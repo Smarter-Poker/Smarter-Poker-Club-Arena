@@ -575,6 +575,64 @@ function props(startingChips: number, blindLevels: NormalisedBlindLevel[]): Tour
 const value = (label: string) =>
   screen.getByText(label, { selector: 'dt' }).parentElement!.querySelector('dd')!.textContent;
 
+describe('recorded satellite qualifier ranking', () => {
+  it('preserves equal survivor outcomes in the real ranking and hero card', () => {
+    const input = props(1000, [level(10)]);
+    input.tournament = {
+      ...input.tournament,
+      status: 'COMPLETED',
+      format_contract: 'mtt-v2',
+      satellite_target_id: 'a1000000-0000-4000-8000-000000000001',
+    };
+    input.currentUserId = 'hero';
+    input.entries = [
+      {
+        id: 'hero-entry',
+        user_id: 'hero',
+        username: 'First Qualifier',
+        avatar_url: null,
+        status: 'winner',
+        chips: 3000,
+      },
+      {
+        id: 'other-entry',
+        user_id: 'other',
+        username: 'Other Qualifier',
+        avatar_url: null,
+        status: 'winner',
+        chips: 1000,
+      },
+      {
+        id: 'bubble-entry',
+        user_id: 'bubble',
+        username: 'Bubble Player',
+        avatar_url: null,
+        status: 'eliminated',
+        chips: 0,
+        position: 3,
+      },
+    ];
+    const { container } = render(
+      <MemoryRouter>
+        <RankingTab {...input} />
+      </MemoryRouter>
+    );
+    expect(container.querySelector('.rk-hero__label')?.textContent).toBe('Your Result');
+    expect(container.querySelector('.rk-hero__rank')?.textContent).toBe('Qualified');
+    expect(container.querySelector('.rk-hero')?.textContent).not.toContain('You Lead');
+    const rows = Array.from(container.querySelectorAll('.rk-item'));
+    expect(rows).toHaveLength(3);
+    for (const row of rows.slice(0, 2)) {
+      expect(row.querySelector('.rk-rank')?.textContent).toBe('-');
+      expect(row.querySelector('.rk-sub')?.textContent).toBe('Qualified');
+      expect(row.querySelector('button')).toBeNull();
+    }
+    expect(rows[2].querySelector('.rk-rank')?.textContent).toBe('3');
+    expect(rows[2].querySelector('.rk-sub')?.textContent).toBe('Finished 3rd');
+    expect(screen.queryByText('The Field Is In The Money')).toBeNull();
+  });
+});
+
 describe('Overview displays engine structure facts without changing tournament rules', () => {
   it.each([
     { minutes: 2, bb: 100, stack: 5000, speed: 'Hyper Turbo', depth: '50 BB' },

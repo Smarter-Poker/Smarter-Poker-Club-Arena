@@ -185,10 +185,69 @@ function changedMigrations(base) {
   );
 }
 
-/** Comments carry no behaviour, and a comment that merely NAMES auth.uid()
- *  must not be mistaken for a call to it. Strip both forms before reading. */
+/** Read comments only in SQL, never inside quoted data. A replacement payload
+ * can legitimately contain an unfinished comment (for example JSON containing
+ * "BEGIN\n /* ..."). The old regex erased later migrations through their next
+ * comment terminator, including real REVOKEs. SQL function/DO bodies still need
+ * inspection: a comment naming auth.uid() inside one is not authorization. */
+function scanSql(sql, grantsOnly = false) {
+  const out = [];
+  const literal = (value) =>
+    // A quoted example or dynamic command is not evidence of a completed
+    // revoke. Keep GRANTs conservatively visible, as dynamic SQL may open access.
+    grantsOnly ? value.replace(/\bREVOKE\b/gi, '______') : value;
+  for (let i = 0; i < sql.length; ) {
+    const start = i;
+    if (sql.startsWith('--', i)) {
+      const end = sql.indexOf('\n', i + 2);
+      i = end < 0 ? sql.length : end;
+      out.push(' ');
+    } else if (sql.startsWith('/*', i)) {
+      let depth = 1;
+      i += 2;
+      while (i < sql.length && depth) {
+        if (sql.startsWith('/*', i)) {
+          depth += 1;
+          i += 2;
+        } else if (sql.startsWith('*/', i)) {
+          depth -= 1;
+          i += 2;
+        } else i += 1;
+      }
+      out.push(' ');
+    } else if (sql[i] === "'" || sql[i] === '"') {
+      const quote = sql[i++];
+      const escaped = quote === "'" && /(?:^|[^\w$])[eE]$/.test(sql.slice(0, start));
+      while (i < sql.length) {
+        if (escaped && sql[i] === '\\') i += 2;
+        else if (sql[i++] === quote) {
+          if (sql[i] !== quote) break;
+          i += 1;
+        }
+      }
+      out.push(literal(sql.slice(start, i)));
+    } else if (sql[i] === '$' && !/[\w$]/.test(sql[i - 1] ?? '')) {
+      const tag = /^\$(?:[A-Za-z_]\w*)?\$/.exec(sql.slice(i))?.[0];
+      const end = tag ? sql.indexOf(tag, i + tag.length) : -1;
+      if (end < 0) {
+        out.push(sql[i++]);
+        continue;
+      }
+      const bodyStart = i + tag.length;
+      const executable = /\b(?:AS|DO(?:\s+LANGUAGE\s+\w+)?)\s*$/i.test(out.join(''));
+      out.push(
+        executable
+          ? tag + scanSql(sql.slice(bodyStart, end), grantsOnly) + tag
+          : literal(sql.slice(start, end + tag.length))
+      );
+      i = end + tag.length;
+    } else out.push(sql[i++]);
+  }
+  return out.join('');
+}
+
 function stripComments(sql) {
-  return sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+  return scanSql(sql);
 }
 
 /** Every function a migration declares, with its header and its body kept
@@ -229,6 +288,7 @@ const BROWSER_ROLES = ['public', 'anon', 'authenticated'];
  * to `authenticated` explicitly.
  */
 function effectiveGrants(sql, name) {
+  sql = scanSql(sql, true);
   const held = { public: true, anon: true, authenticated: true };
   /* THE GAP CANNOT CROSS A STATEMENT BOUNDARY (2026-09-01). This used to be
      `[\s\S]*?`, which let the word "grant" ANYWHERE - inside a RAISE EXCEPTION

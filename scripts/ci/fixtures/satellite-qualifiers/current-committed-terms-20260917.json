@@ -1,0 +1,20 @@
+{
+  "rows": [
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "fn_tournament_payout_terms_committed_v1(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_tournament_payout_terms_committed_v1(p_tournament_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT EXISTS (SELECT 1 FROM public.tournaments t\n                  WHERE t.id=p_tournament_id AND t.prize_pool_finalized IS TRUE)\n     OR EXISTS (SELECT 1 FROM public.tournament_entry_close_receipts r\n                 WHERE r.tournament_id=p_tournament_id)\n     OR EXISTS (SELECT 1 FROM public.tournament_place_settlement_batches b\n                 WHERE b.tournament_id=p_tournament_id)\n     OR EXISTS (SELECT 1 FROM public.tournament_satellite_settlement_batches b\n                 WHERE b.tournament_id=p_tournament_id)\n     OR EXISTS (SELECT 1 FROM public.tournament_final_table_deal_batches b\n                 WHERE b.tournament_id=p_tournament_id)\n     OR EXISTS (SELECT 1 FROM public.tournament_terminal_settlements h\n                 WHERE h.tournament_id=p_tournament_id)\n     OR EXISTS (SELECT 1 FROM public.tournament_cancellation_receipts c\n                 WHERE c.tournament_id=p_tournament_id)\n     OR EXISTS (SELECT 1 FROM public.tournament_obligations o\n                 WHERE o.tournament_id=p_tournament_id\n                   AND o.kind IN ('place','bubble_protection','final_table_deal','late_reg_adjustment'))\n     OR EXISTS (SELECT 1 FROM public.tournament_payouts p\n                 WHERE p.tournament_id=p_tournament_id\n                   AND (p.source IN ('structure','reconcile','hu_shortfall','late_reg_adjustment',\n                         'clawback','spin_backpay','overlay_backpay','final_table_deal','bubble_protection')\n                        OR public.fn_tournament_payout_key_is_place_evidence(\n                             p.tournament_id,p.idempotency_key)));\n$function$\n",
+      "source_md5": "5c31fe20d25154e0c70a976b38bb88c3",
+      "definition_md5": "918c62cbcc182d43a6a27edeb2c1c107"
+    }
+  ],
+  "captured_at": "2026-09-17T20:25:39.602971+00:00"
+}

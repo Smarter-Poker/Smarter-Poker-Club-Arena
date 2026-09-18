@@ -72,6 +72,7 @@ import { useMasterBusSubscription } from '../../../hooks/useMasterBusSubscriptio
 import { openTableAsObserver } from '../../../utils/observeTable';
 import { reportError } from '../../../utils/errorReporter';
 import { readCommittedTournamentBlinds } from '../../../utils/committedTournamentBlinds';
+import { isRecordedSatelliteQualifier } from '../../../utils/satelliteQualification';
 import { useDownlineIds } from './useDownlineIds';
 import {
   chips,
@@ -137,7 +138,8 @@ const isOut = isPlayerOut;
 interface RankRowProps {
   entry: TournamentEntry;
   /** Live rank among the field, or the finishing position once out. */
-  rank: number;
+  rank: number | null;
+  qualified: boolean;
   isHero: boolean;
   isDownline: boolean;
   out: boolean;
@@ -163,6 +165,7 @@ interface RankRowProps {
 const RankRow = React.memo(function RankRow({
   entry,
   rank,
+  qualified,
   isHero,
   isDownline,
   out,
@@ -202,18 +205,22 @@ const RankRow = React.memo(function RankRow({
     .filter(Boolean)
     .join(' ');
 
-  const subText = out
-    ? entry.position
-      ? `Finished ${ordinal(entry.position)}`
-      : 'Eliminated'
-    : entry.table_id
-      ? tableName || 'At A Table'
-      : 'Not Seated Yet';
+  const subText = qualified
+    ? 'Qualified'
+    : out
+      ? entry.position
+        ? `Finished ${ordinal(entry.position)}`
+        : 'Eliminated'
+      : entry.table_id
+        ? tableName || 'At A Table'
+        : 'Not Seated Yet';
 
   const body = (
     <>
-      <span className={`tl-rank rk-rank${!out && rank <= 3 ? ' tl-rank--podium' : ''}`}>
-        {rank}
+      <span
+        className={`tl-rank rk-rank${!out && rank !== null && rank <= 3 ? ' tl-rank--podium' : ''}`}
+      >
+        {rank ?? '-'}
       </span>
 
       {entry.avatar_url ? (
@@ -652,6 +659,11 @@ export default function RankingTab({
   const ordered = useMemo(() => {
     const copy = [...merged];
     copy.sort((a, b) => {
+      const aQualified = isRecordedSatelliteQualifier(tournament, a);
+      const bQualified = isRecordedSatelliteQualifier(tournament, b);
+      if (aQualified !== bQualified) return aQualified ? -1 : 1;
+      // Presentation order is not a finishing rank among equal qualifiers.
+      if (aQualified && bQualified) return a.username.localeCompare(b.username);
       const aOut = isOut(a);
       const bOut = isOut(b);
       if (aOut !== bOut) return aOut ? 1 : -1;
@@ -665,7 +677,7 @@ export default function RankingTab({
       return (a.username || '').localeCompare(b.username || '');
     });
     return copy;
-  }, [merged]);
+  }, [merged, tournament]);
 
   /**
    * Rank is assigned ONCE, over the whole field, before anything is filtered.
@@ -676,10 +688,16 @@ export default function RankingTab({
   const ranked = useMemo(
     () =>
       ordered.map((entry, index) => {
-        const out = isOut(entry);
-        return { entry, out, rank: out ? entry.position || index + 1 : index + 1 };
+        const qualified = isRecordedSatelliteQualifier(tournament, entry);
+        const out = isOut(entry) || qualified;
+        return {
+          entry,
+          out,
+          qualified,
+          rank: qualified ? null : out ? entry.position || index + 1 : index + 1,
+        };
       }),
-    [ordered]
+    [ordered, tournament]
   );
 
   /* The previous stack for every player on the board, refreshed AFTER each
@@ -689,7 +707,10 @@ export default function RankingTab({
     for (const e of merged) seen.set(e.user_id, Number(e.chips) || 0);
   }, [merged]);
 
-  const living = useMemo(() => ordered.filter((e) => !isOut(e)), [ordered]);
+  const living = useMemo(
+    () => ordered.filter((e) => !isOut(e) && !isRecordedSatelliteQualifier(tournament, e)),
+    [ordered, tournament]
+  );
 
   const totalChips = useMemo(
     () => living.reduce((sum, e) => sum + (Number(e.chips) || 0), 0),
@@ -753,7 +774,7 @@ export default function RankingTab({
       if (row.out) continue;
       alive += 1;
       totalChips += Number(row.entry.chips) || 0;
-      if (bestRank === 0 || row.rank < bestRank) bestRank = row.rank;
+      if (row.rank !== null && (bestRank === 0 || row.rank < bestRank)) bestRank = row.rank;
     }
     return { total, alive, bestRank, totalChips };
   }, [ranked, downlineIds, carriesDownline]);
@@ -827,6 +848,7 @@ export default function RankingTab({
   const heroStack = hero ? Number(hero.chips) || 0 : 0;
   const heroBB = hero && bigBlind > 0 ? Math.floor(heroStack / bigBlind) : null;
   const heroOut = hero ? isOut(hero) : false;
+  const heroQualified = hero ? isRecordedSatelliteQualifier(tournament, hero) : false;
   const heroAboveAvg = heroStack >= avgStack;
   /* How far off the chip lead. Zero when the hero IS the leader, which is a
      different sentence and gets one. */
@@ -889,10 +911,14 @@ export default function RankingTab({
         <div className={`rk-hero${heroOut ? ' rk-hero--out' : ''}`}>
           <div className="rk-hero__head">
             <span className="rk-hero__label">
-              {heroOut ? 'You Finished' : 'Your Current Position'}
+              {heroQualified ? 'Your Result' : heroOut ? 'You Finished' : 'Your Current Position'}
             </span>
             <span className="rk-hero__rank">
-              {heroOut ? ordinal(hero.position || heroIndex + 1) : ordinal(heroIndex + 1)}
+              {heroQualified
+                ? 'Qualified'
+                : heroOut
+                  ? ordinal(hero.position || heroIndex + 1)
+                  : ordinal(heroIndex + 1)}
             </span>
           </div>
           <div className="rk-hero__figures">
@@ -909,9 +935,17 @@ export default function RankingTab({
                   did. "Below average" tells a player they are behind; this
                   tells them by how much, which is the number they act on. */}
               <span className="tl-stat__label">
-                {heroOut ? 'Versus Average' : heroLeaderGap === 0 ? 'Chip Lead' : 'Off The Lead'}
+                {heroQualified
+                  ? 'Outcome'
+                  : heroOut
+                    ? 'Versus Average'
+                    : heroLeaderGap === 0
+                      ? 'Chip Lead'
+                      : 'Off The Lead'}
               </span>
-              {heroOut ? (
+              {heroQualified ? (
+                <span className="tl-badge tl-badge--good">Qualified</span>
+              ) : heroOut ? (
                 <span className="tl-badge tl-badge--mute">Out</span>
               ) : heroLeaderGap === 0 ? (
                 <span className="tl-badge tl-badge--good">You Lead</span>
@@ -967,13 +1001,14 @@ export default function RankingTab({
       <ul
         className={`tl-list tl-scroll rk-list${visible.length > DENSE_FIELD ? ' rk-list--dense' : ''}`}
       >
-        {visible.map(({ entry, rank, out }) => {
+        {visible.map(({ entry, rank, out, qualified }) => {
           const pulse = pulses.get(entry.user_id);
           return (
             <RankRow
               key={entry.id || entry.user_id}
               entry={entry}
               rank={rank}
+              qualified={qualified}
               isHero={!!currentUserId && entry.user_id === currentUserId}
               isDownline={downlineIds.has(entry.user_id)}
               out={out}

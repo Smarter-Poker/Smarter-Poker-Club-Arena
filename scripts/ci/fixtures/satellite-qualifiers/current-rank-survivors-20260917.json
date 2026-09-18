@@ -1,0 +1,26 @@
+{
+  "rows": [
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "fn_rank_survivors(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_rank_survivors(p_tournament_id uuid)\n RETURNS integer\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_ranked integer := 0;\n  v_bound  integer;\nBEGIN\n  SELECT GREATEST(COUNT(*), COALESCE(MAX(position), 0))\n    INTO v_bound\n    FROM tournament_players\n   WHERE tournament_id = p_tournament_id;\n\n  IF COALESCE(v_bound, 0) = 0 THEN\n    RETURN 0;\n  END IF;\n\n  WITH taken AS (\n    SELECT DISTINCT position\n      FROM tournament_players\n     WHERE tournament_id = p_tournament_id\n       AND position IS NOT NULL\n  ),\n  survivors AS (\n    SELECT id,\n           row_number() OVER (\n             ORDER BY COALESCE(chips, 0) DESC,\n                      COALESCE(chip_count, 0) DESC,\n                      registered_at ASC,\n                      id ASC\n           ) AS rn\n      FROM tournament_players\n     WHERE tournament_id = p_tournament_id\n       AND position IS NULL\n  ),\n  free AS (\n    SELECT g AS pos, row_number() OVER (ORDER BY g) AS rn\n      FROM generate_series(1, v_bound) g\n     WHERE NOT EXISTS (SELECT 1 FROM taken tk WHERE tk.position = g)\n  )\n  UPDATE tournament_players tp\n     SET position      = f.pos,\n         status        = CASE WHEN f.pos = 1 THEN 'winner' ELSE 'eliminated' END,\n         eliminated_at = CASE WHEN f.pos = 1 THEN tp.eliminated_at\n                              ELSE COALESCE(tp.eliminated_at, now()) END\n    FROM survivors s\n    JOIN free f ON f.rn = s.rn\n   WHERE tp.id = s.id;\n\n  GET DIAGNOSTICS v_ranked = ROW_COUNT;\n  RETURN v_ranked;\nEND;\n$function$\n",
+      "source_md5": "db9fa6b2c0fbd4e5e4f4ba804722a75c",
+      "definition_md5": "08f74242498a66664e9c7fe58001e4d0"
+    }
+  ],
+  "captured_at": "2026-09-17T20:12:34.762897+00:00"
+}

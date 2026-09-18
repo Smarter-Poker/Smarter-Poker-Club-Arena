@@ -1,0 +1,142 @@
+{
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "capture_queries": [
+    "BEGIN READ ONLY; SET LOCAL statement_timeout='8s'; SELECT current_timestamp AS captured_at,p.oid,p.proname,p.oid::regprocedure::text signature,pg_get_userbyid(p.proowner) owner,md5(p.prosrc) source_md5,md5(pg_get_functiondef(p.oid)) definition_md5,p.prosecdef,p.provolatile,p.proconfig,p.proacl::text raw_acl,pg_get_functiondef(p.oid) definition,(SELECT jsonb_agg(jsonb_build_object('grantor',pg_get_userbyid(a.grantor),'grantee',CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,'privilege_type',a.privilege_type,'is_grantable',a.is_grantable) ORDER BY a.grantee::regrole::text,a.privilege_type) FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner)))a) grants FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('fn_tournament_entry_cap_reached','fn_enforce_tournament_capacity','fn_tournament_atomic_register','fn_register_for_tournament_before_atomic_capacity_20260907','fn_ca_register_for_tournament_with_ticket_for','fn_award_satellite_seat','fn_deliver_satellite_ticket_exact','fn_settle_satellite_tournament_pre_money_path_gate','fn_create_seat_first_game_atomic','fn_begin_tournament_launch_atomic','fn_complete_tournament_launch_atomic') ORDER BY p.proname,p.oid; COMMIT;",
+    "BEGIN READ ONLY;\nSET LOCAL statement_timeout='8s';\nSELECT transaction_timestamp() AS captured_at,p.proname,p.oid::regprocedure::text AS signature,\npg_get_functiondef(p.oid) AS definition,md5(p.prosrc) AS source_md5,md5(pg_get_functiondef(p.oid)) AS definition_md5,\npg_get_userbyid(p.proowner) AS owner,p.prosecdef,p.provolatile,p.proconfig,\n(SELECT jsonb_agg(jsonb_build_object('grantor',pg_get_userbyid(a.grantor),'grantee',CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,'privilege_type',a.privilege_type,'is_grantable',a.is_grantable) ORDER BY a.grantee::regrole::text,a.privilege_type)\n FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner)))a) AS grants\nFROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname IN\n('fn_begin_tournament_launch_before_lease_generation','fn_complete_tournament_launch_before_lease_generation',\n'get_club_home','fn_community_search','fn_list_managed_games')\nORDER BY p.proname,p.oid::regprocedure::text;\nCOMMIT;"
+  ],
+  "purpose": "Absent-only real launch authority supplement for existing native fixture; no production load.",
+  "rows": [
+    {
+      "captured_at": "2026-09-17 05:58:14.452551+00",
+      "oid": 24465452,
+      "proname": "fn_begin_tournament_launch_atomic",
+      "signature": "fn_begin_tournament_launch_atomic(uuid,uuid,timestamp with time zone)",
+      "owner": "postgres",
+      "source_md5": "0db85bdca3cea07627408f27e6c563a5",
+      "definition_md5": "3214b4fe0037e6b08963dd8676d593a8",
+      "prosecdef": true,
+      "provolatile": "v",
+      "proconfig": ["search_path=public, pg_temp", "statement_timeout=30s"],
+      "raw_acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_begin_tournament_launch_atomic(p_tournament_id uuid, p_launch_id uuid, p_started_at timestamp with time zone)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET statement_timeout TO '30s'\nAS $function$\nDECLARE\n  v_protocol_version integer;\nBEGIN\n  PERFORM pg_advisory_xact_lock_shared(530090, 1);\n  SELECT l.protocol_version INTO v_protocol_version\n    FROM public.engine_tournament_leases l\n   WHERE l.tournament_id = p_tournament_id\n   FOR UPDATE;\n  IF NOT FOUND OR v_protocol_version >= 2 THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'legacy_launch_protocol_closed');\n  END IF;\n  RETURN public.fn_begin_tournament_launch_before_lease_generation(\n    p_tournament_id,\n    p_launch_id,\n    p_started_at\n  );\nEND;\n$function$\n",
+      "grants": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ]
+    },
+    {
+      "captured_at": "2026-09-17 05:58:14.452551+00",
+      "oid": 24465464,
+      "proname": "fn_begin_tournament_launch_atomic",
+      "signature": "fn_begin_tournament_launch_atomic(uuid,uuid,timestamp with time zone,uuid)",
+      "owner": "postgres",
+      "source_md5": "2ae3184bbea06198a00b8409cf808083",
+      "definition_md5": "80e5567b44bf2711979444432ce4e979",
+      "prosecdef": true,
+      "provolatile": "v",
+      "proconfig": ["search_path=public, pg_temp", "statement_timeout=30s"],
+      "raw_acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_begin_tournament_launch_atomic(p_tournament_id uuid, p_launch_id uuid, p_started_at timestamp with time zone, p_lease_generation uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET statement_timeout TO '30s'\nAS $function$\nDECLARE\n  v_current_generation uuid;\n  v_protocol_version integer;\n  v_heartbeat_at timestamptz;\n  v_receipt_generation uuid;\n  v_result jsonb;\nBEGIN\n  PERFORM pg_advisory_xact_lock_shared(530090, 1);\n\n  IF p_tournament_id IS NULL OR p_launch_id IS NULL OR p_lease_generation IS NULL THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_launch_request');\n  END IF;\n\n  SELECT l.lease_generation, l.protocol_version, l.heartbeat_at\n    INTO v_current_generation, v_protocol_version, v_heartbeat_at\n    FROM public.engine_tournament_leases l\n   WHERE l.tournament_id = p_tournament_id\n   FOR UPDATE;\n  IF NOT FOUND\n     OR v_protocol_version IS DISTINCT FROM 2\n     OR v_current_generation IS DISTINCT FROM p_lease_generation\n     OR v_heartbeat_at < clock_timestamp() - interval '30 seconds' THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'launch_lease_lost');\n  END IF;\n\n  v_result := public.fn_begin_tournament_launch_before_lease_generation(\n    p_tournament_id,\n    p_launch_id,\n    p_started_at\n  );\n\n  IF COALESCE((v_result ->> 'ok')::boolean, false)\n     AND NOT COALESCE((v_result ->> 'completed')::boolean, false) THEN\n    SELECT r.lease_generation INTO STRICT v_receipt_generation\n      FROM public.tournament_launch_receipts r\n     WHERE r.tournament_id = p_tournament_id\n     FOR UPDATE;\n    IF v_receipt_generation IS DISTINCT FROM p_lease_generation THEN\n      PERFORM set_config(\n        'app.atomic_tournament_launch_lease_adoption',\n        p_tournament_id::text || ':' || v_receipt_generation::text || ':' || p_lease_generation::text,\n        true\n      );\n      UPDATE public.tournament_launch_receipts r\n         SET lease_generation = p_lease_generation\n       WHERE r.tournament_id = p_tournament_id\n         AND r.completed_at IS NULL\n         AND r.lease_generation = v_receipt_generation;\n      IF NOT FOUND THEN\n        RAISE EXCEPTION 'tournament launch receipt changed during lease adoption'\n          USING ERRCODE = '40001';\n      END IF;\n    END IF;\n  END IF;\n\n  RETURN v_result || jsonb_build_object('lease_generation', p_lease_generation);\nEND;\n$function$\n",
+      "grants": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ]
+    },
+    {
+      "captured_at": "2026-09-17 05:58:14.452551+00",
+      "oid": 24465453,
+      "proname": "fn_complete_tournament_launch_atomic",
+      "signature": "fn_complete_tournament_launch_atomic(uuid,uuid)",
+      "owner": "postgres",
+      "source_md5": "fcb8cec35d672f897eb8db852b33b4d0",
+      "definition_md5": "554c10597600a0408c5698039f1aa046",
+      "prosecdef": true,
+      "provolatile": "v",
+      "proconfig": ["search_path=public, pg_temp", "statement_timeout=30s"],
+      "raw_acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_complete_tournament_launch_atomic(p_tournament_id uuid, p_launch_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET statement_timeout TO '30s'\nAS $function$\nDECLARE\n  v_protocol_version integer;\nBEGIN\n  SELECT l.protocol_version INTO v_protocol_version\n    FROM public.engine_tournament_leases l\n   WHERE l.tournament_id = p_tournament_id\n   FOR UPDATE;\n  IF NOT FOUND OR v_protocol_version >= 2 THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'legacy_launch_protocol_closed');\n  END IF;\n  RETURN public.fn_complete_tournament_launch_before_lease_generation(\n    p_tournament_id,\n    p_launch_id\n  );\nEND;\n$function$\n",
+      "grants": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ]
+    },
+    {
+      "captured_at": "2026-09-17 05:58:14.452551+00",
+      "oid": 24465465,
+      "proname": "fn_complete_tournament_launch_atomic",
+      "signature": "fn_complete_tournament_launch_atomic(uuid,uuid,uuid)",
+      "owner": "postgres",
+      "source_md5": "5f6597231e323454438ab66aa7defcb3",
+      "definition_md5": "089328dfdae64c78cb2f7976a3a02b83",
+      "prosecdef": true,
+      "provolatile": "v",
+      "proconfig": ["search_path=public, pg_temp", "statement_timeout=30s"],
+      "raw_acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_complete_tournament_launch_atomic(p_tournament_id uuid, p_launch_id uuid, p_lease_generation uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET statement_timeout TO '30s'\nAS $function$\nDECLARE\n  v_current_generation uuid;\n  v_protocol_version integer;\n  v_heartbeat_at timestamptz;\n  v_receipt_generation uuid;\n  v_receipt_launch_id uuid;\n  v_result jsonb;\nBEGIN\n  IF p_tournament_id IS NULL OR p_launch_id IS NULL OR p_lease_generation IS NULL THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_launch_request');\n  END IF;\n\n  SELECT l.lease_generation, l.protocol_version, l.heartbeat_at\n    INTO v_current_generation, v_protocol_version, v_heartbeat_at\n    FROM public.engine_tournament_leases l\n   WHERE l.tournament_id = p_tournament_id\n   FOR UPDATE;\n  IF NOT FOUND\n     OR v_protocol_version IS DISTINCT FROM 2\n     OR v_current_generation IS DISTINCT FROM p_lease_generation\n     OR v_heartbeat_at < clock_timestamp() - interval '30 seconds' THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'launch_lease_lost');\n  END IF;\n\n  SELECT r.launch_id, r.lease_generation\n    INTO v_receipt_launch_id, v_receipt_generation\n    FROM public.tournament_launch_receipts r\n   WHERE r.tournament_id = p_tournament_id\n   FOR UPDATE;\n  IF NOT FOUND\n     OR v_receipt_launch_id IS DISTINCT FROM p_launch_id\n     OR v_receipt_generation IS DISTINCT FROM p_lease_generation THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'launch_receipt_mismatch');\n  END IF;\n\n  v_result := public.fn_complete_tournament_launch_before_lease_generation(\n    p_tournament_id,\n    p_launch_id\n  );\n  RETURN v_result || jsonb_build_object('lease_generation', p_lease_generation);\nEND;\n$function$\n",
+      "grants": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ]
+    },
+    {
+      "captured_at": "2026-09-17 06:09:18.720164+00",
+      "proname": "fn_begin_tournament_launch_before_lease_generation",
+      "signature": "fn_begin_tournament_launch_before_lease_generation(uuid,uuid,timestamp with time zone)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_begin_tournament_launch_before_lease_generation(p_tournament_id uuid, p_launch_id uuid, p_started_at timestamp with time zone)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET statement_timeout TO '30s'\nAS $function$\nDECLARE\n  v_existing public.tournament_launch_receipts%ROWTYPE;\n  v_status text;\n  v_tournament_started_at timestamptz;\n  v_requested_started_at timestamptz := COALESCE(p_started_at, transaction_timestamp());\nBEGIN\n  PERFORM pg_advisory_xact_lock_shared(530090, 1);\n\n  IF p_tournament_id IS NULL OR p_launch_id IS NULL THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_launch_request');\n  END IF;\n\n  SELECT * INTO v_existing\n    FROM public.tournament_launch_receipts r\n   WHERE r.tournament_id = p_tournament_id\n   FOR UPDATE;\n  IF FOUND THEN\n    IF p_started_at IS NOT NULL\n       AND v_existing.launch_id = p_launch_id\n       AND v_existing.started_at IS DISTINCT FROM p_started_at THEN\n      RETURN jsonb_build_object('ok', false, 'reason', 'launch_request_mismatch');\n    END IF;\n    SELECT t.status, t.started_at INTO v_status, v_tournament_started_at\n      FROM public.tournaments t\n     WHERE t.id = p_tournament_id\n     FOR UPDATE;\n    IF NOT FOUND\n       OR (v_existing.completed_at IS NULL AND v_status <> 'REGISTERING')\n       OR (v_existing.completed_at IS NOT NULL\n           AND (v_status <> 'RUNNING'\n                OR v_tournament_started_at IS DISTINCT FROM v_existing.started_at)) THEN\n      RETURN jsonb_build_object('ok', false, 'reason', 'launch_receipt_state_mismatch');\n    END IF;\n    RETURN jsonb_build_object(\n      'ok', true,\n      'claimed', true,\n      'launch_id', v_existing.launch_id,\n      'replay', true,\n      'started_at', v_existing.started_at,\n      'completed', v_existing.completed_at IS NOT NULL,\n      'status', v_status\n    );\n  END IF;\n\n  IF public.fn_entry_purchases_frozen() THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'platform_frozen');\n  END IF;\n\n  SELECT t.status, t.started_at INTO v_status, v_tournament_started_at\n    FROM public.tournaments t\n   WHERE t.id = p_tournament_id\n   FOR UPDATE;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');\n  END IF;\n  IF v_status <> 'REGISTERING' THEN\n    RETURN jsonb_build_object(\n      'ok', false,\n      'reason', 'launch_status_changed',\n      'status', v_status\n    );\n  END IF;\n  IF v_tournament_started_at IS NOT NULL\n     AND v_tournament_started_at IS DISTINCT FROM v_requested_started_at THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'launch_started_at_mismatch');\n  END IF;\n\n  INSERT INTO public.tournament_launch_receipts (\n    tournament_id, launch_id, started_at\n  ) VALUES (\n    p_tournament_id, p_launch_id, v_requested_started_at\n  );\n\n  RETURN jsonb_build_object(\n    'ok', true,\n    'claimed', true,\n    'launch_id', p_launch_id,\n    'replay', false,\n    'started_at', v_requested_started_at,\n    'completed', false\n  );\nEND;\n$function$\n",
+      "source_md5": "6cc03b69671fc2a1aa6c998717d513af",
+      "definition_md5": "21effa5740c1288acc3e224ec5f4903b",
+      "owner": "postgres",
+      "prosecdef": true,
+      "provolatile": "v",
+      "proconfig": ["search_path=public, pg_temp", "statement_timeout=30s"],
+      "grants": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ]
+    }
+  ]
+}

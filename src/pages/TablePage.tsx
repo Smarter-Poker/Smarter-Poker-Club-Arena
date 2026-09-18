@@ -77,6 +77,10 @@ import { publishSessionSummary, type TournamentResult } from '../services/pendin
 import { sitOutMsRemaining, sitOutBadgeLabel } from '../lib/sitOutDeadline';
 import { awaitTournamentResultEnrichment } from '../utils/tournamentResultEnrichment';
 import {
+  readMySatelliteQualifierResult,
+  type SatelliteQualifierResult,
+} from '../services/satelliteQualifierResult';
+import {
   clearSessionPurchaseRequestId,
   readOrCreateSessionPurchaseRequestId,
 } from '../utils/sessionPurchaseRequest';
@@ -574,7 +578,18 @@ async function fetchTournamentResult(
       }
     }
 
+    const qualification =
+      entry?.status === 'winner' && entry.position === null
+        ? await readMySatelliteQualifierResult(tournamentId, userId)
+        : null;
     return {
+      satelliteQualification: qualification?.qualified
+        ? {
+            targetId: qualification.targetId,
+            deliveryKind: qualification.deliveryKind as 'seat' | 'ticket' | 'cash',
+            amount: qualification.amount,
+          }
+        : undefined,
       name: tourney?.name || undefined,
       finishPlace: entry?.position ?? null,
       entrants: entryCount ?? tourney?.current_players ?? null,
@@ -12945,6 +12960,7 @@ function LiveTablePage({
         // Subscribe to tournament break + add-on events via Realtime
         if (table.tournament_id) {
           const durableTournamentId = table.tournament_id;
+          let committedSatelliteQualification: SatelliteQualifierResult | null = null;
           const durableTournamentName = table.name;
           const breakChanKey = `t-break-${durableTournamentId}`;
 
@@ -13055,7 +13071,19 @@ function LiveTablePage({
                     /* The broadcast is authoritative for these two: it is what
                        the engine just decided, whereas the row may not have
                        been written yet when we read it. */
-                    finishPlace: position || full?.finishPlace || null,
+                    finishPlace: committedSatelliteQualification?.qualified
+                      ? null
+                      : position || full?.finishPlace || null,
+                    satelliteQualification: committedSatelliteQualification?.qualified
+                      ? {
+                          targetId: committedSatelliteQualification.targetId,
+                          deliveryKind: committedSatelliteQualification.deliveryKind as
+                            | 'seat'
+                            | 'ticket'
+                            | 'cash',
+                          amount: committedSatelliteQualification.amount,
+                        }
+                      : full?.satelliteQualification,
                     /* Round 12: lets the ranking card's Play Again seat the
                        player into the open same-stake sibling game. */
                     tournamentId: tid || undefined,
@@ -13207,43 +13235,66 @@ function LiveTablePage({
                 lastError = resultError ?? new Error('Tournament result row is unavailable');
                 if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
               }
+              if (!isMounted) return;
+              if (lastError || !result) {
+                if (!durableCompletionFailureReported) {
+                  durableCompletionFailureReported = true;
+                  reportError(lastError, 'TablePage.durable_tournament_result_unreadable', {
+                    tournamentId: durableTournamentId,
+                    userId,
+                  });
+                }
+                scheduleDurableCompletionRetry();
+                return;
+              }
+              if (!['winner', 'eliminated'].includes(String(result.status))) {
+                scheduleDurableCompletionRetry();
+                return;
+              }
+              if (result.status === 'winner' && result.position === null) {
+                try {
+                  const qualification = await readMySatelliteQualifierResult(
+                    durableTournamentId,
+                    userId
+                  );
+                  if (!isMounted) return;
+                  if (qualification?.qualified) {
+                    committedSatelliteQualification = qualification;
+                    durableCompletionHandled = true;
+                    if (durableCompletionRetryTimer) {
+                      clearTimeout(durableCompletionRetryTimer);
+                      durableCompletionRetryTimer = null;
+                    }
+                    goToLobbyWithResult(0, qualification.amount, 2500);
+                    return;
+                  }
+                } catch (error) {
+                  reportError(error, 'TablePage.satellite_qualifier_result_unreadable', {
+                    tournamentId: durableTournamentId,
+                  });
+                }
+              }
+              const position = Number(result.position);
+              if (!Number.isInteger(position) || position < 1) {
+                scheduleDurableCompletionRetry();
+                return;
+              }
+              const prize = Number(result.prize) || 0;
+              durableCompletionHandled = true;
+              if (durableCompletionRetryTimer) {
+                clearTimeout(durableCompletionRetryTimer);
+                durableCompletionRetryTimer = null;
+              }
+              if (position === 1) {
+                setTournamentWinner({
+                  prize,
+                  name: formatGameTitle(durableTournamentName) || 'Tournament',
+                });
+              }
+              goToLobbyWithResult(position, prize, position === 1 ? 7000 : 2500);
             } finally {
               durableCompletionLookupInFlight = false;
             }
-            if (!isMounted) return;
-            if (lastError || !result) {
-              if (!durableCompletionFailureReported) {
-                durableCompletionFailureReported = true;
-                reportError(lastError, 'TablePage.durable_tournament_result_unreadable', {
-                  tournamentId: durableTournamentId,
-                  userId,
-                });
-              }
-              scheduleDurableCompletionRetry();
-              return;
-            }
-            if (!['winner', 'eliminated'].includes(String(result.status))) {
-              scheduleDurableCompletionRetry();
-              return;
-            }
-            const position = Number(result.position);
-            if (!Number.isInteger(position) || position < 1) {
-              scheduleDurableCompletionRetry();
-              return;
-            }
-            const prize = Number(result.prize) || 0;
-            durableCompletionHandled = true;
-            if (durableCompletionRetryTimer) {
-              clearTimeout(durableCompletionRetryTimer);
-              durableCompletionRetryTimer = null;
-            }
-            if (position === 1) {
-              setTournamentWinner({
-                prize,
-                name: formatGameTitle(durableTournamentName) || 'Tournament',
-              });
-            }
-            goToLobbyWithResult(position, prize, position === 1 ? 7000 : 2500);
           }
 
           async function verifyDurableCompletion(): Promise<void> {
@@ -13746,6 +13797,15 @@ function LiveTablePage({
                       seat?.id === elimData.userId ? { ...seat, status: 'eliminated' } : seat
                     ),
                   }));
+                }
+              } else if (data?.type === 'satellite_qualifiers') {
+                // Never infer a rank or payment from the announcement. The
+                // same per-entrant immutable receipt owns initial/reconnect.
+                if (
+                  data.payload?.tournamentId === durableTournamentId &&
+                  data.payload?.receiptVersion === 3
+                ) {
+                  void exitFromDurableCompletion();
                 }
               } else if (data?.type === 'final_table_deal') {
                 // The deal broadcast describes the whole chop, but this

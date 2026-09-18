@@ -152,7 +152,7 @@ export function TournamentRankingHost() {
   useEffect(() => {
     const t = payload?.tournament;
     if (!tournamentId || !t) return;
-    if (t.finishPlace != null) return; // already known — never second-guess it
+    if (t.finishPlace != null || t.satelliteQualification) return; // recorded result is already known
     if (placeFilledRef.current === tournamentId) return; // one fill per card
     placeFilledRef.current = tournamentId;
 

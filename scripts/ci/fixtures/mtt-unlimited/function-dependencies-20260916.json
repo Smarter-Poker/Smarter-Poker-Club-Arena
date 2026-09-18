@@ -1,0 +1,321 @@
+{
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "query_kind": "read-only pg_catalog direct dependencies",
+  "rows": [
+    {
+      "captured_at": "2026-09-16 05:45:35.698529+00",
+      "oid": 25581629,
+      "schema_name": "public",
+      "proname": "fn_ca_tournament_unregistration_receipt",
+      "args": "p_tournament_id uuid, p_user_id uuid, p_source_table_id uuid, p_request_id uuid",
+      "signature": "fn_ca_tournament_unregistration_receipt(uuid,uuid,uuid,uuid)",
+      "owner": "postgres",
+      "source_md5": "090ec08f6c51b6258a6c9c5898f0603e",
+      "definition_md5": "a1eb3a788f88279d07cd421e5fee5a69",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_tournament_unregistration_receipt(p_tournament_id uuid, p_user_id uuid, p_source_table_id uuid DEFAULT NULL::uuid, p_request_id uuid DEFAULT NULL::uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_r public.tournament_unregistration_receipts%ROWTYPE;\n  v_entitlement_count integer;\n  v_fee_entitlement_count integer;\n  v_entitlement_total numeric;\n  v_entitlement_fee numeric;\n  v_source_count integer;\n  v_wallet_count integer;\n  v_wallet_total numeric;\n  v_ticket_count integer;\n  v_ticket_total numeric;\n  v_ticket_ledger_count integer;\n  v_ticket_transaction_count integer;\n  v_fee_reversal_count integer;\n  v_fee_reversal_total numeric;\n  v_fee_source_ids uuid[];\n  v_fee_mapping_count integer;\n  v_fee_mapping_entitlement_count integer;\n  v_fee_mapping_ids uuid[];\nBEGIN\n  SELECT * INTO v_r\n    FROM public.tournament_unregistration_receipts r\n   WHERE r.tournament_id=p_tournament_id AND r.user_id=p_user_id\n     AND r.source_table_id IS NOT DISTINCT FROM p_source_table_id\n     AND (p_request_id IS NULL OR r.request_id=p_request_id)\n   ORDER BY r.settled_at DESC,r.registration_id DESC\n   LIMIT 1;\n  IF v_r.registration_id IS NULL THEN\n    RETURN NULL;\n  END IF;\n\n  -- A later registration, including an eliminated one, makes an unkeyed\n  -- \"latest receipt\" unsafe. The exact request-key path is also refused while\n  -- any later registration row exists: a replay is an outcome read, never an\n  -- operation against a new lifecycle.\n  IF EXISTS(\n    SELECT 1 FROM public.tournament_players tp\n     WHERE tp.tournament_id=v_r.tournament_id AND tp.user_id=v_r.user_id) THEN\n    RETURN NULL;\n  END IF;\n\n  SELECT count(*),count(*) FILTER (WHERE e.refund_fee>0),\n         round(COALESCE(sum(e.gross),0),2),\n         round(COALESCE(sum(e.refund_fee),0),2)\n    INTO v_entitlement_count,v_fee_entitlement_count,\n         v_entitlement_total,v_entitlement_fee\n    FROM public.tournament_refund_entitlements e\n   WHERE e.id=ANY(v_r.entitlement_ids)\n     AND e.tournament_id=v_r.tournament_id AND e.user_id=v_r.user_id;\n  SELECT count(*) INTO v_source_count\n    FROM unnest(v_r.entitlement_ids) WITH ORDINALITY entitlement(id,n)\n    JOIN unnest(v_r.source_wallet_club_ids) WITH ORDINALITY source(club_id,n)\n      USING(n)\n    JOIN public.tournament_refund_entitlements e\n      ON e.id=entitlement.id AND e.refund_wallet_club_id=source.club_id\n     AND e.tournament_id=v_r.tournament_id AND e.user_id=v_r.user_id;\n  SELECT count(*),round(COALESCE(sum(tr.amount_paid_now),0),2)\n    INTO v_wallet_count,v_wallet_total\n    FROM public.tournament_refund_tranches tr\n    JOIN public.tournament_refund_entitlements e ON e.id=tr.entitlement_id\n   WHERE e.id=ANY(v_r.entitlement_ids)\n     AND e.entitlement_kind IN ('wallet_charge','satellite_seat','tournament_ticket')\n     AND tr.wallet_transaction_id=ANY(v_r.wallet_transaction_ids)\n     AND tr.credit_ledger_id=ANY(v_r.credit_ledger_ids)\n     AND tr.tournament_id=v_r.tournament_id AND tr.user_id=v_r.user_id;\n  SELECT count(*),round(COALESCE(sum(tk.value),0),2)\n    INTO v_ticket_count,v_ticket_total\n    FROM public.tournament_tickets tk\n    JOIN public.tournament_refund_entitlements e\n      ON e.id=tk.source_refund_entitlement_id\n   WHERE tk.id=ANY(v_r.ticket_ids)\n     AND tk.redemption_mode='tournament_entry_only'\n     AND e.id=ANY(v_r.entitlement_ids)\n     AND e.entitlement_kind IN ('satellite_seat','tournament_ticket')\n     AND e.tournament_id=v_r.tournament_id AND e.user_id=v_r.user_id\n     AND tk.value=e.gross;\n  SELECT count(*) INTO v_ticket_ledger_count\n    FROM public.chip_ledger l\n    JOIN public.tournament_tickets tk ON tk.id=l.to_entity_id\n    JOIN public.tournament_refund_entitlements e\n      ON e.id=tk.source_refund_entitlement_id\n   WHERE tk.id=ANY(v_r.ticket_ids)\n     AND e.id=ANY(v_r.entitlement_ids)\n     AND l.idempotency_key='tourney:'||e.tournament_id::text\n          ||':satellite-ticket-return:'||e.id::text\n     AND l.from_type='prize_liability'\n     AND l.from_entity_id=e.tournament_id\n     AND l.to_type='escrow' AND l.to_entity_id=tk.id\n     AND l.club_id=e.refund_wallet_club_id AND l.amount=e.gross;\n  SELECT count(*) INTO v_ticket_transaction_count\n    FROM public.chip_transactions ct\n    JOIN public.tournament_tickets tk\n      ON tk.id::text=ct.metadata->>'ticket_id'\n    JOIN public.tournament_refund_entitlements e\n      ON e.id=tk.source_refund_entitlement_id\n    JOIN public.chip_ledger l\n      ON l.id::text=ct.metadata->>'ledger_id'\n   WHERE tk.id=ANY(v_r.ticket_ids)\n     AND e.id=ANY(v_r.entitlement_ids)\n     AND ct.transaction_type='tournament_ticket_issue'\n     AND ct.club_id=e.refund_wallet_club_id\n     AND ct.from_user_id IS NULL AND ct.to_user_id=e.user_id\n     AND ct.amount=e.gross\n     AND ct.metadata->>'entitlement_id'=e.id::text\n     AND l.to_entity_id=tk.id\n     AND l.idempotency_key='tourney:'||e.tournament_id::text\n          ||':satellite-ticket-return:'||e.id::text;\n\n  SELECT count(*),round(COALESCE(-sum(reversal.rake_amount),0),2)\n    INTO v_fee_reversal_count,v_fee_reversal_total\n    FROM public.rake_records reversal\n   WHERE reversal.id=ANY(v_r.fee_reversal_ids)\n     AND reversal.tournament_id=v_r.tournament_id\n     AND reversal.is_tournament IS TRUE\n     AND reversal.source='fn_unregister_from_tournament'\n     AND reversal.rake_amount<0\n     AND reversal.metadata->>'kind'='tournament_fee_refund'\n     AND reversal.metadata->>'user_id'=v_r.user_id::text\n     AND reversal.metadata->>'registration_id'=v_r.registration_id::text;\n  SELECT COALESCE(array_agg(source.id ORDER BY source.id),ARRAY[]::uuid[])\n    INTO v_fee_source_ids\n    FROM public.rake_records reversal\n   CROSS JOIN LATERAL jsonb_array_elements_text(\n     reversal.metadata->'original_rake_record_ids') raw(id)\n   JOIN LATERAL (SELECT raw.id::uuid AS id) source ON true\n   WHERE reversal.id=ANY(v_r.fee_reversal_ids);\n  WITH exact_fee_mapping AS MATERIALIZED (\n    SELECT e.id AS entitlement_id,r.id AS rake_record_id\n      FROM public.tournament_refund_entitlements e\n      JOIN public.chip_ledger l ON l.id=e.source_ledger_id\n      JOIN public.rake_records r\n        ON r.id=ANY(v_r.fee_source_rake_record_ids)\n       AND r.tournament_id=e.tournament_id\n       AND r.is_tournament IS TRUE\n       AND r.club_id IS NOT NULL\n       AND r.rake_amount=e.refund_fee\n       AND r.created_at=l.created_at\n       AND r.metadata->>'user_id'=e.user_id::text\n       AND (\n         (e.entitlement_kind='wallet_charge'\n          AND e.charge_category='tournament_buyin'\n          AND r.source IN (\n            'fn_register_for_tournament','fn_register_horse_for_tournament')\n          AND r.metadata->>'kind'='tournament_entry_fee'\n          AND r.metadata->>'registration_id'=v_r.registration_id::text)\n         OR (e.entitlement_kind='wallet_charge'\n          AND e.charge_category='rebuy'\n          AND r.source='process_tournament_rebuy'\n          AND r.metadata->>'kind' IN (\n            'tournament_rebuy_fee','tournament_reentry_fee'))\n         OR (e.entitlement_kind='satellite_seat'\n          AND r.source='fn_award_satellite_seat'\n          AND r.metadata->>'kind'='satellite_seat_entry_fee'\n          AND r.metadata->>'registration_id'=e.registration_id::text)\n         OR (e.entitlement_kind='tournament_ticket'\n          AND r.source='fn_register_for_tournament_with_ticket'\n          AND r.metadata->>'kind'='tournament_ticket_entry_fee'\n          AND r.metadata->>'registration_id'=e.registration_id::text))\n     WHERE e.id=ANY(v_r.entitlement_ids) AND e.refund_fee>0\n  )\n  SELECT count(*),count(DISTINCT entitlement_id),\n         COALESCE(array_agg(rake_record_id ORDER BY rake_record_id),\n                  ARRAY[]::uuid[])\n    INTO v_fee_mapping_count,v_fee_mapping_entitlement_count,v_fee_mapping_ids\n    FROM exact_fee_mapping;\n\n  IF (v_r.start_authority='scheduled_clock'\n       AND v_r.settled_at>=v_r.scheduled_start_at)\n     OR (v_r.start_authority IN (\n           'spin_actual_start','heads_up_sng_actual_start','launch_release')\n       AND EXISTS (\n         SELECT 1\n           FROM public.tournament_launch_receipts launch\n          WHERE launch.tournament_id=v_r.tournament_id\n            AND launch.completed_at IS NOT NULL\n            AND launch.completed_at<=v_r.settled_at))\n     OR (v_r.start_authority='spin_actual_start'\n       AND NOT EXISTS (\n         SELECT 1 FROM public.tournaments t\n          WHERE t.id=v_r.tournament_id\n            AND t.satellite_target_id IS NULL\n            AND upper(COALESCE(t.tournament_type::text,''))<>'SATELLITE'\n            AND (lower(COALESCE(t.variant::text,''))='spin'\n              OR upper(COALESCE(t.tournament_type::text,''))='SPIN')))\n     OR (v_r.start_authority='heads_up_sng_actual_start'\n       AND NOT EXISTS (\n         SELECT 1 FROM public.tournaments t\n          WHERE t.id=v_r.tournament_id\n            AND t.satellite_target_id IS NULL\n            AND upper(COALESCE(t.tournament_type::text,''))='SNG'\n            AND lower(COALESCE(t.variant::text,''))<>'spin'\n            AND COALESCE(t.max_players,0)=2))\n     OR v_r.start_authority NOT IN (\n          'scheduled_clock','spin_actual_start','heads_up_sng_actual_start',\n          'launch_release')\n     OR v_entitlement_count<>cardinality(v_r.entitlement_ids)\n     OR v_source_count<>cardinality(v_r.entitlement_ids)\n     OR v_entitlement_total IS DISTINCT FROM\n          round(v_r.refunded_chips+v_r.returned_ticket_value,2)\n     OR v_wallet_count<>cardinality(v_r.wallet_transaction_ids)\n     OR v_wallet_total IS DISTINCT FROM v_r.refunded_chips\n     OR v_ticket_count<>cardinality(v_r.ticket_ids)\n     OR v_ticket_total IS DISTINCT FROM v_r.returned_ticket_value\n     OR v_ticket_ledger_count<>cardinality(v_r.ticket_ids)\n     OR v_ticket_transaction_count<>cardinality(v_r.ticket_ids)\n     OR v_r.fees_reversed IS DISTINCT FROM v_entitlement_fee\n     OR v_fee_reversal_count<>cardinality(v_r.fee_reversal_ids)\n     OR v_fee_reversal_total IS DISTINCT FROM v_r.fees_reversed\n     OR v_fee_source_ids IS DISTINCT FROM v_r.fee_source_rake_record_ids\n     OR v_fee_mapping_ids IS DISTINCT FROM v_r.fee_source_rake_record_ids\n     OR v_fee_mapping_count<>v_fee_entitlement_count\n     OR v_fee_mapping_entitlement_count<>v_fee_entitlement_count\n     OR cardinality(v_fee_source_ids)<>(\n       SELECT count(DISTINCT id) FROM unnest(v_fee_source_ids) source(id))\n     OR EXISTS (\n       SELECT 1 FROM public.tournament_unregistration_receipts other\n        WHERE other.registration_id<>v_r.registration_id\n          AND (other.fee_reversal_ids && v_r.fee_reversal_ids\n            OR other.fee_source_rake_record_ids\n                 && v_r.fee_source_rake_record_ids))\n     OR EXISTS (\n       SELECT 1\n         FROM public.rake_records reversal\n        WHERE reversal.id=ANY(v_r.fee_reversal_ids)\n          AND (\n            jsonb_typeof(reversal.metadata->'original_rake_record_ids')\n              IS DISTINCT FROM 'array'\n            OR jsonb_array_length(\n                 reversal.metadata->'original_rake_record_ids')=0\n            OR (SELECT round(COALESCE(sum(original.rake_amount),0),2)\n                  FROM jsonb_array_elements_text(\n                    reversal.metadata->'original_rake_record_ids') raw(id)\n                  JOIN public.rake_records original\n                    ON original.id=raw.id::uuid\n                 WHERE original.tournament_id=v_r.tournament_id\n                   AND original.club_id=reversal.club_id\n                   AND original.is_tournament IS TRUE\n                   AND original.rake_amount>0\n                   AND original.metadata->>'user_id'=v_r.user_id::text\n                   AND (\n                     (original.source IN (\n                        'fn_register_for_tournament',\n                        'fn_register_horse_for_tournament')\n                       AND original.metadata->>'kind'='tournament_entry_fee')\n                     OR (original.source='process_tournament_rebuy'\n                       AND original.metadata->>'kind' IN (\n                         'tournament_rebuy_fee','tournament_reentry_fee'))\n                     OR (original.source=\n                           'fn_register_for_tournament_with_ticket'\n                       AND original.metadata->>'kind'=\n                           'tournament_ticket_entry_fee')\n                     OR (original.source='fn_award_satellite_seat'\n                       AND original.metadata->>'kind'=\n                           'satellite_seat_entry_fee')))\n                IS DISTINCT FROM -reversal.rake_amount))\n     OR (v_r.source_table_id IS NOT NULL AND NOT EXISTS(\n       SELECT 1 FROM public.tables tb\n        WHERE tb.id=v_r.source_table_id\n          AND tb.tournament_id=v_r.tournament_id)) THEN\n    RAISE EXCEPTION 'tournament unregistration receipt % is not exact',\n      v_r.registration_id USING ERRCODE='P0404';\n  END IF;\n\n  RETURN jsonb_build_object(\n    'ok',true,'request_id',v_r.request_id,\n    'registration_id',v_r.registration_id,\n    'refunded_chips',v_r.refunded_chips,\n    'returned_ticket_value',v_r.returned_ticket_value,\n    'wallet_chips_from_satellite_entitlements',(\n      SELECT COALESCE(sum(tr.amount_paid_now),0)\n        FROM public.tournament_refund_tranches tr\n        JOIN public.tournament_refund_entitlements e ON e.id=tr.entitlement_id\n       WHERE e.id=ANY(v_r.entitlement_ids)\n         AND e.entitlement_kind IN ('satellite_seat','tournament_ticket')\n         AND tr.wallet_transaction_id=ANY(v_r.wallet_transaction_ids)\n         AND tr.credit_ledger_id=ANY(v_r.credit_ledger_ids)\n         AND tr.tournament_id=v_r.tournament_id AND tr.user_id=v_r.user_id),\n    'entitlement_ids',to_jsonb(v_r.entitlement_ids),\n    'ticket_ids',to_jsonb(v_r.ticket_ids),\n    'source_wallet_club_ids',to_jsonb(v_r.source_wallet_club_ids),\n    'credit_ledger_ids',to_jsonb(v_r.credit_ledger_ids),\n    'wallet_transaction_ids',to_jsonb(v_r.wallet_transaction_ids),\n    'fees_reversed',v_r.fees_reversed,\n    'fee_reversal_ids',to_jsonb(v_r.fee_reversal_ids),\n    'fee_source_rake_record_ids',to_jsonb(v_r.fee_source_rake_record_ids),\n    'seat_number',v_r.seat_number,'seats_taken',v_r.seats_taken,\n    'scheduled_start_at',v_r.scheduled_start_at,\n    'start_authority',v_r.start_authority,\n    'settled_at',v_r.settled_at);\nEND;\n$function$\n",
+      "prosecdef": true,
+      "provolatile": "v",
+      "proconfig": ["search_path=public, pg_temp"],
+      "raw_acl": "{postgres=X/postgres}",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "effective_execute": {
+        "anon": false,
+        "service_role": false,
+        "authenticated": false
+      }
+    },
+    {
+      "captured_at": "2026-09-16 05:45:35.698648+00",
+      "oid": 13929517,
+      "schema_name": "public",
+      "proname": "fn_game_creation_access",
+      "args": "p_club_id uuid",
+      "signature": "fn_game_creation_access(uuid)",
+      "owner": "postgres",
+      "source_md5": "9e4a5c8d56a65b18468e37f2e69d0b92",
+      "definition_md5": "da7e6d647de08c571ad1e02f85739400",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_game_creation_access(p_club_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_user   uuid := auth.uid();\n  v_own    uuid;\n  v_member uuid;\n  v_union  uuid;\n  v_ok     boolean;\nBEGIN\n  IF v_user IS NULL THEN\n    RETURN jsonb_build_object('allowed', false, 'union_id', NULL, 'reason', 'not_signed_in');\n  END IF;\n  IF p_club_id IS NULL OR NOT EXISTS (SELECT 1 FROM clubs c WHERE c.id = p_club_id) THEN\n    RETURN jsonb_build_object('allowed', false, 'union_id', NULL, 'reason', 'unknown_club');\n  END IF;\n\n  SELECT own_union_id, member_union_id INTO v_own, v_member\n    FROM fn_club_union_context(p_club_id);\n\n  v_ok := fn_can_create_games(p_club_id, v_user);\n\n  SELECT u.id INTO v_union FROM unions u WHERE u.id = COALESCE(v_own, v_member);\n\n  RETURN jsonb_build_object(\n    'allowed',  v_ok,\n    'union_id', v_union,\n    'reason',   CASE WHEN v_ok THEN 'ok'\n                     WHEN v_member IS NOT NULL THEN 'union_only'\n                     ELSE 'not_owner_or_admin' END\n  );\nEND;\n$function$\n",
+      "prosecdef": true,
+      "provolatile": "s",
+      "proconfig": ["search_path=public"],
+      "raw_acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "effective_execute": {
+        "anon": false,
+        "service_role": true,
+        "authenticated": true
+      }
+    },
+    {
+      "captured_at": "2026-09-16 05:45:35.69871+00",
+      "oid": 24566554,
+      "schema_name": "public",
+      "proname": "fn_poker_arena_context",
+      "args": "p_club_key text",
+      "signature": "fn_poker_arena_context(text)",
+      "owner": "postgres",
+      "source_md5": "5c77c6883cd46b0d857769769c4e0616",
+      "definition_md5": "6c85536da97db301d7beb4aae885e69c",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_poker_arena_context(p_club_key text)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE v_uid uuid := auth.uid(); v_club public.clubs%ROWTYPE; v_role text; v_member boolean;\nBEGIN\n  IF v_uid IS NULL OR NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = v_uid) THEN\n    RAISE EXCEPTION 'Authentication Required' USING ERRCODE = '28000';\n  END IF;\n  SELECT c.* INTO v_club FROM public.clubs c\n  WHERE c.id::text = btrim(p_club_key) OR c.club_id::text = btrim(p_club_key)\n     OR lower(c.slug) = lower(btrim(p_club_key))\n  ORDER BY (c.id::text = btrim(p_club_key)) DESC LIMIT 1;\n  IF NOT FOUND OR v_club.lifecycle_status = 'retired' THEN RETURN NULL; END IF;\n  IF v_club.asset = 'diamonds' THEN\n    IF v_club.is_platform IS DISTINCT FROM true OR v_club.union_id IS NOT NULL\n       OR NOT EXISTS (SELECT 1 FROM public.ca_arena_settings WHERE club_id = v_club.id) THEN\n      RAISE EXCEPTION 'Invalid Diamond Arena Identity' USING ERRCODE = '23514';\n    END IF;\n    v_member := true; v_role := 'player';\n  ELSIF v_club.asset = 'chips' AND v_club.is_platform = false THEN\n    SELECT m.role INTO v_role FROM public.club_members m\n      WHERE m.club_id = v_club.id AND m.user_id = v_uid AND m.status IN ('active','approved');\n    v_member := FOUND;\n  ELSE RAISE EXCEPTION 'Invalid Arena Asset' USING ERRCODE = '23514';\n  END IF;\n  RETURN jsonb_build_object('arena',jsonb_build_object('id',v_club.id,'asset',v_club.asset,\n    'is_platform',v_club.is_platform,'union_id',v_club.union_id), 'member',v_member,'role',v_role,\n    'cashGamesEnabled',v_club.asset='diamonds' AND COALESCE(\n      (SELECT s.cash_games_enabled FROM public.ca_arena_settings s WHERE s.club_id=v_club.id),false),\n    -- DIAMOND PHASE 8: the tournament switch, read the same way.\n    'tournamentsEnabled',v_club.asset='diamonds' AND COALESCE(\n      (SELECT s.tournaments_enabled FROM public.ca_arena_settings s WHERE s.club_id=v_club.id),false));\nEND $function$\n",
+      "prosecdef": true,
+      "provolatile": "s",
+      "proconfig": ["search_path=public, pg_temp"],
+      "raw_acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "effective_execute": {
+        "anon": false,
+        "service_role": true,
+        "authenticated": true
+      }
+    },
+    {
+      "captured_at": "2026-09-16 05:45:35.69874+00",
+      "oid": 27953795,
+      "schema_name": "public",
+      "proname": "fn_prove_played_launch_recovery",
+      "args": "p_tournament_id uuid, p_started_at timestamp with time zone",
+      "signature": "fn_prove_played_launch_recovery(uuid,timestamp with time zone)",
+      "owner": "postgres",
+      "source_md5": "27037b1d61898aef22fd476a44667cc9",
+      "definition_md5": "c2fc5742cb5e6596aa7eea1f256d72e6",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_prove_played_launch_recovery(p_tournament_id uuid, p_started_at timestamp with time zone)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_required int;\n  v_finalized boolean;\n  v_playing int;\n  v_eliminated int;\n  v_other int;\n  v_hands bigint;\n  v_first_hand timestamptz;\n  v_seated int;\nBEGIN\n  SELECT CASE WHEN COALESCE(t.max_players, 0) > 0\n              THEN GREATEST(2, LEAST(3, t.max_players))\n              ELSE 3 END,\n         COALESCE(t.prize_pool_finalized, false)\n    INTO v_required, v_finalized\n    FROM public.tournaments t\n   WHERE t.id = p_tournament_id;\n  IF v_required IS NULL THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');\n  END IF;\n  IF NOT v_finalized THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'pool_not_finalized');\n  END IF;\n\n  SELECT count(*) FILTER (WHERE p.status = 'playing'),\n         count(*) FILTER (WHERE p.status = 'eliminated'),\n         count(*) FILTER (WHERE p.status NOT IN ('playing', 'eliminated'))\n    INTO v_playing, v_eliminated, v_other\n    FROM public.tournament_players p\n   WHERE p.tournament_id = p_tournament_id;\n\n  SELECT count(*), min(h.created_at)\n    INTO v_hands, v_first_hand\n    FROM public.hand_history h\n    JOIN public.tables tb ON tb.id = h.table_id\n   WHERE tb.tournament_id = p_tournament_id;\n\n  IF COALESCE(v_hands, 0) = 0 THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'no_hand_was_dealt');\n  END IF;\n\n  IF p_started_at IS NULL OR v_first_hand IS DISTINCT FROM p_started_at THEN\n    RETURN jsonb_build_object(\n      'ok', false,\n      'reason', 'the_receipt_is_not_the_deal_that_happened',\n      'first_hand_at', v_first_hand,\n      'receipt_started_at', p_started_at\n    );\n  END IF;\n\n  IF v_other <> 0 THEN\n    RETURN jsonb_build_object(\n      'ok', false,\n      'reason', 'an_entrant_was_never_dealt_in',\n      'pre_deal_entrants', v_other\n    );\n  END IF;\n\n  IF v_playing + v_eliminated < v_required THEN\n    RETURN jsonb_build_object(\n      'ok', false,\n      'reason', 'the_field_that_was_dealt_is_short',\n      'dealt_field', v_playing + v_eliminated,\n      'required_players', v_required\n    );\n  END IF;\n\n  SELECT count(*)\n    INTO v_seated\n    FROM public.table_seats s\n    JOIN public.tables tb ON tb.id = s.table_id\n   WHERE tb.tournament_id = p_tournament_id\n     AND s.left_at IS NULL;\n\n  IF v_playing < 1 OR v_seated <> v_playing THEN\n    RETURN jsonb_build_object(\n      'ok', false,\n      'reason', 'the_surviving_field_is_not_seated',\n      'playing', v_playing,\n      'live_seats', v_seated\n    );\n  END IF;\n\n  RETURN jsonb_build_object(\n    'ok', true,\n    'hands_dealt', v_hands,\n    'first_hand_at', v_first_hand,\n    'dealt_field', v_playing + v_eliminated,\n    'required_players', v_required,\n    'playing', v_playing,\n    'eliminated', v_eliminated\n  );\nEND;\n$function$\n",
+      "prosecdef": true,
+      "provolatile": "s",
+      "proconfig": ["search_path=public, pg_temp"],
+      "raw_acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "effective_execute": {
+        "anon": false,
+        "service_role": true,
+        "authenticated": false
+      }
+    },
+    {
+      "captured_at": "2026-09-16 05:45:35.698758+00",
+      "oid": 25691778,
+      "schema_name": "public",
+      "proname": "fn_prove_played_spin_launch_recovery",
+      "args": "p_tournament_id uuid",
+      "signature": "fn_prove_played_spin_launch_recovery(uuid)",
+      "owner": "postgres",
+      "source_md5": "b7bc1bb46141fb6bd415b3658e622a3b",
+      "definition_md5": "8bc978cc105c18b2e3350016b48a50eb",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_prove_played_spin_launch_recovery(p_tournament_id uuid)\n RETURNS jsonb\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET row_security TO 'off'\n SET statement_timeout TO '10s'\nAS $function$\nWITH contract AS (\n  SELECT t.id,\n         t.status::text AS status,\n         lower(COALESCE(t.variant, '')) AS variant,\n         upper(COALESCE(t.tournament_type, '')) AS tournament_type,\n         t.max_players,\n         t.buy_in_amount AS buy_in,\n         t.starting_chips,\n         round(t.buy_in_amount * 3 * public.fn_spin_rake_rate(t.buy_in_amount), 2)\n           AS expected_house_rake,\n         round(t.buy_in_amount * 3\n               * (1 - public.fn_spin_rake_rate(t.buy_in_amount)), 2)\n           AS expected_reserve_in\n    FROM public.tournaments t\n   WHERE t.id = p_tournament_id\n), roster AS (\n  SELECT count(*) AS roster_count,\n         count(DISTINCT tp.user_id) AS roster_users,\n         count(*) FILTER (WHERE tp.status = 'playing') AS active_players,\n         count(*) FILTER (WHERE tp.status = 'playing' AND tp.chips > 0)\n           AS positive_active_players,\n         count(*) FILTER (WHERE tp.status = 'eliminated') AS eliminated_players,\n         count(*) FILTER (WHERE tp.status NOT IN ('playing', 'eliminated')) AS other_players,\n         count(*) FILTER (WHERE tp.chips IS NULL OR tp.chips < 0) AS invalid_stacks,\n         count(*) FILTER (WHERE tp.status = 'eliminated' AND tp.chips = 0)\n           AS zero_stack_eliminations,\n         COALESCE(sum(tp.chips), 0) AS roster_chips,\n         COALESCE(\n           array_agg(tp.user_id ORDER BY tp.user_id)\n             FILTER (WHERE tp.user_id IS NOT NULL),\n           ARRAY[]::uuid[]\n         ) AS original_player_ids,\n         COALESCE(\n           array_agg(tp.user_id ORDER BY tp.user_id)\n             FILTER (WHERE tp.status = 'playing'),\n           ARRAY[]::uuid[]\n         ) AS active_player_ids\n    FROM public.tournament_players tp\n   WHERE tp.tournament_id = p_tournament_id\n), entitlements AS (\n  SELECT count(e.id) AS entitlement_count,\n         count(DISTINCT e.user_id) AS entitlement_users,\n         count(DISTINCT e.user_id) FILTER (\n           WHERE EXISTS (\n             SELECT 1\n               FROM public.tournament_players tp\n              WHERE tp.tournament_id = p_tournament_id\n                AND tp.user_id = e.user_id\n           )\n         ) AS roster_entitlement_users,\n         min(e.gross) AS min_gross,\n         max(e.gross) AS max_gross,\n         round(COALESCE(sum(e.gross), 0), 2) AS gross_total\n    FROM public.tournament_refund_entitlements e\n   WHERE e.tournament_id = p_tournament_id\n     AND e.entitlement_kind = 'wallet_charge'\n     AND e.charge_category = 'tournament_buyin'\n), payments AS (\n  SELECT count(w.id) AS payment_count,\n         count(DISTINCT w.user_id) AS paid_users,\n         count(DISTINCT w.user_id) FILTER (\n           WHERE EXISTS (\n             SELECT 1\n               FROM public.tournament_players tp\n              WHERE tp.tournament_id = p_tournament_id\n                AND tp.user_id = w.user_id\n           )\n         ) AS roster_paid_users,\n         min(w.amount) AS min_amount,\n         max(w.amount) AS max_amount,\n         round(COALESCE(sum(w.amount), 0), 2) AS payment_total\n    FROM public.wallet_transactions w\n   WHERE w.related_entity_id = p_tournament_id\n     AND w.type = 'debit'\n     AND w.category = 'tournament_buyin'\n), charge_evidence AS (\n  SELECT count(l.id) AS source_charge_count,\n         count(l.id) FILTER (\n           WHERE l.tournament_id = e.tournament_id\n             AND l.club_id = e.refund_wallet_club_id\n             AND l.from_type = 'player_wallet'\n             AND l.from_entity_id = e.user_id\n             AND l.to_type = 'prize_liability'\n             AND l.to_entity_id = e.tournament_id\n             AND l.category = e.charge_category\n             AND l.amount = e.gross\n         ) AS exact_source_charges\n    FROM public.tournament_refund_entitlements e\n    LEFT JOIN public.chip_ledger l ON l.id = e.source_ledger_id\n   WHERE e.tournament_id = p_tournament_id\n     AND e.entitlement_kind = 'wallet_charge'\n     AND e.charge_category = 'tournament_buyin'\n), reserve_evidence AS (\n  SELECT count(sr.id) FILTER (WHERE sr.kind = 'contribution') AS contribution_count,\n         count(sr.id) FILTER (WHERE sr.kind = 'jackpot_draw') AS draw_count,\n         (array_agg(sr.id ORDER BY sr.created_at, sr.id)\n           FILTER (WHERE sr.kind = 'contribution'))[1] AS contribution_id,\n         (array_agg(sr.id ORDER BY sr.created_at, sr.id)\n           FILTER (WHERE sr.kind = 'jackpot_draw'))[1] AS draw_id,\n         (array_agg(sr.club_id ORDER BY sr.created_at, sr.id)\n           FILTER (WHERE sr.kind = 'contribution'))[1] AS contribution_owner,\n         (array_agg(sr.club_id ORDER BY sr.created_at, sr.id)\n           FILTER (WHERE sr.kind = 'jackpot_draw'))[1] AS draw_owner,\n         min(sr.amount) FILTER (WHERE sr.kind = 'contribution') AS contribution_amount,\n         min(sr.buy_in) FILTER (WHERE sr.kind = 'contribution') AS contribution_buy_in,\n         min(sr.seats) FILTER (WHERE sr.kind = 'contribution') AS contribution_seats,\n         min(sr.house_rake) FILTER (WHERE sr.kind = 'contribution') AS contribution_rake,\n         min(sr.balance_after) FILTER (WHERE sr.kind = 'contribution')\n           AS contribution_balance,\n         min(sr.amount) FILTER (WHERE sr.kind = 'jackpot_draw') AS draw_amount,\n         min(sr.buy_in) FILTER (WHERE sr.kind = 'jackpot_draw') AS draw_buy_in,\n         min(sr.seats) FILTER (WHERE sr.kind = 'jackpot_draw') AS draw_seats,\n         min(sr.multiplier) FILTER (WHERE sr.kind = 'jackpot_draw') AS draw_multiplier,\n         min(sr.balance_after) FILTER (WHERE sr.kind = 'jackpot_draw') AS draw_balance,\n         min(sr.created_at) FILTER (WHERE sr.kind = 'jackpot_draw') AS draw_created_at\n    FROM public.spin_reserve_ledger sr\n   WHERE sr.tournament_id = p_tournament_id\n     AND sr.kind IN ('contribution', 'jackpot_draw')\n), reserve_pool AS (\n  SELECT count(p.id) AS pool_count,\n         (array_agg(p.id ORDER BY p.id))[1] AS pool_id\n    FROM public.spin_bonus_pools p\n    CROSS JOIN reserve_evidence r\n   WHERE p.club_id = r.draw_owner\n), journals AS (\n  SELECT count(l.id) FILTER (WHERE l.category = 'spin_entry') AS entry_journal_count,\n         count(l.id) FILTER (WHERE l.category = 'spin_prize') AS draw_journal_count,\n         count(l.id) FILTER (\n           WHERE l.category = 'spin_entry'\n             AND l.from_type = 'prize_liability'\n             AND l.from_entity_id = p_tournament_id\n             AND l.to_type = 'spin_reserve'\n             AND l.to_entity_id = p.pool_id\n             AND l.amount = c.expected_reserve_in\n             AND l.post_to_balance IS NOT DISTINCT FROM r.contribution_balance\n         ) AS exact_entry_journals,\n         count(l.id) FILTER (\n           WHERE l.category = 'spin_prize'\n             AND l.from_type = 'spin_reserve'\n             AND l.from_entity_id = p.pool_id\n             AND l.to_type = 'prize_liability'\n             AND l.to_entity_id = p_tournament_id\n             AND l.amount = round(-r.draw_amount, 2)\n             AND l.post_from_balance IS NOT DISTINCT FROM r.draw_balance\n         ) AS exact_draw_journals\n    FROM contract c\n    CROSS JOIN reserve_evidence r\n    CROSS JOIN reserve_pool p\n    LEFT JOIN public.chip_ledger l\n      ON l.tournament_id = p_tournament_id\n     AND l.category IN ('spin_entry', 'spin_prize')\n   GROUP BY c.expected_reserve_in, r.contribution_balance, r.draw_amount,\n            r.draw_balance, p.pool_id\n), table_evidence AS (\n  SELECT count(t.id) AS table_count,\n         count(t.id) FILTER (WHERE t.status IN ('running', 'waiting')) AS open_tables,\n         (array_agg(t.id ORDER BY t.created_at, t.id)\n           FILTER (WHERE t.status IN ('running', 'waiting')))[1] AS table_id,\n         min(t.current_players) FILTER (WHERE t.status IN ('running', 'waiting'))\n           AS current_players,\n         min(t.max_players) FILTER (WHERE t.status IN ('running', 'waiting'))\n           AS table_capacity\n    FROM public.tables t\n   WHERE t.tournament_id = p_tournament_id\n), live_seats AS (\n  SELECT count(s.id) AS live_seats,\n         count(DISTINCT s.user_id) AS live_users,\n         count(DISTINCT (s.table_id, s.seat_number)) AS live_coordinates,\n         count(DISTINCT s.table_id) AS live_tables,\n         count(s.id) FILTER (\n           WHERE s.stack IS NULL\n              OR s.stack::text IN ('NaN', 'Infinity', '-Infinity')\n              OR s.stack < 0\n         ) AS invalid_live_stacks,\n         count(s.id) FILTER (WHERE s.stack > 0) AS positive_live_seats,\n         count(s.id) FILTER (\n           WHERE EXISTS (\n             SELECT 1\n               FROM public.tournament_players tp\n              WHERE tp.tournament_id = p_tournament_id\n                AND tp.user_id = s.user_id\n                AND tp.status = 'playing'\n                AND tp.table_id = s.table_id\n                AND tp.seat_number = s.seat_number\n                AND tp.chips IS NOT DISTINCT FROM s.stack\n           )\n         ) AS matching_active_seats,\n         COALESCE(sum(s.stack), 0) AS seat_chips\n    FROM public.table_seats s\n    JOIN public.tables t ON t.id = s.table_id\n   WHERE t.tournament_id = p_tournament_id\n     AND s.left_at IS NULL\n), vacated_seat AS (\n  SELECT count(DISTINCT tp.user_id) AS vacated_eliminated_players\n    FROM public.tournament_players tp\n   WHERE tp.tournament_id = p_tournament_id\n     AND tp.status = 'eliminated'\n     AND EXISTS (\n       SELECT 1\n         FROM public.table_seats s\n         JOIN public.tables t ON t.id = s.table_id\n        WHERE t.tournament_id = p_tournament_id\n          AND s.user_id = tp.user_id\n          AND s.left_at IS NOT NULL\n     )\n), hands AS (\n  SELECT count(h.id) FILTER (WHERE h.created_at >= r.draw_created_at) AS hand_count\n    FROM reserve_evidence r\n    LEFT JOIN public.hand_history h\n      ON h.tournament_id = p_tournament_id\n    LEFT JOIN public.tables t\n      ON t.id = h.table_id\n     AND t.tournament_id = p_tournament_id\n   WHERE h.id IS NULL OR t.id IS NOT NULL\n), escrow AS (\n  SELECT count(e.tournament_id) AS escrow_count,\n         min(e.reserve_out) AS reserve_out,\n         min(e.reserve_in) AS escrow_reserve_in,\n         min(e.prize_balance) AS prize_balance\n    FROM public.tournament_escrow e\n   WHERE e.tournament_id = p_tournament_id\n), facts AS (\n  SELECT c.*,\n         r.*,\n         e.*,\n         pay.*,\n         charge.*,\n         re.*,\n         pool.*,\n         j.*,\n         te.*,\n         ls.*,\n         vs.*,\n         h.*,\n         esc.*,\n         (c.starting_chips * 3)::numeric AS funding_floor\n    FROM (SELECT 1) seed\n    LEFT JOIN contract c ON true\n    CROSS JOIN roster r\n    CROSS JOIN entitlements e\n    CROSS JOIN payments pay\n    CROSS JOIN charge_evidence charge\n    CROSS JOIN reserve_evidence re\n    CROSS JOIN reserve_pool pool\n    CROSS JOIN journals j\n    CROSS JOIN table_evidence te\n    CROSS JOIN live_seats ls\n    CROSS JOIN vacated_seat vs\n    CROSS JOIN hands h\n    CROSS JOIN escrow esc\n), verdict AS (\n  SELECT f.*,\n         (f.id IS NOT NULL\n          AND f.status = 'REGISTERING'\n          AND (f.variant = 'spin' OR f.tournament_type = 'SPIN')\n          AND f.variant <> 'sng'\n          AND f.tournament_type <> 'SNG'\n          AND f.max_players = 3\n          AND f.buy_in IS NOT NULL\n          AND f.buy_in::text NOT IN ('NaN', 'Infinity', '-Infinity')\n          AND f.buy_in > 0\n          AND f.starting_chips IS NOT NULL\n          AND f.starting_chips > 0\n          AND f.roster_count = 3\n          AND f.roster_users = 3\n          AND f.active_players = 2\n          AND f.positive_active_players = 2\n          AND f.eliminated_players = 1\n          AND f.other_players = 0\n          AND f.invalid_stacks = 0\n          AND f.zero_stack_eliminations = 1\n          AND f.roster_chips = f.funding_floor\n          AND f.entitlement_count = 3\n          AND f.entitlement_users = 3\n          AND f.roster_entitlement_users = 3\n          AND f.min_gross = f.buy_in\n          AND f.max_gross = f.buy_in\n          AND f.gross_total = round(f.buy_in * 3, 2)\n          AND f.payment_count = 3\n          AND f.paid_users = 3\n          AND f.roster_paid_users = 3\n          AND f.min_amount = f.buy_in\n          AND f.max_amount = f.buy_in\n          AND f.payment_total = round(f.buy_in * 3, 2)\n          AND f.source_charge_count = 3\n          AND f.exact_source_charges = 3\n          AND f.contribution_count = 1\n          AND f.draw_count = 1\n          AND f.contribution_owner IS NOT NULL\n          AND f.contribution_owner = f.draw_owner\n          AND f.contribution_amount = f.expected_reserve_in\n          AND f.contribution_buy_in = f.buy_in\n          AND f.contribution_seats = 3\n          AND f.contribution_rake = f.expected_house_rake\n          AND f.draw_amount IS NOT NULL\n          AND round(-f.draw_amount, 2) = round(f.buy_in * f.draw_multiplier, 2)\n          AND f.draw_buy_in = f.buy_in\n          AND f.draw_seats = 3\n          AND f.draw_multiplier > 0\n          AND f.pool_count = 1\n          AND f.entry_journal_count = 1\n          AND f.draw_journal_count = 1\n          AND f.exact_entry_journals = 1\n          AND f.exact_draw_journals = 1\n          AND f.escrow_count = 1\n          AND f.reserve_out = f.expected_reserve_in\n          AND f.escrow_reserve_in = round(-f.draw_amount, 2)\n          AND f.prize_balance = round(-f.draw_amount, 2)\n          AND f.table_count = 1\n          AND f.open_tables = 1\n          AND f.current_players = 2\n          AND f.table_capacity = 3\n          AND f.live_seats = 2\n          AND f.live_users = 2\n          AND f.live_coordinates = 2\n          AND f.live_tables = 1\n          AND f.invalid_live_stacks = 0\n          AND f.positive_live_seats = 2\n          AND f.matching_active_seats = 2\n          AND f.seat_chips = f.funding_floor\n          AND f.seat_chips = f.roster_chips\n          AND f.vacated_eliminated_players = 1\n          AND f.hand_count >= 1) AS ok\n    FROM facts f\n)\nSELECT CASE WHEN v.ok THEN\n  jsonb_build_object(\n    'ok', true,\n    'recovery_mode', 'played_vacated_spin',\n    'tournament_id', p_tournament_id,\n    'original_field', 3,\n    'active_field', 2,\n    'eliminated_players', v.eliminated_players,\n    'paid_users', v.paid_users,\n    'entitlement_users', v.entitlement_users,\n    'live_seats', v.live_seats,\n    'hand_count', v.hand_count,\n    'funding_floor', v.funding_floor,\n    'roster_chips', v.roster_chips,\n    'seat_chips', v.seat_chips,\n    'original_player_ids', to_jsonb(v.original_player_ids),\n    'active_player_ids', to_jsonb(v.active_player_ids)\n  )\nELSE\n  jsonb_build_object(\n    'ok', false,\n    'reason', 'played_spin_launch_recovery_unproven',\n    'tournament_id', p_tournament_id\n  )\nEND\n  FROM verdict v;\n$function$\n",
+      "prosecdef": true,
+      "provolatile": "s",
+      "proconfig": ["search_path=public, pg_temp", "row_security=off", "statement_timeout=10s"],
+      "raw_acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "effective_execute": {
+        "anon": false,
+        "service_role": true,
+        "authenticated": false
+      }
+    },
+    {
+      "captured_at": "2026-09-16 05:45:35.698811+00",
+      "oid": 25581606,
+      "schema_name": "public",
+      "proname": "fn_register_for_tournament_with_ticket_before_terminal_gate",
+      "args": "p_tournament_id uuid, p_ticket_id uuid",
+      "signature": "fn_register_for_tournament_with_ticket_before_terminal_gate(uuid,uuid)",
+      "owner": "postgres",
+      "source_md5": "bd9bdc21fe6dbdd039a9e4f784ac4f75",
+      "definition_md5": "086a533791e61600bb6ba3d58973a3b8",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_register_for_tournament_with_ticket_before_terminal_gate(p_tournament_id uuid, p_ticket_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_uid uuid:=auth.uid();\nBEGIN\n  IF v_uid IS NULL THEN\n    RAISE EXCEPTION\n      'fn_register_for_tournament_with_ticket requires an authenticated caller'\n      USING ERRCODE='28000';\n  END IF;\n  RETURN public.fn_ca_register_for_tournament_with_ticket_for(\n    p_tournament_id,p_ticket_id,v_uid);\nEND;\n$function$\n",
+      "prosecdef": true,
+      "provolatile": "v",
+      "proconfig": ["search_path=public, pg_temp"],
+      "raw_acl": "{postgres=X/postgres}",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "effective_execute": {
+        "anon": false,
+        "service_role": false,
+        "authenticated": false
+      }
+    },
+    {
+      "captured_at": "2026-09-16 05:45:35.698827+00",
+      "oid": 24465328,
+      "schema_name": "public",
+      "proname": "fn_register_horse_for_tournament",
+      "args": "p_tournament_id uuid, p_user_id uuid",
+      "signature": "fn_register_horse_for_tournament(uuid,uuid)",
+      "owner": "postgres",
+      "source_md5": "3b44ef567f8dc39dcac6f99e35775fee",
+      "definition_md5": "ff905b806203482d3e95fd706210bfb5",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_register_horse_for_tournament(p_tournament_id uuid, p_user_id uuid)\n RETURNS jsonb\n LANGUAGE sql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT public.fn_register_horse_for_tournament(\n    p_tournament_id,p_user_id,true)\n$function$\n",
+      "prosecdef": true,
+      "provolatile": "v",
+      "proconfig": ["search_path=public, pg_temp"],
+      "raw_acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "effective_execute": {
+        "anon": false,
+        "service_role": true,
+        "authenticated": false
+      }
+    },
+    {
+      "captured_at": "2026-09-16 05:45:35.698844+00",
+      "oid": 25678430,
+      "schema_name": "public",
+      "proname": "fn_register_horse_for_tournament",
+      "args": "p_tournament_id uuid, p_user_id uuid, p_allow_wallet_charge boolean",
+      "signature": "fn_register_horse_for_tournament(uuid,uuid,boolean)",
+      "owner": "postgres",
+      "source_md5": "309841f5a600b9a5e6ca09410b714e3f",
+      "definition_md5": "84c0354e68fb129b5373bc6024cba334",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_register_horse_for_tournament(p_tournament_id uuid, p_user_id uuid, p_allow_wallet_charge boolean)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions', 'pg_temp'\n SET statement_timeout TO '30s'\nAS $function$\nDECLARE\n  v_gate jsonb;\nBEGIN\n  -- DIAMOND PHASE 8: house-funded horse entries are Phase 9.\n  IF public.fn_poker_diamond_tournament(p_tournament_id) THEN\n    RETURN jsonb_build_object('ok',false,'reason','diamond_horse_funding_not_open');\n  END IF;\n  v_gate:=public.fn_ca_lock_tournament_seat_acquisition(\n    p_tournament_id,NULL,p_user_id);\n  IF COALESCE((v_gate->>'ok')::boolean,false) IS NOT TRUE THEN\n    RETURN v_gate;\n  END IF;\n  RETURN public.fn_register_horse_for_tournament_before_terminal_gate(\n    p_tournament_id,p_user_id,p_allow_wallet_charge);\nEND;\n$function$\n",
+      "prosecdef": true,
+      "provolatile": "v",
+      "proconfig": ["search_path=public, extensions, pg_temp", "statement_timeout=30s"],
+      "raw_acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "effective_execute": {
+        "anon": false,
+        "service_role": true,
+        "authenticated": false
+      }
+    },
+    {
+      "captured_at": "2026-09-16 05:45:35.698859+00",
+      "oid": 18666922,
+      "schema_name": "public",
+      "proname": "fn_tournament_management_readiness",
+      "args": "p_tournament_id uuid",
+      "signature": "fn_tournament_management_readiness(uuid)",
+      "owner": "postgres",
+      "source_md5": "aea90fac33932bc29235ecceaafc5de2",
+      "definition_md5": "59c66c63ff4eb9fd2d5567fab9c5858b",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_tournament_management_readiness(p_tournament_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_row jsonb;\nBEGIN\n  SELECT to_jsonb(t)\n    INTO v_row\n    FROM public.tournaments t\n   WHERE t.id = p_tournament_id;\n\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('state', 'missing', 'can_start', false);\n  END IF;\n\n  RETURN public.fn_tournament_management_readiness_for_row(v_row);\nEND;\n$function$\n",
+      "prosecdef": true,
+      "provolatile": "s",
+      "proconfig": ["search_path=public, pg_temp"],
+      "raw_acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "effective_execute": {
+        "anon": false,
+        "service_role": true,
+        "authenticated": false
+      }
+    }
+  ]
+}

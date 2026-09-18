@@ -204,6 +204,123 @@ function withForeignGitContext(directory: string, extended: boolean, check: () =
 
 describe('required CI owns native fixture verification', () => {
   it.each([
+    'scripts/ci/test-satellite-qualifiers.py',
+    'scripts/ci/satellite_qualifier_fixture.py',
+    'scripts/ci/satellite_qualifier_concurrency.py',
+    'scripts/ci/satellite_entry_club_native.py',
+    'scripts/ci/probes/satellite-entry-club-native.sql',
+    'scripts/ci/fixtures/satellite-qualifiers/current-money-ddl-guard-20260917.json',
+    'scripts/ci/probes/satellite-qualifiers-native.sql',
+    'scripts/ci/probes/satellite-qualifier-reader.spec',
+    'scripts/ci/probes/satellite-qualifier-finish.spec',
+    'tests/operations/satellite-qualifier-results.test.py',
+  ])('runs the existing accounting job for satellite input %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+
+  it('executes satellite settlement and retains exact receipts in accounting', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const satellite = steps.filter((step: { run?: string }) =>
+      step.run?.includes('scripts/ci/test-satellite-qualifiers.py')
+    );
+    expect(satellite).toHaveLength(1);
+    expect(satellite[0].run).toContain('satellite-qualifier-results.test.py');
+    expect(satellite[0].run).toContain('--pg-bin "$PG_BIN"');
+    expect(satellite[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(satellite[0].env.PG_ISOLATION_TESTER).toBe(
+      '${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester'
+    );
+    expect(satellite[0]['continue-on-error']).toBeUndefined();
+    expect(satellite[0].if).toBeUndefined();
+    const upload = steps.find(
+      (step: { name?: string }) => step.name === 'Retain satellite qualifier receipts'
+    );
+    expect(upload.uses).toBe('actions/upload-artifact@v4');
+    expect(upload.if).toContain('always()');
+    expect(upload.if).toContain('steps.satellite_qualifiers.outcome');
+    expect(upload.with['if-no-files-found']).toBe('error');
+  });
+
+  it.each([
+    'scripts/ci/test-mtt-unlimited.py',
+    'scripts/ci/mtt_unlimited_fixture.py',
+    'scripts/ci/mtt_format_qualification.py',
+    'scripts/ci/mtt_historical_freebuy_proof.py',
+    'scripts/ci/mtt_break_authoring_native.py',
+    'scripts/ci/fixtures/mtt-break-authoring/source-binding.json',
+    'scripts/ci/fixtures/mtt-break-authoring/catalog-supplement.sql',
+    'scripts/dev/fixtures/mtt-blind-contract/authoring-native.sql',
+    'scripts/ci/fixtures/mtt-historical-freebuy/current-authority-supplement.sql',
+    'scripts/ci/fixtures/mtt-historical-freebuy/source-binding.json',
+    'scripts/ci/mtt_isolation_results.py',
+    'scripts/ci/fixtures/mtt-unlimited/accounting-schema.sql',
+    'scripts/ci/fixtures/mtt-format-preparation/source-binding.json',
+    'scripts/ci/fixtures/mtt-format-preparation/satellite-restart-future.sql',
+    'scripts/ci/fixtures/mtt-format-preparation/satellite-creator-legacy.sql',
+    'scripts/ci/probes/mtt-format-preparation-native.sql',
+    'scripts/ci/probes/mtt-format-admission-lock.spec',
+    'scripts/ci/probes/mtt-isolation/creation-commit.spec',
+    'tests/operations/mtt-unlimited-runner.test.py',
+    'tests/operations/mtt-isolation-results.test.py',
+    'tests/operations/fixtures/mtt-preparation-lock/format_admission-actual.stdout',
+  ])('selects the existing accounting job for MTT regression input %s', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(true);
+  });
+
+  it.each([
+    'scripts/ci/mtt_activation_native.py',
+    'scripts/ci/mtt_activation_funding.py',
+    'scripts/ci/mtt_activation_satellite.py',
+    'scripts/ci/satellite_qualifier_fixture.py',
+    'scripts/ci/mtt_break_authoring_native.py',
+    'scripts/ci/fixtures/mtt-format-activation/source-binding.json',
+    'scripts/ci/fixtures/mtt-format-activation/transition.sql',
+    'scripts/ci/fixtures/satellite-qualifiers/current-money-ddl-guard-20260917.json',
+    'scripts/ci/fixtures/mtt-break-authoring/catalog-supplement.sql',
+    'scripts/ci/probes/mtt-activation/admission-activation-first-commit.spec',
+    'tests/operations/mtt-activation-results.test.py',
+  ])('routes each actual activation input to accounting and its routing tests: %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+
+  it('runs preparation and actual activation only in the existing private native job', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const mtt = steps.filter((step: { run?: string }) =>
+      step.run?.includes('test-mtt-unlimited.py')
+    );
+    expect(mtt).toHaveLength(1);
+    expect(mtt[0].run).toContain('--mode preparation');
+    expect(mtt[0].run).toContain('mtt-unlimited-runner.test.py');
+    expect(mtt[0].run).toContain('mtt-isolation-results.test.py');
+    expect(mtt[0].run).toContain('mtt-activation-results.test.py');
+    expect(mtt[0].run.match(/test-mtt-unlimited\.py --mode activation/g)).toHaveLength(1);
+    expect(mtt[0].run).toContain(
+      '--output "$RUNNER_TEMP/mtt-activation-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"'
+    );
+    expect(mtt[0].run).not.toMatch(/DATABASE_URL|SUPABASE|apply_migration|\|\|\s*true/);
+    expect(mtt[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(mtt[0].env.PG_ISOLATION_TESTER).toBe(
+      '${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester'
+    );
+    expect(mtt[0].run).not.toContain('20260915150000');
+    expect(mtt[0]['continue-on-error']).toBeUndefined();
+    expect(mtt[0].if).toBeUndefined();
+    const evidence = steps.filter(
+      (step: { name?: string }) =>
+        step.name === 'Retain MTT preparation and activation receipts and exact native transcripts'
+    );
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0].uses).toBe('actions/upload-artifact@v4');
+    expect(evidence[0].if).toContain('always()');
+    expect(evidence[0].if).toContain('steps.mtt_preparation.outcome');
+    expect(evidence[0].with['if-no-files-found']).toBe('error');
+    expect(evidence[0].with.path.trim().split('\n')).toEqual([
+      '${{ runner.temp }}/mtt-preparation-${{ github.run_id }}-${{ github.run_attempt }}',
+      '${{ runner.temp }}/mtt-activation-${{ github.run_id }}-${{ github.run_attempt }}',
+    ]);
+  });
+
+  it.each([
     'scripts/dev/probe-atomic-tournament-blinds-pg17.py',
     'scripts/dev/probe-played-mtt-launch-pg17.py',
   ])('executes the retained MTT native authority probe in accounting: %s', (path) => {
@@ -628,6 +745,8 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
         for (const [index, path] of spinExpiryAccountingPaths.entries()) {
           if (operation === 'modified') write(path, 'changed qualification input');
           if (operation === 'deleted') rmSync(join(directory, path));
+          // The commit stages real filesystem renames in one Git operation. Avoid
+          // one subprocess per path while retaining the actual committed diff.
           if (operation === 'renamed')
             renameSync(join(directory, path), join(directory, relocated[index]));
         }

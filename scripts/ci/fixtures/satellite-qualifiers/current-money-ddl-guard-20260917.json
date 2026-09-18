@@ -1,0 +1,80 @@
+{
+  "functions": [
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "fn_ca_money_rpc_balance_columns()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_money_rpc_balance_columns()\n RETURNS text[]\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT array_agg(DISTINCT c)\n    FROM (\n      SELECT (regexp_matches(pg_get_triggerdef(t.oid), '''([a-z_]+)=([a-z_]+)''', 'g'))[1] AS c\n        FROM pg_trigger t\n        JOIN pg_proc p ON p.oid = t.tgfoid\n       WHERE NOT t.tgisinternal AND p.proname IN ('fn_ca_autoledger','fn_ca_autoledger_delete')\n      UNION\n      SELECT unnest(ARRAY['chip_balance','held_chips','locked_chips','credit_used',\n                          'stack','balance','chips','prize','bounty_winnings'])\n    ) s;\n$function$\n",
+      "source_md5": "39b12fc79db9a7af99c49a39ad14b1d0",
+      "definition_md5": "53e86c9945bde2a5830232f59a365fdd"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "fn_ca_money_rpc_registry_guard()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_money_rpc_registry_guard()\n RETURNS event_trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  obj record;\n  v_name text;\n  v_src  text;\nBEGIN\n  FOR obj IN SELECT * FROM pg_event_trigger_ddl_commands()\n  LOOP\n    IF obj.object_type <> 'function' OR obj.schema_name IS DISTINCT FROM 'public' THEN\n      CONTINUE;\n    END IF;\n\n    SELECT p.proname, p.prosrc INTO v_name, v_src\n      FROM pg_proc p WHERE p.oid = obj.objid AND p.prokind = 'f';\n    IF v_name IS NULL THEN\n      CONTINUE;\n    END IF;\n\n    IF NOT public.fn_ca_money_rpc_writes_balances(v_src) THEN\n      CONTINUE;\n    END IF;\n\n    IF EXISTS (SELECT 1 FROM public.ca_money_rpc_registry g WHERE g.proname = v_name) THEN\n      CONTINUE;\n    END IF;\n\n    RAISE EXCEPTION\n      'REFUSED: % writes balance columns and is not in ca_money_rpc_registry', v_name\n      USING ERRCODE = '42501',\n            DETAIL  = 'A function that can move money is registered before it exists, not after. '\n                   || 'This is the guard for the seven drift incidents of 2026-09-11.',\n            HINT    = 'Put the registry row ABOVE the CREATE FUNCTION in this same migration: '\n                   || 'INSERT INTO public.ca_money_rpc_registry (proname, status, notes) VALUES ('\n                   || quote_literal(v_name)\n                   || ', ''approved'', ''what it moves, what gates it, how it is journaled'');  '\n                   || 'Use status ''system'' if it moves no money and only reads or locks.';\n  END LOOP;\nEND;\n$function$\n",
+      "source_md5": "561af7c7b1cd1f875f490d65286071c8",
+      "definition_md5": "03928ac3da782be33306c2e07b0b8977"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "fn_ca_money_rpc_writes_balances(text)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_money_rpc_writes_balances(p_src text)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT COALESCE(\n    p_src ~* 'UPDATE\\s+(public\\.)?(club_members|club_wallets|union_wallets|unions|table_seats|bbj_pools|clubs|agents|wallets|spin_bonus_pools|tournament_players)\\y'\n    OR p_src ~* 'INSERT\\s+INTO\\s+(public\\.)?(club_members|club_wallets|union_wallets|unions|bbj_pools|clubs|agents|wallets|spin_bonus_pools)\\y', false)\n  AND COALESCE(p_src ~* ('\\y(' || array_to_string(public.fn_ca_money_rpc_balance_columns(), '|') || ')\\y'), false);\n$function$\n",
+      "source_md5": "0c4d4960dd40331936ebb6b604020737",
+      "definition_md5": "1b13d12e02c7f7b719fcfae4153dcb1f"
+    }
+  ],
+  "captured_at": "2026-09-17T23:12:53.735024+00:00",
+  "event_triggers": [
+    {
+      "name": "ab_ca_money_rpc_registered",
+      "tags": [
+        "CREATE FUNCTION"
+      ],
+      "event": "ddl_command_end",
+      "owner": "postgres",
+      "enabled": "O",
+      "function": "fn_ca_money_rpc_registry_guard()"
+    }
+  ]
+}

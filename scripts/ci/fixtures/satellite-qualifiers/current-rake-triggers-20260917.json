@@ -1,0 +1,501 @@
+{
+  "rows": [
+    {
+      "owner": "postgres",
+      "table": "accounting_agreement_history",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "accounting_agreement_history_immutable",
+      "function": "fn_accounting_agreement_history_immutable()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER accounting_agreement_history_immutable BEFORE DELETE OR UPDATE ON public.accounting_agreement_history FOR EACH ROW EXECUTE FUNCTION fn_accounting_agreement_history_immutable()",
+      "source_md5": "fcb90de00cac2deb0cb820deca47a002",
+      "definition_md5": "3fa4099435ff1e9d5c48fa1934b63549",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_agreement_history_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN RAISE EXCEPTION 'accounting_agreement_history_is_immutable' USING ERRCODE='55000'; END $function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "accounting_agreement_history",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "accounting_agreement_history_no_truncate",
+      "function": "fn_accounting_agreement_history_immutable()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER accounting_agreement_history_no_truncate BEFORE TRUNCATE ON public.accounting_agreement_history FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_agreement_history_immutable()",
+      "source_md5": "fcb90de00cac2deb0cb820deca47a002",
+      "definition_md5": "3fa4099435ff1e9d5c48fa1934b63549",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_agreement_history_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN RAISE EXCEPTION 'accounting_agreement_history_is_immutable' USING ERRCODE='55000'; END $function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "accounting_cash_source_immutable",
+      "function": "fn_accounting_cash_source_immutable()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER accounting_cash_source_immutable BEFORE DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_accounting_cash_source_immutable()",
+      "source_md5": "8bc8fc5549d8d5a5302774127cb88e7d",
+      "definition_md5": "0d79f2823f390072ddab8abfa8a5263f",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_cash_source_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE old_source_id uuid;new_source_id uuid;hand uuid;\nBEGIN\n IF TG_TABLE_NAME='rake_records' THEN\n  old_source_id:=OLD.id;new_source_id:=NEW.id;\n ELSE\n  IF TG_OP<>'INSERT' THEN old_source_id:=OLD.rake_record_id; END IF;\n  IF TG_OP<>'DELETE' THEN new_source_id:=NEW.rake_record_id; END IF;\n END IF;\n -- The commission writer and every source mutation share the same hand key.\n -- A source edit which began before accrual must finish before it is frozen.\n FOR hand IN SELECT DISTINCT r.hand_id FROM public.rake_records r WHERE r.id IN(old_source_id,new_source_id) AND r.hand_id IS NOT NULL ORDER BY r.hand_id LOOP\n  PERFORM pg_advisory_xact_lock(hashtextextended('accounting_cash_hand:'||hand::text,0));\n END LOOP;\n IF EXISTS(SELECT 1 FROM public.accounting_cash_accrual_batches WHERE rake_record_id IN(old_source_id,new_source_id)) THEN\n  RAISE EXCEPTION 'recorded_cash_earning_source_is_immutable' USING ERRCODE='55000';\n END IF;\n RETURN COALESCE(NEW,OLD);\nEND $function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "accounting_tournament_fee_commit_capture",
+      "function": "fn_accounting_tournament_fee_commit_capture()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE CONSTRAINT TRIGGER accounting_tournament_fee_commit_capture AFTER INSERT ON public.rake_records DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (((new.is_tournament IS TRUE) AND (new.rake_amount > (0)::numeric))) EXECUTE FUNCTION fn_accounting_tournament_fee_commit_capture()",
+      "source_md5": "9ad66a6d812f820467d496e7d9010601",
+      "definition_md5": "afae8152bd03fdb018b4a0d21f4b8f58",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_tournament_fee_commit_capture()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$BEGIN\n PERFORM public.fn_stamp_accounting_tournament_fee(NEW.id);RETURN NULL;\nEND$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "accounting_tournament_fee_source_immutable",
+      "function": "fn_accounting_tournament_fee_source_immutable()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER accounting_tournament_fee_source_immutable BEFORE DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_fee_source_immutable()",
+      "source_md5": "8986e8995e7321368a9f706beb1fb1f4",
+      "definition_md5": "709027685f4ff30a06b36e8fb65618cb",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_tournament_fee_source_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$BEGIN\n IF EXISTS(SELECT 1 FROM public.accounting_tournament_fee_batches b WHERE b.rake_record_id=OLD.id)\n  AND (TG_OP='DELETE' OR public.fn_accounting_tournament_fee_fingerprint(OLD) IS DISTINCT FROM public.fn_accounting_tournament_fee_fingerprint(NEW)) THEN\n  RAISE EXCEPTION 'captured_tournament_fee_source_is_immutable' USING ERRCODE='55000';\n END IF;\n RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;\nEND$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "accounting_tournament_recognized_evidence_immutable",
+      "function": "fn_accounting_tournament_recognized_evidence_immutable()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER accounting_tournament_recognized_evidence_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_recognized_evidence_immutable()",
+      "source_md5": "80383485af039f147f57bf2669e4484f",
+      "definition_md5": "a5a71f9b0ba989721663a85cbb407ea9",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_tournament_recognized_evidence_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$DECLARE event uuid;BEGIN\n IF TG_TABLE_NAME='rake_records' THEN\n  event:=CASE WHEN TG_OP='INSERT' THEN NEW.tournament_id ELSE OLD.tournament_id END;\n  IF EXISTS(SELECT 1 FROM public.accounting_tournament_fee_recognitions WHERE tournament_id=event)\n   AND (TG_OP<>'UPDATE' OR public.fn_accounting_tournament_fee_fingerprint(OLD) IS DISTINCT FROM public.fn_accounting_tournament_fee_fingerprint(NEW)) THEN\n   RAISE EXCEPTION 'recognized_tournament_fee_evidence_is_immutable' USING ERRCODE='55000'; END IF;\n ELSE\n  IF EXISTS(SELECT 1 FROM public.accounting_tournament_fee_recognitions WHERE\n   (TG_TABLE_NAME='chip_ledger' AND bank_journal_id=OLD.id) OR (TG_TABLE_NAME='union_wallet_transactions' AND union_wallet_transaction_id=OLD.id)) THEN\n   RAISE EXCEPTION 'recognized_tournament_fee_bank_receipt_is_immutable' USING ERRCODE='55000'; END IF;\n END IF;\n RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;\nEND$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "ca_reporting_rake_change_del",
+      "function": "trg_ca_reporting_repair_changed_days()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER ca_reporting_rake_change_del AFTER DELETE ON public.rake_records REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_reporting_repair_changed_days()",
+      "source_md5": "1648dffde2ac428d4b680f97989b9e50",
+      "definition_md5": "601c605e44856e42ee0d00e72a0fdb1e",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.trg_ca_reporting_repair_changed_days()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  r record;\nBEGIN\n  IF TG_TABLE_NAME = 'wallet_transactions' THEN\n    IF TG_OP = 'UPDATE' THEN\n      FOR r IN\n        SELECT DISTINCT x.d FROM (\n          SELECT (o.created_at AT TIME ZONE 'UTC')::date AS d\n            FROM old_rows o JOIN new_rows n ON n.id = o.id\n           WHERE o.amount IS DISTINCT FROM n.amount\n              OR o.type IS DISTINCT FROM n.type\n              OR o.category IS DISTINCT FROM n.category\n              OR o.user_id IS DISTINCT FROM n.user_id\n              OR o.table_id IS DISTINCT FROM n.table_id\n              OR o.related_entity_id IS DISTINCT FROM n.related_entity_id\n              OR o.created_at IS DISTINCT FROM n.created_at\n          UNION\n          SELECT (n.created_at AT TIME ZONE 'UTC')::date\n            FROM old_rows o JOIN new_rows n ON n.id = o.id\n           WHERE o.created_at IS DISTINCT FROM n.created_at\n        ) x\n        ORDER BY x.d\n      LOOP\n        PERFORM public.ca_refresh_reporting_rollups(r.d, r.d);\n      END LOOP;\n    ELSE\n      FOR r IN\n        SELECT DISTINCT (o.created_at AT TIME ZONE 'UTC')::date AS d\n          FROM old_rows o ORDER BY 1\n      LOOP\n        PERFORM public.ca_refresh_reporting_rollups(r.d, r.d);\n      END LOOP;\n    END IF;\n  ELSIF TG_TABLE_NAME = 'rake_records' THEN\n    IF TG_OP = 'UPDATE' THEN\n      FOR r IN\n        SELECT DISTINCT x.d FROM (\n          SELECT (o.created_at AT TIME ZONE 'UTC')::date AS d\n            FROM old_rows o JOIN new_rows n ON n.id = o.id\n           WHERE o.rake_amount IS DISTINCT FROM n.rake_amount\n              OR o.created_at IS DISTINCT FROM n.created_at\n              OR o.tournament_id IS DISTINCT FROM n.tournament_id\n              OR o.is_tournament IS DISTINCT FROM n.is_tournament\n              OR o.metadata IS DISTINCT FROM n.metadata\n              OR o.club_id IS DISTINCT FROM n.club_id\n          UNION\n          SELECT (n.created_at AT TIME ZONE 'UTC')::date\n            FROM old_rows o JOIN new_rows n ON n.id = o.id\n           WHERE o.created_at IS DISTINCT FROM n.created_at\n        ) x\n        ORDER BY x.d\n      LOOP\n        PERFORM public.ca_refresh_reporting_rollups(r.d, r.d);\n      END LOOP;\n    ELSE\n      FOR r IN\n        SELECT DISTINCT (o.created_at AT TIME ZONE 'UTC')::date AS d\n          FROM old_rows o ORDER BY 1\n      LOOP\n        PERFORM public.ca_refresh_reporting_rollups(r.d, r.d);\n      END LOOP;\n    END IF;\n  END IF;\n  RETURN NULL;\nEXCEPTION WHEN OTHERS THEN\n  RAISE WARNING 'Club Data changed-ledger repair failed on %: %', TG_TABLE_NAME, SQLERRM;\n  RETURN NULL;\nEND;\n$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "ca_reporting_rake_change_upd",
+      "function": "trg_ca_reporting_repair_changed_days()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER ca_reporting_rake_change_upd AFTER UPDATE ON public.rake_records REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_reporting_repair_changed_days()",
+      "source_md5": "1648dffde2ac428d4b680f97989b9e50",
+      "definition_md5": "601c605e44856e42ee0d00e72a0fdb1e",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.trg_ca_reporting_repair_changed_days()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  r record;\nBEGIN\n  IF TG_TABLE_NAME = 'wallet_transactions' THEN\n    IF TG_OP = 'UPDATE' THEN\n      FOR r IN\n        SELECT DISTINCT x.d FROM (\n          SELECT (o.created_at AT TIME ZONE 'UTC')::date AS d\n            FROM old_rows o JOIN new_rows n ON n.id = o.id\n           WHERE o.amount IS DISTINCT FROM n.amount\n              OR o.type IS DISTINCT FROM n.type\n              OR o.category IS DISTINCT FROM n.category\n              OR o.user_id IS DISTINCT FROM n.user_id\n              OR o.table_id IS DISTINCT FROM n.table_id\n              OR o.related_entity_id IS DISTINCT FROM n.related_entity_id\n              OR o.created_at IS DISTINCT FROM n.created_at\n          UNION\n          SELECT (n.created_at AT TIME ZONE 'UTC')::date\n            FROM old_rows o JOIN new_rows n ON n.id = o.id\n           WHERE o.created_at IS DISTINCT FROM n.created_at\n        ) x\n        ORDER BY x.d\n      LOOP\n        PERFORM public.ca_refresh_reporting_rollups(r.d, r.d);\n      END LOOP;\n    ELSE\n      FOR r IN\n        SELECT DISTINCT (o.created_at AT TIME ZONE 'UTC')::date AS d\n          FROM old_rows o ORDER BY 1\n      LOOP\n        PERFORM public.ca_refresh_reporting_rollups(r.d, r.d);\n      END LOOP;\n    END IF;\n  ELSIF TG_TABLE_NAME = 'rake_records' THEN\n    IF TG_OP = 'UPDATE' THEN\n      FOR r IN\n        SELECT DISTINCT x.d FROM (\n          SELECT (o.created_at AT TIME ZONE 'UTC')::date AS d\n            FROM old_rows o JOIN new_rows n ON n.id = o.id\n           WHERE o.rake_amount IS DISTINCT FROM n.rake_amount\n              OR o.created_at IS DISTINCT FROM n.created_at\n              OR o.tournament_id IS DISTINCT FROM n.tournament_id\n              OR o.is_tournament IS DISTINCT FROM n.is_tournament\n              OR o.metadata IS DISTINCT FROM n.metadata\n              OR o.club_id IS DISTINCT FROM n.club_id\n          UNION\n          SELECT (n.created_at AT TIME ZONE 'UTC')::date\n            FROM old_rows o JOIN new_rows n ON n.id = o.id\n           WHERE o.created_at IS DISTINCT FROM n.created_at\n        ) x\n        ORDER BY x.d\n      LOOP\n        PERFORM public.ca_refresh_reporting_rollups(r.d, r.d);\n      END LOOP;\n    ELSE\n      FOR r IN\n        SELECT DISTINCT (o.created_at AT TIME ZONE 'UTC')::date AS d\n          FROM old_rows o ORDER BY 1\n      LOOP\n        PERFORM public.ca_refresh_reporting_rollups(r.d, r.d);\n      END LOOP;\n    END IF;\n  END IF;\n  RETURN NULL;\nEXCEPTION WHEN OTHERS THEN\n  RAISE WARNING 'Club Data changed-ledger repair failed on %: %', TG_TABLE_NAME, SQLERRM;\n  RETURN NULL;\nEND;\n$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "ca_reporting_rake_insert",
+      "function": "trg_ca_reporting_rake_insert()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER ca_reporting_rake_insert AFTER INSERT ON public.rake_records FOR EACH ROW EXECUTE FUNCTION trg_ca_reporting_rake_insert()",
+      "source_md5": "8a7f9c06565d8c99c66dcaadf69995c1",
+      "definition_md5": "77a5bc5c710f2dbc04b547cab55672a0",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.trg_ca_reporting_rake_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_day date; r record;\nBEGIN\n  IF NOT NEW.is_tournament OR NEW.tournament_id IS NULL OR NEW.rake_amount=0\n    THEN RETURN NULL; END IF;\n  /* SHARED, not exclusive - see trg_ca_reporting_wallet_insert and\n     20260906152215. */\n  PERFORM pg_advisory_xact_lock_shared(918273645);\n  v_day:=(NEW.created_at AT TIME ZONE 'UTC')::date;\n  IF NEW.metadata ? 'user_id' THEN\n    FOR r IN\n      SELECT c.club_id FROM public.tournament_players tp\n      CROSS JOIN LATERAL public.ca_reporting_tournament_clubs_for_user(tp.user_id) c\n      WHERE tp.tournament_id=NEW.tournament_id\n        AND tp.user_id::text=NEW.metadata->>'user_id'\n      ORDER BY c.club_id\n    LOOP\n      INSERT INTO public.ca_club_tournament_daily AS d\n        (club_id,tournament_id,stat_date,fee,updated_at)\n      VALUES(r.club_id,NEW.tournament_id,v_day,NEW.rake_amount,now())\n      ON CONFLICT(club_id,tournament_id,stat_date) DO UPDATE\n       SET fee=d.fee+EXCLUDED.fee,updated_at=now();\n    END LOOP;\n  ELSE\n    FOR r IN\n      WITH total AS (SELECT count(*)::numeric n FROM public.tournament_players\n                      WHERE tournament_id=NEW.tournament_id), mapped AS (\n        SELECT c.club_id FROM public.tournament_players tp\n        CROSS JOIN LATERAL public.ca_reporting_tournament_clubs_for_user(tp.user_id) c\n        WHERE tp.tournament_id=NEW.tournament_id)\n      SELECT m.club_id,count(*)::numeric AS club_players,t.n AS total_players\n        FROM mapped m CROSS JOIN total t GROUP BY m.club_id,t.n\n       ORDER BY m.club_id\n    LOOP\n      INSERT INTO public.ca_club_tournament_daily AS d\n        (club_id,tournament_id,stat_date,fee,updated_at)\n      VALUES(r.club_id,NEW.tournament_id,v_day,\n             NEW.rake_amount*r.club_players/NULLIF(r.total_players,0),now())\n      ON CONFLICT(club_id,tournament_id,stat_date) DO UPDATE\n       SET fee=d.fee+EXCLUDED.fee,updated_at=now();\n    END LOOP;\n  END IF;\n  RETURN NULL;\nEXCEPTION WHEN OTHERS THEN\n  RAISE WARNING 'Club Data rake rollup failed for row %: %',NEW.id,SQLERRM;\n  RETURN NULL;\nEND;\n$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "cancelled_tournament_evidence_is_immutable",
+      "function": "fn_cancelled_tournament_evidence_is_immutable()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+      "source_md5": "9dc93e1a464e6694f588345f19640869",
+      "definition_md5": "55061034adb7416d401622572397c7d2",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_cancelled_tournament_evidence_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_old_tournament_id uuid;\n  v_new_tournament_id uuid;\n  v_tournament_id uuid;\nBEGIN\n  IF TG_OP<>'INSERT' THEN\n    v_old_tournament_id:=NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid;\n  END IF;\n  IF TG_OP<>'DELETE' THEN\n    v_new_tournament_id:=NULLIF(to_jsonb(NEW)->>'tournament_id','')::uuid;\n  END IF;\n  IF TG_OP='UPDATE' AND v_new_tournament_id IS DISTINCT FROM v_old_tournament_id THEN\n    RAISE EXCEPTION '% rows cannot move between tournaments',TG_TABLE_NAME\n      USING ERRCODE='55000';\n  END IF;\n  v_tournament_id:=COALESCE(v_new_tournament_id,v_old_tournament_id);\n  IF v_tournament_id IS NULL THEN\n    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\n  END IF;\n  IF TG_TABLE_NAME='chip_ledger' AND TG_OP<>'INSERT' THEN\n    RAISE EXCEPTION 'tournament chip ledger evidence is append-only'\n      USING ERRCODE='55000';\n  END IF;\n  IF TG_OP='INSERT' THEN\n    PERFORM 1 FROM public.tournaments t\n     WHERE t.id=v_tournament_id FOR KEY SHARE;\n  END IF;\n  IF EXISTS (SELECT 1 FROM public.tournament_cancellation_receipts h\n              WHERE h.tournament_id=v_tournament_id) THEN\n    RAISE EXCEPTION 'cancelled tournament % has immutable % evidence',\n      v_tournament_id,TG_TABLE_NAME USING ERRCODE='55000';\n  END IF;\n  IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\nEND;\n$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "satellite_target_rake_is_immutable",
+      "function": "fn_satellite_target_rake_is_immutable()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER satellite_target_rake_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_satellite_target_rake_is_immutable()",
+      "source_md5": "640f0819d80f769ce4f224413fd359b5",
+      "definition_md5": "42499ae4d7edff6b56e2211a9149a64a",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_satellite_target_rake_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_old_source_id uuid;\n  v_new_source_id uuid;\n  v_text text;\n  v_old_marker timestamptz;\n  v_new_marker timestamptz;\n  v_status text;\nBEGIN\n  IF TG_OP <> 'INSERT' THEN\n    v_text := OLD.metadata->>'satellite_id';\n    IF v_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN\n      v_old_source_id := v_text::uuid;\n    END IF;\n  END IF;\n  IF TG_OP <> 'DELETE' THEN\n    v_text := NEW.metadata->>'satellite_id';\n    IF v_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN\n      v_new_source_id := v_text::uuid;\n    END IF;\n  END IF;\n  IF TG_OP = 'UPDATE'\n     AND (NEW.metadata->>'satellite_id') IS DISTINCT FROM\n         (OLD.metadata->>'satellite_id') THEN\n    RAISE EXCEPTION 'satellite target rake ownership is immutable'\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP <> 'INSERT' THEN v_old_marker := OLD.terminal_closed_at; END IF;\n  IF TG_OP <> 'DELETE' THEN v_new_marker := NEW.terminal_closed_at; END IF;\n  IF TG_OP = 'UPDATE' AND v_new_marker IS DISTINCT FROM v_old_marker\n     AND public.fn_ca_terminal_marker_transition_is_exact(\n           to_jsonb(OLD),to_jsonb(NEW),OLD.tournament_id) THEN\n    RETURN NEW;\n  END IF;\n  -- A recognized satellite fee row is append-only. Refusing an already-locked\n  -- UPDATE/DELETE before any parent lookup removes the child-to-source lock\n  -- edge. INSERT locks the target first, then the source, matching the\n  -- canonical satellite authority.\n  IF TG_OP <> 'INSERT'\n     AND COALESCE(v_old_source_id,v_new_source_id) IS NOT NULL THEN\n    RAISE EXCEPTION 'satellite target rake rows are append-only'\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'INSERT' AND NEW.tournament_id IS NOT NULL THEN\n    SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n      FROM public.tournaments t\n     WHERE t.id = NEW.tournament_id FOR SHARE;\n    IF v_status IN ('COMPLETED','CANCELLED','CANCELED') THEN\n      RAISE EXCEPTION 'terminal target tournament cannot gain satellite rake evidence'\n        USING ERRCODE = '55000';\n    END IF;\n  END IF;\n  IF TG_OP = 'INSERT' AND v_new_source_id IS NOT NULL\n     AND v_new_source_id IS DISTINCT FROM NEW.tournament_id THEN\n    SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n      FROM public.tournaments t\n     WHERE t.id = v_new_source_id FOR SHARE;\n    IF v_status IN ('COMPLETED','CANCELLED','CANCELED') THEN\n      RAISE EXCEPTION 'completed satellite target rake evidence is immutable'\n        USING ERRCODE = '55000';\n    END IF;\n  END IF;\n  IF v_new_source_id IS NOT NULL\n     AND v_new_source_id IS DISTINCT FROM v_old_source_id THEN\n    PERFORM 1 FROM public.tournaments t\n     WHERE t.id = v_new_source_id FOR SHARE;\n  END IF;\n  IF public.fn_ca_has_committed_tournament_receipt(v_old_source_id)\n     OR public.fn_ca_has_committed_tournament_receipt(v_new_source_id) THEN\n    RAISE EXCEPTION 'completed satellite target rake evidence is immutable'\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n  RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "terminal_tournament_evidence_is_immutable",
+      "function": "fn_terminal_tournament_evidence_is_immutable()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()",
+      "source_md5": "e6fbb738a0528aa0f32e33d004bf2045",
+      "definition_md5": "a129e4214f59e7f95ffe397e2245bbd0",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_terminal_tournament_evidence_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_tournament_id uuid;\n  v_status text;\n  v_receipted boolean := false;\n  v_old_marker timestamptz;\n  v_new_marker timestamptz;\nBEGIN\n  IF TG_OP = 'INSERT' THEN\n    v_tournament_id := NULLIF(to_jsonb(NEW)->>'tournament_id','')::uuid;\n  ELSIF TG_OP = 'UPDATE' THEN\n    IF NULLIF(to_jsonb(NEW)->>'tournament_id','')::uuid IS DISTINCT FROM\n       NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid THEN\n      RAISE EXCEPTION '% rows cannot move between tournaments',TG_TABLE_NAME\n        USING ERRCODE = '55000';\n    END IF;\n    v_tournament_id := NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid;\n  ELSE\n    v_tournament_id := NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid;\n  END IF;\n\n  IF v_tournament_id IS NULL THEN\n    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n    RETURN NEW;\n  END IF;\n  IF TG_OP <> 'INSERT' AND to_jsonb(OLD) ? 'terminal_closed_at' THEN\n    v_old_marker := NULLIF(to_jsonb(OLD)->>'terminal_closed_at','')::timestamptz;\n  END IF;\n  IF TG_OP <> 'DELETE' AND to_jsonb(NEW) ? 'terminal_closed_at' THEN\n    v_new_marker := NULLIF(to_jsonb(NEW)->>'terminal_closed_at','')::timestamptz;\n  END IF;\n  IF TG_OP = 'INSERT' AND v_new_marker IS NOT NULL THEN\n    RAISE EXCEPTION '% rows cannot supply a terminal marker',TG_TABLE_NAME\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP <> 'INSERT' AND v_old_marker IS NOT NULL THEN\n    RAISE EXCEPTION 'terminal tournament % has immutable % evidence',\n      v_tournament_id,TG_TABLE_NAME USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'UPDATE' AND v_new_marker IS DISTINCT FROM v_old_marker THEN\n    IF public.fn_ca_terminal_marker_transition_is_exact(\n         to_jsonb(OLD),to_jsonb(NEW),v_tournament_id) THEN\n      RETURN NEW;\n    END IF;\n    RAISE EXCEPTION '% terminal marker transition is not canonical',TG_TABLE_NAME\n      USING ERRCODE = '55000';\n  END IF;\n  -- A journal row is durable testimony from the instant it names a\n  -- tournament. Refuse its UPDATE/DELETE without taking a child-to-parent\n  -- lock; a row trigger already owns the child tuple at this point. INSERT is\n  -- the only operation that takes the root lock, which preserves the\n  -- parent-to-child order used by both terminal authorities.\n  IF TG_TABLE_NAME = 'chip_ledger' AND TG_OP <> 'INSERT' THEN\n    RAISE EXCEPTION 'tournament chip ledger evidence is append-only'\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'INSERT' THEN\n    SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n      FROM public.tournaments t\n     WHERE t.id = v_tournament_id\n     FOR SHARE;\n  ELSE\n    SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n      FROM public.tournaments t\n     WHERE t.id = v_tournament_id;\n  END IF;\n  SELECT EXISTS (\n           SELECT 1 FROM public.tournament_terminal_settlements h\n            WHERE h.tournament_id = v_tournament_id)\n      OR EXISTS (\n           SELECT 1 FROM public.tournament_satellite_settlements h\n            WHERE h.tournament_id = v_tournament_id)\n      OR EXISTS (\n           SELECT 1 FROM public.tournament_cancellation_receipts h\n            WHERE h.tournament_id = v_tournament_id)\n    INTO v_receipted;\n  IF v_status IN ('COMPLETED','CANCELLED','CANCELED')\n     AND (TG_OP = 'INSERT' OR v_receipted) THEN\n    RAISE EXCEPTION\n      'terminal tournament % has immutable % evidence',\n      v_tournament_id,TG_TABLE_NAME USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n  RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "tournament_unregistration_rake_evidence_is_immutable",
+      "function": "fn_ca_unregistration_rake_evidence_is_immutable()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER tournament_unregistration_rake_evidence_is_immutable BEFORE DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_ca_unregistration_rake_evidence_is_immutable()",
+      "source_md5": "9a1109d19453657645e668d6e0310113",
+      "definition_md5": "4d035b0d2f169db1cdbe987078448e99",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_unregistration_rake_evidence_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF EXISTS (\n    SELECT 1 FROM public.tournament_unregistration_receipts receipt\n     WHERE ARRAY[OLD.id] && receipt.fee_reversal_ids\n        OR ARRAY[OLD.id] && receipt.fee_source_rake_record_ids) THEN\n    RAISE EXCEPTION\n      'committed tournament unregistration rake evidence is immutable'\n      USING ERRCODE='55000';\n  END IF;\n  RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;\nEND;\n$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "trg_award_vip_points_from_rake",
+      "function": "fn_award_vip_points_from_rake()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER trg_award_vip_points_from_rake AFTER INSERT ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_award_vip_points_from_rake()",
+      "source_md5": "8b0e827715ef5ec9b603a660a128c83f",
+      "definition_md5": "24028ae5df74069cadea2df80124569a",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_award_vip_points_from_rake()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  rec record;\nBEGIN\n  /* Tournament rake (entry fees, rebuys, satellite seats, spin books) is\n     attributed ONCE, at settlement: fn_settle_tournament_rake ->\n     fn_attribute_tournament_rake, by metadata.user_id or spread across the\n     field. Awarding here as well credited every spin twice (2026-09-07). */\n  IF COALESCE(NEW.is_tournament, false) OR NEW.tournament_id IS NOT NULL THEN\n    RETURN NEW;\n  END IF;\n\n  IF NEW.player_contributions IS NULL OR jsonb_typeof(NEW.player_contributions) <> 'object'\n     OR COALESCE(NEW.rake_amount, 0) <= 0 THEN\n    RETURN NEW;\n  END IF;\n\n  /* RAKE PAID IS RAKE EARNED (20260831100610): the credit is the player's\n     share of NEW.rake_amount under the hand's own method, from the one\n     allocator. Never the raw contribution - that is a pot figure, not rake. */\n  FOR rec IN\n    SELECT a.user_id, a.credit\n      FROM public.fn_allocate_rake_credits(\n             NEW.rake_amount, NEW.player_contributions,\n             COALESCE(NEW.rake_method, 'DEALT_EQUAL')) a\n     -- One order for VIP rows everywhere (2026-09-17): the tournament finish\n     -- credits its players by player_id; a hand crediting the same players\n     -- in seat order met it in the middle on vip_points_carry (three-way\n     -- deadlocks at 11:46 and 12:32 UTC).\n     ORDER BY a.user_id\n  LOOP\n    BEGIN\n      PERFORM public.fn_award_vip_credit(rec.user_id, rec.credit, 'rake', NEW.id, 'Rake generated');\n    EXCEPTION WHEN others THEN\n      -- The rake is banked whether or not the points land; the ledger row\n      -- is the audit and a warning is the trace.\n      RAISE WARNING 'fn_award_vip_points_from_rake: % for user % on %', SQLERRM, rec.user_id, NEW.id;\n    END;\n  END LOOP;\n\n  RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "trg_ca_club_rake_daily_del",
+      "function": "trg_ca_club_rake_daily_change()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER trg_ca_club_rake_daily_del AFTER DELETE ON public.rake_records REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_change()",
+      "source_md5": "1c1c1c2cfda84913e60512266f4ea2af",
+      "definition_md5": "0eff9721f6fb1f9d0295184eaafab2f2",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.trg_ca_club_rake_daily_change()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_lo date; v_hi date;\nBEGIN\n  IF TG_OP = 'UPDATE' THEN\n    -- Transition tables cannot be combined with a column list, so the\n    -- trigger fires on every UPDATE and the filter is here. A hand_id relink\n    -- or a metadata touch names no day.\n    SELECT min(x.d), max(x.d) INTO v_lo, v_hi\n      FROM (\n        SELECT (o.created_at AT TIME ZONE 'UTC')::date AS d\n          FROM old_rows o JOIN new_rows n ON n.id = o.id\n         WHERE o.rake_amount IS DISTINCT FROM n.rake_amount\n            OR o.bbj_contribution IS DISTINCT FROM n.bbj_contribution\n            OR o.pot_size IS DISTINCT FROM n.pot_size\n            OR o.created_at IS DISTINCT FROM n.created_at\n            OR o.club_id IS DISTINCT FROM n.club_id\n            OR o.table_id IS DISTINCT FROM n.table_id\n            OR o.is_tournament IS DISTINCT FROM n.is_tournament\n            OR o.player_contributions IS DISTINCT FROM n.player_contributions\n        UNION ALL\n        SELECT (n.created_at AT TIME ZONE 'UTC')::date\n          FROM old_rows o JOIN new_rows n ON n.id = o.id\n         WHERE o.rake_amount IS DISTINCT FROM n.rake_amount\n            OR o.bbj_contribution IS DISTINCT FROM n.bbj_contribution\n            OR o.pot_size IS DISTINCT FROM n.pot_size\n            OR o.created_at IS DISTINCT FROM n.created_at\n            OR o.club_id IS DISTINCT FROM n.club_id\n            OR o.table_id IS DISTINCT FROM n.table_id\n            OR o.is_tournament IS DISTINCT FROM n.is_tournament\n            OR o.player_contributions IS DISTINCT FROM n.player_contributions\n      ) x;\n  ELSE\n    SELECT min((o.created_at AT TIME ZONE 'UTC')::date), max((o.created_at AT TIME ZONE 'UTC')::date)\n      INTO v_lo, v_hi\n      FROM old_rows o;\n  END IF;\n  IF v_lo IS NOT NULL THEN\n    -- include_today => true: somebody changed a rake row, and the rollup has\n    -- to follow it today, not tomorrow.\n    PERFORM public.fn_ca_club_rake_daily_rebuild_range(v_lo, v_hi, true);\n  END IF;\n  RETURN NULL;\nEXCEPTION WHEN OTHERS THEN\n  RAISE WARNING 'ca_club_rake_daily change rollup failed: %', SQLERRM;\n  RETURN NULL;\nEND;\n$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "trg_ca_club_rake_daily_ins",
+      "function": "trg_ca_club_rake_daily_insert()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER trg_ca_club_rake_daily_ins AFTER INSERT ON public.rake_records REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_insert()",
+      "source_md5": "164eb239c26e8ac0c37498c1870ffcc8",
+      "definition_md5": "4bb7c4d64021796803829faacbcddbb0",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.trg_ca_club_rake_daily_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_ids uuid[];\nBEGIN\n  SELECT array_agg(n.id) INTO v_ids\n    FROM new_rows n\n   WHERE NOT coalesce(n.is_tournament, false) AND n.club_id IS NOT NULL;\n  IF v_ids IS NOT NULL THEN\n    PERFORM public.fn_ca_club_rake_daily_apply(v_ids);\n  END IF;\n  RETURN NULL;\nEXCEPTION WHEN OTHERS THEN\n  RAISE WARNING 'ca_club_rake_daily insert rollup failed: %', SQLERRM;\n  RETURN NULL;\nEND;\n$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "trg_ca_club_rake_daily_upd",
+      "function": "trg_ca_club_rake_daily_change()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER trg_ca_club_rake_daily_upd AFTER UPDATE ON public.rake_records REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_change()",
+      "source_md5": "1c1c1c2cfda84913e60512266f4ea2af",
+      "definition_md5": "0eff9721f6fb1f9d0295184eaafab2f2",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.trg_ca_club_rake_daily_change()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_lo date; v_hi date;\nBEGIN\n  IF TG_OP = 'UPDATE' THEN\n    -- Transition tables cannot be combined with a column list, so the\n    -- trigger fires on every UPDATE and the filter is here. A hand_id relink\n    -- or a metadata touch names no day.\n    SELECT min(x.d), max(x.d) INTO v_lo, v_hi\n      FROM (\n        SELECT (o.created_at AT TIME ZONE 'UTC')::date AS d\n          FROM old_rows o JOIN new_rows n ON n.id = o.id\n         WHERE o.rake_amount IS DISTINCT FROM n.rake_amount\n            OR o.bbj_contribution IS DISTINCT FROM n.bbj_contribution\n            OR o.pot_size IS DISTINCT FROM n.pot_size\n            OR o.created_at IS DISTINCT FROM n.created_at\n            OR o.club_id IS DISTINCT FROM n.club_id\n            OR o.table_id IS DISTINCT FROM n.table_id\n            OR o.is_tournament IS DISTINCT FROM n.is_tournament\n            OR o.player_contributions IS DISTINCT FROM n.player_contributions\n        UNION ALL\n        SELECT (n.created_at AT TIME ZONE 'UTC')::date\n          FROM old_rows o JOIN new_rows n ON n.id = o.id\n         WHERE o.rake_amount IS DISTINCT FROM n.rake_amount\n            OR o.bbj_contribution IS DISTINCT FROM n.bbj_contribution\n            OR o.pot_size IS DISTINCT FROM n.pot_size\n            OR o.created_at IS DISTINCT FROM n.created_at\n            OR o.club_id IS DISTINCT FROM n.club_id\n            OR o.table_id IS DISTINCT FROM n.table_id\n            OR o.is_tournament IS DISTINCT FROM n.is_tournament\n            OR o.player_contributions IS DISTINCT FROM n.player_contributions\n      ) x;\n  ELSE\n    SELECT min((o.created_at AT TIME ZONE 'UTC')::date), max((o.created_at AT TIME ZONE 'UTC')::date)\n      INTO v_lo, v_hi\n      FROM old_rows o;\n  END IF;\n  IF v_lo IS NOT NULL THEN\n    -- include_today => true: somebody changed a rake row, and the rollup has\n    -- to follow it today, not tomorrow.\n    PERFORM public.fn_ca_club_rake_daily_rebuild_range(v_lo, v_hi, true);\n  END IF;\n  RETURN NULL;\nEXCEPTION WHEN OTHERS THEN\n  RAISE WARNING 'ca_club_rake_daily change rollup failed: %', SQLERRM;\n  RETURN NULL;\nEND;\n$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "trg_guard_rake_belongs_to_club",
+      "function": "fn_guard_rake_belongs_to_club()",
+      "proconfig": ["search_path=public, pg_temp"],
+      "definition": "CREATE TRIGGER trg_guard_rake_belongs_to_club BEFORE INSERT OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_guard_rake_belongs_to_club()",
+      "source_md5": "20f3cc5c7929540d5b65242f94043c44",
+      "definition_md5": "04f17832e28e53b2ca5b33eb3b8e0982",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_guard_rake_belongs_to_club()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_owner       uuid;   -- the club/union that owns the table or tournament\n  v_owner_union uuid;   -- if the owner is a club in a union, that union\n  v_is_union    boolean;\nBEGIN\n  IF NEW.club_id IS NULL THEN\n    RETURN NEW;  -- a null club_id cannot enter another club's ledger\n  END IF;\n\n  IF NEW.table_id IS NOT NULL THEN\n    SELECT club_id INTO v_owner FROM public.tables WHERE id = NEW.table_id;\n    IF v_owner IS NULL THEN\n      RAISE EXCEPTION 'rake references table % which does not exist', NEW.table_id\n        USING ERRCODE = 'check_violation';\n    END IF;\n  ELSIF NEW.tournament_id IS NOT NULL THEN\n    SELECT club_id INTO v_owner FROM public.tournaments WHERE id = NEW.tournament_id;\n    IF v_owner IS NULL THEN\n      RETURN NEW;  -- clubless tournament: nothing to scope against\n    END IF;\n  ELSE\n    RETURN NEW;    -- neither table nor tournament: nothing to check\n  END IF;\n\n  -- The fast path: rake attributed to the owning entity itself.\n  IF NEW.club_id = v_owner THEN\n    RETURN NEW;\n  END IF;\n\n  -- Is the owner a UNION? Then member clubs may earn from its shared table.\n  SELECT EXISTS (SELECT 1 FROM public.unions u WHERE u.id = v_owner) INTO v_is_union;\n  IF v_is_union THEN\n    IF EXISTS (\n      SELECT 1 FROM public.clubs c\n       WHERE c.id = NEW.club_id\n         AND (c.union_id = v_owner\n              OR EXISTS (SELECT 1 FROM public.union_clubs uc\n                          WHERE uc.club_id = c.id AND uc.union_id = v_owner))\n    ) THEN\n      RETURN NEW;\n    END IF;\n    RAISE EXCEPTION\n      'rake club isolation: club_id % is not a member of union % that owns this game',\n      NEW.club_id, v_owner USING ERRCODE = 'check_violation';\n  END IF;\n\n  -- The owner is a CLUB. It may still legitimately attribute to a SIBLING in\n  -- its own union (a union whose shared table is recorded under the hosting\n  -- club rather than the union id). But NEVER outside that union - and a\n  -- STANDALONE club (union_id NULL) has no siblings at all, so its ledger is\n  -- sealed to itself.\n  SELECT union_id INTO v_owner_union FROM public.clubs WHERE id = v_owner;\n  IF v_owner_union IS NOT NULL AND EXISTS (\n    SELECT 1 FROM public.clubs c\n     WHERE c.id = NEW.club_id\n       AND (c.union_id = v_owner_union OR c.id = v_owner_union\n            OR EXISTS (SELECT 1 FROM public.union_clubs uc\n                        WHERE uc.club_id = c.id AND uc.union_id = v_owner_union))\n  ) THEN\n    RETURN NEW;\n  END IF;\n\n  RAISE EXCEPTION\n    'rake club isolation: club_id % may not receive rake from a game owned by club % (no shared union)',\n    NEW.club_id, v_owner USING ERRCODE = 'check_violation';\nEND;\n$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "PUBLIC",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "trg_tournament_fee_names_its_player",
+      "function": "fn_tournament_fee_names_its_player()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER trg_tournament_fee_names_its_player BEFORE INSERT ON public.rake_records FOR EACH ROW WHEN (((new.is_tournament IS TRUE) AND (new.player_contributions IS NULL) AND (new.rake_amount > (0)::numeric))) EXECUTE FUNCTION fn_tournament_fee_names_its_player()",
+      "source_md5": "1340c820635fa41ed6633aa2f9250f64",
+      "definition_md5": "a34e26b81ceeda38237b739245ff11f6",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_tournament_fee_names_its_player()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_uid text := NEW.metadata->>'user_id';\n  v_pc  jsonb;\nBEGIN\n  /* Only a tournament row that arrives with no contributions and positive\n     rake. Reversal rows (negative) and rows that already name their players\n     (spin books) pass untouched. The VALUE is a weight: the allocator splits\n     the rake equally under DEALT_EQUAL, so the amount stored is immaterial;\n     rake_amount is used so a reader sees a fee, not a pot. */\n  IF v_uid ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN\n    NEW.player_contributions := jsonb_build_object(v_uid, NEW.rake_amount);\n  ELSIF NEW.tournament_id IS NOT NULL THEN\n    SELECT jsonb_object_agg(tp.user_id::text, NEW.rake_amount) INTO v_pc\n      FROM public.tournament_players tp\n     WHERE tp.tournament_id = NEW.tournament_id AND tp.user_id IS NOT NULL;\n    IF v_pc IS NOT NULL THEN\n      NEW.player_contributions := v_pc;\n    END IF;\n  END IF;\n  IF NEW.player_contributions IS NOT NULL THEN\n    NEW.rake_method := COALESCE(NEW.rake_method, 'DEALT_EQUAL');\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "owner": "postgres",
+      "table": "rake_records",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "enabled": "O",
+      "trigger": "zz_ca_escrow_rake_record",
+      "function": "fn_ca_escrow_on_rake_record()",
+      "proconfig": ["search_path=public"],
+      "definition": "CREATE TRIGGER zz_ca_escrow_rake_record AFTER INSERT ON public.rake_records FOR EACH ROW WHEN (((new.is_tournament IS TRUE) AND (new.tournament_id IS NOT NULL))) EXECUTE FUNCTION fn_ca_escrow_on_rake_record()",
+      "source_md5": "3e628d6a57a93eeb61d494ee33f989a3",
+      "definition_md5": "0dc096bb5615758ed945365a45997c8c",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_escrow_on_rake_record()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_fee numeric := round(COALESCE(NEW.rake_amount,0),2);\nBEGIN\n  IF NOT COALESCE(NEW.is_tournament,false) OR NEW.tournament_id IS NULL THEN\n    RETURN NULL;\n  END IF;\n  IF v_fee < 0 AND NEW.source IN (\n       'atomic_cancel_tournament',\n       'fn_unregister_from_tournament') THEN\n    RETURN NULL;\n  END IF;\n  IF NEW.source = 'fn_award_satellite_seat' THEN\n    PERFORM public.fn_ca_escrow_apply(\n      NEW.tournament_id,'satellite seat fee',\n      p_satellite_fee_in => v_fee,\n      -- Version 2 transfer gross already excludes its fee; legacy gross does not.\n      p_satellite_in => CASE WHEN NEW.metadata->>'entry_split_version'='2'\n                            THEN 0 ELSE -v_fee END);\n  ELSE\n    PERFORM public.fn_ca_escrow_apply(\n      NEW.tournament_id,'entry fee',p_fee_entries_in => v_fee);\n  END IF;\n  RETURN NULL;\nEND;\n$function$\n"
+    }
+  ],
+  "observed_at": "2026-09-17T20:03:36.90661+00:00"
+}

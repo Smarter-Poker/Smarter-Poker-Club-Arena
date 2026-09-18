@@ -145,6 +145,43 @@ describe('Tournament result card delivery', () => {
     expect(card.textContent).toContain(`#${place}(3)`);
   });
 
+  it.each([
+    ['seat', 'Target Entry:'],
+    ['ticket', 'Entry Ticket:'],
+    ['cash', 'Cash Award:'],
+  ] as const)(
+    'shows a committed %s qualifier without inventing a finishing place',
+    async (deliveryKind, label) => {
+      renderHost();
+      await publishAndSettle({
+        duration: 180,
+        handsPlayed: 21,
+        handsWon: 9,
+        totalRebuys: 0,
+        profitLoss: 0,
+        biggestPot: 0,
+        peakStack: 0,
+        tableName: 'Satellite',
+        tournament: {
+          ...spinResult(1, 50),
+          finishPlace: null,
+          name: 'Satellite',
+          satelliteQualification: {
+            targetId: '20000000-0000-4000-8000-000000000002',
+            deliveryKind,
+            amount: 50,
+          },
+        },
+      });
+      const card = screen.getByRole('dialog', { name: /tournament ranking/i });
+      expect(card.textContent).toContain('Qualified');
+      expect(card.textContent).toContain(label);
+      expect(card.textContent).toContain('50.00');
+      expect(card.textContent).not.toMatch(/#1|1st|2nd|3rd|Finished/);
+      expect(screen.queryByRole('img', { name: /Place Trophy/ })).toBeNull();
+    }
+  );
+
   it('shows the champion their prize', async () => {
     renderHost();
     await publishAndSettle({

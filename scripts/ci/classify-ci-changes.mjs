@@ -8,6 +8,14 @@ const wide =
   /^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github\/workflows\/|scripts\/ci\/(classify-ci-changes|fixture-native-gate)\.mjs)/;
 const phase4 =
   /^(\.github\/workflows\/ci\.yml|scripts\/ci\/classify-ci-changes\.mjs|scripts\/ci\/probes\/horse-phase4-certified-solver\/|supabase\/migrations\/20260909(165541|170039|170749|171644|172537|175000|180000)_|server\/src\/(benchmark\/(HorseLeague|HorseSolverAgreementV31)|engine\/(GtoDecisionContext|GtoPostflopV31|GtoV31|HorseDataLedger|HorseLogic|LiveHorseDecisionWorkerHealth|horseDecision\/)|services\/GtoPostflopV31Loader))/;
+const satelliteQualifiers =
+  /^(scripts\/ci\/(?:test-satellite-qualifiers\.py$|(?:satellite_qualifier_(?:fixture|concurrency)|satellite_entry_club_native)\.py$|fixtures\/satellite-qualifiers\/|probes\/(?:satellite-entry-club-native\.sql|satellite-qualifier(?:s-native\.sql|-(?:finish|reader)\.spec))$)|tests\/operations\/satellite-qualifier-results\.test\.py$)/;
+const mttPreparation =
+  /^(scripts\/ci\/(test-mtt-unlimited\.py$|mtt_(unlimited_fixture|isolation_results|format_qualification|historical_freebuy_proof|break_authoring_native)\.py$|fixtures\/mtt-(unlimited|format-preparation|historical-freebuy|break-authoring)\/|probes\/mtt-(isolation\/|.*(?:native\.sql|lock\.spec)$))|tests\/operations\/(mtt-(unlimited-runner|isolation-results)\.test\.py$|fixtures\/mtt-preparation-lock\/))/;
+// Actual activation reuses the same owned PG runner and its exact financial
+// and authoring dependencies. Fixture-only changes must reach this job too.
+const mttActivation =
+  /^(scripts\/ci\/(mtt_activation_native\.py$|mtt_activation_funding\.py$|mtt_activation_satellite\.py$|satellite_qualifier_fixture\.py$|mtt_break_authoring_native\.py$|fixtures\/(mtt-format-activation|satellite-qualifiers|mtt-break-authoring)\/|probes\/mtt-activation\/)|tests\/operations\/mtt-activation-results\.test\.py$)/;
 const fixture =
   /^(operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
 
@@ -110,6 +118,9 @@ export function classifyChangedPaths(paths) {
       bbjFixture ||
       diamondGames ||
       phase4Changed ||
+      matches(mttPreparation) ||
+      matches(satelliteQualifiers) ||
+      matches(mttActivation) ||
       commitmentAudit ||
       matches(accounting) ||
       nativeIsolationTool ||
@@ -129,10 +140,13 @@ export function classifyChangedPaths(paths) {
       instructionOnlyPaths(paths) ||
       paths.some((p) => p.startsWith('docs/agent-policy/')) ||
       broad ||
+      matches(satelliteQualifiers) ||
       buildProvenance ||
       diamondGames ||
       commitmentAudit ||
       tournamentAccountingInput ||
+      matches(mttPreparation) ||
+      matches(mttActivation) ||
       matches(/^scripts\/ci\/detect-silent-revert\.mjs$/) ||
       nativeIsolationTool ||
       spinRules ||

@@ -32,4 +32,5 @@ close and ACK path are qualified separately; the probe preserves exactly 200
 fixture chips, immutable history and financial ledgers, then rolls back. Duplicate
 admission commit/rollback races prove real database blocking and one effect.
 Protected checks, installation, engine publication and natural live acceptance
-remain separate evidence; the schema fragment declares only the pending RPC.
+remain separate evidence; the schema fragment declares the qualified pending
+objects without asserting production installation.

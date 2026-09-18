@@ -1,5 +1,29 @@
 {
   "_owner": "g8/1478-movement-admission-20260918",
-  "_comment": "Pending additive movement-only RPC declaration; not an installed-production claim. Admission requires original canonical custody and never authorizes a new hand.",
-  "functions": ["fn_f06_admit_parked_movement"]
+  "_comment": "Pending additive movement admission declarations verified in isolated PostgreSQL 17 native-final10 (73 public controls, five installer drift refusals and two observed lock races); not a production installation claim. Private helpers remain postgres-only. Admission requires original canonical custody and never authorizes a new hand.",
+  "tables": ["smarter_private.f06_movement_admissions"],
+  "functions": [
+    "fn_f06_admit_parked_movement",
+    "smarter_private.f06_movement_immutable",
+    "smarter_private.f06_movement_permits",
+    "smarter_private.f06_movement_prior",
+    "smarter_private.f06_assert_movement",
+    "smarter_private.f06_movement_transition_guard"
+  ],
+  "columns": {
+    "smarter_private.f06_movement_admissions": [
+      "admission_id",
+      "tournament_id",
+      "lease_generation",
+      "table_id",
+      "lifecycle",
+      "break_id",
+      "custody_id",
+      "revision",
+      "requested_revision",
+      "proof",
+      "proof_hash",
+      "created_at"
+    ]
+  }
 }

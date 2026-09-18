@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 77594,
-      "sha256": "4cf0125d021f12e5d1ecfb2ae3150167ecb78e1efdc1f133b35f5582c315756b"
+      "bytes": 78186,
+      "sha256": "0fa5bfeb93de0ee2ad71887c99418d3c7a2f619d349d18a7a82c1971425b5aee"
     }
   },
   "nativePgCron": {
@@ -198,6 +198,24 @@
         }
       },
       "reason": "Pass the already-built PG_ISOLATION_TESTER artifact explicitly to the journal native runner; routing assertion reproduced missing environment before repair."
+    },
+    "finalMovementParent": {
+      "revision": "546421d4a8080b6cf8127c538e9043f3219beb6a",
+      "movementParentPins": {
+        ".github/workflows/ci.yml": {
+          "bytes": 141976,
+          "sha256": "9a1f06bf566d36eec5d84fe340eaf434309059eb9097e692292782bb8f43a21e"
+        },
+        "scripts/ci/classify-ci-changes.mjs": {
+          "bytes": 16708,
+          "sha256": "3ab7bd814109d3406e3e4b19a390d330ce3fd81d18f68bda6bd3a92c5eec05c9"
+        },
+        "tests/unit/fixtureNativeCi.test.ts": {
+          "bytes": 76134,
+          "sha256": "fe4a48231623c0b3376e7c08d58a57654d55a4d17c3a0cc948782ad5a4713b0e"
+        }
+      },
+      "reason": "Preserves final movement native metadata and result-validator correction, both qualification routes and exact merged source bytes; Cash SQL untouched."
     }
   }
 }

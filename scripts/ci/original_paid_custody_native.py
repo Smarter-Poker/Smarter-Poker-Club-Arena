@@ -254,8 +254,11 @@ def conserved_hands(e,db,fix,migration,refusal):
  e.sql(case,"UPDATE public.engine_tournament_leases SET heartbeat_at=clock_timestamp();",label='conserved-current-lease')
  before=e.snapshot(case,'conserved-hand-before')
  private_before=private_rows(e,case,'conserved-hand-private-before')
- hand=(e.root/fix/'conserved-hand.sql').read_text()
- code,out,err=e.sql(case,hand,label='original-conserved-public-hand-refusal',check=False)
+ # File transport lets psql stop at the expected COMMIT error without a
+ # stdin writer competing with its verbose error output on bounded pipes.
+ hand_path=e.root/fix/'conserved-hand.sql'
+ hand=hand_path.read_text()
+ code,out,err=e.sql(case,file=hand_path,label='original-conserved-public-hand-refusal',check=False)
  if code!=3 or 'TOURNAMENT_FELT_WOULD_EXCEED_SUPPLY' not in err or 'HAND_PUBLIC_ACCEPTED_BEFORE_COMMIT' not in err:raise RuntimeError('original real hand refusal not reproduced: '+err)
  if e.snapshot(case,'original-conserved-hand-rollback')!=before or private_rows(e,case,'original-conserved-hand-private-rollback')!=private_before:raise RuntimeError('original conserved hand left effects')
  for name,mutation in [('observer-body',"ALTER FUNCTION public.fn_union_pnl_inventory_observe() SET statement_timeout='1s';"),('observer-acl',"GRANT EXECUTE ON FUNCTION public.fn_union_pnl_inventory_observe() TO authenticated;"),('seat-attachment',"ALTER TABLE public.table_seats DISABLE TRIGGER union_pnl_original_inventory;"),('scope-attachment',"ALTER TABLE public.tables DISABLE TRIGGER union_pnl_original_inventory;"),('inventory-access',"GRANT INSERT ON public.union_pnl_inventory_events TO service_role;")]:
@@ -284,12 +287,16 @@ def conserved_hands(e,db,fix,migration,refusal):
   code,out,err=e.sql(case,'BEGIN;'+query+'SET CONSTRAINTS zzzzzz_tournament_felt_may_not_exceed_supply IMMEDIATE;COMMIT;',label='conserved-'+name+'-refusal',check=False)
   if code!=3 or 'TOURNAMENT_FELT_WOULD_EXCEED_SUPPLY' not in err:raise RuntimeError('conserved negative not proven '+name+': '+err)
   if e.snapshot(case,'conserved-'+name+'-rollback')!=before:raise RuntimeError('conserved refusal leaked effects '+name)
- code,out,err=e.sql(case,hand.replace("THEN 5000 ELSE 317500 END","THEN 5001 ELSE 317500 END"),label='conserved-public-inflow-refusal',check=False)
+ inflow_path=e.output/'conserved-public-inflow.sql'
+ inflow_path.write_text(hand.replace("THEN 5000 ELSE 317500 END","THEN 5001 ELSE 317500 END"))
+ code,out,err=e.sql(case,file=inflow_path,label='conserved-public-inflow-refusal',check=False)
  if code!=3 or 'conservation violation' not in err:raise RuntimeError('real hand creation was not refused: '+err)
  if e.snapshot(case,'conserved-inflow-rollback')!=before:raise RuntimeError('invalid hand leaked effects')
  zero=e.database(case)
  zero_hand=hand[:hand.index('DO $proof$')].replace('THEN 5000 ELSE 317500 END','THEN 0 ELSE 322500 END').replace("'winners',jsonb_build_array(jsonb_build_object('user_id','b7100000-0000-4000-8000-000000000001'","'winners',jsonb_build_array(jsonb_build_object('user_id','b7100000-0000-4000-8000-000000000002'")
- code,out,err=e.sql(zero,zero_hand,label='conserved-real-zero-stack-hand',check=False)
+ zero_path=e.output/'conserved-real-zero-stack.sql'
+ zero_path.write_text(zero_hand)
+ code,out,err=e.sql(zero,file=zero_path,label='conserved-real-zero-stack-hand',check=False)
  if code or err.count('HAND_PUBLIC_ACCEPTED_BEFORE_COMMIT')!=1:raise RuntimeError('actual zero-stack hand failed '+err)
  _,raw,_=e.sql(zero,"""SELECT EXISTS(SELECT 1 FROM public.hand_atomic_commits c WHERE c.hand_number=9720100 AND c.post_commit_completed_at IS NOT NULL AND c.stack_result->>'tournament_zero_stack_seat_count'='1')
  AND EXISTS(SELECT 1 FROM table_seats s JOIN tournament_players p ON p.user_id=s.user_id AND p.tournament_id='b7200000-0000-4000-8000-000000000001' WHERE s.table_id='b7300000-0000-4000-8000-000000000001' AND s.user_id='b7100000-0000-4000-8000-000000000001' AND s.stack=0 AND s.left_at IS NOT NULL AND p.chips=0)
@@ -301,13 +308,13 @@ def conserved_hands(e,db,fix,migration,refusal):
  hand_changed={'public.table_seats','public.tournament_players','public.hand_history','public.hand_atomic_commits','public.ca_settlements','public.settlement_idempotency_keys','public.union_pnl_inventory_events','public.union_pnl_transaction_frames'}
  if zero_changed!=hand_changed|{'public.tables','public.tournament_knockout_candidates'} or private_rows(e,zero,'conserved-zero-stack-private-after')!=private_before:raise RuntimeError('zero hand changed unexpected money/custody '+str(zero_changed))
  e.discard(zero)
- code,out,err=e.sql(case,hand,label='conserved-real-public-hand',check=False)
+ code,out,err=e.sql(case,file=hand_path,label='conserved-real-public-hand',check=False)
  if code or err.count('HAND_PUBLIC_ACCEPTED_BEFORE_COMMIT')!=1 or err.count('HAND_PUBLIC_COMPLETED_PROVEN')!=1:raise RuntimeError('actual conserved public hand failed: '+err)
  after=e.snapshot(case,'conserved-hand-after')
  changed={k for k in before if before[k]!=after[k]}
  allowed={'public.table_seats','public.tournament_players','public.hand_history','public.hand_atomic_commits','public.ca_settlements','public.settlement_idempotency_keys','public.union_pnl_inventory_events','public.union_pnl_transaction_frames'}
  if changed!=allowed or private_rows(e,case,'conserved-hand-private-after')!=private_before:raise RuntimeError('conserved hand changed unexpected custody or money '+str(changed))
- code,out,err=e.sql(case,hand,label='conserved-public-hand-replay',check=False)
+ code,out,err=e.sql(case,file=hand_path,label='conserved-public-hand-replay',check=False)
  if code or err.count('HAND_PUBLIC_COMPLETED_PROVEN')!=1:raise RuntimeError('conserved replay failed '+err)
  if e.snapshot(case,'conserved-replay-after')!=after:raise RuntimeError('hand replay changed effects')
  _,raw,_=e.sql(case,"SELECT jsonb_build_object('definition',pg_get_functiondef(oid),'definition_md5',md5(pg_get_functiondef(oid)),'body_md5',md5(prosrc),'owner',pg_get_userbyid(proowner),'acl',proacl::text,'config',proconfig) FROM pg_proc WHERE oid='public.fn_ca_tournament_felt_may_not_exceed_supply()'::regprocedure;",label='conserved-guard-postimage')

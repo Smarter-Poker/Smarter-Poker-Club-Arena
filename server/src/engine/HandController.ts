@@ -3599,6 +3599,21 @@ export class HandController {
     };
   }
 
+  /** Dealt stakes stay fixed even when the table advances to its next level. */
+  public getBlindSnapshot(): {
+    smallBlind: number;
+    bigBlind: number;
+    ante: number;
+    bigBlindAnte: boolean;
+  } {
+    return {
+      smallBlind: this.config.smallBlind,
+      bigBlind: this.config.bigBlind,
+      ante: this.config.ante ?? 0,
+      bigBlindAnte: this.config.bigBlindAnte === true,
+    };
+  }
+
   public getChipRulesSnapshot(): {
     asset: 'chips' | 'diamonds';
     chipUnit: 0.01 | 1;

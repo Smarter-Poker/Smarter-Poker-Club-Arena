@@ -1,5 +1,6 @@
 import { supabase } from '../services/supabase.js';
 import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
+import { isDeterministicSettlementRefusal } from './settlementRefusal.js';
 import {
   verifyTournamentCompletionReceipt,
   type TournamentTerminalSettlementMode,
@@ -205,10 +206,12 @@ async function adoptStoredTerminalReceipt(
  * replaying the exact same request. A transport error is never proof of a
  * rollback: PostgreSQL may already have committed the immutable receipt.
  *
- * A replay-disagreement refusal is the one failure that is NOT replayed: the
+ * A replay-disagreement refusal is not replayed with the observed parameters: the
  * database has a receipt and this request contradicts it. The receipt is
  * adopted instead (see adoptStoredTerminalReceipt), so the returned receipt's
  * winnerId and settlementMode may differ from what the caller observed.
+ * Known missing-evidence refusals go directly to the same serialized outcome
+ * resolver; they never prove rollback or release the caller by themselves.
  */
 export async function requestTournamentTerminalReceipt(
   tournamentId: string,
@@ -267,6 +270,7 @@ export async function requestTournamentTerminalReceipt(
       }
     : null;
   let lastFailure = 'terminal settlement returned no receipt';
+  let attemptedWrites = 0;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     if (legacyDeal) {
@@ -298,6 +302,7 @@ export async function requestTournamentTerminalReceipt(
       }
     }
     try {
+      attemptedWrites++;
       const { data, error } = proposalRequest
         ? await supabase.rpc('fn_complete_tournament_terminal_proposal', proposalRequest)
         : await supabase.rpc('fn_complete_tournament_terminal', request);
@@ -321,6 +326,7 @@ export async function requestTournamentTerminalReceipt(
           );
         }
         lastFailure = errorMessage(error);
+        if (isDeterministicSettlementRefusal(error, tournamentId)) break;
       }
     } catch (error) {
       if (error instanceof TerminalSettlementDisagreementError) throw error;
@@ -396,6 +402,6 @@ export async function requestTournamentTerminalReceipt(
   }
 
   throw new TerminalSettlementOutcomeUnknownError(
-    `Terminal settlement outcome is unknown after ${attempts} identical attempt(s): ${lastFailure}`
+    `Terminal settlement outcome is unknown after ${attemptedWrites} identical attempt(s): ${lastFailure}`
   );
 }

@@ -27,6 +27,11 @@ import { ServerTableEngine } from './ServerTableEngine.js';
 import { supabase } from '../services/supabase/client.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { reportError } from '../services/errorReporter.js';
+import { logHandHistory as realLogHandHistory } from '../services/supabase/handHistory.js';
+import * as handProjection from '../services/supabase/handProjection.js';
+import * as handFacts from '../services/supabase/handFacts.js';
+import * as horseReviews from '../services/HorseHandReview.js';
+import * as horseDecision from './horseDecision/index.js';
 const id = '34076355-b232-420e-93e8-2deab277f6bc';
 const handId = '20000000-0000-4000-8000-000000000001';
 const joinedAt = '2026-09-11T01:00:00.000Z';
@@ -179,17 +184,68 @@ describe('the original request identity survives both hand-failure reports', () 
   it('preserves the retry budget and original request UUID on a transient rollback', async () => {
     const { engine, players } = cashTable();
     engine.sleep = vi.fn().mockResolvedValue(undefined);
-    mocks.commit
-      .mockRejectedValueOnce(
-        new Error('atomic hand commit refused (atomic_hand_rolled_back): F06_RETRY_CANONICAL_LANE')
-      )
-      .mockImplementationOnce(async (request) => ({
-        handId: request.handId,
-        settlementCommitted: true,
-      }));
+    engine.getEngineLeaseAuthority = () => ({
+      verified: true,
+      generation: '30000000-0000-4000-8000-000000000001',
+      scope: 'cash',
+    });
+    // Exercise the actual retry owner. These independent observations must not
+    // start projection workers or write stats in a source-only fixture.
+    vi.spyOn(handProjection, 'wakeHandProjection').mockResolvedValue({
+      projected: 0,
+      alreadyCompleted: 0,
+      deferred: 0,
+      failed: 0,
+    });
+    vi.spyOn(handFacts, 'writeHandFacts').mockResolvedValue(undefined);
+    vi.spyOn(horseReviews, 'recordHorseHandReviews').mockResolvedValue(undefined);
+    vi.spyOn(horseDecision, 'getLiveHorseDecisionWorker').mockReturnValue({
+      observeCompletedHand: vi.fn().mockResolvedValue(undefined),
+    } as any);
+    mocks.commit.mockImplementation(realLogHandHistory);
+    const attempts: any[] = [];
+    const payloads: any[] = [];
+    mocks.rpc.mockImplementation(async (name, payload) => {
+      if (name !== 'fn_ca_commit_hand_settlement') return { data: null, error: null };
+      attempts.push(structuredClone(payload));
+      payloads.push(payload);
+      if (attempts.length === 1) {
+        engine.tableInfo.big_blind = 999;
+        return {
+          data: {
+            success: false,
+            atomic_hand_commit: false,
+            reason: 'atomic_hand_rolled_back',
+            sqlstate: '40001',
+            error: 'F06_RETRY_CANONICAL_LANE',
+            table_id: payload.p_table_id,
+            hand_number: payload.p_hand_number,
+            commit_hash: 'a'.repeat(64),
+          },
+          error: null,
+        };
+      }
+      return {
+        data: {
+          success: true,
+          atomic_hand_commit: true,
+          history_id: payload.p_hand_row.id,
+          post_commit_obligations: true,
+        },
+        error: null,
+      };
+    });
     await engine.postHandTasks(players, 1);
-    expect(mocks.commit).toHaveBeenCalledTimes(2);
-    expect(mocks.commit.mock.calls[0][0].handId).toBe(mocks.commit.mock.calls[1][0].handId);
+    expect(mocks.commit).toHaveBeenCalledTimes(1);
+    expect(attempts).toHaveLength(2);
+    expect(attempts[1]).toEqual(attempts[0]);
+    expect(payloads[1]).toBe(payloads[0]);
+    expect(attempts[0].p_hand_row.id).toBe(mocks.commit.mock.calls[0][0].handId);
+    expect(attempts[1].p_hand_row.id).toBe(attempts[0].p_hand_row.id);
+    expect(attempts[1].p_hand_row.big_blind).toBe(2);
+    expect(engine.sleep).not.toHaveBeenCalled();
+    expect(engine.killForRestart).not.toHaveBeenCalled();
+    expect(mocks.obligations).toHaveBeenCalledTimes(1);
     expect(reported(source)).toHaveLength(0);
     expect(reported(historySource)).toHaveLength(0);
   });

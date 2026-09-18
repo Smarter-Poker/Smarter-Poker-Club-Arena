@@ -421,6 +421,13 @@ describe('required CI owns native fixture verification', () => {
   );
 
   it('keeps the real public watermark qualification in the existing PKO gate', () => {
+    const step = ci.jobs['accounting_postgres'].steps.find(
+      (item: { name?: string }) =>
+        item.name === 'PKO heads follow exact accepted knockout dependencies'
+    );
+    expect(step.env.PG_ISOLATION_TESTER).toBe(
+      '${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester'
+    );
     const runner = readFileSync(
       join(root, 'scripts/dev/probe-causal-pko-predecessors-pg17.sh'),
       'utf8'

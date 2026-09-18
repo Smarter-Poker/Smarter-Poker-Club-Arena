@@ -156,6 +156,9 @@ try:
     prepared = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/prepared_cancellation_qualification.py'))
     prepared['qualify'](ROOT, out, cmd, command, run, probe, require, results)
     require(results.get('preparedCancellation', {}).get('passed') is True, 'Prepared cancellation qualification did not complete')
+    continuation = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/no_start_continuation_qualification.py'))
+    continuation['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('noStartContinuation', {}).get('passed') is True, 'No-start continuation did not complete')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

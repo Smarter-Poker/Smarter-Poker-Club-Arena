@@ -406,6 +406,136 @@ class PositiveFeeEntryTests(unittest.TestCase):
 
 
 class MixedCurrentTests(unittest.TestCase):
+    def test_current_lane_variants_preserve_original_bodies_and_capture_pins(self):
+        M = W.MIXED
+        fields = ('signature', 'owner', 'acl', 'config', 'full_md5', 'volatility', 'security_definer')
+        captured = json.loads((W.ROOT / M.BASE / 'authority.json').read_text())[0]['evidence']['functions']
+        expected = {f['signature']: {k: f[k] for k in fields} for f in captured}
+        legacy = json.loads((W.ROOT / 'scripts/qualification/fixtures/spin-receipt-lane/authority.json').read_text())['functions']
+        expected.update({f['identity']: {k: f['identity'] if k == 'signature' else f[k] for k in fields}
+                         for f in legacy})
+        for reverse, name in ((False, M.LANE), (True, M.LANE_ROLLBACK)):
+            text = (W.ROOT / name).read_text()
+            pins = json.loads(re.search(r'\$current_lane_authority\$(.*?)\$current_lane_authority\$', text, re.S)[1])
+            self.assertEqual(len(pins), 10)
+            self.assertEqual(len({p['signature'] for p in pins}), 10)
+            for pin in pins:
+                value = copy.deepcopy(expected[pin['signature']])
+                if reverse and pin['signature'].startswith('settle_hand_atomically('):
+                    value['full_md5'] = '64abd1e3234fdabc655647bfb1ad5018'
+                if reverse and pin['signature'].startswith('sp_compact_hand_history('):
+                    value['full_md5'] = '36a41aa4447e199ec8a9f2a5aa1840ec'
+                self.assertEqual(pin, value)
+            # Only current authority guards and the wrapper preimage differ.
+            original = (W.ROOT / name.replace('current-receipt-lane', 'receipt-lane')).read_text()
+            reduced = re.sub(r'-- Current-cohort variant\..*?END \$current_cohort\$;\n', '', text, count=1, flags=re.S)
+            reduced = re.sub(r'DO \$current_handler\$.*?END \$current_handler\$;\n', '', reduced, count=1, flags=re.S)
+            reduced = reduced.replace('c64e049911fd99c1d784cdb042ca714b', '480be3139fe0878e637ce54f533a2170')
+            self.assertEqual(reduced[reduced.index('BEGIN;'):], original[original.index('BEGIN;'):])
+            mode = 'rollback' if reverse else 'forward'
+            body = dict(M.lane_variables(W.ROOT, mode))['lane_body']
+            self.assertNotIn('\nBEGIN;\n', body)
+            self.assertFalse(body.endswith('COMMIT;\n'))
+            self.assertIn(__import__('hashlib').md5(body.encode()).hexdigest(),
+                          (W.ROOT / M.BASE / 'current-lane-refusals.sql').read_text())
+
+    def test_current_lane_body_refuses_changed_executed_source(self):
+        M = W.MIXED
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder)
+            for mode, name in (('forward', M.LANE), ('rollback', M.LANE_ROLLBACK)):
+                path = source / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes((W.ROOT / name).read_bytes() + b'-- changed\n')
+                with self.assertRaises(ValueError): M.lane_variables(source, mode)
+
+    def roundtrip_outputs(self):
+        # Small protocol records exercise the reader, not PostgreSQL behavior.
+        M = W.MIXED
+        before = {'catalog': {'functions': ['current originals']},
+                  'current_cohort': ['captured current wrapper/finish authority'],
+                  'handler': None, 'business': {'public.input': [{'value': 1}]}}
+        installed = copy.deepcopy(before)
+        installed['catalog'] = {'functions': ['lane installed']}
+        installed['handler'] = {'owner': 'postgres', 'acl': '{postgres=X/postgres}',
+            'body_md5': '534850c97847e72075044d8604b0a09d',
+            'config': ['search_path=pg_catalog, public, pg_temp'],
+            'security_definer': False, 'volatility': 'v'}
+        terminal = copy.deepcopy(installed)
+        terminal['business']['public.output'] = [{'real_writer_output': 2}]
+        reversing = copy.deepcopy(terminal)
+        after = copy.deepcopy(before)
+        after['business'] = copy.deepcopy(terminal['business'])
+        return {'current_lane_before': before, 'current_lane_installed': installed,
+                'current_lane_before_terminal_rollback': terminal,
+                'current_lane_before_rollback': reversing, 'current_lane_after': after,
+                'current_lane_forward_refusals': {'current_lane_mode': 'forward',
+                    'authority_refusals': 9, 'exact_state_restored': True},
+                'current_lane_rollback_refusals': {'current_lane_mode': 'rollback',
+                    'authority_refusals': 12, 'exact_state_restored': True}}
+
+    def test_current_lane_roundtrip_requires_exact_authority_and_no_business_loss(self):
+        M = W.MIXED
+        original = self.roundtrip_outputs()
+        self.assertTrue(M.validate_lane_roundtrip(original.__getitem__)['original_current_authority_restored'])
+        changes = [
+            ('current_lane_after', 'catalog', {'functions': ['stale wrapper']}),
+            ('current_lane_after', 'current_cohort', ['wrong current authority']),
+            ('current_lane_after', 'handler', {'owner': 'postgres'}),
+            ('current_lane_after', 'business', original['current_lane_before']['business']),
+            ('current_lane_installed', 'business', {'public.input': []}),
+            ('current_lane_before_rollback', 'business', {'public.input': []}),
+            ('current_lane_before_rollback', 'handler', None),
+            ('current_lane_installed', 'current_cohort', ['changed by lane install']),
+            ('current_lane_forward_refusals', 'authority_refusals', 8),
+            ('current_lane_rollback_refusals', 'authority_refusals', 11),
+            ('current_lane_rollback_refusals', 'exact_state_restored', False),
+        ]
+        for stage, key, value in changes:
+            wrong = copy.deepcopy(original); wrong[stage][key] = value
+            with self.subTest(stage=stage, key=key), self.assertRaises(ValueError):
+                M.validate_lane_roundtrip(wrong.__getitem__)
+        for stage in original:
+            wrong = copy.deepcopy(original); del wrong[stage]
+            with self.subTest(missing=stage), self.assertRaises(KeyError):
+                M.validate_lane_roundtrip(wrong.__getitem__)
+
+    def test_current_lane_stages_require_original_successful_streams_order_and_roles(self):
+        M = W.MIXED
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'source'; work = Path(folder) / 'work'; work.mkdir()
+            for name in M.INPUTS:
+                path = source / name; path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes((W.ROOT / name).read_bytes())
+            for image in M.IMAGES:
+                seed = M.seed_plan(PG, source, EXECUTION, ORDINARY, TOURNAMENT)
+                body = M.body_plan(PG, source, EXECUTION, ORDINARY, TOURNAMENT, image)
+                stages = [{'stage': 'schema_prefix'}]
+                for name, argv in seed:
+                    stages.append({'stage': name, 'argv': argv, 'returncode': 0})
+                stages += [{'stage': 'schema_suffix_all_real_triggers'}, {'stage': 'retention_provider_authority'}]
+                stages += [{'stage': name, 'argv': argv, 'returncode': 0} for name, argv in body]
+                for stage in stages:
+                    if 'argv' not in stage: continue
+                    for stream in ('stdout', 'stderr'):
+                        raw = (stage['stage'] + stream).encode()
+                        (work / (stage['stage'] + '.' + stream)).write_bytes(raw)
+                        stage[stream + '_sha256'] = W.digest(raw)
+                receipt = {'stages': stages, 'mixed_current_qualification': {'protocol': True}}
+                with patch.object(M, 'validate_outputs', return_value={'protocol': True}):
+                    M.validate_stages(receipt, PG, source, EXECUTION, ORDINARY, TOURNAMENT, image)
+                    for mode in ('missing', 'reordered', 'wrong_role', 'failed', 'hash'):
+                        wrong = copy.deepcopy(receipt)
+                        target = next(s for s in wrong['stages'] if s['stage'] == 'current_lane_rollback')
+                        if mode == 'missing': wrong['stages'].remove(target)
+                        elif mode == 'reordered':
+                            wrong['stages'].remove(target); wrong['stages'].insert(0, target)
+                        elif mode == 'wrong_role': target['argv'][target['argv'].index('-U') + 1] = 'fixture_bootstrap'
+                        elif mode == 'failed': target['returncode'] = 3
+                        else: target['stdout_sha256'] = '0' * 64
+                        with self.subTest(image=image, mode=mode), self.assertRaises(ValueError):
+                            M.validate_stages(wrong, PG, source, EXECUTION, ORDINARY, TOURNAMENT, image)
+
     def test_loading_staged_observer_never_writes_bytecode_into_sealed_packet(self):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder).resolve()
@@ -543,9 +673,20 @@ class MixedCurrentTests(unittest.TestCase):
         common = next(i for i, row in enumerate(completion) if row[0] == 'terminal_consumer')
         self.assertEqual(completion[:common], refusal[:common])
         self.assertEqual([name for name, _ in refusal[common:]],
-                         ['terminal_consumer', 'independent_after_source_change'])
-        self.assertEqual(completion[-2][0], 'current_terminal_rollback')
-        self.assertEqual(completion[-1][0], 'independent_after_rollback')
+                         ['terminal_consumer', 'independent_after_source_change',
+                          'current_lane_before_terminal_rollback', 'current_terminal_rollback',
+                          'independent_after_rollback', 'current_lane_before_rollback',
+                          'current_lane_rollback_refusals', 'current_lane_rollback', 'current_lane_after'])
+        self.assertEqual(completion[-2][0], 'current_lane_rollback')
+        self.assertEqual(completion[-1][0], 'current_lane_after')
+        for rows in (completion, refusal):
+            names = [name for name, _ in rows]
+            self.assertLess(names.index('mixed_catalog_readback'), names.index('mixed_lane_install'))
+            self.assertLess(names.index('mixed_recognition_readback'), names.index('mixed_lane_install'))
+            self.assertLess(names.index('mixed_lane_install'), names.index('mixed_terminal_install'))
+            self.assertLess(names.index('current_terminal_rollback'), names.index('current_lane_rollback'))
+            self.assertEqual(dict(rows)['mixed_lane_install'][-1], str(source / M.LANE))
+            self.assertEqual(dict(rows)['current_lane_rollback'][-1], str(source / M.LANE_ROLLBACK))
         for name, argv in M.seed_plan(PG, source, EXECUTION, ORDINARY, TOURNAMENT) + completion:
             if '-f' in argv:
                 self.assertTrue(Path(argv[-1]).is_relative_to(source))

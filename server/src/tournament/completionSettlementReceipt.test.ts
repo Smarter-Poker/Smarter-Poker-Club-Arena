@@ -557,6 +557,9 @@ describe('bounded original fee custody terminal receipts', () => {
       verifyTournamentCompletionReceipt(r, id, 'places', WINNER_ID)?.rake.accountingState
     ).toBe('recognized');
     const changed = structuredClone(r);
+    changed.rake.accounting.resolution.recognized_source_count = 1;
+    expect(verifyTournamentCompletionReceipt(changed, id, 'places', WINNER_ID)).toBeNull();
+    changed.rake.accounting.resolution.recognized_source_count = 34;
     changed.rake.accounting.resolution.bank_amount = 16.99;
     expect(verifyTournamentCompletionReceipt(changed, id, 'places', WINNER_ID)).toBeNull();
     changed.rake.accounting.resolution.bank_amount = 17;

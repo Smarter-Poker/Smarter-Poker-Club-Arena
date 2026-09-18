@@ -245,7 +245,7 @@ export function verifyTournamentCompletionReceipt(
     uuid(resolution.tournament_id) === tournamentId &&
     resolution.source_fingerprint === original?.fingerprint &&
     exactMoney(resolution.bank_amount) === original?.amount &&
-    (nonNegativeInteger(resolution.recognized_source_count) ?? 0) > 0 &&
+    nonNegativeInteger(resolution.recognized_source_count) === original?.count &&
     resolutionAt !== null &&
     settledAt !== null &&
     Date.parse(resolutionAt) >= Date.parse(settledAt) &&

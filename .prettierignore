@@ -53,6 +53,13 @@ scripts/qualification/fixtures/spin-mixed-current/synthetic-model.json
 scripts/qualification/fixtures/spin-mixed-current/provenance.json
 scripts/qualification/spin-mixed-current.hosted.manifest.json
 
+# Captured paid-entry catalog records and their exact-byte source seal.
+scripts/qualification/fixtures/spin-mixed-positive-fee/expected-metadata.json
+scripts/qualification/fixtures/spin-mixed-positive-fee/preimage-metadata.json
+scripts/qualification/fixtures/spin-mixed-positive-fee/provenance.json
+scripts/qualification/fixtures/spin-mixed-positive-fee/hand-id-sequence-capture.json
+scripts/qualification/spin-positive-fee-entry.hosted.manifest.json
+
 # Preserve the reviewed serialization of captured Production Alert baselines.
 scripts/ci/probes/hand-index-writer-order/baseline.json
 scripts/ci/probes/hand-stat-writer-order/baseline.json

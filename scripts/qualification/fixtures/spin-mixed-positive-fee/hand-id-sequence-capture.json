@@ -1,0 +1,24 @@
+[
+  {
+    "capture": {
+      "default": "nextval('hand_id_seq'::regclass)",
+      "sequence": {
+        "acl": "{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}",
+        "max": "9223372036854775807",
+        "min": "1",
+        "name": "hand_id_seq",
+        "type": "bigint",
+        "cache": "100",
+        "cycle": false,
+        "owner": "postgres",
+        "start": "1000000",
+        "schema": "public",
+        "increment": "1",
+        "service_usage": true,
+        "postgres_usage": true,
+        "authenticated_usage": true
+      },
+      "captured_at": "2026-09-18T01:56:47.003326+00:00"
+    }
+  }
+]

@@ -23,6 +23,8 @@ MANIFEST = 'scripts/qualification/spin-mixed-current.hosted.manifest.json'
 SESSION = 'scripts/qualification/spin-expiry-business-races.py'
 COMPONENT = 'supabase/components/spin-mixed-basis-current-terminal.sql'
 ROLLBACK = 'supabase/components/spin-mixed-basis-current-terminal.rollback.sql'
+LANE = 'supabase/components/spin-mixed-basis-current-receipt-lane.sql'
+LANE_ROLLBACK = 'supabase/components/spin-mixed-basis-current-receipt-lane.rollback.sql'
 RESULT = 'mixed-current-races.json'
 LEAVES = ('catalog-restore.sql', 'catalog-readback.sql', 'recognition-restore.sql',
           'recognition-readback.sql', 'authority.json', 'catalog.json', 'net-plan.json',
@@ -31,8 +33,13 @@ LEAVES = ('catalog-restore.sql', 'catalog-readback.sql', 'recognition-restore.sq
           'synthetic-provider.sql', 'synthetic-entry-close.sql',
           'synthetic-input-check.sql', 'observer.sql', 'replay.sql',
           'wrapper-refusals.sql', 'narrow-refusal.sql', 'rollback-refusals.sql',
-          'provenance.json')
-INPUTS = (MODULE, PROGRAM, ASSERTIONS, SESSION, COMPONENT, ROLLBACK, MANIFEST,
+          'provenance.json', 'current-lane-state.sql', 'current-lane-snapshot.sql',
+          'current-lane-refusals.sql', 'doctrine-successor.json',
+          'doctrine-successor-restore.sql')
+INPUTS = (MODULE, PROGRAM, ASSERTIONS, SESSION, COMPONENT, ROLLBACK, LANE, LANE_ROLLBACK,
+          'scripts/qualification/fixtures/spin-receipt-lane/boundary.sql',
+          'scripts/qualification/fixtures/spin-receipt-lane/state.sql',
+          'scripts/qualification/fixtures/spin-history-retention/database-state.sql', MANIFEST,
           *(BASE + name for name in LEAVES))
 TID = '10000000-0000-4000-8000-000000000001'
 WINNER = '00000000-0000-4000-8000-000000000003'
@@ -136,6 +143,21 @@ def seed_plan(PG, source, execution, ordinary, tournament):
     ]
 
 
+def lane_variables(source, mode):
+    require(mode in ('forward', 'rollback'), 'unknown current-lane direction')
+    text = (source / (LANE if mode == 'forward' else LANE_ROLLBACK)).read_text()
+    require(text.count('\nBEGIN;\n') == 1 and text.endswith('COMMIT;\n'),
+            'current-lane transaction boundary differs')
+    body = text.replace('\nBEGIN;\n', '\n', 1)[:-len('COMMIT;\n')]
+    require(hashlib.md5(body.encode()).hexdigest() == {'forward': '2ef348a0d4f6bacc4615748c9ce25ea8', 'rollback': '88d2276c59dd1646a986ee9a1b07749d'}[mode],
+            'current-lane refusal source differs')
+    original = json.loads((source / BASE / 'authority.json').read_text())[0]['evidence']['functions']
+    stale, = [f['definition'] for f in original if f['signature'] == 'fn_ca_settlement_lane_doctrine()']
+    require(hashlib.md5(stale.encode()).hexdigest() == '8dd361600c8facb1cbb99b3df853e5b9',
+            'original doctrine refusal input differs')
+    return (('lane_mode', mode), ('lane_body', body), ('stale_doctrine', stale))
+
+
 def body_plan(PG, source, execution, ordinary, tournament, image):
     require(image in IMAGES, 'unknown mixed image')
     common = (PG, source, execution, ordinary, tournament)
@@ -146,37 +168,48 @@ def body_plan(PG, source, execution, ordinary, tournament, image):
         ('mixed_pure_install', 'postgres', 'supabase/components/spin-mixed-basis-evidence.sql'),
         ('mixed_input_observer', 'bootstrap_postgres', BASE + 'synthetic-input-check.sql'),
         ('mixed_store_policy', 'postgres', BASE + 'store-policy.sql'),
-        ('mixed_lane_install', 'postgres', 'supabase/components/spin-mixed-basis-receipt-lane.sql'),
         ('mixed_catalog_restore', 'postgres', BASE + 'catalog-restore.sql'),
         ('mixed_catalog_readback', 'postgres', BASE + 'catalog-readback.sql'),
         ('mixed_recognition_restore', 'postgres', BASE + 'recognition-restore.sql'),
         ('mixed_recognition_readback', 'postgres', BASE + 'recognition-readback.sql'),
+        ('mixed_doctrine_restore', 'postgres', BASE + 'doctrine-successor-restore.sql'),
+        ('current_lane_before', 'postgres', BASE + 'current-lane-snapshot.sql'),
+        ('current_lane_forward_refusals', 'fixture_bootstrap', BASE + 'current-lane-refusals.sql'),
+        ('mixed_lane_install', 'postgres', LANE),
+        ('current_lane_installed', 'postgres', BASE + 'current-lane-snapshot.sql'),
         ('mixed_terminal_install', 'postgres', COMPONENT),
         ('independent_before', 'postgres', BASE + 'observer.sql'),
         ('wrapper_refusals', 'postgres', BASE + 'wrapper-refusals.sql'),
         ('narrow_refusal', 'postgres', BASE + 'narrow-refusal.sql'),
         ('independent_after_negatives', 'postgres', BASE + 'observer.sql'),
     ]
-    plan = [(name, sql_argv(*common, role, path)) for name, role, path in specs]
+    plan = [(name, sql_argv(*common, role, path,
+                variables=lane_variables(source, 'forward') if name == 'current_lane_forward_refusals' else ()))
+            for name, role, path in specs]
     plan.append(('terminal_consumer', race_argv(PG, source, execution, image)))
     if mode_for(image) == 'source_change':
         plan.append(('independent_after_source_change', sql_argv(*common, 'postgres', BASE + 'observer.sql')))
-        return plan
-    for name, leaf in [('independent_committed', 'observer.sql'), ('independent_replay', 'replay.sql'),
-                       ('independent_after_replay', 'observer.sql')]:
-        plan.append((name, sql_argv(*common, 'postgres', BASE + leaf)))
-    rollback = (source / ROLLBACK).read_text()
-    require(rollback.splitlines().count('BEGIN;') == 1 and rollback.endswith('COMMIT;\n'),
-            'mixed rollback transaction boundary differs')
-    body = rollback.replace('\nBEGIN;\n', '\n', 1)[:-len('COMMIT;\n')]
-    require(hashlib.md5(body.encode()).hexdigest() == '6745474610e2ef2693f151feeaf65bdb',
-            'mixed rollback refusal source differs')
-    plan.append(('rollback_refusals', sql_argv(*common, 'fixture_bootstrap', BASE + 'rollback-refusals.sql',
-                                              variables=(('rollback_body', body),))))
-    for name, leaf in [('independent_after_rollback_negatives', BASE + 'observer.sql'),
-                       ('current_terminal_rollback', ROLLBACK),
-                       ('independent_after_rollback', BASE + 'observer.sql')]:
-        plan.append((name, sql_argv(*common, 'postgres', leaf)))
+    else:
+        for name, leaf in [('independent_committed', 'observer.sql'), ('independent_replay', 'replay.sql'),
+                           ('independent_after_replay', 'observer.sql')]:
+            plan.append((name, sql_argv(*common, 'postgres', BASE + leaf)))
+        rollback = (source / ROLLBACK).read_text()
+        require(rollback.splitlines().count('BEGIN;') == 1 and rollback.endswith('COMMIT;\n'),
+                'mixed rollback transaction boundary differs')
+        body = rollback.replace('\nBEGIN;\n', '\n', 1)[:-len('COMMIT;\n')]
+        require(hashlib.md5(body.encode()).hexdigest() == '456493c28cbc4ece2254ca2aaec0ebce',
+                'mixed rollback refusal source differs')
+        plan.append(('rollback_refusals', sql_argv(*common, 'fixture_bootstrap', BASE + 'rollback-refusals.sql',
+                                                  variables=(('rollback_body', body),))))
+        plan.append(('independent_after_rollback_negatives', sql_argv(*common, 'postgres', BASE + 'observer.sql')))
+    plan.append(('current_lane_before_terminal_rollback', sql_argv(*common, 'postgres', BASE + 'current-lane-snapshot.sql')))
+    plan.append(('current_terminal_rollback', sql_argv(*common, 'postgres', ROLLBACK)))
+    plan.append(('independent_after_rollback', sql_argv(*common, 'postgres', BASE + 'observer.sql')))
+    plan.append(('current_lane_before_rollback', sql_argv(*common, 'postgres', BASE + 'current-lane-snapshot.sql')))
+    plan.append(('current_lane_rollback_refusals', sql_argv(*common, 'fixture_bootstrap', BASE + 'current-lane-refusals.sql',
+                                                          variables=lane_variables(source, 'rollback'))))
+    plan.append(('current_lane_rollback', sql_argv(*common, 'postgres', LANE_ROLLBACK)))
+    plan.append(('current_lane_after', sql_argv(*common, 'postgres', BASE + 'current-lane-snapshot.sql')))
     return plan
 
 
@@ -325,12 +358,53 @@ def validate_races(value, execution, image, files):
             'mixed race cleanup SQL diagnostic differs')
 
 
+def validate_lane_roundtrip(one):
+    """Read original stage observations; DDL reversal must never erase business rows."""
+    before = one('current_lane_before')
+    installed = one('current_lane_installed')
+    terminal = one('current_lane_before_terminal_rollback')
+    reversing = one('current_lane_before_rollback')
+    after = one('current_lane_after')
+    for value in (before, installed, terminal, reversing, after):
+        require(isinstance(value, dict)
+                and set(value) == {'catalog', 'current_cohort', 'handler', 'business'}
+                and isinstance(value['catalog'], dict) and value['catalog']
+                and isinstance(value['current_cohort'], list) and value['current_cohort']
+                and isinstance(value['business'], dict) and value['business'],
+                'current-lane original authority/business observation incomplete')
+    require(before['handler'] is None and after['handler'] is None,
+            'current-lane original/restored handler is not absent')
+    require(installed['handler'] == reversing['handler'] == {
+        'owner': 'postgres', 'acl': '{postgres=X/postgres}',
+        'body_md5': '534850c97847e72075044d8604b0a09d',
+        'config': ['search_path=pg_catalog, public, pg_temp'],
+        'security_definer': False, 'volatility': 'v'},
+        'current-lane installed handler authority differs')
+    require(before['catalog'] == after['catalog']
+            and before['current_cohort'] == installed['current_cohort']
+                == reversing['current_cohort'] == after['current_cohort'],
+            'current-lane roundtrip did not restore original current authority')
+    require(before['business'] == installed['business']
+            and terminal['business'] == reversing['business'] == after['business'],
+            'current-lane install or terminal/lane rollback changed business state')
+    for mode, count in (('forward', 10), ('rollback', 13)):
+        require(one('current_lane_' + mode + '_refusals') == {
+            'current_lane_mode': mode, 'authority_refusals': count,
+            'exact_state_restored': True}, 'current-lane drift refusal evidence differs')
+    return {'original_current_authority_restored': True,
+            'business_state_preserved': True, 'forward_refusals': 10, 'rollback_refusals': 13}
+
+
 def validate_outputs(source, work, execution, image):
     assertions = load_module(source, ASSERTIONS)
     def one(name):
         value, = assertions.load(work, name)
         return value
     require(one('mixed_input_observer') == INPUT_RESULT, 'declared mixed starting estate differs')
+    require(one('mixed_doctrine_restore') == {
+        'doctrine_successor_restored': True, 'full_md5': 'd6885832ceaa6c071d40bdc26a0b16fa',
+        'financial_rows_written': False, 'production_qualification': False},
+        'fresh doctrine exact native readback absent')
     before, negative = one('independent_before'), one('independent_after_negatives')
     require(before['state'] == negative['state'] and before['estate'] == negative['estate'],
             'refusal changed mixed starting estate')
@@ -352,6 +426,7 @@ def validate_outputs(source, work, execution, image):
             'mixed business clients or locks remain')
     summary = {'qualification': 'synthetic_current_mixed_terminal', 'mode': mode_for(image),
                'race_result_sha256': sha(raw), 'exact_full_state_verified': True,
+               'current_lane_roundtrip': validate_lane_roundtrip(one),
                'positive_fee_qualified': False, 'full_financial_qualification': False,
                'historical_qualification': False, 'production_qualification': False,
                'incident_closed': False}
@@ -380,6 +455,9 @@ def validate_outputs(source, work, execution, image):
                 'committed source refusal changed unrelated state')
         require(before['pid'] != after['pid'] and before['backend_start'] and after['backend_start']
                 and before['backend_start'] != after['backend_start'], 'fresh source observer missing')
+        rolled = one('independent_after_rollback')
+        require(rolled['state'] == after['state'] and rolled['estate'] == after['estate'],
+                'source-change rollback changed the refused estate')
         summary['only_declared_source_change'] = True
     return summary
 

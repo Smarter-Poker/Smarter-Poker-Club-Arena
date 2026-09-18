@@ -29,16 +29,20 @@ ROOT = Path(__file__).resolve().parents[2]
 _mixed_spec = importlib.util.spec_from_file_location('spin_mixed_current', ROOT / 'scripts/qualification/spin-mixed-current.py')
 MIXED = importlib.util.module_from_spec(_mixed_spec)
 _mixed_spec.loader.exec_module(MIXED)
-MIXED_MANIFEST_SHA256 = '39bebd368157dbf9f8296468f472492d7ded1fb8f1b37f91867cb4b35ed246b0'
+_fee_spec = importlib.util.spec_from_file_location('spin_positive_fee_entry', ROOT / 'scripts/qualification/spin-positive-fee-entry.py')
+FEE = importlib.util.module_from_spec(_fee_spec)
+_fee_spec.loader.exec_module(FEE)
+FEE_MANIFEST_SHA256 = 'bf62c5f2c0891264ea5635c84b30a784f626123a6e3e41a513c30727877a0610'
+MIXED_MANIFEST_SHA256 = 'eac92b0f05a6b2e3773b68e47e6135696bb84a97d6515982a4211c28016be7ed'
 FIXTURE = ROOT / 'scripts/ci/probes/spin-expiry'
 ORIGIN_MANIFEST = 'bee0d56349f89b0324962455b770fde4b5c322970b2b7b5a11ad69536b3ff580'
 MARKER = b'CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user();'
 OWNER = '47965354-0e56-43ef-931c-ddaab82af765'
 REFUND_ACTOR = '2d1cd6c3-5700-4af9-a271-d4863fdab20d'
-IMAGES = ('preimage', 'candidate', 'retention-completed', *MIXED.IMAGES)
+IMAGES = ('preimage', 'candidate', 'retention-completed', *MIXED.IMAGES, FEE.IMAGE)
 CASES = {'preimage': ('order',), 'candidate': ('order', 'timeout', 'committed-refund'),
          'retention-completed': ()}
-CASES.update({image: () for image in MIXED.IMAGES})
+CASES.update({image: () for image in (*MIXED.IMAGES, FEE.IMAGE)})
 CASE_RESULTS = {'order': 'business-order.json', 'timeout': 'business-timeout.json',
                 'committed-refund': 'committed-refund.jsonl'}
 SERVER_ENDPOINT_QUERY = """SELECT jsonb_build_object(
@@ -132,6 +136,7 @@ LANE_INPUTS = (LANE_MANIFEST, LANE_COMPONENT, LANE_ROLLBACK, LANE_PROGRAM, LANE_
                                   'snapshot.sql','component-inputs.sql')))
 REPLACEMENTS.update({name: name for name in LANE_INPUTS})
 REPLACEMENTS.update({name: name for name in MIXED.INPUTS})
+REPLACEMENTS.update({name: name for name in FEE.INPUTS})
 LANE_CATALOG = {'qualification':'receipt_lane_catalog','original_and_candidate_compactor_checked':True,
     'unrelated_update_trigger_refused':True,'altered_binding_refusals':7,'helper_authority_drift_refusals':2,'missing_preimage_refused':True,
     'original_cohort_mismatch_reproduced':True,'reverse_prerequisite_refusals':4,
@@ -771,6 +776,8 @@ def source_packet():
     validate_lane_sources(copied)
     require(digest(copied[MIXED.MANIFEST]) == MIXED_MANIFEST_SHA256, 'mixed current manifest changed')
     MIXED.validate_sources(copied)
+    require(digest(copied[FEE.MANIFEST]) == FEE_MANIFEST_SHA256, 'paid-entry manifest changed')
+    FEE.validate_sources(copied)
     manifest = {'schemaVersion': 1, 'kind': 'spin-expiry-hosted-attempt',
                 'checkout': {'head': head, 'tree': tree}, 'fixtureManifestSha256': digest(raw),
                 'fixtureProvenance': fixture_manifest,
@@ -817,6 +824,8 @@ def verify_packet(source, raw, manifest):
     validate_lane_sources(files)
     require(digest(files[MIXED.MANIFEST]) == MIXED_MANIFEST_SHA256, 'mixed current manifest changed')
     MIXED.validate_sources(files)
+    require(digest(files[FEE.MANIFEST]) == FEE_MANIFEST_SHA256, 'paid-entry manifest changed')
+    FEE.validate_sources(files)
 
 
 def find_pg():
@@ -925,6 +934,7 @@ def retained_evidence(work, output, receipt, source_manifest):
 def qualify(args, allocation, manifest_bytes, manifest, PG):
     ROOT = allocation / 'source'
     mixed_image = args.image in MIXED.IMAGES
+    fee_image = args.image == FEE.IMAGE
     verify_packet(ROOT, manifest_bytes, manifest)
     embedded = (ROOT / 'scripts/qualification/spin-expiry-lock-order.component-inputs.sql').read_text()
     for label, name in [('forward', 'spin-expiry-lock-order.sql'),
@@ -964,8 +974,10 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
                'catalog_slice_passed': False, 'retention_qualification': None,
                'completed_retention_qualification': None, 'mixed_pure_qualification': None,
                'receipt_lane_qualification': None, 'mixed_current_qualification': None,
+               'positive_fee_entry_qualification': None,
                'image': args.image, 'tournament': args.tournament, 'business_cases': [],
-               'qualification_scope': ('synthetic current mixed terminal only; not paid-entry, positive-fee or historical qualification' if mixed_image
+               'qualification_scope': ('genuine positive-fee entry and duplicate replay only; not gameplay, completion or historical qualification' if fee_image
+                                       else 'synthetic current mixed terminal only; not paid-entry, positive-fee or historical qualification' if mixed_image
                                        else 'captured completed-receipt retention eligibility only' if args.image == 'retention-completed'
                                        else 'one authentic funded Spin expiry schedule'),
                'connected_services_qualified': False, 'cleanup_verified': False,
@@ -1083,6 +1095,13 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         sql('authentic_settlement_source_authority', ROOT / 'inputs/settle-source-authority.sql')
         role, path = RETENTION_STAGES['retention_provider_authority']
         retention_provider_original = sql('retention_provider_authority', ROOT / path, user=role)
+        if fee_image:
+            for stage, argv in FEE.body_plan(PG, ROOT, args.execution, args.ordinary_user, args.tournament):
+                command(stage, argv, timeout=30)
+            receipt['positive_fee_entry_qualification'] = FEE.validate_outputs(
+                ROOT, work, args.execution, args.tournament)
+            persist()
+            return receipt
         if mixed_image:
             for stage, argv in MIXED.body_plan(PG, ROOT, args.execution, args.ordinary_user, args.tournament, args.image):
                 command(stage, argv, timeout=30)
@@ -1211,7 +1230,8 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         except BaseException as error:
             receipt['source_stable'] = False
             receipt['source_readback_error'] = str(error)
-        success = ('mixed_current_synthetic_passed_cleanup_observed' if mixed_image
+        success = ('positive_fee_entry_passed_cleanup_observed' if fee_image
+                   else 'mixed_current_synthetic_passed_cleanup_observed' if mixed_image
                    else 'retention_completed_eligibility_passed_cleanup_observed' if args.image == 'retention-completed'
                    else 'business_scenario_passed_cleanup_observed')
         receipt['native_status'] = success if failed is None and cleanup_outcome.qualifies() and receipt['source_stable'] else 'failed_or_unknown'
@@ -1228,14 +1248,16 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
             and receipt.get('image') == image and receipt.get('tournament') == tournament,
             'wrong/stale qualification receipt')
     mixed_image = image in MIXED.IMAGES
-    if not mixed_image:
+    fee_image = image == FEE.IMAGE
+    if not mixed_image and not fee_image:
         validate_pure_result(receipt.get('mixed_pure_qualification'))
     completed = image == 'retention-completed'
-    status = ('mixed_current_synthetic_passed_cleanup_observed' if mixed_image
+    status = ('positive_fee_entry_passed_cleanup_observed' if fee_image
+              else 'mixed_current_synthetic_passed_cleanup_observed' if mixed_image
               else 'retention_completed_eligibility_passed_cleanup_observed' if completed
               else 'business_scenario_passed_cleanup_observed')
     require(receipt.get('native_status') == status
-            and receipt.get('business_scenario_passed') is (not completed and not mixed_image) and receipt.get('cleanup_verified') is True
+            and receipt.get('business_scenario_passed') is (not completed and not mixed_image and not fee_image) and receipt.get('cleanup_verified') is True
             and receipt.get('cleanup_errors') == [] and receipt.get('source_stable') is True
             and 'failure' not in receipt, 'business scenario or cleanup did not qualify')
     require(receipt.get('full_qualification') is False and receipt.get('connected_services_qualified') is False
@@ -1255,6 +1277,15 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
     require(endpoint_stage.get('returncode') == 0
             and endpoint_stage.get('argv') == server_endpoint_command(PG, source.parent / 'work/socket'),
             'server endpoint readback identity or outcome differs')
+    if fee_image:
+        require(all(receipt.get(key) is None for key in ('mixed_pure_qualification',
+                    'receipt_lane_qualification', 'retention_qualification',
+                    'completed_retention_qualification', 'mixed_current_qualification'))
+                and receipt.get('business_cases') == [] and 'natural_aging' not in receipt,
+                'paid-entry claimed another image result')
+        return FEE.validate_stages(receipt, PG, source, execution, ordinary, tournament)
+    require(receipt.get('positive_fee_entry_qualification') is None,
+            'another image claimed paid-entry qualification')
     if mixed_image:
         require(all(receipt.get(key) is None for key in ('mixed_pure_qualification',
                 'retention_qualification', 'completed_retention_qualification', 'receipt_lane_qualification'))
@@ -1402,7 +1433,7 @@ def run_image(image, PG, scratch=None):
         retained_evidence(allocation / 'work', output, receipt, manifest_bytes)
         validate_receipt(receipt, args.execution, args.ordinary_user, args.tournament, image,
                          digest(manifest_bytes), allocation / 'source', PG)
-        if image not in MIXED.IMAGES:
+        if image not in MIXED.IMAGES and image != FEE.IMAGE:
             pure_original = read_regular(allocation / 'work' / (PURE_STAGE + '.stdout'), 1048576)
             pure_stage = next(item for item in receipt['stages'] if item['stage'] == PURE_STAGE)
             require(digest(pure_original) == pure_stage['stdout_sha256']

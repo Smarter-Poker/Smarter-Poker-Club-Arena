@@ -18,7 +18,7 @@ END $authority$;
 DO $current_guard$
 BEGIN
  IF md5(pg_get_functiondef('public.fn_ca_tournament_terminal_receipt(uuid,uuid)'::regprocedure))<>'4c2278cdd30130a938ef79705b10504b'
- OR md5(pg_get_functiondef('public.fn_ca_settlement_lane_doctrine()'::regprocedure))<>'a9d989c121c9d5066ee90ffefffaa4ee'
+ OR md5(pg_get_functiondef('public.fn_ca_settlement_lane_doctrine()'::regprocedure))<>'e17791cf6d8911677695de28e681d1df'
  OR NOT EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_ca_spin_mixed_lock_initial_v1(uuid,uuid,text)')
   AND p.proowner='postgres'::regrole AND p.prosecdef AND p.provolatile='v'
   AND md5(p.prosrc)='8ff17974f859ba27dd19c39071f89e8a' AND p.proconfig=ARRAY['search_path=pg_catalog, public, pg_temp']
@@ -1021,6 +1021,12 @@ DECLARE
   v_parent jsonb := '{}'::jsonb;
   v_depth integer;
   r record;
+  -- A CALL of the global helper, not a mention of its name. plpgsql calls it
+  -- as PERFORM/SELECT/assignment; a JSON manifest that pins its signature has
+  -- a quote in front of it and never matches. Written in pieces so this
+  -- function's own source does not match the pattern it carries.
+  v_global_call CONSTANT text :=
+    '(PERFORM|SELECT|:=)\s+public\.fn_ca_lock_settlement_lane_' || 'global\s*\(';
   -- Every function allowed to take the global lane (G and B exclusive):
   -- the rare and cross-tournament authorities reviewed on 2026-09-17. A new
   -- name is a new authority nobody has classified as rolling, finish or
@@ -1048,16 +1054,25 @@ BEGIN
     INTO v_set
     FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public'
+     AND p.prosrc LIKE '%ca:tournament-terminal-' || 'settlement:v1%'
      AND p.prosrc ~ 'pg_advisory_xact_lock\(\s*hashtextextended\(\s*''ca:tournament-terminal-settlement:v1''\s*,\s*0\s*\)\s*\)';
   IF v_set IS DISTINCT FROM 'fn_ca_lock_settlement_lane_for_tournament,fn_ca_lock_settlement_lane_global' THEN
     v_violations := v_violations || jsonb_build_object('rule', 'g_exclusive_only_by_helpers', 'found', v_set);
   END IF;
 
-  -- 2. F is named only by the three finish-lane helpers.
+  -- 2. F is TAKEN only by the three finish-lane helpers. The test is the
+  --    hashtextextended() call that turns the key into the lock, not the name:
+  --    a contract guard that pins the key in a manifest, or an observer that
+  --    reads pg_locks, mentions it without ever taking it.
   SELECT string_agg(p.proname::text, ',' ORDER BY p.proname::text COLLATE "C")
     INTO v_set
     FROM pg_catalog.pg_proc p
-   WHERE p.prosrc LIKE '%ca:tournament-finish-lane' || ':v1%';
+     -- The LIKE runs first and is what makes this cheap: a regex over 3,592
+     -- sources and 8.7 MB of text took 4-6 s, against an 8 s statement
+     -- timeout on the engine role that reads this through PostgREST. The
+     -- regex is strictly narrower than the LIKE, so the answer is the same.
+   WHERE p.prosrc LIKE '%ca:tournament-finish-lane' || ':v1%'
+     AND p.prosrc ~ ('hashtextextended\(\s*''ca:tournament-finish-lane' || ':v1''');
   IF v_set IS DISTINCT FROM
      'fn_ca_lock_settlement_lane_for_finish,fn_ca_lock_settlement_lane_for_satellite_finish,'
      'fn_ca_lock_settlement_lane_for_sweep_member' THEN
@@ -1069,7 +1084,8 @@ BEGIN
     INTO v_unknown
     FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public'
-     AND p.prosrc LIKE '%fn_ca_lock_settlement_lane_global' || '(%'
+     AND p.prosrc LIKE '%fn_ca_lock_settlement_lane_' || 'global(%'
+     AND p.prosrc ~ v_global_call
      AND p.proname <> 'fn_ca_lock_settlement_lane_global'
      AND NOT (p.proname::text = ANY (v_global_allowed));
   IF v_unknown IS NOT NULL THEN
@@ -1088,7 +1104,8 @@ BEGIN
   SELECT COALESCE(array_agg(DISTINCT p.proname::text), '{}'::text[]) INTO v_globals
     FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.prokind = 'f'
-     AND strpos(p.prosrc, 'fn_ca_lock_settlement_lane_global' || '(') > 0
+     AND p.prosrc LIKE '%fn_ca_lock_settlement_lane_' || 'global(%'
+     AND p.prosrc ~ v_global_call
      AND p.proname::text NOT IN ('fn_ca_lock_settlement_lane_global',
                                  'fn_ca_lock_settlement_lane_for_finish',
                                  'fn_ca_lock_settlement_lane_for_satellite_finish');
@@ -1096,8 +1113,13 @@ BEGIN
   SELECT COALESCE(array_agg(DISTINCT p.proname::text), '{}'::text[]) INTO v_frontier
     FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.prokind = 'f'
-     AND (strpos(p.prosrc, 'fn_ca_lock_settlement_lane_for_tournament' || '(') > 0
-          OR strpos(p.prosrc, 'fn_ca_lock_tournament_seat_acquisition' || '(') > 0)
+     -- Call-shaped, like the global test above: a contract guard whose
+     -- manifest pins these signatures is not a rolling authority, and seeding
+     -- the walk from it produced a path made entirely of quoted names.
+     AND (p.prosrc LIKE '%fn_ca_lock_settlement_lane_for_' || 'tournament(%'
+          OR p.prosrc LIKE '%fn_ca_lock_tournament_seat_' || 'acquisition(%')
+     AND p.prosrc ~ ('(PERFORM|SELECT|:=)\s+public\.(fn_ca_lock_settlement_lane_for_tournament'
+                     || '|fn_ca_lock_tournament_seat_acquisition)\s*\(')
      AND p.proname::text NOT IN ('fn_ca_lock_settlement_lane_for_tournament',
                                  'fn_ca_lock_tournament_seat_acquisition',
                                  'fn_resolve_tournament_terminal_outcome')
@@ -1113,7 +1135,14 @@ BEGIN
         FROM (SELECT a.proname::text AS caller, t.m[1] AS callee
                 FROM pg_catalog.pg_proc a
                 JOIN pg_catalog.pg_namespace n ON n.oid = a.pronamespace
-                CROSS JOIN LATERAL regexp_matches(a.prosrc, '\m([A-Za-z_][A-Za-z0-9_]*)\(', 'g') AS t(m)
+                -- A CALL, not a mention: this codebase always calls a public
+                -- function schema-qualified, and the character in front of it
+                -- is whitespace, an opening paren or a comma. A JSON manifest
+                -- writes the same signature behind an escaped quote, which is
+                -- how a contract guard became a rolling authority on
+                -- 2026-09-18 and put fn_award_satellite_seat behind it.
+                CROSS JOIN LATERAL regexp_matches(
+                  a.prosrc, '(?:^|[[:space:](,])public\.([a-z_][a-z_0-9]*)[[:space:]]*\(', 'g') AS t(m)
                WHERE n.nspname = 'public' AND a.prokind = 'f'
                  AND a.proname::text = ANY (v_frontier)) c
        WHERE c.callee <> c.caller
@@ -1152,7 +1181,7 @@ DROP FUNCTION public.fn_ca_spin_mixed_lock_initial_v1(uuid,uuid,text);
 
 DO $post$
 BEGIN
- IF md5(pg_get_functiondef('public.fn_ca_settlement_lane_doctrine()'::regprocedure))<>'8dd361600c8facb1cbb99b3df853e5b9'
+ IF md5(pg_get_functiondef('public.fn_ca_settlement_lane_doctrine()'::regprocedure))<>'d6885832ceaa6c071d40bdc26a0b16fa'
  OR to_regprocedure('public.fn_ca_spin_mixed_lock_initial_v1(uuid,uuid,text)') IS NOT NULL
  OR (SELECT md5(pg_get_functiondef(p.oid)) FROM pg_proc p WHERE p.oid='public.fn_settle_tournament_places(uuid,uuid)'::regprocedure)<>'c412c8b17186976df139f73a706175f2'
  OR (SELECT md5(pg_get_functiondef(p.oid)) FROM pg_proc p WHERE p.oid='public.fn_complete_tournament_terminal(uuid,uuid,text)'::regprocedure)<>'c64e049911fd99c1d784cdb042ca714b' THEN

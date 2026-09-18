@@ -45,7 +45,7 @@ import { TimeBankEngine } from './TimeBankEngine.js';
 import { DisconnectEngine } from './DisconnectEngine.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import type { ValidationContext } from './ServerActionValidator.js';
-import { supabase } from '../services/supabase.js';
+import { broadcastTimeBankActivation } from '../services/timeBankBroadcast.js';
 import type { HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineSeating } from './ServerTableEngineSeating.js';
@@ -993,29 +993,15 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // Restart turn timer with the granted time bank duration
           this.startTurnTimer(userId, seat, grantedSeconds, 'time_bank');
 
-          // Broadcast time bank activation to other players
-          try {
-            supabase
-              .channel(`table:${this.tableId}`)
-              .send({
-                type: 'broadcast',
-                event: 'time_bank_activated',
-                payload: {
-                  player_id: userId,
-                  table_id: this.tableId,
-                  // The seconds actually granted for THIS use, matching the
-                  // enforcement deadline. Broadcasting the whole pool told the
-                  // client it had far longer than the clock would allow.
-                  additional_seconds: grantedSeconds,
-                  auto_activated: true,
-                  uses_remaining: usesAfterActivation,
-                  unlimited_activations: bank?.unlimitedActivations === true,
-                },
-              })
-              .catch(() => {});
-          } catch {
-            /* broadcast failure is non-fatal */
-          }
+          // Preserve the opponent-timer message without retaining a channel.
+          void broadcastTimeBankActivation(this.tableId, {
+            player_id: userId,
+            table_id: this.tableId,
+            additional_seconds: grantedSeconds,
+            auto_activated: true,
+            uses_remaining: usesAfterActivation,
+            unlimited_activations: bank?.unlimitedActivations === true,
+          });
 
           // FIX 125 + 2026-04-14 spam fix: warn ONLY at the last 1 remaining
           // and at 0 (the very last one was just used). Was firing at <=5
@@ -1349,31 +1335,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     this.startTurnTimer(userId, player.seat, newDuration, 'time_bank');
 
-    // Broadcast time bank activation to other players
-    try {
-      supabase
-        .channel(`table:${this.tableId}`)
-        .send({
-          type: 'broadcast',
-          event: 'time_bank_activated',
-          payload: {
-            player_id: userId,
-            table_id: this.tableId,
-            additional_seconds: bankSeconds,
-            uses_remaining: bank?.usesRemaining ?? 0,
-            total_remaining: bank?.remainingSeconds ?? 0,
-            unlimited_activations: bank?.unlimitedActivations === true,
-            auto_activated: false,
-          },
-        })
-        .catch((err) => reportError(err, 'ServerTableEngine.time_bank_broadcast_failed'));
-    } catch (err) {
-      // A cosmetic broadcast must never break the turn it decorates — but it
-      // must not vanish either. This was the one bare `catch (e) {}` left in
-      // the engine: an unused binding, no comment, no report, swallowing every
-      // synchronous throw from the legacy Realtime path.
-      reportError(err, 'ServerTableEngine.time_bank_broadcast_threw');
-    }
+    // Preserve the opponent-timer message without retaining a channel.
+    void broadcastTimeBankActivation(this.tableId, {
+      player_id: userId,
+      table_id: this.tableId,
+      additional_seconds: bankSeconds,
+      uses_remaining: bank?.usesRemaining ?? 0,
+      total_remaining: bank?.remainingSeconds ?? 0,
+      unlimited_activations: bank?.unlimitedActivations === true,
+      auto_activated: false,
+    });
 
     // FIX 125 + 2026-04-14 spam fix: warn ONLY at the last 1 remaining (or 0
     // = just used last one). Previous <=5 condition spammed on 4-max tables.

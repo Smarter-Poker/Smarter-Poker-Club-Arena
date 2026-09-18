@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 73149,
-      "sha256": "5587fccddcca974bc2669e7e306d4ad9d53cab62f2c39fc2112c960785ececcc"
+      "bytes": 73671,
+      "sha256": "bf0179a508debd85bf3a04f7cdfa7590c52a0691785e9eecf95e90db8262dab4"
     }
   },
   "nativePgCron": {

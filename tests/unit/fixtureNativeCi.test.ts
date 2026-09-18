@@ -213,7 +213,14 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/fixtures/original-paid-custody/owner-races.spec',
     'scripts/ci/fixtures/original-paid-custody/purchase-prevention.sql',
     'scripts/ci/fixtures/original-paid-custody/activation-guard.json',
+    'scripts/ci/fixtures/original-paid-custody/conserved-hand.sql',
+    'scripts/ci/fixtures/original-paid-custody/hand-authorities.json',
+    'scripts/ci/fixtures/original-paid-custody/hand-dependencies.json',
+    'scripts/ci/fixtures/original-paid-custody/hand-relations.json',
+    'scripts/ci/fixtures/original-paid-custody/hand-postcommit.json',
+    'scripts/ci/fixtures/original-paid-custody/hand-postcommit-tables.json',
     'supabase/migrations/20260918093004_original_paid_tournament_stack_keeps_its_custody.sql',
+    'supabase/migrations/20260918125231_tournament_felt_guard_recognizes_conserved_hands.sql',
   ])('enforces original paid entry custody qualification for %s', (path) => {
     expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
   });

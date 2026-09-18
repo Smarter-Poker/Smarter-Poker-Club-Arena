@@ -1,0 +1,902 @@
+[
+  {
+    "rls": true,
+    "name": "hand_submissions",
+    "owner": "postgres",
+    "grants": [
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "INSERT"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "SELECT"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "UPDATE"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "DELETE"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "TRUNCATE"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "REFERENCES"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "TRIGGER"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "MAINTAIN"
+      }
+    ],
+    "schema": "smarter_private",
+    "columns": [
+      {
+        "name": "submission_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "instance_id",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "lease_generation",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "request",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "request_hash",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "retained_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "indexes": [
+      {
+        "ready": true,
+        "valid": true,
+        "constraint": true,
+        "definition": "CREATE UNIQUE INDEX hand_submissions_pkey ON smarter_private.hand_submissions USING btree (submission_id)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "constraint": true,
+        "definition": "CREATE UNIQUE INDEX hand_submissions_table_id_hand_number_key ON smarter_private.hand_submissions USING btree (table_id, hand_number)"
+      }
+    ],
+    "policies": null,
+    "triggers": [
+      {
+        "name": "hand_submission_immutable",
+        "enabled": "O",
+        "function": "CREATE OR REPLACE FUNCTION smarter_private.hand_submission_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN RAISE EXCEPTION 'HAND_SUBMISSION_IMMUTABLE' USING ERRCODE='55000'; END\n$function$\n",
+        "signature": "smarter_private.hand_submission_immutable()",
+        "definition": "CREATE TRIGGER hand_submission_immutable BEFORE DELETE OR UPDATE ON smarter_private.hand_submissions FOR EACH ROW EXECUTE FUNCTION smarter_private.hand_submission_immutable()"
+      },
+      {
+        "name": "hand_submission_no_truncate",
+        "enabled": "O",
+        "function": "CREATE OR REPLACE FUNCTION smarter_private.hand_submission_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN RAISE EXCEPTION 'HAND_SUBMISSION_IMMUTABLE' USING ERRCODE='55000'; END\n$function$\n",
+        "signature": "smarter_private.hand_submission_immutable()",
+        "definition": "CREATE TRIGGER hand_submission_no_truncate BEFORE TRUNCATE ON smarter_private.hand_submissions FOR EACH STATEMENT EXECUTE FUNCTION smarter_private.hand_submission_immutable()"
+      }
+    ],
+    "force_rls": false,
+    "constraints": [
+      {
+        "name": "hand_submissions_hand_number_check",
+        "type": "c",
+        "validated": true,
+        "definition": "CHECK ((hand_number > 0))"
+      },
+      {
+        "name": "hand_submissions_instance_id_check",
+        "type": "c",
+        "validated": true,
+        "definition": "CHECK ((length(btrim(instance_id)) > 0))"
+      },
+      {
+        "name": "hand_submissions_pkey",
+        "type": "p",
+        "validated": true,
+        "definition": "PRIMARY KEY (submission_id)"
+      },
+      {
+        "name": "hand_submissions_request_check",
+        "type": "c",
+        "validated": true,
+        "definition": "CHECK ((jsonb_typeof(request) = 'object'::text))"
+      },
+      {
+        "name": "hand_submissions_request_hash_check",
+        "type": "c",
+        "validated": true,
+        "definition": "CHECK ((request_hash ~ '^[0-9a-f]{64}$'::text))"
+      },
+      {
+        "name": "hand_submissions_table_id_hand_number_key",
+        "type": "u",
+        "validated": true,
+        "definition": "UNIQUE (table_id, hand_number)"
+      }
+    ]
+  },
+  {
+    "rls": true,
+    "name": "cash_hand_participant_manifests",
+    "owner": "postgres",
+    "grants": [
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "INSERT"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "SELECT"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "UPDATE"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "DELETE"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "TRUNCATE"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "REFERENCES"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "TRIGGER"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "MAINTAIN"
+      },
+      {
+        "role": "service_role",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "SELECT"
+      }
+    ],
+    "schema": "public",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "captured_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "lease_instance_id",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "lease_generation",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "request",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "game_scope",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "participants",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "issues",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "funding_provenance_complete",
+        "type": "boolean",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "indexes": [
+      {
+        "ready": true,
+        "valid": true,
+        "constraint": true,
+        "definition": "CREATE UNIQUE INDEX cash_hand_participant_manifests_pkey ON public.cash_hand_participant_manifests USING btree (id)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "constraint": true,
+        "definition": "CREATE UNIQUE INDEX cash_hand_participant_manifests_table_id_hand_number_key ON public.cash_hand_participant_manifests USING btree (table_id, hand_number)"
+      }
+    ],
+    "policies": null,
+    "triggers": [
+      {
+        "name": "cash_hand_participant_manifests_no_truncate",
+        "enabled": "O",
+        "function": "CREATE OR REPLACE FUNCTION public.fn_cash_provenance_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN RAISE EXCEPTION 'Original cash provenance is immutable' USING ERRCODE='55000'; END $function$\n",
+        "signature": "fn_cash_provenance_immutable()",
+        "definition": "CREATE TRIGGER cash_hand_participant_manifests_no_truncate BEFORE TRUNCATE ON public.cash_hand_participant_manifests FOR EACH STATEMENT EXECUTE FUNCTION fn_cash_provenance_immutable()"
+      },
+      {
+        "name": "cash_manifest_immutable",
+        "enabled": "O",
+        "function": "CREATE OR REPLACE FUNCTION public.fn_cash_provenance_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN RAISE EXCEPTION 'Original cash provenance is immutable' USING ERRCODE='55000'; END $function$\n",
+        "signature": "fn_cash_provenance_immutable()",
+        "definition": "CREATE TRIGGER cash_manifest_immutable BEFORE DELETE OR UPDATE ON public.cash_hand_participant_manifests FOR EACH ROW EXECUTE FUNCTION fn_cash_provenance_immutable()"
+      }
+    ],
+    "force_rls": false,
+    "constraints": [
+      {
+        "name": "cash_hand_participant_manifests_pkey",
+        "type": "p",
+        "validated": true,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "cash_hand_participant_manifests_table_id_hand_number_key",
+        "type": "u",
+        "validated": true,
+        "definition": "UNIQUE (table_id, hand_number)"
+      }
+    ]
+  },
+  {
+    "rls": true,
+    "name": "hand_submission_dispatch",
+    "owner": "postgres",
+    "grants": [
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "INSERT"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "SELECT"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "UPDATE"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "DELETE"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "TRUNCATE"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "REFERENCES"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "TRIGGER"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "MAINTAIN"
+      }
+    ],
+    "schema": "smarter_private",
+    "columns": [
+      {
+        "name": "transaction_id",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "submission_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "request_hash",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "instance_id",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "lease_generation",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "indexes": [
+      {
+        "ready": true,
+        "valid": true,
+        "constraint": true,
+        "definition": "CREATE UNIQUE INDEX hand_submission_dispatch_pkey ON smarter_private.hand_submission_dispatch USING btree (transaction_id, submission_id)"
+      }
+    ],
+    "policies": null,
+    "triggers": null,
+    "force_rls": false,
+    "constraints": [
+      {
+        "name": "hand_submission_dispatch_pkey",
+        "type": "p",
+        "validated": true,
+        "definition": "PRIMARY KEY (transaction_id, submission_id)"
+      }
+    ]
+  },
+  {
+    "rls": true,
+    "name": "hand_projection_outbox",
+    "owner": "postgres",
+    "grants": [
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "INSERT"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "SELECT"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "UPDATE"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "DELETE"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "TRUNCATE"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "REFERENCES"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "TRIGGER"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "MAINTAIN"
+      },
+      {
+        "role": "service_role",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "SELECT"
+      }
+    ],
+    "schema": "public",
+    "columns": [
+      {
+        "name": "hand_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "indexes": [
+      {
+        "ready": true,
+        "valid": true,
+        "constraint": true,
+        "definition": "CREATE UNIQUE INDEX hand_projection_outbox_pkey ON public.hand_projection_outbox USING btree (hand_id)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "constraint": true,
+        "definition": "CREATE UNIQUE INDEX hand_projection_outbox_hand_number_key ON public.hand_projection_outbox USING btree (hand_number)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "constraint": false,
+        "definition": "CREATE INDEX idx_hand_projection_outbox_table_hand ON public.hand_projection_outbox USING btree (table_id, hand_number)"
+      }
+    ],
+    "policies": null,
+    "triggers": [
+      {
+        "name": "a0_finish_hand_post_commit_obligations",
+        "enabled": "O",
+        "function": "CREATE OR REPLACE FUNCTION public.trg_finish_hand_post_commit_obligations()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_result jsonb;\nBEGIN\n  v_result := public.fn_ca_process_hand_post_commit_obligations(OLD.hand_id);\n  IF COALESCE((v_result->>'ok')::boolean, false) IS NOT TRUE\n     AND v_result->>'reason' <> 'legacy_no_obligations' THEN\n    RAISE EXCEPTION 'hand post-commit obligations remain pending for %: %',\n      OLD.hand_id, v_result;\n  END IF;\n  RETURN OLD;\nEND;\n$function$\n",
+        "signature": "trg_finish_hand_post_commit_obligations()",
+        "definition": "CREATE TRIGGER a0_finish_hand_post_commit_obligations BEFORE DELETE ON public.hand_projection_outbox FOR EACH ROW EXECUTE FUNCTION trg_finish_hand_post_commit_obligations()"
+      },
+      {
+        "name": "z9_notify_hand_projection_outbox",
+        "enabled": "O",
+        "function": "CREATE OR REPLACE FUNCTION public.trg_notify_hand_projection_outbox()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  -- The engine treats this as a wake-up only: it re-reads the outbox ordered\n  -- by hand_number (server/src/services/supabase/handProjection.ts runDrain).\n  -- hand_id:table_id is carried for logging and metrics, never consumed.\n  PERFORM pg_notify('hand_projection_outbox', NEW.hand_id::text || ':' || coalesce(NEW.table_id::text, ''));\n  RETURN NEW;\nEND;\n$function$\n",
+        "signature": "trg_notify_hand_projection_outbox()",
+        "definition": "CREATE TRIGGER z9_notify_hand_projection_outbox AFTER INSERT ON public.hand_projection_outbox FOR EACH ROW EXECUTE FUNCTION trg_notify_hand_projection_outbox()"
+      }
+    ],
+    "force_rls": false,
+    "constraints": [
+      {
+        "name": "hand_projection_outbox_hand_number_check",
+        "type": "c",
+        "validated": true,
+        "definition": "CHECK ((hand_number >= 1000000))"
+      },
+      {
+        "name": "hand_projection_outbox_hand_number_key",
+        "type": "u",
+        "validated": true,
+        "definition": "UNIQUE (hand_number)"
+      },
+      {
+        "name": "hand_projection_outbox_pkey",
+        "type": "p",
+        "validated": true,
+        "definition": "PRIMARY KEY (hand_id)"
+      }
+    ]
+  },
+  {
+    "rls": true,
+    "name": "ca_seat_stack_rebases",
+    "owner": "postgres",
+    "grants": [
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "INSERT"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "SELECT"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "UPDATE"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "DELETE"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "TRUNCATE"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "REFERENCES"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "TRIGGER"
+      },
+      {
+        "role": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "MAINTAIN"
+      },
+      {
+        "role": "service_role",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "INSERT"
+      },
+      {
+        "role": "service_role",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "SELECT"
+      },
+      {
+        "role": "service_role",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "UPDATE"
+      },
+      {
+        "role": "service_role",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "DELETE"
+      },
+      {
+        "role": "service_role",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "TRUNCATE"
+      },
+      {
+        "role": "service_role",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "REFERENCES"
+      },
+      {
+        "role": "service_role",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "TRIGGER"
+      },
+      {
+        "role": "service_role",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "MAINTAIN"
+      }
+    ],
+    "schema": "public",
+    "columns": [
+      {
+        "name": "id",
+        "type": "bigint",
+        "default": "nextval('ca_seat_stack_rebases_id_seq'::regclass)",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "settlement_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "hand_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "engine_before",
+        "type": "numeric",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "db_before",
+        "type": "numeric",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "engine_after",
+        "type": "numeric",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "written",
+        "type": "numeric",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": "(db_before - engine_before)",
+        "notnull": false,
+        "identity": "",
+        "generated": "s"
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "indexes": [
+      {
+        "ready": true,
+        "valid": true,
+        "constraint": true,
+        "definition": "CREATE UNIQUE INDEX ca_seat_stack_rebases_pkey ON public.ca_seat_stack_rebases USING btree (id)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "constraint": false,
+        "definition": "CREATE INDEX idx_ca_seat_stack_rebases_created ON public.ca_seat_stack_rebases USING btree (created_at DESC)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "constraint": false,
+        "definition": "CREATE INDEX idx_ca_seat_stack_rebases_table ON public.ca_seat_stack_rebases USING btree (table_id, created_at DESC)"
+      }
+    ],
+    "policies": null,
+    "triggers": null,
+    "force_rls": false,
+    "constraints": [
+      {
+        "name": "ca_seat_stack_rebases_pkey",
+        "type": "p",
+        "validated": true,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "chk_amount_is_two_decimal_places",
+        "type": "c",
+        "validated": true,
+        "definition": "CHECK (((amount IS NULL) OR (amount = round(amount, 2))))"
+      }
+    ]
+  }
+]

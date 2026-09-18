@@ -10,6 +10,7 @@ CAPTURE=Path('scripts/ci/fixtures/original-paid-custody/current-authorities.json
 SOURCE=Path('scripts/ci/probes/original-paid-custody-authority.sql')
 MIGRATION=Path('supabase/migrations/20260918093004_original_paid_tournament_stack_keeps_its_custody.sql')
 SUCCESSOR=Path('supabase/migrations/20260918123506_original_paid_custody_preserves_acknowledged_supply.sql')
+HAND_SUCCESSOR=Path('supabase/migrations/20260918125231_tournament_felt_guard_recognizes_conserved_hands.sql')
 
 def quoted(s): return "'"+s.replace("'","''")+"'"
 
@@ -131,6 +132,58 @@ def build_acknowledged(root=ROOT):
  sql+="DO $postimage$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_ca_resume_original_paid_tournament_entry(uuid,jsonb)'::regprocedure AND md5(prosrc)="+quoted(digest)+" AND pg_get_userbyid(proowner)='postgres' AND proacl::text='{postgres=X/postgres}') OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_ca_tournament_felt_may_not_exceed_supply()'::regprocedure AND md5(pg_get_functiondef(oid))="+quoted(hashlib.md5(felt_successor.encode()).hexdigest())+" AND pg_get_userbyid(proowner)='postgres' AND proacl::text="+quoted(felt['acl'])+") THEN RAISE EXCEPTION 'ORIGINAL_PAID_ACK_POSTIMAGE_CHANGED'; END IF; END $postimage$;\nCOMMIT;\n"
  return sql,source
 
+def build_conserved(root=ROOT):
+ rows=json.loads((root/CAPTURE.parent/'hand-authorities.json').read_text())
+ deps=json.loads((root/CAPTURE.parent/'hand-dependencies.json').read_text())
+ guard=next(r for r in rows if r['signature']=='fn_ca_tournament_felt_may_not_exceed_supply()')
+ for r in rows+deps['functions']:
+  if hashlib.md5(r['definition'].encode()).hexdigest()!=r['definition_md5']:raise ValueError('hand capture differs')
+ marker='  IF v_felt > v_supply AND (v_felt - v_delta) <= v_supply\n'
+ # The original immutable inventory is written by the actual seat trigger.
+ # Require this exact trigger image and a conserved whole-table transaction.
+ # Other tables, new occupancies and missing capture cannot lend it chips.
+ proof='''     AND NOT EXISTS (
+       SELECT 1 FROM public.union_pnl_inventory_events own
+       WHERE own.transaction_id=pg_current_xact_id() AND own.source_name='table_seats'
+         AND own.row_id=NEW.id AND own.operation=TG_OP
+         AND own.after_row=public.fn_union_pnl_inventory_project('table_seats',to_jsonb(NEW))
+         AND own.before_row=CASE WHEN TG_OP='UPDATE'
+           THEN public.fn_union_pnl_inventory_project('table_seats',to_jsonb(OLD)) ELSE NULL END
+         AND (SELECT count(*)>=2 AND bool_and((
+                  e.operation='UPDATE'
+                  AND e.before_row->>'table_id'=NEW.table_id::text
+                  AND e.after_row->>'table_id'=NEW.table_id::text
+                  AND e.before_row->>'user_id'=e.after_row->>'user_id'
+                  AND e.before_row->>'occupancy_id'=e.after_row->>'occupancy_id'
+                  AND e.before_row->>'joined_at'=e.after_row->>'joined_at') IS TRUE)
+                AND sum(CASE WHEN e.after_row->>'left_at' IS NULL
+                             THEN COALESCE((e.after_row->>'stack')::numeric,0) ELSE 0 END
+                      - CASE WHEN e.before_row->>'left_at' IS NULL
+                             THEN COALESCE((e.before_row->>'stack')::numeric,0) ELSE 0 END)=0
+              FROM public.union_pnl_inventory_events e
+              WHERE e.transaction_id=pg_current_xact_id() AND e.source_name='table_seats'
+                AND (e.before_row->>'table_id'=NEW.table_id::text
+                  OR e.after_row->>'table_id'=NEW.table_id::text)) IS TRUE
+         AND NOT EXISTS(SELECT 1 FROM public.union_pnl_inventory_events scope
+           WHERE scope.transaction_id=pg_current_xact_id() AND scope.source_name='tables'
+             AND scope.row_id=NEW.table_id
+             AND scope.before_row->'tournament_id' IS DISTINCT FROM scope.after_row->'tournament_id')
+     )
+'''
+ if guard['definition'].count(marker)!=1:raise ValueError('conserved hand guard branch differs')
+ successor=guard['definition'].replace(marker,marker+proof)
+ pins=[r for r in rows+deps['functions'] if r['signature'].startswith(('fn_ca_tournament_felt_may_not_exceed_supply(', 'fn_union_pnl_inventory_observe(', 'fn_union_pnl_inventory_project(', 'fn_union_pnl_inventory_immutable(', 'fn_union_pnl_original_frame('))]
+ sql="-- A conserved hand redistributes existing chips; it does not create supply.\nBEGIN;\nSET LOCAL lock_timeout='3s';\nSET LOCAL statement_timeout='8s';\nDO $preimage$ BEGIN\n"
+ for r in pins:
+  sql+="IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid="+quoted('public.'+r['signature'])+"::regprocedure AND md5(pg_get_functiondef(oid))="+quoted(r['definition_md5'])+" AND pg_get_userbyid(proowner)='postgres' AND proacl::text="+quoted(r['acl'])+") THEN RAISE EXCEPTION 'CONSERVED_HAND_PREIMAGE_CHANGED: %',"+quoted(r['signature'])+"; END IF;\n"
+ for t in deps['triggers']:
+  sql+="IF NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid="+quoted('public.'+t['table'])+"::regclass AND tgname="+quoted(t['name'])+" AND md5(pg_get_triggerdef(oid))="+quoted(hashlib.md5(t['definition'].encode()).hexdigest())+" AND tgenabled='O') THEN RAISE EXCEPTION 'CONSERVED_HAND_PREIMAGE_CHANGED: capture attachment'; END IF;\n"
+ sql+="IF NOT EXISTS(SELECT 1 FROM pg_class WHERE oid='public.union_pnl_inventory_events'::regclass AND pg_get_userbyid(relowner)='postgres' AND relacl::text='{postgres=arwdDxtm/postgres}' AND relrowsecurity) OR NOT EXISTS(SELECT 1 FROM pg_index WHERE indexrelid='public.union_pnl_inventory_transaction'::regclass AND indisvalid AND indisready AND pg_get_indexdef(indexrelid)='CREATE INDEX union_pnl_inventory_transaction ON public.union_pnl_inventory_events USING btree (transaction_id, source_name)') THEN RAISE EXCEPTION 'CONSERVED_HAND_PREIMAGE_CHANGED: private indexed inventory'; END IF;\n"
+ sql+='END $preimage$;\n'+successor+';\nREVOKE ALL ON FUNCTION public.fn_ca_tournament_felt_may_not_exceed_supply() FROM PUBLIC;\n'
+ digest=hashlib.md5(successor.encode()).hexdigest()
+ sql+="DO $postimage$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_ca_tournament_felt_may_not_exceed_supply()'::regprocedure AND md5(pg_get_functiondef(oid))="+quoted(digest)+" AND pg_get_userbyid(proowner)='postgres' AND proacl::text="+quoted(guard['acl'])+") THEN RAISE EXCEPTION 'CONSERVED_HAND_POSTIMAGE_CHANGED'; END IF; END $postimage$;\nCOMMIT;\n"
+ return sql,successor
+
 if __name__=='__main__':
  parser=argparse.ArgumentParser();parser.add_argument('--check',action='store_true');args=parser.parse_args()
  migration,successor=build()
@@ -143,3 +196,8 @@ if __name__=='__main__':
   if (ROOT/SUCCESSOR).read_text()!=correction:raise ValueError('generated acknowledged-supply migration differs')
  else:(ROOT/SUCCESSOR).write_text(correction)
  print(json.dumps({'migration':str(SUCCESSOR),'sha256':hashlib.sha256(correction.encode()).hexdigest(),'body_md5':hashlib.md5(authority.split('$function$')[1].encode()).hexdigest()}))
+ correction,authority=build_conserved()
+ if args.check:
+  if (ROOT/HAND_SUCCESSOR).read_text()!=correction:raise ValueError('generated conserved-hand migration differs')
+ else:(ROOT/HAND_SUCCESSOR).write_text(correction)
+ print(json.dumps({'migration':str(HAND_SUCCESSOR),'sha256':hashlib.sha256(correction.encode()).hexdigest(),'definition_md5':hashlib.md5(authority.encode()).hexdigest()}))

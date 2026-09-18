@@ -12,7 +12,7 @@ sys.dont_write_bytecode=True
 from satellite_qualifier_fixture import compose,module,sha,table_sql,exact_table_sql
 import mtt_activation_native as activation
 from mtt_activation_funding import HUMAN
-from original_paid_custody_native import lease_foundation, owner_races, installer_refusals, postimage, paid_purchase_prevention, private_rows, validate_complete, acknowledged_install
+from original_paid_custody_native import lease_foundation, owner_races, installer_refusals, postimage, paid_purchase_prevention, private_rows, validate_complete, acknowledged_install, conserved_hands
 ROOT=Path(__file__).resolve().parents[2]
 FIX=Path('scripts/ci/fixtures/original-paid-custody')
 MIGRATION=Path('supabase/migrations/20260918093004_original_paid_tournament_stack_keeps_its_custody.sql')
@@ -149,7 +149,7 @@ def main():
  p=argparse.ArgumentParser(description=__doc__);p.add_argument('--evidence',type=Path,required=True);p.add_argument('--pg-bin',type=Path,required=True);a=p.parse_args()
  out=a.evidence.resolve();out.mkdir(parents=True,exist_ok=False)
  built=compose(ROOT);(out/'foundation.sql').write_text(built.pop('sql'));built.pop('entry_sql')
- paths=[MIGRATION,SUCCESSOR,FIX/'felt-guard.json',FIX/'acknowledged-supply-catalog.json',FIX/'current-authorities.json',FIX/'opening.sql',FIX/'cases.sql',FIX/'setup.sql',FIX/'races.spec',FIX/'snapshot-catalog.json',FIX/'snapshot-guard.json',FIX/'activation-guard.json',FIX/'lease-claim.json',FIX/'lease-dependencies.json',FIX/'paid-purchase-authority.json',FIX/'purchase-prevention.sql',FIX/'owner-races.spec',Path('scripts/ci/original_paid_custody_native.py'),Path('supabase/migrations/20260918071546_f06_original_preparation_cancellations_survive_maintenance_r.sql'),Path('scripts/ci/probes/original-paid-custody-authority.sql'),Path('scripts/ci/build-original-paid-custody.py'),Path(__file__).relative_to(ROOT),Path('.github/workflows/ci.yml'),Path('scripts/ci/classify-ci-changes.mjs'),Path('tests/unit/fixtureNativeCi.test.ts'),Path('scripts/qualification/cash-native-hosted.manifest.json'),Path('scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql'),Path('scripts/ci/probes/bounty-rebuy-generation-atomicity.sql'),Path('scripts/ci/test-mtt-unlimited.py'),Path('scripts/ci/mtt_isolation_results.py'),Path('scripts/ci/mtt_format_qualification.py'),Path('scripts/ci/mtt_historical_freebuy_proof.py')]
+ paths=[MIGRATION,SUCCESSOR,Path('supabase/migrations/20260918125231_tournament_felt_guard_recognizes_conserved_hands.sql'),FIX/'hand-authorities.json',FIX/'hand-dependencies.json',FIX/'hand-relations.json',FIX/'hand-postcommit.json',FIX/'hand-postcommit-tables.json',FIX/'conserved-hand.sql',FIX/'felt-guard.json',FIX/'acknowledged-supply-catalog.json',FIX/'current-authorities.json',FIX/'opening.sql',FIX/'cases.sql',FIX/'setup.sql',FIX/'races.spec',FIX/'snapshot-catalog.json',FIX/'snapshot-guard.json',FIX/'activation-guard.json',FIX/'lease-claim.json',FIX/'lease-dependencies.json',FIX/'paid-purchase-authority.json',FIX/'purchase-prevention.sql',FIX/'owner-races.spec',Path('scripts/ci/original_paid_custody_native.py'),Path('supabase/migrations/20260918071546_f06_original_preparation_cancellations_survive_maintenance_r.sql'),Path('scripts/ci/probes/original-paid-custody-authority.sql'),Path('scripts/ci/build-original-paid-custody.py'),Path(__file__).relative_to(ROOT),Path('.github/workflows/ci.yml'),Path('scripts/ci/classify-ci-changes.mjs'),Path('tests/unit/fixtureNativeCi.test.ts'),Path('scripts/qualification/cash-native-hosted.manifest.json'),Path('scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql'),Path('scripts/ci/probes/bounty-rebuy-generation-atomicity.sql'),Path('scripts/ci/test-mtt-unlimited.py'),Path('scripts/ci/mtt_isolation_results.py'),Path('scripts/ci/mtt_format_qualification.py'),Path('scripts/ci/mtt_historical_freebuy_proof.py')]
  built['source_sha256'].update({str(p):sha(ROOT/p) for p in paths})
  native=module(ROOT/'scripts/ci/test-mtt-unlimited.py','custody_execution');e=native.Execution(ROOT,out,a.pg_bin.resolve(),out,600)
  e.report.update(source_sha256=built['source_sha256'],fixture_identity='real-financial-catalog-original-paid-custody')
@@ -219,14 +219,21 @@ def main():
    if sha(ROOT/path)!=digest:raise RuntimeError('input changed '+path)
   if private_rows(e,db,'all-cases-private-after')!=private_before:raise RuntimeError('cases changed private custody')
   e.report['private_custody_unchanged']=True
+  conserved_hands(e,db,FIX,Path('supabase/migrations/20260918125231_tournament_felt_guard_recognizes_conserved_hands.sql'),activation.refusal)
   validate_complete(e.report)
-  keys=['original_refusal','refusals','private_role_refusals','races','owner_races','activation','installer_refusals','postimage','successful_transfer','private_custody_unchanged','paid_purchase_prevention','acknowledged_supply']
+  keys=['original_refusal','refusals','private_role_refusals','races','owner_races','activation','installer_refusals','postimage','successful_transfer','private_custody_unchanged','paid_purchase_prevention','acknowledged_supply','conserved_hands']
   for key in keys:
    bad=copy.deepcopy(e.report);bad.pop(key)
    try:validate_complete(bad)
    except RuntimeError:pass
    else:raise RuntimeError('missing qualification evidence accepted: '+key)
   e.report['missing_result_controls']=len(keys)
+  for field in ['original_public_commit_refused','actual_public_commit_and_outbox_completed','money_ack_custody_unchanged','exact_replay_unchanged','zero_stack_vacated_atomically']:
+   bad=copy.deepcopy(e.report);bad['conserved_hands'][field]=False
+   try:validate_complete(bad)
+   except RuntimeError:pass
+   else:raise RuntimeError('false conserved hand evidence accepted: '+field)
+  e.report['false_hand_result_controls']=5
   e.report['status']='passed'
  except BaseException as exc:e.report['failure']=repr(exc)
  finally:

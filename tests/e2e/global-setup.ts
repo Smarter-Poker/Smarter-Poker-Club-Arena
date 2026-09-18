@@ -32,6 +32,7 @@ import { ensureClubMembership } from './support/ensureClubMembership';
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import { registerDiamondInvitationDismissal } from './support/cashLobbyOverlays';
+import { observeSetupFailure } from './support/setupFailureObservation';
 
 export const STORAGE_STATE = 'tests/e2e/.auth/state.json';
 
@@ -195,9 +196,15 @@ export default async function globalSetup(config: FullConfig) {
 
   const browser = await chromium.launch();
   let authenticated = false;
+  let observation: ReturnType<typeof observeSetupFailure> | undefined;
   try {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
+    observation = observeSetupFailure(
+      page,
+      baseURL,
+      process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+    );
 
     /* Authenticate against the API before touching the Hub login form when the
        Supabase public configuration is available. Production login chrome is
@@ -327,6 +334,7 @@ export default async function globalSetup(config: FullConfig) {
     // probe on a known protected layout route before deciding the account is
     // complete. Leaving the gate open caused 15 apparently unrelated lobby
     // and tournament tests to time out behind one correct modal.
+    observation.stage('protected-navigation');
     await page.goto(new URL('notifications', baseURL).toString(), {
       waitUntil: 'domcontentloaded',
       timeout: 60_000,
@@ -334,7 +342,9 @@ export default async function globalSetup(config: FullConfig) {
     // TOSGuard wraps the router; AppLayout owns the profile gate inside it.
     // Honor that real nesting order so a definite TOS refusal is resolved
     // before asking for a profile marker the outer guard correctly unmounts.
+    observation.stage('terms');
     await ensureAcceptedTerms(page);
+    observation.stage('profile');
     await ensurePlayableProfile(page);
 
     // The lobby suite exercises a real club route. A valid authenticated
@@ -342,12 +352,19 @@ export default async function globalSetup(config: FullConfig) {
     // fixture club, which made all eight lobby assertions time out without
     // ever reaching the UI they claim to test. Use the public Join Club flow
     // once and prove the lobby is reachable before sharing this storageState.
+    observation.stage('membership');
     await ensureClubMembership(page, baseURL, process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID);
     await dismissClubEntryMessage(page);
 
     await ctx.storageState({ path: STORAGE_STATE });
     console.log('[global-setup] authenticated session saved — auth-gated specs will run.');
   } catch (err) {
+    // Keep the original failure authoritative, even if writing its evidence fails.
+    try {
+      console.error('[global-setup-observation]', JSON.stringify(observation?.snapshot()));
+    } catch {
+      // Output failure must not replace the original setup error below.
+    }
     /* A throw raised BY signedOut() (E2E_REQUIRE_AUTH=1) must escape with its
        own message. Passing it through the fallback below would call signedOut()
        a second time and nest the explanation inside "auth setup failed (...)",
@@ -363,6 +380,7 @@ export default async function globalSetup(config: FullConfig) {
     }
     signedOut(`auth setup failed (${(err as Error).message.slice(0, 120)})`);
   } finally {
+    observation?.dispose();
     await browser.close();
   }
 }

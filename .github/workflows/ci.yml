@@ -1394,6 +1394,10 @@ jobs:
             --root "$GITHUB_WORKSPACE" --pg-bin "$PG_BIN" \
             --evidence "$RUNNER_TEMP/f06-movement-admission/native" \
             2>&1 | tee "$RUNNER_TEMP/f06-movement-admission/qualification.log"
+          python3 scripts/ci/test-f06-drained-custody.py \
+            --root "$GITHUB_WORKSPACE" --pg-bin "$PG_BIN" \
+            --evidence "$RUNNER_TEMP/f06-movement-admission/drained-custody" \
+            2>&1 | tee "$RUNNER_TEMP/f06-movement-admission/drained-custody.log"
       - name: Retain parked movement custody evidence
         if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.f06_movement_admission.outcome)
         uses: actions/upload-artifact@v4

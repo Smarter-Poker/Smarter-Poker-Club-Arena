@@ -242,6 +242,14 @@ describe('required CI owns native fixture verification', () => {
   });
 
   it.each([
+    'scripts/ci/test-f06-drained-custody.py',
+    'scripts/ci/build-f06-drained-custody.py',
+    'scripts/ci/probes/f06-drained-custody.sql',
+    'scripts/ci/probes/f06-drained-custody.spec',
+    'scripts/ci/probes/f06-drained-custody-authority.sql',
+    'scripts/ci/fixtures/f06-drained-custody/installed-mixed-authority.json',
+    'scripts/ci/fixtures/f06-drained-custody/installed-paid-dependency.sql',
+    'scripts/ci/schema-manifest.d/f06-drained-custody.json',
     'scripts/ci/test-f06-movement-admission.py',
     'scripts/ci/probes/f06-movement-admission.sql',
     'scripts/ci/probes/f06-movement-admission.spec',
@@ -278,6 +286,11 @@ describe('required CI owns native fixture verification', () => {
     expect(calls).toHaveLength(1);
     const movement = calls[0];
     expect(movement.id).toBe('f06_movement_admission');
+    expect(movement.run).toContain('python3 scripts/ci/test-f06-drained-custody.py');
+    expect(movement.run).toContain(
+      '--evidence "$RUNNER_TEMP/f06-movement-admission/drained-custody"'
+    );
+    expect(movement.run).toContain('tee "$RUNNER_TEMP/f06-movement-admission/drained-custody.log"');
     expect(movement.run).toContain('python3 tests/operations/f06-movement-results.test.py');
     expect(movement.run).toContain('--root "$GITHUB_WORKSPACE"');
     expect(movement.run).toContain('--pg-bin "$PG_BIN"');

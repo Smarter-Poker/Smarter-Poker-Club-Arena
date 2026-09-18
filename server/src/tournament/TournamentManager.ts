@@ -9,6 +9,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { readF06RecoveryAdmission, type DrainedF06Custody } from './drainedF06Custody.js';
 import { verifyF06MovementAdmission } from './f06MovementAdmission.js';
 import {
   TournamentTableBreakRpc,
@@ -1297,8 +1298,95 @@ export class TournamentManager extends TournamentManagerEliminations {
     return this.retainedTournamentBreakSources.get(tableId)?.engine === engine;
   }
 
+  /** Transfer only a positively drained pre-manifest park, never an unknown move. */
+  async captureDrainedF06Custody(): Promise<DrainedF06Custody | null> {
+    return this.runWithTournamentSeatMoveAuthority(async () => {
+      const engines = this.captureDrainedF06Originals();
+      const originGeneration = this.getTournamentLeaseGeneration();
+      if (!engines || !originGeneration || this.retainedTournamentBreakSources.size === 0)
+        return null;
+      const retained = [...this.retainedTournamentBreakSources];
+      const durable = [...this.durableTournamentBreaks];
+      const authorityRevision = this.tournamentSeatMoveAuthorityRevision;
+      const sources = Object.freeze(
+        retained
+          .map(([table_id, value]) =>
+            Object.freeze({
+              break_id: value.breakId,
+              table_id,
+              lifecycle: this.durableTournamentBreaks.get(value.breakId)?.lifecycle ?? '',
+            })
+          )
+          .sort((a, b) => a.table_id.localeCompare(b.table_id))
+      );
+      const current = () =>
+        this.tournamentSeatMoveAuthorityRevision === authorityRevision &&
+        this.captureDrainedF06Originals() === engines &&
+        this.pendingTournamentSeatMoveOutcomes.size === 0 &&
+        this.pendingTournamentParkRequests.size === 0 &&
+        this.pendingTournamentBreakBegins.size === 0 &&
+        this.pendingTournamentBreakAmendments.size === 0 &&
+        this.rejectedTournamentBreakBegins.size === 0 &&
+        this.resolvedTournamentBreakProposals.size === 0 &&
+        this.pendingTournamentBreakCustodyIds.size === 0 &&
+        this.pendingTournamentCleanupKinds.size === 0 &&
+        this.pendingNoStartContinuations.size === 0 &&
+        this.activeStoppedOriginalCustody.size === 0 &&
+        this.stoppedOriginalBreaks.size === 0 &&
+        this.tournamentBreakArrivalWakes.size === 0 &&
+        this.pendingTableBreakRetirement === null &&
+        this.retainedTournamentBreakSources.size === retained.length &&
+        retained.every(
+          ([id, value]) =>
+            this.retainedTournamentBreakSources.get(id) === value &&
+            this.tableEngines.get(id) === value.engine
+        ) &&
+        this.durableTournamentBreaks.size === durable.length &&
+        durable.length === retained.length &&
+        durable.every(
+          ([id, value]) =>
+            this.durableTournamentBreaks.get(id) === value &&
+            value.state === 'park_requested' &&
+            value.revision === '0' &&
+            value.members.length === 0 &&
+            value.custody_id === null &&
+            value.custody_generation === null &&
+            !value.terminal_handoff_required
+        ) &&
+        sources.every((source) => /^[1-9][0-9]*$/.test(source.lifecycle)) &&
+        engines.every(
+          ([id, engine]) =>
+            this.gameServer.tournamentRetirementCustody.admissionAllowed(id) &&
+            (!engine.hasClaimedTournamentMoveBoundary() ||
+              retained.some(
+                ([sourceId, value]) =>
+                  sourceId === id &&
+                  value.engine === engine &&
+                  engine.hasOnlyDrainedTournamentMoveOwner(this.tournamentMoveBoundaryOwner)
+              ))
+        );
+      if (!current()) return null;
+      const state = await readF06RecoveryAdmission(this.tournamentId, null, {
+        originGeneration,
+        sources,
+        proof: null,
+      });
+      if (!current()) return null;
+      return Object.freeze({
+        manager: this,
+        tournamentId: this.tournamentId,
+        originGeneration,
+        engines,
+        sources,
+        current,
+        proof: state.proof,
+      });
+    });
+  }
+
   /** One manager generation has exactly one seat-move authority at a time. */
   private tournamentSeatMoveSerialTail: Promise<void> = Promise.resolve();
+  private tournamentSeatMoveAuthorityRevision = 0;
   /** One break per pass; retain its exact generation across ambiguous closes. */
   private pendingTableBreakRetirement: {
     tableId: string;
@@ -1307,6 +1395,7 @@ export class TournamentManager extends TournamentManagerEliminations {
   } | null = null;
 
   private runWithTournamentSeatMoveAuthority<T>(operation: () => Promise<T>): Promise<T> {
+    this.tournamentSeatMoveAuthorityRevision++;
     const result = this.tournamentSeatMoveSerialTail.then(operation);
     this.tournamentSeatMoveSerialTail = result.then(
       () => undefined,

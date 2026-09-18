@@ -5460,6 +5460,18 @@ export abstract class ServerTableEngineBase {
     return this.claimedTournamentMovePauseOwners.size > 0 || this.tournamentMoveOperations.size > 0;
   }
 
+  /** Read-only identity check for a physically completed owner handoff. */
+  hasOnlyDrainedTournamentMoveOwner(ownerId: string): boolean {
+    return (
+      this.terminalTeardownComplete &&
+      !this.running &&
+      this.tournamentMoveOperations.size === 0 &&
+      this.tournamentMoveOperationByOwner.size === 0 &&
+      [...this.claimedTournamentMovePauseOwners].every((owner) => owner === ownerId) &&
+      [...this.tournamentMovePauseOwners].every((owner) => owner === ownerId)
+    );
+  }
+
   /** Only a proven pre-commit refusal may call this terminal release. */
   releaseTerminalCloseoutPause(): void {
     this.terminalCloseoutPaused = false;

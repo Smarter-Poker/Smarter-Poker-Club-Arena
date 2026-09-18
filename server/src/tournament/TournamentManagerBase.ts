@@ -231,6 +231,66 @@ export abstract class TournamentManagerBase {
   private teardownPromise: Promise<void> | null = null;
   /** The synchronous half of stop may be applied before the graceful table drain. */
   private stopFenceApplied = false;
+  private f06RecoveryOwnership = false;
+  private drainedF06Originals: readonly (readonly [string, ServerTableEngine])[] | null = null;
+
+  /** Ownership for an existing disposition only. No gameplay lifecycle starts. */
+  enterF06RecoveryOwnership(): void {
+    if (
+      this.running ||
+      this.stopFenceApplied ||
+      this.teardownPromise ||
+      this.lifecycleOperation ||
+      this.lifecycleJobs.size ||
+      this.tableEngineStartJobs.size ||
+      this.tableEngineRunJobs.size ||
+      this.eliminationSchedulerJobs.size ||
+      this.tableEngines.size !== 0 ||
+      !this.tournamentLeaseGeneration ||
+      !this.hasCurrentTournamentLeaseAuthority()
+    )
+      throw new Error('f06_recovery_owner_invalid');
+    this.f06RecoveryOwnership = true;
+    this.armTournamentLeaseExpiryTimer();
+  }
+
+  isF06RecoveryOwner(): boolean {
+    return (
+      this.f06RecoveryOwnership &&
+      !this.stopFenceApplied &&
+      this.hasCurrentTournamentLeaseAuthority()
+    );
+  }
+
+  /** Positive completion of every exact stop, not merely loss of a registry slot. */
+  protected captureDrainedF06Originals(): readonly (readonly [string, ServerTableEngine])[] | null {
+    const originals = this.drainedF06Originals;
+    if (
+      !originals ||
+      !this.stopFenceApplied ||
+      !this.tournamentLeaseAuthorityExpired ||
+      this.running ||
+      this.teardownPromise ||
+      this.lifecycleOperation ||
+      this.lifecycleJobs.size ||
+      this.tableEngineStartJobs.size ||
+      this.tableEngineRunJobs.size ||
+      this.eliminationSchedulerJobs.size ||
+      this.lifecycleTimeouts.size ||
+      this.lifecycleIntervals.size ||
+      this.tableEngines.size !== originals.length ||
+      originals.some(
+        ([id, engine]) =>
+          this.tableEngines.get(id) !== engine ||
+          engine.isRunning() ||
+          !engine.hasReleasedProcessOwnership() ||
+          engine.hasSettlementInFlight()
+      )
+    )
+      return null;
+    return originals;
+  }
+
   /** Manager callbacks are stopped while its lease remains live for hand drain. */
   private shutdownDrainFenceApplied = false;
   private readonly lifecycleTimeouts = new Set<ReturnType<typeof setTimeout>>();
@@ -876,7 +936,7 @@ export abstract class TournamentManagerBase {
       this.tournamentLeaseGeneration.toLowerCase() !== leaseGeneration.toLowerCase() ||
       this.tournamentLeaseAuthorityExpired ||
       this.stopFenceApplied ||
-      (!this.running && !this.shutdownDrainFenceApplied) ||
+      (!this.running && !this.shutdownDrainFenceApplied && !this.f06RecoveryOwnership) ||
       !this.hasCurrentTournamentLeaseAuthority() ||
       !Number.isFinite(proofDeadlineMonotonicMs) ||
       tournamentLeaseMonotonicNow() >= proofDeadlineMonotonicMs
@@ -940,7 +1000,8 @@ export abstract class TournamentManagerBase {
   stoodDownWithItsLeaseIntact(): boolean {
     return (
       !this.tournamentLeaseAuthorityExpired &&
-      (this.stopFenceApplied || (!this.running && !this.shutdownDrainFenceApplied))
+      (this.stopFenceApplied ||
+        (!this.running && !this.shutdownDrainFenceApplied && !this.f06RecoveryOwnership))
     );
   }
 
@@ -3922,6 +3983,7 @@ export abstract class TournamentManagerBase {
   }
 
   async start(): Promise<void> {
+    if (this.f06RecoveryOwnership) throw new Error('f06_recovery_business_admission_held');
     if (this.teardownPromise) await this.teardownPromise;
     if (!this.tournamentLeaseAuthorityIsCurrent()) {
       this.expireTournamentLeaseAuthority();
@@ -5146,6 +5208,7 @@ export abstract class TournamentManagerBase {
   }
 
   async resume(): Promise<void> {
+    if (this.f06RecoveryOwnership) throw new Error('f06_recovery_business_admission_held');
     if (this.teardownPromise) await this.teardownPromise;
     if (!this.tournamentLeaseAuthorityIsCurrent()) {
       this.expireTournamentLeaseAuthority();
@@ -5665,6 +5728,7 @@ export abstract class TournamentManagerBase {
     const lifecycleOperation = this.lifecycleOperation;
     if (this.stopFenceApplied) return lifecycleOperation;
     this.stopFenceApplied = true;
+    this.f06RecoveryOwnership = false;
     this.publishHandForHandPresentation();
     this.unregisterDatabaseFenceHandler?.();
     this.unregisterDatabaseFenceHandler = null;
@@ -5722,6 +5786,11 @@ export abstract class TournamentManagerBase {
       await initialEngineStops;
       await this.drainTableEngineRunJobs();
       this.recordManagerDiagnostic('owned_work_joined');
+      // A fulfilled engine stop is the positive terminal-teardown certificate.
+      // Cleanup failures that merely released process ownership do not qualify.
+      this.drainedF06Originals = stopResults.every((result) => result.status === 'fulfilled')
+        ? Object.freeze(engines.map(([id, engine]) => Object.freeze([id, engine] as const)))
+        : null;
       const stopFailures: unknown[] = [];
       for (let i = 0; i < engines.length; i++) {
         const [tableId, engine] = engines[i];

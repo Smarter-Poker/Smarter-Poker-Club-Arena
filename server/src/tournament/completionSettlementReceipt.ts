@@ -183,7 +183,10 @@ export function verifyTournamentCompletionReceipt(
   const feeBalance = exactMoney(escrow.fee_balance);
   const custodyVersion = receipt.receipt_version === 3;
   const custody = parseObject(parseObject(receipt.rake).accounting);
-  const cohort: Record<string, { amount: number; fingerprint: string; count: number }> = {
+  const cohort: Record<
+    string,
+    { amount: number; fingerprint: string; count: number; recognizedCount?: number }
+  > = {
     '2d2319d4-09e4-4921-85f3-09832ca7f9da': {
       amount: 54,
       fingerprint: '94462de304de8ab16ff492cadf13d229',
@@ -224,6 +227,36 @@ export function verifyTournamentCompletionReceipt(
       fingerprint: '0dd99b682fed61573e47a2e0f8e57ab8',
       count: 46,
     },
+    '199a71a9-f364-4e90-a3ba-3cdcfb7755bc': {
+      amount: 1.2,
+      fingerprint: 'ceeb0817a40a48f9e7cfdac3883036b7',
+      count: 1,
+      recognizedCount: 3,
+    },
+    '808ef798-0942-4ce0-9ae1-eeefaaf4b0a9': {
+      amount: 0.48,
+      fingerprint: '13f274f32c3ae9ca27da9991d013e33e',
+      count: 1,
+      recognizedCount: 3,
+    },
+    'b60c7add-6b38-4549-b091-601f64d118a0': {
+      amount: 0.24,
+      fingerprint: '03b471964aaef196d4dddec3f73e64f8',
+      count: 1,
+      recognizedCount: 3,
+    },
+    'e3f4e2ab-8397-43e8-8643-6cec3fff3a63': {
+      amount: 4.8,
+      fingerprint: 'cac905b2c20f288a272e04bc65d0b259',
+      count: 1,
+      recognizedCount: 3,
+    },
+    'f3f050f1-569e-4fb6-859f-86b6092e682e': {
+      amount: 4.8,
+      fingerprint: 'a64cf2abd9d146390b482bd4aff9cd3e',
+      count: 1,
+      recognizedCount: 3,
+    },
   };
   const original = tournamentId === null ? undefined : cohort[tournamentId];
   const resolution = parseObject(custody.resolution);
@@ -245,7 +278,8 @@ export function verifyTournamentCompletionReceipt(
     uuid(resolution.tournament_id) === tournamentId &&
     resolution.source_fingerprint === original?.fingerprint &&
     exactMoney(resolution.bank_amount) === original?.amount &&
-    nonNegativeInteger(resolution.recognized_source_count) === original?.count &&
+    nonNegativeInteger(resolution.recognized_source_count) ===
+      (original?.recognizedCount ?? original?.count) &&
     resolutionAt !== null &&
     settledAt !== null &&
     Date.parse(resolutionAt) >= Date.parse(settledAt) &&

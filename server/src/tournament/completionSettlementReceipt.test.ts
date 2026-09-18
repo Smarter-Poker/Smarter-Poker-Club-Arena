@@ -510,8 +510,13 @@ describe('bounded original fee custody terminal receipts', () => {
     ['1ffbd637-9241-4957-902f-3a75e09892c0', 127.5, '53fd19518004de9991312c0aaa749705', 85],
     ['8fc76450-534a-4877-97b5-8f784a3d5daa', 127.5, '87fd65baf92f74a1de5c85ed09844c62', 85],
     ['2421c66f-6f02-40a2-8414-23379802ce23', 69, '0dd99b682fed61573e47a2e0f8e57ab8', 46],
+    ['199a71a9-f364-4e90-a3ba-3cdcfb7755bc', 1.2, 'ceeb0817a40a48f9e7cfdac3883036b7', 1],
+    ['808ef798-0942-4ce0-9ae1-eeefaaf4b0a9', 0.48, '13f274f32c3ae9ca27da9991d013e33e', 1],
+    ['b60c7add-6b38-4549-b091-601f64d118a0', 0.24, '03b471964aaef196d4dddec3f73e64f8', 1],
+    ['e3f4e2ab-8397-43e8-8643-6cec3fff3a63', 4.8, 'cac905b2c20f288a272e04bc65d0b259', 1],
+    ['f3f050f1-569e-4fb6-859f-86b6092e682e', 4.8, 'a64cf2abd9d146390b482bd4aff9cd3e', 1],
   ])(
-    'accepts only the separately named PKO original fee proof %s',
+    'accepts only the separately named original fee proof %s',
     (event, amount, fingerprint, count) => {
       const r = custodyReceipt();
       r.tournament_id = event;
@@ -556,6 +561,30 @@ describe('bounded original fee custody terminal receipts', () => {
     expect(
       verifyTournamentCompletionReceipt(r, id, 'places', WINNER_ID)?.rake.accountingState
     ).toBe('recognized');
+    // One Spin fee record covers three original paid contributors.
+    const spin = structuredClone(r);
+    spin.tournament_id = '199a71a9-f364-4e90-a3ba-3cdcfb7755bc';
+    spin.rake.amount = 1.2;
+    Object.assign(spin.rake.accounting, {
+      tournament_id: spin.tournament_id,
+      held_amount: 1.2,
+      source_count: 1,
+      source_fingerprint: 'ceeb0817a40a48f9e7cfdac3883036b7',
+    });
+    Object.assign(spin.rake.accounting.resolution, {
+      tournament_id: spin.tournament_id,
+      source_fingerprint: spin.rake.accounting.source_fingerprint,
+      bank_amount: 1.2,
+      recognized_source_count: 3,
+    });
+    expect(
+      verifyTournamentCompletionReceipt(spin, spin.tournament_id, 'places', WINNER_ID)?.rake
+        .accountingState
+    ).toBe('recognized');
+    spin.rake.accounting.resolution.recognized_source_count = 1;
+    expect(
+      verifyTournamentCompletionReceipt(spin, spin.tournament_id, 'places', WINNER_ID)
+    ).toBeNull();
     const changed = structuredClone(r);
     changed.rake.accounting.resolution.recognized_source_count = 1;
     expect(verifyTournamentCompletionReceipt(changed, id, 'places', WINNER_ID)).toBeNull();

@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 _mixed_spec = importlib.util.spec_from_file_location('spin_mixed_current', ROOT / 'scripts/qualification/spin-mixed-current.py')
 MIXED = importlib.util.module_from_spec(_mixed_spec)
 _mixed_spec.loader.exec_module(MIXED)
-MIXED_MANIFEST_SHA256 = '15cfa1f2168d4c3cd9e6fc1b2e7d6319692fa44c6c5fd3c472821c2473bbd69c'
+MIXED_MANIFEST_SHA256 = '39bebd368157dbf9f8296468f472492d7ded1fb8f1b37f91867cb4b35ed246b0'
 FIXTURE = ROOT / 'scripts/ci/probes/spin-expiry'
 ORIGIN_MANIFEST = 'bee0d56349f89b0324962455b770fde4b5c322970b2b7b5a11ad69536b3ff580'
 MARKER = b'CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user();'
@@ -105,7 +105,7 @@ PURE_INPUTS = (PURE_COMPONENT, PURE_SHAPE, PURE_PREIMAGE, PURE_QUALIFIER, PURE_O
 PURE_STAGE = 'mixed_pure_evidence_rollback'
 REPLACEMENTS.update({name: name for name in PURE_INPUTS})
 LANE_MANIFEST = 'scripts/qualification/spin-receipt-lane.hosted.manifest.json'
-LANE_MANIFEST_SHA256 = '2232d6461bc9de25b7d0a5652feb0ac8923553ecdbe3d2eb05d25c5807ae6366'
+LANE_MANIFEST_SHA256 = 'dd9aa902babf99b596a6a422c545d6fc5caca92e54328dee5003503adf66facf'
 LANE_BASE = 'scripts/qualification/fixtures/spin-receipt-lane/'
 LANE_COMPONENT = 'supabase/components/spin-mixed-basis-receipt-lane.sql'
 LANE_ROLLBACK = 'supabase/components/spin-mixed-basis-receipt-lane.rollback.sql'
@@ -161,7 +161,7 @@ def validate_lane_sources(files):
         require(pin(files[name]) == expected, 'receipt lane source pin mismatch: ' + name)
     require(digest(files[LANE_BASE+'authority.json']) == 'a4aadc81c0b50396dbed0c3d9b8bf7c72887ecb897ffd2e0b05e96534d78c39c',
             'authentic lane capture differs')
-    require(digest(files[LANE_SESSION]) == '24d45e4bb26b062fd2abbc86f1019cd05f0f79fc2557e82993a19770a8982f2d',
+    require(digest(files[LANE_SESSION]) == '619267d012bb64257d639006c133d03c95f16c7e243b334e6af661d5900b95c5',
             'existing Session implementation differs')
     cohort_preimage = {'commit':'79d045d4fb522fdc5382b4e2b1735c17ce214279',
         'forward_sha256':'e65954462b3cc9b90b304e5bf62ae87e48555f2c0e2ad88051668c9dcc5e52ee',

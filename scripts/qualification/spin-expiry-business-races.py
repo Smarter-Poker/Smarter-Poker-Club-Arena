@@ -173,12 +173,23 @@ class Session:
     def poll(self):
         if self.pending is None:
             return None
-        for _key, _mask in self.selector.select(0):
-            chunk = os.read(self.process.stdout.fileno(), 65536)
-            require(chunk, 'psql terminated before command acknowledgement')
-            self.raw.extend(chunk)
-            require(len(self.raw) <= MAX_STREAM, 'session output bound exceeded')
         marker, start = self.pending
+        for _key, _mask in self.selector.select(0):
+            # A readable pipe may return only 512 bytes on macOS. Drain available
+            # fragments before wait() sleeps, retaining the original read quantum
+            # so a continuously writable client cannot starve the other sessions.
+            remaining = 65536
+            while remaining > 0 and time.monotonic() < self.deadline:
+                try:
+                    chunk = os.read(self.process.stdout.fileno(), remaining)
+                except BlockingIOError:
+                    break
+                require(chunk, 'psql terminated before command acknowledgement')
+                self.raw.extend(chunk)
+                require(len(self.raw) <= MAX_STREAM, 'session output bound exceeded')
+                remaining -= len(chunk)
+                if self.raw.find(marker + b'\n', start) >= 0:
+                    break
         data = bytes(self.raw[start:])
         end = data.find(marker + b'\n')
         if end < 0:

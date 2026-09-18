@@ -590,6 +590,105 @@ class SessionEnvironmentTests(unittest.TestCase):
                 self.assertRaisesRegex(RuntimeError, 'unexpected SQL failure'):
             session.json('SELECT original_observation;')
 
+    def poll_session(self):
+        # Exercise actual poll/wait methods without a process or database.
+        session = object.__new__(self.lib.Session)
+        session.raw = bytearray(b'previous command output\n')
+        session.pending = (b'__spin_fragmented_ack__', len(session.raw))
+        session.deadline = 20.0
+        session.selector = unittest.mock.Mock()
+        session.selector.select.return_value = [(None, None)]
+        session.process = unittest.mock.Mock()
+        session.process.stdout.fileno.return_value = 123
+        return session
+
+    def test_poll_drains_fragmented_output_and_split_ack_without_fragment_sleeps(self):
+        session = self.poll_session()
+        payload = b'{"padding":"' + b'x' * (43004 - 14) + b'"}'
+        marker = session.pending[0]
+        wire = payload + b'\n'
+        chunks = [wire[n:n + 512] for n in range(0, len(wire), 512)]
+        chunks += [marker[:7], marker[7:] + b'\n', b'']
+        with patch.object(self.lib.os, 'read', side_effect=chunks) as read, \
+                patch.object(self.lib.time, 'monotonic', return_value=10.0), \
+                patch.object(self.lib.time, 'sleep') as pause:
+            self.assertEqual(session.wait().encode(), payload)
+        self.assertIsNone(session.pending)
+        self.assertEqual(read.call_count, len(chunks) - 1)
+        session.selector.select.assert_called_once_with(0)
+        pause.assert_not_called()
+        self.assertEqual(session.deadline, 20.0)
+
+    def test_poll_eagain_retains_partial_ack_until_remaining_bytes_arrive(self):
+        session = self.poll_session()
+        marker = session.pending[0]
+        prefix = b'{"ok":true}\n' + marker[:7]
+        with patch.object(self.lib.os, 'read', side_effect=[prefix, BlockingIOError()]) as read, \
+                patch.object(self.lib.time, 'monotonic', return_value=10.0):
+            self.assertIsNone(session.poll())
+        self.assertEqual(read.call_count, 2)
+        self.assertIsNotNone(session.pending)
+        self.assertTrue(session.raw.endswith(prefix))
+        with patch.object(self.lib.os, 'read', side_effect=[marker[7:] + b'\n', b'']) as read, \
+                patch.object(self.lib.time, 'monotonic', return_value=10.0):
+            self.assertEqual(session.poll(), '{"ok":true}')
+        read.assert_called_once()
+        self.assertIsNone(session.pending)
+
+    def test_poll_preserves_sql_diagnostics_and_refuses_eof_before_ack(self):
+        for kind in ('ERROR', 'FATAL', 'PANIC'):
+            with self.subTest(kind=kind):
+                session = self.poll_session()
+                diagnostic = kind + ':  P0404: exact original diagnostic'
+                wire = diagnostic.encode() + b'\n' + session.pending[0] + b'\n'
+                with patch.object(self.lib.os, 'read', side_effect=[wire[:8], wire[8:], b'']), \
+                        patch.object(self.lib.time, 'monotonic', return_value=10.0):
+                    observed = session.poll()
+                self.assertEqual(observed, diagnostic)
+                with self.assertRaisesRegex(RuntimeError, 'unexpected SQL failure'):
+                    self.lib.Session.no_errors(observed)
+        session = self.poll_session()
+        with patch.object(self.lib.os, 'read', side_effect=[b'{"ok":true}\n', b'']), \
+                patch.object(self.lib.time, 'monotonic', return_value=10.0), \
+                self.assertRaisesRegex(RuntimeError, 'terminated before command acknowledgement'):
+            session.poll()
+        self.assertIsNotNone(session.pending)
+
+    def test_poll_keeps_stream_cap_and_checks_original_deadline_during_drain(self):
+        self.assertEqual(self.lib.MAX_STREAM, 8 * 1024 * 1024)
+        session = self.poll_session()
+        session.raw = bytearray(b'x' * (self.lib.MAX_STREAM - 2))
+        session.pending = (session.pending[0], len(session.raw))
+        with patch.object(self.lib.os, 'read', return_value=b'abc') as read, \
+                patch.object(self.lib.time, 'monotonic', return_value=10.0), \
+                self.assertRaisesRegex(RuntimeError, 'session output bound exceeded'):
+            session.poll()
+        read.assert_called_once()
+        session = self.poll_session()
+        with patch.object(self.lib.os, 'read', return_value=b'x' * 512) as read, \
+                patch.object(self.lib.time, 'monotonic', side_effect=[10.0, 10.0, 20.0, 20.0]), \
+                patch.object(self.lib.time, 'sleep') as pause, \
+                self.assertRaisesRegex(TimeoutError, 'original 20 second schedule deadline exceeded'):
+            session.wait()
+        read.assert_called_once()
+        pause.assert_called_once_with(0.01)
+        self.assertEqual(session.deadline, 20.0)
+
+    def test_poll_yields_after_original_read_quantum_without_losing_pending_output(self):
+        session = self.poll_session()
+        marker = session.pending[0]
+        chunks = [b'x' * 512] * 128 + [b'\n' + marker + b'\n']
+        with patch.object(self.lib.os, 'read', side_effect=chunks) as read, \
+                patch.object(self.lib.time, 'monotonic', return_value=10.0):
+            self.assertIsNone(session.poll())
+            self.assertEqual(read.call_count, 128)
+            self.assertIsNotNone(session.pending)
+            self.assertEqual([call.args[1] for call in read.call_args_list],
+                             list(range(65536, 0, -512)))
+            self.assertEqual(session.poll(), 'x' * 65536)
+        self.assertEqual(read.call_count, 129)
+        self.assertIsNone(session.pending)
+
     def test_cleanup_observes_server_exit_after_terminal_clients_without_extending_deadline(self):
         session = object.__new__(self.lib.Session)
         clock = [10.0]

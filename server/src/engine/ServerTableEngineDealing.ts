@@ -1783,10 +1783,15 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   private f06HandPreparation: object | null = null;
 
   getF06RecoverablePermit(): ReturnType<ServerTableEngineDealing['getF06RetainedPermit']> {
-    return this.f06HandPreparation ? null : this.getF06RetainedPermit();
+    return this.f06HandPreparation || this.f06CurrentPermit?.hasPreparedCancellation()
+      ? null
+      : this.getF06RetainedPermit();
   }
 
   protected async dealHand(players: SeatedPlayer[]): Promise<void> {
+    // Resume an already-owned cancellation with the same immutable identity.
+    // A lost response never permits allocation of a different hand first.
+    if (this.f06CurrentPermit?.hasPreparedCancellation()) await this.cancelF06PreparedHand();
     const releaseSeatBoundary = await this.acquireSeatBoundary();
     const preparation = {};
     this.f06HandPreparation = preparation;
@@ -3214,8 +3219,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // Keep parked banks bound to the last real hand, including every pause
       // that can arrive during asynchronous hand preparation.
       if (!handStarted) this.handCount = completedHandNumber;
-      if (this.f06HandPreparation === preparation) this.f06HandPreparation = null;
       releaseSeatBoundary();
+      try {
+        // The exact continuation has finished all preparation awaits and never
+        // invoked permit.start. Fence that permit before durably releasing it;
+        // a pause checkpoint alone cannot survive a process replacement.
+        if (!handStarted && (this.isNextHandPaused() || !this.running))
+          await this.cancelF06PreparedHand();
+      } finally {
+        if (this.f06HandPreparation === preparation) this.f06HandPreparation = null;
+      }
     }
   }
 

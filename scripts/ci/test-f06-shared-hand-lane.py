@@ -153,6 +153,9 @@ try:
     require(results.get('mixedCohorts', {}).get('passed') is True, 'Mixed post-cutover cohorts did not complete')
     require(results.get('mixedHuPrior', {}).get('passed') is True, 'Mixed HU prior-commit qualification did not complete')
     require(results.get('mixedHuPriorAbort', {}).get('passed') is True, 'Mixed HU original-abort qualification did not complete')
+    prepared = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/prepared_cancellation_qualification.py'))
+    prepared['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('preparedCancellation', {}).get('passed') is True, 'Prepared cancellation qualification did not complete')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

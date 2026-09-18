@@ -13,7 +13,7 @@
  */
 
 import React, { useMemo } from 'react';
-import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { generateDefaultAvatar, sizedStorageUrl } from '../../utils/avatarGenerator';
 import './PlayerAvatar.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -133,6 +133,9 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
   }, [name]);
 
   const sizePx = SIZE_PX[size];
+  // JPEG portraits can use the existing retina-sized public Storage path.
+  // Leave animation-capable formats intact until their frames are qualified.
+  const imageSrc = src && /\.jpe?g(?:\?|$)/i.test(src) ? sizedStorageUrl(src, sizePx) : src;
 
   return (
     <div
@@ -151,11 +154,15 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
       <div className="player-avatar-image">
         {src ? (
           <img
-            src={src}
+            src={imageSrc}
             alt={alt}
             loading="lazy"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = generateDefaultAvatar();
+              const image = e.currentTarget;
+              image.src =
+                imageSrc !== src && image.getAttribute('src') === imageSrc
+                  ? src
+                  : generateDefaultAvatar();
             }}
           />
         ) : (

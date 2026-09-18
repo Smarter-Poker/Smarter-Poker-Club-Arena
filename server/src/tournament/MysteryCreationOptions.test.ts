@@ -42,14 +42,36 @@ async function create(method: string, options: Record<string, unknown>) {
       return chain;
     }),
     select: vi.fn(() => chain),
-    maybeSingle: vi.fn(async () => ({ data: { id: 'event' }, error: null })),
+    maybeSingle: vi.fn(async () => ({
+      data: { ...row, id: 'event', format_contract: 'mtt-v1' },
+      error: null,
+    })),
     update: vi.fn(() => chain),
     eq: vi.fn(async () => ({ error: null })),
   };
   vi.spyOn(supabase, 'from').mockReturnValue(chain as never);
+  vi.spyOn(supabase, 'rpc').mockImplementation(((
+    name: string,
+    args: { p_tournament_ids: string[] }
+  ) => {
+    expect(name).toBe('fn_ca_tournament_admission_snapshot');
+    expect(args).toEqual({ p_tournament_ids: ['event'] });
+    return Promise.resolve({
+      data: {
+        ok: true,
+        admission_abi: 'legacy-capacity-v1',
+        entries: [
+          { tournament_id: 'event', format_contract: 'mtt-v1', effective_max_players: 100 },
+        ],
+      },
+      error: null,
+    });
+  }) as never);
   const service = new TournamentRecurringService();
   vi.spyOn(service as any, 'registerHorses').mockResolvedValue(0);
-  await (service as any)[method](config, 'union', 'club');
+  const result = await (service as any)[method](config, 'union', 'club');
+  if (row) expect(result).toMatchObject({ tournamentId: 'event', registered: 0 });
+  else expect(result).toMatchObject({ tournamentId: null, registered: 0 });
   return row;
 }
 describe.each(['scheduled', 'createTournament', 'createXMTT'])('%s mystery creation', (method) => {
@@ -100,6 +122,9 @@ describe.each(['scheduled', 'createTournament', 'createXMTT'])('%s mystery creat
 it('restarts a completed manual event with the same published mystery terms', async () => {
   const old = {
     id: 'old',
+    format_contract: 'mtt-v1',
+    starting_chips: 10000,
+    blind_structure: MTT_BLIND_PRESETS.TURBO,
     club_id: 'club',
     name: 'Synthetic repeating mystery',
     variant: 'mystery_bounty',

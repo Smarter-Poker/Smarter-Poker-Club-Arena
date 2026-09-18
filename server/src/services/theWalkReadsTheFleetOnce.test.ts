@@ -60,6 +60,7 @@ const boardRow = (id: string, overrides: Record<string, unknown> = {}) => ({
   name: id,
   variant: 'freezeout',
   tournament_type: 'MTT',
+  format_contract: 'mtt-v1',
   start_time: new Date(DISCOVERY_NOW - 60_000).toISOString(),
   current_players: 24,
   min_players: 4,
@@ -86,9 +87,27 @@ function discoveryHarness(boards: ReturnType<typeof boardRow>[][]) {
   let boardError = false;
   let ticketTargets: string[] = [];
   let lateRows: Array<ReturnType<typeof boardRow> & { status: string }> = [];
-  const eligibilityRead = vi
-    .spyOn(supabase, 'rpc')
-    .mockResolvedValue({ data: true, error: null } as never);
+  const eligibilityRead = vi.fn().mockResolvedValue({ data: true, error: null });
+  vi.spyOn(supabase, 'rpc').mockImplementation((name: string, args: any) => {
+    if (name !== 'fn_ca_tournament_admission_snapshot') return eligibilityRead(name, args);
+    const currentRows = boards[Math.min(pass, boards.length - 1)];
+    return Promise.resolve({
+      data: {
+        ok: true,
+        admission_abi: 'legacy-capacity-v1',
+        entries: args.p_tournament_ids.map((id: string) => {
+          const row = currentRows.find((candidate) => candidate.id === id);
+          if (!row) throw new Error('Admission snapshot requested an absent board row');
+          return {
+            tournament_id: id,
+            format_contract: row.format_contract,
+            effective_max_players: row.max_players,
+          };
+        }),
+      },
+      error: null,
+    }) as never;
+  });
   Object.assign(server, {
     running: true,
     lifecycleGeneration: 1,
@@ -183,7 +202,7 @@ function discoveryHarness(boards: ReturnType<typeof boardRow>[][]) {
             if (table !== 'tournaments') throw new Error(`Unexpected test read: ${table}`);
             if (
               fields ===
-              'id, name, status, tournament_type, variant, max_players, prize_pool_finalized'
+              'format_contract, id, name, status, tournament_type, variant, max_players, prize_pool_finalized'
             ) {
               const rows = [...lateRows]
                 .sort((a, b) => a.id.localeCompare(b.id))

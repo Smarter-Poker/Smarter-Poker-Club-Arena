@@ -92,7 +92,8 @@ describe('a seat-first game starts on seats, not on a clock', () => {
       src.indexOf('const seatFirstReady ='),
       src.indexOf('const maxReached =')
     );
-    expect(readySlice).toContain('paidSeats >= tournament.max_players');
+    expect(readySlice).toContain('tournament.effective_max_players !== null');
+    expect(readySlice).toContain('paidSeats >= tournament.effective_max_players');
     expect(readySlice).not.toContain('current_players');
     expect(readySlice).not.toContain('startTime');
   });

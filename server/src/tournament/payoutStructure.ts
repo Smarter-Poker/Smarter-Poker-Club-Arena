@@ -1,3 +1,4 @@
+import { isPersistedSpin } from './tournamentEntryCapacity.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  PAYOUT STRUCTURE RESOLUTION — what to split the pool by
@@ -53,6 +54,7 @@ export interface PayoutPlace {
 }
 
 export interface PayoutSubject {
+  format_contract?: unknown;
   payout_structure?: unknown;
   variant?: string | null;
   tournament_type?: string | null;
@@ -65,13 +67,10 @@ function numericJsonScalar(value: unknown): number {
   return Number(value);
 }
 
-/** Is this a Spin? Either column may carry it, in either case. */
+/** Is this a purchased Spin according to its immutable recorded format? */
 export function isSpinTournament(t: PayoutSubject | null | undefined): boolean {
   if (!t) return false;
-  return (
-    String(t.variant ?? '').toLowerCase() === 'spin' ||
-    String(t.tournament_type ?? '').toUpperCase() === 'SPIN'
-  );
+  return isPersistedSpin(t);
 }
 
 /**

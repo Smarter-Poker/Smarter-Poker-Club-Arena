@@ -35,7 +35,7 @@ _fee_spec.loader.exec_module(FEE)
 _terminal_spec = importlib.util.spec_from_file_location('spin_paid_terminal', ROOT / 'scripts/qualification/spin-paid-terminal.py')
 TERMINAL = importlib.util.module_from_spec(_terminal_spec)
 _terminal_spec.loader.exec_module(TERMINAL)
-TERMINAL_MANIFEST_SHA256 = '044ecffa299e6cf553f42c8738f741af99f0a5d48f12c8eda2639b9aaf08e2e8'
+TERMINAL_MANIFEST_SHA256 = 'ee064ceffd851524db441a7cf3e4221426e1d5db587f58f5c47e8bc7b96987e2'
 FEE_MANIFEST_SHA256 = 'bf62c5f2c0891264ea5635c84b30a784f626123a6e3e41a513c30727877a0610'
 MIXED_MANIFEST_SHA256 = 'eac92b0f05a6b2e3773b68e47e6135696bb84a97d6515982a4211c28016be7ed'
 FIXTURE = ROOT / 'scripts/ci/probes/spin-expiry'

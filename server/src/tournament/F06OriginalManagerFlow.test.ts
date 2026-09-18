@@ -907,76 +907,6 @@ it('a replacement Manager admission cannot reconstruct an unresolved original pe
   }
 });
 
-it.each(['accepted', 'pending', 'lost owner'])(
-  'retained original continuation precedes actual replacement admission: %s',
-  async (outcome) => {
-    const f = await fixture('', 'committed');
-    const replacement = new ServerTableEngine(source) as any;
-    Object.defineProperty(replacement, 'ready', { value: Promise.resolve(true) });
-    const start = vi.spyOn(replacement, 'start').mockResolvedValue(undefined);
-    f.manager.tableEngines.set(source, replacement);
-    f.server.tableEngines.set(source, replacement);
-    vi.spyOn(f.manager, 'recoverManagedTableEngine').mockResolvedValue(undefined);
-    const order: string[] = [];
-    f.rpc.mockImplementation((async (name: string) => {
-      order.push(name);
-      if (name === 'fn_ca_resume_hand_submission') {
-        if (outcome === 'lost owner') f.invalidate();
-        return {
-          data:
-            outcome === 'pending'
-              ? { found: true, completed: false, reason: 'original_failure_or_handoff_unproven' }
-              : {
-                  found: true,
-                  completed: true,
-                  success: true,
-                  atomic_hand_commit: true,
-                  snapshot_completed: true,
-                  post_commit_completed: true,
-                  table_id: source,
-                  history_id: id(42),
-                  submission_id: id(42),
-                  submission_hash: 'a'.repeat(64),
-                  hand_number: '1000001',
-                },
-          error: null,
-        };
-      }
-      if (name !== 'fn_f06_hand_number_state') throw new Error('Unexpected admission RPC ' + name);
-      return {
-        data: {
-          ok: true,
-          table_id: source,
-          lifecycle: '1',
-          can_reserve: true,
-          blocked_reason: null,
-          used_hand_number_max: '1000001',
-          next_hand_number_candidate: '1000002',
-          unresolved_permit: null,
-        },
-        error: null,
-      };
-    }) as any);
-    try {
-      f.manager.startManagedTableEngine(replacement, 'retained admission test');
-      await Promise.allSettled([
-        ...f.manager.tableEngineRunJobs,
-        ...f.manager.tableEngineStartJobs,
-      ]);
-      expect(order).toEqual(
-        outcome === 'accepted'
-          ? ['fn_ca_resume_hand_submission', 'fn_f06_hand_number_state']
-          : ['fn_ca_resume_hand_submission']
-      );
-      expect(start).toHaveBeenCalledTimes(outcome === 'accepted' ? 1 : 0);
-      expect(replacement.getF06RetainedPermit()).toBeNull();
-    } finally {
-      replacement.preciseTimer.dispose();
-      f.engine.preciseTimer.dispose();
-    }
-  }
-);
-
 async function lastTableFixture() {
   const f = await fixture();
   f.manager.eligibleBreakDestinations.mockResolvedValue([]);
@@ -1182,3 +1112,188 @@ it('multi-table source exclusion remains available to movement admission without
   expect(f.engine.stop).not.toHaveBeenCalled();
   expect(f.calls.some((c) => c.name === 'fn_f06_continue_no_start_last_table')).toBe(false);
 });
+
+it.each(['valid', 'unresolved', 'wrong custody', 'wrong proof', 'owner changed'])(
+  'replacement Manager admits only exact canonical movement custody: %s',
+  async (mode) => {
+    const f = await fixture('', 'absent');
+    const replacement: any = new ServerTableEngine(source, {
+      scope: 'tournament',
+      verified: true,
+      generation: lease,
+      tournamentId: event,
+      proofDeadlineMonotonicMs: performance.now() + 60_000,
+    });
+    Object.defineProperty(replacement, 'ready', { value: Promise.resolve(true) });
+    const start = vi.spyOn(replacement, 'start').mockResolvedValue(undefined);
+    const recovery = vi.spyOn(f.manager, 'recoverManagedTableEngine').mockResolvedValue(undefined);
+    f.manager.tableEngines.set(source, replacement);
+    f.server.tableEngines.set(source, replacement);
+    const seen: string[] = [];
+    f.rpc.mockImplementation((async (name: string, p: any) => {
+      seen.push(name);
+      if (name === 'fn_ca_resume_hand_submission') return { data: { found: false }, error: null };
+      if (name === 'fn_f06_hand_number_state')
+        return {
+          data: {
+            ok: true,
+            table_id: source,
+            lifecycle: '252200',
+            can_reserve: false,
+            blocked_reason: mode === 'unresolved' ? 'hand_permit_unresolved' : 'source_excluded',
+            unresolved_permit: mode === 'unresolved' ? { permit_id: id(8) } : null,
+            used_hand_number_max: '12297119',
+            next_hand_number_candidate: null,
+          },
+          error: null,
+        };
+      if (name === 'fn_f06_table_state')
+        return {
+          data: {
+            ok: true,
+            table_id: source,
+            lifecycle: '252200',
+            excluded: true,
+            break_id: id(50),
+          },
+          error: null,
+        };
+      if (name === 'fn_f06_break_state')
+        return {
+          data: {
+            ok: true,
+            reason: null,
+            break_id: id(50),
+            tournament_id: event,
+            source_table_id: source,
+            lifecycle: '252200',
+            state: 'park_requested',
+            revision: '0',
+            custody_id: null,
+            custody_generation: null,
+            members: [],
+            terminal_handoff_required: false,
+          },
+          error: null,
+        };
+      if (name === 'fn_f06_admit_parked_movement') {
+        if (mode === 'owner changed') f.manager.tableEngines.delete(source);
+        return {
+          data: {
+            ok: true,
+            mode: 'movement_only',
+            admission_id: p.p_admission_id,
+            tournament_id: event,
+            lease_generation: lease,
+            table_id: source,
+            lifecycle: '252200',
+            break_id: id(50),
+            custody_id: mode === 'wrong custody' ? id(51) : p.p_custody_id,
+            revision: '1',
+            proof_hash: mode === 'wrong proof' ? null : 'a'.repeat(64),
+          },
+          error: null,
+        };
+      }
+      throw new Error('unexpected RPC: ' + name);
+    }) as any);
+    try {
+      f.manager.startManagedTableEngine(replacement, 'test movement admission');
+      await Promise.allSettled([
+        ...f.manager.tableEngineRunJobs,
+        ...f.manager.tableEngineStartJobs,
+      ]);
+      if (mode === 'valid') {
+        expect(start).toHaveBeenCalledOnce();
+        expect(recovery).not.toHaveBeenCalled();
+        expect(replacement.f06MovementAdmission.receipt.lifecycle).toBe('252200');
+        expect(replacement.f06Allocator).toBeNull();
+        expect(replacement.getF06RetainedPermit()).toBeNull();
+      } else {
+        expect(start).not.toHaveBeenCalled();
+        expect(recovery).toHaveBeenCalledOnce();
+      }
+      expect(seen.slice(0, 2)).toEqual([
+        'fn_ca_resume_hand_submission',
+        'fn_f06_hand_number_state',
+      ]);
+      expect(seen).not.toContain('fn_f06_begin_hand');
+      expect(seen).not.toContain('fn_f06_allocate_hand_number');
+      expect(seen).not.toContain('fn_f06_finish_original_no_start');
+    } finally {
+      f.engine.running = false;
+      f.engine.preciseTimer.dispose();
+      replacement.preciseTimer.dispose();
+    }
+  }
+);
+
+it.each(['accepted', 'pending', 'lost owner'])(
+  'retained original continuation precedes actual replacement admission: %s',
+  async (outcome) => {
+    const f = await fixture('', 'committed');
+    const replacement = new ServerTableEngine(source) as any;
+    Object.defineProperty(replacement, 'ready', { value: Promise.resolve(true) });
+    const start = vi.spyOn(replacement, 'start').mockResolvedValue(undefined);
+    f.manager.tableEngines.set(source, replacement);
+    f.server.tableEngines.set(source, replacement);
+    vi.spyOn(f.manager, 'recoverManagedTableEngine').mockResolvedValue(undefined);
+    const order: string[] = [];
+    f.rpc.mockImplementation((async (name: string) => {
+      order.push(name);
+      if (name === 'fn_ca_resume_hand_submission') {
+        if (outcome === 'lost owner') f.invalidate();
+        return {
+          data:
+            outcome === 'pending'
+              ? { found: true, completed: false, reason: 'original_failure_or_handoff_unproven' }
+              : {
+                  found: true,
+                  completed: true,
+                  success: true,
+                  atomic_hand_commit: true,
+                  snapshot_completed: true,
+                  post_commit_completed: true,
+                  table_id: source,
+                  history_id: id(42),
+                  submission_id: id(42),
+                  submission_hash: 'a'.repeat(64),
+                  hand_number: '1000001',
+                },
+          error: null,
+        };
+      }
+      if (name !== 'fn_f06_hand_number_state') throw new Error('Unexpected admission RPC ' + name);
+      return {
+        data: {
+          ok: true,
+          table_id: source,
+          lifecycle: '1',
+          can_reserve: true,
+          blocked_reason: null,
+          used_hand_number_max: '1000001',
+          next_hand_number_candidate: '1000002',
+          unresolved_permit: null,
+        },
+        error: null,
+      };
+    }) as any);
+    try {
+      f.manager.startManagedTableEngine(replacement, 'retained admission test');
+      await Promise.allSettled([
+        ...f.manager.tableEngineRunJobs,
+        ...f.manager.tableEngineStartJobs,
+      ]);
+      expect(order).toEqual(
+        outcome === 'accepted'
+          ? ['fn_ca_resume_hand_submission', 'fn_f06_hand_number_state']
+          : ['fn_ca_resume_hand_submission']
+      );
+      expect(start).toHaveBeenCalledTimes(outcome === 'accepted' ? 1 : 0);
+      expect(replacement.getF06RetainedPermit()).toBeNull();
+    } finally {
+      replacement.preciseTimer.dispose();
+      f.engine.preciseTimer.dispose();
+    }
+  }
+);

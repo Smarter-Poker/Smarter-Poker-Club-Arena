@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 141427,
-      "sha256": "94ec280b980b29ba5450cfea1eebf05449e97b8bdeb60b0c8de7861ce244fe4b"
+      "bytes": 142687,
+      "sha256": "8f1a33be99429876bf59cb820f32931961a0d1b2dd7c7fcf7cb04ea92b8eb7d9"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 16694,
-      "sha256": "943b980c8b9583a80e6eada4902dde27921dd7cc6ff2d72c5f4f71f66c21a35d"
+      "bytes": 16845,
+      "sha256": "dc667e99808844e8351137a5e68a32278b763ca164344e67fe9fb285ff263a48"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 73180,
-      "sha256": "98a593abab97df771e53477ceafc2d8eeeeb2869e5ac8e52335d4ca364f47f34"
+      "bytes": 77409,
+      "sha256": "5fa255a3298c2381ffc7d9dff9b5e76208270c592705193ce219a3262f483719"
     }
   },
   "nativePgCron": {
@@ -163,6 +163,24 @@
       },
       "reason": "Preserves accepted elimination, Spin fee, PKO and cash-week routes while adding the same retained-submission route; exact merged workflow and selector bytes."
     },
-    "noStartParent": "1d1a6cced3cd956e99dd94e3a63de159fcda1010"
+    "noStartParent": "1d1a6cced3cd956e99dd94e3a63de159fcda1010",
+    "movementParent": {
+      "revision": "f3e5bae43395980fc49ca02876b3f94818a54672",
+      "previousPins": {
+        ".github/workflows/ci.yml": {
+          "bytes": 141427,
+          "sha256": "94ec280b980b29ba5450cfea1eebf05449e97b8bdeb60b0c8de7861ce244fe4b"
+        },
+        "scripts/ci/classify-ci-changes.mjs": {
+          "bytes": 16694,
+          "sha256": "943b980c8b9583a80e6eada4902dde27921dd7cc6ff2d72c5f4f71f66c21a35d"
+        },
+        "tests/unit/fixtureNativeCi.test.ts": {
+          "bytes": 73180,
+          "sha256": "98a593abab97df771e53477ceafc2d8eeeeb2869e5ac8e52335d4ca364f47f34"
+        }
+      },
+      "reason": "Compose both existing Accounting native routes and all routing assertions. Cash SQL and capture inputs unchanged."
+    }
   }
 }

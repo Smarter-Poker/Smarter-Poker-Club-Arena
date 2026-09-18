@@ -1,0 +1,5 @@
+{
+  "_owner": "g8/1478-movement-admission-20260918",
+  "_comment": "Pending additive movement-only RPC declaration; not an installed-production claim. Admission requires original canonical custody and never authorizes a new hand.",
+  "functions": ["fn_f06_admit_parked_movement"]
+}

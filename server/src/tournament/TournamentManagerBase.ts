@@ -1433,6 +1433,15 @@ export abstract class TournamentManagerBase {
   }
 
   /** A manager is not torn down until every table start it launched has settled. */
+  protected async startParkedMovementEngine(
+    _engine: ServerTableEngine,
+    _tableId: string,
+    _tableLifecycle: string,
+    _current: () => boolean
+  ): Promise<void> {
+    throw new Error('f06_movement_admission_unavailable');
+  }
+
   protected startManagedTableEngine(
     engine: ServerTableEngine,
     errorContext: string,
@@ -1488,11 +1497,15 @@ export abstract class TournamentManagerBase {
         state.next_hand_number_candidate === null &&
         typeof state.lifecycle === 'string' &&
         /^[1-9][0-9]{0,18}$/.test(state.lifecycle) &&
-        BigInt(state.lifecycle) <= 9223372036854775807n &&
-        (await this.continueExcludedNoStartTable(tableId, engine, current))
+        BigInt(state.lifecycle) <= 9223372036854775807n
       ) {
-        if (!current()) throw new Error('F06 continued startup owner changed');
-        await this.readmitContinuedNoStartTable(tableId, engine);
+        if (await this.continueExcludedNoStartTable(tableId, engine, current)) {
+          if (!current()) throw new Error('F06 continued startup owner changed');
+          await this.readmitContinuedNoStartTable(tableId, engine);
+          return;
+        }
+        // Ordinary multi-table custody remains reachable after explicit no-start noneligibility.
+        await this.startParkedMovementEngine(engine, tableId, state.lifecycle, current);
         return;
       }
       if (

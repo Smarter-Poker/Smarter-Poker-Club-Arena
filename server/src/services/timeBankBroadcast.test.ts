@@ -6,6 +6,19 @@ vi.mock('./supabase.js', () => ({
     return state.client;
   },
 }));
+// The real engine also imports database submodules directly. Keep that path
+// on the same closed test transport, independent of ambient service credentials.
+vi.mock('./supabase/client.js', () => ({
+  get supabase() {
+    return state.client;
+  },
+  get maintenanceSupabase() {
+    return state.client;
+  },
+  get seedingSupabase() {
+    return state.client;
+  },
+}));
 vi.mock('./errorReporter.js', () => ({ reportError: vi.fn() }));
 import { broadcastTimeBankActivation } from './timeBankBroadcast.js';
 import { reportError } from './errorReporter.js';

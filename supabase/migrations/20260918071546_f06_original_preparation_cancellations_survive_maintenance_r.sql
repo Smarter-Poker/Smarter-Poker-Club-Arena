@@ -4,19 +4,33 @@
 -- This API is invoked only after the original preparation has physically exited
 -- without calling permit.start; replacements may read receipts, never create them.
 BEGIN;
-SET LOCAL lock_timeout='2s';
+SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='8s';
 -- Admit all trigger-bearing relations before any catalog mutation. Never wait
 -- holding an earlier hot relation while a live writer needs a later one.
-DO $admission$ BEGIN
- BEGIN
-  LOCK TABLE public.hand_atomic_commits IN SHARE ROW EXCLUSIVE MODE;
-  LOCK TABLE public.hand_history,public.hand_state_snapshots,public.hand_private_state,
-   public.table_hole_cards IN SHARE ROW EXCLUSIVE MODE NOWAIT;
- EXCEPTION WHEN lock_not_available THEN
-  RAISE EXCEPTION 'F06_PREPARED_INSTALL_ADMISSION_BUSY' USING ERRCODE='55P03';
- END;
+DO $admission$
+DECLARE v_deadline timestamptz := clock_timestamp()+interval '3 seconds';
+BEGIN
+ LOOP
+  IF clock_timestamp()>=v_deadline THEN
+   RAISE EXCEPTION 'F06_PREPARED_INSTALL_ADMISSION_BUSY' USING ERRCODE='55P03';
+  END IF;
+  BEGIN
+   PERFORM set_config('lock_timeout',least(1000,greatest(1,ceil(extract(epoch FROM v_deadline-clock_timestamp())*1000)))::text||'ms',true);
+   LOCK TABLE public.hand_atomic_commits IN SHARE ROW EXCLUSIVE MODE;
+   LOCK TABLE public.hand_history,public.hand_state_snapshots,public.hand_private_state,
+    public.table_hole_cards IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+   IF clock_timestamp()>=v_deadline THEN
+    RAISE EXCEPTION 'F06_PREPARED_INSTALL_ADMISSION_BUSY' USING ERRCODE='55P03';
+   END IF;
+   EXIT;
+  EXCEPTION WHEN lock_not_available THEN
+   -- The exception subtransaction released every partial relation lock.
+   PERFORM pg_sleep(least(0.01,greatest(0,extract(epoch FROM v_deadline-clock_timestamp()))));
+  END;
+ END LOOP;
 END $admission$;
+SET LOCAL lock_timeout='1s';
 
 
 CREATE TABLE smarter_private.f06_prepared_hand_cancellations (

@@ -64,14 +64,46 @@ def qualify(root, out, cmd, command, run, probe, require, results):
       while command(cmd,"SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=180971546 AND granted);").stdout.strip()!='t':
         require(process.poll() is None and time.monotonic()<deadline,'Preparation contender never acquired its barrier')
         time.sleep(.01)
-      try: yield
+      try: yield process
       finally:
         process.stdin.write(finish+';\n');process.stdin.close();process.wait(timeout=5)
         require(process.returncode==0,process.stderr.read())
     with held("INSERT INTO hand_state_snapshots(table_id,hand_number) VALUES(md5('prepared-table')::uuid,11000001);"):
       run('prepared-install-refuses-busy-before-ddl',migration.read_text(),error='55P03')
       run('prepared-install-busy-rolled-back',"SELECT to_regclass('smarter_private.f06_prepared_hand_cancellations') IS NULL;",'t')
-    run('prepared-install-qualified-candidate',migration.read_text())
+    private_write="INSERT INTO hand_private_state VALUES(md5('prepared-table')::uuid,11000001);"
+    with held(private_write):
+      started=time.monotonic()
+      run('prepared-install-private-writer-bounded-refusal',migration.read_text(),error='F06_PREPARED_INSTALL_ADMISSION_BUSY')
+      require(time.monotonic()-started<5,'Preparation installer exceeded its finite admission budget')
+      run('prepared-install-private-refusal-atomic',"SELECT to_regclass('smarter_private.f06_prepared_hand_cancellations') IS NULL AND to_regprocedure('public.fn_f06_cancel_prepared_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)') IS NULL;",'t')
+      probe('prepared-install-private-refusal-released-all',"SET LOCAL lock_timeout='100ms'; LOCK TABLE hand_atomic_commits,hand_history,hand_state_snapshots IN ROW EXCLUSIVE MODE NOWAIT;")
+    # The late private writer was the observed production blocker. Wait for
+    # actual admission yielding, then make that same writer take the earlier
+    # atomic relation. It can finish only if every partial lock was released.
+    pending=None
+    try:
+      with held(private_write) as writer:
+        pending=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        pending.stdin.write("SET application_name='prepared_transient_installer';\n"+migration.read_text())
+        pending.stdin.close()
+        deadline=time.monotonic()+2
+        while command(cmd,"SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='prepared_transient_installer' AND wait_event='PgSleep');").stdout.strip()!='t':
+          require(pending.poll() is None and time.monotonic()<deadline,'Preparation installer did not retain bounded admission after transient private writer')
+          time.sleep(.005)
+        writer.stdin.write("SET LOCAL statement_timeout='1s'; LOCK TABLE hand_atomic_commits IN ROW EXCLUSIVE MODE; SELECT pg_advisory_lock(180971547);\n")
+        writer.stdin.flush()
+        while command(cmd,"SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=180971547 AND granted);").stdout.strip()!='t':
+          require(writer.poll() is None and time.monotonic()<deadline,'Preparation installer retained an earlier relation across private-writer refusal')
+          time.sleep(.005)
+      pending.wait(timeout=5)
+      output=pending.stdout.read()+pending.stderr.read()
+      (out/'prepared-install-transient-private-writer.log').write_text(output)
+      require(pending.returncode==0,'Preparation installation failed after transient private writer: '+output)
+      results['cases'].append({'name':'prepared-install-transient-private-writer','passed':True})
+    finally:
+      if pending is not None and pending.poll() is None:
+        pending.wait(timeout=8)
     results['preparedCancellationInputs'] = {str(capture_path.relative_to(root)): hashlib.sha256(capture_path.read_bytes()).hexdigest(), str(migration.relative_to(root)): hashlib.sha256(migration.read_bytes()).hexdigest(),
       'scripts/ci/probes/f06-shared-hand-lane/prepared_cancellation_qualification.py': hashlib.sha256(__import__('pathlib').Path(__file__).read_bytes()).hexdigest()}
     one = json.loads(probe('prepared-exact-original-cancel',auth + cancel))

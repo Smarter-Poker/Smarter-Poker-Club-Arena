@@ -284,6 +284,56 @@ export class F06HandPermit {
     )
       throw new Error('f06_finish_unproven');
   }
+  /**
+   * Called by the exact preparation's finally block after it relinquishes the
+   * start boundary without attempting a controller. The irreversible local
+   * fence precedes transport; only the exact durable receipt frees admission.
+   */
+  async cancelPreparedHand(): Promise<void> {
+    if ((this.phase !== 'reserved' && !this.preparedCancellation) || !this.current())
+      throw new Error('f06_prepared_cancellation_unproven');
+    this.preparedCancellation = true;
+    this.phase = 'terminated';
+    const b = this.binding;
+    const input = {
+      p_tournament_id: b.tournament_id,
+      p_lease_generation: b.lease_generation,
+      p_table_id: b.table_id,
+      p_lifecycle: b.lifecycle,
+      p_permit_id: b.permit_id,
+      p_hand_number: b.hand_number,
+      p_custody_id: b.custody_id,
+    };
+    const valid = (data: unknown): boolean => {
+      const r = data as Record<string, unknown> | null;
+      return (
+        !!r &&
+        r.ok === true &&
+        r.state === 'never_started' &&
+        r.evidence_id === b.permit_id &&
+        r.tournament_id === b.tournament_id &&
+        r.table_id === b.table_id &&
+        r.lifecycle === b.lifecycle &&
+        r.hand_number === b.hand_number &&
+        r.permit_id === b.permit_id &&
+        r.custody_id === b.custody_id &&
+        r.generation === b.lease_generation
+      );
+    };
+    const result = await observeCurrentEngineWriter(
+      'permit-finish',
+      JSON.stringify({ ...b, kind: 'prepared-cancellation' }),
+      () => this.rpc('fn_f06_cancel_prepared_hand', input),
+      (value) => !!value.error || !valid(value.data)
+    );
+    if (!this.current() || result.error || !valid(result.data))
+      throw new Error('f06_prepared_cancellation_unknown');
+  }
+  private preparedCancellation = false;
+  hasPreparedCancellation(): boolean {
+    return this.preparedCancellation;
+  }
+
   /** Must wrap the final synchronous persistence/start block, with no await. */
   start(actuate: () => void): void {
     if (this.phase !== 'reserved' || !this.current() || !this.startAllowed())

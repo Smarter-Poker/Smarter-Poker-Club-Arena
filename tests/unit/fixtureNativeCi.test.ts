@@ -255,6 +255,8 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/probes/f06-shared-hand-lane/generation-preimages.json',
     'scripts/ci/probes/f06-shared-hand-lane/build-generation-migration.py',
     'supabase/migrations/20260918064213_interrupted_tournament_generation_disposition.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/prepared_cancellation_qualification.py',
+    'scripts/ci/probes/f06-shared-hand-lane/prepared-preimages.json',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled-preimages.json',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled-authority.sql',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled-bindings.json',

@@ -1836,6 +1836,19 @@ export abstract class ServerTableEngineBase {
       ? { binding: Object.freeze({ ...permit.binding }), phase: permit.recoveryState() }
       : null;
   }
+  /** Unresolved original preparation blocks maintenance even after a stop. */
+  hasUnresolvedF06Preparation(): boolean {
+    const phase = this.f06CurrentPermit?.recoveryState();
+    return phase === 'unknown' || phase === 'reserved' || phase === 'terminated';
+  }
+  protected async cancelF06PreparedHand(): Promise<void> {
+    const permit = this.f06CurrentPermit;
+    if (!permit || (permit.recoveryState() !== 'reserved' && !permit.hasPreparedCancellation()))
+      return;
+    await permit.cancelPreparedHand();
+    if (this.f06CurrentPermit !== permit) throw new Error('f06_permit_replaced');
+    this.f06CurrentPermit = null;
+  }
   private f06RecoveryInFlight = false;
   async replayF06OriginalPermit(
     expected: F06HandPermit['binding'],

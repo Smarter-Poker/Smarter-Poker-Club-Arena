@@ -24,6 +24,9 @@ vi.mock('../services/supabase.js', async (original) => ({
 }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 import { ServerTableEngine } from './ServerTableEngine.js';
+import { F06HandPermit } from '../services/F06HandPermit.js';
+import { MaintenanceBreak } from '../maintenance/MaintenanceBreak.js';
+import { GameServer } from '../GameServer.js';
 
 const engines: any[] = [];
 afterEach(() => {
@@ -41,8 +44,8 @@ afterEach(() => {
 const levelOne = { small_blind: 10, big_blind: 20, ante: 2 };
 const levelTwo = { small_blind: 20, big_blind: 40, ante: 4 };
 
-function fixture(count = 3) {
-  const engine = new ServerTableEngine('tournament-level-snapshot') as any;
+function fixture(count = 3, tableId = 'tournament-level-snapshot') {
+  const engine = new ServerTableEngine(tableId) as any;
   engines.push(engine);
   expect(engine.claimProcessOwnership()).toBe(true);
   engine.running = true;
@@ -296,4 +299,126 @@ describe('a pause arriving while the controller is being prepared', () => {
     expect(engine.handController).toBeNull();
     expect(engine.currentHandDealtStacks.size).toBe(0);
   });
+});
+
+describe('maintenance crossing an original F06 reservation', () => {
+  it.each(['receipt', 'lost reply'] as const)(
+    'drains the original preparation before maintenance restart: %s',
+    async (outcome) => {
+      const identity = {
+        tournament_id: 'aaaaaaaa-0000-4000-8000-000000000001',
+        lease_generation: 'bbbbbbbb-0000-4000-8000-000000000001',
+        table_id: 'cccccccc-0000-4000-8000-000000000001',
+        lifecycle: '1',
+        permit_id: 'dddddddd-0000-4000-8000-000000000001',
+        hand_number: '100',
+        custody_id: 'eeeeeeee-0000-4000-8000-000000000001',
+      };
+      const { engine, seats } = fixture(3, identity.table_id);
+      engine.tableInfo.tournament_id = identity.tournament_id;
+      let persisted: Record<string, unknown> | null = null;
+      let releaseBegin!: () => void;
+      const beginReturned = new Promise<void>((resolve) => {
+        releaseBegin = resolve;
+      });
+      let entered!: () => void;
+      const beginEntered = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let releaseCancel!: () => void;
+      const cancelReturned = new Promise<void>((resolve) => {
+        releaseCancel = resolve;
+      });
+      let enteredCancel!: () => void;
+      const cancelEntered = new Promise<void>((resolve) => {
+        enteredCancel = resolve;
+      });
+      const rpc = vi.fn(async (name: string) => {
+        if (name === 'fn_f06_cancel_prepared_hand') {
+          expect(permit.recoveryState()).toBe('terminated');
+          expect(engine.handController).toBeNull();
+          persisted = { ...persisted, state: 'never_started', evidence_id: identity.permit_id };
+          enteredCancel();
+          await cancelReturned;
+          if (outcome === 'lost reply') return { data: null, error: new Error('lost reply') };
+          return { data: { ...persisted, ok: true }, error: null };
+        }
+        expect(name).toBe('fn_f06_begin_hand');
+        persisted = {
+          ...identity,
+          generation: identity.lease_generation,
+          state: 'reserved',
+          evidence_id: null,
+        };
+        entered();
+        await beginReturned;
+        return { data: { ...persisted, ok: true }, error: null };
+      });
+      const permit = new F06HandPermit(identity, rpc, () => true);
+      engine.running = false;
+      engine.installF06HandAdmission(() => permit);
+      engine.running = true;
+      // Persistence unrelated to this original permit is excluded by the existing
+      // fixture. The real pause, reserve, deal continuation and stop remain intact.
+      engine.persistPresenceForRestart = vi.fn(async () => {});
+      const snapshot = vi.spyOn(engine, 'saveSnapshot');
+      const maintenance = new MaintenanceBreak({
+        engines: () => new Map<string, ServerTableEngine>([[engine.tableId, engine]]).entries(),
+        isRunning: () => true,
+        emit: () => {},
+        store: {} as any,
+      });
+      // Provider persistence is the test boundary; the actual restart predicate,
+      // real engine and exact F06 permit remain connected.
+      Object.assign(maintenance, {
+        phase: 'counting_down',
+        durableConfirmed: true,
+        breakEndsAt: Date.now() + 300_000,
+      });
+      const server = Object.create(GameServer.prototype) as GameServer;
+      Object.assign(server, { tableEngines: new Map([[engine.tableId, engine]]) });
+      const preparation = engine.dealHand(seats);
+      const settled = preparation.then(
+        () => null,
+        (error: unknown) => error
+      );
+      await beginEntered;
+      engine.pauseForMaintenance(300_000);
+      releaseBegin();
+      await cancelEntered;
+      expect(engine.hasUnresolvedF06Preparation()).toBe(true);
+      expect(maintenance.readyForRestart()).toBe(false);
+      expect(await server.drainHands(0)).toMatchObject({ timedOut: true, drained: 0 });
+      // Stop cannot turn an unacknowledged cancellation into restart readiness.
+      await engine.stop();
+      expect(engine.isRunning()).toBe(false);
+      expect(maintenance.readyForRestart()).toBe(false);
+      expect(await server.drainHands(0)).toMatchObject({ timedOut: true, drained: 0 });
+      releaseCancel();
+      const error = await settled;
+      if (outcome === 'lost reply') {
+        expect(String(error)).toContain('f06_prepared_cancellation_unknown');
+        expect(engine.hasUnresolvedF06Preparation()).toBe(true);
+        expect(maintenance.readyForRestart()).toBe(false);
+        expect(await server.drainHands(0)).toMatchObject({ timedOut: true, drained: 0 });
+        expect(() => permit.start(() => {})).toThrow('f06_start_unproven');
+        return;
+      }
+      expect(error).toBeNull();
+      expect(maintenance.readyForRestart()).toBe(true);
+      expect(await server.drainHands(0)).toMatchObject({ timedOut: false, drained: 1 });
+      expect(engine.handController).toBeNull();
+      expect(engine.handsDealtThisSession).toBe(0);
+      expect(snapshot).not.toHaveBeenCalled();
+      expect(engine.getF06RetainedPermit()).toBeNull();
+      await engine.stop();
+      expect(engine.hasReleasedProcessOwnership()).toBe(true);
+      // A process-local phase cannot clear this durable obstruction at restart.
+      expect(persisted).toMatchObject({ state: 'never_started', evidence_id: identity.permit_id });
+      expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+        'fn_f06_begin_hand',
+        'fn_f06_cancel_prepared_hand',
+      ]);
+    }
+  );
 });

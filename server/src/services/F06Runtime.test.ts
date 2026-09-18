@@ -81,6 +81,8 @@ it('real Dealing method waits for permit before preparing or starting a hand', a
     seatedPlayers: roster,
     tableInfo: {},
     handCount: 0,
+    running: true,
+    tournamentMovePauseOwners: new Set(),
     acquireSeatBoundary: async () => release,
     isTournamentTable: () => true,
     takePreparedHandNumber: () => null,

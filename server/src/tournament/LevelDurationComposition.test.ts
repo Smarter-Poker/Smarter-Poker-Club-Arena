@@ -8,6 +8,7 @@ import { escalatedBlindLevel, lastPlayableIndex } from './blindEscalation.js';
 import { observedStepRatio } from './blindLadder.js';
 import { continueBookedSpinBlinds } from './SpinDrawReceipt.js';
 import { spinBlindsForLevel } from '../config/spinSpec.js';
+import { isPersistedSpin } from './tournamentEntryCapacity.js';
 
 const source = readFileSync(
   path.join(process.cwd(), 'src/tournament/TournamentManagerBase.ts'),
@@ -41,6 +42,7 @@ function manager(
       'observedStepRatio',
       'continueBookedSpinBlinds',
       'spinBlindsForLevel',
+      'isPersistedSpin',
       'supabase',
       'tableStateHub',
       'reportError',
@@ -53,12 +55,17 @@ function manager(
       observedStepRatio,
       continueBookedSpinBlinds,
       spinBlindsForLevel,
+      isPersistedSpin,
       dependencies.supabase,
       dependencies.tableStateHub,
       dependencies.reportError,
       () => false
     ),
-    tournamentCache: { accelerated_mtt: accelerated, variant: spin ? 'spin' : 'mtt' },
+    tournamentCache: {
+      accelerated_mtt: accelerated,
+      variant: spin ? 'spin' : 'mtt',
+      format_contract: spin ? 'spin-v1' : 'mtt-v1',
+    },
     isLateRegClosed: () => closed,
     capLevelToTournamentChips: (level: unknown) => level,
   };

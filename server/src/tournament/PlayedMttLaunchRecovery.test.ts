@@ -44,6 +44,7 @@ function fixture() {
     id: EVENT,
     status: 'REGISTERING',
     tournament_type: 'MTT',
+    format_contract: 'mtt-v1',
     variant: 'freezeout',
     max_players: 500,
     prize_pool_finalized: true,
@@ -107,6 +108,7 @@ function fixture() {
           completed: receipt.completed,
           status: row.status,
           lease_generation: GENERATION,
+          format_contract: row.format_contract,
           ...receipt,
         },
       };
@@ -124,6 +126,7 @@ function fixture() {
           started_at: FIRST,
           completed_at: new Date().toISOString(),
           lease_generation: GENERATION,
+          format_contract: row.format_contract,
         },
       };
     }
@@ -171,9 +174,30 @@ describe('a dealt MTT reaches its existing launch authority before the fresh fie
     expect(state.resumeLifecycle).not.toHaveBeenCalled();
     expect(from.mock.calls.map(([name]) => name)).toEqual(['tournaments', 'tournament_players']);
   });
+  it.each([
+    ['mtt-v1', 4, 4],
+    ['mtt-v2', 2, 3],
+  ])(
+    'uses the recorded %s minimum before proposing a fresh launch',
+    async (format, minimum, required) => {
+      const { row, state } = fixture();
+      row.format_contract = format;
+      row.min_players = minimum;
+      row.max_players = null;
+      rpc.mockResolvedValue({ error: null, data: { ok: false, reason: 'no_hand_was_dealt' } });
+      await state.startLifecycle(1);
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining(`Only 2 of ${required} player(s)`)
+      );
+      expect(rpc).toHaveBeenCalledOnce();
+      expect(state.running).toBe(false);
+      expect(state.createTablesAndSeatPlayers).not.toHaveBeenCalled();
+    }
+  );
   it.each(['SPIN', 'SNG'])('does not apply generic MTT recovery to %s', async (type) => {
     const { row, state } = fixture();
     row.tournament_type = type;
+    row.format_contract = type === 'SPIN' ? 'spin-v1' : 'sng-v1';
     expect(await state.resumePlayedMttLaunch(1, row)).toBe(false);
     expect(rpc).not.toHaveBeenCalled();
   });
@@ -259,5 +283,40 @@ describe('played field proof is exact and finite', () => {
     expect(() =>
       readPlayedMttLaunchProof({ ...proof, playing: 1, eliminated: 33 }, FIRST)
     ).not.toThrow();
+  });
+});
+
+describe('launch format receipt binding', () => {
+  it.each(['fn_begin_tournament_launch_atomic', 'fn_complete_tournament_launch_atomic'])(
+    'refuses a successful-looking %s for another recorded format',
+    async (rpcName) => {
+      const { state, respond } = fixture();
+      rpc.mockImplementation(async (name: string, args: any) => {
+        const result = respond(name, args);
+        if (name === rpcName) (result.data as any).format_contract = 'seat-first-satellite-v1';
+        return result;
+      });
+      await state.startLifecycle(1);
+      expect(state.resumeLifecycle).not.toHaveBeenCalled();
+      expect(state.createTablesAndSeatPlayers).not.toHaveBeenCalled();
+      for (const [name, args] of rpc.mock.calls)
+        if (name === rpcName) expect(args.p_expected_format).toBe('mtt-v1');
+    }
+  );
+  it('rejects a missing parent marker before claiming or configuring a fresh launch', async () => {
+    const { row, state } = fixture();
+    delete row.format_contract;
+    await state.startLifecycle(1);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(state.resumeLifecycle).not.toHaveBeenCalled();
+  });
+  it('leaves terminal status to its owner without requiring an admission format', async () => {
+    const { row, state } = fixture();
+    row.status = 'COMPLETING';
+    row.format_contract = null;
+    await state.startLifecycle(1);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(state.running).toBe(false);
+    expect(reportError).not.toHaveBeenCalled();
   });
 });

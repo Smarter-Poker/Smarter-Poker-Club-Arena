@@ -48,10 +48,55 @@ def qualify(root, out, cmd, command, run, probe, require, results, seed, held, m
         ('outer-settlement', 'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)', 'F06_ABORT_OUTER_SETTLEMENT_CHANGED'),
     ]:
         run('successor-refuses-drift-' + name, 'BEGIN; ALTER FUNCTION ' + signature + ' SET search_path=pg_catalog,pg_temp;' + installer, error=error)
-    with held("SELECT 1 FROM engine_tournament_leases WHERE tournament_id=md5('t11')::uuid FOR KEY SHARE;"):
-        run('successor-installer-refuses-busy-lease-without-wait', installer, error='55P03')
-    run('successor-refused-install-leaves-no-column', "SELECT count(*) FROM pg_attribute WHERE attrelid='smarter_private.f06_unsettled_hand_aborts'::regclass AND attname='retired_lease_generation' AND NOT attisdropped;", '0')
-    run('successor-install', installer)
+    for relation, mode in [('public.engine_tournament_leases', 'ROW EXCLUSIVE'),
+                           ('smarter_private.f06_unsettled_hand_aborts', 'ACCESS SHARE')]:
+        with held('LOCK TABLE ' + relation + ' IN ' + mode + ' MODE;'):
+            started = time.monotonic()
+            failed = command(cmd, installer)
+            elapsed = time.monotonic() - started
+            output = failed.stdout + failed.stderr
+            name = 'successor-installer-budget-' + relation.split('.')[-1]
+            (out / (name + '.log')).write_text(output)
+            require(failed.returncode != 0 and '55P03' in output
+                    and 'F06_SUCCESSOR_INSTALL_ADMISSION_BUSY' in output and 2.9 <= elapsed < 4.5,
+                    'Successor installation did not respect admission budget: ' + output)
+        run(name + '-no-column', "SELECT count(*) FROM pg_attribute WHERE attrelid='smarter_private.f06_unsettled_hand_aborts'::regclass AND attname='retired_lease_generation' AND NOT attisdropped;", '0')
+        require(run(name + '-money', money) == before, 'Refused admission changed money')
+        results['cases'].append({'name': name, 'passed': True})
+
+    def barrier(sql, process, description):
+        deadline = time.monotonic() + 2
+        while command(cmd, sql).stdout.strip() != 't':
+            require(process.poll() is None and time.monotonic() < deadline, description)
+            time.sleep(.01)
+
+    # Block the last relation, then interleave a lease writer while the installer
+    # yields. Its subtransaction must have released the first relation lock.
+    writer = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    with held('LOCK TABLE smarter_private.f06_unsettled_hand_aborts IN ACCESS SHARE MODE;'):
+        admitted = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        admitted.stdin.write("SET application_name='f06-successor-installer';" + installer)
+        admitted.stdin.close()
+        barrier("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='f06-successor-installer' AND wait_event='PgSleep');", admitted, 'Successor installer did not yield its partial set')
+        writer.stdin.write("BEGIN;SET lock_timeout='1s'; LOCK TABLE engine_tournament_leases IN ROW EXCLUSIVE MODE; SELECT count(*) FROM smarter_private.f06_unsettled_hand_aborts; SELECT pg_advisory_lock(18092031);\n")
+        writer.stdin.flush()
+        barrier("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=18092031 AND granted);", writer, 'Lease writer could not cross the yielded partial set')
+        run('successor-installer-yields-with-no-application-lock', """SELECT NOT EXISTS(
+          SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid
+          JOIN pg_class c ON c.oid=l.relation JOIN pg_namespace n ON n.oid=c.relnamespace
+          WHERE a.application_name='f06-successor-installer' AND l.granted
+          AND n.nspname IN('public','smarter_private'));""", 't')
+        run('successor-installer-yields-before-ddl', "SELECT NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='smarter_private.f06_unsettled_hand_aborts'::regclass AND attname='retired_lease_generation' AND NOT attisdropped);", 't')
+    require(admitted.poll() is None, 'Successor installer failed to preserve the interleaved lease writer')
+    writer.stdin.write('ROLLBACK;\n')
+    writer.stdin.close()
+    writer.wait(timeout=5)
+    require(writer.returncode == 0, 'Interleaved lease writer failed: ' + writer.stderr.read())
+    admitted.wait(timeout=8)
+    output = admitted.stdout.read() + admitted.stderr.read()
+    (out / 'successor-install-after-writers-drain.log').write_text(output)
+    require(admitted.returncode == 0, 'Successor installation after drain failed: ' + output)
+    results['cases'].append({'name': 'successor-install-after-writers-drain', 'passed': True})
     results['successorPostimages'] = json.loads(run('successor-qualified-catalog-postimages', """SELECT jsonb_agg(jsonb_build_object(
       'signature',p.oid::regprocedure::text,'md5',md5(pg_get_functiondef(p.oid)),
       'owner',pg_get_userbyid(p.proowner),'acl',p.proacl::text) ORDER BY p.oid::regprocedure::text)

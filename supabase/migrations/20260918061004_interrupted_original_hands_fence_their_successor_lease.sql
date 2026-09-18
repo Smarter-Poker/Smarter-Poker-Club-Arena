@@ -7,10 +7,29 @@
 BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='8s';
--- No wait while owning half the DDL relation set: an active caller may already
--- own its lease and then read the receipt table through the request hook.
-LOCK TABLE public.engine_tournament_leases, smarter_private.f06_unsettled_hand_aborts
- IN ACCESS EXCLUSIVE MODE NOWAIT;
+-- Admit this one installation within a finite transaction-local budget. A live
+-- caller may own its lease before reading receipts; never retain a partial set.
+-- Lease readers remain compatible: only the receipt relation receives DDL.
+DO $admission$
+DECLARE v_deadline timestamptz := clock_timestamp()+interval '3 seconds';
+BEGIN
+ LOOP
+  IF clock_timestamp()>=v_deadline THEN
+   RAISE EXCEPTION 'F06_SUCCESSOR_INSTALL_ADMISSION_BUSY' USING ERRCODE='55P03';
+  END IF;
+  BEGIN
+   LOCK TABLE public.engine_tournament_leases IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+   LOCK TABLE smarter_private.f06_unsettled_hand_aborts IN ACCESS EXCLUSIVE MODE NOWAIT;
+   IF clock_timestamp()>=v_deadline THEN
+    RAISE EXCEPTION 'F06_SUCCESSOR_INSTALL_ADMISSION_BUSY' USING ERRCODE='55P03';
+   END IF;
+   EXIT;
+  EXCEPTION WHEN lock_not_available THEN
+   -- The exception subtransaction released every partial relation lock.
+   PERFORM pg_sleep(least(0.01,greatest(0,extract(epoch FROM v_deadline-clock_timestamp()))));
+  END;
+ END LOOP;
+END $admission$;
 DO $preimages$
 BEGIN
  IF public.fn_platform_frozen() THEN RAISE EXCEPTION 'PLATFORM_FROZEN'; END IF;

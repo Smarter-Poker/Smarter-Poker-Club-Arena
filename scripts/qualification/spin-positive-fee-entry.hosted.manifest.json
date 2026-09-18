@@ -4,8 +4,8 @@
   "image": "positive-fee-entry",
   "files": {
     "scripts/qualification/spin-positive-fee-entry.py": {
-      "bytes": 13407,
-      "sha256": "7d0aae375ce2d64b38427ab0e0df3d48a35222013469389463eea7e0aafbb4fb"
+      "bytes": 15299,
+      "sha256": "a9e1aee8289be8d4fffb89ad33a5b3d0ab11c4a2afb3b02d2d803439e667835d"
     },
     "scripts/qualification/spin-positive-fee-entry-oracle.py": {
       "bytes": 40902,
@@ -38,6 +38,14 @@
     "scripts/qualification/fixtures/spin-mixed-positive-fee/provenance.json": {
       "bytes": 15505,
       "sha256": "4f3ac019050746920f82dfdf6123a9f4712dcb12481ca99f094e807bb30ea791"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/hand-id-sequence.sql": {
+      "bytes": 7643,
+      "sha256": "d7694c6d742026c7e17b23a0a61e30f5e5ba9e07e1eb4926c7734b839a225dc5"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/hand-id-sequence-capture.json": {
+      "bytes": 659,
+      "sha256": "a86f2f81e2ed49bf347c9806a9279b8f8e437c10642de163ee2bd8c5d05f92f1"
     }
   },
   "relative_include_graph": {

@@ -203,7 +203,7 @@ class PositiveFeeEntryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder)/'source'
             receipt = self.allocation_receipt(source)
-            self.assertEqual(len(receipt['stages']), 31)
+            self.assertEqual(len(receipt['stages']), 32)
             self.assertEqual(self.validate_allocation(receipt, source), [])
             for original in receipt['stages']:
                 for mutation in ('missing', 'failed', 'unterminated', 'deadline'):
@@ -221,7 +221,8 @@ class PositiveFeeEntryTests(unittest.TestCase):
             source = Path(folder)/'source'
             receipt = self.allocation_receipt(source)
             for name in ['authentic_access','authentic_policies','current_tested_roles','tested_role_readback',
-                         'authentic_entry_sequence_authority','authentic_settlement_source_authority','fee_actual_paid_entry']:
+                         'authentic_entry_sequence_authority','authentic_settlement_source_authority',
+                         'fee_hand_id_sequence','fee_actual_paid_entry']:
                 for option in ['-U','-h','-d','-f','-v']:
                     changed = copy.deepcopy(receipt)
                     stage = next(s for s in changed['stages'] if s['stage']==name)
@@ -279,6 +280,69 @@ class PositiveFeeEntryTests(unittest.TestCase):
             "DO $entry_context$ BEGIN PERFORM set_config('spin_mixed_qualification.execution_uuid','"+EXECUTION+
             "',false); PERFORM set_config('qualification.execution_uuid','"+EXECUTION+"',false); END $entry_context$;")
 
+    def test_paid_entry_sequence_restore_is_bound_to_original_capture_and_fresh_preimage(self):
+        root = Path(__file__).resolve().parents[2]
+        base = root / W.FEE.BASE
+        raw = (base / 'hand-id-sequence-capture.json').read_bytes()
+        self.assertEqual(W.digest(raw), 'a86f2f81e2ed49bf347c9806a9279b8f8e437c10642de163ee2bd8c5d05f92f1')
+        captured, = W.FEE.decode(raw)
+        sql = (base / 'hand-id-sequence.sql').read_text()
+        pre, post = [W.FEE.decode(value) for value in re.findall(r"'(\{[^\n]+\})'::jsonb", sql)]
+        expected = {k: v for k, v in captured['capture']['sequence'].items() if not k.endswith('_usage')}
+        expected.update(kind='S', persistence='p', owned_dependencies=0)
+        self.assertEqual(post, expected)
+        self.assertEqual(pre, {**expected, 'owner': 'fixture_bootstrap', 'acl': None, 'start': '1', 'cache': '1'})
+        self.assertIn('last_value=1 AND is_called=false', sql)
+        self.assertIn('START WITH 1000000 RESTART WITH 1000000 CACHE 100 NO CYCLE', sql)
+        self.assertLess(sql.index('PERFORM pg_temp.fee_sequence_empty_estate();'), sql.index('ALTER SEQUENCE'))
+        self.assertIn('last_value=1000000 AND is_called=false', sql)
+        self.assertIn("'production_counter_copied',false", sql)
+        self.assertNotIn('ALTER SEQUENCE public.hand_id_seq',
+                         (root / 'scripts/ci/probes/spin-expiry/inputs/entry-sequence-authority.sql').read_text())
+
+    def test_paid_entry_sequence_readback_refuses_wrong_authority_or_scope(self):
+        root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'source'; work = Path(folder) / 'work'
+            base = source / W.FEE.BASE; base.mkdir(parents=True); work.mkdir()
+            for name in ('hand-id-sequence-capture.json', 'expected-metadata.json'):
+                (base / name).write_bytes((root / W.FEE.BASE / name).read_bytes())
+            captured, = W.FEE.decode((base / 'hand-id-sequence-capture.json').read_bytes())
+            authority = {k: v for k, v in captured['capture']['sequence'].items() if not k.endswith('_usage')}
+            authority.update(kind='S', persistence='p', owned_dependencies=0)
+            sequence = {'stage': 'positive_fee_hand_id_sequence', 'execution_uuid': EXECUTION,
+                'database': 'qual_spin_expiry_' + EXECUTION.replace('-', ''), 'user': 'fixture_bootstrap',
+                'session_user': 'fixture_bootstrap', 'socket': str(work / 'socket'), 'sequence': authority,
+                'empty_tables_checked': 250, 'empty_business_estate': True,
+                'fresh_isolated_initialization_only': True, 'production_counter_copied': False,
+                'financial_qualification': False, 'historical_qualification': False, 'production_qualification': False}
+            metadata = W.FEE.decode((base / 'expected-metadata.json').read_bytes())
+            catalog = {'stage': 'positive_fee_catalog_readback', 'execution_uuid': EXECUTION,
+                'database': sequence['database'], 'relations': len(metadata['relations']),
+                'function_authorities': len(metadata['functions']), 'trigger_bindings': len(metadata['bindings']),
+                'logical_catalog_exact': True, 'empty_business_estate': True, 'mtt_abi': 'legacy-capacity-v1',
+                **{key: False for key in ('deployment_local_attnum_identity_compared', 'mtt_activation_qualified',
+                    'native_financial_qualification', 'historical_qualification', 'production_qualification', 'full_qualification')}}
+            (work / 'fee_provider_readback.stdout').write_text(json.dumps(catalog) + '\n')
+            (work / 'fee_actual_paid_entry.stdout').write_bytes(b'original entry bytes for mocked oracle boundary\n')
+            oracle = Mock(); oracle.validate_output.return_value = {'separate_oracle_boundary': True}
+            stream = work / 'fee_hand_id_sequence.stdout'
+            with patch.object(W.FEE, 'load_oracle', return_value=oracle):
+                stream.write_text(json.dumps(sequence) + '\n')
+                self.assertEqual(W.FEE.validate_outputs(source, work, EXECUTION, TOURNAMENT)['sequence'], sequence)
+                for key, value in [('user', 'postgres'), ('socket', '/other/socket'), ('empty_business_estate', False),
+                    ('empty_tables_checked', 0), ('fresh_isolated_initialization_only', False),
+                    ('production_counter_copied', True), ('financial_qualification', True)]:
+                    changed = copy.deepcopy(sequence); changed[key] = value
+                    stream.write_text(json.dumps(changed) + '\n')
+                    with self.subTest(field=key), self.assertRaises(ValueError):
+                        W.FEE.validate_outputs(source, work, EXECUTION, TOURNAMENT)
+                for key, value in [('owner', 'fixture_bootstrap'), ('acl', None), ('start', '1'), ('cache', '1')]:
+                    changed = copy.deepcopy(sequence); changed['sequence'][key] = value
+                    stream.write_text(json.dumps(changed) + '\n')
+                    with self.subTest(authority=key), self.assertRaises(ValueError):
+                        W.FEE.validate_outputs(source, work, EXECUTION, TOURNAMENT)
+
     def test_independent_paid_entry_oracle_rejects_corrupted_original_evidence(self):
         root = Path(__file__).resolve().parents[2]
         self.assertEqual(W.FEE.load_oracle(root).run_negative_controls(), 38)
@@ -307,17 +371,20 @@ class PositiveFeeEntryTests(unittest.TestCase):
 
     def test_paid_entry_cannot_load_historical_or_synthetic_estates(self):
         plan = W.FEE.body_plan(PG, SOURCE, EXECUTION, ORDINARY, TOURNAMENT)
-        self.assertEqual([name for name, _ in plan], ['fee_current_catalog_restore',
+        self.assertEqual([name for name, _ in plan], ['fee_hand_id_sequence', 'fee_current_catalog_restore',
             'fee_current_catalog_readback', 'fee_current_recognition_restore',
             'fee_current_recognition_readback', 'fee_provider_restore',
             'fee_provider_readback', 'fee_actual_paid_entry'])
         for name, argv in plan:
-            self.assertEqual(argv[argv.index('-U') + 1], 'postgres')
+            self.assertEqual(argv[argv.index('-U') + 1],
+                             'fixture_bootstrap' if name == 'fee_hand_id_sequence' else 'postgres')
             self.assertEqual(argv[argv.index('-h') + 1], str(SOURCE.parent / 'work/socket'))
             self.assertEqual(argv[argv.index('-d') + 1], 'qual_spin_expiry_' + EXECUTION.replace('-', ''))
             self.assertIn('ordinary_user_uuid=' + ORDINARY, argv)
             self.assertIn('tournament_uuid=' + TOURNAMENT, argv)
             self.assertNotIn('synthetic-', argv[-1])
+        self.assertIn('qualification_socket=' + str(SOURCE.parent / 'work/socket'), plan[0][1])
+        self.assertEqual(plan[0][1][-1], str(SOURCE / W.FEE.BASE / 'hand-id-sequence.sql'))
         self.assertTrue(set(W.FEE.INPUTS) <= set(W.REPLACEMENTS))
         self.assertEqual(W.CASES[W.FEE.IMAGE], ())
 

@@ -19,7 +19,8 @@ MANIFEST = 'scripts/qualification/spin-positive-fee-entry.hosted.manifest.json'
 BASE = 'scripts/qualification/fixtures/spin-mixed-positive-fee/'
 CURRENT = 'scripts/qualification/fixtures/spin-mixed-current/'
 LEAVES = ('provider-supplement.sql', 'catalog-readback.sql', 'reference-data.sql',
-          'expected-metadata.json', 'preimage-metadata.json', 'provenance.json')
+          'expected-metadata.json', 'preimage-metadata.json', 'provenance.json',
+          'hand-id-sequence.sql', 'hand-id-sequence-capture.json')
 INPUTS = (MODULE, ORACLE, FIXTURE, MANIFEST, *(BASE + n for n in LEAVES))
 
 
@@ -78,12 +79,12 @@ def validate_sources(files):
     require(graph == manifest['relative_include_graph'], 'paid-entry include graph differs')
 
 
-def sql_argv(PG, source, execution, ordinary, tournament, path):
+def sql_argv(PG, source, execution, ordinary, tournament, path, user='postgres'):
     settings = ("DO $entry_context$ BEGIN PERFORM set_config('spin_mixed_qualification.execution_uuid','" + execution
                 + "',false); PERFORM set_config('qualification.execution_uuid','" + execution
                 + "',false); END $entry_context$;")
     return [str(PG / 'psql'), '-X', '-w', '-A', '-t', '-h', str(source.parent / 'work/socket'),
-            '-p', '5432', '-U', 'postgres', '-d', 'qual_spin_expiry_' + execution.replace('-', ''),
+            '-p', '5432', '-U', user, '-d', 'qual_spin_expiry_' + execution.replace('-', ''),
             '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=verbose', '-v', 'execution_uuid=' + execution,
             '-v', 'ordinary_user_uuid=' + ordinary, '-v', 'tournament_uuid=' + tournament,
             '-c', settings, '-f', str(source / path)]
@@ -97,8 +98,12 @@ def body_plan(PG, source, execution, ordinary, tournament):
              ('fee_provider_restore', BASE + 'provider-supplement.sql'),
              ('fee_provider_readback', BASE + 'catalog-readback.sql'),
              ('fee_actual_paid_entry', FIXTURE)]
-    return [(name, sql_argv(PG, source, execution, ordinary, tournament, path))
-            for name, path in specs]
+    sequence = sql_argv(PG, source, execution, ordinary, tournament,
+                        BASE + 'hand-id-sequence.sql', user='fixture_bootstrap')
+    position = sequence.index('-c')
+    sequence[position:position] = ['-v', 'qualification_socket=' + str(source.parent / 'work/socket')]
+    return [('fee_hand_id_sequence', sequence)] + [
+        (name, sql_argv(PG, source, execution, ordinary, tournament, path)) for name, path in specs]
 
 
 def load_oracle(source):
@@ -110,6 +115,23 @@ def load_oracle(source):
 
 
 def validate_outputs(source, work, execution, tournament):
+    sequence_raw = (work / 'fee_hand_id_sequence.stdout').read_bytes()
+    sequence_values = [decode(line) for line in sequence_raw.splitlines() if line.lstrip().startswith(b'{')]
+    sequence, = sequence_values
+    captured, = decode((source / BASE / 'hand-id-sequence-capture.json').read_bytes())
+    authority = {k: v for k, v in captured['capture']['sequence'].items() if not k.endswith('_usage')}
+    authority.update(kind='S', persistence='p', owned_dependencies=0)
+    require(sequence['stage'] == 'positive_fee_hand_id_sequence'
+            and sequence['execution_uuid'] == execution
+            and sequence['database'] == 'qual_spin_expiry_' + execution.replace('-', '')
+            and sequence['user'] == sequence['session_user'] == 'fixture_bootstrap'
+            and sequence['socket'] == str(work / 'socket') and sequence['sequence'] == authority
+            and type(sequence['empty_tables_checked']) is int and 0 < sequence['empty_tables_checked'] <= 400
+            and sequence['empty_business_estate'] is True
+            and sequence['fresh_isolated_initialization_only'] is True
+            and all(sequence[k] is False for k in ('production_counter_copied',
+                'financial_qualification', 'historical_qualification', 'production_qualification')),
+            'captured fee sequence initialization not independently observed')
     catalog_raw = (work / 'fee_provider_readback.stdout').read_bytes()
     values = [decode(line) for line in catalog_raw.splitlines() if line.lstrip().startswith(b'{')]
     catalog, = [v for v in values if v.get('stage') == 'positive_fee_catalog_readback']
@@ -128,7 +150,8 @@ def validate_outputs(source, work, execution, tournament):
             'current paid-entry provider not independently observed')
     original = (work / 'fee_actual_paid_entry.stdout').read_bytes()
     summary = load_oracle(source).validate_output(original, execution, tournament)
-    return {'catalog': catalog, 'entry': summary,
+    return {'sequence': sequence, 'sequence_stdout_sha256': sha(sequence_raw),
+            'catalog': catalog, 'entry': summary,
             'catalog_stdout_sha256': sha(catalog_raw), 'entry_stdout_sha256': sha(original),
             'full_financial_qualification': False, 'historical_qualification': False,
             'production_qualification': False}
@@ -136,7 +159,8 @@ def validate_outputs(source, work, execution, tournament):
 
 def validate_stages(receipt, PG, source, execution, ordinary, tournament):
     # Exact original allocator sequence: bootstrap schema/authority first,
-    # seven nonsuperuser entry stages, then successful original cleanup. A
+    # one fee-only bootstrap sequence stage and seven nonsuperuser entry stages,
+    # then successful original cleanup. A
     # partial/subsequence receipt cannot stand in for the authentic provider.
     work = source.parent / 'work'
     data = work / 'data'

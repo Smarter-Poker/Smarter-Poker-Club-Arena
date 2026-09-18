@@ -33,3 +33,16 @@ its embedded assertion were corrected; runtime flags and all captured function
 bodies are unchanged. Original failed evidence, source stability and successful
 cleanup are retained. This corrects test restoration evidence, not production
 trigger configuration. The next actual entry result remains pending.
+
+Second attempt 5419df68 passed exact current-provider catalog readback and
+committed the real Mint, three transfers, creator and first two purchases in
+the disposable database. The third purchase rolled back with SQLSTATE 42501
+because the original schema fixture created hand_id_seq under its bootstrap
+owner without the live sequence grants. Read-only capture at
+2026-09-18T01:56:47Z confirms production owner postgres, existing usage grants,
+start 1000000 and cache 100. No production permission defect is established.
+The isolated fee image restores that exact authority before business requests;
+a fresh unused local sequence is initialized from its captured start, without
+reading or copying a production counter. Original failed streams, all119 source
+hashes and successful cleanup are retained. A new committed execution is
+required; partial funding/seat observations are not entry qualification.

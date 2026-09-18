@@ -465,6 +465,8 @@ const spinExpiryAccountingPaths = [
   'scripts/qualification/fixtures/spin-mixed-positive-fee/expected-metadata.json',
   'scripts/qualification/fixtures/spin-mixed-positive-fee/preimage-metadata.json',
   'scripts/qualification/fixtures/spin-mixed-positive-fee/provenance.json',
+  'scripts/qualification/fixtures/spin-mixed-positive-fee/hand-id-sequence.sql',
+  'scripts/qualification/fixtures/spin-mixed-positive-fee/hand-id-sequence-capture.json',
   'supabase/components/spin-mixed-basis-current-terminal.sql',
   'supabase/components/spin-mixed-basis-current-terminal.rollback.sql',
   'scripts/qualification/spin-mixed-current.py',

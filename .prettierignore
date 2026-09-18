@@ -57,6 +57,7 @@ scripts/qualification/spin-mixed-current.hosted.manifest.json
 scripts/qualification/fixtures/spin-mixed-positive-fee/expected-metadata.json
 scripts/qualification/fixtures/spin-mixed-positive-fee/preimage-metadata.json
 scripts/qualification/fixtures/spin-mixed-positive-fee/provenance.json
+scripts/qualification/fixtures/spin-mixed-positive-fee/hand-id-sequence-capture.json
 scripts/qualification/spin-positive-fee-entry.hosted.manifest.json
 
 # Preserve the reviewed serialization of captured Production Alert baselines.

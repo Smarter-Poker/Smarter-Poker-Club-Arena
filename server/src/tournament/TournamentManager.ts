@@ -9,6 +9,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { verifyF06MovementAdmission } from './f06MovementAdmission.js';
 import {
   TournamentTableBreakRpc,
   TournamentTableBreakCapacityError,
@@ -160,6 +161,69 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (!generation || !this.eliminationMutationAllowed())
       throw new Error('F06 manager authority unavailable');
     return new TournamentTableBreakRpc(this.tournamentId, generation);
+  }
+
+  protected async startParkedMovementEngine(
+    engine: ServerTableEngine,
+    tableId: string,
+    tableLifecycle: string,
+    current: () => boolean
+  ): Promise<void> {
+    const rpc = this.tableBreakRpc();
+    const table = await rpc.tableState(tableId);
+    if (!current() || !table.excluded || !table.break_id || table.lifecycle !== tableLifecycle)
+      throw new Error('f06_movement_source_changed');
+    const state = await rpc.reconcile(table.break_id);
+    const generation = this.getTournamentLeaseGeneration();
+    if (
+      !current() ||
+      !generation ||
+      state.source_table_id !== tableId ||
+      state.lifecycle !== tableLifecycle ||
+      state.terminal_handoff_required ||
+      !['park_requested', 'begun'].includes(state.state)
+    )
+      throw new Error('f06_movement_break_changed');
+    const expected = Object.freeze({
+      admission_id: randomUUID(),
+      tournament_id: this.tournamentId,
+      lease_generation: generation,
+      table_id: tableId,
+      lifecycle: tableLifecycle,
+      break_id: state.break_id,
+      custody_id: randomUUID(),
+    });
+    const request = Object.freeze({
+      p_tournament_id: expected.tournament_id,
+      p_lease_generation: generation,
+      p_table_id: tableId,
+      p_lifecycle: tableLifecycle,
+      p_break_id: state.break_id,
+      p_admission_id: expected.admission_id,
+      p_custody_id: expected.custody_id,
+      p_expected_revision: state.revision,
+    });
+    const readAdmission = async () => {
+      if (!current()) throw new Error('f06_movement_owner_changed');
+      const { data, error } = await supabase.rpc('fn_f06_admit_parked_movement', request);
+      if (!current() || error) throw new Error('f06_movement_admission_unproven');
+      return verifyF06MovementAdmission(data, expected);
+    };
+    const admission = await readAdmission();
+    engine.installF06MovementAdmission(
+      this.tournamentMoveBoundaryOwner,
+      admission,
+      current,
+      async () => {
+        const repeated = await readAdmission();
+        if (
+          repeated.revision !== admission.revision ||
+          repeated.proof_hash !== admission.proof_hash
+        )
+          throw new Error('f06_movement_proof_changed');
+      }
+    );
+    await engine.start();
   }
 
   private rememberTournamentBreak(state: TournamentTableBreakState): void {

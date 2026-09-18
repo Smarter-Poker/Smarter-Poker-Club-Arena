@@ -1402,6 +1402,15 @@ export abstract class TournamentManagerBase {
   }
 
   /** A manager is not torn down until every table start it launched has settled. */
+  protected async startParkedMovementEngine(
+    _engine: ServerTableEngine,
+    _tableId: string,
+    _tableLifecycle: string,
+    _current: () => boolean
+  ): Promise<void> {
+    throw new Error('f06_movement_admission_unavailable');
+  }
+
   protected startManagedTableEngine(
     engine: ServerTableEngine,
     errorContext: string,
@@ -1441,6 +1450,24 @@ export abstract class TournamentManagerBase {
         unresolved_permit?: unknown;
         next_hand_number_candidate?: string | null;
       } | null;
+      if (
+        current() &&
+        !error &&
+        state?.ok === true &&
+        state.table_id === tableId &&
+        state.can_reserve === false &&
+        state.blocked_reason === 'source_excluded' &&
+        state.unresolved_permit === null &&
+        state.next_hand_number_candidate === null &&
+        typeof state.lifecycle === 'string' &&
+        /^[1-9][0-9]{0,18}$/.test(state.lifecycle) &&
+        BigInt(state.lifecycle) <= 9223372036854775807n
+      ) {
+        // An existing break excludes DEALING, not its exact custody transfer.
+        // The separate admission proves that transfer and never installs a dealer.
+        await this.startParkedMovementEngine(engine, tableId, state.lifecycle, current);
+        return;
+      }
       if (
         !current() ||
         error ||

@@ -147,6 +147,9 @@ try:
     extension = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/unsettled_qualification.py'))
     extension['qualify'](ROOT, out, cmd, command, run, probe, require, results)
     require(results.get('unsettledAbort', {}).get('passed') is True, 'Interrupted-hand qualification did not complete')
+    prepared = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/prepared_cancellation_qualification.py'))
+    prepared['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('preparedCancellation', {}).get('passed') is True, 'Prepared cancellation qualification did not complete')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

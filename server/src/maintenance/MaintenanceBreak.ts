@@ -128,6 +128,8 @@ export interface PausableTableEngine {
    * the restart gate asks (PHASE 2, 2026-09-02) - see `unparkedTables`.
    */
   isBetweenHands(): boolean;
+  /** Positive original preparation disposition must survive process replacement. */
+  hasUnresolvedF06Preparation?(): boolean;
   /** Initialized time banks have reached the durable park row. */
   isMaintenanceStateDurable?(): boolean;
   /**
@@ -1771,6 +1773,11 @@ export class MaintenanceBreak {
     };
     for (const [tableId, engine] of this.deps.engines()) {
       try {
+        if (engine.hasUnresolvedF06Preparation?.()) {
+          out.push(tableId);
+          count('f06_preparation_unresolved');
+          continue;
+        }
         if (!engine.isRunning()) continue;
         if (!engine.isBetweenHands()) {
           out.push(tableId);

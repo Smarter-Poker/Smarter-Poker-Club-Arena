@@ -8,6 +8,9 @@ const wide =
   /^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github\/workflows\/|scripts\/ci\/(classify-ci-changes|fixture-native-gate)\.mjs)/;
 const phase4 =
   /^(\.github\/workflows\/ci\.yml|scripts\/ci\/classify-ci-changes\.mjs|scripts\/ci\/probes\/horse-phase4-certified-solver\/|supabase\/migrations\/20260909(165541|170039|170749|171644|172537|175000|180000)_|server\/src\/(benchmark\/(HorseLeague|HorseSolverAgreementV31)|engine\/(GtoDecisionContext|GtoPostflopV31|GtoV31|HorseDataLedger|HorseLogic|LiveHorseDecisionWorkerHealth|horseDecision\/)|services\/GtoPostflopV31Loader))/;
+const breakfastWitness =
+  /^scripts\/ci\/(?:test-breakfast-original-witness\.py$|breakfast_(?:fixture|original_witness|qualification|concurrency)\.py$|fixtures\/breakfast-original-witness\/|probes\/breakfast-original-witness\/)/;
+
 const satelliteQualifiers =
   /^(scripts\/ci\/(?:test-satellite-qualifiers\.py$|(?:satellite_qualifier_(?:fixture|concurrency)|satellite_entry_club_native)\.py$|fixtures\/satellite-qualifiers\/|probes\/(?:satellite-entry-club-native\.sql|satellite-qualifier(?:s-native\.sql|-(?:finish|reader)\.spec))$)|tests\/operations\/satellite-qualifier-results\.test\.py$)/;
 const mttPreparation =
@@ -122,6 +125,7 @@ export function classifyChangedPaths(paths) {
       phase4Changed ||
       matches(mttPreparation) ||
       matches(satelliteQualifiers) ||
+      matches(breakfastWitness) ||
       matches(mttActivation) ||
       matches(f06HandAuthority) ||
       commitmentAudit ||
@@ -144,6 +148,7 @@ export function classifyChangedPaths(paths) {
       paths.some((p) => p.startsWith('docs/agent-policy/')) ||
       broad ||
       matches(satelliteQualifiers) ||
+      matches(breakfastWitness) ||
       buildProvenance ||
       diamondGames ||
       commitmentAudit ||

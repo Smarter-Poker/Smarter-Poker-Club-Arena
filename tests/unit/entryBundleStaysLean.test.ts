@@ -23,11 +23,27 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceBlockAfter } from '../helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..', '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
 describe('the eager app shell stays free of lazy-only code', () => {
+  it('the ranking host loads persisted format routing only inside Play Again', () => {
+    const host = read('src/components/tournament/TournamentRankingHost.tsx');
+    expect(host).not.toMatch(/\bfrom\s+['"][^'"]*tournamentPresentation['"]/);
+    expect(host).not.toMatch(/\bimport\s*['"][^'"]*tournamentPresentation['"]/);
+
+    const action = sliceBlockAfter(host, 'const playAgain = useCallback');
+    const guarded = sliceBlockAfter(action, 'try');
+    expect(guarded).toContain("await import('../../utils/tournamentPresentation')");
+    expect(guarded).toContain('isSeatFirstTournamentFormat(origin)');
+    expect(guarded).toContain("q.eq('format_contract', readTournamentFormat(origin))");
+    expect(guarded).toContain('isTournamentEntryUnavailable(candidate,');
+    expect(action).toContain('play_again_sibling_lookup_failed');
+    expect(action).toContain('playAgainBusyRef.current = false');
+  });
+
   it('the root-mounted ticker reads the late-reg window without the lobby view-model', () => {
     const ticker = read('src/components/tournament/TournamentStartingTicker.tsx');
 

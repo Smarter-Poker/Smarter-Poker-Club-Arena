@@ -1,8 +1,3 @@
-import {
-  readTournamentFormat,
-  isSeatFirstTournamentFormat,
-  isTournamentEntryUnavailable,
-} from '../../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT RANKING HOST — app-root owner of the bust card (2026-08-20)
@@ -234,6 +229,10 @@ export function TournamentRankingHost() {
 
     void (async () => {
       try {
+        // This root-mounted host only needs format routing after Play Again.
+        // Keep it inside the action's existing failure/fallback boundary.
+        const { readTournamentFormat, isSeatFirstTournamentFormat, isTournamentEntryUnavailable } =
+          await import('../../utils/tournamentPresentation');
         const { data: origin, error: originErr } = await supabase
           .from('tournaments')
           .select(

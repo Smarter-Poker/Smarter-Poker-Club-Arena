@@ -585,7 +585,17 @@ bounded_break_command() {
 }
 
 persist_result() {
-  local result="$1" instance="$2" image_id container_id started_at recorded
+  local result="$1" instance="$2" image_id container_id started_at recorded result_timeout
+  local -a recovery_args=()
+  result_timeout=10
+  if [ "$result" = already-released ] && [ "${BREAK_END_EPOCH:-0}" -eq 0 ]; then
+    # Only the existing duplicate-completion event can retire an orphaned
+    # foreign finalization; the seal independently proves both native owners,
+    # the actual inherited lock and fresh same-image runtime/database proof.
+    recovery_args=(--recover-orphan-finalization-fd 9)
+    result_timeout="$(remaining_seconds)" || die 'deadline expired before completion proof'
+    [ "$result_timeout" -le 60 ] || result_timeout=60
+  fi
   if [ "${BREAK_END_EPOCH:-0}" -gt 0 ]; then
     image_id="$(bounded_break_command 10 "$RELEASE_SEAL" get desired-image-id)"
     container_id="$(bounded_break_command 10 docker container inspect -f '{{.Id}}' "$CONTAINER")"
@@ -607,11 +617,12 @@ persist_result() {
       --run-id "$RUN_ID" --control-sha "$CONTROL_SHA" --invocation-id "$INVOCATION_ID")" \
       || die 'durable per-run release result could not be recorded'
   else
-    recorded="$(timeout --signal=TERM --kill-after=2s 10s \
+    recorded="$(timeout --signal=TERM --kill-after=2s "${result_timeout}s" \
       "$RELEASE_SEAL" record-result \
       --sha "$SHA" --image-id "$image_id" --result "$result" \
       --instance-id "$instance" --container-id "$container_id" --started-at "$started_at" \
-      --run-id "$RUN_ID" --control-sha "$CONTROL_SHA" --invocation-id "$INVOCATION_ID")" \
+      --run-id "$RUN_ID" --control-sha "$CONTROL_SHA" --invocation-id "$INVOCATION_ID" \
+      "${recovery_args[@]}")" \
       || die 'durable per-run release result could not be recorded'
   fi
   case "$recorded" in sealed|already-released) ;; *) die 'durable result returned an invalid outcome' ;; esac

@@ -78,6 +78,32 @@ describe('the existing certification waits only for its engine maintenance bound
     expect(fetchImpl).toHaveBeenCalledTimes(GAMEPLAY_WAIT_MS / 5000);
   });
 
+  it('covers the last-hand lead plus the observed v3 tail and resume spread', async () => {
+    let elapsed = 0;
+    const fetchImpl = vi.fn(async () => {
+      const state =
+        elapsed < 120_000
+          ? { active: true, phase: 'last_hand' }
+          : elapsed < 420_000
+            ? frozen
+            : elapsed < 543_650
+              ? { active: true, phase: 'finalizing' }
+              : { ...idle, resumeWaves: { total: 8, done: elapsed < 554_150 ? 7 : 8 } };
+      return reply(health(state));
+    });
+    expect(
+      await awaitEngineGameplay(SHA, {
+        fetchImpl,
+        now: () => elapsed,
+        pause: async (ms: number) => {
+          elapsed += ms;
+        },
+        report: () => {},
+      })
+    ).toBe(SHA);
+    expect(elapsed).toBe(555_000);
+  });
+
   it('does not accept a response that arrives after its deadline', async () => {
     let elapsed = 0;
     await expect(

@@ -86,8 +86,13 @@ describe('applySeo', () => {
   });
 
   it('writes title, description, canonical, robots and JSON-LD for a public route', () => {
-    applySeo(resolveSeo('/help'));
-    expect(document.title).toBe('Help Center | Smarter.Poker');
+    const seo = resolveSeo('/help');
+    applySeo(seo);
+    // Derived, not pinned: this test is about applySeo writing the head, and
+    // it should not fail the day a title is reworded (AEO phase 3,
+    // 2026-09-18). That the suffix is appended exactly once has its own
+    // test above.
+    expect(document.title).toBe(`${seo.title} | Smarter.Poker`);
     expect(document.head.querySelector('meta[name="robots"]')?.getAttribute('content')).toBe(
       ROBOTS_INDEX
     );
@@ -149,11 +154,46 @@ describe('the Help Center FAQPage schema', () => {
   });
 
   it('gives each public page the title its component sets, so the title never changes after hydration', () => {
-    expect(resolveSeo('/legal/fair-gaming').title).toBe('Fair Gaming Policy');
-    expect(resolveSeo('/legal/tos').title).toBe('Terms Of Service');
-    expect(resolveSeo('/legal/privacy').title).toBe('Privacy Policy');
-    expect(resolveSeo('/legal/promotions').title).toBe('Promotion Rules');
-    expect(resolveSeo('/help').title).toBe('Help Center');
+    /*
+     * This listed the five titles as literals, which pinned the strings
+     * rather than the invariant its own name states, and it broke the day
+     * the titles were prefixed with the product name (AEO phase 3,
+     * 2026-09-18). What matters is that the component sets the SAME title
+     * the head already carries, whatever that title is: otherwise the tab
+     * changes the instant the page hydrates.
+     *
+     * So it now checks the relationship. The legal layout and the Help page
+     * are the two components that set document.title for a public route,
+     * and both must take it from resolveSeo rather than from their own copy.
+     */
+    const ROOT = join(__dirname, '..');
+    const read = (f: string) => readFileSync(join(ROOT, f), 'utf8');
+
+    const layout = read('src/components/legal/LegalDocumentLayout.tsx');
+    expect(layout, 'the legal layout builds its tab title from resolveSeo').toContain(
+      'resolveSeo(location.pathname)'
+    );
+    expect(
+      layout.includes('document.title = `${title} | Smarter.Poker`'),
+      'the legal layout must not rebuild the tab title from the visible heading'
+    ).toBe(false);
+
+    const help = read('src/pages/HelpPage.tsx');
+    const helpTitle = resolveSeo('/help').title;
+    expect(help, 'the Help page sets the title its own head declares').toContain(
+      `document.title = '${helpTitle} | Smarter.Poker'`
+    );
+
+    // And every public route still has a title to set.
+    for (const route of [
+      '/legal/fair-gaming',
+      '/legal/tos',
+      '/legal/privacy',
+      '/legal/promotions',
+      '/help',
+    ]) {
+      expect(resolveSeo(route).title, `${route} has a title`).toBeTruthy();
+    }
   });
 });
 

@@ -9,6 +9,7 @@ import PrivacyPolicyPage from '../../src/pages/legal/PrivacyPolicyPage';
 import PromotionsPage from '../../src/pages/legal/PromotionsPage';
 import TermsOfServicePage from '../../src/pages/legal/TermsOfServicePage';
 
+import { resolveSeo } from '../../src/lib/seo';
 const mocks = vi.hoisted(() => ({
   insert: vi.fn(),
   reportError: vi.fn(),
@@ -173,7 +174,12 @@ describe('Support And Trust Workspace', () => {
   });
 
   it('sets a useful document title for support', async () => {
+    // Derived from the route's own head rather than pinned: the point is
+    // that the page sets the title its head declares, so the tab does not
+    // change on hydration. Pinning the literal broke the day the public
+    // titles were prefixed with the product name (AEO phase 3, 2026-09-18).
     renderRoute(<HelpPage />, '/help');
-    await waitFor(() => expect(document.title).toBe('Help Center | Smarter.Poker'));
+    const expected = `${resolveSeo('/help').title} | Smarter.Poker`;
+    await waitFor(() => expect(document.title).toBe(expected));
   });
 });

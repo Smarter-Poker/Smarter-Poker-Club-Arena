@@ -153,3 +153,50 @@ def verify_acl(q,fresh,check):
         assert q("SELECT has_function_privilege('anon','public."+sig+"','EXECUTE') OR has_function_privilege('authenticated','public."+sig+"','EXECUTE') OR has_function_privilege('service_role','public."+sig+"','EXECUTE')")=='f'
         assert q("SELECT has_function_privilege('postgres','public."+sig+"','EXECUTE')")=='t'
     check('explicit original and helper ACLs preserve owner identity, deny browser callers, and retain only the original log-wallet service grant')
+
+def verify_horse(q,fresh,check):
+    """Real engine-facing horse caller, including its unchanged wrapper chain."""
+    spec=importlib.util.spec_from_file_location('original_horse_candidate',directory/'build-horse-candidate.py')
+    horse=importlib.util.module_from_spec(spec);spec.loader.exec_module(horse)
+    fresh('original_horse_funding');install(q)
+    import re
+    schema=(root/'tests/fixtures/full-weekly-accounting/schema.sql').read_text()
+    table=re.search(r'CREATE TABLE "public"[.]"tournament_satellite_settlements".*?;',schema,re.S)
+    assert table,'Original ticket lookup relation must be retained'
+    q(table.group())
+    deps=json.loads((directory/'captured-horse-dependencies.json').read_text())
+    q('SET check_function_bodies=off;\n'+';\n'.join(r['definition'] for r in deps+horse.rows)+'; RESET check_function_bodies;')
+    q("UPDATE profiles SET is_horse=true; SET test.actor='c1000000-0000-4000-8000-000000000001';")
+    def register(n):return "SELECT public.fn_register_horse_for_tournament('"+event+"','c1000000-0000-4000-8000-"+str(n).zfill(12)+"');"
+    assert json.loads(q(register(1))).get('ok') is True
+    assert q('SELECT count(*) FROM tournament_participant_funding_receipts')=='0'
+    assert q('SELECT count(*) FROM tournament_refund_entitlements')=='1'
+    check('red proof: actual public horse caller charged and registered without an original funding receipt')
+    q(horse.candidate()+';')
+    assert q('SELECT count(*) FROM tournament_participant_funding_receipts')=='0'
+    q("INSERT INTO clubs(id) VALUES('c2000000-0000-4000-8000-000000000002'); INSERT INTO club_members(club_id,user_id,chip_balance,status,role,joined_at) VALUES('c2000000-0000-4000-8000-000000000002','c1000000-0000-4000-8000-000000000002',1000,'active','player','2000-01-01');")
+    result=json.loads(q(register(2)))
+    assert result.get('ok') is True,result
+    funded_assertions(q,1)
+    assert q("SELECT amount=200 AND funding_club_id='"+club+"' AND registration_id='"+result['registration_id']+"' AND operation='entry' FROM tournament_participant_funding_receipts")=='t'
+    assert q("SELECT chip_balance FROM club_members WHERE user_id='c1000000-0000-4000-8000-000000000002' AND club_id='"+club+"'")=='300.00'
+    assert q("SELECT chip_balance FROM club_members WHERE club_id='c2000000-0000-4000-8000-000000000002'")=='1000.00'
+    tables=['club_members','chip_ledger','wallet_transactions','tournament_refund_entitlements','tournament_escrow','tournament_players','tournaments','rake_records','tournament_participant_funding_receipts']
+    state="SELECT md5(jsonb_build_array("+','.join("(SELECT jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text) FROM "+t+" r)" for t in tables)+")::text)"
+    before=q(state)
+    assert json.loads(q(register(2))).get('reason')=='already_registered'
+    assert q(state)==before
+    check('actual public horse entry retains one exact charged-club debit and registration; repeat creates no money or second evidence')
+    original_capture=next(r for r in candidate.rows if r['signature']=='fn_ca_capture_tournament_charge_entitlement()')
+    q(original_capture['definition']+';')
+    before=q(state)
+    q(register(3),'Original tournament funding references do not match')
+    assert q(state)==before
+    q(candidate.candidate(original_capture)+';')
+    check('missing exact horse debit capture refuses and rolls back every original financial and roster write')
+    q("UPDATE tournaments SET buy_in_amount=0,buy_in_fee=0")
+    result=json.loads(q(register(3)))
+    assert result.get('ok') is True,result
+    assert q("SELECT count(*) FROM tournament_participant_funding_receipts WHERE registration_id='"+result['registration_id']+"' AND amount=0 AND asset='chips' AND entitlement_id IS NULL AND ledger_id IS NULL AND wallet_transaction_id IS NULL")=='1'
+    assert q('SELECT count(*) FROM chip_ledger')=='2'
+    check('original zero-price horse entry has explicit zero evidence and no fabricated debit')

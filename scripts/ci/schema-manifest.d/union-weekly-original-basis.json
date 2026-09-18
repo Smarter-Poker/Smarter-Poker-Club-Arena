@@ -5,7 +5,9 @@
     "union_pnl_weekly_capture",
     "union_pnl_cash_outcomes",
     "union_pnl_original_flows",
-    "union_pnl_eco_observations"
+    "union_pnl_eco_observations",
+    "union_pnl_inventory_capture",
+    "union_pnl_inventory_events"
   ],
   "functions": [
     "fn_union_pnl_original_frame",
@@ -25,6 +27,12 @@
     "fn_union_pnl_closed_book_barrier",
     "fn_union_eco_adjustment",
     "fn_union_reconciliation_report",
-    "fn_cash_atomic_original_matches"
-  ]
+    "fn_cash_atomic_original_matches",
+    "fn_union_pnl_inventory_project",
+    "fn_union_pnl_inventory_immutable",
+    "fn_union_pnl_inventory_as_of"
+  ],
+  "columns": {
+    "tournament_refund_tranches": ["transaction_id"]
+  }
 }

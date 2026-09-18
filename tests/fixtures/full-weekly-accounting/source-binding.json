@@ -335,7 +335,7 @@
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
     "scripts/dev/test-union-weekly-basis.py": "9fa3cb30ec88131083e8ff61c3a4a059c270e8c6634b1fd908bb4f6557daf507",
-    "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "b6b142dc8ee209d96211f2d923cf425ea394d12f1de042980a8b5bf4548095f7",
+    "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "fa2f2f378db56fa7b586c6ddecaf43d58cac0b34817e8497b13ebb5159f33798",
     "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
     "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf",
     "docs/changelog/union-original-atomic-seal-2026-09-18.md": "da806e5b7322184395d324616aca7c852c257bff51568956fa6189e782f52678",

@@ -11,6 +11,8 @@ RELEASE_SEAL="$CONTROL_DIR/engine-release-seal.py"
 ENGINE_UP="$CONTROL_DIR/engine-up.sh"
 IMAGE_BUILDER="$CONTROL_DIR/build-engine-image.sh"
 DATABASE_PROOF="$CONTROL_DIR/engine-release-database-proof.py"
+LEGACY_CHECKPOINT="$CONTROL_DIR/legacy-engine-checkpoint.sh"
+LEGACY_CHECKPOINT_SHA=2f4e33560bcd23bfb5cc731f31816b2c2e2847e5
 REPO_DIR="${REPO_DIR:-/opt/club-arena}"
 ENV_FILE="${ENV_FILE:-$REPO_DIR/server/.env}"
 REQUEST_ROOT="${ENGINE_RELEASE_REQUEST_ROOT:-/var/lib/club-arena/engine-release-requests}"
@@ -141,6 +143,7 @@ BREAK_DEADLINE_FILE="$REQUEST_ROOT/$RUN_ID.break-deadline"
 LOCK_HELD=0
 PREPARED=0
 MUTATION_STARTED=0
+LEGACY_CHECKPOINT_ATTEMPTED=0
 
 recover_on_exit() {
   local rc=$? recovery_deadline recovery_remaining non_break_deadline
@@ -420,6 +423,33 @@ if remaining<int(__import__("os").environ["MIN_BREAK_MS"]):
 ok=(m.get("readyForRestart") is True and m.get("unparkedTables")==0)
 if not ok: raise SystemExit(1)
 print(remaining)
+' 2>/dev/null
+}
+
+# Entry to the exact predecessor's checkpoint, NOT restart authority. Its old
+# unparked count combines physical hands with missing bank durability, and its
+# saved-bank bit can remain true after the final announced write erased a row.
+# The helper independently checks every physical table before writing. Only
+# the unchanged maintenance_certificate below can admit a replacement.
+legacy_checkpoint_countdown() {
+  local response http_code body
+  response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
+    http://127.0.0.1:8080/health 2>/dev/null)" || return 1
+  http_code="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+  case "$http_code" in 200|503) ;; *) return 1 ;; esac
+  printf '%s' "$body" | MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS" python3 -c '
+import json, math, os, sys, time
+d=json.load(sys.stdin); m=d.get("maintenance")
+if not isinstance(m,dict): raise SystemExit(1)
+remaining=m.get("remainingMs"); ends=m.get("breakEndsAt")
+valid_number=lambda n: isinstance(n,(int,float)) and not isinstance(n,bool) and math.isfinite(n)
+if not (d.get("running") is True and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True and valid_number(remaining) and valid_number(ends)):
+    raise SystemExit(1)
+minimum=int(os.environ["MIN_BREAK_MS"])
+if remaining<minimum or ends-time.time()*1000<minimum:
+    raise SystemExit(1)
+print(math.floor(ends/1000))
 ' 2>/dev/null
 }
 
@@ -923,6 +953,15 @@ timeout --signal=TERM --kill-after=15s "${BUILD_TIMEOUT}s" \
   || die 'bounded immutable engine image build failed'
 source_target_is_current
 NEXT_FRESHNESS_CHECK=$(( $(date +%s) + 60 ))
+# This is a compatibility operation for one immutable predecessor, not a
+# general checkpoint API. The helper rebinds the seal/image/process under the
+# engine lock immediately before its one durable intent and checkpoint.
+CHECKPOINT_PREDECESSOR_SHA="$(timeout --signal=TERM --kill-after=1s 10s \
+  "$RELEASE_SEAL" get desired-sha)" || die 'sealed checkpoint predecessor is unreadable'
+LEGACY_CHECKPOINT_REQUIRED=0
+if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$LEGACY_CHECKPOINT_SHA" ]; then
+  LEGACY_CHECKPOINT_REQUIRED=1
+fi
 
 while :; do
   [ "$(date +%s)" -lt "$CERTIFICATE_DEADLINE" ] \
@@ -937,7 +976,14 @@ while :; do
   BREAK_REMAINING_MS="$(maintenance_certificate)"
   CERTIFICATE_RC=$?
   set -e
-  if [ "$CERTIFICATE_RC" -eq 2 ]; then
+  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
+    # Counting down follows the final announcement. Run even when the old
+    # certificate says ready: that predecessor can retain a stale saved bit.
+    if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown)"; then
+      bounded_sleep 5
+      continue
+    fi
+  elif [ "$CERTIFICATE_RC" -eq 2 ]; then
     RECOVERY_ADMISSION_MISSED=1
     # A predecessor or image build can consume the beginning of this break.
     # No prepare or break deadline exists yet. Keep the original request's
@@ -947,7 +993,7 @@ while :; do
     bounded_sleep 15
     continue
   fi
-  if [ "$CERTIFICATE_RC" -ne 0 ]; then
+  if [ "$LEGACY_CHECKPOINT_REQUIRED" != 1 ] && [ "$CERTIFICATE_RC" -ne 0 ]; then
     request_recovery_window
     bounded_sleep 5
     continue
@@ -958,10 +1004,41 @@ while :; do
   if EXACT_INSTANCE="$(exact_runtime_instance)"; then
     emit_already_released "$EXACT_INSTANCE"
   fi
+  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
+    CHECKPOINT_PREDECESSOR_SHA="$(timeout --signal=TERM --kill-after=1s 10s \
+      "$RELEASE_SEAL" get desired-sha)" || die 'locked checkpoint predecessor is unreadable'
+    if [ "$CHECKPOINT_PREDECESSOR_SHA" != "$LEGACY_CHECKPOINT_SHA" ]; then
+      # A different release may have advanced desired while this run waited.
+      # Source/high-water admission above still owns whether our target may
+      # follow it. Never apply the old-image compatibility path to its successor.
+      LEGACY_CHECKPOINT_REQUIRED=0
+    fi
+  fi
+  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
+    if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown)"; then
+      release_engine_lock
+      bounded_sleep 5
+      continue
+    fi
+    [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 0 ] \
+      || die 'legacy checkpoint was already attempted; refusing a retry'
+    # This provisional deadline bounds predecessor proof only. It is not
+    # persisted as a cutover certificate. Checkpoint cleanup may consume entry
+    # slack; it must complete before the strict 285000ms certificate is read.
+    BREAK_END_EPOCH="$LEGACY_COUNTDOWN_END"
+    prove_rollback_readiness
+    LEGACY_CHECKPOINT_ATTEMPTED=1
+    "$LEGACY_CHECKPOINT" "$RUN_ID" \
+      || die 'legacy checkpoint or cleanup refused; release cannot continue'
+    BREAK_END_EPOCH=0
+  fi
   set +e
   BREAK_REMAINING_MS="$(maintenance_certificate)"
   CERTIFICATE_RC=$?
   set -e
+  if [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ] && [ "$CERTIFICATE_RC" -ne 0 ]; then
+    die 'legacy checkpoint did not retain the full restart certificate and 285000ms reserve'
+  fi
   if [ "$CERTIFICATE_RC" -eq 2 ]; then
     RECOVERY_ADMISSION_MISSED=1
     release_engine_lock

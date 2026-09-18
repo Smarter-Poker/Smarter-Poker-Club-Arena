@@ -4144,6 +4144,36 @@ export class GameServer {
       '# HELP poker_maintenance_break_ready_for_restart 1 when every table is parked and the deploy may restart the engine',
       '# TYPE poker_maintenance_break_ready_for_restart gauge',
       `poker_maintenance_break_ready_for_restart ${this.maintenanceBreak.readyForRestart() ? 1 : 0}`,
+      // WHY THE GATE IS SHUT (2026-09-18). ready_for_restart is one boolean
+      // and on the night of 2026-09-17 it stayed 0 through five consecutive
+      // breaks. Each time the only published number was the unparked COUNT,
+      // and finding out which of the four conditions held it took the
+      // database, the container log and the source. The breakdown is
+      // published so the next break answers that in one scrape. Labels are
+      // the fixed reason set, zero-seeded, so a rule can read any of them
+      // before it has ever been the reason.
+      '# HELP poker_maintenance_unparked_tables Tables the restart gate refuses, by reason (cards_in_air, accounting_unconfirmed, accounting_pending, bank_park_write_incomplete, unknown)',
+      '# TYPE poker_maintenance_unparked_tables gauge',
+      ...(() => {
+        const counts = (this.maintenanceBreak.snapshot().unparkedReasons ?? {}) as Record<
+          string,
+          number
+        >;
+        const reasons = [
+          'cards_in_air',
+          'accounting_unconfirmed',
+          'accounting_pending',
+          'bank_park_write_incomplete',
+          'unknown',
+        ];
+        for (const reason of Object.keys(counts)) {
+          if (!reasons.includes(reason)) reasons.push(reason);
+        }
+        return reasons.map(
+          (reason) =>
+            `poker_maintenance_unparked_tables{reason="${reason}"} ${counts[reason] ?? 0}`
+        );
+      })(),
       '# HELP poker_db_clock_skew_ms Engine clock minus database clock, ms; 0 when unmeasured',
       '# TYPE poker_db_clock_skew_ms gauge',
       `poker_db_clock_skew_ms ${this.lastDbSkewMs ?? 0}`,

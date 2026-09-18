@@ -5273,19 +5273,36 @@ export abstract class ServerTableEngineBase {
     }
   }
 
-  /** Existing restart gate must not discard initialized banks before their park write. */
-  isMaintenanceStateDurable(): boolean {
+  /**
+   * WHY THE RESTART GATE WOULD REFUSE THIS TABLE, or null when it would not.
+   *
+   * The gate itself is one boolean, and on 2026-09-18 that cost an hour. The
+   * 02:55 break held with seventeen cash tables unparked; every one had
+   * logged "Parked between hands", none had a presence-persist error, none
+   * had a refused park write, and nothing anywhere said which of the three
+   * durability conditions was false. The answer had to be reconstructed from
+   * the database, the container log and the source at three in the morning.
+   *
+   * A gate that can refuse for four different reasons must say which one.
+   * `isMaintenanceStateDurable` is now derived from this, so the number the
+   * gate reads and the reason an operator reads can never disagree.
+   */
+  maintenanceDurabilityReason(): string | null {
+    if (!this.maintenancePaused) return null;
+    if (this.timeBankAccountingUnconfirmed) return 'accounting_unconfirmed';
+    if (this.timeBankAccountingPending.size > 0) return 'accounting_pending';
     const hasBanks =
       Object.keys(this.parkedTimeBanks ?? {}).length > 0 ||
       this.seatedPlayers.some((seat) =>
         this.timeBankEngine.getPlayerBank(this.tableId, seat.user_id)
       );
-    return (
-      !this.maintenancePaused ||
-      (!this.timeBankAccountingUnconfirmed &&
-        this.timeBankAccountingPending.size === 0 &&
-        (!hasBanks || this.parkedBankSaveComplete))
-    );
+    if (hasBanks && !this.parkedBankSaveComplete) return 'bank_park_write_incomplete';
+    return null;
+  }
+
+  /** Existing restart gate must not discard initialized banks before their park write. */
+  isMaintenanceStateDurable(): boolean {
+    return this.maintenanceDurabilityReason() === null;
   }
 
   protected async persistPresenceForRestart(when: 'announced' | 'parked'): Promise<void> {

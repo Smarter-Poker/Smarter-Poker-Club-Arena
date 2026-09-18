@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sliceBetween } from './helpers/sourceWindow';
@@ -176,5 +177,83 @@ describe('the exact legacy checkpoint enters the existing release transaction', 
     expect(stage).toContain(
       "'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**'"
     );
+  });
+});
+
+// /proc descriptor identity and util-linux flock are production Linux contracts.
+// These cases execute the actual maintained lock statements with an inherited
+// descriptor; they do not invoke Docker, the inspector, or any release operation.
+describe.skipIf(process.platform !== 'linux')('legacy checkpoint inherited lock identity', () => {
+  it.each([
+    ['direct path', 'direct', 0],
+    ['symlink alias', 'alias', 0],
+    ['missing inherited descriptor', 'missing', 1],
+    ['different lock file', 'wrong', 1],
+  ] as const)('handles %s before operation intent', (_label, mode, expectedStatus) => {
+    const directory = mkdtempSync(join(tmpdir(), 'legacy-checkpoint-lock-'));
+    try {
+      const realDirectory = join(directory, 'real lock directory');
+      const aliasDirectory = join(directory, 'lock alias');
+      mkdirSync(realDirectory);
+      symlinkSync(realDirectory, aliasDirectory, 'dir');
+      const expected = join(mode === 'direct' ? realDirectory : aliasDirectory, 'engine.lock');
+      const other = join(realDirectory, 'other.lock');
+      writeFileSync(expected, '');
+      writeFileSync(other, '');
+      const checkpoint = read('server/scripts/legacy-engine-checkpoint.sh');
+      const afterRunKey = "|| die 'invalid run key'\n";
+      const start = checkpoint.indexOf(afterRunKey);
+      const end = checkpoint.indexOf('\nmapfile -t REQUEST', start);
+      expect(start).toBeGreaterThan(0);
+      expect(end).toBeGreaterThan(start + afterRunKey.length);
+      const guard = checkpoint.slice(start + afterRunKey.length, end);
+      const child = join(directory, 'actual-lock-guard.sh');
+      writeFileSync(
+        child,
+        `#!/usr/bin/env bash
+set -euo pipefail
+die() { printf '%s\\n' "$*" >&2; exit 1; }
+${guard}
+printf 'lock-admitted\\n'
+`
+      );
+      const result = spawnSync(
+        'bash',
+        [
+          '-c',
+          `set -euo pipefail
+case "$CHECKPOINT_TEST_LOCK_MODE" in
+  direct|alias) exec 9>"$ENGINE_LOCK_FILE"; flock -n 9 ;;
+  wrong) exec 9>"$CHECKPOINT_TEST_OTHER_LOCK"; flock -n 9 ;;
+  missing) exec 9>&- ;;
+  *) exit 70 ;;
+esac
+exec bash "$CHECKPOINT_TEST_LOCK_CHILD"
+`,
+        ],
+        {
+          encoding: 'utf8',
+          timeout: 3_000,
+          env: {
+            ...process.env,
+            ENGINE_LOCK_FILE: expected,
+            CHECKPOINT_TEST_OTHER_LOCK: other,
+            CHECKPOINT_TEST_LOCK_CHILD: child,
+            CHECKPOINT_TEST_LOCK_MODE: mode,
+          },
+        }
+      );
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(expectedStatus);
+      if (expectedStatus === 0) {
+        expect(result.stdout).toBe('lock-admitted\n');
+        expect(result.stderr).toBe('');
+      } else {
+        expect(result.stdout).toBe('');
+        expect(result.stderr).toContain('owning engine lock descriptor missing');
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

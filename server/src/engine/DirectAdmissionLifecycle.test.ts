@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GameServer } from '../GameServer.js';
 import * as freezeState from '../maintenance/freezeState.js';
 import * as errorReporter from '../services/errorReporter.js';
+import { BoundedLeaseRenewalScope } from '../services/BoundedLeaseRenewalScope.js';
 
 type Admission = 'ready' | 'not_wakeable' | 'owned_elsewhere' | 'retryable_failure';
 
@@ -26,6 +27,10 @@ function bareServer(): any {
   server.tournamentManagerLeaseReleaseOperations = new Map<string, Promise<boolean>>();
   server.tournamentManagerPendingLeaseReleases = new Map<string, string>();
   server.ownershipLeaseRenewalOperation = null;
+  server.ownershipLeaseRenewalAbandoned = new WeakSet<Promise<void>>();
+  server.cashLeaseRenewalScope = new BoundedLeaseRenewalScope();
+  server.tournamentLeaseRenewalScope = new BoundedLeaseRenewalScope();
+  server.shutdownOwnershipLeaseRenewalActive = false;
   server.discoveryJobs = new Set<Promise<void>>();
   server.serverLifecycleJobs = new Set<Promise<void>>();
   return server;
@@ -427,6 +432,39 @@ describe('direct table admission lifecycle', () => {
     server.tournamentManagerAdmissionOperations.clear();
     await draining;
     expect(admissionsDrained).toBe(true);
+  });
+
+  it('settles the real shutdown pass through both scopes without a swallowed renewal error', async () => {
+    vi.useFakeTimers();
+    const server = bareServer();
+    server.running = false;
+    server.shutdownOwnershipLeaseRenewalActive = true;
+    const cash = vi.spyOn(server.cashLeaseRenewalScope, 'run');
+    const tournament = vi.spyOn(server.tournamentLeaseRenewalScope, 'run');
+    const report = vi.spyOn(errorReporter, 'reportError').mockImplementation(() => {});
+    try {
+      const loop = server.runShutdownOwnershipLeaseRenewalLoop();
+      server.shutdownOwnershipLeaseRenewalOperation = loop;
+      expect(cash).toHaveBeenCalledTimes(1);
+      expect(tournament).toHaveBeenCalledTimes(1);
+      await expect(cash.mock.results[0].value).resolves.toBeInstanceOf(Map);
+      await expect(tournament.mock.results[0].value).resolves.toBeInstanceOf(Map);
+      const stopping = server.stopShutdownOwnershipLeaseRenewal();
+      await vi.advanceTimersByTimeAsync(5_000);
+      await stopping;
+      expect(
+        report.mock.calls.some(
+          ([, label]) => label === 'GameServer.shutdown_lease_renewal_pass_threw'
+        )
+      ).toBe(false);
+      expect(server.shutdownOwnershipLeaseRenewalActive).toBe(false);
+      expect(server.ownershipLeaseRenewalOperation).toBeNull();
+    } finally {
+      cash.mockRestore();
+      tournament.mockRestore();
+      report.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it('serializes primary and shutdown heartbeat callers through one ownership pass', async () => {

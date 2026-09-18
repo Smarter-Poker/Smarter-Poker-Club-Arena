@@ -7,6 +7,9 @@ import * as leases from '../services/tournamentLease.js';
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 const id = (n: number) => '00000000-0000-4000-8000-' + String(n).padStart(12, '0');
 class Harness extends TournamentManagerBase {
+  async captureDrainedF06Custody() {
+    return null;
+  }
   protected startEliminationChecker() {}
   protected async recalculateEliminatedPrizes() {
     return true;
@@ -21,6 +24,8 @@ function manager(generation = id(2)): any {
 function server(current?: any): any {
   return Object.assign(Object.create(GameServer.prototype), {
     tournamentEngines: new Map(current ? [[id(1), current]] : []),
+    drainedF06TournamentCustody: new Map(),
+    completedF06TournamentCustody: new Map(),
     tournamentManagerRetirementOperations: new WeakMap(),
     tournamentDiagnosticRetirements: new Map(),
     tournamentManagerLeaseReleaseOperations: new Map(),
@@ -218,5 +223,81 @@ describe('bounded GameServer exact-owner read', () => {
       });
       vi.restoreAllMocks();
     }
+  });
+});
+
+it('observes custody-only originals, deduplicates managers and exposes unavailable/truncated coverage', () => {
+  scheduler();
+  const game = server(),
+    old = manager();
+  const forbidden = vi.fn(() => {
+    throw new Error('observation cannot check authority');
+  });
+  const packet = {
+    manager: old,
+    originGeneration: id(2),
+    current: forbidden,
+    proof: { financial: 'private' },
+    engines: [
+      [
+        id(3),
+        {
+          getLifecycleDiagnosticSnapshot: () => ({
+            instanceId: id(4),
+            tableId: id(3),
+            terminal: true,
+          }),
+        },
+      ],
+      [
+        id(5),
+        {
+          getLifecycleDiagnosticSnapshot: () => {
+            throw new Error('unknown');
+          },
+        },
+      ],
+    ],
+  };
+  game.drainedF06TournamentCustody.set(id(1), packet);
+  game.completedF06TournamentCustody.set(
+    id(1),
+    new Set([{ original: packet, terminalProof: { financial: 'private' } }])
+  );
+  vi.spyOn(old, 'isF06RecoveryOwner').mockImplementation(forbidden);
+  const result = game.getTournamentLifecycleDiagnostic(id(1));
+  expect(result.owners).toHaveLength(1);
+  expect(result.owners[0].roles).toEqual(['drained-custody', 'completed-custody']);
+  expect(result.custody).toMatchObject({
+    coverage: 'available',
+    active: true,
+    archivedCount: 1,
+    archivedScanned: 1,
+    archivedTruncated: false,
+  });
+  expect(result.custody.packets[0]).toMatchObject({
+    role: 'drained-custody',
+    originGeneration: id(2),
+    originalsCount: 2,
+    originalsReturned: 2,
+    originalsOmitted: 0,
+    originalsUnavailable: 1,
+  });
+  expect(result.custody.packets[0].originals[0].engine.instanceId).toBe(id(4));
+  expect(result.custody.packets[0].originals[1].availability).toBe('unavailable');
+  expect(JSON.stringify(result)).not.toContain('financial');
+  expect(forbidden).not.toHaveBeenCalled();
+  game.completedF06TournamentCustody.set(
+    id(1),
+    new Set(Array.from({ length: 33 }, () => ({ original: packet, terminalProof: [] })))
+  );
+  expect(game.getTournamentLifecycleDiagnostic(id(1))).toMatchObject({
+    retirementIndexCoverage: 'unavailable',
+    custody: { archivedCount: 33, archivedScanned: 32, archivedTruncated: true },
+  });
+  game.completedF06TournamentCustody = undefined;
+  expect(game.getTournamentLifecycleDiagnostic(id(1))).toMatchObject({
+    retirementIndexCoverage: 'unavailable',
+    custody: { coverage: 'unavailable', archivedCount: null },
   });
 });

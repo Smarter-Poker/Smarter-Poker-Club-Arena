@@ -1,0 +1,406 @@
+[
+  {
+    "relation": "tournament_felt_supply_acknowledgements",
+    "owner": "postgres",
+    "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+    "rls": true,
+    "force_rls": false,
+    "columns": [
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "chips",
+        "type": "numeric",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "incident_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "recorded_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "tournament_felt_supply_acknowledgements_chips_check",
+        "validated": true,
+        "definition": "CHECK ((chips > (0)::numeric))"
+      },
+      {
+        "name": "tournament_felt_supply_acknowledgements_pkey",
+        "validated": true,
+        "definition": "PRIMARY KEY (tournament_id)"
+      },
+      {
+        "name": "tournament_felt_supply_acknowledgements_tournament_id_fkey",
+        "validated": true,
+        "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE"
+      }
+    ],
+    "indexes": [
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX tournament_felt_supply_acknowledgements_pkey ON public.tournament_felt_supply_acknowledgements USING btree (tournament_id)"
+      }
+    ],
+    "triggers": null,
+    "policies": null
+  },
+  {
+    "relation": "smarter_private.f06_unsettled_hand_aborts",
+    "owner": "postgres",
+    "acl": "{postgres=arwdDxtm/postgres}",
+    "rls": true,
+    "force_rls": false,
+    "columns": [
+      {
+        "name": "receipt_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "generation",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "permit_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "break_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "expected",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "outcome",
+        "type": "text",
+        "default": "'aborted_unsettled'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "retired_lease_generation",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "f06_abort_successor_distinct",
+        "validated": true,
+        "definition": "CHECK (((retired_lease_generation IS NULL) OR (retired_lease_generation <> generation)))"
+      },
+      {
+        "name": "f06_unsettled_hand_aborts_break_id_key",
+        "validated": true,
+        "definition": "UNIQUE (break_id)"
+      },
+      {
+        "name": "f06_unsettled_hand_aborts_outcome_check",
+        "validated": true,
+        "definition": "CHECK ((outcome = 'aborted_unsettled'::text))"
+      },
+      {
+        "name": "f06_unsettled_hand_aborts_permit_id_key",
+        "validated": true,
+        "definition": "UNIQUE (permit_id)"
+      },
+      {
+        "name": "f06_unsettled_hand_aborts_pkey",
+        "validated": true,
+        "definition": "PRIMARY KEY (receipt_id)"
+      },
+      {
+        "name": "f06_unsettled_hand_aborts_table_id_hand_number_key",
+        "validated": true,
+        "definition": "UNIQUE (table_id, hand_number)"
+      },
+      {
+        "name": "f06_unsettled_hand_aborts_tournament_id_generation_key",
+        "validated": true,
+        "definition": "UNIQUE (tournament_id, generation)"
+      }
+    ],
+    "indexes": [
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX f06_unsettled_hand_aborts_pkey ON smarter_private.f06_unsettled_hand_aborts USING btree (receipt_id)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX f06_unsettled_hand_aborts_permit_id_key ON smarter_private.f06_unsettled_hand_aborts USING btree (permit_id)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX f06_unsettled_hand_aborts_break_id_key ON smarter_private.f06_unsettled_hand_aborts USING btree (break_id)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX f06_unsettled_hand_aborts_tournament_id_generation_key ON smarter_private.f06_unsettled_hand_aborts USING btree (tournament_id, generation)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX f06_unsettled_hand_aborts_table_id_hand_number_key ON smarter_private.f06_unsettled_hand_aborts USING btree (table_id, hand_number)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX f06_abort_retired_lease_generation ON smarter_private.f06_unsettled_hand_aborts USING btree (tournament_id, retired_lease_generation) WHERE (retired_lease_generation IS NOT NULL)"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "f06_abort_receipt_immutable",
+        "enabled": "O",
+        "function": "CREATE OR REPLACE FUNCTION smarter_private.f06_abort_receipt_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN RAISE EXCEPTION 'F06_ABORT_RECEIPT_IMMUTABLE' USING ERRCODE='55000'; END $function$\n",
+        "definition": "CREATE TRIGGER f06_abort_receipt_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_unsettled_hand_aborts FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_abort_receipt_immutable()",
+        "function_md5": "811127b67caea34bd7d3e5bc6c41ed94"
+      }
+    ],
+    "policies": null
+  },
+  {
+    "relation": "smarter_private.f06_generation_aborts",
+    "owner": "postgres",
+    "acl": "{postgres=arwdDxtm/postgres}",
+    "rls": true,
+    "force_rls": false,
+    "columns": [
+      {
+        "name": "receipt_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "generation",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "expected",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "outcome",
+        "type": "text",
+        "default": "'aborted_unsettled'::text",
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "identity": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "f06_generation_aborts_outcome_check",
+        "validated": true,
+        "definition": "CHECK ((outcome = 'aborted_unsettled'::text))"
+      },
+      {
+        "name": "f06_generation_aborts_pkey",
+        "validated": true,
+        "definition": "PRIMARY KEY (receipt_id)"
+      },
+      {
+        "name": "f06_generation_aborts_receipt_id_tournament_id_generation_key",
+        "validated": true,
+        "definition": "UNIQUE (receipt_id, tournament_id, generation)"
+      },
+      {
+        "name": "f06_generation_aborts_tournament_id_generation_key",
+        "validated": true,
+        "definition": "UNIQUE (tournament_id, generation)"
+      }
+    ],
+    "indexes": [
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX f06_generation_aborts_pkey ON smarter_private.f06_generation_aborts USING btree (receipt_id)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX f06_generation_aborts_tournament_id_generation_key ON smarter_private.f06_generation_aborts USING btree (tournament_id, generation)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX f06_generation_aborts_receipt_id_tournament_id_generation_key ON smarter_private.f06_generation_aborts USING btree (receipt_id, tournament_id, generation)"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "f06_generation_receipt_immutable",
+        "enabled": "O",
+        "function": "CREATE OR REPLACE FUNCTION smarter_private.f06_abort_receipt_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN RAISE EXCEPTION 'F06_ABORT_RECEIPT_IMMUTABLE' USING ERRCODE='55000'; END $function$\n",
+        "definition": "CREATE TRIGGER f06_generation_receipt_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_generation_aborts FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_abort_receipt_immutable()",
+        "function_md5": "811127b67caea34bd7d3e5bc6c41ed94"
+      }
+    ],
+    "policies": null
+  },
+  {
+    "relation": "smarter_private.f06_mixed_abort_generations",
+    "owner": "postgres",
+    "acl": "{postgres=arwdDxtm/postgres}",
+    "rls": true,
+    "force_rls": false,
+    "columns": [
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "generation",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "receipt_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "f06_mixed_abort_generations_pkey",
+        "validated": true,
+        "definition": "PRIMARY KEY (tournament_id, generation)"
+      },
+      {
+        "name": "f06_mixed_abort_generations_receipt_id_tournament_id_fkey",
+        "validated": true,
+        "definition": "FOREIGN KEY (receipt_id, tournament_id) REFERENCES smarter_private.f06_mixed_aborts(receipt_id, tournament_id)"
+      },
+      {
+        "name": "f06_mixed_abort_generations_receipt_id_tournament_id_genera_key",
+        "validated": true,
+        "definition": "UNIQUE (receipt_id, tournament_id, generation)"
+      }
+    ],
+    "indexes": [
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX f06_mixed_abort_generations_pkey ON smarter_private.f06_mixed_abort_generations USING btree (tournament_id, generation)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX f06_mixed_abort_generations_receipt_id_tournament_id_genera_key ON smarter_private.f06_mixed_abort_generations USING btree (receipt_id, tournament_id, generation)"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "f06_mixed_generations_immutable",
+        "enabled": "O",
+        "function": "CREATE OR REPLACE FUNCTION smarter_private.f06_abort_receipt_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN RAISE EXCEPTION 'F06_ABORT_RECEIPT_IMMUTABLE' USING ERRCODE='55000'; END $function$\n",
+        "definition": "CREATE TRIGGER f06_mixed_generations_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_mixed_abort_generations FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_abort_receipt_immutable()",
+        "function_md5": "811127b67caea34bd7d3e5bc6c41ed94"
+      }
+    ],
+    "policies": null
+  }
+]

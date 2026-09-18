@@ -1,0 +1,75 @@
+{
+  "columns": [
+    {
+      "type": "uuid",
+      "attname": "rake_record_id",
+      "attnotnull": true,
+      "default_expr": null
+    },
+    {
+      "type": "uuid",
+      "attname": "tournament_id",
+      "attnotnull": true,
+      "default_expr": null
+    },
+    {
+      "type": "timestamp with time zone",
+      "attname": "cutover_at",
+      "attnotnull": true,
+      "default_expr": null
+    },
+    {
+      "type": "jsonb",
+      "attname": "original_batch",
+      "attnotnull": true,
+      "default_expr": null
+    },
+    {
+      "type": "jsonb",
+      "attname": "source_manifest",
+      "attnotnull": true,
+      "default_expr": null
+    },
+    {
+      "type": "jsonb",
+      "attname": "original_evidence",
+      "attnotnull": true,
+      "default_expr": null
+    },
+    {
+      "type": "jsonb",
+      "attname": "canonical_sources",
+      "attnotnull": true,
+      "default_expr": null
+    },
+    {
+      "type": "timestamp with time zone",
+      "attname": "qualified_at",
+      "attnotnull": true,
+      "default_expr": "clock_timestamp()"
+    },
+    {
+      "type": "xid8",
+      "attname": "transaction_id",
+      "attnotnull": true,
+      "default_expr": "pg_current_xact_id()"
+    }
+  ],
+  "relation": {
+    "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+    "rls": true,
+    "owner": "postgres"
+  },
+  "triggers": [
+    {
+      "tgname": "mixed_cutover_spin_proof_immutable",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER mixed_cutover_spin_proof_immutable BEFORE DELETE OR UPDATE ON public.accounting_mixed_cutover_spin_fee_proofs FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()"
+    },
+    {
+      "tgname": "mixed_cutover_spin_proof_no_truncate",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER mixed_cutover_spin_proof_no_truncate BEFORE TRUNCATE ON public.accounting_mixed_cutover_spin_fee_proofs FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()"
+    }
+  ]
+}

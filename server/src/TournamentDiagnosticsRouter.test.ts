@@ -225,6 +225,83 @@ describe('dedicated authenticated tournament observation route', () => {
     expect(parsed.owners[0].snapshot.records[0]).not.toHaveProperty('operationId');
   });
 
+  it('serializes the actual custody-only owner union without exposing financial proof', async () => {
+    const { GameServer } = await import('./GameServer.js');
+    const { tournamentEliminationScheduler } =
+      await import('./tournament/TournamentEliminationScheduler.js');
+    const scheduler = vi
+      .spyOn(tournamentEliminationScheduler, 'diagnosticSnapshot')
+      .mockReturnValue({
+        tournamentId: TID,
+        activeEntriesCount: 0,
+        activeEntriesScanned: 0,
+        activeScanTruncated: false,
+        matchingEntriesCountLowerBound: 0,
+        entries: [],
+        missingMeans: 'unknown',
+      });
+    const manager = {
+      getLifecycleDiagnosticSnapshot: () => ({
+        instanceId: TID,
+        tournamentId: TID,
+        leaseGeneration: TABLE,
+      }),
+    };
+    const packet = {
+      manager,
+      originGeneration: TABLE,
+      proof: { privateMoney: 123 },
+      current: () => {
+        throw new Error('not observational');
+      },
+      engines: [
+        [
+          TABLE,
+          {
+            getLifecycleDiagnosticSnapshot: () => ({
+              instanceId: TABLE,
+              tableId: TABLE,
+              terminal: true,
+            }),
+          },
+        ],
+      ],
+    };
+    const game = Object.assign(Object.create(GameServer.prototype), {
+      tournamentEngines: new Map(),
+      tournamentDiagnosticRetirements: new Map(),
+      tournamentManagerLeaseReleaseOperations: new Map(),
+      tournamentManagerPendingLeaseReleases: new Map(),
+      drainedF06TournamentCustody: new Map([[TID, packet]]),
+      completedF06TournamentCustody: new Map([
+        [TID, new Set([{ original: packet, terminalProof: { privateMoney: 123 } }])],
+      ]),
+      processStartedAt: 1,
+    });
+    const result = await request(path, game);
+    expect(result.status).toBe(200);
+    const parsed = JSON.parse(result.body);
+    expect(parsed.owners[0].roles).toEqual(['drained-custody', 'completed-custody']);
+    expect(parsed.custody).toMatchObject({
+      coverage: 'available',
+      active: true,
+      archivedCount: 1,
+      archivedScanned: 1,
+      archivedTruncated: false,
+    });
+    expect(parsed.custody.packets[0]).toMatchObject({
+      role: 'drained-custody',
+      originGeneration: TABLE,
+      originalsUnavailable: 0,
+      originals: [
+        { tableId: TABLE, availability: 'observed', engine: { instanceId: TABLE, terminal: true } },
+      ],
+    });
+    expect(result.body).not.toContain('privateMoney');
+    expect(result.body).not.toContain('terminalProof');
+    scheduler.mockRestore();
+  });
+
   it('fails closed when the module is loaded without an internal key', async () => {
     const priorScheduler = await import('./tournament/TournamentEliminationScheduler.js');
     priorScheduler.tournamentEliminationScheduler.stop();

@@ -47,7 +47,8 @@ import {
 import nodeCrypto from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { ServerTableEngine } from '../engine/ServerTableEngine.js';
-import { supabase } from '../services/supabase.js';
+import { supabase, resumeRetainedHandSubmission } from '../services/supabase.js';
+import { INSTANCE_ID } from '../services/tableLease.js';
 import { ChipRaceEngine } from '../engine/ChipRaceEngine.js';
 import { TableBalancer } from '../engine/TableBalancer.js';
 import {
@@ -230,6 +231,66 @@ export abstract class TournamentManagerBase {
   private teardownPromise: Promise<void> | null = null;
   /** The synchronous half of stop may be applied before the graceful table drain. */
   private stopFenceApplied = false;
+  private f06RecoveryOwnership = false;
+  private drainedF06Originals: readonly (readonly [string, ServerTableEngine])[] | null = null;
+
+  /** Ownership for an existing disposition only. No gameplay lifecycle starts. */
+  enterF06RecoveryOwnership(): void {
+    if (
+      this.running ||
+      this.stopFenceApplied ||
+      this.teardownPromise ||
+      this.lifecycleOperation ||
+      this.lifecycleJobs.size ||
+      this.tableEngineStartJobs.size ||
+      this.tableEngineRunJobs.size ||
+      this.eliminationSchedulerJobs.size ||
+      this.tableEngines.size !== 0 ||
+      !this.tournamentLeaseGeneration ||
+      !this.hasCurrentTournamentLeaseAuthority()
+    )
+      throw new Error('f06_recovery_owner_invalid');
+    this.f06RecoveryOwnership = true;
+    this.armTournamentLeaseExpiryTimer();
+  }
+
+  isF06RecoveryOwner(): boolean {
+    return (
+      this.f06RecoveryOwnership &&
+      !this.stopFenceApplied &&
+      this.hasCurrentTournamentLeaseAuthority()
+    );
+  }
+
+  /** Positive completion of every exact stop, not merely loss of a registry slot. */
+  protected captureDrainedF06Originals(): readonly (readonly [string, ServerTableEngine])[] | null {
+    const originals = this.drainedF06Originals;
+    if (
+      !originals ||
+      !this.stopFenceApplied ||
+      !this.tournamentLeaseAuthorityExpired ||
+      this.running ||
+      this.teardownPromise ||
+      this.lifecycleOperation ||
+      this.lifecycleJobs.size ||
+      this.tableEngineStartJobs.size ||
+      this.tableEngineRunJobs.size ||
+      this.eliminationSchedulerJobs.size ||
+      this.lifecycleTimeouts.size ||
+      this.lifecycleIntervals.size ||
+      this.tableEngines.size !== originals.length ||
+      originals.some(
+        ([id, engine]) =>
+          this.tableEngines.get(id) !== engine ||
+          engine.isRunning() ||
+          !engine.hasReleasedProcessOwnership() ||
+          engine.hasSettlementInFlight()
+      )
+    )
+      return null;
+    return originals;
+  }
+
   /** Manager callbacks are stopped while its lease remains live for hand drain. */
   private shutdownDrainFenceApplied = false;
   private readonly lifecycleTimeouts = new Set<ReturnType<typeof setTimeout>>();
@@ -875,7 +936,7 @@ export abstract class TournamentManagerBase {
       this.tournamentLeaseGeneration.toLowerCase() !== leaseGeneration.toLowerCase() ||
       this.tournamentLeaseAuthorityExpired ||
       this.stopFenceApplied ||
-      (!this.running && !this.shutdownDrainFenceApplied) ||
+      (!this.running && !this.shutdownDrainFenceApplied && !this.f06RecoveryOwnership) ||
       !this.hasCurrentTournamentLeaseAuthority() ||
       !Number.isFinite(proofDeadlineMonotonicMs) ||
       tournamentLeaseMonotonicNow() >= proofDeadlineMonotonicMs
@@ -939,7 +1000,8 @@ export abstract class TournamentManagerBase {
   stoodDownWithItsLeaseIntact(): boolean {
     return (
       !this.tournamentLeaseAuthorityExpired &&
-      (this.stopFenceApplied || (!this.running && !this.shutdownDrainFenceApplied))
+      (this.stopFenceApplied ||
+        (!this.running && !this.shutdownDrainFenceApplied && !this.f06RecoveryOwnership))
     );
   }
 
@@ -1401,7 +1463,46 @@ export abstract class TournamentManagerBase {
     });
   }
 
+  /** Layer three owns the exact terminal park/receipt contract. */
+  protected async continueExcludedNoStartTable(
+    _tableId: string,
+    _engine: ServerTableEngine,
+    _current: () => boolean
+  ): Promise<boolean> {
+    return false;
+  }
+
+  protected async readmitContinuedNoStartTable(
+    tableId: string,
+    engine: ServerTableEngine
+  ): Promise<void> {
+    const lifecycle = this.captureLifecycleToken();
+    if (
+      !lifecycle ||
+      !this.lifecycleIsCurrent(lifecycle) ||
+      this.tableEngines.get(tableId) !== engine ||
+      !this.gameServer.ownsTournamentTableEngine(tableId, engine)
+    )
+      throw new Error('F06 continued source owner changed');
+    await this.recoverManagedTableEngine(
+      tableId,
+      engine,
+      lifecycle,
+      'f06_no_start_continued',
+      false
+    );
+  }
+
   /** A manager is not torn down until every table start it launched has settled. */
+  protected async startParkedMovementEngine(
+    _engine: ServerTableEngine,
+    _tableId: string,
+    _tableLifecycle: string,
+    _current: () => boolean
+  ): Promise<void> {
+    throw new Error('f06_movement_admission_unavailable');
+  }
+
   protected startManagedTableEngine(
     engine: ServerTableEngine,
     errorContext: string,
@@ -1426,6 +1527,11 @@ export abstract class TournamentManagerBase {
         this.gameServer.ownsTournamentTableEngine(tableId, engine);
       if (!current() || !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
         throw new Error('f06_engine_admission_fenced');
+      // Retained originals must finish before the existing unresolved-permit
+      // admission refusal. This never reconstructs or cancels a missing hand.
+      await resumeRetainedHandSubmission(tableId, INSTANCE_ID, leaseGeneration);
+      if (!current() || !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
+        throw new Error('f06_engine_admission_fenced');
       const { data, error } = await supabase.rpc('fn_f06_hand_number_state', {
         p_tournament_id: this.tournamentId,
         p_lease_generation: leaseGeneration,
@@ -1441,6 +1547,28 @@ export abstract class TournamentManagerBase {
         unresolved_permit?: unknown;
         next_hand_number_candidate?: string | null;
       } | null;
+      if (
+        current() &&
+        !error &&
+        state?.ok === true &&
+        state.table_id === tableId &&
+        state.can_reserve === false &&
+        state.blocked_reason === 'source_excluded' &&
+        state.unresolved_permit === null &&
+        state.next_hand_number_candidate === null &&
+        typeof state.lifecycle === 'string' &&
+        /^[1-9][0-9]{0,18}$/.test(state.lifecycle) &&
+        BigInt(state.lifecycle) <= 9223372036854775807n
+      ) {
+        if (await this.continueExcludedNoStartTable(tableId, engine, current)) {
+          if (!current()) throw new Error('F06 continued startup owner changed');
+          await this.readmitContinuedNoStartTable(tableId, engine);
+          return;
+        }
+        // Ordinary multi-table custody remains reachable after explicit no-start noneligibility.
+        await this.startParkedMovementEngine(engine, tableId, state.lifecycle, current);
+        return;
+      }
       if (
         !current() ||
         error ||
@@ -3855,6 +3983,7 @@ export abstract class TournamentManagerBase {
   }
 
   async start(): Promise<void> {
+    if (this.f06RecoveryOwnership) throw new Error('f06_recovery_business_admission_held');
     if (this.teardownPromise) await this.teardownPromise;
     if (!this.tournamentLeaseAuthorityIsCurrent()) {
       this.expireTournamentLeaseAuthority();
@@ -5079,6 +5208,7 @@ export abstract class TournamentManagerBase {
   }
 
   async resume(): Promise<void> {
+    if (this.f06RecoveryOwnership) throw new Error('f06_recovery_business_admission_held');
     if (this.teardownPromise) await this.teardownPromise;
     if (!this.tournamentLeaseAuthorityIsCurrent()) {
       this.expireTournamentLeaseAuthority();
@@ -5151,12 +5281,16 @@ export abstract class TournamentManagerBase {
       // Find existing tables. `first_button_seat` comes along so a Spin whose
       // button was drawn but never dealt keeps the seat it drew — see
       // restoreDrawnFirstButtons.
-      const { data: tables } = await supabase
+      const { data: tables, error: tablesError } = await supabase
         .from('tables')
         .select('id, first_button_seat, small_blind, big_blind, ante, stakes')
         .eq('tournament_id', this.tournamentId)
         .in('status', ['running', 'waiting']);
       this.assertLifecycleCurrent(lifecycle);
+      if (tablesError)
+        throw new Error(`Tournament resume table inventory read failed: ${tablesError.message}`);
+      if (!Array.isArray(tables))
+        throw new Error('Tournament resume table inventory was unreadable');
 
       /**
        * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
@@ -5167,15 +5301,23 @@ export abstract class TournamentManagerBase {
        * the tables and seat them — exactly what start() does. A room that lost
        * a table redeals it; it does not void the tournament.
        */
-      if (!tables || tables.length === 0) {
-        const { count: liveEntrants } = await supabase
+      if (tables.length === 0) {
+        const { count: liveEntrants, error: entrantsError } = await supabase
           .from('tournament_players')
           .select('id', { count: 'exact', head: true })
           .eq('tournament_id', this.tournamentId)
           .in('status', ['registered', 'playing']);
         this.assertLifecycleCurrent(lifecycle);
+        if (entrantsError)
+          throw new Error(`Tournament resume entrant count failed: ${entrantsError.message}`);
+        if (
+          typeof liveEntrants !== 'number' ||
+          !Number.isSafeInteger(liveEntrants) ||
+          liveEntrants < 0
+        )
+          throw new Error('Tournament resume entrant count was unreadable');
 
-        if ((liveEntrants || 0) > 0) {
+        if (liveEntrants > 0) {
           console.warn(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Resuming with NO open tables - rebuilding for ${liveEntrants} entrant(s) instead of abandoning the tournament`
           );
@@ -5598,6 +5740,7 @@ export abstract class TournamentManagerBase {
     const lifecycleOperation = this.lifecycleOperation;
     if (this.stopFenceApplied) return lifecycleOperation;
     this.stopFenceApplied = true;
+    this.f06RecoveryOwnership = false;
     this.publishHandForHandPresentation();
     this.unregisterDatabaseFenceHandler?.();
     this.unregisterDatabaseFenceHandler = null;
@@ -5655,6 +5798,11 @@ export abstract class TournamentManagerBase {
       await initialEngineStops;
       await this.drainTableEngineRunJobs();
       this.recordManagerDiagnostic('owned_work_joined');
+      // A fulfilled engine stop is the positive terminal-teardown certificate.
+      // Cleanup failures that merely released process ownership do not qualify.
+      this.drainedF06Originals = stopResults.every((result) => result.status === 'fulfilled')
+        ? Object.freeze(engines.map(([id, engine]) => Object.freeze([id, engine] as const)))
+        : null;
       const stopFailures: unknown[] = [];
       for (let i = 0; i < engines.length; i++) {
         const [tableId, engine] = engines[i];

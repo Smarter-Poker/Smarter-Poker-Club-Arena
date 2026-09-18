@@ -101,30 +101,36 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
     return next;
   }
 
-  it('restores the real startup hand identity before re-parking a saved bank', async () => {
-    await saved();
-    const previousBank = structuredClone(data.row.time_bank_snapshot.players[user]);
-    const next = freshStartup();
-    await next.start();
-    expect(next.killForRestart).not.toHaveBeenCalled();
-    expect(next.handCount).toBe(12);
-    expect(data.row.time_bank_snapshot.handNumber).toBe(12);
-    expect(data.row.time_bank_snapshot.players[user]).toEqual(previousBank);
-    // Continue the same generation after the harness stopped at its pause.
-    next.running = true;
-    next.adoptSeatRoster([{ user_id: user, occupancy_id: stay, seat_number: 2, stack: 25 }]);
-    next.running = false;
-    expect(next.timeBankEngine.getPlayerBank(table, user)).toMatchObject({
-      remainingSeconds: 7,
-      usesRemaining: 1,
-    });
-    expect(next.timeBankMeta.get(user)).toEqual({
-      initialSeconds: 80,
-      baseSeconds: 40,
-      dbConsumedSeconds: 33,
-    });
-    expect(data.rpc).not.toHaveBeenCalled();
-  });
+  it.each([0, 48])(
+    'restores the real startup hand identity after a %i-hour outage before re-parking a saved bank',
+    async (hours) => {
+      await saved();
+      const parkedAt = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+      data.row.parked_at = parkedAt;
+      data.row.time_bank_snapshot.parkedAt = parkedAt;
+      const previousBank = structuredClone(data.row.time_bank_snapshot.players[user]);
+      const next = freshStartup();
+      await next.start();
+      expect(next.killForRestart).not.toHaveBeenCalled();
+      expect(next.handCount).toBe(12);
+      expect(data.row.time_bank_snapshot.handNumber).toBe(12);
+      expect(data.row.time_bank_snapshot.players[user]).toEqual(previousBank);
+      // Continue the same generation after the harness stopped at its pause.
+      next.running = true;
+      next.adoptSeatRoster([{ user_id: user, occupancy_id: stay, seat_number: 2, stack: 25 }]);
+      next.running = false;
+      expect(next.timeBankEngine.getPlayerBank(table, user)).toMatchObject({
+        remainingSeconds: 7,
+        usesRemaining: 1,
+      });
+      expect(next.timeBankMeta.get(user)).toEqual({
+        initialSeconds: 80,
+        baseSeconds: 40,
+        dbConsumedSeconds: 33,
+      });
+      expect(data.rpc).not.toHaveBeenCalled();
+    }
+  );
 
   it.each([true, undefined])(
     'preserves unlimited-use metadata through repeated startup and roster checkpoints (%s)',
@@ -491,7 +497,49 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
     next.adoptSeatRoster(next.seatedPlayers);
     expect(next.timeBankEngine.getPlayerBank(table, user).remainingSeconds).toBe(3);
   });
-  it.each(['legacy', 'later-hand', 'older-write', 'expired', 'invalid', 'invalid-unlimited'])(
+  it.each(['cash', 'mtt', 'spin', 'sng'])(
+    'retains an unchanged %s bank after a prolonged outage without granting or charging again',
+    async (format) => {
+      await saved();
+      const original = structuredClone(data.row.time_bank_snapshot.players[user]);
+      const parkedAt = new Date(Date.now() - 48 * 60 * 60000).toISOString();
+      data.row.parked_at = parkedAt;
+      data.row.time_bank_snapshot.parkedAt = parkedAt;
+      const next = engine();
+      next.tableInfo = {
+        id: table,
+        tournament_id: format === 'cash' ? null : 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        tournament_type: format,
+      };
+      await next.readParkedTimeBanks();
+      next.adoptSeatRoster(next.seatedPlayers);
+      expect(next.timeBankEngine.getPlayerBank(table, user)).toMatchObject({
+        remainingSeconds: original.remainingSeconds,
+        usesRemaining: original.usesRemaining,
+      });
+      await next.persistPresenceForRestart('parked');
+      expect(data.row.time_bank_snapshot.players[user]).toEqual(original);
+      expect(data.rpc).not.toHaveBeenCalled();
+    }
+  );
+  it.each(['later-hand', 'new-occupancy'])(
+    'rejects an old bank after %s even when it was saved during a long outage',
+    async (change) => {
+      await saved();
+      const parkedAt = new Date(Date.now() - 48 * 60 * 60000).toISOString();
+      data.row.parked_at = parkedAt;
+      data.row.time_bank_snapshot.parkedAt = parkedAt;
+      const next = engine(
+        change === 'new-occupancy' ? 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' : stay
+      );
+      if (change === 'later-hand') next.handCount++;
+      await next.readParkedTimeBanks();
+      next.adoptSeatRoster(next.seatedPlayers);
+      expect(next.timeBankEngine.getPlayerBank(table, user)).toBeNull();
+      expect(data.rpc).not.toHaveBeenCalled();
+    }
+  );
+  it.each(['legacy', 'later-hand', 'older-write', 'future', 'invalid', 'invalid-unlimited'])(
     'rejects %s snapshots',
     async (kind) => {
       await saved();
@@ -500,7 +548,7 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
       if (kind === 'legacy') delete data.row.time_bank_snapshot;
       if (kind === 'later-hand') hand++;
       if (kind === 'older-write') data.row.parked_at = new Date(now + 1).toISOString();
-      if (kind === 'expired') now += 21 * 60000;
+      if (kind === 'future') now -= 60000;
       if (kind === 'invalid') data.row.time_bank_snapshot.players[user].remainingSeconds = -1;
       if (kind === 'invalid-unlimited')
         data.row.time_bank_snapshot.players[user].unlimitedActivations = 'true';

@@ -91,6 +91,9 @@ try:
     r = command([pg / 'pg_ctl', '-D', cluster / 'data', '-l', cluster / 'server.log', '-w', 'start'])
     require(r.returncode == 0, r.stderr)
     run('fixture', (ROOT / 'scripts/ci/probes/f06-shared-hand-lane/fixture.sql').read_text())
+    index = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/snapshot_index_qualification.py'))
+    index['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('snapshotIndex', {}).get('passed') is True, 'Snapshot access-path qualification did not complete')
     before = run('snapshot-before', snapshot)
     with holder():
         probe('pure-stack-column-does-not-fire', 'UPDATE table_seats SET stack=101 WHERE id=2 RETURNING stack;', '101')
@@ -156,6 +159,18 @@ try:
     prepared = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/prepared_cancellation_qualification.py'))
     prepared['qualify'](ROOT, out, cmd, command, run, probe, require, results)
     require(results.get('preparedCancellation', {}).get('passed') is True, 'Prepared cancellation qualification did not complete')
+    continuation = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/no_start_continuation_qualification.py'))
+    continuation['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('noStartContinuation', {}).get('passed') is True, 'No-start continuation did not complete')
+    spin = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/spin_prior_qualification.py'))
+    spin['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('spinPrior', {}).get('passed') is True, 'Prior-backed Spin disposition qualification did not complete')
+    completed = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/completed_mtt_qualification.py'))
+    completed['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('completedMtt', {}).get('passed') is True, 'Completed MTT boundary qualification did not complete')
+    interrupted = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/interrupted_custody_qualification.py'))
+    interrupted['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('interruptedCustody', {}).get('passed') is True, 'Original interrupted custody qualification did not complete')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

@@ -43,7 +43,6 @@ import {
   processHandPostCommitObligations,
   recordBBJNearMiss,
   resolveJackpotSiblingClubIds,
-  completeHandSnapshot,
   supabase,
 } from '../services/supabase.js';
 import type { HandEvent, SeatedPlayer } from '../types.js';
@@ -624,15 +623,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       }
     }
 
-    // SETTLEMENT STEP 8 (partial): Mark hand snapshot as complete
-    // FIX 137: Bible V8 §7.17
-    // Reported, not swallowed. A snapshot that never completes leaves the hand
-    // marked in-flight in the recovery path, and `.catch(() => {})` meant the
-    // only way to learn that was to go looking for it. It still must not throw
-    // into settlement — the hand is over and the money is already moved.
-    completeHandSnapshot(this.tableId, this.handCount).catch((err) =>
-      reportError(err, 'ServerTableEngine.complete_hand_snapshot_error')
-    );
+    // The retained original hand transaction completes this snapshot only
+    // after its accepted financial receipt. HAND_COMPLETE alone is not proof.
 
     // SETTLEMENT STEP 5: Capture rake and BBJ fee (calculated in HandController)
     if ((event as any).rake !== undefined) {

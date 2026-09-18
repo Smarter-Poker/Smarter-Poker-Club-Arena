@@ -148,6 +148,21 @@ describe('the publisher hands its selected artifact to post-deploy verification'
 });
 
 describe('production E2E uses exact trusted provenance', () => {
+  it('waits for maintenance and resume waves before creating live-table fixtures', () => {
+    const full = readFileSync(
+      resolve(process.cwd(), '.github/workflows/post-deploy-e2e.yml'),
+      'utf8'
+    );
+    const live = full.slice(full.indexOf('  live-table-e2e:'));
+    const wait = live.indexOf('- name: Wait for the same engine to resume gameplay');
+    expect(wait).toBeGreaterThan(0);
+    expect(wait).toBeLessThan(live.indexOf('- name: Provision an isolated production E2E account'));
+    expect(
+      live.slice(wait, live.indexOf('- name: Provision an isolated production E2E account'))
+    ).toContain('node scripts/ci/await-engine-gameplay.mjs "$EXPECTED_ENGINE_SHA"');
+    expect(full.slice(0, full.indexOf('  live-table-e2e:'))).not.toContain('await-engine-gameplay');
+  });
+
   it('admits only the exact running engine before browser fixture creation', () => {
     expect(
       requireReadyEngineSha(JSON.stringify({ releaseSha: A, running: true, liveness: 'ok' }), A)

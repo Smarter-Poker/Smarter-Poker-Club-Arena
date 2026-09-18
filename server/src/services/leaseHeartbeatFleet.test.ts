@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { RetainedLeaseHeartbeatBatches } from './leaseHeartbeatBatches.js';
 
 const rpc = vi.fn();
 vi.mock('./supabase/client.js', () => ({
@@ -26,6 +27,47 @@ beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 afterEach(() => vi.restoreAllMocks());
+
+it.each(['deadline', 'replacement'] as const)(
+  'bounds retained queued identities under four never-settling transports and %s',
+  async (expiry) => {
+    const batches = new RetainedLeaseHeartbeatBatches<string, string>();
+    let now = 0;
+    let owner = 0;
+    const held: Array<{ key: string; resolve: (value: string) => void }> = [];
+    const deliver = vi.fn();
+    for (let pass = 0; pass < 100; pass++) {
+      now = pass * 5000;
+      owner = pass;
+      const deadline = now + 20000;
+      const captured = owner;
+      batches.dispatch(
+        [String(pass)],
+        (key) => key,
+        () => now < deadline && (expiry === 'deadline' || owner === captured),
+        ([key]) => new Promise((resolve) => held.push({ key, resolve })),
+        deliver,
+        () => {
+          throw new Error('unexpected delivery error');
+        }
+      );
+      expect(held.length).toBeLessThanOrEqual(4);
+      // Four actual transports plus at most one 20s window of 5s dispatches.
+      expect((batches as any).retained.size).toBeLessThanOrEqual(8);
+      expect((batches as any).queued.length).toBeLessThanOrEqual(4);
+    }
+    for (const request of held.slice()) request.resolve(request.key);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(deliver).not.toHaveBeenCalled();
+    const current = held.slice(4);
+    expect(current.map(({ key }) => Number(key))).toEqual(
+      expiry === 'deadline' ? [96, 97, 98, 99] : [99]
+    );
+    for (const request of current) request.resolve(request.key);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect((batches as any).retained.size).toBe(0);
+  }
+);
 
 describe.each(['tournament', 'table'] as const)('%s heartbeat fleet', (scope) => {
   const lostKey = scope === 'tournament' ? 'lostTournamentIds' : 'lostTableIds';
@@ -195,5 +237,121 @@ describe.each(['tournament', 'table'] as const)('%s heartbeat fleet', (scope) =>
     expect(new Set(result.proofs.map((proof) => proof.proofDeadlineMonotonicMs))).toEqual(
       new Set([20_500])
     );
+  });
+
+  it('keeps four transports across passes, releases completed claims, and expires queued generations', async () => {
+    let now = 0;
+    const requests: Array<{
+      claims: RpcClaim[];
+      resolve: (value: ReturnType<typeof kept>) => void;
+    }> = [];
+    rpc.mockImplementation(
+      (_name, args) => new Promise((resolve) => requests.push({ claims: args.p_claims, resolve }))
+    );
+    const { heartbeat, setNow } = await load();
+    setNow(() => now);
+    const delivered = vi.fn();
+    expect(await heartbeat(capture(2501), delivered)).toEqual({
+      status: 'uncertain',
+      reason: 'pending',
+    });
+    expect(requests).toHaveLength(4);
+    for (let pass = 0; pass < 8; pass++) {
+      now += 5000;
+      await heartbeat(capture(2501), delivered);
+      expect(requests).toHaveLength(4);
+    }
+    // Complete one old transport: its callback has expired. The queue now
+    // contains the latest captured pass, not eight duplicate sets of claims.
+    requests[0].resolve(kept(requests[0].claims));
+    await vi.waitFor(() => expect(requests).toHaveLength(5));
+    expect(delivered).not.toHaveBeenCalled();
+    expect(requests[4].claims[0][rowKey]).toBe(id(2000));
+    requests[4].resolve(kept(requests[4].claims));
+    await vi.waitFor(() => expect(requests).toHaveLength(6));
+    requests[5].resolve(kept(requests[5].claims));
+    await vi.waitFor(() => expect(delivered).toHaveBeenCalledTimes(2));
+    expect(delivered.mock.calls.flatMap(([outcome]) => outcome.proofs)).toHaveLength(501);
+    for (const request of requests.slice(1, 4)) request.resolve(kept(request.claims));
+    await Promise.resolve();
+  });
+
+  it('does not dispatch queued claims whose owner was replaced or deliver after shutdown', async () => {
+    const requests: Array<{
+      claims: RpcClaim[];
+      resolve: (value: ReturnType<typeof kept>) => void;
+    }> = [];
+    rpc.mockImplementation(
+      (_name, args) => new Promise((resolve) => requests.push({ claims: args.p_claims, resolve }))
+    );
+    const { heartbeat, setNow } = await load();
+    setNow(() => 1000);
+    let ownerCurrent = true;
+    let replaced = false;
+    const delivered = vi.fn();
+    await heartbeat(
+      capture(2501),
+      delivered,
+      () => ownerCurrent,
+      (claim) =>
+        !replaced || (claim as { tableId?: string; tournamentId?: string })[inputKey] !== id(2000)
+    );
+    replaced = true;
+    requests[0].resolve(kept(requests[0].claims));
+    await vi.waitFor(() => expect(requests).toHaveLength(5));
+    expect(requests[4].claims).toHaveLength(499);
+    expect(requests[4].claims.some((claim) => claim[rowKey] === id(2000))).toBe(false);
+    expect(delivered).toHaveBeenCalledOnce();
+    ownerCurrent = false;
+    for (const request of requests.slice(1)) request.resolve(kept(request.claims));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(requests).toHaveLength(5);
+    expect(delivered).toHaveBeenCalledOnce();
+  });
+
+  it('preserves busy, missing and malformed refusal semantics in immediate batch delivery', async () => {
+    const { heartbeat, setNow } = await load();
+    setNow(() => 1000);
+    const delivered = vi.fn();
+    rpc.mockResolvedValue({
+      data: [
+        { [rowKey]: id(0), lease_generation: generation, state: 'busy' },
+        { [rowKey]: id(1), lease_generation: null, state: 'missing' },
+        { [rowKey]: id(2), lease_generation: generation, state: 'kept' },
+      ],
+      error: null,
+    });
+    await heartbeat(capture(3), delivered);
+    await vi.waitFor(() => expect(delivered).toHaveBeenCalledOnce());
+    expect(delivered.mock.calls[0][0]).toEqual({
+      status: 'answered',
+      proofs: [{ ...capture(3)[2], proofDeadlineMonotonicMs: 21000 }],
+      [lostKey]: [id(1)],
+    });
+    rpc.mockResolvedValue({ data: [], error: null });
+    await heartbeat(capture(3), delivered);
+    await vi.waitFor(() => expect(delivered).toHaveBeenCalledTimes(2));
+    expect(delivered.mock.calls[1][0]).toEqual({
+      status: 'answered',
+      proofs: [],
+      [lostKey]: [id(0), id(1), id(2)],
+    });
+  });
+
+  it('releases a delivered transport once if its synchronous consumer throws', async () => {
+    const { heartbeat, setNow } = await load();
+    setNow(() => 1000);
+    rpc.mockImplementation(async (_name, args) => kept(args.p_claims));
+    const failedConsumer = vi.fn(() => {
+      throw new Error('consumer failure');
+    });
+    await heartbeat(capture(1), failedConsumer);
+    await vi.waitFor(() => expect(failedConsumer).toHaveBeenCalledOnce());
+    const delivered = vi.fn();
+    await heartbeat(capture(1), delivered);
+    await vi.waitFor(() => expect(delivered).toHaveBeenCalledOnce());
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(failedConsumer).toHaveBeenCalledOnce();
+    expect(delivered.mock.calls[0][0].proofs).toHaveLength(1);
   });
 });

@@ -79,6 +79,24 @@ export async function loadTable(tableId: string) {
 }
 
 /**
+ * The pre-deal tournament refresh consumes only these three values. Loading
+ * the full table configuration and club relation on every hand needlessly
+ * repeats the admission read. Keep a fresh read, bound to the same event;
+ * this is not a cache and cannot carry a prior event's blinds into a deal.
+ */
+export async function loadTournamentBlinds(tableId: string, tournamentId: string) {
+  const { data, error } = await supabase
+    .from('tables')
+    .select('small_blind, big_blind, ante')
+    .eq('id', tableId)
+    .eq('tournament_id', tournamentId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to load tournament blinds ${tableId}: ${error.message}`);
+  if (!data) throw new Error(`Tournament table ${tableId} not found in ${tournamentId}`);
+  return data;
+}
+
+/**
  * Load seated players with profiles for a table
  */
 export async function loadSeatedPlayers(tableId: string) {

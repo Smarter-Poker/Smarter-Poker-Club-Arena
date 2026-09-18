@@ -234,21 +234,31 @@ it('actual Manager shared admission starts only after resolved projection and pr
         order.push('recovery');
       },
     });
-    const spy = vi.spyOn(supabase, 'rpc').mockResolvedValue({
-      data: {
-        ok: true,
-        table_id: id(2),
-        lifecycle: '1',
-        can_reserve: !unresolved,
-        blocked_reason: unresolved ? 'hand_permit_unresolved' : null,
-        used_hand_number_max: '1000000',
-        next_hand_number_candidate: unresolved ? null : '1000001',
-        unresolved_permit: unresolved ? { permit_id: id(6) } : null,
-      },
-      error: null,
-    } as never);
+    const spy = vi.spyOn(supabase, 'rpc').mockImplementation((async (name: string) => {
+      if (name === 'fn_ca_resume_hand_submission') {
+        return { data: { found: false }, error: null } as never;
+      }
+      expect(name).toBe('fn_f06_hand_number_state');
+      return {
+        data: {
+          ok: true,
+          table_id: id(2),
+          lifecycle: '1',
+          can_reserve: !unresolved,
+          blocked_reason: unresolved ? 'hand_permit_unresolved' : null,
+          used_hand_number_max: '1000000',
+          next_hand_number_candidate: unresolved ? null : '1000001',
+          unresolved_permit: unresolved ? { permit_id: id(6) } : null,
+        },
+        error: null,
+      } as never;
+    }) as never);
     manager.startManagedTableEngine(engine, 'test');
     await Promise.all([...manager.tableEngineRunJobs]);
+    expect(spy.mock.calls.map(([name]) => name)).toEqual([
+      'fn_ca_resume_hand_submission',
+      'fn_f06_hand_number_state',
+    ]);
     spy.mockRestore();
     expect(order).toEqual(
       unresolved ? ['booked-start-held', 'recovery'] : ['booked-start-held', 'installed', 'started']

@@ -23,7 +23,7 @@ import * as EngineMetrics from '../observability/engineInstruments.js';
 import { startHandSpan } from '../observability/Tracing.js';
 import { getPlayerCountCaps } from '../config/RakeConfig.js';
 import {
-  loadTable,
+  loadTournamentBlinds,
   loadSeatedPlayers,
   supabase,
   autoRebuyHorse,
@@ -1705,10 +1705,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       return Promise.resolve();
     const originalTable = this.tableInfo;
     const lifecycle = originalTable.lifecycle;
+    const tournamentId = originalTable.tournament_id;
     const current = () =>
       this.lifecycleCanMutate() &&
       this.tableInfo === originalTable &&
-      this.tableInfo.lifecycle === lifecycle;
+      this.tableInfo.lifecycle === lifecycle &&
+      this.tableInfo.tournament_id === tournamentId;
     return this.runOwnedReadContinuation(() => this.refreshBlindsOwned(current, originalTable));
   }
 
@@ -1725,7 +1727,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
         if (!current()) return;
-        const data = await loadTable(this.tableId);
+        const data = await loadTournamentBlinds(this.tableId, table.tournament_id!);
         if (!current()) return;
         if (data) {
           /* AND TELL THE FELT (2026-09-09). `TABLE_META_UPDATE` - the message

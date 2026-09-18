@@ -33,6 +33,9 @@ changed witness refuses atomically; exact replay writes nothing.
 Isolated PG17 qualification passed append/replay,12 fault refusals and the
 self-aborting probe, with complete catalog/data snapshots and cleanup. Production
 probe at01:51UTC rolled back all changes; readback confirmed zero source/batch
-rows. Installation and normal terminal completion remain pending.
+rows. The exact transaction was installed once as provider migration
+`20260918020333`; readback at02:03:55UTC confirmed10batches,10sources,
+12.00originalfees and five proven net plans of2,2,2,3,3. Normal terminal
+completion remained pending at02:04:47UTC; no prize/ticket success is claimed.
 
 Qualification result SHA256: 07e1f65ea18d0f0216601953856a6c2d4446fe0f863b6d4ee29f9d37c7eb34a2.

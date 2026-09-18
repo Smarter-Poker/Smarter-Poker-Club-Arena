@@ -16,6 +16,8 @@ const mttPreparation =
 // and authoring dependencies. Fixture-only changes must reach this job too.
 const mttActivation =
   /^(scripts\/ci\/(mtt_activation_native\.py$|mtt_activation_funding\.py$|mtt_activation_satellite\.py$|satellite_qualifier_fixture\.py$|mtt_break_authoring_native\.py$|fixtures\/(mtt-format-activation|satellite-qualifiers|mtt-break-authoring)\/|probes\/mtt-activation\/)|tests\/operations\/mtt-activation-results\.test\.py$)/;
+const originalPaidCustody =
+  /^(?:scripts\/ci\/(?:(?:test|build)-original-paid-custody\.py$|original_paid_custody_native\.py$|fixtures\/original-paid-custody\/|probes\/original-paid-custody-authority\.sql$))/;
 const f06HandAuthority =
   /^(?:scripts\/ci\/(?:test-f06-shared-hand-lane\.py$|(?:test|build)-f06-(?:accepted-elimination|elimination-migration)\.py$|fixtures\/f06-accepted-elimination\/|probes\/f06-(?:shared-hand-lane\/|accepted-elimination\.(?:sql|spec)$))|tests\/operations\/f06-elimination-results\.test\.py$)/;
 const fixture =
@@ -124,6 +126,7 @@ export function classifyChangedPaths(paths) {
       matches(satelliteQualifiers) ||
       matches(mttActivation) ||
       matches(f06HandAuthority) ||
+      matches(originalPaidCustody) ||
       commitmentAudit ||
       matches(accounting) ||
       nativeIsolationTool ||
@@ -151,6 +154,7 @@ export function classifyChangedPaths(paths) {
       matches(mttPreparation) ||
       matches(mttActivation) ||
       matches(f06HandAuthority) ||
+      matches(originalPaidCustody) ||
       matches(/^scripts\/ci\/detect-silent-revert\.mjs$/) ||
       nativeIsolationTool ||
       spinRules ||

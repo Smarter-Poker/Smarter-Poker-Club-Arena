@@ -1366,6 +1366,23 @@ jobs:
           path: ${{ runner.temp }}/f06-accepted-elimination/
           if-no-files-found: error
           retention-days: 7
+      - name: Original paid tournament entry retains its scoring custody
+        id: original_paid_custody
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: |
+          python3 scripts/ci/build-original-paid-custody.py --check
+          python3 scripts/ci/test-original-paid-custody.py \
+            --pg-bin "$PG_BIN" --evidence "$RUNNER_TEMP/original-paid-custody"
+      - name: Retain original paid custody evidence
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.original_paid_custody.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-paid-custody-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/original-paid-custody/
+          if-no-files-found: error
+          retention-days: 7
       - name: Horse profile authority, API roles and concurrent writes
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

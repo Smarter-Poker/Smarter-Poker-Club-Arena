@@ -1,0 +1,782 @@
+-- Original paid tournament chips retain their custody; no wallet or funding change.
+BEGIN;
+SET LOCAL lock_timeout='3s';
+SET LOCAL statement_timeout='8s';
+DO $preimage$ BEGIN
+IF NOT EXISTS(SELECT 1 FROM pg_proc p WHERE oid='public.fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid)'::regprocedure AND md5(prosrc)='6a8c7009cdce61869fefdaa8500b0810' AND md5(pg_get_functiondef(oid))='2d8c9bd676a8ee02e009dd470fbfd585' AND pg_get_userbyid(proowner)='postgres' AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(proacl,acldefault('f',proowner))) a WHERE a.grantee<>proowner)) THEN RAISE EXCEPTION 'ORIGINAL_PAID_AUTHORITY_PREIMAGE_CHANGED: %','public.fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid)'; END IF;
+IF NOT EXISTS(SELECT 1 FROM pg_proc p WHERE oid='public.fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)'::regprocedure AND md5(prosrc)='16a587f7567336fe4379135f22e3fb41' AND md5(pg_get_functiondef(oid))='49383fc3339fb0d380bfad9ab8ecb0c8' AND pg_get_userbyid(proowner)='postgres' AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(proacl,acldefault('f',proowner))) a WHERE a.grantee<>proowner)) THEN RAISE EXCEPTION 'ORIGINAL_PAID_AUTHORITY_PREIMAGE_CHANGED: %','public.fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)'; END IF;
+IF NOT EXISTS(SELECT 1 FROM pg_proc p WHERE oid='smarter_private.f06_try_lane(uuid)'::regprocedure AND md5(prosrc)='e2926a0246837b974c7237872ec42aa5' AND md5(pg_get_functiondef(oid))='78a3a191b9991b0a3a343db39de335aa' AND pg_get_userbyid(proowner)='postgres' AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(proacl,acldefault('f',proowner))) a WHERE a.grantee<>proowner)) THEN RAISE EXCEPTION 'ORIGINAL_PAID_AUTHORITY_PREIMAGE_CHANGED: %','smarter_private.f06_try_lane(uuid)'; END IF;
+IF NOT EXISTS(SELECT 1 FROM pg_proc p WHERE oid='public.fn_ca_guard_mtt_admission_contract()'::regprocedure AND md5(prosrc)='18f6024bcc52669caef757a3d09e9186' AND md5(pg_get_functiondef(oid))='b580b9f60e18480905c79473946b7f92' AND pg_get_userbyid(proowner)='postgres' AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(proacl,acldefault('f',proowner))) a WHERE a.grantee<>proowner)) THEN RAISE EXCEPTION 'ORIGINAL_PAID_AUTHORITY_PREIMAGE_CHANGED: %','public.fn_ca_guard_mtt_admission_contract()'; END IF;
+END $preimage$;
+-- A scoring-chip custody transfer, never a new purchase or monetary baseline.
+CREATE TABLE public.tournament_paid_stack_custody_receipts (
+  id uuid PRIMARY KEY,
+  transaction_id xid8 NOT NULL DEFAULT pg_current_xact_id(),
+  tournament_id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  candidate_id uuid NOT NULL UNIQUE,
+  entitlement_id uuid NOT NULL UNIQUE,
+  source_ledger_id uuid NOT NULL UNIQUE,
+  source_wallet_id uuid NOT NULL UNIQUE,
+  destination_table_id uuid NOT NULL,
+  destination_seat_number integer NOT NULL CHECK(destination_seat_number BETWEEN 1 AND 10),
+  grant_chips numeric NOT NULL CHECK(grant_chips>0 AND grant_chips=trunc(grant_chips) AND grant_chips<2147483648),
+  live_chips_before numeric NOT NULL CHECK(live_chips_before>=0 AND live_chips_before<'Infinity'),
+  funded_supply numeric NOT NULL CHECK(funded_supply>0 AND funded_supply<'Infinity'),
+  scoring_excess numeric NOT NULL,
+  expected jsonb NOT NULL CHECK(jsonb_typeof(expected)='object'),
+  state text NOT NULL CHECK(state IN ('reserved','seated')),
+  assignment jsonb,
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  completed_at timestamptz,
+  CHECK(scoring_excess=live_chips_before+grant_chips-funded_supply),
+  CHECK((state='reserved' AND assignment IS NULL AND completed_at IS NULL)
+     OR (state='seated' AND assignment IS NOT NULL AND completed_at IS NOT NULL))
+);
+ALTER TABLE public.tournament_paid_stack_custody_receipts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.tournament_paid_stack_custody_receipts FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE FUNCTION public.fn_ca_guard_original_paid_stack_receipt() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $function$
+BEGIN
+ IF TG_OP='DELETE' OR TG_OP='TRUNCATE' THEN
+  RAISE EXCEPTION 'ORIGINAL_PAID_CUSTODY_IMMUTABLE' USING ERRCODE='55000';
+ ELSIF TG_OP='INSERT' THEN
+  IF NEW.state IS DISTINCT FROM 'reserved' OR NEW.transaction_id IS DISTINCT FROM pg_current_xact_id() THEN
+   RAISE EXCEPTION 'ORIGINAL_PAID_CUSTODY_RESERVATION_REQUIRED' USING ERRCODE='55000';
+  END IF;
+ ELSIF OLD.state IS DISTINCT FROM 'reserved' OR NEW.state IS DISTINCT FROM 'seated'
+ OR OLD.transaction_id IS DISTINCT FROM pg_current_xact_id()
+ OR (to_jsonb(NEW)-ARRAY['state','assignment','completed_at']) IS DISTINCT FROM
+    (to_jsonb(OLD)-ARRAY['state','assignment','completed_at']) THEN
+  RAISE EXCEPTION 'ORIGINAL_PAID_CUSTODY_IMMUTABLE' USING ERRCODE='55000';
+ END IF;
+ RETURN NEW;
+END $function$;
+REVOKE ALL ON FUNCTION public.fn_ca_guard_original_paid_stack_receipt() FROM PUBLIC,anon,authenticated,service_role;
+CREATE TRIGGER original_paid_custody_immutable BEFORE INSERT OR UPDATE OR DELETE
+ ON public.tournament_paid_stack_custody_receipts FOR EACH ROW
+ EXECUTE FUNCTION public.fn_ca_guard_original_paid_stack_receipt();
+CREATE TRIGGER original_paid_custody_no_truncate BEFORE TRUNCATE
+ ON public.tournament_paid_stack_custody_receipts FOR EACH STATEMENT
+ EXECUTE FUNCTION public.fn_ca_guard_original_paid_stack_receipt();
+
+CREATE FUNCTION public.fn_ca_original_paid_stack_must_complete() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $function$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.tournament_paid_stack_custody_receipts r
+ WHERE r.id=NEW.id AND r.state='seated' AND r.assignment->>'ok'='true'
+ AND r.assignment->>'tournament_id'=r.tournament_id::text
+ AND r.assignment->>'user_id'=r.user_id::text
+ AND r.assignment->>'table_id'=r.destination_table_id::text
+ AND (r.assignment->>'seat_number')::integer=r.destination_seat_number
+ AND (r.assignment->>'stack')::numeric=r.grant_chips) THEN
+  RAISE EXCEPTION 'ORIGINAL_PAID_CUSTODY_INCOMPLETE' USING ERRCODE='55000';
+ END IF;
+ RETURN NULL;
+END $function$;
+REVOKE ALL ON FUNCTION public.fn_ca_original_paid_stack_must_complete() FROM PUBLIC,anon,authenticated,service_role;
+CREATE CONSTRAINT TRIGGER original_paid_custody_completed AFTER INSERT OR UPDATE
+ ON public.tournament_paid_stack_custody_receipts DEFERRABLE INITIALLY DEFERRED
+ FOR EACH ROW EXECUTE FUNCTION public.fn_ca_original_paid_stack_must_complete();
+
+INSERT INTO public.ca_money_rpc_registry(proname,status,notes) VALUES
+ ('fn_ca_resume_original_paid_tournament_entry','approved',
+  'Private explicit original paid entry custody transaction. Locks the existing tournament seat owner and exact engine generation; verifies original debit, refund entitlement and accepted zero with no later play. Transfers only that already counted off-felt grant through the existing assignment owner, records historical scoring excess, closes only the original rebought candidate and immutable receipt. No wallet, escrow, prize, rebuy-count or monetary-baseline writes.');
+
+CREATE FUNCTION public.fn_ca_resume_original_paid_tournament_entry(p_receipt_id uuid,p_expected jsonb)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,smarter_private AS $function$
+DECLARE
+ t uuid:=(p_expected->>'tournament_id')::uuid;
+ u uuid:=(p_expected->>'user_id')::uuid;
+ tab uuid:=(p_expected->>'destination_table_id')::uuid;
+ chair integer:=(p_expected->>'destination_seat_number')::integer;
+ g uuid:=(p_expected->>'generation')::uuid;
+ c public.tournament_knockout_candidates;
+ tp public.tournament_players;
+ tour public.tournaments;
+ ent public.tournament_refund_entitlements;
+ led public.chip_ledger;
+ wallet public.wallet_transactions;
+ lease public.engine_tournament_leases;
+ h public.hand_atomic_commits;
+ prior public.tournament_paid_stack_custody_receipts;
+ actual jsonb; others jsonb; others_after jsonb; supply numeric; live numeric;
+ original_seat jsonb; gate jsonb; v_assignment jsonb; v_purchase_key text; paid_at timestamptz; v_rows integer;
+ grant_chips numeric; money_before jsonb; money_after jsonb; resolved timestamptz;
+BEGIN
+ IF p_receipt_id IS NULL OR jsonb_typeof(p_expected) IS DISTINCT FROM 'object'
+ OR t IS NULL OR u IS NULL OR tab IS NULL OR g IS NULL OR chair IS NULL
+ OR chair NOT BETWEEN 1 AND 10 THEN
+  RAISE EXCEPTION 'ORIGINAL_PAID_IDENTITY_REQUIRED' USING ERRCODE='22023'; END IF;
+ IF public.fn_platform_frozen() THEN
+  RAISE EXCEPTION 'ORIGINAL_PAID_PLATFORM_FROZEN' USING ERRCODE='55000'; END IF;
+ PERFORM pg_advisory_xact_lock(hashtextextended('ca:original-paid-stack:'||p_receipt_id::text,0));
+ SELECT * INTO prior FROM public.tournament_paid_stack_custody_receipts WHERE id=p_receipt_id;
+ IF FOUND THEN
+  IF prior.expected IS DISTINCT FROM p_expected OR prior.state IS DISTINCT FROM 'seated' THEN
+   RAISE EXCEPTION 'ORIGINAL_PAID_CHANGED_REPLAY' USING ERRCODE='22023'; END IF;
+  RETURN prior.assignment||jsonb_build_object('receipt_id',prior.id,'replayed',true);
+ END IF;
+
+ -- The existing seat owner supplies G/T, entry-maintenance, admission, player,
+ -- launch and tournament order. Never wait on a lease after holding that lane:
+ -- protocol-2 requests can own the lease first and be waiting on T.
+ gate:=public.fn_ca_lock_tournament_seat_acquisition(t,tab,u);
+ IF gate->>'ok' IS DISTINCT FROM 'true' THEN
+  RAISE EXCEPTION 'ORIGINAL_PAID_SEAT_ROOT_REFUSED: %',gate USING ERRCODE='55000'; END IF;
+ SELECT * INTO lease FROM public.engine_tournament_leases WHERE tournament_id=t FOR UPDATE NOWAIT;
+ IF NOT FOUND OR lease.lease_generation IS DISTINCT FROM g OR lease.protocol_version IS DISTINCT FROM 2
+ OR lease.instance_id IS DISTINCT FROM p_expected->>'instance_id'
+ OR lease.engine_version IS DISTINCT FROM p_expected->>'engine_version' THEN
+  RAISE EXCEPTION 'ORIGINAL_PAID_LEASE_CHANGED' USING ERRCODE='55000'; END IF;
+ PERFORM id FROM public.tournament_players WHERE tournament_id=t ORDER BY id FOR UPDATE;
+ PERFORM id FROM public.tables WHERE tournament_id=t ORDER BY id FOR UPDATE;
+ PERFORM s.id FROM public.table_seats s JOIN public.tables b ON b.id=s.table_id
+ WHERE b.tournament_id=t ORDER BY s.id FOR UPDATE OF s;
+ SELECT * INTO tour FROM public.tournaments WHERE id=t;
+ SELECT * INTO tp FROM public.tournament_players WHERE tournament_id=t AND user_id=u;
+ SELECT * INTO c FROM public.tournament_knockout_candidates
+ WHERE id=(p_expected->>'candidate_id')::uuid FOR UPDATE;
+ SELECT * INTO ent FROM public.tournament_refund_entitlements
+ WHERE id=(p_expected->>'entitlement_id')::uuid;
+ SELECT * INTO led FROM public.chip_ledger WHERE id=ent.source_ledger_id;
+ SELECT * INTO wallet FROM public.wallet_transactions
+ WHERE id=(p_expected->>'wallet_transaction_id')::uuid;
+ SELECT * INTO h FROM public.hand_atomic_commits
+ WHERE hand_id=c.hand_id AND table_id=c.table_id AND hand_number=c.hand_number;
+ v_purchase_key:='tourney:'||t::text||':rebuy:'||u::text||':#0';
+ grant_chips:=tour.rebuy_chips;
+ SELECT to_jsonb(s) INTO original_seat FROM public.table_seats s WHERE s.id=c.seat_id;
+
+ -- This is one original legacy, non-bounty MTT entry. The current paid writer
+ -- cannot create this shape; its purchase, candidate and chair commit together.
+ IF tour.status IS DISTINCT FROM 'RUNNING' OR tour.format_contract IS DISTINCT FROM 'mtt-v1'
+ OR tour.tournament_type IS DISTINCT FROM 'MTT' OR COALESCE(tour.is_bounty,false)
+ OR COALESCE(tour.is_pko,false) OR COALESCE(tour.is_mystery_bounty,false)
+ OR NOT COALESCE(tour.entry_contract_locked,false)
+ OR NOT COALESCE(tour.prize_pool_finalized,false)
+ OR tp.id IS NULL OR tp.status IS DISTINCT FROM 'playing' OR tp.position IS NOT NULL
+ OR COALESCE(tp.prize,0)<>0 OR tp.table_id IS NOT NULL OR tp.seat_number IS NOT NULL
+ OR tp.terminal_closed_at IS NOT NULL OR tp.rebuys IS DISTINCT FROM 1
+ OR tp.add_on IS DISTINCT FROM false OR tp.chips::numeric IS DISTINCT FROM grant_chips
+ OR grant_chips IS NULL OR grant_chips<=0 OR grant_chips<>trunc(grant_chips) OR grant_chips>=2147483648
+ OR c.id IS NULL OR c.tournament_id IS DISTINCT FROM t OR c.eliminated_user_id IS DISTINCT FROM u
+ OR c.state IS DISTINCT FROM 'pending' OR c.resolved_at IS NOT NULL OR c.stack_after IS DISTINCT FROM 0
+ OR (SELECT count(*) FROM public.tournament_knockout_candidates WHERE tournament_id=t AND eliminated_user_id=u)<>1
+ OR (SELECT count(*) FROM public.tournament_players WHERE tournament_id=t AND status='playing')<>2
+ OR EXISTS(SELECT 1 FROM public.table_seats s JOIN public.tables b ON b.id=s.table_id
+           WHERE b.tournament_id=t AND s.user_id=u AND s.left_at IS NULL)
+ OR EXISTS(SELECT 1 FROM public.tournament_paid_stack_custody_receipts r
+           WHERE r.candidate_id=c.id OR r.entitlement_id=ent.id OR r.source_ledger_id=led.id)
+ OR EXISTS(SELECT 1 FROM public.tournament_participant_funding_receipts r WHERE r.entitlement_id=ent.id)
+ THEN RAISE EXCEPTION 'ORIGINAL_PAID_SCOPE_CHANGED' USING ERRCODE='55000'; END IF;
+
+ -- Both independent accepted journals establish the exact old zero. Durable
+ -- settlement keys also exclude later play after horse hand-history pruning.
+ IF h.hand_id IS NULL OR h.stack_result->>'success' IS DISTINCT FROM 'true'
+ OR h.stack_result->>'table_id' IS DISTINCT FROM c.table_id::text
+ OR h.stack_result->>'hand_number' IS DISTINCT FROM c.hand_number::text
+ OR (h.stack_result->'written'->>u::text)::numeric IS DISTINCT FROM 0
+ OR c.created_at>h.committed_at
+ OR c.seat_joined_at IS NULL OR c.seat_id IS NULL OR c.stack_before<=0
+ OR original_seat IS NULL OR original_seat->>'table_id' IS DISTINCT FROM c.table_id::text
+ OR (original_seat->>'joined_at')::timestamptz<c.seat_joined_at
+ OR (original_seat->>'left_at') IS NULL
+ OR (original_seat->>'stack')::numeric IS DISTINCT FROM 0
+ OR h.post_commit_completed_at IS NULL OR h.post_commit_result->>'ok' IS DISTINCT FROM 'true'
+ OR (SELECT count(*) FROM public.settlement_idempotency_keys k WHERE k.table_id=h.table_id
+     AND k.hand_id::text=h.stack_result->>'hand_id' AND k.status='succeeded'
+     AND k.completed_at IS NOT NULL AND k.result IS NOT DISTINCT FROM h.stack_result)<>1
+ OR EXISTS(SELECT 1 FROM public.settlement_idempotency_keys k JOIN public.tables b ON b.id=k.table_id
+     WHERE b.tournament_id=t AND k.result->'written' ? u::text
+       AND (COALESCE(k.result->>'hand_number','') !~ '^[0-9]+$'
+         OR (k.result->>'hand_number')::bigint>c.hand_number))
+ OR EXISTS(SELECT 1 FROM public.hand_atomic_commits k JOIN public.tables b ON b.id=k.table_id
+     WHERE b.tournament_id=t AND k.stack_result->'written' ? u::text AND k.hand_number>c.hand_number)
+ THEN RAISE EXCEPTION 'ORIGINAL_PAID_ACCEPTED_HISTORY_CHANGED' USING ERRCODE='55000'; END IF;
+ paid_at:=led.created_at;
+ IF ent.id IS NULL OR ent.tournament_id IS DISTINCT FROM t OR ent.user_id IS DISTINCT FROM u
+ OR ent.entitlement_kind IS DISTINCT FROM 'wallet_charge' OR ent.charge_category IS DISTINCT FROM 'rebuy'
+ OR ent.evidence_kind IS DISTINCT FROM 'cutover_wallet_charge' OR ent.escrow_bucket IS DISTINCT FROM 'wallet_gross'
+ OR ent.gross IS NULL OR ent.gross<=0 OR ent.gross>='Infinity' OR ent.gross<>round(ent.gross,2)
+ OR ent.gross IS DISTINCT FROM ent.refund_prize+ent.refund_fee+ent.refund_bounty
+ OR ent.refund_bounty IS DISTINCT FROM 0
+ OR (SELECT count(*) FROM public.tournament_refund_entitlements e WHERE e.tournament_id=t AND e.user_id=u)<>1
+ OR led.id IS NULL OR led.status IS DISTINCT FROM 'posted' OR led.category IS DISTINCT FROM 'rebuy'
+ OR led.from_type IS DISTINCT FROM 'player_wallet' OR led.from_entity_id IS DISTINCT FROM u
+ OR led.to_type IS DISTINCT FROM 'prize_liability' OR led.to_entity_id IS DISTINCT FROM t
+ OR led.tournament_id IS DISTINCT FROM t OR led.club_id IS DISTINCT FROM ent.refund_wallet_club_id
+ OR tp.club_id IS DISTINCT FROM ent.refund_wallet_club_id OR led.amount IS DISTINCT FROM ent.gross
+ OR led.row_hash IS NULL OR led.chain_seq IS NULL OR led.created_at IS DISTINCT FROM ent.created_at
+ OR paid_at IS NULL OR paid_at<=GREATEST(c.created_at,h.committed_at,h.post_commit_completed_at)
+ OR wallet.id IS NULL OR wallet.user_id IS DISTINCT FROM u OR wallet.related_entity_id IS DISTINCT FROM t
+ OR wallet.type IS DISTINCT FROM 'debit' OR wallet.category IS DISTINCT FROM 'rebuy'
+ OR wallet.wallet_type IS DISTINCT FROM 'PLAYER' OR wallet.amount IS DISTINCT FROM ent.gross
+ OR wallet.created_at IS DISTINCT FROM paid_at OR COALESCE(wallet.description,'') NOT LIKE 'Tournament rebuy:%'
+ OR (SELECT count(*) FROM public.wallet_transactions w WHERE w.user_id=u AND w.related_entity_id=t
+     AND w.type='debit' AND w.category='rebuy' AND w.created_at=paid_at AND w.amount=ent.gross)<>1
+ OR NOT EXISTS(SELECT 1 FROM public.wallet_credit_idempotency i WHERE i.key=v_purchase_key AND i.user_id=u
+     AND i.amount=0 AND i.created_at=paid_at)
+ OR EXISTS(SELECT 1 FROM public.wallet_transactions w WHERE w.user_id=u AND w.related_entity_id=t AND w.type='credit')
+ THEN RAISE EXCEPTION 'ORIGINAL_PAID_FUNDING_CHANGED' USING ERRCODE='55000'; END IF;
+
+ IF EXISTS(SELECT 1 FROM smarter_private.f06_hand_permits WHERE tournament_id=t AND state='reserved')
+ OR EXISTS(SELECT 1 FROM smarter_private.f06_operations WHERE tournament_id=t AND state NOT IN ('acknowledged','withdrawn_before_manifest'))
+ OR EXISTS(SELECT 1 FROM public.hand_state_snapshots s JOIN public.tables b ON b.id=s.table_id
+           WHERE b.tournament_id=t AND NOT s.is_complete)
+ OR EXISTS(SELECT 1 FROM public.table_seats WHERE id=c.seat_id AND user_id=u
+           AND joined_at=c.seat_joined_at AND (left_at IS NULL OR stack<>0))
+ OR NOT EXISTS(SELECT 1 FROM public.tables WHERE id=tab AND tournament_id=t AND NOT COALESCE(is_deleted,false)
+               AND lower(status) IN ('waiting','running','active'))
+ THEN RAISE EXCEPTION 'ORIGINAL_PAID_ACTIVE_CUSTODY_CHANGED' USING ERRCODE='55000'; END IF;
+ SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id),sum(s.stack) INTO others,live
+ FROM public.table_seats s JOIN public.tables b ON b.id=s.table_id WHERE b.tournament_id=t AND s.left_at IS NULL;
+ IF jsonb_array_length(others) IS DISTINCT FROM 1 OR live IS NULL OR live<=0
+ OR others->0->>'table_id' IS DISTINCT FROM tab::text
+ OR others->0->>'user_id' IS NOT DISTINCT FROM u::text
+ OR EXISTS(SELECT 1 FROM public.tournament_players p WHERE p.tournament_id=t AND p.status='playing' AND p.user_id<>u
+   AND (p.chips::numeric IS DISTINCT FROM live OR p.table_id IS DISTINCT FROM tab OR p.seat_number IS DISTINCT FROM (others->0->>'seat_number')::integer)) THEN
+  RAISE EXCEPTION 'ORIGINAL_PAID_SURVIVOR_CHANGED' USING ERRCODE='55000'; END IF;
+ supply:=public.fn_ca_tournament_chip_supply(t);
+ actual:=jsonb_build_object('tournament_id',t,'user_id',u,'destination_table_id',tab,
+  'destination_seat_number',chair,'generation',g,'instance_id',lease.instance_id,'engine_version',lease.engine_version,
+  'candidate_id',c.id,'entitlement_id',ent.id,'wallet_transaction_id',wallet.id,
+  'candidate',to_jsonb(c),'original_seat',original_seat,'player',to_jsonb(tp),'entitlement',to_jsonb(ent),'ledger',to_jsonb(led),
+  'wallet',to_jsonb(wallet),'live_seats',others,'funded_supply',supply,'grant_chips',grant_chips,
+  'scoring_excess',live+grant_chips-supply);
+ IF actual IS DISTINCT FROM p_expected THEN
+  RAISE EXCEPTION 'ORIGINAL_PAID_EXPECTED_CHANGED' USING ERRCODE='55000'; END IF;
+ IF public.fn_platform_frozen() THEN
+  RAISE EXCEPTION 'ORIGINAL_PAID_PLATFORM_FROZEN' USING ERRCODE='55000'; END IF;
+ -- No ledger, wallet, escrow, rake, prize, counter or monetary-baseline writes.
+ money_before:=jsonb_build_object('tournament',to_jsonb(tour),'player_rebuys',tp.rebuys,'player_chips',tp.chips,
+   'entitlement',to_jsonb(ent),'ledger',to_jsonb(led),'wallet',to_jsonb(wallet));
+ INSERT INTO public.tournament_paid_stack_custody_receipts(id,tournament_id,user_id,candidate_id,entitlement_id,
+ source_ledger_id,source_wallet_id,destination_table_id,destination_seat_number,grant_chips,
+ live_chips_before,funded_supply,scoring_excess,expected,state)
+ VALUES(p_receipt_id,t,u,c.id,ent.id,led.id,wallet.id,tab,chair,grant_chips,live,supply,live+grant_chips-supply,actual,'reserved');
+ resolved:=clock_timestamp();
+ UPDATE public.tournament_knockout_candidates SET state='rebought',resolved_at=resolved WHERE id=c.id AND state='pending';
+ GET DIAGNOSTICS v_rows=ROW_COUNT;
+ IF v_rows<>1 THEN RAISE EXCEPTION 'ORIGINAL_PAID_CANDIDATE_CHANGED' USING ERRCODE='40001'; END IF;
+ UPDATE public.tournament_players SET rebuy_prompt_until=NULL WHERE id=tp.id AND chips=tp.chips AND status='playing';
+ v_assignment:=public.fn_ca_assign_tournament_player_seat_locked(t,u,tab,chair);
+ IF v_assignment->>'ok' IS DISTINCT FROM 'true' OR (v_assignment->>'stack')::numeric IS DISTINCT FROM grant_chips THEN
+  RAISE EXCEPTION 'ORIGINAL_PAID_ASSIGNMENT_REFUSED: %',v_assignment USING ERRCODE='55000'; END IF;
+ SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) INTO others_after FROM public.table_seats s JOIN public.tables b ON b.id=s.table_id
+ WHERE b.tournament_id=t AND s.left_at IS NULL AND s.user_id<>u;
+ SELECT jsonb_build_object('tournament',to_jsonb(a),'player_rebuys',p.rebuys,'player_chips',p.chips,
+ 'entitlement',to_jsonb(e),'ledger',to_jsonb(l),'wallet',to_jsonb(w)) INTO money_after
+ FROM public.tournaments a JOIN public.tournament_players p ON p.tournament_id=a.id AND p.user_id=u
+ JOIN public.tournament_refund_entitlements e ON e.id=ent.id JOIN public.chip_ledger l ON l.id=led.id
+ JOIN public.wallet_transactions w ON w.id=wallet.id WHERE a.id=t;
+ IF others_after IS DISTINCT FROM others OR money_after IS DISTINCT FROM money_before
+ OR public.fn_ca_tournament_chip_supply(t) IS DISTINCT FROM supply
+ OR public.fn_ca_tournament_felt_total(t) IS DISTINCT FROM live+grant_chips THEN
+  RAISE EXCEPTION 'ORIGINAL_PAID_FINAL_VECTOR_CHANGED' USING ERRCODE='55000'; END IF;
+ v_assignment:=v_assignment||jsonb_build_object('receipt_id',p_receipt_id,'original_entitlement_id',ent.id,
+ 'original_ledger_id',led.id,'scoring_excess',live+grant_chips-supply,'occupancy_id',
+ (SELECT occupancy_id FROM public.table_seats WHERE id=(v_assignment->>'seat_id')::uuid));
+ UPDATE public.tournament_paid_stack_custody_receipts SET state='seated',assignment=v_assignment,completed_at=clock_timestamp()
+ WHERE id=p_receipt_id AND state='reserved';
+ PERFORM public.fn_emit_tournament_manager_wake(t,'rebuy');
+ RETURN v_assignment;
+END $function$;
+REVOKE ALL ON FUNCTION public.fn_ca_resume_original_paid_tournament_entry(uuid,jsonb) FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_ca_assign_tournament_player_seat_locked(p_tournament_id uuid, p_user_id uuid, p_table_id uuid, p_seat_number integer)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+ SET statement_timeout TO '30s'
+AS $function$
+DECLARE
+  v_t public.tournaments%ROWTYPE;
+  v_tp public.tournament_players%ROWTYPE;
+  v_table public.tables%ROWTYPE;
+  v_live public.table_seats%ROWTYPE;
+  v_destination public.table_seats%ROWTYPE;
+  v_live_count integer;
+  v_stack numeric;
+  v_felt_stack numeric;
+  v_live_total numeric;
+  v_own_live numeric;
+  v_cap_chips numeric;
+  v_cap integer;
+  v_seat_id uuid;
+  v_current_players integer;
+  v_rows integer;
+  v_assigned_at timestamptz;
+  v_expected_club_id uuid;
+  v_expected_horse_id uuid;
+  -- Fresh tournament-seat defaults. A rebuy that keeps its live chair keeps
+  -- its own persisted bank; only a newly inserted/revived occupant starts the
+  -- same 30-second/four-use state as a physical INSERT.
+  v_time_bank_uses integer:=4;
+  v_time_bank_seconds integer:=30;
+  v_previous_money_path text:=current_setting('app.money_path',true);
+BEGIN
+  IF p_tournament_id IS NULL OR p_user_id IS NULL OR p_table_id IS NULL
+     OR p_seat_number IS NULL OR p_seat_number NOT BETWEEN 1 AND 10 THEN
+    RAISE EXCEPTION 'tournament, player, table and legal seat are required'
+      USING ERRCODE='22023';
+  END IF;
+
+  SELECT * INTO v_t FROM public.tournaments t
+   WHERE t.id=p_tournament_id;
+  IF upper(COALESCE(v_t.status::text,'')) NOT IN ('REGISTERING','RUNNING') THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','tournament_not_assignable',
+      'status',upper(COALESCE(v_t.status::text,'')));
+  END IF;
+  v_cap:=public.fn_ca_tournament_seat_cap(p_tournament_id);
+
+  -- Lock the beneficiary and every roster row claiming the requested
+  -- coordinate before any table/seat row. This matches terminal settlement's
+  -- tournament -> roster -> tables -> seats child order.
+  PERFORM tp.id
+    FROM public.tournament_players tp
+   WHERE tp.tournament_id=p_tournament_id
+     AND (tp.user_id=p_user_id
+       OR (tp.table_id=p_table_id AND tp.seat_number=p_seat_number))
+   ORDER BY tp.id
+   FOR UPDATE;
+
+  SELECT * INTO v_tp FROM public.tournament_players tp
+   WHERE tp.tournament_id=p_tournament_id AND tp.user_id=p_user_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok',false,'reason','player_not_registered');
+  END IF;
+  IF v_tp.status::text NOT IN ('registered','playing') THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','player_not_assignable','status',v_tp.status::text);
+  END IF;
+
+  IF v_tp.status::text='registered' THEN
+    v_stack:=COALESCE(v_t.starting_chips,0)
+             +GREATEST(COALESCE(v_tp.chips,0),0);
+  ELSE
+    /* THE FELT IS THE BANK ON A MOVE (2026-09-10). This took the new
+       seat's stack from tournament_players.chips, a MIRROR, rather than
+       from the seat the player is leaving. In the ordinary case the two
+       agree - measured 1,540 of 1,541 live tournament seats. When they
+       do not, this statement silently minted or destroyed the gap.
+       Night Owl Special b84f312f: the engine's own hands show 256,000 +
+       128,000 = 384,000 at 18:01, exactly the 48 x 8,000 bought in; a
+       move at 22:34:25 wrote 448,000 over a felt of 256,000 and the
+       tournament has held 64,000 chips nobody bought ever since.
+       The seat is where the engine settles every hand, so the seat is
+       the witness; the mirror is a projection. Read the felt first and
+       fall back to the mirror only when the player holds no live seat. */
+    SELECT ts.stack INTO v_felt_stack
+      FROM public.table_seats ts
+      JOIN public.tables tb ON tb.id=ts.table_id
+     WHERE tb.tournament_id=p_tournament_id
+       AND ts.user_id=p_user_id
+       AND ts.left_at IS NULL
+     ORDER BY ts.joined_at DESC, ts.id
+     LIMIT 1;
+    v_stack:=COALESCE(v_felt_stack,COALESCE(v_tp.chips,0));
+  END IF;
+
+  /* A SEAT ASSIGNMENT NEVER MINTS TOURNAMENT CHIPS (2026-09-10).
+     Whatever corrupts an input, this gate makes the class impossible:
+     an assignment may move chips between chairs but may never RAISE the
+     tournament's live total above what was bought in. A normal move
+     cannot trip it - the player's own live seat is subtracted before
+     v_stack is added back, so the total is unchanged. It fires only when
+     seating a player would ADD chips beyond the cap. An existing overage
+     is tolerated (history) and refused only from growing (the future),
+     the same shape as this estate's NOT VALID constraints. */
+  IF v_tp.status::text<>'registered' THEN
+    SELECT COALESCE(sum(ts.stack),0) INTO v_live_total
+      FROM public.table_seats ts JOIN public.tables tb ON tb.id=ts.table_id
+     WHERE tb.tournament_id=p_tournament_id AND ts.left_at IS NULL;
+    SELECT COALESCE(sum(ts.stack),0) INTO v_own_live
+      FROM public.table_seats ts JOIN public.tables tb ON tb.id=ts.table_id
+     WHERE tb.tournament_id=p_tournament_id AND ts.user_id=p_user_id
+       AND ts.left_at IS NULL;
+    SELECT (count(*)*COALESCE(v_t.starting_chips,0))
+           +(COALESCE(sum(tp2.rebuys),0)*COALESCE(v_t.rebuy_chips,0))
+           +(count(*) FILTER (WHERE tp2.add_on)*COALESCE(v_t.addon_chips,0))
+      INTO v_cap_chips
+      FROM public.tournament_players tp2
+     WHERE tp2.tournament_id=p_tournament_id;
+    IF (v_live_total-v_own_live+v_stack)>v_live_total
+       AND (v_live_total-v_own_live+v_stack)>v_cap_chips
+       -- Only the private original-purchase transaction may transfer a
+       -- proved, unconsumed off-felt stack. This is not a cap increase:
+       -- ordinary callers, later transactions and other coordinates retain
+       -- the same conservation refusal. The deferred receipt must complete.
+       AND NOT EXISTS (
+         SELECT 1 FROM public.tournament_paid_stack_custody_receipts r
+          WHERE r.transaction_id=pg_current_xact_id() AND r.state='reserved'
+            AND r.tournament_id=p_tournament_id AND r.user_id=p_user_id
+            AND r.destination_table_id=p_table_id AND r.destination_seat_number=p_seat_number
+            AND r.grant_chips=v_stack AND r.live_chips_before=v_live_total
+            AND r.funded_supply=v_cap_chips AND v_own_live=0
+            AND v_tp.status='playing' AND v_tp.table_id IS NULL AND v_tp.seat_number IS NULL
+            AND v_tp.rebuy_prompt_until IS NULL
+            AND EXISTS(SELECT 1 FROM public.tournament_knockout_candidates c
+              WHERE c.id=r.candidate_id AND c.state='rebought' AND c.resolved_at IS NOT NULL
+                AND c.tournament_id=p_tournament_id AND c.eliminated_user_id=p_user_id)
+       ) THEN
+      RETURN jsonb_build_object(
+        'ok',false,'reason','tournament_chip_conservation',
+        'live_total',v_live_total,'own_live',v_own_live,
+        'proposed_stack',v_stack,'bought_in_cap',v_cap_chips);
+    END IF;
+  END IF;
+  IF v_stack::text IN ('NaN','Infinity','-Infinity')
+     OR v_stack<=0 OR v_stack<>trunc(v_stack)
+     OR v_stack>2147483647 THEN
+    RETURN jsonb_build_object('ok',false,'reason','player_stack_invalid');
+  END IF;
+
+  SELECT * INTO v_table FROM public.tables tb
+   WHERE tb.id=p_table_id
+   FOR UPDATE;
+  IF NOT FOUND OR v_table.tournament_id IS DISTINCT FROM p_tournament_id THEN
+    RETURN jsonb_build_object('ok',false,'reason','table_tournament_mismatch');
+  END IF;
+  IF lower(COALESCE(v_table.status::text,'')) NOT IN
+       ('waiting','running','active')
+     OR COALESCE(v_table.is_deleted,false)
+     OR p_seat_number>LEAST(
+          v_cap,GREATEST(2,COALESCE(NULLIF(v_table.max_players,0),v_cap))) THEN
+    RETURN jsonb_build_object('ok',false,'reason','table_not_assignable');
+  END IF;
+
+  -- A physical row is reusable, but none of its former occupant's identity or
+  -- per-session state is. Resolve every derived value while the tournament,
+  -- roster and table rows are locked, then write the same complete shape for a
+  -- new row and a revived row. Passing the old club_id through the seat stamp
+  -- trigger would make it the preferred club and could attribute this entry to
+  -- the departed occupant.
+  v_expected_club_id:=public.fn_seat_club_for_user(
+    p_user_id,p_table_id,v_tp.club_id);
+  SELECT CASE WHEN COALESCE(p.is_horse,false) THEN p.id ELSE NULL END
+    INTO v_expected_horse_id
+    FROM public.profiles p
+   WHERE p.id=p_user_id;
+
+  PERFORM s.id
+    FROM public.table_seats s
+    JOIN public.tables tb ON tb.id=s.table_id
+   WHERE tb.tournament_id=p_tournament_id
+     AND s.user_id=p_user_id AND s.left_at IS NULL
+   ORDER BY s.id
+   FOR UPDATE OF s;
+  SELECT count(*)::integer INTO v_live_count
+    FROM public.table_seats s
+    JOIN public.tables tb ON tb.id=s.table_id
+   WHERE tb.tournament_id=p_tournament_id
+     AND s.user_id=p_user_id AND s.left_at IS NULL;
+  IF v_live_count>1 THEN
+    RAISE EXCEPTION 'tournament player already owns multiple live seats'
+      USING ERRCODE='P0404';
+  END IF;
+  IF v_live_count=1 THEN
+    SELECT s.* INTO v_live
+      FROM public.table_seats s
+      JOIN public.tables tb ON tb.id=s.table_id
+     WHERE tb.tournament_id=p_tournament_id
+       AND s.user_id=p_user_id AND s.left_at IS NULL
+     FOR UPDATE OF s;
+    IF v_live.table_id IS DISTINCT FROM p_table_id
+       OR v_live.seat_number IS DISTINCT FROM p_seat_number THEN
+      RETURN jsonb_build_object(
+        'ok',false,'reason','player_already_seated_elsewhere',
+        'table_id',v_live.table_id,'seat_number',v_live.seat_number);
+    END IF;
+    SELECT count(*)::integer INTO v_current_players
+      FROM public.table_seats s
+     WHERE s.table_id=p_table_id AND s.left_at IS NULL;
+    IF v_live.stack IS DISTINCT FROM v_stack
+       OR v_tp.status::text<>'playing'
+       OR v_tp.chips IS DISTINCT FROM v_stack::integer
+       OR v_tp.table_id IS DISTINCT FROM p_table_id
+       OR v_tp.seat_number IS DISTINCT FROM p_seat_number
+       OR v_table.current_players IS DISTINCT FROM v_current_players
+       OR v_live.joined_at IS NULL THEN
+      RAISE EXCEPTION 'existing tournament assignment is not an exact receipt'
+        USING ERRCODE='P0404';
+    END IF;
+    RETURN jsonb_build_object(
+      'ok',true,'replayed',true,'tournament_id',p_tournament_id,
+      'user_id',p_user_id,'table_id',p_table_id,
+      'seat_id',v_live.id,'seat_number',p_seat_number,'stack',v_stack,
+      'current_players',v_current_players,'assigned_at',v_live.joined_at);
+  END IF;
+
+  SELECT * INTO v_destination FROM public.table_seats s
+   WHERE s.table_id=p_table_id AND s.seat_number=p_seat_number
+   FOR UPDATE;
+  IF FOUND AND v_destination.left_at IS NULL THEN
+    RETURN jsonb_build_object('ok',false,'reason','seat_taken');
+  END IF;
+
+  -- A departed occupant can still carry a stale roster coordinate. Correct
+  -- that link inside this assignment transaction; never overwrite a live
+  -- seat or leave two active roster rows claiming one chair.
+  UPDATE public.tournament_players tp
+     SET table_id=NULL,seat_number=NULL
+   WHERE tp.tournament_id=p_tournament_id
+     AND tp.user_id<>p_user_id
+     AND tp.table_id=p_table_id AND tp.seat_number=p_seat_number;
+
+  v_assigned_at:=clock_timestamp();
+  PERFORM set_config(
+    'app.money_path','fn_assign_tournament_player_seat_atomic',true);
+  BEGIN
+    IF v_destination.id IS NULL THEN
+      INSERT INTO public.table_seats(
+        table_id,user_id,player_id,member_id,seat_number,stack,status,
+        joined_at,left_at,is_sitting_out,is_away,leave_pending,
+        scheduled_leave_hands,horse_id,auto_rebuy,time_bank_remaining,
+        time_bank_uses_remaining,club_id,sit_out_at,entry_hold,
+        entry_post_agreed)
+      VALUES(
+        p_table_id,p_user_id,NULL,NULL,p_seat_number,v_stack,'active',
+        v_assigned_at,NULL,false,false,false,NULL,v_expected_horse_id,false,
+        v_time_bank_seconds,v_time_bank_uses,v_expected_club_id,NULL,NULL,
+        false)
+      RETURNING id INTO v_seat_id;
+    ELSE
+      UPDATE public.table_seats s
+         SET user_id=p_user_id,player_id=NULL,member_id=NULL,stack=v_stack,
+             status='active',joined_at=v_assigned_at,left_at=NULL,
+             is_sitting_out=false,is_away=false,leave_pending=false,
+             sit_out_at=NULL,scheduled_leave_hands=NULL,
+             horse_id=v_expected_horse_id,entry_hold=NULL,
+             entry_post_agreed=false,auto_rebuy=false,
+             time_bank_remaining=v_time_bank_seconds,
+             time_bank_uses_remaining=v_time_bank_uses,
+             club_id=v_expected_club_id
+       WHERE s.id=v_destination.id AND s.left_at IS NOT NULL
+       RETURNING id INTO v_seat_id;
+      IF v_seat_id IS NULL THEN
+        RAISE EXCEPTION 'vacated tournament seat changed during assignment'
+          USING ERRCODE='40001';
+      END IF;
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    PERFORM set_config(
+      'app.money_path',COALESCE(v_previous_money_path,''),true);
+    RAISE;
+  END;
+  PERFORM set_config(
+    'app.money_path',COALESCE(v_previous_money_path,''),true);
+
+  UPDATE public.tournament_players tp
+     SET status='playing',chips=v_stack::integer,
+         table_id=p_table_id,seat_number=p_seat_number
+   WHERE tp.id=v_tp.id AND tp.status::text IN ('registered','playing');
+  GET DIAGNOSTICS v_rows=ROW_COUNT;
+  IF v_rows<>1 THEN
+    RAISE EXCEPTION 'tournament roster changed during seat assignment'
+      USING ERRCODE='40001';
+  END IF;
+
+  SELECT count(*)::integer INTO v_current_players
+    FROM public.table_seats s
+   WHERE s.table_id=p_table_id AND s.left_at IS NULL;
+  UPDATE public.tables tb
+     SET current_players=v_current_players,updated_at=now()
+   WHERE tb.id=p_table_id;
+  GET DIAGNOSTICS v_rows=ROW_COUNT;
+  IF v_rows<>1 THEN
+    RAISE EXCEPTION 'tournament table vanished during seat assignment'
+      USING ERRCODE='40001';
+  END IF;
+
+  IF (SELECT count(*) FROM public.table_seats s
+      JOIN public.tables tb ON tb.id=s.table_id
+     WHERE tb.tournament_id=p_tournament_id
+       AND s.user_id=p_user_id AND s.left_at IS NULL)<>1
+     OR NOT EXISTS(
+       SELECT 1 FROM public.table_seats s
+        WHERE s.id=v_seat_id AND s.table_id=p_table_id
+          AND s.user_id=p_user_id AND s.seat_number=p_seat_number
+          AND s.left_at IS NULL AND s.stack=v_stack
+          AND s.player_id IS NULL AND s.member_id IS NULL
+          AND s.horse_id IS NOT DISTINCT FROM v_expected_horse_id
+          AND s.club_id IS NOT DISTINCT FROM v_expected_club_id
+          AND s.time_bank_remaining=v_time_bank_seconds
+          AND s.time_bank_uses_remaining=v_time_bank_uses
+          AND NOT COALESCE(s.is_sitting_out,false)
+          AND NOT COALESCE(s.is_away,false)
+          AND NOT COALESCE(s.leave_pending,false)
+          AND NOT COALESCE(s.auto_rebuy,false)
+          AND s.sit_out_at IS NULL
+          AND s.scheduled_leave_hands IS NULL
+          AND s.entry_hold IS NULL
+          AND NOT s.entry_post_agreed)
+     OR NOT EXISTS(
+       SELECT 1 FROM public.tournament_players tp
+        WHERE tp.id=v_tp.id AND tp.status::text='playing'
+          AND tp.chips=v_stack::integer AND tp.table_id=p_table_id
+          AND tp.seat_number=p_seat_number)
+     OR NOT EXISTS(
+       SELECT 1 FROM public.tables tb
+        WHERE tb.id=p_table_id AND tb.tournament_id=p_tournament_id
+          AND tb.current_players=v_current_players) THEN
+    RAISE EXCEPTION 'atomic tournament seat assignment final proof is not exact'
+      USING ERRCODE='P0404';
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok',true,'replayed',false,'tournament_id',p_tournament_id,
+    'user_id',p_user_id,'table_id',p_table_id,'seat_id',v_seat_id,
+    'seat_number',p_seat_number,'stack',v_stack,
+    'current_players',v_current_players,'assigned_at',v_assigned_at);
+END;
+$function$
+;
+REVOKE ALL ON FUNCTION public.fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer) FROM PUBLIC,anon,authenticated,service_role;
+-- Preserve the existing activation guard and every other sealed authority.
+CREATE OR REPLACE FUNCTION public.fn_ca_guard_mtt_admission_contract()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public'
+AS $function$
+DECLARE v_expected jsonb := $prepared${"functions":[{"signature":"public.ca_club_tournaments(uuid,integer,integer)","definition_md5":"4637d9ee6db98fddcd88597ed3b31411","owner":"postgres","acl":["authenticated=X/postgres","postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_accounting_agent_terms_at(uuid,uuid,timestamp with time zone)","definition_md5":"eefa92172db730cfc9c739800d3bc12a","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_accounting_cash_source_immutable()","definition_md5":"0d79f2823f390072ddab8abfa8a5263f","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_accounting_earning_contract(uuid,uuid,numeric,uuid,timestamp with time zone)","definition_md5":"df9bfbca2abf9f596921ad60363abafe","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_accounting_terms_at(text,text,timestamp with time zone)","definition_md5":"d262f82e6e75fc3e6830f75972e4b823","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_accounting_tournament_bank_proof(uuid,timestamp with time zone,uuid,uuid,numeric,uuid,uuid)","definition_md5":"e56aa8c8280c59e2f0406ea6c504dc4e","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_accounting_tournament_fee_commit_capture()","definition_md5":"afae8152bd03fdb018b4a0d21f4b8f58","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_accounting_tournament_fee_fingerprint(rake_records)","definition_md5":"dd55cceba87b1578472171e1c80ba1fb","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_accounting_tournament_fee_net_plan(uuid)","definition_md5":"d8231a3f9219ecacb5ae68ee3aebe435","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_accounting_tournament_fee_receipt_immutable()","definition_md5":"bdc4ee4b75e3471cd33a5ed4b250ec0f","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_accounting_tournament_fee_source_immutable()","definition_md5":"709027685f4ff30a06b36e8fb65618cb","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_accounting_tournament_recognized_evidence_immutable()","definition_md5":"a5a71f9b0ba989721663a85cbb407ea9","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_accounting_tournament_terminal_fee_receipt(uuid)","definition_md5":"6e446f6d6d19ec8b28b31d124a8c6ac3","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_active_maintenance_release_boundary()","definition_md5":"0d9548e27105b7172d83be4f7d10ea47","owner":"postgres","acl":["anon=X/postgres","authenticated=X/postgres","postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)","definition_md5":"92ab8b6d14cecd75bb945bbe2e6bc12b","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_award_vip_points_from_rake()","definition_md5":"24028ae5df74069cadea2df80124569a","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_begin_tournament_launch_atomic(uuid,uuid,timestamp with time zone)","definition_md5":"0f362f2b4a55f82d627dddccd1da481e","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_begin_tournament_launch_atomic(uuid,uuid,timestamp with time zone,uuid)","definition_md5":"acbb83c13660c3eda2d9f52fec0c7bd5","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_begin_tournament_launch_atomic(uuid,uuid,timestamp with time zone,uuid,text)","definition_md5":"a0718c687780f7cf3ce36f50c558f456","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_ca_assert_satellite_cohort_standings(uuid)","definition_md5":"432010914abab6babb5f2bad9c1ea447","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_assert_tournament_chip_grant(uuid,uuid,uuid,numeric,text)","definition_md5":"c49fa16f6be47ed9ca2e72b2f2b9da07","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)","definition_md5":"0fe132756ddf22122c91aa0d7fd323cd","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_capture_tournament_charge_entitlement()","definition_md5":"9ec1394628e0c6291963d5f76801a3d1","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_capture_tournament_credit_ledger()","definition_md5":"81b1abbedb544e2fca0f8edec7d27cae","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_capture_tournament_obligation_event()","definition_md5":"d6e1f4f7b4a93df535d3b4d4bce925bf","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_choose_tournament_seat_locked(uuid,uuid,uuid,integer)","definition_md5":"5a2839b0a3e84f650c12428c079d47d7","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_fixed_tournament_waitlist_only()","definition_md5":"e5b36a9c98ae3241005588c47347b6eb","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_fund_overlay_on_lock()","definition_md5":"93f3e46a957abb7a42d4a2cfaff42fcb","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_ca_guard_new_satellite_target()","definition_md5":"69247df72bfb68c7148c1a7f9ea4cfd7","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_guard_seat_creation()","definition_md5":"b3e14f411d43b01e84fd614c87f8bf6a","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_guard_tournament_format()","definition_md5":"ff6655365bfdd99ae31dc897568f31e7","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_guard_tournament_restart_source()","definition_md5":"afe57e7d2b37feba95af19b41f9f2df5","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_is_new_mtt(jsonb)","definition_md5":"dff4202458ea4b5b940e78050e6de91c","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_latest_committed_knockout_candidate(uuid,uuid)","definition_md5":"8e5cfccfbe100dce021dd17603832e40","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_legacy_tournament_format(jsonb)","definition_md5":"a83410b4370de8d24e561709dd800ccd","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_lock_mtt_admission_contract()","definition_md5":"10644d522bb50245f76942ecce735cbc","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_lock_settlement_lane_for_finish(uuid)","definition_md5":"76e4c6b5291bab20f0cfc65dd060022b","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_ca_lock_settlement_lane_for_satellite_finish(uuid)","definition_md5":"0aaaac620ce2f34f2cd9523c4323a12e","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_ca_lock_settlement_lane_global()","definition_md5":"7c759bb7a639c3124de2607bdbf12577","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid)","definition_md5":"2d8c9bd676a8ee02e009dd470fbfd585","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_money_rpc_balance_columns()","definition_md5":"53e86c9945bde2a5830232f59a365fdd","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_ca_money_rpc_registry_guard()","definition_md5":"03928ac3da782be33306c2e07b0b8977","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_ca_money_rpc_writes_balances(text)","definition_md5":"1b13d12e02c7f7b719fcfae4153dcb1f","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_ca_new_tournament_is_unlimited(jsonb)","definition_md5":"34b80f98d9d110072ae6951bb4377ee0","owner":"postgres","acl":["authenticated=X/postgres","postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_ca_normalize_new_mtt_capacity()","definition_md5":"06cbd73a8011fac92e0c51b8d752b3da","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_process_tournament_chip_purchase_money_v1(uuid,uuid,text,numeric,numeric,integer,text)","definition_md5":"9ff346ac60f760311d884c6d63d9001d","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_proven_legacy_tournament_format(jsonb)","definition_md5":"ed6d13b779fd7e01786d3a395429ff77","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_read_mtt_admission_contract()","definition_md5":"7f595febb21665580b47f8b992a5cf45","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_record_tournament_accounting_credit(text,uuid,uuid,numeric,uuid,uuid,uuid)","definition_md5":"cb13485c0ff8bdc787d0c6aff9f22c37","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_record_tournament_participant_funding(uuid,text,text,numeric,text,uuid,uuid,jsonb)","definition_md5":"6cfd4af7307ce31460fd62c5b3f38bef","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_register_for_tournament_with_ticket_for(uuid,uuid,uuid)","definition_md5":"8a9b893eeb07cbcf518782391e757c2c","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_satellite_cohort_receipt(uuid,uuid[])","definition_md5":"3207bb2d0d632688e10889bb7ef8ed08","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_satellite_settlement_receipt(uuid,uuid)","definition_md5":"5288fd960eac2c85d955b8c8150f9f93","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_satellite_target_accepts_new_feeder(uuid)","definition_md5":"3933ec28773f12a1da9b02952ad99ed4","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_settle_bounty_rebuy_generation_v1(uuid,uuid,uuid)","definition_md5":"0286145366f00c7cad0a996f05630851","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_settle_satellite_cohort(uuid,uuid[])","definition_md5":"fe7945e734dcb1a8f68e078661bb9c28","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_tournament_accounting_evidence_immutable()","definition_md5":"9bcc5b1f5fc9b9c036b617c36473d290","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_tournament_admission_snapshot(uuid[])","definition_md5":"a72bddf2f9fb2e091a16cac223f6d76d","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_ca_tournament_format_identity(jsonb)","definition_md5":"49173db4a4cb01024d37e292d9471795","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_tournament_is_unlimited(uuid)","definition_md5":"fd66c28075f1d7c63b9d763632592471","owner":"postgres","acl":["authenticated=X/postgres","postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_ca_tournament_rebuy_window(uuid)","definition_md5":"c01c205eef6f1687af9d61ed45d95e8a","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_tournament_recorded_format(uuid)","definition_md5":"a7357dd1366f930eba6cd7f404090bbd","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_tournament_recorded_seat_first(uuid,boolean)","definition_md5":"00e225cc67cf595af35831e981106d93","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_tournament_seat_cap(uuid)","definition_md5":"557b6fd0f941fd7ee803f408580224db","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_ca_unregister_tournament_player_exact(uuid,uuid,uuid,text,uuid)","definition_md5":"3fc3f147808ab3ecc50982f5b6968bff","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_can_manage_tournament_schedule(uuid,uuid,uuid)","definition_md5":"8615be02f04279934a416c5536c37607","owner":"postgres","acl":["authenticated=X/postgres","postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_capture_accounting_tournament_fee(uuid,jsonb)","definition_md5":"e83638c8e5401469c336fe378505fbac","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_capture_managed_game_contract()","definition_md5":"28e259c9fd0c76f39c5ca5b5f0328777","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)","definition_md5":"d219ceeed1041eed5cf2c543315eb91b","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_claim_tournament_bounty_elimination(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)","definition_md5":"9eb078e5860e9bdd8c0afcdbffc02504","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_collect_bounty(uuid,uuid,uuid,jsonb)","definition_md5":"e76385f1c13c9a8e88165d231bda7d6a","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_collect_bounty_obligation(uuid)","definition_md5":"a1e36b2a6907d83c606d08ed5eb888d7","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_community_search(text,text,integer)","definition_md5":"43733303ec00de630c740bae68257a58","owner":"postgres","acl":["authenticated=X/postgres","postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_complete_tournament_launch_atomic(uuid,uuid)","definition_md5":"ab0d03139203d89e16a0cfdae4e1e292","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_complete_tournament_launch_atomic(uuid,uuid,uuid)","definition_md5":"d300cf2470354e570ebb02fdecff0537","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_complete_tournament_launch_atomic(uuid,uuid,uuid,text)","definition_md5":"faeb38ce1a2e975dc80468abaf74c588","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_complete_tournament_launch_before_lease_generation(uuid,uuid)","definition_md5":"d1a25ca8de559144fe83b7639634baff","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_create_seat_first_game_atomic(uuid,jsonb)","definition_md5":"0669e34f1376e42d734f7632ea35eb6a","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_create_tournament(uuid,jsonb)","definition_md5":"4c5c8783d1f6f534fdaf5cefbb460d62","owner":"postgres","acl":["authenticated=X/postgres","postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_create_tournament_governed_legacy(uuid,jsonb)","definition_md5":"bf284ab7932447a7d2e49a1fa7deb9d8","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_credit_and_log(uuid,numeric,text,text,text,uuid,text,uuid,uuid,integer,text)","definition_md5":"e1c4ca5fd66536cc90adc9af106e3068","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_deliver_satellite_ticket_exact(uuid,uuid,uuid,text,integer,numeric)","definition_md5":"503a9f90806bf5498ebd0b006dcc0641","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_eliminate_player_legacy_candidate_20260907(uuid,uuid,integer,numeric,numeric)","definition_md5":"be0bc3420eca1e0c6e579c35b31fed43","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)","definition_md5":"2c34f4cb405753e1180aa59bfb8b1f35","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_emit_managed_game_row_event()","definition_md5":"9706ead97b5e6f495957bfd02a6eb282","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_enforce_tournament_capacity()","definition_md5":"c89a358115c8cd06ff93cfffc2aab84f","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_ensure_late_registration_capacity(uuid,integer)","definition_md5":"cee652fdd8962e43b8e2861bf5c5407e","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_ensure_scheduled_mtt_satellite(jsonb)","definition_md5":"2d6c587397a4c36060e7f3bae474d96d","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_entry_purchases_frozen()","definition_md5":"0b05e2e7905caf71f14c8327a172cea0","owner":"postgres","acl":["authenticated=X/postgres","postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_finalize_tournament_entry_pool_locked(uuid,text,text)","definition_md5":"d8aa6508707a5da0b3b61cc85b644e2f","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_freeroll_fill_targets(uuid)","definition_md5":"4e4e4aa8fd25b41beac236ad5e74449b","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_get_my_satellite_qualifier_result(uuid)","definition_md5":"d2e429f8425166112c94d68b2858ae4e","owner":"postgres","acl":["authenticated=X/postgres","postgres=X/postgres"]},{"signature":"public.fn_get_satellite_qualifier_state(uuid)","definition_md5":"c98348c74d821296e277f94b2987bdec","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_get_tournament_satellite_entitlement_depth(uuid)","definition_md5":"37b4bc689c391a5334b54ce3bd2ab8d3","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_guard_managed_game_contract_version()","definition_md5":"95b0c11437e95b3862558a4d27434ccf","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_guard_managed_game_lifecycle()","definition_md5":"e4e6dbe534f8ed1fc7fa03fcad968114","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_guard_new_mtt_blind_contract()","definition_md5":"aac67e5c89eaa564744a97a85b5f3fbb","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_list_managed_games(text,uuid,timestamp with time zone,text,uuid,integer,integer,integer,text,uuid,integer)","definition_md5":"aab6ac28551b11fdb6b74d7fcd430580","owner":"postgres","acl":["authenticated=X/postgres","postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_lock_accounting_tournament_recognition_week(uuid,timestamp with time zone)","definition_md5":"d5339cec8b0e00be748c4c15bc3dba83","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_managed_game_contract_document(text,jsonb)","definition_md5":"ecbcdaa38256199da944b92ff071ed18","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_managed_game_contract_hash(jsonb)","definition_md5":"1aa2f356d6d3b17135cf5505ec4166f5","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_materialize_satellite_entitlements_locked(uuid)","definition_md5":"155140246ae8a144ffb0a549f1092fa3","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_mystery_bounty_reserve(uuid,uuid,jsonb,uuid,text,uuid,integer)","definition_md5":"6f6c1f2c98c19bea585f331536ebbdeb","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_overlay_at_risk(uuid)","definition_md5":"2c4f699472be892cd81073a26828c3e0","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_pko_claim_predecessor_status_v1(uuid,uuid,uuid,uuid,bigint,timestamp with time zone)","definition_md5":"bae3424d1a86266cf693bc5bce422847","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_pko_watermark_admission_status_v1(uuid,uuid,uuid,uuid,bigint,timestamp with time zone,jsonb)","definition_md5":"eec5afffa1cee9e5106f911c873ce4ce","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_poker_diamond_create_tournament(jsonb)","definition_md5":"6d82bede82370a9cc15d71b5ce1699f5","owner":"postgres","acl":["authenticated=X/postgres","postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_poker_diamond_tournament_unregister(uuid,uuid,uuid)","definition_md5":"39f95b499619cab7a1eb65ff583aa638","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_post_accounting_commission_source(uuid,text,timestamp with time zone,jsonb)","definition_md5":"b647df60b45c25183638f4cdbaec57fd","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_rank_survivors(uuid)","definition_md5":"ef53b38023c2cc3dd223c344c6c82dcb","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_recognize_accounting_tournament_fees(uuid,timestamp with time zone,uuid,uuid,uuid)","definition_md5":"195878da781227b47753a28dbc7bc978","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_register_for_tournament_before_atomic_capacity_20260907(uuid,boolean)","definition_md5":"591867b92e0749eb0e493c56707ae328","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_register_horse_for_tournament_before_maintenance_gate(uuid,uuid)","definition_md5":"33de93271803a28f46c0a259bb2c01c4","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_release_phantom_seat_claims()","definition_md5":"21628db27f7430a3414cbd2b893a660f","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_resolve_satellite_qualifier_outcome(uuid,uuid[])","definition_md5":"670f4ddc09578988747ce0b7ee73d596","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_satellite_settlement_receipts_are_append_only()","definition_md5":"ec03d8976766c413a35a1e29fffd2654","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_seat_change_syncs_seat_first_count()","definition_md5":"3d222458b40d5aec09f8f1e88bf60d53","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_seat_first_boards_ready()","definition_md5":"52d79b624a2f58a1800ccc1ddb496ed1","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_seat_horse_in_seat_first_game_before_maintenance_gate(uuid,uuid)","definition_md5":"28f1d2ea26fb3b3f2bc3af3d817393bf","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_settle_satellite_qualifiers(uuid,uuid[])","definition_md5":"815388758f5ecafc4768e9d0238bb63c","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)","definition_md5":"b59705a793ab0e57286321ceef5f9346","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)","definition_md5":"df387bd37001630d94ab2e380144ccab","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_settle_tournament_rake(uuid,text)","definition_md5":"0492f5a78bc3c84d54c24fd45549a0be","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_short_formats_never_break()","definition_md5":"fb3adc8a9ea6346e34fee79945f9046a","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_stamp_accounting_tournament_fee(uuid)","definition_md5":"7e7495ff6800996d72b5ab27008a33a6","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_sweep_pending_tournament_bounties(uuid,integer)","definition_md5":"30ca1181317d0f76d7a549ceab37b493","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_sync_seat_first_player_count(uuid)","definition_md5":"0e4acaf0ff080d4dafd1aa85068cf0b2","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_take_seat_and_buy_in_before_maintenance_announcement_gate(uuid,integer)","definition_md5":"67a6b85f00a785e22c4d89c6168253d3","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_tournament_atomic_register(uuid,uuid,uuid,numeric)","definition_md5":"c92af85df41906063958185a4250a130","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_tournament_entry_cap_reached(uuid)","definition_md5":"9a34a1460abf1c71f24d88bce182e488","owner":"postgres","acl":["authenticated=X/postgres","postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_tournament_late_registration_open(uuid)","definition_md5":"0a189819d8064f393f5de5b12a2c51f4","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_tournament_management_readiness_for_row(jsonb)","definition_md5":"0b9fecc5c10bdcf459510bbb19a3268a","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_tournament_payout_terms_committed_v1(uuid)","definition_md5":"918c62cbcc182d43a6a27edeb2c1c107","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_tournament_progress_metrics(integer,integer)","definition_md5":"41bd10a2a01fe9100ffa95c0ab090c39","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_tournaments_creation_guard()","definition_md5":"f5dcb63005864b24bf422c6628cb169e","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_union_pnl_capture_original_flow()","definition_md5":"df060874f0ffaf8105cce1d3bdaed35b","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_union_pnl_inventory_immutable()","definition_md5":"307d83a1ee3d912bade24c48144aa801","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_union_pnl_inventory_observe()","definition_md5":"11c7c788d943a11375a15819e78873ba","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_union_pnl_inventory_project(text,jsonb)","definition_md5":"cc819d2476a0252326e7bdd4e72d468f","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_union_pnl_original_frame()","definition_md5":"9a6559774cc1ed4ed49b315a3428abdb","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_union_pnl_receipt_frame()","definition_md5":"dd4dbe3a58dc48bd67aab9ac818280d2","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.fn_union_week_start(timestamp with time zone)","definition_md5":"103f192a228084dad0e4268c36c82c4b","owner":"postgres","acl":["authenticated=X/postgres","postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_update_managed_game(text,uuid,jsonb)","definition_md5":"8616bc6b7c535f0f6eebb97fb0204ad4","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.fn_upsert_tournament_schedule(jsonb)","definition_md5":"b8dd7cc8e0996889a936affdc732b664","owner":"postgres","acl":["authenticated=X/postgres","postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.get_club_home(text)","definition_md5":"a81d488c364fd20d7015a7bae2b774e4","owner":"postgres","acl":["authenticated=X/postgres","postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.log_wallet_transaction(uuid,text,numeric,text,text,text,uuid,uuid,uuid)","definition_md5":"8316c567cd3517cc391c11f7b7059c4b","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)","definition_md5":"a6adf208eae8476128f197c16f83d6c5","owner":"postgres","acl":["authenticated=X/postgres","postgres=X/postgres","service_role=X/postgres"]},{"signature":"public.trg_require_satellite_economics_at_entry_close()","definition_md5":"1c93d532cd49329e3c7e11ee7f6de48b","owner":"postgres","acl":["postgres=X/postgres"]},{"signature":"public.trg_tournaments_rank_before_complete()","definition_md5":"89f80b8b181cf7717fcdee2a94d161ed","owner":"postgres","acl":["postgres=X/postgres","service_role=X/postgres"]}],"triggers":[["accounting_tournament_fee_batches","accounting_tournament_fee_batches_immutable","CREATE TRIGGER accounting_tournament_fee_batches_immutable BEFORE DELETE OR UPDATE ON public.accounting_tournament_fee_batches FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()","O"],["accounting_tournament_fee_batches","accounting_tournament_fee_batches_no_truncate","CREATE TRIGGER accounting_tournament_fee_batches_no_truncate BEFORE TRUNCATE ON public.accounting_tournament_fee_batches FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()","O"],["accounting_tournament_fee_cutover","accounting_tournament_fee_cutover_immutable","CREATE TRIGGER accounting_tournament_fee_cutover_immutable BEFORE DELETE OR UPDATE ON public.accounting_tournament_fee_cutover FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()","O"],["accounting_tournament_fee_cutover","accounting_tournament_fee_cutover_no_truncate","CREATE TRIGGER accounting_tournament_fee_cutover_no_truncate BEFORE TRUNCATE ON public.accounting_tournament_fee_cutover FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()","O"],["accounting_tournament_fee_recognitions","accounting_tournament_fee_recognitions_immutable","CREATE TRIGGER accounting_tournament_fee_recognitions_immutable BEFORE DELETE OR UPDATE ON public.accounting_tournament_fee_recognitions FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()","O"],["accounting_tournament_fee_recognitions","accounting_tournament_fee_recognitions_no_truncate","CREATE TRIGGER accounting_tournament_fee_recognitions_no_truncate BEFORE TRUNCATE ON public.accounting_tournament_fee_recognitions FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()","O"],["accounting_tournament_fee_sources","accounting_tournament_fee_sources_immutable","CREATE TRIGGER accounting_tournament_fee_sources_immutable BEFORE DELETE OR UPDATE ON public.accounting_tournament_fee_sources FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()","O"],["accounting_tournament_fee_sources","accounting_tournament_fee_sources_no_truncate","CREATE TRIGGER accounting_tournament_fee_sources_no_truncate BEFORE TRUNCATE ON public.accounting_tournament_fee_sources FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()","O"],["accounting_tournament_recognized_sources","accounting_tournament_recognized_sources_immutable","CREATE TRIGGER accounting_tournament_recognized_sources_immutable BEFORE DELETE OR UPDATE ON public.accounting_tournament_recognized_sources FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()","O"],["accounting_tournament_recognized_sources","accounting_tournament_recognized_sources_no_truncate","CREATE TRIGGER accounting_tournament_recognized_sources_no_truncate BEFORE TRUNCATE ON public.accounting_tournament_recognized_sources FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()","O"],["ca_mtt_admission_contract","ca_mtt_admission_contract_immutable","CREATE TRIGGER ca_mtt_admission_contract_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.ca_mtt_admission_contract FOR EACH ROW EXECUTE FUNCTION fn_ca_guard_mtt_admission_contract()","O"],["ca_mtt_admission_contract","ca_mtt_admission_contract_no_truncate","CREATE TRIGGER ca_mtt_admission_contract_no_truncate BEFORE TRUNCATE ON public.ca_mtt_admission_contract FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_guard_mtt_admission_contract()","O"],["chip_ledger","original_union_pnl_flow","CREATE TRIGGER original_union_pnl_flow AFTER INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_capture_original_flow()","O"],["chip_ledger","zz_tournament_accounting_credit_ledger","CREATE TRIGGER zz_tournament_accounting_credit_ledger AFTER INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_capture_tournament_credit_ledger()","O"],["managed_game_contract_versions","trg_managed_game_contract_version_immutable","CREATE TRIGGER trg_managed_game_contract_version_immutable BEFORE DELETE OR UPDATE ON public.managed_game_contract_versions FOR EACH ROW EXECUTE FUNCTION fn_guard_managed_game_contract_version()","O"],["rake_records","accounting_cash_source_immutable","CREATE TRIGGER accounting_cash_source_immutable BEFORE DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_accounting_cash_source_immutable()","O"],["rake_records","accounting_tournament_fee_commit_capture","CREATE CONSTRAINT TRIGGER accounting_tournament_fee_commit_capture AFTER INSERT ON public.rake_records DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (((new.is_tournament IS TRUE) AND (new.rake_amount > (0)::numeric))) EXECUTE FUNCTION fn_accounting_tournament_fee_commit_capture()","O"],["rake_records","accounting_tournament_fee_source_immutable","CREATE TRIGGER accounting_tournament_fee_source_immutable BEFORE DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_fee_source_immutable()","O"],["rake_records","accounting_tournament_recognized_evidence_immutable","CREATE TRIGGER accounting_tournament_recognized_evidence_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_recognized_evidence_immutable()","O"],["rake_records","trg_award_vip_points_from_rake","CREATE TRIGGER trg_award_vip_points_from_rake AFTER INSERT ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_award_vip_points_from_rake()","O"],["table_seats","trg_ca_guard_seat_creation","CREATE TRIGGER trg_ca_guard_seat_creation BEFORE INSERT OR UPDATE OF left_at ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_ca_guard_seat_creation()","O"],["table_seats","trg_seat_change_syncs_seat_first_count","CREATE TRIGGER trg_seat_change_syncs_seat_first_count AFTER INSERT OR DELETE OR UPDATE OF left_at ON public.table_seats FOR EACH ROW WHEN ((pg_trigger_depth() < 2)) EXECUTE FUNCTION fn_seat_change_syncs_seat_first_count()","O"],["table_seats","union_pnl_original_inventory","CREATE TRIGGER union_pnl_original_inventory AFTER INSERT OR DELETE OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_inventory_observe()","O"],["table_seats","union_pnl_original_inventory_no_truncate","CREATE TRIGGER union_pnl_original_inventory_no_truncate BEFORE TRUNCATE ON public.table_seats FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_observe()","O"],["table_seats","zz_freeze_entry_guard","CREATE TRIGGER zz_freeze_entry_guard BEFORE INSERT OR UPDATE OF left_at, user_id ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_refuse_new_entries_while_frozen()","O"],["tables","trg_tables_capture_management_contract","CREATE TRIGGER trg_tables_capture_management_contract AFTER INSERT OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_capture_managed_game_contract()","O"],["tables","trg_tables_emit_game_management_event","CREATE TRIGGER trg_tables_emit_game_management_event AFTER INSERT OR DELETE OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_emit_managed_game_row_event()","O"],["tables","trg_tables_managed_lifecycle_guard","CREATE TRIGGER trg_tables_managed_lifecycle_guard BEFORE UPDATE OF status, is_deleted ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_guard_managed_game_lifecycle()","O"],["tables","union_pnl_original_inventory","CREATE TRIGGER union_pnl_original_inventory AFTER INSERT OR DELETE OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_inventory_observe()","O"],["tables","union_pnl_original_inventory_no_truncate","CREATE TRIGGER union_pnl_original_inventory_no_truncate BEFORE TRUNCATE ON public.tables FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_observe()","O"],["tournament_accounting_credit_receipts","original_evidence_immutable","CREATE TRIGGER original_evidence_immutable BEFORE DELETE OR UPDATE ON public.tournament_accounting_credit_receipts FOR EACH ROW EXECUTE FUNCTION fn_ca_tournament_accounting_evidence_immutable()","O"],["tournament_accounting_credit_receipts","original_evidence_no_truncate","CREATE TRIGGER original_evidence_no_truncate BEFORE TRUNCATE ON public.tournament_accounting_credit_receipts FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_tournament_accounting_evidence_immutable()","O"],["tournament_accounting_credit_receipts","original_union_pnl_frame","CREATE TRIGGER original_union_pnl_frame BEFORE INSERT ON public.tournament_accounting_credit_receipts FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_receipt_frame()","O"],["tournament_entry_close_receipts","aaa_require_satellite_economics_at_entry_close","CREATE TRIGGER aaa_require_satellite_economics_at_entry_close BEFORE INSERT ON public.tournament_entry_close_receipts FOR EACH ROW EXECUTE FUNCTION trg_require_satellite_economics_at_entry_close()","O"],["tournament_launch_receipts","tournament_launch_receipt_is_immutable","CREATE TRIGGER tournament_launch_receipt_is_immutable BEFORE DELETE OR UPDATE ON public.tournament_launch_receipts FOR EACH ROW EXECUTE FUNCTION trg_tournament_launch_receipt_is_immutable()","O"],["tournament_obligation_events","original_evidence_immutable","CREATE TRIGGER original_evidence_immutable BEFORE DELETE OR UPDATE ON public.tournament_obligation_events FOR EACH ROW EXECUTE FUNCTION fn_ca_tournament_accounting_evidence_immutable()","O"],["tournament_obligation_events","original_evidence_no_truncate","CREATE TRIGGER original_evidence_no_truncate BEFORE TRUNCATE ON public.tournament_obligation_events FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_tournament_accounting_evidence_immutable()","O"],["tournament_obligation_events","original_union_pnl_frame","CREATE TRIGGER original_union_pnl_frame BEFORE INSERT ON public.tournament_obligation_events FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_receipt_frame()","O"],["tournament_obligations","zz_tournament_accounting_obligation_event","CREATE TRIGGER zz_tournament_accounting_obligation_event AFTER INSERT OR DELETE OR UPDATE ON public.tournament_obligations FOR EACH ROW EXECUTE FUNCTION fn_ca_capture_tournament_obligation_event()","O"],["tournament_participant_funding_receipts","original_evidence_immutable","CREATE TRIGGER original_evidence_immutable BEFORE DELETE OR UPDATE ON public.tournament_participant_funding_receipts FOR EACH ROW EXECUTE FUNCTION fn_ca_tournament_accounting_evidence_immutable()","O"],["tournament_participant_funding_receipts","original_evidence_no_truncate","CREATE TRIGGER original_evidence_no_truncate BEFORE TRUNCATE ON public.tournament_participant_funding_receipts FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_tournament_accounting_evidence_immutable()","O"],["tournament_participant_funding_receipts","original_union_pnl_frame","CREATE TRIGGER original_union_pnl_frame BEFORE INSERT ON public.tournament_participant_funding_receipts FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_receipt_frame()","O"],["tournament_players","trg_enforce_tournament_capacity","CREATE TRIGGER trg_enforce_tournament_capacity BEFORE INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_enforce_tournament_capacity()","O"],["tournament_players","union_pnl_original_inventory","CREATE TRIGGER union_pnl_original_inventory AFTER INSERT OR DELETE OR UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_inventory_observe()","O"],["tournament_players","union_pnl_original_inventory_no_truncate","CREATE TRIGGER union_pnl_original_inventory_no_truncate BEFORE TRUNCATE ON public.tournament_players FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_observe()","O"],["tournament_players","zz_freeze_entry_guard","CREATE TRIGGER zz_freeze_entry_guard BEFORE INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_refuse_new_entries_while_frozen()","O"],["tournament_refund_entitlements","tournament_refund_entitlements_append_only","CREATE TRIGGER tournament_refund_entitlements_append_only BEFORE DELETE OR UPDATE ON public.tournament_refund_entitlements FOR EACH ROW EXECUTE FUNCTION fn_satellite_settlement_receipts_are_append_only()","O"],["tournament_refund_tranches","original_union_pnl_frame","CREATE TRIGGER original_union_pnl_frame BEFORE INSERT ON public.tournament_refund_tranches FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_receipt_frame()","O"],["tournament_refund_tranches","tournament_refund_tranches_append_only","CREATE TRIGGER tournament_refund_tranches_append_only BEFORE DELETE OR UPDATE ON public.tournament_refund_tranches FOR EACH ROW EXECUTE FUNCTION fn_satellite_settlement_receipts_are_append_only()","O"],["tournament_satellite_awards","tournament_satellite_awards_append_only","CREATE TRIGGER tournament_satellite_awards_append_only BEFORE DELETE OR UPDATE ON public.tournament_satellite_awards FOR EACH ROW EXECUTE FUNCTION fn_satellite_settlement_receipts_are_append_only()","O"],["tournament_satellite_remainders","tournament_satellite_remainders_append_only","CREATE TRIGGER tournament_satellite_remainders_append_only BEFORE DELETE OR UPDATE ON public.tournament_satellite_remainders FOR EACH ROW EXECUTE FUNCTION fn_satellite_settlement_receipts_are_append_only()","O"],["tournament_satellite_settlements","tournament_satellite_settlements_append_only","CREATE TRIGGER tournament_satellite_settlements_append_only BEFORE DELETE OR UPDATE ON public.tournament_satellite_settlements FOR EACH ROW EXECUTE FUNCTION fn_satellite_settlement_receipts_are_append_only()","O"],["tournament_unregistration_receipts","tournament_unregistration_receipts_append_only","CREATE TRIGGER tournament_unregistration_receipts_append_only BEFORE DELETE OR UPDATE ON public.tournament_unregistration_receipts FOR EACH ROW EXECUTE FUNCTION fn_satellite_settlement_receipts_are_append_only()","O"],["tournament_waitlists","tournament_waitlists_fixed_format_only","CREATE TRIGGER tournament_waitlists_fixed_format_only BEFORE INSERT OR UPDATE OF tournament_id ON public.tournament_waitlists FOR EACH ROW EXECUTE FUNCTION fn_ca_fixed_tournament_waitlist_only()","O"],["tournaments","a0_tournaments_dual_entry_capacity","CREATE TRIGGER a0_tournaments_dual_entry_capacity BEFORE INSERT OR UPDATE OF max_players, tournament_type, variant, satellite_target_id, satellite_target ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_ca_normalize_new_mtt_capacity()","O"],["tournaments","a1_tournaments_restart_source","CREATE TRIGGER a1_tournaments_restart_source BEFORE INSERT OR DELETE OR UPDATE OF restart_source_id ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_ca_guard_tournament_restart_source()","O"],["tournaments","a2_tournaments_new_satellite_target","CREATE TRIGGER a2_tournaments_new_satellite_target BEFORE INSERT OR UPDATE OF satellite_target_id, satellite_target, is_bounty, is_pko, is_mystery_bounty, is_premium_spin, variant, tournament_type, club_id, union_id ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_ca_guard_new_satellite_target()","O"],["tournaments","tournaments_creation_guard","CREATE TRIGGER tournaments_creation_guard BEFORE INSERT ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_tournaments_creation_guard()","O"],["tournaments","tournaments_new_mtt_blind_contract","CREATE TRIGGER tournaments_new_mtt_blind_contract BEFORE INSERT OR UPDATE OF blind_structure, starting_chips, tournament_type, variant, max_players ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_new_mtt_blind_contract()","O"],["tournaments","tournaments_rank_before_complete","CREATE TRIGGER tournaments_rank_before_complete BEFORE UPDATE ON public.tournaments FOR EACH ROW WHEN (((new.status = 'COMPLETED'::text) AND (old.status IS DISTINCT FROM 'COMPLETED'::text))) EXECUTE FUNCTION trg_tournaments_rank_before_complete()","O"],["tournaments","tournaments_short_formats_never_break","CREATE TRIGGER tournaments_short_formats_never_break BEFORE INSERT OR UPDATE OF tournament_type, variant, synchronized_breaks ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_short_formats_never_break()","O"],["tournaments","trg_tournaments_capture_management_contract","CREATE TRIGGER trg_tournaments_capture_management_contract AFTER INSERT OR UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_capture_managed_game_contract()","O"],["tournaments","trg_tournaments_emit_game_management_event","CREATE TRIGGER trg_tournaments_emit_game_management_event AFTER INSERT OR DELETE OR UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_emit_managed_game_row_event()","O"],["tournaments","trg_tournaments_managed_lifecycle_guard","CREATE TRIGGER trg_tournaments_managed_lifecycle_guard BEFORE UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_managed_game_lifecycle()","O"],["tournaments","union_pnl_original_inventory","CREATE TRIGGER union_pnl_original_inventory AFTER INSERT OR DELETE OR UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_inventory_observe()","O"],["tournaments","union_pnl_original_inventory_no_truncate","CREATE TRIGGER union_pnl_original_inventory_no_truncate BEFORE TRUNCATE ON public.tournaments FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_observe()","O"],["tournaments","zz_ca_fund_overlay_on_lock","CREATE TRIGGER zz_ca_fund_overlay_on_lock BEFORE UPDATE OF status ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_ca_fund_overlay_on_lock()","O"],["tournaments","zz_freeze_launch_guard","CREATE TRIGGER zz_freeze_launch_guard BEFORE UPDATE OF status ON public.tournaments FOR EACH ROW WHEN (((new.status = 'RUNNING'::text) AND (old.status IS DISTINCT FROM new.status))) EXECUTE FUNCTION fn_refuse_new_entries_while_frozen()","O"],["tournaments","zzzzzzz_tournaments_record_format","CREATE TRIGGER zzzzzzz_tournaments_record_format BEFORE INSERT OR UPDATE OF format_contract, tournament_type, variant, max_players, min_players, table_size, satellite_target_id, satellite_target, club_id, union_id ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_ca_guard_tournament_format()","O"],["union_clubs","union_pnl_original_inventory","CREATE TRIGGER union_pnl_original_inventory AFTER INSERT OR DELETE OR UPDATE ON public.union_clubs FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_inventory_observe()","O"],["union_clubs","union_pnl_original_inventory_no_truncate","CREATE TRIGGER union_pnl_original_inventory_no_truncate BEFORE TRUNCATE ON public.union_clubs FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_observe()","O"],["union_pnl_inventory_events","original_pnl_inventory_events_immutable","CREATE TRIGGER original_pnl_inventory_events_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_inventory_events FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()","O"],["union_pnl_original_flows","original_pnl_immutable","CREATE TRIGGER original_pnl_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_original_flows FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()","O"],["union_pnl_transaction_frames","original_pnl_immutable","CREATE TRIGGER original_pnl_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_transaction_frames FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()","O"]],"constraints":[["ca_mtt_admission_contract","ca_mtt_admission_contract_abi_check","CHECK ((abi = ANY (ARRAY['legacy-capacity-v1'::text, 'unlimited-mtt-v2'::text])))",true],["ca_mtt_admission_contract","ca_mtt_admission_contract_pkey","PRIMARY KEY (singleton)",true],["ca_mtt_admission_contract","ca_mtt_admission_contract_singleton_check","CHECK (singleton)",true],["tournament_accounting_credit_receipts","tournament_accounting_credit_receipts_amount_check","CHECK (((amount > (0)::numeric) AND (amount = round(amount, 2)) AND ((amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))",true],["tournament_accounting_credit_receipts","tournament_accounting_credit_receipts_asset_check","CHECK ((asset = 'chips'::text))",true],["tournament_accounting_credit_receipts","tournament_accounting_credit_receipts_idempotency_key_key","UNIQUE (idempotency_key)",true],["tournament_accounting_credit_receipts","tournament_accounting_credit_receipts_ledger_id_key","UNIQUE (ledger_id)",true],["tournament_accounting_credit_receipts","tournament_accounting_credit_receipts_payout_id_key","UNIQUE (payout_id)",true],["tournament_accounting_credit_receipts","tournament_accounting_credit_receipts_pkey","PRIMARY KEY (id)",true],["tournament_accounting_credit_receipts","tournament_accounting_credit_receipts_wallet_transaction_id_key","UNIQUE (wallet_transaction_id)",true],["tournament_launch_receipts","tournament_launch_receipts_tournament_id_fkey","FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE RESTRICT",true],["tournament_obligation_events","tournament_obligation_events_asset_check","CHECK ((asset = ANY (ARRAY['chips'::text, 'diamonds'::text, 'unknown'::text])))",true],["tournament_obligation_events","tournament_obligation_events_check","CHECK ((((operation = 'INSERT'::text) AND (before_row IS NULL) AND (after_row IS NOT NULL)) OR ((operation = 'UPDATE'::text) AND (before_row IS NOT NULL) AND (after_row IS NOT NULL)) OR ((operation = 'DELETE'::text) AND (before_row IS NOT NULL) AND (after_row IS NULL))))",true],["tournament_obligation_events","tournament_obligation_events_operation_check","CHECK ((operation = ANY (ARRAY['INSERT'::text, 'UPDATE'::text, 'DELETE'::text])))",true],["tournament_obligation_events","tournament_obligation_events_pkey","PRIMARY KEY (event_id)",true],["tournament_participant_funding_receipts","tournament_participant_funding_receip_wallet_transaction_id_key","UNIQUE (wallet_transaction_id)",true],["tournament_participant_funding_receipts","tournament_participant_funding_receipts_amount_check","CHECK (((amount >= (0)::numeric) AND (amount = round(amount, 2)) AND ((amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))",true],["tournament_participant_funding_receipts","tournament_participant_funding_receipts_asset_check","CHECK ((asset = ANY (ARRAY['chips'::text, 'diamonds'::text])))",true],["tournament_participant_funding_receipts","tournament_participant_funding_receipts_check","CHECK ((((asset = 'chips'::text) AND (amount > (0)::numeric) AND (entitlement_id IS NOT NULL) AND (ledger_id IS NOT NULL) AND (wallet_transaction_id IS NOT NULL) AND (funding_club_id IS NOT NULL)) OR ((asset = 'chips'::text) AND (amount = (0)::numeric) AND (entitlement_id IS NULL) AND (ledger_id IS NULL)) OR ((asset = 'diamonds'::text) AND (entitlement_id IS NULL) AND (ledger_id IS NULL))))",true],["tournament_participant_funding_receipts","tournament_participant_funding_receipts_entitlement_id_key","UNIQUE (entitlement_id)",true],["tournament_participant_funding_receipts","tournament_participant_funding_receipts_ledger_id_key","UNIQUE (ledger_id)",true],["tournament_participant_funding_receipts","tournament_participant_funding_receipts_operation_check","CHECK ((operation = ANY (ARRAY['entry'::text, 'rebuy'::text, 'reentry'::text, 'addon'::text])))",true],["tournament_participant_funding_receipts","tournament_participant_funding_receipts_pkey","PRIMARY KEY (id)",true],["tournament_satellite_settlements","tournament_satellite_settlements_advertised_seats_check","CHECK ((advertised_seats >= 0))",true],["tournament_satellite_settlements","tournament_satellite_settlements_cash_ticket_count_check","CHECK ((cash_ticket_count >= 0))",true],["tournament_satellite_settlements","tournament_satellite_settlements_check","CHECK ((target_id <> tournament_id))",true],["tournament_satellite_settlements","tournament_satellite_settlements_check1","CHECK ((ticket_cost = (target_buy_in + target_fee)))",true],["tournament_satellite_settlements","tournament_satellite_settlements_check10","CHECK ((released_seat_count = cardinality(released_seat_ids)))",true],["tournament_satellite_settlements","tournament_satellite_settlements_check11","CHECK ((source_closed_at <= settled_at))",true],["tournament_satellite_settlements","tournament_satellite_settlements_check12","CHECK ((source_escrow_closed_at <= settled_at))",true],["tournament_satellite_settlements","tournament_satellite_settlements_check13","CHECK ((released_seat_ids <@ source_seat_ids))",true],["tournament_satellite_settlements","tournament_satellite_settlements_check14","CHECK (((((remainder = (0)::numeric) AND (bubble_user_id IS NULL) AND (bubble_position IS NULL)) OR ((remainder > (0)::numeric) AND (bubble_user_id IS NOT NULL) AND (bubble_position = (ticket_award_count + 1)) AND (bubble_position <= field_size))) IS TRUE))",true],["tournament_satellite_settlements","tournament_satellite_settlements_check2","CHECK ((ticket_award_count = ((seat_count + cash_ticket_count) + entry_ticket_count)))",true],["tournament_satellite_settlements","tournament_satellite_settlements_check3","CHECK ((ticket_award_count <= field_size))",true],["tournament_satellite_settlements","tournament_satellite_settlements_check4","CHECK ((pool = (((ticket_award_count)::numeric * ticket_cost) + remainder)))",true],["tournament_satellite_settlements","tournament_satellite_settlements_check5","CHECK ((pool >= ((advertised_seats)::numeric * ticket_cost)))",true],["tournament_satellite_settlements","tournament_satellite_settlements_check6","CHECK ((remainder < ticket_cost))",true],["tournament_satellite_settlements","tournament_satellite_settlements_check7","CHECK (((target_was_missing IS FALSE) AND (target_contract_version IS NULL)))",true],["tournament_satellite_settlements","tournament_satellite_settlements_check8","CHECK ((source_table_count = cardinality(source_table_ids)))",true],["tournament_satellite_settlements","tournament_satellite_settlements_check9","CHECK ((source_seat_count = cardinality(source_seat_ids)))",true],["tournament_satellite_settlements","tournament_satellite_settlements_entry_ticket_count_check","CHECK ((entry_ticket_count >= 0))",true],["tournament_satellite_settlements","tournament_satellite_settlements_field_size_check","CHECK ((field_size > 0))",true],["tournament_satellite_settlements","tournament_satellite_settlements_pkey","PRIMARY KEY (tournament_id)",true],["tournament_satellite_settlements","tournament_satellite_settlements_pool_check","CHECK (((pool >= (0)::numeric) AND (pool = round(pool, 2))))",true],["tournament_satellite_settlements","tournament_satellite_settlements_receipt_version_check","CHECK ((((receipt_version = 2) AND (winner_id IS NOT NULL) AND (qualifier_ids IS NULL)) OR ((receipt_version = 3) AND (winner_id IS NULL) AND (qualifier_ids IS NOT NULL) AND (array_ndims(qualifier_ids) = 1) AND (cardinality(qualifier_ids) > 0) AND (array_position(qualifier_ids, NULL::uuid) IS NULL) AND (cardinality(qualifier_ids) <= ticket_award_count))))",true],["tournament_satellite_settlements","tournament_satellite_settlements_released_seat_count_check","CHECK ((released_seat_count >= 0))",true],["tournament_satellite_settlements","tournament_satellite_settlements_released_seat_ids_check","CHECK ((array_position(released_seat_ids, NULL::uuid) IS NULL))",true],["tournament_satellite_settlements","tournament_satellite_settlements_remainder_check","CHECK (((remainder >= (0)::numeric) AND (remainder = round(remainder, 2))))",true],["tournament_satellite_settlements","tournament_satellite_settlements_seat_count_check","CHECK ((seat_count >= 0))",true],["tournament_satellite_settlements","tournament_satellite_settlements_source_escrow_close_note_check","CHECK ((length(btrim(source_escrow_close_note)) > 0))",true],["tournament_satellite_settlements","tournament_satellite_settlements_source_seat_count_check","CHECK ((source_seat_count >= 0))",true],["tournament_satellite_settlements","tournament_satellite_settlements_source_seat_ids_check","CHECK ((array_position(source_seat_ids, NULL::uuid) IS NULL))",true],["tournament_satellite_settlements","tournament_satellite_settlements_source_table_count_check","CHECK ((source_table_count > 0))",true],["tournament_satellite_settlements","tournament_satellite_settlements_source_table_ids_check","CHECK ((array_position(source_table_ids, NULL::uuid) IS NULL))",true],["tournament_satellite_settlements","tournament_satellite_settlements_target_buy_in_check","CHECK (((target_buy_in >= (0)::numeric) AND (target_buy_in = round(target_buy_in, 2))))",true],["tournament_satellite_settlements","tournament_satellite_settlements_target_fee_check","CHECK (((target_fee >= (0)::numeric) AND (target_fee = round(target_fee, 2))))",true],["tournament_satellite_settlements","tournament_satellite_settlements_target_id_fkey","FOREIGN KEY (target_id) REFERENCES tournaments(id) ON DELETE RESTRICT",true],["tournament_satellite_settlements","tournament_satellite_settlements_ticket_award_count_check","CHECK ((ticket_award_count >= 0))",true],["tournament_satellite_settlements","tournament_satellite_settlements_ticket_cost_check","CHECK (((ticket_cost > (0)::numeric) AND (ticket_cost = round(ticket_cost, 2))))",true],["tournament_satellite_settlements","tournament_satellite_settlements_tournament_id_fkey","FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE RESTRICT",true],["tournaments","tournament_prize_math_contract_valid","CHECK ((((payout_math_version = 1) AND (payout_unit_cents = 1)) OR ((payout_math_version = 2) AND (payout_unit_cents = ANY (ARRAY[1, 100])) AND (upper(COALESCE(tournament_type, ''::text)) = 'MTT'::text) AND ((COALESCE(max_players, 0) > 2) OR (NOT (format_contract IS DISTINCT FROM 'mtt-v2'::text))) AND (lower(COALESCE(variant, ''::text)) <> ALL (ARRAY['spin'::text, 'sng'::text, 'satellite'::text])) AND (NOT COALESCE(is_premium_spin, false)) AND (satellite_target_id IS NULL) AND (satellite_target IS NULL))))",true],["tournaments","tournaments_format_contract_known","CHECK (((format_contract IS NULL) OR (format_contract = ANY (ARRAY['mtt-v1'::text, 'mtt-v2'::text, 'seat-first-satellite-v1'::text, 'sng-v1'::text, 'spin-v1'::text]))))",true],["tournaments","tournaments_heads_up_rake_within_5_pct","CHECK (((max_players IS NULL) OR (max_players > 2) OR (COALESCE(buy_in_fee, (0)::numeric) <= (round(((COALESCE(buy_in_amount, (0)::numeric) + COALESCE(buy_in_fee, (0)::numeric)) * 0.05), 2) + 0.005)))) NOT VALID",false],["tournaments","tournaments_recorded_entry_capacity","CHECK ((((NOT (format_contract IS DISTINCT FROM 'mtt-v2'::text)) AND (max_players IS NULL) AND (COALESCE(min_players, 0) >= 3)) OR ((format_contract IS DISTINCT FROM 'mtt-v2'::text) AND COALESCE((max_players > 0), false))))",true],["tournaments","tournaments_restart_source_id_fkey","FOREIGN KEY (restart_source_id) REFERENCES tournaments(id) ON UPDATE RESTRICT ON DELETE RESTRICT",true],["tournaments","tournaments_status_check","CHECK ((status = ANY (ARRAY['ANNOUNCED'::text, 'REGISTERING'::text, 'LATE_REG'::text, 'RUNNING'::text, 'COMPLETING'::text, 'COMPLETED'::text, 'CANCELLED'::text])))",true],["union_pnl_inventory_events","union_pnl_inventory_events_check","CHECK (((before_row IS NOT NULL) OR (after_row IS NOT NULL)))",true],["union_pnl_inventory_events","union_pnl_inventory_events_check1","CHECK ((((before_row IS NULL) OR ((jsonb_typeof(before_row) = 'object'::text) AND ((before_row ->> 'id'::text) = (row_id)::text))) IS TRUE))",true],["union_pnl_inventory_events","union_pnl_inventory_events_check2","CHECK ((((after_row IS NULL) OR ((jsonb_typeof(after_row) = 'object'::text) AND ((after_row ->> 'id'::text) = (row_id)::text))) IS TRUE))",true],["union_pnl_inventory_events","union_pnl_inventory_events_check3","CHECK ((((operation = ANY (ARRAY['baseline'::text, 'INSERT'::text])) AND (before_row IS NULL) AND (after_row IS NOT NULL)) OR ((operation = 'UPDATE'::text) AND (before_row IS NOT NULL) AND (after_row IS NOT NULL)) OR ((operation = 'DELETE'::text) AND (before_row IS NOT NULL) AND (after_row IS NULL))))",true],["union_pnl_inventory_events","union_pnl_inventory_events_observed_at_check","CHECK (isfinite(observed_at))",true],["union_pnl_inventory_events","union_pnl_inventory_events_operation_check","CHECK ((operation = ANY (ARRAY['baseline'::text, 'INSERT'::text, 'UPDATE'::text, 'DELETE'::text])))",true],["union_pnl_inventory_events","union_pnl_inventory_events_pkey","PRIMARY KEY (event_id)",true],["union_pnl_inventory_events","union_pnl_inventory_events_source_name_check","CHECK ((source_name = ANY (ARRAY['union_clubs'::text, 'tables'::text, 'table_seats'::text, 'tournaments'::text, 'tournament_players'::text])))",true],["union_pnl_original_flows","union_pnl_original_flows_pkey","PRIMARY KEY (ledger_id)",true],["union_pnl_original_flows","union_pnl_original_flows_transaction_id_fkey","FOREIGN KEY (transaction_id) REFERENCES union_pnl_transaction_frames(transaction_id)",true],["union_pnl_transaction_frames","union_pnl_transaction_frames_observed_at_check","CHECK (isfinite(observed_at))",true],["union_pnl_transaction_frames","union_pnl_transaction_frames_pkey","PRIMARY KEY (transaction_id)",true]],"columns":[["tournament_satellite_settlements","winner_id","uuid",false,null,null],["tournament_satellite_settlements","receipt_version","integer",true,null,"2"],["tournament_satellite_settlements","qualifier_ids","uuid[]",false,null,null],["tournaments","max_players","integer",false,null,null],["tournaments","format_contract","text",false,null,null],["tournaments","restart_source_id","uuid",false,null,null],["ca_mtt_admission_contract","singleton","boolean",true,null,"true"],["ca_mtt_admission_contract","abi","text",true,null,null]],"indexes":[["ca_mtt_admission_contract_pkey","CREATE UNIQUE INDEX ca_mtt_admission_contract_pkey ON public.ca_mtt_admission_contract USING btree (singleton)",true,true],["idx_tournaments_status_start_time","CREATE INDEX idx_tournaments_status_start_time ON public.tournaments USING btree (status, start_time)",true,true],["tournament_accounting_credit_receipts_idempotency_key_key","CREATE UNIQUE INDEX tournament_accounting_credit_receipts_idempotency_key_key ON public.tournament_accounting_credit_receipts USING btree (idempotency_key)",true,true],["tournament_accounting_credit_receipts_ledger_id_key","CREATE UNIQUE INDEX tournament_accounting_credit_receipts_ledger_id_key ON public.tournament_accounting_credit_receipts USING btree (ledger_id)",true,true],["tournament_accounting_credit_receipts_payout_id_key","CREATE UNIQUE INDEX tournament_accounting_credit_receipts_payout_id_key ON public.tournament_accounting_credit_receipts USING btree (payout_id)",true,true],["tournament_accounting_credit_receipts_pkey","CREATE UNIQUE INDEX tournament_accounting_credit_receipts_pkey ON public.tournament_accounting_credit_receipts USING btree (id)",true,true],["tournament_accounting_credit_receipts_wallet_transaction_id_key","CREATE UNIQUE INDEX tournament_accounting_credit_receipts_wallet_transaction_id_key ON public.tournament_accounting_credit_receipts USING btree (wallet_transaction_id)",true,true],["tournament_obligation_events_obligation_id_event_id_idx","CREATE INDEX tournament_obligation_events_obligation_id_event_id_idx ON public.tournament_obligation_events USING btree (obligation_id, event_id)",true,true],["tournament_obligation_events_pkey","CREATE UNIQUE INDEX tournament_obligation_events_pkey ON public.tournament_obligation_events USING btree (event_id)",true,true],["tournament_obligation_events_tournament_id_observed_at_even_idx","CREATE INDEX tournament_obligation_events_tournament_id_observed_at_even_idx ON public.tournament_obligation_events USING btree (tournament_id, observed_at, event_id)",true,true],["tournament_participant_fundin_tournament_id_registration_id_idx","CREATE INDEX tournament_participant_fundin_tournament_id_registration_id_idx ON public.tournament_participant_funding_receipts USING btree (tournament_id, registration_id, observed_at)",true,true],["tournament_participant_funding_receip_wallet_transaction_id_key","CREATE UNIQUE INDEX tournament_participant_funding_receip_wallet_transaction_id_key ON public.tournament_participant_funding_receipts USING btree (wallet_transaction_id)",true,true],["tournament_participant_funding_receipts_entitlement_id_key","CREATE UNIQUE INDEX tournament_participant_funding_receipts_entitlement_id_key ON public.tournament_participant_funding_receipts USING btree (entitlement_id)",true,true],["tournament_participant_funding_receipts_ledger_id_key","CREATE UNIQUE INDEX tournament_participant_funding_receipts_ledger_id_key ON public.tournament_participant_funding_receipts USING btree (ledger_id)",true,true],["tournament_participant_funding_receipts_pkey","CREATE UNIQUE INDEX tournament_participant_funding_receipts_pkey ON public.tournament_participant_funding_receipts USING btree (id)",true,true],["tournament_satellite_settlements_pkey","CREATE UNIQUE INDEX tournament_satellite_settlements_pkey ON public.tournament_satellite_settlements USING btree (tournament_id)",true,true],["tournaments_one_restart_per_source","CREATE UNIQUE INDEX tournaments_one_restart_per_source ON public.tournaments USING btree (restart_source_id) WHERE (restart_source_id IS NOT NULL)",true,true],["union_pnl_inventory_boundary","CREATE INDEX union_pnl_inventory_boundary ON public.union_pnl_inventory_events USING btree (observed_at, event_id)",true,true],["union_pnl_inventory_events_pkey","CREATE UNIQUE INDEX union_pnl_inventory_events_pkey ON public.union_pnl_inventory_events USING btree (event_id)",true,true],["union_pnl_inventory_identity","CREATE INDEX union_pnl_inventory_identity ON public.union_pnl_inventory_events USING btree (source_name, row_id, event_id DESC)",true,true],["union_pnl_inventory_transaction","CREATE INDEX union_pnl_inventory_transaction ON public.union_pnl_inventory_events USING btree (transaction_id, source_name)",true,true],["union_pnl_original_flows_expr_recognized_at_idx","CREATE INDEX union_pnl_original_flows_expr_recognized_at_idx ON public.union_pnl_original_flows USING btree (((game_scope ->> 'game_union_id'::text)), recognized_at)",true,true],["union_pnl_original_flows_pkey","CREATE UNIQUE INDEX union_pnl_original_flows_pkey ON public.union_pnl_original_flows USING btree (ledger_id)",true,true],["union_pnl_transaction_frames_pkey","CREATE UNIQUE INDEX union_pnl_transaction_frames_pkey ON public.union_pnl_transaction_frames USING btree (transaction_id)",true,true]],"event_triggers":[{"name":"ab_ca_money_rpc_registered","tags":["CREATE FUNCTION"],"event":"ddl_command_end","owner":"postgres","enabled":"O","function":"fn_ca_money_rpc_registry_guard()"}],"cohort_registry":{"proname":"fn_ca_settle_satellite_cohort","status":"approved","notes":"Private recorded-format satellite settlement: service-role wrapper, admission and finish locks, immutable qualifier receipt, atomic target-entry/ticket/cash journals and exact source closeout."},"funding_relations":[{"acl":["postgres=arwdDxtm/postgres","service_role=r/postgres"],"rls":true,"name":"tournament_accounting_credit_receipts","owner":"postgres","force_rls":false},{"acl":["postgres=arwdDxtm/postgres","service_role=r/postgres"],"rls":true,"name":"tournament_obligation_events","owner":"postgres","force_rls":false},{"acl":["postgres=arwdDxtm/postgres","service_role=r/postgres"],"rls":true,"name":"tournament_participant_funding_receipts","owner":"postgres","force_rls":false},{"acl":["postgres=arwdDxtm/postgres"],"rls":true,"name":"union_pnl_inventory_events","owner":"postgres","force_rls":false},{"acl":["postgres=arwdDxtm/postgres"],"rls":true,"name":"union_pnl_original_flows","owner":"postgres","force_rls":false},{"acl":["postgres=arwdDxtm/postgres"],"rls":true,"name":"union_pnl_transaction_frames","owner":"postgres","force_rls":false}],"funding_columns":[["tournament_accounting_credit_receipts","amount","numeric",true,null,null,""],["tournament_accounting_credit_receipts","asset","text",true,null,null,""],["tournament_accounting_credit_receipts","credited_club_id","uuid",true,null,null,""],["tournament_accounting_credit_receipts","entry_receipt_ids","uuid[]",true,null,null,""],["tournament_accounting_credit_receipts","id","uuid",true,null,"gen_random_uuid()",""],["tournament_accounting_credit_receipts","idempotency_key","text",true,null,null,""],["tournament_accounting_credit_receipts","ledger_id","uuid",true,null,null,""],["tournament_accounting_credit_receipts","ledger_snapshot","jsonb",true,null,null,""],["tournament_accounting_credit_receipts","observed_at","timestamp with time zone",true,null,"clock_timestamp()",""],["tournament_accounting_credit_receipts","payout_id","uuid",false,null,null,""],["tournament_accounting_credit_receipts","payout_snapshot","jsonb",false,null,null,""],["tournament_accounting_credit_receipts","registration_snapshot","jsonb",false,null,null,""],["tournament_accounting_credit_receipts","tournament_id","uuid",true,null,null,""],["tournament_accounting_credit_receipts","tournament_snapshot","jsonb",true,null,null,""],["tournament_accounting_credit_receipts","transaction_id","xid8",true,null,"pg_current_xact_id()",""],["tournament_accounting_credit_receipts","user_id","uuid",true,null,null,""],["tournament_accounting_credit_receipts","wallet_snapshot","jsonb",true,null,null,""],["tournament_accounting_credit_receipts","wallet_transaction_id","uuid",true,null,null,""],["tournament_obligation_events","after_row","jsonb",false,null,null,""],["tournament_obligation_events","asset","text",true,null,null,""],["tournament_obligation_events","before_row","jsonb",false,null,null,""],["tournament_obligation_events","credit_receipt_id","uuid",false,null,null,""],["tournament_obligation_events","entry_receipt_ids","uuid[]",true,null,null,""],["tournament_obligation_events","event_id","bigint",true,null,null,"a"],["tournament_obligation_events","obligation_id","uuid",true,null,null,""],["tournament_obligation_events","observed_at","timestamp with time zone",true,null,"clock_timestamp()",""],["tournament_obligation_events","operation","text",true,null,null,""],["tournament_obligation_events","refund_tranche_ids","uuid[]",true,null,null,""],["tournament_obligation_events","registration_snapshot","jsonb",false,null,null,""],["tournament_obligation_events","tournament_id","uuid",true,null,null,""],["tournament_obligation_events","tournament_snapshot","jsonb",true,null,null,""],["tournament_obligation_events","transaction_id","xid8",true,null,"pg_current_xact_id()",""],["tournament_obligation_events","user_id","uuid",false,null,null,""],["tournament_participant_funding_receipts","amount","numeric",true,null,null,""],["tournament_participant_funding_receipts","asset","text",true,null,null,""],["tournament_participant_funding_receipts","custody_result","jsonb",false,null,null,""],["tournament_participant_funding_receipts","entitlement_id","uuid",false,null,null,""],["tournament_participant_funding_receipts","entitlement_snapshot","jsonb",false,null,null,""],["tournament_participant_funding_receipts","funding_club_id","uuid",false,null,null,""],["tournament_participant_funding_receipts","id","uuid",true,null,"gen_random_uuid()",""],["tournament_participant_funding_receipts","ledger_id","uuid",false,null,null,""],["tournament_participant_funding_receipts","ledger_snapshot","jsonb",false,null,null,""],["tournament_participant_funding_receipts","observed_at","timestamp with time zone",true,null,"clock_timestamp()",""],["tournament_participant_funding_receipts","operation","text",true,null,null,""],["tournament_participant_funding_receipts","purchase_key","text",false,null,null,""],["tournament_participant_funding_receipts","registration_id","uuid",true,null,null,""],["tournament_participant_funding_receipts","registration_snapshot","jsonb",true,null,null,""],["tournament_participant_funding_receipts","tournament_id","uuid",true,null,null,""],["tournament_participant_funding_receipts","tournament_snapshot","jsonb",true,null,null,""],["tournament_participant_funding_receipts","transaction_id","xid8",true,null,"pg_current_xact_id()",""],["tournament_participant_funding_receipts","user_id","uuid",true,null,null,""],["tournament_participant_funding_receipts","wallet_snapshot","jsonb",false,null,null,""],["tournament_participant_funding_receipts","wallet_transaction_id","uuid",false,null,null,""],["tournament_refund_tranches","transaction_id","xid8",false,null,"pg_current_xact_id()",""],["union_pnl_inventory_events","after_row","jsonb",false,null,null,""],["union_pnl_inventory_events","before_row","jsonb",false,null,null,""],["union_pnl_inventory_events","event_id","bigint",true,null,null,"a"],["union_pnl_inventory_events","observed_at","timestamp with time zone",true,null,null,""],["union_pnl_inventory_events","operation","text",true,null,null,""],["union_pnl_inventory_events","row_id","uuid",true,null,null,""],["union_pnl_inventory_events","source_name","text",true,null,null,""],["union_pnl_inventory_events","transaction_id","xid8",true,null,null,""],["union_pnl_original_flows","game_scope","jsonb",true,null,null,""],["union_pnl_original_flows","ledger_id","uuid",true,null,null,""],["union_pnl_original_flows","ledger_snapshot","jsonb",true,null,null,""],["union_pnl_original_flows","recognized_at","timestamp with time zone",true,null,null,""],["union_pnl_original_flows","transaction_id","xid8",true,null,null,""],["union_pnl_transaction_frames","book_start","timestamp with time zone",true,null,null,""],["union_pnl_transaction_frames","observed_at","timestamp with time zone",true,null,null,""],["union_pnl_transaction_frames","transaction_id","xid8",true,null,null,""]]}$prepared$::jsonb;
+ v_pin jsonb; v_oid oid; v_actual jsonb;
+BEGIN
+ IF TG_OP='UPDATE' THEN
+  IF NEW.singleton IS NOT DISTINCT FROM OLD.singleton AND NEW.abi IS NOT DISTINCT FROM OLD.abi THEN
+   RETURN NEW;
+  END IF;
+  IF OLD.singleton IS TRUE AND NEW.singleton IS TRUE
+     AND OLD.abi='legacy-capacity-v1' AND NEW.abi='unlimited-mtt-v2' THEN
+   -- UPDATE already owns the ABI row. Never wait for maintenance in reverse
+   -- order: the owning row-only transaction obtains maintenance first.
+   IF NOT pg_try_advisory_xact_lock_shared(530090,1) THEN
+    RAISE EXCEPTION 'MTT_ACTIVATION_MAINTENANCE_ORDER_REFUSED' USING ERRCODE='55000';
+   END IF;
+   IF current_setting('transaction_isolation')<>'read committed'
+      OR current_setting('session_replication_role')<>'origin' THEN
+    RAISE EXCEPTION 'MTT_ACTIVATION_REQUIRES_ORIGIN_READ_COMMITTED' USING ERRCODE='55000';
+   END IF;
+   IF public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION 'MTT_ACTIVATION_MAINTENANCE_FROZEN' USING ERRCODE='55000';
+   END IF;
+   -- No DDL, parent FOR UPDATE, or financial effects after ABI exclusion.
+   -- These are the exact final authorities produced by the eight preparation
+   -- migrations, installed L03 authoring rules and reviewed L04 cohort closure.
+   -- pg_get_functiondef includes volatility/security/configuration.
+   FOR v_pin IN SELECT value FROM jsonb_array_elements(v_expected->'functions') LOOP
+    v_oid:=to_regprocedure(v_pin->>'signature');
+    SELECT jsonb_build_object('definition_md5',md5(pg_get_functiondef(p.oid)),
+      'owner',pg_get_userbyid(p.proowner),'acl',
+      (SELECT jsonb_agg(a::text ORDER BY a::text) FROM unnest(coalesce(p.proacl,acldefault('f',p.proowner)))a))
+      INTO v_actual FROM pg_proc p WHERE p.oid=v_oid;
+    IF v_actual IS DISTINCT FROM v_pin-'signature' THEN
+     RAISE EXCEPTION 'MTT_ACTIVATION_AUTHORITY_DRIFT: %',v_pin->>'signature' USING ERRCODE='55000';
+    END IF;
+   END LOOP;
+   FOR v_pin IN SELECT value FROM jsonb_array_elements(v_expected->'triggers') LOOP
+    SELECT jsonb_build_array(t.tgrelid::regclass::text,t.tgname,pg_get_triggerdef(t.oid),t.tgenabled)
+      INTO v_actual FROM pg_trigger t
+      WHERE t.tgrelid=to_regclass('public.'||(v_pin->>0)) AND t.tgname=v_pin->>1;
+    IF v_actual IS DISTINCT FROM v_pin THEN
+     RAISE EXCEPTION 'MTT_ACTIVATION_TRIGGER_DRIFT: %.%',v_pin->>0,v_pin->>1 USING ERRCODE='55000';
+    END IF;
+   END LOOP;
+   FOR v_pin IN SELECT value FROM jsonb_array_elements(v_expected->'constraints') LOOP
+    SELECT jsonb_build_array(x.conrelid::regclass::text,x.conname,pg_get_constraintdef(x.oid),x.convalidated)
+      INTO v_actual FROM pg_constraint x
+      WHERE x.conrelid=to_regclass('public.'||(v_pin->>0)) AND x.conname=v_pin->>1;
+    IF v_actual IS DISTINCT FROM v_pin OR EXISTS(
+      SELECT 1 FROM pg_trigger t JOIN pg_constraint x ON x.oid=t.tgconstraint
+       WHERE x.conrelid=to_regclass('public.'||(v_pin->>0)) AND x.conname=v_pin->>1
+         AND t.tgenabled<>'O') THEN
+     RAISE EXCEPTION 'MTT_ACTIVATION_CONSTRAINT_DRIFT: %.%',v_pin->>0,v_pin->>1 USING ERRCODE='55000';
+    END IF;
+   END LOOP;
+   FOR v_pin IN SELECT value FROM jsonb_array_elements(v_expected->'columns') LOOP
+    SELECT jsonb_build_array(a.attrelid::regclass::text,a.attname,a.atttypid::regtype::text,
+      a.attnotnull,a.attacl,pg_get_expr(d.adbin,d.adrelid)) INTO v_actual
+      FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+      WHERE a.attrelid=to_regclass('public.'||(v_pin->>0)) AND a.attname=v_pin->>1 AND NOT a.attisdropped;
+    IF v_actual IS DISTINCT FROM v_pin THEN
+     RAISE EXCEPTION 'MTT_ACTIVATION_COLUMN_DRIFT: %.%',v_pin->>0,v_pin->>1 USING ERRCODE='55000';
+    END IF;
+   END LOOP;
+   FOR v_pin IN SELECT value FROM jsonb_array_elements(v_expected->'indexes') LOOP
+    SELECT jsonb_build_array(i.indexrelid::regclass::text,pg_get_indexdef(i.indexrelid),i.indisvalid,i.indisready)
+      INTO v_actual FROM pg_index i WHERE i.indexrelid=to_regclass('public.'||(v_pin->>0));
+    IF v_actual IS DISTINCT FROM v_pin THEN
+     RAISE EXCEPTION 'MTT_ACTIVATION_INDEX_DRIFT: %',v_pin->>0 USING ERRCODE='55000';
+    END IF;
+   END LOOP;
+   FOR v_pin IN SELECT value FROM jsonb_array_elements(v_expected->'event_triggers') LOOP
+    SELECT jsonb_build_object('name',e.evtname,'tags',e.evttags,'event',e.evtevent,
+      'owner',pg_get_userbyid(e.evtowner),'enabled',e.evtenabled,'function',e.evtfoid::regprocedure::text)
+      INTO v_actual FROM pg_event_trigger e WHERE e.evtname=v_pin->>'name';
+    IF v_actual IS DISTINCT FROM v_pin THEN
+     RAISE EXCEPTION 'MTT_ACTIVATION_EVENT_GUARD_DRIFT: %',v_pin->>'name' USING ERRCODE='55000';
+    END IF;
+   END LOOP;
+   -- Newly installed funding writers also depend on private evidence tables.
+   -- Preserve all earlier activation checks and verify the reached table graph.
+   FOR v_pin IN SELECT value FROM jsonb_array_elements(v_expected->'funding_relations') LOOP
+    SELECT jsonb_build_object('name',c.relname,'owner',pg_get_userbyid(c.relowner),'acl',
+      (SELECT jsonb_agg(a::text ORDER BY a::text) FROM unnest(coalesce(c.relacl,acldefault('r',c.relowner)))a),
+      'rls',c.relrowsecurity,'force_rls',c.relforcerowsecurity) INTO v_actual
+      FROM pg_class c WHERE c.oid=to_regclass('public.'||(v_pin->>'name'));
+    IF v_actual IS DISTINCT FROM v_pin
+      OR EXISTS(SELECT 1 FROM pg_policy WHERE polrelid=to_regclass('public.'||(v_pin->>'name')))
+      OR (SELECT count(*) FROM pg_trigger WHERE tgrelid=to_regclass('public.'||(v_pin->>'name')) AND NOT tgisinternal)
+         <> (SELECT count(*) FROM jsonb_array_elements(v_expected->'triggers')x WHERE x->>0=v_pin->>'name')
+      OR (SELECT count(*) FROM pg_attribute WHERE attrelid=to_regclass('public.'||(v_pin->>'name')) AND attnum>0 AND NOT attisdropped)
+         <> (SELECT count(*) FROM jsonb_array_elements(v_expected->'funding_columns')x WHERE x->>0=v_pin->>'name') THEN
+     RAISE EXCEPTION 'MTT_ACTIVATION_FUNDING_RELATION_DRIFT: %',v_pin->>'name' USING ERRCODE='55000';
+    END IF;
+   END LOOP;
+   FOR v_pin IN SELECT value FROM jsonb_array_elements(v_expected->'funding_columns') LOOP
+    SELECT jsonb_build_array(a.attrelid::regclass::text,a.attname,a.atttypid::regtype::text,
+      a.attnotnull,a.attacl,pg_get_expr(d.adbin,d.adrelid),a.attidentity) INTO v_actual
+      FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+      WHERE a.attrelid=to_regclass('public.'||(v_pin->>0)) AND a.attname=v_pin->>1 AND NOT a.attisdropped;
+    IF v_actual IS DISTINCT FROM v_pin THEN
+     RAISE EXCEPTION 'MTT_ACTIVATION_FUNDING_COLUMN_DRIFT: %.%',v_pin->>0,v_pin->>1 USING ERRCODE='55000';
+    END IF;
+   END LOOP;
+   SELECT jsonb_build_object('proname',proname,'status',status,'notes',notes) INTO v_actual
+     FROM public.ca_money_rpc_registry WHERE proname='fn_ca_settle_satellite_cohort';
+   IF v_actual IS DISTINCT FROM v_expected->'cohort_registry' THEN
+    RAISE EXCEPTION 'MTT_ACTIVATION_COHORT_REGISTRY_DRIFT' USING ERRCODE='55000';
+   END IF;
+   SELECT jsonb_build_object('owner',pg_get_userbyid(c.relowner),'acl',
+     (SELECT jsonb_agg(a::text ORDER BY a::text) FROM unnest(coalesce(c.relacl,acldefault('r',c.relowner)))a),
+     'rls',c.relrowsecurity,'force_rls',c.relforcerowsecurity) INTO v_actual
+     FROM pg_class c WHERE c.oid='public.ca_mtt_admission_contract'::regclass;
+   IF v_actual IS DISTINCT FROM '{"owner":"postgres","acl":["postgres=arwdDxtm/postgres"],"rls":true,"force_rls":false}'::jsonb
+      OR EXISTS(SELECT 1 FROM pg_policy WHERE polrelid='public.ca_mtt_admission_contract'::regclass)
+      OR (SELECT count(*) FROM public.ca_mtt_admission_contract)<>1
+      OR (SELECT count(*) FROM pg_trigger WHERE tgrelid='public.ca_mtt_admission_contract'::regclass AND NOT tgisinternal)<>2
+      OR (SELECT count(*) FROM pg_attribute WHERE attrelid='public.ca_mtt_admission_contract'::regclass AND attnum>0 AND NOT attisdropped)<>2 THEN
+    RAISE EXCEPTION 'MTT_ACTIVATION_PRIVATE_CONTRACT_DRIFT' USING ERRCODE='55000';
+   END IF;
+   -- Terminal historical rows intentionally may remain unqualified. Existing
+   -- active-parent index and exact uppercase status constraint bound this read.
+   IF EXISTS(SELECT 1 FROM public.tournaments WHERE status IN ('ANNOUNCED','REGISTERING','LATE_REG','RUNNING')
+     AND (format_contract IS NULL OR format_contract NOT IN ('mtt-v1','seat-first-satellite-v1','sng-v1','spin-v1'))) THEN
+    RAISE EXCEPTION 'MTT_ACTIVATION_ACTIVE_FORMAT_UNQUALIFIED' USING ERRCODE='55000';
+   END IF;
+   RETURN NEW;
+  END IF;
+ END IF;
+ RAISE EXCEPTION 'MTT_ADMISSION_CONTRACT_IMMUTABLE' USING ERRCODE='55000';
+END $function$
+;
+REVOKE ALL ON FUNCTION public.fn_ca_guard_mtt_admission_contract() FROM PUBLIC,anon,authenticated,service_role;
+DO $postimage$ BEGIN
+IF NOT EXISTS(SELECT 1 FROM pg_proc p WHERE oid='public.fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)'::regprocedure AND md5(pg_get_functiondef(oid))='0fe132756ddf22122c91aa0d7fd323cd' AND pg_get_userbyid(proowner)='postgres' AND NOT EXISTS(SELECT 1 FROM aclexplode(coalesce(proacl,acldefault('f',proowner))) a WHERE a.grantee<>proowner)) THEN RAISE EXCEPTION 'ORIGINAL_PAID_AUTHORITY_POSTIMAGE_CHANGED: %','fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)'; END IF;
+IF NOT EXISTS(SELECT 1 FROM pg_proc p WHERE oid='public.fn_ca_guard_mtt_admission_contract()'::regprocedure AND md5(pg_get_functiondef(oid))='98363a25bad4495a4b32e7cd99354c37' AND pg_get_userbyid(proowner)='postgres' AND NOT EXISTS(SELECT 1 FROM aclexplode(coalesce(proacl,acldefault('f',proowner))) a WHERE a.grantee<>proowner)) THEN RAISE EXCEPTION 'ORIGINAL_PAID_AUTHORITY_POSTIMAGE_CHANGED: %','fn_ca_guard_mtt_admission_contract()'; END IF;
+END $postimage$;
+COMMIT;

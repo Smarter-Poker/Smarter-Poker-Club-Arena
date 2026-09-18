@@ -1,0 +1,15 @@
+# Original paid tournament chips retain their custody
+
+A historical regular MTT rebuy committed its debit and 2,500-chip roster grant without retaining a live chair. The event already holds a separate scoring excess: the surviving player's live 320,000 chips must remain untouched, while the counted supply is 317,500 and the stranded original paid grant is 2,500. The monetary conservation baseline is not a scoring-chip allowance and is not changed.
+
+The private `fn_ca_resume_original_paid_tournament_entry(uuid,jsonb)` continues only an exact unconsumed original purchase. It validates the original debit, wallet transaction, refund entitlement, legacy correlation key, accepted zero hand and independent durable settlement journal, closed historical seat, absent later play, exact current engine generation, complete expected row vector and no active hand custody. It takes the existing tournament seating/maintenance locks, refuses a contested lease without waiting in reverse lock order, and rechecks the freeze under its final locks.
+
+A private receipt bound to the current transaction lets the existing assignment owner transfer that original off-felt grant to its chair. Ordinary assignment retains its conservation refusal. The receipt records the preexisting 5,000 total scoring excess, completes atomically with the new occupancy and rebought candidate, is immutable, and supports exact replay. Wallets, ledger entries, escrow, prizes, funding counts and monetary baselines are unchanged. The existing manager wake and original Union P&L inventory observation remain part of the owning transaction.
+
+The additive activation-guard successor changes only the sealed assignment definition. It preserves every other guard pin and leaves the active ABI row untouched. No engine decoder, scheduled repair, payment, or broad historical sweep is added.
+
+Required accounting CI invokes the real PostgreSQL 17 qualification. It demonstrates the original assignment failure; exact successful custody and replay; 21 input/history/funding/freeze refusals; six role refusals; four duplicate commit/rollback races; actual lease-first exclusion, heartbeat/claim ordering, competing candidate commit/rollback and a freeze clock transition while waiting. It also proves the real activation succeeds only with the qualified successor, install body/ACL drift rolls back, and exact function ownership, private table and three trigger attachments match. Every race compares complete financial/custody vectors and rejects missing or false evidence.
+
+The existing public paid-purchase authority is independently captured and executed. An injected final receipt failure after its real debit, seat assignment and candidate closure rolls back all business rows. This is the existing prevention of new seatless paid purchases; the new authority addresses the original unconsumed historical entitlement without buying it again.
+
+Production installation, the single self-aborting original-case proof and the committed disposition remain separate evidence owned by the deployment task. Local qualification does not claim that these occurred.

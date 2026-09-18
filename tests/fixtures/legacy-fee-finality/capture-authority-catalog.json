@@ -1,0 +1,143 @@
+{
+  "function": {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "owner": "postgres",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "identity": "fn_ca_capture_tournament_fee_from_recorded_evidence(uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_capture_tournament_fee_from_recorded_evidence(p_rake_record_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  r public.rake_records%ROWTYPE; t record; e record; l record; tp record;\n  item jsonb; row_plan record; cutoff timestamptz; manifest jsonb;\n  contributors jsonb := '[]'; actual_union uuid; expected_kind text;\n  expected_entitlement text; expected_category text; source_type text;\n  uid uuid; reg uuid; count_rows int; reserve_id uuid; fingerprint text;\n  total_weight numeric := 0; total_cents bigint; floor_total bigint;\n  remainder_cents bigint; credit numeric; allocated numeric := 0;\n  contract jsonb; new_id uuid; result_ids uuid[] := '{}';\n  seen_players uuid[] := '{}'; seen_entitlements uuid[] := '{}';\n  player uuid; club uuid; registration uuid; ledger_id uuid;\n  entitlement_id uuid; charged_at timestamptz; weight numeric;\nBEGIN\n  SELECT * INTO r FROM public.rake_records WHERE id = p_rake_record_id FOR UPDATE;\n  IF NOT FOUND OR r.is_tournament IS DISTINCT FROM true OR r.tournament_id IS NULL\n   OR r.hand_id IS NOT NULL OR r.rake_amount IS NULL OR r.rake_amount <= 0\n   OR r.rake_amount <> round(r.rake_amount, 2) OR r.rake_amount::text IN ('NaN','Infinity','-Infinity')\n  THEN RAISE EXCEPTION 'positive_chip_tournament_fee_required' USING ERRCODE = '23514'; END IF;\n\n  -- The producer's own lock, so this can never race a live capture.\n  PERFORM pg_advisory_xact_lock(hashtextextended('accounting_tournament_fee:'||r.id::text, 0));\n\n  -- ENTRY CONDITIONS, narrower than the producer's in every direction.\n  SELECT starts_at INTO cutoff FROM public.accounting_tournament_fee_cutover WHERE singleton;\n  IF cutoff IS NULL THEN\n    RAISE EXCEPTION 'fee_cutover_missing' USING ERRCODE = '55000'; END IF;\n  IF r.created_at >= cutoff THEN\n    RAISE EXCEPTION 'tournament_fee_is_the_producers_to_capture' USING ERRCODE = '55000',\n      HINT = 'This record was charged at or after the cutover. Its own transaction owned its capture.'; END IF;\n  IF EXISTS (SELECT 1 FROM public.accounting_tournament_fee_batches WHERE rake_record_id = r.id) THEN\n    RAISE EXCEPTION 'tournament_fee_already_has_a_batch' USING ERRCODE = '23505'; END IF;\n\n  SELECT id, club_id, union_id, is_private, tournament_type, status INTO t\n    FROM public.tournaments WHERE id = r.tournament_id FOR SHARE;\n  IF NOT FOUND OR public.fn_poker_diamond_tournament(r.tournament_id) THEN\n    RAISE EXCEPTION 'chip_tournament_fee_required' USING ERRCODE = '23514'; END IF;\n  -- A settled event's books are closed. This may only complete a live one.\n  IF upper(COALESCE(t.status::text,'')) NOT IN ('RUNNING','BREAK','REGISTERING','COMPLETING') THEN\n    RAISE EXCEPTION 'tournament_fee_event_is_not_live' USING ERRCODE = '55000'; END IF;\n\n  actual_union := CASE WHEN t.is_private THEN NULL ELSE t.union_id END;\n  fingerprint  := public.fn_accounting_tournament_fee_fingerprint(r);\n\n  -- EVIDENCE ASSEMBLY, byte for byte the rule fn_stamp_accounting_tournament_fee uses.\n  IF r.source = 'fn_spin_book_entry' THEN\n    IF jsonb_typeof(r.player_contributions) IS DISTINCT FROM 'object'\n     OR (SELECT count(*) FROM jsonb_object_keys(r.player_contributions)) <> 3 THEN\n      RAISE EXCEPTION 'spin_fee_exact_paid_contributors_required' USING ERRCODE = '23514'; END IF;\n    FOR item IN SELECT jsonb_build_object('player_id', key, 'weight', value)\n                  FROM jsonb_each_text(r.player_contributions) ORDER BY key LOOP\n      SELECT * INTO tp FROM public.tournament_players\n       WHERE tournament_id = r.tournament_id AND user_id = (item->>'player_id')::uuid;\n      IF NOT FOUND OR tp.club_id IS NULL THEN\n        RAISE EXCEPTION 'spin_fee_entry_club_missing' USING ERRCODE = '23514'; END IF;\n      SELECT count(*) INTO count_rows FROM public.tournament_refund_entitlements x\n       WHERE x.tournament_id = r.tournament_id AND x.user_id = (item->>'player_id')::uuid\n         AND x.entitlement_kind = 'wallet_charge' AND x.charge_category = 'tournament_buyin'\n         AND x.created_at = tp.registered_at AND x.gross = (item->>'weight')::numeric;\n      IF count_rows <> 1 THEN\n        RAISE EXCEPTION 'spin_fee_exact_charge_ambiguous' USING ERRCODE = '23514'; END IF;\n      SELECT * INTO e FROM public.tournament_refund_entitlements x\n       WHERE x.tournament_id = r.tournament_id AND x.user_id = (item->>'player_id')::uuid\n         AND x.entitlement_kind = 'wallet_charge' AND x.charge_category = 'tournament_buyin'\n         AND x.created_at = tp.registered_at AND x.gross = (item->>'weight')::numeric;\n      contributors := contributors || jsonb_build_array(jsonb_build_object(\n        'player_id', e.user_id, 'club_id', e.refund_wallet_club_id, 'registration_id', tp.id,\n        'charge_ledger_id', e.source_ledger_id, 'entitlement_id', e.id,\n        'charged_at', e.created_at, 'weight', (item->>'weight')::numeric));\n    END LOOP;\n    SELECT count(*) INTO count_rows FROM public.spin_reserve_ledger s\n     WHERE s.tournament_id = r.tournament_id AND s.kind = 'contribution';\n    IF count_rows <> 1 THEN\n      RAISE EXCEPTION 'spin_fee_exact_reserve_required' USING ERRCODE = '23514'; END IF;\n    SELECT id INTO reserve_id FROM public.spin_reserve_ledger s\n     WHERE s.tournament_id = r.tournament_id AND s.kind = 'contribution';\n  ELSE\n    IF NOT COALESCE(r.metadata->>'user_id' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$', false) THEN\n      RAISE EXCEPTION 'tournament_fee_exact_player_required' USING ERRCODE = '23514'; END IF;\n    uid := (r.metadata->>'user_id')::uuid;\n    expected_entitlement := CASE r.source\n      WHEN 'fn_register_for_tournament' THEN 'wallet_charge'\n      WHEN 'fn_register_horse_for_tournament' THEN 'wallet_charge'\n      WHEN 'process_tournament_rebuy' THEN 'wallet_charge'\n      WHEN 'fn_award_satellite_seat' THEN 'satellite_seat'\n      WHEN 'fn_register_for_tournament_with_ticket' THEN 'tournament_ticket' END;\n    expected_category := CASE WHEN r.source = 'process_tournament_rebuy' THEN 'rebuy' ELSE 'tournament_buyin' END;\n    IF expected_entitlement IS NULL THEN\n      RAISE EXCEPTION 'tournament_fee_source_unsupported' USING ERRCODE = '55000'; END IF;\n    reg := NULLIF(r.metadata->>'registration_id','')::uuid;\n    IF reg IS NULL AND r.source = 'process_tournament_rebuy' THEN\n      SELECT id INTO reg FROM public.tournament_players\n       WHERE tournament_id = r.tournament_id AND user_id = uid; END IF;\n    IF reg IS NULL THEN\n      RAISE EXCEPTION 'tournament_fee_exact_registration_required' USING ERRCODE = '23514'; END IF;\n    SELECT count(*) INTO count_rows FROM public.tournament_refund_entitlements x\n     WHERE x.tournament_id = r.tournament_id AND x.user_id = uid AND x.created_at = r.created_at\n       AND x.refund_fee = r.rake_amount AND x.entitlement_kind = expected_entitlement\n       AND (CASE WHEN expected_entitlement = 'wallet_charge' THEN x.charge_category = expected_category\n                 ELSE x.registration_id = reg END);\n    IF count_rows <> 1 THEN\n      RAISE EXCEPTION 'tournament_fee_exact_charge_ambiguous' USING ERRCODE = '23514'; END IF;\n    SELECT * INTO e FROM public.tournament_refund_entitlements x\n     WHERE x.tournament_id = r.tournament_id AND x.user_id = uid AND x.created_at = r.created_at\n       AND x.refund_fee = r.rake_amount AND x.entitlement_kind = expected_entitlement\n       AND (CASE WHEN expected_entitlement = 'wallet_charge' THEN x.charge_category = expected_category\n                 ELSE x.registration_id = reg END);\n    contributors := jsonb_build_array(jsonb_build_object(\n      'player_id', e.user_id, 'club_id', e.refund_wallet_club_id, 'registration_id', reg,\n      'charge_ledger_id', e.source_ledger_id, 'entitlement_id', e.id,\n      'charged_at', e.created_at, 'weight', r.rake_amount));\n  END IF;\n\n  manifest := jsonb_build_object('union_id', actual_union, 'game_type', lower(t.tournament_type),\n    'contributors', contributors, 'spin_reserve_id', reserve_id);\n\n  -- EVIDENCE VERIFICATION, every check fn_capture_accounting_tournament_fee makes.\n  -- The two provenance rules it applies are the only ones deliberately absent:\n  -- the record need not have been created in this transaction, and a\n  -- contributor's charge need not follow the cutover. Nothing else is relaxed.\n  expected_kind := CASE r.source\n    WHEN 'fn_register_for_tournament' THEN 'tournament_entry_fee'\n    WHEN 'fn_register_horse_for_tournament' THEN 'tournament_entry_fee'\n    WHEN 'fn_award_satellite_seat' THEN 'satellite_seat_entry_fee'\n    WHEN 'fn_register_for_tournament_with_ticket' THEN 'tournament_ticket_entry_fee'\n    WHEN 'fn_spin_book_entry' THEN 'spin_rake'\n    WHEN 'process_tournament_rebuy' THEN r.metadata->>'kind' END;\n  IF expected_kind IS NULL OR r.metadata->>'kind' IS DISTINCT FROM expected_kind\n   OR (r.source = 'process_tournament_rebuy' AND expected_kind NOT IN ('tournament_rebuy_fee','tournament_reentry_fee'))\n  THEN RAISE EXCEPTION 'tournament_fee_source_unsupported' USING ERRCODE = '55000'; END IF;\n\n  count_rows := jsonb_array_length(manifest->'contributors');\n  IF (r.source = 'fn_spin_book_entry' AND count_rows <> 3)\n   OR (r.source <> 'fn_spin_book_entry' AND count_rows <> 1) THEN\n    RAISE EXCEPTION 'tournament_fee_contributor_count_invalid' USING ERRCODE = '23514'; END IF;\n\n  FOR item IN SELECT value FROM jsonb_array_elements(manifest->'contributors') LOOP\n    player := (item->>'player_id')::uuid; club := (item->>'club_id')::uuid;\n    registration := (item->>'registration_id')::uuid; ledger_id := (item->>'charge_ledger_id')::uuid;\n    entitlement_id := (item->>'entitlement_id')::uuid; charged_at := (item->>'charged_at')::timestamptz;\n    weight := (item->>'weight')::numeric;\n    IF player IS NULL OR club IS NULL OR registration IS NULL OR ledger_id IS NULL\n     OR entitlement_id IS NULL OR charged_at IS NULL OR NOT isfinite(charged_at)\n     OR charged_at > r.created_at\n     OR weight IS NULL OR weight <= 0 OR weight <> round(weight,2)\n     OR weight::text IN ('NaN','Infinity','-Infinity')\n     OR player = ANY(seen_players) OR entitlement_id = ANY(seen_entitlements)\n    THEN RAISE EXCEPTION 'tournament_fee_contributor_invalid' USING ERRCODE = '23514'; END IF;\n    seen_players := array_append(seen_players, player);\n    seen_entitlements := array_append(seen_entitlements, entitlement_id);\n\n    SELECT * INTO e  FROM public.tournament_refund_entitlements WHERE id = entitlement_id;\n    SELECT * INTO l  FROM public.chip_ledger WHERE id = ledger_id;\n    SELECT * INTO tp FROM public.tournament_players WHERE id = registration;\n    IF e.id IS NULL OR l.id IS NULL OR tp.id IS NULL\n     OR e.tournament_id IS DISTINCT FROM r.tournament_id OR e.user_id IS DISTINCT FROM player\n     OR e.refund_wallet_club_id IS DISTINCT FROM club OR e.source_ledger_id IS DISTINCT FROM ledger_id\n     OR e.created_at IS DISTINCT FROM charged_at\n     OR tp.tournament_id IS DISTINCT FROM r.tournament_id OR tp.user_id IS DISTINCT FROM player\n     OR tp.club_id IS DISTINCT FROM club\n     OR l.created_at IS DISTINCT FROM charged_at OR l.amount IS DISTINCT FROM e.gross\n    THEN RAISE EXCEPTION 'tournament_fee_charge_evidence_mismatch' USING ERRCODE = '23514'; END IF;\n\n    IF r.source = 'fn_spin_book_entry' THEN\n      IF e.entitlement_kind IS DISTINCT FROM 'wallet_charge' OR e.charge_category IS DISTINCT FROM 'tournament_buyin'\n       OR e.gross IS DISTINCT FROM weight OR l.from_type IS DISTINCT FROM 'player_wallet'\n       OR l.from_entity_id IS DISTINCT FROM player OR l.to_type IS DISTINCT FROM 'prize_liability'\n       OR l.to_entity_id IS DISTINCT FROM r.tournament_id OR l.club_id IS DISTINCT FROM club\n       OR l.category IS DISTINCT FROM 'tournament_buyin'\n       OR (r.player_contributions->>player::text)::numeric IS DISTINCT FROM weight\n      THEN RAISE EXCEPTION 'spin_fee_charge_evidence_mismatch' USING ERRCODE = '23514'; END IF;\n    ELSE\n      IF e.refund_fee IS DISTINCT FROM r.rake_amount OR weight IS DISTINCT FROM r.rake_amount\n       OR r.metadata->>'user_id' IS DISTINCT FROM player::text\n      THEN RAISE EXCEPTION 'tournament_fee_amount_evidence_mismatch' USING ERRCODE = '23514'; END IF;\n      IF r.source IN ('fn_register_for_tournament','fn_register_horse_for_tournament','process_tournament_rebuy') THEN\n        source_type := CASE WHEN r.source = 'process_tournament_rebuy' THEN 'rebuy' ELSE 'tournament_buyin' END;\n        IF e.entitlement_kind IS DISTINCT FROM 'wallet_charge' OR e.charge_category IS DISTINCT FROM source_type\n         OR l.from_type IS DISTINCT FROM 'player_wallet' OR l.from_entity_id IS DISTINCT FROM player\n         OR l.to_type IS DISTINCT FROM 'prize_liability' OR l.to_entity_id IS DISTINCT FROM r.tournament_id\n         OR l.club_id IS DISTINCT FROM club OR l.category IS DISTINCT FROM source_type\n         OR (r.source <> 'process_tournament_rebuy' AND r.metadata->>'registration_id' IS DISTINCT FROM registration::text)\n        THEN RAISE EXCEPTION 'tournament_fee_wallet_evidence_mismatch' USING ERRCODE = '23514'; END IF;\n      ELSIF r.source = 'fn_register_for_tournament_with_ticket' THEN\n        IF e.entitlement_kind IS DISTINCT FROM 'tournament_ticket' OR e.registration_id IS DISTINCT FROM registration\n         OR e.source_ticket_id IS NULL OR r.metadata->>'ticket_id' IS DISTINCT FROM e.source_ticket_id::text\n         OR r.metadata->>'registration_id' IS DISTINCT FROM registration::text\n         OR l.from_type IS DISTINCT FROM 'escrow' OR l.from_entity_id IS DISTINCT FROM e.source_ticket_id\n         OR l.to_type IS DISTINCT FROM 'prize_liability' OR l.to_entity_id IS DISTINCT FROM r.tournament_id\n         OR l.category IS DISTINCT FROM 'ticket_redeem'\n        THEN RAISE EXCEPTION 'tournament_fee_ticket_evidence_mismatch' USING ERRCODE = '23514'; END IF;\n      ELSE\n        IF e.entitlement_kind IS DISTINCT FROM 'satellite_seat' OR e.registration_id IS DISTINCT FROM registration\n         OR e.source_satellite_id IS NULL OR r.metadata->>'satellite_id' IS DISTINCT FROM e.source_satellite_id::text\n         OR r.metadata->>'registration_id' IS DISTINCT FROM registration::text\n         OR l.from_type IS DISTINCT FROM 'prize_liability' OR l.from_entity_id IS DISTINCT FROM e.source_satellite_id\n         OR l.to_type IS DISTINCT FROM 'prize_liability' OR l.to_entity_id IS DISTINCT FROM r.tournament_id\n         OR l.category IS DISTINCT FROM 'tournament_buyin'\n        THEN RAISE EXCEPTION 'tournament_fee_satellite_evidence_mismatch' USING ERRCODE = '23514'; END IF;\n      END IF;\n    END IF;\n    total_weight := total_weight + weight;\n  END LOOP;\n\n  IF r.source = 'fn_spin_book_entry' THEN\n    IF (SELECT count(DISTINCT (x->>'weight')::numeric) FROM jsonb_array_elements(manifest->'contributors') x) <> 1\n     OR NOT EXISTS (SELECT 1 FROM public.spin_reserve_ledger s\n        WHERE s.id = (manifest->>'spin_reserve_id')::uuid AND s.tournament_id = r.tournament_id\n          AND s.kind = 'contribution' AND s.seats = 3 AND s.house_rake = r.rake_amount\n          AND s.amount = total_weight - r.rake_amount AND s.buy_in = total_weight/3)\n    THEN RAISE EXCEPTION 'spin_fee_reserve_evidence_mismatch' USING ERRCODE = '23514'; END IF;\n  END IF;\n\n  -- ALLOCATION AND CONTRACT, the producer's arithmetic unchanged: largest\n  -- remainder to whole cents, UUID order breaking exact fractional ties.\n  total_cents := (r.rake_amount * 100)::bigint;\n  SELECT sum(floor(total_cents * (x->>'weight')::numeric / total_weight)) INTO floor_total\n    FROM jsonb_array_elements(manifest->'contributors') x;\n  remainder_cents := total_cents - floor_total;\n\n  INSERT INTO public.accounting_tournament_fee_batches\n    (rake_record_id, tournament_id, source_fingerprint, rake_amount, source_manifest)\n  VALUES (r.id, r.tournament_id, fingerprint, r.rake_amount,\n    manifest || jsonb_build_object(\n      'reconciled_at', transaction_timestamp(),\n      'reconciled_by', 'fn_ca_reconcile_stranded_tournament_fee',\n      'reconciliation_note', 'charged before the fee cutover; captured from its own recorded evidence'));\n\n  FOR row_plan IN\n    SELECT x, floor(total_cents * (x->>'weight')::numeric / total_weight)\n      + CASE WHEN row_number() OVER (\n          ORDER BY total_cents * (x->>'weight')::numeric / total_weight\n            - floor(total_cents * (x->>'weight')::numeric / total_weight) DESC, x->>'player_id'\n        ) <= remainder_cents THEN 1 ELSE 0 END AS cents\n      FROM jsonb_array_elements(manifest->'contributors') x ORDER BY x->>'player_id'\n  LOOP\n    item := row_plan.x; credit := row_plan.cents / 100.0;\n    contract := public.fn_accounting_earning_contract((item->>'club_id')::uuid,\n      (item->>'player_id')::uuid, credit, actual_union, (item->>'charged_at')::timestamptz);\n    IF contract->>'player_id' IS DISTINCT FROM item->>'player_id'\n     OR contract->>'club_id' IS DISTINCT FROM item->>'club_id'\n     OR (contract->>'rake_credit')::numeric IS DISTINCT FROM credit\n     OR NULLIF(contract->>'union_id','')::uuid IS DISTINCT FROM actual_union\n     OR (contract->>'terms_at')::timestamptz IS DISTINCT FROM (item->>'charged_at')::timestamptz\n    THEN RAISE EXCEPTION 'tournament_fee_contract_scope_mismatch' USING ERRCODE = '23514'; END IF;\n    INSERT INTO public.accounting_tournament_fee_sources\n      (rake_record_id, tournament_id, player_id, club_id, union_id, coordinator_union_id,\n       game_type, registration_id, source_charge_ledger_id, source_entitlement_id,\n       charged_at, rake_credit, contract)\n    VALUES (r.id, r.tournament_id, (item->>'player_id')::uuid, (item->>'club_id')::uuid, actual_union,\n      NULLIF(contract->>'coordinator_union_id','')::uuid, manifest->>'game_type',\n      (item->>'registration_id')::uuid, (item->>'charge_ledger_id')::uuid,\n      (item->>'entitlement_id')::uuid, (item->>'charged_at')::timestamptz, credit, contract)\n    RETURNING id INTO new_id;\n    result_ids := array_append(result_ids, new_id);\n    allocated := allocated + credit;\n  END LOOP;\n\n  IF allocated IS DISTINCT FROM r.rake_amount THEN\n    RAISE EXCEPTION 'tournament_fee_credit_not_conserved' USING ERRCODE = '23514'; END IF;\n\n  -- The plan's own test, applied to this record before the caller moves on.\n  IF EXISTS (SELECT 1 FROM public.rake_records q\n               JOIN public.accounting_tournament_fee_batches b ON b.rake_record_id = q.id\n              WHERE q.id = r.id\n                AND (b.status IS DISTINCT FROM 'captured'\n                  OR b.tournament_id IS DISTINCT FROM r.tournament_id\n                  OR b.source_fingerprint IS DISTINCT FROM public.fn_accounting_tournament_fee_fingerprint(q)\n                  OR b.rake_amount IS DISTINCT FROM q.rake_amount\n                  OR b.rake_amount IS DISTINCT FROM (SELECT sum(s.rake_credit)\n                       FROM public.accounting_tournament_fee_sources s WHERE s.rake_record_id = q.id)))\n  THEN RAISE EXCEPTION 'tournament_fee_reconciled_batch_would_not_satisfy_the_plan' USING ERRCODE = '23514'; END IF;\n\n  INSERT INTO public.ca_stranded_fee_reconciliations\n    (rake_record_id, tournament_id, rake_amount, contributor_count, source_ids, charged_at, cutover_at)\n  VALUES (r.id, r.tournament_id, r.rake_amount, array_length(result_ids,1), result_ids, r.created_at, cutoff);\n\n  RETURN jsonb_build_object('accounting_version', 2, 'status', 'captured', 'reconciled', true,\n    'rake_record_id', r.id, 'tournament_id', r.tournament_id, 'source_ids', result_ids,\n    'rake_credit', allocated, 'payable', false);\nEND\n$function$\n",
+    "source_md5": "dcc3bc8cad78ec0d934a386a20804023",
+    "definition_md5": "47c613c5ecc3d383db4b4941dc1ff830"
+  },
+  "relation": {
+    "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "rls": true,
+    "name": "ca_stranded_fee_reconciliations",
+    "owner": "postgres",
+    "columns": [
+      {
+        "name": "rake_record_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "rake_amount",
+        "type": "numeric",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "contributor_count",
+        "type": "integer",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "source_ids",
+        "type": "uuid[]",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "charged_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "cutover_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "reconciled_at",
+        "type": "timestamp with time zone",
+        "default": "transaction_timestamp()",
+        "not_null": true
+      },
+      {
+        "name": "reconciled_by",
+        "type": "uuid",
+        "default": "COALESCE(auth.uid(), '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid)",
+        "not_null": true
+      }
+    ],
+    "indexes": [
+      {
+        "name": "ca_stranded_fee_reconciliations_pkey",
+        "definition": "CREATE UNIQUE INDEX ca_stranded_fee_reconciliations_pkey ON public.ca_stranded_fee_reconciliations USING btree (rake_record_id)"
+      }
+    ],
+    "policies": null,
+    "triggers": [
+      {
+        "name": "ca_stranded_fee_reconciliations_immutable",
+        "enabled": "O",
+        "definition": "CREATE TRIGGER ca_stranded_fee_reconciliations_immutable BEFORE DELETE OR UPDATE ON public.ca_stranded_fee_reconciliations FOR EACH ROW EXECUTE FUNCTION fn_ca_stranded_fee_reconciliations_immutable()",
+        "function_acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "function_owner": "postgres",
+        "function_config": null,
+        "function_identity": "fn_ca_stranded_fee_reconciliations_immutable()",
+        "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_stranded_fee_reconciliations_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'ca_stranded_fee_reconciliations is append only' USING ERRCODE = '55000';\nEND\n$function$\n"
+      },
+      {
+        "name": "ca_stranded_fee_reconciliations_no_truncate",
+        "enabled": "O",
+        "definition": "CREATE TRIGGER ca_stranded_fee_reconciliations_no_truncate BEFORE TRUNCATE ON public.ca_stranded_fee_reconciliations FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_stranded_fee_reconciliations_immutable()",
+        "function_acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "function_owner": "postgres",
+        "function_config": null,
+        "function_identity": "fn_ca_stranded_fee_reconciliations_immutable()",
+        "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_stranded_fee_reconciliations_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'ca_stranded_fee_reconciliations is append only' USING ERRCODE = '55000';\nEND\n$function$\n"
+      }
+    ],
+    "force_rls": false,
+    "constraints": [
+      {
+        "name": "ca_stranded_fee_reconciliations_check",
+        "validated": true,
+        "definition": "CHECK ((charged_at < cutover_at))"
+      },
+      {
+        "name": "ca_stranded_fee_reconciliations_check1",
+        "validated": true,
+        "definition": "CHECK ((cardinality(source_ids) = contributor_count))"
+      },
+      {
+        "name": "ca_stranded_fee_reconciliations_contributor_count_check",
+        "validated": true,
+        "definition": "CHECK ((contributor_count > 0))"
+      },
+      {
+        "name": "ca_stranded_fee_reconciliations_pkey",
+        "validated": true,
+        "definition": "PRIMARY KEY (rake_record_id)"
+      },
+      {
+        "name": "ca_stranded_fee_reconciliations_rake_amount_check",
+        "validated": true,
+        "definition": "CHECK (((rake_amount > (0)::numeric) AND (rake_amount = round(rake_amount, 2))))"
+      },
+      {
+        "name": "ca_stranded_fee_reconciliations_rake_record_id_fkey",
+        "validated": true,
+        "definition": "FOREIGN KEY (rake_record_id) REFERENCES rake_records(id)"
+      },
+      {
+        "name": "ca_stranded_fee_reconciliations_source_ids_check",
+        "validated": true,
+        "definition": "CHECK ((cardinality(source_ids) > 0))"
+      }
+    ]
+  },
+  "observed_at": "2026-09-18T09:24:44.352178+00:00"
+}

@@ -162,7 +162,9 @@ export function horseTournamentProvenanceMatchesSnapshot(snapshot: {
     (value.source === null || value.source.tournamentId === t.tournamentId) &&
     value.ageMs === t.sourceAgeMs &&
     value.issues.every((issue) => t.contextIssues?.includes(issue)) &&
-    (value.status === 'complete' || t.contextStatus === value.status) &&
+    (value.status === 'complete'
+      ? t.contextStatus === 'complete' || t.contextStatus === 'incomplete'
+      : t.contextStatus === value.status) &&
     p.actorId === snapshot.player.user_id &&
     p.actorSeat === snapshot.player.seat &&
     p.dealerSeat === (gs.dealerSeat ?? null) &&

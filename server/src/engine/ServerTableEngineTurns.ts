@@ -2535,8 +2535,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
     if (
       tctx &&
-      tctx.currentBigBlind > 0 &&
-      Math.abs(tctx.currentBigBlind - currentBigBlind) > 0.005
+      ((tctx.currentBigBlind > 0 && Math.abs(tctx.currentBigBlind - currentBigBlind) > 0.005) ||
+        (tctx.currentSmallBlind > 0 &&
+          Math.abs(tctx.currentSmallBlind - currentSmallBlind) > 0.005) ||
+        Math.abs(tctx.currentAnte - currentAnte) > 0.005 ||
+        (tctx.anteType === 'big_blind') !== handBlinds.bigBlindAnte)
     ) {
       localIssues.push('blind_level_cache_lag');
     }

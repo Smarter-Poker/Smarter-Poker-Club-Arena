@@ -630,6 +630,7 @@ describe('HorseDecisionWorkerRuntime', () => {
     'generation',
     'digest',
     'status',
+    'local_status',
   ])('refuses mismatched Phase 6 %s provenance before calling the policy', async (fault) => {
     const r = withPhase6Provenance({ ...phase6TournamentRequest(), fence: 'table-a:12:2:9:4' });
     const p = r.gameState.tournament!.contextProvenance!;
@@ -644,6 +645,13 @@ describe('HorseDecisionWorkerRuntime', () => {
     if (fault === 'generation') p.source!.generation = 0;
     if (fault === 'digest') p.source!.contextDigest = 'unverified';
     if (fault === 'status') p.status = 'warming';
+    if (fault === 'local_status') {
+      r.gameState.tournament!.contextStatus = 'stale';
+      r.gameState.tournament!.contextIssues = [
+        TOURNAMENT_CONTEXT_INCOMPLETE,
+        'tournament_context_stale',
+      ];
+    }
     const h = harness();
     h.runtime.receive(rekey(r));
     await h.runtime.drain();

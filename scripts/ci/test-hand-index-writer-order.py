@@ -1,5 +1,6 @@
 """Bounded native index-writer probe; no production connections or financial qualification."""
 import argparse
+import datetime
 import hashlib
 import json
 import os
@@ -106,6 +107,13 @@ def await_wait(name, event):
 H = '00000000-0000-0000-0000-000000000101'
 T = '00000000-0000-0000-0000-000000000201'
 C = '00000000-0000-0000-0000-000000000301'
+# Keep the synthetic hand and both cursors close to the private clock. A fixed
+# September 13 seed grows the every-seat scan each day and exhausts the session
+# deadline on hosted workers; the contention and every assertion stay unchanged.
+fixture_hand = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=2)
+HAND_AT = fixture_hand.isoformat()
+FLOOR_AT = (fixture_hand - datetime.timedelta(hours=1)).isoformat()
+LATER_AT = (fixture_hand + datetime.timedelta(hours=1)).isoformat()
 project = f"SELECT public.fn_project_hand_side_effects_after_post_commit_20260908('{H}');"
 refresh = 'SELECT * FROM public.ca_refresh_hand_player_index(3000);'
 every = 'SELECT public.ca_index_every_seat(60);'
@@ -114,10 +122,10 @@ def seed(n):
     players = json.dumps([{'userId': f'00000000-0000-0000-0000-{i:012d}', 'stack': 100} for i in range(1, n+1)])
     sql(f"""TRUNCATE hand_history,hand_projection_outbox,ca_hand_player_idx,trace;
       INSERT INTO hand_history(id,created_at,players,table_id,hand_number,tournament_id)
-      VALUES('{H}','2026-09-13 04:00:00+00','{players}','{T}',1,NULL);
+      VALUES('{H}','{HAND_AT}','{players}','{T}',1,NULL);
       INSERT INTO hand_projection_outbox VALUES('{H}','{T}',1);
-      UPDATE ca_hand_player_idx_state SET idx_floor='2026-09-13 03:00:00+00',idx_ceil='2026-09-13 03:00:00+00',backfill_complete=true,rows_indexed=0;
-      UPDATE ca_idx_every_seat_state SET cursor_at='2026-09-13 03:00:00+00',done=false,hands_seen=0,rows_added=0;""")
+      UPDATE ca_hand_player_idx_state SET idx_floor='{FLOOR_AT}',idx_ceil='{FLOOR_AT}',backfill_complete=true,rows_indexed=0;
+      UPDATE ca_idx_every_seat_state SET cursor_at='{FLOOR_AT}',done=false,hands_seen=0,rows_added=0;""")
 
 def trace_order(statement):
     return json.loads(sql('BEGIN; '+statement+" SELECT coalesce(json_agg(user_id ORDER BY seq),'[]') FROM trace; ROLLBACK;").splitlines()[-1])
@@ -246,7 +254,7 @@ try:
         a.close();b.close()
     seed(n)
     sql('BEGIN; '+refresh+' ROLLBACK;')
-    check('rollback retains original cursor and removes all index writes',sql("SELECT (SELECT count(*) FROM ca_hand_player_idx)=0 AND idx_ceil='2026-09-13 03:00:00+00'::timestamptz FROM ca_hand_player_idx_state;")=='t')
+    check('rollback retains original cursor and removes all index writes',sql(f"SELECT (SELECT count(*) FROM ca_hand_player_idx)=0 AND idx_ceil='{FLOOR_AT}'::timestamptz FROM ca_hand_player_idx_state;")=='t')
     sql('BEGIN; '+project+' ROLLBACK;')
     check('rollback retains exact outbox and no partial index',sql('SELECT (SELECT count(*) FROM ca_hand_player_idx)=0 AND (SELECT count(*) FROM hand_projection_outbox)=1;')=='t')
     sql('CREATE TRIGGER fixture_legacy AFTER UPDATE ON hand_history FOR EACH ROW EXECUTE FUNCTION trg_ca_stats_live_from_hand();')
@@ -269,9 +277,9 @@ try:
     check('browser roles cannot execute either bulk writer',sql("SELECT NOT has_function_privilege('anon','ca_refresh_hand_player_index(integer)','EXECUTE') AND NOT has_function_privilege('authenticated','ca_index_every_seat(integer)','EXECUTE');")=='t')
     check('service role retains both bulk writer permissions',sql("SELECT has_function_privilege('service_role','ca_refresh_hand_player_index(integer)','EXECUTE') AND has_function_privilege('service_role','ca_index_every_seat(integer)','EXECUTE');")=='t')
     seed(n)
-    sql("UPDATE ca_hand_player_idx_state SET idx_floor='2026-09-13 05:00:00+00',idx_ceil='2026-09-13 05:00:00+00',backfill_complete=false;")
+    sql(f"UPDATE ca_hand_player_idx_state SET idx_floor='{LATER_AT}',idx_ceil='{LATER_AT}',backfill_complete=false;")
     sql(refresh)
-    check('backward fill retains every seat and its exact floor',sql("SELECT (SELECT count(*) FROM ca_hand_player_idx)="+str(n)+" AND idx_floor='2026-09-13 04:00:00+00'::timestamptz AND backfill_complete FROM ca_hand_player_idx_state;")=='t')
+    check('backward fill retains every seat and its exact floor',sql("SELECT (SELECT count(*) FROM ca_hand_player_idx)="+str(n)+f" AND idx_floor='{HAND_AT}'::timestamptz AND backfill_complete FROM ca_hand_player_idx_state;")=='t')
     for statement,label in [(refresh,'refresh'),(project,'projector'),(every,'every-seat')]:
         seed(2)
         extra=json.dumps([{'userId':'00000000-0000-0000-0000-000000000001'}, {'userId':'3ebbefd2-c468-4853-8576-10104335b319'}, {'userId':'invalid'}, {'userId':None}, {}])

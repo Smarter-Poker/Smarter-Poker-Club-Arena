@@ -186,8 +186,8 @@ def install_funding(e, database):
     e.sql(database, file=path, label='actual-original-funding-frame-closure')
 
 
-def guard_refusals(e, template, refusal):
-    transaction = (e.root / ACTIVATION).read_text()
+def guard_refusals(e, template, refusal, activation=ACTIVATION):
+    transaction = (e.root / activation).read_text()
     for name, mutation, error in (
         ('funding-capture-security', 'ALTER FUNCTION public.fn_ca_record_tournament_participant_funding(uuid,text,text,numeric,text,uuid,uuid,jsonb) SECURITY INVOKER;',
          'MTT_ACTIVATION_AUTHORITY_DRIFT: public.fn_ca_record_tournament_participant_funding(uuid,text,text,numeric,text,uuid,uuid,jsonb)'),

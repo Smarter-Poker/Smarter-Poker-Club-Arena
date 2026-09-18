@@ -124,3 +124,21 @@ def qualify(e, root, native, template, output, probe):
         proof=validate_result(code,stdout,stderr,mode,negative)
         e.discard(db)
         e.report['races'].append({'case':label,**proof,'database_removed':True})
+
+
+def validate_entry_club_result(result):
+    """The directly invoked qualifier cannot pass after dropping this proof."""
+    expected = {
+        'original_refusal': 'tournament_fee_charge_evidence_mismatch',
+        'original_atomic_rollback': True, 'successor_funded_v2': True,
+        'forged_controls': 7, 'successor_atomic_rollback': True,
+        'transfer_club_matches_registration': True, 'registration_club_exact': True,
+        'target_cancellation_member_refund': 100, 'target_cancellation_total_refund': 200,
+        'target_cancellation_replay_exact': True, 'successor_funded_v3': True,
+        'exact_postimage_owner_acl_triggers': True,
+    }
+    if not isinstance(result, dict) or result != expected or any(
+        type(result[key]) is not type(value) for key, value in expected.items()
+    ):
+        raise RuntimeError('satellite entry club qualification is missing or incomplete')
+    return True

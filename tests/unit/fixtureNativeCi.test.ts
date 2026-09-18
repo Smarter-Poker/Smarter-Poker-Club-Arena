@@ -207,6 +207,8 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/test-satellite-qualifiers.py',
     'scripts/ci/satellite_qualifier_fixture.py',
     'scripts/ci/satellite_qualifier_concurrency.py',
+    'scripts/ci/satellite_entry_club_native.py',
+    'scripts/ci/probes/satellite-entry-club-native.sql',
     'scripts/ci/fixtures/satellite-qualifiers/current-money-ddl-guard-20260917.json',
     'scripts/ci/probes/satellite-qualifiers-native.sql',
     'scripts/ci/probes/satellite-qualifier-reader.spec',
@@ -268,6 +270,7 @@ describe('required CI owns native fixture verification', () => {
   it.each([
     'scripts/ci/mtt_activation_native.py',
     'scripts/ci/mtt_activation_funding.py',
+    'scripts/ci/mtt_activation_satellite.py',
     'scripts/ci/satellite_qualifier_fixture.py',
     'scripts/ci/mtt_break_authoring_native.py',
     'scripts/ci/fixtures/mtt-format-activation/source-binding.json',

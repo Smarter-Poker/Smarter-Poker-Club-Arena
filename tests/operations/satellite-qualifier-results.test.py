@@ -144,5 +144,32 @@ class SatelliteReaderEvidence(unittest.TestCase):
                 MODULE.validate_reader_result(code,self.output(),stderr,'commit',False)
 
 
+
+class SatelliteEntryClubEvidence(unittest.TestCase):
+    def complete(self):
+        return {'original_refusal': 'tournament_fee_charge_evidence_mismatch',
+                'original_atomic_rollback': True, 'successor_funded_v2': True,
+                'forged_controls': 7, 'successor_atomic_rollback': True,
+                'transfer_club_matches_registration': True, 'registration_club_exact': True,
+                'target_cancellation_member_refund': 100, 'target_cancellation_total_refund': 200,
+                'target_cancellation_replay_exact': True, 'successor_funded_v3': True,
+                'exact_postimage_owner_acl_triggers': True}
+
+    def test_complete_qualified_result_is_required(self):
+        self.assertTrue(MODULE.validate_entry_club_result(self.complete()))
+
+    def test_missing_invocation_or_any_missing_proof_refuses(self):
+        for result in [None, {}, *[{k: v for k, v in self.complete().items() if k != omit}
+                                  for omit in self.complete()]]:
+            with self.subTest(result=result), self.assertRaises(RuntimeError):
+                MODULE.validate_entry_club_result(result)
+
+    def test_false_or_inexact_evidence_refuses(self):
+        for key in self.complete():
+            for value in [False, None, 0, 'true']:
+                result = self.complete(); result[key] = value
+                with self.subTest(key=key,value=value), self.assertRaises(RuntimeError):
+                    MODULE.validate_entry_club_result(result)
+
 if __name__ == '__main__':
     unittest.main()

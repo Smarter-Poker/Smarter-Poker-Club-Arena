@@ -16,8 +16,9 @@
     "scripts/ci/fixtures/mtt-format-activation/prepared-authorities.json": "31db92405e704d3141a2ab6cf7dec9fa41953d6d9d1a18225ebf04671c7ce8f6",
     "scripts/ci/fixtures/mtt-format-activation/transition.sql": "e4d03d275ac03a0d4a614c276a31c664bbf51c9d7f5aff2f1e3690e18dc53786",
     "scripts/ci/fixtures/satellite-qualifiers/current-money-ddl-guard-20260917.json": "8884f9471acd933072afc05ef3f2427cc63a28de9744785d1bc10611f730ef5b",
-    "scripts/ci/mtt_activation_funding.py": "13937754a4f245f63297f45a8edbaa4e1935007d48989a917270a4ec36e62dd6",
-    "scripts/ci/mtt_activation_native.py": "a2739ce55952dbc0f3da0c53194fc7728c40a28dbd4de0c5fc2040c003db0f21",
+    "scripts/ci/mtt_activation_funding.py": "1aa814898a53aded68075cfc2d1b60051909ca85182df422bf785755a7976040",
+    "scripts/ci/mtt_activation_native.py": "a862f192cd683273c1121ed479b5ed72c5bf587601946f49b50d83a0dc45c066",
+    "scripts/ci/mtt_activation_satellite.py": "4ae0c9812be3a00a82e5010ea0209d44004201be62798351528e1e15e39b75de",
     "scripts/ci/mtt_break_authoring_native.py": "28dfd77f7ca09f4fdf0b458404f5cf6770155d4cdee49122ea50eaf073f41ad7",
     "scripts/ci/probes/mtt-activation/admission-activation-first-commit.spec": "fca65a2710ae30f2b96d5e389df938e617530d2f50c7df310207358130b4609c",
     "scripts/ci/probes/mtt-activation/admission-activation-first-rollback.spec": "465db3011abde14fb76ae6b1c87a44c5ca3a9e04cdfc01bb4daabce56cb73a12",
@@ -36,7 +37,10 @@
     "supabase/migrations/20260917233447_tournament_original_funding_and_obligation_receipts.sql": "5e28144b38b3131428b42f714249972db63d0da9b5fc98eead4d05edb3a3f7c1",
     "supabase/migrations/20260918002654_horse_tournament_entry_retains_original_funding.sql": "c72a730fbb650982a09d17d261099c6f5e86187f1e689f706ca6d5f7b1e77a90",
     "supabase/migrations/20260918005809_mtt_activation_preserves_original_funding.sql": "7887af2303ab4d1ba2afd7b8b280423bebe9908d620694ae437a7ff401c85416",
-    "supabase/migrations/20260918005913_mtt_activate_unlimited_with_original_funding.sql": "fe9738a67831da64e901c566e75c84cb8ebdaa6ce9eb3ad04fd64b5ba978923a"
+    "supabase/migrations/20260918005913_mtt_activate_unlimited_with_original_funding.sql": "fe9738a67831da64e901c566e75c84cb8ebdaa6ce9eb3ad04fd64b5ba978923a",
+    "supabase/migrations/20260918021924_satellite_seat_fee_uses_exact_registration_club.sql": "5f9ec43302190f1ccc12452e1f61599d6f375b12499647190b079d575d043853",
+    "supabase/migrations/20260918023535_mtt_activation_preserves_satellite_entry_club.sql": "c7208178ea7b4d167d813e59512bb8c8073fc4b600cb82192d49db79f393670f",
+    "supabase/migrations/20260918023630_mtt_activate_unlimited_with_satellite_entry_club.sql": "26994a11eae47087555506af2b6fc0f68a374ac6f5e61094af33a3796af47cf0"
   },
   "mode": "activation",
   "version": 1

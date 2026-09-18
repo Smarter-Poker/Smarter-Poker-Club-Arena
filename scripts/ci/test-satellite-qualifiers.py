@@ -15,7 +15,8 @@ from types import SimpleNamespace
 
 sys.dont_write_bytecode = True
 from satellite_qualifier_fixture import compose, module, sha, function_sql
-from satellite_qualifier_concurrency import qualify as qualify_concurrency, qualify_readers
+from satellite_qualifier_concurrency import qualify as qualify_concurrency, qualify_readers, validate_entry_club_result
+from satellite_entry_club_native import qualify as qualify_entry_club
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -190,6 +191,8 @@ def main():
             e.report['migration_refusals'].append({'kind':kind,'exact_refusal':True,'catalog_and_data_rollback':True,'database_removed':True})
         e.sql(db,file=migrations[-1],label=migrations[-1].stem,seconds=60)
         e.sql(db,file=opening,label='synthetic-structural-opening',seconds=60)
+        manifest['source_sha256'].update(qualify_entry_club(e,root,db,output,probe))
+        (output/'source-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
         before=e.snapshot(db,'before-data')
         before_catalog=e.catalog_snapshot(db,'before-catalog')
         code,out,err=e.sql(db,file=output/'probe.sql',label='actual-funded-v2-control',seconds=180,check=False)
@@ -230,6 +233,7 @@ def main():
         for path,digest in manifest['source_sha256'].items():
             if sha(root/path)!=digest:
                 raise RuntimeError('input changed during execution: '+path)
+        validate_entry_club_result(e.report.get('entry_club'))
         e.report['status']='passed'
         e.report['failure']=None
         e.discard(db)

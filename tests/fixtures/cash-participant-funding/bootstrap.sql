@@ -3,9 +3,9 @@
 ALTER TABLE chip_ledger ADD COLUMN status text NOT NULL DEFAULT 'posted';
 CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
 CREATE SCHEMA extensions; CREATE EXTENSION pgcrypto WITH SCHEMA extensions;
-ALTER TABLE clubs ADD COLUMN asset text NOT NULL DEFAULT 'chips',ADD COLUMN owner_id uuid;
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS asset text NOT NULL DEFAULT 'chips',ADD COLUMN owner_id uuid;
 ALTER TABLE tables ADD COLUMN max_players int DEFAULT 9,ADD COLUMN is_vip_only boolean DEFAULT false,ADD COLUMN status text DEFAULT 'active';
-ALTER TABLE table_seats ADD COLUMN occupancy_id uuid NOT NULL DEFAULT gen_random_uuid(),ADD COLUMN auto_rebuy boolean DEFAULT false;
+ALTER TABLE table_seats ADD COLUMN IF NOT EXISTS occupancy_id uuid NOT NULL DEFAULT gen_random_uuid(),ADD COLUMN auto_rebuy boolean DEFAULT false;
 ALTER TABLE club_members ADD COLUMN updated_at timestamptz,ADD COLUMN role text;
 CREATE TABLE transaction_idempotency_keys(key uuid PRIMARY KEY,user_id uuid,action text,amount numeric);
 CREATE TABLE table_addon_idempotency(key text PRIMARY KEY,user_id uuid,table_id uuid,amount numeric,applied_to_seat boolean);

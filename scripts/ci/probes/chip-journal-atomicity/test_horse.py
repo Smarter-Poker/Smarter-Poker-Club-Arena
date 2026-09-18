@@ -13,7 +13,7 @@ def verify_horse(run):
  # and teardown: otherwise one committed concurrency case leaks a completed
  # receipt into the next case and turns the intended contention into an
  # immediate replay/conflict.
- names=["clubs","table_seats","chip_transactions","chip_ledger","cash_baselines","entry_purchase_idempotency_receipts"]
+ names=["clubs","table_seats","chip_transactions","chip_ledger","cash_baselines","entry_purchase_idempotency_receipts","cash_participant_funding_receipts"]
  state="jsonb_build_array("+",".join(f"(SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]'::jsonb) FROM {t} t)" for t in names)+")"
  count=0
  run("BEGIN;"+seed+f"""

@@ -919,6 +919,36 @@ export abstract class ServerTableEngineBase {
    */
   isTerminalDrainedForTournamentLease(tableId: string, authority: EngineLeaseAuthority): boolean {
     return (
+      this.hasTerminalTournamentLeaseIdentity(tableId, authority) &&
+      this.tournamentMoveOperations.size === 0
+    );
+  }
+
+  /**
+   * An accepted F06 replay belongs to the current manager, not the retired
+   * dealer's expired gameplay proof. Keep renewing the manager while this
+   * exact barrier drains. This does not renew the dealer, certify a drained
+   * stop, admit another operation, or change the replay's own custody checks.
+   */
+  isTerminalF06MovementForTournamentLease(
+    tableId: string,
+    authority: EngineLeaseAuthority
+  ): boolean {
+    return (
+      this.hasTerminalTournamentLeaseIdentity(tableId, authority) &&
+      this.tournamentMoveOperations.size > 0 &&
+      this.tournamentMoveOperations.size === this.f06StoppedMoveOperations.size &&
+      [...this.tournamentMoveOperations].every((operation) =>
+        this.f06StoppedMoveOperations.has(operation)
+      )
+    );
+  }
+
+  private hasTerminalTournamentLeaseIdentity(
+    tableId: string,
+    authority: EngineLeaseAuthority
+  ): boolean {
+    return (
       this.terminalTeardownComplete &&
       this.terminal &&
       !this.running &&
@@ -927,7 +957,6 @@ export abstract class ServerTableEngineBase {
       this.dealingLoopPromise === null &&
       this.settlementInFlight.size === 0 &&
       this.postHandTasksPromise === null &&
-      this.tournamentMoveOperations.size === 0 &&
       this.readContinuationTasks.size === 0 &&
       this.snapshotFlushPromise === null &&
       this.handController === null &&
@@ -2061,6 +2090,8 @@ export abstract class ServerTableEngineBase {
 
   private tournamentMovePauseExpiryTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private tournamentMoveOperations: Set<Promise<void>> = new Set();
+  /** Exact barriers admitted through F06 custody after positive dealer teardown. */
+  private readonly f06StoppedMoveOperations = new Set<Promise<void>>();
   private tournamentMoveOperationByOwner: Map<string, Promise<void>> = new Map();
   protected boundaryPauseWaiters: Set<() => void> = new Set();
   protected terminalBoundaryPersistenceGeneration = 0;
@@ -5440,6 +5471,9 @@ export abstract class ServerTableEngineBase {
     );
     this.tournamentMoveOperations.add(barrier);
     this.tournamentMoveOperationByOwner.set(ownerId, barrier);
+    if (stoppedQuarantine && (this.f06MovementAdmission || f06Guard)) {
+      this.f06StoppedMoveOperations.add(barrier);
+    }
     this.notifyBoundaryPauseWaiters();
     try {
       const value = await result;
@@ -5448,6 +5482,7 @@ export abstract class ServerTableEngineBase {
       return value;
     } finally {
       this.tournamentMoveOperations.delete(barrier);
+      this.f06StoppedMoveOperations.delete(barrier);
       if (this.tournamentMoveOperationByOwner.get(ownerId) === barrier) {
         this.tournamentMoveOperationByOwner.delete(ownerId);
       }

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {MAX_MIGRATION_BYTES} from './money-trigger-input-limits.mjs';
 import {supabaseServerHeaders} from './supabase-auth-headers.mjs';
 import {inflateSync} from 'node:zlib';
 import {verifyRecovery,sha256} from './money-trigger-recovery.mjs';
@@ -14,18 +15,18 @@ if(process.env.GITHUB_EVENT_NAME==='workflow_dispatch'){
  const encoded=process.env.CANDIDATE_BUNDLE||'';if(encoded.length>48000)throw Error('bundle too large');
  const bundle=JSON.parse(inflateSync(Buffer.from(encoded,'base64'),{maxOutputLength:5000000}));
  headSha=bundle.headSha;inputs=bundle.files;records=bundle.records||{};
- if(Object.keys(records).length>64||Object.entries(records).some(([p,s])=>!/^supabase\/migrations\/[^/]+\.sql$/.test(p)||typeof s!=='string'||Buffer.byteLength(s)>1000000))throw Error('invalid record data');
+ if(Object.keys(records).length>64||Object.entries(records).some(([p,s])=>!/^supabase\/migrations\/[^/]+\.sql$/.test(p)||typeof s!=='string'||Buffer.byteLength(s)>MAX_MIGRATION_BYTES))throw Error('invalid record data');
  if(!Array.isArray(inputs)||inputs.length>64||new Set(inputs.map(x=>x.path)).size!==inputs.length)throw Error('invalid file inventory');
- for(const f of inputs)if(!/^supabase\/migrations\/[^/]+\.sql$/.test(f.path)||typeof f.sql!=='string'||Buffer.byteLength(f.sql)>1000000)throw Error('invalid file data');
+ for(const f of inputs)if(!/^supabase\/migrations\/[^/]+\.sql$/.test(f.path)||typeof f.sql!=='string'||Buffer.byteLength(f.sql)>MAX_MIGRATION_BYTES)throw Error('invalid file data');
 }else{
  if(process.env.GITHUB_EVENT_NAME!=='pull_request_target'||!/^\d+$/.test(number||''))throw Error('invalid event');
  pr=await gh(`pulls/${number}`);if(pr.state!=='open'||pr.base.ref!=='main')throw Error('unsupported PR');
  headSha=pr.head.sha;
  const files=[];for(let page=1;page<=30;page++){const rows=await gh(`pulls/${number}/files?per_page=100&page=${page}`);files.push(...rows);if(rows.length<100)break;if(page===30)throw Error('diff truncated')}
- for(const f of files.filter(f=>['added','modified','renamed'].includes(f.status)&&/^supabase\/migrations\/[^/]+\.sql$/.test(f.filename))){const data=await gh(`contents/${f.filename.split('/').map(encodeURIComponent).join('/')}?ref=${headSha}`);if(data.type!=='file'||data.encoding!=='base64'||data.size>1000000)throw Error('invalid migration data');inputs.push({path:f.filename,sql:Buffer.from(data.content,'base64').toString('utf8')})}
+ for(const f of files.filter(f=>['added','modified','renamed'].includes(f.status)&&/^supabase\/migrations\/[^/]+\.sql$/.test(f.filename))){const data=await gh(`contents/${f.filename.split('/').map(encodeURIComponent).join('/')}?ref=${headSha}`);if(data.type!=='file'||data.encoding!=='base64'||data.size>MAX_MIGRATION_BYTES)throw Error('invalid migration data');inputs.push({path:f.filename,sql:Buffer.from(data.content,'base64').toString('utf8')})}
 }
 records={...records,...Object.fromEntries(inputs.map(f=>[f.path,f.sql]))};
-if(pr)for(const p of policy){const file=`supabase/migrations/${p.declarationVersion}_${p.declarationName}.sql`;if(!(file in records)){const data=await gh(`contents/${file}?ref=${headSha}`);if(data.type!=='file'||data.encoding!=='base64'||data.size>1000000)throw Error('invalid declaration record');records[file]=Buffer.from(data.content,'base64').toString('utf8')}}
+if(pr)for(const p of policy){const file=`supabase/migrations/${p.declarationVersion}_${p.declarationName}.sql`;if(!(file in records)){const data=await gh(`contents/${file}?ref=${headSha}`);if(data.type!=='file'||data.encoding!=='base64'||data.size>MAX_MIGRATION_BYTES)throw Error('invalid declaration record');records[file]=Buffer.from(data.content,'base64').toString('utf8')}}
 if(!/^[a-f0-9]{40}$/.test(headSha))throw Error('invalid SHA');
 let live=null;if(inputs.some(x=>offenders(x.sql).length)){
  const url=process.env.SUPABASE_URL;if(url!=='https://kuklfnapbkmacvwxktbh.supabase.co')throw Error('wrong database');

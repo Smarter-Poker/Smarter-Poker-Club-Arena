@@ -1,6 +1,7 @@
 // Unprivileged consumer: authenticated Actions provenance, exact head, exact file bytes.
 // It never accepts a workspace receipt or a PR-provided artifact URL.
 import fs from 'node:fs';
+import {MAX_MIGRATION_BYTES} from './money-trigger-input-limits.mjs';
 import {validProof} from './money-trigger-proof.mjs';
 import os from 'node:os';
 import path from 'node:path';
@@ -25,7 +26,7 @@ if(!proof)throw Error('No fresh trusted exact-head proof; wait for producer and 
 const base=event.pull_request?.base.sha||process.env.MONEY_TRIGGER_BASE||'origin/main';
 const files=execFileSync('git',['diff','--name-only','--diff-filter=AMR',`${base}...${head}`],{encoding:'utf8'}).trim().split('\n').filter(p=>/^supabase\/migrations\/[^/]+\.sql$/.test(p));
 if(files.length!==proof.results.length||new Set(proof.results.map(x=>x.path)).size!==files.length)throw Error('file coverage differs');
-for(const p of files){const bytes=execFileSync('git',['show',`${head}:${p}`],{maxBuffer:1000000});if(!proof.results.some(x=>x.path===p&&x.sha256===sha256(bytes)))throw Error('migration bytes differ')}
+for(const p of files){const bytes=execFileSync('git',['show',`${head}:${p}`],{maxBuffer:MAX_MIGRATION_BYTES});if(!proof.results.some(x=>x.path===p&&x.sha256===sha256(bytes)))throw Error('migration bytes differ')}
 if(!proof.recordHashes||Object.keys(proof.recordHashes).length>128)throw Error('missing record bindings');
-for(const [p,h] of Object.entries(proof.recordHashes)){if(!/^supabase\/migrations\/[^/]+\.sql$/.test(p)||sha256(execFileSync('git',['show',`${head}:${p}`],{maxBuffer:1000000}))!==h)throw Error('declaration record bytes differ')}
+for(const [p,h] of Object.entries(proof.recordHashes)){if(!/^supabase\/migrations\/[^/]+\.sql$/.test(p)||sha256(execFileSync('git',['show',`${head}:${p}`],{maxBuffer:MAX_MIGRATION_BYTES}))!==h)throw Error('declaration record bytes differ')}
 console.log(`Trusted exact-head money-trigger proof verified for ${files.length} files.`);

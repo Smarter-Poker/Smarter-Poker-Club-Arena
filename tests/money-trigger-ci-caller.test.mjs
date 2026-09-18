@@ -6,6 +6,8 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import './protection-applicability.test.mjs';
 import './revision-boundaries.test.mjs';
+import './producer-boundary.test.mjs';
+import './money-trigger-consumer-boundary.test.mjs';
 
 const workflow = fs.readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
 const lines = workflow.split('\n');

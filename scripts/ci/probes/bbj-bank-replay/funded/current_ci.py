@@ -25,7 +25,7 @@ CLUB = '7beef002-0002-4000-8000-000000000002'
 PROVIDER_BINARIES = ('postgres', 'initdb', 'pg_ctl', 'psql')
 ACCOUNTING_JOB_NAME = 'Accounting transactions (PostgreSQL 17)'
 # Must match accounting_postgres in ci.yml; directly checked by test_current_ci.
-JOB_SECONDS = 1800
+JOB_SECONDS = 2400
 # Finite first qualification ceilings, not observed funded runtimes. Setup's
 # original 300-second cap and three original 30-second physical cleanup caps.
 CASE_SECONDS = 300

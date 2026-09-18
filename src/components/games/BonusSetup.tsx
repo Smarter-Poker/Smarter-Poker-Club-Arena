@@ -1,14 +1,14 @@
-import { SpadeConsole } from '../console/SpadeConsole';
 import {
   plinkoAllocations,
-  validSpinAmount,
+  validBonusBudget,
+  bonusWalletDebit,
   bonusTotal,
   type BonusBudget,
 } from '../../utils/bonusGameBudget';
 import { useNavigate } from 'react-router-dom';
-import styles from '../../pages/diamondGames.module.css';
+import styles from './BonusSetup.module.css';
 
-/** No debit occurs here. The entire chosen entry is accepted by one server request. */
+/** These controls quote one atomic entry; changing a selection never debits a wallet. */
 export default function BonusSetup({
   budget,
   onChange,
@@ -16,6 +16,10 @@ export default function BonusSetup({
   disabled,
   plinko = false,
   clubId,
+  entryReady = true,
+  awardLoading = false,
+  awardError,
+  onRefresh,
 }: {
   budget: BonusBudget;
   onChange: (value: BonusBudget) => void;
@@ -23,82 +27,128 @@ export default function BonusSetup({
   disabled: boolean;
   plinko?: boolean;
   clubId: string;
+  entryReady?: boolean;
+  awardLoading?: boolean;
+  awardError?: string | null;
+  onRefresh?: () => void;
 }) {
   const navigate = useNavigate();
-  const valid = validSpinAmount(budget.base);
-  const total = bonusTotal(budget);
+  const valid = validBonusBudget(budget),
+    total = bonusTotal(budget);
   const choices = valid ? plinkoAllocations(total) : [];
   const change = (next: BonusBudget) => {
-    if (validSpinAmount(next.base) && bonusTotal(next) % next.denomination !== 0)
-      next.denomination = 1;
+    if (validBonusBudget(next) && bonusTotal(next) % next.denomination !== 0) next.denomination = 1;
     onChange(next);
   };
+  const debit = bonusWalletDebit(budget);
+  if (!entryReady)
+    return (
+      <section className={styles.setup} aria-label="Your Bonus Setup">
+        <p className={styles.total} role={awardError ? 'alert' : 'status'}>
+          {awardError ??
+            (awardLoading
+              ? 'Checking Your Wheel Award'
+              : 'Win This Game On Diamond Spins To Play.')}
+        </p>
+        <div className={styles.links}>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => navigate(`/clubs/${clubId}/diamond-games`)}
+          >
+            Spin The Wheel
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => navigate('/marketplace?tab=diamonds')}
+          >
+            Buy More
+          </button>
+          {awardError && onRefresh && (
+            <button type="button" disabled={disabled} onClick={onRefresh}>
+              Refresh
+            </button>
+          )}
+        </div>
+      </section>
+    );
   return (
-    <SpadeConsole
-      crest="diamond"
-      title="Your Bonus"
-      eyebrow="Before You Play"
-      pill={budget.doubled ? 'Doubled' : 'Entry'}
-      foot="foot"
-    >
-      <label className={styles.seedField}>
-        Entry Diamonds
-        <input
-          className={styles.seedInput}
-          type="number"
-          inputMode="numeric"
-          min={25}
-          max={2500}
-          step={1}
-          value={Number.isNaN(budget.base) ? '' : budget.base}
-          disabled={disabled}
-          onChange={(event) => change({ ...budget, base: event.target.valueAsNumber })}
-        />
-      </label>
-      <p className="sc-copy">
-        Choose 25 To 2,500 Diamonds. You Can Double Your Entry Once Before The Game Starts.
-      </p>
-      <label className={styles.bonusToggle}>
+    <section className={styles.setup} aria-label="Your Bonus Setup">
+      {budget.award ? (
+        <div className={styles.entry}>
+          <span>{budget.award.boostMultiplier === 2 ? 'Upgraded Wheel Award' : 'Wheel Award'}</span>
+          <strong>{budget.base.toLocaleString()} Diamonds Funded</strong>
+          <small>Your Original Spin: {budget.award.entryDiamonds.toLocaleString()} Diamonds</small>
+        </div>
+      ) : (
+        <label className={styles.entry}>
+          Entry Diamonds
+          <input
+            type="number"
+            inputMode="numeric"
+            min={25}
+            max={2500}
+            step={1}
+            value={Number.isNaN(budget.base) ? '' : budget.base}
+            disabled={disabled}
+            onChange={(event) => change({ ...budget, base: event.target.valueAsNumber })}
+          />
+        </label>
+      )}
+      <label className={styles.double}>
         <input
           type="checkbox"
           checked={budget.doubled}
           disabled={disabled || !valid}
           onChange={(event) => change({ ...budget, doubled: event.target.checked })}
         />
-        <span>Double Down{valid ? `: Add ${budget.base.toLocaleString()} Diamonds` : ''}</span>
+        <span>
+          Double Down
+          {valid
+            ? ` · +${(budget.award?.entryDiamonds ?? budget.base).toLocaleString()} Diamonds`
+            : ''}
+        </span>
       </label>
-      {plinko && valid ? (
-        <label className={styles.seedField}>
-          Diamonds Per Drop
-          <select
-            className={styles.seedInput}
-            value={budget.denomination}
-            disabled={disabled}
-            onChange={(event) => change({ ...budget, denomination: Number(event.target.value) })}
-          >
+      {plinko && valid && (
+        <fieldset className={styles.drops} disabled={disabled}>
+          <legend>Diamonds Per Drop</legend>
+          <div className={styles.choices}>
             {choices.map((choice) => (
-              <option key={choice.diamondsPerDrop} value={choice.diamondsPerDrop}>
-                {choice.drops} {choice.drops === 1 ? 'Drop' : 'Drops'} At {choice.diamondsPerDrop}{' '}
-                {choice.diamondsPerDrop === 1 ? 'Diamond' : 'Diamonds'} Each
-              </option>
+              <button
+                type="button"
+                key={choice.diamondsPerDrop}
+                disabled={disabled}
+                aria-pressed={budget.denomination === choice.diamondsPerDrop}
+                onClick={() => change({ ...budget, denomination: choice.diamondsPerDrop })}
+                aria-label={`${choice.diamondsPerDrop} ${choice.diamondsPerDrop === 1 ? 'Diamond' : 'Diamonds'} Per Drop, ${choice.drops} ${choice.drops === 1 ? 'Drop' : 'Drops'}`}
+              >
+                <strong>
+                  {choice.diamondsPerDrop} <span>◆</span>
+                </strong>
+                <small>
+                  {choice.drops} {choice.drops === 1 ? 'Drop' : 'Drops'}
+                </small>
+              </button>
             ))}
-          </select>
-        </label>
-      ) : null}
-      <p className="sc-copy" aria-live="polite">
+          </div>
+        </fieldset>
+      )}
+      <p className={styles.total} aria-live="polite">
         {valid
-          ? `${total.toLocaleString()} Diamonds In This Bonus.`
-          : 'Enter A Whole Number From 25 To 2,500.'}
+          ? plinko
+            ? `${total / budget.denomination} ${total / budget.denomination === 1 ? 'Drop' : 'Drops'} × ${budget.denomination} ${budget.denomination === 1 ? 'Diamond' : 'Diamonds'} = ${total.toLocaleString()} Diamonds`
+            : `${total.toLocaleString()} Diamonds In This Round`
+          : 'Enter 25-2,500 Whole Diamonds.'}
       </p>
-      {diamonds !== null && valid && diamonds < total ? (
-        <p className="sc-copy">
-          You Need {(total - diamonds).toLocaleString()} More Diamonds To Start.
+      {diamonds !== null && valid && diamonds < debit && (
+        <p className={styles.short}>
+          You Need {(debit - diamonds).toLocaleString()} More Diamonds.
         </p>
-      ) : null}
-      <div className={styles.bonusLinks}>
+      )}
+      <div className={styles.links}>
         <button
           type="button"
-          className={styles.back}
           disabled={disabled}
           onClick={() => navigate('/marketplace?tab=diamonds')}
         >
@@ -106,13 +156,12 @@ export default function BonusSetup({
         </button>
         <button
           type="button"
-          className={styles.back}
           disabled={disabled}
           onClick={() => navigate(`/clubs/${clubId}/earn-diamonds`)}
         >
           Earn Diamonds
         </button>
       </div>
-    </SpadeConsole>
+    </section>
   );
 }

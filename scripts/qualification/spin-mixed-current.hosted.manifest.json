@@ -11,8 +11,8 @@
       "sha256": "770422e665e230771003e099fedc4dfe29414f32531b3f3ac48883c2c86e06a8"
     },
     "scripts/qualification/spin-mixed-current-races.py": {
-      "bytes": 18261,
-      "sha256": "eb32d8e3784bbe59472f8e4869f21069556e024f7ed6238ab33ed87928b66506"
+      "bytes": 17925,
+      "sha256": "a2b08e98a653912c2dbebbf9333f4cb4dcbd71eed2d157d4626b08f85acd1c3d"
     },
     "scripts/qualification/spin-mixed-current-assertions.py": {
       "bytes": 8029,

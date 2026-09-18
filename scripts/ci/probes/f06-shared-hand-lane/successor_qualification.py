@@ -74,9 +74,12 @@ def qualify(root, out, cmd, command, run, probe, require, results, seed, held, m
     # yields. Its subtransaction must have released the first relation lock.
     writer = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     with held('LOCK TABLE smarter_private.f06_unsettled_hand_aborts IN ACCESS SHARE MODE;'):
-        admitted = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        admitted.stdin.write("SET application_name='f06-successor-installer';" + installer)
-        admitted.stdin.close()
+        # Let psql read the migration without synchronously filling a platform-
+        # dependent pipe before this parent can release the held reader.
+        admitted_sql = out / 'successor-concurrent-installer.sql'
+        admitted_sql.write_text("SET application_name='f06-successor-installer';" + installer)
+        admitted = subprocess.Popen(cmd + ['-f', str(admitted_sql)], stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         barrier("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='f06-successor-installer' AND wait_event='PgSleep');", admitted, 'Successor installer did not yield its partial set')
         writer.stdin.write("BEGIN;SET lock_timeout='1s'; LOCK TABLE engine_tournament_leases IN ROW EXCLUSIVE MODE; SELECT count(*) FROM smarter_private.f06_unsettled_hand_aborts; SELECT pg_advisory_lock(18092031);\n")
         writer.stdin.flush()

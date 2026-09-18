@@ -9,6 +9,7 @@ const backend = vi.hoisted(() => ({
   start: vi.fn(),
   rpc: vi.fn(),
   navigate: vi.fn(),
+  awardState: vi.fn(),
   verify: vi.fn(),
 }));
 vi.mock('../../src/utils/diamondChoiceMath', async (importOriginal) => ({
@@ -24,11 +25,16 @@ vi.mock('../../src/services/DiamondBonusService', () => ({
   BonusRefusal: class extends Error {},
 }));
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: backend.rpc } }));
+vi.mock('../../src/services/WheelBonusEntryService', async (original) => ({
+  ...(await original<typeof import('../../src/services/WheelBonusEntryService')>()),
+  WheelBonusEntryService: { state: backend.awardState },
+}));
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: 'player-a' } }),
 }));
 vi.mock('react-router-dom', () => ({
   useNavigate: () => backend.navigate,
+  useLocation: () => ({ search: '' }),
   useParams: () => ({ clubId: '00000000-0000-0000-0000-000000000003' }),
 }));
 vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: string) => id }));
@@ -97,6 +103,9 @@ const state = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  backend.awardState
+    .mockReset()
+    .mockResolvedValue({ enabled: false, award: null, gameState: null });
   backend.state.mockReset().mockResolvedValue(state);
   backend.start.mockReset().mockReturnValue(new Promise(() => {}));
   backend.verify.mockReset();
@@ -113,6 +122,39 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('choice-game entry quotes belong to the selected settings', () => {
+  it.each([
+    { game: 'mines' as const, picked: [], current: '0.00', next: '2.17' },
+    { game: 'mines' as const, picked: [2, 4], current: '5.33', next: '15.20' },
+    { game: 'crossing' as const, picked: [], current: '0.00', next: '2.17' },
+    { game: 'crossing' as const, picked: [0, 1], current: '5.33', next: '15.20' },
+  ])(
+    'shows current and next potential prizes for $game after $picked',
+    async ({ game, picked, current, next }) => {
+      backend.state.mockResolvedValue({
+        ...state,
+        // The active round owns these quotes. A refreshed lobby quote must not
+        // replace either amount while the player decides whether to continue.
+        prizes: [999, 999, 999],
+        open_round: {
+          ...fixtures.receipts.mines,
+          game,
+          mode: game === 'mines' ? '5' : 'steady',
+          status: 'open',
+          bet_diamonds: 100,
+          max_steps: 3,
+          picked,
+          prizes: [2.17, 5.33, 15.2],
+          proof: null,
+        },
+      });
+      render(<DiamondChoicePage game={game} />);
+      await act(async () => {});
+      expect(screen.getByText('Current Prize').nextElementSibling).toHaveTextContent(current);
+      expect(screen.getByText('Next Prize').nextElementSibling).toHaveTextContent(next);
+      expect(screen.queryByText('999.00')).not.toBeInTheDocument();
+    }
+  );
+
   it('does not show a previous proof verdict while starting another round', async () => {
     const proof = deferred<boolean>();
     backend.verify.mockReturnValue(proof.promise);
@@ -144,10 +186,10 @@ describe('choice-game entry quotes belong to the selected settings', () => {
       render(<DiamondChoicePage game={game} />);
       await act(async () => {});
       expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
-      fireEvent.click(screen.getByRole('button', { name: label }));
+      fireEvent.click(screen.getByRole('button', { name: `Change ${label}` }));
       await act(async () => {});
       expect(screen.getByRole('button', { name: 'Start Round' })).toBeDisabled();
-      fireEvent.click(screen.getByRole('button', { name: label }));
+      fireEvent.click(screen.getByRole('button', { name: `Change ${label}` }));
       await act(async () => {});
       await act(async () => {
         latest.resolve({ ...state, max_steps: 8, prizes: Array(8).fill(2) });
@@ -177,5 +219,75 @@ describe('choice-game entry quotes belong to the selected settings', () => {
       next.resolve(state);
     });
     expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
+  });
+});
+
+describe('choice games consume wheel-funded entry', () => {
+  it.each(['mines', 'crossing'] as const)(
+    'starts an awarded %s round with its reserved limits and no fresh base charge',
+    async (game) => {
+      const award = {
+        id: '00000000-0000-0000-0000-000000000077',
+        game,
+        base_diamonds: 200,
+        entry_diamonds: 100,
+        boost_multiplier: 2,
+        status: 'pending',
+      };
+      backend.state.mockResolvedValue({ ...state, diamonds: 0, max_steps: 0, prizes: [] });
+      backend.awardState.mockResolvedValue({
+        enabled: true,
+        award,
+        gameState: { ...state, diamonds: 0, max_steps: 3, prizes: [2.2, 2.7, 3.4] },
+      });
+      render(<DiamondChoicePage game={game} />);
+      await act(async () => {});
+      expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
+      expect(screen.queryByLabelText('Entry Diamonds')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
+      expect(backend.start).toHaveBeenCalledWith(
+        expect.objectContaining({
+          game,
+          maxSteps: 3,
+          budget: {
+            base: 200,
+            doubled: false,
+            denomination: 1,
+            award: { id: award.id, entryDiamonds: 100, boostMultiplier: 2 },
+          },
+        }),
+        'player-a'
+      );
+    }
+  );
+  it.each(['mines', 'crossing'] as const)(
+    'refuses a direct new %s round when no award exists',
+    async (game) => {
+      backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });
+      render(<DiamondChoicePage game={game} />);
+      await act(async () => {});
+      expect(screen.getByRole('button', { name: 'Start Round' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Spin The Wheel' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Buy More' })).toBeEnabled();
+      expect(backend.start).not.toHaveBeenCalled();
+    }
+  );
+  it('keeps an older Crossing round playable without a new wheel award', async () => {
+    backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });
+    backend.state.mockResolvedValue({
+      ...state,
+      diamonds: 0,
+      open_round: {
+        ...fixtures.receipts.crossing,
+        status: 'open',
+        picked: [],
+        payout_chips: 0,
+        proof: null,
+      },
+    });
+    render(<DiamondChoicePage game="crossing" />);
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Cross Street' })).toBeEnabled();
+    expect(backend.start).not.toHaveBeenCalled();
   });
 });

@@ -1,0 +1,196 @@
+.console {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
+  min-height: calc(100dvh - 100px);
+  background: #060d18;
+  color: #ecf4ff;
+}
+.header {
+  grid-column: 1/-1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 24px;
+  border-bottom: 1px solid #26364c;
+  background: linear-gradient(110deg, #111f31, #080e18);
+}
+.header h1 {
+  margin: 0;
+  font:
+    700 clamp(22px, 3vw, 34px)/1.15 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: -0.02em;
+}
+.status {
+  color: #8dddff;
+  font-size: 13px;
+}
+.playfield {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 12px 20px;
+  background: radial-gradient(ellipse at 50% 40%, #132c48 0, #090f1c 58%, #050a12 100%);
+}
+.controls {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100dvh;
+  overflow-y: auto;
+  min-width: 0;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: linear-gradient(135deg, #152132, #0b121e 65%);
+  border-left: 1px solid #304156;
+  box-shadow: inset 1px 0 #ffffff08;
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 12px;
+  margin: 0;
+}
+.metrics > div {
+  min-width: 0;
+  border-bottom: 1px solid #304156;
+  padding-bottom: 10px;
+}
+.metrics dt {
+  color: #99acc3;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.metrics dd {
+  margin: 0;
+  font:
+    700 clamp(18px, 2.5vw, 28px)/1.2 'Roboto Condensed',
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.metrics button {
+  color: inherit;
+  background: #203650;
+  border: 1px solid #486581;
+  border-radius: 7px;
+  padding: 9px 10px;
+  min-height: 44px;
+  width: 100%;
+  font: inherit;
+  cursor: pointer;
+}
+.metrics [data-ink='gold'] {
+  color: #ffd992;
+}
+.metrics [data-ink='red'] {
+  color: #ff8d80;
+}
+.actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: auto;
+}
+.primary,
+.secondary {
+  min-height: 52px;
+  border-radius: 8px;
+  font:
+    700 18px 'Roboto Condensed',
+    sans-serif;
+  border: 1px solid #6588a9;
+  color: #e7f4ff;
+  cursor: pointer;
+  padding: 12px 16px;
+  box-shadow:
+    inset 0 1px #ffffff35,
+    0 4px 10px #0005;
+}
+.primary {
+  background: linear-gradient(#32b4f5, #0973c3);
+  border-color: #64cdff;
+  color: #031525;
+}
+.secondary {
+  background: linear-gradient(#2b4057, #162638);
+}
+.primary[data-ink='green'] {
+  background: linear-gradient(#80eac2, #28b881);
+  border-color: #aafadb;
+}
+.controls button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.console button:focus-visible,
+.panel summary:focus-visible {
+  outline: 3px solid #e4f6ff;
+  outline-offset: 3px;
+}
+.panel {
+  padding: 16px 24px;
+  border-top: 1px solid #26364c;
+  background: #0a111c;
+  color: #d0dced;
+}
+.panel summary {
+  cursor: pointer;
+  font-weight: 650;
+  min-height: 28px;
+}
+.panel > div {
+  padding-top: 14px;
+  max-width: 900px;
+}
+@media (max-width: 760px) {
+  .console {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+  .header {
+    padding: 12px 14px;
+  }
+  .playfield {
+    padding: 8px;
+  }
+  .controls {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    border-left: 0;
+    border-top: 1px solid #304156;
+    padding: 14px;
+    gap: 14px;
+  }
+  .metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .metrics dt {
+    font-size: 10px;
+  }
+  .metrics dd {
+    font-size: 18px;
+  }
+  .metrics button {
+    padding: 4px;
+    font-size: 14px;
+  }
+  .actions {
+    grid-template-columns: 1fr 1.4fr;
+  }
+  .primary,
+  .secondary {
+    font-size: 16px;
+  }
+  .panel {
+    padding: 14px;
+  }
+}

@@ -3,7 +3,15 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { brilliantGem } from './brilliantGem';
+import { gpuFrameRenderer } from './gpuFrameRenderer';
+import MinesGrid from './MinesGrid';
+import {
+  STREET_WIDTH,
+  DONKEY_SCALE,
+  streetCenter,
+  crossingTrafficVisible,
+  collisionFrame,
+} from '../../utils/crossingScene';
 import type { ChoiceGame } from '../../utils/diamondChoiceMath';
 import { prefersReducedMotion, getAnimationSpeed } from '../../utils/animationSpeed';
 import { reportError } from '../../utils/errorReporter';
@@ -17,6 +25,8 @@ interface Props {
   roadEnd: number | null;
   busy: boolean;
   onPick: (cell: number) => void;
+  roundId?: string;
+  onSettled?: () => void;
 }
 
 function material(color: number, metalness = 0.7, roughness = 0.24) {
@@ -106,284 +116,309 @@ function donkey() {
 }
 
 export default function ChoiceScene(props: Props) {
-  const host = useRef<HTMLDivElement>(null);
-  const latest = useRef(props);
+  if (props.game === 'mines') return <MinesGrid {...props} />;
+  return <CrossingScene {...props} />;
+}
+function CrossingScene(props: Props) {
+  const host = useRef<HTMLDivElement>(null),
+    latest = useRef(props);
   latest.current = props;
-  const [positions, setPositions] = useState<Array<{ x: number; y: number }>>([]);
   const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (failed) latest.current.onSettled?.();
+  }, [failed, props.phase, props.picked.length]);
   useEffect(() => {
     const node = host.current;
     if (!node) return;
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({
-        antialias: true,
-        alpha: false,
-        powerPreference: 'high-performance',
-      });
-    } catch (error) {
-      reportError(error, 'ChoiceScene.renderer');
+      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    } catch (e) {
       setFailed(true);
+      reportError(e, 'ChoiceScene.renderer');
+      latest.current.onSettled?.();
       return;
     }
-    setFailed(false);
     const canvas = renderer.domElement;
     canvas.className = styles.canvas;
     canvas.setAttribute('aria-hidden', 'true');
     node.prepend(canvas);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.82;
+    renderer.toneMappingExposure = 1.05;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x070b10);
+    scene.background = new THREE.Color(0x0a1424);
+    scene.fog = new THREE.Fog(0x0a1424, 22, 65);
     const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    const room = new RoomEnvironment();
-    const environment = pmrem.fromScene(room, 0.04);
+    const pmrem = new THREE.PMREMGenerator(renderer),
+      room = new RoomEnvironment(),
+      environment = pmrem.fromScene(room, 0.04);
     scene.environment = environment.texture;
+    scene.environmentIntensity = 0.22;
     room.dispose();
     pmrem.dispose();
-    scene.add(new THREE.HemisphereLight(0xc8e8ff, 0x111924, 0.6));
-    const key = new THREE.DirectionalLight(0xf4f7ff, 3);
-    key.position.set(-4, 10, 6);
+    scene.add(new THREE.HemisphereLight(0xc9e9ff, 0x080f20, 0.8));
+    const key = new THREE.DirectionalLight(0xffe9ca, 2.4);
+    key.position.set(-5, 12, 8);
     key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
-    Object.assign(key.shadow.camera, { left: -10, right: 10, top: 10, bottom: -10 });
+    key.shadow.mapSize.set(2048, 2048);
+    Object.assign(key.shadow.camera, { left: -12, right: 12, top: 14, bottom: -14 });
     key.shadow.bias = -0.001;
-    scene.add(key);
-    scene.add(key.target);
-    const rim = new THREE.DirectionalLight(0x1877f2, 2.5);
-    rim.position.set(8, 4, -7);
+    scene.add(key, key.target);
+    const rim = new THREE.DirectionalLight(0x4dbdff, 3.2);
+    rim.position.set(5, 7, -6);
     scene.add(rim);
-    const steel = material(0x8797a8, 0.92, 0.2),
-      gunmetal = material(0x19222d, 0.8, 0.3);
-    const blue = material(0x1877f2, 0.5, 0.18),
-      black = material(0x090d12, 0.12, 0.65);
-    const tiles: THREE.Mesh[] = [];
-    const prizes: THREE.Group[] = [];
+    const asphalt = material(0x172536, 0.06, 0.95),
+      steel = material(0x6a8097, 0.8, 0.3),
+      paint = material(0xc7d9db, 0.1, 0.75),
+      curb = material(0x3f5268, 0.1, 0.7);
+    box(scene, asphalt, 18, -0.28, 0, 62, 0.5, 20, 0.1);
     const traffic: THREE.Group[] = [];
-    const animal = props.game === 'crossing' ? donkey() : null;
-    let ghost: THREE.Object3D | null = null;
-    if (props.game === 'mines') {
-      camera.position.set(7.4, 11.5, 9.8);
-      camera.lookAt(0, 0, 0);
-      box(scene, steel, 0, -0.45, 0, 8.15, 0.55, 8.15, 0.22);
-      box(scene, gunmetal, 0, -0.1, 0, 7.92, 0.26, 7.92, 0.15);
-      for (let i = 0; i < 25; i++) {
-        const x = ((i % 5) - 2) * 1.48,
-          z = (Math.floor(i / 5) - 2) * 1.48;
-        box(scene, blue, x, 0.04, z, 1.37, 0.12, 1.37, 0.12);
-        const tile = box(scene, gunmetal.clone(), x, 0.24, z, 1.32, 0.38, 1.32, 0.14);
-        tiles.push(tile);
-        box(tile, steel, 0, 0.2, 0, 0.82, 0.018, 0.82, 0.12);
-        const emblem = new THREE.Mesh(new THREE.OctahedronGeometry(0.2), blue);
-        emblem.position.set(0, 0.26, 0);
-        emblem.scale.y = 0.48;
-        tile.add(emblem);
-        const prize = new THREE.Group();
-        prize.position.set(x, 0.48, z);
-        scene.add(prize);
-        prize.visible = false;
-        prizes.push(prize);
-        const crystal = new THREE.Mesh(
-          brilliantGem(0.59),
-          new THREE.MeshPhysicalMaterial({
-            color: 0xe5f7ff,
-            metalness: 0,
-            roughness: 0.05,
-            transmission: 0.86,
-            ior: 2.417,
-            thickness: 0.8,
-            envMapIntensity: 3.2,
-            attenuationColor: new THREE.Color(0xa8e6ff),
-            attenuationDistance: 2,
-            clearcoat: 1,
-          })
-        );
-        crystal.scale.y = 1.25;
-        crystal.rotation.z = 0.17;
-        prize.add(crystal);
-        const mine = new THREE.Group();
-        sphere(mine, black, 0, 0, 0, 0.39, 0.39, 0.39);
-        for (let j = 0; j < 8; j++) {
-          const pin = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.33, 8), steel);
-          pin.position.set(
-            Math.sin((j * Math.PI) / 4) * 0.39,
-            0,
-            Math.cos((j * Math.PI) / 4) * 0.39
-          );
-          pin.quaternion.setFromUnitVectors(
-            new THREE.Vector3(0, 1, 0),
-            pin.position.clone().normalize()
-          );
-          mine.add(pin);
+    const buildCar = (color: number) => {
+      const car = new THREE.Group(),
+        body = material(color, 0.65, 0.18),
+        glass = material(0x071b2e, 0.4, 0.08),
+        rubber = material(0x080d16, 0.05, 0.85);
+      box(car, body, 0, 0.49, 0, 1.35, 0.46, 2.7, 0.19);
+      box(car, glass, 0, 0.84, -0.15, 1.08, 0.54, 1.5, 0.16);
+      box(car, body, 0, 1.12, -0.23, 1, 0.1, 0.9, 0.08);
+      box(car, steel, 0, 0.34, 1.32, 1.15, 0.1, 0.08, 0.02);
+      box(car, steel, 0, 0.33, -1.32, 1.15, 0.1, 0.08, 0.02);
+      for (const side of [-1, 1])
+        for (const end of [-1, 1]) {
+          const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.2, 24), rubber);
+          wheel.rotation.z = Math.PI / 2;
+          wheel.position.set(side * 0.66, 0.3, end * 0.86);
+          car.add(wheel);
+          sphere(car, steel, side * 0.77, 0.3, end * 0.86, 0.024, 0.15, 0.15);
         }
-        sphere(mine, material(0xff3232, 0.25, 0.15), 0, 0.39, 0, 0.1, 0.06, 0.1);
-        prize.add(mine);
+      const lamp = new THREE.MeshStandardMaterial({
+        color: 0xe3f8ff,
+        emissive: 0x9bdfff,
+        emissiveIntensity: 3,
+      });
+      for (const side of [-1, 1]) {
+        box(car, lamp, side * 0.46, 0.55, 1.35, 0.25, 0.13, 0.04, 0.03);
+        box(car, material(0xf74932, 0.1, 0.2), side * 0.46, 0.52, -1.35, 0.26, 0.13, 0.04, 0.03);
       }
-      camera.updateMatrixWorld();
-      setPositions(
-        tiles.map((tile) => {
-          const v = tile.position.clone().project(camera);
-          return { x: (v.x + 1) * 50, y: (1 - v.y) * 50 };
-        })
-      );
-    } else if (animal) {
-      camera.position.set(5.4, 6.5, 9);
-      camera.lookAt(1, 0, 0);
-      box(scene, gunmetal, 9, -0.38, 0, 38, 0.5, 11, 0.1);
-      for (let i = 0; i < 15; i++) {
-        const x = i * 2.3;
-        box(scene, black, x, -0.06, 0, 2.17, 0.15, 11, 0.03);
-        for (let j = -3; j <= 3; j++)
-          box(scene, steel, x, 0.03, j * 1.65, 0.06, 0.015, 0.66, 0.005);
-        box(scene, blue, x, 0.08, -4.8, 2.1, 0.18, 0.22, 0.04);
-        box(scene, steel, x, 0.08, 4.8, 2.1, 0.18, 0.22, 0.04);
-        const car = new THREE.Group();
+      return car;
+    };
+    const laneSigns: THREE.Mesh[] = [];
+    const textures: THREE.Texture[] = [];
+    const streetSign = (street: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = '#091722';
+      ctx.fillRect(0, 0, 256, 128);
+      ctx.strokeStyle = '#85cfff';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(6, 6, 244, 116);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#def5ff';
+      ctx.font = '600 24px sans-serif';
+      ctx.fillText('STREET', 128, 42);
+      ctx.font = '700 55px sans-serif';
+      ctx.fillText(String(street), 128, 98);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      textures.push(texture);
+      return new THREE.MeshStandardMaterial({
+        map: texture,
+        metalness: 0.2,
+        roughness: 0.6,
+        emissive: 0x326b8e,
+        emissiveMap: texture,
+        emissiveIntensity: 0.25,
+      });
+    };
+    for (let i = 0; i < 16; i++) {
+      const x = streetCenter(i);
+      box(scene, asphalt, x, -0.03, 0, STREET_WIDTH - 0.12, 0.12, 19, 0.025);
+      for (let z = -8; z <= 8; z += 2)
+        box(scene, paint, x - STREET_WIDTH / 2, 0.04, z, 0.035, 0.01, 0.9, 0.002);
+      for (const z of [-5, 5]) {
+        box(scene, curb, x, 0.15, z, STREET_WIDTH - 0.08, 0.36, 0.65, 0.045);
+        box(scene, steel, x, 0.36, z, STREET_WIDTH - 0.08, 0.03, 0.66, 0.01);
+      }
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), streetSign(i));
+      sign.rotation.x = -Math.PI / 2;
+      sign.position.set(x, 0.07, 2.25);
+      scene.add(sign);
+      laneSigns.push(sign);
+      if (i > 0) {
+        const car = buildCar([0x246bad, 0xc3d4df, 0x8b3441, 0x49655f][i % 4]);
         car.position.x = x;
         scene.add(car);
-        traffic.push(car);
-        const paint = material([0x1877f2, 0xcfd7df, 0x263645][i % 3], 0.65, 0.18);
-        box(car, paint, 0, 0.45, 0, 1.13, 0.44, 2.25, 0.16);
-        box(car, black, 0, 0.77, -0.1, 0.87, 0.47, 1.2, 0.12);
-        box(car, paint, 0, 1.01, -0.1, 0.84, 0.1, 0.73, 0.08);
-        for (const side of [-1, 1])
-          for (const end of [-1, 1]) {
-            const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.15, 18), black);
-            wheel.rotation.z = Math.PI / 2;
-            wheel.position.set(side * 0.56, 0.25, end * 0.71);
-            car.add(wheel);
-            sphere(car, steel, side * 0.66, 0.25, end * 0.71, 0.018, 0.13, 0.13);
-          }
-        box(car, material(0xf7f7ff, 0.3, 0.1), 0, 0.5, 1.1, 0.78, 0.09, 0.03, 0.01);
-        box(car, material(0xe52b2b, 0.2, 0.2), 0, 0.5, -1.1, 0.78, 0.08, 0.03, 0.01);
+        traffic[i] = car;
       }
-      // A small city gives the moving road distance, reflected light and scale.
-      for (let i = 0; i < 18; i++) {
-        const x = i * 2.5 - 4,
-          height = 2.5 + ((i * 7) % 5) * 0.6;
-        box(scene, gunmetal, x, height / 2, -7.2, 2.1, height, 2.3, 0.1);
-        for (let floor = 0; floor < Math.floor(height / 0.6); floor++) {
-          box(scene, blue, x, 0.5 + floor * 0.6, -5.99, 1.65, 0.12, 0.025, 0.01);
-        }
-      }
-      animal.animal.scale.setScalar(1.18);
-      animal.animal.position.set(-1.15, 0.05, 1.7);
-      scene.add(animal.animal);
-      ghost = animal.animal.clone(true);
-      ghost.visible = false;
-      ghost.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          const m = obj.material.clone();
-          m.transparent = true;
-          m.opacity = 0.4;
-          obj.material = m;
-        }
-      });
-      scene.add(ghost);
     }
+    // Pavement, illuminated shopfronts and street lamps establish a real street scale.
+    for (let i = -2; i < 18; i++) {
+      const x = i * 3.1,
+        h = 3 + ((i * i) % 4);
+      box(scene, curb, x, h / 2, -8, 2.9, h, 3, 0.06);
+      for (let floor = 0; floor < h - 0.5; floor += 0.9)
+        for (let col = -1; col <= 1; col++) {
+          const windowMat = new THREE.MeshStandardMaterial({
+            color: 0x8ec6e5,
+            emissive: (i + col) % 3 ? 0x246082 : 0xa0713b,
+            emissiveIntensity: 0.65,
+          });
+          box(scene, windowMat, x + col * 0.75, 0.65 + floor, -6.47, 0.46, 0.46, 0.025, 0.01);
+        }
+      if (i % 2 === 0) {
+        box(scene, steel, x, 1.7, 4.8, 0.065, 3.4, 0.065, 0.01);
+        box(scene, steel, x, 3.4, 4.35, 0.07, 0.06, 0.9, 0.01);
+        const light = new THREE.Mesh(
+          new THREE.SphereGeometry(0.14, 12, 8),
+          new THREE.MeshBasicMaterial({ color: 0xffe8ad })
+        );
+        light.position.set(x, 3.35, 3.95);
+        scene.add(light);
+      }
+    }
+    const animal = donkey();
+    animal.animal.scale.setScalar(DONKEY_SCALE);
+    scene.add(animal.animal);
+    const ghost = animal.animal.clone(true);
+    ghost.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.material = obj.material.clone();
+        obj.material.transparent = true;
+        obj.material.opacity = 0.3;
+      }
+    });
+    ghost.visible = false;
+    scene.add(ghost);
+    const impactCar = buildCar(0xe4a233);
+    impactCar.visible = false;
+    scene.add(impactCar);
+    const flash = new THREE.Mesh(
+      new THREE.SphereGeometry(0.8, 20, 12),
+      new THREE.MeshBasicMaterial({ color: 0xffe2a3, transparent: true, opacity: 0.75 })
+    );
+    flash.visible = false;
+    scene.add(flash);
     const resize = () => {
-      const width = node.clientWidth;
-      renderer.setSize(width, width, false);
+      const w = node.clientWidth,
+        h = node.clientHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / Math.max(1, h);
+      camera.updateProjectionMatrix();
     };
     const observer = new ResizeObserver(resize);
     observer.observe(node);
     resize();
-    let frame = 0,
-      last = 0,
-      previousStep = -1,
-      changedAt = 0,
-      from = -1.15,
-      to = -1.15,
-      actual = -1.15,
-      revealAt = 0;
-    let previousPhase = 'idle';
     const reduced = prefersReducedMotion();
+    const frames = gpuFrameRenderer(renderer, scene, camera);
+    let raf = 0,
+      last = 0,
+      signature = '',
+      changedAt = 0,
+      actual = 0,
+      from = 0,
+      to = 0,
+      notified = false;
     const draw = (now: number) => {
-      frame = requestAnimationFrame(draw);
-      if (document.hidden || now - last < (reduced ? 180 : 30)) return;
+      raf = requestAnimationFrame(draw);
+      if (document.hidden || now - last < (reduced ? 100 : 16)) return;
       last = now;
-      const p = latest.current;
-      if (p.game === 'mines') {
-        tiles.forEach((tile, i) => {
-          const picked = p.picked.includes(i),
-            exposed = p.mines !== null;
-          const isMine = p.mines?.includes(i) ?? false;
-          tile.visible = !picked && !exposed;
-          prizes[i].visible = picked || exposed;
-          prizes[i].children[0].visible = !isMine;
-          prizes[i].children[1].visible = isMine;
-          prizes[i].scale.setScalar(picked ? 1 : 0.78);
-          prizes[i].position.y = 0.92 + (reduced ? 0 : Math.sin(now / 800 + i) * 0.045);
-          prizes[i].children[0].rotation.y = reduced ? 0 : now / 3000 + i;
-        });
-      } else if (animal) {
-        const step = p.picked.length - (p.phase === 'lost' ? 1 : 0);
-        if (step !== previousStep) {
-          previousStep = step;
-          changedAt = now;
-          from = actual;
-          to = step * 2.3 - 1.15;
-        }
-        if (p.phase !== previousPhase) {
-          previousPhase = p.phase;
-          revealAt = now;
-        }
-        const t = reduced ? 1 : Math.min(1, (now - changedAt) / (550 * getAnimationSpeed()));
-        actual = THREE.MathUtils.lerp(from, to, t * t * (3 - 2 * t));
-        animal.animal.position.x = actual;
-        animal.animal.position.y = 0.05 + (t < 1 ? Math.sin(t * Math.PI) * 0.48 : 0);
-        animal.legs.forEach((leg, i) => {
-          leg.rotation.z = t < 1 ? Math.sin(t * Math.PI * 4 + (i % 2) * Math.PI) * 0.55 : 0;
-        });
-        let focus = actual;
-        if (ghost) {
-          ghost.visible = p.phase === 'cashed' && p.roadEnd !== null;
-          if (ghost.visible) {
-            const progress = reduced ? 1 : Math.max(0, Math.min(1, (now - revealAt - 900) / 2400));
-            ghost.position.set(
-              THREE.MathUtils.lerp(to, (p.roadEnd ?? step) * 2.3 - 1.15, progress),
-              0.05,
-              1.7
-            );
-            ghost.traverse((part) => {
-              if (part.name.startsWith('walking-leg-'))
-                part.rotation.z =
-                  !reduced && progress > 0 && progress < 1
-                    ? Math.sin(progress * 24 + Number(part.name.slice(-1)) * Math.PI) * 0.55
-                    : 0;
-            });
-            focus = ghost.position.x;
-          }
-        }
-        traffic.forEach((car, i) => {
-          car.position.z = reduced
-            ? ((i * 3.17) % 12) - 6
-            : (((((now / 650) * (i % 2 ? 1 : -1) + i * 3.17) % 14) + 14) % 14) - 7;
-          car.rotation.y = i % 2 ? 0 : Math.PI;
-        });
-        camera.position.set(focus + 5.4, 6.5, 9);
-        camera.lookAt(focus + 1, 0, 0);
-        key.position.x = focus - 4;
-        key.target.position.x = focus;
+      const p = latest.current,
+        step = p.picked.length,
+        newSignature = `${p.roundId}:${step}:${p.phase}`;
+      if (newSignature !== signature) {
+        signature = newSignature;
+        from = p.phase === 'idle' ? 0 : actual;
+        to = streetCenter(step);
+        changedAt = now;
+        notified = false;
       }
-      renderer.render(scene, camera);
+      const elapsed = now - changedAt,
+        walk = reduced ? 1 : Math.min(1, elapsed / (420 * getAnimationSpeed()));
+      actual = THREE.MathUtils.lerp(from, to, walk * walk * (3 - 2 * walk));
+      animal.animal.position.set(
+        actual - 0.12,
+        0.05 + (walk < 1 ? Math.sin(walk * Math.PI) * 0.28 : 0),
+        0
+      );
+      animal.animal.rotation.z = 0;
+      animal.animal.scale.setScalar(DONKEY_SCALE);
+      animal.legs.forEach((leg, i) => {
+        leg.rotation.z = walk < 1 ? Math.sin(walk * Math.PI * 4 + (i % 2) * Math.PI) * 0.5 : 0;
+      });
+      traffic.forEach((car, i) => {
+        if (!car) return;
+        car.visible =
+          crossingTrafficVisible(i, step, p.phase === 'lost') && !(walk < 1 && i === step - 1);
+        car.position.z = reduced
+          ? 7
+          : (((((now / 530) * (i % 2 ? 1 : -1) + i * 3.13) % 22) + 22) % 22) - 11;
+        car.rotation.y = i % 2 ? 0 : Math.PI;
+      });
+      impactCar.visible = p.phase === 'lost';
+      flash.visible = false;
+      let finished = walk === 1;
+      if (p.phase === 'lost') {
+        const impact = collisionFrame(Math.max(0, elapsed - 220), reduced);
+        impactCar.position.set(to, 0, impact.carZ);
+        impactCar.rotation.y = Math.PI;
+        if (impact.hit) {
+          animal.animal.rotation.z = (-Math.PI / 2) * impact.fall;
+          animal.animal.position.y = 0.1;
+          animal.animal.scale.y = DONKEY_SCALE * (1 - 0.8 * impact.fall);
+          flash.position.set(to, 0.7, 0);
+          flash.visible = impact.fall < 0.5;
+          flash.scale.setScalar(0.5 + impact.fall);
+        }
+        finished = impact.finished;
+      }
+      let focus = actual;
+      ghost.visible = p.phase === 'cashed' && p.roadEnd !== null;
+      if (ghost.visible) {
+        const progress = reduced ? 1 : Math.max(0, Math.min(1, (elapsed - 800) / 2400));
+        ghost.position.set(
+          THREE.MathUtils.lerp(to, streetCenter(p.roadEnd ?? step), progress),
+          0.05,
+          0
+        );
+        focus = THREE.MathUtils.lerp(actual, ghost.position.x, 0.65);
+      }
+      laneSigns.forEach((sign, i) => {
+        (sign.material as THREE.MeshPhysicalMaterial).color.setHex(
+          i === step
+            ? p.phase === 'lost'
+              ? 0xff745b
+              : 0x64cbb0
+            : i === step + 1
+              ? 0x65cfff
+              : 0x294966
+        );
+      });
+      camera.position.set(focus + 2.6, 8.5, 10.8);
+      camera.lookAt(focus + 0.6, 0.1, 0);
+      key.position.x = focus - 4;
+      key.target.position.x = focus;
+      if (frames.render() && finished && !notified) {
+        notified = true;
+        p.onSettled?.();
+      }
     };
-    frame = requestAnimationFrame(draw);
-    const lost = (event: Event) => {
-      event.preventDefault();
+    raf = requestAnimationFrame(draw);
+    const lost = (e: Event) => {
+      e.preventDefault();
       setFailed(true);
+      latest.current.onSettled?.();
     };
-    const restored = () => setFailed(false);
     canvas.addEventListener('webglcontextlost', lost);
-    canvas.addEventListener('webglcontextrestored', restored);
     return () => {
-      cancelAnimationFrame(frame);
+      cancelAnimationFrame(raf);
+      frames.dispose();
       observer.disconnect();
       canvas.removeEventListener('webglcontextlost', lost);
-      canvas.removeEventListener('webglcontextrestored', restored);
       const geometries = new Set<THREE.BufferGeometry>(),
         materials = new Set<THREE.Material>();
       scene.traverse((obj) => {
@@ -395,62 +430,28 @@ export default function ChoiceScene(props: Props) {
         }
       });
       geometries.forEach((g) => g.dispose());
+      textures.forEach((t) => t.dispose());
       materials.forEach((m) => m.dispose());
       environment.dispose();
       key.shadow.map?.dispose();
       renderer.dispose();
       canvas.remove();
     };
-  }, [props.game]);
+  }, []);
   return (
-    <div className={styles.scene} ref={host} data-motion="keep">
-      {failed ? (
-        <div className={styles.fallback}>
-          The 3D Scene Is Unavailable. Your Game Controls Still Work.
-        </div>
-      ) : null}
-      {props.game === 'mines' && failed ? (
-        <div className={styles.fallbackGrid}>
-          {Array.from({ length: 25 }, (_, i) => (
-            <button
-              key={i}
-              type="button"
-              className={styles.fallbackTile}
-              aria-label={`Tile ${i + 1}${props.mines?.includes(i) ? ', Mine' : props.picked.includes(i) || props.mines ? ', Gem' : ''}`}
-              disabled={props.busy || props.phase !== 'open' || props.picked.includes(i)}
-              onClick={() => props.onPick(i)}
-            >
-              {props.mines?.includes(i)
-                ? 'Mine'
-                : props.picked.includes(i) || props.mines
-                  ? 'Gem'
-                  : i + 1}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {props.game === 'mines' && !failed
-        ? positions.map((position, i) => (
-            <button
-              key={i}
-              type="button"
-              className={styles.tile}
-              style={{ left: `${position.x}%`, top: `${position.y}%` }}
-              aria-label={`Tile ${i + 1}${props.mines?.includes(i) ? ', Mine' : props.picked.includes(i) || props.mines ? ', Gem' : ''}`}
-              disabled={props.busy || props.phase !== 'open' || props.picked.includes(i)}
-              onClick={() => props.onPick(i)}
-            />
-          ))
-        : null}
+    <div className={styles.scene} ref={host} data-motion="keep" data-phase={props.phase}>
       <div className={styles.caption}>
-        {props.game === 'crossing'
-          ? 'Donkey Crossing'
+        {props.phase === 'lost'
+          ? 'Collision · No Prize'
           : props.phase === 'cashed'
-            ? 'All Mines Revealed'
-            : props.phase === 'open'
-              ? 'Choose Your Next Tile'
-              : 'Diamond Mines'}
+            ? 'Win Booked · Showing The Remaining Route'
+            : `Street ${props.picked.length} · Next Street Clear`}
       </div>
+      {failed && (
+        <p className={styles.fallback}>
+          The Street Animation Is Unavailable. Your Confirmed Result And Controls Remain Available.
+        </p>
+      )}
     </div>
   );
 }

@@ -137,7 +137,7 @@ function ToastInstrumentIcon({ type }: { type: ToastType }) {
         />
         <circle className="toast__instrument-rotor" cx="20" cy="20" r="13.1" />
         <path className="toast__instrument-scan" d="M9.8 27.2 27.2 9.8" />
-        <g className="toast__instrument-mark">{mark}</g>
+        <g>{mark}</g>
         <circle
           className="toast__instrument-lamp toast__instrument-status"
           cx="31.2"
@@ -187,6 +187,7 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
           setTimeout(onRemove, 300);
         }}
       >
+        <span className="toast__close-label">Dismiss</span>
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="m7 7 10 10M17 7 7 17" />
         </svg>

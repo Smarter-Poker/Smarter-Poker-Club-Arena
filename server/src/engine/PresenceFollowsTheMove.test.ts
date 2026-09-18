@@ -227,6 +227,7 @@ describe('the handoff itself', () => {
       timeBank: {
         remainingSeconds: 11,
         usesRemaining: 1,
+        unlimitedActivations: true,
         initialSeconds: 40,
         baseSeconds: 40,
         dbConsumedSeconds: 0,
@@ -235,6 +236,7 @@ describe('the handoff itself', () => {
     expect(claimMovedPresence(PLAYER, MAIN2)!.timeBank).toEqual({
       remainingSeconds: 11,
       usesRemaining: 1,
+      unlimitedActivations: true,
       initialSeconds: 40,
       baseSeconds: 40,
       dbConsumedSeconds: 0,

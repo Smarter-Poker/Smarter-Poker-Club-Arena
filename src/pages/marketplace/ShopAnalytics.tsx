@@ -1,10 +1,10 @@
 /**
- * MARKETPLACE — sales analytics for club owners/admins.
+ * MARKETPLACE : sales analytics for club owners/admins.
  *
  * The Manage tab could only show lifetime totals, so an owner had no way to
  * tell whether the shop was working, what sold, or whether a promo did
- * anything. Revenue comes from /api/club-arena/shop-analytics, which sums
- * price_paid rather than the item's current price — an admin editing a price
+ * anything. Burn totals come from /api/club-arena/shop-analytics, which sums
+ * price_paid rather than the item's current price : an admin editing a price
  * must not rewrite history.
  */
 
@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../components/common/Toast';
 import { fmt } from '../../utils/format';
+import { formatPopupText } from '../../utils/popupStyle';
 import styles from '../MarketplacePage.module.css';
 
 interface DayPoint {
@@ -108,7 +109,7 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
 
       {loading && !data ? (
         <div className={styles.emptyState}>
-          <span className={styles.emptyText}>Loading Sales...</span>
+          <span className={styles.emptyText}>Loading Sales</span>
         </div>
       ) : error && !data ? (
         <div className={styles.emptyState}>
@@ -126,7 +127,7 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
             </div>
             <div className={styles.statCard}>
               <span className={styles.statValue}>{fmt(data.totals.netRevenue)}</span>
-              <span className={styles.statLabel}>Net Diamonds</span>
+              <span className={styles.statLabel}>Net Diamonds Burned</span>
             </div>
             <div className={styles.statCard}>
               <span className={styles.statValue}>{fmt(data.totals.uniqueBuyers)}</span>
@@ -156,8 +157,8 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
               {/* Pure-CSS bar chart: no chart library in this bundle. */}
               <div
                 className={styles.chart}
-                role="img"
-                aria-label={`Daily Diamond Revenue Over ${data.days} Days`}
+                role="list"
+                aria-label={`Daily Diamond Burns Over ${data.days} Days`}
               >
                 {data.series.map((d) => (
                   <div
@@ -165,6 +166,8 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
                     className={styles.chartBar}
                     style={{ height: `${Math.round((d.revenue / peak) * 100)}%` }}
                     title={`${d.date}: ${d.sales} Sale(s), ${d.revenue} Diamonds`}
+                    role="listitem"
+                    aria-label={`${d.date}: ${d.sales} Sales, ${d.revenue} Diamonds Burned`}
                   />
                 ))}
               </div>
@@ -181,9 +184,13 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
                   <tbody>
                     {data.topItems.map((i) => (
                       <tr key={i.itemId}>
-                        <td style={{ fontWeight: 600 }}>{i.name}</td>
-                        <td>{fmt(i.sales)}</td>
-                        <td style={{ color: '#00d4ff', fontWeight: 700 }}>{fmt(i.revenue)}</td>
+                        <td data-label="Top Items" className={styles.dataItemName}>
+                          {formatPopupText(i.name)}
+                        </td>
+                        <td data-label="Sold">{fmt(i.sales)}</td>
+                        <td data-label="Diamonds" className={styles.dataValuePrice}>
+                          {fmt(i.revenue)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -203,9 +210,13 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
                     <tbody>
                       {data.topBuyers.map((b) => (
                         <tr key={b.userId}>
-                          <td style={{ fontWeight: 600 }}>{b.name || 'Member'}</td>
-                          <td>{fmt(b.purchases)}</td>
-                          <td style={{ color: '#00d4ff', fontWeight: 700 }}>{fmt(b.spent)}</td>
+                          <td data-label="Top Buyers" className={styles.dataItemName}>
+                            {formatPopupText(b.name || 'Member')}
+                          </td>
+                          <td data-label="Purchases">{fmt(b.purchases)}</td>
+                          <td data-label="Diamonds" className={styles.dataValuePrice}>
+                            {fmt(b.spent)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

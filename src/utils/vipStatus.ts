@@ -29,8 +29,11 @@ export interface VipColumns {
 
 export function resolveVipStatus(row: VipColumns | null | undefined, now = Date.now()): VipStatus {
   if (!row?.is_vip) return 'none';
-  // A lifetime membership does not expire, whatever a stale expiry column says.
-  if ((row.vip_tier || '').toLowerCase() === 'lifetime') return 'lifetime';
+  // The database sinks grant Lifetime benefits only for this exact canonical
+  // value. Do not normalize a malformed tier into a stronger entitlement in
+  // the client while the authoritative server correctly treats it as ordinary
+  // VIP. A Lifetime membership does not expire, whatever a stale expiry says.
+  if (row.vip_tier === 'lifetime') return 'lifetime';
   return resolveActiveVip(true, row.vip_expires_at ?? null, now) ? 'vip' : 'none';
 }
 

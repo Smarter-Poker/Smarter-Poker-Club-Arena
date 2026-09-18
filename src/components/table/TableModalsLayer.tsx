@@ -1069,7 +1069,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
 
       {/* Throwable Selector */}
       {showThrowableSelector && userId && v8Settings.emoji_enabled && (
-        <div className="throwable-selector-overlay" onClick={onThrowableClose}>
+        <div className="throwable-selector-overlay">
           <ThrowableSelector
             userId={userId}
             onSelect={onThrowableSelect}

@@ -1,5 +1,5 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   events: {} as Record<string, () => void>,
   balance: vi.fn(),
@@ -38,6 +38,10 @@ beforeEach(() => {
   mocks.balance.mockResolvedValue({ available: 125, inPlay: 75 });
   mocks.history.mockResolvedValue({ data: [], error: null });
 });
+afterEach(() => {
+  cleanup();
+  document.body.style.overflow = '';
+});
 describe('wallet custody integration', () => {
   it('refreshes an incoming transfer from profile updates without an old balance', async () => {
     render(<DiamondWalletModal isOpen onClose={() => {}} />);
@@ -64,6 +68,45 @@ describe('wallet custody integration', () => {
     fireEvent.click(retry);
     expect(await screen.findByText('125')).toBeTruthy();
     expect(screen.getByText('75')).toBeTruthy();
+  });
+  it('contains keyboard focus, closes with Escape, and restores the opener and page scroll', async () => {
+    const opener = document.createElement('button');
+    opener.textContent = 'Open Diamond Wallet';
+    document.body.appendChild(opener);
+    opener.focus();
+    document.body.style.overflow = 'auto';
+    const onClose = vi.fn();
+
+    const view = render(<DiamondWalletModal isOpen onClose={onClose} />);
+    const dialog = screen.getByRole('dialog', { name: 'Diamond Wallet' });
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    expect(document.body.style.overflow).toBe('hidden');
+
+    const controls = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    );
+    expect(controls.length).toBeGreaterThan(1);
+
+    controls[controls.length - 1].focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(controls[0]).toHaveFocus();
+
+    controls[0].focus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(controls[controls.length - 1]).toHaveFocus();
+
+    const replacementClose = vi.fn();
+    view.rerender(<DiamondWalletModal isOpen onClose={replacementClose} />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(replacementClose).toHaveBeenCalledTimes(1);
+    view.rerender(<DiamondWalletModal isOpen={false} onClose={replacementClose} />);
+
+    await waitFor(() => expect(opener).toHaveFocus());
+    expect(document.body.style.overflow).toBe('auto');
+    opener.remove();
   });
 });
 

@@ -94,11 +94,12 @@ python3 "$root/tests/fixtures/pnl-evidence/verify-wrapper-source-binding.py"
 
 # Use sequential independent clusters. The real pg_cron launcher can keep a
 # database connection even with job launching disabled, so do not clone it.
-phases=(rejection-provenance rejection-authority rejection-privacy-bypass rejection-privacy rejection-messenger-reader rejection-push-writer rejection-push-rotation rejection-credit-request rejection-cashier-document rejection-correction-document rejection-browser-period rejection-correction-writer acceptance spin-mixed-cutover legacy-fee-finality correction-writer-concurrency rejection-credit-reduction credit-reduction-concurrency)
+phases=(rejection-provenance rejection-authority rejection-privacy-bypass rejection-privacy rejection-messenger-reader rejection-push-writer rejection-push-rotation rejection-credit-request rejection-cashier-document rejection-correction-document rejection-browser-period rejection-correction-writer acceptance spin-mixed-cutover legacy-fee-finality sep8-spin-custody correction-writer-concurrency rejection-credit-reduction credit-reduction-concurrency)
 # A focused invocation reuses this exact original schema and activation path.
 # The normal protected invocation still executes every existing phase.
 if [ "${1:-}" = --spin-mixed-cutover-only ]; then phases=(spin-mixed-cutover); fi
 if [ "${1:-}" = --legacy-fee-finality-only ]; then phases=(legacy-fee-finality); fi
+if [ "${1:-}" = --sep8-spin-custody-only ]; then phases=(sep8-spin-custody); fi
 for phase in "${phases[@]}"; do
 mkdir "$ACCOUNTING_TEST_OUTPUT_DIR/$phase"
 fixture=$(mktemp -d "$ACCOUNTING_FIXTURE_PARENT/accounting-activation.XXXXXX")
@@ -161,7 +162,11 @@ psql=("$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -U postgres -h "$fixture/socket" -p
 # Actual extension-owned unrelated job: disabled launcher makes it inert.
 "${psql[@]}" -A -t -d "$fixture_db" -c "SELECT cron.schedule('fixture-full-activation-unrelated','17 * * * *','SELECT 1');" > "$fixture/cron-fixture.log"
 "${psql[@]}" -A -t -d "$fixture_db" -c 'SELECT jsonb_agg(to_jsonb(j) ORDER BY j.jobid) FROM cron.job j;' > "$fixture/cron-before.json"
-if [ "$phase" = legacy-fee-finality ]; then
+if [ "$phase" = sep8-spin-custody ]; then
+"${psql[@]}" -d "$fixture_db" -f "$candidate" > "$fixture/activation.log" 2>&1
+python3 "$root/scripts/dev/qualify-legacy-fee-finality.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/predecessor" --bootstrap-only
+python3 "$root/scripts/dev/qualify-sep8-spin-custody.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase"
+elif [ "$phase" = legacy-fee-finality ]; then
 "${psql[@]}" -d "$fixture_db" -f "$candidate" > "$fixture/activation.log" 2>&1
 python3 "$root/scripts/dev/qualify-legacy-fee-finality.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase"
 elif [ "$phase" = spin-mixed-cutover ]; then
@@ -419,7 +424,7 @@ finish_fixture
 done
 # The focused command is complete after its own cleanup; unrelated maintained
 # post-loop suites remain mandatory for the normal protected invocation.
-if [ "${1:-}" = --spin-mixed-cutover-only ] || [ "${1:-}" = --legacy-fee-finality-only ]; then exit 0; fi
+if [ "${1:-}" = --spin-mixed-cutover-only ] || [ "${1:-}" = --legacy-fee-finality-only ] || [ "${1:-}" = --sep8-spin-custody-only ]; then exit 0; fi
 
 # Original boundary capture is a separate prospective successor, never part of
 # the sealed installed 37-component migration or a replay of it.

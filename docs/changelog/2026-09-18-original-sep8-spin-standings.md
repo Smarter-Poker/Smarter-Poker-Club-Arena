@@ -1,0 +1,9 @@
+# Original September 8 Spin standings
+
+Five retained three-player outcomes cannot satisfy the modern complete elimination-sequence proof: each original third place has a NULL sequence, while second place has its actual recorded candidate and accepted hand. Reconstructing or inventing that missing sequence could change a historical outcome.
+
+The explicit named-case operation binds the full original roster, financial records, physical seats and table incarnation, accepted hand, and uncapped later-hand/idempotency inventory. It locks the current manager and original inputs, refuses later authority, and creates a private immutable witness in the same transaction as the existing terminal payer. The witness preserves original ranks and records `cash.original_standings`; it never creates a historical sequence or another payout authority. Replays require the same operation and full expected preimage. The existing terminal reader proves closure, while the standings witness separately validates every player closure stamp against the terminal timestamp.
+
+The cash successor composes the exact qualified Breakfast payer and retains its separate `original_witness`. Install the eight-event custody predecessor, exact Breakfast migration, five-Spin custody successor, and then the reserved standings migration in that order. Existing guarded postimages refuse an unexpected predecessor. These migrations provide source authority only; MTT owns installation and financial operations.
+
+The maintained five-Spin native qualification installs real prerequisites and invokes the real operation, payer, custody and decoder. Original inputs remain byte-bound; local seed mutations are restricted to the isolated database before tested actions, and seed no successful witness, payout or terminal. Joined qualification, protected checks, installation and live verification remain separate evidence layers.

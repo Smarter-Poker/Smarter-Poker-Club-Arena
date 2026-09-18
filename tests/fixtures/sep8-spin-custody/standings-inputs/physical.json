@@ -1,0 +1,5647 @@
+[
+  {
+    "at": "2026-09-18 09:40:18.943249+00",
+    "id": "b60c7add-6b38-4549-b091-601f64d118a0",
+    "tables": [
+      {
+        "id": "994b631b-75ea-47bb-9833-90d196e30926",
+        "ante": 0,
+        "name": "1 Chip Deep Stack Spin PLO4",
+        "role": null,
+        "cap_bb": null,
+        "stakes": "10000000/10000000",
+        "status": "waiting",
+        "ante_bb": 0,
+        "avg_pot": 0,
+        "club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+        "live_at": null,
+        "ban_chat": false,
+        "is_spins": false,
+        "nit_game": false,
+        "settings": {},
+        "union_id": null,
+        "auto_muck": true,
+        "big_blind": 10000000,
+        "game_mode": "regular",
+        "game_type": "tournament",
+        "ko_bounty": false,
+        "lifecycle": null,
+        "max_buyin": null,
+        "min_buyin": null,
+        "opened_at": null,
+        "cluster_id": null,
+        "created_at": "2026-09-08T13:33:30.367007+00:00",
+        "created_by": null,
+        "deleted_at": null,
+        "deleted_by": null,
+        "is_deleted": false,
+        "is_private": false,
+        "live_state": null,
+        "main_index": null,
+        "max_buy_in": 0,
+        "min_buy_in": 0,
+        "no_rathole": false,
+        "sng_buy_in": 0,
+        "start_time": null,
+        "updated_at": "2026-09-18T09:39:31.096017+00:00",
+        "bbj_percent": 100,
+        "cap_enabled": false,
+        "hands_dealt": 0,
+        "is_featured": false,
+        "is_template": false,
+        "is_vip_only": false,
+        "max_players": 3,
+        "rake_cap_bb": -1,
+        "run_it_mode": "none",
+        "small_blind": 10000000,
+        "ante_enabled": false,
+        "auto_restart": false,
+        "double_board": false,
+        "game_variant": "plo4",
+        "is_anonymous": false,
+        "label_as_new": false,
+        "rake_percent": -1,
+        "run_it_twice": true,
+        "triple_board": false,
+        "custom_add_on": false,
+        "f06_lifecycle": 20907,
+        "max_buy_in_bb": null,
+        "max_straddles": 1,
+        "min_buy_in_bb": null,
+        "multi_day_mtt": false,
+        "straddle_type": "utg",
+        "tournament_id": "b60c7add-6b38-4549-b091-601f64d118a0",
+        "all_in_or_fold": false,
+        "allow_straddle": true,
+        "auto_extension": false,
+        "big_blind_ante": false,
+        "gtd_prize_pool": false,
+        "hide_club_name": false,
+        "ip_restriction": false,
+        "maintain_hands": 10,
+        "starting_chips": 1500,
+        "accelerated_mtt": false,
+        "blind_structure": "standard",
+        "current_players": 1,
+        "enable_straddle": true,
+        "gps_restriction": true,
+        "max_players_mtt": 300,
+        "min_players_mtt": 30,
+        "promote_pending": false,
+        "restrict_device": true,
+        "save_start_time": false,
+        "seat_game_scope": "table:994b631b-75ea-47bb-9833-90d196e30926",
+        "bomb_pot_enabled": false,
+        "bomb_pot_variant": null,
+        "break_started_at": null,
+        "calltime_enabled": false,
+        "final_table_deal": false,
+        "payout_structure": "winner_takes_all",
+        "pineapple_holdem": false,
+        "sng_player_count": 9,
+        "spins_multiplier": null,
+        "straddle_enabled": false,
+        "add_on_multiplier": 1,
+        "allow_rabbit_hunt": true,
+        "auto_create_table": false,
+        "auto_muck_enabled": true,
+        "auto_utg_straddle": false,
+        "blinds_up_minutes": 10,
+        "bubble_protection": false,
+        "first_button_seat": null,
+        "game_length_hours": 12,
+        "insurance_enabled": false,
+        "short_description": "",
+        "show_hand_enabled": true,
+        "sng_custom_buy_in": false,
+        "time_bank_enabled": true,
+        "allow_run_it_twice": true,
+        "auto_start_players": 2,
+        "bomb_pot_frequency": 0,
+        "career_percent_min": 0,
+        "restrict_observers": false,
+        "seat_admission_key": "tournament:b60c7add-6b38-4549-b091-601f64d118a0",
+        "seven_deuce_amount": 2,
+        "terminal_closed_at": null,
+        "time_bank_max_uses": 4,
+        "voluntary_straddle": false,
+        "wait_for_big_blind": true,
+        "action_time_seconds": 15,
+        "bomb_pot_ante_fixed": null,
+        "featured_tournament": false,
+        "next_step_satellite": false,
+        "observer_show_cards": false,
+        "seven_deuce_enabled": false,
+        "synchronized_breaks": true,
+        "tournament_schedule": false,
+        "agent_downline_limit": null,
+        "bomb_pot_board_count": 1,
+        "bomb_pot_min_players": 3,
+        "bomb_pot_next_due_at": null,
+        "bomb_pot_sched_state": null,
+        "break_eligible_since": null,
+        "buy_in_authorization": false,
+        "maintain_percent_min": 0,
+        "run_it_twice_enabled": false,
+        "bomb_pot_double_board": false,
+        "bomb_pot_trigger_mode": "every_n_hands",
+        "authorized_to_register": false,
+        "big_blind_ante_enabled": false,
+        "bomb_pot_button_policy": "regular",
+        "prefer_check_over_fold": true,
+        "bomb_pot_manual_pending": false,
+        "early_bird_registration": false,
+        "late_registration_level": 6,
+        "pc_emulator_restriction": false,
+        "bomb_pot_ante_multiplier": 2,
+        "max_consecutive_timeouts": 3,
+        "restart_tournament_every": false,
+        "bomb_pot_announce_seconds": null,
+        "bomb_pot_interval_seconds": null,
+        "custom_rebuy_reentry_cost": false,
+        "disconnect_timeout_seconds": 30,
+        "number_of_rebuys_reentries": 3,
+        "add_on_break_length_minutes": 1,
+        "photo_rotation_verification": false
+      }
+    ],
+    "seats": [
+      {
+        "id": "22f05fe4-193a-418e-ac37-ea6204e87bcf",
+        "stack": 0,
+        "status": "active",
+        "club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+        "is_away": false,
+        "left_at": "2026-09-08T13:51:19.683+00:00",
+        "user_id": "2b36fe05-9389-47b9-9646-dc2a91d414d4",
+        "horse_id": "2b36fe05-9389-47b9-9646-dc2a91d414d4",
+        "table_id": "994b631b-75ea-47bb-9833-90d196e30926",
+        "joined_at": "2026-09-08T13:42:53.971244+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 1,
+        "occupancy_id": "51c2a6a7-a7e6-4c16-afce-66e183d86542",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": null,
+        "active_parent_key": null,
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 0,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 0
+      },
+      {
+        "id": "35d13be2-83a6-4fb6-b1c2-c76269e1fe6c",
+        "stack": 0,
+        "status": "left",
+        "club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+        "is_away": false,
+        "left_at": "2026-09-14T00:10:52.020743+00:00",
+        "user_id": "ca898367-27eb-4166-807e-0e674f11aca8",
+        "horse_id": "ca898367-27eb-4166-807e-0e674f11aca8",
+        "table_id": "994b631b-75ea-47bb-9833-90d196e30926",
+        "joined_at": "2026-09-08T13:42:55.349689+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 3,
+        "occupancy_id": "aeea9185-40d5-4936-ad55-1083f8434487",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": null,
+        "active_parent_key": null,
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 40,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 2
+      },
+      {
+        "id": "aaaa681a-579b-4c23-8c1c-c2db66383adf",
+        "stack": 3000,
+        "status": "active",
+        "club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+        "is_away": false,
+        "left_at": null,
+        "user_id": "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+        "horse_id": "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+        "table_id": "994b631b-75ea-47bb-9833-90d196e30926",
+        "joined_at": "2026-09-08T13:42:54.694917+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 2,
+        "occupancy_id": "fa4015d4-ed5c-4389-ac35-086d324dd448",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": "table:994b631b-75ea-47bb-9833-90d196e30926",
+        "active_parent_key": "tournament:b60c7add-6b38-4549-b091-601f64d118a0",
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 40,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 2
+      }
+    ],
+    "table_leases": null,
+    "tournament_lease": {
+      "acquired_at": "2026-09-18T09:12:32.955834+00:00",
+      "instance_id": "1-991f9ac4",
+      "heartbeat_at": "2026-09-18T09:40:17.517865+00:00",
+      "tournament_id": "b60c7add-6b38-4549-b091-601f64d118a0",
+      "engine_version": "7c2371db",
+      "lease_generation": "7a424f71-3e13-48ef-add1-8467ac9f0743",
+      "protocol_version": 2
+    },
+    "permits": null,
+    "operations": null,
+    "active_snapshots": null,
+    "accepted_outcomes": [
+      {
+        "atomic": {
+          "hand_id": "31e5fdbf-b33c-4be2-8600-1e5fd678254f",
+          "table_id": "994b631b-75ea-47bb-9833-90d196e30926",
+          "hand_number": 10754676,
+          "committed_at": "2026-09-14T00:10:52.056304+00:00",
+          "payload_hash": "a83edf4cb7044f55b2e376e7cbe16f0db46d65f8447ed87f1c774c6be8f986ff",
+          "stack_result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "f1549d08-11b1-44ff-4210-5e35e8791da9",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 3000,
+                  "seat_id": "aaaa681a-579b-4c23-8c1c-c2db66383adf",
+                  "user_id": "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+                  "stack_before": 2620,
+                  "seat_joined_at": "2026-09-08T13:42:54.694917+00:00"
+                },
+                {
+                  "stack": 0,
+                  "seat_id": "35d13be2-83a6-4fb6-b1c2-c76269e1fe6c",
+                  "user_id": "ca898367-27eb-4166-807e-0e674f11aca8",
+                  "stack_before": 380,
+                  "seat_joined_at": "2026-09-08T13:42:55.349689+00:00"
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "82c24bec-26e3-476d-ab10-b9b951e1ce93": 3000,
+              "ca898367-27eb-4166-807e-0e674f11aca8": 0
+            },
+            "departed": [],
+            "table_id": "994b631b-75ea-47bb-9833-90d196e30926",
+            "net_deltas": 0,
+            "hand_number": 10754676,
+            "tournament_id": "b60c7add-6b38-4549-b091-601f64d118a0",
+            "conservation_checked": true,
+            "tournament_player_chips": [
+              {
+                "chips": 3000,
+                "user_id": "82c24bec-26e3-476d-ab10-b9b951e1ce93"
+              },
+              {
+                "chips": 0,
+                "user_id": "ca898367-27eb-4166-807e-0e674f11aca8"
+              }
+            ],
+            "tournament_player_count": 2,
+            "tournament_players_synced": true,
+            "tournament_player_user_ids": [
+              "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+              "ca898367-27eb-4166-807e-0e674f11aca8"
+            ],
+            "tournament_zero_stack_seat_ids": [
+              "35d13be2-83a6-4fb6-b1c2-c76269e1fe6c"
+            ],
+            "tournament_zero_stack_user_ids": [
+              "ca898367-27eb-4166-807e-0e674f11aca8"
+            ],
+            "tournament_table_live_seat_count": 1,
+            "tournament_zero_stack_seat_count": 1,
+            "tournament_zero_stack_vacated_at": "2026-09-14T00:10:52.020743+00:00",
+            "tournament_zero_stack_seats_vacated": true,
+            "tournament_zero_stack_seat_generations": [
+              {
+                "seat_id": "35d13be2-83a6-4fb6-b1c2-c76269e1fe6c",
+                "user_id": "ca898367-27eb-4166-807e-0e674f11aca8",
+                "joined_at": "2026-09-08T13:42:55.349689+00:00",
+                "seat_number": 3
+              }
+            ]
+          },
+          "post_commit_result": {
+            "ok": true,
+            "rake": false,
+            "hand_id": "31e5fdbf-b33c-4be2-8600-1e5fd678254f",
+            "insurance": 0,
+            "time_banks": 2,
+            "hand_number": 10754676,
+            "pending_addons": 0,
+            "bbj_contribution": false,
+            "already_completed": false,
+            "promo_playthrough": 0
+          },
+          "post_commit_payload": {
+            "rake": null,
+            "version": 1,
+            "insurance": [],
+            "time_banks": [
+              {
+                "seat_id": "aaaa681a-579b-4c23-8c1c-c2db66383adf",
+                "user_id": "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+                "seat_joined_at": "2026-09-08T13:42:54.694917+00:00",
+                "uses_remaining": 2,
+                "seconds_remaining": 40
+              },
+              {
+                "seat_id": "35d13be2-83a6-4fb6-b1c2-c76269e1fe6c",
+                "user_id": "ca898367-27eb-4166-807e-0e674f11aca8",
+                "seat_joined_at": "2026-09-08T13:42:55.349689+00:00",
+                "uses_remaining": 2,
+                "seconds_remaining": 40
+              }
+            ],
+            "pending_addons": null,
+            "bbj_contribution": null,
+            "promo_playthrough": [],
+            "accepted_hand_facts": {
+              "insurance": [],
+              "contributions": {
+                "82c24bec-26e3-476d-ab10-b9b951e1ce93": 380,
+                "ca898367-27eb-4166-807e-0e674f11aca8": 380
+              },
+              "returned_uncalled": {}
+            }
+          },
+          "post_commit_completed_at": "2026-09-14T00:10:55.261711+00:00",
+          "post_commit_payload_hash": "eb59584a00ec16b3662370937171a38603e149e1c5e7b71c06c7749f139aba4b",
+          "post_commit_request_hash": "34f4ef07cea0b42fa4d76e933bd4dcdae7fe60da0e1312e11863c347106fa0d5"
+        },
+        "history": {
+          "id": "31e5fdbf-b33c-4be2-8600-1e5fd678254f",
+          "pots": [
+            {
+              "index": 0,
+              "amount": 760,
+              "awards": [
+                {
+                  "low": false,
+                  "amount": 760,
+                  "userId": "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+                  "potIndex": 0
+                }
+              ],
+              "eligible": [
+                "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+                "ca898367-27eb-4166-807e-0e674f11aca8"
+              ]
+            }
+          ],
+          "seed": null,
+          "board": [
+            "3clubs",
+            "9hearts",
+            "Jspades",
+            "8clubs",
+            "5spades"
+          ],
+          "source": "manual",
+          "actions": [
+            {
+              "dead": false,
+              "seat": 2,
+              "stage": "preflop",
+              "action": "sb",
+              "amount": 40,
+              "userId": "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+              "timestamp": 1789344613809
+            },
+            {
+              "dead": false,
+              "seat": 3,
+              "stage": "preflop",
+              "action": "bb",
+              "amount": 80,
+              "userId": "ca898367-27eb-4166-807e-0e674f11aca8",
+              "timestamp": 1789344613809
+            },
+            {
+              "seat": 2,
+              "stage": "preflop",
+              "action": "call",
+              "amount": 40,
+              "origin": "horse_policy",
+              "userId": "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+              "timestamp": 1789344616126,
+              "publicNode": {
+                "pot": 120,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    2,
+                    2580,
+                    40,
+                    40,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    3,
+                    300,
+                    80,
+                    80,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  ""
+                ],
+                "status": "captured",
+                "street": "preflop",
+                "toCall": 40,
+                "bombPot": false,
+                "variant": "plo4",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 80,
+                "chipUnit": 1,
+                "actorSeat": 2,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 80,
+                "dealerSeat": 2,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 240,
+                "minRaiseTo": 160,
+                "smallBlind": 40,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "call",
+                  "raise",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "reason": "context_incomplete",
+                  "status": "unavailable",
+                  "version": 1
+                }
+              },
+              "observationIdentity": {
+                "handId": "31e5fdbf-b33c-4be2-8600-1e5fd678254f",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "5134eb089ad380072b7822552480532c477c26fda8ef84c945bab1fd2ac819d0",
+                "actionOrdinal": 2,
+                "observationId": "31e5fdbf-b33c-4be2-8600-1e5fd678254f:2"
+              }
+            },
+            {
+              "seat": 3,
+              "stage": "preflop",
+              "action": "check",
+              "amount": 0,
+              "origin": "horse_policy",
+              "userId": "ca898367-27eb-4166-807e-0e674f11aca8",
+              "timestamp": 1789344624260,
+              "publicNode": {
+                "pot": 160,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    2,
+                    2540,
+                    80,
+                    80,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    3,
+                    300,
+                    80,
+                    80,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  ""
+                ],
+                "status": "captured",
+                "street": "preflop",
+                "toCall": 0,
+                "bombPot": false,
+                "variant": "plo4",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 80,
+                "chipUnit": 1,
+                "actorSeat": 3,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 80,
+                "dealerSeat": 2,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 240,
+                "minRaiseTo": 160,
+                "smallBlind": 40,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "check",
+                  "raise",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "reason": "context_incomplete",
+                  "status": "unavailable",
+                  "version": 1
+                }
+              },
+              "observationIdentity": {
+                "handId": "31e5fdbf-b33c-4be2-8600-1e5fd678254f",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "b0ba13d7679229ce9c60d073887980a25e7f60a111c0c45d2e3ecabd3a5b6b92",
+                "actionOrdinal": 3,
+                "observationId": "31e5fdbf-b33c-4be2-8600-1e5fd678254f:3"
+              }
+            },
+            {
+              "seat": 3,
+              "stage": "flop",
+              "action": "bet",
+              "amount": 98,
+              "origin": "horse_policy",
+              "userId": "ca898367-27eb-4166-807e-0e674f11aca8",
+              "timestamp": 1789344637689,
+              "publicNode": {
+                "pot": 160,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    2,
+                    2540,
+                    0,
+                    80,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    3,
+                    300,
+                    0,
+                    80,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  "3c9hJs"
+                ],
+                "status": "captured",
+                "street": "flop",
+                "toCall": 0,
+                "bombPot": false,
+                "variant": "plo4",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 80,
+                "chipUnit": 1,
+                "actorSeat": 3,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 0,
+                "dealerSeat": 2,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 160,
+                "minRaiseTo": 80,
+                "smallBlind": 40,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "check",
+                  "bet",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 2250,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 4,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "isFullRaise": true,
+              "observationIdentity": {
+                "handId": "31e5fdbf-b33c-4be2-8600-1e5fd678254f",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "b0ba13d7679229ce9c60d073887980a25e7f60a111c0c45d2e3ecabd3a5b6b92",
+                "actionOrdinal": 4,
+                "observationId": "31e5fdbf-b33c-4be2-8600-1e5fd678254f:4"
+              }
+            },
+            {
+              "seat": 2,
+              "stage": "flop",
+              "action": "call",
+              "amount": 98,
+              "origin": "horse_policy",
+              "userId": "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+              "timestamp": 1789344639788,
+              "publicNode": {
+                "pot": 258,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    2,
+                    2540,
+                    0,
+                    80,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    3,
+                    202,
+                    98,
+                    178,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  "3c9hJs"
+                ],
+                "status": "captured",
+                "street": "flop",
+                "toCall": 98,
+                "bombPot": false,
+                "variant": "plo4",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 80,
+                "chipUnit": 1,
+                "actorSeat": 2,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 98,
+                "dealerSeat": 2,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 454,
+                "minRaiseTo": 196,
+                "smallBlind": 40,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "call",
+                  "raise",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 4349,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 4,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "observationIdentity": {
+                "handId": "31e5fdbf-b33c-4be2-8600-1e5fd678254f",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "5134eb089ad380072b7822552480532c477c26fda8ef84c945bab1fd2ac819d0",
+                "actionOrdinal": 5,
+                "observationId": "31e5fdbf-b33c-4be2-8600-1e5fd678254f:5"
+              }
+            },
+            {
+              "seat": 3,
+              "stage": "turn",
+              "action": "all_in",
+              "amount": 202,
+              "origin": "horse_policy",
+              "userId": "ca898367-27eb-4166-807e-0e674f11aca8",
+              "timestamp": 1789344642397,
+              "publicNode": {
+                "pot": 356,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    2,
+                    2442,
+                    0,
+                    178,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    3,
+                    202,
+                    0,
+                    178,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  "3c9hJs8c"
+                ],
+                "status": "captured",
+                "street": "turn",
+                "toCall": 0,
+                "bombPot": false,
+                "variant": "plo4",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 80,
+                "chipUnit": 1,
+                "actorSeat": 3,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 0,
+                "dealerSeat": 2,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 202,
+                "minRaiseTo": 80,
+                "smallBlind": 40,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "check",
+                  "bet",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 6958,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 4,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "isFullRaise": true,
+              "observationIdentity": {
+                "handId": "31e5fdbf-b33c-4be2-8600-1e5fd678254f",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "b0ba13d7679229ce9c60d073887980a25e7f60a111c0c45d2e3ecabd3a5b6b92",
+                "actionOrdinal": 6,
+                "observationId": "31e5fdbf-b33c-4be2-8600-1e5fd678254f:6"
+              }
+            },
+            {
+              "seat": 2,
+              "stage": "turn",
+              "action": "call",
+              "amount": 202,
+              "origin": "horse_policy",
+              "userId": "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+              "timestamp": 1789344643993,
+              "publicNode": {
+                "pot": 558,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    2,
+                    2442,
+                    0,
+                    178,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    3,
+                    0,
+                    202,
+                    380,
+                    0,
+                    0,
+                    2
+                  ]
+                ],
+                "boards": [
+                  "3c9hJs8c"
+                ],
+                "status": "captured",
+                "street": "turn",
+                "toCall": 202,
+                "bombPot": false,
+                "variant": "plo4",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 80,
+                "chipUnit": 1,
+                "actorSeat": 2,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 202,
+                "dealerSeat": 2,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 962,
+                "minRaiseTo": 404,
+                "smallBlind": 40,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "call",
+                  "raise",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 8554,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 4,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "observationIdentity": {
+                "handId": "31e5fdbf-b33c-4be2-8600-1e5fd678254f",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "5134eb089ad380072b7822552480532c477c26fda8ef84c945bab1fd2ac819d0",
+                "actionOrdinal": 7,
+                "observationId": "31e5fdbf-b33c-4be2-8600-1e5fd678254f:7"
+              }
+            }
+          ],
+          "players": [
+            {
+              "seat": 2,
+              "cards": [],
+              "stack": 3000,
+              "userId": "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+              "username": "RailSniper"
+            },
+            {
+              "seat": 3,
+              "cards": [],
+              "stack": 0,
+              "userId": "ca898367-27eb-4166-807e-0e674f11aca8",
+              "username": "ValueWarden"
+            }
+          ],
+          "summary": null,
+          "version": "v1",
+          "winners": [
+            {
+              "hand": {
+                "name": "Straight",
+                "cards": [
+                  {
+                    "rank": "9",
+                    "suit": "hearts"
+                  },
+                  {
+                    "rank": "8",
+                    "suit": "clubs"
+                  },
+                  {
+                    "rank": "7",
+                    "suit": "hearts"
+                  },
+                  {
+                    "rank": "6",
+                    "suit": "hearts"
+                  },
+                  {
+                    "rank": "5",
+                    "suit": "spades"
+                  }
+                ],
+                "ranking": 5
+              },
+              "amount": 760,
+              "userId": "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+              "potIndex": 0
+            }
+          ],
+          "bomb_pot": null,
+          "ended_at": "2026-09-14T00:10:50.564+00:00",
+          "pot_size": 760,
+          "reported": false,
+          "showdown": [
+            {
+              "seat": 3,
+              "mucked": false,
+              "user_id": "ca898367-27eb-4166-807e-0e674f11aca8",
+              "hand_name": "Two Pair",
+              "reveal_order": 0,
+              "hand_description": "Jacks And Nines"
+            },
+            {
+              "seat": 2,
+              "mucked": false,
+              "user_id": "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+              "hand_name": "Straight",
+              "reveal_order": 1,
+              "hand_description": "Nine High"
+            }
+          ],
+          "table_id": "994b631b-75ea-47bb-9833-90d196e30926",
+          "big_blind": 80,
+          "hand_name": null,
+          "has_human": false,
+          "bbj_amount": 0,
+          "created_at": "2026-09-14T00:10:51.986657+00:00",
+          "hole_cards": {
+            "82c24bec-26e3-476d-ab10-b9b951e1ce93": [
+              {
+                "rank": "J",
+                "suit": "diamonds"
+              },
+              {
+                "rank": "6",
+                "suit": "hearts"
+              },
+              {
+                "rank": "K",
+                "suit": "spades"
+              },
+              {
+                "rank": "7",
+                "suit": "hearts"
+              }
+            ],
+            "ca898367-27eb-4166-807e-0e674f11aca8": [
+              {
+                "rank": "9",
+                "suit": "spades"
+              },
+              {
+                "rank": "J",
+                "suit": "clubs"
+              },
+              {
+                "rank": "Q",
+                "suit": "hearts"
+              },
+              {
+                "rank": "8",
+                "suit": "hearts"
+              }
+            ]
+          },
+          "rit_boards": null,
+          "started_at": "2026-09-14T00:10:13.809+00:00",
+          "button_seat": 2,
+          "hand_number": 10754676,
+          "rake_amount": 0,
+          "reported_at": null,
+          "small_blind": 40,
+          "winner_name": null,
+          "game_variant": "plo4",
+          "tournament_id": "b60c7add-6b38-4549-b091-601f64d118a0",
+          "community_cards": [
+            "3clubs",
+            "9hearts",
+            "Jspades",
+            "8clubs",
+            "5spades"
+          ],
+          "community_cards2": null,
+          "community_cards3": null,
+          "winners_by_board": null,
+          "daily_mission_events": [
+            {
+              "values": {
+                "big_pots": [
+                  760
+                ],
+                "strong_hands": [
+                  5
+                ]
+              },
+              "amounts": {
+                "big_pots": 1,
+                "chips_won": 760,
+                "hands_won": 1,
+                "showdowns": 1,
+                "hands_played": 1,
+                "strong_hands": 1,
+                "showdowns_won": 1
+              },
+              "user_id": "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+              "magnitudes": {
+                "big_pots": 760,
+                "strong_hands": 5
+              }
+            },
+            {
+              "values": {},
+              "amounts": {
+                "showdowns": 1,
+                "hands_played": 1
+              },
+              "user_id": "ca898367-27eb-4166-807e-0e674f11aca8",
+              "magnitudes": {}
+            }
+          ]
+        },
+        "candidate": {
+          "id": "7bbc2d91-0f44-48fc-b3cd-03b57dc465c1",
+          "state": "eliminated",
+          "hand_id": "31e5fdbf-b33c-4be2-8600-1e5fd678254f",
+          "seat_id": "35d13be2-83a6-4fb6-b1c2-c76269e1fe6c",
+          "table_id": "994b631b-75ea-47bb-9833-90d196e30926",
+          "created_at": "2026-09-14T00:10:52.051799+00:00",
+          "hand_number": 10754676,
+          "resolved_at": "2026-09-14T00:20:39.096265+00:00",
+          "stack_after": 0,
+          "stack_before": 380,
+          "tournament_id": "b60c7add-6b38-4549-b091-601f64d118a0",
+          "seat_joined_at": "2026-09-08T13:42:55.349689+00:00",
+          "eliminated_user_id": "ca898367-27eb-4166-807e-0e674f11aca8",
+          "rebuy_prompt_until": null
+        }
+      }
+    ],
+    "private_state_count": 0
+  },
+  {
+    "at": "2026-09-18 09:40:18.943249+00",
+    "id": "199a71a9-f364-4e90-a3ba-3cdcfb7755bc",
+    "tables": [
+      {
+        "id": "019baab3-a37a-4e6c-8d12-0f6333385ad3",
+        "ante": 0,
+        "name": "5 Chip Deep Stack Spin NLH",
+        "role": null,
+        "cap_bb": null,
+        "stakes": "10000000/10000000",
+        "status": "waiting",
+        "ante_bb": 0,
+        "avg_pot": 0,
+        "club_id": "fade0000-0000-0000-0000-000000000001",
+        "live_at": null,
+        "ban_chat": false,
+        "is_spins": false,
+        "nit_game": false,
+        "settings": {},
+        "union_id": "fade0000-0000-0000-0000-000000000001",
+        "auto_muck": true,
+        "big_blind": 10000000,
+        "game_mode": "regular",
+        "game_type": "tournament",
+        "ko_bounty": false,
+        "lifecycle": null,
+        "max_buyin": null,
+        "min_buyin": null,
+        "opened_at": null,
+        "cluster_id": null,
+        "created_at": "2026-09-08T14:31:47.7115+00:00",
+        "created_by": null,
+        "deleted_at": null,
+        "deleted_by": null,
+        "is_deleted": false,
+        "is_private": false,
+        "live_state": null,
+        "main_index": null,
+        "max_buy_in": 0,
+        "min_buy_in": 0,
+        "no_rathole": false,
+        "sng_buy_in": 0,
+        "start_time": null,
+        "updated_at": "2026-09-18T09:39:24.832819+00:00",
+        "bbj_percent": 100,
+        "cap_enabled": false,
+        "hands_dealt": 0,
+        "is_featured": false,
+        "is_template": false,
+        "is_vip_only": false,
+        "max_players": 3,
+        "rake_cap_bb": -1,
+        "run_it_mode": "none",
+        "small_blind": 10000000,
+        "ante_enabled": false,
+        "auto_restart": false,
+        "double_board": false,
+        "game_variant": "nlh",
+        "is_anonymous": false,
+        "label_as_new": false,
+        "rake_percent": -1,
+        "run_it_twice": true,
+        "triple_board": false,
+        "custom_add_on": false,
+        "f06_lifecycle": 16511,
+        "max_buy_in_bb": null,
+        "max_straddles": 1,
+        "min_buy_in_bb": null,
+        "multi_day_mtt": false,
+        "straddle_type": "utg",
+        "tournament_id": "199a71a9-f364-4e90-a3ba-3cdcfb7755bc",
+        "all_in_or_fold": false,
+        "allow_straddle": true,
+        "auto_extension": false,
+        "big_blind_ante": false,
+        "gtd_prize_pool": false,
+        "hide_club_name": false,
+        "ip_restriction": false,
+        "maintain_hands": 10,
+        "starting_chips": 1500,
+        "accelerated_mtt": false,
+        "blind_structure": "standard",
+        "current_players": 1,
+        "enable_straddle": true,
+        "gps_restriction": true,
+        "max_players_mtt": 300,
+        "min_players_mtt": 30,
+        "promote_pending": false,
+        "restrict_device": true,
+        "save_start_time": false,
+        "seat_game_scope": "table:019baab3-a37a-4e6c-8d12-0f6333385ad3",
+        "bomb_pot_enabled": false,
+        "bomb_pot_variant": null,
+        "break_started_at": null,
+        "calltime_enabled": false,
+        "final_table_deal": false,
+        "payout_structure": "winner_takes_all",
+        "pineapple_holdem": false,
+        "sng_player_count": 9,
+        "spins_multiplier": null,
+        "straddle_enabled": false,
+        "add_on_multiplier": 1,
+        "allow_rabbit_hunt": true,
+        "auto_create_table": false,
+        "auto_muck_enabled": true,
+        "auto_utg_straddle": false,
+        "blinds_up_minutes": 10,
+        "bubble_protection": false,
+        "first_button_seat": null,
+        "game_length_hours": 12,
+        "insurance_enabled": false,
+        "short_description": "",
+        "show_hand_enabled": true,
+        "sng_custom_buy_in": false,
+        "time_bank_enabled": true,
+        "allow_run_it_twice": true,
+        "auto_start_players": 2,
+        "bomb_pot_frequency": 0,
+        "career_percent_min": 0,
+        "restrict_observers": false,
+        "seat_admission_key": "tournament:199a71a9-f364-4e90-a3ba-3cdcfb7755bc",
+        "seven_deuce_amount": 2,
+        "terminal_closed_at": null,
+        "time_bank_max_uses": 4,
+        "voluntary_straddle": false,
+        "wait_for_big_blind": true,
+        "action_time_seconds": 15,
+        "bomb_pot_ante_fixed": null,
+        "featured_tournament": false,
+        "next_step_satellite": false,
+        "observer_show_cards": false,
+        "seven_deuce_enabled": false,
+        "synchronized_breaks": true,
+        "tournament_schedule": false,
+        "agent_downline_limit": null,
+        "bomb_pot_board_count": 1,
+        "bomb_pot_min_players": 3,
+        "bomb_pot_next_due_at": null,
+        "bomb_pot_sched_state": null,
+        "break_eligible_since": null,
+        "buy_in_authorization": false,
+        "maintain_percent_min": 0,
+        "run_it_twice_enabled": false,
+        "bomb_pot_double_board": false,
+        "bomb_pot_trigger_mode": "every_n_hands",
+        "authorized_to_register": false,
+        "big_blind_ante_enabled": false,
+        "bomb_pot_button_policy": "regular",
+        "prefer_check_over_fold": true,
+        "bomb_pot_manual_pending": false,
+        "early_bird_registration": false,
+        "late_registration_level": 6,
+        "pc_emulator_restriction": false,
+        "bomb_pot_ante_multiplier": 2,
+        "max_consecutive_timeouts": 3,
+        "restart_tournament_every": false,
+        "bomb_pot_announce_seconds": null,
+        "bomb_pot_interval_seconds": null,
+        "custom_rebuy_reentry_cost": false,
+        "disconnect_timeout_seconds": 30,
+        "number_of_rebuys_reentries": 3,
+        "add_on_break_length_minutes": 1,
+        "photo_rotation_verification": false
+      }
+    ],
+    "seats": [
+      {
+        "id": "2b2da771-2f24-4e43-8fb1-a00f7cc49570",
+        "stack": 0,
+        "status": "active",
+        "club_id": "a0000000-0000-0000-0000-000000000001",
+        "is_away": false,
+        "left_at": "2026-09-08T14:46:48.718+00:00",
+        "user_id": "7f99084b-e99a-4312-a258-1be6451c0c8b",
+        "horse_id": "7f99084b-e99a-4312-a258-1be6451c0c8b",
+        "table_id": "019baab3-a37a-4e6c-8d12-0f6333385ad3",
+        "joined_at": "2026-09-08T14:31:52.030525+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 2,
+        "occupancy_id": "d1771bcd-5b78-4004-a311-9f7158219520",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": null,
+        "active_parent_key": null,
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 40,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 2
+      },
+      {
+        "id": "4e2589d4-8b21-417b-9dc6-0baf9c93eda2",
+        "stack": 3000,
+        "status": "active",
+        "club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+        "is_away": false,
+        "left_at": null,
+        "user_id": "d9025f02-260a-4c89-9311-e00b792d35c4",
+        "horse_id": "d9025f02-260a-4c89-9311-e00b792d35c4",
+        "table_id": "019baab3-a37a-4e6c-8d12-0f6333385ad3",
+        "joined_at": "2026-09-08T14:31:51.404293+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 1,
+        "occupancy_id": "8ccbf059-aa58-4da9-a975-4388301f709b",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": "table:019baab3-a37a-4e6c-8d12-0f6333385ad3",
+        "active_parent_key": "tournament:199a71a9-f364-4e90-a3ba-3cdcfb7755bc",
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 40,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 2
+      },
+      {
+        "id": "5b5de3b8-d3ea-4e61-b85e-efb01b142a5d",
+        "stack": 0,
+        "status": "left",
+        "club_id": "a0000000-0000-0000-0000-000000000001",
+        "is_away": false,
+        "left_at": "2026-09-14T00:20:46.212764+00:00",
+        "user_id": "00000000-0000-0000-0000-000000000005",
+        "horse_id": "00000000-0000-0000-0000-000000000005",
+        "table_id": "019baab3-a37a-4e6c-8d12-0f6333385ad3",
+        "joined_at": "2026-09-08T14:36:22.351772+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 3,
+        "occupancy_id": "167410a9-d561-4b63-b646-b1eaf6916270",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": null,
+        "active_parent_key": null,
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 40,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 2
+      }
+    ],
+    "table_leases": null,
+    "tournament_lease": {
+      "acquired_at": "2026-09-18T09:12:30.036535+00:00",
+      "instance_id": "1-991f9ac4",
+      "heartbeat_at": "2026-09-18T09:40:17.517388+00:00",
+      "tournament_id": "199a71a9-f364-4e90-a3ba-3cdcfb7755bc",
+      "engine_version": "7c2371db",
+      "lease_generation": "27e40ff5-32d5-4221-b579-1ad74650bee8",
+      "protocol_version": 2
+    },
+    "permits": null,
+    "operations": null,
+    "active_snapshots": null,
+    "accepted_outcomes": [
+      {
+        "atomic": {
+          "hand_id": "a0ddd31b-3be5-4c3b-9254-f4d06c9a6b60",
+          "table_id": "019baab3-a37a-4e6c-8d12-0f6333385ad3",
+          "hand_number": 10757900,
+          "committed_at": "2026-09-14T00:20:46.255184+00:00",
+          "payload_hash": "3cda791f4cf728db34c2c90cb020100a38b93a9ed37b70670619a5015faf9653",
+          "stack_result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "f963a028-055c-e3da-9b95-fb412960f8f1",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "seat_id": "5b5de3b8-d3ea-4e61-b85e-efb01b142a5d",
+                  "user_id": "00000000-0000-0000-0000-000000000005",
+                  "stack_before": 1286,
+                  "seat_joined_at": "2026-09-08T14:36:22.351772+00:00"
+                },
+                {
+                  "stack": 3000,
+                  "seat_id": "4e2589d4-8b21-417b-9dc6-0baf9c93eda2",
+                  "user_id": "d9025f02-260a-4c89-9311-e00b792d35c4",
+                  "stack_before": 1714,
+                  "seat_joined_at": "2026-09-08T14:31:51.404293+00:00"
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "00000000-0000-0000-0000-000000000005": 0,
+              "d9025f02-260a-4c89-9311-e00b792d35c4": 3000
+            },
+            "departed": [],
+            "table_id": "019baab3-a37a-4e6c-8d12-0f6333385ad3",
+            "net_deltas": 0,
+            "hand_number": 10757900,
+            "tournament_id": "199a71a9-f364-4e90-a3ba-3cdcfb7755bc",
+            "conservation_checked": true,
+            "tournament_player_chips": [
+              {
+                "chips": 0,
+                "user_id": "00000000-0000-0000-0000-000000000005"
+              },
+              {
+                "chips": 3000,
+                "user_id": "d9025f02-260a-4c89-9311-e00b792d35c4"
+              }
+            ],
+            "tournament_player_count": 2,
+            "tournament_players_synced": true,
+            "tournament_player_user_ids": [
+              "00000000-0000-0000-0000-000000000005",
+              "d9025f02-260a-4c89-9311-e00b792d35c4"
+            ],
+            "tournament_zero_stack_seat_ids": [
+              "5b5de3b8-d3ea-4e61-b85e-efb01b142a5d"
+            ],
+            "tournament_zero_stack_user_ids": [
+              "00000000-0000-0000-0000-000000000005"
+            ],
+            "tournament_table_live_seat_count": 1,
+            "tournament_zero_stack_seat_count": 1,
+            "tournament_zero_stack_vacated_at": "2026-09-14T00:20:46.212764+00:00",
+            "tournament_zero_stack_seats_vacated": true,
+            "tournament_zero_stack_seat_generations": [
+              {
+                "seat_id": "5b5de3b8-d3ea-4e61-b85e-efb01b142a5d",
+                "user_id": "00000000-0000-0000-0000-000000000005",
+                "joined_at": "2026-09-08T14:36:22.351772+00:00",
+                "seat_number": 3
+              }
+            ]
+          },
+          "post_commit_result": {
+            "ok": true,
+            "rake": false,
+            "hand_id": "a0ddd31b-3be5-4c3b-9254-f4d06c9a6b60",
+            "insurance": 0,
+            "time_banks": 2,
+            "hand_number": 10757900,
+            "pending_addons": 0,
+            "bbj_contribution": false,
+            "already_completed": false,
+            "promo_playthrough": 0
+          },
+          "post_commit_payload": {
+            "rake": null,
+            "version": 1,
+            "insurance": [],
+            "time_banks": [
+              {
+                "seat_id": "4e2589d4-8b21-417b-9dc6-0baf9c93eda2",
+                "user_id": "d9025f02-260a-4c89-9311-e00b792d35c4",
+                "seat_joined_at": "2026-09-08T14:31:51.404293+00:00",
+                "uses_remaining": 2,
+                "seconds_remaining": 40
+              },
+              {
+                "seat_id": "5b5de3b8-d3ea-4e61-b85e-efb01b142a5d",
+                "user_id": "00000000-0000-0000-0000-000000000005",
+                "seat_joined_at": "2026-09-08T14:36:22.351772+00:00",
+                "uses_remaining": 2,
+                "seconds_remaining": 40
+              }
+            ],
+            "pending_addons": null,
+            "bbj_contribution": null,
+            "promo_playthrough": [],
+            "accepted_hand_facts": {
+              "insurance": [],
+              "contributions": {
+                "00000000-0000-0000-0000-000000000005": 1286,
+                "d9025f02-260a-4c89-9311-e00b792d35c4": 1286
+              },
+              "returned_uncalled": {
+                "d9025f02-260a-4c89-9311-e00b792d35c4": 428
+              }
+            }
+          },
+          "post_commit_completed_at": "2026-09-14T00:20:46.470123+00:00",
+          "post_commit_payload_hash": "1fe9f4a9694cd2063d9b86f7fc01b6295aaa371e36abad2ac4eb24f865082385",
+          "post_commit_request_hash": "a15e4f213d7075cb62177c87ca92d803774f3fd099ae1b21bd790f226e90eaab"
+        },
+        "history": {
+          "id": "a0ddd31b-3be5-4c3b-9254-f4d06c9a6b60",
+          "pots": [
+            {
+              "index": 0,
+              "amount": 2572,
+              "awards": [
+                {
+                  "low": false,
+                  "amount": 2572,
+                  "userId": "d9025f02-260a-4c89-9311-e00b792d35c4",
+                  "potIndex": 0
+                }
+              ],
+              "eligible": [
+                "d9025f02-260a-4c89-9311-e00b792d35c4",
+                "00000000-0000-0000-0000-000000000005"
+              ]
+            }
+          ],
+          "seed": null,
+          "board": [
+            "6spades",
+            "Kspades",
+            "2hearts",
+            "8diamonds",
+            "Qspades"
+          ],
+          "source": "manual",
+          "actions": [
+            {
+              "dead": false,
+              "seat": 1,
+              "stage": "preflop",
+              "action": "sb",
+              "amount": 75,
+              "userId": "d9025f02-260a-4c89-9311-e00b792d35c4",
+              "timestamp": 1789345222650
+            },
+            {
+              "dead": false,
+              "seat": 3,
+              "stage": "preflop",
+              "action": "bb",
+              "amount": 150,
+              "userId": "00000000-0000-0000-0000-000000000005",
+              "timestamp": 1789345222650
+            },
+            {
+              "seat": 1,
+              "stage": "preflop",
+              "action": "all_in",
+              "amount": 1714,
+              "origin": "horse_policy",
+              "userId": "d9025f02-260a-4c89-9311-e00b792d35c4",
+              "timestamp": 1789345226831,
+              "publicNode": {
+                "pot": 225,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    1,
+                    1639,
+                    75,
+                    75,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    3,
+                    1136,
+                    150,
+                    150,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  ""
+                ],
+                "status": "captured",
+                "street": "preflop",
+                "toCall": 75,
+                "bombPot": false,
+                "variant": "nlh",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 150,
+                "chipUnit": 1,
+                "actorSeat": 1,
+                "structure": "no_limit",
+                "boardCount": 1,
+                "currentBet": 150,
+                "dealerSeat": 1,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 1714,
+                "minRaiseTo": 300,
+                "smallBlind": 75,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "call",
+                  "raise",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 3322,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 7,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "isFullRaise": true,
+              "observationIdentity": {
+                "handId": "a0ddd31b-3be5-4c3b-9254-f4d06c9a6b60",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "cc6784cdfb767d3ec821d87da8a14380bf92bfc4c90bfb35167632ddfc3f0495",
+                "actionOrdinal": 2,
+                "observationId": "a0ddd31b-3be5-4c3b-9254-f4d06c9a6b60:2"
+              }
+            },
+            {
+              "seat": 3,
+              "stage": "preflop",
+              "action": "all_in",
+              "amount": 1286,
+              "origin": "horse_policy",
+              "userId": "00000000-0000-0000-0000-000000000005",
+              "timestamp": 1789345234462,
+              "publicNode": {
+                "pot": 1864,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    1,
+                    0,
+                    1714,
+                    1714,
+                    0,
+                    0,
+                    2
+                  ],
+                  [
+                    3,
+                    1136,
+                    150,
+                    150,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  ""
+                ],
+                "status": "captured",
+                "street": "preflop",
+                "toCall": 1564,
+                "bombPot": false,
+                "variant": "nlh",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 150,
+                "chipUnit": 1,
+                "actorSeat": 3,
+                "structure": "no_limit",
+                "boardCount": 1,
+                "currentBet": 1714,
+                "dealerSeat": 1,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": null,
+                "minRaiseTo": null,
+                "smallBlind": 75,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "call",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 10953,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 7,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "observationIdentity": {
+                "handId": "a0ddd31b-3be5-4c3b-9254-f4d06c9a6b60",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "2055de7f46e8b05bc2ed7801298b4e50db8bb735b752db40c96c1f24d3445fff",
+                "actionOrdinal": 3,
+                "observationId": "a0ddd31b-3be5-4c3b-9254-f4d06c9a6b60:3"
+              }
+            },
+            {
+              "seat": 1,
+              "stage": "preflop",
+              "action": "return",
+              "amount": 428,
+              "userId": "d9025f02-260a-4c89-9311-e00b792d35c4",
+              "timestamp": 1789345234462
+            }
+          ],
+          "players": [
+            {
+              "seat": 1,
+              "cards": [],
+              "stack": 3000,
+              "userId": "d9025f02-260a-4c89-9311-e00b792d35c4",
+              "username": "TiltWizard"
+            },
+            {
+              "seat": 3,
+              "cards": [],
+              "stack": 0,
+              "userId": "00000000-0000-0000-0000-000000000005",
+              "username": "BluffFox"
+            }
+          ],
+          "summary": null,
+          "version": "v1",
+          "winners": [
+            {
+              "hand": {
+                "name": "Two Pair",
+                "cards": [
+                  {
+                    "rank": "K",
+                    "suit": "spades"
+                  },
+                  {
+                    "rank": "8",
+                    "suit": "clubs"
+                  },
+                  {
+                    "rank": "8",
+                    "suit": "diamonds"
+                  },
+                  {
+                    "rank": "6",
+                    "suit": "clubs"
+                  },
+                  {
+                    "rank": "6",
+                    "suit": "spades"
+                  }
+                ],
+                "ranking": 3
+              },
+              "amount": 2572,
+              "userId": "d9025f02-260a-4c89-9311-e00b792d35c4",
+              "potIndex": 0
+            }
+          ],
+          "bomb_pot": null,
+          "ended_at": "2026-09-14T00:20:46.117+00:00",
+          "pot_size": 2572,
+          "reported": false,
+          "showdown": [
+            {
+              "seat": 1,
+              "mucked": false,
+              "user_id": "d9025f02-260a-4c89-9311-e00b792d35c4",
+              "hand_name": "Two Pair",
+              "reveal_order": 0,
+              "hand_description": "Eights And Sixes"
+            },
+            {
+              "seat": 3,
+              "mucked": false,
+              "user_id": "00000000-0000-0000-0000-000000000005",
+              "hand_name": "Pair",
+              "reveal_order": 1,
+              "hand_description": "Aces"
+            }
+          ],
+          "table_id": "019baab3-a37a-4e6c-8d12-0f6333385ad3",
+          "big_blind": 150,
+          "hand_name": null,
+          "has_human": false,
+          "bbj_amount": 0,
+          "created_at": "2026-09-14T00:20:46.192976+00:00",
+          "hole_cards": {
+            "00000000-0000-0000-0000-000000000005": [
+              {
+                "rank": "A",
+                "suit": "hearts"
+              },
+              {
+                "rank": "A",
+                "suit": "diamonds"
+              }
+            ],
+            "d9025f02-260a-4c89-9311-e00b792d35c4": [
+              {
+                "rank": "6",
+                "suit": "clubs"
+              },
+              {
+                "rank": "8",
+                "suit": "clubs"
+              }
+            ]
+          },
+          "rit_boards": null,
+          "started_at": "2026-09-14T00:20:22.65+00:00",
+          "button_seat": 1,
+          "hand_number": 10757900,
+          "rake_amount": 0,
+          "reported_at": null,
+          "small_blind": 75,
+          "winner_name": null,
+          "game_variant": "nlh",
+          "tournament_id": "199a71a9-f364-4e90-a3ba-3cdcfb7755bc",
+          "community_cards": [
+            "6spades",
+            "Kspades",
+            "2hearts",
+            "8diamonds",
+            "Qspades"
+          ],
+          "community_cards2": null,
+          "community_cards3": null,
+          "winners_by_board": null,
+          "daily_mission_events": [
+            {
+              "values": {
+                "big_pots": [
+                  2572
+                ],
+                "strong_hands": [
+                  3
+                ]
+              },
+              "amounts": {
+                "big_pots": 1,
+                "chips_won": 2572,
+                "hands_won": 1,
+                "showdowns": 1,
+                "hands_played": 1,
+                "strong_hands": 1,
+                "showdowns_won": 1
+              },
+              "user_id": "d9025f02-260a-4c89-9311-e00b792d35c4",
+              "magnitudes": {
+                "big_pots": 2572,
+                "strong_hands": 3
+              }
+            },
+            {
+              "values": {},
+              "amounts": {
+                "showdowns": 1,
+                "hands_played": 1
+              },
+              "user_id": "00000000-0000-0000-0000-000000000005",
+              "magnitudes": {}
+            }
+          ]
+        },
+        "candidate": {
+          "id": "3e1c780f-5ab9-4d40-9927-1ad4db186610",
+          "state": "eliminated",
+          "hand_id": "a0ddd31b-3be5-4c3b-9254-f4d06c9a6b60",
+          "seat_id": "5b5de3b8-d3ea-4e61-b85e-efb01b142a5d",
+          "table_id": "019baab3-a37a-4e6c-8d12-0f6333385ad3",
+          "created_at": "2026-09-14T00:20:46.251908+00:00",
+          "hand_number": 10757900,
+          "resolved_at": "2026-09-14T00:34:34.930124+00:00",
+          "stack_after": 0,
+          "stack_before": 1286,
+          "tournament_id": "199a71a9-f364-4e90-a3ba-3cdcfb7755bc",
+          "seat_joined_at": "2026-09-08T14:36:22.351772+00:00",
+          "eliminated_user_id": "00000000-0000-0000-0000-000000000005",
+          "rebuy_prompt_until": null
+        }
+      }
+    ],
+    "private_state_count": 0
+  },
+  {
+    "at": "2026-09-18 09:40:18.943249+00",
+    "id": "f3f050f1-569e-4fb6-859f-86b6092e682e",
+    "tables": [
+      {
+        "id": "98173b4c-08fe-42bd-839b-b542bed7f13e",
+        "ante": 0,
+        "name": "20 Chip Deep Stack Spin PLO6",
+        "role": null,
+        "cap_bb": null,
+        "stakes": "10000000/10000000",
+        "status": "waiting",
+        "ante_bb": 0,
+        "avg_pot": 0,
+        "club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+        "live_at": null,
+        "ban_chat": false,
+        "is_spins": false,
+        "nit_game": false,
+        "settings": {},
+        "union_id": null,
+        "auto_muck": true,
+        "big_blind": 10000000,
+        "game_mode": "regular",
+        "game_type": "tournament",
+        "ko_bounty": false,
+        "lifecycle": null,
+        "max_buyin": null,
+        "min_buyin": null,
+        "opened_at": null,
+        "cluster_id": null,
+        "created_at": "2026-09-08T12:45:25.985085+00:00",
+        "created_by": null,
+        "deleted_at": null,
+        "deleted_by": null,
+        "is_deleted": false,
+        "is_private": false,
+        "live_state": null,
+        "main_index": null,
+        "max_buy_in": 0,
+        "min_buy_in": 0,
+        "no_rathole": false,
+        "sng_buy_in": 0,
+        "start_time": null,
+        "updated_at": "2026-09-18T09:39:31.100806+00:00",
+        "bbj_percent": 100,
+        "cap_enabled": false,
+        "hands_dealt": 0,
+        "is_featured": false,
+        "is_template": false,
+        "is_vip_only": false,
+        "max_players": 3,
+        "rake_cap_bb": -1,
+        "run_it_mode": "none",
+        "small_blind": 10000000,
+        "ante_enabled": false,
+        "auto_restart": false,
+        "double_board": false,
+        "game_variant": "plo6",
+        "is_anonymous": false,
+        "label_as_new": false,
+        "rake_percent": -1,
+        "run_it_twice": true,
+        "triple_board": false,
+        "custom_add_on": false,
+        "f06_lifecycle": 199224,
+        "max_buy_in_bb": null,
+        "max_straddles": 1,
+        "min_buy_in_bb": null,
+        "multi_day_mtt": false,
+        "straddle_type": "utg",
+        "tournament_id": "f3f050f1-569e-4fb6-859f-86b6092e682e",
+        "all_in_or_fold": false,
+        "allow_straddle": true,
+        "auto_extension": false,
+        "big_blind_ante": false,
+        "gtd_prize_pool": false,
+        "hide_club_name": false,
+        "ip_restriction": false,
+        "maintain_hands": 10,
+        "starting_chips": 1500,
+        "accelerated_mtt": false,
+        "blind_structure": "standard",
+        "current_players": 1,
+        "enable_straddle": true,
+        "gps_restriction": true,
+        "max_players_mtt": 300,
+        "min_players_mtt": 30,
+        "promote_pending": false,
+        "restrict_device": true,
+        "save_start_time": false,
+        "seat_game_scope": "table:98173b4c-08fe-42bd-839b-b542bed7f13e",
+        "bomb_pot_enabled": false,
+        "bomb_pot_variant": null,
+        "break_started_at": null,
+        "calltime_enabled": false,
+        "final_table_deal": false,
+        "payout_structure": "winner_takes_all",
+        "pineapple_holdem": false,
+        "sng_player_count": 9,
+        "spins_multiplier": null,
+        "straddle_enabled": false,
+        "add_on_multiplier": 1,
+        "allow_rabbit_hunt": true,
+        "auto_create_table": false,
+        "auto_muck_enabled": true,
+        "auto_utg_straddle": false,
+        "blinds_up_minutes": 10,
+        "bubble_protection": false,
+        "first_button_seat": null,
+        "game_length_hours": 12,
+        "insurance_enabled": false,
+        "short_description": "",
+        "show_hand_enabled": true,
+        "sng_custom_buy_in": false,
+        "time_bank_enabled": true,
+        "allow_run_it_twice": true,
+        "auto_start_players": 2,
+        "bomb_pot_frequency": 0,
+        "career_percent_min": 0,
+        "restrict_observers": false,
+        "seat_admission_key": "tournament:f3f050f1-569e-4fb6-859f-86b6092e682e",
+        "seven_deuce_amount": 2,
+        "terminal_closed_at": null,
+        "time_bank_max_uses": 4,
+        "voluntary_straddle": false,
+        "wait_for_big_blind": true,
+        "action_time_seconds": 15,
+        "bomb_pot_ante_fixed": null,
+        "featured_tournament": false,
+        "next_step_satellite": false,
+        "observer_show_cards": false,
+        "seven_deuce_enabled": false,
+        "synchronized_breaks": true,
+        "tournament_schedule": false,
+        "agent_downline_limit": null,
+        "bomb_pot_board_count": 1,
+        "bomb_pot_min_players": 3,
+        "bomb_pot_next_due_at": null,
+        "bomb_pot_sched_state": null,
+        "break_eligible_since": null,
+        "buy_in_authorization": false,
+        "maintain_percent_min": 0,
+        "run_it_twice_enabled": false,
+        "bomb_pot_double_board": false,
+        "bomb_pot_trigger_mode": "every_n_hands",
+        "authorized_to_register": false,
+        "big_blind_ante_enabled": false,
+        "bomb_pot_button_policy": "regular",
+        "prefer_check_over_fold": true,
+        "bomb_pot_manual_pending": false,
+        "early_bird_registration": false,
+        "late_registration_level": 6,
+        "pc_emulator_restriction": false,
+        "bomb_pot_ante_multiplier": 2,
+        "max_consecutive_timeouts": 3,
+        "restart_tournament_every": false,
+        "bomb_pot_announce_seconds": null,
+        "bomb_pot_interval_seconds": null,
+        "custom_rebuy_reentry_cost": false,
+        "disconnect_timeout_seconds": 30,
+        "number_of_rebuys_reentries": 3,
+        "add_on_break_length_minutes": 1,
+        "photo_rotation_verification": false
+      }
+    ],
+    "seats": [
+      {
+        "id": "78d06834-b4ff-4267-9eb3-7fec06da4130",
+        "stack": 3000,
+        "status": "active",
+        "club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+        "is_away": false,
+        "left_at": null,
+        "user_id": "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1",
+        "horse_id": "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1",
+        "table_id": "98173b4c-08fe-42bd-839b-b542bed7f13e",
+        "joined_at": "2026-09-08T13:35:56.385314+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 1,
+        "occupancy_id": "43b78acc-1812-4c65-bc8e-ba6dcd8160eb",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": "table:98173b4c-08fe-42bd-839b-b542bed7f13e",
+        "active_parent_key": "tournament:f3f050f1-569e-4fb6-859f-86b6092e682e",
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 20,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 1
+      },
+      {
+        "id": "8785f508-b537-45da-bff6-9d0ea0191257",
+        "stack": 0,
+        "status": "left",
+        "club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+        "is_away": false,
+        "left_at": "2026-09-14T00:13:59.56683+00:00",
+        "user_id": "8327a08a-77e7-4f33-be45-e086a718c9e2",
+        "horse_id": "8327a08a-77e7-4f33-be45-e086a718c9e2",
+        "table_id": "98173b4c-08fe-42bd-839b-b542bed7f13e",
+        "joined_at": "2026-09-08T13:35:56.827613+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 2,
+        "occupancy_id": "0e020981-13d8-431d-a477-6e4b994ab4cb",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": null,
+        "active_parent_key": null,
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 40,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 2
+      },
+      {
+        "id": "b77dae2c-8e40-4496-ab4a-cebe66af4ed0",
+        "stack": 0,
+        "status": "active",
+        "club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+        "is_away": false,
+        "left_at": "2026-09-08T13:50:12.614+00:00",
+        "user_id": "5dcd596a-64de-4439-84a3-a79960b44000",
+        "horse_id": "5dcd596a-64de-4439-84a3-a79960b44000",
+        "table_id": "98173b4c-08fe-42bd-839b-b542bed7f13e",
+        "joined_at": "2026-09-08T13:35:57.329233+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 3,
+        "occupancy_id": "bdb7177a-4c46-44c3-915e-cba6973fe8f0",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": null,
+        "active_parent_key": null,
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 0,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 0
+      }
+    ],
+    "table_leases": null,
+    "tournament_lease": {
+      "acquired_at": "2026-09-18T09:12:32.305597+00:00",
+      "instance_id": "1-991f9ac4",
+      "heartbeat_at": "2026-09-18T09:40:17.517775+00:00",
+      "tournament_id": "f3f050f1-569e-4fb6-859f-86b6092e682e",
+      "engine_version": "7c2371db",
+      "lease_generation": "29133480-4743-4119-9886-f78a1c9ba037",
+      "protocol_version": 2
+    },
+    "permits": null,
+    "operations": null,
+    "active_snapshots": null,
+    "accepted_outcomes": [
+      {
+        "atomic": {
+          "hand_id": "87346151-e05c-47e9-8b01-22a1d0c64cc2",
+          "table_id": "98173b4c-08fe-42bd-839b-b542bed7f13e",
+          "hand_number": 10755928,
+          "committed_at": "2026-09-14T00:13:59.635679+00:00",
+          "payload_hash": "ab2e0a161aa308d1b6e121834cda5cd03c09d7274638db8ecc41d8cd834763c6",
+          "stack_result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "6bf2eb98-988d-4bae-aa81-8b66037dbb0d",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "seat_id": "8785f508-b537-45da-bff6-9d0ea0191257",
+                  "user_id": "8327a08a-77e7-4f33-be45-e086a718c9e2",
+                  "stack_before": 524,
+                  "seat_joined_at": "2026-09-08T13:35:56.827613+00:00"
+                },
+                {
+                  "stack": 3000,
+                  "seat_id": "78d06834-b4ff-4267-9eb3-7fec06da4130",
+                  "user_id": "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1",
+                  "stack_before": 2476,
+                  "seat_joined_at": "2026-09-08T13:35:56.385314+00:00"
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "8327a08a-77e7-4f33-be45-e086a718c9e2": 0,
+              "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1": 3000
+            },
+            "departed": [],
+            "table_id": "98173b4c-08fe-42bd-839b-b542bed7f13e",
+            "net_deltas": 0,
+            "hand_number": 10755928,
+            "tournament_id": "f3f050f1-569e-4fb6-859f-86b6092e682e",
+            "conservation_checked": true,
+            "tournament_player_chips": [
+              {
+                "chips": 0,
+                "user_id": "8327a08a-77e7-4f33-be45-e086a718c9e2"
+              },
+              {
+                "chips": 3000,
+                "user_id": "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1"
+              }
+            ],
+            "tournament_player_count": 2,
+            "tournament_players_synced": true,
+            "tournament_player_user_ids": [
+              "8327a08a-77e7-4f33-be45-e086a718c9e2",
+              "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1"
+            ],
+            "tournament_zero_stack_seat_ids": [
+              "8785f508-b537-45da-bff6-9d0ea0191257"
+            ],
+            "tournament_zero_stack_user_ids": [
+              "8327a08a-77e7-4f33-be45-e086a718c9e2"
+            ],
+            "tournament_table_live_seat_count": 1,
+            "tournament_zero_stack_seat_count": 1,
+            "tournament_zero_stack_vacated_at": "2026-09-14T00:13:59.56683+00:00",
+            "tournament_zero_stack_seats_vacated": true,
+            "tournament_zero_stack_seat_generations": [
+              {
+                "seat_id": "8785f508-b537-45da-bff6-9d0ea0191257",
+                "user_id": "8327a08a-77e7-4f33-be45-e086a718c9e2",
+                "joined_at": "2026-09-08T13:35:56.827613+00:00",
+                "seat_number": 2
+              }
+            ]
+          },
+          "post_commit_result": {
+            "ok": true,
+            "rake": false,
+            "hand_id": "87346151-e05c-47e9-8b01-22a1d0c64cc2",
+            "insurance": 0,
+            "time_banks": 2,
+            "hand_number": 10755928,
+            "pending_addons": 0,
+            "bbj_contribution": false,
+            "already_completed": false,
+            "promo_playthrough": 0
+          },
+          "post_commit_payload": {
+            "rake": null,
+            "version": 1,
+            "insurance": [],
+            "time_banks": [
+              {
+                "seat_id": "78d06834-b4ff-4267-9eb3-7fec06da4130",
+                "user_id": "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1",
+                "seat_joined_at": "2026-09-08T13:35:56.385314+00:00",
+                "uses_remaining": 1,
+                "seconds_remaining": 20
+              },
+              {
+                "seat_id": "8785f508-b537-45da-bff6-9d0ea0191257",
+                "user_id": "8327a08a-77e7-4f33-be45-e086a718c9e2",
+                "seat_joined_at": "2026-09-08T13:35:56.827613+00:00",
+                "uses_remaining": 2,
+                "seconds_remaining": 40
+              }
+            ],
+            "pending_addons": null,
+            "bbj_contribution": null,
+            "promo_playthrough": [],
+            "accepted_hand_facts": {
+              "insurance": [],
+              "contributions": {
+                "8327a08a-77e7-4f33-be45-e086a718c9e2": 524,
+                "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1": 524
+              },
+              "returned_uncalled": {
+                "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1": 16
+              }
+            }
+          },
+          "post_commit_completed_at": "2026-09-14T00:14:00.853714+00:00",
+          "post_commit_payload_hash": "09a973eb9f225d1870d1ef80a8a88b79f64b0eb3f706b9b09a505189ceb24d20",
+          "post_commit_request_hash": "c9be7adb058d0c46ca3a5285b8865b5b8e3aa1a98dec786ec9623f9407ea16db"
+        },
+        "history": {
+          "id": "87346151-e05c-47e9-8b01-22a1d0c64cc2",
+          "pots": [
+            {
+              "index": 0,
+              "amount": 1048,
+              "awards": [
+                {
+                  "low": false,
+                  "amount": 1048,
+                  "userId": "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1",
+                  "potIndex": 0
+                }
+              ],
+              "eligible": [
+                "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1",
+                "8327a08a-77e7-4f33-be45-e086a718c9e2"
+              ]
+            }
+          ],
+          "seed": null,
+          "board": [
+            "Qclubs",
+            "Thearts",
+            "6spades",
+            "3hearts",
+            "Qspades"
+          ],
+          "source": "manual",
+          "actions": [
+            {
+              "dead": false,
+              "seat": 1,
+              "stage": "preflop",
+              "action": "sb",
+              "amount": 60,
+              "userId": "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1",
+              "timestamp": 1789344799849
+            },
+            {
+              "dead": false,
+              "seat": 2,
+              "stage": "preflop",
+              "action": "bb",
+              "amount": 120,
+              "userId": "8327a08a-77e7-4f33-be45-e086a718c9e2",
+              "timestamp": 1789344799849
+            },
+            {
+              "seat": 1,
+              "stage": "preflop",
+              "action": "raise",
+              "amount": 360,
+              "origin": "horse_policy",
+              "userId": "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1",
+              "timestamp": 1789344804350,
+              "publicNode": {
+                "pot": 180,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    1,
+                    2416,
+                    60,
+                    60,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    2,
+                    404,
+                    120,
+                    120,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  ""
+                ],
+                "status": "captured",
+                "street": "preflop",
+                "toCall": 60,
+                "bombPot": false,
+                "variant": "plo6",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 120,
+                "chipUnit": 1,
+                "actorSeat": 1,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 120,
+                "dealerSeat": 1,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 360,
+                "minRaiseTo": 240,
+                "smallBlind": 60,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "call",
+                  "raise",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 4155,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 6,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "isFullRaise": true,
+              "observationIdentity": {
+                "handId": "87346151-e05c-47e9-8b01-22a1d0c64cc2",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "ca40cdaf85c58aef0518d06106f7dd231891d2f39cf25e0d3302bd34940fce02",
+                "actionOrdinal": 2,
+                "observationId": "87346151-e05c-47e9-8b01-22a1d0c64cc2:2"
+              }
+            },
+            {
+              "seat": 2,
+              "stage": "preflop",
+              "action": "call",
+              "amount": 240,
+              "origin": "horse_policy",
+              "userId": "8327a08a-77e7-4f33-be45-e086a718c9e2",
+              "timestamp": 1789344806152,
+              "publicNode": {
+                "pot": 480,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    1,
+                    2116,
+                    360,
+                    360,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    2,
+                    404,
+                    120,
+                    120,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  ""
+                ],
+                "status": "captured",
+                "street": "preflop",
+                "toCall": 240,
+                "bombPot": false,
+                "variant": "plo6",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 120,
+                "chipUnit": 1,
+                "actorSeat": 2,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 360,
+                "dealerSeat": 1,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": null,
+                "minRaiseTo": null,
+                "smallBlind": 60,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "call",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 5957,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 6,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "observationIdentity": {
+                "handId": "87346151-e05c-47e9-8b01-22a1d0c64cc2",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "65d43d2891c02f01cf7ecd79a8d8d909af4ce391fd13bca01ba1f2c046cab714",
+                "actionOrdinal": 3,
+                "observationId": "87346151-e05c-47e9-8b01-22a1d0c64cc2:3"
+              }
+            },
+            {
+              "seat": 2,
+              "stage": "flop",
+              "action": "check",
+              "amount": 0,
+              "origin": "horse_policy",
+              "userId": "8327a08a-77e7-4f33-be45-e086a718c9e2",
+              "timestamp": 1789344809568,
+              "publicNode": {
+                "pot": 720,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    1,
+                    2116,
+                    0,
+                    360,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    2,
+                    164,
+                    0,
+                    360,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  "QcTh6s"
+                ],
+                "status": "captured",
+                "street": "flop",
+                "toCall": 0,
+                "bombPot": false,
+                "variant": "plo6",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 120,
+                "chipUnit": 1,
+                "actorSeat": 2,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 0,
+                "dealerSeat": 1,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 164,
+                "minRaiseTo": 120,
+                "smallBlind": 60,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "check",
+                  "bet",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 9373,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 6,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "observationIdentity": {
+                "handId": "87346151-e05c-47e9-8b01-22a1d0c64cc2",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "65d43d2891c02f01cf7ecd79a8d8d909af4ce391fd13bca01ba1f2c046cab714",
+                "actionOrdinal": 4,
+                "observationId": "87346151-e05c-47e9-8b01-22a1d0c64cc2:4"
+              }
+            },
+            {
+              "seat": 1,
+              "stage": "flop",
+              "action": "bet",
+              "amount": 180,
+              "origin": "horse_policy",
+              "userId": "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1",
+              "timestamp": 1789344818772,
+              "publicNode": {
+                "pot": 720,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    1,
+                    2116,
+                    0,
+                    360,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    2,
+                    164,
+                    0,
+                    360,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  "QcTh6s"
+                ],
+                "status": "captured",
+                "street": "flop",
+                "toCall": 0,
+                "bombPot": false,
+                "variant": "plo6",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 120,
+                "chipUnit": 1,
+                "actorSeat": 1,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 0,
+                "dealerSeat": 1,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 720,
+                "minRaiseTo": 120,
+                "smallBlind": 60,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "check",
+                  "bet",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 18577,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 6,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "isFullRaise": true,
+              "observationIdentity": {
+                "handId": "87346151-e05c-47e9-8b01-22a1d0c64cc2",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "ca40cdaf85c58aef0518d06106f7dd231891d2f39cf25e0d3302bd34940fce02",
+                "actionOrdinal": 5,
+                "observationId": "87346151-e05c-47e9-8b01-22a1d0c64cc2:5"
+              }
+            },
+            {
+              "seat": 2,
+              "stage": "flop",
+              "action": "all_in",
+              "amount": 164,
+              "origin": "horse_policy",
+              "userId": "8327a08a-77e7-4f33-be45-e086a718c9e2",
+              "timestamp": 1789344829393,
+              "publicNode": {
+                "pot": 900,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    1,
+                    1936,
+                    180,
+                    540,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    2,
+                    164,
+                    0,
+                    360,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  "QcTh6s"
+                ],
+                "status": "captured",
+                "street": "flop",
+                "toCall": 180,
+                "bombPot": false,
+                "variant": "plo6",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 120,
+                "chipUnit": 1,
+                "actorSeat": 2,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 180,
+                "dealerSeat": 1,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": null,
+                "minRaiseTo": null,
+                "smallBlind": 60,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "call",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 9791,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 6,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "observationIdentity": {
+                "handId": "87346151-e05c-47e9-8b01-22a1d0c64cc2",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "65d43d2891c02f01cf7ecd79a8d8d909af4ce391fd13bca01ba1f2c046cab714",
+                "actionOrdinal": 6,
+                "observationId": "87346151-e05c-47e9-8b01-22a1d0c64cc2:6"
+              }
+            },
+            {
+              "seat": 1,
+              "stage": "flop",
+              "action": "return",
+              "amount": 16,
+              "userId": "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1",
+              "timestamp": 1789344829393
+            }
+          ],
+          "players": [
+            {
+              "seat": 1,
+              "cards": [],
+              "stack": 3000,
+              "userId": "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1",
+              "username": "RaiseRanger"
+            },
+            {
+              "seat": 2,
+              "cards": [],
+              "stack": 0,
+              "userId": "8327a08a-77e7-4f33-be45-e086a718c9e2",
+              "username": "FoldShark"
+            }
+          ],
+          "summary": null,
+          "version": "v1",
+          "winners": [
+            {
+              "hand": {
+                "name": "Full House",
+                "cards": [
+                  {
+                    "rank": "Q",
+                    "suit": "diamonds"
+                  },
+                  {
+                    "rank": "Q",
+                    "suit": "clubs"
+                  },
+                  {
+                    "rank": "Q",
+                    "suit": "spades"
+                  },
+                  {
+                    "rank": "3",
+                    "suit": "spades"
+                  },
+                  {
+                    "rank": "3",
+                    "suit": "hearts"
+                  }
+                ],
+                "ranking": 7
+              },
+              "amount": 1048,
+              "userId": "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1",
+              "potIndex": 0
+            }
+          ],
+          "bomb_pot": null,
+          "ended_at": "2026-09-14T00:13:58.403+00:00",
+          "pot_size": 1048,
+          "reported": false,
+          "showdown": [
+            {
+              "seat": 1,
+              "mucked": false,
+              "user_id": "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1",
+              "hand_name": "Full House",
+              "reveal_order": 0,
+              "hand_description": "Queens Full Of Threes"
+            },
+            {
+              "seat": 2,
+              "mucked": false,
+              "user_id": "8327a08a-77e7-4f33-be45-e086a718c9e2",
+              "hand_name": "Two Pair",
+              "reveal_order": 1,
+              "hand_description": "Queens And Jacks"
+            }
+          ],
+          "table_id": "98173b4c-08fe-42bd-839b-b542bed7f13e",
+          "big_blind": 120,
+          "hand_name": null,
+          "has_human": false,
+          "bbj_amount": 0,
+          "created_at": "2026-09-14T00:13:59.503609+00:00",
+          "hole_cards": {
+            "8327a08a-77e7-4f33-be45-e086a718c9e2": [
+              {
+                "rank": "5",
+                "suit": "spades"
+              },
+              {
+                "rank": "J",
+                "suit": "hearts"
+              },
+              {
+                "rank": "4",
+                "suit": "hearts"
+              },
+              {
+                "rank": "T",
+                "suit": "spades"
+              },
+              {
+                "rank": "J",
+                "suit": "clubs"
+              },
+              {
+                "rank": "5",
+                "suit": "clubs"
+              }
+            ],
+            "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1": [
+              {
+                "rank": "8",
+                "suit": "spades"
+              },
+              {
+                "rank": "A",
+                "suit": "clubs"
+              },
+              {
+                "rank": "Q",
+                "suit": "diamonds"
+              },
+              {
+                "rank": "3",
+                "suit": "spades"
+              },
+              {
+                "rank": "J",
+                "suit": "spades"
+              },
+              {
+                "rank": "7",
+                "suit": "diamonds"
+              }
+            ]
+          },
+          "rit_boards": null,
+          "started_at": "2026-09-14T00:13:19.849+00:00",
+          "button_seat": 1,
+          "hand_number": 10755928,
+          "rake_amount": 0,
+          "reported_at": null,
+          "small_blind": 60,
+          "winner_name": null,
+          "game_variant": "plo6",
+          "tournament_id": "f3f050f1-569e-4fb6-859f-86b6092e682e",
+          "community_cards": [
+            "Qclubs",
+            "Thearts",
+            "6spades",
+            "3hearts",
+            "Qspades"
+          ],
+          "community_cards2": null,
+          "community_cards3": null,
+          "winners_by_board": null,
+          "daily_mission_events": [
+            {
+              "values": {
+                "big_pots": [
+                  1048
+                ],
+                "strong_hands": [
+                  7
+                ]
+              },
+              "amounts": {
+                "big_pots": 1,
+                "chips_won": 1048,
+                "hands_won": 1,
+                "showdowns": 1,
+                "hands_played": 1,
+                "strong_hands": 1,
+                "showdowns_won": 1
+              },
+              "user_id": "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1",
+              "magnitudes": {
+                "big_pots": 1048,
+                "strong_hands": 7
+              }
+            },
+            {
+              "values": {},
+              "amounts": {
+                "showdowns": 1,
+                "hands_played": 1
+              },
+              "user_id": "8327a08a-77e7-4f33-be45-e086a718c9e2",
+              "magnitudes": {}
+            }
+          ]
+        },
+        "candidate": {
+          "id": "672023c2-33cd-451e-9f93-f6e45c113a28",
+          "state": "eliminated",
+          "hand_id": "87346151-e05c-47e9-8b01-22a1d0c64cc2",
+          "seat_id": "8785f508-b537-45da-bff6-9d0ea0191257",
+          "table_id": "98173b4c-08fe-42bd-839b-b542bed7f13e",
+          "created_at": "2026-09-14T00:13:59.625529+00:00",
+          "hand_number": 10755928,
+          "resolved_at": "2026-09-14T00:20:19.441527+00:00",
+          "stack_after": 0,
+          "stack_before": 524,
+          "tournament_id": "f3f050f1-569e-4fb6-859f-86b6092e682e",
+          "seat_joined_at": "2026-09-08T13:35:56.827613+00:00",
+          "eliminated_user_id": "8327a08a-77e7-4f33-be45-e086a718c9e2",
+          "rebuy_prompt_until": null
+        }
+      }
+    ],
+    "private_state_count": 0
+  },
+  {
+    "at": "2026-09-18 09:40:18.943249+00",
+    "id": "808ef798-0942-4ce0-9ae1-eeefaaf4b0a9",
+    "tables": [
+      {
+        "id": "0ff3cf55-38f8-43de-8df5-6e25fba188ff",
+        "ante": 0,
+        "name": "2 Chip Deep Stack Spin PLO4",
+        "role": null,
+        "cap_bb": null,
+        "stakes": "10000000/10000000",
+        "status": "waiting",
+        "ante_bb": 0,
+        "avg_pot": 0,
+        "club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+        "live_at": null,
+        "ban_chat": false,
+        "is_spins": false,
+        "nit_game": false,
+        "settings": {},
+        "union_id": null,
+        "auto_muck": true,
+        "big_blind": 10000000,
+        "game_mode": "regular",
+        "game_type": "tournament",
+        "ko_bounty": false,
+        "lifecycle": null,
+        "max_buyin": null,
+        "min_buyin": null,
+        "opened_at": null,
+        "cluster_id": null,
+        "created_at": "2026-09-08T13:24:44.873892+00:00",
+        "created_by": null,
+        "deleted_at": null,
+        "deleted_by": null,
+        "is_deleted": false,
+        "is_private": false,
+        "live_state": null,
+        "main_index": null,
+        "max_buy_in": 0,
+        "min_buy_in": 0,
+        "no_rathole": false,
+        "sng_buy_in": 0,
+        "start_time": null,
+        "updated_at": "2026-09-18T09:39:28.273665+00:00",
+        "bbj_percent": 100,
+        "cap_enabled": false,
+        "hands_dealt": 0,
+        "is_featured": false,
+        "is_template": false,
+        "is_vip_only": false,
+        "max_players": 3,
+        "rake_cap_bb": -1,
+        "run_it_mode": "none",
+        "small_blind": 10000000,
+        "ante_enabled": false,
+        "auto_restart": false,
+        "double_board": false,
+        "game_variant": "plo4",
+        "is_anonymous": false,
+        "label_as_new": false,
+        "rake_percent": -1,
+        "run_it_twice": true,
+        "triple_board": false,
+        "custom_add_on": false,
+        "f06_lifecycle": 15152,
+        "max_buy_in_bb": null,
+        "max_straddles": 1,
+        "min_buy_in_bb": null,
+        "multi_day_mtt": false,
+        "straddle_type": "utg",
+        "tournament_id": "808ef798-0942-4ce0-9ae1-eeefaaf4b0a9",
+        "all_in_or_fold": false,
+        "allow_straddle": true,
+        "auto_extension": false,
+        "big_blind_ante": false,
+        "gtd_prize_pool": false,
+        "hide_club_name": false,
+        "ip_restriction": false,
+        "maintain_hands": 10,
+        "starting_chips": 1500,
+        "accelerated_mtt": false,
+        "blind_structure": "standard",
+        "current_players": 1,
+        "enable_straddle": true,
+        "gps_restriction": true,
+        "max_players_mtt": 300,
+        "min_players_mtt": 30,
+        "promote_pending": false,
+        "restrict_device": true,
+        "save_start_time": false,
+        "seat_game_scope": "table:0ff3cf55-38f8-43de-8df5-6e25fba188ff",
+        "bomb_pot_enabled": false,
+        "bomb_pot_variant": null,
+        "break_started_at": null,
+        "calltime_enabled": false,
+        "final_table_deal": false,
+        "payout_structure": "winner_takes_all",
+        "pineapple_holdem": false,
+        "sng_player_count": 9,
+        "spins_multiplier": null,
+        "straddle_enabled": false,
+        "add_on_multiplier": 1,
+        "allow_rabbit_hunt": true,
+        "auto_create_table": false,
+        "auto_muck_enabled": true,
+        "auto_utg_straddle": false,
+        "blinds_up_minutes": 10,
+        "bubble_protection": false,
+        "first_button_seat": null,
+        "game_length_hours": 12,
+        "insurance_enabled": false,
+        "short_description": "",
+        "show_hand_enabled": true,
+        "sng_custom_buy_in": false,
+        "time_bank_enabled": true,
+        "allow_run_it_twice": true,
+        "auto_start_players": 2,
+        "bomb_pot_frequency": 0,
+        "career_percent_min": 0,
+        "restrict_observers": false,
+        "seat_admission_key": "tournament:808ef798-0942-4ce0-9ae1-eeefaaf4b0a9",
+        "seven_deuce_amount": 2,
+        "terminal_closed_at": null,
+        "time_bank_max_uses": 4,
+        "voluntary_straddle": false,
+        "wait_for_big_blind": true,
+        "action_time_seconds": 15,
+        "bomb_pot_ante_fixed": null,
+        "featured_tournament": false,
+        "next_step_satellite": false,
+        "observer_show_cards": false,
+        "seven_deuce_enabled": false,
+        "synchronized_breaks": true,
+        "tournament_schedule": false,
+        "agent_downline_limit": null,
+        "bomb_pot_board_count": 1,
+        "bomb_pot_min_players": 3,
+        "bomb_pot_next_due_at": null,
+        "bomb_pot_sched_state": null,
+        "break_eligible_since": null,
+        "buy_in_authorization": false,
+        "maintain_percent_min": 0,
+        "run_it_twice_enabled": false,
+        "bomb_pot_double_board": false,
+        "bomb_pot_trigger_mode": "every_n_hands",
+        "authorized_to_register": false,
+        "big_blind_ante_enabled": false,
+        "bomb_pot_button_policy": "regular",
+        "prefer_check_over_fold": true,
+        "bomb_pot_manual_pending": false,
+        "early_bird_registration": false,
+        "late_registration_level": 6,
+        "pc_emulator_restriction": false,
+        "bomb_pot_ante_multiplier": 2,
+        "max_consecutive_timeouts": 3,
+        "restart_tournament_every": false,
+        "bomb_pot_announce_seconds": null,
+        "bomb_pot_interval_seconds": null,
+        "custom_rebuy_reentry_cost": false,
+        "disconnect_timeout_seconds": 30,
+        "number_of_rebuys_reentries": 3,
+        "add_on_break_length_minutes": 1,
+        "photo_rotation_verification": false
+      }
+    ],
+    "seats": [
+      {
+        "id": "035a67b3-2a36-403c-ac64-a9f9903056f3",
+        "stack": 0,
+        "status": "left",
+        "club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+        "is_away": false,
+        "left_at": "2026-09-14T00:11:22.415267+00:00",
+        "user_id": "2c73e303-bb61-4593-bcea-8debad14b6cc",
+        "horse_id": "2c73e303-bb61-4593-bcea-8debad14b6cc",
+        "table_id": "0ff3cf55-38f8-43de-8df5-6e25fba188ff",
+        "joined_at": "2026-09-08T13:38:13.276687+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 3,
+        "occupancy_id": "6cec1378-f414-47ad-ad4a-8ab41fcc331f",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": null,
+        "active_parent_key": null,
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 40,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 2
+      },
+      {
+        "id": "73a1cd17-d5f9-4238-b363-8e3e45d33fcf",
+        "stack": 0,
+        "status": "active",
+        "club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+        "is_away": false,
+        "left_at": "2026-09-08T13:42:56.238+00:00",
+        "user_id": "f17ad785-2e70-4c7e-b053-50d5e2d93c6e",
+        "horse_id": "f17ad785-2e70-4c7e-b053-50d5e2d93c6e",
+        "table_id": "0ff3cf55-38f8-43de-8df5-6e25fba188ff",
+        "joined_at": "2026-09-08T13:38:08.63951+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 2,
+        "occupancy_id": "1151c194-f661-4399-badd-b92c519849a6",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": null,
+        "active_parent_key": null,
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 40,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 2
+      },
+      {
+        "id": "9a6ab291-879e-48f3-b28e-f68a8f57c865",
+        "stack": 3000,
+        "status": "active",
+        "club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+        "is_away": false,
+        "left_at": null,
+        "user_id": "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+        "horse_id": "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+        "table_id": "0ff3cf55-38f8-43de-8df5-6e25fba188ff",
+        "joined_at": "2026-09-08T13:38:07.094829+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 1,
+        "occupancy_id": "45e7eb17-ed98-476c-96df-e7dbc020a710",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": "table:0ff3cf55-38f8-43de-8df5-6e25fba188ff",
+        "active_parent_key": "tournament:808ef798-0942-4ce0-9ae1-eeefaaf4b0a9",
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 40,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 2
+      }
+    ],
+    "table_leases": null,
+    "tournament_lease": {
+      "acquired_at": "2026-09-18T09:12:32.868343+00:00",
+      "instance_id": "1-991f9ac4",
+      "heartbeat_at": "2026-09-18T09:40:17.517819+00:00",
+      "tournament_id": "808ef798-0942-4ce0-9ae1-eeefaaf4b0a9",
+      "engine_version": "7c2371db",
+      "lease_generation": "56ac0210-970b-4165-aa10-3c7edfbdcebb",
+      "protocol_version": 2
+    },
+    "permits": null,
+    "operations": null,
+    "active_snapshots": null,
+    "accepted_outcomes": [
+      {
+        "atomic": {
+          "hand_id": "91c56cb2-543b-4850-bd63-d80c8f819438",
+          "table_id": "0ff3cf55-38f8-43de-8df5-6e25fba188ff",
+          "hand_number": 10754925,
+          "committed_at": "2026-09-14T00:11:22.460664+00:00",
+          "payload_hash": "35d027ec67e3fe1525a8fa14c7077983ca5be0dac970d455de9b2e42a57c2c16",
+          "stack_result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "ce264635-f768-abaf-e482-b609f6bf235e",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "seat_id": "035a67b3-2a36-403c-ac64-a9f9903056f3",
+                  "user_id": "2c73e303-bb61-4593-bcea-8debad14b6cc",
+                  "stack_before": 556,
+                  "seat_joined_at": "2026-09-08T13:38:13.276687+00:00"
+                },
+                {
+                  "stack": 3000,
+                  "seat_id": "9a6ab291-879e-48f3-b28e-f68a8f57c865",
+                  "user_id": "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+                  "stack_before": 2444,
+                  "seat_joined_at": "2026-09-08T13:38:07.094829+00:00"
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "2c73e303-bb61-4593-bcea-8debad14b6cc": 0,
+              "66417bd4-c8e5-4666-af6f-3d85a43593d9": 3000
+            },
+            "departed": [],
+            "table_id": "0ff3cf55-38f8-43de-8df5-6e25fba188ff",
+            "net_deltas": 0,
+            "hand_number": 10754925,
+            "tournament_id": "808ef798-0942-4ce0-9ae1-eeefaaf4b0a9",
+            "conservation_checked": true,
+            "tournament_player_chips": [
+              {
+                "chips": 0,
+                "user_id": "2c73e303-bb61-4593-bcea-8debad14b6cc"
+              },
+              {
+                "chips": 3000,
+                "user_id": "66417bd4-c8e5-4666-af6f-3d85a43593d9"
+              }
+            ],
+            "tournament_player_count": 2,
+            "tournament_players_synced": true,
+            "tournament_player_user_ids": [
+              "2c73e303-bb61-4593-bcea-8debad14b6cc",
+              "66417bd4-c8e5-4666-af6f-3d85a43593d9"
+            ],
+            "tournament_zero_stack_seat_ids": [
+              "035a67b3-2a36-403c-ac64-a9f9903056f3"
+            ],
+            "tournament_zero_stack_user_ids": [
+              "2c73e303-bb61-4593-bcea-8debad14b6cc"
+            ],
+            "tournament_table_live_seat_count": 1,
+            "tournament_zero_stack_seat_count": 1,
+            "tournament_zero_stack_vacated_at": "2026-09-14T00:11:22.415267+00:00",
+            "tournament_zero_stack_seats_vacated": true,
+            "tournament_zero_stack_seat_generations": [
+              {
+                "seat_id": "035a67b3-2a36-403c-ac64-a9f9903056f3",
+                "user_id": "2c73e303-bb61-4593-bcea-8debad14b6cc",
+                "joined_at": "2026-09-08T13:38:13.276687+00:00",
+                "seat_number": 3
+              }
+            ]
+          },
+          "post_commit_result": {
+            "ok": true,
+            "rake": false,
+            "hand_id": "91c56cb2-543b-4850-bd63-d80c8f819438",
+            "insurance": 0,
+            "time_banks": 2,
+            "hand_number": 10754925,
+            "pending_addons": 0,
+            "bbj_contribution": false,
+            "already_completed": false,
+            "promo_playthrough": 0
+          },
+          "post_commit_payload": {
+            "rake": null,
+            "version": 1,
+            "insurance": [],
+            "time_banks": [
+              {
+                "seat_id": "9a6ab291-879e-48f3-b28e-f68a8f57c865",
+                "user_id": "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+                "seat_joined_at": "2026-09-08T13:38:07.094829+00:00",
+                "uses_remaining": 2,
+                "seconds_remaining": 40
+              },
+              {
+                "seat_id": "035a67b3-2a36-403c-ac64-a9f9903056f3",
+                "user_id": "2c73e303-bb61-4593-bcea-8debad14b6cc",
+                "seat_joined_at": "2026-09-08T13:38:13.276687+00:00",
+                "uses_remaining": 2,
+                "seconds_remaining": 40
+              }
+            ],
+            "pending_addons": null,
+            "bbj_contribution": null,
+            "promo_playthrough": [],
+            "accepted_hand_facts": {
+              "insurance": [],
+              "contributions": {
+                "2c73e303-bb61-4593-bcea-8debad14b6cc": 556,
+                "66417bd4-c8e5-4666-af6f-3d85a43593d9": 556
+              },
+              "returned_uncalled": {
+                "66417bd4-c8e5-4666-af6f-3d85a43593d9": 138
+              }
+            }
+          },
+          "post_commit_completed_at": "2026-09-14T00:11:23.661957+00:00",
+          "post_commit_payload_hash": "0457dce805b792fea3106ae9078b784be9071f0c3c544554b89afef8b0a24449",
+          "post_commit_request_hash": "a61d600ee8ffd0276d1160f18d75afa7622e3c8338d4170f713fdd296f21f1fe"
+        },
+        "history": {
+          "id": "91c56cb2-543b-4850-bd63-d80c8f819438",
+          "pots": [
+            {
+              "index": 0,
+              "amount": 1112,
+              "awards": [
+                {
+                  "low": false,
+                  "amount": 1112,
+                  "userId": "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+                  "potIndex": 0
+                }
+              ],
+              "eligible": [
+                "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+                "2c73e303-bb61-4593-bcea-8debad14b6cc"
+              ]
+            }
+          ],
+          "seed": null,
+          "board": [
+            "2spades",
+            "4clubs",
+            "3spades",
+            "Jspades",
+            "Thearts"
+          ],
+          "source": "manual",
+          "actions": [
+            {
+              "dead": false,
+              "seat": 1,
+              "stage": "preflop",
+              "action": "sb",
+              "amount": 50,
+              "userId": "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+              "timestamp": 1789344651326
+            },
+            {
+              "dead": false,
+              "seat": 3,
+              "stage": "preflop",
+              "action": "bb",
+              "amount": 100,
+              "userId": "2c73e303-bb61-4593-bcea-8debad14b6cc",
+              "timestamp": 1789344651326
+            },
+            {
+              "seat": 1,
+              "stage": "preflop",
+              "action": "raise",
+              "amount": 300,
+              "origin": "horse_policy",
+              "userId": "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+              "timestamp": 1789344654594,
+              "publicNode": {
+                "pot": 150,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    1,
+                    2394,
+                    50,
+                    50,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    3,
+                    456,
+                    100,
+                    100,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  ""
+                ],
+                "status": "captured",
+                "street": "preflop",
+                "toCall": 50,
+                "bombPot": false,
+                "variant": "plo4",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 100,
+                "chipUnit": 1,
+                "actorSeat": 1,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 100,
+                "dealerSeat": 1,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 300,
+                "minRaiseTo": 200,
+                "smallBlind": 50,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "call",
+                  "raise",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 438,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 5,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "isFullRaise": true,
+              "observationIdentity": {
+                "handId": "91c56cb2-543b-4850-bd63-d80c8f819438",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "3849f1ddc671ff579ddf069c15a5526bdb26d0466001736a363158015473875a",
+                "actionOrdinal": 2,
+                "observationId": "91c56cb2-543b-4850-bd63-d80c8f819438:2"
+              }
+            },
+            {
+              "seat": 3,
+              "stage": "preflop",
+              "action": "call",
+              "amount": 200,
+              "origin": "horse_policy",
+              "userId": "2c73e303-bb61-4593-bcea-8debad14b6cc",
+              "timestamp": 1789344664136,
+              "publicNode": {
+                "pot": 400,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    1,
+                    2144,
+                    300,
+                    300,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    3,
+                    456,
+                    100,
+                    100,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  ""
+                ],
+                "status": "captured",
+                "street": "preflop",
+                "toCall": 200,
+                "bombPot": false,
+                "variant": "plo4",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 100,
+                "chipUnit": 1,
+                "actorSeat": 3,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 300,
+                "dealerSeat": 1,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 556,
+                "minRaiseTo": 500,
+                "smallBlind": 50,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "call",
+                  "raise",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 9979,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 5,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "observationIdentity": {
+                "handId": "91c56cb2-543b-4850-bd63-d80c8f819438",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "7368c3c66a62e25cf829e3536817cac7fa72f09b83a40e7a247710f4d3e4c18e",
+                "actionOrdinal": 3,
+                "observationId": "91c56cb2-543b-4850-bd63-d80c8f819438:3"
+              }
+            },
+            {
+              "seat": 3,
+              "stage": "flop",
+              "action": "check",
+              "amount": 0,
+              "origin": "horse_policy",
+              "userId": "2c73e303-bb61-4593-bcea-8debad14b6cc",
+              "timestamp": 1789344666118,
+              "publicNode": {
+                "pot": 600,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    1,
+                    2144,
+                    0,
+                    300,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    3,
+                    256,
+                    0,
+                    300,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  "2s4c3s"
+                ],
+                "status": "captured",
+                "street": "flop",
+                "toCall": 0,
+                "bombPot": false,
+                "variant": "plo4",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 100,
+                "chipUnit": 1,
+                "actorSeat": 3,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 0,
+                "dealerSeat": 1,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 256,
+                "minRaiseTo": 100,
+                "smallBlind": 50,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "check",
+                  "bet",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 11962,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 5,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "observationIdentity": {
+                "handId": "91c56cb2-543b-4850-bd63-d80c8f819438",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "7368c3c66a62e25cf829e3536817cac7fa72f09b83a40e7a247710f4d3e4c18e",
+                "actionOrdinal": 4,
+                "observationId": "91c56cb2-543b-4850-bd63-d80c8f819438:4"
+              }
+            },
+            {
+              "seat": 1,
+              "stage": "flop",
+              "action": "bet",
+              "amount": 394,
+              "origin": "horse_policy",
+              "userId": "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+              "timestamp": 1789344668110,
+              "publicNode": {
+                "pot": 600,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    1,
+                    2144,
+                    0,
+                    300,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    3,
+                    256,
+                    0,
+                    300,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  "2s4c3s"
+                ],
+                "status": "captured",
+                "street": "flop",
+                "toCall": 0,
+                "bombPot": false,
+                "variant": "plo4",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 100,
+                "chipUnit": 1,
+                "actorSeat": 1,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 0,
+                "dealerSeat": 1,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 600,
+                "minRaiseTo": 100,
+                "smallBlind": 50,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "check",
+                  "bet",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 13954,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 5,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "isFullRaise": true,
+              "observationIdentity": {
+                "handId": "91c56cb2-543b-4850-bd63-d80c8f819438",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "3849f1ddc671ff579ddf069c15a5526bdb26d0466001736a363158015473875a",
+                "actionOrdinal": 5,
+                "observationId": "91c56cb2-543b-4850-bd63-d80c8f819438:5"
+              }
+            },
+            {
+              "seat": 3,
+              "stage": "flop",
+              "action": "all_in",
+              "amount": 256,
+              "origin": "horse_policy",
+              "userId": "2c73e303-bb61-4593-bcea-8debad14b6cc",
+              "timestamp": 1789344672777,
+              "publicNode": {
+                "pot": 994,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    1,
+                    1750,
+                    394,
+                    694,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    3,
+                    256,
+                    0,
+                    300,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  "2s4c3s"
+                ],
+                "status": "captured",
+                "street": "flop",
+                "toCall": 394,
+                "bombPot": false,
+                "variant": "plo4",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 100,
+                "chipUnit": 1,
+                "actorSeat": 3,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 394,
+                "dealerSeat": 1,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": null,
+                "minRaiseTo": null,
+                "smallBlind": 50,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "call",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 1879,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 5,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "observationIdentity": {
+                "handId": "91c56cb2-543b-4850-bd63-d80c8f819438",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "7368c3c66a62e25cf829e3536817cac7fa72f09b83a40e7a247710f4d3e4c18e",
+                "actionOrdinal": 6,
+                "observationId": "91c56cb2-543b-4850-bd63-d80c8f819438:6"
+              }
+            },
+            {
+              "seat": 1,
+              "stage": "flop",
+              "action": "return",
+              "amount": 138,
+              "userId": "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+              "timestamp": 1789344672777
+            }
+          ],
+          "players": [
+            {
+              "seat": 1,
+              "cards": [],
+              "stack": 3000,
+              "userId": "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+              "username": "BlockerSniper"
+            },
+            {
+              "seat": 3,
+              "cards": [],
+              "stack": 0,
+              "userId": "2c73e303-bb61-4593-bcea-8debad14b6cc",
+              "username": "TiltRanger"
+            }
+          ],
+          "summary": null,
+          "version": "v1",
+          "winners": [
+            {
+              "hand": {
+                "name": "Flush",
+                "cards": [
+                  {
+                    "rank": "J",
+                    "suit": "spades"
+                  },
+                  {
+                    "rank": "6",
+                    "suit": "spades"
+                  },
+                  {
+                    "rank": "5",
+                    "suit": "spades"
+                  },
+                  {
+                    "rank": "3",
+                    "suit": "spades"
+                  },
+                  {
+                    "rank": "2",
+                    "suit": "spades"
+                  }
+                ],
+                "ranking": 6
+              },
+              "amount": 1112,
+              "userId": "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+              "potIndex": 0
+            }
+          ],
+          "bomb_pot": null,
+          "ended_at": "2026-09-14T00:11:21.77+00:00",
+          "pot_size": 1112,
+          "reported": false,
+          "showdown": [
+            {
+              "seat": 1,
+              "mucked": false,
+              "user_id": "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+              "hand_name": "Flush",
+              "reveal_order": 0,
+              "hand_description": "Jack High"
+            },
+            {
+              "seat": 3,
+              "mucked": false,
+              "user_id": "2c73e303-bb61-4593-bcea-8debad14b6cc",
+              "hand_name": "Two Pair",
+              "reveal_order": 1,
+              "hand_description": "Tens And Twos"
+            }
+          ],
+          "table_id": "0ff3cf55-38f8-43de-8df5-6e25fba188ff",
+          "big_blind": 100,
+          "hand_name": null,
+          "has_human": false,
+          "bbj_amount": 0,
+          "created_at": "2026-09-14T00:11:22.37236+00:00",
+          "hole_cards": {
+            "2c73e303-bb61-4593-bcea-8debad14b6cc": [
+              {
+                "rank": "Q",
+                "suit": "hearts"
+              },
+              {
+                "rank": "Q",
+                "suit": "spades"
+              },
+              {
+                "rank": "T",
+                "suit": "clubs"
+              },
+              {
+                "rank": "2",
+                "suit": "clubs"
+              }
+            ],
+            "66417bd4-c8e5-4666-af6f-3d85a43593d9": [
+              {
+                "rank": "J",
+                "suit": "hearts"
+              },
+              {
+                "rank": "6",
+                "suit": "spades"
+              },
+              {
+                "rank": "4",
+                "suit": "spades"
+              },
+              {
+                "rank": "5",
+                "suit": "spades"
+              }
+            ]
+          },
+          "rit_boards": null,
+          "started_at": "2026-09-14T00:10:51.326+00:00",
+          "button_seat": 1,
+          "hand_number": 10754925,
+          "rake_amount": 0,
+          "reported_at": null,
+          "small_blind": 50,
+          "winner_name": null,
+          "game_variant": "plo4",
+          "tournament_id": "808ef798-0942-4ce0-9ae1-eeefaaf4b0a9",
+          "community_cards": [
+            "2spades",
+            "4clubs",
+            "3spades",
+            "Jspades",
+            "Thearts"
+          ],
+          "community_cards2": null,
+          "community_cards3": null,
+          "winners_by_board": null,
+          "daily_mission_events": [
+            {
+              "values": {
+                "big_pots": [
+                  1112
+                ],
+                "strong_hands": [
+                  6
+                ]
+              },
+              "amounts": {
+                "big_pots": 1,
+                "chips_won": 1112,
+                "hands_won": 1,
+                "showdowns": 1,
+                "hands_played": 1,
+                "strong_hands": 1,
+                "showdowns_won": 1
+              },
+              "user_id": "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+              "magnitudes": {
+                "big_pots": 1112,
+                "strong_hands": 6
+              }
+            },
+            {
+              "values": {},
+              "amounts": {
+                "showdowns": 1,
+                "hands_played": 1
+              },
+              "user_id": "2c73e303-bb61-4593-bcea-8debad14b6cc",
+              "magnitudes": {}
+            }
+          ]
+        },
+        "candidate": {
+          "id": "331719a5-f1d1-41c4-819d-95b383b23728",
+          "state": "eliminated",
+          "hand_id": "91c56cb2-543b-4850-bd63-d80c8f819438",
+          "seat_id": "035a67b3-2a36-403c-ac64-a9f9903056f3",
+          "table_id": "0ff3cf55-38f8-43de-8df5-6e25fba188ff",
+          "created_at": "2026-09-14T00:11:22.458911+00:00",
+          "hand_number": 10754925,
+          "resolved_at": "2026-09-14T00:20:23.714448+00:00",
+          "stack_after": 0,
+          "stack_before": 556,
+          "tournament_id": "808ef798-0942-4ce0-9ae1-eeefaaf4b0a9",
+          "seat_joined_at": "2026-09-08T13:38:13.276687+00:00",
+          "eliminated_user_id": "2c73e303-bb61-4593-bcea-8debad14b6cc",
+          "rebuy_prompt_until": null
+        }
+      }
+    ],
+    "private_state_count": 0
+  },
+  {
+    "at": "2026-09-18 09:40:18.943249+00",
+    "id": "e3f4e2ab-8397-43e8-8643-6cec3fff3a63",
+    "tables": [
+      {
+        "id": "a5b9029b-5190-4127-820b-72525fa09ad6",
+        "ante": 0,
+        "name": "20 Chip Deep Stack Spin PLO4",
+        "role": null,
+        "cap_bb": null,
+        "stakes": "10000000/10000000",
+        "status": "waiting",
+        "ante_bb": 0,
+        "avg_pot": 0,
+        "club_id": "fade0000-0000-0000-0000-000000000001",
+        "live_at": null,
+        "ban_chat": false,
+        "is_spins": false,
+        "nit_game": false,
+        "settings": {},
+        "union_id": "fade0000-0000-0000-0000-000000000001",
+        "auto_muck": true,
+        "big_blind": 10000000,
+        "game_mode": "regular",
+        "game_type": "tournament",
+        "ko_bounty": false,
+        "lifecycle": null,
+        "max_buyin": null,
+        "min_buyin": null,
+        "opened_at": null,
+        "cluster_id": null,
+        "created_at": "2026-09-08T13:34:57.8213+00:00",
+        "created_by": null,
+        "deleted_at": null,
+        "deleted_by": null,
+        "is_deleted": false,
+        "is_private": false,
+        "live_state": null,
+        "main_index": null,
+        "max_buy_in": 0,
+        "min_buy_in": 0,
+        "no_rathole": false,
+        "sng_buy_in": 0,
+        "start_time": null,
+        "updated_at": "2026-09-18T09:39:29.019126+00:00",
+        "bbj_percent": 100,
+        "cap_enabled": false,
+        "hands_dealt": 0,
+        "is_featured": false,
+        "is_template": false,
+        "is_vip_only": false,
+        "max_players": 3,
+        "rake_cap_bb": -1,
+        "run_it_mode": "none",
+        "small_blind": 10000000,
+        "ante_enabled": false,
+        "auto_restart": false,
+        "double_board": false,
+        "game_variant": "plo4",
+        "is_anonymous": false,
+        "label_as_new": false,
+        "rake_percent": -1,
+        "run_it_twice": true,
+        "triple_board": false,
+        "custom_add_on": false,
+        "f06_lifecycle": 7726,
+        "max_buy_in_bb": null,
+        "max_straddles": 1,
+        "min_buy_in_bb": null,
+        "multi_day_mtt": false,
+        "straddle_type": "utg",
+        "tournament_id": "e3f4e2ab-8397-43e8-8643-6cec3fff3a63",
+        "all_in_or_fold": false,
+        "allow_straddle": true,
+        "auto_extension": false,
+        "big_blind_ante": false,
+        "gtd_prize_pool": false,
+        "hide_club_name": false,
+        "ip_restriction": false,
+        "maintain_hands": 10,
+        "starting_chips": 1500,
+        "accelerated_mtt": false,
+        "blind_structure": "standard",
+        "current_players": 1,
+        "enable_straddle": true,
+        "gps_restriction": true,
+        "max_players_mtt": 300,
+        "min_players_mtt": 30,
+        "promote_pending": false,
+        "restrict_device": true,
+        "save_start_time": false,
+        "seat_game_scope": "table:a5b9029b-5190-4127-820b-72525fa09ad6",
+        "bomb_pot_enabled": false,
+        "bomb_pot_variant": null,
+        "break_started_at": null,
+        "calltime_enabled": false,
+        "final_table_deal": false,
+        "payout_structure": "winner_takes_all",
+        "pineapple_holdem": false,
+        "sng_player_count": 9,
+        "spins_multiplier": null,
+        "straddle_enabled": false,
+        "add_on_multiplier": 1,
+        "allow_rabbit_hunt": true,
+        "auto_create_table": false,
+        "auto_muck_enabled": true,
+        "auto_utg_straddle": false,
+        "blinds_up_minutes": 10,
+        "bubble_protection": false,
+        "first_button_seat": null,
+        "game_length_hours": 12,
+        "insurance_enabled": false,
+        "short_description": "",
+        "show_hand_enabled": true,
+        "sng_custom_buy_in": false,
+        "time_bank_enabled": true,
+        "allow_run_it_twice": true,
+        "auto_start_players": 2,
+        "bomb_pot_frequency": 0,
+        "career_percent_min": 0,
+        "restrict_observers": false,
+        "seat_admission_key": "tournament:e3f4e2ab-8397-43e8-8643-6cec3fff3a63",
+        "seven_deuce_amount": 2,
+        "terminal_closed_at": null,
+        "time_bank_max_uses": 4,
+        "voluntary_straddle": false,
+        "wait_for_big_blind": true,
+        "action_time_seconds": 15,
+        "bomb_pot_ante_fixed": null,
+        "featured_tournament": false,
+        "next_step_satellite": false,
+        "observer_show_cards": false,
+        "seven_deuce_enabled": false,
+        "synchronized_breaks": true,
+        "tournament_schedule": false,
+        "agent_downline_limit": null,
+        "bomb_pot_board_count": 1,
+        "bomb_pot_min_players": 3,
+        "bomb_pot_next_due_at": null,
+        "bomb_pot_sched_state": null,
+        "break_eligible_since": null,
+        "buy_in_authorization": false,
+        "maintain_percent_min": 0,
+        "run_it_twice_enabled": false,
+        "bomb_pot_double_board": false,
+        "bomb_pot_trigger_mode": "every_n_hands",
+        "authorized_to_register": false,
+        "big_blind_ante_enabled": false,
+        "bomb_pot_button_policy": "regular",
+        "prefer_check_over_fold": true,
+        "bomb_pot_manual_pending": false,
+        "early_bird_registration": false,
+        "late_registration_level": 6,
+        "pc_emulator_restriction": false,
+        "bomb_pot_ante_multiplier": 2,
+        "max_consecutive_timeouts": 3,
+        "restart_tournament_every": false,
+        "bomb_pot_announce_seconds": null,
+        "bomb_pot_interval_seconds": null,
+        "custom_rebuy_reentry_cost": false,
+        "disconnect_timeout_seconds": 30,
+        "number_of_rebuys_reentries": 3,
+        "add_on_break_length_minutes": 1,
+        "photo_rotation_verification": false
+      }
+    ],
+    "seats": [
+      {
+        "id": "00d39bb7-53f3-4b98-b1e3-70599762b0c7",
+        "stack": 0,
+        "status": "active",
+        "club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+        "is_away": false,
+        "left_at": "2026-09-08T13:52:39.039+00:00",
+        "user_id": "eae3996f-9f4d-4fad-ae65-7cbd976240c1",
+        "horse_id": "eae3996f-9f4d-4fad-ae65-7cbd976240c1",
+        "table_id": "a5b9029b-5190-4127-820b-72525fa09ad6",
+        "joined_at": "2026-09-08T13:34:59.669388+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 1,
+        "occupancy_id": "cec81a77-387b-4eab-b5c1-d39b31f4c744",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": null,
+        "active_parent_key": null,
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 20,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 1
+      },
+      {
+        "id": "36ca5cd3-b0cd-4ac0-8e74-042264c1ab67",
+        "stack": 0,
+        "status": "left",
+        "club_id": "a0000000-0000-0000-0000-000000000001",
+        "is_away": false,
+        "left_at": "2026-09-14T00:12:05.822739+00:00",
+        "user_id": "3fff352f-7e86-4449-8262-5fc50462195e",
+        "horse_id": "3fff352f-7e86-4449-8262-5fc50462195e",
+        "table_id": "a5b9029b-5190-4127-820b-72525fa09ad6",
+        "joined_at": "2026-09-08T13:39:32.536078+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 3,
+        "occupancy_id": "620892e2-adb3-468a-a96d-7b7e52375719",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": null,
+        "active_parent_key": null,
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 40,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 2
+      },
+      {
+        "id": "cf924c8c-5fc7-43b2-9fea-721ea170a90a",
+        "stack": 3000,
+        "status": "active",
+        "club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+        "is_away": false,
+        "left_at": null,
+        "user_id": "00000000-0000-0000-0000-000000000049",
+        "horse_id": "00000000-0000-0000-0000-000000000049",
+        "table_id": "a5b9029b-5190-4127-820b-72525fa09ad6",
+        "joined_at": "2026-09-08T13:35:00.029665+00:00",
+        "member_id": null,
+        "player_id": null,
+        "auto_rebuy": false,
+        "entry_hold": null,
+        "sit_out_at": null,
+        "seat_number": 2,
+        "occupancy_id": "f66b9052-ea51-40c8-b854-d2c025994fac",
+        "leave_pending": false,
+        "is_sitting_out": false,
+        "active_game_scope": "table:a5b9029b-5190-4127-820b-72525fa09ad6",
+        "active_parent_key": "tournament:e3f4e2ab-8397-43e8-8643-6cec3fff3a63",
+        "entry_post_agreed": false,
+        "terminal_closed_at": null,
+        "time_bank_remaining": 40,
+        "scheduled_leave_hands": null,
+        "time_bank_uses_remaining": 2
+      }
+    ],
+    "table_leases": null,
+    "tournament_lease": {
+      "acquired_at": "2026-09-18T09:12:34.494275+00:00",
+      "instance_id": "1-991f9ac4",
+      "heartbeat_at": "2026-09-18T09:40:17.517963+00:00",
+      "tournament_id": "e3f4e2ab-8397-43e8-8643-6cec3fff3a63",
+      "engine_version": "7c2371db",
+      "lease_generation": "7a0a0909-5372-46db-9e95-41be02e7cd35",
+      "protocol_version": 2
+    },
+    "permits": null,
+    "operations": null,
+    "active_snapshots": null,
+    "accepted_outcomes": [
+      {
+        "atomic": {
+          "hand_id": "8ede789e-5cd0-4ca7-9783-b574ab2f5e3e",
+          "table_id": "a5b9029b-5190-4127-820b-72525fa09ad6",
+          "hand_number": 10755307,
+          "committed_at": "2026-09-14T00:12:05.868356+00:00",
+          "payload_hash": "f7ef988f2eba2a0805379b16799f423abc1e2d6e5e587ffa190a4a929ce36d49",
+          "stack_result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "35d3f041-e7a3-3888-d803-21b98cac5a4e",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 3000,
+                  "seat_id": "cf924c8c-5fc7-43b2-9fea-721ea170a90a",
+                  "user_id": "00000000-0000-0000-0000-000000000049",
+                  "stack_before": 2193,
+                  "seat_joined_at": "2026-09-08T13:35:00.029665+00:00"
+                },
+                {
+                  "stack": 0,
+                  "seat_id": "36ca5cd3-b0cd-4ac0-8e74-042264c1ab67",
+                  "user_id": "3fff352f-7e86-4449-8262-5fc50462195e",
+                  "stack_before": 807,
+                  "seat_joined_at": "2026-09-08T13:39:32.536078+00:00"
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "00000000-0000-0000-0000-000000000049": 3000,
+              "3fff352f-7e86-4449-8262-5fc50462195e": 0
+            },
+            "departed": [],
+            "table_id": "a5b9029b-5190-4127-820b-72525fa09ad6",
+            "net_deltas": 0,
+            "hand_number": 10755307,
+            "tournament_id": "e3f4e2ab-8397-43e8-8643-6cec3fff3a63",
+            "conservation_checked": true,
+            "tournament_player_chips": [
+              {
+                "chips": 3000,
+                "user_id": "00000000-0000-0000-0000-000000000049"
+              },
+              {
+                "chips": 0,
+                "user_id": "3fff352f-7e86-4449-8262-5fc50462195e"
+              }
+            ],
+            "tournament_player_count": 2,
+            "tournament_players_synced": true,
+            "tournament_player_user_ids": [
+              "00000000-0000-0000-0000-000000000049",
+              "3fff352f-7e86-4449-8262-5fc50462195e"
+            ],
+            "tournament_zero_stack_seat_ids": [
+              "36ca5cd3-b0cd-4ac0-8e74-042264c1ab67"
+            ],
+            "tournament_zero_stack_user_ids": [
+              "3fff352f-7e86-4449-8262-5fc50462195e"
+            ],
+            "tournament_table_live_seat_count": 1,
+            "tournament_zero_stack_seat_count": 1,
+            "tournament_zero_stack_vacated_at": "2026-09-14T00:12:05.822739+00:00",
+            "tournament_zero_stack_seats_vacated": true,
+            "tournament_zero_stack_seat_generations": [
+              {
+                "seat_id": "36ca5cd3-b0cd-4ac0-8e74-042264c1ab67",
+                "user_id": "3fff352f-7e86-4449-8262-5fc50462195e",
+                "joined_at": "2026-09-08T13:39:32.536078+00:00",
+                "seat_number": 3
+              }
+            ]
+          },
+          "post_commit_result": {
+            "ok": true,
+            "rake": false,
+            "hand_id": "8ede789e-5cd0-4ca7-9783-b574ab2f5e3e",
+            "insurance": 0,
+            "time_banks": 2,
+            "hand_number": 10755307,
+            "pending_addons": 0,
+            "bbj_contribution": false,
+            "already_completed": false,
+            "promo_playthrough": 0
+          },
+          "post_commit_payload": {
+            "rake": null,
+            "version": 1,
+            "insurance": [],
+            "time_banks": [
+              {
+                "seat_id": "cf924c8c-5fc7-43b2-9fea-721ea170a90a",
+                "user_id": "00000000-0000-0000-0000-000000000049",
+                "seat_joined_at": "2026-09-08T13:35:00.029665+00:00",
+                "uses_remaining": 2,
+                "seconds_remaining": 40
+              },
+              {
+                "seat_id": "36ca5cd3-b0cd-4ac0-8e74-042264c1ab67",
+                "user_id": "3fff352f-7e86-4449-8262-5fc50462195e",
+                "seat_joined_at": "2026-09-08T13:39:32.536078+00:00",
+                "uses_remaining": 2,
+                "seconds_remaining": 40
+              }
+            ],
+            "pending_addons": null,
+            "bbj_contribution": null,
+            "promo_playthrough": [],
+            "accepted_hand_facts": {
+              "insurance": [],
+              "contributions": {
+                "00000000-0000-0000-0000-000000000049": 807,
+                "3fff352f-7e86-4449-8262-5fc50462195e": 807
+              },
+              "returned_uncalled": {
+                "00000000-0000-0000-0000-000000000049": 93
+              }
+            }
+          },
+          "post_commit_completed_at": "2026-09-14T00:12:07.282486+00:00",
+          "post_commit_payload_hash": "97fcbae39803439c4d15a7452a3924df0979bd4832bea06e208ce59a01cc9e8d",
+          "post_commit_request_hash": "39f8847d331d57b287c16622c0cba2bf54ee3b08ae99c7ba3c32b056c0ab2b41"
+        },
+        "history": {
+          "id": "8ede789e-5cd0-4ca7-9783-b574ab2f5e3e",
+          "pots": [
+            {
+              "index": 0,
+              "amount": 1614,
+              "awards": [
+                {
+                  "low": false,
+                  "amount": 1614,
+                  "userId": "00000000-0000-0000-0000-000000000049",
+                  "potIndex": 0
+                }
+              ],
+              "eligible": [
+                "00000000-0000-0000-0000-000000000049",
+                "3fff352f-7e86-4449-8262-5fc50462195e"
+              ]
+            }
+          ],
+          "seed": null,
+          "board": [
+            "Jdiamonds",
+            "5spades",
+            "4diamonds",
+            "Kclubs",
+            "Adiamonds"
+          ],
+          "source": "manual",
+          "actions": [
+            {
+              "dead": false,
+              "seat": 2,
+              "stage": "preflop",
+              "action": "bb",
+              "amount": 100,
+              "userId": "00000000-0000-0000-0000-000000000049",
+              "timestamp": 1789344700273
+            },
+            {
+              "dead": false,
+              "seat": 3,
+              "stage": "preflop",
+              "action": "sb",
+              "amount": 50,
+              "userId": "3fff352f-7e86-4449-8262-5fc50462195e",
+              "timestamp": 1789344700273
+            },
+            {
+              "seat": 3,
+              "stage": "preflop",
+              "action": "raise",
+              "amount": 300,
+              "origin": "horse_policy",
+              "userId": "3fff352f-7e86-4449-8262-5fc50462195e",
+              "timestamp": 1789344707054,
+              "publicNode": {
+                "pot": 150,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    2,
+                    2093,
+                    100,
+                    100,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    3,
+                    757,
+                    50,
+                    50,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  ""
+                ],
+                "status": "captured",
+                "street": "preflop",
+                "toCall": 50,
+                "bombPot": false,
+                "variant": "plo4",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 100,
+                "chipUnit": 1,
+                "actorSeat": 3,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 100,
+                "dealerSeat": 3,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 300,
+                "minRaiseTo": 200,
+                "smallBlind": 50,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "call",
+                  "raise",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 9882,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 5,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "isFullRaise": true,
+              "observationIdentity": {
+                "handId": "8ede789e-5cd0-4ca7-9783-b574ab2f5e3e",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "bd5755da57ebb36784b10cc84b2788b9d8ec1c3d2fe721752f482ddcd04c64c2",
+                "actionOrdinal": 2,
+                "observationId": "8ede789e-5cd0-4ca7-9783-b574ab2f5e3e:2"
+              }
+            },
+            {
+              "seat": 2,
+              "stage": "preflop",
+              "action": "raise",
+              "amount": 900,
+              "origin": "horse_policy",
+              "userId": "00000000-0000-0000-0000-000000000049",
+              "timestamp": 1789344709125,
+              "publicNode": {
+                "pot": 400,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    2,
+                    2093,
+                    100,
+                    100,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    3,
+                    507,
+                    300,
+                    300,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  ""
+                ],
+                "status": "captured",
+                "street": "preflop",
+                "toCall": 200,
+                "bombPot": false,
+                "variant": "plo4",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 100,
+                "chipUnit": 1,
+                "actorSeat": 2,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 300,
+                "dealerSeat": 3,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": 900,
+                "minRaiseTo": 500,
+                "smallBlind": 50,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "call",
+                  "raise",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 11953,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 5,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "isFullRaise": true,
+              "observationIdentity": {
+                "handId": "8ede789e-5cd0-4ca7-9783-b574ab2f5e3e",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "cdaec337175e38449f0312f116a48b3ac9cf8370d950507588660f7642eaf626",
+                "actionOrdinal": 3,
+                "observationId": "8ede789e-5cd0-4ca7-9783-b574ab2f5e3e:3"
+              }
+            },
+            {
+              "seat": 3,
+              "stage": "preflop",
+              "action": "all_in",
+              "amount": 807,
+              "origin": "horse_policy",
+              "userId": "3fff352f-7e86-4449-8262-5fc50462195e",
+              "timestamp": 1789344710698,
+              "publicNode": {
+                "pot": 1200,
+                "ante": 0,
+                "mode": "tournament",
+                "asset": "chips",
+                "seats": [
+                  [
+                    2,
+                    1293,
+                    900,
+                    900,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    3,
+                    507,
+                    300,
+                    300,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "boards": [
+                  ""
+                ],
+                "status": "captured",
+                "street": "preflop",
+                "toCall": 600,
+                "bombPot": false,
+                "variant": "plo4",
+                "version": 1,
+                "anteType": "per_player",
+                "bigBlind": 100,
+                "chipUnit": 1,
+                "actorSeat": 3,
+                "structure": "pot_limit",
+                "boardCount": 1,
+                "currentBet": 900,
+                "dealerSeat": 3,
+                "deductions": {
+                  "bbj": {
+                    "feeBB": 0.03,
+                    "enabled": false,
+                    "minPotBB": 10,
+                    "minPlayersDealt": 3
+                  },
+                  "rake": {
+                    "cap": 0,
+                    "percent": 0,
+                    "noFlopNoDrop": true,
+                    "playerCountCaps": []
+                  },
+                  "rules": "controller-rake-bbj-v1",
+                  "status": "captured",
+                  "version": 1
+                },
+                "maxRaiseTo": null,
+                "minRaiseTo": null,
+                "smallBlind": 50,
+                "allInOrFold": false,
+                "fixedBetSize": null,
+                "legalActions": [
+                  "fold",
+                  "call",
+                  "all_in"
+                ],
+                "wagersCapped": false,
+                "tournamentStage": {
+                  "ageMs": 13526,
+                  "isPko": false,
+                  "rules": "tournament-stage-public-v1",
+                  "format": "spin",
+                  "status": "captured",
+                  "inMoney": false,
+                  "onBreak": false,
+                  "version": 1,
+                  "entrants": 3,
+                  "isBounty": false,
+                  "rebuyOpen": false,
+                  "satellite": false,
+                  "spotsPaid": 1,
+                  "finalTable": false,
+                  "nearBubble": true,
+                  "handForHand": false,
+                  "playersLeft": 2,
+                  "reentryOpen": false,
+                  "currentLevel": 5,
+                  "seatsPerTable": 3,
+                  "satelliteSeats": 0,
+                  "addOnPeriodOpen": false,
+                  "isMysteryBounty": false,
+                  "registrationOpen": false,
+                  "mysteryBountyStage": "none",
+                  "lateRegistrationOpen": false
+                }
+              },
+              "observationIdentity": {
+                "handId": "8ede789e-5cd0-4ca7-9783-b574ab2f5e3e",
+                "status": "bound",
+                "version": 1,
+                "sessionKey": "bd5755da57ebb36784b10cc84b2788b9d8ec1c3d2fe721752f482ddcd04c64c2",
+                "actionOrdinal": 4,
+                "observationId": "8ede789e-5cd0-4ca7-9783-b574ab2f5e3e:4"
+              }
+            },
+            {
+              "seat": 2,
+              "stage": "preflop",
+              "action": "return",
+              "amount": 93,
+              "userId": "00000000-0000-0000-0000-000000000049",
+              "timestamp": 1789344710698
+            }
+          ],
+          "players": [
+            {
+              "seat": 2,
+              "cards": [],
+              "stack": 3000,
+              "userId": "00000000-0000-0000-0000-000000000049",
+              "username": "AceBandito"
+            },
+            {
+              "seat": 3,
+              "cards": [],
+              "stack": 0,
+              "userId": "3fff352f-7e86-4449-8262-5fc50462195e",
+              "username": "NutSniper"
+            }
+          ],
+          "summary": null,
+          "version": "v1",
+          "winners": [
+            {
+              "hand": {
+                "name": "Three of a Kind",
+                "cards": [
+                  {
+                    "rank": "A",
+                    "suit": "clubs"
+                  },
+                  {
+                    "rank": "A",
+                    "suit": "spades"
+                  },
+                  {
+                    "rank": "A",
+                    "suit": "diamonds"
+                  },
+                  {
+                    "rank": "K",
+                    "suit": "clubs"
+                  },
+                  {
+                    "rank": "J",
+                    "suit": "diamonds"
+                  }
+                ],
+                "ranking": 4
+              },
+              "amount": 1614,
+              "userId": "00000000-0000-0000-0000-000000000049",
+              "potIndex": 0
+            }
+          ],
+          "bomb_pot": null,
+          "ended_at": "2026-09-14T00:12:03.739+00:00",
+          "pot_size": 1614,
+          "reported": false,
+          "showdown": [
+            {
+              "seat": 2,
+              "mucked": false,
+              "user_id": "00000000-0000-0000-0000-000000000049",
+              "hand_name": "Three of a Kind",
+              "reveal_order": 0,
+              "hand_description": "Aces"
+            },
+            {
+              "seat": 3,
+              "mucked": false,
+              "user_id": "3fff352f-7e86-4449-8262-5fc50462195e",
+              "hand_name": "Pair",
+              "reveal_order": 1,
+              "hand_description": "Fives"
+            }
+          ],
+          "table_id": "a5b9029b-5190-4127-820b-72525fa09ad6",
+          "big_blind": 100,
+          "hand_name": null,
+          "has_human": false,
+          "bbj_amount": 0,
+          "created_at": "2026-09-14T00:12:05.801119+00:00",
+          "hole_cards": {
+            "00000000-0000-0000-0000-000000000049": [
+              {
+                "rank": "A",
+                "suit": "clubs"
+              },
+              {
+                "rank": "K",
+                "suit": "spades"
+              },
+              {
+                "rank": "A",
+                "suit": "spades"
+              },
+              {
+                "rank": "J",
+                "suit": "spades"
+              }
+            ],
+            "3fff352f-7e86-4449-8262-5fc50462195e": [
+              {
+                "rank": "Q",
+                "suit": "spades"
+              },
+              {
+                "rank": "6",
+                "suit": "clubs"
+              },
+              {
+                "rank": "3",
+                "suit": "spades"
+              },
+              {
+                "rank": "5",
+                "suit": "clubs"
+              }
+            ]
+          },
+          "rit_boards": null,
+          "started_at": "2026-09-14T00:11:40.273+00:00",
+          "button_seat": 3,
+          "hand_number": 10755307,
+          "rake_amount": 0,
+          "reported_at": null,
+          "small_blind": 50,
+          "winner_name": null,
+          "game_variant": "plo4",
+          "tournament_id": "e3f4e2ab-8397-43e8-8643-6cec3fff3a63",
+          "community_cards": [
+            "Jdiamonds",
+            "5spades",
+            "4diamonds",
+            "Kclubs",
+            "Adiamonds"
+          ],
+          "community_cards2": null,
+          "community_cards3": null,
+          "winners_by_board": null,
+          "daily_mission_events": [
+            {
+              "values": {
+                "big_pots": [
+                  1614
+                ],
+                "strong_hands": [
+                  4
+                ]
+              },
+              "amounts": {
+                "big_pots": 1,
+                "chips_won": 1614,
+                "hands_won": 1,
+                "showdowns": 1,
+                "hands_played": 1,
+                "strong_hands": 1,
+                "showdowns_won": 1
+              },
+              "user_id": "00000000-0000-0000-0000-000000000049",
+              "magnitudes": {
+                "big_pots": 1614,
+                "strong_hands": 4
+              }
+            },
+            {
+              "values": {},
+              "amounts": {
+                "showdowns": 1,
+                "hands_played": 1
+              },
+              "user_id": "3fff352f-7e86-4449-8262-5fc50462195e",
+              "magnitudes": {}
+            }
+          ]
+        },
+        "candidate": {
+          "id": "74d2512f-85a7-4045-ac37-29334e06a6ab",
+          "state": "eliminated",
+          "hand_id": "8ede789e-5cd0-4ca7-9783-b574ab2f5e3e",
+          "seat_id": "36ca5cd3-b0cd-4ac0-8e74-042264c1ab67",
+          "table_id": "a5b9029b-5190-4127-820b-72525fa09ad6",
+          "created_at": "2026-09-14T00:12:05.865379+00:00",
+          "hand_number": 10755307,
+          "resolved_at": "2026-09-14T00:20:32.787287+00:00",
+          "stack_after": 0,
+          "stack_before": 807,
+          "tournament_id": "e3f4e2ab-8397-43e8-8643-6cec3fff3a63",
+          "seat_joined_at": "2026-09-08T13:39:32.536078+00:00",
+          "eliminated_user_id": "3fff352f-7e86-4449-8262-5fc50462195e",
+          "rebuy_prompt_until": null
+        }
+      }
+    ],
+    "private_state_count": 0
+  }
+]

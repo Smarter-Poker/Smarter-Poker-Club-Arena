@@ -1,10 +1,12 @@
 // Execute the actual maintained decoder on receipts emitted by PostgreSQL.
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import ts from 'typescript';
 const [root, output, mode] = process.argv.slice(2);
-if (mode && mode !== '--original-five-custody-only') throw new Error('Unknown native receipt qualification mode');
+// The accounting job installs server/package-lock.json, not the client dependencies.
+const ts = createRequire(path.join(root, 'server/package.json'))('typescript');
+if (mode && !['--original-five-custody-only', '--sep8-spin-custody'].includes(mode)) throw new Error('Unknown native receipt qualification mode');
 const compiled = path.join(output, 'actual-decoder');
 fs.mkdirSync(compiled, { recursive: true });
 for (const [source, destination] of [
@@ -24,11 +26,15 @@ for (const [source, destination] of [
 }
 const { verifyTournamentCompletionReceipt } = await import(pathToFileURL(path.join(compiled, 'completionSettlementReceipt.mjs')));
 let verified = 0;
-const runs = [
+const sep8 = mode === '--sep8-spin-custody';
+const runs = sep8 ? [
+  ['sep8-player-finality.log', 'SEP8_NATIVE_RECEIPTS=', 'fee_custody_unresolved'],
+  ['sep8-original-resolution.log', 'SEP8_NATIVE_RESOLVED=', 'recognized'],
+] : [
   ['legacy-finality-custody-qualification.log', 'LEGACY_FEE_NATIVE_RECEIPTS=', 'fee_custody_unresolved'],
   ['legacy-original-resolution-qualification.log', 'LEGACY_FEE_NATIVE_RESOLVED=', 'recognized'],
 ];
-for (const [file, marker, state] of mode ? runs.slice(0, 1) : runs) {
+for (const [file, marker, state] of mode === '--original-five-custody-only' ? runs.slice(0, 1) : runs) {
   const text = fs.readFileSync(path.join(output, file), 'utf8');
   const line = text.split('\n').find((line) => line.trim().startsWith(marker));
   if (!line) throw new Error(`Missing actual native receipt: ${file}`);

@@ -1,9 +1,9 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "bf8a270bccf7633dd982890b528f6a7a68a2a1c2e4348e52ec7e910052902727",
+    "scripts/ci/classify-ci-changes.mjs": "02ad9afd28daae965fda9992c4b6a9262857793bee9ab269cc5acac96837f637",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
-    "scripts/dev/qualify-legacy-fee-finality.py": "b56525e26167f7eb3b1019f991a9df4990ac3eed31bb9bb6869bc44c7ed309c7",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "cf6634d4db376606908c34b4084f812bac2f9fdc934e6f52d379db87345fc9c4",
+    "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "e500aa832ea849e9272fb63119e15a938393e6da3d821f7cb69272e6ccf13a4a",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
@@ -40,7 +40,7 @@
     "tests/fixtures/legacy-fee-finality/positive-restore-terms.sql": "25763351166caea11a2dfdeab18d2d9b4d52cad593ed019427fd0241860e7198",
     "tests/fixtures/legacy-fee-finality/resolution.sql": "50a6897d52a060b2aa87b7f6493c7fb8e8c33a3fcee354d1d1a70dd2954a3695",
     "tests/fixtures/legacy-fee-finality/setup.sql": "ee83d419415ded41cecb3f6877ebc4fe9b12cb7a3e1e63b5d5d98c28c4c60599",
-    "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "87e64b37c9d4d046fcd7e1424c47112a7db74a06e22a23a86eadacc332e18260"
+    "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "616bab391d2893dbffc8d65237155009b7a83530a299910aee8b4dda5c700871"
   },
   "expected_assertion_executions": 128,
   "assertion_breakdown": {

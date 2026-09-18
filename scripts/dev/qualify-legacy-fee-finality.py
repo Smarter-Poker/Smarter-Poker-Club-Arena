@@ -3,7 +3,9 @@
 import hashlib,json,subprocess,sys
 from pathlib import Path
 root=Path(__file__).resolve().parents[2]
-psql,socket,port,database,out=sys.argv[1:];out=Path(out);out.mkdir(exist_ok=True,parents=True)
+psql,socket,port,database,out=sys.argv[1:6];out=Path(out);out.mkdir(exist_ok=True,parents=True)
+bootstrap_only=sys.argv[6:]==['--bootstrap-only']
+if sys.argv[6:] and not bootstrap_only:raise AssertionError('Unknown native phase selection')
 fix=root/'tests/fixtures/legacy-fee-finality'
 binding=json.loads((fix/'source-binding.json').read_text())
 def verify_binding():
@@ -40,6 +42,12 @@ for r in access:
 sql+=(fix/'fn_complete_tournament_terminal.sql').read_text()+';\n'
 run(sql,'legacy-exact-terminal-predecessors')
 run((root/'tests/fixtures/tournament-fee-lifecycle/full-lifecycle-seed.sql').read_text(),'legacy-original-template')
+if bootstrap_only:
+ subprocess.run([sys.executable,str(fix/'build-candidate.py'),'--check'],check=True)
+ run(next((root/'supabase/migrations').glob('20260918090848*.sql')).read_text(),'legacy-custody-successor')
+ verify_binding()
+ print('PASS exact legacy custody bootstrap; no predecessor behavior assertions repeated',flush=True)
+ sys.exit(0)
 def original_variable(name,path):
  raw=path.read_text().strip()
  json.loads(raw) # Validate syntax without reserializing decimal evidence.

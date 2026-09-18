@@ -204,3 +204,8 @@ tests/helpers/creditReductionReceipt.ts
 # Lossless original fee JSON and captured custody authority use exact numeric
 # serialization in their PostgreSQL fingerprints and reviewed source bindings.
 tests/fixtures/legacy-fee-finality/*.json
+
+# Lossless September 8 Spin originals and exact source-bound catalog/fixture seals.
+# Numeric scale and whole recorded JSON are authority, not formatting input.
+tests/fixtures/sep8-spin-custody/**/*.json
+tests/fixtures/sep8-spin-custody/*.json

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {readMigrationContent} from './read-migration-content.mjs';
 import {supabaseServerHeaders} from './supabase-auth-headers.mjs';
 import {inflateSync} from 'node:zlib';
 import {verifyRecovery,sha256} from './money-trigger-recovery.mjs';
@@ -6,7 +7,7 @@ import {offenders} from './check-money-trigger-declared.mjs';
 const repo=process.env.GITHUB_REPOSITORY, number=process.env.PR_NUMBER;
 if(repo!=='Smarter-Poker/Smarter-Poker-Club-Arena')throw Error('invalid repository');
 const headers={Authorization:`Bearer ${process.env.GITHUB_TOKEN}`,Accept:'application/vnd.github+json'};
-async function gh(p){const r=await fetch(`https://api.github.com/repos/${repo}/${p}`,{headers});if(!r.ok)throw Error(`GitHub read failed ${r.status}`);return r.json()}
+async function gh(p,accept=headers.Accept){const r=await fetch(`https://api.github.com/repos/${repo}/${p}`,{headers:{...headers,Accept:accept}});if(!r.ok)throw Error(`GitHub read failed ${r.status}`);return r.json()}
 const policy=JSON.parse(fs.readFileSync(new URL('./money-trigger-recovery-policy.json',import.meta.url),'utf8'));
 let headSha,inputs=[],pr=null,records={};
 if(process.env.GITHUB_EVENT_NAME==='workflow_dispatch'){
@@ -22,10 +23,10 @@ if(process.env.GITHUB_EVENT_NAME==='workflow_dispatch'){
  pr=await gh(`pulls/${number}`);if(pr.state!=='open'||pr.base.ref!=='main')throw Error('unsupported PR');
  headSha=pr.head.sha;
  const files=[];for(let page=1;page<=30;page++){const rows=await gh(`pulls/${number}/files?per_page=100&page=${page}`);files.push(...rows);if(rows.length<100)break;if(page===30)throw Error('diff truncated')}
- for(const f of files.filter(f=>['added','modified','renamed'].includes(f.status)&&/^supabase\/migrations\/[^/]+\.sql$/.test(f.filename))){const data=await gh(`contents/${f.filename.split('/').map(encodeURIComponent).join('/')}?ref=${headSha}`);if(data.type!=='file'||data.encoding!=='base64'||data.size>1000000)throw Error('invalid migration data');inputs.push({path:f.filename,sql:Buffer.from(data.content,'base64').toString('utf8')})}
+ for(const f of files.filter(f=>['added','modified','renamed'].includes(f.status)&&/^supabase\/migrations\/[^/]+\.sql$/.test(f.filename))){inputs.push({path:f.filename,sql:await readMigrationContent(gh,f.filename,headSha)})}
 }
 records={...records,...Object.fromEntries(inputs.map(f=>[f.path,f.sql]))};
-if(pr)for(const p of policy){const file=`supabase/migrations/${p.declarationVersion}_${p.declarationName}.sql`;if(!(file in records)){const data=await gh(`contents/${file}?ref=${headSha}`);if(data.type!=='file'||data.encoding!=='base64'||data.size>1000000)throw Error('invalid declaration record');records[file]=Buffer.from(data.content,'base64').toString('utf8')}}
+if(pr)for(const p of policy){const file=`supabase/migrations/${p.declarationVersion}_${p.declarationName}.sql`;if(!(file in records))records[file]=await readMigrationContent(gh,file,headSha)}
 if(!/^[a-f0-9]{40}$/.test(headSha))throw Error('invalid SHA');
 let live=null;if(inputs.some(x=>offenders(x.sql).length)){
  const url=process.env.SUPABASE_URL;if(url!=='https://kuklfnapbkmacvwxktbh.supabase.co')throw Error('wrong database');

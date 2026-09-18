@@ -283,6 +283,13 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/probes/f06-shared-hand-lane/completed-mtt-paid-preimages.json',
     'scripts/ci/probes/f06-shared-hand-lane/completed_mtt_qualification.py',
     'supabase/migrations/20260918130733_completed_unaccepted_mtt_snapshots_retain_their_committed_st.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/build-interrupted-custody-migration.py',
+    'scripts/ci/probes/f06-shared-hand-lane/snapshot-absent-spin-cards.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/snapshot-absent-spin-fixture.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/completed-mtt-earlier-receipts.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/completed-mtt-earlier-receipts-fixture.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/interrupted_custody_qualification.py',
+    'supabase/migrations/20260918154419_interrupted_hands_preserve_original_custody_without_inventin.sql',
   ])('runs the existing accounting job for F06 input %s', (path) => {
     expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
   });

@@ -74,9 +74,12 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     pending=None
     try:
       with held(private_write) as writer:
-        pending=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
-        pending.stdin.write("SET application_name='prepared_transient_installer';\n"+migration.read_text())
-        pending.stdin.close()
+        # Keep the parent free to release the real writer while psql reads the
+        # full migration; pipe capacity must not consume its admission budget.
+        pending_sql=out/'prepared-transient-installer.sql'
+        pending_sql.write_text("SET application_name='prepared_transient_installer';\n"+migration.read_text())
+        pending=subprocess.Popen(cmd+['-f',str(pending_sql)],stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
         deadline=time.monotonic()+2
         while command(cmd,"SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='prepared_transient_installer' AND wait_event='PgSleep');").stdout.strip()!='t':
           require(pending.poll() is None and time.monotonic()<deadline,'Preparation installer did not retain bounded admission after transient private writer')

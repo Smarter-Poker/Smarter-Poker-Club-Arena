@@ -156,7 +156,12 @@ def qualify(root, out, cmd, command, run, probe, require, results):
         barrier("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=18092028 AND granted);",old_ddl,'old installer owns operations')
         reader.stdin.write('SELECT count(*) FROM smarter_private.f06_operations; ROLLBACK;\n');reader.stdin.close()
         barrier("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='f06-install-reader' AND wait_event_type='Lock');",reader,'permit reader needs operations')
-        old_ddl.stdin.write(suffix);old_ddl.stdin.close()
+        # The expected 40P01 can close psql while a large suffix is still being
+        # copied into stdin. Let psql read the exact suffix file so the parent
+        # always reaches the existing error/rollback assertions.
+        old_suffix=out/'abort-baseline-installer-suffix.sql'
+        old_suffix.write_text(suffix)
+        old_ddl.stdin.write("\\i '"+str(old_suffix)+"'\n");old_ddl.stdin.close()
         old_ddl.wait(timeout=8);reader.wait(timeout=8)
         failure=old_ddl.stdout.read()+old_ddl.stderr.read()
         (out/'abort-baseline-installer-deadlock.log').write_text(failure)

@@ -103,6 +103,10 @@ try:
  print(result.stdout,flush=True)
  run((root/'tests/fixtures/union-weekly-basis/tournament-regression.sql').read_text(),'tournament-regression')
  run((root/'tests/fixtures/union-weekly-basis/raked-regression.sql').read_text(),'raked-regression')
+ result=subprocess.run(['python3',str(root/'scripts/dev/qualify-final-atomic-receipt.py'),str(pg/'psql'),str(socket),port,str(base)],capture_output=True,text=True)
+ (base/'final-atomic-qualification.log').write_text(result.stdout+result.stderr)
+ if result.returncode:raise AssertionError(result.stdout+result.stderr)
+ print(result.stdout,flush=True)
 finally:
  if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True)
  print('Evidence retained: '+str(base),flush=True)

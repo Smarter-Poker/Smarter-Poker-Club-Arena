@@ -4,7 +4,7 @@
   "historical_catalog": "Original37 accepted provider schema from CI35267921827/native105361807361; no production user rows.",
   "scope": "Prospective complete original weeks. Native tests are separate from protected publication and production behavior.",
   "repository_files": {
-    "scripts/dev/test-union-weekly-basis.py": "b3adb763cbdf97ef19104c258c49dde7c775aa1441db51de07646ddd6db37c5e",
+    "scripts/dev/test-union-weekly-basis.py": "9fa3cb30ec88131083e8ff61c3a4a059c270e8c6634b1fd908bb4f6557daf507",
     "supabase/accounting/weekly-v3/components/20260914150848_union_pnl_evidence_is_distinct_from_posted_chip_payments.sql": "d09383d8ca6a76aa1d42d99bc4646979f4e2d1adedda16b0e66d450e38b2bcac",
     "supabase/accounting/weekly-v3/components/20260914153000_uncertified_union_pnl_blocks_close_and_squareup.sql": "3532e95c4b22e95121d02836607ffba0d8bca9315d94e5b36883d1037ef947a9",
     "supabase/migrations/20260917230515_union_eco_terms_are_observed_at_their_original_write.sql": "b19f682725f07217236da2a20b1bd53e2d3e804d1f8337a7660567deb25bfafd",
@@ -35,7 +35,7 @@
     "tests/fixtures/tournament-accounting-provenance/captured-horse-preimages.json": "dcca6db77772b5c9df030d462bc1d02462ebebc18f28e2d8fed0758d5f9fc33f",
     "tests/fixtures/tournament-accounting-provenance/captured-preimages.json": "edcf97c8b75ed08b74121de3a63b8fe5304a341ce87655ab58a46673aa87c993",
     "tests/fixtures/tournament-accounting-provenance/new-authority.sql": "44399c2cc4dabbcc8f921650d21a344edfbab2055e1ce6163287c461559b787a",
-    "tests/fixtures/union-weekly-basis/README.md": "c56db2b09a21b1ac393d4dadac94f8d0a49cbe6f21b279f420146173e3a2ce2d",
+    "tests/fixtures/union-weekly-basis/README.md": "b722e09f7a923872066f19efd819899045badb6b0cbae97dd09163b7486661bd",
     "tests/fixtures/union-weekly-basis/accepted-document-relations.sql": "ff1493ba0e3dd7a3480029ab83dd522d29c03502d37ff05d74bc59dda20beaf3",
     "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
     "tests/fixtures/union-weekly-basis/captured-cascade-preimage.json": "af70c7a63f87d3556cd876623b878e7aaacdcb858bcb4567e8e7ba46611e77ff",
@@ -54,6 +54,11 @@
     "tests/fixtures/union-weekly-basis/payment-regression.sql": "2270f4bd2e60c1601783173fa24a351b52bdb1ea489fed92c059fd83da90ee96",
     "tests/fixtures/union-weekly-basis/raked-regression.sql": "399e235101b3d77a83432425674e89cd7cd8dbd7bd245fe1fa5d34ff83e691b3",
     "tests/fixtures/union-weekly-basis/regression.sql": "44064e6ace5baff1fb489b4d7c513107367068a56fbd868118d8215781c1e75f",
-    "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d"
+    "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
+    "scripts/dev/qualify-final-atomic-receipt.py": "d565209ba88e792aea957f8b5b997943636ff8f9e43871bed14202762bdc33c7",
+    "supabase/migrations/20260918004443_cash_pnl_validates_the_finalized_original_atomic_receipt.sql": "bab5a8ec252141f258c999c06d6a67b2060b3a5a387150daed34d8491871862d",
+    "tests/fixtures/union-weekly-basis/captured-final-atomic-preimages.json": "c4a0cdd043a3ed83a7a64945cfb53e6a023393b970ed5b17b1619be45256ac68",
+    "tests/fixtures/union-weekly-basis/final-atomic-after.sql": "f09eefabb5d4a2368127f38afb8540256973b6163b11968e50bc668481912e7d",
+    "tests/fixtures/union-weekly-basis/final-atomic-before.sql": "1701c060c8ddbc3c074326f7e3c6eda3d4f0ebeb16573f03ef28d5c57ebca7e4"
   }
 }

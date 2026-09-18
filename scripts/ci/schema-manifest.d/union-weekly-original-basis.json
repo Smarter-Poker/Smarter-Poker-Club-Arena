@@ -24,6 +24,7 @@
     "fn_union_pnl_baseline",
     "fn_union_pnl_closed_book_barrier",
     "fn_union_eco_adjustment",
-    "fn_union_reconciliation_report"
+    "fn_union_reconciliation_report",
+    "fn_cash_atomic_original_matches"
   ]
 }

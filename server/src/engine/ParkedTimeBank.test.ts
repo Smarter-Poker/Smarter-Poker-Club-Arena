@@ -156,6 +156,41 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
     next.onTimeBankAccounting({ type: 'TIME_BANK_STOPPED', tableId: table, playerId: user });
     expect(data.rpc).not.toHaveBeenCalled();
   });
+  it('preserves a zero-balance Lifetime bank across two native restart cycles', async () => {
+    const first = engine();
+    first.timeBankEngine.initializePlayer(table, user, {
+      remainingSeconds: 0,
+      usesRemaining: 0,
+      unlimitedActivations: true,
+    });
+    first.timeBankMeta.set(user, {
+      initialSeconds: 40,
+      baseSeconds: 40,
+      dbConsumedSeconds: 0,
+      unlimitedActivations: true,
+    });
+
+    await first.persistPresenceForRestart('parked');
+    expect(data.row.time_bank_snapshot.players[user].unlimitedActivations).toBe(true);
+
+    const second = engine();
+    await second.readParkedTimeBanks();
+    second.adoptSeatRoster(second.seatedPlayers);
+    expect(second.timeBankEngine.isUnlimited(table, user)).toBe(true);
+    expect(second.timeBankEngine.hasTimeBank(table, user)).toBe(true);
+    expect(second.timeBankMeta.get(user).unlimitedActivations).toBe(true);
+
+    await second.persistPresenceForRestart('parked');
+    expect(data.row.time_bank_snapshot.players[user].unlimitedActivations).toBe(true);
+
+    const third = engine();
+    await third.readParkedTimeBanks();
+    third.adoptSeatRoster(third.seatedPlayers);
+    expect(third.timeBankEngine.isUnlimited(table, user)).toBe(true);
+    expect(third.timeBankEngine.hasTimeBank(table, user)).toBe(true);
+    expect(third.timeBankMeta.get(user).unlimitedActivations).toBe(true);
+    expect(data.rpc).not.toHaveBeenCalled();
+  });
   it('holds restart readiness through pending and failed saves, then accepts a durable save', async () => {
     const e = await saved();
     e.pauseForMaintenance(120000);
@@ -283,7 +318,7 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
     next.adoptSeatRoster(next.seatedPlayers);
     expect(next.timeBankEngine.getPlayerBank(table, user).remainingSeconds).toBe(3);
   });
-  it.each(['legacy', 'later-hand', 'older-write', 'expired', 'invalid'])(
+  it.each(['legacy', 'later-hand', 'older-write', 'expired', 'invalid', 'invalid-unlimited'])(
     'rejects %s snapshots',
     async (kind) => {
       await saved();
@@ -294,6 +329,8 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
       if (kind === 'older-write') data.row.parked_at = new Date(now + 1).toISOString();
       if (kind === 'expired') now += 21 * 60000;
       if (kind === 'invalid') data.row.time_bank_snapshot.players[user].remainingSeconds = -1;
+      if (kind === 'invalid-unlimited')
+        data.row.time_bank_snapshot.players[user].unlimitedActivations = 'true';
       expect(await loadTimeBanksFromPark(table, hand, now)).toEqual({});
     }
   );

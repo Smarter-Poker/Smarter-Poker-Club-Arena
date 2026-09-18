@@ -214,25 +214,35 @@ jobs:
           node scripts/ci/check-cosmetic-catalog-drift.mjs 2>&1 | tee /tmp/drift-cosmetics.log
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
+      - name: Only the functions anon is meant to reach are reachable
+        id: anondefiners
+        env:
+          SUPABASE_DB_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set +e
+          node scripts/ci/check-anon-definer-grants.mjs 2>&1 | tee /tmp/drift-anon-definers.log
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
       - name: Carry the live-drift verdict
         if: always()
         env:
           RT: ${{ steps.realtime.outputs.code }}
           BBJ: ${{ steps.bbj.outputs.code }}
           COS: ${{ steps.cosmetics.outputs.code }}
+          ANON: ${{ steps.anondefiners.outputs.code }}
         run: |
           set -euo pipefail
-          for code in "$RT" "$BBJ" "$COS"; do
+          for code in "$RT" "$BBJ" "$COS" "$ANON"; do
             [[ "$code" =~ ^[0-9]+$ ]] || {
               echo "::error::A live-drift detector produced no trustworthy verdict."
               exit 1
             }
           done
-          if [ "$RT" = 0 ] && [ "$BBJ" = 0 ] && [ "$COS" = 0 ]; then
+          if [ "$RT" = 0 ] && [ "$BBJ" = 0 ] && [ "$COS" = 0 ] && [ "$ANON" = 0 ]; then
             echo 'All live-drift readers and repository rebuild guards returned clean evidence.'
             exit 0
           fi
-          echo "::error title=INTEGRITY DRIFT OR UNKNOWN::realtime=$RT bbj_rebuild=$BBJ cosmetics=$COS. Read the detector logs; no repair was attempted."
+          echo "::error title=INTEGRITY DRIFT OR UNKNOWN::realtime=$RT bbj_rebuild=$BBJ cosmetics=$COS anon_definers=$ANON. Read the detector logs; no repair was attempted."
           exit 1
 
   # ─────────────────────────────────────────────────────────────────────────────

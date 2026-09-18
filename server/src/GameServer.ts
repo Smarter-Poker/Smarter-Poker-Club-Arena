@@ -218,6 +218,7 @@ import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBr
 import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
 import { runMaintenanceThawV3 } from './maintenance/maintenanceThawV3.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
+import { isFleetWideStall } from './fleetWideZombieVerdict.js';
 import {
   RunningResumeCooldowns,
   resumesHoldingASlot,
@@ -2847,6 +2848,10 @@ export class GameServer {
    */
   static readonly MAX_HEALTHY_PAUSE_MS = 10 * 60 * 1000;
 
+  /** Sweeps that refused to condemn a fleet-wide verdict, and the last one. */
+  private fleetWideZombieRefusals = 0;
+  private lastFleetWideZombieRefusalAtMs = 0;
+
   start(): Promise<void> {
     if (this.teardownPromise) {
       return Promise.reject(new Error('A stopped GameServer instance cannot be restarted'));
@@ -4171,6 +4176,14 @@ export class GameServer {
        * The ordinary Docker/Caddy/deploy probe retains only the counts and
        * capped stalled-table list; it never serializes the whole fleet.
        */
+      /* A sweep that refused to rebuild the whole fleet at once. Zero is the
+         healthy value; a rising count is the hourly break boundary condemning
+         everything, which is the fault this refusal exists to survive. */
+      fleetWideZombieRefusals: this.fleetWideZombieRefusals,
+      lastFleetWideZombieRefusalAt:
+        this.lastFleetWideZombieRefusalAtMs === 0
+          ? null
+          : new Date(this.lastFleetWideZombieRefusalAtMs).toISOString(),
       tableLivenessSummary: {
         tables: tableLiveness.length,
         stalled: stalledTables.length,
@@ -4369,6 +4382,12 @@ export class GameServer {
       '# HELP poker_paused_tables Tables paused on purpose (hand-for-hand/break) - excluded from stall detection',
       '# TYPE poker_paused_tables gauge',
       `poker_paused_tables ${pausedCount}`,
+      /* Rises once per sweep that declined to rebuild the whole fleet. Zero is
+         healthy. Anything else says a systemic pause made every dealable table
+         cross the 180s line together - see the note at the sweep. */
+      '# HELP poker_fleet_wide_zombie_refusals_total Sweeps that refused to condemn every table at once',
+      '# TYPE poker_fleet_wide_zombie_refusals_total counter',
+      `poker_fleet_wide_zombie_refusals_total ${this.fleetWideZombieRefusals}`,
       // The maintenance break, as numbers an alert rule can silence itself
       // with. `active` exists first and foremost so every fleet-level alarm
       // (deal rate, hands/min, fleet floor) can carry `unless
@@ -6110,6 +6129,9 @@ export class GameServer {
             Number(r.player_count) || 0,
           ])
         );
+        /* Collected, then judged as a whole - see the note below the loop. */
+        const zombieVerdicts: Array<[string, ServerTableEngine]> = [];
+        let zombieCandidates = 0;
         for (const [id, engine] of this.tableEngines) {
           if (!engine.isRunning()) {
             /* TournamentManager owns its child's causal restart callback and
@@ -6177,7 +6199,87 @@ export class GameServer {
           // prepareManagedTableEngineForPlay).
           const pausedTooLong = engine.msPaused() > GameServer.MAX_HEALTHY_PAUSE_MS;
           const parkedOnPurpose = engine.isParkedByDesign() && !pausedTooLong;
+          if (shouldBeDealing && !parkedOnPurpose) zombieCandidates += 1;
           if (shouldBeDealing && !parkedOnPurpose && engine.msSinceProgress() > 180_000) {
+            zombieVerdicts.push([id, engine]);
+          }
+        }
+
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  A VERDICT AGAINST THE WHOLE FLEET IS A VERDICT AGAINST ITSELF
+         *  (2026-09-18)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * The condemnations above used to be applied one at a time, inside the
+         * loop, with nothing that could see how many there were. On a fleet
+         * where every table stops for the same reason at the same moment, that
+         * demolishes the entire estate in one pass.
+         *
+         * MEASURED OVER SEVEN DAYS, from `engine_recovery_events`, by MINUTE
+         * OF THE HOUR. Zombie kills only:
+         *
+         *   minute :03   30,372 kills, in 45 separate hours, 6,618 tables
+         *   minute :04   12,207 kills, in 12 separate hours, 3,530 tables
+         *   :13             392        :55  260        :56  239
+         *   every other minute of the hour: under 250
+         *
+         * 97% of every zombie kill on this platform lands in two minutes of
+         * the hour. On 2026-09-18 at 03:03 that was 464 tables condemned
+         * INSIDE ONE MINUTE, out of a fleet of about 500, followed by 249 more
+         * at 03:13.
+         *
+         * The arithmetic is exact and self-inflicted. The maintenance break
+         * parks every table at :55. The break runs five minutes. This test
+         * fires at 180 seconds of no progress. So every parked table crosses
+         * the line together and the sweep that closes the break window
+         * destroys and rebuilds the fleet - every hour, all day, for as long
+         * as `engine_recovery_events` retains. That churn is why a tournament
+         * table cannot finish a hand, and why 391 of 554 RUNNING tournaments
+         * had dealt nothing for over thirty minutes when this was written.
+         *
+         * THE RULE THIS FILE ALREADY ESTABLISHED, APPLIED ONE MORE TIME. The
+         * liveness verdict says it outright: "a signal may only kill the
+         * process when killing it costs less than leaving it", and
+         * `wholeFleetStalled` exists so that one stalled table cannot condemn
+         * the process. The same test was never applied to the tables. Four
+         * hundred and sixty-four tables that stopped in the same minute are
+         * not 464 independent failures; they are one systemic pause, and a
+         * fleet-wide rebuild is the most expensive answer available to it -
+         * it voids every hand in flight and then loads the database harder
+         * than whatever caused the pause.
+         *
+         * So a fleet-wide verdict condemns nobody. It is reported, loudly and
+         * by name, and the sweep stands down.
+         *
+         * THIS REMOVES NO RECOVERY. Each table keeps its OWN watchdog
+         * (ServerTableEngineTurns: two trips at 90s and the engine kills
+         * itself), which is per-table, independent of this sweep, and which
+         * recovers a genuinely broken minority exactly as before. What stands
+         * down here is only the mass rebuild. And if the fleet really is dead
+         * rather than paused, the process-level verdict above
+         * (`wholeFleetStalled`) still answers for it - which is the one place
+         * a whole-fleet judgement belongs.
+         */
+        if (isFleetWideStall(zombieVerdicts.length, zombieCandidates)) {
+          this.fleetWideZombieRefusals += 1;
+          this.lastFleetWideZombieRefusalAtMs = Date.now();
+          reportError(
+            new Error(
+              'Fleet-wide stall: ' +
+                zombieVerdicts.length +
+                ' of ' +
+                zombieCandidates +
+                ' tables that should be dealing have made no progress for 180s. ' +
+                'That is one systemic pause, not ' +
+                zombieVerdicts.length +
+                ' broken tables - standing down rather than rebuilding the fleet. ' +
+                "Each table's own watchdog still answers for it."
+            ),
+            'GameServer.fleet_wide_zombie_refusal'
+          );
+        } else {
+          for (const [id, engine] of zombieVerdicts) {
             reportError(
               new Error(
                 'Engine for ' +

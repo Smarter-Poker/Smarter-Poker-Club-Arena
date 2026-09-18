@@ -117,6 +117,47 @@ function storedParameters(raw: unknown): TerminalSettlementParameters | null {
   return { settlementMode: mode, winnerId: winner };
 }
 
+/** Read an existing immutable result through its serialized verifier; never pay. */
+export async function readCommittedTournamentTerminalReceipt(
+  tournamentId: string
+): Promise<VerifiedTournamentCompletionReceipt | null> {
+  const { data, error } = await supabase
+    .from('tournament_terminal_settlements')
+    .select('settlement_mode, winner_id')
+    .eq('tournament_id', tournamentId)
+    .maybeSingle();
+  if (error) throw new TerminalSettlementOutcomeUnknownError(errorMessage(error));
+  if (!data) return null;
+  const stored = storedParameters(data);
+  if (!stored) throw new TerminalSettlementOutcomeUnknownError('Invalid stored terminal identity');
+  const response = await supabase.rpc('fn_resolve_tournament_terminal_outcome', {
+    p_tournament_id: tournamentId,
+    p_observed_winner_id: stored.winnerId,
+    p_settlement_mode: stored.settlementMode,
+  });
+  if (response.error) throw new TerminalSettlementOutcomeUnknownError(errorMessage(response.error));
+  const outcome = record(response.data);
+  const receipt = verifyTournamentCompletionReceipt(
+    outcome.receipt,
+    tournamentId,
+    stored.settlementMode,
+    stored.winnerId
+  );
+  if (
+    outcome.ok !== true ||
+    outcome.terminal_committed !== true ||
+    outcome.definitively_not_committed !== false ||
+    outcome.status !== 'COMPLETED' ||
+    outcome.tournament_id !== tournamentId ||
+    outcome.mode !== stored.settlementMode ||
+    !receipt
+  )
+    throw new TerminalSettlementOutcomeUnknownError(
+      'Stored terminal outcome could not be verified'
+    );
+  return receipt;
+}
+
 /**
  * The database refused a replay because its stored receipt disagrees with what
  * this process observed. The receipt is the witness that was there (CLAUDE.md

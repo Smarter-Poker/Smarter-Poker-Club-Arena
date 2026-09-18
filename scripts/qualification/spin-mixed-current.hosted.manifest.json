@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "kind": "synthetic-current-mixed-terminal",
+  "images": [
+    "mixed-current-completion",
+    "mixed-current-source-change"
+  ],
+  "files": {
+    "scripts/qualification/spin-mixed-current.py": {
+      "bytes": 25023,
+      "sha256": "40b2aaa284412f0a83fd61dc00c9983b088a9bf46fed10bc40d064dd66bb27dc"
+    },
+    "scripts/qualification/spin-mixed-current-races.py": {
+      "bytes": 18261,
+      "sha256": "eb32d8e3784bbe59472f8e4869f21069556e024f7ed6238ab33ed87928b66506"
+    },
+    "scripts/qualification/spin-mixed-current-assertions.py": {
+      "bytes": 8029,
+      "sha256": "a8a6082ec6c54a37beec945c68bb8a001cb69537a51de317961bae4ac835d63c"
+    },
+    "scripts/qualification/spin-expiry-business-races.py": {
+      "bytes": 26932,
+      "sha256": "619267d012bb64257d639006c133d03c95f16c7e243b334e6af661d5900b95c5"
+    },
+    "supabase/components/spin-mixed-basis-current-terminal.sql": {
+      "bytes": 53797,
+      "sha256": "f162beadd08e26ca2de45c80662fdd2ee13138d6fda173a620272ef410e6e14b"
+    },
+    "supabase/components/spin-mixed-basis-current-terminal.rollback.sql": {
+      "bytes": 58078,
+      "sha256": "ed282017349cac3b4f510c1dc271d11c39fc276c0b84846c2da8bfd500299b44"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/catalog-restore.sql": {
+      "bytes": 232918,
+      "sha256": "35cb39829a29393ffd27b326ee65e7567826cd31d1dda28c8b0b48d533eea2cf"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/catalog-readback.sql": {
+      "bytes": 36896,
+      "sha256": "fbcf7f7b888519923327dc8840337585047554257ce9ce8ae8ca151bbd9e6aff"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/recognition-restore.sql": {
+      "bytes": 28211,
+      "sha256": "78e383e6139ca0573c99e9f614881ebc8ead534d91f68c686c9a917425c2aab1"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/recognition-readback.sql": {
+      "bytes": 9383,
+      "sha256": "763f7f2fb52b038723bda699dcd2fbc1743412798ccbcb520b896feefeeee982"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/authority.json": {
+      "bytes": 151700,
+      "sha256": "193d8f25921068b2e4402d4d4b3861195917542b67a95fc854d6844842a29bd2"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/catalog.json": {
+      "bytes": 47834,
+      "sha256": "329b95dfe4489c1099502e517005904d014d1e6fe2630f66433361aaec99b418"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/net-plan.json": {
+      "bytes": 8504,
+      "sha256": "2a0f15c69396fc10dd9e5b8137ba61bb819df8f1c00bc4ebd53e9f83eb808fbd"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/recognizer.json": {
+      "bytes": 5514,
+      "sha256": "2c3ad8931db2aaef037cbb827da4ebac544e33768dd7a3754377175bfe771fdf"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/period-requests.json": {
+      "bytes": 4686,
+      "sha256": "81a582b185e763782e68fc8fe24d3c9870c32e3d1266e8d31cdb45106312860d"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/synthetic-model.json": {
+      "bytes": 9716,
+      "sha256": "8259b713348b95c85247044443e6b32b0f0db76110af44ef3a32a929ce6edd79"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/synthetic-seed.sql": {
+      "bytes": 13167,
+      "sha256": "d2dd861f03c8a0311c01b331672c9ff15f3597fd8002742b5e6aa8efa7cd3162"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/actor-identity.sql": {
+      "bytes": 1288,
+      "sha256": "5836845bff01cd9826d43d5d8c5a593793c454f41249c8ab66b27f9fa6b44957"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/store-policy.sql": {
+      "bytes": 1431,
+      "sha256": "2e4d9019aa3593d2b2e65f792d32688690414cc10339faf55e18d51f1030edaa"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/synthetic-provider.sql": {
+      "bytes": 51742,
+      "sha256": "7ffa9e9603f89d51d8a4d34ef1584b4927d8bba86b8ac87eb9be07e8b713354b"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/synthetic-entry-close.sql": {
+      "bytes": 1604,
+      "sha256": "df9a9b1f73863d300f98a802c179a4c9135c0fdeb3ae1b94af98c50c6418a32c"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/synthetic-input-check.sql": {
+      "bytes": 4266,
+      "sha256": "f8f3b27e7235f5cf7845a57d5215612689dc9238f8064164e0f6b8de27e42835"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/observer.sql": {
+      "bytes": 4170,
+      "sha256": "2261a61b6b08a8408b4c9a3b7fc2e0a5c8e6a88ceacd08edc9d985158812a56c"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/replay.sql": {
+      "bytes": 1775,
+      "sha256": "1421c7c0e7ee6089993730c2c786260defa5c2fad10eaef725601245df6ba8c2"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/wrapper-refusals.sql": {
+      "bytes": 3690,
+      "sha256": "092666c8cf033a8547d8f6a3181a5ce9d0c8d8c3575d1d14bcc65c0dde14626e"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/narrow-refusal.sql": {
+      "bytes": 1719,
+      "sha256": "16a14e3b4aa4a568e632a696ee74f292b4adde3e719cf704fa51a2e8d13d1cf0"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/rollback-refusals.sql": {
+      "bytes": 4096,
+      "sha256": "c77cf88d827c01fdcb45a651aacc44fb767bace06913159d6d0314a5312ef630"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/provenance.json": {
+      "bytes": 25776,
+      "sha256": "9e032a8ac2f189fdb811e674fc07b5ce395f9ff3fc8aeb7bad5b8b9dd7f1c661"
+    }
+  },
+  "relative_include_graph": {},
+  "historical_qualification": false,
+  "full_financial_qualification": false,
+  "production_qualification": false
+}

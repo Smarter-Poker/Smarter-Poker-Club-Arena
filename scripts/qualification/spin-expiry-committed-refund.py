@@ -24,7 +24,7 @@ R2_SQL = DIRECTORY/'spin-expiry-committed-refund-state.sql'
 ORACLE = DIRECTORY/'spin-expiry-committed-refund-oracle.py'
 AUTHORITY = DIRECTORY/'spin-expiry-committed-refund.authority.json'
 FROZEN = {
-    R1:'24d45e4bb26b062fd2abbc86f1019cd05f0f79fc2557e82993a19770a8982f2d',
+    R1:'619267d012bb64257d639006c133d03c95f16c7e243b334e6af661d5900b95c5',
     R1_SQL:'eb052a103771b40e473a34b8b730e3126db7d9a9cbe18ece152b7a0afeab588a',
     DIRECTORY/'spin-expiry-lock-order.authority.json':
         '204c8528c4963c723139a2636fe7482abbad6ebcf3a247ec8a2f1de5fbccc09c',

@@ -54,12 +54,18 @@ test('catalog exactly300s refused',()=>{const p=pair(time+300000);assert.equal(v
 test('forged extended expiry refused',()=>{const p=pair(time+299999);p.x.expiresAt=new Date(time+600000).toISOString();assert.equal(validProof(p.run,p.x,p.ctx),false)});
 function deps(){let t=0,requests=0,reads=0;return {now:()=>t,head:async()=>head,requestId:()=>String(++requests),dispatch:async()=>{},sleep:async ms=>{t+=ms},findRun:async()=>++reads<3?{status:'in_progress'}:{id:requests,status:'completed',conclusion:'success'},consume:async()=>true,requests:()=>requests}}
 test('first lookup before completion waits',async()=>{const d=deps();await coordinate(d);assert.equal(d.now(),10000)});
+test('hosted queue leaves time to consume a newly generated exact-head proof',async()=>{
+ const d=deps();let completedAt;
+ d.findRun=async()=>{if(d.now()<610000)return {status:'queued'};completedAt=d.now();return {id:1,status:'completed',conclusion:'success'}};
+ d.consume=async()=>{await d.sleep(30000);assert.ok(d.now()-completedAt<300000);return true};
+ await coordinate(d);assert.equal(d.now(),640000);assert.equal(d.requests(),1);
+});
 test('expired same-head proof dispatches fresh read',async()=>{const d=deps();let c=0;d.consume=async()=>++c===2;await coordinate(d);assert.equal(d.requests(),2)});
 test('slow queue bounded deadline fails',async()=>{const d=deps();d.findRun=async()=>({status:'queued'});await assert.rejects(coordinate(d,{deadlineMs:12000}),/deadline/);assert.equal(d.now(),12000)});
 test('head advance while waiting refuses',async()=>{const d=deps();d.head=async()=>d.now()>0?'b'.repeat(40):head;await assert.rejects(coordinate(d),/advanced/)});
 test('cancelled producer refuses',async()=>{const d=deps();d.findRun=async()=>({status:'completed',conclusion:'cancelled'});await assert.rejects(coordinate(d),/did not succeed/)});
 test('bounded refresh does not loop forever',async()=>{const d=deps();d.consume=async()=>false;await assert.rejects(coordinate(d),/bounded refresh/);assert.equal(d.requests(),3)});
-test('consume past deadline cannot succeed',async()=>{const d=deps();d.consume=async()=>{await d.sleep(600000);return true};await assert.rejects(coordinate(d),/deadline/)});
+test('consume past deadline cannot succeed',async()=>{const d=deps();d.consume=async()=>{await d.sleep(600000);return true};await assert.rejects(coordinate(d,{deadlineMs:600000}),/deadline/)});
 
 // Regression: a successful consumer must not authorize a different current HEAD.
 test('head advance during successful consume refuses',async()=>{const d=deps();let current=head;d.head=async()=>current;d.consume=async()=>{current='b'.repeat(40);return true};await assert.rejects(coordinate(d),/advanced during proof consumption/)});

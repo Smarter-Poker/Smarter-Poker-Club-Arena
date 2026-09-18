@@ -27,8 +27,10 @@ idempotent replay. Full fixture data/catalog rollback and owned-cluster cleanup
 pass. Ten result-validator tests, 437 CI-routing contracts and six directly
 affected Cash input-manifest checks pass.
 
-This packet qualifies the database correction in isolation. Production
-installation, fresh catalog readback and natural affected-player progress are
-separate acceptance steps owned by the coordinating task. The independent PKO
+The coordinating task installed the exact qualified migration once as provider
+`20260918084433`. Independent readback at 08:44:47 UTC confirms the three changed
+functions, preserved private permissions, unchanged public wrappers and source
+triggers, and an empty private authorization table. Natural affected-player
+progress remains a separate acceptance step. The independent PKO
 watermark correction has separate source and qualification; this change does not
 relax its admission proof or certify a recovery operation.

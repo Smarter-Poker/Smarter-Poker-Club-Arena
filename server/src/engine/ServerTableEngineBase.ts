@@ -2978,10 +2978,10 @@ export abstract class ServerTableEngineBase {
       // support query, and "hand #N" reference on a restarted table was
       // ambiguous.
       //
-      // Seeding from MAX(hand_number) makes the sequence monotonic across
-      // restarts. Deliberately runs BEFORE checkCrashRecovery() so a crash
-      // snapshot still wins — recovery resumes an in-flight hand and must be
-      // able to reuse that hand's exact number.
+      // Restore the last completed hand's identity before reading its parked
+      // time banks. New deals still allocate from the global sequence.
+      // Deliberately runs BEFORE checkCrashRecovery() so an in-flight crash
+      // snapshot can restore its own exact hand number instead.
       await this.seedHandCountFromHistory();
       if (!this.lifecycleCanMutate()) return;
 
@@ -7189,17 +7189,10 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
-   * Continue hand numbering from where this table left off.
-   *
-   * handCount defaults to 0, and before this existed the ONLY thing that ever
-   * restored it was checkCrashRecovery(), which needs an incomplete-hand
-   * snapshot. A clean restart (deploy, reboot, table reactivation) has no
-   * snapshot, so numbering silently began again at 1 and (table_id,
-   * hand_number) stopped being unique for the table.
-   *
-   * Failure is non-fatal by design: if the lookup errors we leave handCount at
-   * its current value and carry on. A duplicated hand number is an annoyance;
-   * refusing to start the table would be an outage.
+   * Restore the completed hand identity used to validate parked time banks.
+   * New deals allocate globally; this value identifies the previous boundary.
+   * Unknown history must reject startup before a zero-hand checkpoint can
+   * replace a saved bank. The existing startup owner handles the failure.
    */
   private async seedHandCountFromHistory(): Promise<void> {
     try {
@@ -7236,29 +7229,25 @@ export abstract class ServerTableEngineBase {
         .maybeSingle();
 
       if (error) {
-        console.warn(
-          `[ServerTableEngine:${this.tableId}] Could not seed hand counter (${error.message}) - ` +
-            `continuing from #${this.handCount}. Hand numbers may repeat for this table.`
-        );
-        return;
+        throw error;
       }
 
-      const last = Number((data as { hand_number?: number } | null)?.hand_number ?? 0);
-      // 2026-08-18: hand numbers now come from the global sequence, allocated
-      // fresh at each deal, so there is no counter to "resume" — the next hand
-      // cannot collide with anything no matter what this engine last saw. This
-      // is kept only to log where the table left off, which is genuinely useful
-      // when reading a crash trail.
-      if (Number.isFinite(last) && last > 0) {
+      const last = data ? Number((data as { hand_number?: number }).hand_number ?? NaN) : 0;
+      if (!Number.isSafeInteger(last) || last < 0) {
+        throw new Error('Invalid persisted hand number');
+      }
+      if (!this.lifecycleCanMutate()) return;
+      this.handCount = last;
+      if (last > 0) {
         console.log(
           `[ServerTableEngine:${this.tableId}] Last persisted hand on this table: #${last}`
         );
       }
     } catch (err) {
-      console.warn(
-        `[ServerTableEngine:${this.tableId}] Hand counter seed threw (${(err as Error)?.message}) - ` +
-          `continuing from #${this.handCount}.`
+      console.error(
+        `[ServerTableEngine:${this.tableId}] Cannot restore hand identity (${(err as Error)?.message})`
       );
+      throw err;
     }
   }
 

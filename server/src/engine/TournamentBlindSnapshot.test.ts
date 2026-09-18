@@ -1,10 +1,30 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import type { HandController } from './HandController.js';
+import { horseTournamentProvenanceMatchesSnapshot } from './HorseTournamentContextProvenance.js';
+import type {
+  FastHorseDecisionResult,
+  LiveHorseDecisionSnapshot,
+} from './horseDecision/protocol.js';
 import * as tournamentContext from '../services/TournamentBrainContext.js';
 
 const { loadTable, loadSeatedPlayers } = vi.hoisted(() => ({
   loadTable: vi.fn(),
   loadSeatedPlayers: vi.fn(),
+}));
+const { decideFast } = vi.hoisted(() => ({
+  decideFast: vi.fn(
+    (_snapshot: LiveHorseDecisionSnapshot, signal: AbortSignal) =>
+      new Promise<FastHorseDecisionResult>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('fixture turn retired')), {
+          once: true,
+        });
+      })
+  ),
+}));
+vi.mock('./horseDecision/index.js', async (original) => ({
+  ...(await original<typeof import('./horseDecision/index.js')>()),
+  getLiveHorseDecisionWorker: () => ({ decideFast }),
 }));
 vi.mock('../services/supabase/client.js', () => ({
   supabase: {
@@ -31,6 +51,7 @@ import { GameServer } from '../GameServer.js';
 const engines: any[] = [];
 afterEach(() => {
   for (const engine of engines.splice(0)) {
+    engine.cancelHorseDecisionWork();
     engine.running = false;
     (ServerTableEngine as any).releaseCurrentEngine(engine.tableId, engine);
     engine.preciseTimer.dispose();
@@ -38,6 +59,7 @@ afterEach(() => {
   }
   loadTable.mockReset();
   loadSeatedPlayers.mockReset();
+  decideFast.mockClear();
   vi.restoreAllMocks();
 });
 
@@ -91,12 +113,213 @@ function fixture(count = 3, tableId = 'tournament-level-snapshot') {
 }
 
 describe('tournament levels belong to the hand that was created with them', () => {
+  it.each([false, true])(
+    'keeps the Horse request on the dealt level until the next hand (big-blind ante: %s)',
+    async (bigBlindAnte) => {
+      const { engine, seats, deal } = fixture();
+      engine.tableInfo.big_blind_ante_enabled = bigBlindAnte;
+      engine.getEngineLeaseAuthority = () => ({ verified: true, generation: 'fixture-lease' });
+      const capture = (hand: HandController): LiveHorseDecisionSnapshot => {
+        const state = hand.getState();
+        const player = state.players.find((p) => p.seat === state.currentPlayerSeat)!;
+        const seated = seats.find((p) => p.user_id === player.user_id)!;
+        engine.scheduleHorseAction(seated, player.seat, player, state);
+        expect(decideFast).toHaveBeenCalledOnce();
+        const snapshot = decideFast.mock.calls[0]![0];
+        expect(horseTournamentProvenanceMatchesSnapshot(snapshot)).toBe(true);
+        expect(snapshot.gameState.tournament?.contextProvenance?.projection).toMatchObject({
+          tableId: engine.tableId,
+          handNumber: engine.handCount,
+          actorId: player.user_id,
+          actorSeat: player.seat,
+          dealerSeat: state.dealerSeat,
+          dealtSeatIds: state.players.map((p) => p.seat),
+          gameVariant: 'nlh',
+        });
+        // The same actor and payload cannot borrow another table's turn fence.
+        expect(
+          horseTournamentProvenanceMatchesSnapshot({
+            ...snapshot,
+            fence: snapshot.fence.replace(`${engine.tableId}:`, 'another-table:'),
+          })
+        ).toBe(false);
+        engine.cancelHorseDecisionWork();
+        decideFast.mockClear();
+        return snapshot;
+      };
+      const first = await deal();
+      first.start();
+      loadTable.mockResolvedValue({ ...engine.tableInfo, ...levelTwo });
+      await engine.refreshBlinds();
+      expect(engine.tableInfo).toMatchObject(levelTwo);
+      const old = capture(first);
+      expect(old.gameState).toMatchObject({
+        bigBlind: 20,
+        ante: 2,
+        bigBlindAnte,
+        minRaiseTo: 40,
+        tournament: {
+          currentSmallBlind: 10,
+          currentBigBlind: 20,
+          currentAnte: 2,
+          anteType: bigBlindAnte ? 'big_blind' : 'per_player',
+          // Ante 2 is authored per player; a BBA fronts all three shares.
+          m: { orbitCostChips: 36 },
+          contextProvenance: { projection: { smallBlind: 10, bigBlind: 20, ante: 2 } },
+        },
+      });
+      for (let folds = 0; folds < 2; folds++) {
+        expect(first.performAction(first.getState().currentPlayerSeat, 'fold')).toBe(true);
+      }
+      const second = await deal();
+      second.start();
+      expect(capture(second).gameState).toMatchObject({
+        bigBlind: 40,
+        ante: 4,
+        bigBlindAnte,
+        minRaiseTo: 80,
+        tournament: {
+          currentSmallBlind: 20,
+          currentBigBlind: 40,
+          currentAnte: 4,
+          m: { orbitCostChips: 72 },
+          contextProvenance: { projection: { smallBlind: 20, bigBlind: 40, ante: 4 } },
+        },
+      });
+    }
+  );
+
+  it('retains a complete cached source when its next-level blinds lag the actual dealt hand', async () => {
+    const { engine, seats, deal } = fixture();
+    engine.getEngineLeaseAuthority = () => ({ verified: true, generation: 'fixture-lease' });
+    const hand = await deal();
+    hand.start();
+    const now = Date.now();
+    // Synthetic source rows exercise the real context derivation and scheduler.
+    // This is not a live database read or an atomic database-snapshot proof.
+    const context = tournamentContext.deriveContext(
+      {
+        format_contract: 'mtt-v1',
+        effective_max_players: 100,
+        tournament_type: 'MTT',
+        status: 'RUNNING',
+        game_type: 'NLH',
+        variant: 'freezeout',
+        max_players: 100,
+        table_size: 6,
+        payout_structure: [{ place: 1, percentage: 100 }],
+        prize_pool: 100,
+        bounty_pool: 0,
+        is_pko: false,
+        is_bounty: false,
+        is_mystery_bounty: false,
+        blind_structure: [{ level: 1, smallBlind: 20, bigBlind: 40, ante: 4, durationMinutes: 10 }],
+        current_level: 0,
+        level_started_at: new Date(now - 60_000).toISOString(),
+        started_at: new Date(now - 120_000).toISOString(),
+        late_reg_mins: 0,
+        late_reg_levels: 0,
+        is_reentry: false,
+        max_reentries: 0,
+        is_rebuy: false,
+        rebuy_levels: 0,
+        max_rebuys: 0,
+        add_on_available: false,
+        addon_period_triggered: false,
+        prize_pool_finalized: false,
+        on_break: false,
+        accelerated_mtt: false,
+        big_blind_ante: false,
+        authorized_to_register: false,
+      },
+      3,
+      3,
+      3000,
+      [1000, 1000, 1000],
+      [],
+      [],
+      0,
+      {},
+      now
+    );
+    expect(context.contextStatus).toBe('complete');
+    const cached: tournamentContext.TournamentBrainContextSnapshot = {
+      context,
+      status: 'complete',
+      issues: [],
+      ageMs: 0,
+      contextProvenance: {
+        version: 1,
+        readAtMs: now,
+        status: 'complete',
+        issues: [],
+        ageMs: 0,
+        source: {
+          version: 1,
+          tournamentId: engine.tableInfo.tournament_id,
+          cacheId: 'aaaaaaaa-0000-4000-8000-000000000001',
+          generation: 1,
+          readStartedAtMs: now - 10,
+          readCompletedAtMs: now,
+          contextDigest: createHash('sha256').update(JSON.stringify(context)).digest('hex'),
+          contextStatus: 'complete',
+          contextIssues: [],
+        },
+      },
+    };
+    vi.spyOn(tournamentContext, 'getTournamentBrainContextSnapshot').mockReturnValue(cached);
+    loadTable.mockResolvedValue({ ...engine.tableInfo, ...levelTwo });
+    await engine.refreshBlinds();
+    const state = hand.getState();
+    const player = state.players.find((p) => p.seat === state.currentPlayerSeat)!;
+    engine.scheduleHorseAction(
+      seats.find((p) => p.user_id === player.user_id)!,
+      player.seat,
+      player,
+      state
+    );
+    expect(decideFast).toHaveBeenCalledOnce();
+    const request = decideFast.mock.calls[0]![0];
+    expect(horseTournamentProvenanceMatchesSnapshot(request)).toBe(true);
+    expect(request.gameState).toMatchObject({
+      bigBlind: 20,
+      ante: 2,
+      tournament: {
+        contextStatus: 'incomplete',
+        contextIssues: ['TOURNAMENT_CONTEXT_INCOMPLETE', 'blind_level_cache_lag'],
+        currentSmallBlind: 10,
+        currentBigBlind: 20,
+        currentAnte: 2,
+        m: { orbitCostChips: 36 },
+        contextProvenance: {
+          status: 'complete',
+          issues: [],
+          source: cached.contextProvenance.source,
+          projection: { smallBlind: 10, bigBlind: 20, ante: 2 },
+        },
+      },
+    });
+    expect(cached.status).toBe('complete');
+    expect(cached.context?.contextStatus).toBe('complete');
+    expect(cached.contextProvenance.source?.contextStatus).toBe('complete');
+    expect(cached.context?.currentBigBlind).toBe(40);
+    expect(cached.issues).toEqual([]);
+  });
+
   it('binds the observation cache reader to the dealt tournament before table reassignment', async () => {
     const read = vi.spyOn(tournamentContext, 'getTournamentBrainContextSnapshot').mockReturnValue({
       context: null,
       status: 'warming',
       issues: ['warming'],
       ageMs: null,
+      contextProvenance: {
+        version: 1,
+        readAtMs: 1000,
+        status: 'warming',
+        issues: ['TOURNAMENT_CONTEXT_INCOMPLETE', 'tournament_context_warming'],
+        ageMs: null,
+        source: null,
+      },
     });
     const { engine, deal } = fixture();
     const hand = await deal();

@@ -147,9 +147,17 @@ export function validatedHorsePolicySamplingKey(
   const mods = project(input.mods, HORSE_REVIEW_SIGNAL_KEYS);
   // Legacy v41Leaks now controls diagnostic telemetry only.
   const opts = project(input.opts, ['v41Leaks']);
-  return mods === input.mods && opts === input.opts && input.handJournalContext === undefined
+  const tournament = input.gameState.tournament;
+  const gameState =
+    tournament?.contextProvenance === undefined
+      ? input.gameState
+      : { ...input.gameState, tournament: project(tournament, ['contextProvenance']) };
+  return mods === input.mods &&
+    opts === input.opts &&
+    gameState === input.gameState &&
+    input.handJournalContext === undefined
     ? input.decisionKey
-    : buildHorseDecisionKey({ ...input, mods, opts, handJournalContext: undefined });
+    : buildHorseDecisionKey({ ...input, gameState, mods, opts, handJournalContext: undefined });
 }
 
 export interface FastHorseDecisionRequest extends LiveHorseDecisionSnapshot {

@@ -1,3 +1,4 @@
+import { horseTournamentProvenanceMatchesSnapshot } from '../HorseTournamentContextProvenance.js';
 import {
   horsePlanContextFromDecision,
   horsePlanBatchBindingFromRequest,
@@ -1072,6 +1073,9 @@ export class HorseDecisionWorkerRuntime {
     const tournament = gs.tournament;
     if (!tournament || tournament.schemaVersion !== 1) {
       throw new Error('Phase 6 tournament context schema version 1 is required');
+    }
+    if (!horseTournamentProvenanceMatchesSnapshot(request)) {
+      throw new Error('Phase 6 tournament provenance does not bind the current hand snapshot');
     }
     const status = tournament.contextStatus;
     if (!['complete', 'incomplete', 'warming', 'stale'].includes(status ?? '')) {

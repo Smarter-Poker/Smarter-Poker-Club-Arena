@@ -2438,6 +2438,13 @@ class SoundService {
     }
   }
 
+  /** A visible Diamond Wheel peg strike, driven by its presentation clock.
+   * Unlike a prescheduled chase, it cannot finish while that tab is hidden. */
+  playSpinPeg(velocity: number) {
+    if (!this.shouldPlaySpinCue('visible-peg', 0) || !this.ensureContext()) return;
+    this.spinPegClick(this.ctx!.currentTime, Math.max(0.5, Math.min(1, velocity)));
+  }
+
   /** A single peg strike: noise transient + a short randomised ring. */
   private spinPegClick(at: number, velocity: number) {
     if (!this.ctx) return;

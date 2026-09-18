@@ -57,7 +57,11 @@ jobs:
     outputs:
       should_run: ${{ steps.origin.outputs.should_run }}
       engine_trigger_sha: ${{ steps.origin.outputs.engine_trigger_sha }}
+      client_target_sha: ${{ steps.client-target.outputs.sha }}
     steps:
+      - name: Checkout trusted publication verification
+        if: github.event_name == 'workflow_run'
+        uses: actions/checkout@v4
       # workflow_run.conclusion covers the whole publisher, including the
       # optional Capgo job. A Capgo failure after a verified web publish must
       # never suppress web E2E, so read the exact origin job and its proof step.
@@ -130,6 +134,27 @@ jobs:
           fs.appendFileSync(output, 'should_run=true\n');
           NODE
 
+      # The publisher selects current main, which can be newer than its trigger.
+      # Its unique same-run dist artifact binds that selection. Never substitute
+      # a PR artifact or whichever newer SHA happens to be live now. If a later
+      # publisher has superseded it, the exact live comparison still refuses.
+      - name: Resolve the exact client artifact selected by this publisher
+        if: github.event_name == 'workflow_run'
+        id: client-target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPOSITORY_ID: ${{ github.repository_id }}
+        run: |
+          set -euo pipefail
+          SELECTED_SHA=$(timeout 30s gh api \
+            "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" \
+            | node scripts/ci/production-e2e-provenance.mjs \
+              publisher-artifact "$SOURCE_RUN_ID" "$SOURCE_TRIGGER_SHA" "$REPOSITORY_ID")
+          echo "sha=$SELECTED_SHA" >> "$GITHUB_OUTPUT"
+          echo "Publisher run $SOURCE_RUN_ID selected client \`$SELECTED_SHA\` (trigger \`$SOURCE_TRIGGER_SHA\`)." >> "$GITHUB_STEP_SUMMARY"
+
   # DISCOVERABILITY PHASE 3 (2026-09-17). What a crawler gets from production,
   # checked against what the deployed bundle says it published: build-info,
   # the prerender manifest, every prerendered route's head and words, the
@@ -150,14 +175,14 @@ jobs:
       - name: Checkout the published commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ needs.publication-gate.outputs.client_target_sha }}
           fetch-depth: 1
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
       - name: Read production as Googlebot and hold it to the contract
-        run: node scripts/ci/check-live-seo-contract.mjs --sha "${{ github.event.workflow_run.head_sha }}"
+        run: node scripts/ci/check-live-seo-contract.mjs --sha "${{ needs.publication-gate.outputs.client_target_sha }}"
 
   production-e2e:
     needs: publication-gate

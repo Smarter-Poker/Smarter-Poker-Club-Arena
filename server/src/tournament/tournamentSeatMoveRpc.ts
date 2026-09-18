@@ -83,7 +83,7 @@ function message(value: unknown): string {
   return String(value);
 }
 
-function verify(
+export function verifyTournamentSeatMoveReceipt(
   raw: unknown,
   expected: TournamentSeatMoveInput
 ): VerifiedTournamentSeatMoveReceipt | null {
@@ -136,7 +136,7 @@ function verify(
  * it can call only the receipt-only RPC, stamps ordinary service authority,
  * and exposes no general query or mutation surface.
  */
-async function resolveCommittedTournamentSeatMove(
+export async function resolveCommittedTournamentSeatMove(
   input: TournamentSeatMoveInput
 ): Promise<VerifiedTournamentSeatMoveReceipt | null> {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -181,7 +181,7 @@ async function resolveCommittedTournamentSeatMove(
     }
     const raw = (await response.json()) as unknown;
     if (raw === null) return null;
-    const receipt = verify(raw, input);
+    const receipt = verifyTournamentSeatMoveReceipt(raw, input);
     if (!receipt) {
       throw new Error('committed tournament move resolver returned a mismatched receipt');
     }
@@ -217,7 +217,7 @@ export async function moveTournamentPlayerAtomically(
     try {
       const { data, error } = await supabase.rpc('fn_move_tournament_player', request);
       if (!error) {
-        const receipt = verify(data, input);
+        const receipt = verifyTournamentSeatMoveReceipt(data, input);
         if (receipt) return receipt;
         lastFailure = 'tournament seat move returned an invalid stored receipt';
         knownRefusal = false;

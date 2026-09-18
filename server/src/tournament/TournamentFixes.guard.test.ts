@@ -408,7 +408,10 @@ describe('a table move must never leave a player holding two live seats', () => 
     const request = rpc.indexOf('const request = {');
     const retry = rpc.indexOf('for (let attempt = 0; attempt < 2; attempt++)', request);
     const invoke = rpc.indexOf("supabase.rpc('fn_move_tournament_player', request)", retry);
-    const verified = rpc.indexOf('const receipt = verify(data, input)', invoke);
+    const verified = rpc.indexOf(
+      'const receipt = verifyTournamentSeatMoveReceipt(data, input)',
+      invoke
+    );
     const unknown = rpc.indexOf('throw new TournamentSeatMoveOutcomeUnknownError(', verified);
     expect(request).toBeGreaterThanOrEqual(0);
     expect(retry).toBeGreaterThan(request);
@@ -503,9 +506,7 @@ describe('no seating path may write a second live seat in the same tournament', 
     const move = fn.slice(0, end);
     expect(move).toContain('requestTournamentSeatMoveAtBoundary(input, boundary)');
     expect(move).toContain('const requestId = randomUUID()');
-    expect(src).toContain(
-      'return moveTournamentPlayerAtomically(input, { outcomeWasAlreadyUnknown })'
-    );
+    expect(src).toContain('moveTournamentPlayerAtomically(input, { outcomeWasAlreadyUnknown })');
     expect(move).not.toMatch(/\.from\('table_seats'\)/);
     expect(move).not.toMatch(/\.from\('tournament_players'\)/);
     expect(move).not.toMatch(/restore|compensat/i);

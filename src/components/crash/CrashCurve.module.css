@@ -1,13 +1,12 @@
-/* The crash chart's frame is the page's CasinoWell; this only holds the canvas. */
-
 .wrap {
   display: flex;
   justify-content: center;
   width: 100%;
+  position: relative;
 }
-
 .canvas {
   display: block;
   max-width: 100%;
-  border-radius: 8px;
+  border-radius: 10px;
+  box-shadow: inset 0 0 80px #000;
 }

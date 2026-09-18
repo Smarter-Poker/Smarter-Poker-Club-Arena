@@ -1,4 +1,5 @@
-import type { WheelSpinResult } from '../services/DiamondWheelService';
+import type { WheelContractVersion, WheelSpinResult } from '../services/DiamondWheelService';
+import { assertWheelAward } from './wheelAward';
 
 export type WheelSpinMode = 'paid' | 'welcome' | 'daily_bonus';
 export interface WheelPendingSpin {
@@ -9,6 +10,9 @@ export interface WheelPendingSpin {
   commitHash: string;
   clientSeed: string;
   ticketId: string | null;
+  /** Missing only on a request saved before the twelve-sector wheel. */
+  contractVersion?: WheelContractVersion;
+  entryDiamonds?: number;
 }
 
 const keyFor = (userId: string, clubId: string) => `diamond-wheel-pending:v1:${userId}:${clubId}`;
@@ -24,6 +28,13 @@ function valid(a: WheelPendingSpin, userId: string, clubId: string): boolean {
     a.clientSeed.length > 0 &&
     a.clientSeed.length <= 64 &&
     (a.mode === 'paid' || a.mode === 'welcome' || a.mode === 'daily_bonus') &&
+    (a.contractVersion === undefined
+      ? a.entryDiamonds === undefined
+      : (a.contractVersion === 2 || a.contractVersion === 3) &&
+        Number.isSafeInteger(a.entryDiamonds) &&
+        Number(a.entryDiamonds) >= 25 &&
+        Number(a.entryDiamonds) <= 2500 &&
+        (a.mode === 'paid' || a.entryDiamonds === 100)) &&
     (a.mode === 'daily_bonus'
       ? typeof a.ticketId === 'string' && uuid.test(a.ticketId)
       : a.ticketId === null)
@@ -54,8 +65,18 @@ export function clearWheelPending(a: WheelPendingSpin): void {
 
 /** Transport success is insufficient: only this request's complete receipt may settle it. */
 export function assertWheelReceipt(r: WheelSpinResult, a: WheelPendingSpin): void {
+  assertWheelAward(r);
   if (
     r.ok !== true ||
+    (a.contractVersion !== undefined &&
+      // A saved v2 request may first execute after the v3 cutover. Its sealed
+      // commit, stake and mode stay identical; a v3 request never downgrades.
+      ((a.contractVersion === 3
+        ? r.contract_version !== 3
+        : r.contract_version !== 2 && r.contract_version !== 3) ||
+        r.entry_value_diamonds !== a.entryDiamonds ||
+        r.player_cost_diamonds !== (a.mode === 'paid' ? a.entryDiamonds : 0) ||
+        (a.mode === 'daily_bonus' && r.entry_funded_by !== 'mint'))) ||
     !uuid.test(r.spin_id) ||
     r.club_id !== a.clubId ||
     r.welcome !== (a.mode === 'welcome') ||

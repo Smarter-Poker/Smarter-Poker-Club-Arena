@@ -64,7 +64,6 @@ const ALLOWED: Record<string, Reason> = {
   'src/components/table/TournamentWinnerOverlay.tsx': 'animation',
   'src/components/tournament/CoinShower.tsx': 'animation',
   'src/components/wallet/DynamicWallet.tsx': 'identifier', // instance id
-  'src/components/wheel/DiamondWheel.tsx': 'animation', // where in the winning segment the pointer rests; the segment comes from the server
   'src/components/wallet/WalletCashierModal.tsx': 'identifier', // uuid v4 fallback for an idempotency key
   'src/pages/CashierPage.tsx': 'identifier', // uuid v4 fallback for an idempotency key
   'src/pages/CashierTradePage.tsx': 'identifier', // uuid v4 fallback for an idempotency key

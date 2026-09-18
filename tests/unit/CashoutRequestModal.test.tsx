@@ -97,12 +97,10 @@ beforeEach(() => {
       },
     },
   });
-  lookup
-    .mockReset()
-    .mockImplementation(async (_name, args) => ({
-      data: cashoutLookupEnvelope(args),
-      error: null,
-    }));
+  lookup.mockReset().mockImplementation(async (_name, args) => ({
+    data: cashoutLookupEnvelope(args),
+    error: null,
+  }));
   transport
     .mockReset()
     .mockImplementation(

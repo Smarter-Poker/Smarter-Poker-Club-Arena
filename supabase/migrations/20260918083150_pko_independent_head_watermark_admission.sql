@@ -161,6 +161,8 @@ BEGIN
     'inspected',inspected,'watermark',watermark);
 END;
 $function$;
+-- Restate the already-pinned private ACL for the static authorization gate.
+REVOKE ALL ON FUNCTION public.fn_pko_watermark_admission_status_v1(uuid,uuid,uuid,uuid,bigint,timestamp with time zone,jsonb) FROM PUBLIC, anon, authenticated, service_role;
 DO $postimage$
 DECLARE p record;
 BEGIN

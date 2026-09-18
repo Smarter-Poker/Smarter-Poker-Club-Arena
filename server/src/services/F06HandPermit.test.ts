@@ -182,3 +182,123 @@ it('only explicit used-number refusal permits choosing another number', async ()
     expect(p.knownNumberRefusal()).toBe(reply.data?.reason === 'hand_number_already_used');
   }
 });
+
+it('cancels only its reserved original preparation and replays a lost receipt with the same identity', async () => {
+  let finish!: (value: any) => void;
+  const calls: { name: string; input: Record<string, unknown> }[] = [];
+  const p = new F06HandPermit(
+    b,
+    async (name, input) => {
+      calls.push({ name, input });
+      if (name === 'fn_f06_begin_hand') return { data, error: null };
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    },
+    () => true
+  );
+  await p.reserve();
+  const pending = p.cancelPreparedHand();
+  expect(p.recoveryState()).toBe('terminated');
+  expect(() =>
+    p.start(() => {
+      throw new Error('must not actuate');
+    })
+  ).toThrow('f06_start_unproven');
+  finish({ data: null, error: new Error('lost reply') });
+  await expect(pending).rejects.toThrow('f06_prepared_cancellation_unknown');
+  const replay = p.cancelPreparedHand();
+  expect(calls[1]).toEqual(calls[2]);
+  expect(calls[1].input).toEqual(
+    Object.fromEntries(Object.entries(b).map(([key, value]) => ['p_' + key, value]))
+  );
+  finish({ data: { ...data, state: 'never_started', evidence_id: b.permit_id }, error: null });
+  await replay;
+  expect(() => p.start(() => {})).toThrow('f06_start_unproven');
+});
+
+it.each(['new', 'unknown', 'attempted', 'terminated'] as const)(
+  'cannot certify a %s permit as an original preparation',
+  async (phase) => {
+    let calls = 0;
+    const p = new F06HandPermit(
+      b,
+      async () => {
+        calls++;
+        return phase === 'unknown'
+          ? { data: null, error: new Error('BEGIN lost') }
+          : { data, error: null };
+      },
+      () => true
+    );
+    if (phase !== 'new') await p.reserve().catch(() => {});
+    if (phase === 'attempted') {
+      expect(() =>
+        p.start(() => {
+          throw new Error('partial start');
+        })
+      ).toThrow('partial start');
+    }
+    if (phase === 'terminated')
+      await p.drainNeverStarted(
+        async () => {},
+        () => true
+      );
+    const before = calls;
+    await expect(p.cancelPreparedHand()).rejects.toThrow('f06_prepared_cancellation_unproven');
+    expect(calls).toBe(before);
+  }
+);
+
+it.each(['before', 'during'] as const)(
+  'refuses prepared cancellation after original owner loss %s transport',
+  async (when) => {
+    let current = true;
+    let cancelCalls = 0;
+    const p = new F06HandPermit(
+      b,
+      async (name) => {
+        if (name === 'fn_f06_begin_hand') return { data, error: null };
+        cancelCalls++;
+        current = false;
+        return { data: { ...data, state: 'never_started', evidence_id: b.permit_id }, error: null };
+      },
+      () => current
+    );
+    await p.reserve();
+    if (when === 'before') current = false;
+    await expect(p.cancelPreparedHand()).rejects.toThrow(
+      when === 'before' ? 'f06_prepared_cancellation_unproven' : 'f06_prepared_cancellation_unknown'
+    );
+    expect(cancelCalls).toBe(when === 'before' ? 0 : 1);
+  }
+);
+
+it.each([
+  'ok',
+  'state',
+  'evidence_id',
+  'tournament_id',
+  'generation',
+  'table_id',
+  'lifecycle',
+  'hand_number',
+  'permit_id',
+  'custody_id',
+])('refuses a prepared cancellation receipt with altered %s', async (field) => {
+  const p = new F06HandPermit(
+    b,
+    async (name) => ({
+      data:
+        name === 'fn_f06_begin_hand'
+          ? data
+          : { ...data, state: 'never_started', evidence_id: b.permit_id, [field]: 'changed' },
+      error: null,
+    }),
+    () => true
+  );
+  await p.reserve();
+  await expect(p.cancelPreparedHand()).rejects.toThrow('f06_prepared_cancellation_unknown');
+  expect(p.hasPreparedCancellation()).toBe(true);
+  expect(() => p.start(() => {})).toThrow('f06_start_unproven');
+});

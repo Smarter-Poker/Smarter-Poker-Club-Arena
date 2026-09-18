@@ -108,7 +108,13 @@ END $installed$;
 '''
  casefn='CREATE FUNCTION smarter_private.breakfast_retained_case() RETURNS jsonb LANGUAGE sql IMMUTABLE SET search_path=pg_catalog AS $case$ SELECT '+js(retained(root))+' $case$;\nREVOKE ALL ON FUNCTION smarter_private.breakfast_retained_case() FROM PUBLIC,anon,authenticated,service_role;\n'
  registry="INSERT INTO public.ca_money_rpc_registry(proname,status,notes) VALUES('fn_complete_breakfast_original_witness','approved','Exact original Breakfast witness; unchanged terminal payers and immutable receipt; no generic adjudication') ON CONFLICT(proname) DO NOTHING;\n"
- candidate=header+pre+casefn+registry+(root/AUTHORITY).read_text()+'\n'+cash+';\nCOMMIT;\n'
+ # These CREATE TRIGGER strings are read-only catalog comparison operands,
+ # never executed DDL. Declare that fact using the maintained scanner contract.
+ catalog_notes=''.join('-- money-trigger-ok: '+r['table']+'.'+r['name']+' because This retained catalog string is compared for equality only; no trigger is created or altered here.\n' for r in guards)
+ # CREATE OR REPLACE retains the existing ACL, but make the original service-only
+ # boundary explicit for the migration authorization checker and future installs.
+ cash_acl='\nREVOKE ALL ON FUNCTION public.fn_settle_tournament_places(uuid,uuid) FROM PUBLIC,anon,authenticated;\nGRANT EXECUTE ON FUNCTION public.fn_settle_tournament_places(uuid,uuid) TO service_role;\n'
+ candidate=header+catalog_notes+pre+casefn+registry+(root/AUTHORITY).read_text()+'\n'+cash+';\n'+cash_acl+'COMMIT;\n'
  return candidate
 if __name__=='__main__':
  import argparse

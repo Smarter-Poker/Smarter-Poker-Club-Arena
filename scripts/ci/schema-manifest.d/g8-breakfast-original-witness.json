@@ -1,6 +1,6 @@
 {
   "_owner": "g8/breakfast-original-witness-20260918",
-  "_scope": "Declarations for the exact original Breakfast witness migration; not an installation receipt.",
+  "_comment": "Declarations for the exact original Breakfast witness migration; not an installation receipt.",
   "tables": ["smarter_private.breakfast_original_witness"],
   "functions": [
     "smarter_private.breakfast_retained_case",

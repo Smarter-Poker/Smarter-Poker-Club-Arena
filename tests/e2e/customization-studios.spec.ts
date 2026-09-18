@@ -357,13 +357,14 @@ test.describe('real Table Studio browser flows', () => {
         await shell.scrollIntoViewIfNeeded();
         const bounds = await shell.boundingBox();
         expect(bounds, `preview bounds for ${name}`).not.toBeNull();
-        // Derive the output dimensions from the element itself so fractional
-        // viewport scroll alignment cannot add or remove an edge pixel in CI.
+        // Keep every clip coordinate on the CSS-pixel grid. Chromium can trim
+        // an edge pixel when a fractional scroll position reaches the
+        // screenshot clipper, even when width and height are already integers.
         const width = Math.ceil(bounds!.width);
         const height = Math.ceil(bounds!.height);
         const clip = {
-          x: bounds!.x - (width - bounds!.width) / 2,
-          y: bounds!.y - (height - bounds!.height) / 2,
+          x: Math.floor(bounds!.x),
+          y: Math.floor(bounds!.y),
           width,
           height,
         };

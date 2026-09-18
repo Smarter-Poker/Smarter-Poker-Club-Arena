@@ -366,3 +366,6 @@ def qualify(root, out, cmd, command, run, probe, require, results):
 
     generation = runpy.run_path(str(here / "generation_qualification.py"))
     generation["qualify"](root, out, cmd, command, run, probe, require, results, held, money, service)
+
+    mixed = runpy.run_path(str(here / "mixed_qualification.py"))
+    mixed["qualify"](root, out, cmd, command, run, probe, require, results, held, money, service)

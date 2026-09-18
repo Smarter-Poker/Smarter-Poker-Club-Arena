@@ -7,6 +7,20 @@ SET idle_in_transaction_session_timeout='20s'; SET timezone='UTC';
 SET search_path=public,pg_temp;
 \ir ../spin-receipt-lane/boundary.sql
 \ir ../spin-history-retention/database-state.sql
+-- Exact captured reference policy needed by the real fee banking authority.
+-- The six-row original entry proof has already completed unchanged.
+BEGIN;
+DO $policy$ BEGIN
+ IF EXISTS(SELECT 1 FROM public.ca_chip_store_coverage WHERE store='union_wallet') THEN
+  RAISE EXCEPTION 'paid terminal union store preimage differs'; END IF;
+END $policy$;
+INSERT INTO public.ca_chip_store_coverage
+SELECT * FROM jsonb_populate_record(NULL::public.ca_chip_store_coverage,$capture${"notes":"the union rake, bbj, promo, insurance and spin reserve wallets","store":"union_wallet","added_at":"2026-09-11T16:10:27.128168+00:00","treatment":"counted","counted_by":"union_wallets"}$capture$::jsonb);
+DO $policy$ BEGIN
+ IF (SELECT to_jsonb(s) FROM public.ca_chip_store_coverage s WHERE store='union_wallet')
+ IS DISTINCT FROM $capture${"notes":"the union rake, bbj, promo, insurance and spin reserve wallets","store":"union_wallet","added_at":"2026-09-11T16:10:27.128168+00:00","treatment":"counted","counted_by":"union_wallets"}$capture$::jsonb THEN RAISE EXCEPTION 'paid terminal union store readback differs'; END IF;
+END $policy$;
+COMMIT;
 CREATE TEMP TABLE paid_q AS SELECT :'execution_uuid'::uuid execution,
  :'tournament_uuid'::uuid tournament, :'ordinary_user_uuid'::uuid winner,
  extensions.uuid_generate_v5(:'execution_uuid'::uuid,'paid-launch') launch,

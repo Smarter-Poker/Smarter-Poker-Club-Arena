@@ -11,16 +11,16 @@
       "sha256": "d0067ded91d91abdeba0e820d0590d13b3bd8900f849593263f57ce4d7dfd6ea"
     },
     "scripts/qualification/fixtures/spin-paid-terminal/capture.json": {
-      "bytes": 141626,
-      "sha256": "42888c0137e6f01b47315bdce9baf4f901f093cf694c2ad4334ee5219ee08799"
+      "bytes": 142191,
+      "sha256": "a6bd1647e21156483b127f4466e06a2d0033079fb85d15e1552bfd732d5f117c"
     },
     "scripts/qualification/fixtures/spin-paid-terminal/provider.sql": {
       "bytes": 149455,
       "sha256": "1b17500f439fa5c623380f00faf350663ba70c35adacd13552ff30049213f341"
     },
     "scripts/qualification/fixtures/spin-paid-terminal/execute.sql": {
-      "bytes": 9760,
-      "sha256": "8d95d637523647750565be39ba1e518db6d4f45f7699317de90589b5b1c16fea"
+      "bytes": 10883,
+      "sha256": "475164a5b146a03cd940f8645b6dc86d7bb348071eb6afa70be27a9fa4abe241"
     },
     "scripts/qualification/fixtures/spin-paid-terminal/rules.json": {
       "bytes": 18511,

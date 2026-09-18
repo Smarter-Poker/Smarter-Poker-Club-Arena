@@ -19,6 +19,11 @@
       "path": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/modern-launch-source-20260918/payout-terms-capture.json",
       "sha256": "13afddf6ff17909109d4fe13be30ac130f6806ac5ceaf3abd544e0fc2d2ddc3d",
       "captured_at": "2026-09-18 03:41:28.636296+00"
+    },
+    {
+      "path": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/modern-launch-source-20260918/union-store-capture.json",
+      "sha256": "68301bc016599dd872da0029e9f66104e54404401654fd5dea19ea34481a9156",
+      "captured_at": "2026-09-18 03:43:41.437116+00"
     }
   ],
   "functions": [
@@ -675,5 +680,12 @@
       "present": false
     }
   ],
-  "scope": "private current paid launch and terminal compatibility; synthetic finish input; no history recovery"
+  "scope": "private current paid launch and terminal compatibility; synthetic finish input; no history recovery",
+  "union_store_policy": {
+    "notes": "the union rake, bbj, promo, insurance and spin reserve wallets",
+    "store": "union_wallet",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "union_wallets"
+  }
 }

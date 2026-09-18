@@ -98,8 +98,10 @@ try:
   (base/'cash-move-qualification.log').write_text(result.stdout+result.stderr)
   if result.returncode:raise AssertionError(result.stdout+result.stderr)
   print(result.stdout,flush=True)
+ # Clone the pristine installed candidate before calendar and fault scenarios
+ # mutate functions/defaults. Full and focused modes use the identical input.
+ qualify_moves()
  if '--cash-move-only' in sys.argv:
-  qualify_moves()
   sys.exit(0)
  run((root/'tests/fixtures/union-weekly-basis/regression.sql').read_text(),'weekly-regression')
  run((root/'tests/fixtures/union-weekly-basis/negative-regression.sql').read_text(),'negative-regression')
@@ -119,7 +121,6 @@ try:
  (base/'guard-declaration-qualification.log').write_text(result.stdout+result.stderr)
  if result.returncode:raise AssertionError(result.stdout+result.stderr)
  print(result.stdout,flush=True)
- qualify_moves()
 finally:
  if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True)
  print('Evidence retained: '+str(base),flush=True)

@@ -61,7 +61,7 @@ import { checkTournamentChipConservation } from './tournamentChipConservation.js
 import { checkTournamentWholeChips, describeFractionalSeats } from './tournamentWholeChips.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { INSTANCE_ID } from '../services/tableLease.js';
-import { requireHandSeatGeneration } from './handSeatGeneration.js';
+import { handStackBefore, requireHandSeatGeneration } from './handSeatGeneration.js';
 import {
   LeavePendingDiagnostic,
   type LeavePendingAttempt,
@@ -2384,7 +2384,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 ...requireHandSeatGeneration(snap.seatGenerations, p.user_id),
                 user_id: p.user_id,
                 stack: cents(p.stack),
-                stack_before: cents(snap.dealtStacks.get(p.user_id) ?? p.stack),
+                stack_before: cents(
+                  handStackBefore(snap.seatGenerations, snap.dealtStacks, p.user_id, p.stack)
+                ),
               })),
               rake: this.isTournamentTable() ? 0 : snap.rake,
               bbj: this.isTournamentTable() ? 0 : snap.bbjFee,

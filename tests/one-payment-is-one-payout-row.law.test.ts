@@ -59,6 +59,18 @@ const ALREADY_CORRECTED = [
 const CREDIT_PATHS = /fn_credit_and_log|credit_and_log\(/i;
 const HAND_WRITES = /INSERT\s+INTO\s+(public\.)?tournament_payouts/i;
 
+/** Find the matched dollar quote and its statement terminator, including whitespace. */
+function functionDefinitionEnd(sql: string, start: number): number {
+  const as = sql.slice(start).match(/\bAS\s+(\$[A-Za-z0-9_]*\$)/i);
+  if (!as) return -1;
+  const tag = as[1];
+  const bodyStart = start + (as.index ?? 0) + as[0].length;
+  const close = sql.indexOf(tag, bodyStart);
+  if (close < 0) return -1;
+  const terminator = sql.slice(close + tag.length).match(/^\s*;/);
+  return terminator ? close + tag.length + terminator[0].length : -1;
+}
+
 /**
  * The credit primitive itself owns the payout-evidence INSERT. Remove that
  * definition before asking whether a caller both invokes the primitive and
@@ -69,17 +81,9 @@ function withoutCreditPrimitive(sql: string): string {
   let result = sql;
   let start = signature.exec(result)?.index ?? -1;
   while (start >= 0) {
-    const as = result.slice(start).match(/\bAS\s+(\$[A-Za-z0-9_]*\$)/i);
-    if (!as) break;
-    const tag = as[1];
-    const bodyStart = start + (as.index ?? 0) + as[0].length;
-    const end = result.indexOf(tag, bodyStart);
+    const end = functionDefinitionEnd(result, start);
     if (end < 0) break;
-    // PostgreSQL can emit the semicolon on the line after the closing tag.
-    // Do not search beyond that tag into a later caller's function body.
-    const terminator = result.slice(end + tag.length).match(/^\s*;/);
-    if (!terminator) break;
-    result = result.slice(0, start) + result.slice(end + tag.length + terminator[0].length);
+    result = result.slice(0, start) + result.slice(end);
     signature.lastIndex = 0;
     start = signature.exec(result)?.index ?? -1;
   }
@@ -108,18 +112,9 @@ function withoutSeparatedSatelliteDelivery(sql: string): string {
   let result = sql;
   let start = signature.exec(result)?.index ?? -1;
   while (start >= 0) {
-    const as = result.slice(start).match(/\bAS\s+(\$[A-Za-z0-9_]*\$)/i);
-    if (!as) break;
-    const tag = as[1];
-    const bodyStart = start + (as.index ?? 0) + as[0].length;
-    const end = result.indexOf(tag, bodyStart);
+    const end = functionDefinitionEnd(result, start);
     if (end < 0) break;
-    // pg_get_functiondef can put the statement semicolon on its own line.
-    // Stop at this body's closing tag, never at a later function's terminator.
-    const terminator = result.slice(end + tag.length).match(/^\s*;/);
-    if (!terminator) break;
-    const definitionEnd = end + tag.length + terminator[0].length;
-    const definition = result.slice(start, definitionEnd);
+    const definition = result.slice(start, end);
     const seatStart = definition.lastIndexOf("IF v_delivery_kind = 'seat' THEN");
     const ticketStart = definition.indexOf("ELSIF v_delivery_kind = 'ticket' THEN", seatStart);
     const cashStart = definition.indexOf("ELSIF v_delivery_kind = 'cash' THEN", ticketStart);
@@ -146,7 +141,7 @@ function withoutSeparatedSatelliteDelivery(sql: string): string {
       cash.includes("p_payout_source => 'satellite_ticket'") &&
       definition.includes('v_paid IS DISTINCT FROM v_pool');
     if (separated) {
-      result = result.slice(0, start) + result.slice(definitionEnd);
+      result = result.slice(0, start) + result.slice(end);
       signature.lastIndex = 0;
       start = signature.exec(result)?.index ?? -1;
     } else {
@@ -156,33 +151,17 @@ function withoutSeparatedSatelliteDelivery(sql: string): string {
   return result;
 }
 
+function hasMixedPayoutWriters(sql: string): boolean {
+  const code = withoutSeparatedSatelliteDelivery(withoutCreditPrimitive(sql))
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/'(?:''|[^'])*'/g, "''")
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+  return CREDIT_PATHS.test(code) && HAND_WRITES.test(code);
+}
+
 describe('one payment is one payout row', () => {
-  it.each(['$credit$;', '$credit$\n;'])(
-    'removes only the credit primitive when its terminator is %j',
-    (terminator) => {
-      const primitive =
-        'CREATE OR REPLACE FUNCTION public.fn_credit_and_log() RETURNS void ' +
-        'LANGUAGE plpgsql AS $credit$ BEGIN INSERT INTO public.tournament_payouts DEFAULT VALUES; END; ' +
-        terminator;
-      const unsafeCaller =
-        '\nDO $caller$ BEGIN PERFORM public.fn_credit_and_log(); ' +
-        'INSERT INTO public.tournament_payouts DEFAULT VALUES; END; $caller$;';
-      expect(withoutCreditPrimitive(primitive + unsafeCaller)).toBe(unsafeCaller);
-      expect(CREDIT_PATHS.test(withoutCreditPrimitive(primitive + unsafeCaller))).toBe(true);
-      expect(HAND_WRITES.test(withoutCreditPrimitive(primitive + unsafeCaller))).toBe(true);
-    }
-  );
-
-  it('does not remove an unterminated credit primitive or another function', () => {
-    const incomplete =
-      'CREATE OR REPLACE FUNCTION public.fn_credit_and_log() RETURNS void ' +
-      'LANGUAGE plpgsql AS $credit$ BEGIN NULL; END; $credit$';
-    expect(withoutCreditPrimitive(incomplete)).toBe(incomplete);
-    const unknown =
-      incomplete.replace('public.fn_credit_and_log()', 'public.unknown_credit()') + ';';
-    expect(withoutCreditPrimitive(unknown)).toBe(unknown);
-  });
-
   const cohortMigration = readFileSync(
     join(MIGRATIONS, '20260917201651_satellite_multi_qualifier_receipt_v3.sql'),
     'utf8'
@@ -271,6 +250,47 @@ describe('one payment is one payout row', () => {
     }
   });
 
+  const creditCall = 'SELECT public.fn_credit_and_log(NULL, 1);';
+  const directPayout = 'INSERT INTO public.tournament_payouts(amount) VALUES (1);';
+  const primitive = (tag: string, terminator: string) =>
+    `CREATE OR REPLACE FUNCTION public.fn_credit_and_log() RETURNS void
+     LANGUAGE plpgsql AS ${tag} BEGIN ${directPayout} END; ${tag}${terminator}`;
+
+  it.each(['$function$', '$$', '$credit_17$'])(
+    'recognizes the primitive with matched %s delimiters and legal terminator whitespace',
+    (tag) => {
+      for (const terminator of [';', '\n;', ' \t\r\n;']) {
+        const sql = primitive(tag, terminator) + '\n' + creditCall;
+        expect(withoutCreditPrimitive(sql)).toBe('\n' + creditCall);
+        expect(hasMixedPayoutWriters(sql)).toBe(false);
+      }
+    }
+  );
+
+  it.each([';', '\n;', ' \t\r\n;'])(
+    'still rejects a separate duplicate payout before or after a primitive ending with %j',
+    (terminator) => {
+      const owner = primitive('$function$', terminator);
+      const duplicate = `${creditCall}\n${directPayout}`;
+      expect(hasMixedPayoutWriters(`${owner}\n${duplicate}`)).toBe(true);
+      expect(hasMixedPayoutWriters(`${duplicate}\n${owner}`)).toBe(true);
+      expect(
+        hasMixedPayoutWriters(`${owner}\n${creditCall}
+          CREATE OR REPLACE FUNCTION public.other_writer() RETURNS void
+          LANGUAGE plpgsql AS $function$ BEGIN ${directPayout} END; $function$;`)
+      ).toBe(true);
+    }
+  );
+
+  it('does not exempt a malformed or unterminated primitive', () => {
+    for (const ending of ['', '$other$;', '$function$ unexpected;']) {
+      const sql = `CREATE OR REPLACE FUNCTION public.fn_credit_and_log() RETURNS void
+        LANGUAGE plpgsql AS $function$ BEGIN ${directPayout} END; ${ending}`;
+      expect(withoutCreditPrimitive(sql)).toBe(sql);
+      expect(hasMixedPayoutWriters(sql)).toBe(true);
+    }
+  });
+
   it('no migration credits through the platform path AND writes the payout row itself', () => {
     const offenders: string[] = [];
     for (const f of files) {
@@ -279,13 +299,7 @@ describe('one payment is one payout row', () => {
       // Comments and verifier string literals quote both freely; only look at
       // executable SQL after removing the primitive that legitimately owns
       // the one payout-evidence insert.
-      const code = withoutSeparatedSatelliteDelivery(withoutCreditPrimitive(sql))
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/'(?:''|[^'])*'/g, "''")
-        .split('\n')
-        .filter((l) => !l.trimStart().startsWith('--'))
-        .join('\n');
-      if (CREDIT_PATHS.test(code) && HAND_WRITES.test(code)) offenders.push(f);
+      if (hasMixedPayoutWriters(sql)) offenders.push(f);
     }
     expect(
       offenders,

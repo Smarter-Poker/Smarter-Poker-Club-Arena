@@ -55,11 +55,12 @@ function ready(pid = 1234) {
 let child: Child;
 let clients: HorseLeagueComputeWorkerClient[];
 let originalExecArgv: string[];
+
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 
 beforeEach(() => {
-  // The child and priority APIs are modeled here; model their Linux host too.
-  // Actual process/thread qualification remains in the native Linux runner.
+  // This suite models fork/IPC; actual Linux process proof has its own native runner.
+  // Model its OS input too, so the same assertions execute on developer Macs.
   Object.defineProperty(process, 'platform', { ...originalPlatform, value: 'linux' });
   child = new Child();
   clients = [];
@@ -88,12 +89,11 @@ function client(): HorseLeagueComputeWorkerClient {
 }
 
 describe('Horse League dedicated launch and READY contract', () => {
-  it.each(['darwin', 'win32'])('refuses an unqualified %s host before spawning', (platform) => {
+  it.each(['darwin', 'win32'])('still refuses a real %s launcher before spawning', (platform) => {
     Object.defineProperty(process, 'platform', { ...originalPlatform, value: platform });
-    expect(() => client()).toThrow(/requires the qualified Linux launcher/);
+    expect(() => client()).toThrow('requires the qualified Linux launcher');
     expect(launch.fork).not.toHaveBeenCalled();
   });
-
   it('wraps the original module and filtered Node arguments, retaining advanced IPC', () => {
     process.execArgv = [
       '--max-old-space-size=128',

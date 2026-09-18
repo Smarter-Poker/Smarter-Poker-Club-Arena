@@ -12,6 +12,10 @@ const satelliteQualifiers =
   /^(scripts\/ci\/(?:test-satellite-qualifiers\.py$|satellite_qualifier_(?:fixture|concurrency)\.py$|fixtures\/satellite-qualifiers\/|probes\/satellite-qualifier(?:s-native\.sql|-(?:finish|reader)\.spec)$)|tests\/operations\/satellite-qualifier-results\.test\.py$)/;
 const mttPreparation =
   /^(scripts\/ci\/(test-mtt-unlimited\.py$|mtt_(unlimited_fixture|isolation_results|format_qualification|historical_freebuy_proof|break_authoring_native)\.py$|fixtures\/mtt-(unlimited|format-preparation|historical-freebuy|break-authoring)\/|probes\/mtt-(isolation\/|.*(?:native\.sql|lock\.spec)$))|tests\/operations\/(mtt-(unlimited-runner|isolation-results)\.test\.py$|fixtures\/mtt-preparation-lock\/))/;
+// Actual activation reuses the same owned PG runner and its exact financial
+// and authoring dependencies. Fixture-only changes must reach this job too.
+const mttActivation =
+  /^(scripts\/ci\/(mtt_activation_native\.py$|satellite_qualifier_fixture\.py$|mtt_break_authoring_native\.py$|fixtures\/(mtt-format-activation|satellite-qualifiers|mtt-break-authoring)\/|probes\/mtt-activation\/)|tests\/operations\/mtt-activation-results\.test\.py$)/;
 const fixture =
   /^(operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
 
@@ -103,6 +107,7 @@ export function classifyChangedPaths(paths) {
       phase4Changed ||
       matches(mttPreparation) ||
       matches(satelliteQualifiers) ||
+      matches(mttActivation) ||
       commitmentAudit ||
       matches(accounting) ||
       nativeIsolationTool ||
@@ -125,6 +130,8 @@ export function classifyChangedPaths(paths) {
       diamondGames ||
       commitmentAudit ||
       tournamentAccountingInput ||
+      matches(mttPreparation) ||
+      matches(mttActivation) ||
       matches(/^scripts\/ci\/detect-silent-revert\.mjs$/) ||
       nativeIsolationTool ||
       spinRules ||

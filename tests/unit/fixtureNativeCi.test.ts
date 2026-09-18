@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { readFileSync, mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -247,7 +247,21 @@ describe('required CI owns native fixture verification', () => {
     expect(classifyChangedPaths([path]).server).toBe(true);
   });
 
-  it('runs preparation verification in the existing accounting job without activation', () => {
+  it.each([
+    'scripts/ci/mtt_activation_native.py',
+    'scripts/ci/satellite_qualifier_fixture.py',
+    'scripts/ci/mtt_break_authoring_native.py',
+    'scripts/ci/fixtures/mtt-format-activation/source-binding.json',
+    'scripts/ci/fixtures/mtt-format-activation/transition.sql',
+    'scripts/ci/fixtures/satellite-qualifiers/current-money-ddl-guard-20260917.json',
+    'scripts/ci/fixtures/mtt-break-authoring/catalog-supplement.sql',
+    'scripts/ci/probes/mtt-activation/admission-activation-first-commit.spec',
+    'tests/operations/mtt-activation-results.test.py',
+  ])('routes each actual activation input to accounting and its routing tests: %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+
+  it('runs preparation and actual activation only in the existing private native job', () => {
     const steps = ci.jobs.accounting_postgres.steps;
     const mtt = steps.filter((step: { run?: string }) =>
       step.run?.includes('test-mtt-unlimited.py')
@@ -256,6 +270,12 @@ describe('required CI owns native fixture verification', () => {
     expect(mtt[0].run).toContain('--mode preparation');
     expect(mtt[0].run).toContain('mtt-unlimited-runner.test.py');
     expect(mtt[0].run).toContain('mtt-isolation-results.test.py');
+    expect(mtt[0].run).toContain('mtt-activation-results.test.py');
+    expect(mtt[0].run.match(/test-mtt-unlimited\.py --mode activation/g)).toHaveLength(1);
+    expect(mtt[0].run).toContain(
+      '--output "$RUNNER_TEMP/mtt-activation-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"'
+    );
+    expect(mtt[0].run).not.toMatch(/DATABASE_URL|SUPABASE|apply_migration|\|\|\s*true/);
     expect(mtt[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
     expect(mtt[0].env.PG_ISOLATION_TESTER).toBe(
       '${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester'
@@ -265,13 +285,17 @@ describe('required CI owns native fixture verification', () => {
     expect(mtt[0].if).toBeUndefined();
     const evidence = steps.filter(
       (step: { name?: string }) =>
-        step.name === 'Retain MTT preparation receipts and exact native transcripts'
+        step.name === 'Retain MTT preparation and activation receipts and exact native transcripts'
     );
     expect(evidence).toHaveLength(1);
     expect(evidence[0].uses).toBe('actions/upload-artifact@v4');
     expect(evidence[0].if).toContain('always()');
     expect(evidence[0].if).toContain('steps.mtt_preparation.outcome');
     expect(evidence[0].with['if-no-files-found']).toBe('error');
+    expect(evidence[0].with.path.trim().split('\n')).toEqual([
+      '${{ runner.temp }}/mtt-preparation-${{ github.run_id }}-${{ github.run_attempt }}',
+      '${{ runner.temp }}/mtt-activation-${{ github.run_id }}-${{ github.run_attempt }}',
+    ]);
   });
 
   it.each([
@@ -650,7 +674,10 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
         for (const [index, path] of spinExpiryAccountingPaths.entries()) {
           if (operation === 'modified') write(path, 'changed qualification input');
           if (operation === 'deleted') rmSync(join(directory, path));
-          if (operation === 'renamed') git('mv', '--', path, relocated[index]);
+          // The commit stages real filesystem renames in one Git operation. Avoid
+          // one subprocess per path while retaining the actual committed diff.
+          if (operation === 'renamed')
+            renameSync(join(directory, path), join(directory, relocated[index]));
         }
         const result = classifyGitChanges({ cwd: directory, base, head: commit() });
         expect(result.complete).toBe(true);

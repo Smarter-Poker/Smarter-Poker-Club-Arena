@@ -1477,7 +1477,7 @@ jobs:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-tournament-create-payout-depth-pg17.py
 
-      - name: MTT persisted-format preparation preserves legacy admission
+      - name: MTT preparation and actual activation preserve funded contracts
         id: mtt_preparation
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1485,16 +1485,22 @@ jobs:
         run: |
           python3 -B tests/operations/mtt-unlimited-runner.test.py
           python3 -B tests/operations/mtt-isolation-results.test.py
+          python3 -B tests/operations/mtt-activation-results.test.py
           python3 -B scripts/ci/test-mtt-unlimited.py --mode preparation \
             --output "$RUNNER_TEMP/mtt-preparation-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
             --work-parent "$RUNNER_TEMP" --deadline-seconds 600
+          python3 -B scripts/ci/test-mtt-unlimited.py --mode activation \
+            --output "$RUNNER_TEMP/mtt-activation-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --work-parent "$RUNNER_TEMP" --deadline-seconds 600
 
-      - name: Retain MTT preparation receipts and exact native transcripts
+      - name: Retain MTT preparation and activation receipts and exact native transcripts
         if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.mtt_preparation.outcome)
         uses: actions/upload-artifact@v4
         with:
           name: mtt-preparation-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/mtt-preparation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/mtt-preparation-${{ github.run_id }}-${{ github.run_attempt }}
+            ${{ runner.temp }}/mtt-activation-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 7
 

@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "mode": "activation",
+  "files": {
+    "scripts/ci/fixtures/mtt-format-activation/active-index.sql": "dc605c4e4cf594d3f927255d199b808622d95f127ba8b5c4ae0ac6017bc869a2",
+    "scripts/ci/fixtures/mtt-format-activation/current-dependencies-20260917.json": "188ba1fca0ec3c5717b4dc6bc2511b310029005079356d6ffe771a0bc2dffc17",
+    "scripts/ci/fixtures/mtt-format-activation/funded-hu-after.sql": "7e400e09b95c5b3159a90fb81363e9d2cd27ce1f56dd67662a3b10bf929d5896",
+    "scripts/ci/fixtures/mtt-format-activation/funded-hu-before.sql": "ef08bdfbc5a9015dae4ebf403e235ed87f3a98737c8c2260e1ce97ec869e9ceb",
+    "scripts/ci/fixtures/mtt-format-activation/prepared-authorities.json": "31db92405e704d3141a2ab6cf7dec9fa41953d6d9d1a18225ebf04671c7ce8f6",
+    "scripts/ci/fixtures/mtt-format-activation/transition.sql": "b04d9068096387f34916d608a8591219e85ed602f9d9c5d8ebfab25f31727d70",
+    "scripts/ci/fixtures/satellite-qualifiers/current-money-ddl-guard-20260917.json": "8884f9471acd933072afc05ef3f2427cc63a28de9744785d1bc10611f730ef5b",
+    "scripts/ci/mtt_activation_native.py": "2a82507a0f7683acd866fa6c2636d030ada104740fbc00d70c62b07d6f04efa7",
+    "scripts/ci/mtt_break_authoring_native.py": "28dfd77f7ca09f4fdf0b458404f5cf6770155d4cdee49122ea50eaf073f41ad7",
+    "scripts/ci/probes/mtt-activation/admission-activation-first-commit.spec": "fca65a2710ae30f2b96d5e389df938e617530d2f50c7df310207358130b4609c",
+    "scripts/ci/probes/mtt-activation/admission-activation-first-rollback.spec": "465db3011abde14fb76ae6b1c87a44c5ca3a9e04cdfc01bb4daabce56cb73a12",
+    "scripts/ci/probes/mtt-activation/admission-legacy-first-commit.spec": "8737a78dc5f82ca44ba034d6492763eeea4d0fe350a2a742d51e3adc0a685db9",
+    "scripts/ci/probes/mtt-activation/admission-legacy-first-rollback.spec": "4796e67df558c6e343c34002291f17b961d99c0145e125698abd2955a93f7bf9",
+    "scripts/ci/probes/mtt-activation/creator-activation-first-commit.spec": "cfbfe2e4785ea29ab30e86e35d55f13216ec16bbcabc50fb733d251717d96521",
+    "scripts/ci/probes/mtt-activation/creator-activation-first-rollback.spec": "a8fa7c349f0370e46fad91b0d994500dab240f5b2230525dabdc05bebc1eb8e6",
+    "scripts/ci/probes/mtt-activation/creator-legacy-first-commit.spec": "4e441d3243182bf6781fb66b8d9438258be4166f70b90bae3e4b000e14754c58",
+    "scripts/ci/probes/mtt-activation/creator-legacy-first-rollback.spec": "9236f6c84a949a35b810dc7f6d50a2c1911304327c4f3c6abb24252bc6e5e8ab",
+    "scripts/ci/satellite_qualifier_fixture.py": "89b593fd5afe44d6568e2751bcd209b7b5cc10ad1c48e98c13efe8ea15d26e87",
+    "scripts/ci/test-mtt-unlimited.py": "348d3ced86e32b1541a7b4257a724844b4a7adcb072aaa1bec3e4f4170ff4f35",
+    "supabase/migrations/20260917201651_satellite_multi_qualifier_receipt_v3.sql": "96faf33209c07f5eaf690c2345e555d7f626963acb7be55f4b693f6878a3da08",
+    "supabase/migrations/20260917204152_mtt_authored_ladders_only_contain_playing_levels.sql": "3f9e1807b384b803e4e33cab9c85126039274f2300bc0f251c04b104d3070882",
+    "supabase/migrations/20260917232232_mtt_activation_guard_preparation.sql": "45bfb0e60bbe06a5ea506a28379d027daef416736410b2229e2d42784116521c",
+    "supabase/migrations/20260917232311_mtt_activate_unlimited_admission.sql": "bda4691003b9ffbf5020637574f87b9ed278785bf5c13031f8d75a583962147b"
+  }
+}

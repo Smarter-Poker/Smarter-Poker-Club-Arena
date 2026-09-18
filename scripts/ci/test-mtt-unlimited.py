@@ -629,7 +629,7 @@ def run_cases(execution):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("preparation",), required=True)
+    parser.add_argument("--mode", choices=("preparation", "activation"), required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--work-parent", type=Path, default=Path(tempfile.gettempdir()))
     parser.add_argument("--deadline-seconds", type=int, default=600)
@@ -651,7 +651,13 @@ def main():
     execution.report["mode"] = args.mode
     failure = None
     try:
-        run_cases(execution)
+        if args.mode == "activation":
+            # Reuse this exact resource owner; activation adds no second runner.
+            import sys
+            from mtt_activation_native import run_activation
+            run_activation(execution, sys.modules[__name__])
+        else:
+            run_cases(execution)
     except BaseException as error:
         failure = f"{type(error).__name__}: {error}"
     finally:

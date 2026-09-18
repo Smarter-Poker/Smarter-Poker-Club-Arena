@@ -3035,7 +3035,8 @@
       "destination_occupancy_id",
       "amount",
       "receipt",
-      "created_at"
+      "created_at",
+      "transaction_id"
     ],
     "cash_seat_moves": [
       "id",

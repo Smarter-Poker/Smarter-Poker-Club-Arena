@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Private native qualification of original weekly P&L and existing payer wiring."""
-import hashlib,importlib.util,json,os,re,subprocess,tempfile
+import hashlib,importlib.util,json,os,re,subprocess,sys,tempfile
 from pathlib import Path
 root=Path(__file__).resolve().parents[2]
 pg=Path(os.environ.get('PG_BIN','/opt/homebrew/opt/postgresql@17/bin'))
@@ -93,6 +93,14 @@ try:
  subprocess.run([str(pg/'pg_dump'),'-U','postgres','-h',str(socket),'-p',port,'-d','postgres','--schema-only','-f',str(base/'candidate-schema.sql')],check=True,capture_output=True)
  (base/'tested-source-binding.json').write_text(json.dumps(binding,indent=2)+'\n')
  print('PASS candidate-catalog-export',flush=True)
+ def qualify_moves():
+  result=subprocess.run(['python3',str(root/'scripts/dev/qualify-cash-move-funding.py'),str(pg/'psql'),str(socket),port,str(base)],capture_output=True,text=True)
+  (base/'cash-move-qualification.log').write_text(result.stdout+result.stderr)
+  if result.returncode:raise AssertionError(result.stdout+result.stderr)
+  print(result.stdout,flush=True)
+ if '--cash-move-only' in sys.argv:
+  qualify_moves()
+  sys.exit(0)
  run((root/'tests/fixtures/union-weekly-basis/regression.sql').read_text(),'weekly-regression')
  run((root/'tests/fixtures/union-weekly-basis/negative-regression.sql').read_text(),'negative-regression')
  run((root/'tests/fixtures/union-weekly-basis/payment-regression.sql').read_text(),'payment-regression')
@@ -111,6 +119,7 @@ try:
  (base/'guard-declaration-qualification.log').write_text(result.stdout+result.stderr)
  if result.returncode:raise AssertionError(result.stdout+result.stderr)
  print(result.stdout,flush=True)
+ qualify_moves()
 finally:
  if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True)
  print('Evidence retained: '+str(base),flush=True)

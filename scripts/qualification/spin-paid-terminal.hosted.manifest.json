@@ -7,8 +7,8 @@
   "production_qualification": false,
   "files": {
     "scripts/qualification/spin-paid-terminal.py": {
-      "bytes": 14347,
-      "sha256": "90059dea94146cde15a905d67e86451e81326d084913914014ba5215009646a0"
+      "bytes": 14528,
+      "sha256": "7f203eb4a05ab12631a0b23c3c0cd732e7ff8fd2075467e4f847ef25d5f90683"
     },
     "scripts/qualification/fixtures/spin-paid-terminal/capture.json": {
       "bytes": 139011,

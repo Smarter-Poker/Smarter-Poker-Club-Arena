@@ -100,6 +100,8 @@ def body_plan(PG, source, execution, ordinary, tournament, fee, mixed):
         return name, argv
     # The original pure preimage must be installed before the current catalog.
     prefix = [sql('paid_legacy_lane_provider', 'scripts/qualification/fixtures/spin-receipt-lane/provider.sql'),
+              ('paid_catalog_provider', mixed.sql_argv(PG, source, execution, ordinary, tournament,
+                  'bootstrap_postgres', mixed.BASE + 'synthetic-provider.sql')),
               sql('paid_pure_install', 'supabase/components/spin-mixed-basis-evidence.sql')]
     additions = [sql('paid_launch_provider', BASE + 'provider.sql'),
                  sql('paid_doctrine_restore', mixed.BASE + 'doctrine-successor-restore.sql'),

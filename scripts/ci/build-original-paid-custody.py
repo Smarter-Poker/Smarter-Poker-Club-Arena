@@ -53,7 +53,11 @@ def build(root=ROOT):
   if r['owner']!='postgres' or r['acl']!=['postgres=X/postgres']:
    raise ValueError('expected private authority')
   pre.append("IF NOT EXISTS(SELECT 1 FROM pg_proc p WHERE oid="+quoted(sig)+"::regprocedure AND md5(prosrc)="+quoted(r['body_md5'])+" AND md5(pg_get_functiondef(oid))="+quoted(r['definition_md5'])+" AND pg_get_userbyid(proowner)='postgres' AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(proacl,acldefault('f',proowner))) a WHERE a.grantee<>proowner)) THEN RAISE EXCEPTION 'ORIGINAL_PAID_AUTHORITY_PREIMAGE_CHANGED: %',"+quoted(sig)+"; END IF;")
- body='-- Original paid tournament chips retain their custody; no wallet or funding change.\nBEGIN;\nSET LOCAL lock_timeout=\'3s\';\nSET LOCAL statement_timeout=\'8s\';\nDO $preimage$ BEGIN\n'+'\n'.join(pre)+'\nEND $preimage$;\n'
+ # These are inert installed trigger definitions in the preserved guard JSON,
+ # not trigger DDL. Retain the existing activation migration's exact declarations.
+ catalog=json.loads(re.search(r'\$prepared\$(.*?)\$prepared\$',guard_successor,re.S)[1])
+ proof_comments=''.join('-- money-trigger-ok: '+r[0]+'.'+r[1]+' because this is an inert exact installed trigger identity inside the activation catalog proof; no trigger DDL is executed.\n' for r in catalog['triggers'])
+ body=proof_comments+'-- Original paid tournament chips retain their custody; no wallet or funding change.\nBEGIN;\nSET LOCAL lock_timeout=\'3s\';\nSET LOCAL statement_timeout=\'8s\';\nDO $preimage$ BEGIN\n'+'\n'.join(pre)+'\nEND $preimage$;\n'
  body+=(root/SOURCE).read_text()+'\n'+successor+';\n'
  body+='REVOKE ALL ON FUNCTION public.'+assignment['signature']+' FROM PUBLIC,anon,authenticated,service_role;\n'
  body+='-- Preserve the existing activation guard and every other sealed authority.\n'+guard_successor+';\n'

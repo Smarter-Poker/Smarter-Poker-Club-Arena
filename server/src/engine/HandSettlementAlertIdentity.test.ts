@@ -205,8 +205,21 @@ describe('the original request identity survives both hand-failure reports', () 
     mocks.commit.mockImplementation(realLogHandHistory);
     const attempts: any[] = [];
     const payloads: any[] = [];
+    const originals: any[] = [];
     mocks.rpc.mockImplementation(async (name, payload) => {
-      if (name !== 'fn_ca_commit_hand_settlement') return { data: null, error: null };
+      if (name === 'fn_ca_retain_hand_submission') {
+        originals.push(structuredClone(payload.p_request));
+        return {
+          data: {
+            retained: true,
+            submission_id: payload.p_request.p_hand_row.id,
+            request_hash: 'b'.repeat(64),
+          },
+          error: null,
+        };
+      }
+      if (name !== 'fn_ca_commit_hand_submission') return { data: null, error: null };
+      const original = originals[0];
       attempts.push(structuredClone(payload));
       payloads.push(payload);
       if (attempts.length === 1) {
@@ -218,8 +231,8 @@ describe('the original request identity survives both hand-failure reports', () 
             reason: 'atomic_hand_rolled_back',
             sqlstate: '40001',
             error: 'F06_RETRY_CANONICAL_LANE',
-            table_id: payload.p_table_id,
-            hand_number: payload.p_hand_number,
+            table_id: original.p_table_id,
+            hand_number: original.p_hand_number,
             commit_hash: 'a'.repeat(64),
           },
           error: null,
@@ -229,7 +242,10 @@ describe('the original request identity survives both hand-failure reports', () 
         data: {
           success: true,
           atomic_hand_commit: true,
-          history_id: payload.p_hand_row.id,
+          history_id: original.p_hand_row.id,
+          submission_id: original.p_hand_row.id,
+          submission_hash: 'b'.repeat(64),
+          snapshot_completed: true,
           post_commit_obligations: true,
         },
         error: null,
@@ -240,9 +256,10 @@ describe('the original request identity survives both hand-failure reports', () 
     expect(attempts).toHaveLength(2);
     expect(attempts[1]).toEqual(attempts[0]);
     expect(payloads[1]).toBe(payloads[0]);
-    expect(attempts[0].p_hand_row.id).toBe(mocks.commit.mock.calls[0][0].handId);
-    expect(attempts[1].p_hand_row.id).toBe(attempts[0].p_hand_row.id);
-    expect(attempts[1].p_hand_row.big_blind).toBe(2);
+    expect(originals).toHaveLength(1);
+    expect(originals[0].p_hand_row.id).toBe(mocks.commit.mock.calls[0][0].handId);
+    expect(attempts[1].p_submission_id).toBe(originals[0].p_hand_row.id);
+    expect(originals[0].p_hand_row.big_blind).toBe(2);
     expect(engine.sleep).not.toHaveBeenCalled();
     expect(engine.killForRestart).not.toHaveBeenCalled();
     expect(mocks.obligations).toHaveBeenCalledTimes(1);

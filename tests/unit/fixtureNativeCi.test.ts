@@ -206,6 +206,151 @@ function withForeignGitContext(directory: string, extended: boolean, check: () =
 
 describe('required CI owns native fixture verification', () => {
   it.each([
+    'scripts/ci/test-hand-submission.py',
+    'scripts/ci/build-hand-submission-migration.py',
+    'scripts/ci/probes/hand-submission-authority.sql',
+    'scripts/ci/probes/hand-submission-successor.sql',
+    'scripts/ci/probes/hand-submission-native.sql',
+    'scripts/ci/probes/hand-submission-disposition.spec',
+    'scripts/ci/probes/hand-submission-owner.spec',
+    'scripts/ci/probes/hand-submission-maintenance.spec',
+    'scripts/ci/fixtures/hand-submission/current-authorities-20260918.json',
+  ])('enforces actual retained submission qualification for %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+
+  it('enforces and retains original submission and successor native proof', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const native = steps.filter((step: { run?: string }) =>
+      step.run?.includes('python3 scripts/ci/test-hand-submission.py')
+    );
+    expect(native).toHaveLength(1);
+    expect(native[0].id).toBe('hand_submission');
+    expect(native[0]['continue-on-error']).not.toBe(true);
+    expect(native[0].env.PG_ISOLATION_TESTER).toBe(
+      '${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester'
+    );
+    expect(native[0].run).toContain('--pg-bin "$POKER_AUDIT_PG_BIN"');
+    expect(native[0].run).toContain('--evidence artifacts/hand-submission');
+    const artifact = steps.find(
+      (step: { with?: { path?: string } }) => step.with?.path === 'artifacts/hand-submission/'
+    );
+    expect(artifact).toBeDefined();
+    expect(artifact.if).toContain('always()');
+    expect(artifact.if).toContain('steps.hand_submission.outcome');
+    expect(artifact.with['if-no-files-found']).toBe('error');
+  });
+
+  it.each([
+    'scripts/ci/test-f06-drained-custody.py',
+    'scripts/ci/build-f06-drained-custody.py',
+    'scripts/ci/probes/f06-drained-custody.sql',
+    'scripts/ci/probes/f06-drained-custody.spec',
+    'scripts/ci/probes/f06-drained-custody-authority.sql',
+    'scripts/ci/fixtures/f06-drained-custody/installed-mixed-authority.json',
+    'scripts/ci/fixtures/f06-drained-custody/installed-paid-dependency.sql',
+    'scripts/ci/schema-manifest.d/f06-drained-custody.json',
+    'scripts/ci/test-f06-movement-admission.py',
+    'scripts/ci/probes/f06-movement-admission.sql',
+    'scripts/ci/probes/f06-movement-admission.spec',
+    'scripts/ci/probes/f06-movement-opening.sql',
+    'scripts/ci/fixtures/f06-movement-admission/current-movement-receipt.json',
+    'scripts/ci/fixtures/f06-movement-admission/current-movement-authorities.json',
+    'scripts/ci/fixtures/f06-movement-admission/current-public-f06.json',
+    'scripts/ci/fixtures/f06-movement-admission/current-final-relations.json',
+    'scripts/ci/fixtures/f06-movement-admission/current-control-relations.json',
+    'scripts/ci/fixtures/f06-movement-admission/current-private-authorities.json',
+    'scripts/ci/fixtures/f06-movement-admission/g8-generation-dependency-catalog-1234.json',
+    'scripts/ci/fixtures/f06-movement-admission/g8-generation-dependency-functions-1234.json',
+    'scripts/ci/schema-manifest.d/f06-movement-admission.json',
+    'tests/operations/f06-movement-results.test.py',
+    'supabase/migrations/20260918095135_parked_tournament_movement_requires_canonical_custody.sql',
+  ])('enforces movement custody qualification for fixture input %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+
+  it.each([
+    'scripts/ci/test-f06-movement-admission.py.backup',
+    'scripts/ci/fixtures/f06-movement-admission-other/readme.json',
+    'scripts/ci/probes/f06-movement-opening.sql.notes',
+    'docs/changelog/movement-custody.md',
+  ])('does not widen movement qualification to unrelated input %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: false, tests: false });
+  });
+
+  it('runs native movement custody and retains failed qualification evidence', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const calls = steps.filter((step: { run?: string }) =>
+      step.run?.includes('scripts/ci/test-f06-movement-admission.py')
+    );
+    expect(calls).toHaveLength(1);
+    const movement = calls[0];
+    expect(movement.id).toBe('f06_movement_admission');
+    expect(movement.run).toContain('python3 scripts/ci/test-f06-drained-custody.py');
+    expect(movement.run).toContain(
+      '--evidence "$RUNNER_TEMP/f06-movement-admission/drained-custody"'
+    );
+    expect(movement.run).toContain('tee "$RUNNER_TEMP/f06-movement-admission/drained-custody.log"');
+    expect(movement.run).toContain('python3 tests/operations/f06-movement-results.test.py');
+    expect(movement.run).toContain('--root "$GITHUB_WORKSPACE"');
+    expect(movement.run).toContain('--pg-bin "$PG_BIN"');
+    expect(movement.run).toContain('--evidence "$RUNNER_TEMP/f06-movement-admission/native"');
+    expect(movement.run).toContain('set -euo pipefail');
+    expect(movement.run).toContain('mkdir -p "$RUNNER_TEMP/f06-movement-admission"');
+    expect(movement.run).toContain(
+      'tee "$RUNNER_TEMP/f06-movement-admission/result-validator.log"'
+    );
+    expect(movement.run).toContain('tee "$RUNNER_TEMP/f06-movement-admission/qualification.log"');
+    expect(movement.env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(movement.env.PG_ISOLATION_TESTER).toBe(
+      '${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester'
+    );
+    expect(movement['continue-on-error']).toBeUndefined();
+    expect(movement.if).toBeUndefined();
+    const artifact = steps.find(
+      (step: { name?: string }) => step.name === 'Retain parked movement custody evidence'
+    );
+    expect(artifact.uses).toBe('actions/upload-artifact@v4');
+    expect(artifact.if).toContain('always()');
+    expect(artifact.if).toContain('steps.f06_movement_admission.outcome');
+    expect(artifact.if).toContain('["success", "failure", "cancelled"]');
+    expect(artifact.with.path).toBe('${{ runner.temp }}/f06-movement-admission/');
+    expect(artifact.with['if-no-files-found']).toBe('error');
+    expect(artifact.with['retention-days']).toBe(7);
+  });
+
+  it('declares qualified pending movement objects without a production installation claim', () => {
+    const fragment = JSON.parse(
+      readFileSync(join(root, 'scripts/ci/schema-manifest.d/f06-movement-admission.json'), 'utf8')
+    );
+    expect(fragment.functions).toEqual([
+      'fn_f06_admit_parked_movement',
+      'smarter_private.f06_movement_immutable',
+      'smarter_private.f06_movement_permits',
+      'smarter_private.f06_movement_prior',
+      'smarter_private.f06_assert_movement',
+      'smarter_private.f06_movement_transition_guard',
+    ]);
+    expect(fragment.tables).toEqual(['smarter_private.f06_movement_admissions']);
+    expect(fragment.columns['smarter_private.f06_movement_admissions']).toEqual([
+      'admission_id',
+      'tournament_id',
+      'lease_generation',
+      'table_id',
+      'lifecycle',
+      'break_id',
+      'custody_id',
+      'revision',
+      'requested_revision',
+      'proof',
+      'proof_hash',
+      'created_at',
+    ]);
+    expect(fragment._comment).toContain('Pending');
+    expect(fragment._comment).toContain('not a production installation claim');
+  });
+
+  it.each([
     'scripts/ci/test-original-paid-custody.py',
     'scripts/ci/build-original-paid-custody.py',
     'scripts/ci/original_paid_custody_native.py',
@@ -301,6 +446,9 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/probes/f06-shared-hand-lane/snapshot_index_qualification.py',
     'scripts/ci/probes/f06-shared-hand-lane/snapshot-index/build-online.sql',
     'supabase/migrations/20260918130650_hand_snapshot_table_and_hand_access_path.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/no_start_continuation_qualification.py',
+    'scripts/ci/probes/f06-shared-hand-lane/no-start-fixture.sql',
+    'supabase/migrations/20260918094425_continue_positively_never_started_last_table_parks_without_m.sql',
     'scripts/ci/probes/f06-shared-hand-lane/prepared-preimages.json',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled-preimages.json',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled-authority.sql',
@@ -308,6 +456,33 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/probes/f06-shared-hand-lane/unsettled-fixture.sql',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled-freeze-preimages.sql',
     'scripts/ci/probes/f06-shared-hand-lane/build-unsettled-migration.py',
+    'scripts/ci/probes/f06-shared-hand-lane/build-spin-prior-migration.py',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-boundary.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-current-guard.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-fixture.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/spin_prior_qualification.py',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-ended-dispatch.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-refusal-preimages.json',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-retention-prefix.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-current-journal.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-continuation-dependency.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-continuation-postimages.json',
+    'supabase/migrations/20260918092117_spin_interrupted_hands_retain_their_prior_committed_stacks.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/build-completed-mtt-migration.py',
+    'scripts/ci/probes/f06-shared-hand-lane/completed-mtt-boundary.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/completed-mtt-fixture.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/completed-mtt-index-contract.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/completed-mtt-paid-dependency.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/completed-mtt-paid-preimages.json',
+    'scripts/ci/probes/f06-shared-hand-lane/completed_mtt_qualification.py',
+    'supabase/migrations/20260918130733_completed_unaccepted_mtt_snapshots_retain_their_committed_st.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/build-interrupted-custody-migration.py',
+    'scripts/ci/probes/f06-shared-hand-lane/snapshot-absent-spin-cards.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/snapshot-absent-spin-fixture.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/completed-mtt-earlier-receipts.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/completed-mtt-earlier-receipts-fixture.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/interrupted_custody_qualification.py',
+    'supabase/migrations/20260918154419_interrupted_hands_preserve_original_custody_without_inventin.sql',
   ])('runs the existing accounting job for F06 input %s', (path) => {
     expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
   });

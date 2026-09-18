@@ -22,7 +22,7 @@ const mttActivation =
 const originalPaidCustody =
   /^(?:scripts\/ci\/(?:(?:test|build)-original-paid-custody\.py$|original_paid_custody_native\.py$|fixtures\/original-paid-custody\/|probes\/original-paid-custody-authority\.sql$))/;
 const f06HandAuthority =
-  /^(?:scripts\/ci\/(?:test-f06-shared-hand-lane\.py$|(?:test|build)-f06-(?:accepted-elimination|elimination-migration)\.py$|fixtures\/f06-accepted-elimination\/|probes\/f06-(?:shared-hand-lane\/|accepted-elimination\.(?:sql|spec)$))|tests\/operations\/f06-elimination-results\.test\.py$)/;
+  /^(?:scripts\/ci\/(?:test-f06-shared-hand-lane\.py$|(?:test|build)-f06-(?:accepted-elimination|elimination-migration|movement-admission|drained-custody)\.py$|fixtures\/f06-(?:accepted-elimination|movement-admission|drained-custody)\/|probes\/f06-(?:shared-hand-lane\/|(?:accepted-elimination|movement-admission|drained-custody)\.(?:sql|spec)$|(?:movement-opening|drained-custody-authority)\.sql$)|schema-manifest\.d\/f06-(?:movement-admission|drained-custody)\.json$|(?:test-hand-submission|build-hand-submission-migration)\.py$|probes\/hand-submission-[a-z-]+\.(?:sql|spec)$|fixtures\/hand-submission\/)|tests\/operations\/f06-(?:elimination|movement)-results\.test\.py$)/;
 const fixture =
   /^(operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
 

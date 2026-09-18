@@ -29,13 +29,15 @@ const methods = [
   'fenceTerminalEngine',
 ].map((n) => method(base, n));
 const uuid = 'abcdef00-0000-4000-8000-000000000001';
-function harness(sequence, { rootB = false, onSleep, onRpc } = {}) {
+function harness(sequence, { rootB = false, onSleep, onRpc, retainSequence } = {}) {
   const calls = [],
     alerts = [],
     sleeps = [],
     phases = [],
     finish = [],
-    references = [];
+    references = [],
+    retainedRequests = [],
+    order = [];
   let probe;
   const post = method(settlement, 'postHandTasks');
   const hh = readCurrent('services/supabase/handHistory.ts');
@@ -98,7 +100,14 @@ function harness(sequence, { rootB = false, onSleep, onRpc } = {}) {
     },
     supabase: {
       rpc: async (name, payload) => {
-        assert.equal(name, 'fn_ca_commit_hand_settlement');
+        order.push(name);
+        if (name === 'fn_ca_retain_hand_submission') {
+          retainedRequests.push(structuredClone(payload.p_request));
+          const supplied = retainSequence?.[retainedRequests.length - 1];
+          if (supplied instanceof Error) throw supplied;
+          return supplied ?? { data: { retained: true, submission_id: uuid, request_hash: 'b'.repeat(64) }, error: null };
+        }
+        assert(['fn_ca_commit_hand_submission', 'fn_ca_commit_hand_settlement'].includes(name));
         calls.push(structuredClone(payload));
         references.push(payload);
         onRpc?.(probe, calls.length);
@@ -190,6 +199,8 @@ function harness(sequence, { rootB = false, onSleep, onRpc } = {}) {
     p: probe,
     calls,
     references,
+    retainedRequests,
+    order,
     alerts,
     sleeps,
     phases,
@@ -220,8 +231,58 @@ const accepted = () => ({
     atomic_hand_commit: true,
     history_id: uuid,
     post_commit_obligations: true,
+    submission_id: uuid,
+    submission_hash: 'b'.repeat(64),
+    snapshot_completed: true,
   },
   error: null,
+});
+test('durable original is acknowledged before the receipt-only financial call', async () => {
+  const h = harness([accepted()], { rootB: true });
+  await h.run();
+  assert.deepEqual(h.order, ['fn_ca_retain_hand_submission', 'fn_ca_commit_hand_submission']);
+  assert.equal(h.retainedRequests.length, 1);
+  assert.equal(h.retainedRequests[0].p_hand_row.id, uuid);
+  assert.deepEqual(h.calls[0], {
+    p_submission_id: uuid,
+    p_instance_id: 'instance',
+    p_lease_generation: h.retainedRequests[0].p_lease_generation,
+  });
+});
+test('semantic XX000 refusal preserves full original while retaining unresolved custody', async () => {
+  const h = harness([rollback('XX000')], { rootB: true });
+  await assert.rejects(h.run());
+  assert.equal(h.retainedRequests.length, 1);
+  assert.equal(h.retainedRequests[0].p_hand_row.id, uuid);
+  assert(h.retainedRequests[0].p_hand_row._accepted_post_commit_facts);
+  assert(h.retainedRequests[0].p_post_commit_obligations);
+  assert.equal(h.calls.length, 1);
+  assert.deepEqual(h.sleeps, []);
+  assert.equal(h.finish.length, 0);
+  assert(h.p.f06CurrentPermit);
+});
+test('lost retention acknowledgement repeats original retention before any financial call', async () => {
+  const h = harness([accepted()], { retainSequence: [new Error('retention response lost')] });
+  await h.run();
+  assert.deepEqual(h.order, ['fn_ca_retain_hand_submission', 'fn_ca_retain_hand_submission', 'fn_ca_commit_hand_submission']);
+  assert.deepEqual(h.retainedRequests[0], h.retainedRequests[1]);
+  assert.equal(h.calls.length, 1);
+  assert.deepEqual(h.sleeps, [200]);
+});
+test('malformed retention acknowledgement cannot dispatch settlement', async () => {
+  const h = harness([accepted()], { retainSequence: [{ data: { retained: true, submission_id: 'wrong' }, error: null }] });
+  await assert.rejects(h.run());
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.finish.length, 0);
+});
+test('accepted-looking response without atomic snapshot acknowledgement cannot release custody', async () => {
+  const reply = accepted();
+  delete reply.data.snapshot_completed;
+  const h = harness([reply], { rootB: true });
+  await assert.rejects(h.run());
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.finish.length, 0);
+  assert(h.p.f06CurrentPermit);
 });
 for (const sqlstate of ['40001', '40P01'])
   test(
@@ -241,7 +302,8 @@ for (const sqlstate of ['40001', '40P01'])
       assert.equal(h.calls.length, 2);
       assert.deepEqual(h.calls[0], h.calls[1]);
       assert.strictEqual(h.references[0], h.references[1]);
-      assert.equal(h.calls[1].p_hand_row.big_blind, 2);
+      assert.equal(h.retainedRequests[0].p_hand_row.big_blind, 2);
+      assert.equal(h.retainedRequests.length, 1);
       assert.equal(h.p.terminal, false);
       assert.deepEqual(h.sleeps, [250]);
       assert.deepEqual(h.finish, [['42', uuid]]);

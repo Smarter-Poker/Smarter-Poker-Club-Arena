@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "02ad9afd28daae965fda9992c4b6a9262857793bee9ab269cc5acac96837f637",
+    "scripts/ci/classify-ci-changes.mjs": "f037363cf1da6ddfca7cfa73ff4129b9b9b5457a846cf2d783fde2b3a06a1fdf",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "e500aa832ea849e9272fb63119e15a938393e6da3d821f7cb69272e6ccf13a4a",

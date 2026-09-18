@@ -1,0 +1,30 @@
+{
+  "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SELECT jsonb_build_object('captured_at',clock_timestamp(),'functions',(SELECT jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'definition',pg_get_functiondef(p.oid),'definition_md5',md5(pg_get_functiondef(p.oid)),'body_md5',md5(p.prosrc),'owner',pg_get_userbyid(p.proowner),'acl',p.proacl::text,'config',p.proconfig)) FROM pg_proc p WHERE p.oid IN ('public.trg_finish_hand_post_commit_obligations()'::regprocedure,'public.trg_notify_hand_projection_outbox()'::regprocedure))) AS capture; COMMIT;",
+  "capture": {
+    "functions": [
+      {
+        "acl": "{postgres=X/postgres}",
+        "owner": "postgres",
+        "config": [
+          "search_path=public, pg_temp"
+        ],
+        "body_md5": "fd39f531933f6705f20ed94e179c20ed",
+        "signature": "trg_finish_hand_post_commit_obligations()",
+        "definition": "CREATE OR REPLACE FUNCTION public.trg_finish_hand_post_commit_obligations()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_result jsonb;\nBEGIN\n  v_result := public.fn_ca_process_hand_post_commit_obligations(OLD.hand_id);\n  IF COALESCE((v_result->>'ok')::boolean, false) IS NOT TRUE\n     AND v_result->>'reason' <> 'legacy_no_obligations' THEN\n    RAISE EXCEPTION 'hand post-commit obligations remain pending for %: %',\n      OLD.hand_id, v_result;\n  END IF;\n  RETURN OLD;\nEND;\n$function$\n",
+        "definition_md5": "66d5a81792f64fc5ec1ab33ced6a05ba"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "owner": "postgres",
+        "config": [
+          "search_path=public, pg_temp"
+        ],
+        "body_md5": "a90a8cb231ffa8cd2586895b8a9bfa47",
+        "signature": "trg_notify_hand_projection_outbox()",
+        "definition": "CREATE OR REPLACE FUNCTION public.trg_notify_hand_projection_outbox()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  -- The engine treats this as a wake-up only: it re-reads the outbox ordered\n  -- by hand_number (server/src/services/supabase/handProjection.ts runDrain).\n  -- hand_id:table_id is carried for logging and metrics, never consumed.\n  PERFORM pg_notify('hand_projection_outbox', NEW.hand_id::text || ':' || coalesce(NEW.table_id::text, ''));\n  RETURN NEW;\nEND;\n$function$\n",
+        "definition_md5": "57069a33071dbb02460486310802be90"
+      }
+    ],
+    "captured_at": "2026-09-18T09:41:13.012136+00:00"
+  }
+}

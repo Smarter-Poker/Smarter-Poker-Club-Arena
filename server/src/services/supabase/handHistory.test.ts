@@ -11,6 +11,7 @@ interface Call {
 
 const calls: Call[] = [];
 const rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
+const retentionCalls: Record<string, unknown>[] = [];
 /** Ordered replies for the accepted-hand transaction. */
 let atomicRpcResults: Array<{ data: unknown; error: unknown }> = [];
 
@@ -21,14 +22,34 @@ vi.mock('./client.js', () => ({
       throw new Error(`unexpected legacy table write: ${table}`);
     },
     rpc: async (fn: string, args: Record<string, unknown>) => {
+      if (fn === 'fn_ca_retain_hand_submission') {
+        retentionCalls.push(args.p_request as Record<string, unknown>);
+        return {
+          data: {
+            retained: true,
+            submission_id: (args.p_request as any).p_hand_row.id,
+            request_hash: 'b'.repeat(64),
+          },
+          error: null,
+        };
+      }
       rpcCalls.push({ fn, args });
-      if (fn === 'fn_ca_commit_hand_settlement') {
-        return (
-          atomicRpcResults.shift() ?? {
-            data: { success: false, reason: 'missing_test_reply' },
-            error: null,
-          }
-        );
+      if (fn === 'fn_ca_commit_hand_settlement' || fn === 'fn_ca_commit_hand_submission') {
+        const result = atomicRpcResults.shift() ?? {
+          data: { success: false, reason: 'missing_test_reply' },
+          error: null,
+        };
+        return fn === 'fn_ca_commit_hand_submission' && result.data
+          ? {
+              ...result,
+              data: {
+                submission_id: args.p_submission_id,
+                submission_hash: 'b'.repeat(64),
+                snapshot_completed: true,
+                ...(result.data as object),
+              },
+            }
+          : result;
       }
       return { data: null, error: null };
     },
@@ -188,6 +209,7 @@ const obligationsParams = (handNumber = GLOBAL_HAND + 600) => {
   const assertLeaseAuthority = vi.fn();
   return {
     ...input,
+    handId: historyId,
     atomicCommit: {
       ...input.atomicCommit,
       assertLeaseAuthority,
@@ -256,6 +278,7 @@ function deferred<T>() {
 beforeEach(() => {
   calls.length = 0;
   rpcCalls.length = 0;
+  retentionCalls.length = 0;
   atomicRpcResults = [];
   mockReportError.mockReset();
   mockWakeHandProjection.mockClear();
@@ -607,13 +630,22 @@ describe('logHandHistory - accepted-hand transaction', () => {
       expect(result).toMatchObject({ handId: historyId, settlementCommitted: true });
       expect(rpcCalls).toHaveLength(2);
       expect(rpcCalls[1]).toEqual(rpcCalls[0]);
-      expect(rpcCalls[0].args).toMatchObject({
+      expect(retentionCalls).toHaveLength(1);
+      expect(retentionCalls[0]).toMatchObject({
         p_post_commit_obligations: input.atomicCommit.postCommitObligations,
         p_hand_row: {
           _accepted_post_commit_facts: input.atomicCommit.acceptedPostCommitFacts,
         },
       });
-      expect(input.assertLeaseAuthority).toHaveBeenCalledTimes(2);
+      expect(rpcCalls[0]).toEqual({
+        fn: 'fn_ca_commit_hand_submission',
+        args: {
+          p_submission_id: historyId,
+          p_instance_id: 'engine-instance-1',
+          p_lease_generation: leaseGeneration,
+        },
+      });
+      expect(input.assertLeaseAuthority).toHaveBeenCalledTimes(3);
       expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
       expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
     } finally {
@@ -737,15 +769,16 @@ describe('logHandHistory - accepted-hand transaction', () => {
       ];
       const pending = logHandHistory(input);
       await vi.advanceTimersByTimeAsync(0);
-      const accepted = structuredClone(rpcCalls[0].args);
+      const accepted = structuredClone(retentionCalls[0]);
       input.atomicCommit.stacks[0].stack = 999;
       input.atomicCommit.acceptedPostCommitFacts.contributions.u1 = 999;
       input.atomicCommit.postCommitObligations.time_banks[0].uses_remaining = 999;
       await vi.advanceTimersByTimeAsync(250);
       await expect(pending).resolves.toMatchObject({ settlementCommitted: true });
       expect(rpcCalls).toHaveLength(2);
-      expect(rpcCalls[0].args).toEqual(accepted);
-      expect(rpcCalls[1].args).toEqual(accepted);
+      expect(retentionCalls).toHaveLength(1);
+      expect(retentionCalls[0]).toEqual(accepted);
+      expect(rpcCalls[1].args).toEqual(rpcCalls[0].args);
     } finally {
       vi.useRealTimers();
     }

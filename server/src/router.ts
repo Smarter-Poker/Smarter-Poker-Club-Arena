@@ -152,6 +152,16 @@ const DIAGNOSTIC_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 const DIAGNOSTIC_MAX_BYTES = 64 * 1024;
 // Fixed wire fields: never enumerate arbitrary objects or invoke toJSON/accessors.
 const DIAGNOSTIC_WIRE_KEYS = [
+  'custody',
+  'coverage',
+  'active',
+  'archivedCount',
+  'archivedScanned',
+  'archivedTruncated',
+  'packets',
+  'originGeneration',
+  'role',
+  'originalsUnavailable',
   'schema',
   'diagnosticOnly',
   'tournamentId',

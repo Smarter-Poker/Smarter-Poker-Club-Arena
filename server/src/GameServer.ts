@@ -13,6 +13,10 @@ import {
 } from './tournament/tournamentEntryCapacity.js';
 import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorker.js';
 import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
+import {
+  prepareF06SuccessorAdmission,
+  type DrainedF06Custody,
+} from './tournament/drainedF06Custody.js';
 /**
  * GameServer — server-side game orchestration.
  *
@@ -529,6 +533,12 @@ export class GameServer {
   >();
   /** Read index only: lifetime is exactly the already-owned retirement operation. */
   private tournamentDiagnosticRetirements = new Map<string, Set<TournamentManager>>();
+  /** Strong original references survive every claim, refusal and successor stop. */
+  private drainedF06TournamentCustody = new Map<string, DrainedF06Custody>();
+  private completedF06TournamentCustody = new Map<
+    string,
+    Set<Readonly<{ original: DrainedF06Custody; terminalProof: unknown }>>
+  >();
   private tournamentDiagnosticIndexFailures = 0;
   private tournamentReleaseDiagnosticFailures = 0;
 
@@ -1706,7 +1716,7 @@ export class GameServer {
     type Snapshot = ReturnType<TournamentManagerBase['getLifecycleDiagnosticSnapshot']>;
     const current = this.tournamentEngines.get(tournamentId);
     const retiring = this.tournamentDiagnosticRetirements?.get(tournamentId);
-    const retirementIndexComplete =
+    let retirementIndexComplete =
       this.tournamentDiagnosticRetirements instanceof Map &&
       (this.tournamentDiagnosticIndexFailures ?? 0) === 0;
     const scheduler = tournamentEliminationScheduler.diagnosticSnapshot(
@@ -1747,6 +1757,54 @@ export class GameServer {
         add(next.value === current ? currentSnapshot : read(next.value), 'retiring');
       }
     }
+    const custodyIndexAvailable =
+      this.drainedF06TournamentCustody instanceof Map &&
+      this.completedF06TournamentCustody instanceof Map;
+    const activeCustody = this.drainedF06TournamentCustody?.get(tournamentId);
+    const archivedCustody = this.completedF06TournamentCustody?.get(tournamentId);
+    const custodyOriginals: unknown[] = [];
+    let archivedCustodyScanned = 0;
+    const addCustody = (packet: DrainedF06Custody, role: string): void => {
+      add(read(packet.manager), role);
+      const selected = boundedSelection.tableIds
+        ? packet.engines.filter(([id]) => boundedSelection.tableIds?.includes(id))
+        : packet.engines.slice(0, 8);
+      const originals = selected.map(([tableId, engine]) => {
+        let snapshot: ReturnType<ServerTableEngine['getLifecycleDiagnosticSnapshot']> | null = null;
+        try {
+          snapshot = engine.getLifecycleDiagnosticSnapshot();
+        } catch {
+          /* unavailable */
+        }
+        return Object.freeze({
+          tableId,
+          availability: snapshot ? 'observed' : 'unavailable',
+          engine: snapshot,
+        });
+      });
+      custodyOriginals.push(
+        Object.freeze({
+          role,
+          originGeneration: packet.originGeneration,
+          originalsCount: packet.engines.length,
+          originalsReturned: selected.length,
+          originalsOmitted: packet.engines.length - selected.length,
+          originalsUnavailable: originals.filter((entry) => entry.availability === 'unavailable')
+            .length,
+          originals: Object.freeze(originals),
+        })
+      );
+    };
+    if (activeCustody) addCustody(activeCustody, 'drained-custody');
+    if (archivedCustody) {
+      for (const entry of archivedCustody) {
+        if (archivedCustodyScanned >= 32) break;
+        archivedCustodyScanned++;
+        addCustody(entry.original, 'completed-custody');
+      }
+    }
+    retirementIndexComplete &&=
+      custodyIndexAvailable && (archivedCustody?.size ?? 0) <= archivedCustodyScanned;
     for (const entry of scheduler.entries) {
       if (entry.owner) add(entry.owner, 'scheduler');
       else if (entry.managerInstanceId) unavailableOwners++;
@@ -1785,6 +1843,15 @@ export class GameServer {
         ? ('complete' as const)
         : ('unavailable' as const),
       retirementOperationsCount: retirementIndexComplete ? (retiring?.size ?? 0) : null,
+      custody: Object.freeze({
+        coverage: custodyIndexAvailable ? 'available' : 'unavailable',
+        active: !!activeCustody,
+        archivedCount: custodyIndexAvailable ? (archivedCustody?.size ?? 0) : null,
+        archivedScanned: archivedCustodyScanned,
+        archivedTruncated: (archivedCustody?.size ?? 0) > archivedCustodyScanned,
+        packets: Object.freeze(custodyOriginals),
+        missingMeans: 'unknown',
+      }),
       retirementEntriesScanned,
       retirementScanTruncated: retirementIndexComplete
         ? (retiring?.size ?? 0) > retirementEntriesScanned
@@ -1862,12 +1929,15 @@ export class GameServer {
     const operation = (async (): Promise<boolean> => {
       let releaseConfirmed = leaseGeneration === null;
       try {
-        const stopped = await stopOwnedTournamentManager(
+        let stopped = await stopOwnedTournamentManager(
           this.tournamentEngines,
           tournamentId,
           manager,
           (error) => reportError(error, errorContext)
         );
+        if (!stopped && releaseLease && this.tournamentEngines.get(tournamentId) === manager) {
+          stopped = await this.transferDrainedF06Custody(tournamentId, manager);
+        }
         if (stopped && leaseGeneration) {
           this.tournamentManagerPendingLeaseReleases.set(tournamentId, leaseGeneration);
           const release = await releaseTournaments([{ tournamentId, leaseGeneration }]);
@@ -1923,6 +1993,49 @@ export class GameServer {
     return operation;
   }
 
+  /** All identities are checked before the first deletion; no await splits CAS. */
+  private async transferDrainedF06Custody(
+    tournamentId: string,
+    manager: TournamentManager
+  ): Promise<boolean> {
+    this.drainedF06TournamentCustody ??= new Map();
+    if (this.drainedF06TournamentCustody.has(tournamentId)) return false;
+    const packet = await manager.captureDrainedF06Custody();
+    if (
+      !packet ||
+      packet.manager !== manager ||
+      packet.tournamentId !== tournamentId ||
+      this.tournamentEngines.get(tournamentId) !== manager ||
+      this.drainedF06TournamentCustody.has(tournamentId) ||
+      !packet.current() ||
+      packet.engines.some(
+        ([id, engine]) =>
+          this.tableEngines.get(id) !== engine ||
+          !this.tournamentRetirementCustody.admissionAllowed(id)
+      )
+    )
+      return false;
+    // Publish custody before removing any activation slot. Original local maps
+    // remain intact; this is a handoff, never successful business teardown.
+    this.drainedF06TournamentCustody.set(tournamentId, packet);
+    for (const [id] of packet.engines) {
+      this.tableEngines.delete(id);
+      this.tournamentOwnedTables.delete(id);
+    }
+    this.tournamentEngines.delete(tournamentId);
+    for (const [id] of packet.engines) {
+      try {
+        tableStateHub.dropTable(id);
+      } catch (error) {
+        reportError(error, 'GameServer.drained_custody_projection_failed', {
+          tournamentId,
+          tableId: id,
+        });
+      }
+    }
+    return true;
+  }
+
   /**
    * Discovery must keep admitting unrelated events while an exact manager
    * drains its accepted work. Retain its slot and lease until physical stop
@@ -1933,7 +2046,8 @@ export class GameServer {
     manager: TournamentManager,
     errorContext: string
   ): void {
-    if (this.tournamentManagerRetirementOperations.has(manager)) return;
+    if (manager.isF06RecoveryOwner?.() || this.tournamentManagerRetirementOperations.has(manager))
+      return;
     this.launchDiscoveryJob(
       this.stopTournamentManagerIfOwned(tournamentId, manager, errorContext),
       errorContext,
@@ -2129,6 +2243,43 @@ export class GameServer {
     }
     this.clearTournamentManagerAdmissionRetry(tournamentId);
 
+    const packet = this.drainedF06TournamentCustody?.get(tournamentId) ?? null;
+    let recoveryRequired = false;
+    if (mode === 'resume' || packet) {
+      try {
+        const state = await prepareF06SuccessorAdmission(
+          tournamentId,
+          lease.leaseGeneration,
+          INSTANCE_ID,
+          packet,
+          () =>
+            this.directAdmissionIsCurrent(generation) &&
+            !this.tournamentEngines.has(tournamentId) &&
+            (this.drainedF06TournamentCustody?.get(tournamentId) ?? null) === packet
+        );
+        if (
+          !this.directAdmissionIsCurrent(generation) ||
+          this.tournamentEngines.has(tournamentId) ||
+          (this.drainedF06TournamentCustody?.get(tournamentId) ?? null) !== packet
+        )
+          throw new Error('f06_successor_admission_changed');
+        recoveryRequired = state.recoveryRequired;
+        if (packet && !recoveryRequired) {
+          // Terminal dispositions are monotonic. Retain the original objects,
+          // but stop applying their old mutable roster proof before dealers can
+          // start: a later startup error must not strand a newly accepted hand.
+          this.completedF06TournamentCustody ??= new Map();
+          const archive = this.completedF06TournamentCustody.get(tournamentId) ?? new Set();
+          this.completedF06TournamentCustody.set(tournamentId, archive);
+          archive.add(Object.freeze({ original: packet, terminalProof: state.terminalProof }));
+          this.drainedF06TournamentCustody.delete(tournamentId);
+        }
+      } catch (error) {
+        this.tournamentManagerPendingLeaseReleases.set(tournamentId, lease.leaseGeneration);
+        await this.awaitTournamentManagerLeaseRelease(tournamentId);
+        throw error;
+      }
+    }
     console.log(`[GameServer] ${description}`);
     const manager = new TournamentManager(
       tournamentId,
@@ -2142,6 +2293,10 @@ export class GameServer {
     );
     this.tournamentEngines.set(tournamentId, manager);
     try {
+      if (recoveryRequired) {
+        manager.enterF06RecoveryOwnership();
+        return;
+      }
       if (mode === 'resume') await manager.resume();
       else await manager.start();
 

@@ -1,0 +1,41 @@
+{
+  "query": "BEGIN READ ONLY;SET LOCAL statement_timeout='5s';SELECT jsonb_build_object('captured_at',clock_timestamp(),'functions',(SELECT jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'definition',pg_get_functiondef(p.oid),'body_md5',md5(p.prosrc),'definition_md5',md5(pg_get_functiondef(p.oid)),'owner',pg_get_userbyid(p.proowner),'acl',p.proacl::text,'config',p.proconfig)) FROM pg_proc p WHERE p.oid IN ('smarter_private.f06_abort_receipt_immutable()'::regprocedure,'smarter_private.f06_prepared_cancellation_immutable()'::regprocedure,'public.fn_f06_cancel_prepared_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)'::regprocedure))) capture;COMMIT;",
+  "capture": {
+    "functions": [
+      {
+        "acl": "{postgres=X/postgres}",
+        "owner": "postgres",
+        "config": [
+          "search_path=pg_catalog"
+        ],
+        "body_md5": "3ca19a36eb984823814e51042b56e2a3",
+        "signature": "smarter_private.f06_abort_receipt_immutable()",
+        "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_abort_receipt_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN RAISE EXCEPTION 'F06_ABORT_RECEIPT_IMMUTABLE' USING ERRCODE='55000'; END $function$\n",
+        "definition_md5": "811127b67caea34bd7d3e5bc6c41ed94"
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "owner": "postgres",
+        "config": [
+          "search_path=pg_catalog"
+        ],
+        "body_md5": "55b942212973a9f10ba6a6d3174bf048",
+        "signature": "smarter_private.f06_prepared_cancellation_immutable()",
+        "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_prepared_cancellation_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN RAISE EXCEPTION 'F06_PREPARED_CANCELLATION_IMMUTABLE' USING ERRCODE='55000'; END $function$\n",
+        "definition_md5": "02bf681ff7ba388c19cbdebb9efe42ac"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "owner": "postgres",
+        "config": [
+          "search_path=pg_catalog, public, smarter_private"
+        ],
+        "body_md5": "978ff0e9361f9990fb49d2cc5f92bd0e",
+        "signature": "fn_f06_cancel_prepared_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_f06_cancel_prepared_hand(p_tournament_id uuid, p_lease_generation uuid, p_table_id uuid, p_lifecycle bigint, p_permit_id uuid, p_hand_number bigint, p_custody_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE h smarter_private.f06_hand_permits; r smarter_private.f06_prepared_hand_cancellations;\nBEGIN\n IF p_tournament_id IS NULL OR p_lease_generation IS NULL OR p_table_id IS NULL\n OR p_lifecycle IS NULL OR p_permit_id IS NULL OR p_hand_number IS NULL\n OR p_hand_number<1 OR p_custody_id IS NULL THEN\n RAISE EXCEPTION 'F06_PREPARED_IDENTITY_REQUIRED' USING ERRCODE='22023'; END IF;\n -- Unchanged protocol-2 admission and canonical lease/lane/physical-row order.\n -- A successor lease cannot certify the original process's local non-actuation.\n PERFORM smarter_private.f06_prefix(p_tournament_id,p_lease_generation,'{}',ARRAY[p_table_id]);\n SELECT * INTO h FROM smarter_private.f06_hand_permits WHERE permit_id=p_permit_id FOR UPDATE;\n IF NOT FOUND OR (h.tournament_id,h.generation,h.table_id,h.lifecycle,h.hand_number,h.custody_id)\n IS DISTINCT FROM(p_tournament_id,p_lease_generation,p_table_id,p_lifecycle,p_hand_number,p_custody_id) THEN\n RAISE EXCEPTION 'F06_PREPARED_ORIGINAL_REQUIRED' USING ERRCODE='55000'; END IF;\n SELECT * INTO r FROM smarter_private.f06_prepared_hand_cancellations WHERE permit_id=p_permit_id;\n IF FOUND THEN\n IF (r.tournament_id,r.generation,r.table_id,r.lifecycle,r.hand_number,r.custody_id)\n IS DISTINCT FROM(p_tournament_id,p_lease_generation,p_table_id,p_lifecycle,p_hand_number,p_custody_id)\n OR h.state<>'never_started' OR h.evidence_id IS DISTINCT FROM p_permit_id THEN\n RAISE EXCEPTION 'F06_PREPARED_RECEIPT_CHANGED' USING ERRCODE='55000'; END IF;\n ELSE\n IF h.state<>'reserved' OR h.evidence_id IS NOT NULL THEN\n RAISE EXCEPTION 'F06_PREPARED_NOT_RESERVED' USING ERRCODE='55000'; END IF;\n IF NOT EXISTS(SELECT 1 FROM public.tables tb JOIN public.tournaments t ON t.id=tb.tournament_id\n WHERE tb.id=p_table_id AND tb.tournament_id=p_tournament_id AND tb.f06_lifecycle=p_lifecycle\n AND upper(t.status)='RUNNING' AND lower(tb.status)<>'closed' AND NOT COALESCE(tb.is_deleted,false)) THEN\n RAISE EXCEPTION 'F06_HAND_LIFECYCLE' USING ERRCODE='55000'; END IF;\n -- Durable witnesses only REFUSE a claimed no-start; their absence cannot grant it.\n -- The active snapshot uses its maintained partial index. Completed snapshot\n -- history is not scanned or inferred absent: positive original-process start\n -- exclusion (not a successor reconstruction) is the authority for this receipt.\n IF EXISTS(SELECT 1 FROM smarter_private.f06_hand_dispatch WHERE permit_id=p_permit_id)\n OR EXISTS(SELECT 1 FROM public.hand_atomic_commits WHERE table_id=p_table_id AND hand_number=p_hand_number)\n OR EXISTS(SELECT 1 FROM public.hand_history WHERE table_id=p_table_id AND hand_number=p_hand_number)\n OR EXISTS(SELECT 1 FROM public.hand_state_snapshots WHERE table_id=p_table_id AND NOT is_complete AND hand_number=p_hand_number)\n OR EXISTS(SELECT 1 FROM public.hand_private_state WHERE table_id=p_table_id AND hand_number=p_hand_number)\n OR EXISTS(SELECT 1 FROM public.table_hole_cards WHERE table_id=p_table_id AND hand_number=p_hand_number) THEN\n RAISE EXCEPTION 'F06_PREPARED_START_EVIDENCE' USING ERRCODE='55000'; END IF;\n INSERT INTO smarter_private.f06_prepared_hand_cancellations\n (permit_id,tournament_id,generation,table_id,lifecycle,hand_number,custody_id)\n VALUES(p_permit_id,p_tournament_id,p_lease_generation,p_table_id,p_lifecycle,p_hand_number,p_custody_id);\n UPDATE smarter_private.f06_hand_permits SET state='never_started',evidence_id=p_permit_id\n WHERE permit_id=p_permit_id RETURNING * INTO h;\n END IF;\n RETURN to_jsonb(h)||jsonb_build_object('ok',true,'lifecycle',h.lifecycle::text,'hand_number',h.hand_number::text);\nEND $function$\n",
+        "definition_md5": "2eaabb545cbc3251be0cef438b08f989"
+      }
+    ],
+    "captured_at": "2026-09-18T09:29:50.053631+00:00"
+  }
+}

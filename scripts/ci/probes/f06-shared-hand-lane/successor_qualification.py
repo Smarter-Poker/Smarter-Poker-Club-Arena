@@ -52,6 +52,13 @@ def qualify(root, out, cmd, command, run, probe, require, results, seed, held, m
         run('successor-installer-refuses-busy-lease-without-wait', installer, error='55P03')
     run('successor-refused-install-leaves-no-column', "SELECT count(*) FROM pg_attribute WHERE attrelid='smarter_private.f06_unsettled_hand_aborts'::regclass AND attname='retired_lease_generation' AND NOT attisdropped;", '0')
     run('successor-install', installer)
+    results['successorPostimages'] = json.loads(run('successor-qualified-catalog-postimages', """SELECT jsonb_agg(jsonb_build_object(
+      'signature',p.oid::regprocedure::text,'md5',md5(pg_get_functiondef(p.oid)),
+      'owner',pg_get_userbyid(p.proowner),'acl',p.proacl::text) ORDER BY p.oid::regprocedure::text)
+      FROM pg_proc p WHERE p.oid IN('smarter_private.f06_generation_aborted(uuid,uuid)'::regprocedure,
+      'public.fn_f06_abort_successor_unsettled_hand(uuid,jsonb)'::regprocedure);"""))
+    require(all(p['owner'] == 'postgres' and p['acl'] == ('{postgres=X/postgres}' if p['signature'].startswith('smarter_private.') else '{postgres=X/postgres,service_role=X/postgres}')
+                for p in results['successorPostimages']), 'Successor postimage owner/ACL changed')
     require(run('successor-ddl-preserves-money', money) == before, 'Successor DDL changed financial state')
     probe('successor-browser-refused', 'SET ROLE authenticated;' + service + abort(), error='42501')
     probe('successor-wrong-service-actor', "SET request.jwt.claims='{\"role\":\"service_role\"}';SET app.smarter_data_actor='tournament-manager';" + abort(), error='F06_ABORT_SERVICE_REQUIRED')

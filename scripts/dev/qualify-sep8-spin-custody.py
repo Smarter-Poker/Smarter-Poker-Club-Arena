@@ -112,6 +112,9 @@ except AssertionError:
  value=subprocess.check_output(cmd+['-At','-c',diagnostic],text=True)
  (out/'sep8-original-seed-diagnostic.json').write_text(value)
  raise
+# Qualify the additive installed reader before the unchanged real payer path.
+import runpy
+reader_proof=runpy.run_path(str(fix/'qualify-current-case-reader.py'))['qualify'](root,fix,out,cmd,run,schema)
 run((fix/'standings-negative.sql').read_text(),'sep8-standings-negative')
 run((fix/'late-fault.sql').read_text(),'sep8-late-terminal-fault')
 # Two first-completion backends for one Union and one standalone original event.
@@ -181,6 +184,6 @@ import re
 count=sum(len(re.findall(r'NOTICE:\s+PASS ',p.read_text())) for p in out.glob('sep8-*.log'))
 (out/'sep8-native-evidence.json').write_text(json.dumps({'status':'passed','assertion_notices':count,'events':5,
  'original_raw_sources':5,'recognized_contributors':15,'original_fee_total':'11.52','original_prize_total':'96',
- 'first_close_races':2,'actual_decoder_receipts':10,'late_preimage_schema_acl_rollback':True,
+ 'first_close_races':2,'actual_decoder_receipts':10,'late_preimage_schema_acl_rollback':True,'current_case_reader':reader_proof,
  'source_binding':'sep8-tested-binding.json','limitations':'Original standings and financial records are retained; account support and restored original agreements are explicitly synthetic. No production history or outcome is certified.'},indent=2)+'\n')
 print('PASS exact five original Spin payer, custody and canonical continuation',flush=True)

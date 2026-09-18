@@ -347,6 +347,14 @@ class PositiveFeeEntryTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         self.assertEqual(W.FEE.load_oracle(root).run_negative_controls(), 46)
 
+    def test_restoration_reader_is_created_before_the_read_only_observation(self):
+        sql = (W.ROOT / 'scripts/qualification/spin-mixed-positive-fee-entry.sql').read_text()
+        start = sql.index('BEGIN READ ONLY;')
+        end = sql.index('COMMIT;', start)
+        self.assertLess(sql.index('END $restoration$;'), start)
+        self.assertIn("'restoration_inputs',pg_temp.spin_q_restoration_inputs()", sql[start:end])
+        self.assertNotIn('CREATE FUNCTION', sql[start:end])
+
     def files(self):
         root = Path(__file__).resolve().parents[2]
         files = {name: (root / name).read_bytes() for name in W.FEE.INPUTS}

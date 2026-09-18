@@ -424,6 +424,34 @@ SELECT jsonb_build_object('stage','seat3_committed','receipt',result) FROM spin_
 -- 0.24 fee, 2.76 reserve, 0.08 attributable to each of three paid principals.
 -- Do not derive these expected amounts by invoking the function under test.
 -- All observations follow the successful COMMIT, including deferred capture.
+-- Read-only restoration witness for the separately declared modern consumer.
+-- Original requests/assertions and replay protocol are unchanged. Capture the
+-- real table (including an explicit empty array), never reconstruct its rows
+-- from a returned RPC response. These are private disposable fixture records.
+CREATE FUNCTION pg_temp.spin_q_restoration_inputs() RETURNS jsonb
+LANGUAGE plpgsql SET timezone TO 'UTC' AS $restoration$
+DECLARE name text; n integer; field_names jsonb; data jsonb; body text;
+ result jsonb:='{}'::jsonb;
+BEGIN
+ FOREACH name IN ARRAY ARRAY['entry_purchase_idempotency_receipts','club_wallets','union_wallets','union_clubs','accounting_agreement_history','union_pnl_transaction_frames','union_pnl_inventory_events','ca_op_claims','ca_mint_policy'] LOOP
+  -- Count first; refuse before materializing an oversized relation.
+  EXECUTE format('SELECT count(*) FROM (SELECT 1 FROM public.%I LIMIT 257) bounded',name) INTO n;
+  IF n>256 THEN RAISE EXCEPTION 'restoration input row cap exceeded: %',name; END IF;
+  SELECT jsonb_agg(a.attname ORDER BY a.attname) INTO field_names
+    FROM pg_attribute a WHERE a.attrelid=to_regclass('public.'||name)
+      AND a.attnum>0 AND NOT a.attisdropped;
+  IF field_names IS NULL THEN RAISE EXCEPTION 'restoration input relation absent: %',name; END IF;
+  EXECUTE format('SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text),''[]''::jsonb) FROM public.%I r',name) INTO data;
+  body:=data::text;
+  IF octet_length(body)>262144 THEN RAISE EXCEPTION 'restoration input byte cap exceeded: %',name; END IF;
+  result:=result||jsonb_build_object(name,jsonb_build_object('columns',field_names,
+    'row_count',n,'rows',data,'rows_jsonb_text',body,'rows_md5',md5(body),'complete',true));
+ END LOOP;
+ IF octet_length(result::text)>1048576 THEN RAISE EXCEPTION 'restoration input total byte cap exceeded'; END IF;
+ RETURN jsonb_build_object('kind','genuine-entry-restoration-inputs-v1','complete',true,
+   'historical_evidence',false,'relations',result);
+END $restoration$;
+
 BEGIN READ ONLY;
 SELECT pg_temp.spin_q_assert((SELECT count(*)=3 FROM public.table_seats)
   AND (SELECT count(*)=3 FROM public.tournament_players)
@@ -588,33 +616,6 @@ BEGIN
      EXCEPT SELECT tgrelid,tgname,tgenabled FROM pg_trigger WHERE NOT tgisinternal)),
     'all original trigger identities/enabled states preserved');
 END $no_completion$;
--- Read-only restoration witness for the separately declared modern consumer.
--- Original requests/assertions and replay protocol are unchanged. Capture the
--- real table (including an explicit empty array), never reconstruct its rows
--- from a returned RPC response. These are private disposable fixture records.
-CREATE FUNCTION pg_temp.spin_q_restoration_inputs() RETURNS jsonb
-LANGUAGE plpgsql SET timezone TO 'UTC' AS $restoration$
-DECLARE name text; n integer; field_names jsonb; data jsonb; body text;
- result jsonb:='{}'::jsonb;
-BEGIN
- FOREACH name IN ARRAY ARRAY['entry_purchase_idempotency_receipts','club_wallets','union_wallets','union_clubs','accounting_agreement_history','union_pnl_transaction_frames','union_pnl_inventory_events','ca_op_claims','ca_mint_policy'] LOOP
-  -- Count first; refuse before materializing an oversized relation.
-  EXECUTE format('SELECT count(*) FROM (SELECT 1 FROM public.%I LIMIT 257) bounded',name) INTO n;
-  IF n>256 THEN RAISE EXCEPTION 'restoration input row cap exceeded: %',name; END IF;
-  SELECT jsonb_agg(a.attname ORDER BY a.attname) INTO field_names
-    FROM pg_attribute a WHERE a.attrelid=to_regclass('public.'||name)
-      AND a.attnum>0 AND NOT a.attisdropped;
-  IF field_names IS NULL THEN RAISE EXCEPTION 'restoration input relation absent: %',name; END IF;
-  EXECUTE format('SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text),''[]''::jsonb) FROM public.%I r',name) INTO data;
-  body:=data::text;
-  IF octet_length(body)>262144 THEN RAISE EXCEPTION 'restoration input byte cap exceeded: %',name; END IF;
-  result:=result||jsonb_build_object(name,jsonb_build_object('columns',field_names,
-    'row_count',n,'rows',data,'rows_jsonb_text',body,'rows_md5',md5(body),'complete',true));
- END LOOP;
- IF octet_length(result::text)>1048576 THEN RAISE EXCEPTION 'restoration input total byte cap exceeded'; END IF;
- RETURN jsonb_build_object('kind','genuine-entry-restoration-inputs-v1','complete',true,
-   'historical_evidence',false,'relations',result);
-END $restoration$;
 SELECT jsonb_build_object('stage','positive_fee_entry_committed_observation','execution',q.execution,
   'tournament',q.tournament,'club',q.execution,'owner',q.owner_user,
   'players',jsonb_build_array(q.player1,q.player2,q.owner_user),'table',(SELECT id FROM spin_q_table),

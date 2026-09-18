@@ -16,3 +16,11 @@ This is input custody for a disposable fixture. It does not fabricate missing
 receipts, advance a live tournament, prove positive-fee completion, reconstruct
 historical hands or close the oldest alert. The previous native artifacts remain
 unaltered; the new capture needs its own actual PostgreSQL execution.
+
+The first execution at `e06183d539b198e3ed43ed9746e1c5bf7644c572` exposed
+SQLSTATE 25006: temporary function creation was placed inside the read-only
+observation transaction. The helper is now created before that transaction;
+the actual snapshot remains read-only. The directly invoked ordering regression
+fails on the original placement and passes the correction. The failed execution
+`0a3d599e-4850-43a0-a07d-37068bb89e0e`, its original output and stopped allocation
+remain retained. No production transaction was invoked.

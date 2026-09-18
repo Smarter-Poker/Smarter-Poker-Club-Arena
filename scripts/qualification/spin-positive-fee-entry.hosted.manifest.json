@@ -12,8 +12,8 @@
       "sha256": "7cce48c16acfdb7b681569d5361b7fe8dd8bbfed3a5af49fed7c473846adb2b9"
     },
     "scripts/qualification/spin-mixed-positive-fee-entry.sql": {
-      "bytes": 51514,
-      "sha256": "ae7e95c5cc55ad0956c5bd1ea5d2c7d1fcfb6b696bbdc24bcdb72f1eddd7ef18"
+      "bytes": 51515,
+      "sha256": "abccdd57023de5e7e4ce611bf4f05eba01a57699350df9a9e0f4faa2f2f24157"
     },
     "scripts/qualification/fixtures/spin-mixed-positive-fee/provider-supplement.sql": {
       "bytes": 512502,

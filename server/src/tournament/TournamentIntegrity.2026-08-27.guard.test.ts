@@ -127,7 +127,8 @@ describe('A2: the break gate is where the break starts, not only in the caller',
 
   it('the format rule is stated once and reused', () => {
     expect(BASE).toMatch(/mayTakeSynchronizedBreak\(/);
-    expect(BASE).toMatch(/isShortFormat\(/);
+    const classify = sliceMethod(BASE, 'isMttOrXmtt(');
+    expect(classify).toMatch(/isPersistedUnlimitedMtt\(this\.tournamentCache\)/);
     // The old hand-rolled copy inside isMttOrXmtt is gone.
     expect(BASE).not.toMatch(/type === 'SNG' \|\| type === 'SPIN'/);
   });

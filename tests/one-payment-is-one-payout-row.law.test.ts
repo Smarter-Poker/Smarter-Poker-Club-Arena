@@ -89,10 +89,18 @@ function withoutCreditPrimitive(sql: string): string {
  * seat and a noncash tournament ticket move no wallet money, so those branches
  * write their own payout evidence. Remove that authority from the generic
  * mixed-writer scan only when the separation and whole-pool proof are visible.
+ *
+ * THE AUTHORITY KEPT ITS BODY AND CHANGED ITS NAME (2026-09-17). The same
+ * three branches now live in fn_settle_satellite_tournament_pre_money_path_gate,
+ * which is what the finish path calls; a migration that carries that body
+ * forward (20260917191322 takes the satellite off the global settlement lane)
+ * was refused by this rule for writing the seat and ticket rows the cash
+ * branch does not write. Both names are admitted HERE ONLY, and each still has
+ * to prove the separation below: the exception is the proof, never the name.
  */
 function withoutSeparatedSatelliteDelivery(sql: string): string {
   const signature =
-    /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.(?:fn_settle_satellite_tournament|fn_ca_settle_satellite_cohort)\s*\(/gi;
+    /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.(?:fn_settle_satellite_tournament(?:_pre_money_path_gate)?|fn_ca_settle_satellite_cohort)\s*\(/gi;
   let result = sql;
   let start = signature.exec(result)?.index ?? -1;
   while (start >= 0) {

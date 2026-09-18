@@ -140,13 +140,11 @@ describe('GameServer discovery reads - unreadable is UNKNOWN, never empty', () =
 });
 
 describe('the seat-first definition agrees everywhere (P1-2)', () => {
-  it('the start gate is spin, or an sng of at most two seats', () => {
+  it('both seat-first gates use the recorded fixed-format authority', () => {
     // The old `any sng` reading made every 3+ seat SNG a structural deadlock:
     // fn_take_seat_and_buy_in refused its seat sales as not_a_seat_first_game
     // while this gate waited for seats forever.
-    const matches = GAME_SERVER.match(
-      /variant === 'spin' \|\|\s*\(?\s*t(?:ournament)?\.variant === 'sng' && Number\(t(?:ournament)?\.max_players\) <= 2\s*\)?/g
-    );
+    const matches = GAME_SERVER.match(/isPersistedSeatFirst\(t(?:ournament)?\)/g);
     expect(matches?.length ?? 0, 'both the batch filter and the start gate').toBeGreaterThanOrEqual(
       2
     );

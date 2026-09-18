@@ -1,33 +1,26 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  DIAMOND WHEEL SERVICE
- * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Dan 2026-09-07: a paid prize wheel inside Club Arena. A spin costs diamonds
- * and pays chips, diamonds or nothing at exactly 80 percent return to player,
- * and the wheel can never pay out more than it takes in. Rates are his ruling
- * of the same day: 1 diamond = $0.01, 1 chip = $1.00, read from ca_bridge_rate.
- *
- * NOTHING IS DECIDED HERE. Every number on the wheel screen comes from
- * fn_wheel_state; the outcome comes from fn_wheel_spin, which is the one
- * money door (SECURITY DEFINER, on the money RPC register, one row lock per
- * host). The browser draws the wheel landing on the segment the server names,
- * never the other way round. The fairness commit-and-reveal is the server's
- * too: fn_wheel_commit hands the player the hash of a seed before Spin, the
- * spin reveals the seed, and `src/utils/wheelFairness.ts` lets the browser
- * recompute the roll. The whole design: supabase/migrations/20260907233833.
- *
- * THE FREE SPIN (2026-09-09, supabase/migrations/20260909234101). One spin a
- * day on the house, per player per host, paying diamonds only and never
- * chips: a welcome spin takes nothing in, and the games never pay out more than
- * they take in. It has its own state (fn_wheel_welcome_state hands it back), its
- * own door (fn_wheel_welcome_spin) and the SAME commit
- * and derivation as a paid spin, so the verifier below checks it unchanged.
- */
+/** Server-owned Diamond Spins. The browser renders the committed receipt; it
+ * never chooses a prize. V2 has twelve non-empty sectors and funded game awards.
+ * Legacy RPCs remain exclusively for inactive hosts and old-request recovery. */
 
 import { supabase } from '../lib/supabase';
+import { assertWheelAward, assertWheelUpgradeTable } from '../utils/wheelAward';
 
-export type WheelSegmentKind = 'nothing' | 'chips' | 'diamonds';
+export type WheelContractVersion = 2 | 3;
+export type WheelDrawDomain = 'wheel-v2' | 'wheel-v2-upgrade' | 'wheel-v3' | 'wheel-v3-upgrade';
+
+/** Legacy receipts retain their original kind; new tables never include an empty prize. */
+export type WheelSegmentKind =
+  | 'nothing'
+  | 'chips'
+  | 'diamonds'
+  | 'bonus'
+  | 'upgrade'
+  | 'throwables'
+  | 'time_bank'
+  | 'rabbit_hunt';
+export type WheelBonusGame = 'plinko' | 'crash' | 'crossing' | 'mines';
+
+export type WheelInventoryGrant = { feature: string; uses: number };
 
 export interface WheelSegment {
   ord: number;
@@ -41,6 +34,9 @@ export interface WheelSegment {
   probability: number;
   locked: boolean;
   unlocks_at: number | null;
+  game?: WheelBonusGame;
+  multiplier?: number;
+  grants?: WheelInventoryGrant[];
 }
 
 export interface WheelConfigView {
@@ -95,7 +91,22 @@ export interface WheelPlayerView {
   member_chips: number | null;
 }
 
+export interface WheelBonusAward {
+  id: string;
+  game: WheelBonusGame;
+  base_diamonds: number;
+  boost_multiplier: number;
+  entry_diamonds: number;
+}
+
 export interface WheelState {
+  contract_version?: WheelContractVersion;
+  enabled?: boolean;
+  min_entry?: number;
+  max_entry?: number;
+  max_funded_entry?: number;
+  welcome?: { available: boolean; entry_diamonds: number };
+  pending_awards?: WheelBonusAward[];
   ok: boolean;
   error?: string;
   available: boolean;
@@ -105,6 +116,8 @@ export interface WheelState {
   club_id?: string;
   config?: WheelConfigView;
   segments: WheelSegment[];
+  /** Server quote for Upgrade's secondary draw at the selected entry. */
+  upgrade_segments?: WheelSegment[];
   pool?: WheelPoolView;
   player?: WheelPlayerView;
   frozen?: boolean;
@@ -191,6 +204,7 @@ export interface WheelDailyBonusState {
 }
 
 export interface WheelFairness {
+  domain?: WheelDrawDomain;
   commit_id: string;
   server_seed_hash: string;
   server_seed: string;
@@ -203,6 +217,8 @@ export interface WheelFairness {
 }
 
 export interface WheelSpinResult {
+  contract_version?: WheelContractVersion;
+  segments?: WheelSegment[];
   ok: boolean;
   error?: string;
   detail?: string;
@@ -226,7 +242,12 @@ export interface WheelSpinResult {
     amount: number;
     label: string;
     value_chips: number;
+    game?: WheelBonusGame;
+    multiplier?: number;
+    grants?: WheelInventoryGrant[];
   };
+  bonus?: WheelBonusAward;
+  secondary?: { segments: WheelSegment[]; outcome: WheelSegment; fairness: WheelFairness };
   fairness: WheelFairness;
   balances: { diamonds: number; member_chips: number | null };
   pool: { chips_paid: number; diamond_float: number };
@@ -350,6 +371,18 @@ function normaliseSegment(raw: Record<string, unknown>): WheelSegment {
     probability: num(raw.probability),
     locked: Boolean(raw.locked),
     unlocks_at: numOrNull(raw.unlocks_at),
+    game: typeof raw.game === 'string' ? (raw.game as WheelBonusGame) : undefined,
+    multiplier: raw.multiplier == null ? undefined : num(raw.multiplier),
+  };
+}
+
+function normaliseAward(raw: Record<string, unknown>): WheelBonusAward {
+  return {
+    id: String(raw.id ?? ''),
+    game: raw.game as WheelBonusGame,
+    base_diamonds: num(raw.base_diamonds),
+    boost_multiplier: num(raw.boost_multiplier),
+    entry_diamonds: num(raw.entry_diamonds),
   };
 }
 
@@ -358,6 +391,22 @@ function normaliseState(raw: Record<string, unknown>): WheelState {
   const pool = raw.pool as Record<string, unknown> | undefined;
   const player = raw.player as Record<string, unknown> | undefined;
   return {
+    contract_version:
+      raw.contract_version === 2 || raw.contract_version === 3 ? raw.contract_version : undefined,
+    enabled: raw.enabled === true,
+    min_entry: num(raw.min_entry),
+    max_entry: num(raw.max_entry),
+    max_funded_entry: raw.max_funded_entry == null ? undefined : num(raw.max_funded_entry),
+    welcome:
+      raw.welcome && typeof raw.welcome === 'object'
+        ? {
+            available: (raw.welcome as Record<string, unknown>).available === true,
+            entry_diamonds: num((raw.welcome as Record<string, unknown>).entry_diamonds),
+          }
+        : undefined,
+    pending_awards: Array.isArray(raw.awards)
+      ? raw.awards.map((a) => normaliseAward(a as Record<string, unknown>))
+      : [],
     ok: Boolean(raw.ok),
     error: raw.error ? String(raw.error) : undefined,
     available: Boolean(raw.available),
@@ -385,6 +434,9 @@ function normaliseState(raw: Record<string, unknown>): WheelState {
     segments: Array.isArray(raw.segments)
       ? (raw.segments as Record<string, unknown>[]).map(normaliseSegment)
       : [],
+    upgrade_segments: Array.isArray(raw.upgrade_segments)
+      ? (raw.upgrade_segments as Record<string, unknown>[]).map(normaliseSegment)
+      : undefined,
     pool: pool
       ? {
           spins: num(pool.spins),
@@ -418,6 +470,34 @@ function normaliseState(raw: Record<string, unknown>): WheelState {
   };
 }
 
+function normaliseFairness(fairness: Record<string, unknown>): WheelFairness {
+  return {
+    ...(fairness.domain === 'wheel-v2' ||
+    fairness.domain === 'wheel-v2-upgrade' ||
+    fairness.domain === 'wheel-v3' ||
+    fairness.domain === 'wheel-v3-upgrade'
+      ? { domain: fairness.domain }
+      : {}),
+    commit_id: String(fairness.commit_id ?? ''),
+    server_seed_hash: String(fairness.server_seed_hash ?? ''),
+    server_seed: String(fairness.server_seed ?? ''),
+    client_seed: String(fairness.client_seed ?? ''),
+    nonce: num(fairness.nonce),
+    roll: num(fairness.roll),
+    weight_total: num(fairness.weight_total),
+    eligible_ords: Array.isArray(fairness.eligible_ords)
+      ? (fairness.eligible_ords as unknown[]).map(num)
+      : [],
+    locked: Array.isArray(fairness.locked)
+      ? (fairness.locked as Record<string, unknown>[]).map((l) => ({
+          ord: num(l.ord),
+          reason: String(l.reason ?? ''),
+          unlocks_at: num(l.unlocks_at),
+        }))
+      : [],
+  };
+}
+
 function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
   const outcome = (raw.outcome ?? {}) as Record<string, unknown>;
   const fairness = (raw.fairness ?? {}) as Record<string, unknown>;
@@ -427,6 +507,11 @@ function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
     ok: Boolean(raw.ok),
     error: raw.error ? String(raw.error) : undefined,
     detail: raw.detail ? String(raw.detail) : undefined,
+    contract_version:
+      raw.contract_version === 2 || raw.contract_version === 3 ? raw.contract_version : undefined,
+    segments: Array.isArray(raw.segments)
+      ? (raw.segments as Record<string, unknown>[]).map(normaliseSegment)
+      : undefined,
     replayed: Boolean(raw.replayed),
     welcome: Boolean(raw.welcome),
     daily_bonus: raw.daily_bonus === true,
@@ -446,26 +531,32 @@ function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
       amount: num(outcome.amount),
       label: String(outcome.label ?? ''),
       value_chips: num(outcome.value_chips),
-    },
-    fairness: {
-      commit_id: String(fairness.commit_id ?? ''),
-      server_seed_hash: String(fairness.server_seed_hash ?? ''),
-      server_seed: String(fairness.server_seed ?? ''),
-      client_seed: String(fairness.client_seed ?? ''),
-      nonce: num(fairness.nonce),
-      roll: num(fairness.roll),
-      weight_total: num(fairness.weight_total),
-      eligible_ords: Array.isArray(fairness.eligible_ords)
-        ? (fairness.eligible_ords as unknown[]).map(num)
-        : [],
-      locked: Array.isArray(fairness.locked)
-        ? (fairness.locked as Record<string, unknown>[]).map((l) => ({
-            ord: num(l.ord),
-            reason: String(l.reason ?? ''),
-            unlocks_at: num(l.unlocks_at),
+      game: typeof outcome.game === 'string' ? (outcome.game as WheelBonusGame) : undefined,
+      multiplier: outcome.multiplier == null ? undefined : num(outcome.multiplier),
+      grants: Array.isArray(outcome.grants)
+        ? outcome.grants.map((grant: Record<string, unknown>) => ({
+            feature: String(grant.feature),
+            uses: num(grant.uses),
           }))
-        : [],
+        : undefined,
     },
+    bonus: raw.bonus ? normaliseAward(raw.bonus as Record<string, unknown>) : undefined,
+    secondary: raw.secondary
+      ? {
+          segments: Array.isArray((raw.secondary as Record<string, unknown>).segments)
+            ? (
+                (raw.secondary as Record<string, unknown>).segments as Record<string, unknown>[]
+              ).map(normaliseSegment)
+            : [],
+          outcome: normaliseSegment(
+            ((raw.secondary as Record<string, unknown>).outcome ?? {}) as Record<string, unknown>
+          ),
+          fairness: normaliseFairness(
+            ((raw.secondary as Record<string, unknown>).fairness ?? {}) as Record<string, unknown>
+          ),
+        }
+      : undefined,
+    fairness: normaliseFairness(fairness),
     balances: { diamonds: num(balances.diamonds), member_chips: numOrNull(balances.member_chips) },
     pool: {
       chips_paid: num(pool.chips_paid),
@@ -482,12 +573,15 @@ function spinResponse(data: unknown): WheelSpinResult {
   const raw = data as Record<string, unknown>;
   if (
     typeof raw.ok !== 'boolean' ||
+    (raw.contract_version != null && raw.contract_version !== 2 && raw.contract_version !== 3) ||
     (raw.ok === false && typeof raw.error !== 'string') ||
     (raw.ok === true && (!raw.spin_id || !raw.fairness || !raw.outcome))
   ) {
     throw new Error('The Spin Receipt Could Not Be Confirmed');
   }
-  return normaliseSpin(raw);
+  const result = normaliseSpin(raw);
+  if (result.ok) assertWheelAward(result);
+  return result;
 }
 
 /** Paid and welcome spins in one list, newest first, for the player's own history. */
@@ -525,6 +619,66 @@ function normaliseWelcomeState(raw: Record<string, unknown>): WheelWelcomeState 
 }
 
 const DiamondWheelService = {
+  /** An explicit inactive contract permits legacy play; an unreadable one never does. */
+  async getStateV2(clubId: string, entryDiamonds = 100): Promise<WheelState> {
+    const { data, error } = await supabase.rpc('fn_wheel_state_v2', {
+      p_club_id: clubId,
+      p_entry_diamonds: entryDiamonds,
+    });
+    if (error) throw error;
+    if (
+      !data ||
+      (data.contract_version !== 2 && data.contract_version !== 3) ||
+      typeof data.enabled !== 'boolean'
+    )
+      throw new Error('Diamond Spins Availability Could Not Be Confirmed');
+    if (!data.enabled) return this.getState(clubId);
+    const state = normaliseState(data);
+    // The server deliberately omits a prize table until a host is configured.
+    // Keep that closed state visible without downgrading to another play route.
+    if (state.ok && !state.available && state.reason === 'not_configured') return state;
+    if (
+      state.min_entry !== 25 ||
+      state.max_entry !== 2500 ||
+      state.segments.length !== 12 ||
+      state.segments.some((s) => s.kind === 'nothing')
+    )
+      throw new Error('The Diamond Spins Prize Table Could Not Be Confirmed');
+    if (state.contract_version === 3) {
+      if (state.config?.spin_price_diamonds !== entryDiamonds)
+        throw new Error('The Diamond Spins Prize Table Could Not Be Confirmed');
+      assertWheelUpgradeTable(
+        state.upgrade_segments,
+        entryDiamonds,
+        state.config.diamonds_per_chip
+      );
+    }
+    return state;
+  },
+
+  async spinV2(input: {
+    clubId: string;
+    commitId: string;
+    clientSeed: string;
+    entryDiamonds: number;
+    mode: 'paid' | 'welcome' | 'daily_bonus';
+    ticketId: string | null;
+  }): Promise<WheelSpinResult> {
+    const { data, error } = await supabase.rpc('fn_wheel_spin_v2', {
+      p_club_id: input.clubId,
+      p_commit_id: input.commitId,
+      p_client_seed: input.clientSeed,
+      p_entry_diamonds: input.entryDiamonds,
+      p_mode: input.mode === 'daily_bonus' ? 'daily' : input.mode,
+      p_bonus_ticket_id: input.ticketId,
+    });
+    if (error) throw error;
+    const result = spinResponse(data);
+    if (result.ok && result.contract_version !== 2 && result.contract_version !== 3)
+      throw new Error('The Diamond Spins Receipt Version Could Not Be Confirmed');
+    return result;
+  },
+
   async dailyBonusState(clubId: string): Promise<WheelDailyBonusState> {
     const { data, error } = await supabase.rpc('fn_wheel_daily_bonus_state', { p_club_id: clubId });
     if (error) throw error;
@@ -583,7 +737,7 @@ const DiamondWheelService = {
     ) {
       throw new Error('Bonus Spin Receipt Could Not Be Confirmed. Retry The Same Spin');
     }
-    return normaliseSpin(data);
+    return spinResponse(data);
   },
 
   /** Everything the wheel screen shows: table, odds, locks, the player's limits. */
@@ -627,7 +781,11 @@ const DiamondWheelService = {
       p_limit: limit,
     });
     if (error) throw error;
-    return Array.isArray(data) ? (data as Record<string, unknown>[]).map(normaliseSpin) : [];
+    return Array.isArray(data)
+      ? (data as Record<string, unknown>[]).map((raw) =>
+          raw.contract_version == null ? normaliseSpin(raw) : spinResponse(raw)
+        )
+      : [];
   },
 
   /** The welcome spin: whether this member still has theirs, and the table it pays from. */

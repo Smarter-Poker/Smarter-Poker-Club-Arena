@@ -1,0 +1,55 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# THE SETTLEMENT LANE DOCTRINE HOLDS ON THE LIVE CATALOG
+#
+# scripts/ci/check-settlement-lane-doctrine.mjs asks production's
+# fn_ca_settlement_lane_doctrine() the four questions every lane migration
+# re-proved inside its own transaction and then stopped asking: who takes G
+# exclusively, who names F, who takes the global lane, and whether any
+# rolling authority reaches it. Migrations are applied to production before
+# their pull request merges, so the live catalog is the branch's truth.
+#
+# Runs on every pull request that touches a migration and on every push to
+# main. Not a required check: a violation shows red on the PR and on main
+# and names the function, which is the review the lane needs; it does not
+# hold every other branch hostage to a database that cannot be reached.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Settlement Lane Doctrine
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/ci/check-settlement-lane-doctrine.mjs'
+      - '.github/workflows/settlement-lane-doctrine.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: settlement-lane-doctrine-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  doctrine:
+    name: The lane doctrine holds on the live catalog
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Use Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Ask the live catalog
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/check-settlement-lane-doctrine.mjs

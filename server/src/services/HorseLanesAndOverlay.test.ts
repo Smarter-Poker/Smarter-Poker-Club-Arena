@@ -138,3 +138,16 @@ describe('freerolls fill from every lane', () => {
     expect(freerollTargetFor(fr({ max_players: 0 }))).toBe(0);
   });
 });
+
+it('an unlimited freeroll keeps a finite funding batch instead of becoming a zero-seat event', () => {
+  expect(
+    freerollTargetFor({
+      tournament_id: 't',
+      name: 'MTT',
+      status: 'REGISTERING',
+      current_players: 200,
+      max_players: null,
+      minutes_to_start: 1,
+    })
+  ).toBe(240);
+});

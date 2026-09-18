@@ -16,6 +16,8 @@ const icmRisk = (
 ).icmRisk;
 
 const row = (over: Record<string, unknown> = {}) => ({
+  format_contract: 'mtt-v1',
+  effective_max_players: 100,
   tournament_type: 'MTT',
   game_type: 'NLH',
   variant: 'freezeout',
@@ -38,13 +40,27 @@ const row = (over: Record<string, unknown> = {}) => ({
 
 describe('TournamentBrainContext V12 - derivation', () => {
   it('derives formats: spin, multi-seat sng, hu_sng, mtt', () => {
-    expect(deriveContext(row({ tournament_type: 'SPIN' }) as never, 3, 3, 3000).format).toBe(
-      'spin'
-    );
-    expect(deriveContext(row({ variant: 'spin' }) as never, 3, 3, 3000).format).toBe('spin');
     expect(
       deriveContext(
-        row({ tournament_type: 'SNG', variant: 'sng', table_size: 6, max_players: 6 }) as never,
+        row({ format_contract: 'spin-v1', tournament_type: 'SPIN' }) as never,
+        3,
+        3,
+        3000
+      ).format
+    ).toBe('spin');
+    expect(
+      deriveContext(row({ format_contract: 'spin-v1', variant: 'spin' }) as never, 3, 3, 3000)
+        .format
+    ).toBe('spin');
+    expect(
+      deriveContext(
+        row({
+          format_contract: 'sng-v1',
+          tournament_type: 'SNG',
+          variant: 'sng',
+          table_size: 6,
+          max_players: 6,
+        }) as never,
         6,
         6,
         6000
@@ -52,13 +68,29 @@ describe('TournamentBrainContext V12 - derivation', () => {
     ).toBe('sng');
     expect(
       deriveContext(
-        row({ tournament_type: 'SNG', variant: 'sng', table_size: 2, max_players: 2 }) as never,
+        row({
+          format_contract: 'sng-v1',
+          tournament_type: 'SNG',
+          variant: 'sng',
+          table_size: 2,
+          max_players: 2,
+        }) as never,
         2,
         2,
         3000
       ).format
     ).toBe('hu_sng');
-    expect(deriveContext(row({ table_size: 2 }) as never, 2, 2, 3000).format).toBe('hu_sng');
+    expect(deriveContext(row({ table_size: 2, max_players: 2 }) as never, 2, 2, 3000).format).toBe(
+      'mtt'
+    );
+    expect(
+      deriveContext(
+        row({ format_contract: 'seat-first-satellite-v1', table_size: 9, max_players: 2 }) as never,
+        2,
+        2,
+        3000
+      ).format
+    ).toBe('hu_sng');
     expect(deriveContext(row() as never, 40, 60, 100000).format).toBe('mtt');
   });
 
@@ -86,7 +118,12 @@ describe('TournamentBrainContext V12 - derivation', () => {
     // A multi-place Spin with no stored structure used to be assumed
     // winner-take-all, which zeroes the ICM premium outright.
     const spin = deriveContext(
-      row({ tournament_type: 'SPIN', payout_structure: null, spin_multiplier: 3 }) as never,
+      row({
+        format_contract: 'spin-v1',
+        tournament_type: 'SPIN',
+        payout_structure: null,
+        spin_multiplier: 3,
+      }) as never,
       2,
       3,
       3000
@@ -106,7 +143,7 @@ describe('TournamentBrainContext V12 - derivation', () => {
 
   it('does not invent winner-take-all when a Spin payout is unresolved', () => {
     const c = deriveContext(
-      row({ tournament_type: 'SPIN', payout_structure: [] }) as never,
+      row({ format_contract: 'spin-v1', tournament_type: 'SPIN', payout_structure: [] }) as never,
       3,
       3,
       3000

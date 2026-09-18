@@ -1,4 +1,5 @@
 import { supabase } from '../services/supabase.js';
+import { isDeterministicSettlementRefusal } from './settlementRefusal.js';
 import {
   verifySatelliteSettlementReceipt,
   type VerifiedSatelliteSettlementReceipt,
@@ -55,6 +56,8 @@ function record(value: unknown): Record<string, unknown> {
  * If every direct response is lost, the resolver waits behind the same global
  * database lock before it distinguishes a committed receipt from a proven
  * RUNNING or COMPLETING miss. No caller may infer rollback from HTTP failure.
+ * Known missing-evidence refusals skip identical writes, but still require that
+ * same serialized outcome check before the caller can release its finish guard.
  */
 export async function requestSatelliteSettlementReceipt(
   tournamentId: string,
@@ -68,9 +71,11 @@ export async function requestSatelliteSettlementReceipt(
     p_observed_winner_id: observedWinnerId,
   };
   let lastFailure = 'satellite settlement returned no receipt';
+  let attemptedWrites = 0;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
+      attemptedWrites++;
       const { data, error } = await supabase.rpc('fn_settle_satellite_tournament', request);
       if (!error) {
         const receipt = verifySatelliteSettlementReceipt(data, tournamentId, observedWinnerId);
@@ -78,6 +83,7 @@ export async function requestSatelliteSettlementReceipt(
         lastFailure = 'satellite settlement returned an invalid stored receipt';
       } else {
         lastFailure = errorMessage(error);
+        if (isDeterministicSettlementRefusal(error, tournamentId)) break;
       }
     } catch (error) {
       lastFailure = errorMessage(error);
@@ -127,6 +133,6 @@ export async function requestSatelliteSettlementReceipt(
   }
 
   throw new SatelliteSettlementOutcomeUnknownError(
-    `Satellite settlement outcome is unknown after ${attempts} identical attempt(s): ${lastFailure}`
+    `Satellite settlement outcome is unknown after ${attemptedWrites} identical attempt(s): ${lastFailure}`
   );
 }

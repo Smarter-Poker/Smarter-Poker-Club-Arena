@@ -185,6 +185,14 @@ receipts. The runner never sets allocation_disposed or full_qualification true.
 A successful process exit means only the implemented observations completed; the
 required-check collector must refuse acceptance without the bound disposal receipt.
 
+Client exit can precede server-backend disappearance. The cleanup observer retains
+each exact backend/lock count and the original backend identities while observing
+that same shutdown within the original five-second cleanup budget. It does not
+replay expiry, cancellation or a refund, extend the deadline, ignore a lingering
+backend/lock, or turn missing client-exit/readback/evidence into success. The
+source-specific wrapper controls cover delayed disappearance and deadline/failure
+boundaries; those controls are not native financial qualification.
+
 The historical broader native failure-injection requirements include deferred
 failure, COMMIT acknowledgement loss, readback loss, journal I/O failure, timeout
 during canonical refund, original-client exit failure, lingering backend and

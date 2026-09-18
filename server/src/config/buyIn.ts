@@ -1,3 +1,4 @@
+import { isUnlimitedMtt } from '../tournament/tournamentEntryCapacity.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT BUY-INS (server mirror of src/utils/buyIn.ts)
@@ -48,6 +49,10 @@ export interface RakeSubject {
   variant?: string | null;
   /** Seats in the game. tournaments.max_players, or a form's field size. */
   maxPlayers?: number | null;
+  satelliteTargetId?: string | null;
+  satellite_target_id?: string | null;
+  satellite_target?: unknown;
+  satelliteTarget?: unknown;
 }
 
 /**
@@ -58,13 +63,16 @@ export interface RakeSubject {
  * the money columns directly rather than through fn_create_tournament, CHARGED
  * it.
  *
- * Keyed on SEATS, not on the word "SNG": a two-handed game is a duel whatever
- * its label says, and the label is the thing that varies between writers.
+ * New MTT-family and satellite quotes use the MTT rate. Only a genuine fixed
+ * format may use its seat count to select the heads-up rate; booked events
+ * retain their stored amounts.
  *
  * MIRROR of src/utils/buyIn.ts — change one, change both.
  * tests/unit/tournamentRakeMirror.test.ts pins them together.
  */
 export function rakeRateFor(subject: RakeSubject): number {
+  // New quotes never inherit a historical purchased-format exemption.
+  if (isUnlimitedMtt(subject)) return DEFAULT_RAKE_RATE;
   const type = String(subject?.tournamentType ?? '').toUpperCase();
   const variant = String(subject?.variant ?? '').toLowerCase();
   if (type === 'SPIN' || variant === 'spin') return SPIN_RAKE_RATE;

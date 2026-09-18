@@ -67,6 +67,8 @@ describe('V37 flat payout curves are priced as survival', () => {
 
 describe('V37 the brain context builds the real satellite curve', () => {
   const row = (o: Record<string, unknown> = {}) => ({
+    format_contract: 'mtt-v1',
+    effective_max_players: 200,
     tournament_type: 'MTT',
     variant: 'nlh',
     max_players: 100,

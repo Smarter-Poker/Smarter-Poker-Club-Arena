@@ -13,7 +13,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  mttPrestartHorseTarget,
+  mttPrestartHorseTarget as recordedMttPrestartHorseTarget,
   startsOnBoughtSeats,
   MTT_PRESTART_RAMP_MS,
   MTT_PRESTART_MAX_HORSES,
@@ -22,6 +22,14 @@ import {
   MTT_PUBLISH_LEAD_MS,
 } from './TournamentRecurringService.js';
 
+const mttPrestartHorseTarget = (
+  opts: Omit<Parameters<typeof recordedMttPrestartHorseTarget>[0], 'format_contract'>
+) =>
+  recordedMttPrestartHorseTarget({
+    ...opts,
+    format_contract:
+      opts.variant === 'spin' ? 'spin-v1' : opts.variant === 'sng' ? 'sng-v1' : 'mtt-v1',
+  });
 const MIN = 60 * 1000;
 /**
  * The curve as seen from an EMPTY field. `currentPlayers: 0` plus a step cap
@@ -480,4 +488,27 @@ describe('mttPrestartHorseTarget - the step cap survives a guarantee', () => {
       ).toBe(0);
     }
   });
+});
+
+it('an activated MTT ramps beyond its former cap despite stale SNG spelling', () => {
+  expect(
+    recordedMttPrestartHorseTarget({
+      msUntilStart: 1,
+      maxPlayers: null,
+      format_contract: 'mtt-v1',
+      variant: 'sng',
+      currentPlayers: 100,
+      guaranteedPrize: 1000,
+      prizePool: 100,
+      buyInPrizeShare: 1,
+    })
+  ).toBeGreaterThan(100);
+  expect(() =>
+    recordedMttPrestartHorseTarget({
+      msUntilStart: 1,
+      maxPlayers: null,
+      format_contract: null,
+      variant: 'mtt',
+    })
+  ).toThrow('TOURNAMENT_FORMAT_CONTRACT_INVALID');
 });

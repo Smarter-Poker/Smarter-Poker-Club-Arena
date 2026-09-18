@@ -1,0 +1,103 @@
+.dialog.dialog[role='dialog'] {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  width: min(580px, calc(100vw - 20px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
+.dialog :global(.ca-modal-content) {
+  padding: 0;
+  overflow: visible;
+}
+.opening {
+  transform-origin: 50% 12%;
+  animation-name: prize-pop-open;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+}
+.prize {
+  position: relative;
+  isolation: isolate;
+  width: 74%;
+  aspect-ratio: 1.2;
+  margin: -2% auto 0;
+}
+.art {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 20px 7px #000);
+  animation: prize-float calc(3s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+.rays {
+  position: absolute;
+  inset: 8%;
+  background: conic-gradient(
+    from 0deg,
+    transparent,
+    #1877f244,
+    transparent 16%,
+    #45adff44,
+    transparent 31%,
+    #1877f244,
+    transparent 52%,
+    #45adff44,
+    transparent 73%,
+    #1877f244,
+    transparent
+  );
+  mask-image: radial-gradient(circle, #000 5%, transparent 68%);
+  animation: prize-rays calc(12s * var(--animation-speed, 1)) linear infinite;
+}
+.continue {
+  display: block;
+  margin: 12px auto;
+  min-height: 44px;
+  border: 0;
+  padding: 8px 20px;
+  background: transparent;
+  color: #45adff;
+  font:
+    700 18px 'Roboto Condensed',
+    sans-serif;
+  cursor: pointer;
+}
+.continue:disabled {
+  opacity: 0.5;
+}
+.continue:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 2px;
+}
+@keyframes prize-pop-open {
+  0% {
+    opacity: 0;
+    transform: perspective(1000px) translateY(-22vh) scale(0.12) rotateX(-32deg);
+  }
+  48% {
+    opacity: 1;
+    transform: perspective(1000px) translateY(0) scale(1.035) rotateX(0);
+  }
+  70%,
+  100% {
+    opacity: 1;
+    transform: perspective(1000px) scale(1);
+  }
+}
+@keyframes prize-float {
+  0%,
+  100% {
+    transform: translateY(2px) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-7px) rotate(2deg);
+  }
+}
+@keyframes prize-rays {
+  to {
+    transform: rotate(360deg);
+  }
+}

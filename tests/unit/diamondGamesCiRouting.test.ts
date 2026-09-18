@@ -7,6 +7,8 @@ describe('Diamond Games retain their financial PostgreSQL qualification', () => 
   it.each([
     'tests/sql/diamond-games-funding-identity.sql',
     'tests/sql/diamond-games-bank-fallback.sql',
+    'tests/sql/diamond-plinko-denominations.sql',
+    'tests/sql/diamond-crash-clicked-multiplier.sql',
     'tests/sql/diamond-spins-claimed-daily-bonus.sql',
     'tests/fixtures/accounting-delivery/diamond-games/functions.sql',
     'src/services/DiamondBonusService.ts',
@@ -17,9 +19,42 @@ describe('Diamond Games retain their financial PostgreSQL qualification', () => 
     'src/pages/DiamondChoicePage.tsx',
     'src/pages/DiamondCrashPage.tsx',
     'src/pages/DiamondPlinkoPage.tsx',
+    'tests/sql/diamond-wheel-funded-awards.sql',
+    'tests/sql/diamond-wheel-upgrade-eight.sql',
+    'tests/fixtures/diamond-spins/wheel-v3-postgres-receipts.json',
+    'tests/unit/wheelUpgradePostgresContract.test.ts',
+    'tests/unit/wheelUpgradeReceipts.test.ts',
+    'tests/fixtures/diamond-wheel-v2-receipts.json',
+    'tests/fixtures/diamond-spins/wheel-earned-postgres-receipts.json',
+    'tests/unit/wheelServerReceipts.test.ts',
+    'tests/unit/wheelEarnedPostgresContract.test.ts',
+    'src/services/DiamondWheelService.ts',
+    'src/services/WheelBonusEntryService.ts',
+    'src/hooks/useEarnedBonus.ts',
+    'src/hooks/useBonusBudget.ts',
+    'src/components/games/BonusSetup.tsx',
+    'src/utils/bonusGameBudget.ts',
+    'src/utils/wheelAward.ts',
+    'src/utils/wheelPendingSpin.ts',
+    'src/utils/wheelFairness.ts',
+    'src/pages/DiamondWheelPage.tsx',
   ])('admits the accounting job for %s', (path) => {
     expect(classifyChangedPaths([path]).server).toBe(true);
     expect(classifyChangedPaths([path]).tests).toBe(true);
+  });
+
+  it.each([
+    'tests/e2e/css/diamond-games-playfield.spec.ts',
+    'tests/e2e/helpers/diamond-games-fixture.mjs',
+    'tests/e2e/css/diamond-wheel-reveal.spec.ts',
+    'tests/e2e/helpers/diamond-wheel-fixture.mjs',
+    'src/components/games/gpuFrameRenderer.ts',
+    'src/components/games/sceneKit.ts',
+    'src/components/games/ChoiceScene.tsx',
+    'src/components/plinko/PlinkoBoard.tsx',
+    'src/components/crash/CrashCurve.tsx',
+  ])('runs the actual browser fixture when %s changes', (path) => {
+    expect(classifyChangedPaths([path]).src).toBe(true);
   });
 
   it('preserves unrelated UI and documentation classification', () => {

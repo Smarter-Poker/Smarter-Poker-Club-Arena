@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { earnedReceiptBudget } from '../utils/bonusGameBudget';
 import type { ChoiceGame, ChoiceProof } from '../utils/diamondChoiceMath';
 
 export interface ChoiceRound {
@@ -6,6 +7,7 @@ export interface ChoiceRound {
   id: string;
   game: ChoiceGame;
   club_id: string;
+  award_id?: string;
   status: 'open' | 'cashed' | 'lost';
   mode: string;
   bet_diamonds: number;
@@ -85,7 +87,8 @@ export function parseChoiceRound(value: unknown): ChoiceRound {
     v.bet_chips <= 0 ||
     !Number.isSafeInteger(v.bet_diamonds) ||
     Number(v.bet_diamonds) < 25 ||
-    Number(v.bet_diamonds) > 5000 ||
+    (v.award_id !== undefined && !earnedReceiptBudget(v)) ||
+    Number(v.bet_diamonds) > (earnedReceiptBudget(v) ? 7500 : 5000) ||
     !Number.isSafeInteger(v.diamonds_per_chip) ||
     Number(v.diamonds_per_chip) <= 0 ||
     Math.abs(Number(v.bet_diamonds) / Number(v.diamonds_per_chip) - v.bet_chips) > 1e-8 ||
@@ -130,6 +133,43 @@ export function parseChoiceRound(value: unknown): ChoiceRound {
   return v as unknown as ChoiceRound;
 }
 
+export function parseChoiceState(value: unknown, club: string, game: ChoiceGame): ChoiceState {
+  const v = object(value);
+  if (
+    typeof v.available !== 'boolean' ||
+    typeof v.frozen !== 'boolean' ||
+    ![v.rounds_today, v.daily_limit, v.diamonds_today, v.seconds_until_next].every(
+      (n) => Number.isSafeInteger(n) && Number(n) >= 0
+    ) ||
+    !Array.isArray(v.prizes) ||
+    !Array.isArray(v.bets) ||
+    !Array.isArray(v.history) ||
+    !Number.isInteger(v.max_steps) ||
+    typeof v.is_member !== 'boolean' ||
+    typeof v.member_chips !== 'number' ||
+    !Number.isFinite(v.member_chips) ||
+    v.member_chips < 0 ||
+    typeof v.diamonds !== 'number' ||
+    !Number.isFinite(v.diamonds) ||
+    v.diamonds < 0 ||
+    !Number.isSafeInteger(v.diamonds_per_chip) ||
+    Number(v.diamonds_per_chip) < 1 ||
+    !v.prizes.every((p) => typeof p === 'number' && Number.isFinite(p) && p > 0) ||
+    v.prizes.length !== v.max_steps
+  ) {
+    throw new Error('The Game Response Could Not Be Verified');
+  }
+  if (v.open_round !== null) v.open_round = parseChoiceRound(v.open_round);
+  v.history = v.history.map(parseChoiceRound);
+  const rows = [
+    ...(v.open_round ? [v.open_round as ChoiceRound] : []),
+    ...(v.history as ChoiceRound[]),
+  ];
+  if (rows.some((row) => row.game !== game || row.club_id !== club))
+    throw new Error('The Round Belongs To A Different Club');
+  return v as unknown as ChoiceState;
+}
+
 async function rpc(name: string, args: Record<string, unknown>) {
   const { data, error } = await supabase.rpc(name as never, args as never);
   if (error) throw error;
@@ -141,39 +181,7 @@ export const DiamondChoiceService = {
     const v = object(
       await rpc('fn_choice_state', { p_club_id: club, p_game: game, p_mode: mode, p_bet: bet })
     );
-    if (
-      typeof v.available !== 'boolean' ||
-      typeof v.frozen !== 'boolean' ||
-      ![v.rounds_today, v.daily_limit, v.diamonds_today, v.seconds_until_next].every(
-        (n) => Number.isSafeInteger(n) && Number(n) >= 0
-      ) ||
-      !Array.isArray(v.prizes) ||
-      !Array.isArray(v.bets) ||
-      !Array.isArray(v.history) ||
-      !Number.isInteger(v.max_steps) ||
-      typeof v.is_member !== 'boolean' ||
-      typeof v.member_chips !== 'number' ||
-      !Number.isFinite(v.member_chips) ||
-      v.member_chips < 0 ||
-      typeof v.diamonds !== 'number' ||
-      !Number.isFinite(v.diamonds) ||
-      v.diamonds < 0 ||
-      !Number.isSafeInteger(v.diamonds_per_chip) ||
-      Number(v.diamonds_per_chip) < 1 ||
-      !v.prizes.every((p) => typeof p === 'number' && Number.isFinite(p) && p > 0) ||
-      v.prizes.length !== v.max_steps
-    ) {
-      throw new Error('The Game Response Could Not Be Verified');
-    }
-    if (v.open_round !== null) v.open_round = parseChoiceRound(v.open_round);
-    v.history = v.history.map(parseChoiceRound);
-    const rows = [
-      ...(v.open_round ? [v.open_round as ChoiceRound] : []),
-      ...(v.history as ChoiceRound[]),
-    ];
-    if (rows.some((row) => row.game !== game || row.club_id !== club))
-      throw new Error('The Round Belongs To A Different Club');
-    return v as unknown as ChoiceState;
+    return parseChoiceState(v, club, game);
   },
   async start(
     club: string,
@@ -207,6 +215,7 @@ export const DiamondChoiceService = {
     );
     const immutable = [
       'id',
+      'award_id',
       'game',
       'club_id',
       'mode',
@@ -221,6 +230,8 @@ export const DiamondChoiceService = {
     ] as const;
     if (
       immutable.some((field) => next[field] !== round[field]) ||
+      JSON.stringify(earnedReceiptBudget(next as unknown as Record<string, unknown>)) !==
+        JSON.stringify(earnedReceiptBudget(round as unknown as Record<string, unknown>)) ||
       next.prizes.some((prize, index) => prize !== round.prizes[index]) ||
       next.picked.length < round.picked.length ||
       round.picked.some((cell, index) => next.picked[index] !== cell)

@@ -112,7 +112,7 @@ does. `SET ROLE authenticated` alone was insufficient: a nested SECURITY DEFINER
 writer becomes `postgres`, and an absent JWT made the real service-context helper
 take its privileged branch. The real profile trigger was present but its browser
 guard was therefore not exercised. With the JWT present, the old guard rejects
-the wheel owner credit with SQLSTATE 42501. Migration `20260918225134` admits only
+the wheel owner credit with SQLSTATE 42501. Migration `20260918230314` admits only
 the reviewed `fn_wheel_spin_v2` caller, preserving all other guard text and ACLs.
 The same full v3 probe now executes every primary/Upgrade prize and all four
 bonus games with that guard active. Additional assertions reject direct currency

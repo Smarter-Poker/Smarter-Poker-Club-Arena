@@ -2485,7 +2485,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     player: SeatPlayer,
     players: SeatPlayer[],
     dealerSeat: number | undefined,
-    activeVariant: string
+    activeVariant: string,
+    handBlinds: ReturnType<HandController['getBlindSnapshot']>
   ): {
     format: 'cash' | 'mtt' | 'sng' | 'spin' | 'hu_sng';
     tournament?: NonNullable<HorseGameStateV2['tournament']>;
@@ -2499,6 +2500,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           status: 'incomplete' as const,
           issues: [TOURNAMENT_CONTEXT_INCOMPLETE, 'tournament_id_missing'],
           ageMs: null,
+          contextProvenance: {
+            version: 1 as const,
+            readAtMs: Date.now(),
+            status: 'incomplete' as const,
+            issues: [TOURNAMENT_CONTEXT_INCOMPLETE, 'tournament_id_missing'],
+            ageMs: null,
+            source: null,
+          },
         };
     const tctx = snapshot.context;
     const fallbackFormat =
@@ -2510,9 +2519,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const dealtPlayers = players;
     const actionablePlayers = players.filter((candidate) => !candidate.is_sitting_out);
     const playersAtTable = Math.max(2, dealtPlayers.length);
-    const currentSmallBlind = Math.max(0, Number(this.tableInfo?.small_blind) || 0);
-    const currentBigBlind = Math.max(0, Number(this.tableInfo?.big_blind) || 0);
-    const currentAnte = Math.max(0, Number(this.tableInfo?.ante) || 0);
+    const currentSmallBlind = Math.max(0, Number(handBlinds.smallBlind) || 0);
+    const currentBigBlind = Math.max(0, Number(handBlinds.bigBlind) || 0);
+    const currentAnte = Math.max(0, Number(handBlinds.ante) || 0);
     const localIssues = [...snapshot.issues];
     if (currentSmallBlind <= 0 || currentBigBlind <= 0) {
       localIssues.push('live_blinds_invalid');
@@ -2526,8 +2535,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
     if (
       tctx &&
-      tctx.currentBigBlind > 0 &&
-      Math.abs(tctx.currentBigBlind - currentBigBlind) > 0.005
+      ((tctx.currentBigBlind > 0 && Math.abs(tctx.currentBigBlind - currentBigBlind) > 0.005) ||
+        (tctx.currentSmallBlind > 0 &&
+          Math.abs(tctx.currentSmallBlind - currentSmallBlind) > 0.005) ||
+        Math.abs(tctx.currentAnte - currentAnte) > 0.005 ||
+        (tctx.anteType === 'big_blind') !== handBlinds.bigBlindAnte)
     ) {
       localIssues.push('blind_level_cache_lag');
     }
@@ -2540,12 +2552,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     if (contextStatus !== 'complete' && !localIssues.includes(TOURNAMENT_CONTEXT_INCOMPLETE)) {
       localIssues.unshift(TOURNAMENT_CONTEXT_INCOMPLETE);
     }
-    const anteType: TournamentAnteType =
-      this.tableInfo?.big_blind_ante_enabled === true
-        ? 'big_blind'
-        : currentAnte > 0 || (contextStatus === 'complete' && (tctx?.nextAnte ?? 0) > 0)
-          ? 'per_player'
-          : 'none';
+    const anteType: TournamentAnteType = handBlinds.bigBlindAnte
+      ? 'big_blind'
+      : currentAnte > 0 || (contextStatus === 'complete' && (tctx?.nextAnte ?? 0) > 0)
+        ? 'per_player'
+        : 'none';
     const localSeatsPerTable = Math.min(
       10,
       Math.max(2, Math.floor(Number(this.tableInfo?.max_players) || playersAtTable))
@@ -2594,6 +2605,21 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         contextStatus,
         contextIssues: [...new Set(localIssues)],
         sourceAgeMs: snapshot.ageMs,
+        contextProvenance: {
+          ...snapshot.contextProvenance,
+          projection: {
+            tableId: this.tableId,
+            handNumber: this.handCount,
+            actorId: player.user_id,
+            actorSeat: player.seat,
+            dealerSeat: dealerSeat ?? null,
+            dealtSeatIds: dealtPlayers.map((candidate) => candidate.seat),
+            smallBlind: currentSmallBlind,
+            bigBlind: currentBigBlind,
+            ante: currentAnte,
+            gameVariant: activeVariant,
+          },
+        },
         tournamentId: tid || null,
         tournamentType: tctx?.tournamentType ?? '',
         tournamentStatus: tctx?.tournamentStatus ?? '',
@@ -2946,6 +2972,17 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // canonical decision state and must not be the source of poker rules.
     if (!handControllerRef) return;
     const state = handControllerRef.getState();
+    const tournamentHand = this.isTournamentTable();
+    // refreshBlinds may already describe the next level while this controller
+    // still plays the dealt hand. Preserve the existing cash input contract.
+    const handBlinds = tournamentHand
+      ? handControllerRef.getBlindSnapshot()
+      : {
+          smallBlind: this.tableInfo?.small_blind || 0,
+          bigBlind: this.tableInfo?.big_blind || 2,
+          ante: this.tableInfo?.ante || 0,
+          bigBlindAnte: this.tableInfo?.big_blind_ante_enabled === true,
+        };
     const authoritativePlayer = state.players.find((candidate) => candidate.seat === seat);
     const controllerActions = handControllerRef.getAuthoritativeActionState(player.user_id);
     if (!authoritativePlayer || !controllerActions || !controllerActions.canAct) {
@@ -3067,7 +3104,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // VARIANT OVERRIDE 2026-08-28: horses evaluate the hand they were DEALT
       // — PLO equity on a PLO bomb hand, whatever the table's label says.
       gameVariant: activeVariant,
-      bigBlind: this.tableInfo?.big_blind || 2,
+      bigBlind: handBlinds.bigBlind,
       // AUDIT V2: position + action context for the V2 decision engine
       dealerSeat: state.dealerSeat ?? this.currentHandDealerSeat,
       lastRaise: state.lastRaise,
@@ -3077,10 +3114,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // size) plus the ante, so preflop ranges, ICM pressure, push/fold
       // tiers, and rake-aware pot odds all switch on the real game mode.
       gameMode: this.isTournamentTable() ? ('tournament' as const) : ('cash' as const),
-      ante: this.tableInfo?.ante || 0,
+      ante: handBlinds.ante,
       // Which ante STYLE — the brain's M depends on what an orbit costs, and
       // a big blind ante costs the table one ante per orbit, not one each.
-      bigBlindAnte: this.tableInfo?.big_blind_ante_enabled === true,
+      bigBlindAnte: handBlinds.bigBlindAnte,
       // AoF: tell the brain, instead of rewriting its answer afterwards. The
       // coercion below stays as the legality guarantee.
       allInOrFold: this.tableInfo?.all_in_or_fold === true,
@@ -3104,7 +3141,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         decisionPlayer,
         publicPlayers,
         state.dealerSeat ?? this.currentHandDealerSeat,
-        activeVariant
+        activeVariant,
+        handBlinds
       ),
     };
 
@@ -3358,7 +3396,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           decision,
           toCall,
           state.pot,
-          this.tableInfo?.big_blind || 2,
+          tournamentHand ? handBlinds.bigBlind : this.tableInfo?.big_blind || 2,
           remainingThinkMs,
           fastResult.governorScale
         );

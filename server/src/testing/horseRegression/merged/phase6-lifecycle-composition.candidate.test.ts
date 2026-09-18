@@ -25,7 +25,7 @@ import type {
   DeepHorseDecisionRequest,
   FastHorseDecisionRequest,
 } from '../../../engine/horseDecision/protocol.js';
-import { fixture, request, TABLE, HAND } from './fixture.js';
+import { fixture, request, TABLE, HAND, withPhase6Provenance } from './fixture.js';
 
 const faults = [
   'valid',
@@ -37,6 +37,11 @@ const faults = [
   'rng_before_overflow',
   'rng_after_negative',
   'rng_after_overflow',
+  'source_generation_mismatch',
+  'source_removed',
+  'receipt_removed',
+  'source_table_mismatch',
+  'atlas_revision_mismatch',
 ] as const;
 const cases = (['fast', 'deep'] as const).flatMap((lane) =>
   [false, true].flatMap((execution) => {
@@ -50,9 +55,9 @@ describe('composed receipt validation precedes lifecycle qualification', () => {
     const f = fixture();
     seedFastRandom(901791);
     const rngBefore = saveFastRandom();
-    const original = HorseLogic.decide(f.hero, f.state, 'balanced', {}, f.opts);
+    const fast = withPhase6Provenance(request(f));
+    const original = HorseLogic.decide(fast.player, fast.gameState, 'balanced', {}, f.opts);
     const rngAfter = saveFastRandom();
-    const fast = request(f);
     const snapshot: FastHorseDecisionRequest | DeepHorseDecisionRequest =
       lane === 'fast' ? fast : { ...fast, type: 'DECIDE_DEEP', rngBefore, deepEquity: 2 };
     const decision = structuredClone(original);
@@ -69,6 +74,20 @@ describe('composed receipt validation precedes lifecycle qualification', () => {
       expect(horseDecisionReceiptIsValid(decision, 'nlh')).toBe(true);
       expect(horsePhase6AttributionMatchesSnapshot(decision, snapshot)).toBe(false);
     }
+    expect(original.tournamentPreflopAttribution?.version).toBe('horse-phase6-attribution-v2');
+    if (fault === 'source_generation_mismatch')
+      decision.tournamentPreflopAttribution!.inputSource.tournamentContext!.source!.generation++;
+    if (fault === 'source_table_mismatch')
+      decision.tournamentPreflopAttribution!.inputSource.tournamentContext!.projection.tableId =
+        'another-table';
+    if (fault === 'receipt_removed') delete decision.tournamentPreflopAttribution;
+    if (fault === 'source_removed') {
+      decision.tournamentPreflopAttribution!.version = 'horse-phase6-attribution-v1';
+      delete decision.tournamentPreflopAttribution!.inputSource.tournamentContext;
+      delete decision.tournamentPreflopAttribution!.inputSource.atlasRevision;
+    }
+    if (fault === 'atlas_revision_mismatch')
+      (decision.tournamentPreflopAttribution!.inputSource as any).atlasRevision = 'unknown-atlas';
     if (fault === 'missing_reference_graph') delete decision.policyGraph;
     const governorScale = fault === 'governor_above_one' ? 2 : 1;
     const witness = createHorseExecutionWitness(snapshot, decision, {

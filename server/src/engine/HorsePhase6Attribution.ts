@@ -1,8 +1,15 @@
 /** Private observational Phase6 receipt. No policy call, I/O, RNG or clock read.
  * Captures the lookup actually performed; does not certify causal influence. */
 import type { HorseDecision, SeatPlayer } from '../types.js';
+import { isDeepStrictEqual as samePhase6Provenance } from 'node:util';
 import type { HorseGameStateV2 } from './HorseLogic.js';
 import {
+  horseTournamentProvenanceIsValid,
+  horseTournamentProvenanceMatchesSnapshot,
+  type HorseTournamentDecisionProvenance,
+} from './HorseTournamentContextProvenance.js';
+import {
+  TOURNAMENT_PREFLOP_ATLAS_REVISION,
   TOURNAMENT_POSITIONS,
   TOURNAMENT_PREFLOP_BRANCHES,
   interpolateTournamentDepth,
@@ -28,7 +35,7 @@ export interface Phase6LookupObservation {
   policy: TournamentPreflopPolicy;
 }
 export interface HorsePhase6Attribution {
-  version: 'horse-phase6-attribution-v1';
+  version: 'horse-phase6-attribution-v1' | 'horse-phase6-attribution-v2';
   status: 'bypassed' | 'unavailable' | 'atlas_evaluated';
   route: Phase6ReferenceRoute;
   reason:
@@ -48,6 +55,9 @@ export interface HorsePhase6Attribution {
     stateSchemaVersion: number | null;
     tournamentSchemaVersion: number | null;
     tournamentMode: boolean;
+    /** Present together only on v2. Missing v1 data is historical, not reconstructed. */
+    tournamentContext?: HorseTournamentDecisionProvenance;
+    atlasRevision?: typeof TOURNAMENT_PREFLOP_ATLAS_REVISION;
   };
   atlasEvaluated: boolean;
   forwardedToIntentEngine: boolean;
@@ -57,6 +67,7 @@ export interface HorsePhase6Attribution {
   gtoOptimality: 'not_established';
 }
 type Phase6Snapshot = {
+  fence?: string;
   gameState: HorseGameStateV2;
   player: SeatPlayer;
   opts?: {
@@ -158,7 +169,10 @@ export function createPhase6Attribution(
   // Diagnostics cannot turn a successful reference decision into an exception.
   try {
     const receipt: HorsePhase6Attribution = {
-      version: 'horse-phase6-attribution-v1',
+      version:
+        gs.tournament?.contextProvenance === undefined
+          ? 'horse-phase6-attribution-v1'
+          : 'horse-phase6-attribution-v2',
       status: expectedStatus(observation.route, observation.lookup),
       route: observation.route,
       reason: 'lookup_unavailable',
@@ -167,6 +181,12 @@ export function createPhase6Attribution(
         stateSchemaVersion: gs.stateSchemaVersion ?? null,
         tournamentSchemaVersion: gs.tournament?.schemaVersion ?? null,
         tournamentMode,
+        ...(gs.tournament?.contextProvenance === undefined
+          ? {}
+          : {
+              tournamentContext: gs.tournament.contextProvenance,
+              atlasRevision: TOURNAMENT_PREFLOP_ATLAS_REVISION,
+            }),
       },
       atlasEvaluated: observation.lookup !== null,
       forwardedToIntentEngine: observation.route === 'intent_engine' && observation.lookup !== null,
@@ -176,7 +196,7 @@ export function createPhase6Attribution(
       gtoOptimality: 'not_established',
     };
     receipt.reason = expectedReason(receipt, !!gs.tournament?.m);
-    return horsePhase6AttributionIsValid(receipt) ? freeze(receipt) : undefined;
+    return horsePhase6AttributionIsValid(receipt) ? copyPhase6Attribution(receipt) : undefined;
   } catch {
     return undefined;
   }
@@ -197,7 +217,9 @@ export function horsePhase6AttributionIsValid(value: unknown): value is HorsePha
         'causalInfluence',
         'gtoOptimality',
       ]) ||
-      value.version !== 'horse-phase6-attribution-v1' ||
+      !['horse-phase6-attribution-v1', 'horse-phase6-attribution-v2'].includes(
+        value.version as string
+      ) ||
       !routes.includes(value.route as string) ||
       value.causalInfluence !== 'not_established' ||
       value.gtoOptimality !== 'not_established' ||
@@ -206,6 +228,9 @@ export function horsePhase6AttributionIsValid(value: unknown): value is HorsePha
         'stateSchemaVersion',
         'tournamentSchemaVersion',
         'tournamentMode',
+        ...(value.version === 'horse-phase6-attribution-v2'
+          ? ['tournamentContext', 'atlasRevision']
+          : []),
       ]) ||
       value.inputSource.basis !== 'provided_decision_snapshot' ||
       !schema(value.inputSource.stateSchemaVersion) ||
@@ -220,6 +245,13 @@ export function horsePhase6AttributionIsValid(value: unknown): value is HorsePha
     )
       return false;
     const r = value as unknown as HorsePhase6Attribution;
+    if (
+      r.version === 'horse-phase6-attribution-v2' &&
+      (!r.inputSource.tournamentMode ||
+        r.inputSource.atlasRevision !== TOURNAMENT_PREFLOP_ATLAS_REVISION ||
+        !horseTournamentProvenanceIsValid(r.inputSource.tournamentContext))
+    )
+      return false;
     if (
       r.atlasEvaluated !== (r.lookup !== null) ||
       r.forwardedToIntentEngine !== (r.route === 'intent_engine' && r.lookup !== null) ||
@@ -537,12 +569,26 @@ export function horsePhase6AttributionMatchesSnapshot(
   snapshot: Phase6Snapshot
 ): boolean {
   try {
+    const s = snapshot.gameState;
+    const provenance = s.tournament?.contextProvenance;
+    if (!horseTournamentProvenanceMatchesSnapshot(snapshot)) return false;
     const r = decision.tournamentPreflopAttribution;
-    if (r === undefined) return true; // legacy/missing evidence remains absent
+    if (r === undefined)
+      return (
+        provenance === undefined ||
+        s.stage !== 'preflop' ||
+        decision.policyFallback === 'brain_exception'
+      );
     if (!horsePhase6AttributionIsValid(r) || decision.policyFallback !== undefined) return false;
     const usesIntentReference = snapshot.opts?.v7Preflop ?? snapshot.opts?.v7 !== false;
     if ((r.route === 'legacy_preflop') === usesIntentReference) return false;
-    const s = snapshot.gameState;
+    if (
+      provenance === undefined
+        ? r.version !== 'horse-phase6-attribution-v1'
+        : r.version !== 'horse-phase6-attribution-v2' ||
+          !samePhase6Provenance(r.inputSource.tournamentContext, provenance)
+    )
+      return false;
     if (!necessaryReferenceRouteGates(r.route, snapshot) || !referenceReturnShape(r, snapshot))
       return false;
     if (

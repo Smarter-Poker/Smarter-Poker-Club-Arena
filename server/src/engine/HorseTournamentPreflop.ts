@@ -9,6 +9,8 @@
 import { bigBlindAnteTotal } from './AnteMath.js';
 
 export const TOURNAMENT_CONTEXT_INCOMPLETE = 'TOURNAMENT_CONTEXT_INCOMPLETE' as const;
+/** Maintained heuristic revision; release evidence pins the actual source postimage. */
+export const TOURNAMENT_PREFLOP_ATLAS_REVISION = 'horse-tournament-preflop-v1' as const;
 
 export type TournamentContextStatus = 'complete' | 'incomplete' | 'warming' | 'stale';
 export type TournamentAnteType = 'none' | 'per_player' | 'big_blind';

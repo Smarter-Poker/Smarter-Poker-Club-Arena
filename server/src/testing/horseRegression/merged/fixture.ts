@@ -5,7 +5,10 @@ import { horseVariantRulesFor } from '../../../engine/VariantRules.js';
 import { bettingStructureFor } from '../../../engine/BettingStructure.js';
 import { buildTournamentMState } from '../../../engine/HorseTournamentPreflop.js';
 import { calculatePots, calculateContestablePot } from '../../../engine/PokerEngine.js';
-import { buildHorseDecisionKey } from '../../../engine/horseDecision/protocol.js';
+import {
+  buildHorseDecisionKey,
+  type LiveHorseDecisionSnapshot,
+} from '../../../engine/horseDecision/protocol.js';
 import { captureHorseHandJournalContext } from '../../../engine/HorseDecisionHandBinding.js';
 export const TABLE = '10000000-0000-4000-8000-000000000001';
 export const HAND = '30000000-0000-4000-8000-000000000001';
@@ -195,4 +198,45 @@ export function bbDefend(variant: GameVariant = 'nlh') {
   f.state.pots = calculatePots(f.state.players);
   f.state.contestablePot = calculateContestablePot(f.state.players, bb.user_id, 600);
   return f;
+}
+
+/** Synthetic source observation for boundary tests; no database authority claim. */
+export function withPhase6Provenance<T extends LiveHorseDecisionSnapshot>(input: T): T {
+  const out = structuredClone(input);
+  const t = out.gameState.tournament!;
+  const [tableId, hand] = out.fence.split(':');
+  t.tournamentId ??= 'synthetic-tournament';
+  t.sourceAgeMs = 100;
+  t.contextProvenance = {
+    version: 1,
+    readAtMs: 1000,
+    status: 'complete',
+    issues: [],
+    ageMs: 100,
+    source: {
+      version: 1,
+      tournamentId: t.tournamentId,
+      cacheId: '50000000-0000-4000-8000-000000000001',
+      generation: 1,
+      readStartedAtMs: 850,
+      readCompletedAtMs: 900,
+      contextDigest: 'a'.repeat(64),
+      contextStatus: 'complete',
+      contextIssues: [],
+    },
+    projection: {
+      tableId,
+      handNumber: Number(hand),
+      actorId: out.player.user_id,
+      actorSeat: out.player.seat,
+      dealerSeat: out.gameState.dealerSeat ?? null,
+      dealtSeatIds: out.gameState.players.map((p) => p.seat),
+      smallBlind: t.currentSmallBlind!,
+      bigBlind: out.gameState.bigBlind,
+      ante: out.gameState.ante ?? 0,
+      gameVariant: out.gameState.gameVariant!,
+    },
+  };
+  out.decisionKey = buildHorseDecisionKey(out);
+  return out;
 }

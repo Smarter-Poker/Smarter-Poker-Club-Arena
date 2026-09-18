@@ -23,7 +23,7 @@
     "scripts/ci/test-mtt-unlimited.py": "348d3ced86e32b1541a7b4257a724844b4a7adcb072aaa1bec3e4f4170ff4f35",
     "supabase/migrations/20260917201651_satellite_multi_qualifier_receipt_v3.sql": "96faf33209c07f5eaf690c2345e555d7f626963acb7be55f4b693f6878a3da08",
     "supabase/migrations/20260917204152_mtt_authored_ladders_only_contain_playing_levels.sql": "3f9e1807b384b803e4e33cab9c85126039274f2300bc0f251c04b104d3070882",
-    "supabase/migrations/20260917232232_mtt_activation_guard_preparation.sql": "45bfb0e60bbe06a5ea506a28379d027daef416736410b2229e2d42784116521c",
+    "supabase/migrations/20260917232232_mtt_activation_guard_preparation.sql": "79555e55b3c6b45904b6f9cb087241cae5a07b7a8ba02f7b2f144351ba37140d",
     "supabase/migrations/20260917232311_mtt_activate_unlimited_admission.sql": "bda4691003b9ffbf5020637574f87b9ed278785bf5c13031f8d75a583962147b"
   }
 }

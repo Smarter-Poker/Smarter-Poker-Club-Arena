@@ -1,3 +1,24 @@
+-- Installed as provider20260917234256 from source45bfb0e60bbe06a5ea506a28379d027daef416736410b2229e2d42784116521c.
+-- These declarations describe inert catalog proof strings, not new trigger DDL.
+-- The installed function body and all executable SQL below remain unchanged; do not replay.
+-- money-trigger-ok: table_seats.trg_ca_guard_seat_creation because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: table_seats.trg_seat_change_syncs_seat_first_count because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: table_seats.zz_freeze_entry_guard because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournament_players.trg_enforce_tournament_capacity because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournament_players.zz_freeze_entry_guard because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournaments.a0_tournaments_dual_entry_capacity because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournaments.a1_tournaments_restart_source because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournaments.a2_tournaments_new_satellite_target because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournaments.tournaments_creation_guard because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournaments.tournaments_new_mtt_blind_contract because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournaments.tournaments_rank_before_complete because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournaments.tournaments_short_formats_never_break because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournaments.trg_tournaments_capture_management_contract because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournaments.trg_tournaments_emit_game_management_event because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournaments.trg_tournaments_managed_lifecycle_guard because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournaments.zz_ca_fund_overlay_on_lock because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournaments.zz_freeze_launch_guard because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournaments.zzzzzzz_tournaments_record_format because its existing pg_get_triggerdef is only compared inside the captured JSON proof; this migration never creates or replaces that trigger.
 -- Prepare the existing private ABI guard. This does not activate admission,
 -- rewrite an event, or alter accepted financial/launch receipts.
 BEGIN;

@@ -5,7 +5,10 @@ application is published and the old writers are retired. The existing private
 admission guard has an installed one-way activation rule, recorded by provider
 migration `20260917234256` at 23:42:56 UTC on September 17. Readback at
 23:43:06 UTC confirmed the exact qualified guard, unchanged trigger attachments
-and `legacy-capacity-v1`. The guard source remains byte-identical (`45bfb0e6`).
+and `legacy-capacity-v1`. The installed source was `45bfb0e6`; the repository adds only truthful
+declaration comments (`79555e55`) for catalog descriptions that are never
+executed as trigger DDL. The entire original SQL is an unchanged suffix,
+including the exact installed function body. The migration must not be replayed.
 It checks the prepared function bodies and permissions, trigger attachments,
 constraints, columns, indexes, financial registry and active format records.
 Unknown or changed prerequisites refuse the transition.
@@ -40,3 +43,9 @@ cleanup. The current joined routing checks passed 373 assertions; the strict
 transcript consumer passed five and the shared Cash manifest passed six. The
 Git rename fixture uses real filesystem renames staged by its existing commit,
 preserving every original path assertion and its existing test deadline.
+
+The declaration scanner originally read18 existing trigger descriptions in
+the proof JSON as new DDL. Existing per-trigger declaration comments document
+those inert descriptions without changing the scanner or SQL. A direct negative
+control still refuses a newly appended undeclared trigger. The composed native
+qualification was repeated for the updated exact source binding.

@@ -90,6 +90,7 @@ async function fixture(failure = '', beginOutcome = 'committed', prepareThroughD
   );
   const rpc = vi.spyOn(supabase, 'rpc').mockImplementation((async (name: string, p: any) => {
     calls.push({ name, p: structuredClone(p) });
+    if (name === 'fn_ca_resume_hand_submission') return { data: { found: false }, error: null };
     if (name === 'fn_f06_begin_hand') {
       if (beginOutcome === 'live_reserved') return { data: canonicalBegin(), error: null };
       if (beginOutcome.startsWith('pending_')) {
@@ -625,6 +626,7 @@ it.each(['committed', 'absent', 'pending_reserved'])(
     f.rpc.mockImplementation((async (name: string, p: any) => {
       if (p?.p_table_id !== destination) return rpc(name, p);
       destinationCalls.push({ name, p: structuredClone(p) });
+      if (name === 'fn_ca_resume_hand_submission') return { data: { found: false }, error: null };
       if (name === 'fn_f06_hand_number_state')
         return {
           data: {
@@ -693,6 +695,7 @@ it.each(['committed', 'absent', 'pending_reserved'])(
       expect(next.handCount).toBe(1000002);
       expect(next.getF06RetainedPermit().phase).toBe('attempted');
       expect(destinationCalls.map((c) => c.name)).toEqual([
+        'fn_ca_resume_hand_submission',
         'fn_f06_hand_number_state',
         'fn_f06_allocate_hand_number',
         'fn_f06_hand_number_state',
@@ -865,6 +868,7 @@ it('a replacement Manager admission cannot reconstruct an unresolved original pe
   f.server.tableEngines.set(source, replacement);
   const recovery = vi.spyOn(f.manager, 'recoverManagedTableEngine').mockResolvedValue(undefined);
   f.rpc.mockImplementation((async (name: string) => {
+    if (name === 'fn_ca_resume_hand_submission') return { data: { found: false }, error: null };
     expect(name).toBe('fn_f06_hand_number_state');
     return {
       data: {
@@ -894,3 +898,73 @@ it('a replacement Manager admission cannot reconstruct an unresolved original pe
     replacement.preciseTimer.dispose();
   }
 });
+
+it.each(['accepted', 'pending', 'lost owner'])(
+  'retained original continuation precedes actual replacement admission: %s',
+  async (outcome) => {
+    const f = await fixture('', 'committed');
+    const replacement = new ServerTableEngine(source) as any;
+    Object.defineProperty(replacement, 'ready', { value: Promise.resolve(true) });
+    const start = vi.spyOn(replacement, 'start').mockResolvedValue(undefined);
+    f.manager.tableEngines.set(source, replacement);
+    f.server.tableEngines.set(source, replacement);
+    vi.spyOn(f.manager, 'recoverManagedTableEngine').mockResolvedValue(undefined);
+    const order: string[] = [];
+    f.rpc.mockImplementation((async (name: string) => {
+      order.push(name);
+      if (name === 'fn_ca_resume_hand_submission') {
+        if (outcome === 'lost owner') f.invalidate();
+        return {
+          data:
+            outcome === 'pending'
+              ? { found: true, completed: false, reason: 'original_failure_or_handoff_unproven' }
+              : {
+                  found: true,
+                  completed: true,
+                  success: true,
+                  atomic_hand_commit: true,
+                  snapshot_completed: true,
+                  post_commit_completed: true,
+                  table_id: source,
+                  history_id: id(42),
+                  submission_id: id(42),
+                  submission_hash: 'a'.repeat(64),
+                  hand_number: '1000001',
+                },
+          error: null,
+        };
+      }
+      if (name !== 'fn_f06_hand_number_state') throw new Error('Unexpected admission RPC ' + name);
+      return {
+        data: {
+          ok: true,
+          table_id: source,
+          lifecycle: '1',
+          can_reserve: true,
+          blocked_reason: null,
+          used_hand_number_max: '1000001',
+          next_hand_number_candidate: '1000002',
+          unresolved_permit: null,
+        },
+        error: null,
+      };
+    }) as any);
+    try {
+      f.manager.startManagedTableEngine(replacement, 'retained admission test');
+      await Promise.allSettled([
+        ...f.manager.tableEngineRunJobs,
+        ...f.manager.tableEngineStartJobs,
+      ]);
+      expect(order).toEqual(
+        outcome === 'accepted'
+          ? ['fn_ca_resume_hand_submission', 'fn_f06_hand_number_state']
+          : ['fn_ca_resume_hand_submission']
+      );
+      expect(start).toHaveBeenCalledTimes(outcome === 'accepted' ? 1 : 0);
+      expect(replacement.getF06RetainedPermit()).toBeNull();
+    } finally {
+      replacement.preciseTimer.dispose();
+      f.engine.preciseTimer.dispose();
+    }
+  }
+);

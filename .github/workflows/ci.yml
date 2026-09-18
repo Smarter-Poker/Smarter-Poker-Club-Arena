@@ -1344,6 +1344,19 @@ jobs:
           path: artifacts/f06-shared-hand-lane/
           if-no-files-found: error
           retention-days: 7
+      - name: Original hand retention, accepted receipts and successor ownership
+        id: hand_submission
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-hand-submission.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/hand-submission
+      - name: Retain original hand and successor proof
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_submission.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hand-submission-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/hand-submission/
+          if-no-files-found: error
+          retention-days: 7
       - name: Atomic departures, ownership, rollback and concurrency
         env:
           PGBIN: /usr/lib/postgresql/17/bin

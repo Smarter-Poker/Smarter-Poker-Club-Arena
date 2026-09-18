@@ -23,9 +23,15 @@
  * A regex cannot see either of those. It can only see that certain words are
  * present, and they were. So these tests CALL things and assert what happened.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DisconnectEngine } from './DisconnectEngine.js';
 
+const retainedRecovery = vi.hoisted(() => ({ snapshot: vi.fn(), complete: vi.fn() }));
+vi.mock('../services/supabase.js', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('../services/supabase.js')),
+  getActiveHandSnapshotFull: retainedRecovery.snapshot,
+  completeHandSnapshot: retainedRecovery.complete,
+}));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 
 const TABLE = 'table-restart-1';
@@ -205,4 +211,76 @@ describe('a crash-recovered sit-out can still be evicted on the clock', () => {
     ).playerStates.get(`${TABLE}:connected-player`);
     expect(state?.sitOutSince).toBeNull();
   });
+});
+
+describe('retained originals precede legacy cash snapshot cleanup', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    retainedRecovery.snapshot.mockReset();
+    retainedRecovery.complete.mockReset();
+  });
+  it.each(['pending', 'malformed', 'transport', 'lease lost', 'accepted', 'absent'])(
+    'actual crash-recovery boundary: %s',
+    async (outcome) => {
+      const { ServerTableEngine } = await import('./ServerTableEngine.js');
+      const { supabase } = await import('../services/supabase/client.js');
+      const tableId = 'aaaaaaaa-0000-4000-8000-000000000111';
+      const generation = 'aaaaaaaa-0000-4000-8000-000000000112';
+      const submissionId = 'aaaaaaaa-0000-4000-8000-000000000113';
+      const engine: any = new ServerTableEngine(tableId);
+      let current = true;
+      engine.running = true;
+      engine.getEngineLeaseAuthority = () => ({ scope: 'cash', verified: true, generation });
+      engine.hasCurrentEngineLeaseAuthority = () => current;
+      engine.lifecycleCanMutate = () => current;
+      engine.restoreButtonFromHistory = vi.fn(async () => {});
+      retainedRecovery.snapshot.mockResolvedValue(null);
+      vi.spyOn(supabase, 'rpc').mockImplementation((async (name: string, args: any) => {
+        expect(name).toBe('fn_ca_resume_hand_submission');
+        expect(args).toMatchObject({ p_table_id: tableId, p_lease_generation: generation });
+        expect(retainedRecovery.snapshot).not.toHaveBeenCalled();
+        expect(retainedRecovery.complete).not.toHaveBeenCalled();
+        if (outcome === 'lease lost') current = false;
+        if (outcome === 'transport')
+          return { data: null, error: { message: 'acknowledgment lost' } };
+        return {
+          data:
+            outcome === 'absent'
+              ? { found: false }
+              : outcome === 'pending'
+                ? { found: true, completed: false, reason: 'original_failure_or_handoff_unproven' }
+                : {
+                    found: true,
+                    completed: true,
+                    success: true,
+                    atomic_hand_commit: true,
+                    snapshot_completed: outcome !== 'malformed',
+                    post_commit_completed: true,
+                    table_id: tableId,
+                    history_id: submissionId,
+                    submission_id: submissionId,
+                    submission_hash: 'a'.repeat(64),
+                    hand_number: '1000001',
+                  },
+          error: null,
+        };
+      }) as any);
+      try {
+        if (['pending', 'malformed', 'transport'].includes(outcome)) {
+          await expect(engine.checkCrashRecovery()).rejects.toThrow('retained_hand_submission');
+          expect(retainedRecovery.snapshot).not.toHaveBeenCalled();
+        } else {
+          await expect(engine.checkCrashRecovery()).resolves.toBe(false);
+          expect(retainedRecovery.snapshot).toHaveBeenCalledTimes(outcome === 'lease lost' ? 0 : 1);
+          expect(engine.restoreButtonFromHistory).toHaveBeenCalledTimes(
+            outcome === 'accepted' ? 1 : 0
+          );
+          expect(engine.handCount).toBe(outcome === 'accepted' ? 1000001 : 0);
+        }
+        expect(retainedRecovery.complete).not.toHaveBeenCalled();
+      } finally {
+        engine.preciseTimer.dispose();
+      }
+    }
+  );
 });

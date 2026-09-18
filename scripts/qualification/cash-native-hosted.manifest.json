@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 139539,
-      "sha256": "50fa46ccf228dca4be463240f9ebd9d59725586a4ae6f6b122fbb3c1d976106d"
+      "bytes": 140250,
+      "sha256": "c51ff2d7076ab617483160922d3973c7a385193743ad2cb0df55f42d6d0ead5f"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 16351,
-      "sha256": "844fa375346299ebac935116203fa20cc7413b1f5f670b17eea4b8a754252ddd"
+      "bytes": 16488,
+      "sha256": "0a5231d0ae7296bc9688aa0ac0876798ed1735d77105ef3257d30ac5d2b70ae7"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 67917,
-      "sha256": "34e81f4c7bdbfe4678ea8ff6b437a025e2a601bc43f46ceea07793b3f65c5a6f"
+      "bytes": 69525,
+      "sha256": "bfc5ba6a0feb0a8e4be4844976de648f19a10ce14a7cab4970be59969534a735"
     }
   },
   "nativePgCron": {
@@ -128,5 +128,22 @@
     "Production provider binary identity not captured; source/schema compatibility only",
     "Existing positive donor fixture is a narrow synthetic schema; current full financial-trigger graph closure is not proved by this native scheduler test",
     "Production resource/extension lifecycle behavior unqualified; no production failure injection"
-  ]
+  ],
+  "handSubmissionIntegration": {
+    "reason": "Existing Accounting job directly invokes retained-hand native qualification; selector and routing regression expanded. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 139539,
+        "sha256": "50fa46ccf228dca4be463240f9ebd9d59725586a4ae6f6b122fbb3c1d976106d"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 16351,
+        "sha256": "844fa375346299ebac935116203fa20cc7413b1f5f670b17eea4b8a754252ddd"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 67917,
+        "sha256": "34e81f4c7bdbfe4678ea8ff6b437a025e2a601bc43f46ceea07793b3f65c5a6f"
+      }
+    }
+  }
 }

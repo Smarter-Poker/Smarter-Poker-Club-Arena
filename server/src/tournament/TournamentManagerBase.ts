@@ -47,7 +47,8 @@ import {
 import nodeCrypto from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { ServerTableEngine } from '../engine/ServerTableEngine.js';
-import { supabase } from '../services/supabase.js';
+import { supabase, resumeRetainedHandSubmission } from '../services/supabase.js';
+import { INSTANCE_ID } from '../services/tableLease.js';
 import { ChipRaceEngine } from '../engine/ChipRaceEngine.js';
 import { TableBalancer } from '../engine/TableBalancer.js';
 import {
@@ -1424,6 +1425,11 @@ export abstract class TournamentManagerBase {
         this.tournamentLeaseGeneration === leaseGeneration &&
         this.tableEngines.get(tableId) === engine &&
         this.gameServer.ownsTournamentTableEngine(tableId, engine);
+      if (!current() || !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
+        throw new Error('f06_engine_admission_fenced');
+      // Retained originals must finish before the existing unresolved-permit
+      // admission refusal. This never reconstructs or cancels a missing hand.
+      await resumeRetainedHandSubmission(tableId, INSTANCE_ID, leaseGeneration);
       if (!current() || !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
         throw new Error('f06_engine_admission_fenced');
       const { data, error } = await supabase.rpc('fn_f06_hand_number_state', {

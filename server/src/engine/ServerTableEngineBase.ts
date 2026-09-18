@@ -70,6 +70,7 @@ import {
   saveHandStateSnapshot,
   completeHandSnapshot,
   getActiveHandSnapshotFull,
+  resumeRetainedHandSubmission,
   savePresenceAtPark,
   loadPresenceFromPark,
   loadTimeBanksFromPark,
@@ -7999,6 +8000,23 @@ export abstract class ServerTableEngineBase {
    * from serialized state, which is a future enhancement.
    */
   async checkCrashRecovery(): Promise<boolean> {
+    const authority = this.getEngineLeaseAuthority();
+    // Tournament managers perform this before F06 admission. Cash enters here
+    // before legacy snapshot cleanup, under the current table generation.
+    if (authority?.scope === 'cash' && authority.verified && authority.generation) {
+      if (!this.hasCurrentEngineLeaseAuthority()) return false;
+      const retained = await resumeRetainedHandSubmission(
+        this.tableId,
+        INSTANCE_ID,
+        authority.generation
+      );
+      if (!this.lifecycleCanMutate() || !this.hasCurrentEngineLeaseAuthority()) return false;
+      if (retained) {
+        this.handCount = Math.max(this.handCount, retained.handNumber);
+        await this.restoreButtonFromHistory();
+        if (!this.lifecycleCanMutate() || !this.hasCurrentEngineLeaseAuthority()) return false;
+      }
+    }
     // Phase 1.2 PR-D: use the extended snapshot reader so pending deadlines
     // and disconnect states come back with the hand state. Full HandController
     // reconstruction still waits for a later PR; for now we log visibility

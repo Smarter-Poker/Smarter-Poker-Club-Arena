@@ -206,6 +206,39 @@ function withForeignGitContext(directory: string, extended: boolean, check: () =
 
 describe('required CI owns native fixture verification', () => {
   it.each([
+    'scripts/ci/test-hand-submission.py',
+    'scripts/ci/build-hand-submission-migration.py',
+    'scripts/ci/probes/hand-submission-authority.sql',
+    'scripts/ci/probes/hand-submission-successor.sql',
+    'scripts/ci/probes/hand-submission-native.sql',
+    'scripts/ci/probes/hand-submission-disposition.spec',
+    'scripts/ci/probes/hand-submission-owner.spec',
+    'scripts/ci/probes/hand-submission-maintenance.spec',
+    'scripts/ci/fixtures/hand-submission/current-authorities-20260918.json',
+  ])('enforces actual retained submission qualification for %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+
+  it('enforces and retains original submission and successor native proof', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const native = steps.filter((step: { run?: string }) =>
+      step.run?.includes('python3 scripts/ci/test-hand-submission.py')
+    );
+    expect(native).toHaveLength(1);
+    expect(native[0].id).toBe('hand_submission');
+    expect(native[0]['continue-on-error']).not.toBe(true);
+    expect(native[0].run).toContain('--pg-bin "$POKER_AUDIT_PG_BIN"');
+    expect(native[0].run).toContain('--evidence artifacts/hand-submission');
+    const artifact = steps.find(
+      (step: { with?: { path?: string } }) => step.with?.path === 'artifacts/hand-submission/'
+    );
+    expect(artifact).toBeDefined();
+    expect(artifact.if).toContain('always()');
+    expect(artifact.if).toContain('steps.hand_submission.outcome');
+    expect(artifact.with['if-no-files-found']).toBe('error');
+  });
+
+  it.each([
     'scripts/ci/test-f06-shared-hand-lane.py',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled_qualification.py',
     'scripts/ci/probes/f06-shared-hand-lane/successor_qualification.py',

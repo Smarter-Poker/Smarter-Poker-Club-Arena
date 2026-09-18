@@ -152,6 +152,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * the next admission never restarts the same prefix forever.
    */
   private readonly eliminationSweepCursor = new TournamentSweepWorkCursor();
+  /** A queued continuation can finish later stages without revisiting these busts. */
+  private unresolvedBustsInSweepCycle = false;
   /** Latest level-triggered generation observed for each durable wake identity. */
   private readonly pendingManagerWakeGenerations = new Map<number, number>();
   /**
@@ -505,6 +507,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
           return; // the finally block clears isProcessingEliminations
         }
+
+        this.unresolvedBustsInSweepCycle = (busted?.length ?? 0) > 0;
 
         // Re-drive only tournaments that currently contain an unresolved
         // zero-stack player. The retired five-second interval also retried a
@@ -1640,6 +1644,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (completedStage(8)) return;
       }
       this.eliminationSweepCursor.reset();
+      // A shared slot may admit peers before this cursor resumes. Both the
+      // immediate and delayed bust wakes can then coalesce into that same
+      // queued continuation, which skips the already completed bust stage.
+      // Retain the known obligation until a fresh bust read proves it empty.
+      if (this.unresolvedBustsInSweepCycle && !sweepStopped()) {
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      }
       completedWholeSweep = true;
     } catch (err) {
       reportError(err, 'Tournament.elimination_check_error');

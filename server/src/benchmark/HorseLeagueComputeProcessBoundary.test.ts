@@ -55,21 +55,28 @@ function ready(pid = 1234) {
 let child: Child;
 let clients: HorseLeagueComputeWorkerClient[];
 let originalExecArgv: string[];
+const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 
 beforeEach(() => {
-  expect(process.platform).toBe('linux');
   child = new Child();
   clients = [];
   originalExecArgv = process.execArgv;
   launch.fork.mockReset().mockReturnValue(child);
   launch.getPriority.mockReset().mockReturnValue(0);
+  // This file models the Linux launcher with a fake child; no process is forked.
+  // Actual Linux process and thread-priority proof remains in the integration test.
+  Object.defineProperty(process, 'platform', { ...originalPlatform, value: 'linux' });
 });
 
 afterEach(async () => {
-  process.execArgv = originalExecArgv;
-  if (child.exitCode === null && child.signalCode === null) child.exit();
-  await Promise.all(clients.map((client) => client.shutdown()));
-  vi.useRealTimers();
+  try {
+    if (child.exitCode === null && child.signalCode === null) child.exit();
+    await Promise.all(clients.map((client) => client.shutdown()));
+  } finally {
+    process.execArgv = originalExecArgv;
+    Object.defineProperty(process, 'platform', originalPlatform);
+    vi.useRealTimers();
+  }
 });
 
 function client(): HorseLeagueComputeWorkerClient {
@@ -84,6 +91,13 @@ function client(): HorseLeagueComputeWorkerClient {
 }
 
 describe('Horse League dedicated launch and READY contract', () => {
+  it.each(['darwin', 'win32'])('refuses the real launcher on %s before spawning', (platform) => {
+    Object.defineProperty(process, 'platform', { ...originalPlatform, value: platform });
+    expect(() => client()).toThrow(/requires the qualified Linux launcher/);
+    expect(launch.fork).not.toHaveBeenCalled();
+    expect(launch.getPriority).not.toHaveBeenCalled();
+  });
+
   it('wraps the original module and filtered Node arguments, retaining advanced IPC', () => {
     process.execArgv = [
       '--max-old-space-size=128',

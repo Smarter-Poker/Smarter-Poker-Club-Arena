@@ -7,6 +7,12 @@ import { sliceBetween } from './helpers/sourceWindow';
 const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 const transaction = read('server/scripts/engine-release-transaction.sh');
 const installer = read('server/scripts/install-engine-supervisor.sh');
+const checkpointShell = read('server/scripts/legacy-engine-checkpoint.sh');
+const checkpointTransport = read('server/scripts/legacy-engine-checkpoint.mjs');
+const predecessor758 = '758610f3f844406bbbaee2f5100ced36d84fb943';
+const predecessorA0 = 'a0ab287d902879280f0c915e44f5222c5db4d7df';
+const image758 = 'sha256:0190d49e394fd2b12b1462730bb22c4c4d1c4d49564e19b192bb07e3754c5561';
+const imageA0 = 'sha256:a58e0d3983b73b59bfc26e0ad55f67759730a7313d0280f80311fe20109658f6';
 const countdownStart = transaction.indexOf('legacy_checkpoint_countdown() {');
 const countdownEnd = transaction.indexOf('\npersist_break_deadline()', countdownStart);
 const countdown = transaction.slice(countdownStart, countdownEnd);
@@ -46,6 +52,90 @@ legacy_checkpoint_countdown
 }
 
 describe('the exact legacy checkpoint enters the existing release transaction', () => {
+  it.each([
+    [predecessor758, image758, 0],
+    [predecessorA0, imageA0, 0],
+    [predecessorA0, image758, 1],
+    [predecessor758, imageA0, 1],
+    [
+      '2f4e33560bcd23bfb5cc731f31816b2c2e2847e5',
+      'sha256:3796b874331fee7d3b0824472df65e9fe613306a5175d3a211fdf8158bdab852',
+      0,
+    ],
+    [predecessor758, 'sha256:' + 'a'.repeat(64), 1],
+    ['a'.repeat(40), image758, 1],
+  ])('binds sealed predecessor %s to its exact immutable image', (sha, image, status) => {
+    const selection = checkpointShell.slice(
+      checkpointShell.indexOf('LEGACY_SHA="$(timeout'),
+      checkpointShell.indexOf('\nIDENTITY=')
+    );
+    const result = spawnSync(
+      'bash',
+      [
+        '-c',
+        `set -euo pipefail
+CONTROL_DIR=/unexecuted-fixture
+die() { exit 1; }
+timeout() { case "\${*: -1}" in desired-sha) printf '%s' "$PROFILE_SHA";; desired-image-id) printf '%s' "$PROFILE_IMAGE";; *) exit 2;; esac; }
+${selection}
+printf '%s' "$LEGACY_IMAGE"
+`,
+      ],
+      {
+        encoding: 'utf8',
+        timeout: 3000,
+        env: { ...process.env, PROFILE_SHA: sha, PROFILE_IMAGE: image },
+      }
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(status);
+    if (status === 0) expect(result.stdout).toBe(image);
+  });
+
+  it.each([predecessor758, predecessorA0, '2f4e33560bcd23bfb5cc731f31816b2c2e2847e5'])(
+    'retains the existing recovery event only for capable predecessor %s',
+    (sha) => {
+      const entry = transaction.indexOf(
+        '    if ! LEGACY_COUNTDOWN_END=',
+        transaction.indexOf('LEGACY_CHECKPOINT_REQUIRED=0')
+      );
+      const action = transaction.slice(entry, transaction.indexOf('      bounded_sleep 5', entry));
+      const result = spawnSync(
+        'bash',
+        [
+          '-c',
+          `set -euo pipefail
+CHECKPOINT_PREDECESSOR_SHA="$PROFILE_SHA"
+CHECKPOINT_758_SHA=${predecessor758}
+CHECKPOINT_A0_SHA=${predecessorA0}
+CERTIFICATE_RC=2
+RECOVERY_ADMISSION_MISSED=0
+legacy_checkpoint_countdown() { return 1; }
+request_recovery_window() { printf 'existing-event:%s' "$RECOVERY_ADMISSION_MISSED"; }
+${action}
+fi
+`,
+        ],
+        { encoding: 'utf8', timeout: 3000, env: { ...process.env, PROFILE_SHA: sha } }
+      );
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toBe(
+        [predecessor758, predecessorA0].includes(sha) ? 'existing-event:1' : ''
+      );
+    }
+  );
+
+  it('passes only the seal-selected closed profile into the native transport', () => {
+    expect(checkpointShell).toContain('node --input-type=module - "$INSTANCE" "$LEGACY_SHA"');
+    const production = checkpointTransport.slice(
+      checkpointTransport.indexOf("if (process.argv[1] === '-'")
+    );
+    expect(production).toContain('const checkpointRelease = process.argv[3]');
+    expect(production).toContain('].includes(checkpointRelease)');
+    expect(production).toContain(predecessor758);
+    expect(production).toContain(predecessorA0);
+    expect(production).toContain('releaseSha: checkpointRelease');
+  });
   it.each([false, true])(
     'allows a durable countdown with old ready=%s for checkpoint only',
     (ready) => {

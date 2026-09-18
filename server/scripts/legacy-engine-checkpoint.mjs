@@ -418,6 +418,12 @@ export async function runLegacyEngineCheckpoint({
 
 if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eval1]')) {
   // Immutable production coordinates; no environment/argv source override.
+  const checkpointRelease = process.argv[3];
+  if (![
+    '2f4e33560bcd23bfb5cc731f31816b2c2e2847e5',
+    '758610f3f844406bbbaee2f5100ced36d84fb943',
+    'a0ab287d902879280f0c915e44f5222c5db4d7df',
+  ].includes(checkpointRelease)) throw refused('checkpoint predecessor profile refused');
   const checkpointModuleExpression = `process.getBuiltinModule('node:vm').runInThisContext(
     "Promise.all([import('file:///app/dist/GameServer.js'), import('file:///app/dist/engine/ServerTableEngineBase.js'), import('file:///app/dist/releaseIdentity.js'), import('file:///app/dist/services/tableLease.js'), import('file:///app/dist/services/supabase/client.js'), import('node:fs'), import('node:crypto'), import('file:///app/dist/maintenance/MaintenanceBreak.js'), import('file:///app/dist/maintenance/freezeState.js'), import('file:///app/dist/services/supabase/dataActorContext.js')]).then(([gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext])=>({gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext}))",
     { importModuleDynamically: process.getBuiltinModule('node:vm').constants.USE_MAIN_CONTEXT_DEFAULT_LOADER })`;
@@ -425,7 +431,7 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
     pid: 1,
     port: 9229,
     instanceId: process.argv[2],
-    releaseSha: '2f4e33560bcd23bfb5cc731f31816b2c2e2847e5',
+    releaseSha: checkpointRelease,
     moduleExpression: checkpointModuleExpression,
     guard: legacyEngineCheckpointGuard,
   }).catch(() => ({

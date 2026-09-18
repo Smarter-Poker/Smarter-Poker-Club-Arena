@@ -384,7 +384,7 @@
     "tests/fixtures/spin-mixed-cutover/setup.sql": "023ca3e1c6b4614d83190bcd7c1ad8f8a1e7d5ceea8ffa419564b59aa5d2e06c",
     "scripts/dev/qualify-spin-mixed-cutover.py": "4b50779f6ed435262e7281057d4dbf588dab131fb0a6862fb743d7b13e5d402f",
     "supabase/migrations/20260918085836_original_mixed_cutover_spin_fee_proof.sql": "a79d6e958f06bf17470a870e20167fa2e9b0cc358cb79a22f75f5866e737f8c6",
-    "tests/fixtures/spin-mixed-cutover/source-binding.json": "e63212a2d01cc2a98c57e72ad9a6f0081ac15335b51529214039776ba4424739",
+    "tests/fixtures/spin-mixed-cutover/source-binding.json": "75adb19d94bc0f123a41d6d18ae1a477d14e958adf3c93be7e034ae200cd4cd5",
     "tests/fixtures/legacy-fee-finality/fn_terminal_tournament_evidence_is_immutable.sql": "dfb2ee68610de70577b3ed8a61c90a397e4b987bfdec0903654daea61e5c9906",
     "tests/fixtures/legacy-fee-finality/build-candidate.py": "2fc2667d4b6ab644b3f97ba440922900daeb0f9edf67fc6a2874869d6bd90f37",
     "tests/fixtures/legacy-fee-finality/negative.sql": "9a824c9f45318ed8cb665b4de7868fe80788de3f80aff84d06c3a08ee11cc14f",
@@ -1397,5 +1397,12 @@
     ],
     "reason": "The integrated MTT classifier adds directly triggered Breakfast, original paid custody, movement, drained-custody and retained-submission qualification; its routing tests add corresponding enforcement. The two nested financial bindings already retain those exact reviewed classifier/test bytes. Refresh only the four stale outer bindings; preserve all 29 captured catalog fixtures and the other 405 repository bindings, financial components and assertions.",
     "validation": "The unchanged native runner binding guard reproduces the rejection before this repair and accepts these reviewed inputs afterward. The current routing suite and generated activation source are checked separately. This binding refresh does not establish native financial execution or production installation; the required hosted accounting job must still pass."
+  },
+  "mixed_spin_runner_integration_binding_20260918": {
+    "prior_binding_sha256": "5347403431d8fbcc967456fe3f32689120b1952dcfb55fed97d53953c49cf463",
+    "path": "tests/fixtures/spin-mixed-cutover/source-binding.json",
+    "previous_sha256": "e63212a2d01cc2a98c57e72ad9a6f0081ac15335b51529214039776ba4424739",
+    "sha256": "75adb19d94bc0f123a41d6d18ae1a477d14e958adf3c93be7e034ae200cd4cd5",
+    "reason": "Retain the reviewed nested binding successor for the added September8 native phase. All underlying financial source, captures, original mixed-cutover implementation and assertion count remain unchanged. Full native execution remains separately required."
   }
 }

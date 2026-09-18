@@ -8,8 +8,15 @@
     "tests/fixtures/spin-mixed-cutover/proof-authority.sql": "56d0f2337776aec187ed5f4833f81652a500b0896277d636c3c3150580cea66a",
     "tests/fixtures/spin-mixed-cutover/setup.sql": "023ca3e1c6b4614d83190bcd7c1ad8f8a1e7d5ceea8ffa419564b59aa5d2e06c",
     "scripts/dev/qualify-spin-mixed-cutover.py": "4b50779f6ed435262e7281057d4dbf588dab131fb0a6862fb743d7b13e5d402f",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "cf6634d4db376606908c34b4084f812bac2f9fdc934e6f52d379db87345fc9c4",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "e500aa832ea849e9272fb63119e15a938393e6da3d821f7cb69272e6ccf13a4a",
     "supabase/migrations/20260918085836_original_mixed_cutover_spin_fee_proof.sql": "a79d6e958f06bf17470a870e20167fa2e9b0cc358cb79a22f75f5866e737f8c6"
   },
-  "expected_assertion_executions": 33
+  "expected_assertion_executions": 33,
+  "runner_integration_binding_20260918": {
+    "prior_binding_sha256": "e63212a2d01cc2a98c57e72ad9a6f0081ac15335b51529214039776ba4424739",
+    "reviewed_predecessor_commit": "07c420dcb55911adc0eed5224375b4c517add610",
+    "previous_runner_sha256": "cf6634d4db376606908c34b4084f812bac2f9fdc934e6f52d379db87345fc9c4",
+    "runner_sha256": "e500aa832ea849e9272fb63119e15a938393e6da3d821f7cb69272e6ccf13a4a",
+    "reason": "The runner adds the separately qualified September8 Spin custody phase and its focused invocation. The original mixed-cutover phase, all nine other bound inputs and33 expected assertions are unchanged. The exact native invocation rejected this stale runner binding after full acceptance; this explicit successor keeps the guard enforced."
+  }
 }

@@ -85,7 +85,7 @@ export interface VerifiedTournamentCompletionReceipt {
     amount: number;
     destination: string;
     attributedUsers: number;
-    settledAt: string;
+    settledAt: string | null;
     attributedAt: string | null;
     accountingState: string;
     accountingReason: string | null;
@@ -181,12 +181,118 @@ export function verifyTournamentCompletionReceipt(
   const prizeBalance = exactMoney(escrow.prize_balance);
   const bountyBalance = exactMoney(escrow.bounty_balance);
   const feeBalance = exactMoney(escrow.fee_balance);
+  const custodyVersion = receipt.receipt_version === 3;
+  const custody = parseObject(parseObject(receipt.rake).accounting);
+  const cohort: Record<string, { amount: number; fingerprint: string; count: number }> = {
+    '2d2319d4-09e4-4921-85f3-09832ca7f9da': {
+      amount: 54,
+      fingerprint: '94462de304de8ab16ff492cadf13d229',
+      count: 54,
+    },
+    '7834a033-8bf0-4a6b-bccf-9f4f6e78a9b9': {
+      amount: 120,
+      fingerprint: '57840c57d89643def8db903c4b19b487',
+      count: 80,
+    },
+    '80443725-b71c-4fc6-bc09-ceaf650809b3': {
+      amount: 54,
+      fingerprint: 'bae6c0de665f87d378bda4249963b51b',
+      count: 54,
+    },
+    'b1fdf860-2fdd-40da-8fff-ef37e650ddc8': {
+      amount: 120,
+      fingerprint: '70dd50a8c0fc28b2ff5d4b53de2f56d1',
+      count: 80,
+    },
+    'f370585d-40ea-4085-bb8f-c7e8c74f3fb4': {
+      amount: 17,
+      fingerprint: 'f67bf12ee0b00c954b6f8403de9718fe',
+      count: 34,
+    },
+    '1ffbd637-9241-4957-902f-3a75e09892c0': {
+      amount: 127.5,
+      fingerprint: '53fd19518004de9991312c0aaa749705',
+      count: 85,
+    },
+    '8fc76450-534a-4877-97b5-8f784a3d5daa': {
+      amount: 127.5,
+      fingerprint: '87fd65baf92f74a1de5c85ed09844c62',
+      count: 85,
+    },
+    '2421c66f-6f02-40a2-8414-23379802ce23': {
+      amount: 69,
+      fingerprint: '0dd99b682fed61573e47a2e0f8e57ab8',
+      count: 46,
+    },
+  };
+  const original = tournamentId === null ? undefined : cohort[tournamentId];
+  const resolution = parseObject(custody.resolution);
+  const resolutionBank = uuid(resolution.bank_receipt_id);
+  const resolutionClub = uuid(resolution.bank_club_id);
+  const resolutionUnion = uuid(resolution.bank_union_id);
+  const resolutionAt = validTimestamp(resolution.banked_at);
+  const custodyResolved = custodyVersion && custody.accounting_complete === true;
+  const exactCustodyResolution =
+    custodyResolved &&
+    receipt.fully_settled === true &&
+    receipt.accounting_complete === true &&
+    receipt.accounting_state === 'recognized' &&
+    custody.current_held_amount === 0 &&
+    feeBalance === 0 &&
+    resolution.accounting_version === 2 &&
+    resolution.status === 'recognized' &&
+    resolution.payable === true &&
+    uuid(resolution.tournament_id) === tournamentId &&
+    resolution.source_fingerprint === original?.fingerprint &&
+    exactMoney(resolution.bank_amount) === original?.amount &&
+    (nonNegativeInteger(resolution.recognized_source_count) ?? 0) > 0 &&
+    resolutionAt !== null &&
+    settledAt !== null &&
+    Date.parse(resolutionAt) >= Date.parse(settledAt) &&
+    resolutionBank !== null &&
+    resolutionClub !== null &&
+    (resolution.bank_receipt_kind === 'union_wallet_transaction'
+      ? resolutionUnion !== null
+      : resolution.bank_receipt_kind === 'chip_ledger' && resolution.bank_union_id === null);
+  const exactCustody =
+    custodyVersion &&
+    original !== undefined &&
+    receipt.player_result === 'final' &&
+    custody.accounting_version === 3 &&
+    custody.status === 'fee_custody_unresolved' &&
+    custody.player_result === 'final' &&
+    custody.payable === false &&
+    custody.custody_store === 'tournament_escrow' &&
+    uuid(custody.tournament_id) === tournamentId &&
+    uuid(custody.obligation_id) !== null &&
+    custody.source_fingerprint === original.fingerprint &&
+    custody.source_count === original.count &&
+    exactMoney(custody.held_amount) === original.amount &&
+    validTimestamp(custody.held_at) !== null &&
+    settledAt !== null &&
+    Date.parse(String(custody.held_at)) <= Date.parse(settledAt) &&
+    custody.recognized_source_count === 0 &&
+    custody.bank_amount === 0 &&
+    custody.banked_at === null &&
+    custody.bank_receipt_id === null &&
+    escrow.closed_at === null &&
+    escrow.close_note === null &&
+    (custodyResolved
+      ? exactCustodyResolution
+      : receipt.fully_settled === false &&
+        receipt.accounting_complete === false &&
+        receipt.accounting_state === 'fee_custody_unresolved' &&
+        custody.accounting_complete === false &&
+        custody.resolution === null &&
+        exactMoney(custody.current_held_amount) === original.amount &&
+        feeBalance === original.amount);
 
   if (
     receipt.ok !== true ||
-    receipt.fully_settled !== true ||
+    (!custodyVersion && receipt.fully_settled !== true) ||
+    (custodyVersion && !exactCustody) ||
     receipt.status !== 'COMPLETED' ||
-    ![1, 2].includes(Number(receipt.receipt_version)) ||
+    ![1, 2, 3].includes(Number(receipt.receipt_version)) ||
     tournamentId !== expectedTournamentId ||
     winnerId === null ||
     (expectedWinnerId != null && winnerId !== expectedWinnerId) ||
@@ -198,7 +304,7 @@ export function verifyTournamentCompletionReceipt(
     settledAt === null ||
     prizeBalance !== 0 ||
     bountyBalance !== 0 ||
-    feeBalance !== 0
+    (!custodyVersion && feeBalance !== 0)
   ) {
     return null;
   }
@@ -379,8 +485,18 @@ export function verifyTournamentCompletionReceipt(
             accounting.bank_union_id === null &&
             rakeDestination === `chip_retirement:${bankClub}`);
   const exactAccounting =
+    (exactCustody &&
+      rakeAmount === original?.amount &&
+      rakeDestination === 'tournament_escrow' &&
+      rake.attributed === false &&
+      rake.attributed_users === 0 &&
+      rake.settled_at === null &&
+      rake.attributed_at === null &&
+      typeof accounting.reason === 'string' &&
+      deferredReasons.includes(accounting.reason)) ||
     receiptVersion === 1 ||
-    (accounting.accounting_version === 2 &&
+    (receiptVersion === 2 &&
+      accounting.accounting_version === 2 &&
       uuid(accounting.tournament_id) === tournamentId &&
       bankAmount !== null &&
       bankAmount === rakeAmount &&
@@ -408,11 +524,11 @@ export function verifyTournamentCompletionReceipt(
     rakeDestination === null ||
     rakeDestination === 'pending' ||
     !exactAccounting ||
-    (!isDeferred && rake.attributed !== true) ||
+    (!isDeferred && !custodyVersion && rake.attributed !== true) ||
     attributedUsers === null ||
-    rakeSettledAt === null ||
-    (!isDeferred && rakeAttributedAt === null) ||
-    Date.parse(rakeSettledAt) > Date.parse(settledAt) ||
+    (!custodyVersion && rakeSettledAt === null) ||
+    (!isDeferred && !custodyVersion && rakeAttributedAt === null) ||
+    (rakeSettledAt !== null && Date.parse(rakeSettledAt) > Date.parse(settledAt)) ||
     (rakeAttributedAt !== null && Date.parse(rakeAttributedAt) > Date.parse(settledAt))
   ) {
     return null;
@@ -442,8 +558,9 @@ export function verifyTournamentCompletionReceipt(
       attributedUsers,
       settledAt: rakeSettledAt,
       attributedAt: rakeAttributedAt,
-      accountingState: String(accountingState),
-      accountingReason: isDeferred ? String(accounting.reason) : null,
+      accountingState: custodyResolved ? 'recognized' : String(accountingState),
+      accountingReason:
+        isDeferred || (custodyVersion && !custodyResolved) ? String(accounting.reason) : null,
     },
     settledAt,
   };

@@ -1,16 +1,22 @@
 import { pendingBonus } from '../services/diamondBonusRecovery';
 import { useBonusBudget } from '../hooks/useBonusBudget';
+import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { DeckConsole } from '../components/console/DeckConsole';
-import { SpadeConsole } from '../components/console/SpadeConsole';
+import { GameConsole, GamePanel } from '../components/games/GameConsole';
 import BonusSetup from '../components/games/BonusSetup';
 import TodayLine from '../components/games/TodayLine';
 import SealedPrize from '../components/games/SealedPrize';
 import { useGameCooldown } from '../hooks/useGameCooldown';
-import { bonusTotal, gameChips, validSpinAmount } from '../utils/bonusGameBudget';
+import {
+  bonusTotal,
+  bonusWalletDebit,
+  earnedReceiptBudget,
+  gameChips,
+  validBonusBudget,
+} from '../utils/bonusGameBudget';
 import { DiamondBonusService, BonusRefusal } from '../services/DiamondBonusService';
 import ChoiceScene from '../components/games/ChoiceScene';
 import {
@@ -51,15 +57,19 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const { user } = useAuthUser();
   const navigate = useNavigate();
   const [uuid, setUuid] = useState<string | null>(null);
-  const [state, setState] = useState<ChoiceState | null>(null);
+  const [legacyState, setState] = useState<ChoiceState | null>(null);
   const [quotedEntry, setQuotedEntry] = useState<string | null>(null);
   const [round, setRound] = useState<ChoiceRound | null>(null);
   const [mode, setMode] = useState(game === 'mines' ? '5' : 'steady');
-  const [budget, setBudget] = useBonusBudget(clubId, game);
+  const [selectedBudget, setBudget] = useBonusBudget(clubId, game);
+  const earned = useEarnedBonus(uuid, game, selectedBudget, mode);
+  const budget = earned.budget;
+  const state = (earned.gameState as ChoiceState | null) ?? legacyState;
   const bet = bonusTotal(budget);
   const [seed, setSeed] = useState(randomClientSeed);
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sceneBusy, setSceneBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uncertain, setUncertain] = useState(false);
   const [verified, setVerified] = useState<boolean | null>(null);
@@ -77,7 +87,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     async (id: string) => {
       const g = ++generation.current;
       setQuotedEntry(null);
-      const next = await DiamondChoiceService.state(id, game, mode, bet);
+      const next = await DiamondChoiceService.state(id, game, mode, Math.min(bet, 5000));
       if (!mounted.current || generation.current !== g) return;
       setState(next);
       setQuotedEntry(`${id}:${game}:${mode}:${bet}`);
@@ -88,14 +98,14 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         setBudget((current) =>
           bonusTotal(current) === next.open_round!.bet_diamonds
             ? current
-            : {
+            : (earnedReceiptBudget(next.open_round! as unknown as Record<string, unknown>) ?? {
                 base:
                   next.open_round!.bet_diamonds > 2500
                     ? next.open_round!.bet_diamonds / 2
                     : next.open_round!.bet_diamonds,
                 doubled: next.open_round!.bet_diamonds > 2500,
                 denomination: 1,
-              }
+              })
         );
         setTicket(null);
         if (!heldStart.current) {
@@ -196,6 +206,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           await DiamondBonusService.start(heldStart.current, user?.id ?? '')
         );
         if (!mounted.current) return;
+        earned.consume(recovered.award_id);
         currentRound.current = recovered;
         setRound(recovered);
         heldStart.current = null;
@@ -203,6 +214,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         setUncertain(false);
         setTicket(null);
       }
+      await earned.refresh();
       await load(uuid);
       if (mounted.current) setError(null);
     } catch (e) {
@@ -223,7 +235,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     }
   };
   const blocked =
-    !validSpinAmount(budget.base) ||
+    !earned.ready ||
+    !validBonusBudget(budget) ||
     quotedEntry !== `${uuid}:${game}:${mode}:${bet}` ||
     !state?.available ||
     state.frozen ||
@@ -231,7 +244,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     state.max_steps < 1 ||
     state.rounds_today >= state.daily_limit ||
     waitSeconds > 0 ||
-    state.diamonds < bet;
+    state.diamonds < bonusWalletDebit(budget);
   const start = async () => {
     if (
       !uuid ||
@@ -277,6 +290,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         )
       );
       if (!mounted.current) return;
+      earned.consume(next.award_id);
       currentRound.current = next;
       setRound(next);
       heldStart.current = null;
@@ -301,7 +315,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     }
   };
   const act = async (action: 'pick' | 'cashout', cell: number | null) => {
-    if (!uuid || !round || round.status !== 'open' || busyRef.current || uncertain) return;
+    if (!uuid || !round || round.status !== 'open' || busyRef.current || uncertain || sceneBusy)
+      return;
     busyRef.current = true;
     generation.current++;
     setQuotedEntry(null);
@@ -312,6 +327,12 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       const next = await DiamondChoiceService.act(round, action, cell);
       if (!mounted.current) return;
       currentRound.current = next;
+      if (
+        game === 'crossing' &&
+        action === 'pick' &&
+        (next.status !== round.status || next.picked.length !== round.picked.length)
+      )
+        setSceneBusy(true);
       setRound(next);
       triggerHaptic(next.status === 'lost' ? 'heavy' : 'light');
       await load(uuid);
@@ -329,7 +350,15 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const open = round?.status === 'open';
   const picks = round?.picked.length ?? 0;
   const prizes = open ? round.prizes : (state?.prizes ?? []);
-  const prize = open && picks > 0 ? prizes[picks - 1] : prizes[0];
+  const prize =
+    round?.status === 'lost'
+      ? 0
+      : round?.status === 'cashed'
+        ? round.payout_chips
+        : open && picks > 0
+          ? prizes[picks - 1]
+          : 0;
+  const nextPrize = open ? prizes[picks] : round ? undefined : prizes[0];
   const ladder = ROAD_LADDERS[(round?.mode ?? mode) as RoadRisk];
   const roadEnd =
     game === 'crossing' && round?.proof && ladder
@@ -357,7 +386,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const cashLabel = open && picks > 0 ? 'Book The Win' : 'Refresh';
   const phase = round?.status ?? 'idle';
   return (
-    <div className={styles.page}>
+    <div className={`${styles.page} ${styles.fullscreenPage}`}>
       <button
         type="button"
         className={styles.back}
@@ -366,16 +395,22 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         ‹ Diamond Spins
       </button>
       <DiamondSpinsTabs clubId={clubId ?? ''} />
-      {!open && (
-        <BonusSetup
-          budget={budget}
-          onChange={setBudget}
-          diamonds={state?.diamonds ?? null}
-          disabled={busy || uncertain}
-          clubId={clubId ?? ''}
-        />
-      )}
-      <DeckConsole
+      <GameConsole
+        setup={
+          !open && (
+            <BonusSetup
+              budget={budget}
+              entryReady={earned.ready}
+              awardLoading={earned.loading}
+              awardError={earned.error}
+              onRefresh={() => void earned.refresh()}
+              onChange={setBudget}
+              diamonds={state?.diamonds ?? null}
+              disabled={busy || uncertain}
+              clubId={clubId ?? ''}
+            />
+          )
+        }
         title={title}
         eyebrow="Diamond Spins"
         pill={status}
@@ -388,14 +423,14 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             disabled: busy || open || uncertain,
           },
           {
-            label: 'Bet',
-            value: compactChips(bet),
+            label: game === 'mines' ? 'Revealed' : 'Street',
+            value: String(picks),
             disabled: true,
           },
-          { label: game === 'mines' ? 'Revealed' : 'Street', value: String(picks), ink: 'silver' },
+          { label: 'Current Prize', value: gameChips(prize ?? 0), ink: 'gold' },
           {
-            label: 'Chip Prize',
-            value: prize === undefined ? 'N/A' : gameChips(prize),
+            label: 'Next Prize',
+            value: nextPrize === undefined ? 'N/A' : gameChips(nextPrize),
             ink: 'gold',
           },
         ]}
@@ -403,7 +438,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           label: uncertain ? 'Check Round' : cashLabel,
           onClick: () =>
             open && picks > 0 && !uncertain ? void act('cashout', null) : void refresh(),
-          disabled: busy,
+          disabled: busy || sceneBusy,
         }}
         primary={{
           label: open
@@ -414,7 +449,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               ? `Ready In ${waitSeconds}s`
               : 'Start Round',
           onClick: () => (open ? void act('pick', picks) : void start()),
-          disabled: busy || uncertain || (open ? game === 'mines' : blocked || !ticket),
+          disabled:
+            busy || sceneBusy || uncertain || (open ? game === 'mines' : blocked || !ticket),
         }}
       >
         <TodayLine
@@ -425,6 +461,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         />
         <ChoiceScene
           game={game}
+          roundId={round?.id}
+          onSettled={() => setSceneBusy(false)}
           phase={phase}
           picked={round?.picked ?? []}
           mines={round?.proof?.mine_cells ?? null}
@@ -468,24 +506,29 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                 ? game === 'mines'
                   ? 'Reveal A Tile Or Book The Win.'
                   : 'Cross The Next Street Or Book The Win.'
-                : !state
-                  ? 'Loading Your Game'
-                  : quotedEntry !== `${uuid}:${game}:${mode}:${bet}`
-                    ? 'Checking Your Entry'
-                    : blocked
-                      ? state.diamonds < bet
-                        ? 'Not Enough Diamonds For This Bet'
-                        : !state.is_member
-                          ? 'Join The Club To Play'
-                          : !state.available
-                            ? 'This Game Is Not Open Here Yet'
-                            : 'This Bet Is Not Available Right Now'
-                      : `${compactChips(bet)} Diamonds To Play. ${state.max_steps} ${game === 'mines' ? 'Safe Picks' : 'Streets'} In This Round.`}
+                : !earned.ready
+                  ? (earned.error ??
+                    (earned.loading
+                      ? 'Checking Your Wheel Award'
+                      : 'Win This Game On Diamond Spins To Play.'))
+                  : !state
+                    ? 'Loading Your Game'
+                    : quotedEntry !== `${uuid}:${game}:${mode}:${bet}`
+                      ? 'Checking Your Entry'
+                      : blocked
+                        ? state.diamonds < bonusWalletDebit(budget)
+                          ? 'Not Enough Diamonds For This Bet'
+                          : !state.is_member
+                            ? 'Join The Club To Play'
+                            : !state.available
+                              ? 'This Game Is Not Open Here Yet'
+                              : 'This Bet Is Not Available Right Now'
+                        : `${compactChips(bet)} Diamonds To Play. ${state.max_steps} ${game === 'mines' ? 'Safe Picks' : 'Streets'} In This Round.`}
             </p>
           )}
         </div>
-      </DeckConsole>
-      <SpadeConsole
+      </GameConsole>
+      <GamePanel
         title="Your Game"
         pill="Rules"
         eyebrow={`${compactChips(state?.diamonds ?? 0)} Diamonds`}
@@ -505,8 +548,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             The Win Is Booked.
           </p>
         ) : null}
-      </SpadeConsole>
-      <SpadeConsole title="Round Proof" pill="Sealed" eyebrow="Sealed Before Play" foot="foot">
+      </GamePanel>
+      <GamePanel title="Round Proof" pill="Sealed" eyebrow="Sealed Before Play" foot="foot">
         <p className={`sc-copy ${styles.proofHash}`}>
           {open ? round.server_seed_hash : (ticket?.hash ?? 'Preparing Your Ticket')}
         </p>
@@ -550,8 +593,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               : 'The Outcome Could Not Be Verified.'}
           </p>
         ) : null}
-      </SpadeConsole>
-      <SpadeConsole title="Recent Rounds" pill="Saved" foot="foot">
+      </GamePanel>
+      <GamePanel title="Recent Rounds" pill="Saved" foot="foot">
         {(state?.history ?? []).length === 0 ? (
           <p className="sc-copy">Your Completed Rounds Will Appear Here.</p>
         ) : (
@@ -564,7 +607,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             </div>
           ))
         )}
-      </SpadeConsole>
+      </GamePanel>
     </div>
   );
 }

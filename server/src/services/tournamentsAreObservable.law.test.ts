@@ -31,6 +31,7 @@ import {
   TournamentMetrics,
   UNPAID_LOOKBACK_HOURS,
 } from './TournamentMetrics.js';
+import { HorseFleetMetrics } from './HorseFleetMetrics.js';
 
 const read = (p: string) => readFileSync(join(__dirname, p), 'utf8');
 
@@ -124,8 +125,26 @@ describe('the alert rules are wired and reference only real gauges', () => {
     expect(src.match(/- alert: /g)?.length ?? 0).toBeGreaterThanOrEqual(5);
   });
 
+  /**
+   * TWO COLLECTORS WRITE THIS FILE'S SERIES (2026-09-18). The rule file began
+   * as TournamentMetrics alone. The horse-fleet-settlement group added by the
+   * horse programme reads HorseFleetMetrics, which answers the other half of
+   * the same question - how many RUNNING tournaments are already decided and
+   * nothing has finished them - and one counter that lives on the always-on
+   * instrument registry rather than on either collector. A rule may name a
+   * series from any of the three and nothing else, which is what this asks.
+   */
+  const emittedSeries = (): string =>
+    [
+      new TournamentMetrics().toPrometheus().join('\n'),
+      new HorseFleetMetrics().toPrometheus().join('\n'),
+      // Counters are declared, not sampled, so read their names from the
+      // registry declarations rather than instantiating the engine.
+      read('../observability/engineInstruments.ts'),
+    ].join('\n');
+
   it('every metric named in an expression is one the engine actually emits', () => {
-    const emitted = new TournamentMetrics().toPrometheus().join('\n');
+    const emitted = emittedSeries();
     const exprs = rules().match(/^\s*expr:\s*(.+)$/gm) ?? [];
     expect(exprs.length).toBeGreaterThanOrEqual(5);
 
@@ -134,6 +153,30 @@ describe('the alert rules are wired and reference only real gauges', () => {
         expect(emitted, `${metric} is emitted by the engine`).toContain(metric);
       }
     }
+  });
+
+  it('the decided-and-unfinished group is wired to its collector', () => {
+    const src = rules();
+    for (const alert of [
+      'TournamentsDecidedButUnfinished',
+      'HorsesCommittedToDecidedGames',
+      'TournamentFinishRefusalsPersisting',
+      'TournamentsBlockedByUnreconciledFees',
+      'DatabaseDeadlocksElevated',
+      'SettlementLaneConvoy',
+      'HorseFleetMetricsStale',
+    ]) {
+      expect(src, `${alert} exists`).toContain(`alert: ${alert}`);
+    }
+    // Every gauge rule in the group refuses to fire on a stale snapshot, so a
+    // broken collector reads as a broken collector and not as a healthy fleet.
+    const group = src.slice(src.indexOf('- name: horse-fleet-settlement'));
+    const gaugeAlerts = group.match(/- alert: (\w+)/g) ?? [];
+    expect(gaugeAlerts.length).toBeGreaterThanOrEqual(7);
+    expect(
+      (group.match(/poker_horse_fleet_metrics_stale_seconds < 600/g) ?? []).length,
+      'each gauge rule reads the collector staleness'
+    ).toBeGreaterThanOrEqual(3);
   });
 
   it('covers the four failures that actually happened, plus the blind-collector case', () => {

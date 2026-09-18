@@ -16,6 +16,23 @@ const native = parse(
   readFileSync(join(root, '.github/workflows/component-fixture-native-smoke.yml'), 'utf8')
 );
 
+it('runs the real Diamond playfields once with an isolated software-rendering worker', () => {
+  const beat = ci.jobs['css-beats-e2e'].steps.find(
+    (step: { name?: string }) => step.name === "Run the beats against this commit's CSS"
+  );
+  const commands = beat.run.split('\n').filter((line: string) => line.includes('playwright test'));
+  const playfields = commands.filter((line: string) =>
+    line.includes('tests/e2e/css/diamond-games-playfield.spec.ts')
+  );
+  expect(playfields).toHaveLength(1);
+  expect(playfields[0]).toContain('--workers=1');
+  expect(playfields[0]).toContain('--retries=0');
+  expect(playfields[0]).not.toContain('tests/e2e/multi-table.spec.ts');
+  expect(commands.some((line: string) => line.includes('tests/e2e/multi-table.spec.ts'))).toBe(
+    true
+  );
+});
+
 describe('cash lobby verification reaches the existing browser gate', () => {
   it.each([
     'tests/e2e/global-setup.ts',
@@ -1145,4 +1162,68 @@ describe('restored provider accounting qualification', () => {
     expect(evidence.with.path).toContain('${{ runner.temp }}/union-accounting-results');
     expect(evidence.with.path).toContain('${{ runner.temp }}/union-accounting-activation');
   });
+});
+
+describe('instruction-only verification preserves source contracts without replaying unchanged SQL', () => {
+  it('admits only the exact maintained policy prose and hash manifest', async () => {
+    const { instructionOnlyPaths } = await import('../../scripts/ci/classify-ci-changes.mjs');
+    const allowed = [
+      'OWNER-POLICY.md',
+      'OPERATING-LAW.md',
+      'HARDENING.md',
+      'REFERENCE-INDEX.md',
+      'policy-manifest.json',
+    ].map((p) => `docs/agent-policy/${p}`);
+    expect(instructionOnlyPaths(allowed)).toBe(true);
+    expect(classifyChangedPaths(allowed)).toMatchObject({
+      tests: true,
+      src: false,
+      server: false,
+      fixture: false,
+    });
+    for (const path of [
+      'CLAUDE.md',
+      'docs/changelog/rollback.sql',
+      'docs/agent-policy/agent-policy.mjs',
+      'src/App.tsx',
+      'server/src/index.ts',
+      'supabase/migrations/fix.sql',
+      '.github/workflows/ci.yml',
+      'scripts/ci/classify-ci-changes.mjs',
+      'docs/agent-policy/../other.md',
+    ]) {
+      expect(instructionOnlyPaths([...allowed, path]), path).toBe(false);
+    }
+    expect(instructionOnlyPaths([])).toBe(false);
+    expect(instructionOnlyPaths(null)).toBe(false);
+  });
+  it('the existing required compiler route invokes policy checks and fails closed for missing classification', () => {
+    const ci = readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8');
+    expect(ci).toContain('node docs/agent-policy/agent-policy.mjs check');
+    expect(ci).toContain('node --test docs/agent-policy/agent-policy.test.mjs');
+    expect(ci).toContain("if: steps.compile_scope.outputs.instructions_only != 'true'");
+    expect(ci).toContain('npx tsc --noEmit');
+    expect(ci).toContain('npx vitest run tests/ --shard=${{ matrix.shard }}/4');
+  });
+});
+
+it('the actual replay condition executes for missing output and non-instruction diffs', () => {
+  const condition = ci.jobs.typecheck_compile.steps.find(
+    (step: { name: string }) =>
+      step.name === 'Chip journal transactions survive failures and replays'
+  ).if;
+  const evaluate = new Function('steps', `return (${condition});`);
+  for (const value of ['true', 'false', undefined, '']) {
+    expect(evaluate({ compile_scope: { outputs: { instructions_only: value } } })).toBe(
+      value !== 'true'
+    );
+  }
+  const classifier = ci.jobs.typecheck_compile.steps.find(
+    (step: { id: string }) => step.id === 'compile_scope'
+  );
+  expect(classifier.run).toBe('node scripts/ci/classify-ci-changes.mjs');
+  expect(classifier.env.CI_HEAD_SHA).toBe('${{ github.sha }}');
+  expect(classifier['continue-on-error']).toBeUndefined();
+  expect(ci.jobs.typecheck_compile.needs).toBeUndefined();
+  expect(ci.jobs.typecheck_compile.if).toBe("github.event_name == 'pull_request'");
 });

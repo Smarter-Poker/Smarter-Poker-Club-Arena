@@ -454,6 +454,8 @@ if [ -d "$DIR" ] && git -C "$DIR" rev-parse --git-dir >/dev/null 2>&1; then
     # startup, and a workspace script that said "leaving it as it is" and did.
     provision_all_package_roots
     verify_all_native_deps
+    node "$DIR/docs/agent-policy/agent-policy.mjs" check >&2
+    echo "# Read current policy: node '$DIR/docs/agent-policy/agent-policy.mjs' read" >&2
     [ "$MODE" = "--print-path" ] && echo "$DIR" || echo "cd '$DIR'"
     exit 0
   fi
@@ -500,6 +502,8 @@ bash "$ROOT/scripts/check-unpushed-work.sh" --quiet 2>&1 | sed "s/^/# /" >&2 || 
 provision_all_package_roots
 verify_all_native_deps
 
+node "$DIR/docs/agent-policy/agent-policy.mjs" check >&2
+echo "# Read current policy: node '$DIR/docs/agent-policy/agent-policy.mjs' read" >&2
 echo "# worktree: $DIR" >&2
 echo "# branch:   $BRANCH  (from origin/main)" >&2
 if [ "$MODE" = "--print-path" ]; then

@@ -65,3 +65,9 @@ the re-announcement skip and explicitly refuses a missing skip. The prior
 unbounded slice incorrectly included an unrelated satellite continuation.
 The root's 10 law cases and 19 real Spin reveal-boundary cases passed; the
 adopted test, production method, helper and Spin inputs are byte-identical.
+
+The engine recovery guard also pinned the old unconditional pause-ready
+callback. It now requires the existing qualifier-boundary branch and the
+ordinary hand-for-hand alternative within that exact callback. A connected
+manager and engine test proves that only the selected owner receives each
+edge. Both affected suites pass all 31 cases. Engine code is unchanged.

@@ -310,6 +310,21 @@ describe('new-format satellite completion at the actual full-ticket boundary', (
     fixture.reportError.mockClear();
     setMaintenanceFrozen(false);
   });
+  it('the actual pause-ready callback prioritizes a pending qualifier boundary and otherwise advances hand-for-hand', () => {
+    const f = cohortManager();
+    const advance = vi.spyOn(f.manager, 'advanceHandForHandBarrier').mockImplementation(() => {});
+    f.manager.satelliteQualifierBoundaryPending = true;
+    f.e.pauseReadyCallback(f.tableId);
+    expect(f.manager.requestEliminationSweep).toHaveBeenCalledOnce();
+    expect(f.manager.requestEliminationSweep).toHaveBeenCalledWith('satellite_qualifier_boundary');
+    expect(advance).not.toHaveBeenCalled();
+
+    f.manager.requestEliminationSweep.mockClear();
+    f.manager.satelliteQualifierBoundaryPending = false;
+    f.e.pauseReadyCallback(f.tableId);
+    expect(advance).toHaveBeenCalledOnce();
+    expect(f.manager.requestEliminationSweep).not.toHaveBeenCalled();
+  });
   it.each(['two_survivors', 'same_hand_overflow'] as const)(
     'the actual finish caller accepts %s without inventing first place',
     async (key) => {

@@ -133,6 +133,57 @@ const key = (x: {
 const same = (a: unknown, b: unknown) => horseJournalJson(a) === horseJournalJson(b);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uint = (x: unknown): x is number => Number.isSafeInteger(x) && Number(x) >= 0;
+// RIT appends private board metadata to accepted history after play. It is
+// neither a player action nor a live decision prefix. Recognize only the exact
+// existing producer shape; never relax horsePriorActionsDigest or renumber the
+// original accepted array used by execution/observation bindings.
+function ritBoardNumber(raw: unknown): number | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  if (
+    Object.keys(row).length !== 5 ||
+    !Object.keys(row).every((key) =>
+      ['seat', 'userId', 'action', 'stage', 'timestamp'].includes(key)
+    ) ||
+    row.seat !== 0 ||
+    row.userId !== 'system' ||
+    row.stage !== 'river' ||
+    !uint(row.timestamp) ||
+    typeof row.action !== 'string'
+  )
+    return null;
+  const match =
+    /^rit_board_([23]):((?:[2-9TJQKA](?:hearts|diamonds|clubs|spades),){4}[2-9TJQKA](?:hearts|diamonds|clubs|spades))$/.exec(
+      row.action
+    );
+  return match && match[0] === row.action && new Set(match[2]!.split(',')).size === 5
+    ? Number(match[1])
+    : null;
+}
+
+function completedActionsAreValid(actions: unknown): boolean {
+  if (!Array.isArray(actions) || actions.length > 4096) return false;
+  const playerActions: unknown[] = [];
+  let nextBoard = 2,
+    metadataClosed = false;
+  for (const action of actions) {
+    const board = ritBoardNumber(action);
+    if (board !== null) {
+      if (metadataClosed || board !== nextBoard) return false;
+      nextBoard++;
+    } else {
+      if (nextBoard > 2) {
+        // The RIT producer settles an uncalled return after its board rows.
+        // No further player choice may follow that completed runout.
+        if (!action || typeof action !== 'object' || action.action !== 'return') return false;
+        metadataClosed = true;
+      }
+      playerActions.push(action);
+    }
+  }
+  return horsePriorActionsDigest(playerActions) !== null;
+}
+
 type Capture = {
   snapshot: FastHorseDecisionRequest | DeepHorseDecisionRequest;
   readFrame: Parameters<typeof decodeHorseDecisionReads>[0];
@@ -224,7 +275,7 @@ export function reconcileHorseJournalHand(
           row.turnKey !== handKey ||
           !uuid.test(candidate.committedHandId ?? '') ||
           !Array.isArray(candidate.actions) ||
-          !horsePriorActionsDigest(candidate.actions) ||
+          !completedActionsAreValid(candidate.actions) ||
           !(candidate.bigBlind > 0) ||
           !Number.isFinite(candidate.bigBlind)
         )
@@ -357,6 +408,7 @@ export function reconcileHorseJournalHand(
     }
     const expected = new Set<number>();
     hand.actions!.forEach((action, i) => {
+      if (ritBoardNumber(action) !== null) return;
       if (action.historyEvent !== undefined || action.action === 'return') {
         // A positive return is already reflected in the controller's balances.
         // Admit only its explicit producer shape, never an inferred legacy

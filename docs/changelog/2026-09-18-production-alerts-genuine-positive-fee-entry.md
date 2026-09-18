@@ -19,9 +19,16 @@ changed or corrupt records, and stage validation binds the authentic baseline
 through original process cleanup. No new runner, schedule, production probe,
 release route or financial repair process is added.
 
-Validation status: source review and initial routing/TypeScript checks passed;
-final source controls and actual PostgreSQL execution are pending. This document
-must be updated with final execution evidence before protected submission.
+Validation: 106 source controls, 355 routing cases, six enclosing manifest
+controls and TypeScript compilation pass. Local PostgreSQL 17.11 execution
+`a57700f3-1c00-4a19-b15e-87cdc0aa260d` passed on committed source
+`62adcacd679965005bd78d442907d031fd65b2db`: 121 sealed inputs, all 32 original
+process stages, 64 streams, exact current catalog and observed disposal of the
+isolated allocation. All three purchases committed; the independent raw-row
+oracle verified 100 = 97 + 2.76 + 0.24 and unchanged seat/booking replays.
+Two original warnings name the absent isolated realtime schema, so no realtime
+or connected-service acceptance is claimed. Hosted checks and protected
+publication remain pending.
 Entry qualification is not gameplay, settlement, commission agreement,
 historical recovery, production installation or alert closure.
 

@@ -49,5 +49,11 @@ gameplay, mixed historical settlement, completion, commission-bearing agent
 agreements, MTT activation, satellite/restart paths, production installation,
 recovery of missing history, or closure of the oldest production alert.
 
-Initial source status: draft, native execution pending. Record actual evidence
-in the existing Production Alerts checkpoint and the dated change record.
+Local PostgreSQL 17.11 execution `a57700f3-1c00-4a19-b15e-87cdc0aa260d`
+passed on committed source `62adcacd679965005bd78d442907d031fd65b2db`.
+All 121 source inputs, 32 process stages, 64 original streams and disposable
+allocation cleanup were verified. The independent reader accepted all three
+paid entries, exact conservation and both unchanged replays. Two original
+warnings report the absent isolated `realtime` schema; realtime delivery and
+connected-service qualification remain false. Required hosted checks,
+protected integration and all broader qualification remain separate.

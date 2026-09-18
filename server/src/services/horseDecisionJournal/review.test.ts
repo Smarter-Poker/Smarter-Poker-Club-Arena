@@ -7,7 +7,10 @@ import {
   settleHorseExecutionWitness,
   retireHorseExecutionWitness,
 } from '../../engine/HorseExecutionWitness.js';
-import { captureHorseHandJournalContext } from '../../engine/HorseDecisionHandBinding.js';
+import {
+  captureHorseHandJournalContext,
+  horsePriorActionsDigest,
+} from '../../engine/HorseDecisionHandBinding.js';
 import { encodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame.js';
 import { HorseMind } from '../../engine/HorseMind.js';
 import {
@@ -184,6 +187,193 @@ describe('private retained-hand journal consumer', () => {
       activationAllowed: false,
     });
     expect(JSON.stringify(f.a)).toBe(before);
+  });
+
+  // Exact five-field history shape emitted by ServerTableEngineRunout. Boards
+  // may share the already-dealt flop; only duplicates within one board are bad.
+  const ritBoard = (board: 2 | 3 = 2): Record<string, unknown> => ({
+    seat: 0,
+    userId: 'system',
+    action:
+      board === 2
+        ? 'rit_board_2:2clubs,3diamonds,4hearts,Tspades,Aclubs'
+        : 'rit_board_3:2clubs,3diamonds,4hearts,Kspades,Qclubs',
+    stage: 'river',
+    timestamp: 1002,
+  });
+
+  it.each([2, 3] as const)(
+    'reconciles %s-run trailing board metadata while preserving posts, returns and full ordinals',
+    (runs) => {
+      const forcedPost = {
+        seat: 1,
+        userId: '20000000-0000-4000-8000-000000000001',
+        action: 'sb',
+        amount: 1,
+        timestamp: 999,
+        stage: 'preflop',
+        dead: false,
+        origin: 'forced',
+      };
+      const f = fixture('nlh', [forcedPost]);
+      const accepted = f.a.actions[1];
+      f.a.actions.push(ritBoard(2));
+      if (runs === 3) f.a.actions.push(ritBoard(3));
+      // The actual RIT path appends boards before settleUncalledBet emits this.
+      f.a.actions.push({ ...returned(), timestamp: 1003 });
+      const rows = f.rows();
+      const beforeHand = JSON.stringify(f.a);
+      const beforeRows = JSON.stringify(rows);
+      Object.freeze(f.a.actions);
+      Object.freeze(rows);
+      expect(f.w.handAnchor).toMatchObject({ status: 'anchored', actionOrdinal: 1 });
+      expect(accepted.observationIdentity.actionOrdinal).toBe(1);
+      const report = reconcileHorseJournalHand(rows, handKey);
+      expect(report).toMatchObject({
+        status: 'reconciled',
+        acceptedHorseActions: 1,
+        matchedActions: 1,
+        gaps: [],
+        completePopulation: false,
+        replayVerified: false,
+        gtoVerified: false,
+        activationAllowed: false,
+      });
+      expect(f.a.actions[0]).toEqual(forcedPost);
+      expect(f.a.actions[1]).toBe(accepted);
+      expect(f.a.actions.at(-1)).toEqual({ ...returned(), timestamp: 1003 });
+      expect(JSON.stringify(f.a)).toBe(beforeHand);
+      expect(JSON.stringify(rows)).toBe(beforeRows);
+      expect(JSON.stringify(report)).not.toContain(String(ritBoard(2).action));
+    }
+  );
+
+  it.each([
+    { name: 'player seat', patch: { seat: 1 } },
+    { name: 'string seat', patch: { seat: '0' } },
+    { name: 'player UUID', patch: { userId: '20000000-0000-4000-8000-000000000001' } },
+    { name: 'missing actor', patch: { userId: undefined } },
+    { name: 'missing cards', patch: { action: 'rit_board_2:' } },
+    { name: 'four cards', patch: { action: 'rit_board_2:2clubs,3diamonds,4hearts,Tspades' } },
+    {
+      name: 'six cards',
+      patch: { action: 'rit_board_2:2clubs,3diamonds,4hearts,Tspades,Aclubs,Khearts' },
+    },
+    { name: 'bad rank', patch: { action: 'rit_board_2:2clubs,3diamonds,4hearts,10spades,Aclubs' } },
+    { name: 'bad suit', patch: { action: 'rit_board_2:2clubs,3diamonds,4hearts,Tspade,Aclubs' } },
+    {
+      name: 'duplicate card',
+      patch: { action: 'rit_board_2:2clubs,3diamonds,4hearts,Tspades,2clubs' },
+    },
+    {
+      name: 'first board',
+      patch: { action: 'rit_board_1:2clubs,3diamonds,4hearts,Tspades,Aclubs' },
+    },
+    {
+      name: 'fourth board',
+      patch: { action: 'rit_board_4:2clubs,3diamonds,4hearts,Tspades,Aclubs' },
+    },
+    {
+      name: 'padded board number',
+      patch: { action: 'rit_board_02:2clubs,3diamonds,4hearts,Tspades,Aclubs' },
+    },
+    ...['\n', '\r', '\r\n', '\u2028', '\u2029'].map((suffix) => ({
+      name: `trailing line terminator ${JSON.stringify(suffix)}`,
+      patch: { action: String(ritBoard().action) + suffix },
+    })),
+    { name: 'wrong stage', patch: { stage: 'flop' } },
+    { name: 'missing stage', patch: { stage: undefined } },
+    { name: 'supplied zero amount', patch: { amount: 0 } },
+    { name: 'supplied null amount', patch: { amount: null } },
+    { name: 'forced origin', patch: { origin: 'forced' } },
+    { name: 'Horse origin', patch: { origin: 'horse_policy' } },
+    { name: 'null origin', patch: { origin: null } },
+    { name: 'public node', patch: { publicNode: { version: 1, status: 'captured' } } },
+    {
+      name: 'observation identity',
+      patch: { observationIdentity: { version: 1, status: 'bound' } },
+    },
+    { name: 'return marker', patch: { historyEvent: 'uncalled_bet_returned' } },
+    { name: 'dead-money flag', patch: { dead: false } },
+    { name: 'raise flag', patch: { isFullRaise: false } },
+    { name: 'missing timestamp', patch: { timestamp: undefined } },
+    { name: 'negative timestamp', patch: { timestamp: -1 } },
+    { name: 'fractional timestamp', patch: { timestamp: 1002.5 } },
+    { name: 'unsafe timestamp', patch: { timestamp: Number.MAX_SAFE_INTEGER + 1 } },
+    { name: 'string timestamp', patch: { timestamp: '1002' } },
+    { name: 'null timestamp', patch: { timestamp: null } },
+  ])('never reconciles an RIT metadata impostor with $name', ({ patch }) => {
+    const f = fixture();
+    f.a.actions.push({ ...ritBoard(), ...patch });
+    const before = JSON.stringify(f.a);
+    const report = reconcileHorseJournalHand(f.rows(), handKey);
+    expect(report.status).not.toBe('reconciled');
+    expect(report.gaps.length).toBeGreaterThan(0);
+    expect(report.completePopulation).toBe(false);
+    expect(report.activationAllowed).toBe(false);
+    expect(JSON.stringify(f.a)).toBe(before);
+  });
+
+  it.each([
+    { name: 'board three without board two', boards: [3] },
+    { name: 'duplicate board two', boards: [2, 2] },
+    { name: 'reversed boards', boards: [3, 2] },
+  ] as const)('refuses $name in the retained RIT suffix', ({ boards }) => {
+    const f = fixture();
+    f.a.actions.push(...boards.map((board) => ritBoard(board)));
+    expect(reconcileHorseJournalHand(f.rows(), handKey).status).not.toBe('reconciled');
+  });
+
+  it('does not hide a player action after RIT board metadata', () => {
+    const f = fixture();
+    f.a.actions.push(ritBoard(), {
+      seat: 2,
+      userId: '20000000-0000-4000-8000-000000000002',
+      action: 'check',
+      amount: 0,
+      timestamp: 1003,
+      stage: 'river',
+      origin: 'player',
+    });
+    expect(reconcileHorseJournalHand(f.rows(), handKey).status).not.toBe('reconciled');
+  });
+
+  it.each([2, 3] as const)(
+    'keeps board %s metadata invalid for live player-action anchors',
+    (board) => {
+      const f = fixture();
+      const actions = [...f.a.actions, ritBoard(board)];
+      expect(horsePriorActionsDigest(actions)).toBeNull();
+      expect(captureHorseHandJournalContext(actions)).toBeNull();
+    }
+  );
+
+  it('reconciles persisted RIT metadata from a fresh read-only store without rewriting it', () => {
+    const dir = directory();
+    const f = fixture();
+    f.a.actions.push(ritBoard(), { ...returned(), timestamp: 1003 });
+    const rows = f.rows();
+    const store = new HorseDecisionJournalStore(dir);
+    try {
+      store.appendBatch(rows);
+    } finally {
+      store.close();
+    }
+    const path = join(dir, 'horse-decisions.sqlite');
+    const before = readFileSync(path);
+    expect(readHorseJournalHand(dir, handKey)).toMatchObject({
+      status: 'reconciled',
+      acceptedHorseActions: 1,
+      matchedActions: 1,
+      gaps: [],
+    });
+    expect(readFileSync(path)).toEqual(before);
+    const reader = new HorseDecisionJournalStore(dir, { readOnly: true });
+    try {
+      expect(reader.readHand(handKey)).toEqual(rows);
+    } finally {
+      reader.close();
+    }
   });
 
   it.each([

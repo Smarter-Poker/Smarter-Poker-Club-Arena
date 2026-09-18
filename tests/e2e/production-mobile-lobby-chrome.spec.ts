@@ -1,4 +1,5 @@
 import { test, expect, devices, type Page } from '@playwright/test';
+import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 
 /**
  * THE THREE THINGS DAN PHOTOGRAPHED, ON THE LIVE LOBBY (2026-09-10).
@@ -31,17 +32,9 @@ async function openLobby(page: Page) {
   await page.waitForTimeout(500);
   test.skip(/\/auth(?:\/|$|\?)/.test(page.url()), 'signed out: the club lobby is behind a login');
 
-  /* A club message is a legitimate full-screen welcome at the door. Close it
-     through its own X, without persisting anything. */
-  const close = page.getByRole('button', { name: 'Close Club Message' });
-  const opened = await close
-    .waitFor({ state: 'visible', timeout: 3_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (opened) {
-    await close.click();
-    await expect(close).toBeHidden({ timeout: 8_000 });
-  }
+  // Either optional welcome can cover a later tab action. Use the original
+  // public dismissals, including the shared handler for a delayed Diamond offer.
+  await prepareCashLobbyActions(page);
   await expect(page.locator('.lobby-wallets-trigger')).toBeVisible({ timeout: 45_000 });
 }
 

@@ -83,6 +83,7 @@ scripts/operational-alerts/cash-pot-failed-run-intake.md
 scripts/qualification/cash-pot-check-evidence.manifest.json
 scripts/qualification/cash-pot-check-evidence.md
 scripts/qualification/cash-native-hosted.manifest.json
+scripts/ci/probes/f06-shared-hand-lane/generation-preimages.json
 scripts/qualification/class4-hand-outcome-evidence.manifest.json
 scripts/qualification/alert-evidence-hosted.manifest.json
 

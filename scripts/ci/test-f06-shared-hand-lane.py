@@ -148,6 +148,7 @@ try:
     extension['qualify'](ROOT, out, cmd, command, run, probe, require, results)
     require(results.get('unsettledAbort', {}).get('passed') is True, 'Interrupted-hand qualification did not complete')
     require(results.get('successorAbort', {}).get('passed') is True, 'Successor interrupted-hand qualification did not complete')
+    require(results.get('generationAbort', {}).get('passed') is True, 'Generation disposition qualification did not complete')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

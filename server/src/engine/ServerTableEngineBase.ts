@@ -224,6 +224,8 @@ export abstract class ServerTableEngineBase {
    * false` for a teardown that never happened (or hide a teardown failure).
    */
   private teardownPromise: Promise<void> | null = null;
+  /** Successful physical teardown, never inferred from the terminal fence alone. */
+  private terminalTeardownComplete = false;
   /** True only after this object has owned the process-global table resources. */
   private claimedProcessOwnership: boolean = false;
   /** One causal hand-off from an asynchronously failed dealer to its owner. */
@@ -905,6 +907,37 @@ export abstract class ServerTableEngineBase {
     );
     if (this.running) this.armEngineLeaseExpiryTimer();
     return true;
+  }
+
+  /**
+   * A retained F06/seat-move source may outlive its dealer proof. It needs no
+   * renewal after successful physical teardown, but remains the same retired
+   * object: this proof authorizes neither dealing nor financial disposition.
+   * Recheck owned work because stopped custody can accept an exact move replay.
+   */
+  isTerminalDrainedForTournamentLease(tableId: string, authority: EngineLeaseAuthority): boolean {
+    return (
+      this.terminalTeardownComplete &&
+      this.terminal &&
+      !this.running &&
+      this.tableId === tableId &&
+      !ServerTableEngineBase.liveEngines.has(this.tableId) &&
+      this.dealingLoopPromise === null &&
+      this.settlementInFlight.size === 0 &&
+      this.postHandTasksPromise === null &&
+      this.tournamentMoveOperations.size === 0 &&
+      this.readContinuationTasks.size === 0 &&
+      this.snapshotFlushPromise === null &&
+      this.handController === null &&
+      this.engineLeaseScope === 'tournament' &&
+      this.engineLeaseVerified &&
+      authority.scope === 'tournament' &&
+      authority.verified &&
+      (this.engineLeaseGeneration ?? '').toLowerCase() === authority.generation.toLowerCase() &&
+      (this.engineLeaseTournamentId ?? '').toLowerCase() === authority.tournamentId.toLowerCase() &&
+      Number.isFinite(authority.proofDeadlineMonotonicMs) &&
+      leaseMonotonicNow() < authority.proofDeadlineMonotonicMs
+    );
   }
 
   /** Read-time fence catches an event loop that resumes before its timer runs. */
@@ -3488,6 +3521,7 @@ export abstract class ServerTableEngineBase {
         `Table engine ${this.tableId} teardown failed in ${failures.length} operation(s)`
       );
     }
+    this.terminalTeardownComplete = true;
   }
 
   /**
@@ -4177,6 +4211,7 @@ export abstract class ServerTableEngineBase {
         initialSeconds: bank.initialSeconds,
         baseSeconds: bank.baseSeconds,
         dbConsumedSeconds: bank.dbConsumedSeconds,
+        ...(bank.unlimitedActivations === true ? { unlimitedActivations: true } : {}),
       });
     }
     this.parkedTimeBanks = {};
@@ -5377,6 +5412,8 @@ export abstract class ServerTableEngineBase {
         remainingSeconds: bank.remainingSeconds,
         usesRemaining: bank.usesRemaining,
         ...meta,
+        // TimeBankEngine owns the live entitlement; metadata is only its accounting mirror.
+        unlimitedActivations: bank.unlimitedActivations,
       };
     }
     return saved;

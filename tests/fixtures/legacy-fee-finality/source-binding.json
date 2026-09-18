@@ -40,7 +40,7 @@
     "tests/fixtures/legacy-fee-finality/positive-restore-terms.sql": "25763351166caea11a2dfdeab18d2d9b4d52cad593ed019427fd0241860e7198",
     "tests/fixtures/legacy-fee-finality/resolution.sql": "50a6897d52a060b2aa87b7f6493c7fb8e8c33a3fcee354d1d1a70dd2954a3695",
     "tests/fixtures/legacy-fee-finality/setup.sql": "ee83d419415ded41cecb3f6877ebc4fe9b12cb7a3e1e63b5d5d98c28c4c60599",
-    "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "87e64b37c9d4d046fcd7e1424c47112a7db74a06e22a23a86eadacc332e18260"
+    "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "434c00831ab486b7a6da4cd62a5bddf24078c40a3952f43e4c023ed800c40204"
   },
   "expected_assertion_executions": 128,
   "assertion_breakdown": {

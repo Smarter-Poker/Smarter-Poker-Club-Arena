@@ -117,4 +117,16 @@ for role in anon authenticated; do
   grep -q 'permission denied' "$TMP/collector-private-refusal.log"
 done
 echo 'PASS: explicit caller privileges replay and five original-authority refusals'
+# Preserve the original overstrict refusal, then qualify the additive helper.
+P -v watermark_repaired=false -f "$FIX/watermark-commuting.sql"
+P -f "$ROOT/supabase/migrations/20260918083150_pko_independent_head_watermark_admission.sql"
+P -v watermark_repaired=true -f "$FIX/watermark-commuting.sql"
+# These original dependent-head and corruption scenarios now exercise the
+# successor helper, including immutable pending snapshots and exact replay.
+P -c 'DROP FUNCTION fixture_causal_snapshot(uuid)'
+for scenario in qualification evidence-matrix pending-snapshot independent-pending multiple-predecessors; do
+  P -f "$FIX/$scenario.sql"
+done
+P -f "$FIX/watermark-refusals.sql"
+python3 -B "$FIX/full-native.py" --root "$ROOT" --evidence "$TMP/full-financial" --pg-bin "$BIN"
 echo 'PASS: causal PKO admission, immutable replay and bounded native concurrency'

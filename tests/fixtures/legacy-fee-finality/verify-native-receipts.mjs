@@ -1,9 +1,11 @@
 // Execute the actual maintained decoder on receipts emitted by PostgreSQL.
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import ts from 'typescript';
 const [root, output, mode] = process.argv.slice(2);
+// The accounting job installs server/package-lock.json, not the client dependencies.
+const ts = createRequire(path.join(root, 'server/package.json'))('typescript');
 if (mode && mode !== '--original-five-custody-only') throw new Error('Unknown native receipt qualification mode');
 const compiled = path.join(output, 'actual-decoder');
 fs.mkdirSync(compiled, { recursive: true });

@@ -411,7 +411,7 @@
     "tests/fixtures/legacy-fee-finality/before.sql": "2adf8490208f2d0b86d7c9198f28473ff27a77379e17ad4ce6b9647e9e7eacb5",
     "tests/fixtures/legacy-fee-finality/README.md": "14a2c2c5c54825bcff66334f51620f8ca0de5733c80de81e6bef4da57be37bb8",
     "tests/fixtures/legacy-fee-finality/pko-original-cohort.json": "0ba4acb267e47216bd770abfdb7936610bbbcbf1cd173537955dcc3ba9fe8a72",
-    "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "87e64b37c9d4d046fcd7e1424c47112a7db74a06e22a23a86eadacc332e18260",
+    "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "434c00831ab486b7a6da4cd62a5bddf24078c40a3952f43e4c023ed800c40204",
     "tests/fixtures/legacy-fee-finality/after.sql": "0ab6450fb4d8829211681f91df45025c2cc6b50d0764168fdc31c499524c4c55",
     "tests/fixtures/legacy-fee-finality/fn_settle_tournament_rake.sql": "c24c8dedae18ea4d59f8a61ca70c11ea68c2d271ab58350b2932fdb8c1276589",
     "tests/fixtures/legacy-fee-finality/pko-original-fees.json": "c280278971fd63583fcfb30be4bbd52489bb56ff5fd3e8768260d2b6c87eefbd",
@@ -423,7 +423,7 @@
     "scripts/ci/classify-ci-changes.mjs": "91d29218a4968dfcd108a1eca98ac82360bd5d7da58997cb4c234c0583cd1332",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "60d88e9126d388e2b7ecb07174a10d9c2a627ddcaf1f8f57ccecda6da47e4940"
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "a63406f6845264544216fdd288699fa58b5d158a08159fffbb46cd039852fb7f"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",

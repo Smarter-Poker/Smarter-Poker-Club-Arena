@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 140567,
-      "sha256": "e13c847f8de4686e07ee48226d99e366300533fcb9f2327dfa5682bf2045a1cb"
+      "bytes": 140716,
+      "sha256": "f223211fc49a26cadaca69b275569d416b36565d612052ab2298d5dba3d97687"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 69735,
-      "sha256": "a9dafc5718b456451358eb311993e41b9f4daaf4e9cfb33b8c9413c8026981bf"
+      "bytes": 72315,
+      "sha256": "a2ab89a0493b3a989de647244cae53e9283e28923b83d6823c7b005ab1232849"
     }
   },
   "nativePgCron": {

@@ -17,3 +17,5 @@ The original manager retains unknown continuation identity under its exact stopp
 Final local verification: 73 connected manager/RPC cases, 449 classifier cases, and server TypeScript passed. Native qualification: 586 cases passed, owned cluster removed, exact migration SHA `57bdce8ed60155806193cfc728bf5e92e97964ffff48106c70c064ca968ba608`. This source record does not claim production installation or business actuation. Root owns installation and the seven existing events' live readback.
 
 Real-time law: no new player-facing signal; fresh dealing and existing named game events remain owned by the normal admitted engine, with no snapshot-diff trigger.
+
+The exact qualified SQL was installed once as provider migration `20260918123246` and catalog-verified at 12:33 UTC. The source adds only a leading `money-trigger-ok` comment: the quoted `zzz_stamp_seat_occupancy` definition is an existing catalog witness, not new trigger DDL. The installed body remains byte-identical. The scoped schema fragment records actual installed objects; it does not certify engine publication or a live continuation.

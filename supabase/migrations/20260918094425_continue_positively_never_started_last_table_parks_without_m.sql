@@ -1,3 +1,4 @@
+-- money-trigger-ok: table_seats.zzz_stamp_seat_occupancy because this migration only compares its existing catalog definition as a predecessor witness; it never creates or replaces that trigger.
 -- Exact positive original no-start continuation; never an abort or compensation.
 -- The service caller must stop/join the current exact source dealer under local
 -- registry custody. A persisted reserved row is never original no-start evidence.

@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "c809e834d35e96c31284308ca78f8606609d504716a1e8211c519e87f76c5511",
+    "scripts/ci/classify-ci-changes.mjs": "0591dd75a49710f3a791d387926dec2fd570ccacddd01dd54d7a55a488f3adbe",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "948dd2795e1c520836143e81388a90f5e965621b3928be6ed2eb56f11dc977ad",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "c5981fb608d3f0c6d48e8488f9ec06445ca1bcda1da0cf441316b745b2d6aa50",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "4d072a238bb91d807e4ec8c0cf40f26dba124dca9f2696911d1cf717ec55e147",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "079f6a100e3ee9c052b279a6289a679b8edf2d18e75cc0b1fa84cf17cc3c4b0f",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -1424,5 +1424,10 @@
     "previous_sha256": "75adb19d94bc0f123a41d6d18ae1a477d14e958adf3c93be7e034ae200cd4cd5",
     "sha256": "c48c512538bb97ef0e7ce50fd8003477f017eba9a1b482c35e82b5a142ecd6d3",
     "reason": "Bind the reviewed Early Bird runner addition in the existing mixed-cutover phase; no SQL or fixture assertion changed."
+  },
+  "diamond_replay_ci_binding_20260919": {
+    "failed_run": 35453124666,
+    "reason": "The additive Diamond replay and daily-custody CI routes changed the classifier. All prior classification branches and financial fixture inputs remain unchanged. Refresh the three active classifier bindings and the two resulting nested binding hashes; retain historical receipts.",
+    "verification": "Exact active binding guards and classifier routing tests; native qualification remains the existing required hosted accounting job."
   }
 }

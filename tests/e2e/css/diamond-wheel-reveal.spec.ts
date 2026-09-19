@@ -31,9 +31,21 @@ for (const width of [320, 390, 1280]) {
       const receipt = await mountDiamondWheel(page, kind, width);
       const wheel = page.getByRole('img', { name: 'Diamond Wheel', exact: true });
       const secondary = page.getByRole('img', { name: 'Upgrade Wheel', exact: true });
+      await expect(page.locator('[data-painted-band="loading"]')).toHaveCount(0);
+      await expect(page.locator('[data-painted-band="cached"]')).toHaveCount(64);
       await expect(secondary.locator('[data-slot]')).toHaveCount(8);
       await expect(secondary).toBeVisible();
       await expect(secondary.locator('[data-wheel-selector]')).toHaveCount(0);
+      await expect(secondary.locator('[data-card-design="title"]')).toHaveCount(8);
+      await expect(secondary.locator('[data-card-design="full"]')).toHaveCount(0);
+      await expect(page.locator('[data-wheel-assembly]')).toHaveAttribute(
+        'data-upgrade-reveal',
+        'peek'
+      );
+      await expect(wheel.locator('[data-wheel-face]')).toHaveCSS(
+        'transform',
+        'matrix(0.91, 0, 0, 0.91, 0, 0)'
+      );
       await expect(wheel.locator('[data-wheel-selector]')).toHaveCount(1);
       await expect
         .poll(async () => (await wheel.boundingBox())?.width ?? 0)
@@ -82,6 +94,16 @@ for (const width of [320, 390, 1280]) {
       if (kind.startsWith('upgrade')) {
         await expect(secondary.locator('..')).toHaveAttribute('data-phase', 'spinning');
         await expect(secondary.locator('[data-wheel-selector]')).toHaveCount(1);
+        await expect(secondary.locator('[data-card-design="title"]')).toHaveCount(0);
+        await expect(secondary.locator('[data-card-design="full"]')).toHaveCount(8);
+        await expect(page.locator('[data-wheel-assembly]')).toHaveAttribute(
+          'data-upgrade-reveal',
+          'open'
+        );
+        await expect(wheel.locator('[data-wheel-face]')).toHaveCSS(
+          'transform',
+          'matrix(0.56, 0, 0, 0.56, 0, 0)'
+        );
       }
       if (kind === 'prize' || kind === 'upgradechips') {
         const dialog = page.getByRole('dialog');

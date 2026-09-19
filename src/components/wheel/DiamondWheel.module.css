@@ -173,3 +173,10 @@
 .frame[data-fit-viewport] .svg {
   height: 100%;
 }
+
+/* The front wheel covers the upgrade card bodies until UPGRADE lands. It
+   recedes around the shared axle, revealing the complete illustrated cards. */
+.face {
+  transform-origin: 500px 500px;
+  transition: transform calc(650ms * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.25, 1);
+}

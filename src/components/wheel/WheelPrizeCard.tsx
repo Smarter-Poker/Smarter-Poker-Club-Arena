@@ -1,4 +1,5 @@
-import { useId, useMemo } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
+import { reportError } from '../../utils/errorReporter';
 import type { WheelSegment } from '../../services/DiamondWheelService';
 import styles from './WheelPrizeCard.module.css';
 
@@ -26,6 +27,17 @@ const UPGRADE_REGIONS: readonly Region[] = [
   [388, 527, 379, 432],
   [771, 527, 378, 432],
   [1152, 527, 380, 432],
+];
+// Separate title-only artwork selected by the owner on September 19.
+const UPGRADE_TITLE_REGIONS: readonly Region[] = [
+  [8, 211, 372, 201],
+  [390, 211, 373, 201],
+  [774, 211, 372, 201],
+  [1157, 211, 373, 201],
+  [8, 618, 372, 190],
+  [390, 618, 373, 190],
+  [774, 618, 372, 190],
+  [1157, 618, 373, 190],
 ];
 const GAME_CARDS = { plinko: 0, crash: 1, crossing: 2, mines: 3 } as const;
 const SUPER_TIERS = { 5: 'MINI', 10: 'MINOR', 25: 'MAJOR', 100: 'GRAND' } as const;
@@ -101,10 +113,72 @@ function triangle(source: readonly Point[], destination: readonly Point[]) {
       return `${x + ((x - center[0]) * 0.3) / distance},${y + ((y - center[1]) * 0.3) / distance}`;
     })
     .join(' ');
-  return {
-    clip,
-    transform: `matrix(${a} ${b} ${c} ${d} ${p0[0] - a * s0[0] - c * s0[1]} ${p0[1] - b * s0[0] - d * s0[1]})`,
-  };
+  const matrix = [
+    a,
+    b,
+    c,
+    d,
+    p0[0] - a * s0[0] - c * s0[1],
+    p0[1] - b * s0[0] - d * s0[1],
+  ] as const;
+  return { clip, matrix, transform: `matrix(${matrix.join(' ')})` };
+}
+
+type PaintedTexture = { url: string; x: number; y: number; width: number; height: number };
+const atlasImages = new Map<string, Promise<HTMLImageElement>>();
+const bandTextures = new Map<string, Promise<PaintedTexture>>();
+
+// Warp the approved pixels once. Repainting thousands of clipped atlas images
+// on every rotor frame exhausted software-rendered browsers and slower phones.
+// The shared cache is independent of the spin amount; live amounts stay in SVG.
+function paintTexture(atlas: string, mesh: ReturnType<typeof triangle>[]) {
+  const key = JSON.stringify([atlas, mesh]);
+  const cached = bandTextures.get(key);
+  if (cached) return cached;
+  let image = atlasImages.get(atlas);
+  if (!image) {
+    image = new Promise<HTMLImageElement>((resolve, reject) => {
+      const source = new Image();
+      source.onload = () => resolve(source);
+      source.onerror = () => reject(new Error('Wheel Card Artwork Could Not Load'));
+      source.src = atlas;
+    });
+    atlasImages.set(atlas, image);
+  }
+  const painted = image.then((source) => {
+    const polygons = mesh.map((t) => t.clip.split(' ').map((p) => p.split(',').map(Number)));
+    const points = polygons.flat();
+    const x = Math.floor(Math.min(...points.map((p) => p[0]))),
+      y = Math.floor(Math.min(...points.map((p) => p[1]))),
+      width = Math.ceil(Math.max(...points.map((p) => p[0]))) - x,
+      height = Math.ceil(Math.max(...points.map((p) => p[1]))) - y;
+    const canvas = document.createElement('canvas');
+    const scale = 2;
+    canvas.width = width * scale;
+    canvas.height = height * scale;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Wheel Card Renderer Is Unavailable');
+    context.imageSmoothingQuality = 'high';
+    mesh.forEach((t, index) => {
+      context.save();
+      context.setTransform(scale, 0, 0, scale, -x * scale, -y * scale);
+      context.beginPath();
+      polygons[index].forEach(([px, py], n) => {
+        if (n === 0) context.moveTo(px, py);
+        else context.lineTo(px, py);
+      });
+      context.closePath();
+      context.clip();
+      context.transform(...t.matrix);
+      context.drawImage(source, 0, 0);
+      context.restore();
+    });
+    return { url: canvas.toDataURL('image/png'), x, y, width, height };
+  });
+  // This cache holds only the two finite card catalogs, with a bound for previews.
+  if (bandTextures.size >= 128) bandTextures.delete(bandTextures.keys().next().value!);
+  bandTextures.set(key, painted);
+  return painted;
 }
 
 /** A small affine texture mesh seats the original painted pixels on a true
@@ -164,8 +238,37 @@ function PaintedBand({
       }).flat(),
     [sx, sy, sw, sh, slices, start, end, outer, inner]
   );
+  const [texture, setTexture] = useState<PaintedTexture | null>(null);
+  useEffect(() => {
+    let active = true;
+    setTexture(null);
+    void paintTexture(atlas, mesh).then(
+      (result) => {
+        if (active) setTexture(result);
+      },
+      (error) => {
+        if (active) reportError(error, 'WheelPrizeCard.paint');
+      }
+    );
+    return () => {
+      active = false;
+    };
+  }, [atlas, mesh]);
+  if (texture)
+    return (
+      <image
+        aria-hidden="true"
+        data-painted-band="cached"
+        href={texture.url}
+        x={texture.x}
+        y={texture.y}
+        width={texture.width}
+        height={texture.height}
+      />
+    );
+  // Keep the original artwork available while loading or if canvas is unavailable.
   return (
-    <g aria-hidden="true">
+    <g aria-hidden="true" data-painted-band="loading">
       <defs>
         {mesh.map((t, index) => (
           <clipPath key={index} id={`${id}-${index}`}>
@@ -189,6 +292,7 @@ export interface WheelPrizeCardProps {
   outerRadius: number;
   innerRadius: number;
   upgraded?: boolean;
+  titleOnly?: boolean;
   /** Preview can use the approved source sheet without copying its pixels. */
   atlasUrl?: string;
 }
@@ -201,13 +305,16 @@ export function WheelPrizeCard({
   outerRadius,
   innerRadius,
   upgraded = false,
+  titleOnly = false,
   atlasUrl,
 }: WheelPrizeCardProps) {
   const id = `prize-card-${useId().replace(/:/g, '')}`;
-  const region = (upgraded ? UPGRADE_REGIONS : MAIN_REGIONS)[cardIndex(segment, upgraded)];
+  const region = (upgraded ? (titleOnly ? UPGRADE_TITLE_REGIONS : UPGRADE_REGIONS) : MAIN_REGIONS)[
+    cardIndex(segment, upgraded)
+  ];
   const atlas =
     atlasUrl ??
-    `${import.meta.env.BASE_URL}assets/diamond-spins/${upgraded ? 'wheel-upgrade-cards-v1.png' : 'wheel-main-cards-v1.png'}`;
+    `${import.meta.env.BASE_URL}assets/diamond-spins/${upgraded ? (titleOnly ? 'wheel-upgrade-titles-v1.png' : 'wheel-upgrade-cards-v1.png') : 'wheel-main-cards-v1.png'}`;
   const half = (endAngle - startAngle) / 2 - 1.1;
   const mid = (startAngle + endAngle) / 2;
   const outer = outerRadius - 6;
@@ -220,8 +327,8 @@ export function WheelPrizeCard({
     end: half,
   };
   const label = wheelCardLabel(segment, upgraded);
-  const labelRadius = upgraded ? inner + 23 : outer - 35;
-  const amountStart = upgraded ? 1 : -half + 2,
+  const labelRadius = upgraded ? inner + 29 : outer - 35;
+  const amountStart = -half + 2,
     amountEnd = half - 2;
   const [x, y, width, height] = region;
   return (
@@ -231,6 +338,7 @@ export function WheelPrizeCard({
       data-wheel-card={segment.kind}
       data-card-index={cardIndex(segment, upgraded)}
       data-upgraded={upgraded || undefined}
+      data-card-design={titleOnly ? 'title' : 'full'}
       role="img"
       aria-label={label}
     >
@@ -251,31 +359,7 @@ export function WheelPrizeCard({
       </defs>
       <g clipPath={`url(#${id})`}>
         {upgraded ? (
-          <>
-            <PaintedBand
-              {...source}
-              region={[x + 35, y + 145, width - 70, height - 205]}
-              outer={outer - 5}
-              inner={inner + 5}
-              end={-2}
-            />
-            <PaintedBand
-              {...source}
-              region={[x + 40, y + 38, width - 80, segment.kind === 'chips' ? 85 : 115]}
-              outer={outer - 5}
-              inner={segment.kind === 'chips' ? inner + 45 : inner + 8}
-              start={-2}
-            />
-            {segment.kind === 'chips' && (
-              <PaintedBand
-                {...source}
-                region={[x + 45, y + height - 87, width - 90, 48]}
-                outer={inner + 44}
-                inner={inner + 7}
-                start={-2}
-              />
-            )}
-          </>
+          <PaintedBand {...source} region={region} outer={outer - 5} inner={inner + 5} />
         ) : (
           <>
             <PaintedBand
@@ -303,7 +387,7 @@ export function WheelPrizeCard({
         <g clipPath={`url(#${id}-rim)`}>
           <PaintedBand {...source} region={region} outer={outer} inner={inner} />
         </g>
-        {segment.kind === 'chips' && (
+        {segment.kind === 'chips' && !titleOnly && (
           <text
             className={styles.amount}
             fontSize={upgraded ? 18 : 20}

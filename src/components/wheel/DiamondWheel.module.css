@@ -151,3 +151,12 @@
 .frame[data-presentation='assembly'] .aura {
   display: none;
 }
+
+.frame[data-fit-viewport] {
+  width: 100% !important;
+  height: 100%;
+  aspect-ratio: auto;
+}
+.frame[data-fit-viewport] .svg {
+  height: 100%;
+}

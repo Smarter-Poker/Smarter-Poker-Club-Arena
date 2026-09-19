@@ -1,12 +1,18 @@
 import type { ReactNode } from 'react';
 import type { DeckBay } from '../console/DeckConsole';
-import { SpadeConsole, type PlateButtonProps, type ConsoleInk } from '../console/SpadeConsole';
+import {
+  PlateButton,
+  SPADE_CONSOLE_ZONES,
+  SPADE_CONSOLE_PLATES_H,
+  type PlateButtonProps,
+  type ConsoleInk,
+} from '../console/SpadeConsole';
 import { WheelPrizeArt } from './WheelPrizeArt';
 import { wheelPrizeTitle } from './WheelExperience';
 import type { WheelSegment } from '../../services/DiamondWheelService';
 import styles from './WheelCabinet.module.css';
 
-/** A full-width wheel above the approved control chassis, with no frame around the game. */
+/** The wheel and its attached controls share one available play viewport. */
 export function WheelCabinet({
   title,
   titleId,
@@ -16,6 +22,8 @@ export function WheelCabinet({
   primary,
   secondary,
   setup,
+  navigation,
+  notice,
   children,
 }: {
   title: string;
@@ -27,6 +35,8 @@ export function WheelCabinet({
   primary?: PlateButtonProps;
   secondary?: PlateButtonProps;
   setup?: ReactNode;
+  navigation?: ReactNode;
+  notice?: ReactNode;
   children?: ReactNode;
 } & Record<string, unknown>) {
   return (
@@ -37,14 +47,14 @@ export function WheelCabinet({
       </header>
       <div className={styles.wheel}>{children}</div>
       <aside className={styles.controls} aria-label="Diamond Spins Controls">
-        <SpadeConsole
-          eyebrow="Choose Your Spin"
-          title="Diamonds"
-          pill={pill}
-          pillInk={pillInk}
-          plates={primary && secondary ? { primary, secondary } : undefined}
-        >
-          {setup}
+        <div className={styles.controlHeading}>
+          <span className={`sc-ink--${pillInk ?? 'silver'}`} role="status">
+            {pill}
+          </span>
+          {navigation}
+        </div>
+        {setup}
+        <div className={styles.dashboard}>
           <dl className={styles.metrics}>
             {bays.map((bay) => (
               <div key={bay.label}>
@@ -53,7 +63,24 @@ export function WheelCabinet({
               </div>
             ))}
           </dl>
-        </SpadeConsole>
+          <div className={styles.actions}>
+            {secondary && (
+              <PlateButton
+                {...secondary}
+                zone={SPADE_CONSOLE_ZONES.plateSecondary}
+                canvasH={SPADE_CONSOLE_PLATES_H}
+              />
+            )}
+            {primary && (
+              <PlateButton
+                {...primary}
+                zone={SPADE_CONSOLE_ZONES.platePrimary}
+                canvasH={SPADE_CONSOLE_PLATES_H}
+              />
+            )}
+          </div>
+        </div>
+        {notice && <div className={styles.notice}>{notice}</div>}
       </aside>
     </section>
   );
@@ -100,6 +127,7 @@ export function WheelEntry({
       <label htmlFor="diamond-spin-entry">Diamonds To Spin</label>
       <input
         id="diamond-spin-entry"
+        aria-describedby="diamond-spin-range"
         type="number"
         inputMode="numeric"
         min={25}
@@ -109,7 +137,7 @@ export function WheelEntry({
         disabled={disabled}
         onChange={(e) => onChange(e.target.valueAsNumber)}
       />
-      <span>25 To 2,500 Diamonds</span>
+      <span id="diamond-spin-range">25 To 2,500</span>
       <div className={styles.presets}>
         {[25, 100, 500, 1000, 2500].map((amount) => (
           <button

@@ -52,6 +52,7 @@ export function WheelExperience({
   onFinished,
   size,
   autoContinue = false,
+  fitViewport = false,
 }: {
   segments: WheelSegment[];
   upgradeSegments?: WheelSegment[];
@@ -61,6 +62,7 @@ export function WheelExperience({
   onFinished: () => void;
   size: number;
   autoContinue?: boolean;
+  fitViewport?: boolean;
 }) {
   const [phase, setPhase] = useState<'primary' | 'prize' | 'secondary' | 'bonus' | 'finished'>(
     'primary'
@@ -70,10 +72,10 @@ export function WheelExperience({
   const mainStage = useRef<HTMLDivElement>(null);
   const upgradeStage = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!spinning || (phase !== 'primary' && phase !== 'secondary')) return;
+    if (fitViewport || !spinning || (phase !== 'primary' && phase !== 'secondary')) return;
     const stage = phase === 'secondary' ? upgradeStage.current : mainStage.current;
     stage?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-  }, [spinning, phase]);
+  }, [spinning, phase, fitViewport]);
   const prize = secondary ? receipt?.secondary?.outcome : receipt?.outcome;
   const showPrize = (phase === 'prize' || phase === 'bonus') && prize && receipt;
   const finish = () => {
@@ -86,6 +88,7 @@ export function WheelExperience({
         className={styles.stack}
         role="group"
         data-wheel-assembly="concentric"
+        data-fit-viewport={fitViewport || undefined}
         aria-label="Diamond Spins Prize Wheel"
       >
         {upperSegments.length > 0 && (
@@ -102,6 +105,7 @@ export function WheelExperience({
               upgraded
               showSelector={phase !== 'primary' && receipt?.outcome.kind === 'upgrade'}
               idleDirection={-1}
+              fitViewport={fitViewport}
               size={size}
               presentation="assembly"
               onLanded={() => setPhase('bonus')}
@@ -115,6 +119,7 @@ export function WheelExperience({
             landingOrd={receipt?.outcome.ord ?? null}
             spinKey={spinKey}
             spinning={spinning && phase === 'primary'}
+            fitViewport={fitViewport}
             size={size}
             onLanded={() => {
               if (receipt?.outcome.kind === 'nothing') finish();

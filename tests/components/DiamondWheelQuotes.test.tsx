@@ -34,7 +34,13 @@ vi.mock('../../src/components/wheel/WheelExperience', () => ({
   wheelPrizeTitle: () => '',
   WheelExperience: ({ size }: { size: number }) => <output aria-label="Wheel Width">{size}</output>,
 }));
-vi.mock('../../src/components/console/SpadeConsole', () => ({
+vi.mock('../../src/components/console/SpadeConsole', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/components/console/SpadeConsole')>()),
+  PlateButton: ({ label, disabled, onClick }: any) => (
+    <button disabled={disabled} onClick={onClick}>
+      {label}
+    </button>
+  ),
   SpadeConsole: ({ children, plates }: any) => (
     <section>
       {children}
@@ -118,6 +124,7 @@ describe('the selected wheel stake owns its availability quote', () => {
         pending_awards: [{ id: 'earned/award?1', game, base_diamonds: 100 }],
       });
       render(<DiamondWheelPage />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Prizes & More', exact: true }));
       const open = await screen.findByRole('button', { name: 'Open', exact: true });
       fireEvent.click(open);
       expect(backend.navigate).toHaveBeenCalledWith(

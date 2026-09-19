@@ -48,18 +48,22 @@
   background: #000;
   font-family: 'Roboto Condensed', sans-serif;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
 }
 .controlHeading {
   grid-column: 2;
   grid-row: 1;
-  justify-self: end;
+  justify-self: stretch;
+  width: 100%;
+  max-width: 390px;
+  margin-left: auto;
 }
 .entryModes {
   grid-column: 1;
   grid-row: 1;
-  justify-self: start;
+  justify-self: stretch;
+  max-width: 420px;
 }
 .entry,
 .dashboard,
@@ -71,7 +75,8 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
   gap: 0 8px;
 }
 .controlHeading > span {
@@ -85,8 +90,11 @@
 .controls .controlHeading button,
 .controls .entryModes button {
   min-height: 36px;
-  min-width: 110px;
+  min-width: 0;
+  flex: 1;
+  font-family: 'Roboto Condensed', sans-serif;
   font-size: 13px;
+  white-space: nowrap;
   padding: 0 6px;
   border: 7px solid transparent;
   border-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') 26 fill /

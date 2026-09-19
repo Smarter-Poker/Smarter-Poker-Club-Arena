@@ -172,8 +172,9 @@ for (const viewport of [
   { width: 390, height: 844 },
   { width: 1280, height: 720 },
   { width: 844, height: 390 },
+  { width: 844, height: 390, fallbackFonts: true },
 ]) {
-  test(`Diamond Spins controls share one screen at ${viewport.width}x${viewport.height}`, async ({
+  test(`Diamond Spins controls share one screen at ${viewport.width}x${viewport.height}${'fallbackFonts' in viewport ? ' with fallback fonts' : ''}`, async ({
     page,
   }, testInfo) => {
     const { diamondWheelPageFixture } = await import('../helpers/diamond-wheel-page-fixture.mjs');
@@ -200,6 +201,12 @@ for (const viewport of [
     });
     await page.goto('https://diamond-wheel.test/');
     await page.addStyleTag({ content: bundle.css });
+    if ('fallbackFonts' in viewport) {
+      await page.addStyleTag({
+        content:
+          '[aria-label="Diamond Spins Controls"] button {font-family: Arial, sans-serif !important}',
+      });
+    }
     await page.addScriptTag({ content: bundle.javascript });
     const controls = page.getByRole('complementary', { name: 'Diamond Spins Controls' });
     await expect(controls).toBeVisible();
@@ -242,20 +249,20 @@ for (const viewport of [
       expect(measured.targets.every(Boolean)).toBe(true);
       expect(
         await controls.locator('button').evaluateAll((elements) =>
-          elements.every((el) => {
+          elements.flatMap((el) => {
             const range = document.createRange();
             range.selectNodeContents(el);
             const text = range.getBoundingClientRect(),
               button = el.getBoundingClientRect();
-            return (
-              text.left >= button.left &&
+            return text.left >= button.left &&
               text.right <= button.right &&
               text.top >= button.top &&
               text.bottom <= button.bottom
-            );
+              ? []
+              : [{ label: el.textContent, text: text.toJSON(), button: button.toJSON() }];
           })
         )
-      ).toBe(true);
+      ).toEqual([]);
     };
     await assertFits();
     await controls.getByRole('button', { name: '2,500', exact: true }).click();

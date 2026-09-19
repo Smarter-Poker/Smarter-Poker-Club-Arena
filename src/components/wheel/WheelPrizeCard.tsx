@@ -239,15 +239,20 @@ function PaintedBand({
     [sx, sy, sw, sh, slices, start, end, outer, inner]
   );
   const [texture, setTexture] = useState<PaintedTexture | null>(null);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     let active = true;
     setTexture(null);
+    setFailed(false);
     void paintTexture(atlas, mesh).then(
       (result) => {
         if (active) setTexture(result);
       },
       (error) => {
-        if (active) reportError(error, 'WheelPrizeCard.paint');
+        if (active) {
+          setFailed(true);
+          reportError(error, 'WheelPrizeCard.paint');
+        }
       }
     );
     return () => {
@@ -266,9 +271,12 @@ function PaintedBand({
         height={texture.height}
       />
     );
-  // Keep the original artwork available while loading or if canvas is unavailable.
+  // Leave the painted sector chassis visible while decoding. Mounting every
+  // atlas triangle here starved the image load on software-rendered devices.
+  if (!failed) return <g aria-hidden="true" data-painted-band="loading" />;
+  // A renderer failure still retains the approved artwork through the SVG mesh.
   return (
-    <g aria-hidden="true" data-painted-band="loading">
+    <g aria-hidden="true" data-painted-band="fallback">
       <defs>
         {mesh.map((t, index) => (
           <clipPath key={index} id={`${id}-${index}`}>

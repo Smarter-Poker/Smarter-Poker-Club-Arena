@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { WheelPrizeCard, wheelCardLabel } from '../../src/components/wheel/WheelPrizeCard';
 import type { WheelSegment } from '../../src/services/DiamondWheelService';
 import receipts from '../fixtures/diamond-spins/wheel-v3-postgres-receipts.json';
@@ -18,15 +18,29 @@ const mainIndex = (segment: WheelSegment) =>
       : { upgrade: 4, throwables: 8, time_bank: 9, rabbit_hunt: 10, diamonds: 11 }[
           segment.kind as 'upgrade'
         ];
+vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
+beforeAll(() => {
+  vi.stubGlobal(
+    'Image',
+    class {
+      onerror = () => {};
+      set src(_value: string) {
+        queueMicrotask(() => this.onerror());
+      }
+    }
+  );
+});
+afterAll(() => vi.unstubAllGlobals());
 afterEach(cleanup);
 
 describe('approved wheel prize cards', () => {
   it.each([
-    [false, main.segments],
-    [true, upgrade.segments],
+    [false, main.segments, false],
+    [true, upgrade.segments, false],
+    [true, upgrade.segments, true],
   ] as const)(
-    'maps every catalog outcome to its correct approved card; upgraded=%s',
-    (upgraded, segments: WheelSegment[]) => {
+    'maps every catalog outcome and preserves its artwork when the renderer fails; upgraded=%s',
+    async (upgraded, segments: WheelSegment[], titleOnly) => {
       const count = segments.length;
       const view = render(
         <svg>
@@ -35,6 +49,7 @@ describe('approved wheel prize cards', () => {
               key={segment.ord}
               segment={segment}
               upgraded={upgraded}
+              titleOnly={titleOnly}
               startAngle={(index * 360) / count}
               endAngle={((index + 1) * 360) / count}
               outerRadius={upgraded ? 468 : 344}
@@ -44,6 +59,9 @@ describe('approved wheel prize cards', () => {
         </svg>
       );
       expect(screen.getAllByRole('img')).toHaveLength(upgraded ? 8 : 12);
+      // Decoding must not mount thousands of clipped atlas images.
+      expect(view.container.querySelectorAll('image')).toHaveLength(0);
+      await waitFor(() => expect(view.container.querySelector('image')).toBeTruthy());
       for (const segment of segments) {
         const element = screen.getByRole('img', {
           name: wheelCardLabel(segment, upgraded),
@@ -57,7 +75,7 @@ describe('approved wheel prize cards', () => {
         expect(element).toHaveAttribute('data-card-index', String(index));
         expect(element.querySelector('image')).toHaveAttribute(
           'href',
-          `/assets/diamond-spins/${upgraded ? 'wheel-upgrade-cards-v1.png' : 'wheel-main-cards-v1.png'}`
+          `/assets/diamond-spins/${upgraded ? (titleOnly ? 'wheel-upgrade-titles-v1.png' : 'wheel-upgrade-cards-v1.png') : 'wheel-main-cards-v1.png'}`
         );
         expect(element.querySelector('g[clip-path]')).toBeTruthy();
       }

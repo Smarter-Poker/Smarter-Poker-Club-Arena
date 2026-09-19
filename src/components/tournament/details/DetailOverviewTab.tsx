@@ -62,6 +62,7 @@ import {
   ordinal,
   placePrize,
   resolvePayoutStructure,
+  tournamentRowUnitCents,
 } from './types';
 import { tournamentService } from '../../../services/TournamentService';
 import { useMaintenanceBreak } from '../../../hooks/useMaintenanceBreak';
@@ -596,11 +597,11 @@ export default function DetailOverviewTab({
           prizeValue: Number.isFinite(recorded)
             ? recorded
             : row && pool !== null
-              ? placePrize(pool, payoutStructure, row.place)
+              ? placePrize(pool, payoutStructure, row.place, tournamentRowUnitCents(tournament))
               : 0,
         };
       });
-  }, [isCompleted, entries, payoutStructure, prize.ladder]);
+  }, [isCompleted, entries, payoutStructure, prize.ladder, tournament]);
 
   /**
    * The runners-up list under the podium.

@@ -401,6 +401,13 @@ it('process replacement retains source recovery gate after terminal hand adoptio
     },
     phase: 'counting_down',
     peakUnparked: 0,
+    // Object.create skips the constructor, so every field unparkedTables()
+    // reads has to be stubbed at its real initial value. #4909 added the
+    // F06 unresolved clock after this test was written and the stub went
+    // stale silently: the method reached .keys() on undefined.
+    f06UnresolvedSince: new Map<string, number>(),
+    f06StuckAnnounced: new Set<string>(),
+    f06StuckTableCount: 0,
   });
   expect(maintenance.unparkedTables()).toEqual([id(3)]);
   expect(maintenance.unparkedReasonCounts).toEqual({ f06_preparation_unresolved: 1 });

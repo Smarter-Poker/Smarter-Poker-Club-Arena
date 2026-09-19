@@ -108,7 +108,13 @@ function stopped(s = server()) {
   return { s, m, engines };
 }
 beforeEach(() => {
-  mocks.rpc.mockReset().mockImplementation(async (_n, a) => response(a));
+  mocks.rpc
+    .mockReset()
+    .mockImplementation(async (name, a) =>
+      name === 'fn_f06_find_mixed_manager_custody'
+        ? { error: null, data: { ok: true, tournament_id: a.p_tournament_id, receipt: null } }
+        : response(a)
+    );
   mocks.resume.mockReset().mockResolvedValue(null);
   mocks.claim.mockReset().mockResolvedValue({
     status: 'granted',
@@ -249,6 +255,10 @@ it('refuses changed incarnation after awaited journal completion', async () => {
 });
 it('does not infer a read failure as an empty event', async () => {
   mocks.rpc.mockResolvedValue({ error: { message: 'unknown' }, data: null });
+  mocks.rpc.mockResolvedValueOnce({
+    error: null,
+    data: { ok: true, tournament_id: id(1), receipt: null },
+  });
   const s = server();
   await expect(s.performTournamentManagerAdmission(id(1), 'resume', 'test', 1)).rejects.toThrow(
     'custody_unproven'

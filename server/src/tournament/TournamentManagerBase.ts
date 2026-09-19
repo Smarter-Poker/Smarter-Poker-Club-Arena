@@ -262,6 +262,12 @@ export abstract class TournamentManagerBase {
     );
   }
 
+  protected leaveCompletedF06RecoveryOwnership(): void {
+    if (!this.isF06RecoveryOwner() || this.tableEngines.size !== 0)
+      throw new Error('f06_recovery_completion_owner_changed');
+    this.f06RecoveryOwnership = false;
+  }
+
   /** Positive completion of every exact stop, not merely loss of a registry slot. */
   protected captureDrainedF06Originals(): readonly (readonly [string, ServerTableEngine])[] | null {
     const originals = this.drainedF06Originals;
@@ -1043,7 +1049,7 @@ export abstract class TournamentManagerBase {
     if (!this.running) throw new TournamentLifecycleAbortedError(token.generation);
   }
 
-  private trackLifecycleJob<T>(operation: Promise<T>): Promise<T> {
+  protected trackLifecycleJob<T>(operation: Promise<T>): Promise<T> {
     let tracked!: Promise<T>;
     tracked = operation.finally(() => this.lifecycleJobs.delete(tracked));
     this.lifecycleJobs.add(tracked);
@@ -1635,7 +1641,8 @@ export abstract class TournamentManagerBase {
             throw new Error('f06_allocation_unproven');
           return Number(a.hand_number);
         },
-        () => current() && this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId)
+        () => current() && this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId),
+        tableLifecycle
       );
       engine.installF06HandAdmission(async (handNumber) => {
         const refreshed = await supabase.rpc('fn_f06_hand_number_state', {

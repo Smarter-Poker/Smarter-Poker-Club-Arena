@@ -65,7 +65,8 @@ in dependency order, each with `-x` so the source SHA is on record:
 7. `84a8e5d754` (#4595) the diamond-health qualification script and its CI
    step, placed beside the other `PG_BIN` pg17 steps. The script finds its
    migration by slug because production recorded a different stamp
-   (20260914063002) than the file was written with.
+   (20260914063002) than the file was written with. Moved to the stacked
+   branch with the laws: it reads the same missing migration file.
 8. `64a27a6895` (#4679) the bounded Diamond bonus club index law.
 
 No `supabase/migrations/*` or `scripts/ci/schema-manifest.d/*` path is carried
@@ -78,9 +79,13 @@ index pin in `a-club-stays-deletable`) cannot pass until those files are on
 short stacked series: this PR carries every engine, client, test and law
 change that passes on today's `main`; the stacked branch
 `agent/cw-diamond-mtt/feat/the-diamond-tournament-laws-come-home` carries the
-nine migration-text laws with their `docs/laws.d/` files and pushes the moment
-the migration files land. Those nine were run locally with the archived
-migration files placed temporarily: 11 files, 135 tests green.
+nine migration-text laws with their `docs/laws.d/` files, plus the
+diamond-health qualification script and CI step of #4595 (which reads the
+`diamond_health_requires_known_comparisons` migration the same way) and the
+`cash-native-hosted.manifest.json` repin that step's `ci.yml` change needs. It
+pushes the moment the migration files land. The nine laws were run locally
+with the archived migration files placed temporarily: 11 files, 135 tests
+green.
 
 The programme's Phase 8 and Phase 9 sections carry the archived text again with
 a paragraph recording the re-landing. The `docs/laws.d/` file for every

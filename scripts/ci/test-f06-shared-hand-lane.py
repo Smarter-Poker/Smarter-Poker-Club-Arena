@@ -180,6 +180,9 @@ try:
     retained = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/retained_mtt_qualification.py'))
     retained['qualify'](ROOT, out, cmd, command, run, probe, require, results)
     require(results.get('retainedMtt', {}).get('passed') is True, 'Retained MTT qualification did not complete')
+    retired = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/retired_origin_qualification.py'))
+    retired['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('retiredOrigin', {}).get('passed') is True, 'Retired original authority qualification did not complete')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

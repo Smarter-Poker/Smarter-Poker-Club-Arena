@@ -169,10 +169,42 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # A day already anchored that now hashes differently is the alarm, and
+          # the script exits 1 for exactly that. Days the file has simply not
+          # caught up with are NOT that - and `git diff --exit-code` treated
+          # them identically, so this job went red the first day nobody
+          # committed the regenerated file and stayed red, which is how the
+          # real signal became invisible. Measured 2026-09-19: every one of the
+          # 39 anchored days still hashed the same; the job was red because
+          # eight new days had been attested since 2026-09-10 and nothing had
+          # committed them.
+          UNANCHORED_BACKLOG_FAILS_AT: '14'
         run: |
           set -euo pipefail
+          # Assume the incident until the script returns: an unexplained change
+          # is the only thing it exits non-zero for, and under `set -e` nothing
+          # after it runs.
+          echo "verdict=changed" >> "$GITHUB_OUTPUT"
           node scripts/ci/anchor-ledger-days.mjs 2>&1 | tee /tmp/anchor-ledger-days.log
-          git diff --exit-code -- docs/attestation/
+
+          # The script rewrote the file in this disposable checkout. This job
+          # is contents:read on purpose and cannot commit, so it counts what
+          # the anchor is missing and says so.
+          NEW=$(git diff --numstat -- docs/attestation/ | awk '{s+=$1} END {print s+0}')
+          echo "new_days=$NEW" >> "$GITHUB_OUTPUT"
+          if [ "$NEW" -eq 0 ]; then
+            echo "verdict=clean" >> "$GITHUB_OUTPUT"
+            echo "the anchor already carries every day the database has attested."
+            exit 0
+          fi
+
+          echo "verdict=behind" >> "$GITHUB_OUTPUT"
+          echo "::warning title=Ledger anchor::${NEW} attested day(s) are not in docs/attestation/chip-ledger-days.tsv. Run scripts/ci/anchor-ledger-days.mjs and commit the result - git is where this history is supposed to live."
+          git diff -- docs/attestation/ | head -60
+          if [ "$NEW" -ge "$UNANCHORED_BACKLOG_FAILS_AT" ]; then
+            echo "::error title=Ledger anchor::${NEW} day(s) behind, at or past the ${UNANCHORED_BACKLOG_FAILS_AT}-day bound. An attestation stored only in the database it hashes proves nothing; it means something while git carries it."
+            exit 1
+          fi
 
       # A RED JOB IN A SCHEDULED WORKFLOW IS A TREE NOBODY HEARS FALL.
       #
@@ -189,7 +221,10 @@ jobs:
       # CLAUDE.md 10.86 rule 3: a guard must have a reader, and you must name
       # them. The reader is this issue.
       - name: Raise the alarm
-        if: failure() && steps.anchor.outcome == 'failure'
+        # Only for the incident, never for a backlog: filing "an anchored day
+        # now hashes differently" because the file is three days behind is the
+        # crying-wolf that gets an alarm muted.
+        if: failure() && steps.anchor.outputs.verdict == 'changed'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}

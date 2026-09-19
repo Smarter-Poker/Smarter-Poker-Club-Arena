@@ -18,6 +18,7 @@ export default function BonusCompletion({
       title={`${chips.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Chips`}
       detail={`${chips > 0 ? 'Your Prize Is Booked.' : 'No Chips Won This Round.'} ${detail} Returning To Diamond Spins.`}
       autoContinue
+      autoContinueAfterMs={5000}
       onOpen={() => navigate(`/clubs/${clubId}/wheel`, { replace: true })}
     />
   );

@@ -16,6 +16,7 @@
 
 import { supabase } from '../lib/supabase';
 import { validateCrashSettlement } from '../utils/crashReceipt';
+import { bonusAdded, bonusTotal, earnedReceiptBudget } from '../utils/bonusGameBudget';
 
 export type DiamondGame = 'plinko' | 'crash' | 'crossing' | 'mines';
 
@@ -164,6 +165,14 @@ export interface CrashRound {
   status: CrashStatus;
   bet_diamonds: number;
   bet_chips: number;
+  award_id?: string;
+  bonus?: {
+    base_diamonds: number;
+    entry_diamonds: number;
+    boost_multiplier: 1 | 2;
+    added_diamonds: number;
+    total_diamonds: number;
+  };
   minimum_payout_chips?: number;
   payout_version?: 1 | 2;
   diamonds_per_chip: number;
@@ -450,6 +459,8 @@ export function normaliseCrash(raw: Record<string, unknown>): CrashRound {
   const fairness = rec(raw.fairness);
   const balances = rec(raw.balances);
   const pool = rec(raw.pool);
+  const funded = earnedReceiptBudget(raw);
+  if (raw.award_id != null && !funded) throw new Error('The Crash Award Could Not Be Verified');
   return {
     ok: raw.ok === true,
     error: raw.error ? String(raw.error) : undefined,
@@ -465,6 +476,18 @@ export function normaliseCrash(raw: Record<string, unknown>): CrashRound {
     status: (raw.status as CrashStatus) ?? 'open',
     bet_diamonds: num(raw.bet_diamonds),
     bet_chips: num(raw.bet_chips),
+    ...(funded?.award
+      ? {
+          award_id: funded.award.id,
+          bonus: {
+            base_diamonds: funded.base,
+            entry_diamonds: funded.award.entryDiamonds,
+            boost_multiplier: funded.award.boostMultiplier,
+            added_diamonds: bonusAdded(funded),
+            total_diamonds: bonusTotal(funded),
+          },
+        }
+      : {}),
     minimum_payout_chips:
       raw.minimum_payout_chips === undefined ? undefined : num(raw.minimum_payout_chips),
     payout_version:

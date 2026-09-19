@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react';
 import DiamondChoicePage from '../../src/pages/DiamondChoicePage';
 import fixtures from '../fixtures/diamond-spins/local-postgres-receipts.json';
+import upgrades from '../fixtures/diamond-spins/wheel-v3-postgres-receipts.json';
 
 const backend = vi.hoisted(() => ({
   state: vi.fn(),
@@ -315,6 +316,27 @@ describe('choice-game entry quotes belong to the selected settings', () => {
 
 describe('choice games consume wheel-funded entry', () => {
   it.each(['mines', 'crossing'] as const)(
+    'keeps the Super %s title when resuming its spent award',
+    async (game) => {
+      const saved = upgrades.records.find(
+        (r) =>
+          r.kind === 'start' &&
+          r.game === game &&
+          (r.value as Record<string, any>).bonus?.boost_multiplier === 2
+      )!.value;
+      backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });
+      backend.state.mockResolvedValue({ ...state, open_round: saved });
+      render(<DiamondChoicePage game={game} />);
+      await act(async () => {});
+      expect(
+        screen.getByRole('heading', {
+          name: game === 'mines' ? 'Super Diamond Mines' : 'Super Donkey Cross',
+        })
+      ).toBeInTheDocument();
+      expect(backend.start).not.toHaveBeenCalled();
+    }
+  );
+  it.each(['mines', 'crossing'] as const)(
     'starts an awarded %s round with its reserved limits and no fresh base charge',
     async (game) => {
       const award = {
@@ -333,6 +355,11 @@ describe('choice games consume wheel-funded entry', () => {
       });
       render(<DiamondChoicePage game={game} />);
       await act(async () => {});
+      expect(
+        screen.getByRole('heading', {
+          name: game === 'mines' ? 'Super Diamond Mines' : 'Super Donkey Cross',
+        })
+      ).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
       expect(screen.queryByLabelText('Entry Diamonds')).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));

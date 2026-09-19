@@ -1,0 +1,5 @@
+{
+  "_comment": "Qualified migration: 20260919023656; install only after compatible receipt readers are published.",
+  "_owner": "Diamond Games",
+  "functions": ["fn_diamond_bonus_minimum", "fn_crash_point_cents"]
+}

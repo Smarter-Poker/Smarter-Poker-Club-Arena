@@ -48,7 +48,7 @@ DO $$
 DECLARE player uuid:='d1000000-0000-4000-8000-000000000005';owner uuid:='d1000000-0000-4000-8000-000000000002';club uuid:='d1000000-0000-4000-8000-000000000003';
  result jsonb;replay jsonb;st jsonb;game_result jsonb;award uuid;commit uuid;game_commit uuid;seed text;game_seed text;drop_value integer;nonce bigint;point numeric;point2 numeric;
  target integer;variant integer;expected_game text;i integer;stake integer;before_player numeric;before_owner numeric;before_spent numeric;before_intake numeric;before_alloc numeric;
- bonus public.wheel_bonus_awards;after_bonus public.wheel_bonus_awards;hash bytea;secondary_cutoffs integer[]:=ARRAY[20000,40000,60000,80000,89600,97000,99000,100000]; secondary_floor integer; before_chips numeric; before_promo numeric; before_bank numeric; cutoffs integer[]:=ARRAY[10000,15000,30000,40000,45000,60000,70000,72000,87000,97000,98000,100000];
+ bonus public.wheel_bonus_awards;after_bonus public.wheel_bonus_awards;hash bytea;secondary_cutoffs integer[]:=ARRAY[20000,40000,60000,80000,89600,97000,99000,100000]; secondary_floor integer; before_chips numeric; before_promo numeric; before_bank numeric; cutoffs integer[]:=ARRAY[10000,15000,29600,39600,44600,59200,69200,71200,85800,95800,98000,100000];
  floor_point integer;double_it boolean;extra integer;kind text;cost integer;mint_count bigint;denied boolean;d date:=(now() AT TIME ZONE 'America/Chicago')::date;daily uuid;cl jsonb;
  historical_receipt constant jsonb:=$historical${"ok":true,"pool":{"chips_paid":5.25,"diamond_float":6061.0},"bonus":{"id":"08b0fbcd-1ed7-4dab-85c0-e526fd116239","game":"plinko","club_id":"d1000000-0000-4000-8000-000000000003","cap_cents":100000,"base_diamonds":5000,"entry_diamonds":2500,"boost_multiplier":2},"club_id":"d1000000-0000-4000-8000-000000000003","host_id":"d1000000-0000-4000-8000-000000000003","outcome":{"ord":12,"game":null,"kind":"upgrade","label":"Upgrade","amount":5000,"locked":false,"weight":2000,"multiplier":2,"probability":0.02,"value_chips":50.0},"spin_id":"85d46beb-41ad-4038-9276-f2295cf73410","welcome":false,"balances":{"diamonds":95949,"member_chips":13.67},"fairness":{"roll":276893916919784,"nonce":16,"domain":"wheel-v2","locked":[],"commit_id":"3514c96e-7f58-49ff-84b0-3212373bd545","client_seed":"client","server_seed":"4cf4a7c1e35095a715e194a117f64015706278aee5dcdd4547b0daf429335f18","weight_total":100000,"eligible_ords":[1,2,3,4,5,6,7,8,9,10,11,12],"server_seed_hash":"738fbdec57add54f659126536649e24d2642c081233a29e7139b9ad6a6ee21c3"},"replayed":false,"segments":[{"ord":1,"game":"plinko","kind":"bonus","label":"Diamond Plinko","amount":2500,"locked":false,"weight":10000,"multiplier":1,"probability":0.1,"value_chips":25.0},{"ord":2,"game":null,"kind":"chips","label":"1x Chips","amount":25.0,"locked":false,"weight":5000,"multiplier":1,"probability":0.05,"value_chips":25.0},{"ord":3,"game":null,"kind":"throwables","label":"Throwables","amount":1000.0,"locked":false,"weight":14000,"multiplier":0.4,"probability":0.14,"value_chips":10.0},{"ord":4,"game":"crash","kind":"bonus","label":"Diamond Crash","amount":2500,"locked":false,"weight":10000,"multiplier":1,"probability":0.1,"value_chips":25.0},{"ord":5,"game":null,"kind":"diamonds","label":"2x Diamonds","amount":5000,"locked":false,"weight":8000,"multiplier":2,"probability":0.08,"value_chips":50.0},{"ord":6,"game":null,"kind":"time_bank","label":"Time Bank","amount":1000.0,"locked":false,"weight":14000,"multiplier":0.4,"probability":0.14,"value_chips":10.0},{"ord":7,"game":"crossing","kind":"bonus","label":"Donkey Cross","amount":2500,"locked":false,"weight":10000,"multiplier":1,"probability":0.1,"value_chips":25.0},{"ord":8,"game":null,"kind":"chips","label":"2x Chips","amount":50.0,"locked":false,"weight":2000,"multiplier":2,"probability":0.02,"value_chips":50.0},{"ord":9,"game":null,"kind":"rabbit_hunt","label":"Rabbit Hunt","amount":1000.0,"locked":false,"weight":14000,"multiplier":0.4,"probability":0.14,"value_chips":10.0},{"ord":10,"game":"mines","kind":"bonus","label":"Diamond Mines","amount":2500,"locked":false,"weight":10000,"multiplier":1,"probability":0.1,"value_chips":25.0},{"ord":11,"game":null,"kind":"chips","label":"3x Chips","amount":75.0,"locked":false,"weight":1000,"multiplier":3,"probability":0.01,"value_chips":75.0},{"ord":12,"game":null,"kind":"upgrade","label":"Upgrade","amount":5000,"locked":false,"weight":2000,"multiplier":2,"probability":0.02,"value_chips":50.0}],"secondary":{"outcome":{"ord":1,"game":"plinko","kind":"bonus","label":"Diamond Plinko","amount":5000,"locked":false,"weight":25000,"multiplier":2,"probability":0.25,"value_chips":50.0},"fairness":{"roll":30001411788624,"nonce":16,"domain":"wheel-v2-upgrade","locked":[],"commit_id":"3514c96e-7f58-49ff-84b0-3212373bd545","client_seed":"client","server_seed":"4cf4a7c1e35095a715e194a117f64015706278aee5dcdd4547b0daf429335f18","weight_total":100000,"eligible_ords":[1,2,3,4],"server_seed_hash":"738fbdec57add54f659126536649e24d2642c081233a29e7139b9ad6a6ee21c3"},"segments":[{"ord":1,"game":"plinko","kind":"bonus","label":"Diamond Plinko","amount":5000,"locked":false,"weight":25000,"multiplier":2,"probability":0.25,"value_chips":50.0},{"ord":2,"game":"crash","kind":"bonus","label":"Diamond Crash","amount":5000,"locked":false,"weight":25000,"multiplier":2,"probability":0.25,"value_chips":50.0},{"ord":3,"game":"crossing","kind":"bonus","label":"Donkey Cross","amount":5000,"locked":false,"weight":25000,"multiplier":2,"probability":0.25,"value_chips":50.0},{"ord":4,"game":"mines","kind":"bonus","label":"Diamond Mines","amount":5000,"locked":false,"weight":25000,"multiplier":2,"probability":0.25,"value_chips":50.0}]},"created_at":"2026-09-17T20:14:23.397421+00:00","daily_bonus":false,"bonus_ticket_id":null,"entry_funded_by":"player","segment_version":2,"contract_version":2,"diamonds_per_chip":100,"spin_price_diamonds":2500,"entry_value_diamonds":2500,"player_cost_diamonds":2500}$historical$::jsonb; historical_row public.wheel_spins;
  funding_case record; funding_group integer;cfg_before jsonb;cfg_after jsonb;funding_cfg public.diamond_game_configs;funding_pool public.diamond_game_pools;
@@ -101,7 +101,7 @@ BEGIN
  IF result->>'error' IS DISTINCT FROM 'Win This Bonus On Diamond Spins First' THEN RAISE EXCEPTION 'Legacy direct game still open: %',result; END IF;
  FOR target IN 1..12 LOOP
   FOR variant IN 1..(CASE WHEN target=12 THEN 8 WHEN target IN(1,4,7,10) THEN 2 ELSE 1 END) LOOP
-   stake:=CASE WHEN target=12 THEN 2500 WHEN target=3 THEN 26 WHEN target=2 THEN 25 ELSE 100 END;
+   stake:=CASE WHEN target=12 OR target IN(4,7,10) THEN 2500 WHEN target IN(2,3,5,6,9) THEN 25 ELSE 100 END;
    drop_value:=CASE WHEN stake=2500 THEN 100 ELSE 1 END;
    double_it:=variant%2=0 OR target=12;extra:=CASE WHEN double_it THEN stake ELSE 0 END;
    SELECT count(*)+1 INTO nonce FROM public.wheel_spins WHERE user_id=player;
@@ -129,9 +129,10 @@ BEGIN
    IF result->>'ok' IS DISTINCT FROM 'true' OR (result#>>'{outcome,ord}')::integer IS DISTINCT FROM target OR result->>'contract_version' IS DISTINCT FROM '3' OR jsonb_array_length(result->'segments')<>12 THEN RAISE EXCEPTION 'Wheel failed target %: %',target,result; END IF;
    RAISE NOTICE 'WHEEL_SAMPLE %',jsonb_build_object('kind','wheel','stake',stake,'value',result);
    kind:=result#>>'{outcome,kind}';
-   IF (SELECT diamonds FROM public.profiles WHERE id=player) IS DISTINCT FROM before_player-stake+(CASE WHEN kind='diamonds' THEN stake*2 ELSE 0 END) THEN RAISE EXCEPTION 'Wrong player intake/prize'; END IF;
-   cost:=CASE WHEN kind='diamonds' THEN stake*2 WHEN kind IN('throwables','time_bank','rabbit_hunt') THEN (result#>>'{outcome,value_chips}')::numeric*100 ELSE 0 END;
+   IF (SELECT diamonds FROM public.profiles WHERE id=player) IS DISTINCT FROM before_player-stake+(CASE WHEN kind='diamonds' THEN (result#>>'{outcome,amount}')::integer ELSE 0 END) THEN RAISE EXCEPTION 'Wrong player intake/prize'; END IF;
+   cost:=CASE WHEN kind='diamonds' THEN (result#>>'{outcome,amount}')::integer WHEN kind IN('throwables','time_bank','rabbit_hunt') THEN (result#>>'{outcome,value_chips}')::numeric*100 ELSE 0 END;
    IF (SELECT diamonds FROM public.profiles WHERE id=owner) IS DISTINCT FROM before_owner+stake-cost THEN RAISE EXCEPTION 'Wrong host intake/prize'; END IF;
+   IF kind IN('throwables','time_bank','rabbit_hunt','diamonds') AND (cost NOT IN(floor(stake*.5),ceil(stake*.5)) OR (result#>>'{outcome,multiplier}')::numeric<>.5) THEN RAISE EXCEPTION 'Half Entry Prize Wrong: %',result; END IF;
    SET LOCAL ROLE authenticated;
    replay:=public.fn_wheel_spin_v2(club,commit,'client',stake,'paid',NULL);
    RESET ROLE;
@@ -163,6 +164,14 @@ BEGIN
       EXIT WHEN public.fn_crash_point_cents((('x'||substr(encode(hash,'hex'),1,12))::bit(48)::bigint)::numeric)=100;
      END LOOP;
     END IF;
+    IF expected_game='crossing' THEN
+     SELECT count(*)+1 INTO nonce FROM public.diamond_choice_rounds WHERE user_id=player AND game='crossing';
+     FOR i IN 1..10000 LOOP
+      game_seed:=encode(extensions.digest('road-loss-'||i,'sha256'),'hex');
+      point:=(('x'||substr(encode(extensions.hmac('game-client:'||nonce||':road',game_seed,'sha256'),'hex'),1,12))::bit(48)::bigint)::numeric;
+      EXIT WHEN point>281474976710656*.9;
+     END LOOP;
+    END IF;
     INSERT INTO public.diamond_game_commits(id,user_id,game,server_seed,server_seed_hash) VALUES(game_commit,player,expected_game,game_seed,encode(extensions.digest(game_seed,'sha256'),'hex'));
     SELECT diamonds INTO before_player FROM public.profiles WHERE id=player;
     SELECT intake_diamonds,wheel_allocated_diamonds INTO before_intake,before_alloc FROM public.diamond_game_pools WHERE host_id=club AND game=expected_game;
@@ -191,6 +200,7 @@ BEGIN
     RAISE NOTICE 'WHEEL_SAMPLE %',jsonb_build_object('kind','state','game',expected_game,'stake',stake,'double',double_it,'value',st);
     RAISE NOTICE 'WHEEL_SAMPLE %',jsonb_build_object('kind','start','game',expected_game,'stake',stake,'double',double_it,'value',game_result);
     IF st->>'ok' IS DISTINCT FROM 'true' OR (st#>>'{award,bet_diamonds}')::integer IS DISTINCT FROM bonus.base_diamonds+extra THEN RAISE EXCEPTION 'Award quote failed: %',st; END IF;
+    IF expected_game<>'plinko' AND ((game_result->>'minimum_payout_chips')::numeric IS DISTINCT FROM ceil((bonus.base_diamonds+extra)::numeric/100*10)/100 OR game_result->>'payout_version'<>'2') THEN RAISE EXCEPTION 'Full Entry Minimum Missing: %',game_result; END IF;
     IF game_result->>'ok' IS DISTINCT FROM 'true' OR game_result->>'award_id' IS DISTINCT FROM award::text OR (game_result#>>'{bonus,entry_diamonds}')::integer IS DISTINCT FROM stake OR (game_result->>'bet_diamonds')::integer IS DISTINCT FROM bonus.base_diamonds+extra THEN RAISE EXCEPTION 'Earned % start failed: %',expected_game,game_result; END IF;
     IF (SELECT diamonds FROM public.profiles WHERE id=player) IS DISTINCT FROM before_player-extra OR (SELECT intake_diamonds FROM public.diamond_game_pools WHERE host_id=club AND game=expected_game) IS DISTINCT FROM before_intake+extra OR (SELECT wheel_allocated_diamonds FROM public.diamond_game_pools WHERE host_id=club AND game=expected_game) IS DISTINCT FROM before_alloc THEN RAISE EXCEPTION 'Prepaid base charged or allocated twice'; END IF;
     IF public.fn_diamond_games_spent_today(club,player) IS DISTINCT FROM before_spent+stake+extra THEN RAISE EXCEPTION 'Prepaid base counted as player spending twice'; END IF;
@@ -201,8 +211,20 @@ BEGIN
     IF replay->>'replayed' IS DISTINCT FROM 'true' OR (SELECT diamonds FROM public.profiles WHERE id=player) IS DISTINCT FROM before_player-extra THEN RAISE EXCEPTION 'Game replay charged again'; END IF;
     IF public.fn_wheel_bonus_start(award,game_commit,'game-client',NOT double_it,CASE WHEN expected_game='mines' THEN '5' ELSE 'steady' END,drop_value,1,NULL,1)->>'ok' IS DISTINCT FROM 'false' THEN RAISE EXCEPTION 'Award replay changed Double Down'; END IF;
     IF expected_game='plinko' AND game_result#>>'{bonus,id}' IS DISTINCT FROM game_result->>'id' THEN RAISE EXCEPTION 'Plinko receipt lost its bonus identity'; END IF;
+    SELECT chip_balance INTO before_chips FROM public.club_members WHERE club_id=club AND user_id=player;
+    SELECT promo_balance,chip_treasury INTO before_promo,before_bank FROM public.clubs WHERE id=club;
     IF expected_game='crash' THEN game_result:=public.fn_crash_cashout((game_result->>'round_id')::uuid,101);
-    ELSIF expected_game IN('crossing','mines') THEN game_result:=public.fn_choice_act((game_result->>'id')::uuid,'pick',0,0); END IF;
+    ELSIF expected_game IN('crossing','mines') THEN game_result:=public.fn_choice_act((game_result->>'id')::uuid,'pick',CASE WHEN expected_game='mines' THEN (SELECT mine_cells[1] FROM public.diamond_choice_rounds WHERE id=(game_result->>'id')::uuid) ELSE 0 END,0); END IF;
+    IF expected_game<>'plinko' THEN
+     IF COALESCE(game_result#>>'{outcome,status}',game_result->>'status') NOT IN('lost','crashed') OR COALESCE((game_result#>>'{outcome,payout_chips}')::numeric,(game_result->>'payout_chips')::numeric) IS DISTINCT FROM ceil((bonus.base_diamonds+extra)::numeric/100*10)/100 THEN RAISE EXCEPTION 'Losing Bonus Minimum Wrong: %',game_result; END IF;
+     IF (SELECT chip_balance FROM public.club_members WHERE club_id=club AND user_id=player) IS DISTINCT FROM before_chips+(game_result->>'minimum_payout_chips')::numeric OR (SELECT promo_balance+chip_treasury FROM public.clubs WHERE id=club) IS DISTINCT FROM before_promo+before_bank-(game_result->>'minimum_payout_chips')::numeric THEN RAISE EXCEPTION 'Minimum Prize Wallet Legs Do Not Reconcile'; END IF;
+     SET LOCAL ROLE authenticated;
+     IF expected_game='crash' THEN replay:=public.fn_crash_cashout((game_result->>'round_id')::uuid,101);
+     ELSE replay:=public.fn_choice_act((game_result->>'id')::uuid,'pick',0,0); END IF;
+     RESET ROLE;
+     IF COALESCE(replay->'outcome',replay) IS DISTINCT FROM COALESCE(game_result->'outcome',game_result) OR (SELECT chip_balance FROM public.club_members WHERE club_id=club AND user_id=player) IS DISTINCT FROM before_chips+(game_result->>'minimum_payout_chips')::numeric THEN RAISE EXCEPTION 'Minimum Prize Replay Paid Twice'; END IF;
+     IF (SELECT sum(amount) FROM public.chip_ledger WHERE idempotency_key IN(CASE WHEN expected_game='crash' THEN 'crash-prize:'||(game_result->>'round_id') ELSE 'choice-prize:'||(game_result->>'id') END,CASE WHEN expected_game='crash' THEN 'crash-prize:'||(game_result->>'round_id')||':bank' ELSE 'choice-prize:'||(game_result->>'id')||':bank' END)) IS DISTINCT FROM (game_result->>'minimum_payout_chips')::numeric THEN RAISE EXCEPTION 'Minimum Prize Journal Is Missing'; END IF;
+    END IF;
     RAISE NOTICE 'WHEEL_SAMPLE %',jsonb_build_object('kind','action','game',expected_game,'stake',stake,'double',double_it,'value',game_result);
     IF game_result->>'award_id' IS DISTINCT FROM award::text THEN RAISE EXCEPTION 'Action lost award metadata'; END IF;
     SELECT * INTO after_bonus FROM public.wheel_bonus_awards WHERE id=award;

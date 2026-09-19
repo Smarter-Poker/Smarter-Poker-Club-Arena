@@ -28,6 +28,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { computePlacePrize } from './payoutMath.js';
+import { CHIP_UNIT_CENTS } from './tournamentUnit.js';
 import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
@@ -95,7 +96,12 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** What every place, paid together, actually disburses. */
 const totalPaid = (pool: number, payouts: Array<{ place?: number; percentage?: number }>) =>
-  round2(payouts.reduce((sum, p) => sum + computePlacePrize(pool, payouts, Number(p.place)), 0));
+  round2(
+    payouts.reduce(
+      (sum, p) => sum + computePlacePrize(pool, payouts, Number(p.place), CHIP_UNIT_CENTS),
+      0
+    )
+  );
 
 describe('the places sum to the pool, whatever the structure', () => {
   it('pays 483.00 out of a 483.00 pool on the 9-place structure', () => {
@@ -104,8 +110,8 @@ describe('the places sum to the pool, whatever the structure', () => {
     // from fn_tournament_payout_reconcile, which implements the residual rule.
     expect(totalPaid(483, NINE_PLACE)).toBe(483);
     // And the adjustment lands on the SMALLEST prize, never a headline one.
-    expect(computePlacePrize(483, NINE_PLACE, 1)).toBe(144.9);
-    expect(computePlacePrize(483, NINE_PLACE, 9)).toBe(12.07);
+    expect(computePlacePrize(483, NINE_PLACE, 1, CHIP_UNIT_CENTS)).toBe(144.9);
+    expect(computePlacePrize(483, NINE_PLACE, 9, CHIP_UNIT_CENTS)).toBe(12.07);
   });
 
   it('holds across a matrix of pools and structures', () => {
@@ -145,8 +151,8 @@ describe('a malformed structure degrades, it never overpays', () => {
       { place: 1, percentage: 50 },
       { place: 2, percentage: 50 },
     ];
-    expect(computePlacePrize(100, dupe, 1)).toBe(50);
-    expect(computePlacePrize(100, dupe, 2)).toBe(50);
+    expect(computePlacePrize(100, dupe, 1, CHIP_UNIT_CENTS)).toBe(50);
+    expect(computePlacePrize(100, dupe, 2, CHIP_UNIT_CENTS)).toBe(50);
   });
 
   it('a non-numeric place does not switch the residual rule off', () => {
@@ -158,14 +164,14 @@ describe('a malformed structure degrades, it never overpays', () => {
     // coerces; a non-numeric string is what actually produces the NaN.)
     const junk = [...NINE_PLACE, { place: '2nd' as unknown as number, percentage: 0 }];
     const paid = round2(
-      NINE_PLACE.reduce((sum, p) => sum + computePlacePrize(483, junk, p.place), 0)
+      NINE_PLACE.reduce((sum, p) => sum + computePlacePrize(483, junk, p.place, CHIP_UNIT_CENTS), 0)
     );
     // 483.01 under independent rounding; 483.00 once the residual rule is
     // reachable again. The 9-place structure is used deliberately — a
     // two-place structure happens to round to the pool either way, so it
     // cannot tell the two rules apart (an early sabotage run proved that).
     expect(paid).toBe(483);
-    expect(computePlacePrize(483, junk, 9)).toBe(12.07);
+    expect(computePlacePrize(483, junk, 9, CHIP_UNIT_CENTS)).toBe(12.07);
   });
 
   it('a negative percentage never pays a negative prize, at any place', () => {
@@ -173,17 +179,17 @@ describe('a malformed structure degrades, it never overpays', () => {
       { place: 1, percentage: 120 },
       { place: 2, percentage: -20 },
     ];
-    expect(computePlacePrize(100, bad, 1)).toBeGreaterThanOrEqual(0);
-    expect(computePlacePrize(100, bad, 2)).toBeGreaterThanOrEqual(0);
+    expect(computePlacePrize(100, bad, 1, CHIP_UNIT_CENTS)).toBeGreaterThanOrEqual(0);
+    expect(computePlacePrize(100, bad, 2, CHIP_UNIT_CENTS)).toBeGreaterThanOrEqual(0);
     expect(totalPaid(100, bad)).toBeLessThanOrEqual(100);
   });
 
   it('an unpaid place, an empty structure and a dead pool all pay nothing', () => {
-    expect(computePlacePrize(100, NINE_PLACE, 10)).toBe(0);
-    expect(computePlacePrize(100, [], 1)).toBe(0);
-    expect(computePlacePrize(0, NINE_PLACE, 1)).toBe(0);
-    expect(computePlacePrize(-5, NINE_PLACE, 1)).toBe(0);
-    expect(computePlacePrize(100, NINE_PLACE, NaN)).toBe(0);
+    expect(computePlacePrize(100, NINE_PLACE, 10, CHIP_UNIT_CENTS)).toBe(0);
+    expect(computePlacePrize(100, [], 1, CHIP_UNIT_CENTS)).toBe(0);
+    expect(computePlacePrize(0, NINE_PLACE, 1, CHIP_UNIT_CENTS)).toBe(0);
+    expect(computePlacePrize(-5, NINE_PLACE, 1, CHIP_UNIT_CENTS)).toBe(0);
+    expect(computePlacePrize(100, NINE_PLACE, NaN, CHIP_UNIT_CENTS)).toBe(0);
   });
 });
 

@@ -24,6 +24,7 @@
 import type { Tournament } from '../../../types/database.types';
 import type { UseMysteryBountyResult } from '../../../hooks/useMysteryBounty';
 import { computePlacePrize, prizePoolAvailableToPlaces } from '../../../lib/payoutMath';
+import { UNIT_CENTS_ASSET_NOT_READ } from '../../../../server/src/tournament/tournamentUnit';
 import { parsePayoutStructure } from '../../../lib/payoutStructure';
 
 export { parsePayoutStructure } from '../../../lib/payoutStructure';
@@ -326,13 +327,26 @@ export function lastPaidPlace(raw: unknown): number {
  * rule now lives in src/lib/payoutMath.ts, byte-identical to the server's.
  *
  * A player must never be shown one number and paid another.
+ *
+ * THE UNIT IS STATED, NOT INHERITED (2026-09-13). `computePlacePrize` gained a
+ * `unitCents` parameter that defaulted to a cent, and every display in this
+ * app - the lobby panel, the info panel, Rewards, Detail Overview and the
+ * tournament page - omitted it. A default is not a decision, and CLAUDE.md
+ * 10.86 rule 1 is about exactly this: a signal that answers confidently when it
+ * cannot tell. The parameter is required now and this wrapper names its answer.
+ *
+ * It is the chip unit because this is a projection drawn from a tournament row
+ * and a payout structure; none of the five callers has read the club's asset,
+ * and every tournament that can currently exist is a chip tournament. When
+ * Diamond tournaments open, this wrapper takes the unit from its callers -
+ * `UNIT_CENTS_ASSET_NOT_READ` is what finds them.
  */
 export function placePrize(
   pool: number,
   structure: Array<{ place?: number; percentage?: number }>,
   place: number
 ): number {
-  return computePlacePrize(Number(pool), structure, Number(place));
+  return computePlacePrize(Number(pool), structure, Number(place), UNIT_CENTS_ASSET_NOT_READ);
 }
 
 /**

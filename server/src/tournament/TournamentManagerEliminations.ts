@@ -36,6 +36,7 @@ import {
   classifyFinishRefusal,
 } from '../observability/engineInstruments.js';
 import { computePlacePrize, prizePoolAvailableToPlaces } from './payoutMath.js';
+import { UNIT_CENTS_ASSET_NOT_READ } from './tournamentUnit.js';
 import { resolvePayoutStructure, parsePayoutStructure } from './payoutStructure.js';
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import type { VerifiedTournamentCompletionReceipt } from './completionSettlementReceipt.js';
@@ -164,6 +165,49 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * standings tie that the accepted hand can distinguish.
    */
   private readonly bustRefusalStreak = new Map<string, number>();
+
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  THE UNIT THIS MANAGER PRICES PLACES IN - ONE ANSWER, TWO CALL SITES
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * Both places this file prices a finishing position - `eliminatePlayer` for
+   * places 2..N and the late-registration reprice for all of them - ask here
+   * rather than each naming a unit of their own. That is the shape the rest of
+   * Phase 8 was about: the ladder rule had four spellings and nothing held
+   * them together, so the unit gets one spelling from the start.
+   *
+   * IT IS DELIBERATELY THE CHIP UNIT, AND IT MUST NOT BE MADE DIAMOND-AWARE ON
+   * ITS OWN. Read from the live database on 2026-09-13:
+   *
+   *   fn_ca_tournament_place_amounts    uses fn_ca_prize_ladder, knows the unit
+   *   fn_tournament_payout_reconcile    uses fn_ca_prize_ladder, knows the unit
+   *   fn_tournament_place_prize_exact   uses fn_ca_prize_ladder, unit passed in
+   *   fn_prepare_tournament_place_obligations   NEITHER
+   *
+   * That last one is the gate this number has to pass. It prices the whole
+   * ladder inline - a FIFTH spelling that the 2026-09-12 collapse did not
+   * reach - and then demands that `tournament_players.prize`, which is the
+   * number computed HERE, equal its own answer to the cent:
+   *
+   *     IF v_player_prize_cents <> v_expected_cents THEN
+   *       RETURN ... 'recorded_prize_disagrees_with_structure' ... 'retryable', false
+   *
+   * So teaching this side about Diamonds while `fn_prepare_tournament_place_obligations`
+   * still divides to the cent would not pay a Diamond prize. It would make
+   * every Diamond place disagree with the gate by up to 99 cents and freeze the
+   * event permanently, unretryably - the same failure the prize-ladder
+   * changelog describes when it says "the payer and the checker learn the unit
+   * together or not at all", arriving one function later.
+   *
+   * When that SQL gate learns the unit, this method is where this engine does
+   * too: read the tournament's club and return `tournamentUnitCents(club)`. A
+   * club that cannot be read must refuse to price the place, exactly as an
+   * unreadable ladder pool already does below - never fall back to a cent.
+   */
+  private placeLadderUnitCents(): number {
+    return UNIT_CENTS_ASSET_NOT_READ;
+  }
 
   override requestEliminationSweep(
     reason?: string,
@@ -2284,7 +2328,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           );
           return false;
         }
-        prize = computePlacePrize(ladderPool, payouts, position);
+        prize = computePlacePrize(ladderPool, payouts, position, this.placeLadderUnitCents());
       }
     }
 
@@ -3751,7 +3795,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     for (const player of eliminated) {
       const payoutEntry = payouts.find((p: any) => Number(p.place) === Number(player.position));
       const correctPrize = payoutEntry
-        ? computePlacePrize(ladderPool, payouts, Number(player.position))
+        ? computePlacePrize(
+            ladderPool,
+            payouts,
+            Number(player.position),
+            this.placeLadderUnitCents()
+          )
         : 0;
 
       /**

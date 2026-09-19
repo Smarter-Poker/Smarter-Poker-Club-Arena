@@ -90,6 +90,23 @@ for (const game of ['plinko', 'crash', 'crossing', 'mines'])
           'Test Mode. Simulated Diamonds And Chips Only. No Account Or Wallet Connection.'
         )
       ).toBeVisible();
+      if (game === 'plinko') {
+        // Exact production tables, independently read from plinko_tables on September 19.
+        const expected = {
+          steady: [20, 10, 5, 2.5, 1.6, 1.3, 1, 0.65, 0, 0.65, 1, 1.3, 1.6, 2.5, 5, 10, 20],
+          bold: [130, 40, 9.95, 4.1, 2, 1.05, 1, 0.5, 0, 0.5, 1, 1.05, 2, 4.1, 9.95, 40, 130],
+          extreme: [
+            1000, 100.5, 20.25, 5.25, 2.5, 1.3, 1, 0, 0, 0, 1, 1.3, 2.5, 5.25, 20.25, 100.5, 1000,
+          ],
+        };
+        for (const [risk, slots] of Object.entries(expected)) {
+          await page.getByLabel('Payout Range').selectOption(risk);
+          await expect(
+            page.getByRole('list', { name: 'Plinko Payout Slots' }).locator('strong')
+          ).toHaveText(slots.map((n) => `${n}x`));
+        }
+        await page.getByLabel('Payout Range').selectOption('steady');
+      }
       await page.getByRole('button', { name: 'Start Test', exact: true }).click();
       await page.getByRole('link', { name: 'Super Diamond Mines', exact: true }).click();
       await expect(page.getByText('Finish This Test Round Before Leaving.')).toBeVisible();

@@ -7,7 +7,7 @@
     "predev": "node scripts/dev-freshness-check.mjs",
     "dev": "vite",
     "build": "tsc -b && npm run build:ci",
-    "build:ci": "node scripts/generate-webp-media.mjs && node scripts/generate-customization-thumbnails.mjs && vite build && node scripts/stamp-manifest-base.mjs && node scripts/self-host-fonts.mjs && node scripts/optimize-dist-media.mjs && node scripts/prerender-public-routes.mjs && node scripts/generate-arena-sitemap.mjs && node scripts/stamp-build-provenance.mjs && node -e \"require('fs').copyFileSync('tests/protected-features.json',(process.env.CA_DIST||'dist')+'/protected-features.json')\"",
+    "build:ci": "node scripts/generate-webp-media.mjs && node scripts/generate-customization-thumbnails.mjs && vite build && node scripts/build-diamond-test.mjs && node scripts/stamp-manifest-base.mjs && node scripts/self-host-fonts.mjs && node scripts/optimize-dist-media.mjs && node scripts/prerender-public-routes.mjs && node scripts/generate-arena-sitemap.mjs && node scripts/stamp-build-provenance.mjs && node -e \"require('fs').copyFileSync('tests/protected-features.json',(process.env.CA_DIST||'dist')+'/protected-features.json')\"",
     "build:native": "VITE_NATIVE=1 CA_DIST=dist-native CA_PUBLIC_BASE=/ npm run build",
     "cap:sync": "npm run build:native && npx cap sync",
     "cap:ios": "npm run cap:sync && npx cap open ios",

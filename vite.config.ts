@@ -33,6 +33,37 @@ if (!Number.isSafeInteger(maxParallelFileOps) || maxParallelFileOps <= 0) {
 }
 const mediaIdentity = viteMediaIdentity();
 
+/**
+ * STANDALONE DIAMOND TEST ENTRY (2026-09-19)
+ *
+ * `CA_HTML_ENTRY=diamond-test` builds diamond-test.html (src/diamond-test.tsx,
+ * the wallet-free Diamond bonus test games) as a SECOND PASS into the dist the
+ * application build just wrote (scripts/build-diamond-test.mjs, from build:ci).
+ *
+ * It is deliberately not a second Rollup input of the application build. Two
+ * inputs make Rollup hoist every module both entries share into a shared
+ * chunk, and Vite then links that chunk's stylesheet AHEAD of the
+ * application's own. That moved ~45kB of global CSS (the popup shell rules,
+ * loading states, animations) from the 72% mark of index.css to before its
+ * first byte, the cascade changed for pages the test entry never touches,
+ * and the Table Studio pixel baselines went red (run 35458870630). A separate
+ * pass leaves the application bundle byte-for-byte what a single-input build
+ * produces, so its CSS order, entry chunk and bundle budget are untouched.
+ *
+ * The pass writes its scripts and styles under dist/diamond-test/, outside
+ * dist/assets/: scripts/ci/bundle-size.mjs charges only dist/assets/ to the
+ * arena's total, and public/sw-bus.js caches only /assets/ and /fonts/, so the
+ * test page is always fetched fresh. Raster media keeps the shared identity
+ * policy, so artwork both entries import is written once, under assets/.
+ * The native bundle never gets this pass (scripts/build-diamond-test.mjs).
+ */
+const TEST_ENTRY = process.env.CA_HTML_ENTRY === 'diamond-test';
+const SCRIPT_DIR = TEST_ENTRY ? 'diamond-test' : 'assets';
+const testEntryAssetFileNames = (asset: { names?: string[]; name?: string; source: unknown }) =>
+  /\.css$/i.test(asset.names?.[0] || asset.name || '')
+    ? `${SCRIPT_DIR}/[name]-[hash]-v6[extname]`
+    : mediaIdentity.assetFileNames(asset as Parameters<typeof mediaIdentity.assetFileNames>[0]);
+
 function sourceMapAssetIdentity(): Plugin {
   let policy = '';
   return {
@@ -75,7 +106,8 @@ export default defineConfig({
         const chunk = Object.values(bundle).find(
           (c) =>
             (c as { type?: string; isEntry?: boolean }).type === 'chunk' &&
-            (c as { isEntry?: boolean }).isEntry
+            (c as { isEntry?: boolean }).isEntry &&
+            (c as { facadeModuleId?: string }).facadeModuleId?.endsWith('/index.html')
         ) as { fileName?: string; modules?: Record<string, unknown> } | undefined;
         if (!chunk?.modules) return;
         const modules = Object.keys(chunk.modules)
@@ -141,6 +173,8 @@ export default defineConfig({
   },
   build: {
     outDir: NATIVE ? 'dist-native' : 'dist',
+    // The second pass lands in the dist the application build just wrote.
+    ...(TEST_ENTRY ? { emptyOutDir: false, copyPublicDir: false } : {}),
     // Compress each emitted chunk without moving lazy modules into startup.
     // Keep CI resource usage bounded; Rollup owns the unchanged module graph.
     minify: 'terser',
@@ -152,6 +186,9 @@ export default defineConfig({
     // Neither web nor native publication needs source maps.
     sourcemap: false,
     rollupOptions: {
+      // The application build keeps Vite's single default input, index.html.
+      // The standalone test entry is its own pass; see TEST_ENTRY above.
+      ...(TEST_ENTRY ? { input: path.resolve(__dirname, 'diamond-test.html') } : {}),
       // Rollup defaults to 1000 concurrent file operations. Our intended
       // local cap is 20; shared CI hosts use half their CPUs, with a floor of 4.
       // This is a Rollup input option, so it belongs inside rollupOptions.
@@ -163,9 +200,10 @@ export default defineConfig({
         // are bypassed. Vite's default content hash alone can't help here
         // because vendor chunks' content is unchanged — the tag forces a
         // brand-new URL even when content hash would otherwise match.
-        entryFileNames: 'assets/[name]-[hash]-v6.js',
-        chunkFileNames: 'assets/[name]-[hash]-v6.js',
+        entryFileNames: `${SCRIPT_DIR}/[name]-[hash]-v6.js`,
+        chunkFileNames: `${SCRIPT_DIR}/[name]-[hash]-v6.js`,
         assetFileNames: mediaIdentity.assetFileNames,
+        ...(TEST_ENTRY ? { assetFileNames: testEntryAssetFileNames } : {}),
         manualChunks(id: string) {
           // ── Vendor Splits (safe — no circular dependencies) ──
           if (id.includes('node_modules/react-dom')) return 'vendor-react';

@@ -14,6 +14,7 @@ DECLARE
  i integer; seed text; game_seed text; commit uuid; game_commit uuid; award uuid; entry uuid; rid uuid; share_id uuid;
  spun jsonb; started jsonb; settled jsonb; replay jsonb; repeated jsonb; shared jsonb; feed jsonb; history jsonb;
  expected numeric; cell integer; before_chips numeric; before_diamonds integer; ids uuid[]:='{}'; first_share uuid;
+ admission jsonb; admission_commit uuid; admission_before numeric;
  refused boolean; post uuid; payload jsonb; keys text[]; expected_road integer; failed_share uuid;
 BEGIN
  IF current_database()<>'diamond_games_probe' THEN RAISE EXCEPTION 'Requires The Isolated Fixture'; END IF;
@@ -50,6 +51,21 @@ BEGIN
    RESET ROLE;
    IF spun->>'ok' IS DISTINCT FROM 'true' OR (spun#>>'{outcome,ord}')::integer IS DISTINCT FROM target OR spun#>>'{bonus,game}' IS DISTINCT FROM game THEN RAISE EXCEPTION 'Replay Award Failed: %',spun; END IF;
    award:=(spun#>>'{bonus,id}')::uuid;
+   IF to_regprocedure('public.fn_wheel_bonus_unfinished(public.wheel_bonus_awards)') IS NOT NULL THEN
+    admission_commit:=gen_random_uuid();
+    INSERT INTO public.wheel_seed_commits(id,user_id,server_seed,server_seed_hash) VALUES(admission_commit,player,'blocked','blocked');
+    SELECT diamonds INTO admission_before FROM public.profiles WHERE id=player;
+    SET LOCAL ROLE authenticated;
+    admission:=public.fn_wheel_spin_v2(club,admission_commit,'blocked',100,'paid',NULL);
+    repeated:=public.fn_wheel_spin_v2(club,commit,'replay-client',100,'paid',NULL);
+    RESET ROLE;
+    IF admission->>'error' IS DISTINCT FROM 'Finish Your Bonus Game Before Another Spin'
+       OR repeated->>'replayed' IS DISTINCT FROM 'true'
+       OR (SELECT diamonds FROM public.profiles WHERE id=player) IS DISTINCT FROM admission_before
+       OR EXISTS(SELECT 1 FROM public.wheel_spins WHERE commit_id=admission_commit)
+       THEN RAISE EXCEPTION 'Pending bonus banked another spin or broke receipt replay: %',admission; END IF;
+   END IF;
+
    IF game='crash' THEN SELECT count(*)+1 INTO nonce FROM public.crash_rounds WHERE user_id=player;
    ELSE SELECT count(*)+1 INTO nonce FROM public.diamond_choice_rounds WHERE user_id=player AND diamond_choice_rounds.game=game; END IF;
    FOR i IN 1..10000 LOOP
@@ -68,6 +84,16 @@ BEGIN
    ids:=array_append(ids,entry);
    rid:=coalesce(started->>'round_id',started->>'id')::uuid;
    IF game<>'plinko' THEN
+
+    IF to_regprocedure('public.fn_wheel_bonus_unfinished(public.wheel_bonus_awards)') IS NOT NULL AND started->>'status'='open' THEN
+     SET LOCAL ROLE authenticated;
+     admission:=public.fn_wheel_spin_v2(club,admission_commit,'blocked',100,'paid',NULL);
+     history:=public.fn_wheel_state_v2(club,100);
+     RESET ROLE;
+     IF admission->>'error' IS DISTINCT FROM 'Finish Your Bonus Game Before Another Spin'
+        OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(history->'awards') a WHERE a->>'id'=award::text)
+        THEN RAISE EXCEPTION 'Live bonus permitted another spin or disappeared from recovery: %',admission; END IF;
+    END IF;
     SET LOCAL ROLE authenticated;
     replay:=public.fn_diamond_bonus_replay(entry);
     shared:=public.fn_diamond_bonus_share(entry);

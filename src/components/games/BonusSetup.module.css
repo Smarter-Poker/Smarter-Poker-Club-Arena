@@ -13,7 +13,8 @@
   gap: 7px;
   color: #aabdd0;
 }
-.entry input {
+.entry input,
+.entry select {
   box-sizing: border-box;
   width: 100%;
   min-height: 46px;
@@ -133,4 +134,9 @@
   .choices {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+}
+
+.entry select {
+  min-width: 0;
+  font-size: 16px;
 }

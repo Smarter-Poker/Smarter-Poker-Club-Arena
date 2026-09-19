@@ -1,3 +1,4 @@
+import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import { pendingBonus } from '../services/diamondBonusRecovery';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
@@ -731,6 +732,9 @@ function DiamondCrashGame() {
     [live, toast]
   );
 
+  useLiveBonusGuard(Boolean(earned.award) || starting || open || cashing || uncertain, () =>
+    toast.error('Finish Your Bonus Game Before Leaving.')
+  );
   if (loading) return <PageSkeleton />;
   if (loadError || !state) {
     return (

@@ -1,3 +1,4 @@
+import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import { pendingBonus } from '../services/diamondBonusRecovery';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
@@ -399,6 +400,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           : round?.status === 'lost'
             ? 'Round Over'
             : 'Ready';
+  useLiveBonusGuard(Boolean(earned.award) || busy || uncertain || open || sceneBusy, () =>
+    setError('Finish Your Bonus Game Before Leaving.')
+  );
   const modeLabel =
     game === 'mines' ? `${mode} Mines` : mode.charAt(0).toUpperCase() + mode.slice(1);
   const cycleMode = () => {

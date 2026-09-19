@@ -10,6 +10,7 @@
     "fn_diamond_bonus_replays",
     "fn_diamond_bonus_share",
     "fn_shared_bonus_replay",
-    "fn_diamond_bonus_share_to_feed"
+    "fn_diamond_bonus_share_to_feed",
+    "fn_wheel_bonus_unfinished"
   ]
 }

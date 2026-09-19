@@ -543,6 +543,11 @@ export class GameServer {
   /** Strong original references survive every claim, refusal and successor stop. */
   private drainedF06TournamentCustody = new Map<string, DrainedF06Custody>();
   private durableMixedF06Custody = new Map<string, MixedF06Transfer>();
+  /** Same-process continuation of an admitted original, invoked by admission or a durable wake. */
+  private mixedF06AdmissionContinuations = new Map<
+    string,
+    { manager: TournamentManager; run: () => Promise<void> }
+  >();
   private completedF06TournamentCustody = new Map<
     string,
     Set<Readonly<{ original: DrainedF06Custody; terminalProof: unknown }>>
@@ -2330,7 +2335,10 @@ export class GameServer {
     if (!this.directAdmissionIsCurrent(generation)) {
       return Promise.resolve();
     }
-    if (this.tournamentEngines.has(tournamentId)) {
+    const existing = this.tournamentManagerAdmissionOperations.get(tournamentId);
+    if (existing) return existing;
+    const admitted = this.tournamentEngines.get(tournamentId);
+    if (admitted && !admitted.isF06RecoveryOwner?.()) {
       this.clearTournamentManagerAdmissionRetry(tournamentId);
       return Promise.resolve();
     }
@@ -2342,8 +2350,6 @@ export class GameServer {
     if (mode === 'start' && spinLaunchParks.isParked(tournamentId)) {
       return Promise.resolve();
     }
-    const existing = this.tournamentManagerAdmissionOperations.get(tournamentId);
-    if (existing) return existing;
     // A top-up still owns this event's entry transaction. Unrelated events
     // may start, but this event is re-read only after its real outcome settles.
     if (mode === 'start' && this.tournamentTopUpsInFlight.has(tournamentId)) {
@@ -2372,7 +2378,13 @@ export class GameServer {
     generation: number
   ): Promise<void> {
     await this.awaitTournamentManagerLeaseRelease(tournamentId);
-    if (!this.directAdmissionIsCurrent(generation) || this.tournamentEngines.has(tournamentId)) {
+    if (!this.directAdmissionIsCurrent(generation)) return;
+    const admitted = this.tournamentEngines.get(tournamentId);
+    if (admitted) {
+      const continuation = this.mixedF06AdmissionContinuations?.get(tournamentId);
+      if (admitted.isF06RecoveryOwner?.() && continuation?.manager === admitted) {
+        await continuation.run();
+      }
       return;
     }
 
@@ -2544,30 +2556,48 @@ export class GameServer {
         // now account for every retained preparation in the native gate.
         this.terminalMixedF06Admissions ??= new Map();
         this.terminalMixedF06Admissions.set(transfer.transferId, mixedTerminalProof);
-        let completion: Readonly<Record<string, unknown>>;
-        try {
-          completion = await manager.recoverMixedF06Custody(transfer, reservation.assertCurrent);
-          reservation.assertCurrent();
-        } catch (error) {
-          reportError(error, 'GameServer.mixed_original_recovery_retained', {
-            tournamentId,
-            transferId: transfer.transferId,
-          });
-          return; // Unknown originals retain this admitted process and every reservation.
-        }
-        reservation.complete();
-        this.completedF06TournamentCustody ??= new Map();
-        if (packet) {
-          const archive = this.completedF06TournamentCustody.get(tournamentId) ?? new Set();
-          archive.add(Object.freeze({ original: packet, terminalProof: completion }));
-          this.completedF06TournamentCustody.set(tournamentId, archive);
-          this.drainedF06TournamentCustody.delete(tournamentId);
-        }
-        this.durableMixedF06Custody.delete(tournamentId);
-        this.terminalMixedF06Admissions.delete(transfer.transferId);
-        manager.finishMixedF06RecoveryAdmission(completion);
-        await manager.resume();
-        await this.finishTournamentManagerAdmission(tournamentId, manager, generation);
+        this.mixedF06AdmissionContinuations ??= new Map();
+        const continueAdmission = async (): Promise<void> => {
+          let completion: Readonly<Record<string, unknown>>;
+          try {
+            completion = await manager.recoverMixedF06Custody(transfer, reservation.assertCurrent);
+            reservation.assertCurrent();
+          } catch (error) {
+            reportError(error, 'GameServer.mixed_original_recovery_retained', {
+              tournamentId,
+              transferId: transfer.transferId,
+            });
+            return; // Unknown originals retain this admitted process and every reservation.
+          }
+          reservation.complete();
+          this.completedF06TournamentCustody ??= new Map();
+          if (packet) {
+            const archive = this.completedF06TournamentCustody.get(tournamentId) ?? new Set();
+            archive.add(Object.freeze({ original: packet, terminalProof: completion }));
+            this.completedF06TournamentCustody.set(tournamentId, archive);
+            this.drainedF06TournamentCustody.delete(tournamentId);
+          }
+          this.durableMixedF06Custody.delete(tournamentId);
+          this.terminalMixedF06Admissions.delete(transfer.transferId);
+          manager.finishMixedF06RecoveryAdmission(completion);
+          this.mixedF06AdmissionContinuations.delete(tournamentId);
+          try {
+            await manager.resume();
+            await this.finishTournamentManagerAdmission(tournamentId, manager, generation);
+          } catch (error) {
+            await this.stopTournamentManagerIfOwned(
+              tournamentId,
+              manager,
+              'GameServer.mixed_completed_admission_cleanup_failed'
+            );
+            throw error;
+          }
+        };
+        this.mixedF06AdmissionContinuations.set(tournamentId, {
+          manager,
+          run: continueAdmission,
+        });
+        await continueAdmission();
         return;
       }
       if (mode === 'resume') await manager.resume();
@@ -8472,7 +8502,19 @@ export class GameServer {
     ) {
       return false;
     }
-    const manager = this.tournamentEngines.get(tournamentId);
+    let manager = this.tournamentEngines.get(tournamentId);
+    if (manager?.isF06RecoveryOwner?.()) {
+      // The durable request is also the continuation signal for this exact
+      // admitted owner. Keep it pending on refusal; no timer, replacement
+      // generation, or ordinary dealer supplies recovery correctness.
+      await this.ensureTournamentManagerAdmission(
+        tournamentId,
+        'resume',
+        'Continuing original tournament admission',
+        this.lifecycleGeneration
+      );
+      manager = this.tournamentEngines.get(tournamentId);
+    }
     if (!manager || !manager.isRunning()) return false;
 
     // Queue admission is not completion. Leave the row pending until the

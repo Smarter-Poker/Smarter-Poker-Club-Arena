@@ -63,6 +63,8 @@ function server(): any {
     tournamentManagerLeaseReleaseOperations: new Map(),
     tournamentManagerPendingLeaseReleases: new Map(),
     tournamentManagerAdmissionLeaseGenerations: new Map(),
+    tournamentManagerAdmissionOperations: new Map(),
+    tournamentTopUpsInFlight: new Map(),
     tournamentManagerAdmissionRetryTimers: new Map(),
     discoveryJobs: new Set(),
     directAdmissionIsCurrent: () => true,
@@ -655,7 +657,20 @@ async function recoverableMixedScene(interrupt?: string) {
   await s.performTournamentManagerAdmission(id(1), 'resume', 'qualified mixed', 1);
   const successor = s.tournamentEngines.get(id(1));
   if (successor) managers.push(successor);
-  return { s, m, successor, transfer, calls, winners, resume, engines, permit };
+  return {
+    s,
+    m,
+    successor,
+    transfer,
+    calls,
+    winners,
+    resume,
+    engines,
+    permit,
+    unblock: () => {
+      interrupt = undefined;
+    },
+  };
 }
 it('real successor consumes original park begin amendment moves custody and ACK before ordinary restart', async () => {
   const { s, m, successor, transfer, calls, winners, resume, engines, permit } =
@@ -704,4 +719,94 @@ it.each([
   expect(s.drainedF06TournamentCustody.get(id(1)).mixed).toBe(transfer);
   expect(s.tournamentRetirementCustody.admissionAllowed(id(3))).toBe(false);
   expect(s.mixedF06PreparationBlockers()).toEqual([id(3)]);
+});
+
+it.each([
+  'fn_f06_mixed_custody_intent',
+  'fn_f06_begin_break',
+  'fn_f06_amend_attempt',
+  'fn_f06_claim_custody',
+  'fn_f06_close_break',
+  'fn_f06_ack_cleanup',
+  'fn_f06_complete_mixed_manager_custody',
+])('the original admission continues after %s without replacing its owner', async (rpc) => {
+  const { s, successor, transfer, winners, resume, unblock, calls } =
+    await recoverableMixedScene(rpc);
+  unblock();
+  const first = s.ensureTournamentManagerAdmission(id(1), 'resume', 'original continuation', 1);
+  const second = s.ensureTournamentManagerAdmission(
+    id(1),
+    'resume',
+    'same original continuation',
+    1
+  );
+  expect(second).toBe(first);
+  await first;
+  expect(s.tournamentEngines.get(id(1))).toBe(successor);
+  expect(successor.isF06RecoveryOwner()).toBe(false);
+  expect(winners.size).toBe(2);
+  expect(mocks.claim).toHaveBeenCalledOnce();
+  expect(mocks.release).not.toHaveBeenCalled();
+  expect(resume).toHaveBeenCalledOnce();
+  expect(s.mixedF06PreparationBlockers()).toEqual([]);
+  expect(s.terminalMixedF06Admissions.has(transfer.transferId)).toBe(false);
+  expect(
+    new Set(
+      calls.filter((c) => c.name === 'fn_move_tournament_player').map((c) => c.args.p_request_id)
+    )
+  ).toEqual(new Set([id(12), id(24)]));
+  expect(s.scheduleTournamentManagerAdmissionRetry).not.toHaveBeenCalled();
+});
+it('a durable manager wake continues retained admission before requesting or acknowledging its sweep', async () => {
+  const { s, successor, resume, unblock } = await recoverableMixedScene('fn_f06_ack_cleanup');
+  const sweep = vi.spyOn(successor, 'requestEliminationSweep').mockReturnValue(true);
+  vi.spyOn(successor, 'isRunning').mockImplementation(() => !successor.isF06RecoveryOwner());
+  const wake = {
+    id: 7,
+    generation: 2,
+    tournament_id: id(1),
+    consumed_at: null,
+    reason: 'player_action',
+  };
+  expect(await s.admitTournamentManagerWake(wake)).toBe(false);
+  expect(sweep).not.toHaveBeenCalled();
+  expect(resume).not.toHaveBeenCalled();
+  unblock();
+  expect(await s.admitTournamentManagerWake(wake)).toBe(true);
+  expect(resume).toHaveBeenCalledOnce();
+  expect(sweep).toHaveBeenCalledWith('player_action', 7, 2);
+});
+
+it.each(['shutdown', 'replacement'])(
+  'a %s never resumes an old mixed admission',
+  async (change) => {
+    const { s, successor, unblock, calls, resume } =
+      await recoverableMixedScene('fn_f06_ack_cleanup');
+    unblock();
+    if (change === 'shutdown') s.directAdmissionIsCurrent = () => false;
+    else s.tournamentEngines.set(id(1), { isF06RecoveryOwner: () => true });
+    const before = calls.length;
+    await s.ensureTournamentManagerAdmission(id(1), 'resume', 'stale continuation', 1);
+    expect(calls.length).toBe(before);
+    expect(successor.isF06RecoveryOwner()).toBe(true);
+    expect(resume).not.toHaveBeenCalled();
+    expect(mocks.release).not.toHaveBeenCalled();
+  }
+);
+
+it('a normal resume failure after completed recovery enters exact-owner cleanup', async () => {
+  const { s, successor, unblock, resume } = await recoverableMixedScene('fn_f06_ack_cleanup');
+  unblock();
+  resume.mockRejectedValueOnce(new Error('ordinary resume failed'));
+  const stop = vi.spyOn(s, 'stopTournamentManagerIfOwned').mockResolvedValue(true);
+  await expect(
+    s.ensureTournamentManagerAdmission(id(1), 'resume', 'original continuation', 1)
+  ).rejects.toThrow('ordinary resume failed');
+  expect(stop).toHaveBeenCalledWith(
+    id(1),
+    successor,
+    'GameServer.mixed_completed_admission_cleanup_failed'
+  );
+  expect(successor.isF06RecoveryOwner()).toBe(false);
+  expect(s.mixedF06AdmissionContinuations.has(id(1))).toBe(false);
 });

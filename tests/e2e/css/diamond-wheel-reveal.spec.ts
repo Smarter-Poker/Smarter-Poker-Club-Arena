@@ -160,7 +160,12 @@ for (const viewport of [
     await page.route('**/*', async (route) => {
       const url = new URL(route.request().url());
       if (url.hostname !== 'diamond-wheel.test') return route.abort();
-      if (url.pathname.startsWith('/assets/') || url.pathname.startsWith('/fonts/')) {
+      if (
+        url.pathname.startsWith('/assets/') ||
+        url.pathname.startsWith('/fonts/') ||
+        url.pathname.startsWith('/images/') ||
+        url.pathname === '/default-avatar.png'
+      ) {
         const { resolve, sep } = await import('node:path');
         const root = resolve('public');
         const path = resolve(root, '.' + decodeURIComponent(url.pathname));
@@ -176,7 +181,11 @@ for (const viewport of [
     await page.addScriptTag({ content: bundle.javascript });
     const controls = page.getByRole('complementary', { name: 'Diamond Spins Controls' });
     await expect(controls).toBeVisible();
-    await controls.getByRole('button', { name: 'Paid Spin', exact: true }).click();
+    await controls.getByRole('button', { name: 'Use Diamonds', exact: true }).click();
+    await controls.getByRole('button', { name: 'Hold Automatic Spin', exact: true }).click();
+    await expect(page.locator('#global-header')).toBeVisible();
+    await expect(controls.getByText('Club Chips', { exact: true })).toBeVisible();
+    await expect(controls.getByText('12.3K', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Spin 100', exact: true })).toBeEnabled();
     const assertFits = async () => {
       const measured = await controls.evaluate((el) => {
@@ -210,10 +219,12 @@ for (const viewport of [
       expect(measured.scrollWidth).toBeLessThanOrEqual(viewport.width);
       expect(measured.targets.every(Boolean)).toBe(true);
       expect(
-        await controls.locator('.sc-plate__text').evaluateAll((elements) =>
+        await controls.locator('button').evaluateAll((elements) =>
           elements.every((el) => {
-            const text = el.getBoundingClientRect(),
-              button = el.closest('button')!.getBoundingClientRect();
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const text = range.getBoundingClientRect(),
+              button = el.getBoundingClientRect();
             return (
               text.left >= button.left &&
               text.right <= button.right &&

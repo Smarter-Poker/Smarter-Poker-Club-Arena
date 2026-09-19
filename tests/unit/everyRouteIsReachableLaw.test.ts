@@ -76,6 +76,8 @@ const ALLOWED_ORPHANS: Record<string, string> = {
   'share/hand/:handId':
     "a hand's own address - Copy Link on the replay writes it, and a player bookmarks it; " +
     'reads hand_history, so it is for the people who played the hand',
+  'bonus-replay/:shareId':
+    'External replay link built by DiamondReplayService after an explicit owner share; Copy Link, native share and the social feed deliver its private random token.',
   'clubs/create': 'legacy redirect to /?create=club, kept so old links resolve',
   advertise:
     "the outside sponsor's door (2026-09-13): an advertiser is not a player, and the link is " +

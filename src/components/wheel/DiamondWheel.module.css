@@ -69,6 +69,19 @@
   transform-origin: 500px 490px;
   animation: wheel-gem calc(4s * var(--animation-speed, 1)) ease-in-out infinite;
 }
+.selectorCrystal {
+  filter: drop-shadow(0 3px 2px rgb(0 0 0 / 80%));
+  animation: selector-reflection calc(3s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+@keyframes selector-reflection {
+  0%,
+  100% {
+    filter: drop-shadow(0 3px 2px rgb(0 0 0 / 80%)) brightness(1);
+  }
+  50% {
+    filter: drop-shadow(0 3px 3px rgb(31 142 255 / 45%)) brightness(1.14);
+  }
+}
 .prizeFloat {
   animation: wheel-prize calc(4s * var(--animation-speed, 1)) ease-in-out infinite;
   transform-box: fill-box;

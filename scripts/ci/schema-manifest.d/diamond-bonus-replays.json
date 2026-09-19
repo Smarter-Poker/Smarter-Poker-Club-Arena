@@ -1,0 +1,15 @@
+{
+  "_owner": "agent/codex/diamond-replays-settlement-20260919; replay/Crash migration 20260919152603. These are candidate schema declarations, not installation evidence.",
+  "tables": ["diamond_bonus_shares"],
+  "columns": {
+    "diamond_bonus_shares": ["id", "bonus_id", "user_id", "payload", "social_post_id", "created_at"]
+  },
+  "functions": [
+    "fn_crash_config_limits",
+    "fn_diamond_bonus_replay",
+    "fn_diamond_bonus_replays",
+    "fn_diamond_bonus_share",
+    "fn_diamond_bonus_shared",
+    "fn_diamond_bonus_share_to_feed"
+  ]
+}

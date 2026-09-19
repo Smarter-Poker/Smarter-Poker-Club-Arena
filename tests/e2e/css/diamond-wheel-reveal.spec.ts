@@ -1,10 +1,23 @@
 import { test, expect, type Page } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import { mountDiamondWheel } from '../helpers/diamond-wheel-fixture.mjs';
+import { WHEEL_SPIN_MS } from '../../../src/utils/diamondWheelMotion';
 
 type WheelProof = {
   finished: number;
   events: { event: string; title?: string; time: number }[];
+  upgradeStates: {
+    phase: string;
+    expanded: string;
+    selectors: number;
+    titles: number;
+    cards: number;
+    slots: number;
+    visible: boolean;
+    scale: string;
+    finished: number;
+    destination: string;
+  }[];
 };
 declare global {
   interface Window {
@@ -92,18 +105,26 @@ for (const width of [320, 390, 1280]) {
       await expect(page.getByTestId('destination')).toHaveText('/clubs/fixture/wheel');
 
       if (kind.startsWith('upgrade')) {
-        await expect(secondary.locator('..')).toHaveAttribute('data-phase', 'spinning');
-        await expect(secondary.locator('[data-wheel-selector]')).toHaveCount(1);
-        await expect(secondary.locator('[data-card-design="title"]')).toHaveCount(0);
-        await expect(secondary.locator('[data-card-design="full"]')).toHaveCount(8);
-        await expect(page.locator('[data-wheel-assembly]')).toHaveAttribute(
-          'data-upgrade-reveal',
-          'open'
-        );
-        await expect(wheel.locator('[data-wheel-face]')).toHaveCSS(
-          'transform',
-          'matrix(0.56, 0, 0, 0.56, 0, 0)'
-        );
+        // The fixture runs at the player's 0.25 animation-speed setting. On a
+        // software-rendered runner, sequential round trips can span the entire
+        // secondary spin. Require all the same properties in ONE observed
+        // rendered state, retained before the real game navigation removes it.
+        await expect
+          .poll(() => page.evaluate(() => window.wheelProof.upgradeStates), {
+            timeout: WHEEL_SPIN_MS + 1400 + 650,
+          })
+          .toContainEqual({
+            phase: 'spinning',
+            expanded: 'open',
+            selectors: 1,
+            titles: 0,
+            cards: 8,
+            slots: 8,
+            visible: true,
+            scale: 'matrix(0.56, 0, 0, 0.56, 0, 0)',
+            finished: 0,
+            destination: '/clubs/fixture/wheel',
+          });
       }
       if (kind === 'prize' || kind === 'upgradechips') {
         const dialog = page.getByRole('dialog');
@@ -127,13 +148,6 @@ for (const width of [320, 390, 1280]) {
         await expect(dialog).toHaveCount(0);
         await expect(page.getByTestId('destination')).toHaveText('/clubs/fixture/wheel');
       } else {
-        if (kind === 'upgrade') {
-          await expect(secondary).toBeVisible();
-          await expect(secondary.locator('[data-slot]')).toHaveCount(8);
-          expect(await page.evaluate(() => window.wheelProof.finished)).toBe(0);
-          await expect(page.getByTestId('destination')).toHaveText('/clubs/fixture/wheel');
-          await page.screenshot({ path: testInfo.outputPath(`wheel-upgrade-${width}.png`) });
-        }
         await expect(page.getByRole('heading', { name: 'Earned Game Entry' })).toBeVisible();
         await expect(page.getByTestId('destination')).toHaveText(
           `/clubs/fixture/${receipt.bonus.game}?wheelAward=${receipt.bonus.id}`

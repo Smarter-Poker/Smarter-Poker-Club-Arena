@@ -1,4 +1,5 @@
 import type { LeaderboardSettlementStatus } from '../../services/LeaderboardService';
+import { compactChips } from '../../utils/format';
 import './LeaderboardSettlementCard.css';
 
 interface LeaderboardSettlementCardProps {
@@ -65,8 +66,7 @@ export function LeaderboardSettlementCard({
   if (loading && !status) {
     return (
       <section className="lb-settlement-card is-loading" aria-label="Leaderboard Settlement">
-        <span className="lb-settlement-skeleton wide" />
-        <span className="lb-settlement-skeleton" />
+        <p role="status">Verifying Settlement Status...</p>
       </section>
     );
   }
@@ -121,9 +121,7 @@ export function LeaderboardSettlementCard({
       <dl className="lb-settlement-ledger">
         <div>
           <dt>{status.state === 'paid' ? 'Paid' : 'Prize Pool'}</dt>
-          <dd>
-            {(status.batch?.total_paid ?? status.planned_total).toLocaleString('en-US')} Chips
-          </dd>
+          <dd>{compactChips(status.batch?.total_paid ?? status.planned_total)} Chips</dd>
         </div>
         <div>
           <dt>{status.state === 'paid' ? 'Winners' : 'Program'}</dt>
@@ -146,7 +144,7 @@ export function LeaderboardSettlementCard({
       {ownReceipt && (
         <div className="lb-settlement-receipt">
           <span>Your Verified Receipt</span>
-          <strong>{ownReceipt.payout_amount.toLocaleString('en-US')} Chips</strong>
+          <strong>{compactChips(ownReceipt.payout_amount)} Chips</strong>
           <small>
             Rank {ownReceipt.rank} · Receipt {ownReceipt.id.slice(0, 8).toUpperCase()}
           </small>

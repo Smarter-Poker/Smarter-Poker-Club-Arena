@@ -39,12 +39,14 @@ describe('cinematic retained route families', () => {
     expect(source).toContain('data-arena-surface="play"');
   });
 
-  it('preserves the championship-native leaderboard visual authority', () => {
+  it('uses the user-approved painted console for championship leaderboards', () => {
+    // Dan explicitly approved replacing the protected Championship Deck design.
     const source = readFileSync('src/pages/LeaderboardPage.tsx', 'utf8');
-    expect(source).toContain('data-arena-surface="championship"');
-    expect(source).toContain('className="lb-hero"');
-    expect(source).toContain('Club Arena / Championship Deck');
-    expect(existsSync('public/images/leaderboard/championship-machine.jpg')).toBe(true);
+    expect(source).toContain('data-arena-surface="leaderboard-console"');
+    expect(source).toContain('<SpadeConsole');
+    expect(source).toContain('eyebrow="Club Arena"');
+    expect(source).not.toContain('className="lb-hero"');
+    expect(existsSync('public/assets/club-buttons/console/spade-console-v1/top.png')).toBe(true);
   });
 
   it('preserves the mission-native Daily Challenges visual authority', () => {

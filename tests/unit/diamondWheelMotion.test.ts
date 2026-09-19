@@ -3,10 +3,26 @@ import {
   wheelTravel,
   wheelLandingRotation,
   wheelPegTimes,
+  wheelPointerDeflection,
   WHEEL_SPIN_MS,
 } from '../../src/utils/diamondWheelMotion';
 
 describe('the wheel motion follows the server result', () => {
+  it.each([8, 12])(
+    'the mounted selector flexes at each of %i seams and rests inside the bay',
+    (count) => {
+      const step = 360 / count;
+      expect(wheelPointerDeflection(0, count, 1)).toBe(-26);
+      expect(wheelPointerDeflection(step / 2, count, 1)).toBe(0);
+      expect(wheelPointerDeflection(step * 0.12, count, 1)).toBeGreaterThan(0);
+      expect(wheelPointerDeflection(step * 0.95, count, 1)).toBeLessThan(0);
+      for (const phase of [0, 0.12, 0.5, 0.95]) {
+        expect(wheelPointerDeflection(-step * phase, count, -1)).toBeCloseTo(
+          -wheelPointerDeflection(step * phase, count, 1)
+        );
+      }
+    }
+  );
   it.each([4, 12])('lands every one of %i slots at the fixed pointer from any heading', (count) => {
     for (const from of [0, 17.5, 359.9, 5081]) {
       for (let index = 0; index < count; index += 1) {

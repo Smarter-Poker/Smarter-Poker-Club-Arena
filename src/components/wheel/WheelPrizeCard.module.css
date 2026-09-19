@@ -1,0 +1,13 @@
+.card {
+  pointer-events: none;
+}
+.amount {
+  fill: #e4e7ec;
+  font-family: 'Roboto Condensed', sans-serif;
+  font-weight: 900;
+  paint-order: stroke fill;
+  stroke: #050607;
+  stroke-width: 1.4px;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 1px 0 #9aa5b3) drop-shadow(0 2px 1px #050607);
+}

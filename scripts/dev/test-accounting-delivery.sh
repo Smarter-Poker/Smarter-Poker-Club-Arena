@@ -138,3 +138,64 @@ run_game_probe diamond-wheel-upgrade-eight 'NOTICE:  PASS Wheel v3: twelve prima
 # Old zero-minimum open rounds remain valid after the new settlement contract.
 run_game_probe diamond-crash-clicked-multiplier 'NOTICE:  PASS Crash clicked multiplier: exact 2.57x, no late rescue, auto and cap preserved, future and foreign requests refused, one payout on replay'
 run_game_probe diamond-bonus-minimum-wins 'NOTICE:  PASS Bonus minimum wins: exact reported Crash award, authenticated start, full immutable minimum, exact257cashout, Mines and Crossing wins, Promo first and Main Bank shortfall, replay'
+
+# Replays use real settled games and the canonical social writer in isolation.
+"${diamond_psql[@]}" -f "$diamond/replay-social-dependencies.sql" \
+  -f "$diamond/replay-public-guard-dependencies.sql" \
+  -f "$root/supabase/migrations/20260919152603_diamond_bonus_replay_and_daily_spin_custody.sql" \
+  -f "$root/supabase/migrations/20260919153418_public_bonus_replay_has_an_explicitly_public_reader.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-bonus-replays 'NOTICE:  PASS Bonus replays: eight actual normal/Super settlements, private open and foreign refusal, exact payloads and 257cashout, slow100x, scoped cursor, random public snapshot, stable token, one canonical post/story/reward and unchanged game wallets'
+
+# Daily owner settlement is additive after the preserved original custody probes.
+"${diamond_psql[@]}" -f "$diamond/daily-custody-dependencies.sql" \
+  -f "$diamond/daily-custody-preimages.sql" \
+  -f "$root/supabase/migrations/20260919152614_diamond_spin_daily_net_settlement.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-daily-custody 'NOTICE:  PASS Daily Diamond custody: real wheel prizes and Double Down, claimed Mint entry only, welcome, canonical supply, negative backing, owner isolation, one closed-day transfer and notification, replay and atomic rollback'
+
+# Observe a genuine two-connection duplicate race in a SECOND disposable local
+# database. Its commits never touch production or the rollback-probe baseline.
+"${diamond_psql[@]}" -c 'CREATE DATABASE diamond_custody_race TEMPLATE diamond_games_probe OWNER postgres'
+race_psql=("$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$fixture/socket" -p 55487 -U postgres -d diamond_custody_race)
+"${race_psql[@]}" -f "$diamond/daily-custody-concurrency-seed.sql" > "$fixture/custody-race-seed.stdout"
+"${race_psql[@]}" > "$fixture/custody-race-a.stdout" 2> "$fixture/custody-race-a.stderr" <<'SQL' &
+BEGIN;
+SET LOCAL lock_timeout='10s';
+SET LOCAL application_name='diamond-custody-race-a';
+SET LOCAL "request.jwt.claims"='{"role":"service_role"}';
+SELECT public.fn_diamond_spin_settle_day('d1000000-0000-4000-8000-000000000002',(clock_timestamp() AT TIME ZONE 'America/Chicago')::date-1);
+SELECT pg_sleep(2);
+COMMIT;
+SQL
+race_a=$!
+# Wait for the first exact function invocation to own the row before its duplicate.
+first_owned=0
+for attempt in $(seq 1 60); do
+  if [ "$("${race_psql[@]}" -Atc "SELECT count(*) FROM pg_stat_activity WHERE application_name='diamond-custody-race-a' AND wait_event='PgSleep'")" = 1 ]; then first_owned=1; break; fi
+  sleep 0.02
+done
+if [ "$first_owned" != 1 ]; then wait "$race_a"; echo 'First settlement never reached its held receipt' >&2; exit 1; fi
+"${race_psql[@]}" > "$fixture/custody-race-b.stdout" 2> "$fixture/custody-race-b.stderr" <<'SQL' &
+BEGIN;
+SET LOCAL lock_timeout='10s';
+SET LOCAL application_name='diamond-custody-race-b';
+SET LOCAL "request.jwt.claims"='{"role":"service_role"}';
+SELECT public.fn_diamond_spin_settle_day('d1000000-0000-4000-8000-000000000002',(clock_timestamp() AT TIME ZONE 'America/Chicago')::date-1);
+COMMIT;
+SQL
+race_b=$!
+blocked=0
+for attempt in $(seq 1 60); do
+  if [ "$("${race_psql[@]}" -Atc "SELECT count(*) FROM pg_stat_activity a,pg_stat_activity b WHERE a.application_name='diamond-custody-race-a' AND b.application_name='diamond-custody-race-b' AND a.pid=ANY(pg_blocking_pids(b.pid))")" = 1 ]; then blocked=1; break; fi
+  sleep 0.02
+done
+wait "$race_a"
+wait "$race_b"
+cat "$fixture/custody-race-a.stderr" "$fixture/custody-race-b.stderr"
+if [ "$blocked" != 1 ] || ! grep -Fq '"replayed": true' "$fixture/custody-race-b.stdout" ||
+   grep -Eq 'ERROR:|WARNING:|FATAL:|PANIC:' "$fixture/custody-race-a.stderr" "$fixture/custody-race-b.stderr"; then
+  echo 'The concurrent settlement did not block and replay its exact owner receipt' >&2
+  exit 1
+fi
+"${race_psql[@]}" -f "$diamond/daily-custody-concurrency-assert.sql"

@@ -24,7 +24,15 @@
     "public/assets/club-buttons/wallets/square/wallet-promo-wallet-square-v1.png": {
       "pct": 0.5,
       "reason": "Sits exactly on the floor and under the cleaner's own threshold, so clean-shell-matte.py writes nothing for it. Recorded so the number is pinned rather than left one rounding tick away from failing the build."
+    },
+    "public/assets/diamond-spins/wheel-matte-controls-v1.png": {
+      "pct": 3.5,
+      "reason": "Matte gunmetal frame and its antialiased silhouette, inspected at full size on black on 2026-09-19. The detector removes 13487 edge pixels with mean RGB luminance 104.94; none exceeds 200 and only 831 are fully opaque. The removed band follows the horizontal steel rim and corner housing shadows, not a white export background. An in-memory cleaned copy converges to 0.0%, but convergence alone is insufficient: it removes the frame silhouette shading. Keep the approved matte frame and pin this exact reading."
+    },
+    "public/assets/diamond-spins/wheel-selector-matte-v1.png": {
+      "pct": 1.0,
+      "reason": "Matte steel pointer, inspected at full size on black on 2026-09-19. The detector removes 6072 pixels with mean RGB luminance 93.14, only two above 200; 5928 lie in the top 20% of the image along the pointed steel crest and upper shoulders. An in-memory cleaned copy reads 0.0031%, but removes the matte metal contour, not a white background. Preserve the blue crystal and matte housing and pin the measured reading."
     }
   },
-  "generated": "2026-09-11"
+  "generated": "2026-09-19"
 }

@@ -34,7 +34,33 @@ export function diamondWheelFixture() {
           import {useMeasuredWidth} from './src/hooks/useMeasuredWidth';
           const receipts=${JSON.stringify(receipts)};
           const previews=${JSON.stringify(wheel.filter((r) => r.secondary))};
-          window.wheelProof={finished:0,events:[]};
+          window.wheelProof={finished:0,events:[],upgradeStates:[]};
+          // Record short-lived rendered states in the browser. Serial driver
+          // assertions can miss a complete secondary spin under CI tracing.
+          const observeUpgrade=()=>{
+            const upper=document.querySelector('[aria-label="Upgrade Wheel"]');
+            const main=document.querySelector('[aria-label="Diamond Wheel"]');
+            if(!upper||!main)return;
+            const state={
+              phase:upper.parentElement.dataset.phase,
+              expanded:document.querySelector('[data-wheel-assembly]').dataset.upgradeReveal,
+              selectors:upper.querySelectorAll('[data-wheel-selector]').length,
+              titles:upper.querySelectorAll('[data-card-design="title"]').length,
+              cards:upper.querySelectorAll('[data-card-design="full"]').length,
+              slots:upper.querySelectorAll('[data-slot]').length,
+              visible:upper.getBoundingClientRect().height>0&&getComputedStyle(upper).visibility==='visible',
+              scale:getComputedStyle(main.querySelector('[data-wheel-face]')).transform,
+              finished:window.wheelProof.finished,
+              destination:document.querySelector('[data-testid="destination"]').textContent,
+            };
+            const last=window.wheelProof.upgradeStates.at(-1);
+            if(JSON.stringify(last)!==JSON.stringify(state))window.wheelProof.upgradeStates.push(state);
+          };
+          new MutationObserver(observeUpgrade).observe(document.getElementById('root'),{
+            subtree:true,childList:true,attributes:true,
+            attributeFilter:['data-phase','data-upgrade-reveal','style'],
+          });
+          document.addEventListener('transitionend',observeUpgrade,true);
           function Fixture(){
             const kind=new URLSearchParams(window.location.search).get('kind')||'prize';
             const receipt=receipts[kind];const [spinning,setSpinning]=useState(false);

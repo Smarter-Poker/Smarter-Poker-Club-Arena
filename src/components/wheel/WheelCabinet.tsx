@@ -1,12 +1,6 @@
 import type { ReactNode } from 'react';
 import type { DeckBay } from '../console/DeckConsole';
-import {
-  PlateButton,
-  SPADE_CONSOLE_ZONES,
-  SPADE_CONSOLE_PLATES_H,
-  type PlateButtonProps,
-  type ConsoleInk,
-} from '../console/SpadeConsole';
+import { type PlateButtonProps, type ConsoleInk } from '../console/SpadeConsole';
 import { WheelPrizeArt } from './WheelPrizeArt';
 import { wheelPrizeTitle } from './WheelExperience';
 import type { WheelSegment } from '../../services/DiamondWheelService';
@@ -16,8 +10,6 @@ import styles from './WheelCabinet.module.css';
 export function WheelCabinet({
   title,
   titleId,
-  pill,
-  pillInk,
   bays,
   primary,
   secondary,
@@ -42,17 +34,11 @@ export function WheelCabinet({
   return (
     <section className={styles.cabinet} aria-labelledby={titleId}>
       <header className={styles.heading}>
-        <span>Smarter.Poker</span>
         <h1 id={titleId}>{title}</h1>
       </header>
       <div className={styles.wheel}>{children}</div>
       <aside className={styles.controls} aria-label="Diamond Spins Controls">
-        <div className={styles.controlHeading}>
-          <span className={`sc-ink--${pillInk ?? 'silver'}`} role="status">
-            {pill}
-          </span>
-          {navigation}
-        </div>
+        <div className={styles.controlHeading}>{navigation}</div>
         {setup}
         <div className={styles.dashboard}>
           <dl className={styles.metrics}>
@@ -65,18 +51,26 @@ export function WheelCabinet({
           </dl>
           <div className={styles.actions}>
             {secondary && (
-              <PlateButton
-                {...secondary}
-                zone={SPADE_CONSOLE_ZONES.plateSecondary}
-                canvasH={SPADE_CONSOLE_PLATES_H}
-              />
+              <button
+                type="button"
+                className={styles.secondary}
+                onClick={secondary.onClick}
+                disabled={secondary.disabled}
+                data-ink={secondary.ink}
+              >
+                {secondary.label}
+              </button>
             )}
             {primary && (
-              <PlateButton
-                {...primary}
-                zone={SPADE_CONSOLE_ZONES.platePrimary}
-                canvasH={SPADE_CONSOLE_PLATES_H}
-              />
+              <button
+                type="button"
+                className={styles.primary}
+                onClick={primary.onClick}
+                disabled={primary.disabled}
+                data-ink={primary.ink}
+              >
+                {primary.label}
+              </button>
             )}
           </div>
         </div>

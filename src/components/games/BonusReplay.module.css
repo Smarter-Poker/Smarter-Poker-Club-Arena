@@ -1,0 +1,97 @@
+.player {
+  width: 100%;
+  color: #e4e7ec;
+  text-align: center;
+}
+.player h2 {
+  font:
+    700 clamp(24px, 5vw, 38px) 'Roboto Condensed',
+    sans-serif;
+  margin: 6px 0;
+}
+.stage {
+  width: 100%;
+  max-width: 760px;
+  margin: 12px auto;
+}
+.action {
+  color: #e4e7ec;
+  background: transparent;
+  border: 8px solid transparent;
+  border-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') 26 fill /
+    8px / 0 stretch;
+  padding: 8px 16px;
+  min-height: 44px;
+  font-family: 'Roboto Condensed', sans-serif;
+  font-weight: 700;
+  cursor: pointer;
+}
+.action:active {
+  filter: brightness(1.15);
+}
+.link {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  color: #e4e7ec;
+  background: #000;
+  border: 8px solid transparent;
+  border-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') 26 fill /
+    8px / 0 stretch;
+  font:
+    14px Inter,
+    sans-serif;
+}
+.action:disabled {
+  color: #9aa5b3;
+  cursor: default;
+}
+.action:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 2px;
+}
+.progress {
+  font:
+    700 24px 'Roboto Condensed',
+    sans-serif;
+  color: #45adff;
+}
+.note {
+  color: #9aa5b3;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.rows {
+  display: grid;
+  gap: 8px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgb(228 231 236 / 15%);
+}
+.row small {
+  display: block;
+  color: #9aa5b3;
+  margin-top: 5px;
+}
+.sharing {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+.page {
+  min-height: 100dvh;
+  background: #000;
+  padding: 16px;
+  color: #e4e7ec;
+}
+.page > div {
+  max-width: 1000px;
+  margin: auto;
+}

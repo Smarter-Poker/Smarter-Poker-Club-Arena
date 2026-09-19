@@ -12,6 +12,8 @@ export interface CrashCurveProps {
   growthK: number;
   capCents: number;
   startedAtLocalMs: number | null;
+  /** Read-only replay clock. Live play always follows startedAtLocalMs. */
+  replayElapsedMs?: number;
   finalCents: number | null;
   cashoutCents: number | null;
   crashCents?: number | null;
@@ -260,7 +262,8 @@ export default function CrashCurve(props: CrashCurveProps) {
         notified = false;
       } else revealedFor += visibleDelta;
       const elapsed =
-        p.startedAtLocalMs === null ? 0 : Math.max(0, performance.now() - p.startedAtLocalMs);
+        p.replayElapsedMs ??
+        (p.startedAtLocalMs === null ? 0 : Math.max(0, performance.now() - p.startedAtLocalMs));
       const current =
         p.phase === 'open'
           ? crashMultiplierCents(p.growthK, elapsed, p.capCents)

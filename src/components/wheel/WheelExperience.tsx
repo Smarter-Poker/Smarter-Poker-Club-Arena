@@ -68,6 +68,7 @@ export function WheelExperience({
     'primary'
   );
   const secondary = phase === 'secondary' || phase === 'bonus';
+  const expanded = phase !== 'primary' && receipt?.outcome.kind === 'upgrade';
   const upperSegments = receipt?.secondary?.segments ?? upgradeSegments;
   const mainStage = useRef<HTMLDivElement>(null);
   const upgradeStage = useRef<HTMLDivElement>(null);
@@ -88,6 +89,7 @@ export function WheelExperience({
         className={styles.stack}
         role="group"
         data-wheel-assembly="concentric"
+        data-upgrade-reveal={expanded ? 'open' : 'peek'}
         data-fit-viewport={fitViewport || undefined}
         aria-label="Diamond Spins Prize Wheel"
       >
@@ -103,7 +105,8 @@ export function WheelExperience({
               spinKey={spinKey}
               spinning={spinning && phase === 'secondary'}
               upgraded
-              showSelector={phase !== 'primary' && receipt?.outcome.kind === 'upgrade'}
+              upgradeExpanded={expanded}
+              showSelector={expanded}
               idleDirection={-1}
               fitViewport={fitViewport}
               size={size}
@@ -115,6 +118,7 @@ export function WheelExperience({
         <div className={styles.mainStage} ref={mainStage}>
           <DiamondWheel
             segments={segments}
+            faceScale={upperSegments.length > 0 ? (expanded ? 0.56 : 0.91) : 1}
             presentation="assembly"
             landingOrd={receipt?.outcome.ord ?? null}
             spinKey={spinKey}

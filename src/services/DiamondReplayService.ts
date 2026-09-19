@@ -158,7 +158,7 @@ export function parseBonusReplay(value: unknown): BonusReplay {
           d.picked.slice(0, -1).some((n) => d.mine_cells!.includes(n)) ||
           d.mine_cells.includes(d.picked[d.picked.length - 1]) !== (d.status === 'lost'))) ||
       (r.game === 'crossing' &&
-        (!Object.hasOwn(ROAD_LADDERS, d.mode) ||
+        (!Object.prototype.hasOwnProperty.call(ROAD_LADDERS, d.mode) ||
           !integer(d.road_end) ||
           d.road_end > d.prizes.length ||
           d.picked.some((n, i) => n !== i) ||

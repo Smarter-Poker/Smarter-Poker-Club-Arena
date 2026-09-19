@@ -274,7 +274,7 @@ export default function BonusReplayLibrary({ clubId }: { clubId: string }) {
               className={styles.action}
               type="button"
               disabled={busy}
-              onClick={() => void load(rows.at(-1))}
+              onClick={() => void load(rows[rows.length - 1])}
             >
               Older Replays
             </button>

@@ -23,7 +23,7 @@ describe('Diamond Games retain their financial PostgreSQL qualification', () => 
     'tests/sql/diamond-wheel-upgrade-eight.sql',
     'tests/sql/diamond-bonus-minimum-wins.sql',
     'tests/sql/diamond-bonus-replays.sql',
-    'supabase/migrations/20260919153039_public_bonus_replay_has_an_explicitly_public_reader.sql',
+    'supabase/migrations/20260919153418_public_bonus_replay_has_an_explicitly_public_reader.sql',
     'tests/fixtures/accounting-delivery/diamond-games/replay-public-guard-dependencies.sql',
     'tests/sql/diamond-daily-custody.sql',
     'tests/fixtures/accounting-delivery/diamond-games/replay-social-dependencies.sql',

@@ -104,6 +104,10 @@ export async function loadDiamondStatements(
       bad();
     previous = row.day;
   }
-  if (result.next_before_day !== null && result.next_before_day !== result.days.at(-1)?.day) bad();
+  if (
+    result.next_before_day !== null &&
+    result.next_before_day !== result.days[result.days.length - 1]?.day
+  )
+    bad();
   return result;
 }

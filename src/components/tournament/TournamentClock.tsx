@@ -156,9 +156,15 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
       //                  it were live. The same tournament above showed 8,000
       //                  when the real average stack was 168,700.)
       //
-      // Count and sum the actual seats instead. tournament_players is in the
-      // realtime publication, so the subscription below keeps this current
-      // between the 15s polls.
+      // Count and sum the actual seats instead. This read is the authoritative
+      // one; the 30s refresh below re-runs it.
+      //
+      // This used to claim tournament_players was in the realtime publication
+      // and that the subscription kept it current "between the 15s polls". Both
+      // halves were wrong. tournament_players is NOT published - 25,280,935
+      // writes, the most written table on the platform, which is precisely why
+      // the 2026-09-06 trim keeps it out - so the subscription below delivers
+      // nothing. And the poll beside it is 30s, not 15s.
       let playersRemaining = tournament.current_players || 0;
       let entrants = tournament.current_players || 0;
       let totalChips = (tournament.starting_chips || 0) * playersRemaining;
@@ -285,9 +291,19 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
       refreshState();
     }, 30_000);
 
-    // Eliminations and chip movements must reach the clock immediately, not up
-    // to 30s later — the whole point of the fix above is that this footer
-    // tracks the live field. tournament_players is in the realtime publication.
+    // Eliminations and chip movements SHOULD reach the clock immediately rather
+    // than up to 30s later, and this subscription is how that was meant to
+    // happen. It does not happen: tournament_players is not in the
+    // supabase_realtime publication, so this channel joins, reports SUBSCRIBED
+    // and receives nothing. Until a scoped carrier exists, the 30s refresh
+    // above is the ONLY thing moving the field count and average stack, and the
+    // TOURNAMENT_UPDATED handler below only fires for actions taken in THIS
+    // tab - every masterBus emitter of it is local except the
+    // game_management_events bridge, which is unpublished too.
+    //
+    // The subscription is kept rather than deleted because the handler takes no
+    // payload (it just re-runs the authoritative read), so it is correct for
+    // any future carrier without modification.
     const channelKey = `clock-players-${tournamentId}`;
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel

@@ -20,8 +20,10 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from './Toast';
 import { reportError } from '../../utils/errorReporter';
+import { decideSeatOffer, holdDeadline } from './waitlistSeatOffer';
 
 const WAITLIST_CHANNEL_KEY = 'global-waitlist-auto-seat';
+
 const MAX_RETRIES = 5;
 const BACKOFF_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000]; // Exponential backoff, capped at 30s
 
@@ -38,6 +40,52 @@ export default function GlobalWaitlistListener() {
    * almost all of the time - which is the whole point (see setupChannel).
    */
   const watchedTableIdsRef = useRef<string[]>([]);
+
+  /**
+   * THE OFFER WE HAVE ALREADY SHOWN, per table, keyed to its DEADLINE.
+   *
+   * This exists so the seat offer does not depend on `payload.old`. Postgres
+   * Changes only sends the columns in the table's REPLICA IDENTITY as the old
+   * row, and Supabase documents that an RLS-enabled table sends only the
+   * primary key there - `table_waitlist` is RLS-enabled, so `old.status` cannot
+   * be relied on. The two branches below used to read exactly that:
+   *
+   *   old.status === 'notified'   gated the thaw re-seed, so it never fired
+   *   old.status !== 'notified'   gated the offer, and `undefined !== 'notified'`
+   *                               is always true, so it fired on EVERY touch
+   *
+   * which is a missed deadline update and a duplicate toast, from the same
+   * missing field. Remembering what we showed makes both decisions locally and
+   * leaves the answer correct whether or not the old row ever arrives.
+   */
+  const offeredHoldsRef = useRef<Map<string, string>>(new Map());
+
+  /**
+   * Re-read the authoritative FIFO position for ONE watched table and publish
+   * it on the bus. Bounded: one table, one read, and only for a table this user
+   * is actually queued on, so an unfilterable or unrelated event cannot turn
+   * into a fan of queries. Emits only for a genuinely waiting row - a
+   * 'notified' row is position 0 and belongs to the seat-offer path, which owns
+   * the banner while a hold is live.
+   */
+  const refreshQueuePosition = useCallback(async (tableId?: string | number | null) => {
+    if (!tableId || cleanedUpRef.current) return;
+    const id = String(tableId);
+    if (!watchedTableIdsRef.current.includes(id)) return;
+    try {
+      const { waitlistService } = await import('../../services/WaitlistService');
+      const pos = await waitlistService.getPosition(id);
+      if (pos && pos.status === 'waiting' && pos.position > 0) {
+        masterBus.emit('WAITLIST_POSITION_CHANGED', {
+          tableId: id,
+          position: pos.position,
+          tableName: 'Unknown',
+        });
+      }
+    } catch (err) {
+      reportError(err, 'GlobalWaitlistListener.Error_checking_waitlist_position');
+    }
+  }, []);
 
   // ─── Core subscription logic (extracted for reuse on reconnect) ───
   const setupChannel = useCallback(() => {
@@ -92,9 +140,36 @@ export default function GlobalWaitlistListener() {
         table: 'table_seats',
         filter: `table_id=in.(${watched.join(',')})`,
       },
-      async (payload) => {
-        const vacatedTableId = (payload.old as { table_id?: string })?.table_id;
-        if (!vacatedTableId) return;
+      async () => {
+        /* THIS HANDLER CANNOT READ THE TABLE OFF THE EVENT, and no publication
+           change would let it. Two documented Postgres Changes behaviours:
+
+             1. DELETE events are not filterable. The `table_id=in.(...)` filter
+                above is accepted and then ignored for DELETE, so if table_seats
+                were ever published this would receive every seat vacated
+                anywhere on the platform.
+             2. The old row carries only the REPLICA IDENTITY columns, and for
+                an RLS-enabled table Supabase documents that as the primary key
+                alone. table_seats is RLS-enabled with primary key `id`, so
+                `old.table_id` is undefined - and raising the table to REPLICA
+                IDENTITY FULL does not change that while RLS is on.
+
+           It read `old.table_id` and returned early when it was missing, so it
+           was a guaranteed no-op wearing the shape of a working handler.
+
+           The watched set is small - the tables THIS user is queued on - and it
+           is already known locally, so refreshing those positions needs nothing
+           from the payload. That is correct for an unfilterable DELETE too: an
+           unrelated table's event costs one bounded refresh of the user's own
+           queue rather than a wrong answer.
+
+           It still cannot fire today: table_seats is not published (14,582,928
+           writes, which is why the trim keeps it out). It is kept rather than
+           deleted because the authoritative position refresh below is the
+           behaviour a future carrier has to drive, and it is now correct for
+           one. The live position signal comes from table_waitlist changes. */
+        const watchedNow = [...watchedTableIdsRef.current];
+        if (watchedNow.length === 0) return;
 
         /* Dan 2026-08-26 waitlist fix — this used to AUTO-NAVIGATE whoever
            read `position === 1` off their own row. That column is NOT NULL
@@ -106,13 +181,15 @@ export default function GlobalWaitlistListener() {
            the queue-position badge, from a real FIFO count. */
         try {
           const { waitlistService } = await import('../../services/WaitlistService');
-          const pos = await waitlistService.getPosition(vacatedTableId);
-          if (pos && pos.status === 'waiting' && pos.position > 0) {
-            masterBus.emit('WAITLIST_POSITION_CHANGED', {
-              tableId: vacatedTableId,
-              position: pos.position,
-              tableName: 'Unknown',
-            });
+          for (const tableId of watchedNow) {
+            const pos = await waitlistService.getPosition(tableId);
+            if (pos && pos.status === 'waiting' && pos.position > 0) {
+              masterBus.emit('WAITLIST_POSITION_CHANGED', {
+                tableId,
+                position: pos.position,
+                tableName: 'Unknown',
+              });
+            }
           }
         } catch (err) {
           reportError(err, 'GlobalWaitlistListener.Error_checking_waitlist_position');
@@ -136,6 +213,54 @@ export default function GlobalWaitlistListener() {
         if ((payload.new as { user_id?: string })?.user_id === user.id) {
           masterBus.emit('WAITLIST_CHANGED', undefined as void);
         }
+      }
+    );
+
+    /* ── THE QUEUE POSITION, FROM A TABLE THAT IS ACTUALLY PUBLISHED ────────
+       Both table_seats handlers above are dead and are going to stay dead: the
+       table carries 14,582,928 writes and publishing it to move a badge is the
+       exact trade the 2026-09-06 trim exists to refuse.
+
+       But a vacated seat was only ever a PROXY for the thing the badge shows.
+       FIFO position is computed from table_waitlist, and that is where it
+       changes: somebody ahead leaves, is notified, or claims their seat. Those
+       are table_waitlist writes, and table_waitlist IS published - it is one of
+       the twenty-three restored on 2026-09-19, with 15 recorded writes, four
+       live rows and eight columns. The signal is both cheaper and more
+       authoritative than the seat event it replaces.
+
+       Scope: the tables THIS user is queued on. Other players' rows arrive
+       because `waitlist_public_queue_read` grants authenticated users SELECT on
+       any row whose status is 'waiting' or 'notified', so postgres_changes
+       passes them - the queue is deliberately public, and nothing private is
+       carried here. INSERT and UPDATE only: those accept a filter, and their
+       `new` row is complete regardless of replica identity. DELETE is left to
+       the handler above precisely because it can be neither filtered nor read.
+
+       The user's own row also matches this filter, and that is fine: one bounded
+       position read is the correct response either way. */
+    channel.on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'table_waitlist',
+        filter: `table_id=in.(${watched.join(',')})`,
+      },
+      (payload) => {
+        void refreshQueuePosition((payload.new as { table_id?: string } | undefined)?.table_id);
+      }
+    );
+    channel.on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'table_waitlist',
+        filter: `table_id=in.(${watched.join(',')})`,
+      },
+      (payload) => {
+        void refreshQueuePosition((payload.new as { table_id?: string } | undefined)?.table_id);
       }
     );
 
@@ -167,7 +292,7 @@ export default function GlobalWaitlistListener() {
         }, delay);
       }
     });
-  }, [user?.id, navigate, toast]);
+  }, [user?.id, navigate, toast, refreshQueuePosition]);
 
   /**
    * Keep `watchedTableIdsRef` in step with the user's actual waitlist, and
@@ -190,16 +315,50 @@ export default function GlobalWaitlistListener() {
       // for queues the player was no longer in.
       const { data, error } = await supabase
         .from('table_waitlist')
-        .select('table_id')
+        .select('table_id, status, hold_expires_at, notified_at')
         .eq('user_id', user.id)
         .in('status', ['waiting', 'notified']);
       if (error) {
         reportError(error, 'GlobalWaitlistListener.refreshWatchedTables');
         return;
       }
-      const next = Array.from(
-        new Set((data || []).map((r: { table_id: string }) => r.table_id).filter(Boolean))
-      ).sort();
+      type WatchedRow = {
+        table_id: string;
+        status?: string | null;
+        hold_expires_at?: string | null;
+        notified_at?: string | null;
+      };
+      const rows = (data || []) as WatchedRow[];
+
+      /* SEED THE OFFER MEMORY FROM THE AUTHORITATIVE READ.
+         Two things depend on this. A player who reloads mid-hold gets the
+         banner back with the real remaining time, instead of nothing until the
+         next UPDATE happens to arrive. And a hold we have already recorded will
+         not toast again when the thaw moves its deadline: the handler re-emits
+         for the banner and stays quiet, which is what the 2026-09-01 thaw fix
+         intended before old.status silently disabled it. */
+      for (const row of rows) {
+        if (!row.table_id || row.status !== 'notified') continue;
+        const tableId = String(row.table_id);
+        const deadline = holdDeadline(row);
+        if (offeredHoldsRef.current.get(tableId) === (deadline ?? '')) continue;
+        offeredHoldsRef.current.set(tableId, deadline ?? '');
+        masterBus.emit('WAITLIST_SEAT_OFFERED', {
+          tableId,
+          tableName: '',
+          holdExpiresAt: deadline,
+        });
+      }
+      /* A row that is no longer notified must forget its offer, or a genuine
+         later re-offer on the same table would be deduped into silence. */
+      const stillNotified = new Set(
+        rows.filter((r) => r.status === 'notified').map((r) => String(r.table_id))
+      );
+      for (const tableId of [...offeredHoldsRef.current.keys()]) {
+        if (!stillNotified.has(tableId)) offeredHoldsRef.current.delete(tableId);
+      }
+
+      const next = Array.from(new Set(rows.map((r) => r.table_id).filter(Boolean))).sort();
       const prev = watchedTableIdsRef.current;
       const changed = next.length !== prev.length || next.some((id, i) => id !== prev[i]);
       if (!changed) return;
@@ -256,87 +415,86 @@ export default function GlobalWaitlistListener() {
                 notified_at?: string | null;
                 hold_expires_at?: string | null;
               };
-              old?: { status?: string };
               eventType?: string;
             };
             const newRow = (payload as WaitlistPayload).new;
-            const oldRow = (payload as WaitlistPayload).old;
-            /* ── THE THAW MOVES THE DEADLINE, AND THE BANNER MUST FOLLOW
-               (Dan 2026-09-01, to-do #2563 item 5). When the maintenance
-               break ends, fn_thaw_platform shifts hold_expires_at forward by
-               the frozen duration - an UPDATE on this player's own row, which
-               lands right here. The status is already 'notified' on both
-               sides, so the offer branch below skips it, and the on-screen
-               countdown kept counting a deadline that no longer exists:
-               the banner showed "expired" on a hold that was alive. Re-emit
-               with the fresh deadline so the countdown re-seeds. Harmless on
-               any other same-status touch: the banner just re-reads the same
-               instant. */
-            if (
-              (payload as WaitlistPayload).eventType === 'UPDATE' &&
-              newRow?.status === 'notified' &&
-              oldRow?.status === 'notified' &&
-              newRow?.table_id &&
-              newRow?.hold_expires_at
-            ) {
-              masterBus.emit('WAITLIST_SEAT_OFFERED', {
-                tableId: String(newRow.table_id),
-                tableName: '',
-                holdExpiresAt: newRow.hold_expires_at,
-              });
-            }
-            if (
-              (payload as WaitlistPayload).eventType === 'UPDATE' &&
-              newRow?.status === 'notified' &&
-              oldRow?.status !== 'notified' &&
-              newRow?.table_id
-            ) {
-              const offeredTableId = String(newRow.table_id);
-              /* The banner needs the DEADLINE, not a duration: a tab that was
-                 backgrounded, or a component that mounts late, must show the
-                 true remaining time instead of restarting the clock at sixty.
-                 Falls back to notified_at + 60s for a row written before
-                 hold_expires_at existed. */
-              const holdExpiresAt =
-                newRow.hold_expires_at ??
-                (newRow.notified_at
-                  ? new Date(new Date(newRow.notified_at).getTime() + 60_000).toISOString()
-                  : null);
-              /* Name the table. The banner card is otherwise anonymous - "Seat
-                 Held 0:47" with no indication of WHERE - and a player queued
-                 on more than one table cannot tell which seat is being held.
-                 One small read, only when an offer actually arrives, and the
-                 card still renders immediately if it fails: the emit happens
-                 first with no name, and the name follows if it resolves. */
+
+            /* ── THE SEAT OFFER, DECIDED WITHOUT THE OLD ROW ──────────────
+               The engine claims the queue head by flipping the row to
+               'notified' (notifyWaitlistSeatOpen). That UPDATE lands here on
+               the player's own realtime channel: the authoritative "your seat
+               is open" signal.
+
+               What decides NEW OFFER versus DEADLINE MOVED is now what we
+               remember showing, not `old.status`, which an RLS-enabled table
+               does not reliably send (see offeredHoldsRef). Three outcomes:
+
+                 nothing remembered      -> a new offer. Banner, name, toast.
+                 remembered, new deadline -> the thaw moved the hold. Re-emit so
+                                             the countdown re-seeds, no toast:
+                                             the player already has this offer.
+                 remembered, same deadline -> a duplicate or an unrelated touch
+                                             on the row. Ignored.
+
+               The third case is new protection: a redelivery, or any other
+               UPDATE that leaves the row notified with the same deadline, used
+               to reach the offer branch and toast again. */
+            const decision = decideSeatOffer({
+              eventType: (payload as WaitlistPayload).eventType,
+              row: newRow,
+              remembered: newRow?.table_id
+                ? offeredHoldsRef.current.get(String(newRow.table_id))
+                : undefined,
+            });
+
+            if (decision.action === 'forget') {
+              /* The hold ended: seated, left, cleared or expired. Forget it so
+                 a genuine later re-offer on this table toasts again instead of
+                 being deduped into silence. */
+              offeredHoldsRef.current.delete(decision.tableId);
+            } else if (decision.action === 'offer' || decision.action === 'reseed') {
+              const offeredTableId = decision.tableId;
+              const deadline = decision.deadline;
+              offeredHoldsRef.current.set(offeredTableId, deadline ?? '');
               masterBus.emit('WAITLIST_SEAT_OFFERED', {
                 tableId: offeredTableId,
                 tableName: '',
-                holdExpiresAt,
+                holdExpiresAt: deadline,
               });
-              void supabase
-                .from('tables')
-                .select('name')
-                .eq('id', offeredTableId)
-                .maybeSingle()
-                .then(({ data }) => {
-                  if (data?.name) {
-                    masterBus.emit('WAITLIST_SEAT_OFFERED', {
-                      tableId: offeredTableId,
-                      tableName: String(data.name),
-                      holdExpiresAt,
-                    });
-                  }
-                });
-              /* 60 SECONDS, NOT 15 (Dan 2026-08-30): the seat is now HELD for
-                 this player for 60s (fn_offer_open_seat + atomic_table_buyin
-                 SEAT_RESERVED guard), so the popup lives exactly as long as
-                 the hold. Tapping it lands on the table with the buy-in
-                 screen already open (?buyin=1). */
-              toast.success(
-                'A Seat Just Opened For You. It Is Held For 60 Seconds. Tap Here To Take It.',
-                60000,
-                () => navigate(`/table/${offeredTableId}?buyin=1`)
-              );
+
+              if (decision.action === 'offer') {
+                /* Name the table. The banner card is otherwise anonymous -
+                   "Seat Held 0:47" with no indication of WHERE - and a player
+                   queued on more than one table cannot tell which seat is
+                   being held. One small read, only when an offer actually
+                   arrives, and the card still renders immediately if it
+                   fails: the emit happened first with no name, and the name
+                   follows if it resolves. */
+                void supabase
+                  .from('tables')
+                  .select('name')
+                  .eq('id', offeredTableId)
+                  .maybeSingle()
+                  .then(({ data }) => {
+                    if (data?.name) {
+                      masterBus.emit('WAITLIST_SEAT_OFFERED', {
+                        tableId: offeredTableId,
+                        tableName: String(data.name),
+                        holdExpiresAt: deadline,
+                      });
+                    }
+                  });
+                /* 60 SECONDS, NOT 15 (Dan 2026-08-30): the seat is now HELD for
+                   this player for 60s (fn_offer_open_seat + atomic_table_buyin
+                   SEAT_RESERVED guard), so the popup lives exactly as long as
+                   the hold. Tapping it lands on the table with the buy-in
+                   screen already open (?buyin=1). */
+                toast.success(
+                  'A Seat Just Opened For You. It Is Held For 60 Seconds. Tap Here To Take It.',
+                  60000,
+                  () => navigate(`/table/${offeredTableId}?buyin=1`)
+                );
+              }
             }
             void refreshWatchedTables();
             masterBus.emit('WAITLIST_CHANGED', undefined as void);

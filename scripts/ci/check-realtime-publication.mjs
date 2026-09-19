@@ -173,14 +173,23 @@ function walk(dir, out = []) {
   return out;
 }
 
-/** Table names this repo's client code subscribes to. */
+/**
+ * Table names this repo's client code subscribes to, mapped to EVERY file that
+ * names them. Recording only the first file understated the work: `table_seats`
+ * pointed at TableOperationsPanel while GlobalWaitlistListener's two handlers
+ * went unnamed, so a reader fixing the one file named here would have believed
+ * the table was done.
+ */
 function subscribedTables() {
   const found = new Map();
   for (const dir of SCAN_DIRS) {
     for (const file of walk(join(ROOT, dir))) {
       const src = readFileSync(file, 'utf8');
       for (const m of src.matchAll(/\btable:\s*'([a-z_][a-z0-9_]*)'/g)) {
-        if (!found.has(m[1])) found.set(m[1], file.replace(ROOT + '/', ''));
+        const rel = file.replace(ROOT + '/', '');
+        const sites = found.get(m[1]);
+        if (!sites) found.set(m[1], [rel]);
+        else if (!sites.includes(rel)) sites.push(rel);
       }
     }
   }
@@ -221,9 +230,32 @@ const subscribed = subscribedTables();
 const published = publishedTables();
 
 const cannotFire = [];
-for (const [table, where] of subscribed) {
+/**
+ * Subscribed, NOT published, and on the baseline. These are accepted - the
+ * eleven were measured and excluded on purpose - but "accepted" is not
+ * "working". Each one is a consumer in this repo whose channel joins, reports
+ * SUBSCRIBED and receives nothing, for ever. The baseline records the decision;
+ * it does not repair the page. Keeping them out of `cannotFire` is what lets
+ * this detector go green on unrecorded drift, which is its actual job - but a
+ * green run must still say out loud how many consumers are still dark, or the
+ * next reader learns the same thing the hard way a third time.
+ */
+const knownDead = [];
+/**
+ * Baseline entries that are not tables at all - the scanner's regex matches a
+ * `table:` key in an ordinary event payload. They are neither drift nor dead
+ * consumers, so they must not inflate the dead count.
+ */
+const NOT_A_TABLE = new Set(['table_id']);
+for (const [table, sites] of subscribed) {
   if (published.has(table)) continue;
-  if (KNOWN_UNPUBLISHED.has(table)) continue;
+  const where = sites.join(', ');
+  if (KNOWN_UNPUBLISHED.has(table)) {
+    if (!NOT_A_TABLE.has(table)) {
+      knownDead.push({ table, where, sites, why: KNOWN_UNPUBLISHED.get(table) });
+    }
+    continue;
+  }
   cannotFire.push({ table, where });
 }
 
@@ -260,4 +292,28 @@ if (cannotFire.length > 0) {
   process.exit(1);
 }
 
-console.log('[realtime-publication] OK - every subscription this repo makes can actually fire.');
+if (knownDead.length > 0) {
+  console.log(
+    `\n[realtime-publication] ${knownDead.length} SUBSCRIPTION(S) STILL CANNOT FIRE - accepted on the baseline:\n`
+  );
+  const deadSites = new Set();
+  for (const { table, sites, why } of knownDead) {
+    console.log(`    ${table}`);
+    for (const site of sites) {
+      deadSites.add(site);
+      console.log(`        ${site}`);
+    }
+    console.log(`        ${why}`);
+  }
+  console.log(
+    '\n  These are recorded decisions, not drift, so this run is not a failure.\n' +
+      '  They are still dead consumers: the page subscribing to each one needs a\n' +
+      '  different delivery path before its behavior is repaired.\n'
+  );
+  console.log(
+    `[realtime-publication] OK - no unrecorded drift. ${knownDead.length} recorded table(s) ` +
+      `across ${deadSites.size} file(s) still cannot fire.`
+  );
+} else {
+  console.log('[realtime-publication] OK - every subscription this repo makes can actually fire.');
+}

@@ -224,12 +224,20 @@ function deps(file: string): string[] {
 
 function roots(): Set<string> {
   const out = new Set<string>();
-  const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
-  for (const m of html.matchAll(/["'](\/src\/[^"']+)["']/g)) {
-    const r = resolveSpec(ROOT, m[1]);
-    if (r) out.add(r);
-  }
   const vite = readFileSync(join(ROOT, 'vite.config.ts'), 'utf8');
+  // Vite publishes separate HTML entries as well as the account application.
+  // Follow only entries named in the build, not arbitrary preview HTML files.
+  const entries = new Set(['index.html']);
+  for (const m of vite.matchAll(/path\.resolve\(__dirname,\s*['"]([^'"]+\.html)['"]\)/g)) {
+    entries.add(m[1]);
+  }
+  for (const entry of entries) {
+    const html = readFileSync(join(ROOT, entry), 'utf8');
+    for (const m of html.matchAll(/["'](\/src\/[^"']+)["']/g)) {
+      const r = resolveSpec(ROOT, m[1]);
+      if (r) out.add(r);
+    }
+  }
   for (const m of vite.matchAll(/['"]\.?\/?src\/([^'"]+)['"]/g)) {
     const r = resolveSpec(ROOT, '/src/' + m[1]);
     if (r) out.add(r);
@@ -261,6 +269,7 @@ describe('every file under src/ is reachable from the entry, or it is listed', (
 
   it('the walk starts from the real entry', () => {
     expect([...roots()].map((r) => relative(ROOT, r))).toContain('src/main.tsx');
+    expect([...roots()].map((r) => relative(ROOT, r))).toContain('src/diamond-test.tsx');
   });
 
   it('no unlisted file under src/ is unreachable', () => {

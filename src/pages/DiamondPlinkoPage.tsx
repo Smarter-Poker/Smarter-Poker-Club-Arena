@@ -1,3 +1,4 @@
+import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import { pendingBonus } from '../services/diamondBonusRecovery';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
@@ -316,6 +317,9 @@ function DiamondPlinkoGame() {
       if (live.current) setBusy(false);
     }
   };
+  useLiveBonusGuard(Boolean(earned.award) || busy || uncertain || animating, () =>
+    setError('Finish Your Bonus Game Before Leaving.')
+  );
   const shownWin = result
     ? result.drops
         .slice(0, landed)

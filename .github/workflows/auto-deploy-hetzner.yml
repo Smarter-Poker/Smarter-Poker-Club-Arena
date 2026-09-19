@@ -626,7 +626,8 @@ jobs:
             echo "- Run identity: \`$RUN_KEY\`"
             echo "- Durable transaction: \`$RELEASE_RESULT\`"
             echo "- Independent exact-SHA proof: \`$VERIFIED\`"
-            echo '- Image build: owned and bounded by the durable Hetzner transaction'
+            echo '- Image build: produced locally; Hetzner imports the sealed archive'
+            echo '- Scope: engine component only. Client publication and cross-artifact certification have separate results.'
           } >> "$GITHUB_STEP_SUMMARY"
 
       # A run that ships nothing must say so where a person actually looks.
@@ -645,7 +646,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$SHIPPED" = 'true' ]; then
-            echo "Production is serving $TARGET_SHA."
+            echo "The production engine is serving $TARGET_SHA. Client publication and cross-artifact certification have separate results."
             exit 0
           fi
           DETAIL="durable transaction result '$RELEASE_RESULT', independent proof '$VERIFIED'"
@@ -695,4 +696,10 @@ jobs:
           done
           [[ "$RECEIVER_ID" =~ ^[0-9]+$ ]] \
             || { echo '::error::GitHub accepted the exact certification event but no correlated post-deploy E2E run appeared.'; exit 1; }
-          echo "Post-deploy E2E receiver $RECEIVER_ID accepted exact engine component $ENGINE_SHA."
+          RECEIVER_URL="$GITHUB_SERVER_URL/$REPO/actions/runs/$RECEIVER_ID"
+          echo "Post-deploy E2E receiver acknowledged for exact engine component $ENGINE_SHA: $RECEIVER_URL"
+          {
+            echo '### Cross-artifact certification receiver acknowledged'
+            echo "- Receiver: [run $RECEIVER_ID]($RECEIVER_URL)"
+            echo '- Certification verdict: pending observation in the linked run. This dispatch step does not wait for or prove certification success.'
+          } >> "$GITHUB_STEP_SUMMARY"

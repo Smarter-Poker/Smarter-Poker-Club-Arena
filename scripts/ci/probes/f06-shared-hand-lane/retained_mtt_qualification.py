@@ -13,6 +13,7 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     migration = root / build['MIGRATION']
     require(migration.read_text() == build['render'](), 'Retained MTT source composition differs')
     require(results.get('interruptedCustody', {}).get('passed') is True, 'Exact installed predecessor required')
+    generic_before = run('retained-mtt-generic-preimage', "SELECT md5(pg_get_functiondef('fn_f06_abort_mixed_unsettled_generation(uuid,jsonb)'::regprocedure));")
     # Retain the exact synthetic predecessor for deterministic investigation;
     # this is local qualification data, never a production dump or actuator.
     dump = command([str(__import__('pathlib').Path(cmd[0]).with_name('pg_dump')), '-h', cmd[cmd.index('-h')+1],
@@ -120,7 +121,7 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     run('retained-mtt-original-generation-refused', "SELECT granted FROM claim_tournament_lease_v2(md5('rm-event1302')::uuid,'late','test',md5('rm-generation1302')::uuid);", 'f')
     probe('retained-mtt-immutable-receipt', "UPDATE smarter_private.f06_mixed_aborts SET expected='{}' WHERE receipt_id=md5('rm-receipt1302')::uuid;", error='F06_ABORT_RECEIPT_IMMUTABLE')
     run('retained-mtt-browser-and-private-closed', "SELECT NOT has_function_privilege('authenticated','fn_f06_abort_retained_mtt_hands(uuid,jsonb)','EXECUTE') AND NOT has_function_privilege('anon','fn_f06_abort_retained_mtt_hands(uuid,jsonb)','EXECUTE') AND NOT has_function_privilege('service_role','smarter_private.f06_retained_mtt_abort_snapshot(jsonb)','EXECUTE');", 't')
-    run('retained-mtt-generic-owner-unchanged', "SELECT md5(pg_get_functiondef('fn_f06_abort_mixed_unsettled_generation(uuid,jsonb)'::regprocedure));", '483b508311d233d3da73e55db17499ce')
+    run('retained-mtt-generic-owner-unchanged', "SELECT md5(pg_get_functiondef('fn_f06_abort_mixed_unsettled_generation(uuid,jsonb)'::regprocedure));", generic_before)
     # The accepted original wins permanently. No disposition can reinterpret
     # it after draining a writer that held the canonical lane first.
     run('retained-mtt-race-originals', 'SELECT fixture_seed_retained_mtt(1303,true);SELECT fixture_seed_retained_mtt(1304,true);')

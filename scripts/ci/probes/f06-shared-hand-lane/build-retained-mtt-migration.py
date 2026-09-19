@@ -6,9 +6,10 @@ ROOT = HERE.parents[3]
 MIGRATION = 'supabase/migrations/20260918233825_retain_mixed_mtt_interrupted_hands_without_changing_custody_.sql'
 
 def render():
+    # The generic abort is independent of this owner and may gain its separately
+    # qualified projected-witness branch. Pin only authorities consumed here.
     pins = {
         'public.fn_engine_lease_stale_seconds()': '483a7e0ee940744fd557f1f2144d9eba',
-        'public.fn_f06_abort_mixed_unsettled_generation(uuid,jsonb)': '483b508311d233d3da73e55db17499ce',
         'smarter_private.f06_prior_committed_stacks(uuid,jsonb,jsonb)': '4f914e43de444919d99229775a2ac2e5',
         'public.fn_f06_finish_hand(uuid,uuid,uuid,text,uuid)': 'd5700b1c4e4663c5b9e12915a75d269b',
         'smarter_private.f06_generation_aborted(uuid,uuid)': '3530559a94372866bf3baec006a8fd3c',

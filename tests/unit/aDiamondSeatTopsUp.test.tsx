@@ -81,8 +81,13 @@ describe('A Diamond seat tops up from the custody it sat with', () => {
        Five and six are the bust rebuy, which was chip-only until 2026-09-12
        on a note saying Diamond re-entry needed a new custody occupancy. It
        does not: `fn_poker_diamond_top_up` accepts an expected stack of zero
-       and reserves into the custody the seat already holds. */
-    expect(TABLE_PAGE.match(/seatCanAddFunds\(/g) ?? []).toHaveLength(6);
+       and reserves into the custody the seat already holds.
+
+         7. the report to the multi-table tab bar (2026-09-19, B12): the bar
+            cannot see the arena, so the page tells it the rule's answer and
+            the bar drops its Top Up items where the answer is no
+            (tests/unit/tabBarTopUpFollowsSeatCanAddFunds.test.tsx). */
+    expect(TABLE_PAGE.match(/seatCanAddFunds\(/g) ?? []).toHaveLength(7);
   });
 
   it('opens the cashier for Diamonds in whole units and names them', () => {

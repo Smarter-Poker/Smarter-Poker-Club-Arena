@@ -95,6 +95,10 @@ export interface ClubIdentityCardProps {
     freerollText: string;
     freerollTitle: string;
     freerollImminent?: boolean;
+    /** True when `freerollText` is a word ("None Scheduled") rather than a
+     *  clock, so the rail sizes it to fit and reads it aloud without
+     *  "Starts In". Absent means a clock. */
+    freerollIsWord?: boolean;
   } | null;
   onCopyClubId?: () => void;
   onCopyPlayerId?: () => void;
@@ -239,10 +243,16 @@ export function ClubIdentityCard({
             >
               <span className="club-identity__arena-label">FREEROLL</span>
               <strong
-                className="club-identity__arena-value club-identity__arena-value--timer"
+                className={`club-identity__arena-value club-identity__arena-value--timer${
+                  arenaStats.freerollIsWord ? ' club-identity__arena-value--word' : ''
+                }`}
                 role="timer"
                 aria-live="off"
-                aria-label={`Next Freeroll Starts In ${arenaStats.freerollText}`}
+                aria-label={
+                  arenaStats.freerollIsWord
+                    ? `Next Freeroll ${arenaStats.freerollText}`
+                    : `Next Freeroll Starts In ${arenaStats.freerollText}`
+                }
               >
                 {arenaStats.freerollText}
               </strong>

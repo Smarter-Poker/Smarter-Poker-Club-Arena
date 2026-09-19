@@ -18,6 +18,7 @@ export interface DiamondWheelProps {
   spinning: boolean;
   onLanded: () => void;
   size?: number;
+  fitViewport?: boolean;
   upgraded?: boolean;
   idleDirection?: 1 | -1;
   showSelector?: boolean;
@@ -73,11 +74,23 @@ export default function DiamondWheel({
   spinning,
   onLanded,
   size = 760,
+  fitViewport = false,
   upgraded = false,
   idleDirection = 1,
   presentation = 'cabinet',
   showSelector = true,
 }: DiamondWheelProps) {
+  const frame = useRef<HTMLDivElement>(null);
+  const [apertureWidth, setApertureWidth] = useState(360);
+  useEffect(() => {
+    if (!fitViewport || !frame.current) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (height > 0) setApertureWidth(Math.max(360, (415 * width) / height));
+    });
+    observer.observe(frame.current);
+    return () => observer.disconnect();
+  }, [fitViewport]);
   const arranged = useMemo(() => arrangeForDisplay(segments), [segments]);
   const id = `wheel-${useId().replace(/:/g, '')}`;
   const rotor = useRef<SVGGElement>(null);
@@ -200,8 +213,10 @@ export default function DiamondWheel({
           : 'glass';
   return (
     <div
+      ref={frame}
       className={styles.frame}
       style={{ width: size, maxWidth: '100%' }}
+      data-fit-viewport={fitViewport || undefined}
       data-motion="keep"
       data-phase={spinning ? 'spinning' : settledOrd === null ? 'idle' : 'landed'}
       data-upgraded={upgraded || undefined}
@@ -213,7 +228,9 @@ export default function DiamondWheel({
       <svg
         viewBox={
           assembled
-            ? '320 0 360 415'
+            ? fitViewport
+              ? `${500 - apertureWidth / 2} 0 ${apertureWidth} 415`
+              : '320 0 360 415'
             : presentation === 'cabinet'
               ? upgraded
                 ? '140 45 720 485'

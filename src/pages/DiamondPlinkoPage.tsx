@@ -2,6 +2,7 @@ import { pendingBonus } from '../services/diamondBonusRecovery';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
+import BonusCompletion from '../components/games/BonusCompletion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -51,6 +52,7 @@ function DiamondPlinkoGame() {
   const [ticket, setTicket] = useState<{ id: string; hash: string } | null>(null);
   const [seed, setSeed] = useState(randomClientSeed);
   const [result, setResult] = useState<PlinkoBonus | null>(null);
+  const [completionId, setCompletionId] = useState<string | null>(null);
   const [landed, setLanded] = useState(0);
   const [animating, setAnimating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -160,6 +162,7 @@ function DiamondPlinkoGame() {
       const saved = parsePlinkoBonus(earned.recoveredResult);
       setResult(saved);
       setLanded(saved.drops.length);
+      setCompletionId(saved.id);
     } catch (error) {
       reportError(error, 'DiamondPlinkoPage.awardRecovery');
       setError('Your Saved Wheel Bonus Could Not Be Verified.');
@@ -169,6 +172,7 @@ function DiamondPlinkoGame() {
   const accept = (next: PlinkoBonus, animate: boolean) => {
     earned.consume(next.award_id);
     setResult(next);
+    setCompletionId(next.id);
     setLanded(animate ? 0 : next.drops.length);
     setAnimating(animate);
     held.current = null;
@@ -474,6 +478,14 @@ function DiamondPlinkoGame() {
             ) : null;
           })}
         </GamePanel>
+      )}
+      {result && completionId === result.id && !animating && !uncertain && !busy && (
+        <BonusCompletion
+          key={result.id}
+          clubId={clubId ?? ''}
+          chips={result.payout_chips}
+          detail={`${result.drops.length} Drops Completed.`}
+        />
       )}
     </div>
   );

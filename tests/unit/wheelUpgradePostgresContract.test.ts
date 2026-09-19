@@ -5,13 +5,13 @@ import fixture from '../fixtures/diamond-spins/wheel-v3-postgres-receipts.json';
 const rpc = vi.hoisted(() => vi.fn());
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc } }));
 import service, { type WheelSpinResult } from '../../src/services/DiamondWheelService';
-import { verifyWheelReceiptFairness } from '../../src/utils/wheelFairness';
+import { hmacSha256Hex, verifyWheelReceiptFairness } from '../../src/utils/wheelFairness';
 import { assertWheelReceipt } from '../../src/utils/wheelPendingSpin';
 
 type RecordEntry = { kind: string; stake: number; value: WheelSpinResult };
 const records = fixture.records as unknown as RecordEntry[];
 const spins = records.filter((r) =>
-  ['wheel', 'wheel-replay', 'wheel-historical-replay'].includes(r.kind)
+  ['wheel', 'wheel-replay', 'wheel-historical-replay', 'wheel-legacy-v3'].includes(r.kind)
 );
 beforeEach(() => rpc.mockReset());
 
@@ -110,6 +110,32 @@ describe('real PostgreSQL eight-outcome Upgrade contract', () => {
       ).toEqual([(stake * 5) / 100, (stake * 10) / 100, (stake * 25) / 100, stake]);
     }
   );
+
+  it('matches half-entry quotes and the actual sealed whole-unit payout for all four odd-stake rewards', async () => {
+    const half = spins.filter((r) => r.kind === 'wheel' && r.value.outcome.multiplier === 0.5);
+    expect(new Set(half.map((r) => r.value.outcome.kind))).toEqual(
+      new Set(['diamonds', 'throwables', 'time_bank', 'rabbit_hunt'])
+    );
+    for (const { value: raw, stake } of half) {
+      expect(stake).toBe(25);
+      const segment = raw.segments!.find((s) => s.ord === raw.outcome.ord)!;
+      expect(segment.amount).toBe(12.5);
+      expect(segment.value_chips).toBe(0.125);
+      const f = raw.fairness;
+      const domain = raw.outcome.kind === 'diamonds' ? 'wheel-v3-diamonds' : 'wheel-v3-consumable';
+      const h = await hmacSha256Hex(f.server_seed, `${domain}:${f.client_seed}:${f.nonce}`);
+      const expected = 12 + (BigInt(`0x${h.slice(0, 12)}`) + 1n <= 140737488355328n ? 1 : 0);
+      expect(raw.outcome.value_chips).toBe(expected / 100);
+      if (raw.outcome.kind === 'diamonds') expect(raw.outcome.amount).toBe(expected);
+      else
+        expect(
+          raw.outcome.grants!.reduce(
+            (sum, g) => sum + g.uses * (g.feature === 'throwable' ? 1 : 5),
+            0
+          )
+        ).toBe(expected);
+    }
+  });
 
   it('decodes the actual history RPC with its retained v2 and v3 final outcomes', async () => {
     const record = records.find((r) => r.kind === 'wheel-history');

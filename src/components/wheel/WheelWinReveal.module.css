@@ -12,6 +12,12 @@
   padding: 0;
   overflow: visible;
 }
+.offerDialog.dialog[role='dialog'] {
+  width: min(500px, calc(100vw - 20px), calc(100dvh * 0.66));
+}
+.offerPrize.prize {
+  width: 48%;
+}
 .opening {
   transform-origin: 50% 12%;
   animation-name: prize-pop-open;

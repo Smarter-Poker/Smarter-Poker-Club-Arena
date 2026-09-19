@@ -1,4 +1,5 @@
 import type { CrashRound } from '../services/DiamondGamesService';
+import { validBonusMinimum } from './diamondBonusPayout';
 
 /** Read the receipt before normalization can turn absent amounts into zero. */
 export function validateCrashSettlement(
@@ -20,6 +21,7 @@ export function validateCrashSettlement(
     Math.abs(n * 100 - Math.round(n * 100)) < 1e-8;
   if (
     value.ok !== true ||
+    !validBonusMinimum(value) ||
     value.round_id !== roundId ||
     !['open', 'cashed', 'crashed'].includes(String(value.status)) ||
     !integer(value.cap_cents) ||
@@ -32,6 +34,7 @@ export function validateCrashSettlement(
         value.host_id !== expected.host_id ||
         value.bet_diamonds !== expected.bet_diamonds ||
         value.bet_chips !== expected.bet_chips ||
+        (value.minimum_payout_chips ?? 0) !== (expected.minimum_payout_chips ?? 0) ||
         value.diamonds_per_chip !== expected.diamonds_per_chip ||
         value.cap_cents !== expected.cap_cents ||
         value.growth_k !== expected.growth_k ||
@@ -69,7 +72,8 @@ export function validateCrashSettlement(
     proof.roll < 0 ||
     proof.roll >= 281474976710656 ||
     (value.status === 'crashed' &&
-      (outcome.payout_chips !== 0 || outcome.cashout_cents !== null)) ||
+      (outcome.payout_chips !== (value.minimum_payout_chips ?? 0) ||
+        outcome.cashout_cents !== null)) ||
     (value.status === 'cashed' &&
       (!integer(outcome.cashout_cents) ||
         outcome.cashout_cents < 101 ||

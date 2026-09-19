@@ -172,8 +172,7 @@ function CrossingScene(props: Props) {
     scene.add(rim);
     const asphalt = material(0x172536, 0.06, 0.95),
       steel = material(0x6a8097, 0.8, 0.3),
-      paint = material(0xc7d9db, 0.1, 0.75),
-      curb = material(0x3f5268, 0.1, 0.7);
+      paint = material(0xc7d9db, 0.1, 0.75);
     box(scene, asphalt, 18, -0.28, 0, 62, 0.5, 20, 0.1);
     const traffic: THREE.Group[] = [];
     const buildCar = (color: number) => {
@@ -220,9 +219,9 @@ function CrossingScene(props: Props) {
       ctx.textAlign = 'center';
       ctx.fillStyle = '#def5ff';
       ctx.font = '600 24px sans-serif';
-      ctx.fillText('STREET', 128, 42);
+      ctx.fillText(street === 0 ? 'START' : 'STREET', 128, 42);
       ctx.font = '700 55px sans-serif';
-      ctx.fillText(String(street), 128, 98);
+      if (street > 0) ctx.fillText(String(street), 128, 98);
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       textures.push(texture);
@@ -240,10 +239,6 @@ function CrossingScene(props: Props) {
       box(scene, asphalt, x, -0.03, 0, STREET_WIDTH - 0.12, 0.12, 19, 0.025);
       for (let z = -8; z <= 8; z += 2)
         box(scene, paint, x - STREET_WIDTH / 2, 0.04, z, 0.035, 0.01, 0.9, 0.002);
-      for (const z of [-5, 5]) {
-        box(scene, curb, x, 0.15, z, STREET_WIDTH - 0.08, 0.36, 0.65, 0.045);
-        box(scene, steel, x, 0.36, z, STREET_WIDTH - 0.08, 0.03, 0.66, 0.01);
-      }
       const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), streetSign(i));
       sign.rotation.x = -Math.PI / 2;
       sign.position.set(x, 0.07, 2.25);
@@ -256,31 +251,9 @@ function CrossingScene(props: Props) {
         traffic[i] = car;
       }
     }
-    // Pavement, illuminated shopfronts and street lamps establish a real street scale.
-    for (let i = -2; i < 18; i++) {
-      const x = i * 3.1,
-        h = 3 + ((i * i) % 4);
-      box(scene, curb, x, h / 2, -8, 2.9, h, 3, 0.06);
-      for (let floor = 0; floor < h - 0.5; floor += 0.9)
-        for (let col = -1; col <= 1; col++) {
-          const windowMat = new THREE.MeshStandardMaterial({
-            color: 0x8ec6e5,
-            emissive: (i + col) % 3 ? 0x246082 : 0xa0713b,
-            emissiveIntensity: 0.65,
-          });
-          box(scene, windowMat, x + col * 0.75, 0.65 + floor, -6.47, 0.46, 0.46, 0.025, 0.01);
-        }
-      if (i % 2 === 0) {
-        box(scene, steel, x, 1.7, 4.8, 0.065, 3.4, 0.065, 0.01);
-        box(scene, steel, x, 3.4, 4.35, 0.07, 0.06, 0.9, 0.01);
-        const light = new THREE.Mesh(
-          new THREE.SphereGeometry(0.14, 12, 8),
-          new THREE.MeshBasicMaterial({ color: 0xffe8ad })
-        );
-        light.position.set(x, 3.35, 3.95);
-        scene.add(light);
-      }
-    }
+    // One continuous highway. The starting shoulder is outside every traffic lane.
+    box(scene, paint, STREET_WIDTH / 2, 0.05, 0, 0.08, 0.02, 19, 0.005);
+    box(scene, paint, -STREET_WIDTH / 2, 0.05, 0, 0.08, 0.02, 19, 0.005);
     const animal = donkey();
     animal.animal.scale.setScalar(DONKEY_SCALE);
     scene.add(animal.animal);
@@ -318,15 +291,22 @@ function CrossingScene(props: Props) {
     let raf = 0,
       last = 0,
       signature = '',
-      changedAt = 0,
+      sceneElapsed = 0,
       actual = 0,
       from = 0,
       to = 0,
       notified = false;
+    let lastVisibleFrame: number | null = null;
+    const visibilityChanged = () => {
+      lastVisibleFrame = null;
+    };
+    document.addEventListener('visibilitychange', visibilityChanged);
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
       if (document.hidden || now - last < (reduced ? 100 : 16)) return;
       last = now;
+      const visibleDelta = lastVisibleFrame === null ? 0 : now - lastVisibleFrame;
+      lastVisibleFrame = now;
       const p = latest.current,
         step = p.picked.length,
         newSignature = `${p.roundId}:${step}:${p.phase}`;
@@ -334,10 +314,10 @@ function CrossingScene(props: Props) {
         signature = newSignature;
         from = p.phase === 'idle' ? 0 : actual;
         to = streetCenter(step);
-        changedAt = now;
+        sceneElapsed = 0;
         notified = false;
-      }
-      const elapsed = now - changedAt,
+      } else sceneElapsed += visibleDelta;
+      const elapsed = sceneElapsed,
         walk = reduced ? 1 : Math.min(1, elapsed / (420 * getAnimationSpeed()));
       actual = THREE.MathUtils.lerp(from, to, walk * walk * (3 - 2 * walk));
       animal.animal.position.set(
@@ -386,6 +366,7 @@ function CrossingScene(props: Props) {
           0
         );
         focus = THREE.MathUtils.lerp(actual, ghost.position.x, 0.65);
+        finished = finished && progress === 1;
       }
       laneSigns.forEach((sign, i) => {
         (sign.material as THREE.MeshPhysicalMaterial).color.setHex(
@@ -416,6 +397,7 @@ function CrossingScene(props: Props) {
     canvas.addEventListener('webglcontextlost', lost);
     return () => {
       cancelAnimationFrame(raf);
+      document.removeEventListener('visibilitychange', visibilityChanged);
       frames.dispose();
       observer.disconnect();
       canvas.removeEventListener('webglcontextlost', lost);
@@ -442,10 +424,12 @@ function CrossingScene(props: Props) {
     <div className={styles.scene} ref={host} data-motion="keep" data-phase={props.phase}>
       <div className={styles.caption}>
         {props.phase === 'lost'
-          ? 'Collision · No Prize'
+          ? 'Collision · Round Over'
           : props.phase === 'cashed'
             ? 'Win Booked · Showing The Remaining Route'
-            : `Street ${props.picked.length} · Next Street Clear`}
+            : props.phase === 'idle'
+              ? 'Start · Highway Ahead'
+              : `Street ${props.picked.length} · Next Street Clear`}
       </div>
       {failed && (
         <p className={styles.fallback}>

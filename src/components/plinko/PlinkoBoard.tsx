@@ -118,17 +118,24 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     let raf = 0,
       last = 0,
       key = -1,
-      start = 0,
+      visibleElapsed = 0,
       duration = 0,
       landed = true,
       pendingLanding = false,
       pendingProgress: number | null = null,
       labelKey = '';
+    let lastVisibleFrame: number | null = null;
+    const visibilityChanged = () => {
+      lastVisibleFrame = null;
+    };
+    document.addEventListener('visibilitychange', visibilityChanged);
     const reduced = prefersReducedMotion();
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
       if (document.hidden || now - last < (reduced ? 150 : 30)) return;
       last = now;
+      visibleElapsed += lastVisibleFrame === null ? 0 : now - lastVisibleFrame;
+      lastVisibleFrame = now;
       const p = latest.current;
       const nextLabel = p.multipliersCents.join(',');
       if (labelKey !== nextLabel) {
@@ -145,8 +152,8 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
       }
       if ((p.path || p.batchPathBits?.length) && key !== p.dropKey) {
         key = p.dropKey;
-        start = now;
-        duration = 16 * 118 * getAnimationSpeed();
+        visibleElapsed = 0;
+        duration = 16 * 236 * getAnimationSpeed();
         landed = false;
         pendingLanding = false;
         pendingProgress = null;
@@ -158,8 +165,8 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         mesh.visible = false;
       });
       if (p.batchPathBits?.length && !landed) {
-        const gap = 70 * getAnimationSpeed();
-        const elapsed = reduced ? duration + gap * p.batchPathBits.length : now - start;
+        const gap = 140 * getAnimationSpeed();
+        const elapsed = reduced ? duration + gap * p.batchPathBits.length : visibleElapsed;
         const finished = Math.max(
           0,
           Math.min(p.batchPathBits.length, Math.floor((elapsed - duration) / gap) + 1)
@@ -192,7 +199,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
           pendingLanding = true;
         }
       } else if (p.path && !landed) {
-        const progress = reduced ? 16 : Math.min(16, ((now - start) / duration) * 16);
+        const progress = reduced ? 16 : Math.min(16, (visibleElapsed / duration) * 16);
         const row = Math.min(15, Math.floor(progress));
         const t = progress - row;
         const rights = p.path.slice(0, row).reduce((a, b) => a + b, 0);
@@ -234,6 +241,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     raf = requestAnimationFrame(draw);
     return () => {
       cancelAnimationFrame(raf);
+      document.removeEventListener('visibilitychange', visibilityChanged);
       surface.removeEventListener('webglcontextlost', lost);
       surface.removeEventListener('webglcontextrestored', restored);
       sceneRef.current = null;

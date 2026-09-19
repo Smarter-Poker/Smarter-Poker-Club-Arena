@@ -117,7 +117,9 @@ describe('the wheel and crash share their repeat-round runner', () => {
 
 describe('the run stops wherever a thumb would be stopped', () => {
   it('on any blocker the page would print', () => {
-    expect(WHEEL).toContain('{ busy: spinning || pending !== null, blocker, ready: canSpin }');
+    expect(WHEEL).toContain(
+      '{ busy: spinning || pending !== null || preparing, blocker, ready: canSpin }'
+    );
   });
 
   it('on a refusal from the server', () => {

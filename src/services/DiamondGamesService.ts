@@ -164,6 +164,8 @@ export interface CrashRound {
   status: CrashStatus;
   bet_diamonds: number;
   bet_chips: number;
+  minimum_payout_chips?: number;
+  payout_version?: 1 | 2;
   diamonds_per_chip: number;
   cap_cents: number;
   growth_k: number;
@@ -463,6 +465,10 @@ export function normaliseCrash(raw: Record<string, unknown>): CrashRound {
     status: (raw.status as CrashStatus) ?? 'open',
     bet_diamonds: num(raw.bet_diamonds),
     bet_chips: num(raw.bet_chips),
+    minimum_payout_chips:
+      raw.minimum_payout_chips === undefined ? undefined : num(raw.minimum_payout_chips),
+    payout_version:
+      raw.payout_version === 1 || raw.payout_version === 2 ? raw.payout_version : undefined,
     diamonds_per_chip: num(raw.diamonds_per_chip),
     cap_cents: num(raw.cap_cents),
     growth_k: num(raw.growth_k),

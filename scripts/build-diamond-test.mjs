@@ -17,14 +17,23 @@ if (process.env.VITE_NATIVE === '1') {
   process.exit(0);
 }
 
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// The repo root, whatever the caller's working directory: the config resolves
+// diamond-test.html against its own directory, so the build root must agree.
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
 // The switch must be in the environment before vite.config.ts is evaluated,
 // which happens inside build() when it loads the config file.
 process.env.CA_HTML_ENTRY = 'diamond-test';
 const { build } = await import('vite');
 try {
-  await build({ configFile: 'vite.config.ts' });
-  console.log('[diamond-test] standalone test entry built into dist/diamond-test/');
+  await build({ root: ROOT, configFile: resolve(ROOT, 'vite.config.ts') });
+  console.log('[diamond-test] standalone test entry built into dist/assets/diamond-test.*');
 } catch (error) {
-  console.error(`[diamond-test] the standalone test entry did not build: ${error?.message ?? error}`);
+  // Rollup names the module and frame on the error; keep them.
+  const detail = [error?.id, error?.message ?? String(error), error?.frame].filter(Boolean);
+  console.error(`[diamond-test] the standalone test entry did not build:\n${detail.join('\n')}`);
   process.exit(1);
 }

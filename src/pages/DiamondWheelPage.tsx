@@ -644,9 +644,21 @@ export default function DiamondWheelPage() {
         case 'mines':
           navigate(`/clubs/${routeClubId}/mines?wheelAward=${awardId}`);
           break;
+        default: {
+          // A game this build cannot route: a newer server-side game or a
+          // malformed award. The server refuses new spins until it is finished
+          // and the banked-game list is gone, so say why the control is held
+          // instead of sitting on 'Opening Your Bonus Game' forever.
+          const unrouted: never = award.game;
+          reportError(
+            new Error(`Wheel bonus game cannot be routed: ${String(unrouted)}`),
+            'DiamondWheelPage.openBonus'
+          );
+          toast.error('Update The App To Open This Bonus Game.');
+        }
       }
     },
-    [navigate, routeClubId]
+    [navigate, routeClubId, toast]
   );
 
   // An unfinished entitlement is resumed immediately, never offered as a banked game.
@@ -697,6 +709,7 @@ export default function DiamondWheelPage() {
       openBonus(result.bonus);
     }
   }, [
+    releaseNavigation,
     endAuto,
     openBonus,
     recovery,

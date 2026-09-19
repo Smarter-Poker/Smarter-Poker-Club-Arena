@@ -141,23 +141,45 @@ function snapshot(pid) {
   }).sort((a, b) => a.tid - b.tid);
 }
 
-function cpuDelta(first, last) {
+function cpuDelta(first, last, pid) {
+  // Endpoint reads cannot account for final CPU of absent threads or work by
+  // new identities before their first observation. Preserve both explicitly;
+  // only identical TID/start-time pairs establish a comparable lower bound.
   const identity = (thread) => `${thread.tid}:${thread.startTicks}`;
   const before = new Map(first.map((thread) => [identity(thread), thread]));
   const after = new Map(last.map((thread) => [identity(thread), thread]));
-  const deltas = [];
+  assert(first.length === before.size && last.length === after.size, 'duplicate thread identity');
+  const leader = first.find((thread) => thread.tid === pid);
+  assert(
+    leader && after.has(identity(leader)),
+    'CPU observation inconclusive: original process leader disappeared or its identity changed'
+  );
+  const threads = [];
+  const absentOriginalThreads = [];
   let total = 0n;
   for (const [key, old] of before) {
     const current = after.get(key);
-    assert(current, 'CPU observation inconclusive: an original thread disappeared or its identity changed');
+    if (!current) {
+      absentOriginalThreads.push(old);
+      continue;
+    }
     const user = BigInt(current.userTicks) - BigInt(old.userTicks);
     const system = BigInt(current.systemTicks) - BigInt(old.systemTicks);
     assert(user >= 0n && system >= 0n, 'kernel thread CPU counters regressed');
     total += user + system;
-    deltas.push({ tid: old.tid, startTicks: old.startTicks, userTicks: String(user), systemTicks: String(system) });
+    threads.push({
+      tid: old.tid,
+      startTicks: old.startTicks,
+      userTicks: String(user),
+      systemTicks: String(system),
+    });
   }
   return {
-    threads: deltas, totalComparableTicks: String(total),
+    scope:
+      'lower-bound CPU for identities present at both endpoint observations; not total process CPU',
+    threads,
+    totalComparableTicks: String(total),
+    absentOriginalThreads,
     newThreads: last.filter((thread) => !before.has(identity(thread))),
   };
 }
@@ -193,7 +215,7 @@ async function observeMatchupCPU(client, receipt, evidence) {
       assert(first, 'CPU observation inconclusive: terminal arrived without a matching heartbeat');
       assert.equal(item.jobId, jobId, 'terminal belongs to a different job');
       evidence.jobId = jobId;
-      evidence.cpuDelta = cpuDelta(first.threads, evidence.terminalSnapshot.threads);
+      evidence.cpuDelta = cpuDelta(first.threads, evidence.terminalSnapshot.threads, receipt.pid);
       assert(first.threads.every((t) => t.nice === 19) && evidence.terminalSnapshot.threads.every((t) => t.nice === 19));
       assert(BigInt(evidence.cpuDelta.totalComparableTicks) > 0n, 'CPU observation inconclusive: no positive per-thread delta');
       assert.equal(item.type, 'MATCHUP_RESULT', 'job failed instead of completing');
@@ -438,7 +460,7 @@ try {
     assert(Number.isSafeInteger(evidence.result.gcEvents) && evidence.result.gcEvents > 0 && evidence.result.gcEvents <= 256,
       'GC observation inconclusive: no bounded actual GC entry during work');
     assert(Number.isFinite(evidence.result.gcDurationMs) && evidence.result.gcDurationMs >= 0);
-    evidence.cpuDelta = cpuDelta(evidence.first.threads, evidence.last.threads);
+    evidence.cpuDelta = cpuDelta(evidence.first.threads, evidence.last.threads, receipt.pid);
     assert(BigInt(evidence.cpuDelta.totalComparableTicks) > 0n, 'CPU observation inconclusive: no positive per-thread delta');
     assert(evidence.first.threads.every((t) => t.nice === 19) && evidence.last.threads.every((t) => t.nice === 19));
     await finish(receipt);

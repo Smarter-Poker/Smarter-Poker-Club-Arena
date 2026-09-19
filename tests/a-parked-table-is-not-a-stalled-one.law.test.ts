@@ -49,6 +49,34 @@
  * So: time a table was TOLD not to deal is not time it failed to deal. Every
  * pause authority credits the clock when it lets go, and every deliberate hold
  * is visible to the one predicate that decides whether a table is broken.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * AND THE OTHER HALF (2026-09-18)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * "Told not to deal" was read as "was told", not "stopped". A resume reaches
+ * EVERY engine - MaintenanceBreak.resumeEveryEngine() calls
+ * resumeFromMaintenance() on the whole fleet on purpose, because skipping a
+ * table strands it - so the credit also went to tables that never reached the
+ * gate: ones frozen mid-hand, or frozen on a database round trip between
+ * hands. markProgress() zeroes `watchdogTrips` as well as the clock, so a
+ * frozen table had both its stall time and the turn watchdog's escalation
+ * reset by every break it had never joined.
+ *
+ * MEASURED IN PRODUCTION, 2026-09-18 16:25:03Z, from /health:
+ *
+ *   20 stalled tables sampled, 2-5 dealable seats each, none `paused`
+ *   loop phases frozen in ONE phase for 1,000s - 21,606s (to six hours)
+ *   phases whose measured p90 is 0.1-0.6s: load_next_hand_inputs,
+ *     refresh_blinds, settlement_post_commit_obligations
+ *   msSinceProgress on all twenty: 1,420-1,430s - every one reset inside the
+ *     same second, 16:01-16:02, which is when the break resumed the fleet
+ *   re-polled 45s later: zero hands, zero phase change, msSinceProgress +45.3s
+ *
+ * This is the same distinction the rest of this file already draws between
+ * `isPausedByDesign()` (a flag was raised) and `isParkedByDesign()` (the pause
+ * took effect). The clock credit was the last intervention-shaped reader still
+ * asking the weaker question.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -93,6 +121,50 @@ describe('the progress clock is credited when a pause ends', () => {
       body,
       'releasePauseGate must call markProgress() - a table told not to deal has not failed to deal'
     ).toMatch(/this\.markProgress\(\)/);
+  });
+
+  it('and marks it only for a table that actually parked at the gate', () => {
+    // THE OTHER HALF. An unconditional credit vouches for a frozen table once
+    // an hour, because a resume reaches every engine whether or not its loop
+    // ever stopped. `handForHandResolve` is non-null only while the dealing
+    // loop is suspended inside awaitPauseGate - the one fact that proves the
+    // table stopped because it was told to.
+    const body = methodBody(BASE, 'releasePauseGate(): void {');
+    expect(
+      body,
+      'the progress credit must be conditional on the loop being parked at the gate'
+    ).toMatch(/if \(this\.handForHandResolve !== null\) this\.markProgress\(\);/);
+    // Belt and braces: no second, unguarded credit anywhere in the method.
+    const credits = [...body.matchAll(/this\.markProgress\(\)/g)];
+    expect(credits.length, 'exactly one progress credit, and it is the guarded one').toBe(1);
+  });
+
+  it('being merely between hands is not enough to earn the credit', () => {
+    // Three of the twenty frozen tables measured on 2026-09-18 were BETWEEN
+    // hands - stuck on the database call that loads the next one. A credit
+    // keyed on isBetweenHands() or isPausedByDesign() would still have
+    // vouched for them.
+    const body = methodBody(BASE, 'releasePauseGate(): void {');
+    const code = body
+      .split('\n')
+      .filter((line) => !/^\s*(\*|\/\*|\/\/)/.test(line))
+      .join('\n');
+    for (const weaker of ['isBetweenHands()', 'isPausedByDesign()', 'pausedSinceMs >']) {
+      expect(code, `${weaker} does not prove the loop stopped`).not.toContain(weaker);
+    }
+  });
+
+  it('the resume still reaches every engine, credited or not', () => {
+    // The fix is to the CREDIT, never to the fan-out. Skipping a table in
+    // resumeEveryEngine is what stranded tables permanently on 2026-09-03:
+    // resumeFromMaintenance() is the only thing that clears maintenancePaused.
+    const BREAK = readFileSync(join(ROOT, 'server/src/maintenance/MaintenanceBreak.ts'), 'utf8');
+    const resumeAll = methodBody(BREAK, 'resumeEveryEngine(');
+    expect(resumeAll).toMatch(/resumable\.push\(\[tableId, engine\]\)/);
+    expect(
+      resumeAll,
+      'a table held by another authority is still resumed - only its credit differs'
+    ).not.toMatch(/shouldStayPaused[^\n]*\)\s*continue;/);
   });
 
   it('every resume path goes through that one gate', () => {

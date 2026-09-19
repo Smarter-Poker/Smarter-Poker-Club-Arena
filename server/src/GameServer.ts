@@ -4481,6 +4481,13 @@ export class GameServer {
           'accounting_unconfirmed',
           'accounting_pending',
           'bank_park_write_incomplete',
+          /* Zero-seeded like the rest: a rule that reads these must be able to
+             fire the first time either becomes the reason, not only after it
+             already has. `f06_preparation_stuck` is the bounded case - a
+             permit that outlived the gate and stopped holding every other
+             table's restart certificate shut. */
+          'f06_preparation_unresolved',
+          'f06_preparation_stuck',
           'unknown',
         ];
         for (const reason of Object.keys(counts)) {
@@ -4490,6 +4497,18 @@ export class GameServer {
           (reason) => `poker_maintenance_unparked_tables{reason="${reason}"} ${counts[reason] ?? 0}`
         );
       })(),
+      /* THE ALARM THAT WAS MISSING (2026-09-19). Whether the restart gate ever
+         opened is recorded per break in engine_maintenance_break_log, which no
+         alert rule reads. Six consecutive shut breaks left production four and
+         a half hours behind main with no route forward, and /health said `ok`
+         the whole time - because every table was dealing. It was the RESTART
+         that was impossible, not the poker. Zero is healthy; two in a row
+         means the engine cannot be replaced at all. */
+      '# HELP poker_maintenance_breaks_since_restart_certified Consecutive breaks that ended with no restart certificate',
+      '# TYPE poker_maintenance_breaks_since_restart_certified gauge',
+      `poker_maintenance_breaks_since_restart_certified ${
+        (this.maintenanceBreak.snapshot().breaksSinceRestartCertified as number) ?? 0
+      }`,
       '# HELP poker_db_clock_skew_ms Engine clock minus database clock, ms; 0 when unmeasured',
       '# TYPE poker_db_clock_skew_ms gauge',
       `poker_db_clock_skew_ms ${this.lastDbSkewMs ?? 0}`,

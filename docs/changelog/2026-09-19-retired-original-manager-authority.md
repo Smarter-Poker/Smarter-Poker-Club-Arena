@@ -50,6 +50,9 @@ is introduced.
 Owned checkout: `/Volumes/SmarterWork/agent-work/mtt-mixed-custody-transfer-20260918`.
 Owned follow-up branch: `work/mtt-retired-origin-20260919`. PR4907 head b273bb5b30,
 including the root-owned finite admission continuation, is integrated unchanged.
+Reviewed PR4911 head 9552509e7b325282d370bfca66371bf93097882e is integrated at
+ddf61bce87. Its pre-intent, read-only contract comparison now pins the exact
+24-function catalogue qualified below; equality and refusal behavior are unchanged.
 Root owns protected merge, installation, physical attestation, publication and
 all production mutations. This helper has made no production write or inspector
 attachment.
@@ -58,7 +61,7 @@ The four canonical owner policies, full portable policy content (supplemented
 where output was truncated), repository AGENTS/AGENT-PLAYBOOK/CLAUDE/PUBLISHING,
 applicable rules, deploy-paths, changelog instructions and existing custody
 checkpoint were freshly read on resumption. Policy reader time:
-2026-09-19T02:54:18.313Z; policy 2.9; manifest SHA256
+2026-09-19T03:10:13.666Z at ddf61bce87; policy 2.9; manifest SHA256
 7663cc909626f7e9966931d27166ad8774addc801f7ad1898a2d7564bc13c378.
 
 Evidence: `/Volumes/SmarterArchives/agent-evidence/mtt-retired-origin-20260919`.
@@ -78,8 +81,16 @@ Evidence: `/Volumes/SmarterArchives/agent-evidence/mtt-retired-origin-20260919`.
   intentionally changed prepare and catalogue functions. The qualified catalogue
   is retained as `focused-2/qualified-service-contract.json`.
 - CI routing passed 579 assertions. Exact affected current manifest fingerprints
-  are refreshed; historical captures remain unchanged. Final normal submission
-  checks and preflight integration are pending.
+  are refreshed; historical captures remain unchanged. Independent checks confirm
+  all 542 current accounting inputs; cash manifest tests passed six cases.
+- Supported Node 20.20.2 passes all 69 checkpoint admission and actual isolated
+  transport tests after the 24-entry preflight integration. The initial run used
+  unsupported Node 26 and correctly refused all twelve transport cases; no runtime
+  assertion was changed. The publisher pin and fixture exactly equal the native
+  service-role result.
+- Root TypeScript, migration declaration/authorization checks, generator exactness,
+  policy integrity, whitespace checks and the first normal commit hooks passed.
+  Final normal submission and hosted checks remain pending.
 
 ## Production limit
 

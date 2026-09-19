@@ -73,6 +73,14 @@
 -- exactly the repository's allowlist; 0 of the thirteen still anon-executable;
 -- 13 of 13 still authenticated-executable; and 0 anon-executable definers with
 -- a mutable search_path, so the exploitable combination stays empty.
+--
+-- HOW TO TELL IT IS LIVE. This migration creates no object, so nothing in any
+-- catalogue is named by the file and scripts/ci/check-migrations-are-live.mjs
+-- cannot look it up. It states its own claim instead, and that check runs it
+-- read-only against production every hour. See
+-- tests/a-merged-migration-must-be-live.law.test.ts.
+--
+-- @live-proof: NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname IN ('trgfn_award_daily_trivia','trgfn_award_first_training_session','trgfn_award_follow','trgfn_award_reaction_interaction','trgfn_award_reaction_like','trgfn_award_share_content','trgfn_award_social_post','trgfn_award_strategy_comment','is_admin','fn_my_club_ids','fn_notification_has_personal_destination','fn_club_chat_is_silenced','fn_table_chat_is_silenced') AND has_function_privilege('anon', p.oid, 'EXECUTE'))
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ONE TRANSACTION, not thirteen: every DDL statement fires Supabase's

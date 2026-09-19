@@ -98,15 +98,22 @@ schema. It never uses active production games.
 - connected11 passed 94 tests across the real GameServer/Manager custody path,
   drained handoff and native parked bank startup/roster/re-park. Seven interrupted
   ownership edges keep custody and block ordinary dealing. Server typecheck passed.
-- native14 passed the expanded 65 mixed assertions, 28 strict custody assertions,
+- native16 passed the expanded 65 mixed assertions, 28 strict custody assertions,
   committed restart chain, all four mixed settlement/player-lane lock-order
   permutations and both existing custody/admission races. Full rollback and
   local database cleanup passed. The earlier native13 lexer failure was fixed.
-- Final formatted source passed the server build and 570 CI routing assertions;
-  final related server tests are running.
+  The real publisher run-attempt ID 35405450271-1 is covered. Qualified installed
+  function definitions, ACLs and hashes are captured as mixed_postimages in RESULTS.
+- Final integrated source passed server build, 584 CI routing assertions and
+  2134 related server tests (166 pre-existing gated skips). After checkpoint
+  integration, 155 focused tests passed across custody, bank restoration, actual
+  old-checkpoint semantics, diagnostics and lease boundaries. Two diagnostic-only
+  test harnesses were updated to represent the added mixed capture entry point.
 - The generator asserts every composed movement-guard replacement occurs exactly
   once; source drift cannot silently omit part of the original guard.
 
-Final formatting, exact-candidate required checks, main integration, normal
-submission and root's final connected review remain pending. No merged,
-installed, published or live-recovered result is claimed by this draft.
+Normal commit hooks passed. Protected main a8ba0d4245 (including PR4901 and
+PR4905) and e56f1f115a (PR4906) are integrated; the classifier conflict preserves
+both sets of required inputs. Root authorized normal push after final checks.
+Normal pre-push validation, protected submission and provider CI remain pending.
+No installed, published or live-recovered result is claimed here.

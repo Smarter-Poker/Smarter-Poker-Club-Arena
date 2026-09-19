@@ -88,6 +88,8 @@ def main():
   leader_source=(root/'supabase/migrations/20260823_engine_leadership.sql').read_text()
   e.sql(db,leader_source[leader_source.index('CREATE TABLE IF NOT EXISTS public.engine_leader'):leader_source.index('CREATE OR REPLACE FUNCTION public.claim_engine_leadership')],label='actual-engine-leader-relation')
   e.sql(db,file=root/mixed_builder.MIGRATION,label='mixed-candidate-install')
+  _,mixed_catalog,_=e.sql(db,"SELECT jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'definition',pg_get_functiondef(p.oid),'definition_md5',md5(pg_get_functiondef(p.oid)),'body_md5',md5(p.prosrc),'owner',pg_get_userbyid(p.proowner),'acl',p.proacl::text,'security_definer',p.prosecdef,'config',p.proconfig) ORDER BY p.oid::regprocedure::text) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN('public','smarter_private') AND (p.proname LIKE 'fn_f06_%mixed%manager_custody' OR p.proname='fn_f06_mixed_custody_intent' OR p.proname LIKE 'f06_mixed_%' OR p.proname IN('f06_assert_movement','f06_manager_transfer_immutable'));",label='mixed-qualified-authority-catalog')
+  e.report['mixed_postimages']=json.loads(mixed_catalog)
   mixed_before=e.snapshot(db,'mixed-before-data');mixed_private=f.private_snapshot(e,db,'mixed-before-private');mixed_catalog=e.catalog_snapshot(db,'mixed-before-catalog')
   rc,stdout,stderr=e.sql(db,file=root/'scripts/ci/probes/f06-mixed-custody.sql',label='mixed-direct-cases',check=False,seconds=60)
   e.report.update(mixed_output=stdout,mixed_errors=stderr)

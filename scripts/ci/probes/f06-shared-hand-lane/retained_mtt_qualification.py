@@ -26,6 +26,8 @@ def qualify(root, out, cmd, command, run, probe, require, results):
                   root / 'scripts/ci/test-f06-shared-hand-lane.py']}
     service = "SET request.jwt.claims='{\"role\":\"service_role\"}';SET app.smarter_data_actor='service';"
     run('retained-mtt-fixture-schema', (here / 'retained-mtt-fixture.sql').read_text())
+    # Each composed qualification owns its capture rows; earlier suites retain theirs.
+    run('retained-mtt-capture-store', 'CREATE TABLE fixture_retained_expected_inputs (LIKE fixture_expected_inputs INCLUDING ALL);')
     run('retained-mtt-two-boundaries', 'SELECT fixture_seed_retained_mtt(1301,true);SELECT fixture_seed_retained_mtt(1302,false);')
     # Reproduce the actual refusals using the unchanged installed generic owner.
     for i, error in [(1301, 'F06_GENERATION_PARK_CHANGED'), (1302, 'F06_GENERATION_ROSTER_CHANGED')]:
@@ -45,28 +47,28 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     run('retained-mtt-install', migration.read_text())
     require(run('retained-mtt-install-unchanged', money) == before, 'Installation changed retained state')
     for i, kind in [(1301,'true'),(1302,'false')]:
-        run('retained-mtt-capture-' + str(i), service + f'INSERT INTO fixture_expected_inputs VALUES({i},smarter_private.f06_retained_mtt_abort_snapshot(fixture_retained_input({i},{kind})));')
+        run('retained-mtt-capture-' + str(i), service + f'INSERT INTO fixture_retained_expected_inputs VALUES({i},smarter_private.f06_retained_mtt_abort_snapshot(fixture_retained_input({i},{kind})));')
 
     def abort(i=1302, receipt=None):
-        return f"SELECT fn_f06_abort_retained_mtt_hands(md5('rm-receipt{receipt or i}')::uuid,(SELECT expected FROM fixture_expected_inputs WHERE i={i}));"
+        return f"SELECT fn_f06_abort_retained_mtt_hands(md5('rm-receipt{receipt or i}')::uuid,(SELECT expected FROM fixture_retained_expected_inputs WHERE i={i}));"
 
     for i in (1301,1302):
         probe('retained-mtt-qualified-rollback-' + str(i), service + abort(i))
     for name, change, error in [
         ('browser', 'SET ROLE authenticated;', '42501'),
         ('wrong-actor', "SET app.smarter_data_actor='browser';", 'F06_ABORT_SERVICE_REQUIRED'),
-        ('physical-unknown', "UPDATE fixture_expected_inputs SET expected=jsonb_set(expected,'{physical,all_owned_work_joined}','false') WHERE i=1302;", 'F06_RETAINED_PHYSICAL_PROOF_REQUIRED'),
-        ('physical-wrong-original', "UPDATE fixture_expected_inputs SET expected=jsonb_set(expected,'{physical,permit_id}',to_jsonb(gen_random_uuid())) WHERE i=1302;", 'F06_RETAINED_PHYSICAL_PROOF_REQUIRED'),
+        ('physical-unknown', "UPDATE fixture_retained_expected_inputs SET expected=jsonb_set(expected,'{physical,all_owned_work_joined}','false') WHERE i=1302;", 'F06_RETAINED_PHYSICAL_PROOF_REQUIRED'),
+        ('physical-wrong-original', "UPDATE fixture_retained_expected_inputs SET expected=jsonb_set(expected,'{physical,permit_id}',to_jsonb(gen_random_uuid())) WHERE i=1302;", 'F06_RETAINED_PHYSICAL_PROOF_REQUIRED'),
         ('fresh-lease', "UPDATE engine_tournament_leases SET heartbeat_at=now() WHERE tournament_id=md5('rm-event1302')::uuid;", 'F06_RETAINED_LEASE_CHANGED'),
-        ('longer-lease-policy', "CREATE OR REPLACE FUNCTION public.fn_engine_lease_stale_seconds() RETURNS integer LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path TO 'public','pg_temp' AS 'SELECT 120';UPDATE engine_tournament_leases SET heartbeat_at=clock_timestamp()-interval '60 seconds' WHERE tournament_id=md5('rm-event1302')::uuid;UPDATE fixture_expected_inputs SET expected=jsonb_set(expected,'{lease}',(SELECT to_jsonb(l) FROM engine_tournament_leases l WHERE l.tournament_id=md5('rm-event1302')::uuid)) WHERE i=1302;", 'F06_RETAINED_LEASE_CHANGED'),
+        ('longer-lease-policy', "CREATE OR REPLACE FUNCTION public.fn_engine_lease_stale_seconds() RETURNS integer LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path TO 'public','pg_temp' AS 'SELECT 120';UPDATE engine_tournament_leases SET heartbeat_at=clock_timestamp()-interval '60 seconds' WHERE tournament_id=md5('rm-event1302')::uuid;UPDATE fixture_retained_expected_inputs SET expected=jsonb_set(expected,'{lease}',(SELECT to_jsonb(l) FROM engine_tournament_leases l WHERE l.tournament_id=md5('rm-event1302')::uuid)) WHERE i=1302;", 'F06_RETAINED_LEASE_CHANGED'),
         ('lease-replaced', "UPDATE engine_tournament_leases SET lease_generation=gen_random_uuid() WHERE tournament_id=md5('rm-event1302')::uuid;", 'F06_RETAINED_LEASE_CHANGED'),
-        ('unproven-zero', "UPDATE fixture_expected_inputs SET expected=jsonb_set(expected,'{accepted_zeros}','[]') WHERE i=1302;", 'F06_RETAINED_ZERO_SET_CHANGED'),
+        ('unproven-zero', "UPDATE fixture_retained_expected_inputs SET expected=jsonb_set(expected,'{accepted_zeros}','[]') WHERE i=1302;", 'F06_RETAINED_ZERO_SET_CHANGED'),
         ('zero-positive', "UPDATE hand_atomic_commits SET stack_result=jsonb_set(stack_result,ARRAY['written',md5('rm-user1302:3')::uuid::text],'1') WHERE hand_id=md5('rm-atomic-zero1302')::uuid;", 'F06_RETAINED_FINANCIAL_BOUNDARY_CHANGED'),
         ('zero-unsealed', "UPDATE hand_atomic_commits SET post_commit_payload_hash=repeat('b',64) WHERE hand_id=md5('rm-atomic-zero1302')::uuid;", 'F06_RETAINED_ZERO_PROOF_CHANGED'),
         ('prior-unsealed', "UPDATE hand_atomic_commits SET post_commit_payload_hash=repeat('b',64) WHERE hand_id=md5('rm-atomic-prior1302')::uuid;", 'F06_MIXED_PRIOR_POSTCOMMIT_SEAL'),
         ('prior-incomplete', "UPDATE hand_atomic_commits SET post_commit_completed_at=NULL WHERE hand_id=md5('rm-atomic-prior1302')::uuid;", 'F06_RETAINED_FINANCIAL_BOUNDARY_CHANGED'),
-        ('arrival-omitted', "UPDATE fixture_expected_inputs SET expected=expected #- '{hands,0,interruption,inbound_requests,0}' WHERE i=1302;", 'F06_RETAINED_INBOUND_SET_CHANGED'),
-        ('arrival-duplicated', "UPDATE fixture_expected_inputs SET expected=jsonb_set(expected,'{hands,0,interruption,inbound_requests}',jsonb_build_array(expected#>'{hands,0,interruption,inbound_requests,0}',expected#>'{hands,0,interruption,inbound_requests,0}')) WHERE i=1302;", 'F06_RETAINED_INBOUND_SET_CHANGED'),
+        ('arrival-omitted', "UPDATE fixture_retained_expected_inputs SET expected=expected #- '{hands,0,interruption,inbound_requests,0}' WHERE i=1302;", 'F06_RETAINED_INBOUND_SET_CHANGED'),
+        ('arrival-duplicated', "UPDATE fixture_retained_expected_inputs SET expected=jsonb_set(expected,'{hands,0,interruption,inbound_requests}',jsonb_build_array(expected#>'{hands,0,interruption,inbound_requests,0}',expected#>'{hands,0,interruption,inbound_requests,0}')) WHERE i=1302;", 'F06_RETAINED_INBOUND_SET_CHANGED'),
         ('arrival-stack', "UPDATE tournament_seat_move_receipts SET stack=stack+1 WHERE request_id=md5('rm-move1302:1')::uuid;", 'F06_RETAINED_INBOUND_PROOF_CHANGED'),
         ('arrival-occupancy', "UPDATE smarter_private.f06_members SET occupancy_id=gen_random_uuid() WHERE break_id=md5('rm-break1302:1')::uuid;", 'F06_IDENTITY_IMMUTABLE'),
         ('arrival-destination', "UPDATE tournament_seat_move_receipts SET destination_seat_id=gen_random_uuid() WHERE request_id=md5('rm-move1302:1')::uuid;", 'F06_RETAINED_INBOUND_PROOF_CHANGED'),
@@ -110,7 +112,7 @@ def qualify(root, out, cmd, command, run, probe, require, results):
         probe('retained-mtt-disposition-excludes-atomic', atomic, error='F06_RETRY_CANONICAL_LANE')
         probe('retained-mtt-same-operation-serialized', "SET LOCAL lock_timeout='150ms';" + service + abort(), error='55P03')
     run('retained-mtt-identical-replay', service + abort())
-    probe('retained-mtt-changed-replay', service + "UPDATE fixture_expected_inputs SET expected=jsonb_set(expected,'{physical,evidence_sha256}',to_jsonb(repeat('f',64))) WHERE i=1302;" + abort(), error='F06_ABORT_CHANGED_REPLAY')
+    probe('retained-mtt-changed-replay', service + "UPDATE fixture_retained_expected_inputs SET expected=jsonb_set(expected,'{physical,evidence_sha256}',to_jsonb(repeat('f',64))) WHERE i=1302;" + abort(), error='F06_ABORT_CHANGED_REPLAY')
     probe('retained-mtt-late-atomic-fenced', atomic, error='F06_ABORTED_HAND_FENCED')
     probe('retained-mtt-different-operation-refused', service + abort(receipt=1399), error='F06_RETAINED_WHOLE_ORIGINAL_REQUIRED')
     run('retained-mtt-snapshot-commit', service + abort(1301))
@@ -126,7 +128,7 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     # it after draining a writer that held the canonical lane first.
     run('retained-mtt-race-originals', 'SELECT fixture_seed_retained_mtt(1303,true);SELECT fixture_seed_retained_mtt(1304,true);')
     for i in (1303,1304):
-        run('retained-mtt-race-capture-' + str(i), service + f'INSERT INTO fixture_expected_inputs VALUES({i},smarter_private.f06_retained_mtt_abort_snapshot(fixture_retained_input({i},true)));')
+        run('retained-mtt-race-capture-' + str(i), service + f'INSERT INTO fixture_retained_expected_inputs VALUES({i},smarter_private.f06_retained_mtt_abort_snapshot(fixture_retained_input({i},true)));')
     accepted = "INSERT INTO hand_atomic_commits(table_id,hand_number,hand_id,post_commit_completed_at,post_commit_result) VALUES(md5('rm-table1303')::uuid,10003,md5('rm-race-accepted')::uuid,now(),'{\"ok\":true}');"
     with held(accepted, finish='COMMIT'):
         probe('retained-mtt-accepted-first-excludes-disposition', service + abort(1303), error='F06_RETRY_CANONICAL_LANE')

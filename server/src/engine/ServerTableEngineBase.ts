@@ -971,6 +971,66 @@ export abstract class ServerTableEngineBase {
     );
   }
 
+  /** Positive physical custody proof. It grants no lease or hand outcome. */
+  captureDrainedF06Identity(tableId: string, tournamentId: string, generation: string) {
+    const lifecycle = this.f06TableLifecycle ?? this.f06MovementAdmission?.receipt.lifecycle;
+    if (!lifecycle || !/^[1-9][0-9]{0,18}$/.test(lifecycle)) return null;
+    if (
+      !this.terminalTeardownComplete ||
+      !this.terminal ||
+      this.running ||
+      this.tableId !== tableId ||
+      ServerTableEngineBase.liveEngines.has(tableId) ||
+      this.dealingLoopPromise !== null ||
+      this.settlementInFlight.size !== 0 ||
+      this.postHandTasksPromise !== null ||
+      this.tournamentMoveOperations.size !== 0 ||
+      this.tournamentMoveOperationByOwner.size !== 0 ||
+      this.readContinuationTasks.size !== 0 ||
+      this.snapshotFlushPromise !== null ||
+      this.handController !== null ||
+      this.terminalBoundaryPendingGenerations.size !== 0 ||
+      this.f06RecoveryInFlight ||
+      this.presenceSavePending !== 0 ||
+      this.timeBankAccountingPending.size !== 0 ||
+      this.entryHoldWriteChains.size !== 0 ||
+      this.timeBankAccountingUnconfirmed ||
+      this.timeBankEngine.hasPlayerBanksForTable(tableId) ||
+      Object.keys(this.disconnectEngine.getFsmStatesForTable(tableId)).length !== 0 ||
+      this.engineLeaseScope !== 'tournament' ||
+      !this.engineLeaseVerified ||
+      this.engineLeaseTournamentId !== tournamentId ||
+      this.engineLeaseGeneration !== generation ||
+      !this.f06PreparationDrained()
+    )
+      return null;
+    return Object.freeze({
+      table_id: tableId,
+      engine_id: this.lifecycleDiagnostics.instanceId,
+      allocation_epoch: this.f06AllocationEpoch,
+      lifecycle,
+      permit: this.getF06RetainedPermit(),
+      bank_custody: {
+        hand_number: this.handCount,
+        roster: this.seatedPlayers.map((seat) => [
+          seat.user_id,
+          seat.occupancy_id,
+          seat.seat_number,
+          seat.stack,
+        ]),
+        time_bank_metadata: [...this.timeBankMeta].sort(([a], [b]) => a.localeCompare(b)),
+        parked_time_banks: this.parkedTimeBanks,
+        live_time_banks: [],
+        disconnect_states: this.disconnectEngine.getFsmStatesForTable(tableId),
+      },
+    });
+  }
+
+  /** Subclasses must positively cover their own preparation continuation. */
+  protected f06PreparationDrained(): boolean {
+    return false;
+  }
+
   /** Read-time fence catches an event loop that resumes before its timer runs. */
   hasCurrentEngineLeaseAuthority(): boolean {
     if (this.engineLeaseAuthorityIsCurrent()) return true;
@@ -1864,13 +1924,16 @@ export abstract class ServerTableEngineBase {
   private f06Allocator: (() => Promise<number>) | null = null;
   private f06AllocationCurrent: (() => boolean) | null = null;
   protected f06AllocationEpoch: string | null = null;
+  private f06TableLifecycle: string | null = null;
   installF06Allocator(
     epoch: string,
     allocate: () => Promise<number>,
-    current: () => boolean
+    current: () => boolean,
+    lifecycle?: string
   ): void {
     if (this.running || this.f06Allocator || this.f06MovementAdmission || !epoch)
       throw new Error('f06_allocator_install_invalid');
+    this.f06TableLifecycle = lifecycle ?? null;
     this.f06AllocationEpoch = epoch;
     this.f06Allocator = allocate;
     this.f06AllocationCurrent = current;
@@ -2324,6 +2387,7 @@ export abstract class ServerTableEngineBase {
   protected readonly timeBankBaseSeconds = 40;
   private parkedTimeBanks: Record<string, ParkedTimeBank> = {};
   private presenceSave: Promise<void> = Promise.resolve();
+  private presenceSavePending = 0;
   private parkedBankSaveComplete = false;
   private maintenanceCheckpointGeneration = 0;
   private readonly timeBankAccountingPending = new Set<Promise<void>>();
@@ -5660,6 +5724,7 @@ export abstract class ServerTableEngineBase {
   }
 
   protected async persistPresenceForRestart(when: 'announced' | 'parked'): Promise<void> {
+    this.presenceSavePending++;
     const generation = this.maintenanceCheckpointGeneration;
     const previous = this.presenceSave ?? Promise.resolve();
     let finish!: () => void;
@@ -5719,6 +5784,7 @@ export abstract class ServerTableEngineBase {
     } catch (err) {
       reportError(err, 'ServerTableEngine.' + this.tableId + '.presence_persist');
     } finally {
+      this.presenceSavePending--;
       finish();
     }
   }

@@ -1,3 +1,9 @@
+import {
+  findMixedF06Transfer,
+  admitMixedF06Transfer,
+  mixedF06PendingOriginals,
+  type MixedF06Transfer,
+} from './tournament/mixedF06Custody.js';
 import { channelHub } from './hub/ChannelHub.js';
 import { BoundedLeaseRenewalScope } from './services/BoundedLeaseRenewalScope.js';
 import {
@@ -536,6 +542,12 @@ export class GameServer {
   private tournamentDiagnosticRetirements = new Map<string, Set<TournamentManager>>();
   /** Strong original references survive every claim, refusal and successor stop. */
   private drainedF06TournamentCustody = new Map<string, DrainedF06Custody>();
+  private durableMixedF06Custody = new Map<string, MixedF06Transfer>();
+  /** Same-process continuation of an admitted original, invoked by admission or a durable wake. */
+  private mixedF06AdmissionContinuations = new Map<
+    string,
+    { manager: TournamentManager; run: () => Promise<void> }
+  >();
   private completedF06TournamentCustody = new Map<
     string,
     Set<Readonly<{ original: DrainedF06Custody; terminalProof: unknown }>>
@@ -2085,7 +2097,29 @@ export class GameServer {
   ): Promise<boolean> {
     this.drainedF06TournamentCustody ??= new Map();
     if (this.drainedF06TournamentCustody.has(tournamentId)) return false;
-    const packet = await manager.captureDrainedF06Custody();
+    let packet = await manager.captureDrainedF06Custody();
+    if (!packet) {
+      const successor =
+        this.tournamentManagerAdmissionLeaseGenerations.get(tournamentId) ?? randomUUID();
+      // Retain this exact successor before a durable prepare can have an unknown reply.
+      this.tournamentManagerAdmissionLeaseGenerations.set(tournamentId, successor);
+      packet = await manager.captureMixedF06Custody(successor);
+    }
+    const completePhysicalMap = () => {
+      if (!packet?.mixed) return true;
+      const global = [...this.tableEngines].filter(
+        ([, engine]) =>
+          engine.getEngineLeaseAuthority()?.scope === 'tournament' &&
+          (engine.getEngineLeaseAuthority() as { tournamentId?: string }).tournamentId ===
+            tournamentId
+      );
+      return (
+        global.length === packet.engines.length &&
+        global.every(([id, engine]) =>
+          packet!.engines.some(([key, original]) => key === id && original === engine)
+        )
+      );
+    };
     if (
       !packet ||
       packet.manager !== manager ||
@@ -2093,16 +2127,21 @@ export class GameServer {
       this.tournamentEngines.get(tournamentId) !== manager ||
       this.drainedF06TournamentCustody.has(tournamentId) ||
       !packet.current() ||
+      !completePhysicalMap() ||
       packet.engines.some(
         ([id, engine]) =>
           this.tableEngines.get(id) !== engine ||
-          !this.tournamentRetirementCustody.admissionAllowed(id)
+          (!packet!.mixed && !this.tournamentRetirementCustody.admissionAllowed(id))
       )
     )
       return false;
     // Publish custody before removing any activation slot. Original local maps
     // remain intact; this is a handoff, never successful business teardown.
     this.drainedF06TournamentCustody.set(tournamentId, packet);
+    if (packet.mixed) {
+      this.durableMixedF06Custody ??= new Map();
+      this.durableMixedF06Custody.set(tournamentId, packet.mixed);
+    }
     for (const [id] of packet.engines) {
       this.tableEngines.delete(id);
       this.tournamentOwnedTables.delete(id);
@@ -2119,6 +2158,81 @@ export class GameServer {
       }
     }
     return true;
+  }
+
+  hasCompleteMixedF06PhysicalMap(
+    tournamentId: string,
+    manager: TournamentManager,
+    originals: readonly (readonly [string, ServerTableEngine])[]
+  ): boolean {
+    const packet = this.drainedF06TournamentCustody?.get(tournamentId);
+    const global = [...this.tableEngines].filter(([, engine]) => {
+      const authority = engine.getEngineLeaseAuthority();
+      return authority?.scope === 'tournament' && authority.tournamentId === tournamentId;
+    });
+    if (packet?.mixed && packet.manager === manager)
+      return global.length === 0 && packet.engines === originals;
+    return (
+      this.tournamentEngines.get(tournamentId) === manager &&
+      global.length === originals.length &&
+      global.every(
+        ([table, engine]) =>
+          this.tournamentOwnedTables.has(table) &&
+          originals.some(([id, exact]) => id === table && exact === engine)
+      )
+    );
+  }
+
+  hasMixedF06CustodyOriginal(
+    tournamentId: string,
+    manager: TournamentManager,
+    tableId: string,
+    engine: ServerTableEngine
+  ): boolean {
+    const packet = this.drainedF06TournamentCustody?.get(tournamentId);
+    return (
+      !!packet?.mixed &&
+      packet.manager === manager &&
+      !this.tableEngines.has(tableId) &&
+      packet.engines.some(([id, original]) => id === tableId && original === engine)
+    );
+  }
+
+  private terminalMixedF06Admissions = new Map<string, unknown>();
+
+  private mixedF06PreparationBlockers(): readonly string[] {
+    const represented = new Set([...this.enginesIncludingMixedF06Custody()].map(([id]) => id));
+    const pending = new Set<string>();
+    for (const transfer of this.durableMixedF06Custody?.values() ?? []) {
+      if (!this.terminalMixedF06Admissions?.has(transfer.transferId)) {
+        for (const id of mixedF06PendingOriginals(transfer))
+          if (!represented.has(id)) pending.add(id);
+      }
+      // Terminal hand adoption does not complete a pending source operation.
+      // Keep its custody barrier until the durable recovery completion exists.
+      for (const operation of (transfer.canonical as { operations: Array<Record<string, unknown>> })
+        .operations) {
+        const id = operation.source_table_id;
+        if (
+          typeof id === 'string' &&
+          !represented.has(id) &&
+          !['acknowledged', 'withdrawn_before_manifest'].includes(String(operation.state))
+        )
+          pending.add(id);
+      }
+    }
+    return [...pending];
+  }
+
+  /** Custody-only originals must never disappear from preparation/drain gates. */
+  private *enginesIncludingMixedF06Custody(): IterableIterator<[string, ServerTableEngine]> {
+    yield* this.tableEngines;
+    for (const packet of this.drainedF06TournamentCustody?.values() ?? []) {
+      if (!packet.mixed || this.terminalMixedF06Admissions?.has(packet.mixed.transferId)) continue;
+      for (const [id, engine] of packet.engines) {
+        if (this.tableEngines.get(id) !== engine) yield [id, engine];
+      }
+    }
   }
 
   /**
@@ -2221,7 +2335,10 @@ export class GameServer {
     if (!this.directAdmissionIsCurrent(generation)) {
       return Promise.resolve();
     }
-    if (this.tournamentEngines.has(tournamentId)) {
+    const existing = this.tournamentManagerAdmissionOperations.get(tournamentId);
+    if (existing) return existing;
+    const admitted = this.tournamentEngines.get(tournamentId);
+    if (admitted && !admitted.isF06RecoveryOwner?.()) {
       this.clearTournamentManagerAdmissionRetry(tournamentId);
       return Promise.resolve();
     }
@@ -2233,8 +2350,6 @@ export class GameServer {
     if (mode === 'start' && spinLaunchParks.isParked(tournamentId)) {
       return Promise.resolve();
     }
-    const existing = this.tournamentManagerAdmissionOperations.get(tournamentId);
-    if (existing) return existing;
     // A top-up still owns this event's entry transaction. Unrelated events
     // may start, but this event is re-read only after its real outcome settles.
     if (mode === 'start' && this.tournamentTopUpsInFlight.has(tournamentId)) {
@@ -2263,12 +2378,33 @@ export class GameServer {
     generation: number
   ): Promise<void> {
     await this.awaitTournamentManagerLeaseRelease(tournamentId);
-    if (!this.directAdmissionIsCurrent(generation) || this.tournamentEngines.has(tournamentId)) {
+    if (!this.directAdmissionIsCurrent(generation)) return;
+    const admitted = this.tournamentEngines.get(tournamentId);
+    if (admitted) {
+      const continuation = this.mixedF06AdmissionContinuations?.get(tournamentId);
+      if (admitted.isF06RecoveryOwner?.() && continuation?.manager === admitted) {
+        await continuation.run();
+      }
       return;
     }
 
+    this.durableMixedF06Custody ??= new Map();
+    let durableMixed = this.durableMixedF06Custody.get(tournamentId) ?? null;
+    if (!durableMixed && !this.drainedF06TournamentCustody?.has(tournamentId)) {
+      durableMixed = await findMixedF06Transfer(tournamentId);
+      if (durableMixed) this.durableMixedF06Custody.set(tournamentId, durableMixed);
+      if (!this.directAdmissionIsCurrent(generation) || this.tournamentEngines.has(tournamentId))
+        return;
+    }
+    const retainedGeneration = this.tournamentManagerAdmissionLeaseGenerations.get(tournamentId);
+    if (
+      durableMixed &&
+      retainedGeneration &&
+      retainedGeneration !== durableMixed.successorGeneration
+    )
+      throw new Error('f06_mixed_successor_generation_changed');
     const requestedLeaseGeneration =
-      this.tournamentManagerAdmissionLeaseGenerations.get(tournamentId) ?? randomUUID();
+      durableMixed?.successorGeneration ?? retainedGeneration ?? randomUUID();
     this.tournamentManagerAdmissionLeaseGenerations.set(tournamentId, requestedLeaseGeneration);
     const lease = await claimTournamentLease(tournamentId, requestedLeaseGeneration);
     const uncertainLeaseGeneration =
@@ -2330,25 +2466,31 @@ export class GameServer {
 
     const packet = this.drainedF06TournamentCustody?.get(tournamentId) ?? null;
     let recoveryRequired = false;
-    if (mode === 'resume' || packet) {
+    let mixedTerminalProof: unknown = null;
+    if (mode === 'resume' || packet || durableMixed) {
       try {
-        const state = await prepareF06SuccessorAdmission(
-          tournamentId,
-          lease.leaseGeneration,
-          INSTANCE_ID,
-          packet,
-          () =>
-            this.directAdmissionIsCurrent(generation) &&
-            !this.tournamentEngines.has(tournamentId) &&
-            (this.drainedF06TournamentCustody?.get(tournamentId) ?? null) === packet
-        );
+        const state =
+          !packet && durableMixed
+            ? await admitMixedF06Transfer(tournamentId, lease.leaseGeneration, durableMixed)
+            : await prepareF06SuccessorAdmission(
+                tournamentId,
+                lease.leaseGeneration,
+                INSTANCE_ID,
+                packet,
+                () =>
+                  this.directAdmissionIsCurrent(generation) &&
+                  !this.tournamentEngines.has(tournamentId) &&
+                  (this.drainedF06TournamentCustody?.get(tournamentId) ?? null) === packet
+              );
         if (
           !this.directAdmissionIsCurrent(generation) ||
           this.tournamentEngines.has(tournamentId) ||
-          (this.drainedF06TournamentCustody?.get(tournamentId) ?? null) !== packet
+          (this.drainedF06TournamentCustody?.get(tournamentId) ?? null) !== packet ||
+          (this.durableMixedF06Custody.get(tournamentId) ?? null) !== durableMixed
         )
           throw new Error('f06_successor_admission_changed');
         recoveryRequired = state.recoveryRequired;
+        if (durableMixed || packet?.mixed) mixedTerminalProof = state.terminalProof;
         if (packet && !recoveryRequired) {
           // Terminal dispositions are monotonic. Retain the original objects,
           // but stop applying their old mutable roster proof before dealers can
@@ -2380,6 +2522,82 @@ export class GameServer {
     try {
       if (recoveryRequired) {
         manager.enterF06RecoveryOwnership();
+        const transfer = durableMixed ?? packet?.mixed;
+        if (!transfer) return; // Existing strict recovery has its own disposition owner.
+        if (!mixedTerminalProof) throw new Error('f06_mixed_terminal_admission_missing');
+        const canonical = transfer.canonical as { tables: { id: string }[] };
+        if (!Array.isArray(canonical.tables)) throw new Error('f06_mixed_complete_map_missing');
+        const current = () =>
+          this.directAdmissionIsCurrent(generation) &&
+          this.tournamentEngines.get(tournamentId) === manager &&
+          manager.isF06RecoveryOwner() &&
+          this.durableMixedF06Custody.get(tournamentId) === transfer &&
+          (this.drainedF06TournamentCustody?.get(tournamentId) ?? null) === packet &&
+          (!packet || packet.current()) &&
+          [...this.tableEngines.values()].every((engine) => {
+            const authority = engine.getEngineLeaseAuthority();
+            return authority?.scope !== 'tournament' || authority.tournamentId !== tournamentId;
+          });
+        const reservation = this.tournamentRetirementCustody.reserveMixed(
+          transfer.transferId,
+          canonical.tables.map((table) => table.id),
+          transfer.local.reservations as {
+            table_id: string;
+            revision: string;
+            binding: string[];
+          }[],
+          !!packet,
+          this.tableEngines,
+          new Map(),
+          current
+        );
+        // This is terminal receipt adoption. The original objects and their
+        // reserved flags remain unchanged in custody; their exact SQL outcomes
+        // now account for every retained preparation in the native gate.
+        this.terminalMixedF06Admissions ??= new Map();
+        this.terminalMixedF06Admissions.set(transfer.transferId, mixedTerminalProof);
+        this.mixedF06AdmissionContinuations ??= new Map();
+        const continueAdmission = async (): Promise<void> => {
+          let completion: Readonly<Record<string, unknown>>;
+          try {
+            completion = await manager.recoverMixedF06Custody(transfer, reservation.assertCurrent);
+            reservation.assertCurrent();
+          } catch (error) {
+            reportError(error, 'GameServer.mixed_original_recovery_retained', {
+              tournamentId,
+              transferId: transfer.transferId,
+            });
+            return; // Unknown originals retain this admitted process and every reservation.
+          }
+          reservation.complete();
+          this.completedF06TournamentCustody ??= new Map();
+          if (packet) {
+            const archive = this.completedF06TournamentCustody.get(tournamentId) ?? new Set();
+            archive.add(Object.freeze({ original: packet, terminalProof: completion }));
+            this.completedF06TournamentCustody.set(tournamentId, archive);
+            this.drainedF06TournamentCustody.delete(tournamentId);
+          }
+          this.durableMixedF06Custody.delete(tournamentId);
+          this.terminalMixedF06Admissions.delete(transfer.transferId);
+          manager.finishMixedF06RecoveryAdmission(completion);
+          this.mixedF06AdmissionContinuations.delete(tournamentId);
+          try {
+            await manager.resume();
+            await this.finishTournamentManagerAdmission(tournamentId, manager, generation);
+          } catch (error) {
+            await this.stopTournamentManagerIfOwned(
+              tournamentId,
+              manager,
+              'GameServer.mixed_completed_admission_cleanup_failed'
+            );
+            throw error;
+          }
+        };
+        this.mixedF06AdmissionContinuations.set(tournamentId, {
+          manager,
+          run: continueAdmission,
+        });
+        await continueAdmission();
         return;
       }
       if (mode === 'resume') await manager.resume();
@@ -2671,7 +2889,8 @@ export class GameServer {
         throw new Error('maintenance_recovery_database_contract_unavailable');
       }
     }),
-    engines: () => this.tableEngines.entries(),
+    engines: () => this.enginesIncludingMixedF06Custody(),
+    retainedPreparationBlockers: () => this.mixedF06PreparationBlockers(),
     isRunning: () => this.running,
     emit: (tableId, payload) => tableStateHub.emitEvent(tableId, payload),
     emitPresentation: (payload) =>
@@ -4830,8 +5049,8 @@ export class GameServer {
   async drainHands(
     maxWaitMs = 8000
   ): Promise<{ drained: number; total: number; timedOut: boolean }> {
-    const engines = [...this.tableEngines.values()];
-    const total = engines.length;
+    const engines = [...this.enginesIncludingMixedF06Custody()].map(([, engine]) => engine);
+    const total = engines.length + this.mixedF06PreparationBlockers().length;
     if (total === 0) return { drained: 0, total: 0, timedOut: false };
 
     for (const engine of engines) {
@@ -8302,7 +8521,19 @@ export class GameServer {
     ) {
       return false;
     }
-    const manager = this.tournamentEngines.get(tournamentId);
+    let manager = this.tournamentEngines.get(tournamentId);
+    if (manager?.isF06RecoveryOwner?.()) {
+      // The durable request is also the continuation signal for this exact
+      // admitted owner. Keep it pending on refusal; no timer, replacement
+      // generation, or ordinary dealer supplies recovery correctness.
+      await this.ensureTournamentManagerAdmission(
+        tournamentId,
+        'resume',
+        'Continuing original tournament admission',
+        this.lifecycleGeneration
+      );
+      manager = this.tournamentEngines.get(tournamentId);
+    }
     if (!manager || !manager.isRunning()) return false;
 
     // Queue admission is not completion. Leave the row pending until the

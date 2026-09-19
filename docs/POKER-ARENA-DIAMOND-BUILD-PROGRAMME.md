@@ -381,7 +381,7 @@ Phase 8 Of 12 Is Built, September 14, 2026, behind a switch that is still off: `
 ### Phase 9 Of 12: Spins, Bounties, Satellites And Reserves
 
 - [ ] Adapt spins prize draw/reserve logic to funded diamonds.
-- [ ] Wire bounty, PKO and mystery-bounty pools and activation rules.
+- [x] Wire bounty, PKO and mystery-bounty pools and activation rules.
 - [ ] Implement diamond-to-diamond satellite escrow transfer and duplicate qualification handling.
 - [ ] Fund guarantees and promotional entries from authorized diamond house/budgets.
 - [ ] Implement rake/fees/BBJ destinations only in Diamond accounts, where approved.
@@ -389,6 +389,8 @@ Phase 8 Of 12 Is Built, September 14, 2026, behind a switch that is still off: `
 - [ ] Test prize-pool conservation, capped exposure, rounding and cancellation recovery.
 
 Exit: specialty prize liabilities and reserves reconcile; no inferred new prices/guarantees.
+
+Phase 9 Of 12 In Progress, September 14, 2026, behind the switch (`tournaments_enabled` false). First piece built: knockout and progressive (PKO) bounties pay from the Diamond bounty bank. Migration 20260914111709 opens the bank the Phase 8 ledger already held (the drain holds it per custody row, the payer pays category bounty from it in whole Diamonds and opens the escrow shadow from the ledger's exact parts because a knockout is paid mid-event, the charge carries a bounty part and follows an open shadow), admits `bounty` and `progressive_bounty` at the creation door under the chip door's rule (a whole bounty within the buy-in after the fee; no price invented), carries the head on the Diamond roster row, and teaches six chip readers of "bounty paid" the Diamond ledger in place. The chip knockout machinery (the engine's claim, `fn_collect_bounty` and its PKO half rule, `fn_finalize_bounty_pool` at the terminal) is reused whole. A Phase 8 gap found on the way was closed first: both knockout doors proved a bought-back generation only by a chip rebuy leg, so a Diamond player who busted, bought back and busted again would have been refused for ever (20260914111558). A full Diamond PKO lifecycle was rehearsed through the real doors and rolled back before the applies: [a bounty is paid from its own bank](changelog/2026-09-14-diamond-phase-9-a-bounty-is-paid-from-its-own-bank.md). Second piece built the same day: mystery bounties in Diamonds (20260914113514) - the seed floors the mystery half to the unit and holds every chest to it, the reserve splits a chest in whole Diamonds, the complete marker (the evidence a knockout was settled exactly) expects the split at the unit, the terminal settlement reads the Diamond ledger, the creation door admits and stamps the format under the chip configuration door's rules, and the engine builds the chest ladder at the unit it read beside the tournament row, refusing to seed at one it has not: [a mystery chest holds whole Diamonds](changelog/2026-09-14-diamond-phase-9-a-mystery-chest-holds-whole-diamonds.md). Every bounty format the chip estate deals now runs in Diamonds. Still to build in this phase: satellites, spins and their reserve, guarantees and promotional entries from the house, the fee destinations for those formats, and the conservation tests across them.
 
 ### Phase 10 Of 12: History, Statistics And Management
 

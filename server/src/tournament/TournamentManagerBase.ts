@@ -103,7 +103,7 @@ import {
   DEFAULT_TOP_BOUNTY_PERCENT,
   resolveMysteryBountyProfile,
 } from '../config/mysteryBountySpec.js';
-import { buildInventory, poolCentsFromNumeric } from './mysteryBountyPool.js';
+import { buildInventoryAtUnit, poolCentsFromNumeric } from './mysteryBountyPool.js';
 import { shuffleChests } from './mysteryBountyDraw.js';
 import {
   mysteryPoolCents,
@@ -111,11 +111,7 @@ import {
   type MysteryBountyActivationMode,
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
-import {
-  UNIT_CENTS_ASSET_NOT_READ,
-  tournamentUnitCents,
-  type TournamentUnitClubRow,
-} from './tournamentUnit.js';
+import { tournamentUnitCents, type TournamentUnitClubRow } from './tournamentUnit.js';
 import { applySpinDrawPatch } from './spinDrawSync.js';
 import { proveSpinDrawWithParking } from './spinLaunchParking.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
@@ -3225,6 +3221,24 @@ export abstract class TournamentManagerBase {
       return;
     }
 
+    /* DIAMOND PHASE 9: the unit this event pays in - a cent for a chip
+       event, a whole Diamond for a Diamond event - read from the club beside
+       the tournament row at start (tournamentUnit). A club that could not be
+       read is not a cent: an inventory built at the wrong unit would be
+       refused by the seed (chest_not_on_unit / inventory_mismatch) and the
+       chests would never open, so a manager that does not know its unit
+       does not seed; the next sweep reads again. */
+    const unitCents = this.tournamentUnit();
+    if (unitCents == null) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] mystery bounty not seeded: the tournament's club was not read, so its unit is unknown`
+        ),
+        'Tournament.mystery_bounty_unit_unknown'
+      );
+      return;
+    }
+
     let poolCents = 0;
     try {
       poolCents = mysteryPoolCents(
@@ -3236,11 +3250,7 @@ export abstract class TournamentManagerBase {
         // the inventory sum; not subtracting it here is what refused every
         // seed this platform has ever attempted. See mysteryPoolCents.
         poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0),
-        // This manager has not read the tournament's club, so it cannot say
-        // whether the event pays in cents or in whole Diamonds. The named
-        // constant is that admission; it is a cent because every tournament
-        // that can currently exist is a chip tournament. See tournamentUnit.ts.
-        UNIT_CENTS_ASSET_NOT_READ
+        unitCents
       );
     } catch (err) {
       // A bounty pool that is not a whole number of cents means something
@@ -3302,8 +3312,7 @@ export abstract class TournamentManagerBase {
           fresh.mystery_bounty_pool_percent,
           fresh.mystery_bounty_regular_pool_percent,
           poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0) + unrecordedCents,
-          // Same admission as the seed above: the club was never read here.
-          UNIT_CENTS_ASSET_NOT_READ
+          unitCents
         );
       } catch (err) {
         reportError(err, 'Tournament.mystery_bounty_pool_not_in_cents');
@@ -3324,7 +3333,7 @@ export abstract class TournamentManagerBase {
           ? DEFAULT_TOP_BOUNTY_PERCENT
           : Number(fresh.mystery_bounty_top_percent);
       const chests = shuffleChests(
-        buildInventory(poolCents, decision.drawCount, profile, topPercent)
+        buildInventoryAtUnit(poolCents, decision.drawCount, profile, topPercent, unitCents)
       ).map((c) => ({ tier: c.tier, amount_cents: c.amountCents, seq: c.seq }));
 
       const { data: seeded, error: seedErr } = await supabase.rpc('fn_mystery_bounty_seed', {

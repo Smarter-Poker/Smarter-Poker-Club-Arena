@@ -69,6 +69,49 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
  */
 const KNOWN_UNPUBLISHED = new Map([
   ['table_id', 'not a table - a column name caught by the scanner'],
+
+  // ── RE-SEEDED 2026-09-19, AFTER THE SWEEP NOBODY DID ────────────────────
+  //
+  // This baseline was seeded on 2026-09-06 from the live comparison - BEFORE
+  // that day's WAL trim and before the 2026-09-08 SET TABLE replaced the rest
+  // of the membership. So the subscriptions that died after it were never
+  // recorded here, 34 of them, and this detector has been red ever since:
+  // true, unreadable, and therefore unable to catch a NEW one.
+  //
+  // Twenty-three of the 34 were restored to the publication on 2026-09-19
+  // (a_subscription_that_costs_nothing_may_fire_again, plus table_waitlist):
+  // 35,618 writes between them, 0.06% of the eleven below, every one with RLS
+  // on and a SELECT policy a subscriber can satisfy.
+  //
+  // These eleven stay out, and each carries the number that decides it -
+  // writes since the stats reset, and the column count, because apply_rls runs
+  // roughly one dynamic cast plus one column-privilege check per column per
+  // change. Publishing any of them re-creates the 22.9-seconds-per-15-seconds
+  // stream the trim was built to stop. The page subscribing to each one needs
+  // a different delivery path, not a republished table.
+  ['tournament_players',
+   'NOT PUBLISHED BY MEASUREMENT: 25,280,935 writes, 27 columns - the most written table on the platform. TournamentClock should read standings rather than subscribe.'],
+  ['table_seats',
+   'NOT PUBLISHED BY MEASUREMENT: 14,582,928 writes, 26 columns. Seat state reaches the felt over the engine socket; TableOperationsPanel should refetch.'],
+  ['tournaments',
+   'NOT PUBLISHED BY MEASUREMENT: 5,477,895 writes over 117 columns, measured at 39.40ms per change on 2026-09-06. TournamentHUD should refetch.'],
+  ['tables',
+   'NOT PUBLISHED BY MEASUREMENT: 4,643,367 writes over 159 columns, 28.40ms per change on 2026-09-06 and 6,277ms of the 18,146ms apply_rls total. AdminTableHeatmap should refetch.'],
+  ['agent_commissions',
+   'NOT PUBLISHED BY MEASUREMENT: 1,802,610 writes, 10 columns, 6.7M live rows. AgentCommissionDashboard should refetch.'],
+  ['agents',
+   'NOT PUBLISHED BY MEASUREMENT: 1,066,935 writes, 31 columns, against 146 live rows - it is rewritten constantly. AgentPromoPanel should refetch.'],
+  ['clubs',
+   'NOT PUBLISHED BY MEASUREMENT: 1,047,848 writes over 94 columns, 35.96ms per change on 2026-09-06, against 5 live rows. DynamicWallet should refetch.'],
+  ['game_management_events',
+   'NOT PUBLISHED BY MEASUREMENT: 1,027,487 writes, 3.1M live rows. useGameManagementRealtime should poll or move to the engine socket.'],
+  ['profiles',
+   'NOT PUBLISHED BY MEASUREMENT: 1,000,061 writes over 120 columns, 45.29ms per change on 2026-09-06 - the worst per-change cost measured. PresenceIndicator wants presence, which is a channel feature, not a row change.'],
+  ['union_wallets',
+   'NOT PUBLISHED BY MEASUREMENT: 338,150 writes against 1 live row. DynamicWallet should refetch.'],
+  ['chip_transactions',
+   'NOT PUBLISHED BY MEASUREMENT: 258,956 writes, 822,598 live rows. AgentDashboardPage should refetch.'],
+
   [
     'table_hole_cards',
     'DELIBERATELY unpublished (PR #3032, 2026-09-06): the engine socket delivers the ' +

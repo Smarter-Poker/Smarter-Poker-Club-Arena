@@ -478,7 +478,8 @@ describe('Phase 10 complete bounded PLO4 baseline', () => {
     const input = plo4ReferenceSpot('royal_flush');
     input.state.players[1].cards = plo4Cards('Ah Ad 6c 7c');
     expect(
-      evaluatePlo4LivePolicy(input.hero, input.state, input.baseline, evidence).receipt.reason
+      evaluatePlo4LivePolicy(input.hero, input.state, input.baseline, evidence, 'shadow', () => 0)
+        .receipt.reason
     ).toBe('private_state_rejected');
     input.state.players[1].cards = [];
     let clock = 0;

@@ -15,6 +15,7 @@ LEGACY_CHECKPOINT="$CONTROL_DIR/legacy-engine-checkpoint.sh"
 LEGACY_CHECKPOINT_SHA=2f4e33560bcd23bfb5cc731f31816b2c2e2847e5
 CHECKPOINT_758_SHA=758610f3f844406bbbaee2f5100ced36d84fb943
 CHECKPOINT_A0_SHA=a0ab287d902879280f0c915e44f5222c5db4d7df
+CHECKPOINT_8825_SHA=8825af51817f379c4261658ca29ecc9d8d81932d
 REPO_DIR="${REPO_DIR:-/opt/club-arena}"
 ENV_FILE="${ENV_FILE:-$REPO_DIR/server/.env}"
 REQUEST_ROOT="${ENGINE_RELEASE_REQUEST_ROOT:-/var/lib/club-arena/engine-release-requests}"
@@ -974,7 +975,8 @@ CHECKPOINT_PREDECESSOR_SHA="$(timeout --signal=TERM --kill-after=1s 10s \
 LEGACY_CHECKPOINT_REQUIRED=0
 if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$LEGACY_CHECKPOINT_SHA" ] \
   || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_758_SHA" ] \
-  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_A0_SHA" ]; then
+  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_A0_SHA" ] \
+  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_8825_SHA" ]; then
   LEGACY_CHECKPOINT_REQUIRED=1
 fi
 
@@ -999,7 +1001,8 @@ while :; do
       # event. Retain that opportunity; the helper still needs its real durable
       # countdown, and an unknown request can never create another announcement.
       if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_758_SHA" ] \
-        || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_A0_SHA" ]; then
+        || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_A0_SHA" ] \
+        || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_8825_SHA" ]; then
         if [ "$CERTIFICATE_RC" -eq 2 ]; then RECOVERY_ADMISSION_MISSED=1; fi
         request_recovery_window
       fi
@@ -1032,7 +1035,8 @@ while :; do
       "$RELEASE_SEAL" get desired-sha)" || die 'locked checkpoint predecessor is unreadable'
     if [ "$CHECKPOINT_PREDECESSOR_SHA" != "$LEGACY_CHECKPOINT_SHA" ] \
       && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_758_SHA" ] \
-      && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_A0_SHA" ]; then
+      && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_A0_SHA" ] \
+      && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_8825_SHA" ]; then
       # A different release may have advanced desired while this run waited.
       # Source/high-water admission above still owns whether our target may
       # follow it. Never apply the old-image compatibility path to its successor.

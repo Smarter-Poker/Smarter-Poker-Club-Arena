@@ -31,6 +31,30 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe('Plinko GPU resource lifetime', () => {
+  it('gives a drop the full slower flight instead of finishing at the former two-second pace', () => {
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+      frame = callback;
+      return 1;
+    });
+    vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => {});
+    calls.draw.mockReturnValue(true);
+    const onLanded = vi.fn();
+    render(
+      <PlinkoBoard
+        multipliersCents={[100]}
+        path={Array(16).fill(1)}
+        dropKey={1}
+        restingSlot={null}
+        onLanded={onLanded}
+      />
+    );
+    frame(100);
+    frame(2100);
+    expect(onLanded).not.toHaveBeenCalled();
+    frame(3900);
+    expect(onLanded).toHaveBeenCalledTimes(1);
+  });
   it('keeps its room and shaders when the first measured width or denomination changes', () => {
     const props = { multipliersCents: [100, 200], path: null, dropKey: 0, restingSlot: null };
     const view = render(<PlinkoBoard {...props} width={600} />);

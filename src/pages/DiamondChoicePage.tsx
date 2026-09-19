@@ -2,6 +2,7 @@ import { pendingBonus } from '../services/diamondBonusRecovery';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
+import BonusCompletion from '../components/games/BonusCompletion';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -60,6 +61,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const [legacyState, setState] = useState<ChoiceState | null>(null);
   const [quotedEntry, setQuotedEntry] = useState<string | null>(null);
   const [round, setRound] = useState<ChoiceRound | null>(null);
+  const [completionId, setCompletionId] = useState<string | null>(null);
+  const [revealedId, setRevealedId] = useState<string | null>(null);
   const [mode, setMode] = useState(game === 'mines' ? '5' : 'steady');
   const [selectedBudget, setBudget] = useBonusBudget(clubId, game);
   const earned = useEarnedBonus(uuid, game, selectedBudget, mode);
@@ -94,6 +97,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       setWaitSeconds(next.seconds_until_next);
       if (next.open_round) {
         setRound(next.open_round);
+        setCompletionId(next.open_round.id);
         setMode(next.open_round.mode);
         setBudget((current) =>
           bonusTotal(current) === next.open_round!.bet_diamonds
@@ -118,7 +122,6 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           (r) => r.id === current?.id || r.commit_id === uncertainTicket.current
         );
         if (finished) setRound(finished);
-        else if (!current && next.history.length) setRound(next.history[0]);
         if (!heldStart.current) {
           setUncertain(false);
           uncertainTicket.current = null;
@@ -209,6 +212,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         earned.consume(recovered.award_id);
         currentRound.current = recovered;
         setRound(recovered);
+        setCompletionId(recovered.id);
         heldStart.current = null;
         uncertainTicket.current = null;
         setUncertain(false);
@@ -293,6 +297,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       earned.consume(next.award_id);
       currentRound.current = next;
       setRound(next);
+      setCompletionId(next.id);
       heldStart.current = null;
       setTicket(null);
       uncertainTicket.current = null;
@@ -352,7 +357,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const prizes = open ? round.prizes : (state?.prizes ?? []);
   const prize =
     round?.status === 'lost'
-      ? 0
+      ? round.payout_chips
       : round?.status === 'cashed'
         ? round.payout_chips
         : open && picks > 0
@@ -362,7 +367,14 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const ladder = ROAD_LADDERS[(round?.mode ?? mode) as RoadRisk];
   const roadEnd =
     game === 'crossing' && round?.proof && ladder
-      ? ladder.filter((target) => roadSurvives(BigInt(round.proof!.road_roll), target)).length
+      ? ladder.filter((target) =>
+          roadSurvives(
+            BigInt(round.proof!.road_roll),
+            target,
+            round.bet_chips,
+            round.minimum_payout_chips ?? 0
+          )
+        ).length
       : null;
   const roadMultiplier = roadEnd !== null && roadEnd > 0 ? ladder[roadEnd - 1] : 0;
   const payableRoadEnd = Math.min(roadEnd ?? 0, round?.max_steps ?? 0);
@@ -384,7 +396,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     setMode(modes[(modes.indexOf(mode) + 1) % modes.length]);
   };
   const cashLabel = open && picks > 0 ? 'Book The Win' : 'Refresh';
-  const phase = round?.status ?? 'idle';
+  // History is available for proof, but must not replay an old collision on entry.
+  const sceneRound = round?.id === completionId ? round : null;
+  const phase = sceneRound?.status ?? 'idle';
   return (
     <div className={`${styles.page} ${styles.fullscreenPage}`}>
       <button
@@ -461,12 +475,15 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         />
         <ChoiceScene
           game={game}
-          roundId={round?.id}
-          onSettled={() => setSceneBusy(false)}
+          roundId={sceneRound?.id}
+          onSettled={() => {
+            setSceneBusy(false);
+            if (sceneRound && sceneRound.status !== 'open') setRevealedId(sceneRound.id);
+          }}
           phase={phase}
-          picked={round?.picked ?? []}
-          mines={round?.proof?.mine_cells ?? null}
-          roadEnd={roadEnd}
+          picked={sceneRound?.picked ?? []}
+          mines={sceneRound?.proof?.mine_cells ?? null}
+          roadEnd={sceneRound ? roadEnd : null}
           busy={busy || uncertain}
           onPick={(cell) => void act('pick', cell)}
         />
@@ -498,7 +515,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               {game === 'mines'
                 ? 'A Mine Ended This Round. All Mines Are Revealed.'
                 : 'The Donkey Did Not Make This Crossing.'}{' '}
-              No Chip Prize.
+              {gameChips(round.payout_chips)} Chips Booked.
             </p>
           ) : (
             <p className="sc-copy">
@@ -608,6 +625,25 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           ))
         )}
       </GamePanel>
+      {round &&
+        round.status !== 'open' &&
+        completionId === round.id &&
+        revealedId === round.id &&
+        !uncertain &&
+        !busy && (
+          <BonusCompletion
+            key={round.id}
+            clubId={clubId ?? ''}
+            chips={round.payout_chips}
+            detail={
+              game === 'mines'
+                ? 'All Remaining Mines Have Been Revealed.'
+                : round.status === 'lost'
+                  ? `The Donkey Was Hit At Street ${round.picked.length}.`
+                  : `The Donkey Would Have Reached Street ${roadEnd ?? 0}.`
+            }
+          />
+        )}
     </div>
   );
 }

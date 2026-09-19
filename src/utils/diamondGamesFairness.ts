@@ -58,9 +58,24 @@ export function plinkoBitsFromPathBits(pathBits: number, rows = 16): number[] {
 }
 
 /** floor(80 * 2^48 / (roll + 1)) cents, floored at 1.00x. Exact BigInt arithmetic. */
-export function crashPointCentsFromRoll(roll: number | bigint): number {
+export function crashPointCentsFromRoll(
+  roll: number | bigint,
+  betChips = 1,
+  minimumPayoutChips = 0
+): number {
   const r = BigInt(roll);
-  const cents = EIGHTY_TIMES_TWO_48 / (r + 1n);
+  if (r < 0n || r >= 281474976710656n) throw new Error('Invalid Crash Outcome');
+  const betCents = BigInt(Math.round(betChips * 100));
+  const minimumCents = BigInt(Math.round(minimumPayoutChips * 100));
+  if (betCents <= 0n || minimumCents < 0n || minimumCents * 5n >= betCents * 4n)
+    throw new Error('Invalid Crash Outcome');
+  // L + (0.8 B - L) / P preserves the same expectation with a guaranteed L.
+  const cents =
+    minimumCents === 0n
+      ? EIGHTY_TIMES_TWO_48 / (r + 1n)
+      : (100n *
+          (5n * minimumCents * (r + 1n) + (4n * betCents - 5n * minimumCents) * 281474976710656n)) /
+        (5n * betCents * (r + 1n));
   return cents < 100n ? 100 : Number(cents);
 }
 
@@ -121,6 +136,8 @@ export interface CrashFairnessInput {
   nonce: number;
   roll: number;
   crashCents: number;
+  betChips?: number;
+  minimumPayoutChips?: number;
 }
 
 export interface CrashFairnessVerdict {
@@ -137,7 +154,11 @@ export async function verifyCrashRound(input: CrashFairnessInput): Promise<Crash
   const computedHash = await sha256Hex(input.serverSeed);
   const hmac = await hmacSha256Hex(input.serverSeed, `${input.clientSeed}:${input.nonce}`);
   const computedRoll = rollFromHmacHex(hmac);
-  const computedCrashCents = crashPointCentsFromRoll(computedRoll);
+  const computedCrashCents = crashPointCentsFromRoll(
+    computedRoll,
+    input.betChips,
+    input.minimumPayoutChips
+  );
   const hashMatches = computedHash === input.serverSeedHash.toLowerCase();
   const rollMatches = computedRoll === input.roll;
   const crashMatches = computedCrashCents === input.crashCents;

@@ -133,6 +133,9 @@ export default function DiamondWheelPage() {
   const stateRead = useRef(0);
   const quotedEntry = useRef<number | null>(null);
   const [quoting, setQuoting] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [preparationError, setPreparationError] = useState<string | null>(null);
+  const preparingRef = useRef(false);
   const [dailyBonus, setDailyBonus] = useState<WheelDailyBonusState | null>(null);
   const [dailyBonusError, setDailyBonusError] = useState(false);
   const [recovery, setRecovery] = useState<WheelPendingSpin | null>(null);
@@ -218,7 +221,8 @@ export default function DiamondWheelPage() {
     const scope = scopeRef.current;
     const c = await DiamondWheelService.commit();
     if (!live() || scopeRef.current !== scope) return;
-    setCommit(c.ok ? { id: c.commit_id, hash: c.server_seed_hash } : null);
+    if (!c.ok) throw new Error('The Next Spin Ticket Could Not Be Prepared');
+    setCommit({ id: c.commit_id, hash: c.server_seed_hash });
   }, [live]);
 
   const loadHistory = useCallback(
@@ -240,12 +244,43 @@ export default function DiamondWheelPage() {
     [live]
   );
 
+  /** Retire a consumed ticket before any asynchronous refresh. The next debit
+   * needs both a new ticket and the new availability/balance quote. */
+  const prepareNextSpin = useCallback(
+    async (uuid: string) => {
+      const scope = scopeRef.current;
+      preparingRef.current = true;
+      setPreparing(true);
+      setPreparationError(null);
+      setCommit(null);
+      try {
+        const next = await loadState(uuid);
+        if (!live() || scopeRef.current !== scope) return;
+        if (next.available) await freshCommit();
+      } catch (err) {
+        reportError(err, 'DiamondWheelPage.prepare');
+        if (live() && scopeRef.current === scope)
+          setPreparationError('The Next Spin Could Not Be Prepared. Refresh The Wheel To Retry.');
+      } finally {
+        if (live() && scopeRef.current === scope) {
+          preparingRef.current = false;
+          setPreparing(false);
+        }
+      }
+    },
+    [loadState, freshCommit, live]
+  );
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!routeClubId || !user?.id) return;
       setLoading(true);
       busyRef.current = false;
+      preparingRef.current = false;
+      setPreparing(false);
+      setPreparationError(null);
+      setCommit(null);
       setLoadError(null);
       try {
         const uuid = await resolveClubUUID(routeClubId);
@@ -325,6 +360,10 @@ export default function DiamondWheelPage() {
     let current = true;
     setQuoting(true);
     void loadState(clubUuid, () => current)
+      .then(async (next) => {
+        // A lower stake can reopen a wheel that had no funded ticket on entry.
+        if (current && next.available && !commit && !preparingRef.current) await freshCommit();
+      })
       .catch((err) => {
         reportError(err, 'DiamondWheelPage.entry');
         if (current) setLoadError('The Spin Amount Could Not Be Checked');
@@ -335,7 +374,17 @@ export default function DiamondWheelPage() {
     return () => {
       current = false;
     };
-  }, [clubUuid, entryDiamonds, freeMode, state?.contract_version, spinning, recovery, loadState]);
+  }, [
+    clubUuid,
+    entryDiamonds,
+    freeMode,
+    state?.contract_version,
+    spinning,
+    recovery,
+    loadState,
+    commit,
+    freshCommit,
+  ]);
 
   const segments: WheelSegment[] = state?.segments ?? [];
   const welcomeSegments: WheelSegment[] = welcome?.segments ?? [];
@@ -371,6 +420,7 @@ export default function DiamondWheelPage() {
     if (!state) return null;
     if (!user?.id) return 'Sign In To Spin';
     if (recovery) return null; // Receipt recovery must work even if the host has since closed.
+    if (preparationError) return preparationError;
     if (!validSpinAmount(price)) return 'Choose 25 To 2,500 Whole Diamonds';
     if (
       quoting ||
@@ -415,6 +465,7 @@ export default function DiamondWheelPage() {
     dailyBonus,
     dailyBonusError,
     recovery,
+    preparationError,
     user?.id,
   ]);
 
@@ -449,11 +500,17 @@ export default function DiamondWheelPage() {
 
   const stopAuto = useCallback(() => endAuto('Auto Spin Stopped'), [endAuto]);
   const canSpin = Boolean(
-    clubUuid && commit && !spinning && !blocker && (recovery || welcomeMode || waitSeconds <= 0)
+    clubUuid &&
+    commit &&
+    !spinning &&
+    !preparing &&
+    !blocker &&
+    (recovery || welcomeMode || waitSeconds <= 0)
   );
 
   const handleSpin = useCallback(async () => {
-    if (!user?.id || !clubUuid || !commit || busyRef.current || spinning) return;
+    if (!user?.id || !clubUuid || !commit || busyRef.current || preparingRef.current || spinning)
+      return;
     const scope = scopeRef.current;
     busyRef.current = true;
     setVerdict(null);
@@ -512,7 +569,7 @@ export default function DiamondWheelPage() {
             setFace('paid');
           }
         }
-        await freshCommit();
+        await prepareNextSpin(clubUuid);
         return;
       }
       assertWheelReceipt(result, attempt);
@@ -549,6 +606,7 @@ export default function DiamondWheelPage() {
     price,
     user?.id,
     endAuto,
+    prepareNextSpin,
   ]);
 
   const openBonus = useCallback(
@@ -597,7 +655,7 @@ export default function DiamondWheelPage() {
       setAutoSize(0);
     }
     if (clubUuid) {
-      void loadState(clubUuid).catch((err) => reportError(err, 'DiamondWheelPage.reload'));
+      void prepareNextSpin(clubUuid);
       void loadWelcome(clubUuid);
       void loadDailyBonus(clubUuid);
       void loadHistory(clubUuid);
@@ -607,7 +665,6 @@ export default function DiamondWheelPage() {
       endAuto(null);
       openBonus(result.bonus);
     }
-    void freshCommit();
   }, [
     endAuto,
     openBonus,
@@ -621,6 +678,7 @@ export default function DiamondWheelPage() {
     loadHistory,
     freshCommit,
     refreshFloor,
+    prepareNextSpin,
   ]);
 
   /* The runner. It presses Spin when the page would let a thumb press it: a
@@ -631,7 +689,7 @@ export default function DiamondWheelPage() {
   useEffect(() => {
     const verdict = autoRunVerdict(
       autoRun,
-      { busy: spinning || pending !== null, blocker, ready: canSpin },
+      { busy: spinning || pending !== null || preparing, blocker, ready: canSpin },
       AUTO_PAUSE_MS
     );
     if (verdict.kind === 'wait') return;
@@ -647,7 +705,33 @@ export default function DiamondWheelPage() {
     }
     const t = setTimeout(() => void handleSpin(), verdict.delayMs);
     return () => clearTimeout(t);
-  }, [autoRun, spinning, pending, blocker, canSpin, handleSpin, toast]);
+  }, [autoRun, spinning, pending, preparing, blocker, canSpin, handleSpin, toast]);
+
+  const refreshWheel = useCallback(async () => {
+    if (!clubUuid || busyRef.current || spinning || preparingRef.current) return;
+    endAuto(null);
+    if (!recovery) {
+      await prepareNextSpin(clubUuid);
+    } else {
+      // Refresh is read-only. An unknown spin keeps its exact durable identity;
+      // only Recover Spin may resubmit that same idempotent request.
+      const scope = scopeRef.current;
+      preparingRef.current = true;
+      setPreparing(true);
+      try {
+        await loadState(clubUuid);
+      } catch (err) {
+        reportError(err, 'DiamondWheelPage.refresh');
+        if (live() && scopeRef.current === scope)
+          toast.error('The Wheel Could Not Be Refreshed. Your Spin Is Still Saved.');
+      } finally {
+        if (live() && scopeRef.current === scope) {
+          preparingRef.current = false;
+          setPreparing(false);
+        }
+      }
+    }
+  }, [clubUuid, spinning, recovery, endAuto, prepareNextSpin, loadState, live, toast]);
 
   const handleVerify = useCallback(
     async (result: WheelSpinResult) => {
@@ -705,17 +789,21 @@ export default function DiamondWheelPage() {
      this one, and the wheel is the only one of the three that had it; the run
      is the control the other two put here and the wheel had nowhere. */
   const autoLabel = running ? 'Stop' : autoSize ? `Run ${autoSize}` : 'Run Off';
-  const pill = dailyBonusMode
-    ? 'Bonus Spin'
-    : state.frozen
-      ? 'Break'
-      : state.available
-        ? welcomeMode
-          ? 'Welcome'
-          : 'Open'
-        : state.reason === 'not_configured'
-          ? 'Closed'
-          : 'Paused';
+  const pill = preparing
+    ? 'Checking'
+    : preparationError
+      ? 'Retry'
+      : dailyBonusMode
+        ? 'Bonus Spin'
+        : state.frozen
+          ? 'Break'
+          : state.available
+            ? welcomeMode
+              ? 'Welcome'
+              : 'Open'
+            : state.reason === 'not_configured'
+              ? 'Closed'
+              : 'Paused';
   const pillInk = state.frozen
     ? 'gold'
     : state.available
@@ -831,6 +919,21 @@ export default function DiamondWheelPage() {
                 Daily Bonus Rewards
               </button>
             </nav>
+            <div className={styles.rows}>
+              {blocker && (
+                <p className="sc-copy" role="status">
+                  {blocker}
+                </p>
+              )}
+              <button
+                type="button"
+                className={`${styles.back} ${wheelStyles.refresh}`}
+                disabled={spinning || preparing}
+                onClick={() => void refreshWheel()}
+              >
+                {preparing ? 'Refreshing Wheel' : 'Refresh Wheel'}
+              </button>
+            </div>
             <TodayLine
               used={player?.spins_today ?? 0}
               cap={cfg?.max_spins_per_player_per_day ?? 0}
@@ -919,15 +1022,17 @@ export default function DiamondWheelPage() {
             </div>
           ) : (
             <p className={`sc-copy sc-copy--center ${styles.readoutSub}`}>
-              {blocker
-                ? blocker
-                : recovery
-                  ? 'Your Previous Spin Needs Its Receipt. Recover It Before Starting Another.'
-                  : dailyBonusMode
-                    ? 'One Claimed Bonus Spin. 100 Diamond Value, No Diamonds Taken From You.'
-                    : welcomeMode
-                      ? `Your Welcome Spin, On The Club. A ${price.toLocaleString()} Diamond Spin On The Same Wheel, At No Cost To You, Once.`
-                      : `Spin ${price.toLocaleString()} Diamonds.${state.contract_version === 2 || state.contract_version === 3 ? ' Every Spin Wins A Prize.' : ' Explore The Prizes Below.'}${welcomeNote}`}
+              {spinning
+                ? 'Your Spin Is Playing. Your Prize Is Saved.'
+                : blocker
+                  ? 'Check The Spin Controls Below To Continue'
+                  : recovery
+                    ? 'Your Previous Spin Needs Its Receipt. Recover It Before Starting Another.'
+                    : dailyBonusMode
+                      ? 'One Claimed Bonus Spin. 100 Diamond Value, No Diamonds Taken From You.'
+                      : welcomeMode
+                        ? `Your Welcome Spin, On The Club. A ${price.toLocaleString()} Diamond Spin On The Same Wheel, At No Cost To You, Once.`
+                        : `Spin ${price.toLocaleString()} Diamonds.${state.contract_version === 2 || state.contract_version === 3 ? ' Every Spin Wins A Prize.' : ' Explore The Prizes Below.'}${welcomeNote}`}
             </p>
           )}
         </div>

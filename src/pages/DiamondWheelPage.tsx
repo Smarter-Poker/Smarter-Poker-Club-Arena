@@ -967,6 +967,7 @@ export default function DiamondWheelPage() {
             : freeMode || recovery
               ? {
                   label: 'Prizes',
+                  disabled: spinning,
                   onClick: () => setDetailsOpen(true),
                 }
               : {

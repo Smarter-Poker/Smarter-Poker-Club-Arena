@@ -151,11 +151,24 @@ export const AgentRakeService = {
   },
 
   /**
-   * Live trigger. rake_records is deliberately NOT in the realtime publication
-   * — it would broadcast every hand on the platform to every subscriber, which
-   * is both a firehose and a cross-club data leak. agent_commissions is
-   * published and is written as rake is earned, so it is the correct signal.
-   * Returns an unsubscribe function.
+   * Live trigger, and it is NOT live. Returns an unsubscribe function.
+   *
+   * `rake_records` is deliberately NOT in the realtime publication - it would
+   * broadcast every hand on the platform to every subscriber, which is both a
+   * firehose and a cross-club data leak. That part still holds.
+   *
+   * What no longer holds is the next sentence, which said "agent_commissions is
+   * published and is written as rake is earned, so it is the correct signal".
+   * It was the correct signal, and it was published, until the 2026-09-06
+   * publication trim: 1,802,610 writes against 6.7M live rows put it among the
+   * eleven tables the trim keeps out. So this channel joins, reports SUBSCRIBED
+   * and delivers nothing.
+   *
+   * The consumer is covered meanwhile: DownlineRakePanel wraps this in a 30s
+   * poll it describes as a fallback "in case the socket drops", and that poll is
+   * now the whole mechanism. Left in place rather than deleted because the
+   * subscription is correct for a scoped carrier and the panel does not break
+   * without it - but do not read this as a live feed.
    */
   subscribeToRake(clubId: string | undefined, onChange: () => void): () => void {
     /* ONE CHANNEL PER CLUB, SHARED. The name used to carry a random suffix, so

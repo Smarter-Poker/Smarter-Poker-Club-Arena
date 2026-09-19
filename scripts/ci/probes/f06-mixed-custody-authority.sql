@@ -573,3 +573,34 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.fn_f06_find_mixed_manager_custody(uuid) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.fn_f06_find_mixed_manager_custody(uuid) TO service_role;
+
+-- The existing publisher verifies the installed contract before creating its
+-- one-shot intent or attaching to the original process. This fixed catalogue
+-- observation has no dynamic SQL, business reads, locks or write capabilities.
+CREATE FUNCTION public.fn_f06_mixed_custody_contract() RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog AS $$
+BEGIN
+ IF auth.role() IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'F06_MIXED_SERVICE_REQUIRED' USING ERRCODE='42501'; END IF;
+ RETURN (SELECT jsonb_build_object('kind','f06_mixed_custody_contract_v1','functions',jsonb_agg(jsonb_build_object(
+ 'signature',wanted.signature,'definition_md5',md5(pg_get_functiondef(p.oid)),
+ 'body_md5',md5(p.prosrc),'owner',pg_get_userbyid(p.proowner),'acl',p.proacl::text,
+ 'security_definer',p.prosecdef,'config',p.proconfig,'volatility',p.provolatile) ORDER BY wanted.signature))
+ FROM (VALUES
+ ('public.fn_f06_prepare_mixed_manager_custody(uuid,uuid,uuid,uuid,jsonb,jsonb)'),
+ ('public.fn_f06_admit_mixed_manager_custody(uuid,uuid,uuid,jsonb)'),
+ ('public.fn_f06_complete_mixed_manager_custody(uuid,uuid,uuid,jsonb)'),
+ ('public.fn_f06_find_mixed_manager_custody(uuid)'),
+ ('public.fn_f06_mixed_custody_intent(uuid,uuid,uuid,text,jsonb)'),
+ ('public.fn_f06_mixed_custody_contract()'),
+ ('smarter_private.f06_assert_movement(uuid)'),
+ ('smarter_private.f06_manager_transfer_immutable()'),
+ ('smarter_private.f06_mixed_adopt_presence(uuid,jsonb)'),
+ ('smarter_private.f06_mixed_bank_proof(uuid,jsonb)'),
+ ('smarter_private.f06_mixed_current_admission(uuid,uuid,uuid)'),
+ ('smarter_private.f06_mixed_custody_snapshot(uuid,uuid,jsonb)'),
+ ('smarter_private.f06_mixed_movement_generation(uuid)'),
+ ('smarter_private.f06_mixed_preparation_guard()')
+ ) wanted(signature) LEFT JOIN pg_proc p ON p.oid=to_regprocedure(wanted.signature));
+END $$;
+REVOKE ALL ON FUNCTION public.fn_f06_mixed_custody_contract() FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_f06_mixed_custody_contract() TO service_role;

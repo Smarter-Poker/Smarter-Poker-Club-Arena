@@ -82,7 +82,7 @@ policy output with truncated portions supplemented from source, repository
 AGENTS/AGENT-PLAYBOOK/CLAUDE/PUBLISHING, applicable .agents rules, deploy-paths,
 changelog README, both required engine programme references, the existing
 checkpoint and full mixed-recovery-analysis. Reader emitted
-2026-09-19T00:16:22.744Z, policy version 2.9, manifest SHA256
+2026-09-19T02:32:09.877Z at 01eee6f2f7, policy version 2.9, manifest SHA256
 7663cc909626f7e9966931d27166ad8774addc801f7ad1898a2d7564bc13c378.
 
 Evidence resides in
@@ -115,5 +115,22 @@ schema. It never uses active production games.
 Normal commit hooks passed. Protected main a8ba0d4245 (including PR4901 and
 PR4905) and e56f1f115a (PR4906) are integrated; the classifier conflict preserves
 both sets of required inputs. Root authorized normal push after final checks.
+The initial normal push refused stale exact fingerprints for the CI classifier
+and routing regression in the existing Cash native manifest. Those two pins were
+refreshed with their old values retained; Cash SQL and fixture inputs are
+unchanged. All six maintained manifest/oracle preflight checks pass.
+
+Native17 also passes the full native16 recovery suite and nine catalogue checks.
+The existing publisher can read fn_f06_mixed_custody_contract() before creating
+its one-shot intent or attaching to the process. This fixed service-only STABLE
+catalogue returns hashes and authority metadata for fourteen exact functions,
+including itself; no business rows are read or changed. The actual service role
+READ ONLY result equals independent installed metadata. Browser roles and a
+wrong JWT role refuse, while missing functions and altered ACL/config remain
+visible. The schema fragment declares every new public/private function and
+receipt relation; schema inventory and definer checks pass. The standalone live
+telemetry exposure reader requires provider credentials absent locally; its
+configured hosted check and installed readback remain separate evidence.
+
 Normal pre-push validation, protected submission and provider CI remain pending.
 No installed, published or live-recovered result is claimed here.

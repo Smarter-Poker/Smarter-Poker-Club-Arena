@@ -88,8 +88,38 @@ def main():
   leader_source=(root/'supabase/migrations/20260823_engine_leadership.sql').read_text()
   e.sql(db,leader_source[leader_source.index('CREATE TABLE IF NOT EXISTS public.engine_leader'):leader_source.index('CREATE OR REPLACE FUNCTION public.claim_engine_leadership')],label='actual-engine-leader-relation')
   e.sql(db,file=root/mixed_builder.MIGRATION,label='mixed-candidate-install')
-  _,mixed_catalog,_=e.sql(db,"SELECT jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'definition',pg_get_functiondef(p.oid),'definition_md5',md5(pg_get_functiondef(p.oid)),'body_md5',md5(p.prosrc),'owner',pg_get_userbyid(p.proowner),'acl',p.proacl::text,'security_definer',p.prosecdef,'config',p.proconfig) ORDER BY p.oid::regprocedure::text) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN('public','smarter_private') AND (p.proname LIKE 'fn_f06_%mixed%manager_custody' OR p.proname='fn_f06_mixed_custody_intent' OR p.proname LIKE 'f06_mixed_%' OR p.proname IN('f06_assert_movement','f06_manager_transfer_immutable'));",label='mixed-qualified-authority-catalog')
+  _,mixed_catalog,_=e.sql(db,"SELECT jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'definition',pg_get_functiondef(p.oid),'definition_md5',md5(pg_get_functiondef(p.oid)),'body_md5',md5(p.prosrc),'owner',pg_get_userbyid(p.proowner),'acl',p.proacl::text,'security_definer',p.prosecdef,'config',p.proconfig,'volatility',p.provolatile) ORDER BY p.oid::regprocedure::text) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN('public','smarter_private') AND (p.proname LIKE 'fn_f06_%mixed%manager_custody' OR p.proname IN('fn_f06_mixed_custody_intent','fn_f06_mixed_custody_contract') OR p.proname LIKE 'f06_mixed_%' OR p.proname IN('f06_assert_movement','f06_manager_transfer_immutable'));",label='mixed-qualified-authority-catalog')
   e.report['mixed_postimages']=json.loads(mixed_catalog)
+  # The provider has service REST access, not a privileged SQL connection.
+  # Exercise its exact fixed read-only RPC under the real database role.
+  contract_read="BEGIN READ ONLY; SET LOCAL ROLE service_role; SET LOCAL request.jwt.claim.role='service_role'; SET LOCAL request.jwt.claims='{\"role\":\"service_role\"}'; SELECT public.fn_f06_mixed_custody_contract(); COMMIT;"
+  contract_before=e.snapshot(db,'contract-before-data');contract_private=f.private_snapshot(e,db,'contract-before-private')
+  _,contract_json,_=e.sql(db,contract_read,label='mixed-service-contract-read-only')
+  contract=json.loads(contract_json)
+  fields=('signature','definition_md5','body_md5','owner','acl','security_definer','config','volatility')
+  expected=[]
+  for row in e.report['mixed_postimages']:
+   entry={key:row[key] for key in fields}
+   if '.' not in entry['signature']:entry['signature']='public.'+entry['signature']
+   expected.append(entry)
+  expected.sort(key=lambda row:row['signature'])
+  if len(expected)!=14 or contract!={'kind':'f06_mixed_custody_contract_v1','functions':expected}:raise RuntimeError('service catalogue differs from independent installed metadata')
+  if e.snapshot(db,'contract-after-data')!=contract_before or f.private_snapshot(e,db,'contract-after-private')!=contract_private:raise RuntimeError('read-only catalogue changed business state')
+  e.report['mixed_service_contract']=contract
+  for role,jwt,reason in [('anon','service_role','permission denied'),('authenticated','service_role','permission denied'),('service_role','authenticated','F06_MIXED_SERVICE_REQUIRED')]:
+   rc,_,error=e.sql(db,"BEGIN READ ONLY; SET LOCAL ROLE "+role+"; SET LOCAL request.jwt.claim.role='"+jwt+"'; SET LOCAL request.jwt.claims='{\"role\":\""+jwt+"\"}'; SELECT public.fn_f06_mixed_custody_contract();",label='mixed-contract-refuses-'+role+'-'+jwt,check=False)
+   if not rc or reason not in error:raise RuntimeError('service catalogue permission refusal missing: '+role+' '+jwt)
+  # Drift is exposed by the real callable reader; missing metadata is never
+  # replaced by the qualification candidate's expected value.
+  signature='smarter_private.f06_mixed_bank_proof(uuid,jsonb)'
+  for mutation,label in [("ALTER FUNCTION "+signature+" SET search_path=pg_catalog;",'config'),("GRANT EXECUTE ON FUNCTION "+signature+" TO authenticated;",'acl'),("ALTER FUNCTION "+signature+" RENAME TO fixture_missing_bank_proof;",'missing')]:
+   case=e.database(db);e.sql(case,mutation,label='mixed-contract-drift-'+label)
+   _,changed,_=e.sql(case,contract_read,label='mixed-contract-observes-'+label)
+   rows=json.loads(changed)['functions'];row=next(x for x in rows if x['signature']==signature)
+   if len(rows)!=14 or json.loads(changed)==contract:raise RuntimeError('service catalogue concealed drift: '+label)
+   if label=='missing' and any(row[key] is not None for key in fields if key!='signature'):raise RuntimeError('missing authority metadata is not null')
+   e.discard(case)
+  e.report['mixed_contract_checks']=['service-read-only','independent-metadata','unchanged-data','anon-refused','authenticated-refused','wrong-jwt-refused','config-drift','acl-drift','missing-authority']
   mixed_before=e.snapshot(db,'mixed-before-data');mixed_private=f.private_snapshot(e,db,'mixed-before-private');mixed_catalog=e.catalog_snapshot(db,'mixed-before-catalog')
   rc,stdout,stderr=e.sql(db,file=root/'scripts/ci/probes/f06-mixed-custody.sql',label='mixed-direct-cases',check=False,seconds=60)
   e.report.update(mixed_output=stdout,mixed_errors=stderr)

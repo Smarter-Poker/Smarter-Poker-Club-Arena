@@ -130,6 +130,12 @@ Seat changes and must-move remain unavailable, and they are unavailable BY CONST
 
 Phase 7 exit is met: the supported-feature matrix is explicit and passing, and every unsupported feature is refused by a rule rather than left out.
 
+## Execution Update, September 19, 2026, The Restoration And The Record
+
+On September 16 the owner-requested restoration (PR #4711, `ea498c1fab`) returned the application to the September 13 baseline. It archived the Phase 8 tournament work (#4553, #4583, #4585, #4620), the first Phase 9 pieces (#4638), the wallet programme phases 1 through 5 (#4502, #4608, #4613) and the priced-in-Diamonds client (#4685) out of `main`. The migrations those deliveries applied to production on September 13 through 16 were not reverted, so the database kept the Diamond tournament custody doors, the bounty bank, the wallet summary and the reconciliation readers while the repository carried neither their files nor the engine and client that call them. Both arena switches remained off throughout; no funded Diamond game or tournament has run in public.
+
+The first step back is the record: the twenty applied Diamond migrations are on `main` again under their original names, and the one that never had a file is written from the database's own stored statements ([the record changelog](changelog/2026-09-19-the-diamond-migrations-are-on-record-again.md)). Re-landing the engine, client and tests follows in dependency order, each against the doors these files define. Phase 8 and Phase 9 lines below are shown unchecked until that code is back on `main` and verified; the September 14 evidence stands as history, not as current status.
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.

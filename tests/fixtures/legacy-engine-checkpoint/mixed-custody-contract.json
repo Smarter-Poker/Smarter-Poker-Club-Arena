@@ -75,10 +75,10 @@
       "acl": "{postgres=X/postgres,service_role=X/postgres}",
       "owner": "postgres",
       "config": ["search_path=pg_catalog, public, smarter_private"],
-      "body_md5": "af89bc29c2d839e950f678fedad1ad75",
+      "body_md5": "568665a1a07652dd2aad09dbd3a3d7f1",
       "signature": "public.fn_f06_prepare_mixed_manager_custody(uuid,uuid,uuid,uuid,jsonb,jsonb)",
       "volatility": "v",
-      "definition_md5": "626b7f8687e5747fde18629c1ccbba29",
+      "definition_md5": "53a44c9be52e0b07114917732d0cf390",
       "security_definer": true
     },
     {
@@ -105,20 +105,20 @@
       "acl": "{postgres=X/postgres}",
       "owner": "postgres",
       "config": ["search_path=pg_catalog, public, smarter_private"],
-      "body_md5": "9dab70e0012b7550c7d8378df998f09a",
+      "body_md5": "14ef74fe205a1b4164d9ba90b496f95b",
       "signature": "smarter_private.f06_mixed_adopt_presence(uuid,jsonb)",
       "volatility": "v",
-      "definition_md5": "9957f669bd05823094f15599d8714c9e",
+      "definition_md5": "f26dbbdab1bdc3cc4aecc3dcbd3ed844",
       "security_definer": true
     },
     {
       "acl": "{postgres=X/postgres}",
       "owner": "postgres",
       "config": ["search_path=pg_catalog, public, smarter_private"],
-      "body_md5": "a22bf6241dba96e747c0aca01a504899",
+      "body_md5": "5600dda463cd9eb331333dd16f708031",
       "signature": "smarter_private.f06_mixed_bank_proof(uuid,jsonb)",
       "volatility": "v",
-      "definition_md5": "4a14ebba9c038f759230b9b3186a56b8",
+      "definition_md5": "319879233ac2163b513107b91ce26cf1",
       "security_definer": true
     },
     {
@@ -135,10 +135,10 @@
       "acl": "{postgres=X/postgres}",
       "owner": "postgres",
       "config": ["search_path=pg_catalog, public, smarter_private"],
-      "body_md5": "882162fbb2ebaa3eaf2a0a6e567e9824",
+      "body_md5": "884dcaa75ea8fe389f4e228ab5f811d2",
       "signature": "smarter_private.f06_mixed_custody_snapshot(uuid,uuid,jsonb)",
       "volatility": "v",
-      "definition_md5": "a57792a090f58f2c80b197bc01ef4447",
+      "definition_md5": "f92d6c7413496dcfa17042c03ed76cb5",
       "security_definer": true
     },
     {

@@ -809,3 +809,183 @@ it('a normal resume failure after completed recovery enters exact-owner cleanup'
   expect(successor.isF06RecoveryOwner()).toBe(false);
   expect(s.mixedF06AdmissionContinuations.has(id(1))).toBe(false);
 });
+
+it.each(['confirmed', 'lost-reply'])(
+  'hands bank-only custody to the selected successor after %s preparation',
+  async (outcome) => {
+    const s = server(),
+      m = manager(s);
+    const engine: any = new ServerTableEngine(id(3), {
+      scope: 'tournament',
+      verified: true,
+      tournamentId: id(1),
+      generation: id(2),
+      proofDeadlineMonotonicMs: performance.now() + 30_000,
+    });
+    engine.installF06Allocator(
+      id(15),
+      async () => 1,
+      () => true,
+      '1'
+    );
+    engine.tableInfo = { tournament_id: id(1) };
+    engine.handCount = 12;
+    engine.seatedPlayers = [{ user_id: id(11), occupancy_id: id(31), seat_number: 1, stack: 1500 }];
+    engine.timeBankEngine.initializePlayer(id(3), id(11), {
+      remainingSeconds: 7,
+      usesRemaining: 1,
+      unlimitedActivations: true,
+    });
+    engine.timeBankMeta.set(id(11), {
+      initialSeconds: 80,
+      baseSeconds: 40,
+      dbConsumedSeconds: 33,
+      unlimitedActivations: true,
+    });
+    m.tableEngines.set(id(3), engine);
+    s.tableEngines.set(id(3), engine);
+    s.tournamentOwnedTables.add(id(3));
+    s.tournamentEngines.set(id(1), m);
+    m.fenceForTournamentLeaseLoss();
+    let transfer: any,
+      nativeRow: any,
+      savedReceipt: any,
+      lost = false;
+    mocks.rpc.mockImplementation(async (name, a) => {
+      if (name === 'fn_f06_prepare_mixed_manager_custody') {
+        expect(a.p_local.retained).toEqual([]);
+        const capture = a.p_local.engines[0].bank_custody.stopped_capture;
+        expect(capture.snapshot.time_bank_snapshot.players[id(11)]).toMatchObject({
+          remainingSeconds: 7,
+          usesRemaining: 1,
+          unlimitedActivations: true,
+        });
+        const canonical = {
+          operations: [],
+          tables: [{ id: id(3) }],
+          attempts: [],
+          originals: [],
+          pending_original_tables: [],
+          no_start_continuations: [],
+        };
+        const r = mixedResponse(name, a);
+        r.data.canonical = canonical;
+        if (r.data.receipt) {
+          r.data.receipt.canonical_proof = canonical;
+          if (savedReceipt) expect(r.data.receipt.transfer_id).toBe(savedReceipt.transfer_id);
+          savedReceipt = r.data.receipt;
+          if (outcome === 'lost-reply' && !lost) {
+            lost = true;
+            return { data: null, error: { message: 'committed reply lost' } };
+          }
+        }
+        return r;
+      }
+      if (name === 'fn_f06_find_mixed_manager_custody')
+        return {
+          data: { ok: true, tournament_id: id(1), receipt: transfer?.receipt ?? null },
+          error: null,
+        };
+      if (name === 'fn_f06_admit_mixed_manager_custody') return mixedResponse(name, a);
+      if (name === 'fn_f06_complete_mixed_manager_custody') {
+        nativeRow = structuredClone(
+          transfer.local.engines[0].bank_custody.stopped_capture.snapshot
+        );
+        return {
+          data: {
+            ok: true,
+            transfer_id: transfer.transferId,
+            tournament_id: id(1),
+            lease_generation: transfer.successorGeneration,
+            completion: {
+              transfer_id: transfer.transferId,
+              generation: transfer.successorGeneration,
+              operation_receipts: [],
+              presence_receipts: [],
+            },
+          },
+          error: null,
+        };
+      }
+      throw new Error(`unexpected bank-only RPC ${name}`);
+    });
+    mocks.release.mockImplementationOnce(async () => {
+      transfer = s.drainedF06TournamentCustody.get(id(1)).mixed;
+      expect(transfer.receipt).toBeTruthy();
+      expect(engine.hasUnretiredStoppedTimeBankCustody()).toBe(false);
+      expect(s.tournamentEngines.has(id(1))).toBe(false);
+      return { status: 'confirmed', attempts: 1 };
+    });
+    const maintenance: any = new MaintenanceBreak({
+      engines: () => s.enginesIncludingMixedF06Custody(),
+      isRunning: () => true,
+      emit: vi.fn(),
+      store: { save: vi.fn(), clear: vi.fn() },
+      now: () => Date.now(),
+    } as any);
+    maintenance.phase = 'counting_down';
+    if (outcome === 'lost-reply') {
+      await expect(s.stopTournamentManagerIfOwned(id(1), m, 'bank-only')).rejects.toThrow(
+        'transfer_unproven'
+      );
+      expect(savedReceipt).toBeTruthy();
+      expect(engine.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+      expect(s.tableEngines.get(id(3))).toBe(engine);
+      expect(s.tournamentEngines.get(id(1))).toBe(m);
+      expect(mocks.release).not.toHaveBeenCalled();
+      expect(maintenance.unparkedTables()).toEqual([id(3)]);
+    }
+    expect(await s.stopTournamentManagerIfOwned(id(1), m, 'bank-only')).toBe(true);
+    expect(maintenance.unparkedTables()).toEqual([]);
+    expect(mocks.release).toHaveBeenCalledOnce();
+    expect(transfer.local.engines[0].bank_custody.durable_presence).toBeNull();
+    mocks.claim.mockImplementation(async (_id, generation) => ({
+      status: 'granted',
+      leaseGeneration: generation,
+      proofDeadlineMonotonicMs: performance.now() + 30_000,
+    }));
+    const resume = vi
+      .spyOn(TournamentManager.prototype, 'resume')
+      .mockImplementation(async function (this: any) {
+        expect(nativeRow.time_bank_snapshot.players[id(11)]).toMatchObject({
+          remainingSeconds: 7,
+          usesRemaining: 1,
+          unlimitedActivations: true,
+        });
+        const next: any = new ServerTableEngine(id(3), {
+          scope: 'tournament',
+          verified: true,
+          tournamentId: id(1),
+          generation: transfer.successorGeneration,
+          proofDeadlineMonotonicMs: performance.now() + 30_000,
+        });
+        next.tableInfo = { tournament_id: id(1) };
+        next.handCount = 12;
+        next.running = true;
+        expect(next.claimProcessOwnership()).toBe(true);
+        mocks.from.mockReturnValue({
+          select: () => ({
+            eq: () => ({ maybeSingle: async () => ({ data: nativeRow, error: null }) }),
+          }),
+        });
+        await next.readParkedTimeBanks();
+        next.adoptSeatRoster([
+          { user_id: id(11), occupancy_id: id(31), seat_number: 1, stack: 1500 },
+        ]);
+        expect(next.timeBankEngine.getPlayerBank(id(3), id(11))).toMatchObject({
+          remainingSeconds: 7,
+          usesRemaining: 1,
+          unlimitedActivations: true,
+        });
+        await next.stop();
+      });
+    await s.performTournamentManagerAdmission(id(1), 'resume', 'bank-only successor', 1);
+    const successor = s.tournamentEngines.get(id(1));
+    managers.push(successor);
+    expect(successor.isF06RecoveryOwner()).toBe(false);
+    expect(resume).toHaveBeenCalledOnce();
+    expect(s.drainedF06TournamentCustody.has(id(1))).toBe(false);
+    expect(s.mixedF06PreparationBlockers()).toEqual([]);
+    expect([...s.enginesIncludingMixedF06Custody()]).toEqual([]);
+  }
+);

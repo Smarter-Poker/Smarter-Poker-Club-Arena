@@ -19,6 +19,11 @@ vi.mock('../services/supabase/client.js', () => ({
   maintenanceSupabase: {},
 }));
 
+vi.mock('../services/tableLease.js', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('../services/tableLease.js')),
+  INSTANCE_ID: '1-3846b8bb',
+}));
+
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 const id = (n: number) => '00000000-0000-4000-8000-' + String(n).padStart(12, '0');
 function deferred() {
@@ -119,6 +124,10 @@ async function nativeCheckpoint(includeAcceptedOriginal = false, includeOriginal
     let ids: string[] = [];
     const q: any = {
       select: () => q,
+      upsert: async (row: any) => {
+        bankRows.set(row.table_id, structuredClone(row));
+        return { error: null };
+      },
       in: (_key: string, values: string[]) => {
         ids = values;
         return q;
@@ -229,13 +238,10 @@ async function nativeCheckpoint(includeAcceptedOriginal = false, includeOriginal
       e.applyParkedTimeBanks(e.seatedPlayers);
       const players = e.captureParkedTimeBanks();
       expect(players[player].unlimitedActivations).toBe(true);
-      bankRows.set(e.tableId, {
-        table_id: e.tableId,
-        engine_instance: '1-3846b8bb:parked',
-        parked_at: new Date().toISOString(),
-        disconnect_states: {},
-        time_bank_snapshot: { version: 1, handNumber: e.handCount, players },
-      });
+      // Current-source stop additionally needs its actual acknowledged park.
+      // The pinned 8825 run has no new custody state, and uses the same writer.
+      await e.persistPresenceForRestart('parked');
+      expect(bankRows.get(e.tableId).time_bank_snapshot.players).toEqual(players);
     }
     // An ordinary previously played table has neither a current permit nor a
     // movement admission. The actual accepted-hand method clears its permit,
@@ -510,7 +516,8 @@ describe('native retained 8825 release checkpoint', () => {
   it('retains the exact native original bank snapshot after stop disposes live banks', async () => {
     const f = await nativeCheckpoint(false, true);
     const prior = structuredClone([...f.bankRows]);
-    expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+    const result = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true, readyForRestart: true });
     expect([...f.bankRows]).toEqual(prior);
     for (const o of f.originals) {
       expect(o.e.timeBankEngine.playerBanks.size).toBe(0);

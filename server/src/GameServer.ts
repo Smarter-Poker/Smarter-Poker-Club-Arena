@@ -2135,6 +2135,27 @@ export class GameServer {
       )
     )
       return false;
+    // Stage every original's exact bank acknowledgment before mutating any map.
+    // The validated immutable receipt is already durable; a lost reply never
+    // reaches this edge. The original capture remains available for successor CAS.
+    const bankReceipts = packet.mixed
+      ? packet.engines.map(([id, engine]) => {
+          const proof = (
+            packet!.mixed!.local.engines as Array<{
+              table_id: string;
+              bank_custody: { stopped_capture?: unknown };
+            }>
+          ).find((value) => value.table_id === id)?.bank_custody.stopped_capture;
+          return engine.prepareStoppedTimeBankReceipt(
+            packet!.mixed!.transferId,
+            id,
+            tournamentId,
+            packet!.originGeneration,
+            proof
+          );
+        })
+      : [];
+    if (bankReceipts.some((acknowledge) => acknowledge === null)) return false;
     // Publish custody before removing any activation slot. Original local maps
     // remain intact; this is a handoff, never successful business teardown.
     this.drainedF06TournamentCustody.set(tournamentId, packet);
@@ -2142,6 +2163,7 @@ export class GameServer {
       this.durableMixedF06Custody ??= new Map();
       this.durableMixedF06Custody.set(tournamentId, packet.mixed);
     }
+    for (const acknowledge of bankReceipts) acknowledge!();
     for (const [id] of packet.engines) {
       this.tableEngines.delete(id);
       this.tournamentOwnedTables.delete(id);
@@ -3866,6 +3888,12 @@ export class GameServer {
           continue;
         }
         reportError(result.reason, 'GameServer.table_engine_stop_cleanup_failed', { tableId });
+      }
+      if (engine.hasUnretiredStoppedTimeBankCustody()) {
+        ownershipFailures.push(
+          new Error(`Table ${tableId} retained unconfirmed time-bank custody`)
+        );
+        continue;
       }
       if (this.tableEngines.get(tableId) === engine) this.tableEngines.delete(tableId);
     }
@@ -9697,7 +9725,8 @@ export class GameServer {
         replacement,
         () =>
           this.tournamentRetirementCustody.admissionAllowed(tableId) &&
-          !expected.hasClaimedTournamentMoveBoundary()
+          !expected.hasClaimedTournamentMoveBoundary(),
+        () => replacement.adoptStoppedTimeBankCustody(expected)
       );
     } catch (error) {
       // ServerTableEngine reports cleanup failures only after releasing its
@@ -9713,6 +9742,7 @@ export class GameServer {
       ) {
         throw error;
       }
+      if (!replacement.adoptStoppedTimeBankCustody(expected)) throw error;
       reportError(error, 'GameServer.tournament_table_teardown_cleanup_failed', { tableId });
       this.tableEngines.set(tableId, replacement);
       this.tournamentOwnedTables.add(tableId);
@@ -9767,6 +9797,7 @@ export class GameServer {
       return true;
     }
     if (current !== engine) return false;
+    if (!engine.retireStoppedTimeBanksForClosedSession()) return false;
     this.tableEngines.delete(tableId);
     this.tournamentOwnedTables.delete(tableId);
     tableStateHub.dropTable(tableId);

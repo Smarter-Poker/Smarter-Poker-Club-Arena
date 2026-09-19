@@ -18,6 +18,7 @@ import {
  */
 
 import { randomUUID } from 'node:crypto';
+import { INSTANCE_ID, INSTANCE_VERSION } from '../services/tableLease.js';
 import { readF06RecoveryAdmission, type DrainedF06Custody } from './drainedF06Custody.js';
 import { verifyF06MovementAdmission } from './f06MovementAdmission.js';
 import {
@@ -1392,7 +1393,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           (custody.engine ? 'retired' : 'verified_absent');
         this.pendingTournamentCleanupKinds.set(owned.break_id, cleanupKind);
         if (custody.engine) {
-          if (!this.gameServer.unregisterTournamentTableEngine(binding.tableId, custody.engine))
+          if (!this.gameServer.unregisterTableEngine(binding.tableId, custody.engine))
             throw new Error('F06 global registry CAS refused');
           if (this.tableEngines.get(binding.tableId) !== custody.engine)
             throw new Error('F06 local registry CAS refused');
@@ -1686,7 +1687,8 @@ export class TournamentManager extends TournamentManagerEliminations {
         !engines ||
         !originGeneration ||
         originGeneration === successorGeneration ||
-        !this.retainedTournamentBreakSources.size ||
+        (!this.retainedTournamentBreakSources.size &&
+          !engines.some(([, engine]) => engine.hasUnretiredStoppedTimeBankCustody())) ||
         this.activeStoppedOriginalCustody.size
       )
         return null;
@@ -1720,6 +1722,13 @@ export class TournamentManager extends TournamentManagerEliminations {
       const presenceByTable = new Map(presence.map((row) => [row.table_id, immutableCustody(row)]));
       const vector = () => ({
         manager_id: this.getLifecycleDiagnosticSnapshot().instanceId,
+        stopped_bank_owner: {
+          kind: 'mtt_pre_disposal_bank_v1',
+          instance_id: INSTANCE_ID,
+          version: INSTANCE_VERSION,
+          generation: originGeneration,
+          tournament_id: this.tournamentId,
+        },
         move_owner: this.tournamentMoveBoundaryOwner,
         engines: physical().map(
           (engine) =>
@@ -2093,7 +2102,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       return false;
     }
 
-    if (!this.gameServer.unregisterTournamentTableEngine(tableId, engine)) {
+    if (!this.gameServer.unregisterTableEngine(tableId, engine)) {
       const ownershipError = new Error(
         `[Tournament:${this.tournamentId.slice(0, 8)}] broken table ${tableId.slice(0, 8)} changed global engine generation before retirement CAS`
       );

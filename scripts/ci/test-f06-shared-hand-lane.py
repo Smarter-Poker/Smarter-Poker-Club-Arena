@@ -183,6 +183,9 @@ try:
     retired = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/retired_origin_qualification.py'))
     retired['qualify'](ROOT, out, cmd, command, run, probe, require, results)
     require(results.get('retiredOrigin', {}).get('passed') is True, 'Retired original authority qualification did not complete')
+    stopped_banks = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/stopped_bank_qualification.py'))
+    stopped_banks['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('stoppedBanks', {}).get('passed') is True, 'Stopped original bank qualification did not complete')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

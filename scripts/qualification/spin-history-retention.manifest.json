@@ -135,8 +135,8 @@
   },
   "unchanged_base_bindings": {
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 8690,
-      "sha256": "286243a8eb84d755cb102b4502c751dbaefbd15899dd0d5b9588aa1e90f62f7e"
+      "bytes": 17884,
+      "sha256": "3db7aa8c3632b1c2ba5e6ba9de98ac900e2bb1fbf5868a73c12ddbc19b2b31a3"
     },
     "scripts/ci/test-spin-expiry-postgres.py": {
       "bytes": 46351,

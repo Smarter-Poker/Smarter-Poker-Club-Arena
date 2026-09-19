@@ -491,6 +491,9 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/probes/f06-shared-hand-lane/snapshot-retention-preimage.json',
     'supabase/migrations/20260918230713_unresolved_hand_permits_retain_their_original_snapshots.sql',
     'scripts/ci/probes/f06-shared-hand-lane/retained_mtt_qualification.py',
+    'scripts/ci/probes/f06-shared-hand-lane/lease_reaper_qualification.py',
+    'scripts/ci/probes/f06-shared-hand-lane/lease-reaper-preimage.json',
+    'scripts/ci/schema-manifest.d/f06-lease-retention.json',
     'scripts/ci/schema-manifest.d/f06-retained-mtt-disposition.json',
     'scripts/ci/probes/f06-shared-hand-lane/retained-mtt-authority.sql',
     'scripts/ci/probes/f06-shared-hand-lane/retained-mtt-fixture.sql',
@@ -1505,6 +1508,7 @@ describe('restored provider accounting qualification', () => {
     'credit-request-authority',
     'full-weekly-accounting',
     'legacy-fee-finality',
+    'earlybird-fee-custody',
     'sep8-spin-custody',
     'messenger-private-accounting',
     'mixed-rake-period',
@@ -1567,6 +1571,30 @@ describe('restored provider accounting qualification', () => {
     }
     expect(classifyChangedPaths([]).server).toBe(false);
     expect(Object.values(classifyChangedPaths([''])).every(Boolean)).toBe(true);
+  });
+
+  it('keeps the Early Bird original-fee transaction in normal accounting qualification', () => {
+    const runner = readFileSync(
+      join(root, 'scripts/dev/test-full-weekly-accounting-activation.sh'),
+      'utf8'
+    );
+    expect(runner).toMatch(/phases=\([^\n]*earlybird-fee-custody/);
+    expect(runner).toContain('scripts/dev/qualify-earlybird-fee-custody.py');
+    const qualifier = readFileSync(
+      join(root, 'scripts/dev/qualify-earlybird-fee-custody.py'),
+      'utf8'
+    );
+    for (const input of [
+      'before.sql',
+      'after.sql',
+      'paid-originals.json',
+      'credit-originals.json',
+    ]) {
+      expect(qualifier).toContain(input);
+    }
+    expect(readFileSync(join(root, '.prettierignore'), 'utf8')).toContain(
+      'tests/fixtures/earlybird-fee-custody/*.json'
+    );
   });
 
   it('resolves the actual receipt compiler from the locked dependencies installed by accounting', () => {

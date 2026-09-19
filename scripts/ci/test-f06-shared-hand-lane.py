@@ -180,6 +180,9 @@ try:
     retained = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/retained_mtt_qualification.py'))
     retained['qualify'](ROOT, out, cmd, command, run, probe, require, results)
     require(results.get('retainedMtt', {}).get('passed') is True, 'Retained MTT qualification did not complete')
+    lease_retention = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/lease_reaper_qualification.py'))
+    lease_retention['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('leaseReaper', {}).get('passed') is True, 'Unresolved F06 lease retention did not qualify')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

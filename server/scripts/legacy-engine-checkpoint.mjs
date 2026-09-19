@@ -80,12 +80,31 @@ function checkpointSummary(value) {
   const result = {};
   for (const key of keys) {
     const item = value?.[key];
-    if (
-      typeof item === 'boolean' ||
-      (typeof item === 'number' && Number.isFinite(item)) ||
-      (typeof item === 'string' && item.length <= 128)
-    )
-      result[key] = item;
+    const valid =
+      key === 'schema'
+        ? item === 'legacy-engine-checkpoint/v1'
+        : key === 'reason'
+          ? typeof item === 'string' &&
+            item.length <= 128 &&
+            /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(item)
+          : key === 'stage'
+            ? ['preflight', 'mixed_custody', 'checkpoint', 'readback', 'complete'].includes(item)
+            : key === 'checkpointOutcome'
+              ? ['not_started', 'unconfirmed', 'verified_at_observation'].includes(item)
+              : key === 'paidAccountingQualification'
+                ? [
+                    'legacy_untracked',
+                    'native_pending_registry_drained',
+                    'native_pending_registry_unqualified',
+                  ].includes(item)
+                : key === 'restartAuthorized'
+                  ? item === false
+                  : ['ok', 'readyForRestart'].includes(key)
+                    ? typeof item === 'boolean'
+                    : key === 'remainingMs'
+                      ? typeof item === 'number' && Number.isFinite(item) && item >= 0
+                      : Number.isSafeInteger(item) && item >= 0;
+    if (valid) result[key] = item;
   }
   return result;
 }
@@ -409,7 +428,13 @@ export async function runLegacyEngineCheckpoint({
   if (failure)
     return {
       ok: false,
-      reason: failure,
+      reason:
+        failure === 'native checkpoint did not qualify' && result?.ok === false
+          ? (result.reason ?? failure)
+          : failure,
+      // Preserve only the validated guard summary. Cleanup failure remains the
+      // outer refusal and must not erase the original checkpoint observation.
+      ...(result ? { checkpoint: result } : {}),
       retryAllowed: false,
       checkpointInvoked,
       inspectorClosed,

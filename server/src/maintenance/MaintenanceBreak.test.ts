@@ -758,6 +758,55 @@ describe('the restart gate', () => {
     expect(outcomes[0].readyForRestartAtMs).not.toBeNull();
     expect(outcomes[0].tablesResumed).toBe(3);
   });
+
+  /**
+   * THE ALARM THAT WAS MISSING (2026-09-19).
+   *
+   * Whether a break ever certified a restart is recorded per break in
+   * `engine_maintenance_break_log.ready_for_restart_at`, and no alert rule
+   * reads a database table. On 2026-09-18 one table held an unresolved F06
+   * hand-number preparation from 21:56; the gate never opened again; six
+   * consecutive engine releases failed, including two off-cycle recovery
+   * windows they asked for themselves; and production sat four and a half
+   * hours behind main. `/health` read `status: ok` the whole time, correctly -
+   * every table was dealing. It was the RESTART that was impossible, and
+   * nothing measured that.
+   */
+  it('counts the breaks that ended without ever certifying a restart', async () => {
+    const { mb, engines, outcomes } = build(2);
+    const list = [...engines.values()];
+
+    // A break whose gate never opens: one table keeps a hand in the air.
+    list[0].deal();
+    await mb.announceLastHand();
+    list[1].park();
+    await mb.beginCountdown();
+    expect(mb.readyForRestart()).toBe(false);
+    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS + 1000);
+    await mb.end();
+    expect(outcomes[0].readyForRestartAtMs).toBeNull();
+    expect(mb.snapshot().breaksSinceRestartCertified, 'one shut break').toBe(1);
+
+    // And again. Two in a row is the state in which no release can land.
+    await mb.announceLastHand();
+    list[1].park();
+    await mb.beginCountdown();
+    expect(mb.readyForRestart()).toBe(false);
+    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS + 1000);
+    await mb.end();
+    expect(mb.snapshot().breaksSinceRestartCertified, 'the engine cannot be replaced').toBe(2);
+
+    // One certified break clears it. The count is consecutive, not cumulative:
+    // a single lost window is normal and must not page anybody.
+    list[0].finishHand();
+    await mb.announceLastHand();
+    parkAll(engines);
+    await mb.beginCountdown();
+    expect(mb.readyForRestart()).toBe(true);
+    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS + 1000);
+    await mb.end();
+    expect(mb.snapshot().breaksSinceRestartCertified, 'a certified break resets it').toBe(0);
+  });
 });
 
 describe('the end of the break', () => {

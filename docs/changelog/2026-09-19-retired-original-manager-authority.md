@@ -94,6 +94,15 @@ Evidence: `/Volumes/SmarterArchives/agent-evidence/mtt-retired-origin-20260919`.
 - Root TypeScript, migration declaration/authorization checks, generator exactness,
   policy integrity, whitespace checks and the first normal commit hooks passed.
   Final normal submission and hosted checks remain pending.
+- The first normal push after main integration passed 2,088 source-contract checks,
+  but exposed one fixture that bypassed the MaintenanceBreak constructor. The
+  fixture now constructs the real component, preserving its recovery-blocker
+  assertions and native initialized state. All 44 mixed-custody tests pass; no
+  runtime maintenance predicate was changed.
+- The schema declaration file was reformatted by the normal commit hook. Its
+  original expanded JSON hashes exactly to the focused run's 901839e2 input;
+  parsed content is unchanged. All eight functions and the one table still match
+  the qualified migration and native catalogue.
 
 ## Production limit
 

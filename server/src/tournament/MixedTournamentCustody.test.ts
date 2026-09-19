@@ -393,12 +393,11 @@ it('process replacement retains source recovery gate after terminal hand adoptio
   expect(owner.isF06RecoveryOwner()).toBe(true);
   expect(resume).not.toHaveBeenCalled();
   expect(await replacement.drainHands(0)).toEqual({ drained: 0, total: 1, timedOut: true });
-  const maintenance = Object.create(MaintenanceBreak.prototype) as any;
+  const maintenance = new MaintenanceBreak({
+    engines: () => [],
+    retainedPreparationBlockers: () => replacement.mixedF06PreparationBlockers(),
+  } as never) as any;
   Object.assign(maintenance, {
-    deps: {
-      engines: () => [],
-      retainedPreparationBlockers: () => replacement.mixedF06PreparationBlockers(),
-    },
     phase: 'counting_down',
     peakUnparked: 0,
   });

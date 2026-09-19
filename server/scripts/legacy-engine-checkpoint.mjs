@@ -193,6 +193,7 @@ export async function runLegacyEngineCheckpoint({
   releaseSha,
   moduleExpression,
   guard,
+  custodyIntent = null,
   port = 9229,
   workBudgetMs = 20000,
   cleanupBudgetMs = 5000,
@@ -312,6 +313,7 @@ export async function runLegacyEngineCheckpoint({
                 expectedReleaseSha: releaseSha,
                 expectedInstanceId: instanceId,
                 expectedPid: pid,
+                custodyIntent,
               },
             },
             { objectId: objects.objects.objectId },
@@ -419,13 +421,21 @@ export async function runLegacyEngineCheckpoint({
 if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eval1]')) {
   // Immutable production coordinates; no environment/argv source override.
   const checkpointRelease = process.argv[3];
-  if (![
-    '2f4e33560bcd23bfb5cc731f31816b2c2e2847e5',
-    '758610f3f844406bbbaee2f5100ced36d84fb943',
-    'a0ab287d902879280f0c915e44f5222c5db4d7df',
-  ].includes(checkpointRelease)) throw refused('checkpoint predecessor profile refused');
+  if (
+    ![
+      '2f4e33560bcd23bfb5cc731f31816b2c2e2847e5',
+      '758610f3f844406bbbaee2f5100ced36d84fb943',
+      'a0ab287d902879280f0c915e44f5222c5db4d7df',
+      '8825af51817f379c4261658ca29ecc9d8d81932d',
+    ].includes(checkpointRelease)
+  )
+    throw refused('checkpoint predecessor profile refused');
+  const mixedImports =
+    checkpointRelease === '8825af51817f379c4261658ca29ecc9d8d81932d'
+      ? ", import('file:///app/dist/tournament/TournamentManager.js'), import('file:///app/dist/tournament/TournamentManagerBase.js'), import('file:///app/dist/services/F06HandPermit.js'), import('file:///app/dist/services/TournamentRetirementCustody.js')"
+      : '';
   const checkpointModuleExpression = `process.getBuiltinModule('node:vm').runInThisContext(
-    "Promise.all([import('file:///app/dist/GameServer.js'), import('file:///app/dist/engine/ServerTableEngineBase.js'), import('file:///app/dist/releaseIdentity.js'), import('file:///app/dist/services/tableLease.js'), import('file:///app/dist/services/supabase/client.js'), import('node:fs'), import('node:crypto'), import('file:///app/dist/maintenance/MaintenanceBreak.js'), import('file:///app/dist/maintenance/freezeState.js'), import('file:///app/dist/services/supabase/dataActorContext.js')]).then(([gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext])=>({gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext}))",
+    "Promise.all([import('file:///app/dist/GameServer.js'), import('file:///app/dist/engine/ServerTableEngineBase.js'), import('file:///app/dist/releaseIdentity.js'), import('file:///app/dist/services/tableLease.js'), import('file:///app/dist/services/supabase/client.js'), import('node:fs'), import('node:crypto'), import('file:///app/dist/maintenance/MaintenanceBreak.js'), import('file:///app/dist/maintenance/freezeState.js'), import('file:///app/dist/services/supabase/dataActorContext.js')${mixedImports}]).then(([gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement])=>({gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement}))",
     { importModuleDynamically: process.getBuiltinModule('node:vm').constants.USE_MAIN_CONTEXT_DEFAULT_LOADER })`;
   const checkpointResult = await runLegacyEngineCheckpoint({
     pid: 1,
@@ -434,6 +444,7 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
     releaseSha: checkpointRelease,
     moduleExpression: checkpointModuleExpression,
     guard: legacyEngineCheckpointGuard,
+    custodyIntent: JSON.parse(process.argv[4] ?? 'null'),
   }).catch(() => ({
     ok: false,
     reason: 'legacy checkpoint invocation refused',

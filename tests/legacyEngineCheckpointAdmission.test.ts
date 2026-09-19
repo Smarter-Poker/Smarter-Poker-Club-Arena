@@ -11,6 +11,8 @@ const checkpointShell = read('server/scripts/legacy-engine-checkpoint.sh');
 const checkpointTransport = read('server/scripts/legacy-engine-checkpoint.mjs');
 const predecessor758 = '758610f3f844406bbbaee2f5100ced36d84fb943';
 const predecessorA0 = 'a0ab287d902879280f0c915e44f5222c5db4d7df';
+const predecessor8825 = '8825af51817f379c4261658ca29ecc9d8d81932d';
+const image8825 = 'sha256:7973b0cd170e7ea00a948f6376b17a201485c3e03ae47c06f0248b17a4bfae1c';
 const image758 = 'sha256:0190d49e394fd2b12b1462730bb22c4c4d1c4d49564e19b192bb07e3754c5561';
 const imageA0 = 'sha256:a58e0d3983b73b59bfc26e0ad55f67759730a7313d0280f80311fe20109658f6';
 const countdownStart = transaction.indexOf('legacy_checkpoint_countdown() {');
@@ -53,6 +55,8 @@ legacy_checkpoint_countdown
 
 describe('the exact legacy checkpoint enters the existing release transaction', () => {
   it.each([
+    [predecessor8825, image8825, 0],
+    [predecessor8825, image758, 1],
     [predecessor758, image758, 0],
     [predecessorA0, imageA0, 0],
     [predecessorA0, image758, 1],
@@ -92,22 +96,26 @@ printf '%s' "$LEGACY_IMAGE"
     if (status === 0) expect(result.stdout).toBe(image);
   });
 
-  it.each([predecessor758, predecessorA0, '2f4e33560bcd23bfb5cc731f31816b2c2e2847e5'])(
-    'retains the existing recovery event only for capable predecessor %s',
-    (sha) => {
-      const entry = transaction.indexOf(
-        '    if ! LEGACY_COUNTDOWN_END=',
-        transaction.indexOf('LEGACY_CHECKPOINT_REQUIRED=0')
-      );
-      const action = transaction.slice(entry, transaction.indexOf('      bounded_sleep 5', entry));
-      const result = spawnSync(
-        'bash',
-        [
-          '-c',
-          `set -euo pipefail
+  it.each([
+    predecessor8825,
+    predecessor758,
+    predecessorA0,
+    '2f4e33560bcd23bfb5cc731f31816b2c2e2847e5',
+  ])('retains the existing recovery event only for capable predecessor %s', (sha) => {
+    const entry = transaction.indexOf(
+      '    if ! LEGACY_COUNTDOWN_END=',
+      transaction.indexOf('LEGACY_CHECKPOINT_REQUIRED=0')
+    );
+    const action = transaction.slice(entry, transaction.indexOf('      bounded_sleep 5', entry));
+    const result = spawnSync(
+      'bash',
+      [
+        '-c',
+        `set -euo pipefail
 CHECKPOINT_PREDECESSOR_SHA="$PROFILE_SHA"
 CHECKPOINT_758_SHA=${predecessor758}
 CHECKPOINT_A0_SHA=${predecessorA0}
+CHECKPOINT_8825_SHA=${predecessor8825}
 CERTIFICATE_RC=2
 RECOVERY_ADMISSION_MISSED=0
 legacy_checkpoint_countdown() { return 1; }
@@ -115,15 +123,14 @@ request_recovery_window() { printf 'existing-event:%s' "$RECOVERY_ADMISSION_MISS
 ${action}
 fi
 `,
-        ],
-        { encoding: 'utf8', timeout: 3000, env: { ...process.env, PROFILE_SHA: sha } }
-      );
-      expect(result.status, result.stderr).toBe(0);
-      expect(result.stdout).toBe(
-        [predecessor758, predecessorA0].includes(sha) ? 'existing-event:1' : ''
-      );
-    }
-  );
+      ],
+      { encoding: 'utf8', timeout: 3000, env: { ...process.env, PROFILE_SHA: sha } }
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toBe(
+      [predecessor8825, predecessor758, predecessorA0].includes(sha) ? 'existing-event:1' : ''
+    );
+  });
 
   it('passes only the seal-selected closed profile into the native transport', () => {
     expect(checkpointShell).toContain('node --input-type=module - "$INSTANCE" "$LEGACY_SHA"');

@@ -32,14 +32,21 @@ case "$LEGACY_SHA" in
     LEGACY_IMAGE=sha256:0190d49e394fd2b12b1462730bb22c4c4d1c4d49564e19b192bb07e3754c5561 ;;
   a0ab287d902879280f0c915e44f5222c5db4d7df)
     LEGACY_IMAGE=sha256:a58e0d3983b73b59bfc26e0ad55f67759730a7313d0280f80311fe20109658f6 ;;
+  8825af51817f379c4261658ca29ecc9d8d81932d)
+    LEGACY_IMAGE=sha256:7973b0cd170e7ea00a948f6376b17a201485c3e03ae47c06f0248b17a4bfae1c ;;
   *) die 'sealed predecessor has no qualified checkpoint profile' ;;
 esac
 [ "$(timeout 3s "$CONTROL_DIR/engine-release-seal.py" get desired-image-id)" = "$LEGACY_IMAGE" ] \
   || die 'sealed predecessor is not the qualified legacy image'
-IDENTITY="$(timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}}' "$CONTAINER")"
-read -r CONTAINER_ID IMAGE RUNNING <<< "$IDENTITY"
+IDENTITY="$(timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")"
+read -r CONTAINER_ID IMAGE RUNNING STARTED_AT HOST_PID <<< "$IDENTITY"
 [[ "$CONTAINER_ID" =~ ^[0-9a-f]{64}$ ]] && [ "$IMAGE" = "$LEGACY_IMAGE" ] \
   && [ "$RUNNING" = true ] || die 'serving predecessor identity mismatch'
+if [ "$LEGACY_SHA" = 8825af51817f379c4261658ca29ecc9d8d81932d ]; then
+  [ "$CONTAINER_ID" = c63b254ee71b76aa26f4d1394d96189963774310244b046bc91186e219ca3f66 ] \
+    && [ "$STARTED_AT" = 2026-09-18T21:55:50.88305198Z ] && [ "$HOST_PID" = 1231816 ] \
+    || die 'original mixed-custody process changed'
+fi
 timeout 3s docker exec "$CONTAINER_ID" node -e '
 const fs = require("node:fs");
 const args = fs.readFileSync("/proc/1/cmdline", "utf8").split("\0").filter(Boolean);
@@ -62,23 +69,31 @@ print(instance)
 
 # Persist intent before opening debugger access. A disconnect is unknown, not
 # permission to invoke again. Existing release recovery retains this run key.
-python3 - "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" "$INSTANCE" "$CONTAINER_ID" <<'PY'
-import json,os,sys,time
-path,instance,container=sys.argv[1:]
+CHECKPOINT_INTENT="$(python3 - "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" "$INSTANCE" "$CONTAINER_ID" "$STARTED_AT" "$HOST_PID" "$LEGACY_SHA" "$RUN_ID" "${REQUEST[4]}" <<'PY'
+import json,os,sys,time,uuid
+path,instance,container,started,pid,source,run,control=sys.argv[1:]
+intent={"instance":instance,"container":container,"startedAt":started,"hostPid":int(pid),
+        "source":source,"runId":run,"controlSha":control,"at":time.time(),"retryAllowed":False}
+if source=="8825af51817f379c4261658ca29ecc9d8d81932d":
+    if instance!="1-3846b8bb": raise SystemExit("original process instance changed")
+    intent["custody"]=[{"tournament_id":event,"transfer_id":str(uuid.uuid4()),"successor_generation":str(uuid.uuid4())}
+        for event in ["5a387a75-754a-416e-8fee-b85b15fc2702","615783bf-15e3-40b7-9368-75f21b6ac53b"]]
 fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
 try:
-    os.write(fd,(json.dumps({"instance":instance,"container":container,"at":time.time(),"retryAllowed":False})+"\n").encode())
+    os.write(fd,(json.dumps(intent)+"\n").encode())
     os.fsync(fd)
 finally: os.close(fd)
 fd=os.open(os.path.dirname(path),os.O_RDONLY|os.O_DIRECTORY)
 try: os.fsync(fd)
 finally: os.close(fd)
+print(json.dumps(intent,separators=(",",":")))
 PY
+)"
 
 { cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs"; cat "$CONTROL_DIR/legacy-engine-checkpoint.mjs"; } \
-  | docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" "$LEGACY_SHA" \
+  | docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT" \
   || die 'checkpoint or inspector cleanup refused; do not retry this operation'
-[ "$(timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}}' "$CONTAINER")" = "$IDENTITY" ] \
+[ "$(timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")" = "$IDENTITY" ] \
   || die 'predecessor changed during checkpoint'
 # This helper cannot certify or start cutover. The caller must now pass the
 # original maintenance_certificate with the complete 285000ms reserve.

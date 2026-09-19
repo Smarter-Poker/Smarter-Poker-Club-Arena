@@ -127,7 +127,7 @@ import { headsUpButtonSeat } from './headsUpButton.js';
 import { HEADS_UP_SEATS } from '../config/headsUpSpec.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
-import { assertDiamondCashTable } from '../domain/DiamondCashBoundary.js';
+import { assertDiamondTable } from '../domain/DiamondCashBoundary.js';
 import {
   DiamondCashPolicyClosedError,
   type CashTablePolicyRefusal,
@@ -7191,7 +7191,9 @@ export abstract class ServerTableEngineBase {
          recorded rather than silently swallowed. */
       if (tableRow && this.tableInfo && (this.tableInfo as any).arena?.asset === 'diamonds') {
         try {
-          assertDiamondCashTable(tableRow as unknown as Record<string, unknown>);
+          // The boundary of the table's own kind: a tournament table is held
+          // to the tournament boundary, a cash table to the cash one.
+          assertDiamondTable(tableRow as unknown as Record<string, unknown>);
         } catch (error) {
           console.error(
             `[refreshRakeConfig] Diamond table ${this.tableId} rules changed to something the ` +

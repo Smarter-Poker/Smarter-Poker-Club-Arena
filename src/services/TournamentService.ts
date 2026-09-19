@@ -44,6 +44,10 @@ import {
   mysteryBountyCreationOptions,
   mysteryBountyCreationColumns,
 } from '../../server/src/domain/mysteryBountyCreation';
+import {
+  UNIT_CENTS_ASSET_NOT_READ,
+  type TournamentUnitClubRow,
+} from '../../server/src/tournament/tournamentUnit';
 import { gameManagementService } from './GameManagementService';
 import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 import { uuid } from '../utils/uuid';
@@ -53,6 +57,42 @@ import {
   withTournamentUnregistrationIntent,
   ObsoleteTournamentUnregistrationIntentError,
 } from './TournamentUnregistrationIntent';
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A TOURNAMENT ROW IS READ WITH THE ARENA IT BELONGS TO (2026-09-15)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Exactly the three columns `fn_ca_tournament_unit_cents` joins and tests, so
+ * the browser can answer "what unit does this tournament pay in?" with the
+ * same rule the database uses instead of assuming the cent every tournament
+ * used to pay in. `tables` has carried the identical embed since the Diamond
+ * cash work - `arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id)`
+ * in TablePage and TableFundingService - and this is that idiom arriving at
+ * tournaments.
+ *
+ * THE CONSTRAINT IS NAMED RATHER THAN LEFT TO BE INFERRED. `clubs(...)` alone
+ * resolves today because `tournaments` has exactly one foreign key to `clubs`
+ * (`tournaments_club_id_fkey`), but the day a second one is added PostgREST
+ * stops guessing and starts erroring, and it would do it at runtime on a
+ * player's lobby rather than in CI. Naming it costs nothing now.
+ *
+ * READABLE BY THE PLAYER WHO NEEDS IT: `clubs` has RLS enabled with a single
+ * SELECT policy of `USING (true)`, verified 2026-09-15, so this embed does not
+ * silently resolve to null for an ordinary member and hand the ladder a
+ * confident "chips".
+ */
+const TOURNAMENT_ARENA_EMBED =
+  'arena:clubs!tournaments_club_id_fkey(id, asset, is_platform, union_id)';
+
+/**
+ * A tournament row as this service reads it: the columns plus the arena embed
+ * above. Everything that prices a place off one of these rows takes its unit
+ * from `tournamentRowUnitCents`, never from a literal.
+ */
+export type TournamentWithArena = Tournament & {
+  arena?: TournamentUnitClubRow | TournamentUnitClubRow[] | null;
+};
 
 /** A transport success alone does not confirm a tournament chip purchase. */
 function confirmedTournamentPurchaseStack(
@@ -129,6 +169,13 @@ const REGISTER_REASON_TEXT: Record<string, string> = {
     'That Tournament Ticket does not match this tournament entry fee.',
   matching_tournament_ticket_unavailable:
     'Your Matching Tournament Ticket Could Not Be Verified. No Chips Were Charged.',
+  // Diamond Phase 8: the Diamond Arena's doors answer with these reasons
+  // (migration a_diamond_tournament_door_answers_the_client). No Diamonds move
+  // on any of them.
+  insufficient_diamonds: 'Not Enough Settled Diamonds In Your Diamond Wallet.',
+  diamond_tournaments_not_open: 'Diamond Tournaments Are Not Open Yet.',
+  diamond_debt_requires_settlement:
+    'Your Diamond Wallet Has An Unsettled Balance. Settle It Before Entering A Tournament.',
 };
 
 /**
@@ -143,6 +190,38 @@ export function registerReasonText(reason: string | undefined): string {
 
 function unregisterReasonText(reason: string | undefined): string {
   return UNREGISTER_REASON_TEXT[reason ?? ''] ?? `Could not unregister (${reason ?? 'unknown'})`;
+}
+
+/**
+ * The seat-first purchase (`fn_take_seat_and_buy_in`, heads-up and spins)
+ * answers the same refusals as the lobby register door plus its own seat
+ * reasons. Diamond Phase 8: a Diamond seat purchase answers with the Diamond
+ * reasons above, and `insufficient_diamonds` must be read before the bare
+ * chip `insufficient` so a Diamond player is not told they lack chips.
+ */
+export function seatFirstBuyInReasonIsKnown(reason: string | undefined): boolean {
+  return /seat_taken|insufficient|already_started|game_already_started|tournament_full|not_a_seat_first_game|table_limit_reached|FOUR TABLE LIMIT|diamond_tournaments_not_open|diamond_debt_requires_settlement/.test(
+    reason ?? ''
+  );
+}
+
+export function seatFirstBuyInRefusalText(reason: string | undefined): string {
+  const r = reason ?? '';
+  if (/seat_taken/.test(r)) return 'That Seat Was Just Taken';
+  if (/insufficient_diamonds/.test(r)) return REGISTER_REASON_TEXT.insufficient_diamonds;
+  if (/diamond_tournaments_not_open/.test(r))
+    return REGISTER_REASON_TEXT.diamond_tournaments_not_open;
+  if (/diamond_debt_requires_settlement/.test(r)) {
+    return REGISTER_REASON_TEXT.diamond_debt_requires_settlement;
+  }
+  if (/insufficient/.test(r)) return 'Not Enough Chips For This Buy In';
+  if (/already_started|game_already_started/.test(r)) return 'This Game Has Already Started';
+  if (/tournament_full/.test(r)) return 'This Game Is Full';
+  if (/not_a_seat_first_game/.test(r)) return 'Seats Are Not For Sale At This Table';
+  if (/table_limit_reached|FOUR TABLE LIMIT/.test(r)) {
+    return 'You Are Already In Four Games, Leave One To Join Another';
+  }
+  return 'Could Not Take That Seat, Please Try Again';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -163,6 +242,16 @@ export interface TournamentEntryTicket {
 export interface TournamentUnregisterResult {
   refundedChips: number;
   returnedTicketValue: number;
+  /**
+   * Diamond Phase 8: a Diamond entry is refunded whole out of custody to the
+   * player's Diamond wallet. Absent for every chip event (a chip receipt is
+   * exactly the two fields above); when present, `refundedChips` and
+   * `returnedTicketValue` are zero, because a Diamond event has no chip rail
+   * and no ticket.
+   */
+  refundedDiamonds?: number;
+  /** The Diamond wallet after the refund, when the receipt carried it. */
+  diamondsAfter?: number;
 }
 
 /** A committed refusal is different from an unknown transport outcome. */
@@ -195,6 +284,10 @@ type TournamentUnregisterRpcResponse = {
   refunded_chips?: unknown;
   returned_ticket_value?: unknown;
   wallet_chips_from_satellite_entitlements?: unknown;
+  /** Diamond Phase 8: the Diamond unregistration receipt. */
+  asset?: unknown;
+  refunded_diamonds?: unknown;
+  diamonds_after?: unknown;
 };
 
 function unregisterNumber(value: unknown): number | null {
@@ -214,6 +307,31 @@ export function parseTournamentUnregisterResult(
   expectedRequestId: string
 ): TournamentUnregisterResult {
   const response = payload as TournamentUnregisterRpcResponse | null;
+  /* DIAMOND PHASE 8: a Diamond event's receipt is the Diamond shape - the
+     refund named in Diamonds, the asset stated, no chip rail and no ticket.
+     It is held to the same identity checks as the chip receipt; only the
+     amount keys differ, and an amount that is not a whole Diamond is refused
+     because no Diamond door pays one. */
+  if (response?.asset === 'diamonds') {
+    const refundedDiamonds = unregisterNumber(response.refunded_diamonds);
+    const diamondsAfter = unregisterNumber(response.diamonds_after);
+    if (
+      response.ok !== true ||
+      response.request_id !== expectedRequestId ||
+      typeof response.registration_id !== 'string' ||
+      response.registration_id.length === 0 ||
+      refundedDiamonds === null ||
+      !Number.isSafeInteger(refundedDiamonds)
+    ) {
+      throw new Error('Tournament unregistration returned an invalid settlement receipt');
+    }
+    return {
+      refundedChips: 0,
+      returnedTicketValue: 0,
+      refundedDiamonds,
+      ...(diamondsAfter !== null && Number.isSafeInteger(diamondsAfter) ? { diamondsAfter } : {}),
+    };
+  }
   const refundedChips = unregisterNumber(response?.refunded_chips);
   const returnedTicketValue = unregisterNumber(response?.returned_ticket_value);
   const satelliteWalletChips = unregisterNumber(response?.wallet_chips_from_satellite_entitlements);
@@ -305,8 +423,27 @@ const unregisterAmount = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 2,
 });
 
+/**
+ * Diamond Phase 8: a Diamond refund reaches the wallet through the database
+ * alone - no engine pushes a FINANCIAL_UPDATE for it - so the client moves
+ * the balance it shows from the receipt. DIAMOND_BALANCE_CHANGED forces the
+ * store to reload; the figure carried is the wallet the receipt reported.
+ */
+function announceDiamondRefund(result: TournamentUnregisterResult): void {
+  if ((result.refundedDiamonds ?? 0) > 0 && typeof result.diamondsAfter === 'number') {
+    masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+      newBalance: result.diamondsAfter,
+      delta: result.refundedDiamonds ?? 0,
+      source: 'tournament_unregister_refund',
+    });
+  }
+}
+
 /** Player-facing confirmation derived only from the committed refund rails. */
 export function tournamentUnregisterSuccessText(result: TournamentUnregisterResult): string {
+  if ((result.refundedDiamonds ?? 0) > 0) {
+    return `${unregisterAmount.format(result.refundedDiamonds ?? 0)} Diamonds Were Returned To Your Diamond Wallet.`;
+  }
   const chips = unregisterAmount.format(result.refundedChips);
   const ticket = unregisterAmount.format(result.returnedTicketValue);
   if (result.refundedChips > 0 && result.returnedTicketValue > 0) {
@@ -646,7 +783,7 @@ class TournamentService {
   /**
    * Get all tournaments for a club
    */
-  async getTournaments(clubId: string): Promise<Tournament[]> {
+  async getTournaments(clubId: string): Promise<TournamentWithArena[]> {
     // Resolve integer club_id to UUID for FK queries
     const resolvedId = await resolveClubUUID(clubId);
 
@@ -654,7 +791,8 @@ class TournamentService {
     const { data: clubTournaments, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, format_contract, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, blind_level_state, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats, satellite_target_id, satellite_target'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, format_contract, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, blind_level_state, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats, satellite_target_id, satellite_target, ' +
+          TOURNAMENT_ARENA_EMBED
       )
       .eq('club_id', resolvedId)
       // Lobby fix 2026-08-15: this query had NO status filter, so every
@@ -814,10 +952,15 @@ class TournamentService {
       );
     }
 
-    // Merge and deduplicate by id
-    const all = [...(clubTournaments || []), ...xmttTournaments];
+    // Merge and deduplicate by id. The cast is the arena embed's, explained on
+    // getTournament's return below: the generated types carry no relationship
+    // names, so the typed client cannot resolve the join it was given.
+    const all = [
+      ...((clubTournaments || []) as unknown as TournamentWithArena[]),
+      ...(xmttTournaments as unknown as TournamentWithArena[]),
+    ];
     const seen = new Set<string>();
-    const unique: Tournament[] = [];
+    const unique: TournamentWithArena[] = [];
     for (const t of all) {
       if (!seen.has(t.id)) {
         seen.add(t.id);
@@ -833,11 +976,12 @@ class TournamentService {
   async getTournament(
     tournamentId: string,
     options?: { throwOnError?: boolean }
-  ): Promise<Tournament | null> {
+  ): Promise<TournamentWithArena | null> {
     const { data, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, format_contract, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, blind_level_state, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats, satellite_target_id, satellite_target'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, format_contract, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, blind_level_state, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats, satellite_target_id, satellite_target, ' +
+          TOURNAMENT_ARENA_EMBED
       )
       .eq('id', tournamentId)
       .maybeSingle();
@@ -847,7 +991,16 @@ class TournamentService {
       reportError(error, 'TournamentService.Error_fetching_tournament');
       return null;
     }
-    return data;
+    /**
+     * The cast is the same one `TablePage` makes for the identical embed
+     * (`table = res.data as TableBootstrapRow | null`): `database.types.ts`
+     * carries no relationship NAMES, so the typed client cannot resolve
+     * `clubs!tournaments_club_id_fkey` and widens the row to include
+     * `GenericStringError`. The shape is declared above and read through
+     * `tournamentRowUnitCents`, which handles an absent or array-shaped embed
+     * explicitly rather than letting either become a confident "chips".
+     */
+    return (data ?? null) as TournamentWithArena | null;
   }
 
   /**
@@ -1411,6 +1564,9 @@ class TournamentService {
         ticket_id?: string;
         cost?: number;
         mystery_bounty?: number | null;
+        /** Diamond Phase 8: the receipt names its asset and the Diamond wallet after. */
+        asset?: string;
+        diamonds_after?: number | null;
       } | null;
       const registrationId = res?.registration_id;
       if (rpcError) {
@@ -1470,6 +1626,15 @@ class TournamentService {
       // debit or credit the player's Club Arena wallet.
       if (!usesTournamentTicket) {
         masterBus.emit('BALANCE_UPDATED', { source: 'tournament_buyin', userId });
+      }
+      // Diamond Phase 8: a Diamond entry left the Diamond wallet, not a club
+      // chip wallet, and no engine pushes that balance; the receipt carries it.
+      if (res?.asset === 'diamonds' && typeof res.diamonds_after === 'number') {
+        masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+          newBalance: res.diamonds_after,
+          delta: -Number(res.cost ?? 0),
+          source: 'tournament_buyin',
+        });
       }
       masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, userId, clubId: tournament.club_id });
       masterBus.emit('TOURNAMENT_UPDATED', { tournamentId, status: tournament.status });
@@ -1590,6 +1755,7 @@ class TournamentService {
       if (result.refundedChips > 0) {
         masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
       }
+      announceDiamondRefund(result);
       return result;
     });
   }
@@ -1623,6 +1789,7 @@ class TournamentService {
       if (result.refundedChips > 0) {
         masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
       }
+      announceDiamondRefund(result);
       return result;
     });
   }
@@ -1724,7 +1891,13 @@ class TournamentService {
     // truncated where the engine rounds and had no residual rule, so its
     // places did not sum to the pool. One rule now, shared with the engine
     // byte for byte -- see src/lib/payoutMath.ts.
-    return computePlacePrize(prizePool, structure, position);
+    //
+    // 2026-09-13: the unit is stated rather than defaulted. This method is
+    // documented above as display-only ("it must never be wired back into a
+    // credit") and takes no tournament, so it has no club to read an asset
+    // from. UNIT_CENTS_ASSET_NOT_READ says that, and is what the Diamond
+    // tournament work greps for. See server/src/tournament/tournamentUnit.ts.
+    return computePlacePrize(prizePool, structure, position, UNIT_CENTS_ASSET_NOT_READ);
   }
 
   /**

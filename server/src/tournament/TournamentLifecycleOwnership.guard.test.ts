@@ -81,7 +81,10 @@ describe('one tournament lifecycle generation owns every continuation', () => {
   it('never performs an unowned manager-map delete or overwrites after an awaited lease claim', () => {
     const transfer = sliceMethod(SERVER, 'private async transferDrainedF06Custody(');
     const code = blankNonCode(transfer);
-    const capture = code.indexOf('const packet = await manager.captureDrainedF06Custody();');
+    const firstCapture = code.indexOf('let packet = await manager.captureDrainedF06Custody();');
+    const capture = code.indexOf('packet = await manager.captureMixedF06Custody(successor);');
+    expect(firstCapture).toBeGreaterThanOrEqual(0);
+    expect(capture).toBeGreaterThan(firstCapture);
     const retain = code.indexOf('this.drainedF06TournamentCustody.set(tournamentId, packet);');
     const removeTables = code.indexOf('this.tableEngines.delete(id);');
     const removeManager = code.indexOf('this.tournamentEngines.delete(tournamentId);');
@@ -98,6 +101,7 @@ describe('one tournament lifecycle generation owns every continuation', () => {
       'this.tournamentEngines.get(tournamentId) !== manager',
       'this.drainedF06TournamentCustody.has(tournamentId)',
       '!packet.current()',
+      '!completePhysicalMap()',
       'packet.engines.some(',
       'this.tableEngines.get(id) !== engine',
       '!this.tournamentRetirementCustody.admissionAllowed(id)',
@@ -119,7 +123,7 @@ describe('one tournament lifecycle generation owns every continuation', () => {
     expect(SERVER).toContain('await releaseTournaments([{ tournamentId, leaseGeneration }])');
     expect(SERVER).toContain('return unregisterOwnedTournamentTableEngine(');
     expect(SERVER).toContain('if (this.tournamentEngines.has(tournament.id)) continue;');
-    expect(SERVER.match(/finishTournamentManagerAdmission\(/g) ?? []).toHaveLength(2);
+    expect(SERVER.match(/finishTournamentManagerAdmission\(/g) ?? []).toHaveLength(3);
     expect(SERVER.match(/new TournamentManager\(/g) ?? []).toHaveLength(1);
   });
 

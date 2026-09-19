@@ -1784,6 +1784,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   // failed admission and retire the table before its controller can start.
   private f06HandPreparation: object | null = null;
 
+  protected override f06PreparationDrained(): boolean {
+    return this.f06HandPreparation === null;
+  }
+
   getF06RecoverablePermit(): ReturnType<ServerTableEngineDealing['getF06RetainedPermit']> {
     return this.f06HandPreparation || this.f06CurrentPermit?.hasPreparedCancellation()
       ? null

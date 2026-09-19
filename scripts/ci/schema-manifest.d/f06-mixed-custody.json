@@ -1,0 +1,25 @@
+{
+  "_owner": "mtt-mixed-custody-transfer-20260918",
+  "_comment": "Source-only immutable mixed custody transfer. Does not dispose original hands or movement outcomes.",
+  "functions": [
+    "fn_f06_prepare_mixed_manager_custody",
+    "fn_f06_admit_mixed_manager_custody",
+    "fn_f06_find_mixed_manager_custody",
+    "fn_f06_mixed_custody_intent",
+    "fn_f06_complete_mixed_manager_custody",
+    "fn_f06_mixed_custody_contract",
+    "smarter_private.f06_manager_transfer_immutable",
+    "smarter_private.f06_mixed_bank_proof",
+    "smarter_private.f06_mixed_custody_snapshot",
+    "smarter_private.f06_mixed_current_admission",
+    "smarter_private.f06_mixed_adopt_presence",
+    "smarter_private.f06_mixed_movement_generation",
+    "smarter_private.f06_mixed_preparation_guard"
+  ],
+  "tables": [
+    "smarter_private.f06_manager_custody_transfers",
+    "smarter_private.f06_manager_custody_admissions",
+    "smarter_private.f06_manager_custody_completions",
+    "smarter_private.f06_manager_custody_intents"
+  ]
+}

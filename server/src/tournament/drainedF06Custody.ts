@@ -1,3 +1,4 @@
+import { admitMixedF06Transfer, type MixedF06Transfer } from './mixedF06Custody.js';
 import { supabase, resumeRetainedHandSubmission } from '../services/supabase.js';
 import {
   bindToProcessRoot,
@@ -13,6 +14,7 @@ export interface DrainedF06Source {
   readonly lifecycle: string;
 }
 export interface DrainedF06Custody {
+  readonly mixed?: MixedF06Transfer;
   readonly manager: TournamentManager;
   readonly tournamentId: string;
   readonly originGeneration: string;
@@ -83,6 +85,11 @@ export const prepareF06SuccessorAdmission = bindToProcessRoot(
     original: DrainedF06Custody | null,
     current: () => boolean
   ) => {
+    if (original?.mixed) {
+      const state = await admitMixedF06Transfer(tournamentId, leaseGeneration, original.mixed);
+      if (!current() || !original.current()) throw new Error('f06_successor_admission_changed');
+      return state;
+    }
     let state = await readF06RecoveryAdmission(tournamentId, leaseGeneration, original);
     if (!current()) throw new Error('f06_successor_admission_changed');
     for (const tableId of state.pendingTables) {

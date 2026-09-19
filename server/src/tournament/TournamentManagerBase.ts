@@ -958,10 +958,13 @@ export abstract class TournamentManagerBase {
       proofDeadlineMonotonicMs: this.tournamentLeaseProofDeadlineMonotonicMs,
     };
     for (const [tableId, engine] of this.tableEngines) {
-      // A drained original can remain in both registries until its F06/move
-      // outcome is known. Keep it retired; extending its proof is unnecessary
-      // and its old deadline is not evidence that this live manager lost lease.
-      if (engine.isTerminalDrainedForTournamentLease?.(tableId, authority)) {
+      // A retired original can retain or replay F06 custody in both registries.
+      // The exact admitted replay keeps its own barrier and outcome checks;
+      // neither it nor an idle original needs a renewed gameplay proof.
+      if (
+        engine.isTerminalDrainedForTournamentLease?.(tableId, authority) ||
+        engine.isTerminalF06MovementForTournamentLease?.(tableId, authority)
+      ) {
         if (!this.gameServer.ownsTournamentTableEngine(tableId, engine)) {
           this.fenceForTournamentLeaseLoss();
           return false;

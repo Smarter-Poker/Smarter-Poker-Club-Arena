@@ -110,6 +110,7 @@ jobs:
       phase4: ${{ steps.f.outputs.phase4 }}
       fixture: ${{ steps.f.outputs.fixture }}
       instructions_only: ${{ steps.f.outputs.instructions_only }}
+      head_current: ${{ steps.head.outputs.head_current }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -128,6 +129,57 @@ jobs:
           CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/ci/classify-ci-changes.mjs
+      # ── IS THIS RUN STILL THE ONE THAT WILL BE MERGED? (2026-09-18) ──────
+      #
+      # The concurrency group above is keyed on the HEAD SHA on purpose, and
+      # its comment explains what that bought: a run for the sha a required
+      # check is evaluated against can no longer be killed by a newer push, so
+      # no pull request can be stranded by a check that will never speak again.
+      # Six of them were, before that change.
+      #
+      # What it costs is that every push to a branch pays for a COMPLETE
+      # fan-out, including the ones nobody will ever merge. Measured over
+      # 2026-09-17: 309 CI runs across 95 branches, 3.3 full runs per branch,
+      # and the five busiest branches alone accounted for 107 of them - 34, 28,
+      # 17, 15 and 13 runs, each an agent iterating on the same pull request.
+      # The whole account spent 168,011 Actions minutes in eighteen days and
+      # stopped dead when it hit its spending limit at 10:11 on 2026-09-18,
+      # taking the engine release route down with it.
+      #
+      # So: keep every FAST gate on every push (they are seconds, they are
+      # ungated on purpose, and two of them exist because something reached
+      # main unseen), and let the HEAVY matrix - four client shards, four
+      # server shards, PostgreSQL accounting, the production build, the CSS
+      # beat E2E, the native fixture - run only for a head that is still the
+      # pull request's head when its diff is classified.
+      #
+      # THE MERGE GATE IS UNCHANGED. The final push to a branch is, by
+      # definition, its current head, so its run executes everything. Only a
+      # sha that has already been replaced skips, and a replaced sha is not the
+      # one a required check is evaluated against.
+      #
+      # FAIL OPEN, always. An unreadable answer means run everything, exactly
+      # as `needs.changes.result != 'success'` already means "this diff could
+      # break anything". A cost control must never be able to hide a failure.
+      - id: head
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CI_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -u
+          current=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${CI_PR_NUMBER}" --jq .head.sha 2>/dev/null || echo '')
+          if [ -z "$current" ]; then
+            echo "could not read the pull request head; running everything"
+            echo "head_current=true" >> "$GITHUB_OUTPUT"
+          elif [ "$current" = "$CI_HEAD_SHA" ]; then
+            echo "this run is the pull request head ($CI_HEAD_SHA)"
+            echo "head_current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "superseded: this run is $CI_HEAD_SHA, the pull request head is now $current"
+            echo "head_current=false" >> "$GITHUB_OUTPUT"
+          fi
       # Keep always() failure-reporting gates intact. Normal cancellation can
       # leave their old jobs queued; this one event retires only proven older
       # heads of this same PR, never current checks or a production workflow.
@@ -227,6 +279,7 @@ jobs:
     needs: changes
     if: >-
       always() && github.event_name == 'pull_request' &&
+      needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.fixture != 'false')
     permissions:
       contents: read
@@ -1027,6 +1080,7 @@ jobs:
       always() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
+        needs.changes.outputs.head_current != 'false' &&
         (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
     name: Client Unit Tests shard ${{ matrix.shard }}
     # Every pull-request shard gets a fresh hosted image. A dependency or test
@@ -1133,6 +1187,7 @@ jobs:
       always() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
+        needs.changes.outputs.head_current != 'false' &&
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Accounting transactions (PostgreSQL 17)
@@ -1684,6 +1739,7 @@ jobs:
       always() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
+        needs.changes.outputs.head_current != 'false' &&
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Server Engine shard ${{ matrix.shard }}/4
@@ -1766,6 +1822,7 @@ jobs:
           ACCOUNTING_RESULT: ${{ needs.accounting_postgres.result }}
           DIFF_RESULT: ${{ needs.changes.result }}
           SERVER_CHANGED: ${{ needs.changes.outputs.server }}
+          HEAD_CURRENT: ${{ needs.changes.outputs.head_current }}
           CI_EVENT_NAME: ${{ github.event_name }}
         run: |
           for dependency in "server:$MATRIX_RESULT" "accounting:$ACCOUNTING_RESULT"; do
@@ -1776,6 +1833,13 @@ jobs:
               skipped)
                 if [ "$CI_EVENT_NAME" = pull_request ] && [ "$DIFF_RESULT" = success ] && [ "$SERVER_CHANGED" = false ]; then
                   echo "$suite checks skipped: the checked diff does not change the server."
+                elif [ "$CI_EVENT_NAME" = pull_request ] && [ "$HEAD_CURRENT" = false ]; then
+                  # A superseded sha. This run verifies a commit nobody will
+                  # merge; the run for the head that replaced it carries the
+                  # required check. Said out loud rather than passed in silence,
+                  # because a skip that explains nothing is what this whole
+                  # block exists to refuse.
+                  echo "::notice title=SUPERSEDED::$suite checks skipped: this sha is no longer the pull request head, so the heavy matrix ran for the head that replaced it."
                 else
                   echo "::error::Required $suite checks were unexpectedly skipped."
                   exit 1
@@ -1824,6 +1888,7 @@ jobs:
           NATIVE='${{ needs.fixture_native.result }}'
           STUB='${{ needs.stub_gate.result }}'
           CHANGES='${{ needs.changes.result }}'
+          HEAD_CURRENT='${{ needs.changes.outputs.head_current }}'
 
           {
             echo "## What this run verified"
@@ -1844,7 +1909,14 @@ jobs:
           [ "$UNIT" = "skipped" ] && SKIPPED="$SKIPPED client-unit"
           [ "$SERVER" = "skipped" ] && SKIPPED="$SKIPPED server-engine"
 
-          if [ "$UNIT" = "skipped" ] && [ "$SERVER" = "skipped" ]; then
+          if [ "$HEAD_CURRENT" = "false" ]; then
+            echo "::notice title=SUPERSEDED SHA::This sha is no longer the pull request head, so only the fast gates ran. The heavy matrix ran for the head that replaced it, which is the sha the required checks are evaluated against."
+            {
+              echo "**This sha was superseded while it was being tested.** The"
+              echo "fast gates ran; the heavy matrix ran for the head that"
+              echo "replaced it. Required checks are evaluated against that head."
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$UNIT" = "skipped" ] && [ "$SERVER" = "skipped" ]; then
             echo "::warning title=NO TESTS RAN::This run executed neither test suite. It is green because nothing was checked, not because everything passed. On a push to main that is expected - every job here is gated on pull_request - and it is exactly why the daily scheduled run against main exists."
             {
               echo "**No test suite ran in this run.** It is green because nothing"
@@ -1888,6 +1960,7 @@ jobs:
     # treated as "could break anything", never as "nothing to do".
     if: >-
       always() && github.event_name == 'pull_request' &&
+      needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: Production Build
     runs-on: ubuntu-latest
@@ -2333,6 +2406,7 @@ jobs:
     # treated as "could break anything", never as "nothing to do".
     if: >-
       always() && github.event_name == 'pull_request' &&
+      needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: CSS Beat E2E (multi-table + animations)
     runs-on: ubuntu-latest

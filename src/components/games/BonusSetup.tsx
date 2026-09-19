@@ -6,6 +6,8 @@ import {
   type BonusBudget,
 } from '../../utils/bonusGameBudget';
 import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import DoubleDownOffer from './DoubleDownOffer';
 import styles from './BonusSetup.module.css';
 
 /** These controls quote one atomic entry; changing a selection never debits a wallet. */
@@ -33,6 +35,7 @@ export default function BonusSetup({
   onRefresh?: () => void;
 }) {
   const navigate = useNavigate();
+  const [answeredAward, setAnsweredAward] = useState<string | null>(null);
   const valid = validBonusBudget(budget),
     total = bonusTotal(budget);
   const choices = valid ? plinkoAllocations(total) : [];
@@ -96,20 +99,29 @@ export default function BonusSetup({
           />
         </label>
       )}
-      <label className={styles.double}>
-        <input
-          type="checkbox"
-          checked={budget.doubled}
+      {budget.award ? (
+        <button
+          type="button"
+          className={styles.offer}
           disabled={disabled || !valid}
-          onChange={(event) => change({ ...budget, doubled: event.target.checked })}
-        />
-        <span>
-          Double Down
-          {valid
-            ? ` · +${(budget.award?.entryDiamonds ?? budget.base).toLocaleString()} Diamonds`
-            : ''}
-        </span>
-      </label>
+          onClick={() => setAnsweredAward(null)}
+        >
+          {budget.doubled ? 'Double Down Selected' : 'Double Down Your Bonus'}
+        </button>
+      ) : (
+        <label className={styles.double}>
+          <input
+            type="checkbox"
+            checked={budget.doubled}
+            disabled={disabled || !valid}
+            onChange={(event) => change({ ...budget, doubled: event.target.checked })}
+          />
+          <span>
+            Double Down
+            {valid ? ` · +${budget.base.toLocaleString()} Diamonds` : ''}
+          </span>
+        </label>
+      )}
       {plinko && valid && (
         <fieldset className={styles.drops} disabled={disabled}>
           <legend>Diamonds Per Drop</legend>
@@ -162,6 +174,18 @@ export default function BonusSetup({
           Earn Diamonds
         </button>
       </div>
+      {budget.award && valid && !disabled && answeredAward !== budget.award.id && (
+        <DoubleDownOffer
+          key={budget.award.id}
+          budget={budget}
+          diamonds={diamonds}
+          onChoose={(doubled) => {
+            setAnsweredAward(budget.award!.id);
+            change({ ...budget, doubled });
+          }}
+          onBuyMore={() => navigate('/marketplace?tab=diamonds')}
+        />
+      )}
     </section>
   );
 }

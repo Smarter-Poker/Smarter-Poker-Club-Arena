@@ -41,6 +41,18 @@
   accent-color: #30b9ff;
   flex: none;
 }
+.offer {
+  min-height: 44px;
+  padding: 8px 0;
+  background: transparent;
+  color: #45adff;
+  border: 0;
+  text-align: left;
+  font:
+    700 18px 'Roboto Condensed',
+    sans-serif;
+  cursor: pointer;
+}
 .drops {
   border: 0;
   margin: 0;

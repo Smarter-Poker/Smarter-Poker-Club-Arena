@@ -1,4 +1,5 @@
-import { useId } from 'react';
+import { useEffect, useId, useState } from 'react';
+import { getAnimationSpeed } from '../../utils/animationSpeed';
 import styles from './MinesGrid.module.css';
 export function GemArt({ mine = false }: { mine?: boolean }) {
   const id = useId().replace(/:/g, '');
@@ -52,15 +53,43 @@ export default function MinesGrid({
   phase,
   busy,
   onPick,
+  onSettled,
+  roundId,
 }: {
   picked: number[];
   mines: number[] | null;
   phase: 'idle' | 'open' | 'cashed' | 'lost';
   busy: boolean;
   onPick: (cell: number) => void;
+  onSettled?: () => void;
+  roundId?: string;
 }) {
+  const terminal = phase === 'cashed' || phase === 'lost';
+  const [visible, setVisible] = useState(() => document.visibilityState !== 'hidden');
+  useEffect(() => {
+    const update = () => setVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
+  }, []);
   return (
-    <div className={styles.board} aria-label="Diamond Mines Board">
+    <div
+      key={`${roundId}:${phase}`}
+      className={styles.board}
+      aria-label="Diamond Mines Board"
+      data-motion="keep"
+      data-terminal={terminal}
+      style={
+        terminal
+          ? {
+              animationDuration: `${1800 * getAnimationSpeed()}ms`,
+              animationPlayState: visible ? 'running' : 'paused',
+            }
+          : undefined
+      }
+      onAnimationEnd={(event) => {
+        if (terminal && event.target === event.currentTarget) onSettled?.();
+      }}
+    >
       <div className={styles.stage}>
         <div className={styles.grid}>
           {Array.from({ length: 25 }, (_, cell) => {

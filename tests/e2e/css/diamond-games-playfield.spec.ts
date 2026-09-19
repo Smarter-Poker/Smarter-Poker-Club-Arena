@@ -35,7 +35,7 @@ for (const width of [320, 390, 1280])
     await page.getByRole('button', { name: 'Preview Safe Crossing', exact: true }).click();
     await expect(page.getByText('Street 1 · Next Street Clear')).toBeVisible();
     await page.getByRole('button', { name: 'Preview Collision', exact: true }).click();
-    await expect(page.getByText('Collision · No Prize')).toBeVisible();
+    await expect(page.getByText('Collision · Round Over')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true
     );

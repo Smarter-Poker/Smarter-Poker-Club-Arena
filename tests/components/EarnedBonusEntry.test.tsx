@@ -172,7 +172,7 @@ describe('server-owned earned game entry', () => {
         <BonusSetup
           budget={budget}
           onChange={onChange}
-          diamonds={0}
+          diamonds={100}
           disabled={false}
           plinko
           clubId={club}
@@ -182,7 +182,10 @@ describe('server-owned earned game entry', () => {
     expect(screen.getByText('200 Diamonds Funded')).toBeInTheDocument();
     expect(screen.queryByRole('spinbutton')).toBeNull();
     expect(screen.queryByText(/You Need/)).toBeNull();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Double Down · +100 Diamonds' }));
+    const offer = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
+    expect(offer).toHaveTextContent('Add 100 Diamonds To Your 200 Diamond Bonus.');
+    fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Diamonds' }));
     expect(bonusTotal(onChange.mock.calls[0][0])).toBe(300);
     expect(screen.getByRole('button', { name: 'Buy More' })).toBeEnabled();
   });

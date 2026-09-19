@@ -11,13 +11,14 @@ const backend = vi.hoisted(() => ({
   navigate: vi.fn(),
   awardState: vi.fn(),
   verify: vi.fn(),
+  act: vi.fn(),
 }));
 vi.mock('../../src/utils/diamondChoiceMath', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/utils/diamondChoiceMath')>()),
   verifyChoiceRound: backend.verify,
 }));
 vi.mock('../../src/services/DiamondChoiceService', () => ({
-  DiamondChoiceService: { state: backend.state },
+  DiamondChoiceService: { state: backend.state, act: backend.act },
   parseChoiceRound: (value: unknown) => value,
 }));
 vi.mock('../../src/services/DiamondBonusService', () => ({
@@ -40,7 +41,38 @@ vi.mock('react-router-dom', () => ({
 vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: string) => id }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/services/HapticService', () => ({ triggerHaptic: vi.fn() }));
-vi.mock('../../src/components/games/ChoiceScene', () => ({ default: () => null }));
+vi.mock('../../src/components/games/ChoiceScene', () => ({
+  default: ({
+    phase,
+    onSettled,
+    onPick,
+  }: {
+    phase: string;
+    onSettled: () => void;
+    onPick: (n: number) => void;
+  }) => (
+    <section aria-label={`Scene ${phase}`}>
+      <button onClick={onSettled}>Finish Scene</button>
+      <button onClick={() => onPick(0)}>Pick Tile</button>
+    </section>
+  ),
+}));
+vi.mock('../../src/components/wheel/WheelWinReveal', () => ({
+  WheelWinReveal: ({
+    title,
+    detail,
+    onOpen,
+  }: {
+    title: string;
+    detail: string;
+    onOpen: () => void;
+  }) => (
+    <div role="dialog" aria-label={title}>
+      {detail}
+      <button onClick={onOpen}>Finish Prize</button>
+    </div>
+  ),
+}));
 vi.mock('../../src/components/games/SealedPrize', () => ({ default: () => null }));
 vi.mock('../../src/components/games/DiamondSpinsTabs', () => ({ default: () => null }));
 vi.mock('../../src/components/games/TodayLine', () => ({ default: () => null }));
@@ -123,6 +155,57 @@ afterEach(cleanup);
 
 describe('choice-game entry quotes belong to the selected settings', () => {
   it.each([
+    { game: 'crossing' as const, status: 'lost', amount: 0 },
+    { game: 'mines' as const, status: 'lost', amount: 0 },
+    { game: 'crossing' as const, status: 'cashed', amount: 12.57 },
+    { game: 'mines' as const, status: 'cashed', amount: 12.57 },
+  ])(
+    'shows the confirmed $game $status only after its reveal, then returns to wheel',
+    async ({ game, status, amount }) => {
+      const active = { ...fixtures.receipts[game], game, status: 'open', picked: [], proof: null };
+      const finished = {
+        ...fixtures.receipts[game],
+        game,
+        status,
+        picked: [0],
+        payout_chips: amount,
+      };
+      backend.state
+        .mockResolvedValueOnce({ ...state, open_round: active })
+        .mockResolvedValue({ ...state, history: [finished] });
+      backend.act.mockResolvedValue(finished);
+      render(<DiamondChoicePage game={game} />);
+      await act(async () => {});
+      fireEvent.click(
+        screen.getByRole('button', { name: game === 'mines' ? 'Pick Tile' : 'Cross Street' })
+      );
+      await act(async () => {});
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
+      expect(screen.getByRole('dialog', { name: `${amount.toFixed(2)} Chips` })).toHaveTextContent(
+        amount ? 'Your Prize Is Booked.' : 'No Chips Won This Round.'
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Finish Prize' }));
+      expect(backend.navigate).toHaveBeenCalledWith(
+        '/clubs/00000000-0000-0000-0000-000000000003/wheel',
+        { replace: true }
+      );
+    }
+  );
+  it('starts at the highway entrance instead of replaying a historical collision', async () => {
+    backend.state.mockResolvedValue({
+      ...state,
+      history: [{ ...fixtures.receipts.crossing, status: 'lost', picked: [0] }],
+    });
+    render(<DiamondChoicePage game="crossing" />);
+    await act(async () => {});
+    expect(screen.getByRole('region', { name: 'Scene idle' })).toBeInTheDocument();
+    expect(screen.queryByText(/The Donkey Did Not Make/)).not.toBeInTheDocument();
+    expect(screen.getByText('Current Prize').nextElementSibling).toHaveTextContent('0.00');
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+  it.each([
     { game: 'mines' as const, picked: [], current: '0.00', next: '2.17' },
     { game: 'mines' as const, picked: [2, 4], current: '5.33', next: '15.20' },
     { game: 'crossing' as const, picked: [], current: '0.00', next: '2.17' },
@@ -158,8 +241,16 @@ describe('choice-game entry quotes belong to the selected settings', () => {
   it('does not show a previous proof verdict while starting another round', async () => {
     const proof = deferred<boolean>();
     backend.verify.mockReturnValue(proof.promise);
-    backend.state.mockResolvedValue({ ...state, history: [fixtures.receipts.mines] });
+    backend.state
+      .mockResolvedValueOnce({
+        ...state,
+        open_round: { ...fixtures.receipts.mines, status: 'open', picked: [], proof: null },
+      })
+      .mockResolvedValue({ ...state, history: [fixtures.receipts.mines] });
+    backend.act.mockResolvedValue(fixtures.receipts.mines);
     render(<DiamondChoicePage game="mines" />);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: 'Pick Tile' }));
     await act(async () => {});
     fireEvent.click(screen.getByRole('button', { name: 'Verify Revealed Outcome' }));
     expect(backend.verify).toHaveBeenCalledTimes(1);

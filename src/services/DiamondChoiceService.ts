@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { earnedReceiptBudget } from '../utils/bonusGameBudget';
+import { validBonusMinimum } from '../utils/diamondBonusPayout';
 import type { ChoiceGame, ChoiceProof } from '../utils/diamondChoiceMath';
 
 export interface ChoiceRound {
@@ -17,6 +18,8 @@ export interface ChoiceRound {
   max_steps: number;
   prizes: number[];
   payout_chips: number;
+  minimum_payout_chips?: number;
+  payout_version?: 1 | 2;
   server_seed_hash: string;
   client_seed: string;
   nonce: number;
@@ -108,7 +111,11 @@ export function parseChoiceRound(value: unknown): ChoiceRound {
     throw new Error('The Game Response Could Not Be Verified');
   if (v.status === 'open' && v.proof !== null)
     throw new Error('The Game Response Could Not Be Verified');
-  if (v.status !== 'cashed' && v.payout_chips !== 0)
+  if (
+    !validBonusMinimum(v) ||
+    (v.status === 'open' && v.payout_chips !== 0) ||
+    (v.status === 'lost' && v.payout_chips !== (v.minimum_payout_chips ?? 0))
+  )
     throw new Error('The Game Response Could Not Be Verified');
   if (v.status !== 'open') {
     const p = v.proof as ChoiceProof | null;

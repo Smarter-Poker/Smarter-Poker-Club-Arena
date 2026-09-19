@@ -70,15 +70,22 @@ in dependency order, each with `-x` so the source SHA is on record:
 
 No `supabase/migrations/*` or `scripts/ci/schema-manifest.d/*` path is carried
 by any pick: the migrations are installed and their files return through the
-parallel migration-records restoration PR. Every law test that reads a
+parallel migration-records restoration PR. The nine law tests that read a
 migration's text (`a-tournament-stack-is-not-a-diamond`, the three Phase 8
-custody laws, the seat-exit law, the three Phase 9 laws, the bonus club index
-pin) therefore passes only once both PRs are on `main`, which is why this
-series lands after that one.
+custody laws, the seat-exit law, the three Phase 9 laws and the bonus club
+index pin in `a-club-stays-deletable`) cannot pass until those files are on
+`main`, and the pre-push hook rightly refuses a red law, so this delivery is a
+short stacked series: this PR carries every engine, client, test and law
+change that passes on today's `main`; the stacked branch
+`agent/cw-diamond-mtt/feat/the-diamond-tournament-laws-come-home` carries the
+nine migration-text laws with their `docs/laws.d/` files and pushes the moment
+the migration files land. Those nine were run locally with the archived
+migration files placed temporarily: 11 files, 135 tests green.
 
 The programme's Phase 8 and Phase 9 sections carry the archived text again with
 a paragraph recording the re-landing. The `docs/laws.d/` file for every
-restored law returns with it (`law-registry.law.test.ts` holds both directions).
+restored law returns with its test (`law-registry.law.test.ts` holds both
+directions), in whichever of the two PRs the test lands.
 
 Nothing opens funded play: `ca_arena_settings.tournaments_enabled` and
 `cash_games_enabled` stay false and are not touched.

@@ -48,6 +48,14 @@ const DETECTOR = 'scripts/ci/check-realtime-publication.mjs';
 const THIS_VERSION = '20260919141903';
 
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+
+/**
+ * Source with comments removed. The guards below look for a field being READ,
+ * and the repairs they protect are documented in prose that necessarily names
+ * the field it stopped reading - so matching raw text would fire on the very
+ * comment explaining the fix.
+ */
+const codeOnly = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 const SQL = read(PUBLISH);
 const DETECTOR_SRC = read(DETECTOR);
 
@@ -146,6 +154,107 @@ describe('a published table is a measured decision', () => {
     expect(mute.map(([t]) => t)).toEqual([]);
     // And the baseline is not empty, which would make the detector vacuous.
     expect(baseline().size).toBeGreaterThan(40);
+  });
+
+  /**
+   * A DETECTOR THAT SAYS "ALL CLEAR" OVER A MUTED FAILURE IS WORSE THAN NO
+   * DETECTOR. The baseline exists so unrecorded drift can be caught, which
+   * means a recorded dead consumer does NOT fail the run. That is correct.
+   * What was not correct was printing "every subscription this repo makes can
+   * actually fire" on the same run - twenty-one tables across forty-five files
+   * were subscribed, unpublished and silent, and the detector said they were
+   * fine. The green line must be conditional on there being nothing dead.
+   */
+  it('does not claim every subscription can fire while it is holding dead ones', () => {
+    const unconditional =
+      /console\.log\(\s*'\[realtime-publication\] OK - every subscription this repo makes can actually fire\.'\s*\);/;
+    const match = DETECTOR_SRC.match(unconditional);
+    expect(
+      match,
+      'the detector must still have the all-clear line for the day nothing is dead'
+    ).not.toBeNull();
+
+    // It must sit inside an else, i.e. be reachable only when nothing is dead.
+    const idx = DETECTOR_SRC.indexOf(match![0]);
+    const before = DETECTOR_SRC.slice(0, idx);
+    expect(
+      /}\s*else\s*{\s*$/.test(before),
+      'the "every subscription can fire" line must be the else branch of a check on the ' +
+        'dead-consumer list. Printed unconditionally it tells a reader the sweep is done ' +
+        'while twenty-one recorded consumers are still receiving nothing.'
+    ).toBe(true);
+
+    // And the other branch must actually name the count rather than stay quiet.
+    expect(
+      DETECTOR_SRC,
+      'the run that is holding dead consumers must say how many, out loud, every time'
+    ).toMatch(/STILL CANNOT FIRE/);
+  });
+
+  /**
+   * The scanner used to record the FIRST file naming a table and drop the rest,
+   * so `table_seats` pointed at TableOperationsPanel and GlobalWaitlistListener's
+   * two dead handlers were never printed. Someone repairing the named file would
+   * have believed the table was finished.
+   */
+  it('names every file that subscribes to a table, not just the first', () => {
+    expect(DETECTOR_SRC, 'subscribedTables() must accumulate every file per table').toMatch(
+      /sites\.includes\(rel\)/
+    );
+    expect(DETECTOR_SRC, 'the first-file-wins shortcut must be gone').not.toMatch(
+      /if \(!found\.has\(m\[1\]\)\) found\.set\(m\[1\], file\.replace/
+    );
+  });
+
+  /**
+   * RLS DOES NOT SEND THE OLD ROW, AND REPLICA IDENTITY FULL DOES NOT CHANGE IT.
+   * Supabase documents both: an RLS-enabled table sends only the primary key as
+   * `old`, and there is no way around it while RLS is on. `table_waitlist` is
+   * published, RLS-enabled and FULL, and its live seat-offer logic branched on
+   * `old.status` - so the thaw re-seed could never fire and the offer fired on
+   * every touch. Both from the same absent field.
+   *
+   * The decision now compares against what this client has already shown. This
+   * guards the source so it cannot quietly go back to asking the old row.
+   */
+  it('the live waitlist offer does not branch on the old row', () => {
+    const listener = codeOnly(read('src/components/common/GlobalWaitlistListener.tsx'));
+
+    expect(
+      listener,
+      'GlobalWaitlistListener must not read a status off payload.old: table_waitlist has RLS ' +
+        'enabled, so the old row carries only the primary key. Branching on it gives a thaw ' +
+        're-seed that never fires and an offer that fires on every update.'
+    ).not.toMatch(/old(Row)?\s*(\?\.|\.)\s*status/);
+
+    // And the replacement is actually the thing being used.
+    expect(listener, 'the offer decision must come from the pure module').toMatch(
+      /decideSeatOffer\(/
+    );
+
+    const decider = codeOnly(read('src/components/common/waitlistSeatOffer.ts'));
+    expect(decider, 'the decision module must not consult an old row either').not.toMatch(
+      /old(Row)?\s*(\?\.|\.)\s*status/
+    );
+    // A remembered offer with no deadline must stay distinguishable from no
+    // offer, or the dedupe collapses and duplicate toasts come back.
+    expect(decider).toMatch(/remembered === undefined/);
+  });
+
+  /**
+   * DELETE cannot be filtered and its old row is the primary key alone, so a
+   * handler that reads any other column off it is a guaranteed no-op no matter
+   * what the publication says. table_seats' primary key is `id`; the waitlist
+   * DELETE handler read `old.table_id`.
+   */
+  it('no DELETE handler reads a non-key column off the old row', () => {
+    const listener = codeOnly(read('src/components/common/GlobalWaitlistListener.tsx'));
+    expect(
+      listener,
+      'a DELETE handler cannot read old.table_id: the old row on an RLS-enabled table is the ' +
+        "primary key only, and table_seats' key is `id`. The watched set is already known " +
+        'locally and needs nothing from the payload.'
+    ).not.toMatch(/payload\.old as \{ table_id/);
   });
 
   /**

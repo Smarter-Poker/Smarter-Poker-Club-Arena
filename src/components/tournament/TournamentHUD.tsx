@@ -211,6 +211,24 @@ export function TournamentHUD({
      */
     resyncRef.current = setInterval(() => void refresh(), POLL_MS);
 
+    /* THE SUBSCRIPTION BELOW CANNOT FIRE TODAY, and saying so is the point.
+       `tournaments` is NOT in the supabase_realtime publication: 5,477,895
+       writes over 117 columns, measured at 39.40ms per change on 2026-09-06,
+       which is why the trim keeps it out. So this channel joins, reports
+       SUBSCRIBED, and receives nothing. The 45s resync above is not an
+       optimisation backstop right now - it is the ONLY thing updating this HUD.
+
+       It is kept rather than deleted because it is correct code for a delivery
+       path that does not exist yet: the filter is row-scoped, and UPDATE
+       payloads carry a full `new` row regardless of replica identity, so the
+       day `tournaments` gains a scoped carrier this works unchanged.
+
+       What was NOT kept is the silence. The comment above has named
+       "a subscribe() that returned CHANNEL_ERROR (nothing here even looked at
+       the status)" since it was written, while this very call still passed no
+       callback - so a genuine transport failure and a permanently unpublished
+       table looked identical from here, which is exactly how this stayed
+       unnoticed. The status is now read and a real error is reported. */
     const channel = masterBus.getOrCreateChannel(`tournament-hud-${tournamentId}`);
     channel
       .on(
@@ -222,7 +240,18 @@ export function TournamentHUD({
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR' && err) {
+          reportError(err?.message || err, 'TournamentHUD.Realtime_channel_error', {
+            tournamentId,
+          });
+        }
+        if (status === 'TIMED_OUT') {
+          reportError('realtime channel timed out', 'TournamentHUD.Realtime_channel_timeout', {
+            tournamentId,
+          });
+        }
+      });
 
     return () => {
       mounted = false;

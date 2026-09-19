@@ -183,7 +183,7 @@ describe('replay service boundaries', () => {
     expect(await DiamondReplayService.read(id)).toEqual(crash);
     expect(rpc).toHaveBeenLastCalledWith('fn_diamond_bonus_replay', { p_bonus_id: id });
     await DiamondReplayService.read(id, true);
-    expect(rpc).toHaveBeenLastCalledWith('fn_diamond_bonus_shared', { p_share_id: id });
+    expect(rpc).toHaveBeenLastCalledWith('fn_shared_bonus_replay', { p_share_id: id });
   });
   it('preserves the pagination cursor and confirmed amounts', async () => {
     const row = {

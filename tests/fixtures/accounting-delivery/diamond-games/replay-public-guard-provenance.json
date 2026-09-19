@@ -1,0 +1,98 @@
+{
+  "project": "kuklfnapbkmacvwxktbh",
+  "capturedAt": "2026-09-19T15:28:24.951737+00:00",
+  "boundary": "Read-only catalog metadata. No production user rows or writes. Exact active event guard and lock/allowlist table schemas.",
+  "trigger": {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "name": "trg_autorevoke_privileged_anon",
+    "tags": ["CREATE FUNCTION", "ALTER FUNCTION", "GRANT"],
+    "event": "ddl_command_end",
+    "enabled": "O",
+    "body_md5": "4508beb8e21b1a964ed2d21cf68c374c",
+    "function": "fn_autorevoke_privileged_anon()",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_autorevoke_privileged_anon()\n RETURNS event_trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_catalog'\nAS $function$\nDECLARE\n  obj          record;\n  lk           record;\n  v_name       text;\n  v_sig        text;\n  v_secdef     boolean;\n  v_src        text;\n  v_behaves    boolean;\n  v_named      boolean;\n  v_saw_grant  boolean := false;\nBEGIN\n  IF COALESCE(current_setting('app.allow_privileged_anon_grant', true), 'off') = 'on' THEN\n    RETURN;\n  END IF;\n\n  FOR obj IN SELECT * FROM pg_event_trigger_ddl_commands() LOOP\n\n    -- GRANT rows carry no objid/object_identity at all (probe-verified):\n    --   [tag=GRANT | object_type=FUNCTION | objid=NULL | ident=NULL]\n    -- so the granted function cannot be identified here. Flag a lock sweep.\n    IF obj.command_tag = 'GRANT' THEN\n      IF upper(COALESCE(obj.object_type, '')) = 'FUNCTION' THEN\n        v_saw_grant := true;\n      END IF;\n      CONTINUE;\n    END IF;\n\n    IF lower(COALESCE(obj.object_type, '')) <> 'function' THEN\n      CONTINUE;\n    END IF;\n\n    SELECT p.proname,\n           format('public.%I(%s)', p.proname,\n                  COALESCE((SELECT string_agg(format_type(t.typ, NULL), ', ' ORDER BY t.ord)\n                              FROM unnest(p.proargtypes) WITH ORDINALITY AS t(typ, ord)), '')),\n           p.prosecdef,\n           p.prosrc\n      INTO v_name, v_sig, v_secdef, v_src\n      FROM pg_proc p\n      JOIN pg_namespace n ON n.oid = p.pronamespace\n     WHERE p.oid = obj.objid\n       AND n.nspname = 'public';\n\n    IF v_name IS NULL\n       OR v_name IN ('fn_autorevoke_privileged_anon', 'fn_audit_privileged_grants') THEN\n      CONTINUE;\n    END IF;\n\n    -- ARM 1 - NAME. Unchanged except the prefix arm now tolerates an `fn_`\n    -- prefix: `fn_credit_stalled_seat_first_stacks` defeated the anchored\n    -- version on 2026-08-23 despite crediting stacks.\n    v_named := v_name !~ '^st_' AND (\n         v_name ~* '(mint_|_mint|chip|wallet|promo|cashout|diamond|rake|bounty|settle|payout|clawback|purchase|treasury|jackpot|bbj)'\n      OR v_name ~* '^(fn_)?(credit|debit|transfer|distribute|deduct|atomic|admin)_'\n      OR v_name ~* '(promote_member|transfer_club_ownership|remove_player)'\n    );\n\n    -- ARM 2 - BEHAVIOUR. The rule economy_invariants() actually asserts:\n    -- SECURITY DEFINER (so RLS does not apply) + writes + never consults\n    -- auth.uid() (so it cannot tell who is asking). Such a function must not\n    -- be reachable without a session, whatever it is called. This is the arm\n    -- that would have caught all six of today's.\n    v_behaves := COALESCE(v_secdef, false)\n             AND v_src ~* '\\m(insert|update|delete)\\M'\n             AND v_src !~* 'auth\\.uid\\(\\)';\n\n    IF v_named OR v_behaves THEN\n      BEGIN\n        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', obj.object_identity);\n        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon',   obj.object_identity);\n\n        INSERT INTO public.privileged_function_lock (function_signature, security_definer, reason)\n        VALUES (v_sig,\n                COALESCE(v_secdef, false),\n                'Auto-locked by trg_autorevoke_privileged_anon on ' || obj.command_tag\n                 || CASE WHEN v_behaves AND NOT v_named\n                         THEN ' (behavioural: definer + writes + no auth.uid())'\n                         WHEN v_behaves THEN ' (name + behavioural)'\n                         ELSE ' (name)' END || '.')\n        ON CONFLICT (function_signature) DO NOTHING;\n\n        RAISE NOTICE '[autorevoke] stripped PUBLIC/anon EXECUTE from % (tag %, named=%, behaviour=%)',\n          obj.object_identity, obj.command_tag, v_named, v_behaves;\n      EXCEPTION WHEN OTHERS THEN\n        RAISE WARNING '[autorevoke] could not revoke on %: %', obj.object_identity, SQLERRM;\n      END;\n    END IF;\n  END LOOP;\n\n  IF v_saw_grant THEN\n    FOR lk IN\n      SELECT l.function_signature, to_regprocedure(l.function_signature) AS rp\n        FROM public.privileged_function_lock l\n       WHERE to_regprocedure(l.function_signature) IS NOT NULL\n         AND ( has_function_privilege('anon',   to_regprocedure(l.function_signature)::oid, 'EXECUTE')\n            OR has_function_privilege('public', to_regprocedure(l.function_signature)::oid, 'EXECUTE') )\n    LOOP\n      BEGIN\n        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', lk.function_signature);\n        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon',   lk.function_signature);\n        RAISE NOTICE '[autorevoke] GRANT sweep re-revoked anon/PUBLIC on %', lk.function_signature;\n      EXCEPTION WHEN OTHERS THEN\n        RAISE WARNING '[autorevoke] GRANT sweep could not revoke on %: %', lk.function_signature, SQLERRM;\n      END;\n    END LOOP;\n  END IF;\nEND;\n$function$\n"
+  },
+  "lockTable": {
+    "table": {
+      "acl": "{postgres=arwdDxtm/postgres,anon=rxt/postgres,authenticated=rxt/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "owner": "postgres",
+      "force_rls": false
+    },
+    "columns": [
+      {
+        "name": "function_signature",
+        "type": "text",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "security_definer",
+        "type": "boolean",
+        "default": "false",
+        "notnull": true
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "locked_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true
+      }
+    ],
+    "policies": null,
+    "triggers": null,
+    "constraints": [
+      {
+        "name": "privileged_function_lock_pkey",
+        "definition": "PRIMARY KEY (function_signature)"
+      }
+    ],
+    "allowlist_table": {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "owner": "postgres"
+    },
+    "allowlist_constraints": [
+      {
+        "name": "ca_browser_definer_allowlist_pkey",
+        "definition": "PRIMARY KEY (proname)"
+      },
+      {
+        "name": "ca_browser_definer_allowlist_reason_check",
+        "definition": "CHECK ((length(btrim(reason)) >= 20))"
+      }
+    ]
+  },
+  "reader": {
+    "reader_md5": "fe66fec0f8444b2aa7f77107ccfc6544",
+    "allowlist_columns": [
+      {
+        "name": "proname",
+        "type": "text",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "recorded_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true
+      }
+    ],
+    "reader_definition": "CREATE OR REPLACE FUNCTION public.fn_diamond_bonus_shared(p_share_id uuid)\n RETURNS jsonb\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n SELECT coalesce((SELECT jsonb_build_object('ok',true,'replay',payload)\n  FROM public.diamond_bonus_shares WHERE id=p_share_id),jsonb_build_object('ok',false,'error','Replay Not Found'));\n$function$\n",
+    "allowlist_policies": null,
+    "allowlist_triggers": null
+  }
+}

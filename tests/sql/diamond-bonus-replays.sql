@@ -127,8 +127,8 @@ BEGIN
    IF repeated IS DISTINCT FROM shared OR (SELECT count(*) FROM public.diamond_bonus_shares WHERE bonus_id=entry)<>1 THEN RAISE EXCEPTION 'Sharing Duplicate Changed Token'; END IF;
    PERFORM set_config('test.user','',true); PERFORM set_config('request.jwt.claims','{"role":"anon"}',true);
    SET LOCAL ROLE anon;
-   shared:=public.fn_diamond_bonus_shared(share_id);
-   repeated:=public.fn_diamond_bonus_shared(entry);
+   shared:=public.fn_shared_bonus_replay(share_id);
+   repeated:=public.fn_shared_bonus_replay(entry);
    RESET ROLE;
    IF shared IS DISTINCT FROM replay OR repeated->>'ok' IS DISTINCT FROM 'false' THEN RAISE EXCEPTION 'Public Replay Privacy Or Snapshot Failed'; END IF;
    PERFORM set_config('test.user',player::text,true); PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',player,'role','authenticated')::text,true);
@@ -187,6 +187,14 @@ BEGIN
  EXCEPTION WHEN insufficient_privilege THEN RESET ROLE; refused:=true;
  END;
  IF NOT refused THEN RAISE EXCEPTION 'Replay Sharing Opened Direct Wallet Writes'; END IF;
+ -- A later unrelated grant must not close the public content link. The exact
+ -- production event trigger remains active and still protects money helpers.
+ GRANT EXECUTE ON FUNCTION public.fn_diamond_bonus_share(uuid) TO authenticated;
+ IF NOT has_function_privilege('anon','public.fn_shared_bonus_replay(uuid)','EXECUTE')
+ OR to_regprocedure('public.fn_diamond_bonus_shared(uuid)') IS NOT NULL
+ OR md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_autorevoke_privileged_anon()'::regprocedure)) <> '4508beb8e21b1a964ed2d21cf68c374c'
+ OR NOT EXISTS(SELECT 1 FROM pg_event_trigger WHERE evtname='trg_autorevoke_privileged_anon' AND evtenabled='O')
+ THEN RAISE EXCEPTION 'Public Replay Grant Did Not Survive The Actual Money Guard'; END IF;
  IF has_function_privilege('anon','public.fn_diamond_bonus_replay(uuid)','EXECUTE') OR has_function_privilege('anon','public.fn_diamond_bonus_share(uuid)','EXECUTE') OR has_function_privilege('anon','public.fn_diamond_bonus_share_to_feed(uuid)','EXECUTE') OR has_table_privilege('authenticated','public.diamond_bonus_shares','SELECT') OR has_table_privilege('authenticated','public.diamond_bonus_shares','INSERT') THEN RAISE EXCEPTION 'Private Replay Authority Widened'; END IF;
  SET CONSTRAINTS ALL IMMEDIATE;
  RAISE NOTICE 'PASS Bonus replays: eight actual normal/Super settlements, private open and foreign refusal, exact payloads and 257cashout, slow100x, scoped cursor, random public snapshot, stable token, one canonical post/story/reward and unchanged game wallets';

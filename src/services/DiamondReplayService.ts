@@ -215,7 +215,7 @@ export const DiamondReplayService = {
   async read(id: string, shared = false) {
     if (!uuid(id)) throw new Error('Replay Not Found');
     const result = await call(
-      shared ? 'fn_diamond_bonus_shared' : 'fn_diamond_bonus_replay',
+      shared ? 'fn_shared_bonus_replay' : 'fn_diamond_bonus_replay',
       shared ? { p_share_id: id } : { p_bonus_id: id }
     );
     return parseBonusReplay(result.replay);

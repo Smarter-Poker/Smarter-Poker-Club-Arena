@@ -118,7 +118,6 @@ describe('FinancialCronService', () => {
       FinancialCronService.stop();
       expect(FinancialCronService._reconciliationTimer).toBeNull();
       expect(FinancialCronService._suspensionTimer).toBeNull();
-      expect(FinancialCronService._disputeEscalationTimer).toBeNull();
       expect(FinancialCronService._startupTimer).toBeNull();
     });
 
@@ -219,10 +218,24 @@ describe('FinancialCronService', () => {
   // ESCALATE STALE DISPUTES (72h SLA)
   // ─────────────────────────────────────────────────────────────────────────
 
-  describe('escalateStaleDisputes', () => {
-    it('should return 0 when no stale disputes', async () => {
-      const count = await FinancialCronService.escalateStaleDisputes();
-      expect(count).toBe(0);
+  describe('dispute escalation is retired', () => {
+    it('the browser has no dispute escalation entry point at all', () => {
+      // Measured 2026-09-19: authenticated has no UPDATE grant on
+      // public.disputes and the table's only policy is SELECT, so this method
+      // was 42501 on every call while still incrementing its own counter and
+      // persisting a "dispute auto-escalated" alert through
+      // fn_raise_financial_alert, which authenticated CAN execute.
+      expect(
+        (FinancialCronService as Record<string, unknown>).escalateStaleDisputes
+      ).toBeUndefined();
+    });
+
+    it('booting the service never reaches the disputes table', async () => {
+      mockFrom.mockClear();
+      FinancialCronService.start({ autoSuspendEnabled: false });
+      FinancialCronService.stop();
+      const touched = mockFrom.mock.calls.map((c: unknown[]) => c[0]);
+      expect(touched).not.toContain('disputes');
     });
   });
 });

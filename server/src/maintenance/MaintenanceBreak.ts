@@ -247,6 +247,8 @@ export interface ResumeWavesProgress {
 export interface MaintenanceBreakDeps {
   /** Every live table engine, cash and tournament alike. */
   engines(): Iterable<[string, PausableTableEngine]>;
+  /** Durable original preparations retained across a process replacement. */
+  retainedPreparationBlockers?(): readonly string[];
   /** False once the process is shutting down; stops any further scheduling. */
   isRunning(): boolean;
   /** Discrete per-table event frame to every subscriber of that table. */
@@ -1771,6 +1773,10 @@ export class MaintenanceBreak {
     const count = (reason: string) => {
       reasons[reason] = (reasons[reason] ?? 0) + 1;
     };
+    for (const tableId of this.deps.retainedPreparationBlockers?.() ?? []) {
+      out.push(tableId);
+      count('f06_preparation_unresolved');
+    }
     for (const [tableId, engine] of this.deps.engines()) {
       try {
         if (engine.hasUnresolvedF06Preparation?.()) {

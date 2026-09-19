@@ -49,7 +49,7 @@ vi.mock('../services/supabase.js', async () => ({
 }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 import { ServerTableEngine } from './ServerTableEngine.js';
-import { loadTimeBanksFromPark } from '../services/supabase/snapshots.js';
+import { loadPresenceFromPark, loadTimeBanksFromPark } from '../services/supabase/snapshots.js';
 const table = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const user = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const stay = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -171,6 +171,93 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
       expect(data.rpc).not.toHaveBeenCalled();
     }
   );
+
+  it('consumes the completed mixed transfer bank through native startup and re-park', async () => {
+    const parkedAt = new Date().toISOString();
+    const transferred = {
+      occupancyId: stay,
+      remainingSeconds: 47,
+      usesRemaining: 4,
+      initialSeconds: 60,
+      baseSeconds: 30,
+      dbConsumedSeconds: 13,
+      unlimitedActivations: true,
+    };
+    data.row = {
+      table_id: table,
+      disconnect_states: {},
+      parked_at: parkedAt,
+      engine_instance: 'f06_mixed_custody',
+      time_bank_snapshot: {
+        version: 1,
+        parkedAt,
+        handNumber: 12,
+        players: { [user]: transferred },
+      },
+    };
+    const next = freshStartup();
+    await next.start();
+    next.running = true;
+    next.adoptSeatRoster([{ user_id: user, occupancy_id: stay, seat_number: 2, stack: 25 }]);
+    expect(next.timeBankEngine.getPlayerBank(table, user)).toMatchObject({
+      remainingSeconds: 47,
+      usesRemaining: 4,
+    });
+    expect(next.timeBankEngine.isUnlimited(table, user)).toBe(true);
+    await next.persistPresenceForRestart('parked');
+    next.running = false;
+    expect(data.row.time_bank_snapshot.players[user]).toEqual(transferred);
+    expect(data.rpc).not.toHaveBeenCalled();
+  });
+
+  it('retains the native disconnect expiry while restoring a transferred bank', async () => {
+    const parkedAt = new Date(Date.now() - 21 * 60 * 1000).toISOString();
+    data.row = {
+      table_id: table,
+      disconnect_states: { [user]: { state: 'DISCONNECTED', sinceMs: 1, graceDeadlineMs: 2 } },
+      parked_at: parkedAt,
+      engine_instance: 'f06_mixed_custody',
+      time_bank_snapshot: {
+        version: 1,
+        parkedAt,
+        handNumber: 12,
+        players: {
+          [user]: {
+            occupancyId: stay,
+            remainingSeconds: 47,
+            usesRemaining: 4,
+            initialSeconds: 60,
+            baseSeconds: 30,
+            dbConsumedSeconds: 13,
+            unlimitedActivations: true,
+          },
+        },
+      },
+    };
+    expect(await loadPresenceFromPark(table)).toBeNull();
+    expect((await loadTimeBanksFromPark(table, 12))[user]).toMatchObject({
+      remainingSeconds: 47,
+      unlimitedActivations: true,
+    });
+    expect(data.rpc).not.toHaveBeenCalled();
+  });
+
+  it('has no initialized custody to restore from an unrelated empty historic snapshot', async () => {
+    const parkedAt = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    data.row = {
+      table_id: table,
+      disconnect_states: {},
+      parked_at: parkedAt,
+      time_bank_snapshot: { version: 1, parkedAt, handNumber: 0, players: {} },
+    };
+    const next = freshStartup();
+    await next.start();
+    expect(next.timeBankMeta.size).toBe(0);
+    expect(next.parkedTimeBanks).toEqual({});
+    expect(next.timeBankEngine.hasPlayerBanksForTable(table)).toBe(false);
+    expect(next.captureParkedTimeBanks()).toEqual({});
+    expect(data.rpc).not.toHaveBeenCalled();
+  });
 
   it.each(['refused', 'thrown', 'invalid'])(
     'refuses startup before overwriting a saved bank when hand history is %s',

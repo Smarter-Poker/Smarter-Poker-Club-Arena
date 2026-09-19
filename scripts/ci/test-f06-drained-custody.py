@@ -8,6 +8,7 @@ PROBE='scripts/ci/probes/f06-drained-custody.sql'
 SPEC='scripts/ci/probes/f06-drained-custody.spec'
 FORMAT='supabase/migrations/20260917060000_mtt_persisted_format_preparation.sql'
 FINISH='supabase/migrations/20260912100322_tournament_break_original_custody_and_hand_authority.sql'
+STALE='supabase/migrations/20260908043100_table_leases_and_hand_commits_have_generations.sql'
 RELEASE='supabase/migrations/20260908042900_tournament_leases_have_fencing_generations.sql'
 MIXED='scripts/ci/fixtures/f06-drained-custody/installed-mixed-authority.json'
 PAID='scripts/ci/fixtures/f06-drained-custody/installed-paid-dependency.sql'
@@ -18,8 +19,11 @@ def main():
  root,out=a.root.resolve(),a.evidence.resolve();out.mkdir(parents=True,exist_ok=False)
  f=module(root/'scripts/ci/test-f06-accepted-elimination.py','drained_fixture');m=module(root/'scripts/ci/test-f06-movement-admission.py','drained_movement');b=module(root/'scripts/ci/build-f06-drained-custody.py','drained_builder')
  manifest=f.prepare(root,out)
- paths=['scripts/ci/mtt_break_authoring_native.py',PROBE,SPEC,FORMAT,FINISH,RELEASE,PREPARED_FIXTURE,MIXED,PAID,MIXED_FIXTURE,b.MIGRATION,b.AUTHORITY,b.PREPARED,'scripts/ci/build-f06-drained-custody.py','scripts/ci/test-f06-drained-custody.py','scripts/ci/test-f06-movement-admission.py']
+ mixed_builder=module(root/'scripts/ci/build-f06-mixed-custody.py','mixed_custody_builder')
+ if mixed_builder.render(root)!=(root/mixed_builder.MIGRATION).read_text():raise ValueError('mixed installer binding differs')
+ paths=['scripts/ci/mtt_break_authoring_native.py',PROBE,SPEC,FORMAT,FINISH,RELEASE,STALE,PREPARED_FIXTURE,MIXED,PAID,MIXED_FIXTURE,b.MIGRATION,b.AUTHORITY,b.PREPARED,'scripts/ci/build-f06-drained-custody.py','scripts/ci/test-f06-drained-custody.py','scripts/ci/test-f06-movement-admission.py']
  paths +=[m.MIGRATION,m.OPENING,m.RECEIPT,m.AUTHORITIES,m.PUBLIC_F06,m.DEPENDENCY_FUNCTIONS,m.DEPENDENCY_CATALOG,m.FINAL_RELATIONS,m.PRIVATE,m.CONTROL,m.CONTINUATION]
+ paths += [mixed_builder.MIGRATION,mixed_builder.AUTHORITY,mixed_builder.MOVEMENT_AUTHORITY,mixed_builder.MOVEMENT,'supabase/migrations/20260904230754_engine_presence_survives_the_restart.sql','supabase/migrations/20260917120432_parked_time_banks_retain_their_seat_occupancy.sql','supabase/migrations/20260823_engine_leadership.sql','scripts/ci/build-f06-mixed-custody.py','scripts/ci/probes/f06-mixed-custody.sql','scripts/ci/probes/f06-mixed-restart-qualification.py']
  manifest['source_sha256'].update({p:sha(root/p) for p in paths})
  if b.render(root)!=(root/b.MIGRATION).read_text():raise ValueError('installer binding differs')
  (out/'movement-catalog.sql').write_text(m.movement_catalog(root));(out/'source-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
@@ -49,7 +53,7 @@ def main():
   format_sql=(root/FORMAT).read_text();format_sql=format_sql[format_sql.index('ALTER TABLE public.tournaments ADD COLUMN format_contract'):format_sql.index('-- Metadata qualification')]
   e.sql(db,format_sql,label='actual-recorded-format-schema')
   e.sql(db,"BEGIN; SET LOCAL session_replication_role=replica; UPDATE public.tournaments SET format_contract='mtt-v2' WHERE id::text LIKE 'b7200000-%'; COMMIT;",label='synthetic-recorded-format')
-  for path,name,delimiter in [(FINISH,'fn_f06_finish_hand','$$'),(RELEASE,'release_tournament_leases_v2','$function$')]:
+  for path,name,delimiter in [(STALE,'fn_engine_lease_stale_seconds','$function$'),(FINISH,'fn_f06_finish_hand','$$'),(RELEASE,'release_tournament_leases_v2','$function$')]:
    source=(root/path).read_text();definition=re.search(r'CREATE (?:OR REPLACE )?FUNCTION public\.'+name+r'\(.*?'+re.escape(delimiter)+r'.*?'+re.escape(delimiter)+r';',source,re.S)[0]
    e.sql(db,definition,label='original-'+name)
   mixed=json.loads((root/MIXED).read_text())
@@ -76,6 +80,24 @@ def main():
    if rc!=3 or reason not in errors or e.catalog_snapshot(case,'after-install-'+label)!=state:raise RuntimeError('installer drift refusal failed: '+label)
    e.discard(case);e.report.setdefault('installer_refusals',[]).append(label)
   e.sql(db,file=root/b.MIGRATION,label='candidate-install')
+  rc,_,err=e.sql(db,"SELECT public.fn_f06_prepare_mixed_manager_custody(NULL,NULL,NULL,NULL,NULL,NULL);",label='before-no-mixed-transfer',check=False)
+  if not rc or 'does not exist' not in err:raise RuntimeError('expected missing mixed authority refusal absent')
+  presence_source=(root/'supabase/migrations/20260904230754_engine_presence_survives_the_restart.sql').read_text()
+  e.sql(db,presence_source,label='actual-presence-relation')
+  e.sql(db,file=root/'supabase/migrations/20260917120432_parked_time_banks_retain_their_seat_occupancy.sql',label='actual-bank-custody-column')
+  leader_source=(root/'supabase/migrations/20260823_engine_leadership.sql').read_text()
+  e.sql(db,leader_source[leader_source.index('CREATE TABLE IF NOT EXISTS public.engine_leader'):leader_source.index('CREATE OR REPLACE FUNCTION public.claim_engine_leadership')],label='actual-engine-leader-relation')
+  e.sql(db,file=root/mixed_builder.MIGRATION,label='mixed-candidate-install')
+  mixed_before=e.snapshot(db,'mixed-before-data');mixed_private=f.private_snapshot(e,db,'mixed-before-private');mixed_catalog=e.catalog_snapshot(db,'mixed-before-catalog')
+  rc,stdout,stderr=e.sql(db,file=root/'scripts/ci/probes/f06-mixed-custody.sql',label='mixed-direct-cases',check=False,seconds=60)
+  e.report.update(mixed_output=stdout,mixed_errors=stderr)
+  if rc or stderr.count('MIXED_CUSTODY_COMPLETE')!=1 or stderr.count('MIXED_CUSTODY PASS:')!=65 or 'ERROR:' in stderr:raise RuntimeError('mixed custody cases failed')
+  if e.snapshot(db,'mixed-after-data')!=mixed_before or f.private_snapshot(e,db,'mixed-after-private')!=mixed_private or e.catalog_snapshot(db,'mixed-after-catalog')!=mixed_catalog:raise RuntimeError('mixed full rollback differs')
+  e.report.update(mixed_assertions=stderr.count('MIXED_CUSTODY PASS:'),mixed_rollback=True,mixed_before_missing=True)
+
+  restart=module(root/'scripts/ci/probes/f06-mixed-restart-qualification.py','mixed_committed_restart')
+  restart.qualify(e,db,root)
+
   before=e.snapshot(db,'before-data');private=f.private_snapshot(e,db,'before-private');catalog=e.catalog_snapshot(db,'before-catalog')
   code,stdout,stderr=e.sql(db,file=root/PROBE,label='drained-direct-cases',check=False,seconds=60)
   e.report.update(case_output=stdout,case_errors=stderr)
@@ -86,6 +108,7 @@ def main():
   # own immutable custody and financial guards remain active after release.
   text=(root/SPEC).read_text();binary=n.stock_isolationtester(e.pg)
   e.report['isolationtester']={'path':str(binary),'sha256':sha(binary)}
+  restart.qualify_locks(e,db,root,binary)
   permutations=re.findall(r'^permutation .+$',text,re.M);body=re.sub(r'^permutation .+$','',text,flags=re.M)
   if len(permutations)!=2:raise ValueError('exact two lock permutations required')
   for mode,permutation in zip(['commit','rollback'],permutations):

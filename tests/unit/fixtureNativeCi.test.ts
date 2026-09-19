@@ -244,6 +244,12 @@ describe('required CI owns native fixture verification', () => {
   it.each([
     'scripts/ci/test-f06-drained-custody.py',
     'scripts/ci/build-f06-drained-custody.py',
+    'scripts/ci/build-f06-mixed-custody.py',
+    'scripts/ci/probes/f06-mixed-custody.sql',
+    'scripts/ci/probes/f06-mixed-custody-authority.sql',
+    'scripts/ci/probes/f06-mixed-movement-authority.sql',
+    'scripts/ci/probes/f06-mixed-restart-qualification.py',
+    'scripts/ci/schema-manifest.d/f06-mixed-custody.json',
     'scripts/ci/probes/f06-drained-custody.sql',
     'scripts/ci/probes/f06-drained-custody.spec',
     'scripts/ci/probes/f06-drained-custody-authority.sql',

@@ -26,9 +26,106 @@ export class TournamentRetirementCustody<E extends RetirementEngine> {
   private revision = 0n;
   private readonly pending = new Map<string, string>();
   private readonly active = new Set<string>();
+  private readonly mixedHeld = new Map<string, string>();
   admissionAllowed(tableId: string): boolean {
-    return !this.held.has(tableId);
+    return !this.held.has(tableId) && !this.mixedHeld.has(tableId);
   }
+  /** Receipt-bound whole-map reservation. Unknown close/ACK bindings stay intact
+   * until the caller has verified the durable completion receipt. */
+  reserveMixed(
+    transferId: string,
+    tableIds: readonly string[],
+    originals: readonly { table_id: string; revision: string; binding: readonly string[] }[],
+    originalsAreLocal: boolean,
+    global: Map<string, E>,
+    local: Map<string, E>,
+    current: () => boolean
+  ) {
+    const ids = [...new Set(tableIds)];
+    if (!transferId || ids.length !== tableIds.length || !ids.length)
+      throw new Error('mixed_retirement_identity_invalid');
+    const original = new Map(originals.map((r) => [r.table_id, r]));
+    const assertOriginals = () => {
+      for (const id of ids) {
+        const expected = original.get(id);
+        if (this.active.has(id) || global.has(id) || local.has(id))
+          throw new Error('mixed_retirement_registry_changed');
+        if (originalsAreLocal && expected) {
+          if (
+            this.held.get(id) !== expected.revision ||
+            this.pending.get(id) !== JSON.stringify(expected.binding)
+          )
+            throw new Error('mixed_retirement_original_changed');
+        } else if (this.held.has(id) || this.pending.has(id))
+          throw new Error('mixed_retirement_foreign_reservation');
+      }
+    };
+    if (!current()) throw new Error('mixed_retirement_owner_changed');
+    assertOriginals();
+    for (const id of ids)
+      if (this.mixedHeld.has(id) && this.mixedHeld.get(id) !== transferId)
+        throw new Error('mixed_retirement_custody_busy');
+    for (const id of ids) this.mixedHeld.set(id, transferId);
+    const assertCurrent = () => {
+      if (!current() || ids.some((id) => this.mixedHeld.get(id) !== transferId))
+        throw new Error('mixed_retirement_owner_changed');
+      assertOriginals();
+    };
+    return Object.freeze({
+      assertCurrent,
+      complete: () => {
+        assertCurrent();
+        for (const id of ids) {
+          this.mixedHeld.delete(id);
+          if (originalsAreLocal && original.has(id)) {
+            this.held.delete(id);
+            this.pending.delete(id);
+          }
+        }
+      },
+    });
+  }
+
+  /** Capture inactive reservations without releasing or rebinding an unknown ACK. */
+  captureDrained(tournamentId: string, generation: string, tableIds: readonly string[]) {
+    const selected: [string, string, string][] = [];
+    for (const [id, identity] of this.pending) {
+      const binding = JSON.parse(identity) as string[];
+      if (binding[0] !== tournamentId) continue;
+      if (
+        binding[4] !== generation ||
+        !tableIds.includes(id) ||
+        this.active.has(id) ||
+        !this.held.has(id)
+      )
+        return null;
+      selected.push([id, this.held.get(id)!, identity]);
+    }
+    if (tableIds.some((id) => this.held.has(id) && !selected.some(([key]) => key === id)))
+      return null;
+    const current = () =>
+      selected.every(
+        ([id, held, identity]) =>
+          !this.active.has(id) && this.held.get(id) === held && this.pending.get(id) === identity
+      ) &&
+      tableIds.every((id) => !this.held.has(id) || selected.some(([key]) => key === id)) &&
+      [...this.pending].every(
+        ([id, identity]) =>
+          JSON.parse(identity)[0] !== tournamentId ||
+          selected.some(([key, , exact]) => key === id && exact === identity)
+      );
+    const reservations = selected
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([table_id, revision, identity]) =>
+        Object.freeze({
+          table_id,
+          revision,
+          binding: Object.freeze(JSON.parse(identity) as string[]),
+        })
+      );
+    return Object.freeze({ reservations: Object.freeze(reservations), current });
+  }
+
   /** Local reopen/admission work shares the custody reservation. SQL's durable
    * pending-source guard remains authoritative across processes. */
   async withAdmission<T>(
@@ -77,6 +174,7 @@ export class TournamentRetirementCustody<E extends RetirementEngine> {
     if (
       (this.held.has(binding.tableId) && !this.pending.has(binding.tableId)) ||
       this.active.has(binding.tableId) ||
+      this.mixedHeld.has(binding.tableId) ||
       (this.pending.has(binding.tableId) && this.pending.get(binding.tableId) !== identity)
     )
       throw new Error('retirement_custody_busy');

@@ -1,0 +1,11 @@
+{
+  "_owner": "mtt-mixed-custody-transfer-20260918",
+  "_comment": "Source-only immutable mixed custody transfer. Does not dispose original hands or movement outcomes.",
+  "functions": [
+    "fn_f06_prepare_mixed_manager_custody",
+    "fn_f06_admit_mixed_manager_custody",
+    "fn_f06_find_mixed_manager_custody",
+    "fn_f06_mixed_custody_intent",
+    "fn_f06_complete_mixed_manager_custody"
+  ]
+}

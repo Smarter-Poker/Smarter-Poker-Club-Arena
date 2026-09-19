@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Prove that the elected engine leader wrote the requested release.
+"""Prove the elected leader or the exact legacy custody prerequisite.
 
 This runs only inside the root-owned one-shot release transaction. It reads the
 engine's fixed environment file itself, never exports or prints credentials,
 and talks only to the pinned Club Arena Supabase project. HTTP health is not a
 substitute for this witness: the elected leader row is the independent write
 that makes a compatibility trial eligible for the durable release seal.
+The separate mixed-custody mode only reads the installed catalog, once, before
+the legacy checkpoint may persist its intent or open inspector access.
 """
 
 from __future__ import annotations
@@ -26,6 +28,159 @@ from urllib.request import HTTPSHandler, HTTPRedirectHandler, Request, build_ope
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 PROJECT_HOST = "kuklfnapbkmacvwxktbh.supabase.co"
+MIXED_CUSTODY_PREDECESSOR = "8825af51817f379c4261658ca29ecc9d8d81932d"
+# Exact service-role READ ONLY result from native-17 mixed-custody qualification,
+# migration 20260918232558; independently compared with pg_get_functiondef.
+# Kept in this immutable control-generation file, never supplied by a caller.
+MIXED_CUSTODY_CONTRACT = {'kind': 'f06_mixed_custody_contract_v1',
+ 'functions': [{'acl': '{postgres=X/postgres,service_role=X/postgres}',
+                'owner': 'postgres',
+                'config': ['search_path=pg_catalog, public, smarter_private'],
+                'body_md5': 'aeaabb44975b8d138ed447687b0aea22',
+                'signature': 'public.fn_f06_admit_mixed_manager_custody(uuid,uuid,uuid,jsonb)',
+                'volatility': 'v',
+                'definition_md5': '3b047e7502c62bff570cd6253e85a741',
+                'security_definer': True},
+               {'acl': '{postgres=X/postgres,service_role=X/postgres}',
+                'owner': 'postgres',
+                'config': ['search_path=pg_catalog, public, smarter_private'],
+                'body_md5': '43aa14703d4d8f37a95f7adf6c6ed5c1',
+                'signature': 'public.fn_f06_complete_mixed_manager_custody(uuid,uuid,uuid,jsonb)',
+                'volatility': 'v',
+                'definition_md5': '1c45252d2701562fbd9d189927f418aa',
+                'security_definer': True},
+               {'acl': '{postgres=X/postgres,service_role=X/postgres}',
+                'owner': 'postgres',
+                'config': ['search_path=pg_catalog, public, smarter_private'],
+                'body_md5': 'd140c71041b6fa7c7fe5bcec1e621fb4',
+                'signature': 'public.fn_f06_find_mixed_manager_custody(uuid)',
+                'volatility': 'v',
+                'definition_md5': 'd9ab62fbf2dd62e234f9070582169c04',
+                'security_definer': True},
+               {'acl': '{postgres=X/postgres,service_role=X/postgres}',
+                'owner': 'postgres',
+                'config': ['search_path=pg_catalog'],
+                'body_md5': '0adb4f8e9c99abffa9782b60f6847b3b',
+                'signature': 'public.fn_f06_mixed_custody_contract()',
+                'volatility': 's',
+                'definition_md5': '1fe8e26e53014c9eb68a180767b5f688',
+                'security_definer': True},
+               {'acl': '{postgres=X/postgres,service_role=X/postgres}',
+                'owner': 'postgres',
+                'config': ['search_path=pg_catalog, public, smarter_private'],
+                'body_md5': 'a1175d233f0cd493bf3e4775a9ecef45',
+                'signature': 'public.fn_f06_mixed_custody_intent(uuid,uuid,uuid,text,jsonb)',
+                'volatility': 'v',
+                'definition_md5': '56095501ac846f06739c46fa0b7fbd48',
+                'security_definer': True},
+               {'acl': '{postgres=X/postgres,service_role=X/postgres}',
+                'owner': 'postgres',
+                'config': ['search_path=pg_catalog, public, smarter_private'],
+                'body_md5': '6cee89d253373a45298c13324429ab1b',
+                'signature': 'public.fn_f06_prepare_mixed_manager_custody(uuid,uuid,uuid,uuid,jsonb,jsonb)',
+                'volatility': 'v',
+                'definition_md5': 'd571f3b9051d0e747c3a4020e1a7727c',
+                'security_definer': True},
+               {'acl': '{postgres=X/postgres}',
+                'owner': 'postgres',
+                'config': ['search_path=pg_catalog, public, smarter_private'],
+                'body_md5': '1bc767e267e5b90534c601c39f2790a0',
+                'signature': 'smarter_private.f06_assert_movement(uuid)',
+                'volatility': 'v',
+                'definition_md5': '7f10809c0e6ce2819c97c2ab53b95fba',
+                'security_definer': True},
+               {'acl': '{postgres=X/postgres}',
+                'owner': 'postgres',
+                'config': ['search_path=pg_catalog'],
+                'body_md5': '0daf117b8c81a351771c5fa802d22c62',
+                'signature': 'smarter_private.f06_manager_transfer_immutable()',
+                'volatility': 'v',
+                'definition_md5': 'd595b68fa3464e5d56b5bc5395b5eb08',
+                'security_definer': False},
+               {'acl': '{postgres=X/postgres}',
+                'owner': 'postgres',
+                'config': ['search_path=pg_catalog, public, smarter_private'],
+                'body_md5': '9dab70e0012b7550c7d8378df998f09a',
+                'signature': 'smarter_private.f06_mixed_adopt_presence(uuid,jsonb)',
+                'volatility': 'v',
+                'definition_md5': '9957f669bd05823094f15599d8714c9e',
+                'security_definer': True},
+               {'acl': '{postgres=X/postgres}',
+                'owner': 'postgres',
+                'config': ['search_path=pg_catalog, public, smarter_private'],
+                'body_md5': 'a22bf6241dba96e747c0aca01a504899',
+                'signature': 'smarter_private.f06_mixed_bank_proof(uuid,jsonb)',
+                'volatility': 'v',
+                'definition_md5': '4a14ebba9c038f759230b9b3186a56b8',
+                'security_definer': True},
+               {'acl': '{postgres=X/postgres}',
+                'owner': 'postgres',
+                'config': ['search_path=pg_catalog, public, smarter_private'],
+                'body_md5': 'dc612333e6fc9bb08bf70ffa8562ce1a',
+                'signature': 'smarter_private.f06_mixed_current_admission(uuid,uuid,uuid)',
+                'volatility': 'v',
+                'definition_md5': '90ff66e263413795edcc691a879595d7',
+                'security_definer': True},
+               {'acl': '{postgres=X/postgres}',
+                'owner': 'postgres',
+                'config': ['search_path=pg_catalog, public, smarter_private'],
+                'body_md5': '882162fbb2ebaa3eaf2a0a6e567e9824',
+                'signature': 'smarter_private.f06_mixed_custody_snapshot(uuid,uuid,jsonb)',
+                'volatility': 'v',
+                'definition_md5': 'a57792a090f58f2c80b197bc01ef4447',
+                'security_definer': True},
+               {'acl': '{postgres=X/postgres}',
+                'owner': 'postgres',
+                'config': ['search_path=pg_catalog, public, smarter_private'],
+                'body_md5': 'f33b05adc06f9c8f31390ca5d6b7bd67',
+                'signature': 'smarter_private.f06_mixed_movement_generation(uuid)',
+                'volatility': 'v',
+                'definition_md5': '2d096f6ee2a9eecd6895713be15cf365',
+                'security_definer': True},
+               {'acl': '{postgres=X/postgres}',
+                'owner': 'postgres',
+                'config': ['search_path=pg_catalog, public, smarter_private'],
+                'body_md5': '5d061187142fe383baf6392b6306519e',
+                'signature': 'smarter_private.f06_mixed_preparation_guard()',
+                'volatility': 'v',
+                'definition_md5': 'bcbdb70741099a7806acd90e838cc03f',
+                'security_definer': True}]}
+
+
+class RefuseRedirects(HTTPRedirectHandler):
+    def redirect_request(self, *_args: object, **_kwargs: object) -> None:
+        return None
+
+
+def read_mixed_custody_contract(base_url: str, service_key: str) -> object:
+    # GET executes the STABLE catalog-only RPC in PostgREST's read-only
+    # transaction. Never call prepare/admit/complete merely to test existence.
+    request = Request(
+        f"{base_url}/rest/v1/rpc/fn_f06_mixed_custody_contract",
+        headers={
+            "apikey": service_key,
+            "authorization": f"Bearer {service_key}",
+            "accept": "application/json",
+            "cache-control": "no-cache, no-store",
+        },
+        method="GET",
+    )
+    opener = build_opener(HTTPSHandler(context=ssl.create_default_context()), RefuseRedirects())
+    with opener.open(request, timeout=5.0) as response:
+        payload = response.read(65537)
+    if len(payload) > 65536:
+        raise ValueError("mixed-custody catalog response exceeds its bounded contract")
+    return json.loads(payload.decode("utf-8"))
+
+
+def verify_mixed_custody_contract(payload: object) -> None:
+    # Exact equality includes signatures, body/definition digests, owner,
+    # privileges, search path, security mode and volatility. Missing, duplicate,
+    # unrecognized or malformed entries must not look like installed support.
+    if not MIXED_CUSTODY_CONTRACT or json.dumps(payload, sort_keys=True) != json.dumps(
+        MIXED_CUSTODY_CONTRACT, sort_keys=True
+    ):
+        raise ValueError("installed mixed-custody contract differs from qualification")
 
 
 def die(message: str) -> NoReturn:
@@ -89,10 +244,6 @@ def read_leader(
             "cache-control": "no-cache, no-store",
         },
     )
-    class RefuseRedirects(HTTPRedirectHandler):
-        def redirect_request(self, *_args: object, **_kwargs: object) -> None:
-            return None
-
     # Authorization must never follow a redirect to a different origin. The
     # sole allowed endpoint is already pinned above, so every redirect is an
     # invalid configuration rather than a navigation aid.
@@ -113,7 +264,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--env-file", required=True)
     parser.add_argument("--sha", required=True)
-    parser.add_argument("--instance-id", required=True)
+    parser.add_argument("--instance-id")
+    parser.add_argument("--mixed-custody-contract", action="store_true")
     parser.add_argument("--timeout-seconds", type=int, default=240)
     parser.add_argument("--poll-seconds", type=int, default=10)
     parser.add_argument("--max-heartbeat-age-seconds", type=int, default=60)
@@ -123,7 +275,10 @@ def main() -> None:
     if not SHA_RE.fullmatch(target_sha):
         die("target SHA must be one lowercase 40-hex commit")
     instance_id = str(args.instance_id)
-    if not re.fullmatch(r"^[1-9][0-9]*-[0-9a-f]{8}$", instance_id):
+    if args.mixed_custody_contract:
+        if target_sha != MIXED_CUSTODY_PREDECESSOR or args.instance_id is not None:
+            die("mixed-custody prerequisite is limited to the qualified predecessor")
+    elif not re.fullmatch(r"^[1-9][0-9]*-[0-9a-f]{8}$", instance_id):
         die("instance id is invalid")
     if (
         not 1 <= args.timeout_seconds <= 600
@@ -140,6 +295,15 @@ def main() -> None:
         die("SUPABASE_URL is not the pinned Club Arena project origin")
     if not service_key:
         die("SUPABASE_SERVICE_ROLE_KEY is absent from the fixed engine environment")
+
+    if args.mixed_custody_contract:
+        try:
+            verify_mixed_custody_contract(read_mixed_custody_contract(base_url, service_key))
+        except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
+            # No response body, request headers, URL or environment values.
+            die(f"mixed-custody prerequisite unconfirmed ({type(exc).__name__}); checkpoint not started")
+        print("[engine-release-database-proof] installed mixed-custody contract matches qualification")
+        return
 
     expected = target_sha[:8]
     deadline = time.monotonic() + args.timeout_seconds

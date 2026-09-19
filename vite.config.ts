@@ -75,7 +75,8 @@ export default defineConfig({
         const chunk = Object.values(bundle).find(
           (c) =>
             (c as { type?: string; isEntry?: boolean }).type === 'chunk' &&
-            (c as { isEntry?: boolean }).isEntry
+            (c as { isEntry?: boolean }).isEntry &&
+            (c as { facadeModuleId?: string }).facadeModuleId?.endsWith('/index.html')
         ) as { fileName?: string; modules?: Record<string, unknown> } | undefined;
         if (!chunk?.modules) return;
         const modules = Object.keys(chunk.modules)
@@ -152,6 +153,10 @@ export default defineConfig({
     // Neither web nor native publication needs source maps.
     sourcemap: false,
     rollupOptions: {
+      input: {
+        index: path.resolve(__dirname, 'index.html'),
+        diamondTest: path.resolve(__dirname, 'diamond-test.html'),
+      },
       // Rollup defaults to 1000 concurrent file operations. Our intended
       // local cap is 20; shared CI hosts use half their CPUs, with a floor of 4.
       // This is a Rollup input option, so it belongs inside rollupOptions.

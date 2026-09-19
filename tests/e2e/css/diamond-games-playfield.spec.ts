@@ -54,3 +54,64 @@ for (const width of [320, 390, 1280])
       true
     );
   });
+
+// The public test entry mounts the shipping scenes with fictional local rounds.
+// It must remain independent of authentication, RPCs and real wallet balances.
+for (const game of ['plinko', 'crash', 'crossing', 'mines'])
+  for (const superGame of [false, true]) {
+    test(`Wallet-free ${superGame ? 'Super ' : ''}${game} is playable and holds navigation`, async ({
+      page,
+    }) => {
+      const { diamondTestFixture } = await import('../helpers/diamond-test-fixture.mjs');
+      const bundle = await diamondTestFixture();
+      await page.setViewportSize({ width: 390, height: 844 });
+      const network: string[] = [];
+      await page.route('**/*', (route) => {
+        const url = new URL(route.request().url());
+        if (url.hostname !== 'diamond-test.local') network.push(url.href);
+        return route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' });
+      });
+      // Fix a safe local outcome so every test reaches a meaningful interaction.
+      await page.addInitScript(() => {
+        Object.defineProperty(window.crypto, 'getRandomValues', {
+          value: (a: Uint32Array | Uint16Array) => {
+            a.fill(1);
+            return a;
+          },
+        });
+      });
+      await page.goto(
+        `http://diamond-test.local/diamond-test.html?game=${game}${superGame ? '&super=1' : ''}`
+      );
+      await page.addStyleTag({ content: bundle.css });
+      await page.addScriptTag({ content: bundle.javascript });
+      await expect(
+        page.getByText(
+          'Test Mode. Simulated Diamonds And Chips Only. No Account Or Wallet Connection.'
+        )
+      ).toBeVisible();
+      await page.getByRole('button', { name: 'Start Test', exact: true }).click();
+      await page.getByRole('link', { name: 'Super Diamond Mines', exact: true }).click();
+      await expect(page.getByText('Finish This Test Round Before Leaving.')).toBeVisible();
+      expect(page.url()).toContain(`game=${game}`);
+      if (game === 'plinko') await expect(page.getByRole('dialog')).toBeVisible({ timeout: 60000 });
+      else {
+        if (game === 'mines')
+          await page.getByRole('button', { name: 'Tile 2', exact: true }).click();
+        if (game === 'crossing')
+          await page.getByRole('button', { name: 'Cross Next Road', exact: true }).click();
+        await page
+          .getByRole('button', {
+            name: game === 'crash' ? 'Cash Out' : 'Book The Win',
+            exact: true,
+          })
+          .click();
+        await expect(page.getByRole('dialog')).toBeVisible({ timeout: 15000 });
+      }
+      await expect(page.getByText('Simulated Prize Only. No Wallet Was Changed.')).toBeVisible();
+      expect(network).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true
+      );
+    });
+  }

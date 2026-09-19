@@ -1,3 +1,4 @@
+vi.mock('../../src/hooks/useLiveBonusGuard', () => ({ useLiveBonusGuard: () => () => {} }));
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 const backend = vi.hoisted(() => ({
@@ -124,12 +125,12 @@ describe('the selected wheel stake owns its availability quote', () => {
         pending_awards: [{ id: 'earned/award?1', game, base_diamonds: 100 }],
       });
       render(<DiamondWheelPage />);
-      fireEvent.click(await screen.findByRole('button', { name: 'Prizes & More', exact: true }));
-      const open = await screen.findByRole('button', { name: 'Open', exact: true });
-      fireEvent.click(open);
-      expect(backend.navigate).toHaveBeenCalledWith(
-        `/clubs/club-a/${game}?wheelAward=earned%2Faward%3F1`
+      await waitFor(() =>
+        expect(backend.navigate).toHaveBeenCalledWith(
+          `/clubs/club-a/${game}?wheelAward=earned%2Faward%3F1`
+        )
       );
+      expect(screen.queryByText('Your Ready Bonus Games')).not.toBeInTheDocument();
     }
   );
 

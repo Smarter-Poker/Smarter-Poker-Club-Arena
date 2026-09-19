@@ -1,3 +1,4 @@
+import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import BonusReplayLibrary from '../components/games/BonusReplayLibrary';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
 /** The player chooses an entry, then watches a committed server result open.
@@ -426,6 +427,7 @@ export default function DiamondWheelPage() {
     if (!state) return null;
     if (!user?.id) return 'Sign In To Spin';
     if (recovery) return null; // Receipt recovery must work even if the host has since closed.
+    if (state.pending_awards?.length) return 'Opening Your Bonus Game';
     if (preparationError) return preparationError;
     if (!validSpinAmount(price)) return 'Choose 25 To 2,500 Whole Diamonds';
     if (
@@ -647,6 +649,17 @@ export default function DiamondWheelPage() {
     [navigate, routeClubId]
   );
 
+  // An unfinished entitlement is resumed immediately, never offered as a banked game.
+  useEffect(() => {
+    const award = state?.pending_awards?.[0];
+    if (award && !spinning && !pending && !recovery && !loading) openBonus(award);
+  }, [state?.pending_awards, spinning, pending, recovery, loading, openBonus]);
+
+  const releaseNavigation = useLiveBonusGuard(
+    spinning || Boolean(pending) || Boolean(recovery),
+    () => toast.error('Wait For Your Spin To Finish.')
+  );
+
   const handleLanded = useCallback(() => {
     if (!pending) return;
     const result = pending;
@@ -679,6 +692,7 @@ export default function DiamondWheelPage() {
       if (!result.welcome) void refreshFloor();
     }
     if (result.bonus) {
+      releaseNavigation();
       endAuto(null);
       openBonus(result.bonus);
     }
@@ -1070,7 +1084,7 @@ export default function DiamondWheelPage() {
         ) : (
           <p className={`sc-copy sc-copy--center ${styles.readoutSub}`}>
             {spinning
-              ? 'Your Spin Is Playing. Your Prize Is Saved.'
+              ? 'Your Spin Is Playing. Your Prize Opens Next.'
               : blocker
                 ? 'Check The Spin Controls Below To Continue'
                 : recovery
@@ -1091,30 +1105,6 @@ export default function DiamondWheelPage() {
         />
         <div>
           <WheelPrizeGallery segments={table} />
-          {(state.pending_awards?.length ?? 0) > 0 && (
-            <div className={styles.rows}>
-              <h2>Your Ready Bonus Games</h2>
-              {state.pending_awards?.map((award) => (
-                <button
-                  key={award.id}
-                  type="button"
-                  className={styles.back}
-                  disabled={spinning || Boolean(recovery)}
-                  onClick={() => openBonus(award)}
-                >
-                  Open{' '}
-                  {wheelPrizeTitle({
-                    kind: 'bonus',
-                    game: award.game,
-                    ord: 0,
-                    amount: award.base_diamonds,
-                    label: '',
-                    value_chips: 0,
-                  })}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         <SpadeConsole

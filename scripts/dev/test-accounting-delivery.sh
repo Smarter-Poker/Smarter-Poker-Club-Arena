@@ -154,6 +154,11 @@ run_game_probe diamond-bonus-replays 'NOTICE:  PASS Bonus replays: eight actual 
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
 run_game_probe diamond-daily-custody 'NOTICE:  PASS Daily Diamond custody: real wheel prizes and Double Down, claimed Mint entry only, welcome, canonical supply, negative backing, owner isolation, one closed-day transfer and notification, replay and atomic rollback'
 
+# Immediate bonus admission is qualified after daily custody, on its exact preimage.
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20260919172312_wheel_bonuses_must_finish_before_another_spin.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-bonus-replays 'NOTICE:  PASS Bonus replays: eight actual normal/Super settlements, private open and foreign refusal, exact payloads and 257cashout, slow100x, scoped cursor, random public snapshot, stable token, one canonical post/story/reward and unchanged game wallets'
+
 # Observe a genuine two-connection duplicate race in a SECOND disposable local
 # database. Its commits never touch production or the rollback-probe baseline.
 "${diamond_psql[@]}" -c 'CREATE DATABASE diamond_custody_race TEMPLATE diamond_games_probe OWNER postgres'

@@ -53,6 +53,9 @@ including the root-owned finite admission continuation, is integrated unchanged.
 Reviewed PR4911 head 9552509e7b325282d370bfca66371bf93097882e is integrated at
 ddf61bce87. Its pre-intent, read-only contract comparison now pins the exact
 24-function catalogue qualified below; equality and refusal behavior are unchanged.
+Current protected main 56c722f8ec is integrated at 7bca6733e5; the maintenance
+changes compose with the existing finite mixed-admission continuation. All 542
+accounting input bindings still match after integration.
 Root owns protected merge, installation, physical attestation, publication and
 all production mutations. This helper has made no production write or inspector
 attachment.

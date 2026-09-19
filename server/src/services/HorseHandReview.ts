@@ -204,6 +204,17 @@ function isCallAction(a: { action: string; isFullRaise?: boolean }): boolean {
 const PLO_STACKOFF_BB = 100;
 
 /**
+ * The bar for one_pair_deep_stackoff below. A hundred and fifty big blinds is
+ * more than a full cash buy-in and, in the fleet's deep-starting tournaments,
+ * is the point at which one pair has stopped being a hand anybody stacks off
+ * with by design. Measured over the seven days to 2026-09-16 (horse_hand_reviews,
+ * NLH, one pair on an unpaired board, committed on the turn or river): at 150bb+
+ * the fleet won 21 of 79 tournament hands (-11,394bb) and 45 of 135 cash hands
+ * (-9,159bb); at 300bb+ it won 2 of 16 in tournaments, averaging -339bb a hand.
+ */
+const DEEP_ONE_PAIR_BB = 150;
+
+/**
  * Hand categories as `scoreOmahaHiPartial` numbers them (HorseEval): 1 high
  * card, 2 one pair, 3 two pair, 4 trips, 5 straight, 6 flush, 7 full house,
  * 8 quads. Named here because a bare `=== 4` in a detector is unreadable and
@@ -656,6 +667,49 @@ export function detectLeaks(row: {
           if (kicker <= 9 && (boardCount.get(kicker) ?? 0) === 0) {
             flag('top_pair_weak_kicker_stackoff');
           }
+        }
+      }
+    } catch {
+      /* detector is best-effort */
+    }
+  }
+
+  // ═══ V50 ONE PAIR, DEEP, COMMITTED LATE (2026-09-17 daily horse audit) ═══
+  //
+  // The 09-16 GTO sweep's untagged NLH tournament losses were one shape, over
+  // and over: QQ all-in on the turn on 6-J-2-7 for 567bb (review 511597), QQ
+  // on 5-3-3-9 for 810bb (504324), KK three-barrelling into an all-in on
+  // A-3-2-7 for 329bb (509437), AA on 3-7-K-8 for 397bb (504738), AA on
+  // 7-8-Q-5 for 235bb (504828), JJ on T-8-3-2 for 222bb (509668). Eight of the
+  // day's ten largest untagged tournament losses were one pair - an overpair
+  // or top pair - committed for 200bb to 800bb on the turn or river. None of
+  // them carried a tag: preflop_stackoff owns preflop, the V24 block only
+  // knows a rag kicker, and the nut-discipline block knows straights, flushes
+  // and boats. So the largest untagged line in the fleet was invisible to the
+  // rollup, the self-tuner's diagnostics and the nightly audit.
+  //
+  // This tag COUNTS the pattern, mirrored like every situation tag so it can
+  // be ranked by EV rather than by damage. NO STRATEGY DIAL MOVES HERE - a
+  // deep-stack one-pair commitment cap is strategy and needs scenario tests
+  // plus a league matchup with significance, per the standing rule. The
+  // commit street is read the way the PLO block reads it (commitStreet): a
+  // flop commit still has two cards to come and is a different decision, and
+  // a preflop commit is preflop_stackoff's hand.
+  if (
+    !vi.isOmaha &&
+    row.wentToShowdown &&
+    row.holeCards &&
+    row.holeCards.length === 2 &&
+    row.board &&
+    row.board.length >= 5 &&
+    investedBB >= DEEP_ONE_PAIR_BB
+  ) {
+    try {
+      const commit = commitStreet(row.heroActions, row.invested);
+      if (commit === 'turn' || commit === 'river') {
+        const ns = nlhNutStatus(row.holeCards, row.board, vi.isShortDeck);
+        if (ns.cat === CAT_ONE_PAIR) {
+          flag('one_pair_deep_stackoff');
         }
       }
     } catch {

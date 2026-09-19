@@ -247,6 +247,12 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
   ),
   tag('weak_kicker_trips_stackoff', 'measurement', 'board trips, dominated kicker, 40bb+', 'V24'),
   tag(
+    'one_pair_deep_stackoff',
+    'measurement',
+    'hold em one pair (overpair or top pair) at showdown, committed on the turn or river for 150bb+; the 2026-09-16 audit found eight of the ten largest untagged tournament losses were this shape',
+    'V50'
+  ),
+  tag(
     'straight_into_flush_stackoff',
     'measurement',
     'straight on a three-flush board - since 2026-09-13 also flagged in Omaha, where it is recorded and reviewed but deliberately NOT in PLO_STACKOFF_TAGS',

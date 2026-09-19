@@ -11,6 +11,19 @@
   width: 100%;
   filter: drop-shadow(0 12px 12px #0009);
 }
+.board[data-terminal='true'] {
+  animation-name: mine-board-complete;
+  animation-fill-mode: both;
+}
+@keyframes mine-board-complete {
+  0% {
+    opacity: 0.88;
+  }
+  20%,
+  100% {
+    opacity: 1;
+  }
+}
 .stage::before {
   content: '';
   position: absolute;

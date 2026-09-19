@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import DiamondPlinkoPage from '../../src/pages/DiamondPlinkoPage';
+import fixtures from '../fixtures/diamond-spins/local-postgres-receipts.json';
 const backend = vi.hoisted(() => ({
   getState: vi.fn(),
   commit: vi.fn(),
@@ -31,7 +32,31 @@ vi.mock('react-router-dom', () => ({
 vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: string) => id }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/hooks/useMeasuredWidth', () => ({ useMeasuredWidth: () => [null, 320] }));
-vi.mock('../../src/components/plinko/PlinkoBoard', () => ({ default: () => null }));
+vi.mock('../../src/components/plinko/PlinkoBoard', () => ({
+  default: ({
+    batchPathBits,
+    onLanded,
+  }: {
+    batchPathBits: number[] | null;
+    onLanded: () => void;
+  }) => (batchPathBits ? <button onClick={onLanded}>Finish Drops</button> : null),
+}));
+vi.mock('../../src/components/wheel/WheelWinReveal', () => ({
+  WheelWinReveal: ({
+    title,
+    detail,
+    onOpen,
+  }: {
+    title: string;
+    detail: string;
+    onOpen: () => void;
+  }) => (
+    <div role="dialog" aria-label={title}>
+      {detail}
+      <button onClick={onOpen}>Finish Prize</button>
+    </div>
+  ),
+}));
 vi.mock('../../src/components/games/DiamondSpinsTabs', () => ({ default: () => null }));
 vi.mock('../../src/components/games/TodayLine', () => ({ default: () => null }));
 const state = {
@@ -63,6 +88,29 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe('Plinko starts only its earned funding', () => {
+  it('shows its exact confirmed prize after the final drop and returns to its wheel', async () => {
+    backend.awardState.mockResolvedValue({ enabled: false, award: null, gameState: null });
+    backend.getState.mockResolvedValue({
+      ...state,
+      bets: [{ bet_diamonds: 100, cap_cents: 2000, playable: true }],
+      player: { ...state.player, spendable: 100 },
+    });
+    backend.start.mockResolvedValue({ ...fixtures.receipts.plinko, payout_chips: 12.57 });
+    render(<DiamondPlinkoPage />);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
+    await act(async () => {});
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Drops' }));
+    await act(async () => {});
+    expect(screen.getByRole('dialog', { name: '12.57 Chips' })).toBeInTheDocument();
+    expect(backend.navigate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Prize' }));
+    expect(backend.navigate).toHaveBeenCalledWith(
+      '/clubs/00000000-0000-0000-0000-000000000003/wheel',
+      { replace: true }
+    );
+  });
   it('allows the reserved upgrade with no fresh base diamonds and preserves denomination choices', async () => {
     const award = {
       id: '00000000-0000-0000-0000-000000000077',

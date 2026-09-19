@@ -32,6 +32,40 @@ afterEach(() => {
 });
 
 describe('Crossing terminal frame ownership', () => {
+  it('reveals the full remaining route before completing a booked win', () => {
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+      frame = callback;
+      return 1;
+    });
+    vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => {});
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      fillRect() {},
+      strokeRect() {},
+      fillText() {},
+    } as unknown as CanvasRenderingContext2D);
+    frames.render.mockReturnValue(true);
+    const onSettled = vi.fn();
+    render(
+      <ChoiceScene
+        game="crossing"
+        roundId="booked"
+        picked={[0]}
+        mines={null}
+        phase="cashed"
+        roadEnd={8}
+        busy={false}
+        onPick={() => {}}
+        onSettled={onSettled}
+      />
+    );
+    frame(100);
+    frame(600);
+    frame(3200);
+    expect(onSettled).not.toHaveBeenCalled();
+    frame(3400);
+    expect(onSettled).toHaveBeenCalledTimes(1);
+  });
   it.each(['open', 'lost'] as const)(
     'holds %s completion until the terminal frame is submitted',
     (phase) => {

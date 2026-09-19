@@ -236,3 +236,7 @@
     font-size: 10px;
   }
 }
+
+.refresh {
+  min-height: 44px;
+}

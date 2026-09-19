@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sliceBetween } from './helpers/sourceWindow';
@@ -54,6 +55,92 @@ legacy_checkpoint_countdown
 }
 
 describe('the exact legacy checkpoint enters the existing release transaction', () => {
+  it('checks the installed custody contract before saving intent or opening inspector access', () => {
+    const prerequisite = checkpointShell.indexOf('--mixed-custody-contract');
+    const intent = checkpointShell.indexOf('CHECKPOINT_INTENT="$(python3');
+    const inspector = checkpointShell.indexOf('node --input-type=module');
+    expect(prerequisite).toBeGreaterThan(0);
+    expect(prerequisite).toBeLessThan(intent);
+    expect(intent).toBeLessThan(inspector);
+    const check = checkpointShell.slice(checkpointShell.lastIndexOf('\nif ', prerequisite), intent);
+    expect(check).toContain(predecessor8825);
+    expect(check).toContain('engine-release-database-proof.py');
+    expect(check).toContain(
+      "die 'installed mixed-custody contract unavailable or incompatible; checkpoint not started'"
+    );
+  });
+
+  it.each([0, 1, 124])(
+    'preserves the one-shot intent until the installed prerequisite passes (exit %s)',
+    (status) => {
+      const requestRoot = mkdtempSync(join(tmpdir(), 'legacy-custody-prerequisite-'));
+      try {
+        const block = checkpointShell.slice(
+          checkpointShell.indexOf('# Installed SQL is a prerequisite'),
+          checkpointShell.indexOf('{ cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs";')
+        );
+        expect(block).toContain('--mixed-custody-contract');
+        const result = spawnSync(
+          'bash',
+          [
+            '-c',
+            `set -euo pipefail
+die() { echo "$*" >&2; exit 1; }
+timeout() { printf '%s\\n' "$*"; return "$PREREQUISITE_STATUS"; }
+curl() { printf '%s' "$PREREQUISITE_HEALTH"; }
+CONTROL_DIR=/immutable-reviewed-control
+LEGACY_SHA=${predecessor8825}
+REQUEST_ROOT="$PREREQUISITE_ROOT"
+RUN_ID=35405450271-1
+REQUEST=(unused unused unused unused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
+CONTAINER_ID=c63b254ee71b76aa26f4d1394d96189963774310244b046bc91186e219ca3f66
+STARTED_AT=2026-09-18T21:55:50.88305198Z
+HOST_PID=1231816
+${block}
+printf '%s' inspector-boundary-reached
+`,
+          ],
+          {
+            encoding: 'utf8',
+            timeout: 3000,
+            env: {
+              ...process.env,
+              PREREQUISITE_STATUS: String(status),
+              PREREQUISITE_ROOT: requestRoot,
+              PREREQUISITE_HEALTH: JSON.stringify({
+                running: true,
+                version: predecessor8825.slice(0, 8),
+                releaseSha: predecessor8825,
+                instanceId: '1-3846b8bb',
+                maintenance: {
+                  active: true,
+                  phase: 'counting_down',
+                  durableConfirmed: true,
+                  remainingMs: 299000,
+                },
+              }),
+            },
+          }
+        );
+        expect(result.error).toBeUndefined();
+        expect(result.status, result.stderr).toBe(status === 0 ? 0 : 1);
+        expect(result.stdout).toContain('--mixed-custody-contract');
+        expect(result.stdout.includes('inspector-boundary-reached')).toBe(status === 0);
+        const intent = join(requestRoot, '35405450271-1.legacy-checkpoint-intent');
+        expect(existsSync(intent)).toBe(status === 0);
+        if (status === 0) {
+          expect(JSON.parse(readFileSync(intent, 'utf8'))).toMatchObject({
+            retryAllowed: false,
+            source: predecessor8825,
+            runId: '35405450271-1',
+          });
+        }
+      } finally {
+        rmSync(requestRoot, { recursive: true, force: true });
+      }
+    }
+  );
+
   it.each([
     [predecessor8825, image8825, 0],
     [predecessor8825, image758, 1],
@@ -273,5 +360,134 @@ fi
     expect(stage).toContain(
       "'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**'"
     );
+  });
+});
+
+// The production Python entrypoint runs here with an isolated HTTP transport.
+// No database call, environment file, inspector or engine process is touched.
+function contractPreflight(payload: unknown, failure = '', sha = predecessor8825) {
+  return spawnSync(
+    'python3',
+    [
+      '-c',
+      `
+import contextlib, importlib.util, io, json, os, sys
+from urllib.error import HTTPError, URLError
+spec=importlib.util.spec_from_file_location('release_proof', 'server/scripts/engine-release-database-proof.py')
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+requests=[]; limits=[]; messages=io.StringIO()
+m.read_fixed_env=lambda path: {'SUPABASE_URL':'https://kuklfnapbkmacvwxktbh.supabase.co','SUPABASE_SERVICE_ROLE_KEY':'isolated-secret-must-not-print'}
+class Response:
+    def __enter__(self): return self
+    def __exit__(self,*args): return False
+    def read(self,limit):
+        limits.append(limit)
+        if os.environ['RPC_FAILURE']=='json': return b'{'
+        if os.environ['RPC_FAILURE']=='oversize': return b' '*limit
+        return os.environ['RPC_PAYLOAD'].encode()
+class Transport:
+    def open(self,request,timeout):
+        requests.append({'url':request.full_url,'method':request.get_method(),'timeout':timeout})
+        failure=os.environ['RPC_FAILURE']
+        if failure.isdigit(): raise HTTPError(request.full_url,int(failure),'denied',{},None)
+        if failure=='timeout': raise TimeoutError('isolated-secret-must-not-print')
+        if failure=='network': raise URLError('isolated-secret-must-not-print')
+        return Response()
+m.build_opener=lambda *handlers: Transport()
+m.read_leader=lambda *args: (_ for _ in ()).throw(AssertionError('not the elected-leader mode'))
+m.time.sleep=lambda *args: (_ for _ in ()).throw(AssertionError('no retry'))
+sys.argv=['engine-release-database-proof.py','--env-file','/unread-fixture','--sha',os.environ['RPC_SHA'],'--mixed-custody-contract']
+rc=0
+with contextlib.redirect_stdout(messages),contextlib.redirect_stderr(messages):
+    try: m.main()
+    except SystemExit as e: rc=e.code
+print(json.dumps({'exit':rc,'requests':requests,'limits':limits,'messages':messages.getvalue()}))
+`,
+    ],
+    {
+      encoding: 'utf8',
+      timeout: 3000,
+      env: {
+        ...process.env,
+        RPC_PAYLOAD: JSON.stringify(payload),
+        RPC_FAILURE: failure,
+        RPC_SHA: sha,
+      },
+    }
+  );
+}
+
+describe('installed mixed custody contract prerequisite', () => {
+  const qualified = JSON.parse(
+    read('tests/fixtures/legacy-engine-checkpoint/mixed-custody-contract.json')
+  );
+  const run = (payload: unknown, failure = '', sha = predecessor8825) => {
+    const result = contractPreflight(payload, failure, sha);
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+    const outcome = JSON.parse(result.stdout);
+    expect(outcome.messages).not.toContain('isolated-secret-must-not-print');
+    return outcome;
+  };
+
+  it('reads the exact qualified service-role catalog once through the pinned read-only RPC', () => {
+    const outcome = run(qualified);
+    expect(outcome.exit).toBe(0);
+    expect(outcome.requests).toEqual([
+      {
+        url: 'https://kuklfnapbkmacvwxktbh.supabase.co/rest/v1/rpc/fn_f06_mixed_custody_contract',
+        method: 'GET',
+        timeout: 5,
+      },
+    ]);
+    expect(outcome.limits).toEqual([65537]);
+  });
+
+  it.each(['401', '403', '404', '500', 'timeout', 'network', 'json', 'oversize'])(
+    'refuses %s without retry or leaking response/credential values',
+    (failure) => {
+      const outcome = run(qualified, failure);
+      expect(outcome.exit).toBe(1);
+      expect(outcome.requests).toHaveLength(1);
+      expect(outcome.messages).toContain('prerequisite unconfirmed');
+      expect(outcome.messages).toContain('checkpoint not started');
+    }
+  );
+
+  it.each([
+    'signature',
+    'definition_md5',
+    'body_md5',
+    'owner',
+    'acl',
+    'security_definer',
+    'config',
+    'volatility',
+  ])('refuses drift in each function %s', (field) => {
+    for (let i = 0; i < qualified.functions.length; i += 1) {
+      const drift = structuredClone(qualified);
+      drift.functions[i][field] =
+        field === 'security_definer' ? Number(drift.functions[i][field]) : null;
+      expect(run(drift).exit, `${qualified.functions[i].signature} ${field}`).toBe(1);
+    }
+  });
+
+  it.each(['missing', 'duplicate', 'empty', 'unknown-kind', 'null'])(
+    'refuses a %s catalog',
+    (kind) => {
+      let drift = structuredClone(qualified);
+      if (kind === 'missing') drift.functions.pop();
+      if (kind === 'duplicate') drift.functions.push(drift.functions[0]);
+      if (kind === 'empty') drift.functions = [];
+      if (kind === 'unknown-kind') drift.kind = 'unqualified';
+      if (kind === 'null') drift = null;
+      expect(run(drift).exit).toBe(1);
+    }
+  );
+
+  it('refuses an unrelated predecessor before contacting the database', () => {
+    const outcome = run(qualified, '', predecessor758);
+    expect(outcome.exit).toBe(1);
+    expect(outcome.requests).toEqual([]);
   });
 });

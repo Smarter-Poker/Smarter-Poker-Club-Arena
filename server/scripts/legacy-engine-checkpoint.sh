@@ -56,6 +56,15 @@ if (process.version !== "v22.23.2" ||
     process.env.GIT_COMMIT_SHA !== process.argv[1]) process.exit(1);
 ' "$LEGACY_SHA" || die 'predecessor runtime or loopback inspector configuration refused'
 
+# Installed SQL is a prerequisite, not a trial mutation. Refuse before the
+# durable one-shot intent or inspector; the existing transaction owns failure.
+if [ "$LEGACY_SHA" = 8825af51817f379c4261658ca29ecc9d8d81932d ]; then
+  timeout 8s python3 "$CONTROL_DIR/engine-release-database-proof.py" \
+    --env-file "${ENGINE_ENV_FILE:-/opt/club-arena/server/.env}" --sha "$LEGACY_SHA" \
+    --mixed-custody-contract \
+    || die 'installed mixed-custody contract unavailable or incompatible; checkpoint not started'
+fi
+
 INSTANCE="$(curl -sS --max-time 2 http://127.0.0.1:8080/health | python3 -c '
 import json,re,sys
 d=json.load(sys.stdin); m=d.get("maintenance",{}); instance=d.get("instanceId",""); release=sys.argv[1]

@@ -17,6 +17,9 @@ describe('actual isolated legacy checkpoint transport', () => {
     ['two', 'multiple instances refuse checkpoint invocation'],
     ['preexisting', 'an inspector owned by another caller remains untouched'],
     ['cleanup_close_timeout', 'missing close notification stays unknown without a competing close'],
+    ['refusal', 'validated native refusal and counts survive successful inspector cleanup'],
+    ['refusal_cleanup_timeout', 'cleanup refusal retains the original native refusal evidence'],
+    ['malformed_refusal', 'unrecognized or wrongly typed summary values cannot become diagnostics'],
   ])(
     '%s: %s',
     (scenario) => {

@@ -19,6 +19,7 @@ export interface CrashCurveProps {
   width?: number;
   height?: number;
   onTick?: (cents: number) => void;
+  onSettled?: () => void;
 }
 function jet() {
   const group = new THREE.Group();
@@ -102,6 +103,10 @@ export default function CrashCurve(props: CrashCurveProps) {
   latest.current = props;
   const width = props.width ?? 360;
   const height = props.height ?? 300;
+  useEffect(() => {
+    if (failed && (props.phase === 'cashed' || props.phase === 'crashed'))
+      latest.current.onSettled?.();
+  }, [failed, props.phase]);
   useEffect(() => {
     if (!canvas.current) return;
     let kit: ReturnType<typeof gameRenderer>;
@@ -232,7 +237,13 @@ export default function CrashCurve(props: CrashCurveProps) {
     let raf = 0,
       last = 0,
       previousPhase: CrashPhase = 'idle',
-      revealAt = 0;
+      notified = false,
+      revealedFor = 0;
+    let lastVisibleFrame: number | null = null;
+    const visibilityChanged = () => {
+      lastVisibleFrame = null;
+    };
+    document.addEventListener('visibilitychange', visibilityChanged);
     const reduced = prefersReducedMotion();
     const speed = getAnimationSpeed();
     const point = (v: number) => new THREE.Vector3(-3.8 + v * 7.1, -1.55 + v * v * 3.5, 0);
@@ -240,11 +251,14 @@ export default function CrashCurve(props: CrashCurveProps) {
       raf = requestAnimationFrame(draw);
       if (document.hidden || now - last < (reduced ? 180 : 30)) return;
       last = now;
+      const visibleDelta = lastVisibleFrame === null ? 0 : now - lastVisibleFrame;
+      lastVisibleFrame = now;
       const p = latest.current;
       if (p.phase !== previousPhase) {
         previousPhase = p.phase;
-        revealAt = now;
-      }
+        revealedFor = 0;
+        notified = false;
+      } else revealedFor += visibleDelta;
       const elapsed =
         p.startedAtLocalMs === null ? 0 : Math.max(0, performance.now() - p.startedAtLocalMs);
       const current =
@@ -258,7 +272,7 @@ export default function CrashCurve(props: CrashCurveProps) {
         p.phase === 'cashed'
           ? reduced
             ? 1
-            : Math.max(0, Math.min(1, (now - revealAt - 800) / (2600 * speed)))
+            : Math.max(0, Math.min(1, (revealedFor - 800) / (2600 * speed)))
           : 0;
       const shown =
         p.phase === 'cashed'
@@ -299,7 +313,7 @@ export default function CrashCurve(props: CrashCurveProps) {
         );
       if (finished) {
         const positions = burstGeometry.attributes.position.array as Float32Array;
-        const t = reduced ? 0.55 : Math.min(1, (now - revealAt) / (1200 * speed));
+        const t = reduced ? 0.55 : Math.min(1, revealedFor / (1200 * speed));
         for (let i = 0; i < 80; i++) {
           const angle = i * 2.39996;
           const radius = (0.2 + (i % 9) * 0.1) * t;
@@ -319,11 +333,19 @@ export default function CrashCurve(props: CrashCurveProps) {
         planet.rotation.y = now / 70000;
         orbit.rotation.z = now / 16000;
       }
-      kit.render();
+      const submitted = kit.render();
+      const terminalComplete =
+        finished &&
+        (reduced || revealedFor >= (p.phase === 'cashed' ? 800 + 2600 * speed : 1200 * speed));
+      if (submitted && terminalComplete && !notified) {
+        notified = true;
+        p.onSettled?.();
+      }
     };
     raf = requestAnimationFrame(draw);
     return () => {
       cancelAnimationFrame(raf);
+      document.removeEventListener('visibilitychange', visibilityChanged);
       surface.removeEventListener('webglcontextlost', lost);
       surface.removeEventListener('webglcontextrestored', restored);
       kit.cleanup();

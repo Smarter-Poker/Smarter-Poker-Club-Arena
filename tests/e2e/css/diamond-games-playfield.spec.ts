@@ -31,11 +31,25 @@ for (const width of [320, 390, 1280])
     await page.getByRole('button', { name: 'plinko', exact: true }).click();
     await page.getByRole('button', { name: '4 Diamonds Per Drop, 25 Drops' }).click();
     await expect(page.getByText('25 Drops × 4 Diamonds = 100 Diamonds')).toBeVisible();
+    const payoutLabels = page.getByRole('list', { name: 'Plinko Payout Slots' }).locator('strong');
+    await expect(payoutLabels).toHaveCount(17);
+    expect(
+      await payoutLabels.evaluateAll((elements) =>
+        elements.every((element) => {
+          const box = element.getBoundingClientRect();
+          return (
+            parseFloat(getComputedStyle(element).fontSize) >= 20 &&
+            box.left >= 0 &&
+            box.right <= innerWidth
+          );
+        })
+      )
+    ).toBe(true);
     await page.getByRole('button', { name: 'crossing', exact: true }).click();
     await page.getByRole('button', { name: 'Preview Safe Crossing', exact: true }).click();
     await expect(page.getByText('Street 1 · Next Street Clear')).toBeVisible();
     await page.getByRole('button', { name: 'Preview Collision', exact: true }).click();
-    await expect(page.getByText('Collision · No Prize')).toBeVisible();
+    await expect(page.getByText('Collision · Round Over')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true
     );

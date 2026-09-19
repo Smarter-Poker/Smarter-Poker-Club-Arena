@@ -167,8 +167,15 @@ describe('table watchdog - when it must stay out of the way', () => {
     h.setStale(10 * 60_000);
     run(h);
     expect(trips(h)).toBe(0);
-    (h.engine as any).handForHandResolve = null;
+    /* The table is PARKED: its dealing loop is suspended inside
+       awaitPauseGate's promise, and `handForHandResolve` is that promise's
+       resolver. The harness stands in a no-op for it because there is no real
+       loop here - but it must be present, because since 2026-09-18 the
+       progress credit below is given only to a table that actually stopped.
+       The unparked case is its own test, directly beneath this one. */
+    (h.engine as any).handForHandResolve = () => {};
     h.engine.resumeDealing();
+    expect((h.engine as any).handForHandResolve).toBeNull();
     expect((h.engine as any).isPausedByDesign()).toBe(false);
     /**
      * 2026-09-05: this used to `run(h)` here and expect a trip immediately,
@@ -191,6 +198,49 @@ describe('table watchdog - when it must stay out of the way', () => {
     h.setStale(10 * 60_000);
     run(h); // idle + dealable + unpaused -> Case B counts a trip again
     expect(trips(h)).toBe(1);
+  });
+
+  it('a resume does NOT vouch for a table whose loop never reached the gate', () => {
+    /**
+     * ── A BREAK CANNOT VOUCH FOR A TABLE THAT NEVER PARKED (2026-09-18) ────
+     *
+     * A resume reaches every engine: MaintenanceBreak.resumeEveryEngine()
+     * calls resumeFromMaintenance() on the whole fleet on purpose, because
+     * skipping a table strands it (2026-09-03), and a tournament break calls
+     * resumeDealing() on every table of its event. The credit was
+     * unconditional, so a table frozen mid-hand - or frozen on a database
+     * round trip between hands - was handed the same clean bill of health as
+     * one that stopped when it was told to, and markProgress() zeroes
+     * `watchdogTrips` along with the clock.
+     *
+     * MEASURED IN PRODUCTION 2026-09-18 16:25:03Z: twenty stalled tables,
+     * loop phases frozen in ONE phase for 1,000s to 21,606s, and
+     * msSinceProgress on every one of them 1,420-1,430s - all reset inside
+     * the same second, which was the break's resume. Re-polled 45s later:
+     * zero hands, zero phase change. Every hour, the break was the only thing
+     * telling the watchdog those tables were alive.
+     *
+     * `handForHandResolve` stays null here: nothing ever parked.
+     */
+    const h = harness({ noHand: true });
+    (h.engine as any).maintenancePaused = true;
+    (h.engine as any).pausedSinceMs = Date.now() - 10 * 60_000;
+    h.setStale(10 * 60_000);
+    // Frozen mid-phase for the whole break - the loop never reached the gate.
+    h.setLoopPhase('load_next_hand_inputs', 10 * 60_000);
+    expect((h.engine as any).handForHandResolve).toBeNull();
+
+    h.engine.resumeFromMaintenance();
+
+    expect((h.engine as any).isPausedByDesign()).toBe(false);
+    // THE REGRESSION, BY NAME: the ten stale minutes survive the resume.
+    expect((h.engine as any).msSinceProgress()).toBeGreaterThanOrEqual(10 * 60_000);
+    // ...so the watchdog engages on the very next pass rather than starting
+    // its two-trip escalation over from zero once an hour, forever.
+    run(h);
+    expect(trips(h)).toBe(1);
+    run(h);
+    expect(h.calls.killed.join(',')).toContain('load_next_hand_inputs');
   });
 
   it('does nothing to a table that is making progress', () => {

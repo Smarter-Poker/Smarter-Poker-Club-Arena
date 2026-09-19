@@ -72,11 +72,11 @@ beforeEach(() => {
 describe('actual isolated PostgreSQL earned-game contract', () => {
   it.each(versions)(
     'retains normal, doubled, and maximum upgraded examples from wheel v$version',
-    ({ records: rows }) => {
+    ({ version, records: rows }) => {
       for (const game of ['plinko', 'crash', 'crossing', 'mines']) {
         expect(
           rows.filter((r) => r.kind === 'start' && r.game === game).map((r) => r.value.bet_diamonds)
-        ).toEqual([100, 200, 7500]);
+        ).toEqual(version === 3 && game !== 'plinko' ? [2500, 5000, 7500] : [100, 200, 7500]);
       }
       expect(rows).toHaveLength(48);
     }

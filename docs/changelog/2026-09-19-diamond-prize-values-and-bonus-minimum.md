@@ -1,0 +1,15 @@
+# Diamond Spins prize values and bonus minimums
+
+Throwables, Time Bank, Rabbit Hunt and Diamond wheel rewards now have half the entry's diamond value. The primary and upgraded instant-chip multipliers stay unchanged. The three interactive bonus games settle a losing round with a guaranteed minimum based on the entire funded entry, including Double Down and Super entry credit. A 5,000-diamond entry at the existing 100-diamonds-per-chip bridge pays at least 5 chips.
+
+The chip minimum rounds upward to the existing cent precision. A 25-diamond entry therefore guarantees 0.03 chips. Inventory and diamond prizes remain whole units; odd entries use the existing independent sealed rounding draw, so a 25-diamond spin awards 12 or 13 diamonds of value with a mean of 12.5. Receipts retain the actual amount paid.
+
+Internal mathematics preserves the established 0.80 expectation. With entry B, minimum L, and cumulative survival q, Mines pays L+(0.8B-L)/q on a win and L on a loss. Crossing and Crash retain their advertised targets and use survival (0.8B-L)/(target-L). This keeps the stopping process fair after the initial charge and accounts for the actual upward-rounded minimum. Primary wheel weights keep all four bonus probabilities and Upgrade odds; the 3x-chip weight becomes 2,200 and the three consumable weights become 14,600 each, out of 100,000. Their exact model expectation is 0.80. These internal percentages are not shown in player-facing copy.
+
+Each new round stores its immutable minimum. Existing open rounds retain zero and their original sealed distribution and prizes. Historical wheel receipts retain their complete stored segment/weight snapshot. Receipt validators and browser fairness calculations recognize both versions. Exact clicked Crash multipliers are unchanged. All minimum and winning prizes use the existing reserved-liability settlement transaction, Promo Wallet first and exact Main Bank shortfall, with the original replay key and journal.
+
+The native qualification exercises authenticated JWT claims, all wheel prizes, 2,500/5,000/7,500-diamond losing entries, genuine bonus admission, the reported Crash award's 5,905-cent cap, winning paths, immutable minimums, direct-write denial, replay, host funding, journal totals and full-row rollback. The existing native accounting job enforces it. Independent rational-math tests cover all selectable Mines/Crossing targets and Crash threshold boundaries. No financial probe is executed against live players.
+
+Deploy the compatible client before installing the qualified migration. Read back the exact installed functions and migration history once; do not replay it. The migration changes future admissions only and does not rewrite settled records.
+
+Installed once as provider-assigned version `20260919034436` after client PR #4912 was published and verified. Migration history retained the exact qualified SQL bytes; all 13 function bodies, security/search-path contracts, both helper ACLs and both new columns were independently read back. The reserved local filename was aligned to the installed version without replaying SQL.

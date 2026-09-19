@@ -110,6 +110,59 @@ groups:
             /health?liveness_table_ids=... for the loopPhase of each.
           runbook: https://monitor.smarter.poker/runbooks/tables-frozen
 
+      # ── THE ENGINE CANNOT BE REPLACED (2026-09-19) ─────────────────────
+      # Whether a break ever certified a restart is recorded per break in
+      # engine_maintenance_break_log.ready_for_restart_at, and no alert rule
+      # reads a database table. On 2026-09-18 one table held an unresolved F06
+      # hand-number preparation from 21:56 onward; the restart gate never
+      # opened again; six consecutive engine releases failed, including two
+      # off-cycle recovery windows they asked for themselves; and production
+      # sat four and a half hours behind main.
+      #
+      # /health said `status: ok` throughout, and it was telling the truth.
+      # Every table was dealing. It was the RESTART that was impossible, which
+      # nothing measured. This is that measurement.
+      #
+      # One shut break is a lost window and gets retried. Two in a row means no
+      # fix, security or otherwise, can reach production until somebody acts.
+      - alert: PokerEngineCannotBeReplaced
+        expr: poker_maintenance_breaks_since_restart_certified >= 2
+        for: 0m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: '{{ $value }} consecutive breaks ended with no restart certificate'
+          description: |
+            The engine restart gate has not opened for two or more breaks in a
+            row, so no engine release can land. The felt is unaffected and will
+            look healthy; the deploy route is not.
+            Read engine.smarter.poker/health -> maintenance.unparkedReasons for
+            the reason the gate is refusing. A table holding an unresolved F06
+            preparation is process-local: only replacing that table's engine,
+            or restarting the process, clears it.
+          runbook: https://monitor.smarter.poker/runbooks/tables-frozen
+
+      # The bounded half of the same fault. Past ten minutes an unresolved F06
+      # preparation stops holding every other table's restart certificate shut,
+      # which is what keeps the deploy route open - but the table itself is
+      # still wedged and still needs its engine replaced.
+      - alert: PokerRestartGateHeldByStuckPermit
+        expr: poker_maintenance_unparked_tables{reason="f06_preparation_stuck"} > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: '{{ $value }} table(s) hold an F06 preparation past the restart gate'
+          description: |
+            A table has held an unresolved F06 hand-number preparation for over
+            ten minutes. It no longer blocks the platform's restart
+            certificate, so releases can proceed, but that table is wedged and
+            its permit only clears when its engine is replaced. The container
+            log names the table id.
+          runbook: https://monitor.smarter.poker/runbooks/tables-frozen
+
       # A settlement retry heartbeat can keep the existing progress watchdog
       # healthy while the same accepted hand remains blocked indefinitely.
       # Confirmed in the live Prometheus name catalog on 2026-09-08 after

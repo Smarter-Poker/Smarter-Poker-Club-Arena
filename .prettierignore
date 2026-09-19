@@ -233,3 +233,7 @@ scripts/ci/fixtures/hand-submission/current-outbox-dependencies-20260918.json
 scripts/ci/fixtures/hand-submission/current-postcommit-tables-20260918.json
 scripts/ci/fixtures/hand-submission/current-snapshots-20260918.json
 scripts/ci/fixtures/hand-submission/current-stack-authority-20260918.json
+
+# Lossless Early Bird fee, funding and prior-credit evidence uses numeric scale
+# in its original PostgreSQL fingerprints; the native source binding owns bytes.
+tests/fixtures/earlybird-fee-custody/*.json

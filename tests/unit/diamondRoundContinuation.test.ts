@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import fixtures from '../fixtures/diamond-spins/local-postgres-receipts.json';
+import upgrades from '../fixtures/diamond-spins/wheel-v3-postgres-receipts.json';
 import DiamondGamesService, { normaliseCrash } from '../../src/services/DiamondGamesService';
 import { DiamondChoiceService, parseChoiceRound } from '../../src/services/DiamondChoiceService';
 
@@ -21,6 +22,43 @@ const expectedCrash = normaliseCrash({
 beforeEach(() => rpc.mockReset());
 
 describe('a Diamond game continuation keeps its accepted round', () => {
+  it('retains the validated Super Crash budget through normalization of real server receipts', () => {
+    const record = upgrades.records.find(
+      (r) =>
+        r.kind === 'start' &&
+        r.game === 'crash' &&
+        (r.value as Record<string, any>).bonus?.boost_multiplier === 2
+    )!;
+    const raw = record.value as Record<string, any>;
+    const normalized = normaliseCrash(raw);
+    expect(normalized.award_id).toBe(raw.award_id);
+    expect(normalized.bonus).toMatchObject({
+      base_diamonds: 5000,
+      entry_diamonds: 2500,
+      boost_multiplier: 2,
+      added_diamonds: 2500,
+      total_diamonds: 7500,
+    });
+    expect(normalized.bet_diamonds).toBe(7500);
+    expect(normaliseCrash(normalized as unknown as Record<string, unknown>).bonus).toEqual(
+      normalized.bonus
+    );
+    for (const change of [
+      { boost_multiplier: 1 },
+      { base_diamonds: 2500 },
+      { total_diamonds: 5000 },
+      { added_diamonds: 5000 },
+    ]) {
+      expect(() => normaliseCrash({ ...raw, bonus: { ...raw.bonus, ...change } })).toThrow(
+        'Award Could Not Be Verified'
+      );
+    }
+    expect(normaliseCrash(crash).bonus).toBeUndefined();
+    expect(normaliseCrash({ ...crash, award_id: null }).bonus).toBeUndefined();
+    for (const award_id of ['', 'invalid', 2, false]) {
+      expect(() => normaliseCrash({ ...crash, award_id })).toThrow('Award Could Not Be Verified');
+    }
+  });
   it('sends the clicked hundredth unchanged to the authenticated cash-out endpoint', async () => {
     rpc.mockResolvedValue({ data: crash, error: null });
     await DiamondGamesService.crashSettle(crash.round_id, true, expectedCrash, 257);

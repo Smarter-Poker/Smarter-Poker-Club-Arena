@@ -1,0 +1,145 @@
+{
+  "kind": "f06_mixed_custody_contract_v1",
+  "functions": [
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "body_md5": "aeaabb44975b8d138ed447687b0aea22",
+      "signature": "public.fn_f06_admit_mixed_manager_custody(uuid,uuid,uuid,jsonb)",
+      "volatility": "v",
+      "definition_md5": "3b047e7502c62bff570cd6253e85a741",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "body_md5": "43aa14703d4d8f37a95f7adf6c6ed5c1",
+      "signature": "public.fn_f06_complete_mixed_manager_custody(uuid,uuid,uuid,jsonb)",
+      "volatility": "v",
+      "definition_md5": "1c45252d2701562fbd9d189927f418aa",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "body_md5": "d140c71041b6fa7c7fe5bcec1e621fb4",
+      "signature": "public.fn_f06_find_mixed_manager_custody(uuid)",
+      "volatility": "v",
+      "definition_md5": "d9ab62fbf2dd62e234f9070582169c04",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog"],
+      "body_md5": "0adb4f8e9c99abffa9782b60f6847b3b",
+      "signature": "public.fn_f06_mixed_custody_contract()",
+      "volatility": "s",
+      "definition_md5": "1fe8e26e53014c9eb68a180767b5f688",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "body_md5": "a1175d233f0cd493bf3e4775a9ecef45",
+      "signature": "public.fn_f06_mixed_custody_intent(uuid,uuid,uuid,text,jsonb)",
+      "volatility": "v",
+      "definition_md5": "56095501ac846f06739c46fa0b7fbd48",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "body_md5": "6cee89d253373a45298c13324429ab1b",
+      "signature": "public.fn_f06_prepare_mixed_manager_custody(uuid,uuid,uuid,uuid,jsonb,jsonb)",
+      "volatility": "v",
+      "definition_md5": "d571f3b9051d0e747c3a4020e1a7727c",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "body_md5": "1bc767e267e5b90534c601c39f2790a0",
+      "signature": "smarter_private.f06_assert_movement(uuid)",
+      "volatility": "v",
+      "definition_md5": "7f10809c0e6ce2819c97c2ab53b95fba",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog"],
+      "body_md5": "0daf117b8c81a351771c5fa802d22c62",
+      "signature": "smarter_private.f06_manager_transfer_immutable()",
+      "volatility": "v",
+      "definition_md5": "d595b68fa3464e5d56b5bc5395b5eb08",
+      "security_definer": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "body_md5": "9dab70e0012b7550c7d8378df998f09a",
+      "signature": "smarter_private.f06_mixed_adopt_presence(uuid,jsonb)",
+      "volatility": "v",
+      "definition_md5": "9957f669bd05823094f15599d8714c9e",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "body_md5": "a22bf6241dba96e747c0aca01a504899",
+      "signature": "smarter_private.f06_mixed_bank_proof(uuid,jsonb)",
+      "volatility": "v",
+      "definition_md5": "4a14ebba9c038f759230b9b3186a56b8",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "body_md5": "dc612333e6fc9bb08bf70ffa8562ce1a",
+      "signature": "smarter_private.f06_mixed_current_admission(uuid,uuid,uuid)",
+      "volatility": "v",
+      "definition_md5": "90ff66e263413795edcc691a879595d7",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "body_md5": "882162fbb2ebaa3eaf2a0a6e567e9824",
+      "signature": "smarter_private.f06_mixed_custody_snapshot(uuid,uuid,jsonb)",
+      "volatility": "v",
+      "definition_md5": "a57792a090f58f2c80b197bc01ef4447",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "body_md5": "f33b05adc06f9c8f31390ca5d6b7bd67",
+      "signature": "smarter_private.f06_mixed_movement_generation(uuid)",
+      "volatility": "v",
+      "definition_md5": "2d096f6ee2a9eecd6895713be15cf365",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "body_md5": "5d061187142fe383baf6392b6306519e",
+      "signature": "smarter_private.f06_mixed_preparation_guard()",
+      "volatility": "v",
+      "definition_md5": "bcbdb70741099a7806acd90e838cc03f",
+      "security_definer": true
+    }
+  ]
+}

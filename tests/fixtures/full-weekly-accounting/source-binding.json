@@ -295,7 +295,7 @@
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "e500aa832ea849e9272fb63119e15a938393e6da3d821f7cb69272e6ccf13a4a",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "40197721a91930668687751146dacd9ea59f68765633b402fb6ef08498e2852b",
     "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
@@ -384,7 +384,7 @@
     "tests/fixtures/spin-mixed-cutover/setup.sql": "023ca3e1c6b4614d83190bcd7c1ad8f8a1e7d5ceea8ffa419564b59aa5d2e06c",
     "scripts/dev/qualify-spin-mixed-cutover.py": "4b50779f6ed435262e7281057d4dbf588dab131fb0a6862fb743d7b13e5d402f",
     "supabase/migrations/20260918085836_original_mixed_cutover_spin_fee_proof.sql": "a79d6e958f06bf17470a870e20167fa2e9b0cc358cb79a22f75f5866e737f8c6",
-    "tests/fixtures/spin-mixed-cutover/source-binding.json": "75adb19d94bc0f123a41d6d18ae1a477d14e958adf3c93be7e034ae200cd4cd5",
+    "tests/fixtures/spin-mixed-cutover/source-binding.json": "c48c512538bb97ef0e7ce50fd8003477f017eba9a1b482c35e82b5a142ecd6d3",
     "tests/fixtures/legacy-fee-finality/fn_terminal_tournament_evidence_is_immutable.sql": "dfb2ee68610de70577b3ed8a61c90a397e4b987bfdec0903654daea61e5c9906",
     "tests/fixtures/legacy-fee-finality/build-candidate.py": "2fc2667d4b6ab644b3f97ba440922900daeb0f9edf67fc6a2874869d6bd90f37",
     "tests/fixtures/legacy-fee-finality/negative.sql": "9a824c9f45318ed8cb665b4de7868fe80788de3f80aff84d06c3a08ee11cc14f",
@@ -420,7 +420,7 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "0aaf5fd915689d740408313ef802cbe0557fda48f9cc8634b4e4394368b79bd9",
+    "scripts/ci/classify-ci-changes.mjs": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
     "tests/fixtures/legacy-fee-finality/source-binding.json": "5192bb75e41e0941430cd4043a261ce3c075309a1eb034dcd715ad4bdb70386a",
@@ -437,7 +437,7 @@
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
     "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
     "scripts/dev/qualify-sep8-spin-custody.py": "19a01adc032b82338fdc8a1041ba1fb60047019b0313fc3580b0bd9264cec737",
-    "tests/unit/fixtureNativeCi.test.ts": "645c965b763f69b53f72c857457f4d3d2a929688c54fa3344e37c2af9030233f",
+    "tests/unit/fixtureNativeCi.test.ts": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
@@ -473,7 +473,19 @@
     "tests/fixtures/sep8-spin-custody/union-journal-guard.sql": "9e51de2fff3be93ea99ea493d54eca2f2da2ede7c189f710ff4a401572a8912d",
     "tests/fixtures/sep8-spin-custody/union-journal-after.sql": "fdb962f82796d0d3d2244de0bd2092467d337c7f4bb86e5bdc06a8745f11d5ae",
     "tests/fixtures/sep8-spin-custody/qualify-clock-comparison.py": "6e72595bd5ec5f56dbd00a10621e72d5050a7d5d9da98bc48827479e0c1aaa97",
-    "supabase/migrations/20260918225150_original_spin_closure_ignores_only_elapsed_clock_metadata.sql": "f4a3660b311d3270e9d0dbec17c33a0d35488dfccc43dc97836dbcd54491a18d"
+    "supabase/migrations/20260918225150_original_spin_closure_ignores_only_elapsed_clock_metadata.sql": "f4a3660b311d3270e9d0dbec17c33a0d35488dfccc43dc97836dbcd54491a18d",
+    "tests/fixtures/earlybird-fee-custody/setup.sql": "ac34d5f9432bd6c4ede4072439e66a6f93c7ffc0f5df53ca5a42d6d72c01e573",
+    "tests/fixtures/earlybird-fee-custody/funding-scope.json": "342424a2012da6b9f987e5265d772e59f610dac74c4b5c89d1a718c8ec13e8ff",
+    "tests/fixtures/earlybird-fee-custody/originals.json": "216b0724f54e34df563dbf24741c23a596cdf1534653da20e16affb464f326d0",
+    "tests/fixtures/earlybird-fee-custody/predecessors.json": "8ca184b468374a9bede7a3965db0815fc2d1e6ff25d68657505d84c9a9b693b0",
+    "tests/fixtures/earlybird-fee-custody/before.sql": "ec9c2a263cfa12a946a24501c2ba22890f0afe13a351453dba7d6009198c52d2",
+    "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
+    "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
+    "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "6a7e882df5fae21b7eb7982826b63094531c470c7e5a078b9bfd95a3e2060565",
+    "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
+    "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
+    "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",
@@ -1379,7 +1391,7 @@
       {
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous_sha256": "02ad9afd28daae965fda9992c4b6a9262857793bee9ab269cc5acac96837f637",
-        "sha256": "f037363cf1da6ddfca7cfa73ff4129b9b9b5457a846cf2d783fde2b3a06a1fdf"
+        "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
       },
       {
         "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
@@ -1389,7 +1401,7 @@
       {
         "path": "tests/unit/fixtureNativeCi.test.ts",
         "previous_sha256": "b50ab5f30f6543b6a67acf5d0d684ca0839fc67e44efc4d95f14f9158cd4e12f",
-        "sha256": "bb58f37feb9bac28ea2994be33f24bbf96a8f70db998f2126df865d22f180d64"
+        "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
       },
       {
         "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
@@ -1406,5 +1418,11 @@
     "previous_sha256": "e63212a2d01cc2a98c57e72ad9a6f0081ac15335b51529214039776ba4424739",
     "sha256": "75adb19d94bc0f123a41d6d18ae1a477d14e958adf3c93be7e034ae200cd4cd5",
     "reason": "Retain the reviewed nested binding successor for the added September8 native phase. All underlying financial source, captures, original mixed-cutover implementation and assertion count remain unchanged. Full native execution remains separately required."
+  },
+  "mixed_runner_binding_20260919": {
+    "path": "tests/fixtures/spin-mixed-cutover/source-binding.json",
+    "previous_sha256": "75adb19d94bc0f123a41d6d18ae1a477d14e958adf3c93be7e034ae200cd4cd5",
+    "sha256": "c48c512538bb97ef0e7ce50fd8003477f017eba9a1b482c35e82b5a142ecd6d3",
+    "reason": "Bind the reviewed Early Bird runner addition in the existing mixed-cutover phase; no SQL or fixture assertion changed."
   }
 }

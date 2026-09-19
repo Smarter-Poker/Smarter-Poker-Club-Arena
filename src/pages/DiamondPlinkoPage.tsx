@@ -2,6 +2,7 @@ import { pendingBonus } from '../services/diamondBonusRecovery';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
+import BonusCompletion from '../components/games/BonusCompletion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -20,6 +21,7 @@ import {
 } from '../services/DiamondBonusService';
 import {
   bonusTotal,
+  earnedReceiptBudget,
   bonusWalletDebit,
   gameChips,
   validBonusBudget,
@@ -30,6 +32,13 @@ import { reportError } from '../utils/errorReporter';
 import { multiplierLabel } from '../utils/diamondGamesFairness';
 import { roundedMinePrize } from '../utils/diamondChoiceMath';
 import styles from './diamondGames.module.css';
+import plinkoStyles from './diamondPlinko.module.css';
+
+const RISK_LABELS: Record<number, { label: string; detail: string }> = {
+  1: { label: 'Lower Risk', detail: 'Smaller Top Prizes, Less Variation Between Drops.' },
+  2: { label: 'Medium Risk', detail: 'Bigger Outer Prizes, Wider Variation Between Drops.' },
+  3: { label: 'Higher Risk', detail: 'Largest Outer Prizes, More Zero-Prize Slots.' },
+};
 
 export default function DiamondPlinkoPage() {
   const { user } = useAuthUser();
@@ -47,10 +56,11 @@ function DiamondPlinkoGame() {
   const earned = useEarnedBonus(uuid, 'plinko', selectedBudget);
   const budget = earned.budget;
   const state = (earned.gameState as GameState | null) ?? legacyState;
-  const [tableVersion, setTableVersion] = useState(2);
+  const [tableVersion, setTableVersion] = useState(1);
   const [ticket, setTicket] = useState<{ id: string; hash: string } | null>(null);
   const [seed, setSeed] = useState(randomClientSeed);
   const [result, setResult] = useState<PlinkoBonus | null>(null);
+  const [completionId, setCompletionId] = useState<string | null>(null);
   const [landed, setLanded] = useState(0);
   const [animating, setAnimating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -64,8 +74,21 @@ function DiamondPlinkoGame() {
   const held = useRef<Parameters<typeof DiamondBonusService.start>[0] | null>(null);
   const [stageRef, width] = useMeasuredWidth<HTMLDivElement>(300);
   const total = bonusTotal(budget);
+  const receiptBudget = result
+    ? earnedReceiptBudget(result as unknown as Record<string, unknown>)
+    : null;
+  const isSuper = (result ? receiptBudget?.award : budget.award)?.boostMultiplier === 2;
   const player = state?.player;
-  const table = state?.tables.find((t) => t.version === tableVersion) ?? state?.tables[0];
+  const quotedBet = state?.bets.find((bet) => bet.bet_diamonds === total);
+  const fundedTables = (state?.tables ?? []).filter(
+    (option) => quotedBet?.playable && quotedBet.cap_cents >= option.max_multiplier_cents
+  );
+  // An award reserves a maximum prize. A larger entry can lower its supported
+  // multiplier, so the old selected table must never strand a funded bonus.
+  const table = fundedTables.find((option) => option.version === tableVersion) ?? fundedTables[0];
+  const risk = table
+    ? (RISK_LABELS[table.version]?.label ?? `Level ${table.version}`)
+    : 'Unavailable';
   const paths = useMemo(() => result?.drops.map((ball) => ball.path_bits) ?? null, [result]);
   const painted =
     result && animating
@@ -74,15 +97,12 @@ function DiamondPlinkoGame() {
   const blocked =
     !earned.ready ||
     !validBonusBudget(budget) ||
-    quotedAmount !== total ||
+    (!earned.award && quotedAmount !== total) ||
     !state?.available ||
     state.frozen ||
     !state.player?.is_member ||
     state.player.spendable < bonusWalletDebit(budget) ||
     !table ||
-    !state.bets.some(
-      (b) => b.bet_diamonds === total && b.cap_cents >= table.max_multiplier_cents
-    ) ||
     state.player.rounds_today >= (state.config?.max_rounds_per_player_per_day ?? 0) ||
     waitSeconds > 0;
 
@@ -127,13 +147,6 @@ function DiamondPlinkoGame() {
           setError('Check Your Saved Bonus Before Starting Another.');
           return;
         }
-        const saved = await DiamondBonusService.latest(id, 'plinko');
-        if (cancelled) return;
-        if (saved) {
-          const previous = parsePlinkoBonus(saved);
-          setResult(previous);
-          setLanded(previous.drops.length);
-        }
         await newTicket();
       } catch (e) {
         reportError(e, 'DiamondPlinkoPage.load');
@@ -147,12 +160,16 @@ function DiamondPlinkoGame() {
     };
   }, [clubId, user?.id, newTicket, setBudget]);
   useEffect(() => {
-    if (!uuid || !validBonusBudget(budget)) return;
+    if (!uuid || !validBonusBudget(budget) || earned.loading || earned.required) return;
     void load(uuid, total).catch((e) => {
       reportError(e, 'DiamondPlinkoPage.quote');
       if (live.current) setError('The Entry Could Not Be Checked. Try Refresh.');
     });
-  }, [uuid, total, budget.base, load]);
+  }, [uuid, total, budget.base, earned.loading, earned.required, load]);
+  useEffect(() => {
+    if (earned.gameState)
+      setWaitSeconds((earned.gameState as GameState).player?.seconds_until_next ?? 0);
+  }, [earned.gameState, setWaitSeconds]);
 
   useEffect(() => {
     if (!earned.recoveredResult || result || animating || uncertain) return;
@@ -160,6 +177,7 @@ function DiamondPlinkoGame() {
       const saved = parsePlinkoBonus(earned.recoveredResult);
       setResult(saved);
       setLanded(saved.drops.length);
+      setCompletionId(saved.id);
     } catch (error) {
       reportError(error, 'DiamondPlinkoPage.awardRecovery');
       setError('Your Saved Wheel Bonus Could Not Be Verified.');
@@ -169,13 +187,15 @@ function DiamondPlinkoGame() {
   const accept = (next: PlinkoBonus, animate: boolean) => {
     earned.consume(next.award_id);
     setResult(next);
+    setCompletionId(next.id);
     setLanded(animate ? 0 : next.drops.length);
     setAnimating(animate);
     held.current = null;
     setUncertain(false);
     setTicket(null);
     setError(null);
-    if (uuid) void load(uuid, total).catch((e) => reportError(e, 'DiamondPlinkoPage.after'));
+    if (uuid && !earned.required)
+      void load(uuid, total).catch((e) => reportError(e, 'DiamondPlinkoPage.after'));
   };
   const play = async () => {
     if (!uuid || !ticket || busyRef.current || blocked || animating || uncertain) return;
@@ -225,7 +245,7 @@ function DiamondPlinkoGame() {
       }
       if (!live.current) return;
       await earned.refresh();
-      await load(uuid, validBonusBudget(budget) ? total : 100);
+      if (!earned.required) await load(uuid, validBonusBudget(budget) ? total : 100);
       if (!live.current) return;
       if (!ticket || uncertain) await newTicket();
       if (live.current) setError(null);
@@ -310,37 +330,64 @@ function DiamondPlinkoGame() {
       <GameConsole
         setup={
           !animating && (
-            <BonusSetup
-              budget={budget}
-              entryReady={earned.ready}
-              awardLoading={earned.loading}
-              awardError={earned.error}
-              onRefresh={() => void earned.refresh()}
-              onChange={setBudget}
-              diamonds={state?.player?.spendable ?? null}
-              disabled={busy || uncertain}
-              plinko
-              clubId={clubId ?? ''}
-            />
+            <>
+              <BonusSetup
+                budget={budget}
+                entryReady={earned.ready}
+                awardLoading={earned.loading}
+                awardError={earned.error}
+                onRefresh={() => void earned.refresh()}
+                onChange={setBudget}
+                diamonds={state?.player?.spendable ?? null}
+                disabled={busy || uncertain}
+                plinko
+                clubId={clubId ?? ''}
+              />
+              {earned.ready && state && (
+                <fieldset className={plinkoStyles.risk} disabled={busy || uncertain}>
+                  <legend>Choose Your Risk Level</legend>
+                  <p>Every Level Can Lose. Larger Outer Prizes Are Harder To Land.</p>
+                  <div className={plinkoStyles.levels}>
+                    {state.tables.map((option) => {
+                      const copy = RISK_LABELS[option.version];
+                      const funded = fundedTables.some(
+                        (candidate) => candidate.version === option.version
+                      );
+                      return (
+                        <button
+                          key={option.version}
+                          type="button"
+                          disabled={busy || uncertain || !funded}
+                          aria-pressed={table?.version === option.version}
+                          onClick={() => setTableVersion(option.version)}
+                        >
+                          <strong>{copy?.label ?? `Level ${option.version}`}</strong>
+                          <span>Up To {multiplierLabel(option.max_multiplier_cents)}</span>
+                          <small>
+                            {copy?.detail ?? 'Check The Slot Multipliers Before Playing.'}
+                          </small>
+                          {!funded && <small>Not Available For This Entry</small>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p>
+                    Only Levels Covered By Your Bonus Are Available. Multipliers Apply To Each Drop.
+                  </p>
+                </fieldset>
+              )}
+            </>
           )
         }
-        title="Diamond Plinko"
+        title={isSuper ? 'Super Plinko' : 'Diamond Plinko'}
         eyebrow="Diamond Spins"
-        pill={uncertain ? 'Check Bonus' : animating ? 'Dropping' : result ? 'Completed' : 'Ready'}
+        pill={
+          uncertain ? 'Check Bonus' : animating ? 'Dropping' : completionId ? 'Completed' : 'Ready'
+        }
         bays={[
           {
-            label: 'Table',
-            value: table?.name ?? 'Loading',
-            disabled: busy || animating || uncertain,
-            onPress: () => {
-              const tables = state?.tables ?? [];
-              if (tables.length)
-                setTableVersion(
-                  tables[
-                    (tables.findIndex((t) => t.version === table?.version) + 1) % tables.length
-                  ].version
-                );
-            },
+            label: 'Risk',
+            value: risk,
           },
           {
             label: 'Per Drop',
@@ -405,22 +452,31 @@ function DiamondPlinkoGame() {
                 (earned.loading
                   ? 'Checking Your Wheel Award'
                   : 'Win Plinko On Diamond Spins To Play.'))
-              : !state.available
-                ? 'Plinko Is Not Open Here Yet.'
-                : !state.player?.is_member
-                  ? 'Join The Club To Play.'
-                  : state.player.spendable < bonusWalletDebit(budget)
-                    ? budget.award
-                      ? 'Buy More Diamonds Or Turn Off Double Down.'
-                      : 'Buy More Diamonds Or Change Your Entry.'
-                    : 'Refresh To Check This Entry And The Available Prize Cover.'}
+              : state.frozen
+                ? 'Games Are Paused For Maintenance. Refresh After The Break.'
+                : !state.available
+                  ? 'Plinko Is Not Open Here Yet.'
+                  : !state.player?.is_member
+                    ? 'Join The Club To Play.'
+                    : state.player.spendable < bonusWalletDebit(budget)
+                      ? budget.award
+                        ? 'Buy More Diamonds Or Turn Off Double Down.'
+                        : 'Buy More Diamonds Or Change Your Entry.'
+                      : !table
+                        ? budget.doubled
+                          ? 'This Bonus Does Not Cover A Doubled Entry. Choose Keep My Bonus To Play.'
+                          : 'No Risk Level Is Covered Right Now. Refresh Or Return To The Wheel.'
+                        : waitSeconds > 0
+                          ? `Your Next Drop Is Ready In ${waitSeconds} Seconds.`
+                          : 'Refresh To Check This Entry And The Available Prize Cover.'}
           </p>
         )}
       </GameConsole>
       <GamePanel title="How To Play" pill="Rules" foot="foot">
         <p className="sc-copy">
-          Your Entry Is Divided Into Drops At The Value You Choose. Each Ball Lands In A Prize Slot.
-          All Diamonds In This Bonus Are Played Together, And Your Chips Are Booked Automatically.
+          Your Entry Is Divided Into Drops At The Value You Choose. Each Diamond Lands In A Prize
+          Slot. All Diamonds In This Bonus Are Played Together, And Your Chips Are Booked
+          Automatically.
         </p>
       </GamePanel>
       <GamePanel
@@ -474,6 +530,14 @@ function DiamondPlinkoGame() {
             ) : null;
           })}
         </GamePanel>
+      )}
+      {result && completionId === result.id && !animating && !uncertain && !busy && (
+        <BonusCompletion
+          key={result.id}
+          clubId={clubId ?? ''}
+          chips={result.payout_chips}
+          detail={`${result.drops.length} Drops Completed.`}
+        />
       )}
     </div>
   );

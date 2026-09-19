@@ -1,0 +1,61 @@
+.risk {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.risk legend {
+  color: #45adff;
+  font:
+    700 19px 'Roboto Condensed',
+    sans-serif;
+}
+.risk p {
+  color: #e4e7ec;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 8px 0 12px;
+}
+.levels {
+  display: grid;
+  gap: 12px;
+}
+.levels button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 10px;
+  text-align: left;
+  min-height: 64px;
+  border: 0;
+  border-bottom: 1px solid #9aa5b3;
+  padding: 10px 0;
+  background: transparent;
+  color: #e4e7ec;
+  cursor: pointer;
+}
+.levels strong {
+  font:
+    700 20px 'Roboto Condensed',
+    sans-serif;
+}
+.levels span {
+  align-self: center;
+  font-size: 16px;
+  font-weight: 700;
+}
+.levels small {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.levels button[aria-pressed='true'] {
+  color: #45adff;
+  border-bottom-color: #45adff;
+}
+.levels button:disabled {
+  cursor: default;
+}
+.levels button:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 4px;
+}

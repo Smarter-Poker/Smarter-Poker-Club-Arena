@@ -1,4 +1,4 @@
-/** A physical Plinko cabinet. The server supplies every turn of the ball. */
+/** A physical Plinko cabinet. The server supplies every turn of each diamond. */
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { gameRenderer, inscription, metal, solid } from '../games/sceneKit';
@@ -8,6 +8,66 @@ import { multiplierLabel } from '../../utils/diamondGamesFairness';
 import { reportError } from '../../utils/errorReporter';
 import styles from './PlinkoBoard.module.css';
 export const PLINKO_ROWS = 16;
+
+/** One closed brilliant-cut mesh, shared by every drop and disposed by the scene. */
+function dropDiamondGeometry() {
+  const positions: number[] = [],
+    colors: number[] = [];
+  const palette = [0x45adff, 0xe4e7ec, 0x1877f2, 0xf4f7fb].map((value) => new THREE.Color(value));
+  const ring = (radius: number, y: number, i: number) =>
+    new THREE.Vector3(
+      Math.cos((i * Math.PI) / 4) * radius,
+      y,
+      Math.sin((i * Math.PI) / 4) * radius
+    );
+  const facet = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, color: THREE.Color) => {
+    for (const vertex of [a, b, c]) {
+      positions.push(vertex.x, vertex.y, vertex.z);
+      colors.push(color.r, color.g, color.b);
+    }
+  };
+  for (let i = 0; i < 8; i++) {
+    const table = ring(0.13, 0.16, i),
+      tableNext = ring(0.13, 0.16, i + 1),
+      rim = ring(0.27, 0.035, i),
+      rimNext = ring(0.27, 0.035, i + 1),
+      base = ring(0.255, -0.005, i),
+      baseNext = ring(0.255, -0.005, i + 1);
+    facet(new THREE.Vector3(0, 0.16, 0), tableNext, table, palette[1]);
+    facet(table, tableNext, rim, palette[i % 4]);
+    facet(tableNext, rimNext, rim, palette[(i + 1) % 4]);
+    facet(rim, rimNext, base, palette[0]);
+    facet(rimNext, baseNext, base, palette[0]);
+    facet(base, baseNext, new THREE.Vector3(0, -0.29, 0), palette[(i + 2) % 4]);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.name = 'Brilliant Cut Diamond';
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/** Tall engraving uses the whole slot face instead of a tiny landscape label. */
+function payoutInscription(multiplier: number) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.fillStyle = '#f4f7fb';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '700 132px "Roboto Condensed", Arial, sans-serif';
+    ctx.fillText(multiplierLabel(multiplier).slice(0, -1), 128, 90, 244);
+    ctx.font = '700 80px "Roboto Condensed", Arial, sans-serif';
+    ctx.fillText('x', 128, 200);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 export interface PlinkoBoardProps {
   multipliersCents: number[];
   tableMultipliersCents?: number[];
@@ -80,8 +140,8 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
       );
       slots.push(slot);
       const label = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.57, 0.24),
-        new THREE.MeshBasicMaterial({ map: inscription('') })
+        new THREE.PlaneGeometry(0.59, 0.64),
+        new THREE.MeshBasicMaterial({ transparent: true })
       );
       label.position.set(x, -4.48, 0.235);
       scene.add(label);
@@ -95,14 +155,17 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     title.position.set(0, 5.65, 0.04);
     scene.add(title);
     const ball = new THREE.Mesh(
-      new THREE.SphereGeometry(0.205, 24, 16),
+      dropDiamondGeometry(),
       new THREE.MeshPhysicalMaterial({
-        color: 0xf5fbff,
-        metalness: 0.7,
+        vertexColors: true,
+        metalness: 0.35,
         roughness: 0.08,
         clearcoat: 1,
+        envMapIntensity: 1.8,
+        flatShading: true,
       })
     );
+    ball.name = 'Plinko Drop Diamond';
     ball.castShadow = true;
     scene.add(ball);
     const batchBalls = Array.from({ length: 32 }, () => {
@@ -118,17 +181,24 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     let raf = 0,
       last = 0,
       key = -1,
-      start = 0,
+      visibleElapsed = 0,
       duration = 0,
       landed = true,
       pendingLanding = false,
       pendingProgress: number | null = null,
       labelKey = '';
+    let lastVisibleFrame: number | null = null;
+    const visibilityChanged = () => {
+      lastVisibleFrame = null;
+    };
+    document.addEventListener('visibilitychange', visibilityChanged);
     const reduced = prefersReducedMotion();
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
       if (document.hidden || now - last < (reduced ? 150 : 30)) return;
       last = now;
+      visibleElapsed += lastVisibleFrame === null ? 0 : now - lastVisibleFrame;
+      lastVisibleFrame = now;
       const p = latest.current;
       const nextLabel = p.multipliersCents.join(',');
       if (labelKey !== nextLabel) {
@@ -136,17 +206,14 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         labels.forEach((label, i) => {
           const m = label.material as THREE.MeshBasicMaterial;
           m.map?.dispose();
-          m.map = inscription(
-            multiplierLabel(p.multipliersCents[i] ?? 0),
-            i === 8 ? '#8797a8' : '#ffffff'
-          );
+          m.map = payoutInscription(p.multipliersCents[i] ?? 0);
           m.needsUpdate = true;
         });
       }
       if ((p.path || p.batchPathBits?.length) && key !== p.dropKey) {
         key = p.dropKey;
-        start = now;
-        duration = 16 * 118 * getAnimationSpeed();
+        visibleElapsed = 0;
+        duration = 16 * 236 * getAnimationSpeed();
         landed = false;
         pendingLanding = false;
         pendingProgress = null;
@@ -158,8 +225,8 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         mesh.visible = false;
       });
       if (p.batchPathBits?.length && !landed) {
-        const gap = 70 * getAnimationSpeed();
-        const elapsed = reduced ? duration + gap * p.batchPathBits.length : now - start;
+        const gap = 140 * getAnimationSpeed();
+        const elapsed = reduced ? duration + gap * p.batchPathBits.length : visibleElapsed;
         const finished = Math.max(
           0,
           Math.min(p.batchPathBits.length, Math.floor((elapsed - duration) / gap) + 1)
@@ -177,6 +244,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
           for (let k = 0; k < row; k++) rights += (bits >> k) & 1;
           const mesh = batchBalls[j];
           mesh.visible = true;
+          mesh.rotation.set(0.22, reduced ? 0.32 : visibleElapsed / 850 + index, -0.12);
           mesh.position.set(
             (rights - row / 2) * 0.65 + ((bits >> row) & 1 ? 1 : -1) * 0.325 * t,
             4.95 - progress * 0.55 + Math.sin(t * Math.PI) * 0.17,
@@ -192,7 +260,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
           pendingLanding = true;
         }
       } else if (p.path && !landed) {
-        const progress = reduced ? 16 : Math.min(16, ((now - start) / duration) * 16);
+        const progress = reduced ? 16 : Math.min(16, (visibleElapsed / duration) * 16);
         const row = Math.min(15, Math.floor(progress));
         const t = progress - row;
         const rights = p.path.slice(0, row).reduce((a, b) => a + b, 0);
@@ -219,6 +287,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         m.emissive.setHex(i === p.restingSlot ? 0x1877f2 : 0);
         m.emissiveIntensity = i === p.restingSlot ? 1.1 : 0;
       });
+      ball.rotation.set(0.22, reduced ? 0.32 : now / 850, -0.12);
       halo.position.copy(ball.position);
       if (kit.render()) {
         if (pendingProgress !== null) {
@@ -234,6 +303,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     raf = requestAnimationFrame(draw);
     return () => {
       cancelAnimationFrame(raf);
+      document.removeEventListener('visibilitychange', visibilityChanged);
       surface.removeEventListener('webglcontextlost', lost);
       surface.removeEventListener('webglcontextrestored', restored);
       sceneRef.current = null;
@@ -265,6 +335,22 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         role="img"
         aria-label="Plinko Board"
       />
+      <section
+        className={styles.payouts}
+        style={{ maxWidth: width }}
+        aria-label="Payout Multipliers"
+      >
+        <h3>Slot Multipliers</h3>
+        <p>Slots Run From Left To Right</p>
+        <ol className={styles.payoutList} aria-label="Plinko Payout Slots">
+          {props.multipliersCents.map((multiplier, index) => (
+            <li key={index} aria-current={props.restingSlot === index ? 'true' : undefined}>
+              <span>Slot {index + 1}</span>
+              <strong>{multiplierLabel(multiplier)}</strong>
+            </li>
+          ))}
+        </ol>
+      </section>
     </div>
   );
 }

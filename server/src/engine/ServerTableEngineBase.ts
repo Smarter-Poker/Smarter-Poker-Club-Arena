@@ -5915,8 +5915,56 @@ export abstract class ServerTableEngineBase {
      * every second of that is already published as `poker_paused_tables`. The
      * clock measures time a table should have been dealing and was not; time
      * it was told not to deal is not that.
+     *
+     * ── ...BUT ONLY FOR A TABLE THAT ACTUALLY PARKED (2026-09-18) ──────────
+     *
+     * The credit above was unconditional, and a resume reaches EVERY engine:
+     * MaintenanceBreak.resumeEveryEngine() calls resumeFromMaintenance() on
+     * the whole fleet by design (skipping one strands it), and a tournament
+     * break calls resumeDealing() on every table of its event. So a table
+     * whose loop never reached this gate - one frozen mid-hand, or frozen on
+     * a database round trip between hands - was handed the same credit as one
+     * that stopped when it was told to. Its stall clock was reset to zero, and
+     * `markProgress()` zeroes `watchdogTrips` with it, so the turn watchdog's
+     * two-trip escalation restarted from nothing at the same moment.
+     *
+     * Once an hour, every hour, a frozen table was vouched for by a break it
+     * had never joined.
+     *
+     * MEASURED IN PRODUCTION, 2026-09-18 16:25:03Z, from /health:
+     *
+     *   20 stalled tables sampled, 2-5 dealable seats each, none `paused`
+     *   loop phases frozen 1,000s - 21,606s (to 6 hours) in ONE phase
+     *   phases whose measured p90 is 0.1-0.6s: load_next_hand_inputs,
+     *     refresh_blinds, settlement_post_commit_obligations
+     *   msSinceProgress on all twenty: 1,420-1,430s - i.e. every one of them
+     *     reset within the same second, 16:01-16:02, the break's resume
+     *   re-polled 45s later: zero hands, zero phase change, msSinceProgress
+     *     +45.3s - nothing else on the platform marks these tables alive
+     *
+     * The distinction this restores is the one this file already makes twice
+     * over: `isPausedByDesign()` is a raised flag, `isParkedByDesign()` is a
+     * pause that has TAKEN EFFECT, and the readers that decide whether to
+     * intervene ask the second question (see the field comment on
+     * isParkedByDesign, and the zombie reaper in GameServer). The clock credit
+     * was the one intervention-shaped reader still asking the first.
+     *
+     * `handForHandResolve` is that fact and nothing weaker: it is non-null
+     * only while the dealing loop is suspended inside awaitPauseGate's
+     * promise, which the loop can only reach between hands and only because a
+     * pause authority told it to stop. Being merely `isBetweenHands()` is not
+     * enough - three of the twenty frozen tables above were between hands,
+     * stuck on the database call that loads the next one.
+     *
+     * A healthy table loses nothing. Mid-hand it is marking progress on every
+     * action and its clock is already fresh; parked, it takes the credit
+     * exactly as before. The one uncovered case is the microtask between the
+     * pause safety timeout resolving and the loop re-entering the gate: a
+     * resume landing in that gap costs the table one cycle of reading its
+     * true stall time. Against a 480s timer and an hourly resume that is a
+     * price worth paying to stop vouching for the dead.
      */
-    this.markProgress();
+    if (this.handForHandResolve !== null) this.markProgress();
     this.pausedSinceMs = 0;
     this.lastPauseAlarmAtMs = 0;
     this.pauseMaxWaitMs = null;

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import DiamondCrashPage from '../../src/pages/DiamondCrashPage';
+import { BonusRefusal } from '../../src/services/DiamondBonusService';
 import fixtures from '../fixtures/diamond-spins/local-postgres-receipts.json';
 
 const backend = vi.hoisted(() => ({
@@ -99,7 +100,27 @@ vi.mock('../../src/components/console/SpadeConsole', () => ({
 }));
 vi.mock('../../src/components/common/PageSkeleton', () => ({ default: () => null }));
 vi.mock('../../src/components/common/EmptyState', () => ({ ErrorState: () => null }));
-vi.mock('../../src/components/crash/CrashCurve', () => ({ default: () => null }));
+vi.mock('../../src/components/crash/CrashCurve', () => ({
+  default: ({ onSettled }: { onSettled: () => void }) => (
+    <button onClick={onSettled}>Finish Flight</button>
+  ),
+}));
+vi.mock('../../src/components/wheel/WheelWinReveal', () => ({
+  WheelWinReveal: ({
+    title,
+    detail,
+    onOpen,
+  }: {
+    title: string;
+    detail: string;
+    onOpen: () => void;
+  }) => (
+    <div role="dialog" aria-label={title}>
+      {detail}
+      <button onClick={onOpen}>Finish Prize</button>
+    </div>
+  ),
+}));
 vi.mock('../../src/components/games/DiamondSpinsTabs', () => ({ default: () => null }));
 vi.mock('../../src/components/games/TodayLine', () => ({ default: () => null }));
 vi.mock('../../src/components/games/SealedPrize', () => ({ default: () => null }));
@@ -185,6 +206,25 @@ afterEach(() => {
 });
 
 describe('Crash settles one displayed round once', () => {
+  it('shows exact booked chips only after the flight reveal and returns to its wheel', async () => {
+    backend.crashSettle.mockResolvedValueOnce(settled);
+    await mountOpen();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Flight' }));
+    const amount = settled.outcome.payout_chips.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    expect(screen.getByRole('dialog', { name: `${amount} Chips` })).toHaveTextContent(
+      'The Flight Crashed At'
+    );
+    expect(backend.navigate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Prize' }));
+    expect(backend.navigate).toHaveBeenCalledWith(
+      '/clubs/00000000-0000-0000-0000-000000000003/wheel',
+      { replace: true }
+    );
+  });
   it('sends both unfunded entry controls directly to the wheel without starting a game', async () => {
     backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });
     render(<DiamondCrashPage />);
@@ -317,7 +357,28 @@ describe('Crash settles one displayed round once', () => {
 });
 
 describe('Crash uses its earned entry without blocking existing cashouts', () => {
-  it('admits the funded award with an empty wallet and binds Double Down to the original stake', async () => {
+  it('replaces a definitively refused ticket without automatically starting another round', async () => {
+    backend.start.mockRejectedValueOnce(new BonusRefusal('That Ticket Has Expired'));
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    backend.commit.mockResolvedValueOnce({
+      ok: true,
+      commit_id: '00000000-0000-0000-0000-000000000010',
+      server_seed_hash: 'b'.repeat(64),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Start 100' }));
+    await act(async () => {});
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Check Round' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start 100' })).toBeEnabled();
+    backend.start.mockReturnValueOnce(new Promise(() => {}));
+    fireEvent.click(screen.getByRole('button', { name: 'Start 100' }));
+    expect(backend.start).toHaveBeenLastCalledWith(
+      expect.objectContaining({ commitId: '00000000-0000-0000-0000-000000000010' }),
+      'player-a'
+    );
+  });
+  it('prepares a funded award when direct entry is closed and binds Double Down to the original stake', async () => {
     const award = {
       id: '00000000-0000-0000-0000-000000000077',
       game: 'crash',
@@ -328,6 +389,7 @@ describe('Crash uses its earned entry without blocking existing cashouts', () =>
     };
     backend.getState.mockResolvedValue({
       ...state,
+      available: false,
       player: { ...state.player, spendable: 0, diamonds: 0 },
     });
     backend.awardState.mockImplementation((_club, _game, doubled) =>
@@ -336,7 +398,7 @@ describe('Crash uses its earned entry without blocking existing cashouts', () =>
         award,
         gameState: {
           ...state,
-          player: { ...state.player, spendable: doubled ? 100 : 0, diamonds: doubled ? 100 : 0 },
+          player: { ...state.player, spendable: 100, diamonds: 100 },
           bets: [{ bet_diamonds: doubled ? 300 : 200, playable: true, cap_cents: 2000 }],
         },
       })
@@ -344,9 +406,11 @@ describe('Crash uses its earned entry without blocking existing cashouts', () =>
     backend.start.mockReturnValue(new Promise(() => {}));
     render(<DiamondCrashPage />);
     await act(async () => {});
-    expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Double Down · +100 Diamonds' }));
+    const dialog = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
+    fireEvent.animationEnd(dialog.querySelector('[data-motion="keep"]')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Diamonds' }));
     await act(async () => {});
+    expect(screen.getByRole('heading', { name: 'Super Crash' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Start 300' }));
     expect(backend.start).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -359,6 +423,46 @@ describe('Crash uses its earned entry without blocking existing cashouts', () =>
       }),
       'player-a'
     );
+  });
+  it('keeps Super Crash visible for an active funded round after its award is consumed', async () => {
+    const bonus = {
+      base_diamonds: 200,
+      entry_diamonds: 100,
+      boost_multiplier: 2 as const,
+      added_diamonds: 0,
+      total_diamonds: 200,
+    };
+    const saved = {
+      ...open,
+      award_id: '00000000-0000-0000-0000-000000000077',
+      bet_diamonds: 200,
+      bet_chips: 2,
+      bonus,
+    };
+    backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });
+    backend.getState.mockResolvedValue({ ...state, open_round: saved });
+    backend.crashSettle.mockResolvedValue(saved);
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    expect(screen.getByRole('heading', { name: 'Super Crash' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Book The Win' })).toBeEnabled();
+    expect(backend.start).not.toHaveBeenCalled();
+  });
+  it('provides explicit retry after ticket preparation fails without submitting a round', async () => {
+    backend.commit.mockRejectedValueOnce(new Error('Connection Lost'));
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    expect(screen.getByText('Your Game Could Not Be Prepared. Tap Retry Game.')).toBeVisible();
+    expect(backend.commit).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(backend.commit).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Game' }));
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Start 100' })).toBeEnabled();
+    expect(backend.start).not.toHaveBeenCalled();
+    expect(backend.commit).toHaveBeenCalledTimes(2);
   });
   it('keeps the existing open round cashout plate usable when no new award exists', async () => {
     backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });

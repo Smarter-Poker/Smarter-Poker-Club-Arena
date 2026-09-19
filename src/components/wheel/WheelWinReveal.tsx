@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WheelSegment } from '../../services/DiamondWheelService';
 import { Modal } from '../common/Modal';
 import { SpadeConsole } from '../console/SpadeConsole';
@@ -15,14 +15,19 @@ export function WheelWinReveal({
   detail,
   onOpen,
   autoContinue = false,
+  autoContinueAfterMs = 0,
 }: {
   prize: Pick<WheelSegment, 'kind' | 'game' | 'multiplier'>;
   title: string;
   detail: string;
   onOpen: () => void;
   autoContinue?: boolean;
+  autoContinueAfterMs?: number;
 }) {
   const opened = useRef(false);
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
+  const remaining = useRef(autoContinueAfterMs);
   const sounded = useRef(false);
   const [visible, setVisible] = useState(() => document.visibilityState !== 'hidden');
   useEffect(() => {
@@ -43,18 +48,28 @@ export function WheelWinReveal({
   useEffect(() => {
     if (ready && !automatic) continueButton.current?.focus();
   }, [ready, automatic]);
-  const finish = () => {
+  const finish = useCallback(() => {
     if (opened.current) return;
     opened.current = true;
-    onOpen();
-  };
+    onOpenRef.current();
+  }, []);
+  const timedPrize = automatic && autoContinueAfterMs > 0;
+  useEffect(() => {
+    if (!timedPrize || !visible || opened.current) return;
+    const started = Date.now();
+    const timer = window.setTimeout(finish, remaining.current);
+    return () => {
+      window.clearTimeout(timer);
+      remaining.current = Math.max(0, remaining.current - (Date.now() - started));
+    };
+  }, [timedPrize, visible, finish]);
   return (
     <Modal
       isOpen
       ariaLabel={title}
-      onClose={() => ready && finish()}
-      closeOnOverlay={false}
-      closeOnEscape={ready}
+      onClose={() => (ready || timedPrize) && finish()}
+      closeOnOverlay={timedPrize}
+      closeOnEscape={ready || timedPrize}
       showCloseButton={false}
       className={styles.dialog}
     >
@@ -68,7 +83,7 @@ export function WheelWinReveal({
         onAnimationEnd={(event) => {
           if (event.target !== event.currentTarget) return;
           setReady(true);
-          if (automatic) finish();
+          if (automatic && !timedPrize) finish();
         }}
       >
         <SpadeConsole
@@ -89,7 +104,7 @@ export function WheelWinReveal({
           <button
             ref={continueButton}
             className={styles.continue}
-            disabled={!ready}
+            disabled={!ready && !timedPrize}
             onClick={finish}
           >
             {prize.kind === 'bonus' || prize.kind === 'upgrade' ? 'Opening Your Bonus' : 'Continue'}

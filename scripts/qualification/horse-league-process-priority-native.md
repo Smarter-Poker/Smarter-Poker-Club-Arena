@@ -19,7 +19,13 @@ The original leader-only operation is reproduced in an isolated fixture, without
 importing old application dependencies or retired external telemetry. Required
 supported controls preserve the earlier candidate's kernel/IPC/cleanup assertions,
 add direct-versus-child seeded result comparison and prove the parent priority is
-unchanged. A real independent unprivileged priority-raise attempt is followed by
+unchanged. CPU deltas are a lower bound over exact TID/start-time identities
+present at both endpoint observations. Retired or reused identities remain in
+`absentOriginalThreads`, new identities remain in `newThreads`, and neither is
+assigned invented CPU. The original process leader must retain its identity,
+all observed priorities must still be19, and comparable CPU must be positive.
+The receipt does not claim total process CPU or instruction-level attribution.
+A real independent unprivileged priority-raise attempt is followed by
 candidate bootstrap refusal when Linux returns EPERM/EACCES. This is explicitly
 not fault injection of GNU nice's positive adjustment. If privileges allow that
 attempt, the result is CONTROL_UNAVAILABLE with its limitation retained; it is

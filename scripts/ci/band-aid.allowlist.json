@@ -1,35 +1,133 @@
 {
   "_read_this_first": "CLAUDE.md 10.12 forbids creating anything that repairs, back-pays, re-drives, catches up, backfills or heals what a live path should have written correctly. This file is the EXISTING debt only, so that a migration which FIXES or DELETES one of these is not blocked by the guard. It may only ever get shorter - tests/no-band-aids.law.test.ts asserts that every entry has a row in docs/BAND-AIDS-REGISTER.md naming the root fix that lets it be deleted. Adding a name here to get a new band-aid past the gate is the thing the rule exists to stop.",
   "existing_debt": [
-    { "name": "fn_backpay_unfinalised_bounty_pools", "register": "TIER 1 #3" },
-    { "name": "ca-bounty-backpay-hourly", "register": "TIER 1 #3" },
-    { "name": "fn_rake_repair_unbanked", "register": "TIER 1 #5" },
-    { "name": "rake-repair-unbanked-hourly", "register": "TIER 1 #5" },
-    { "name": "fn_redrive_unbanked_rake", "register": "TIER 1 #5" },
-    { "name": "ca-redrive-unbanked-rake-15m", "register": "TIER 1 #5" },
-    { "name": "fn_bbj_repair_unbanked", "register": "TIER 2" },
-    { "name": "ca-bbj-repair-unbanked-15m", "register": "TIER 2" },
-    { "name": "fn_spin_repair_missing_multiplier", "register": "TIER 1 #9" },
-    { "name": "spin_repair_missing_multiplier", "register": "TIER 1 #9" },
-    { "name": "fn_heal_seat_provenance", "register": "TIER 2" },
-    { "name": "union-seat-provenance-heal", "register": "TIER 2" },
-    { "name": "fn_ca_auto_reconcile_tick", "register": "TIER 2" },
-    { "name": "ca-auto-reconcile-tick", "register": "TIER 2" },
-    { "name": "fn_ca_quick_reconcile", "register": "TIER 2" },
-    { "name": "ca-quick-reconcile-5m", "register": "TIER 2" },
-    { "name": "fn_reconcile_club_table_counts", "register": "TIER 2" },
-    { "name": "reconcile-club-table-counts-nightly", "register": "TIER 2" },
-    { "name": "reconcile-club-member-daily-profit", "register": "TIER 2" },
-    { "name": "reconcile-ledger-integrity-6h", "register": "TIER 2" },
-    { "name": "reconcile_ledger_nightly", "register": "TIER 2" },
-    { "name": "fn_bbj_rollup_catchup", "register": "TIER 2" },
-    { "name": "bbj-rollup-catchup", "register": "TIER 2" },
-    { "name": "fn_club_rake_rollup_catchup", "register": "TIER 2" },
-    { "name": "club-rake-rollup-catchup", "register": "TIER 2" },
-    { "name": "fn_ca_ledger_day_manifest_backfill", "register": "TIER 2" },
-    { "name": "fn_ca_retry_promo_accruals", "register": "TIER 2" },
-    { "name": "ca-promo-accrual-retry-10m", "register": "TIER 2" },
-    { "name": "fn_ca_escalate_reconcile_criticals", "register": "TIER 3" },
-    { "name": "ca-escalate-reconcile-criticals-hourly", "register": "TIER 3" }
+    {
+      "name": "fn_backpay_unfinalised_bounty_pools",
+      "register": "TIER 1 #3"
+    },
+    {
+      "name": "ca-bounty-backpay-hourly",
+      "register": "TIER 1 #3"
+    },
+    {
+      "name": "fn_rake_repair_unbanked",
+      "register": "TIER 1 #5"
+    },
+    {
+      "name": "rake-repair-unbanked-hourly",
+      "register": "TIER 1 #5"
+    },
+    {
+      "name": "fn_redrive_unbanked_rake",
+      "register": "TIER 1 #5"
+    },
+    {
+      "name": "ca-redrive-unbanked-rake-15m",
+      "register": "TIER 1 #5"
+    },
+    {
+      "name": "fn_bbj_repair_unbanked",
+      "register": "TIER 2"
+    },
+    {
+      "name": "ca-bbj-repair-unbanked-15m",
+      "register": "TIER 2"
+    },
+    {
+      "name": "fn_spin_repair_missing_multiplier",
+      "register": "TIER 1 #9"
+    },
+    {
+      "name": "spin_repair_missing_multiplier",
+      "register": "TIER 1 #9"
+    },
+    {
+      "name": "fn_heal_seat_provenance",
+      "register": "TIER 2"
+    },
+    {
+      "name": "union-seat-provenance-heal",
+      "register": "TIER 2"
+    },
+    {
+      "name": "fn_ca_auto_reconcile_tick",
+      "register": "TIER 2"
+    },
+    {
+      "name": "ca-auto-reconcile-tick",
+      "register": "TIER 2"
+    },
+    {
+      "name": "fn_ca_quick_reconcile",
+      "register": "TIER 2"
+    },
+    {
+      "name": "ca-quick-reconcile-5m",
+      "register": "TIER 2"
+    },
+    {
+      "name": "fn_reconcile_club_table_counts",
+      "register": "TIER 2"
+    },
+    {
+      "name": "reconcile-club-table-counts-nightly",
+      "register": "TIER 2"
+    },
+    {
+      "name": "reconcile-club-member-daily-profit",
+      "register": "TIER 2"
+    },
+    {
+      "name": "reconcile-ledger-integrity-6h",
+      "register": "TIER 2"
+    },
+    {
+      "name": "reconcile_ledger_nightly",
+      "register": "TIER 2"
+    },
+    {
+      "name": "fn_bbj_rollup_catchup",
+      "register": "TIER 2"
+    },
+    {
+      "name": "bbj-rollup-catchup",
+      "register": "TIER 2"
+    },
+    {
+      "name": "fn_club_rake_rollup_catchup",
+      "register": "TIER 2"
+    },
+    {
+      "name": "club-rake-rollup-catchup",
+      "register": "TIER 2"
+    },
+    {
+      "name": "fn_ca_ledger_day_manifest_backfill",
+      "register": "TIER 2"
+    },
+    {
+      "name": "fn_ca_retry_promo_accruals",
+      "register": "TIER 2"
+    },
+    {
+      "name": "ca-promo-accrual-retry-10m",
+      "register": "TIER 2"
+    },
+    {
+      "name": "fn_ca_escalate_reconcile_criticals",
+      "register": "TIER 3"
+    },
+    {
+      "name": "ca-escalate-reconcile-criticals-hourly",
+      "register": "TIER 3"
+    },
+    {
+      "name": "fn_reconcile_club_member_daily_profit",
+      "register": "TIER 2"
+    },
+    {
+      "name": "fn_pay_backed_payout_shortfalls",
+      "register": "TIER 1 #2"
+    }
   ]
 }

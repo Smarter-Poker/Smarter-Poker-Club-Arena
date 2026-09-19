@@ -141,7 +141,9 @@ run_game_probe diamond-bonus-minimum-wins 'NOTICE:  PASS Bonus minimum wins: exa
 
 # Replays use real settled games and the canonical social writer in isolation.
 "${diamond_psql[@]}" -f "$diamond/replay-social-dependencies.sql" \
-  -f "$root/supabase/migrations/20260919152603_diamond_bonus_replay_and_daily_spin_custody.sql"
+  -f "$diamond/replay-public-guard-dependencies.sql" \
+  -f "$root/supabase/migrations/20260919152603_diamond_bonus_replay_and_daily_spin_custody.sql" \
+  -f "$root/supabase/migrations/20260919153418_public_bonus_replay_has_an_explicitly_public_reader.sql"
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
 run_game_probe diamond-bonus-replays 'NOTICE:  PASS Bonus replays: eight actual normal/Super settlements, private open and foreign refusal, exact payloads and 257cashout, slow100x, scoped cursor, random public snapshot, stable token, one canonical post/story/reward and unchanged game wallets'
 

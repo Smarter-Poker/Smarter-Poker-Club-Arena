@@ -1,0 +1,8 @@
+{
+  "_owner": "fix/stakes-follows-its-own-blinds; migrations 20260919184755 and 20260919184835 (applied live as 20260919184206 and 20260919184450). Candidate declarations, not installation evidence.",
+  "_comment": "fn_tables_stakes_follows_its_own_blinds backs the BEFORE UPDATE trigger zzzzzz_tables_stakes_follows_its_own_blinds on public.tables. It keeps stakes equal to trim_scale(small_blind)/trim_scale(big_blind) for tournament tables. The INSERT side is fn_tournament_table_inherits_committed_blinds, which already existed and was BEFORE INSERT only, which is why a minutely cron UPDATE had been maintaining this column for 40,998 rows it could not reach. Cash tables are excluded in both the WHEN clause and the body.",
+  "functions": ["fn_tables_stakes_follows_its_own_blinds"],
+  "tables": [],
+  "removedFunctions": [],
+  "columns": {}
+}

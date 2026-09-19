@@ -1,9 +1,9 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "3db7aa8c3632b1c2ba5e6ba9de98ac900e2bb1fbf5868a73c12ddbc19b2b31a3",
+    "scripts/ci/classify-ci-changes.mjs": "5c312f7cd0ee2d451d3121df6366eb30189771c886e32b00280ef6ae39c2303a",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "e500aa832ea849e9272fb63119e15a938393e6da3d821f7cb69272e6ccf13a4a",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "40197721a91930668687751146dacd9ea59f68765633b402fb6ef08498e2852b",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",

@@ -3,7 +3,9 @@
 import hashlib,json,subprocess,sys
 from pathlib import Path
 root=Path(__file__).resolve().parents[2]
-psql,socket,port,database,out=sys.argv[1:];out=Path(out);out.mkdir(parents=True,exist_ok=True)
+psql,socket,port,database,out=sys.argv[1:6];out=Path(out);out.mkdir(parents=True,exist_ok=True)
+bootstrap_only=sys.argv[6:]==['--bootstrap-only']
+if sys.argv[6:] and not bootstrap_only:raise AssertionError('Unknown native phase selection')
 fix=root/'tests/fixtures/sep8-spin-custody'
 binding=json.loads((fix/'source-binding.json').read_text())
 def verify_binding():
@@ -78,6 +80,12 @@ check_sql='BEGIN;\n'
 for row in checks:
  check_sql+='ALTER TABLE public.tournaments DROP CONSTRAINT IF EXISTS '+ident(row['name'])+';\nALTER TABLE public.tournaments ADD CONSTRAINT '+ident(row['name'])+' '+row['definition']+';\n'
 run(check_sql+'COMMIT;\n','sep8-current-format-checks')
+if bootstrap_only:
+ subprocess.run([sys.executable,str(fix/'build-candidate.py'),'--check'],check=True)
+ run(next((root/'supabase/migrations').glob('20260918095320*.sql')).read_text(),'sep8-custody-bootstrap')
+ verify_binding()
+ print('PASS exact current custody bootstrap; no original Spin behavior assertions repeated',flush=True)
+ sys.exit(0)
 raw=(fix/'originals.json').read_text().strip();json.loads(raw)
 run('SELECT $sep8_raw$'+raw+'$sep8_raw$ AS sep8_originals \\gset\n'+(fix/'setup.sql').read_text(),'sep8-original-scene')
 subprocess.run([sys.executable,str(fix/'build-candidate.py'),'--check'],check=True)

@@ -1,0 +1,7 @@
+{
+  "schema": "public",
+  "proname": "reap_dead_engine_leases",
+  "args": "p_stale_seconds integer",
+  "definition_md5": "6144b5c9ba79371234f8bee9007ed4a6",
+  "definition": "CREATE OR REPLACE FUNCTION public.reap_dead_engine_leases(p_stale_seconds integer DEFAULT 3600)\n RETURNS TABLE(table_leases_deleted integer, tournament_leases_deleted integer)\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\ndeclare\n  v_cutoff timestamptz;\n  v_tables integer;\n  v_tourneys integer;\nbegin\n  if coalesce(p_stale_seconds, 0) < 600 then\n    raise exception 'reap_dead_engine_leases refuses a cutoff under 600s (asked for %)', p_stale_seconds;\n  end if;\n\n  v_cutoff := now() - make_interval(secs => p_stale_seconds);\n\n  delete from public.engine_table_leases where heartbeat_at < v_cutoff;\n  get diagnostics v_tables = row_count;\n\n  delete from public.engine_tournament_leases where heartbeat_at < v_cutoff;\n  get diagnostics v_tourneys = row_count;\n\n  return query select v_tables, v_tourneys;\nend;\n$function$\n"
+}

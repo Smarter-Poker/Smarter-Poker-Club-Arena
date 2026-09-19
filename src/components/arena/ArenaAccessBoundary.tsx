@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { getArenaContext } from '../../services/ArenaContextService';
@@ -9,8 +9,6 @@ import DiamondArenaWallet from './DiamondArenaWallet';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { ArenaAccessProvider } from './arenaAccess';
 import './DiamondArenaShell.css';
-
-const DiamondsToChipsButton = lazy(() => import('../games/DiamondsToChipsButton'));
 
 interface AccessState {
   key: string;
@@ -138,20 +136,21 @@ export default function ArenaAccessBoundary({
 
        The closed-games line stays above the lobby while `cash_games_enabled`
        is false. An empty game board is honest, but silently empty is not: the
-       player is told why there is nothing to sit down at. */
+       player is told why there is nothing to sit down at.
+
+       THE ARENA HAS NO CHIP BRIDGE (2026-09-19). This notice used to carry the
+       Diamonds To Chips button underneath it. That button leads to the host
+       club's diamonds-to-chips wheel, which pays chip prizes into that club's
+       `club_members.chip_balance`, and the programme's rule is that the arena
+       club must never acquire chip balances. It was silent only because the
+       Diamond host has no wheel configured; the day staff enabled one, every
+       Diamond player would have been sent to it. The chip bridge is a chip
+       club feature and is not mounted here. tests/the-diamond-arena-has-no-
+       chip-bridge.law.test.ts holds this. */
     return showCashLobby ? (
       <ArenaAccessProvider value={state.context}>
         {state.context.cashGamesEnabled !== true && (
-          <>
-            <p className="diamond-arena-notice">Diamond Games Are Not Open For Play Yet.</p>
-            <Suspense fallback={null}>
-              <DiamondsToChipsButton
-                clubId={key || null}
-                size="compact"
-                onGo={(to) => navigate(to)}
-              />
-            </Suspense>
-          </>
+          <p className="diamond-arena-notice">Diamond Games Are Not Open For Play Yet.</p>
         )}
         {children}
       </ArenaAccessProvider>

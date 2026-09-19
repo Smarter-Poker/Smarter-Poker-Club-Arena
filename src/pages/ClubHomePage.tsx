@@ -4729,6 +4729,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     freerollText: arenaFreeroll.text,
                     freerollTitle: arenaFreeroll.title,
                     freerollImminent: arenaFreeroll.imminent,
+                    /* "None Scheduled" and "Unavailable" are words, not clocks
+                       (2026-09-19); the rail sizes them to fit. Loading prints
+                       zeros like every other figure on the card. */
+                    freerollIsWord:
+                      arenaFreeroll.state === 'none' || arenaFreeroll.state === 'error',
                   }
                 : null
             }
@@ -5342,8 +5347,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         />
 
         {/* The footer is the permanent Diamond Spins entry. Keep the
-            eligible zero-chip invitation without an extra box under ads. */}
-        <DiamondBustPrompt clubId={resolvedClubId || club.id} />
+            eligible zero-chip invitation without an extra box under ads.
+
+            NOT IN THE DIAMOND ARENA (2026-09-19). "Out Of Chips? ... Chip
+            Prizes Paid Into Your Club Wallet" invites the player to a wheel
+            that credits the host club's chip balance, and the arena club must
+            never acquire one (programme rule). The arena has no chip wallet to
+            run out of; the prompt is a chip club feature and stays on chip
+            clubs, where nothing changes. */}
+        {!isAutomaticArena && <DiamondBustPrompt clubId={resolvedClubId || club.id} />}
 
         {/* `club.id` is the fallback, not a second source of truth: this markup
           only renders past the `if (!club) return` guard, so it is always

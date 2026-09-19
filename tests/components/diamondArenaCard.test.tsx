@@ -11,11 +11,29 @@
  * figures on its rail, keep the countdown honest, and keep the words Dan
  * struck off it.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, act } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { render, screen, cleanup, act, waitFor } from '@testing-library/react';
 import DiamondArenaCard, {
   formatFreerollCountdown,
 } from '../../src/components/club/DiamondArenaCard';
+
+/* The live read, for the states the seam cannot express: loading and a
+   failed read only ever come from the database. One chainable builder whose
+   terminal `maybeSingle` answers whatever the test queued. */
+const db = vi.hoisted(() => ({
+  answer: vi.fn<() => Promise<{ data: unknown; error: unknown }>>(),
+}));
+vi.mock('../../src/lib/supabase', () => {
+  const builder: Record<string, unknown> = {};
+  for (const m of ['from', 'select', 'eq', 'gt', 'order', 'limit']) builder[m] = () => builder;
+  builder.maybeSingle = () => db.answer();
+  return { supabase: builder };
+});
+vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
+
+beforeEach(() => {
+  db.answer.mockReset();
+});
 
 afterEach(() => {
   cleanup();
@@ -61,9 +79,63 @@ describe('DiamondArenaCard', () => {
     expect(container.innerHTML.toLowerCase()).not.toContain('automatic entry');
   });
 
-  it('prints zeros, never a word, when no freeroll is scheduled yet', () => {
-    render(<DiamondArenaCard activePlayers={null} nextFreerollAt={null} />);
-    expect(screen.getByRole('timer').textContent).toBe('0:00');
+  /* A COUNTDOWN WITH NOTHING TO COUNT TO IS NOT ZERO (2026-09-19). Until
+     today this pin demanded "0:00" here, and with no Diamond freeroll on the
+     calendar every player who opened the arena read a freeroll starting this
+     second. The four answers the read can give each print differently now,
+     and none of them borrows another's figure. */
+  it('says None Scheduled, never 0:00, when the read answered and no freeroll is ahead', () => {
+    const { container } = render(<DiamondArenaCard activePlayers={null} nextFreerollAt={null} />);
+    const timer = screen.getByRole('timer');
+    expect(timer.textContent).toBe('None Scheduled');
+    expect(timer.getAttribute('aria-label')).toBe('Next Freeroll None Scheduled');
+    expect(timer.className).toContain('club-card-stat-value--word');
+    expect(container.querySelector('.club-card-stat--timer')?.getAttribute('title')).toBe(
+      'No Freeroll Scheduled Yet'
+    );
+    expect(container.querySelector('.club-card-stat--imminent')).toBeNull();
+  });
+
+  it('prints zeros while the live read is still loading, like every other figure on the rail', () => {
+    db.answer.mockReturnValue(new Promise(() => {}));
+    render(<DiamondArenaCard activePlayers={null} />);
+    const timer = screen.getByRole('timer');
+    expect(timer.textContent).toBe('0:00');
+    expect(timer.className).not.toContain('club-card-stat-value--word');
+    expect(screen.getByTitle('Reading The Freeroll Schedule')).toBeTruthy();
+  });
+
+  it('resolves the live read to None Scheduled when no row comes back', async () => {
+    db.answer.mockResolvedValue({ data: null, error: null });
+    render(<DiamondArenaCard activePlayers={null} />);
+    await waitFor(() => expect(screen.getByRole('timer').textContent).toBe('None Scheduled'));
+  });
+
+  it('resolves the live read to a running clock when a freeroll is ahead', async () => {
+    db.answer.mockResolvedValue({
+      data: {
+        id: 't1',
+        name: 'Midnight Freeroll',
+        start_time: new Date(Date.now() + 42 * 60 * 1000 + 17_500).toISOString(),
+      },
+      error: null,
+    });
+    render(<DiamondArenaCard activePlayers={null} />);
+    await waitFor(() => expect(screen.getByRole('timer').textContent).toBe('42:17'));
+    const timer = screen.getByRole('timer');
+    expect(timer.getAttribute('aria-label')).toBe('Next Freeroll Starts In 42:17');
+    expect(timer.className).not.toContain('club-card-stat-value--word');
+    expect(screen.getByTitle(/^Midnight Freeroll Starts /)).toBeTruthy();
+  });
+
+  it('says Unavailable, not 0:00 and not None Scheduled, when the read fails', async () => {
+    db.answer.mockResolvedValue({ data: null, error: { message: 'timeout' } });
+    render(<DiamondArenaCard activePlayers={null} />);
+    await waitFor(() => expect(screen.getByRole('timer').textContent).toBe('Unavailable'));
+    const timer = screen.getByRole('timer');
+    expect(timer.getAttribute('aria-label')).toBe('Next Freeroll Unavailable');
+    expect(timer.className).toContain('club-card-stat-value--word');
+    expect(screen.getByTitle('Could Not Read The Freeroll Schedule')).toBeTruthy();
   });
 
   it('ticks down once a second and turns red inside the last ten seconds', () => {

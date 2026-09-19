@@ -19,7 +19,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { figureOr, readFigures, rememberFigures } from '../../lib/lobbyFigureCache';
 import { formatDuration } from '../../lib/date';
-import { useNextDiamondFreeroll } from '../../hooks/useNextDiamondFreeroll';
+import {
+  freerollClockTitle,
+  freerollClockWord,
+  useNextDiamondFreeroll,
+  type FreerollClockState,
+} from '../../hooks/useNextDiamondFreeroll';
 import './ClubCardPanel.css';
 
 const ARENA_FIGURE_SCOPE = 'arena:diamond';
@@ -49,6 +54,11 @@ export const DiamondArenaCard: React.FC<DiamondArenaCardProps> = ({
   const [imgLoaded, setImgLoaded] = useState(false);
   const live = useNextDiamondFreeroll(nextFreerollAt === undefined);
   const startsAt = nextFreerollAt === undefined ? live.startsAt : nextFreerollAt;
+  /* The seam is two-valued on purpose: a number is a scheduled freeroll and
+     null is a known "none". Loading and error only ever come from the live
+     read, which is the only place they can happen. */
+  const clockState: FreerollClockState =
+    nextFreerollAt === undefined ? live.state : nextFreerollAt === null ? 'none' : 'scheduled';
 
   /* Same count cache the club cards use (Dan 2026-09-02: zeros until the
      card loads, then the last known figure, then the live one). */
@@ -79,12 +89,20 @@ export const DiamondArenaCard: React.FC<DiamondArenaCardProps> = ({
     if (expired && isLive) refresh();
   }, [expired, isLive, refresh]);
 
-  const timerText = remaining == null ? '0:00' : formatFreerollCountdown(remaining);
+  /* A COUNTDOWN WITH NOTHING TO COUNT TO IS NOT ZERO (2026-09-19). With no
+     Diamond freeroll on the calendar this printed 0:00, which on a clock reads
+     "starting now". Each non-clock answer prints its own word instead, and a
+     failed read prints an unknown rather than a confident zero. */
+  const timerWord = remaining == null ? freerollClockWord(clockState) : null;
+  const timerText = timerWord ?? formatFreerollCountdown(remaining ?? 0);
   const imminent = remaining != null && remaining > 0 && remaining <= IMMINENT_SECONDS;
-  const timerTitle =
-    startsAt == null
-      ? 'No Freeroll Scheduled Yet'
-      : `${live.name ?? 'Freeroll'} Starts ${new Date(startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  const timerTitle = freerollClockTitle(clockState, startsAt, live.name);
+  /* Loading prints zeros like every other figure on the rail; the two words
+     get a modifier so they fit the half-rail a clock was sized for. */
+  const timerIsWord = timerWord !== null && clockState !== 'loading';
+  const timerAria = timerIsWord
+    ? `Next Freeroll ${timerText}`
+    : `Next Freeroll Starts In ${timerText}`;
 
   return (
     <div className="club-card-panel club-card-panel--arena">
@@ -134,10 +152,10 @@ export const DiamondArenaCard: React.FC<DiamondArenaCardProps> = ({
           >
             <span className="club-card-stat-label">NEXT FREEROLL</span>
             <span
-              className="club-card-stat-value club-card-stat-value--timer"
+              className={`club-card-stat-value club-card-stat-value--timer${timerIsWord ? ' club-card-stat-value--word' : ''}`}
               role="timer"
               aria-live="off"
-              aria-label={`Next Freeroll Starts In ${timerText}`}
+              aria-label={timerAria}
             >
               {timerText}
             </span>

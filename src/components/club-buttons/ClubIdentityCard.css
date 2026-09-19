@@ -281,6 +281,17 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* A word where the clock would be ("None Scheduled", "Unavailable"). The
+   column is about 14cqw wide and the clock's 3.4cqw digits would run "None
+   Scheduled" to twice that, so the word stacks on two lines at the label's
+   size, which is the size already proven to fit this column. */
+.club-identity__arena-value--word {
+  font-size: 1.75cqw;
+  line-height: 1.15;
+  white-space: normal;
+  overflow-wrap: normal;
+}
+
 .club-identity__arena-stat--imminent .club-identity__arena-value {
   color: #ff6a6a;
   -webkit-text-fill-color: #ff6a6a;

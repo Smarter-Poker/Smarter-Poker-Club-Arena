@@ -235,6 +235,7 @@ import TimebankCounter from '../components/table/TimebankCounter';
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
 import { parseTableArenaIdentity, seatCanAddFunds } from '../../server/src/domain/ArenaContext';
+import { bootExplanation, seatCopy } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
 import { soundService, haptic } from '../services/SoundService';
 import {
@@ -1085,6 +1086,9 @@ interface TablePageProps {
     decision?: string;
     /** Time bank is burning at this table, as "1:absoluteDeadlineMs" or ''. */
     timeBank?: string;
+    /** `seatCanAddFunds` for this seat, so the tab bar's hamburger can drop
+     *  its Top Up items at a seat where they would do nothing (B12). */
+    canAddFunds?: boolean;
   }) => void;
   /** Whether this table is part of a multi-table session (hides own header if tab bar is shown) */
   isMultiTable?: boolean;
@@ -1433,26 +1437,9 @@ function buildSpinDrawFromRow(row: SpinDrawRow | null | undefined): SpinWheelDat
  */
 let enhancedViewHolders = 0;
 
-/**
- * Why a player was removed, in words they can act on.
- *
- * Module scope so BOTH boot paths quote the same sentence — they used to each
- * carry their own copy and the poll's had no per-reason text at all, so a
- * five-minute sit-out eviction that arrived by poll said only the generic line.
- * Title Case, no em dashes (Dan 2026-08-20): these are rendered through the
- * Toast layer, but a string that is already correct cannot be mangled by a
- * future change to it.
- */
-const BOOT_EXPLANATIONS: Record<string, string> = {
-  away_blind_cap:
-    'You Were Away, So We Cashed You Out After One Small Blind And One Big Blind. Your Chips Are Back In Your Wallet.',
-  sit_out_timeout: 'You Sat Out Too Long And Were Cashed Out. Your Chips Are Back In Your Wallet.',
-  abandoned_seat:
-    'You Were Disconnected For Five Minutes, So Your Seat Was Cashed Out. Your Chips Are Back In Your Wallet.',
-  busted_no_rebuy: 'You Ran Out Of Chips And Did Not Rebuy, So Your Seat Was Released.',
-  nit_game_vpip:
-    'This Table Has A Minimum VPIP And You Were Below It, So You Were Cashed Out. Your Chips Are Back In Your Wallet.',
-};
+/* Why a player was removed, in words they can act on: `bootExplanation` in
+   components/table/seatExitCopy, keyed by the seat's asset so a Diamond seat
+   is told about its Diamonds. Both boot paths quote the same sentence. */
 
 /**
  * A warmed seat row (services/tableWarmup) -> a felt player. The felt mounts
@@ -4628,7 +4615,8 @@ function LiveTablePage({
       if (announce && !bootNoticeShownRef.current) {
         const say = heartbeatToastRef.current?.info;
         if (typeof say === 'function') {
-          const mapped = reason ? BOOT_EXPLANATIONS[reason] : undefined;
+          const seatAsset = tableStateRef.current.arenaAsset;
+          const mapped = bootExplanation(reason, seatAsset);
           /* Dan 2026-08-30: "THATS A CASH GAME PROMPT, NOT A TOURNAMENT
              PROMPT." A tournament seat closing with no mapped reason is
              almost always the balancer moving the player - the wallet line is
@@ -4642,7 +4630,7 @@ function LiveTablePage({
             say(mapped);
           } else if (!tableStateRef.current.isTournament) {
             bootNoticeShownRef.current = true;
-            say('You Were Removed From The Table. Your Chips Are Back In Your Wallet.');
+            say(seatCopy(seatAsset).removedFromTable);
           }
         }
       }
@@ -6327,6 +6315,10 @@ function LiveTablePage({
       sittingOut: heroTabSittingOut,
       sitOutDeadlineMs: heroTabSitOutDeadlineMs,
       isTournament: tableState.isTournament,
+      /* The tab bar cannot see the arena, so it is told the one rule's answer.
+         A Diamond tournament seat reports false and loses the two items that
+         this page would only have refused. */
+      canAddFunds: seatCanAddFunds(tableState.arenaAsset, tableState.isTournament),
       gameCode: heroTabGameCode,
       decision: heroTabDecision,
       timeBank: heroTabTimeBank,
@@ -6363,6 +6355,7 @@ function LiveTablePage({
        learn the deadline at all, and a stale one could persist. */
     heroTabSitOutDeadlineMs,
     tableState.isTournament,
+    tableState.arenaAsset,
     tableState.clusterId,
     onTableInfoUpdate,
   ]);
@@ -9643,7 +9636,7 @@ function LiveTablePage({
        still goes to the lobby, seat and chips staying on the table, tab open. */
     if (heroLeaveLocked) {
       goToLobbyKeepingSeat(
-        `${leaveAvailableLabel(heroLeaveMs)}. Your Seat And Chips Stay On The Table, Tap Its Tab To Return.`
+        `${leaveAvailableLabel(heroLeaveMs)}. ${seatCopy(tableState.arenaAsset).seatStaysTapToReturn}`
       );
       return;
     }
@@ -9856,7 +9849,7 @@ function LiveTablePage({
           // or "Leave Available In 2:30" is still said, followed by what it
           // means for the chips.
           goToLobbyKeepingSeat(
-            `${result.error}. Your Seat And Chips Stay On The Table, Tap Its Tab To Return And Cash Out.`
+            `${result.error}. ${seatCopy(tableState.arenaAsset).seatStaysTapToReturnAndCashOut}`
           );
         } else {
           // Dan 2026-08-20 (leave-stuck fix): no error means the player
@@ -9882,9 +9875,7 @@ function LiveTablePage({
       }
     } catch (error) {
       reportError(error, 'TablePage.Exception');
-      goToLobbyKeepingSeat(
-        'Could Not Cash Out Yet. Your Seat And Chips Stay On The Table, Tap Its Tab To Return.'
-      );
+      goToLobbyKeepingSeat(seatCopy(tableState.arenaAsset).couldNotCashOutYet);
     }
   };
 
@@ -9971,7 +9962,7 @@ function LiveTablePage({
            it), but the player is not held on the felt: same rule as the menu
            door, the view is always allowed to leave. */
         goToLobbyKeepingSeat(
-          `${forced.error}. Your Seat And Chips Stay On The Table, Tap Its Tab To Return And Cash Out.`
+          `${forced.error}. ${seatCopy(tableState.arenaAsset).seatStaysTapToReturnAndCashOut}`
         );
         return;
       }
@@ -14977,7 +14968,7 @@ function LiveTablePage({
       st.lossToastShown = true;
       heartbeatToastRef.current?.warning?.(
         heroIsSeated
-          ? 'Still reconnecting. Your seat and chips are safe on the server.'
+          ? seatCopy(tableStateRef.current.arenaAsset).reconnectingSeated
           : 'Still reconnecting. The table will resume when the connection returns.'
       );
       // Seated only: the disconnect tone is a warning that the server may
@@ -22796,7 +22787,7 @@ function LiveTablePage({
                 soundService.playButtonClick();
                 if (tableState.heroSeat > 0) setShowCashier(true);
               }}
-              title="Add Chips"
+              title={seatCopy(tableState.arenaAsset).addFunds}
             >
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
                 <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5" />
@@ -24975,9 +24966,9 @@ function LiveTablePage({
                 onClick={() => void commitSeatFirstBuyIn(seatFirstConfirm)}
               >
                 {seatFirstPending
-                  ? 'Taking Your Chips'
+                  ? seatCopy(tableState.arenaAsset).takingYourFunds
                   : accountBalance !== null && Number(accountBalance) < seatFirstBuyIn.cost
-                    ? 'Not Enough Chips'
+                    ? seatCopy(tableState.arenaAsset).notEnoughFunds
                     : `Buy In ${seatFirstBuyIn.cost.toLocaleString()}`}
               </button>
             </div>
@@ -25156,7 +25147,7 @@ function LiveTablePage({
                    one, or leaving looks like the rational move (it did, at
                    18:06Z today). */
                 if (left > 0 && seatFirstWaitLong) {
-                  return 'Still Filling Your Game, Your Seat And Chips Are Safe';
+                  return seatCopy(tableState.arenaAsset).stillFillingSeatIsSafe;
                 }
                 return left === 1
                   ? 'Seat Reserved, Waiting For 1 More Player'

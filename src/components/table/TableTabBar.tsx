@@ -36,6 +36,11 @@ export interface TabInfo {
   turnProgress?: number;
   pot?: number;
   isAutoRebuyEnabled?: boolean;
+  /** The owning table page's `seatCanAddFunds` answer for this seat. `false`
+   *  removes Top Up and Auto Top Up from the hamburger (B12, 2026-09-19): a
+   *  Diamond tournament seat has no top-up writer, and both items reached the
+   *  page only to be refused there in silence. Absent keeps both. */
+  canAddFunds?: boolean;
   standUpNextBB?: boolean;
   soundEnabled?: boolean;
   vibrationsEnabled?: boolean;
@@ -707,6 +712,7 @@ export function TableTabBar({
                   ? 'ON'
                   : 'OFF'
                 : undefined,
+              canAddFunds: tabs.find((t) => t.id === activeTabId)?.canAddFunds,
             }
           ),
     [activeTabId, tabs, activeIsLobby, profitTrackingEnabled, onToggleProfitTracking]

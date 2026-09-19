@@ -164,10 +164,10 @@ export default function DiamondGamesMoney({ clubId }: { clubId: string | null })
         foot="foot"
       >
         <p className="sc-copy">
-          What The Games Earned You, Not What They Paid Back. Every Diamond Taken In Went To The
-          Owner Wallet; Every Chip Paid Left The Promo Wallet Or The Bank; Diamond Prizes Came Out
-          Of The Owner Balance. Welcome Spins Are Shown Apart, Because They Are A Gift You Chose To
-          Make Rather Than The Paid Game Losing Money.
+          Game Earnings Include Entry Diamonds And Prize Costs. New Entries Stay In Daily Custody;
+          Diamond And Inventory Prizes Are Deducted Before One Net Owner Wallet Settlement. Chip
+          Prizes Use The Promo Wallet First, Then The Bank. Welcome Spins Are Shown Separately.
+          Daily Diamond Statements Show The Exact Wallet Settlement.
         </p>
         <div className={styles.rows}>
           {refusal ? <p className="sc-copy sc-ink--red">{refusal}</p> : null}
@@ -295,7 +295,7 @@ export default function DiamondGamesMoney({ clubId }: { clubId: string | null })
               <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>
                 Owner Diamonds
                 <span className={`${styles.rowMeta} sc-ink--muted`}>
-                  The Wheel Pays Its Diamond Prizes From Here
+                  This Balance Backs Any Daily Diamond Shortfall
                 </span>
               </span>
               <span className={`${styles.rowValue} sc-ink--red`}>

@@ -31,6 +31,21 @@ export function diamondWheelPageFixture() {
       },
     };
     const stubs = {
+      DiamondReplayService: `export const DiamondReplayService={list:async()=>[]}; export const bonusReplayTitle=()=> 'Diamond Plinko';`,
+      ClubArenaWelcomeModal: `export default()=>null;export const useClubArenaWelcome=()=>({isReady:false,showWelcome:false,acceptWelcome:()=>{}});`,
+      CompleteProfileModal: `export default()=>null;export const useCompleteProfile=()=>({isReady:false,showProfileModal:false,profileStatus:'complete',finishProfile:()=>{}});`,
+      DailyBonusEntry: `export default()=>null;`,
+      ClubWorkspaceContext: `export const ClubWorkspaceProvider=({children})=>children;export const useClubWorkspace=()=>({routeClubId:'fixture'});`,
+      NavigationTelemetry: `export default()=>null;`,
+      ClubAnnouncementBanner: `export default()=>null;`,
+      ArenaSectionRail: `export default()=>null;`,
+      ClubOperationsRail: `export default()=>null;`,
+      HamburgerMenu: `export default()=>null;`,
+      useWalletStore: `const state={loadBalances:()=>{},loadDiamonds:()=>{}};export const useWalletStore=()=>state;useWalletStore.setState=()=>{};`,
+      useHeaderDataStore: `const state={avatarUrl:null,isVipActive:false,notificationCount:0,unreadMessages:0,loadOnce:()=>{},clearUnreadNotifications:()=>{},clearUnreadMessages:()=>{}};export const useHeaderDataStore=()=>state;`,
+      useMasterBusSubscription: `export const useMasterBusSubscription=()=>{};`,
+      MasterBus: `export const masterBus={emit:()=>{},on:()=>()=>{}};`,
+      avatarGenerator: `export const sizedStorageUrl=(url)=>url;`,
       DiamondWheelService: `const state=${JSON.stringify(state)};export default {
         getStateV2:async()=>({...state,available:!location.search.includes('paused'),reason:'Local Connection Is Paused'}),
         welcomeState:async()=>({available:true,enabled:true,price:100}),
@@ -54,7 +69,8 @@ export function diamondWheelPageFixture() {
       import './src/styles/club-engine.css';import './src/styles/animations.css';import './src/styles/metallic-popups.css';import './src/styles/reducedMotion.css';
       import React from 'react';import {createRoot} from 'react-dom/client';import {MemoryRouter,Routes,Route} from 'react-router-dom';
       import DiamondWheelPage from './src/pages/DiamondWheelPage';
-      createRoot(document.getElementById('root')).render(<MemoryRouter initialEntries={['/clubs/fixture/wheel']}><Routes><Route path="/clubs/:clubId/wheel" element={<DiamondWheelPage/>}/></Routes></MemoryRouter>);
+      import AppLayout from './src/components/layouts/AppLayout';
+      createRoot(document.getElementById('root')).render(<MemoryRouter initialEntries={['/clubs/fixture/wheel']}><Routes><Route element={<AppLayout/>}><Route path="/clubs/:clubId/wheel" element={<DiamondWheelPage/>}/></Route></Routes></MemoryRouter>);
     `,
       },
       bundle: true,

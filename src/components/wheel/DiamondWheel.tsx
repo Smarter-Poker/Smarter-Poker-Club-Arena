@@ -6,9 +6,11 @@ import {
   wheelLandingRotation,
   wheelPegTimes,
   wheelTravel,
+  wheelPointerDeflection,
   WHEEL_SPIN_MS,
 } from '../../utils/diamondWheelMotion';
 import { WheelPrizeArt } from './WheelPrizeArt';
+import { WheelPrizeCard } from './WheelPrizeCard';
 import styles from './DiamondWheel.module.css';
 
 export interface DiamondWheelProps {
@@ -22,6 +24,8 @@ export interface DiamondWheelProps {
   upgraded?: boolean;
   idleDirection?: 1 | -1;
   showSelector?: boolean;
+  faceScale?: number;
+  upgradeExpanded?: boolean;
   presentation?: 'cabinet' | 'complete' | 'assembly';
 }
 
@@ -37,14 +41,21 @@ function materialClass(seg: WheelSegment): string {
   return styles.reward;
 }
 
-function wheelLabel(segment: WheelSegment, upgraded = false): string {
+export function wheelLabel(segment: WheelSegment, upgraded = false): string {
   if (segment.kind === 'bonus') {
     const name = { plinko: 'Plinko', crash: 'Crash', crossing: 'Donkey Cross', mines: 'Mines' }[
       segment.game ?? 'plinko'
     ];
     return upgraded ? `Super ${name}` : name;
   }
-  if (segment.kind === 'chips' && segment.multiplier) return `${segment.multiplier}x Chips`;
+  if (segment.kind === 'upgrade') return 'UPGRADE';
+  if (segment.kind === 'chips') {
+    const amount = segment.amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const tier = upgraded
+      ? ({ 5: 'MINI', 10: 'MINOR', 25: 'MAJOR', 100: 'GRAND' }[segment.multiplier ?? 0] ?? '')
+      : '';
+    return `${tier ? `${tier} ` : ''}${amount} Chips`;
+  }
   if (segment.kind === 'time_bank') return 'Time Bank';
   if (segment.kind === 'rabbit_hunt') return 'Rabbit Hunt';
   if (segment.kind === 'throwables') return 'Throwables';
@@ -79,6 +90,8 @@ export default function DiamondWheel({
   idleDirection = 1,
   presentation = 'cabinet',
   showSelector = true,
+  faceScale = 1,
+  upgradeExpanded = false,
 }: DiamondWheelProps) {
   const frame = useRef<HTMLDivElement>(null);
   const [apertureWidth, setApertureWidth] = useState(360);
@@ -164,17 +177,10 @@ export default function DiamondWheel({
           run.nextPeg += 1;
         }
         position.current = run.from + (run.to - run.from) * wheelTravel(progress);
-        const sectorAngle = 360 / Math.max(1, props.current.count);
-        const pegPhase = (position.current % sectorAngle) / sectorAngle;
-        pointer.current?.setAttribute(
-          'transform',
-          `rotate(${pegPhase < 0.15 ? -16 * (1 - pegPhase / 0.15) : 0} 500 180)`
-        );
         if (progress === 1) {
           animation.current = null;
           settledRef.current = expectedOrd.current;
           setSettledOrd(expectedOrd.current);
-          pointer.current?.setAttribute('transform', 'rotate(0 500 180)');
           soundService.playSpinResult();
           callback.current();
         }
@@ -183,6 +189,16 @@ export default function DiamondWheel({
         if (settledRef.current === null)
           position.current += (elapsed / 1000) * 3 * props.current.idleDirection;
       }
+      const moving =
+        Boolean(animation.current && props.current.spinning) ||
+        (!props.current.spinning && settledRef.current === null);
+      const direction = props.current.spinning ? 1 : props.current.idleDirection;
+      pointer.current?.setAttribute(
+        'transform',
+        `rotate(${
+          moving ? wheelPointerDeflection(position.current, props.current.count, direction) : 0
+        } 500 156)`
+      );
       rotor.current?.setAttribute('transform', `rotate(${position.current} 500 500)`);
       frame = requestAnimationFrame(animate);
     };
@@ -200,7 +216,7 @@ export default function DiamondWheel({
   const assembled = presentation === 'assembly';
   const outerRing = assembled && upgraded;
   const outerRadius = outerRing ? 468 : 344;
-  const innerRadius = outerRing ? 358 : 88;
+  const innerRadius = outerRing ? (upgradeExpanded ? 204 : 334) : 88;
   const count = Math.max(1, arranged.length);
   const step = 360 / count;
   const material = (seg: WheelSegment) =>
@@ -244,17 +260,20 @@ export default function DiamondWheel({
         <defs>
           <clipPath id={`${id}-outer-housing`}>
             <path
-              d="M0 0H1000V1000H0Z M975 500A475 475 0 1 0 25 500A475 475 0 1 0 975 500Z"
+              d="M0 0H1000V1000H0Z M968 500A468 468 0 1 0 32 500A468 468 0 1 0 968 500Z"
+              clipRule="evenodd"
+            />
+          </clipPath>
+          <clipPath id={`${id}-bearing`}>
+            <path
+              d="M863 500A363 363 0 1 0 137 500A363 363 0 1 0 863 500Z M841 500A341 341 0 1 0 159 500A341 341 0 1 0 841 500Z"
               clipRule="evenodd"
             />
           </clipPath>
           <linearGradient id={`${id}-chrome`} x1="0" y1="0" x2="1" y2="1">
-            <stop stopColor="#f4f7fb" />
-            <stop offset=".17" stopColor="#9aa5b3" />
-            <stop offset=".29" stopColor="#050607" />
-            <stop offset=".43" stopColor="#e4e7ec" />
-            <stop offset=".7" stopColor="#050607" />
-            <stop offset="1" stopColor="#9aa5b3" />
+            <stop stopColor="#9aa5b3" />
+            <stop offset=".4" stopColor="#9aa5b3" stopOpacity=".6" />
+            <stop offset="1" stopColor="#050607" />
           </linearGradient>
           {(['glass', 'bonus', 'chips', 'upgrade'] as const).map((name) => (
             <radialGradient key={name} id={`${id}-${name}`} cx=".25" cy=".1" r=".9">
@@ -262,6 +281,7 @@ export default function DiamondWheel({
                 stopColor={
                   name === 'upgrade' ? '#ffd700' : name === 'bonus' ? '#45adff' : '#9aa5b3'
                 }
+                stopOpacity={name === 'bonus' || name === 'upgrade' ? 0.75 : 0.35}
               />
               <stop
                 offset=".3"
@@ -276,154 +296,168 @@ export default function DiamondWheel({
             <stop offset="1" stopColor="#1877f2" stopOpacity="0" />
           </radialGradient>
           <linearGradient id={`${id}-sheen`} x1="0" y1="0" x2="1" y2="1">
-            <stop stopColor="#fff" stopOpacity=".3" />
-            <stop offset=".35" stopColor="#fff" stopOpacity="0" />
-            <stop offset=".65" stopColor="#000" stopOpacity=".5" />
-            <stop offset="1" stopColor="#fff" stopOpacity=".15" />
+            <stop stopColor="#000" stopOpacity=".3" />
+            <stop offset=".2" stopColor="#000" stopOpacity="0" />
+            <stop offset=".8" stopColor="#000" stopOpacity=".1" />
+            <stop offset="1" stopColor="#000" stopOpacity=".35" />
+          </linearGradient>
+          <linearGradient id={`${id}-cut-edge`} x1="0" y1="0" x2="0" y2="1">
+            <stop stopColor="#9aa5b3" />
+            <stop offset=".12" stopColor="#9aa5b3" stopOpacity=".6" />
+            <stop offset=".32" stopColor="#050607" />
+            <stop offset=".78" stopColor="#050607" />
+            <stop offset="1" stopColor="#9aa5b3" />
           </linearGradient>
           <filter id={`${id}-shadow`} x="-30%" y="-30%" width="160%" height="170%">
             <feDropShadow dx="0" dy="8" stdDeviation="7" floodOpacity=".9" />
           </filter>
         </defs>
-        {outerRing ? (
-          <circle cx="500" cy="500" r="474" fill="#050607" />
-        ) : (
-          <circle cx="500" cy="500" r="352" fill="#050607" />
-        )}
-        <g ref={rotor} data-wheel-rotor data-motion="keep">
-          {arranged.map((segment, index) => {
-            const start = index * step;
-            const end = start + step;
-            const mid = start + step / 2;
-            const [x, y] = point(outerRing ? 412 : 250, mid);
-            const winner = settledOrd === segment.ord;
-            return (
-              <g
-                key={segment.ord}
-                className={`${materialClass(segment)} ${segment.locked ? styles.locked : ''}`}
-                data-slot={segment.ord}
-                data-winner={winner || undefined}
-              >
-                <path
-                  d={sector(outerRadius, innerRadius, start + 0.6, end - 0.6)}
-                  fill="#000"
-                  transform="translate(0 9)"
-                />
-                <path
-                  d={sector(outerRadius, innerRadius, start + 0.6, end - 0.6)}
-                  fill={`url(#${id}-chrome)`}
-                />
-                <path
-                  d={sector(outerRadius - 10, innerRadius + 11, start + 1.7, end - 1.7)}
-                  fill={`url(#${id}-${material(segment)})`}
-                />
-                <path
-                  d={sector(outerRadius - 14, innerRadius + 15, start + 2.2, end - 2.2)}
-                  fill={`url(#${id}-sheen)`}
-                />
-                <path
-                  d={sector(outerRadius - 16, innerRadius + 17, start + 2.3, end - 2.3)}
-                  className={styles.sectorLight}
-                  fill="none"
-                  stroke={winner ? '#f4f7fb' : '#45adff'}
-                  strokeWidth={winner ? 4 : 1}
-                />
-                <g transform={`translate(${x} ${y}) rotate(${mid})`}>
-                  <g className={styles.prizeFloat} style={{ animationDelay: `${index * -0.24}s` }}>
-                    <svg
-                      x={outerRing ? -110 : count <= 8 ? -77 : -57}
-                      y={outerRing ? -38 : count <= 8 ? -88 : -62}
-                      width={outerRing ? 88 : count <= 8 ? 154 : 114}
-                      height={outerRing ? 76 : count <= 8 ? 140 : 104}
-                      overflow="visible"
-                    >
-                      <WheelPrizeArt segment={segment} />
-                    </svg>
-                  </g>
-                  <text
-                    className={styles.segText}
-                    textAnchor="middle"
-                    y={outerRing ? -7 : count <= 8 ? 77 : 65}
-                    fontSize={outerRing ? 18 : count <= 8 ? 23 : 19}
-                  >
-                    {(outerRing && segment.kind === 'bonus'
-                      ? ['Super', wheelLabel(segment)]
-                      : wheelLabel(segment, upgraded).split(' ')
-                    ).map((word, line) => (
-                      <tspan key={line} x={outerRing ? 43 : 0} dy={line ? '1.05em' : 0}>
-                        {word}
-                      </tspan>
-                    ))}
-                  </text>
+        <g className={styles.face} style={{ transform: `scale(${faceScale})` }} data-wheel-face>
+          {outerRing ? (
+            <circle cx="500" cy="500" r="474" fill="#050607" />
+          ) : (
+            <circle cx="500" cy="500" r="352" fill="#050607" />
+          )}
+          <g ref={rotor} data-wheel-rotor data-motion="keep">
+            {arranged.map((segment, index) => {
+              const start = index * step;
+              const end = start + step;
+              const winner = settledOrd === segment.ord;
+              return (
+                <g
+                  key={segment.ord}
+                  className={`${materialClass(segment)} ${segment.locked ? styles.locked : ''}`}
+                  data-slot={segment.ord}
+                  data-winner={winner || undefined}
+                >
+                  <path
+                    d={sector(outerRadius, innerRadius, start + 0.6, end - 0.6)}
+                    fill="#000"
+                    transform="translate(0 8)"
+                  />
+                  <path
+                    d={sector(outerRadius, innerRadius, start + 0.6, end - 0.6)}
+                    fill={`url(#${id}-chrome)`}
+                    stroke="#050607"
+                    strokeWidth="1.5"
+                  />
+                  <path
+                    d={sector(outerRadius - 2, innerRadius + 2, start + 0.9, end - 0.9)}
+                    fill={`url(#${id}-cut-edge)`}
+                    stroke="#e4e7ec"
+                    strokeOpacity=".45"
+                    strokeWidth=".7"
+                  />
+                  <path
+                    d={sector(outerRadius - 6, innerRadius + 7, start + 1.35, end - 1.35)}
+                    fill="#050607"
+                    stroke="#000"
+                    strokeWidth="2.5"
+                  />
+                  <path
+                    d={sector(outerRadius - 10, innerRadius + 11, start + 1.7, end - 1.7)}
+                    fill={`url(#${id}-${material(segment)})`}
+                    stroke={`url(#${id}-cut-edge)`}
+                    strokeWidth="2"
+                  />
+                  <path
+                    d={sector(outerRadius - 14, innerRadius + 15, start + 2.2, end - 2.2)}
+                    fill={`url(#${id}-sheen)`}
+                  />
+                  <path
+                    d={sector(outerRadius - 16, innerRadius + 17, start + 2.3, end - 2.3)}
+                    className={styles.sectorLight}
+                    fill="none"
+                    stroke={winner ? '#f4f7fb' : '#45adff'}
+                    strokeWidth={winner ? 4 : 1}
+                  />
+                  <WheelPrizeCard
+                    segment={segment}
+                    startAngle={start}
+                    endAngle={end}
+                    outerRadius={outerRadius}
+                    innerRadius={innerRadius}
+                    upgraded={upgraded}
+                    titleOnly={outerRing && !upgradeExpanded}
+                  />
                 </g>
-              </g>
-            );
-          })}
-        </g>
-        {(!assembled || upgraded) && (
-          <image
-            clipPath={outerRing ? `url(#${id}-outer-housing)` : undefined}
-            href={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-chrome-housing-v1.png`}
-            width="1000"
-            height="1000"
-            pointerEvents="none"
-          />
-        )}
-        {assembled && !upgraded && (
-          <>
-            <circle
-              cx="500"
-              cy="500"
-              r="352"
-              fill="none"
-              stroke={`url(#${id}-chrome)`}
-              strokeWidth="12"
+              );
+            })}
+          </g>
+          {(!assembled || upgraded) && (
+            <image
+              clipPath={outerRing ? `url(#${id}-outer-housing)` : undefined}
+              href={`${import.meta.env.BASE_URL}assets/diamond-spins/${outerRing ? 'wheel-matte-rim-v1.png' : 'wheel-chrome-housing-v1.png'}`}
+              x={outerRing ? -18 : 0}
+              y={outerRing ? -18 : 0}
+              width={outerRing ? 1036 : 1000}
+              height={outerRing ? 1036 : 1000}
+              pointerEvents="none"
             />
-            <circle cx="500" cy="500" r="345" fill="none" stroke="#45adff" strokeWidth="2" />
-          </>
-        )}
-        {(!assembled || upgraded) &&
-          Array.from({ length: 48 }, (_, i) => {
-            const [x, y] = point(outerRing ? 482 : 424, i * 7.5);
-            return (
-              <circle
-                key={i}
-                cx={x}
-                cy={y}
-                r="5"
-                fill={`url(#${id}-light)`}
-                className={styles.lamp}
-                style={{ animationDelay: `${i * -0.045}s` }}
-              />
-            );
-          })}
-        {!outerRing && (
-          <g filter={`url(#${id}-shadow)`}>
-            <circle cx="500" cy="500" r="102" fill={`url(#${id}-chrome)`} />
-            <circle cx="500" cy="500" r="91" fill="#050607" stroke="#45adff" strokeWidth="2" />
-            <circle cx="500" cy="500" r="85" fill={`url(#${id}-glass)`} />
-            <svg x="437" y="433" width="126" height="118" className={styles.hubStone}>
-              <WheelPrizeArt segment={{ kind: upgraded ? 'upgrade' : 'diamonds' }} />
-            </svg>
-            <text x="500" y="568" className={styles.hubLabel} textAnchor="middle">
-              {upgraded ? 'Upgrade' : 'Diamond Spins'}
-            </text>
-          </g>
-        )}
-        {showSelector && (
-          <g data-wheel-selector transform={outerRing ? 'translate(0 -135)' : undefined}>
-            <g ref={pointer} filter={`url(#${id}-shadow)`}>
-              <path
-                d="M475 166 L500 149 L525 166 L516 192 L500 225 L484 192Z"
-                fill={`url(#${id}-chrome)`}
-                stroke="#000"
-                strokeWidth="2"
-              />
-              <path d="M490 171 L510 171 L507 191 L500 207 L493 191Z" fill="#45adff" />
-              <circle cx="500" cy="174" r="9" fill={`url(#${id}-light)`} />
+          )}
+          {assembled && !upgraded && (
+            <image
+              href={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-matte-rim-v1.png`}
+              x="64"
+              y="64"
+              width="872"
+              height="872"
+              clipPath={`url(#${id}-bearing)`}
+              pointerEvents="none"
+            />
+          )}
+          {(!assembled || upgraded) &&
+            Array.from({ length: 48 }, (_, i) => {
+              const [x, y] = point(outerRing ? 482 : 424, i * 7.5);
+              return (
+                <circle
+                  key={i}
+                  cx={x}
+                  cy={y}
+                  r="5"
+                  fill={`url(#${id}-light)`}
+                  className={styles.lamp}
+                  style={{ animationDelay: `${i * -0.045}s` }}
+                />
+              );
+            })}
+          {!outerRing && (
+            <g filter={`url(#${id}-shadow)`}>
+              <circle cx="500" cy="500" r="102" fill={`url(#${id}-chrome)`} />
+              <circle cx="500" cy="500" r="91" fill="#050607" stroke="#45adff" strokeWidth="2" />
+              <circle cx="500" cy="500" r="85" fill={`url(#${id}-glass)`} />
+              <svg x="437" y="433" width="126" height="118" className={styles.hubStone}>
+                <WheelPrizeArt segment={{ kind: upgraded ? 'upgrade' : 'diamonds' }} />
+              </svg>
+              <text x="500" y="568" className={styles.hubLabel} textAnchor="middle">
+                {upgraded ? 'UPGRADE' : 'Diamond Spins'}
+              </text>
             </g>
-          </g>
-        )}
+          )}
+          {showSelector && (
+            <g data-wheel-selector transform={outerRing ? 'translate(0 -124)' : undefined}>
+              <image
+                href={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-selector-mount-v1.png`}
+                x="390"
+                y="128"
+                width="220"
+                height="80"
+                aria-hidden="true"
+              />
+              <g ref={pointer} filter={`url(#${id}-shadow)`}>
+                <image
+                  href={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-selector-matte-v1.png`}
+                  x="487"
+                  y="152"
+                  width="26"
+                  height="39"
+                  className={styles.selectorCrystal}
+                  aria-hidden="true"
+                />
+              </g>
+            </g>
+          )}
+        </g>
       </svg>
     </div>
   );

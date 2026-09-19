@@ -144,7 +144,7 @@ describe('Club Arena accessibility foundation', () => {
     expect(source).toContain('aria-label={`${section.label} Sections`}');
     expect(source).toContain("aria-current={isActive ? 'page' : undefined}");
     expect(source).toContain('<ul className={styles.items}>');
-    expect(layoutSource).toContain('{showGlobalHeader && <ArenaSectionRail />}');
+    expect(layoutSource).toContain('{showGlobalHeader && !immersiveGame && <ArenaSectionRail />}');
   });
 
   it('gives the club operations workspace semantic groups and a current-page rail', () => {
@@ -163,7 +163,9 @@ describe('Club Arena accessibility foundation', () => {
     expect(railBodySource).toContain('aria-label="Club Operations Sections"');
     expect(railBodySource).toContain("aria-current={isActive ? 'page' : undefined}");
     expect(railSource).toContain("lazy(() => import('./ClubOperationsRailBody'))");
-    expect(layoutSource).toContain('{showGlobalHeader && <ClubOperationsRail />}');
+    expect(layoutSource).toContain(
+      '{showGlobalHeader && !immersiveGame && <ClubOperationsRail />}'
+    );
   });
 
   it('makes the integrity case workflow labelled, permission-aware, and keyboard operable', () => {

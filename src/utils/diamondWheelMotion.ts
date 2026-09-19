@@ -2,6 +2,22 @@
 export const WHEEL_SPIN_MS = 10800;
 export const WHEEL_TURNS = 7;
 
+/** The pawl bends against each divider, then springs back into the prize bay. */
+export function wheelPointerDeflection(rotation: number, count: number, direction: 1 | -1): number {
+  if (!Number.isFinite(rotation) || count < 1) return 0;
+  const step = 360 / count;
+  const phase = ((((rotation * direction) % step) + step) % step) / step;
+  if (phase > 0.86) {
+    const contact = (phase - 0.86) / 0.14;
+    return -direction * 26 * contact * contact;
+  }
+  if (phase < 0.35) {
+    const release = phase / 0.35;
+    return -direction * 26 * (1 - release) ** 3 * Math.cos((phase * Math.PI) / 0.12);
+  }
+  return 0;
+}
+
 // Continuous velocity: accelerate for 12%, coast for 25%, then slow to zero.
 const ACCEL = 0.12;
 const COAST_END = 0.37;

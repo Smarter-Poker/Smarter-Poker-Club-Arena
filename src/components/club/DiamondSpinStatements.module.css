@@ -1,0 +1,75 @@
+.action {
+  padding: 8px 16px;
+  min-height: 44px;
+  border: 8px solid transparent;
+  border-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') 26 fill /
+    8px / 0 stretch;
+  background: transparent;
+  color: #e4e7ec;
+  font:
+    700 15px 'Roboto Condensed',
+    sans-serif;
+  cursor: pointer;
+}
+.action:active {
+  filter: brightness(1.15);
+}
+.action:focus-visible {
+  outline: 2px solid #45adff;
+}
+.action:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.day {
+  padding: 12px 0;
+  border-bottom: 1px solid rgb(154 165 179 / 20%);
+}
+.day summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+}
+.day summary strong {
+  font-size: clamp(16px, 3.5cqw, 24px);
+  text-align: right;
+}
+.day summary small {
+  display: block;
+  color: #9aa5b3;
+  margin-top: 5px;
+}
+.totals {
+  margin: 12px 0;
+}
+.totals > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+}
+.totals dt {
+  color: #9aa5b3;
+}
+.totals dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.host {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+}
+.host strong {
+  color: #45adff;
+}
+.note,
+.host span {
+  color: #9aa5b3;
+  font-size: 13px;
+  line-height: 1.5;
+}

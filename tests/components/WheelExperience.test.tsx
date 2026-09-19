@@ -65,6 +65,10 @@ describe('wheel to prize to earned game', () => {
     expect(screen.getByRole('button', { name: 'Land Bonus Wheel' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Land Main Wheel' })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Diamond Spins Prize Wheel' })).toHaveAttribute(
+      'data-upgrade-reveal',
+      'peek'
+    );
   });
   it('opens an upgraded instant chip prize and waits for acknowledgement without entering a game', () => {
     const onFinished = vi.fn();
@@ -116,6 +120,10 @@ describe('wheel to prize to earned game', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Land Main Wheel' }));
     expect(screen.getByRole('heading', { name: 'Bonus Upgrade' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Diamond Spins Prize Wheel' })).toHaveAttribute(
+      'data-upgrade-reveal',
+      'open'
+    );
     expect(onFinished).not.toHaveBeenCalled();
     finishReveal();
     fireEvent.click(screen.getByRole('button', { name: 'Land Bonus Wheel' }));

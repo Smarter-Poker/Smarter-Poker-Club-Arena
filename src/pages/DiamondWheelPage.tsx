@@ -1,3 +1,4 @@
+import BonusReplayLibrary from '../components/games/BonusReplayLibrary';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
 /** The player chooses an entry, then watches a committed server result open.
  * Free entries retain their welcome or claimed Daily Bonus identity. */
@@ -7,6 +8,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { useIdleSpinCountdown } from '../hooks/useIdleSpinCountdown';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { Modal } from '../components/common/Modal';
 import { ErrorState } from '../components/common/EmptyState';
@@ -162,6 +164,8 @@ export default function DiamondWheelPage() {
   const [waitSeconds, setWaitSeconds] = useState(0);
   const busyRef = useRef(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [idleArmed, setIdleArmed] = useState(true);
+  const [idleChoice, setIdleChoice] = useState(0);
   const [stageRef, stageWidth] = useMeasuredWidth<HTMLDivElement>(300);
   const { floor, refresh: refreshFloor } = useGameFloor(clubUuid, 20);
 
@@ -277,6 +281,7 @@ export default function DiamondWheelPage() {
     (async () => {
       if (!routeClubId || !user?.id) return;
       setLoading(true);
+      setIdleArmed(true);
       busyRef.current = false;
       preparingRef.current = false;
       setPreparing(false);
@@ -475,12 +480,12 @@ export default function DiamondWheelPage() {
   const shortOfDiamonds = blocker === SHORT_OF_DIAMONDS;
   const running = autoRun !== null;
 
-  /* A WELCOME SPIN IS NEVER AUTO-PLAYED. It is once per member, ever, and it
-     costs nothing, so there is no run to make of it: the size cannot be set and
-     a run cannot be started while the wheel is on the house. */
+  /* Free entries cannot start a paid batch. The owner's visible 30-second
+     countdown can consume one selected entry, then holds until another choice. */
   const cycleAuto = useCallback(() => {
     if (running || spinning || freeMode || recovery) return;
     setAutoSize(cycleRunSize);
+    setIdleArmed(false);
     triggerHaptic('light');
   }, [running, spinning, freeMode, recovery]);
 
@@ -512,6 +517,7 @@ export default function DiamondWheelPage() {
   const handleSpin = useCallback(async () => {
     if (!user?.id || !clubUuid || !commit || busyRef.current || preparingRef.current || spinning)
       return;
+    setIdleArmed(false);
     const scope = scopeRef.current;
     busyRef.current = true;
     setVerdict(null);
@@ -609,6 +615,16 @@ export default function DiamondWheelPage() {
     endAuto,
     prepareNextSpin,
   ]);
+
+  const idleSeconds = useIdleSpinCountdown(
+    idleArmed,
+    !loading && canSpin && !recovery && !detailsOpen && !running && autoSize === 0,
+    `${scopeRef.current}:${mode}:${entryDiamonds}:${idleChoice}`,
+    () => {
+      setIdleArmed(false);
+      if (canSpin && !busyRef.current && !recovery) void handleSpin();
+    }
+  );
 
   const openBonus = useCallback(
     (award: WheelBonusAward) => {
@@ -842,14 +858,6 @@ export default function DiamondWheelPage() {
 
   return (
     <div className={`${styles.page} ${styles.fullscreenPage} ${wheelStyles.page}`}>
-      <button
-        type="button"
-        className={styles.back}
-        onClick={() => navigate(`/clubs/${routeClubId}/diamond-games`)}
-      >
-        ‹ Diamond Spins
-      </button>
-
       <WheelCabinet
         eyebrow="Diamond Games"
         title="Diamond Spins"
@@ -859,6 +867,15 @@ export default function DiamondWheelPage() {
         aria-labelledby="diamond-wheel-title"
         navigation={
           <>
+            <button
+              type="button"
+              className={styles.back}
+              disabled={spinning || running || Boolean(recovery) || autoSize > 0}
+              aria-label={idleArmed ? 'Hold Automatic Spin' : 'Start 30 Second Spin Countdown'}
+              onClick={() => setIdleArmed((value) => !value)}
+            >
+              {idleArmed ? `Hold ${idleSeconds}s` : 'Auto Held'}
+            </button>
             <button
               type="button"
               className={styles.back}
@@ -889,18 +906,22 @@ export default function DiamondWheelPage() {
         setup={
           <>
             <nav aria-label="Spin Entry" className={wheelStyles.entryModes}>
-              <button
-                type="button"
-                className={styles.back}
-                disabled={spinning || running || Boolean(recovery)}
-                aria-pressed={mode === 'paid'}
-                onClick={() => {
-                  setMode('paid');
-                  setAutoSize(0);
-                }}
-              >
-                Paid Spin
-              </button>
+              {(Boolean(welcome?.available) || (dailyBonus?.ticket_count ?? 0) > 0 || freeMode) && (
+                <button
+                  type="button"
+                  className={styles.back}
+                  disabled={spinning || running || Boolean(recovery)}
+                  aria-pressed={mode === 'paid'}
+                  onClick={() => {
+                    setMode('paid');
+                    setIdleArmed(true);
+                    setIdleChoice((v) => v + 1);
+                    setAutoSize(0);
+                  }}
+                >
+                  Use Diamonds
+                </button>
+              )}
               {welcome?.available && (
                 <button
                   type="button"
@@ -909,6 +930,8 @@ export default function DiamondWheelPage() {
                   aria-pressed={welcomeMode}
                   onClick={() => {
                     setMode('welcome');
+                    setIdleArmed(true);
+                    setIdleChoice((v) => v + 1);
                     setAutoSize(0);
                   }}
                 >
@@ -923,6 +946,8 @@ export default function DiamondWheelPage() {
                   aria-pressed={dailyBonusMode}
                   onClick={() => {
                     setMode('daily_bonus');
+                    setIdleArmed(true);
+                    setIdleChoice((v) => v + 1);
                     setAutoSize(0);
                   }}
                 >
@@ -944,14 +969,18 @@ export default function DiamondWheelPage() {
               <WheelEntry
                 value={freeMode ? 100 : entryDiamonds}
                 disabled={freeMode || spinning || running || Boolean(recovery)}
-                onChange={setEntryDiamonds}
+                onChange={(amount) => {
+                  setEntryDiamonds(amount);
+                  setIdleArmed(true);
+                  setIdleChoice((v) => v + 1);
+                }}
               />
             )}
           </>
         }
         bays={[
           { label: 'Diamonds', value: compactChips(player?.diamonds ?? 0), ink: 'blue' },
-          { label: 'Chips', value: compactChips(player?.member_chips ?? 0), ink: 'silver' },
+          { label: 'Club Chips', value: compactChips(player?.member_chips ?? 0), ink: 'silver' },
           freeMode
             ? { label: 'Spin', value: welcomeMode ? 'Welcome' : 'Bonus', ink: 'gold' }
             : { label: 'Spin', value: compactChips(price), ink: 'silver' },
@@ -1184,6 +1213,8 @@ export default function DiamondWheelPage() {
           title="Recent Wins"
           limit={8}
         />
+
+        {clubUuid && <BonusReplayLibrary clubId={clubUuid} />}
 
         <SpadeConsole eyebrow="Your Spins" title="History" foot="foot">
           {history.length === 0 ? (

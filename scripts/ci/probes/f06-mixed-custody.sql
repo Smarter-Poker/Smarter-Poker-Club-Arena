@@ -88,7 +88,7 @@ VALUES(true,'counting_down',clock_timestamp()-interval '121 seconds',clock_times
 INSERT INTO public.engine_leader(id,instance_id,engine_version,heartbeat_at) VALUES(true,'1-3846b8bb','8825af51',clock_timestamp());
 CREATE TEMP TABLE frozen_local AS SELECT pg_temp.mixed_local()||jsonb_build_object('release_checkpoint',
  jsonb_build_object('kind','legacy_engine_checkpoint_8825_v1','source','8825af51817f379c4261658ca29ecc9d8d81932d','instance_id','1-3846b8bb',
- 'container_id','c63b254ee71b76aa26f4d1394d96189963774310244b046bc91186e219ca3f66','process_id',1,'run_id','123','control_sha',repeat('a',40))||
+ 'container_id','c63b254ee71b76aa26f4d1394d96189963774310244b046bc91186e219ca3f66','process_id',1,'run_id','35405450271-1','control_sha',repeat('a',40))||
  (SELECT to_jsonb(b)-ARRAY['id','declared_by','updated_at','enforce_freeze'] FROM public.engine_maintenance_break b WHERE id=true)) AS value;
 SELECT pg_temp.mixed_check(public.fn_platform_frozen() AND pg_temp.mixed_prepare((SELECT value FROM frozen_local))->'receipt'='null'::jsonb,'native frozen owner qualifies custody-only observation');
 SELECT pg_temp.mixed_refuses($q$DELETE FROM public.engine_maintenance_break;SELECT pg_temp.mixed_prepare((SELECT value FROM frozen_local))$q$,'FROZEN_CHECKPOINT_UNPROVEN','missing maintenance never proves checkpoint');

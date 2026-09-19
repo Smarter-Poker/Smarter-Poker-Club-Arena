@@ -406,7 +406,7 @@ BEGIN
  OR checkpoint->>'instance_id' IS DISTINCT FROM '1-3846b8bb'
  OR checkpoint->>'container_id' IS DISTINCT FROM 'c63b254ee71b76aa26f4d1394d96189963774310244b046bc91186e219ca3f66'
  OR checkpoint->>'process_id' IS DISTINCT FROM '1'
- OR COALESCE(checkpoint->>'run_id','') !~ '^[1-9][0-9]*$' OR COALESCE(checkpoint->>'control_sha','') !~ '^[0-9a-f]{40}$'
+ OR COALESCE(checkpoint->>'run_id','') !~ '^[1-9][0-9]*(-[1-9][0-9]*)?$' OR COALESCE(checkpoint->>'control_sha','') !~ '^[0-9a-f]{40}$'
  OR checkpoint->>'phase' IS DISTINCT FROM 'counting_down'
  OR maintenance->>'phase' IS DISTINCT FROM checkpoint->>'phase'
  OR maintenance->>'declared_by' IS DISTINCT FROM '8825af51'

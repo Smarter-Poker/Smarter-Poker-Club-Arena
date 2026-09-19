@@ -6,10 +6,10 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "f037363cf1da6ddfca7cfa73ff4129b9b9b5457a846cf2d783fde2b3a06a1fdf",
+    "scripts/ci/classify-ci-changes.mjs": "b19feec938412061c38e8ac101509ec7cffcbd24ec3b487bb0ee05263517e12b",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/dev/qualify-sep8-spin-custody.py": "70808b65cd2a371bf84d25444d4793f78a8ea8741ce62df5bc6cd0e33e96891b",
+    "scripts/dev/qualify-sep8-spin-custody.py": "19a01adc032b82338fdc8a1041ba1fb60047019b0313fc3580b0bd9264cec737",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "e500aa832ea849e9272fb63119e15a938393e6da3d821f7cb69272e6ccf13a4a",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
@@ -27,7 +27,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "bb58f37feb9bac28ea2994be33f24bbf96a8f70db998f2126df865d22f180d64",
+    "tests/unit/fixtureNativeCi.test.ts": "34dc034707475d944e7e77b08e93077f36bf758266bd2d58636248295f77b521",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -37,7 +37,7 @@
     "scripts/ci/fixtures/satellite-qualifiers/current-entry-close-table-20260917.json": "b1cc77864ffc14627037515d8372453eb769f8ff0ed2fa3861d51a0c681298e3",
     "scripts/ci/fixtures/satellite-qualifiers/current-entry-close-functions-20260917.json": "848ece62fd1d96eeaf95ac3b6dec3159576f5ebd68ae4b10e6f2d78bb490dd07",
     "scripts/ci/fixtures/satellite-qualifiers/current-committed-terms-20260917.json": "e1ad04af2d8891199009874df4667c7f2ba99fc2dc5443933c85443a5774c4f5",
-    "tests/fixtures/sep8-spin-custody/standings-negative.sql": "7282ab6bf0b23b6a072327ce13f0fcf7143997d686efd6ee0ce0227cba541820",
+    "tests/fixtures/sep8-spin-custody/standings-negative.sql": "83baaab3b2e0acf02c6ea8b5b99870c738b64923b0df742a167852d0a7402cdb",
     "tests/fixtures/sep8-spin-custody/g8-original-standings-seed.sql": "2dadada85cfb804a2c6ac05b1ac6b6a4e0d398528dd937db3e52b98403edb653",
     "tests/fixtures/sep8-spin-custody/build-standings-candidate.py": "3909bd3460f71df59f4a216bef16aa7d8492fa55482ebe0c4ff07aa505ee263f",
     "tests/fixtures/sep8-spin-custody/g8-original-standings-authority.sql": "c249a60bc128c70f7a858551d62166612717594244768255ac59bbe261182822",
@@ -64,6 +64,8 @@
     "tests/fixtures/sep8-spin-custody/qualify-legacy-custody-lane.py": "d3f29151922d82b8245f5cfbab19d2bf20be53e1d69f3920691023f591ce2746",
     "tests/fixtures/sep8-spin-custody/legacy-custody-lane-catalog.json": "90680e3318a59d2d4527ffe022629464efac1941ae8c32d2036693f166a04712",
     "tests/fixtures/sep8-spin-custody/legacy-custody-lane-controls.sql": "ea881ef1234b034658a9d56b332b91c2fd9994cca2abbb1743b142723c217aab",
-    "supabase/migrations/20260918213339_review_bounded_legacy_fee_custody_settlement_lane_callers.sql": "61ffaf5bf15ed33970efed36677fac4341d66f3fdf403fde79efff8744c24e08"
+    "supabase/migrations/20260918213339_review_bounded_legacy_fee_custody_settlement_lane_callers.sql": "61ffaf5bf15ed33970efed36677fac4341d66f3fdf403fde79efff8744c24e08",
+    "tests/fixtures/sep8-spin-custody/qualify-clock-comparison.py": "6e72595bd5ec5f56dbd00a10621e72d5050a7d5d9da98bc48827479e0c1aaa97",
+    "supabase/migrations/20260918225150_original_spin_closure_ignores_only_elapsed_clock_metadata.sql": "f4a3660b311d3270e9d0dbec17c33a0d35488dfccc43dc97836dbcd54491a18d"
   }
 }

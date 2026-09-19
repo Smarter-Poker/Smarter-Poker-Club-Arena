@@ -9,10 +9,15 @@ export interface HorseJournalArchiveOptions {
 
 // Separate durable archive allocation; the original 64 MiB journal remains
 // unchanged. These bound compressed files independently of the catalog's
-// 2 GiB physical ceiling and each 4 MiB decoded batch. No quota grants
+// 4 GiB physical ceiling and each 4 MiB decoded batch. No quota grants
 // permission to delete records or describe an incomplete window as complete.
 export const HORSE_JOURNAL_ARCHIVE_BYTES = 8 * 1024 * 1024 * 1024;
 export const HORSE_JOURNAL_ARCHIVE_SEGMENTS = 500_000;
+// The former 2 GiB catalog filled at 262387 segments / 4.99 GB compressed,
+// before either archive allocation was reached. At that observed density,
+// 500000 segments need ~4.09 GB of index space. Keep a finite allocation,
+// shared by writer enforcement and reader diagnostics; SQLite grows on demand.
+export const HORSE_JOURNAL_ARCHIVE_CATALOG_BYTES = 4 * 1024 * 1024 * 1024;
 
 function positiveInteger(value: string | undefined, fallback: number, ceiling: number): number {
   if (value === undefined) return fallback;

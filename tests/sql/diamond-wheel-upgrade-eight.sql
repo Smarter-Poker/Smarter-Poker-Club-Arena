@@ -2,6 +2,48 @@
 \set ON_ERROR_STOP on
 BEGIN;
 SET LOCAL "test.user"='d1000000-0000-4000-8000-000000000005';
+-- PostgREST retains JWT claims inside SECURITY DEFINER calls. SET ROLE alone
+-- would become postgres there and incorrectly exercise the service bypass.
+SET LOCAL "request.jwt.claims"='{"role":"authenticated"}';
+DO $guard$
+DECLARE assignment text; denied boolean; before_profile jsonb; after_profile jsonb;
+BEGIN
+ IF public.fn_is_service_context() IS DISTINCT FROM false THEN
+  RAISE EXCEPTION 'Authenticated claims must survive SECURITY DEFINER owner context';
+ END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='public.profiles'::regclass
+   AND tgname='trg_guard_profile_privileged_columns' AND tgenabled='O') THEN
+  RAISE EXCEPTION 'The real profile guard must be active';
+ END IF;
+ FOREACH assignment IN ARRAY ARRAY['diamonds=COALESCE(diamonds,0)+1',
+   'diamond_multiplier=COALESCE(diamond_multiplier,1)+1','is_vip=NOT COALESCE(is_vip,false)',
+   'vip_tier=''guard-probe''','vip_expires_at=now()+interval ''1 day'''] LOOP
+  denied:=false;
+  BEGIN
+   EXECUTE 'UPDATE public.profiles SET '||assignment||' WHERE id=auth.uid()';
+  EXCEPTION WHEN insufficient_privilege THEN
+   IF SQLERRM NOT LIKE 'profiles.% is server-managed%' THEN RAISE; END IF;
+   denied:=true;
+  END;
+  IF NOT denied THEN RAISE EXCEPTION 'Direct profile write escaped guard: %',assignment; END IF;
+ END LOOP;
+ -- The mirror trigger runs before the guard and normalizes mirror-only writes.
+ -- Assert it leaves the complete stored profile unchanged, rather than demanding
+ -- a rejection after that earlier trigger has already removed the attempted edit.
+ SELECT to_jsonb(p) INTO before_profile FROM public.profiles p WHERE id=auth.uid();
+ UPDATE public.profiles SET diamond_balance=COALESCE(diamond_balance,0)+1 WHERE id=auth.uid();
+ SELECT to_jsonb(p) INTO after_profile FROM public.profiles p WHERE id=auth.uid();
+ IF after_profile IS DISTINCT FROM before_profile THEN RAISE EXCEPTION 'Diamond mirror edit changed the stored profile'; END IF;
+ denied:=false;
+ SET LOCAL ROLE authenticated;
+ BEGIN
+  PERFORM public.add_diamonds_to_balance(auth.uid(),1,'adjustment','forbidden','guard-direct-credit',NULL);
+ EXCEPTION WHEN insufficient_privilege THEN denied:=true;
+ END;
+ RESET ROLE;
+ IF NOT denied THEN RAISE EXCEPTION 'A browser called the private ledger writer'; END IF;
+ RAISE NOTICE 'PASS Wheel JWT profile guard: direct currency and VIP writes denied, mirror unchanged, ledger writer private';
+END $guard$;
 DO $$
 DECLARE player uuid:='d1000000-0000-4000-8000-000000000005';owner uuid:='d1000000-0000-4000-8000-000000000002';club uuid:='d1000000-0000-4000-8000-000000000003';
  result jsonb;replay jsonb;st jsonb;game_result jsonb;award uuid;commit uuid;game_commit uuid;seed text;game_seed text;drop_value integer;nonce bigint;point numeric;point2 numeric;

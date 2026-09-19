@@ -1,0 +1,53 @@
+{
+  "schema": "earlybird-original-pruned-projection/v1",
+  "observed_at": "2026-09-18T13:04:23.077577+00:00",
+  "source_raw_sha256": "ca66ad34a31449009c5e381a252f87aa2271d010543e6acbd2a2dcb3212c0bb3",
+  "source_parsed_sha256": "19873d0ce16e526b7e06cb37ca77ba7a7c84ee751cc96f6698ef250f91d5cc4f",
+  "full_snapshot_row_available": false,
+  "snapshot_hash_scope": "historical_database_whole_row",
+  "original_permit": {
+    "state": "reserved",
+    "table_id": "f2ad5d92-6640-4e14-acd0-555222be14fe",
+    "lifecycle": 224250,
+    "permit_id": "332ef667-03f4-40cf-bd0a-15503ef80a47",
+    "custody_id": "95f802d6-81f2-4941-a8df-806ba409d8b2",
+    "generation": "b16bba80-2454-46d6-a80b-372bdcd93b0f",
+    "evidence_id": null,
+    "hand_number": 12636137,
+    "tournament_id": "a5aa6984-6c1c-4b59-aeb7-9e7878853bdd"
+  },
+  "paid_receipt_id": "3f5e8bcc-4aeb-4f8b-ae1c-61ed5fb40fcf",
+  "snapshot": {
+    "id": "e7cf319f-2911-40e5-9544-a434f5bf8982",
+    "pot": 26312,
+    "stage": "preflop",
+    "players": [
+      {
+        "seat": 1,
+        "stack": 0,
+        "user_id": "dca6c345-c2ab-456f-98d9-dfbca3a43f7d",
+        "deadInvested": 2500,
+        "totalInvested": 2500,
+        "returnedUncalled": 0,
+        "individualAnteInvested": 2500
+      },
+      {
+        "seat": 2,
+        "stack": 296188,
+        "user_id": "4f7f8abb-ba34-464c-9ecb-0ab7a972a978",
+        "deadInvested": 15875,
+        "totalInvested": 23812,
+        "returnedUncalled": 0,
+        "individualAnteInvested": 15875
+      }
+    ],
+    "row_hash": "e076344a1e32ff8969cd212f663751c1",
+    "table_id": "f2ad5d92-6640-4e14-acd0-555222be14fe",
+    "created_at": "2026-09-18T12:47:33.136119+00:00",
+    "updated_at": "2026-09-18T12:47:36.386485+00:00",
+    "hand_number": 12636137,
+    "is_complete": true,
+    "state_stage": "preflop",
+    "action_count": 0
+  }
+}

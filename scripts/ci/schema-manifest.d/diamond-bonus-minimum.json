@@ -1,5 +1,9 @@
 {
-  "_comment": "Qualified migration: 20260919023656; install only after compatible receipt readers are published.",
+  "_comment": "Installed migration20260919034436; exact source and live columns verified after compatible client035d7597 publication.",
   "_owner": "Diamond Games",
-  "functions": ["fn_diamond_bonus_minimum", "fn_crash_point_cents"]
+  "functions": ["fn_diamond_bonus_minimum", "fn_crash_point_cents"],
+  "columns": {
+    "diamond_choice_rounds": ["minimum_payout_chips"],
+    "crash_rounds": ["minimum_payout_chips"]
+  }
 }

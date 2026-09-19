@@ -43,6 +43,8 @@ function harness(
     field?: number;
     buyIn?: number;
     satellite?: boolean;
+    /** What the base class answers for the tournament's unit; null is "the club was not read". */
+    unit?: number | null;
   } = {}
 ) {
   const tournament = {
@@ -127,6 +129,10 @@ function harness(
     eliminationWorkBudgetExpired: () => false,
     requestUrgentEliminationSweepAfter: vi.fn(),
     broadcast: vi.fn(async () => {}),
+    // 2026-09-14: `placeLadderUnitCents` asks the base class, which read the
+    // club beside the tournament row. Null is the not-read answer, and the
+    // method must then pass the named admission rather than a bare cent.
+    tournamentUnit: () => options.unit ?? null,
   });
   return { subject, rpc, report, selections };
 }
@@ -190,6 +196,25 @@ describe('result amounts reserve the same bubble buy-in as terminal SQL', () => 
     ];
     expect(await h.subject.eliminatePlayer('third', 3)).toBe(true);
     expect(h.rpc.mock.calls[0][1].p_prize).toBe(360);
+  });
+  it('prices a Diamond event in whole Diamonds when the club was read', async () => {
+    // 1001 Diamonds, a 100-Diamond bubble reserved: the 901 ladder would pay
+    // 270.30 and 180.20 to the cent; a Diamond does not divide, so the shares
+    // floor and the remainder lands on the last paid place, as the database
+    // ladder does it.
+    const h = harness({ pool: 1001, unit: 100 });
+    expect(await h.subject.eliminatePlayer('second', 2)).toBe(true);
+    expect(h.rpc.mock.calls[0][1].p_prize).toBe(270);
+    h.rpc.mockClear();
+    expect(await h.subject.recalculateEliminatedPrizes(1001)).toBe(true);
+    const prizes = h.rpc.mock.calls.map(([, r]) => r.p_new_prize);
+    expect(prizes.every((p: number) => Number.isInteger(p))).toBe(true);
+    expect(prizes).toEqual([270, 180]);
+  });
+  it('prices to the cent, by name, when the club was not read', async () => {
+    const h = harness({ pool: 1001, unit: null });
+    expect(await h.subject.eliminatePlayer('second', 2)).toBe(true);
+    expect(h.rpc.mock.calls[0][1].p_prize).toBe(270.3);
   });
   it('keeps satellite elimination outside the cash ladder', async () => {
     const h = harness({ satellite: true });

@@ -299,8 +299,15 @@ export class HandController {
       // rule it already applied to every other amount on the hand. The ante is
       // rounded to the table's own unit below and the boundary refuses a row
       // whose ante could not be whole, so neither half can produce a fraction.
+      /* A DIAMOND TOURNAMENT HAND IS A TOURNAMENT HAND (Phase 8, 2026-09-14).
+         `config.isTournament` was refused here from Phase 6 until the
+         tournament money doors existed. They do now - the entry is custody
+         and the database pays the places from it - and a tournament hand
+         already arrives with the deductions this guard refuses set to
+         nothing: rakeConfig is zero and the BBJ fee off for every tournament
+         table, so the same checks below hold it to the same rule. What a
+         tournament hand deals is tournament chips, whole by construction. */
       if (
-        config.isTournament ||
         /* 2026-09-12: the nine games the chip cash screen offers, not the one
            this arena opened with. Every place a pot is divided was already
            made unit-aware while it was NLH only, the hi-lo split included, so
@@ -312,7 +319,7 @@ export class HandController {
         config.rakeConfig.cap !== 0 ||
         config.bbjConfig?.enabled
       ) {
-        throw new Error('Diamond Cash Certification Requires A Supported Game With No Deductions');
+        throw new Error('Diamond Certification Requires A Supported Game With No Deductions');
       }
     }
     this.config = config;

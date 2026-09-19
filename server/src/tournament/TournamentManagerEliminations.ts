@@ -177,36 +177,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * Phase 8 was about: the ladder rule had four spellings and nothing held
    * them together, so the unit gets one spelling from the start.
    *
-   * IT IS DELIBERATELY THE CHIP UNIT, AND IT MUST NOT BE MADE DIAMOND-AWARE ON
-   * ITS OWN. Read from the live database on 2026-09-13:
+   * DIAMOND-AWARE SINCE 2026-09-14. The 2026-09-13 note here held this at the
+   * chip unit because `fn_prepare_tournament_place_obligations` priced the
+   * ladder to the cent and demanded `tournament_players.prize` agree with it.
+   * Read again against the live estate before the payout migration: that
+   * function has no caller in the database or in this engine (it belongs to
+   * the ruling path the server does not call). The path the engine DOES call
+   * - fn_complete_tournament_terminal -> fn_settle_tournament_places - derives
+   * its ladder from fn_ca_tournament_place_amounts, which knows the unit, and
+   * stamps `tournament_players.prize` from that ladder in the same
+   * transaction; it never compares the engine's provisional figure with its
+   * own until the event is COMPLETED and the stamp is its own. So the number
+   * computed here is presentation, and the only wrong thing it can do is show
+   * a Diamond finisher 122.10 for a bust the database will settle at 122.
    *
-   *   fn_ca_tournament_place_amounts    uses fn_ca_prize_ladder, knows the unit
-   *   fn_tournament_payout_reconcile    uses fn_ca_prize_ladder, knows the unit
-   *   fn_tournament_place_prize_exact   uses fn_ca_prize_ladder, unit passed in
-   *   fn_prepare_tournament_place_obligations   NEITHER
-   *
-   * That last one is the gate this number has to pass. It prices the whole
-   * ladder inline - a FIFTH spelling that the 2026-09-12 collapse did not
-   * reach - and then demands that `tournament_players.prize`, which is the
-   * number computed HERE, equal its own answer to the cent:
-   *
-   *     IF v_player_prize_cents <> v_expected_cents THEN
-   *       RETURN ... 'recorded_prize_disagrees_with_structure' ... 'retryable', false
-   *
-   * So teaching this side about Diamonds while `fn_prepare_tournament_place_obligations`
-   * still divides to the cent would not pay a Diamond prize. It would make
-   * every Diamond place disagree with the gate by up to 99 cents and freeze the
-   * event permanently, unretryably - the same failure the prize-ladder
-   * changelog describes when it says "the payer and the checker learn the unit
-   * together or not at all", arriving one function later.
-   *
-   * When that SQL gate learns the unit, this method is where this engine does
-   * too: read the tournament's club and return `tournamentUnitCents(club)`. A
-   * club that cannot be read must refuse to price the place, exactly as an
-   * unreadable ladder pool already does below - never fall back to a cent.
+   * The unit comes from the club read beside the tournament row
+   * (`readTournamentClub`). When that read failed, the named admission is
+   * passed and the failure was already reported there - never a bare cent.
    */
   private placeLadderUnitCents(): number {
-    return UNIT_CENTS_ASSET_NOT_READ;
+    return this.tournamentUnit() ?? UNIT_CENTS_ASSET_NOT_READ;
   }
 
   override requestEliminationSweep(

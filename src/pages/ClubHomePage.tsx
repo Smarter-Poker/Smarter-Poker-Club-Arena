@@ -690,6 +690,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   /* Undefined for every chip club, so their cards are untouched. */
   const arenaSeatsClosedLabel =
     isAutomaticArena && arenaAccess?.cashGamesEnabled !== true ? 'Not Open Yet' : undefined;
+  /* Diamond Phase 8: the arena's tournaments have their own switch, read from
+     the same server entitlement, and the same label while it is off. */
+  const arenaRegistrationClosedLabel =
+    isAutomaticArena && arenaAccess?.tournamentsEnabled !== true ? 'Not Open Yet' : undefined;
   useVisibilityRefresh(() => loadClubData());
   const navigate = useAppNavigate();
   const isMountedRef = useIsMounted();
@@ -4227,6 +4231,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          buy-in door refuses every seat until it opens. Say so on the card
          rather than offering a Join that the server will reject. */
       seatsClosedLabel: arenaSeatsClosedLabel,
+      registrationClosedLabel: arenaRegistrationClosedLabel,
       /* A full table's primary action is the waitlist, not a join that cannot
          succeed. The page already owns this flow for the panel; the card runs
          the same one rather than inventing a second. */
@@ -5627,6 +5632,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           onClose={() => setPanelOpen(false)}
           onJoinTable={handleJoinTable}
           seatsClosedLabel={arenaSeatsClosedLabel}
+          registrationClosedLabel={arenaRegistrationClosedLabel}
           onWaitlistToggle={handleLobbyWaitlistToggle}
           onRegister={handleRegister}
           onUnregister={handleUnregister}

@@ -98,6 +98,9 @@ def qualify(root, out, cmd, command, run, probe, require, results):
         ('unknown-submission', "INSERT INTO smarter_private.f06_hand_dispatch VALUES((fixture_origin_c(1401)#>>'{permit,permit_id}')::uuid,txid_current());", 'F06_RETAINED_LATER_OR_UNKNOWN_CUSTODY'),
     ]:
         probe('retired-origin-refuses-' + label, service + change + attest(), error=reason)
+    other_zero = runpy.run_path(str(root / 'scripts/ci/probes/f06-shared-hand-lane/retired_other_zero_qualification.py'))
+    other_zero['qualify'](root, out, cmd, command, run, probe, require, results)
+    require(results.get('retiredOtherZero', {}).get('passed') is True, 'Other original table zero proof did not qualify')
     # The native INSERT trigger and retirement share an absent-row lock. Neither
     # a rowless SELECT nor an attestation can let an in-flight claim slip through.
     @contextmanager

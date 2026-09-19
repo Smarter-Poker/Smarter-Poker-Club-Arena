@@ -83,8 +83,14 @@ async function main() {
     process.exit(1);
   }
 
+  // `diamond-test.*` is the standalone Diamond bonus test entry, built by a
+  // second Vite pass (vite.config.ts, TEST_ENTRY). It shares the directory so
+  // the origin pools it and the service worker caches it like every other
+  // chunk, but no player downloads it, so it is not charged to the budget that
+  // guards what players download.
   const all = (await readdir(ASSETS))
     .filter((f) => f.endsWith('.js') || f.endsWith('.css'))
+    .filter((f) => !f.startsWith('diamond-test.'))
     .map((f) => path.join(ASSETS, f));
 
   if (all.length === 0) {

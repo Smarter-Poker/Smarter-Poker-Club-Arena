@@ -70,6 +70,13 @@ export default function DiamondTestPage() {
   const total = entry * (upgraded ? 2 : 1) + (doubled ? entry : 0),
     chips = total / 100,
     minimum = chips / 10;
+  // Double Down and Super change the entry without touching the chosen
+  // denomination; a drop size that no longer divides the entry falls back to
+  // the default (or the first that does) so every drop is a whole diamond.
+  const allocations = plinkoAllocations(total);
+  const drop = allocations.some((c) => c.diamondsPerDrop === denomination)
+    ? denomination
+    : (allocations.find((c) => c.diamondsPerDrop === 5) ?? allocations[0]).diamondsPerDrop;
   const open = phase === 'open';
   const active = open || (phase !== 'idle' && !settled);
   useLiveBonusGuard(active, () => setNotice('Finish This Test Round Before Leaving.'));
@@ -90,7 +97,7 @@ export default function DiamondTestPage() {
     if (!open || game !== 'crash') return;
     let frame: number;
     const tick = () => {
-      const cents = crashMultiplierCents(performance.now() - started.current, 0.04, 10000);
+      const cents = crashMultiplierCents(0.04, performance.now() - started.current, 10000);
       setLiveCents(cents);
       if (cents >= 10000 && crash.current >= 10000) finish(chips * 100, 'cashed');
       else if (cents >= crash.current) finish(minimum, 'lost');
@@ -118,13 +125,12 @@ export default function DiamondTestPage() {
     setLiveCents(100);
     started.current = performance.now();
     if (game === 'plinko') {
-      const next = Array.from(crypto.getRandomValues(new Uint16Array(total / denomination)));
+      const next = Array.from(crypto.getRandomValues(new Uint16Array(total / drop)));
       setPaths(next);
       payout.current = next.reduce(
         (sum, path) =>
           sum +
-          (denomination * tables[risk][plinkoBitsFromPathBits(path).reduce((a, b) => a + b, 0)]) /
-            10000,
+          (drop * tables[risk][plinkoBitsFromPathBits(path).reduce((a, b) => a + b, 0)]) / 10000,
         0
       );
     } else if (game === 'crash')
@@ -155,7 +161,7 @@ export default function DiamondTestPage() {
   const cash = () => {
     if (!open) return;
     if (game === 'crash') {
-      const cents = crashMultiplierCents(performance.now() - started.current, 0.04, 10000);
+      const cents = crashMultiplierCents(0.04, performance.now() - started.current, 10000);
       setLiveCents(cents);
       finish(
         cents >= crash.current && crash.current < 10000 ? minimum : (chips * cents) / 100,
@@ -228,11 +234,11 @@ export default function DiamondTestPage() {
               <label className={setup.entry}>
                 Diamonds Per Drop
                 <select
-                  value={denomination}
+                  value={drop}
                   disabled={active}
                   onChange={(e) => setDenomination(Number(e.target.value))}
                 >
-                  {plinkoAllocations(total).map((c) => (
+                  {allocations.map((c) => (
                     <option key={c.diamondsPerDrop} value={c.diamondsPerDrop}>
                       {c.diamondsPerDrop} Diamonds, {c.drops} Drops
                     </option>
@@ -264,7 +270,7 @@ export default function DiamondTestPage() {
           { label: 'Bonus Entry', value: total.toLocaleString() },
           {
             label: game === 'plinko' ? 'Drops' : 'Choices',
-            value: game === 'plinko' ? `${landed}/${total / denomination}` : String(picked.length),
+            value: game === 'plinko' ? `${landed}/${total / drop}` : String(picked.length),
           },
           {
             label: game === 'crash' ? 'Multiplier' : 'Current Prize',

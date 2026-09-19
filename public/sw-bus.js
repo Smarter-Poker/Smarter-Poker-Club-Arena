@@ -71,8 +71,8 @@ const SHELL_KEY = '/hub/club-arena';
 const PROTECTED_PATHS = new Set([SHELL_KEY, '/hub/club-arena/offline.html', ...PRECACHE_URLS]);
 
 // Documents under /hub/club-arena/ that are NOT the SPA shell. The standalone
-// Diamond bonus test entry (dist/diamond-test.html, its own scripts under
-// /diamond-test/) is a different page: served from SHELL_KEY it would boot the
+// Diamond bonus test entry (dist/diamond-test.html; its own hashed chunks sit
+// in /assets/ as diamond-test.*) is a different page: served from SHELL_KEY it would boot the
 // arena in place of the test page, and stored under SHELL_KEY it would boot the
 // test page in place of the arena for every navigation until the next
 // revalidation. These bypass shellFromCache and always go to the network.

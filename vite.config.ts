@@ -50,18 +50,23 @@ const mediaIdentity = viteMediaIdentity();
  * pass leaves the application bundle byte-for-byte what a single-input build
  * produces, so its CSS order, entry chunk and bundle budget are untouched.
  *
- * The pass writes its scripts and styles under dist/diamond-test/, outside
- * dist/assets/: scripts/ci/bundle-size.mjs charges only dist/assets/ to the
- * arena's total, and public/sw-bus.js caches only /assets/ and /fonts/, so the
- * test page is always fetched fresh. Raster media keeps the shared identity
- * policy, so artwork both entries import is written once, under assets/.
- * The native bundle never gets this pass (scripts/build-diamond-test.mjs).
+ * The pass writes its scripts and styles into dist/assets/ like every other
+ * hashed chunk, under a `diamond-test.` name prefix. assets/ is the origin's
+ * append-only pool (infra/ca-origin/Caddyfile: served immutable, kept across
+ * releases) and the service worker's cache-first directory, so a page a
+ * player already has open keeps its chunks through the next release exactly
+ * as the arena does. The prefix is what scripts/ci/bundle-size.mjs excludes
+ * from the arena's total: no player downloads the test page, so it is not
+ * charged to the budget that guards what players download. Raster media
+ * keeps the shared identity policy, so artwork both entries import is
+ * written once. The native bundle never gets this pass
+ * (scripts/build-diamond-test.mjs).
  */
 const TEST_ENTRY = process.env.CA_HTML_ENTRY === 'diamond-test';
-const SCRIPT_DIR = TEST_ENTRY ? 'diamond-test' : 'assets';
+const CHUNK_PREFIX = TEST_ENTRY ? 'diamond-test.' : '';
 const testEntryAssetFileNames = (asset: { names?: string[]; name?: string; source: unknown }) =>
   /\.css$/i.test(asset.names?.[0] || asset.name || '')
-    ? `${SCRIPT_DIR}/[name]-[hash]-v6[extname]`
+    ? `assets/${CHUNK_PREFIX}[name]-[hash]-v6[extname]`
     : mediaIdentity.assetFileNames(asset as Parameters<typeof mediaIdentity.assetFileNames>[0]);
 
 function sourceMapAssetIdentity(): Plugin {
@@ -200,8 +205,8 @@ export default defineConfig({
         // are bypassed. Vite's default content hash alone can't help here
         // because vendor chunks' content is unchanged — the tag forces a
         // brand-new URL even when content hash would otherwise match.
-        entryFileNames: `${SCRIPT_DIR}/[name]-[hash]-v6.js`,
-        chunkFileNames: `${SCRIPT_DIR}/[name]-[hash]-v6.js`,
+        entryFileNames: `assets/${CHUNK_PREFIX}[name]-[hash]-v6.js`,
+        chunkFileNames: `assets/${CHUNK_PREFIX}[name]-[hash]-v6.js`,
         assetFileNames: mediaIdentity.assetFileNames,
         ...(TEST_ENTRY ? { assetFileNames: testEntryAssetFileNames } : {}),
         manualChunks(id: string) {

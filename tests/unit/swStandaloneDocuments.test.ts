@@ -30,12 +30,18 @@ describe('standalone documents never pass through the shell cache', () => {
     );
   });
 
-  it('the test page scripts live outside the two cache-first directories', () => {
-    // vite.config.ts writes the second pass under dist/diamond-test/; the SW
-    // caches only /assets/ and /fonts/, so the test page is always fresh.
+  it("the test page chunks are ordinary hashed assets, cached like the arena's own", () => {
+    // vite.config.ts writes the second pass as assets/diamond-test.*; the SW's
+    // cache-first branch is keyed on the /assets/ directory, so those chunks
+    // get the same immutable treatment as every other -v6 chunk while the
+    // document itself (above) always goes to the network.
     const vite = readFileSync(path.join(__dirname, '..', '..', 'vite.config.ts'), 'utf8');
-    expect(vite).toContain("const SCRIPT_DIR = TEST_ENTRY ? 'diamond-test' : 'assets';");
-    expect(sw).toContain("url.pathname.startsWith('/hub/club-arena/assets/')");
-    expect(sw).not.toContain("'/hub/club-arena/diamond-test/'");
+    expect(vite).toContain('`assets/${CHUNK_PREFIX}[name]-[hash]-v6.js`');
+    const cacheFirst = sw.slice(
+      sw.indexOf('const isHashedAsset ='),
+      sw.indexOf('if (isHashedAsset)')
+    );
+    expect(cacheFirst).toContain("url.pathname.startsWith('/hub/club-arena/assets/')");
+    expect(cacheFirst).toContain('/\\.(js|css)$/.test(url.pathname)');
   });
 });

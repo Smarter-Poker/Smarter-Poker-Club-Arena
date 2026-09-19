@@ -732,8 +732,16 @@ function DiamondCrashGame() {
     [live, toast]
   );
 
-  useLiveBonusGuard(Boolean(earned.award) || starting || open || cashing || uncertain, () =>
-    toast.error('Finish Your Bonus Game Before Leaving.')
+  // The hold is armed only while the game is on screen: the skeleton and the
+  // error screen offer no way to finish a bonus, so they must not hold the
+  // player on a page that cannot progress. The award stays pending server-side
+  // and the wheel reopens it.
+  useLiveBonusGuard(
+    !loading &&
+      !loadError &&
+      Boolean(state) &&
+      (Boolean(earned.award) || starting || open || cashing || uncertain),
+    () => toast.error('Finish Your Bonus Game Before Leaving.')
   );
   if (loading) return <PageSkeleton />;
   if (loadError || !state) {

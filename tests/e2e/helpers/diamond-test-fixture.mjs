@@ -13,7 +13,9 @@ export async function diamondTestFixture() {
     logLevel: 'silent',
   });
   const forbidden = Object.keys(result.metafile.inputs).filter((p) =>
-    /supabase|IdentityDNA|DiamondGamesService|WheelBonusEntryService|AuthContext/.test(p)
+    /supabase|IdentityDNA|DiamondGamesService|DiamondWheelService|DiamondChoiceService|WheelBonusEntryService|AuthContext|authUtils|\/src\/stores\/|\/src\/contexts\//.test(
+      p
+    )
   );
   if (forbidden.length) throw new Error(`Test page connects to accounts: ${forbidden.join(',')}`);
   return {

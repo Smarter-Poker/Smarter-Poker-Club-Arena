@@ -56,29 +56,60 @@ describe('the Diamond test entry is a pass of its own', () => {
     expect(build.rollupOptions?.output?.chunkFileNames).toBe('assets/[name]-[hash]-v6.js');
   });
 
-  it('the test pass builds only diamond-test.html, beside the first pass, under diamond-test/', async () => {
+  it('the test pass builds only diamond-test.html, beside the first pass, as diamond-test.* chunks', async () => {
     const config = await load('diamond-test');
     const build = config.build!;
     expect(build.rollupOptions?.input).toBe(path.resolve(ROOT, 'diamond-test.html'));
     expect(build.emptyOutDir).toBe(false);
     expect(build.copyPublicDir).toBe(false);
-    expect(build.rollupOptions?.output?.entryFileNames).toBe('diamond-test/[name]-[hash]-v6.js');
-    expect(build.rollupOptions?.output?.chunkFileNames).toBe('diamond-test/[name]-[hash]-v6.js');
+    // Same directory as every other chunk: the origin pools assets/ across
+    // releases and serves it immutable, and the service worker caches it.
+    expect(build.rollupOptions?.output?.entryFileNames).toBe(
+      'assets/diamond-test.[name]-[hash]-v6.js'
+    );
+    expect(build.rollupOptions?.output?.chunkFileNames).toBe(
+      'assets/diamond-test.[name]-[hash]-v6.js'
+    );
     const assetFileNames = build.rollupOptions?.output?.assetFileNames as (asset: {
       names?: string[];
       name?: string;
       source: unknown;
     }) => string;
     expect(typeof assetFileNames).toBe('function');
-    // Stylesheets stay out of dist/assets/ (bundle-size.mjs charges that
-    // directory to the arena's total); media keeps the shared identity policy
+    // Stylesheets carry the prefix too; media keeps the shared identity policy
     // so artwork both entries import is written once.
-    expect(assetFileNames({ names: ['diamondTest.css'], source: '' })).toBe(
-      'diamond-test/[name]-[hash]-v6[extname]'
+    expect(assetFileNames({ names: ['diamond-test.css'], source: '' })).toBe(
+      'assets/diamond-test.[name]-[hash]-v6[extname]'
+    );
+    expect(assetFileNames({ name: 'diamond-test.css', source: '' })).toBe(
+      'assets/diamond-test.[name]-[hash]-v6[extname]'
     );
     expect(assetFileNames({ names: ['logo.svg'], source: '' })).toBe(
       'assets/[name]-[hash]-v6[extname]'
     );
+  });
+
+  it('the prefix is what keeps the test page out of the bundle budget', () => {
+    // scripts/ci/bundle-size.mjs sums every js/css in dist/assets/ against the
+    // whole-app ceiling. The test page shares the directory (pooled, immutable,
+    // cached) and is excluded by name, so the two must agree on the prefix.
+    const gate = read('scripts/ci/bundle-size.mjs');
+    expect(gate).toContain(".filter((f) => !f.startsWith('diamond-test.'))");
+    const vite = read('vite.config.ts');
+    expect(vite).toContain("const CHUNK_PREFIX = TEST_ENTRY ? 'diamond-test.' : '';");
+  });
+
+  it('the second pass never overwrites the entry-module manifest of the first', () => {
+    // scripts/ci/entry-chunk-delta.mjs gates the application's entry chunk
+    // from .entry-modules.json, written on writeBundle. Pass 2 has an entry
+    // chunk too; only the facade filter keeps it from replacing the file with
+    // the test page's module list.
+    const vite = read('vite.config.ts');
+    const plugin = vite.slice(
+      vite.indexOf("name: 'entry-module-manifest'"),
+      vite.indexOf('.entry-modules.json')
+    );
+    expect(plugin).toContain("facadeModuleId?.endsWith('/index.html')");
   });
 
   it('an unrelated CA_HTML_ENTRY value is the application build', async () => {
@@ -106,7 +137,8 @@ describe('the Diamond test entry is a pass of its own', () => {
     expect(script.indexOf("process.env.CA_HTML_ENTRY = 'diamond-test'")).toBeLessThan(
       script.indexOf("await import('vite')")
     );
-    expect(script).toContain("configFile: 'vite.config.ts'");
+    expect(script).toContain("configFile: resolve(ROOT, 'vite.config.ts')");
+    expect(script).toContain('root: ROOT');
     const vite = read('vite.config.ts');
     expect(vite).not.toMatch(/input:\s*\{/);
     expect(vite).toContain("path.resolve(__dirname, 'diamond-test.html')");

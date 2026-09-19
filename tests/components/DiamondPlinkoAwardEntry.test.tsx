@@ -123,6 +123,7 @@ describe('Plinko starts only its earned funding', () => {
     backend.awardState.mockResolvedValue({ enabled: true, award, gameState: state });
     render(<DiamondPlinkoPage />);
     await act(async () => {});
+    expect(screen.getByRole('heading', { name: 'Super Plinko' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: '20 Diamonds Per Drop, 10 Drops' }));
     await act(async () => {});
     fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
@@ -137,6 +138,139 @@ describe('Plinko starts only its earned funding', () => {
       }),
       'player-a'
     );
+  });
+  it('starts the funded 2500 award after Double Down and 4-diamond selection without stale history or a legacy quote', async () => {
+    const award = {
+      id: '00000000-0000-0000-0000-000000000077',
+      game: 'plinko',
+      base_diamonds: 2500,
+      entry_diamonds: 2500,
+      boost_multiplier: 1,
+      status: 'pending',
+    };
+    const tables = [
+      { ...state.tables[0], version: 1, name: 'Steady', max_multiplier_cents: 2000 },
+      { ...state.tables[0], version: 2, name: 'Bold', max_multiplier_cents: 13000 },
+      { ...state.tables[0], version: 3, name: 'Moonshot', max_multiplier_cents: 100000 },
+    ];
+    backend.latest.mockResolvedValue(fixtures.receipts.plinko);
+    backend.getState.mockRejectedValue(new Error('Legacy direct entry is unavailable'));
+    backend.awardState.mockImplementation(async (_club, _game, doubled) => ({
+      enabled: true,
+      award,
+      gameState: {
+        ...state,
+        tables,
+        bets: [
+          { bet_diamonds: doubled ? 5000 : 2500, cap_cents: doubled ? 2957 : 5915, playable: true },
+        ],
+        player: { ...state.player, spendable: 10000 },
+      },
+    }));
+    render(<DiamondPlinkoPage />);
+    await act(async () => {});
+    const offer = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
+    fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Diamonds' }));
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: '4 Diamonds Per Drop, 1250 Drops' }));
+    expect(screen.queryByText(/Chips Booked From/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Medium Risk/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    expect(backend.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tableVersion: 1,
+        budget: {
+          base: 2500,
+          doubled: true,
+          denomination: 4,
+          award: { id: award.id, entryDiamonds: 2500, boostMultiplier: 1 },
+        },
+      }),
+      'player-a'
+    );
+    expect(backend.getState).not.toHaveBeenCalled();
+    expect(backend.latest).not.toHaveBeenCalled();
+  });
+  it('keeps a selected funded level but falls back when Double Down reduces its cover', async () => {
+    const award = {
+      id: '00000000-0000-0000-0000-000000000077',
+      game: 'plinko',
+      base_diamonds: 2500,
+      entry_diamonds: 2500,
+      boost_multiplier: 1,
+      status: 'pending',
+    };
+    backend.awardState.mockImplementation(async (_club, _game, doubled) => ({
+      enabled: true,
+      award,
+      gameState: {
+        ...state,
+        tables: [
+          { ...state.tables[0], version: 1, name: 'Steady', max_multiplier_cents: 2000 },
+          { ...state.tables[0], version: 2, name: 'Bold', max_multiplier_cents: 13000 },
+        ],
+        bets: [
+          {
+            bet_diamonds: doubled ? 5000 : 2500,
+            cap_cents: doubled ? 7500 : 15000,
+            playable: true,
+          },
+        ],
+        player: { ...state.player, spendable: 10000 },
+      },
+    }));
+    render(<DiamondPlinkoPage />);
+    await act(async () => {});
+    fireEvent.animationEnd(screen.getByRole('dialog').querySelector('[data-motion="keep"]')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Keep My Bonus' }));
+    fireEvent.click(screen.getByRole('button', { name: /Medium Risk/ }));
+    expect(screen.getByRole('button', { name: /Medium Risk/ })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Double Down Your Bonus', exact: true }));
+    fireEvent.animationEnd(screen.getByRole('dialog').querySelector('[data-motion="keep"]')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Diamonds' }));
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: /Lower Risk/ })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: /Medium Risk/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeEnabled();
+  });
+  it('refuses an uncovered entry and explains how to remove Double Down', async () => {
+    const award = {
+      id: '00000000-0000-0000-0000-000000000077',
+      game: 'plinko',
+      base_diamonds: 2500,
+      entry_diamonds: 2500,
+      boost_multiplier: 1,
+      status: 'pending',
+    };
+    backend.awardState.mockImplementation(async (_club, _game, doubled) => ({
+      enabled: true,
+      award,
+      gameState: {
+        ...state,
+        tables: [{ ...state.tables[0], version: 1, max_multiplier_cents: 2000 }],
+        bets: [
+          { bet_diamonds: doubled ? 5000 : 2500, cap_cents: doubled ? 1000 : 2000, playable: true },
+        ],
+        player: { ...state.player, spendable: 10000 },
+      },
+    }));
+    render(<DiamondPlinkoPage />);
+    await act(async () => {});
+    fireEvent.animationEnd(screen.getByRole('dialog').querySelector('[data-motion="keep"]')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Diamonds' }));
+    await act(async () => {});
+    expect(screen.getByText(/This Bonus Does Not Cover A Doubled Entry/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeDisabled();
+    expect(backend.start).not.toHaveBeenCalled();
   });
   it('routes a direct visitor back to the wheel without admitting a new wager', async () => {
     backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });

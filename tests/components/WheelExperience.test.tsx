@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { WheelSegment, WheelSpinResult } from '../../src/services/DiamondWheelService';
-import { WheelExperience } from '../../src/components/wheel/WheelExperience';
+import { WheelExperience, wheelPrizeTitle } from '../../src/components/wheel/WheelExperience';
 
 vi.mock('../../src/components/wheel/DiamondWheel', () => ({
   default: ({ upgraded, onLanded }: { upgraded: boolean; onLanded: () => void }) => (
@@ -31,6 +31,16 @@ const finishReveal = () =>
   fireEvent.animationEnd(screen.getByRole('dialog').querySelector('[data-motion="keep"]')!);
 
 describe('wheel to prize to earned game', () => {
+  it.each([
+    ['plinko', 'Super Plinko'],
+    ['crash', 'Super Crash'],
+    ['crossing', 'Super Donkey Cross'],
+    ['mines', 'Super Diamond Mines'],
+  ])('keeps the awarded %s upgrade in its prize title', (game, title) => {
+    expect(
+      wheelPrizeTitle({ ...outcome('bonus', game), multiplier: 2 } as WheelSpinResult['outcome'])
+    ).toBe(title);
+  });
   it('shows the eight-option upper wheel before any entry is spent', () => {
     render(
       <WheelExperience
@@ -90,8 +100,8 @@ describe('wheel to prize to earned game', () => {
     const receipt = {
       outcome: outcome('upgrade'),
       secondary: {
-        outcome: outcome('bonus', 'mines'),
-        segments: [{ ...outcome('bonus', 'mines') }],
+        outcome: { ...outcome('bonus', 'mines'), multiplier: 2 },
+        segments: [{ ...outcome('bonus', 'mines'), multiplier: 2 }],
       },
     } as unknown as WheelSpinResult;
     render(
@@ -109,7 +119,7 @@ describe('wheel to prize to earned game', () => {
     expect(onFinished).not.toHaveBeenCalled();
     finishReveal();
     fireEvent.click(screen.getByRole('button', { name: 'Land Bonus Wheel' }));
-    expect(screen.getByRole('heading', { name: 'Diamond Mines' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Super Diamond Mines' })).toBeInTheDocument();
     expect(onFinished).not.toHaveBeenCalled();
     finishReveal();
     expect(onFinished).toHaveBeenCalledTimes(1);

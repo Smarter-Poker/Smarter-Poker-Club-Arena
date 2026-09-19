@@ -16,9 +16,16 @@ const gameNames = {
   crossing: 'Donkey Cross',
   mines: 'Diamond Mines',
 };
+const superGameNames = {
+  plinko: 'Super Plinko',
+  crash: 'Super Crash',
+  crossing: 'Super Donkey Cross',
+  mines: 'Super Diamond Mines',
+};
 
 export function wheelPrizeTitle(prize: WheelSpinResult['outcome']): string {
-  if (prize.kind === 'bonus' && prize.game) return gameNames[prize.game];
+  if (prize.kind === 'bonus' && prize.game)
+    return prize.multiplier === 2 ? superGameNames[prize.game] : gameNames[prize.game];
   if (prize.kind === 'upgrade') return 'Bonus Upgrade';
   const amount = prize.amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
   if (prize.kind === 'chips') return `${amount} ${prize.amount === 1 ? 'Chip' : 'Chips'}`;

@@ -813,7 +813,11 @@ function DiamondCrashGame() {
           )
         }
         eyebrow="Diamond Spins"
-        title="Diamond Crash"
+        title={
+          (round ? round.bonus?.boost_multiplier === 2 : budget.award?.boostMultiplier === 2)
+            ? 'Super Crash'
+            : 'Diamond Crash'
+        }
         titleId="diamond-crash-title"
         pill={pill}
         pillInk={pillInk}

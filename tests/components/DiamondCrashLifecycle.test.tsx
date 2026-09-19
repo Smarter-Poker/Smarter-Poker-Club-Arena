@@ -410,6 +410,7 @@ describe('Crash uses its earned entry without blocking existing cashouts', () =>
     fireEvent.animationEnd(dialog.querySelector('[data-motion="keep"]')!);
     fireEvent.click(screen.getByRole('button', { name: 'Add Diamonds' }));
     await act(async () => {});
+    expect(screen.getByRole('heading', { name: 'Super Crash' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Start 300' }));
     expect(backend.start).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -422,6 +423,30 @@ describe('Crash uses its earned entry without blocking existing cashouts', () =>
       }),
       'player-a'
     );
+  });
+  it('keeps Super Crash visible for an active funded round after its award is consumed', async () => {
+    const bonus = {
+      base_diamonds: 200,
+      entry_diamonds: 100,
+      boost_multiplier: 2 as const,
+      added_diamonds: 0,
+      total_diamonds: 200,
+    };
+    const saved = {
+      ...open,
+      award_id: '00000000-0000-0000-0000-000000000077',
+      bet_diamonds: 200,
+      bet_chips: 2,
+      bonus,
+    };
+    backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });
+    backend.getState.mockResolvedValue({ ...state, open_round: saved });
+    backend.crashSettle.mockResolvedValue(saved);
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    expect(screen.getByRole('heading', { name: 'Super Crash' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Book The Win' })).toBeEnabled();
+    expect(backend.start).not.toHaveBeenCalled();
   });
   it('provides explicit retry after ticket preparation fails without submitting a round', async () => {
     backend.commit.mockRejectedValueOnce(new Error('Connection Lost'));

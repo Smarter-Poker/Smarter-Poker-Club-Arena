@@ -84,7 +84,17 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   currentRound.current = round;
   const uncertainTicket = useRef<string | null>(null);
   const heldStart = useRef<Parameters<typeof DiamondBonusService.start>[0] | null>(null);
-  const title = game === 'mines' ? 'Diamond Mines' : 'Donkey Crossing';
+  const upgraded = round
+    ? earnedReceiptBudget(round as unknown as Record<string, unknown>)?.award?.boostMultiplier === 2
+    : budget.award?.boostMultiplier === 2;
+  const title =
+    game === 'mines'
+      ? upgraded
+        ? 'Super Diamond Mines'
+        : 'Diamond Mines'
+      : upgraded
+        ? 'Super Donkey Cross'
+        : 'Donkey Crossing';
 
   const load = useCallback(
     async (id: string) => {

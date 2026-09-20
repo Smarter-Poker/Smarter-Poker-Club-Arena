@@ -35,6 +35,24 @@ function disputeReasonText(reason: string | undefined): string {
   );
 }
 
+// fn_dispute_submit refuses the same way fn_resolve_dispute does: an envelope
+// with a reason, not an exception, for anything a caller can correct.
+const DISPUTE_SUBMIT_REASON_TEXT: Record<string, string> = {
+  invalid_target_type: 'That is not something a dispute can be filed against',
+  target_required: 'A dispute needs to name what it is about',
+  reason_required: 'A dispute needs a reason',
+  invalid_amount: 'A disputed amount cannot be negative',
+  club_not_found: 'That club no longer exists',
+  already_open: 'You already have an open dispute about this',
+};
+
+function disputeSubmitReasonText(reason: string | undefined): string {
+  return (
+    DISPUTE_SUBMIT_REASON_TEXT[reason ?? ''] ??
+    `Dispute could not be filed (${reason ?? 'unknown'})`
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -83,55 +101,61 @@ export interface DisputeResolution {
 
 export const DisputeService = {
   /**
-   * Submit a new dispute
+   * Submit a new dispute.
+   *
+   * THIS WAS A CLIENT INSERT AGAINST A TABLE WITH NO INSERT GRANT. `disputes`
+   * gives authenticated exactly SELECT, and its one policy is SELECT only, so
+   * the insert was refused for every user who ever pressed this button, and
+   * the table has held ZERO rows since it was created. Not one dispute has
+   * ever been filed on this platform.
+   *
+   * That is the same fault startReview, resolveDispute and escalateDispute
+   * each turned out to have, and each was given a definer entry point. This
+   * is the last one and the one that mattered most: repairing the middle of a
+   * workflow whose front door refuses every caller leaves the whole feature
+   * inert and looking finished.
+   *
+   * fn_dispute_submit takes the submitter from the session, never from this
+   * argument, so `userId` is no longer sent. The old code passed it in from
+   * the browser, which in a working version would have let anyone file a
+   * dispute in somebody else's name. The parameter stays so call sites do not
+   * change, exactly as startReview keeps `_reviewerId`.
    */
-  async submitDispute(userId: string, dispute: DisputeCreate): Promise<Dispute> {
-    // Get submitter name
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select(PLAYER_NAME_COLUMNS)
-      .eq('id', userId)
-      .maybeSingle();
+  async submitDispute(_userId: string, dispute: DisputeCreate): Promise<Dispute> {
+    const { data, error } = await supabase.rpc('fn_dispute_submit', {
+      p_target_type: dispute.targetType,
+      p_target_id: dispute.targetId,
+      p_club_id: dispute.clubId,
+      p_amount: dispute.amount,
+      p_reason: dispute.reason,
+    });
 
-    const submitterName = playerDisplayName(profile);
-
-    const { data, error } = await supabase
-      .from('disputes')
-      .insert({
-        submitted_by: userId,
-        submitter_name: submitterName,
-        target_type: dispute.targetType,
-        target_id: dispute.targetId,
-        club_id: dispute.clubId,
-        amount: dispute.amount,
-        reason: dispute.reason,
-        status: 'open',
-      })
-      .select()
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data) throw new Error('Failed to create dispute');
-
-    // Notify club owner
-    try {
-      const { data: club } = await supabase
-        .from('clubs')
-        .select('owner_id, name')
-        .eq('id', dispute.clubId)
-        .maybeSingle();
-
-      if (club?.owner_id) {
-        // Notification removed 2026-08-30 (#1498). The club owner is now told by
-        // trg_notify_dispute, which fires on the INSERT itself, so a dispute filed
-        // from Commander or a back-office script notifies identically. This call
-        // had delivered nothing since OneSignal was retired on 2026-08-19.
-      }
-    } catch (e: unknown) {
-      reportError(e, 'DisputeService.notification');
+    if (error) {
+      reportError(error, 'DisputeService.submitDispute', {
+        targetType: dispute.targetType,
+        clubId: dispute.clubId,
+      });
+      throw new Error('Could not file the dispute');
     }
 
-    return this.mapDispute(data);
+    const out = (data || {}) as { ok?: boolean; reason?: string; dispute_id?: string };
+    if (!out.ok) throw new Error(disputeSubmitReasonText(out.reason));
+    if (!out.dispute_id) {
+      throw new Error('The dispute was filed but did not come back with an id');
+    }
+
+    // The club owner is told by trg_notify_dispute, which fires on the INSERT
+    // itself, so a dispute filed from Commander or a back-office script
+    // notifies identically. Nothing is sent from here.
+    const { data: row, error: readError } = await supabase
+      .from('disputes')
+      .select('*')
+      .eq('id', out.dispute_id)
+      .maybeSingle();
+    if (readError) throw readError;
+    if (!row) throw new Error('This dispute could not be read back.');
+
+    return this.mapDispute(row);
   },
 
   /**
@@ -338,20 +362,35 @@ export const DisputeService = {
   },
 
   /**
-   * Withdraw a dispute (by submitter)
+   * Withdraw a dispute (by submitter).
+   *
+   * Same story as submitDispute: a client UPDATE against a table with no
+   * UPDATE grant and no UPDATE policy. It matched zero rows and reported
+   * success every time, because a filtered UPDATE that matches nothing is not
+   * an error. No dispute has ever been withdrawn, and the screen said it had
+   * been.
+   *
+   * fn_dispute_withdraw locks the row, refuses anyone but the submitter, and
+   * refuses a dispute that is already resolved, escalated or withdrawn.
    */
-  async withdrawDispute(disputeId: string, userId: string): Promise<void> {
-    const { error } = await supabase
-      .from('disputes')
-      .update({
-        status: 'withdrawn',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', disputeId)
-      .eq('submitted_by', userId)
-      .in('status', ['open', 'under_review']);
+  async withdrawDispute(disputeId: string, _userId: string): Promise<void> {
+    const { data, error } = await supabase.rpc('fn_dispute_withdraw', {
+      p_dispute_id: disputeId,
+    });
 
-    if (error) throw error;
+    if (error) {
+      reportError(error, 'DisputeService.withdrawDispute', { disputeId });
+      throw new Error('Could not withdraw the dispute');
+    }
+
+    const out = (data || {}) as { ok?: boolean; reason?: string; status?: string };
+    if (!out.ok) {
+      throw new Error(
+        out.reason === 'not_withdrawable'
+          ? `This dispute is already ${out.status ?? 'closed'} and cannot be withdrawn.`
+          : 'This dispute could not be withdrawn.'
+      );
+    }
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ import DiamondCustodyBalance from './DiamondCustodyBalance';
 import DiamondArenaWallet from './DiamondArenaWallet';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { ArenaAccessProvider } from './arenaAccess';
+import { isDiamondArenaLobbyPath, isDiamondArenaPlayerPath } from './diamondArenaRoutes';
 import './DiamondArenaShell.css';
 
 interface AccessState {
@@ -33,6 +34,16 @@ export default function ArenaAccessBoundary({
   const path = useLocation().pathname;
   const navigate = useNavigate();
   const showCashLobby = cashLobby || /\/clubs\/[^/]+\/?$/.test(path);
+  /* THE PLAYER DOORS OPEN (2026-09-19). The lobby was the only route under
+     the arena that rendered its page; Tournaments, Players, a member's own
+     profile and Messages all fell to the safe shell below, so a Diamond
+     player had the lobby and no way out of it. `isDiamondArenaPlayerPath`
+     is the allowlist (src/components/arena/diamondArenaRoutes.ts): those
+     routes render their page, and every operator, finance, agent and union
+     route keeps the shell, which is what "no unions or agents" on a typed
+     URL means. The closed-games notice stays on the lobby only. */
+  const showArenaPlayerSurface = showCashLobby || isDiamondArenaPlayerPath(path);
+  const showClosedNotice = showCashLobby || isDiamondArenaLobbyPath(path);
   const [retry, setRetry] = useState(0);
   const [state, setState] = useState<AccessState>({
     key: '',
@@ -147,9 +158,9 @@ export default function ArenaAccessBoundary({
        Diamond player would have been sent to it. The chip bridge is a chip
        club feature and is not mounted here. tests/the-diamond-arena-has-no-
        chip-bridge.law.test.ts holds this. */
-    return showCashLobby ? (
+    return showArenaPlayerSurface ? (
       <ArenaAccessProvider value={state.context}>
-        {state.context.cashGamesEnabled !== true && (
+        {showClosedNotice && state.context.cashGamesEnabled !== true && (
           <p className="diamond-arena-notice">Diamond Games Are Not Open For Play Yet.</p>
         )}
         {children}

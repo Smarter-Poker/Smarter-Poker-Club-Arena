@@ -144,9 +144,21 @@ describe('the correct data', () => {
     const svc = read('src/services/HandHistoryService.ts');
     expect(svc).toContain("'winners_by_board',");
     expect(svc).toContain("'bomb_pot',");
-    // ONE select list, so getHand and getPlayerHands cannot drift apart again
-    // (getHand never selected winners_by_board; getPlayerHands never bomb_pot).
-    expect(svc.match(/\.select\(\s*HAND_HISTORY_COLUMNS\s*\)/g)?.length).toBe(2);
+    /* ONE select list, so getHand and getPlayerHands cannot drift apart again
+       (getHand never selected winners_by_board; getPlayerHands never bomb_pot).
+
+       Stated as "both hand_history reads name the one constant" since
+       2026-09-20, rather than as "the argument is exactly the constant".
+       `getPlayerHands` now APPENDS an embed to it - `ca_hand_facts` under its
+       named constraint, which is how a Diamond player's record is scoped to
+       the arena server-side - and the columns are still the shared list. The
+       drift this pin was written about is a second column list, and a read
+       that spelled one would name no constant and fail here. */
+    const handReads = [...svc.matchAll(/from\('hand_history'\)\s*\.select\(([^)]*)\)/g)].map((m) =>
+      m[1].trim()
+    );
+    expect(handReads.length).toBe(2);
+    for (const read of handReads) expect(read).toContain('HAND_HISTORY_COLUMNS');
     // Behaviour: with winners_by_board, a player who took only board 2 is a
     // winner on board 2 and not on board 1, under board 2's own hand name.
     const m = buildReplay({

@@ -1,5 +1,12 @@
 # The Diamond tournament doors, captured
 
+> **The lifecycle cases built on this base are in the second half of this
+> README, under "The lifecycle cases".** Run them with
+> `python3 tests/sql/run-diamond-tournament-lifecycle.py`. This first half
+> describes the base and its 79 doors; that runner loads the base, this
+> capture, a second delta, a second capture of 22 more doors, a seed and the
+> cases.
+
 This is the base of the Diamond tournament lifecycle fixture: a private
 PostgreSQL 17 database carrying the estate's historical schema plus the **exact
 installed Diamond tournament doors**, each one pinned by the md5 of its own
@@ -83,7 +90,11 @@ captured, because a Diamond event cannot reach either:
 `fn_ca_register_for_tournament_with_ticket_for` (satellite-ticket admission; a
 satellite target is refused at creation) and
 `fn_ensure_late_registration_capacity` (late-registration seating; not on the
-pre-start path). If a future case reaches either, capture it first.
+pre-start path). If a future case reaches either, capture it first. **Neither
+was reached by the lifecycle cases** (2026-09-20): a satellite target is still
+refused at the creation door, and no case in the lifecycle file seats a late
+registrant, because reaching RUNNING needs the UPDATE half of the trigger chain
+that is not captured yet. Both remain uncaptured, for the same stated reasons.
 
 ## What this is NOT
 
@@ -97,3 +108,83 @@ records exactly where that work stopped and the next thing it hits.
 
 It also opens nothing: `cash_games_enabled` and `tournaments_enabled` are false
 in the fixture as they are in production, and the runner asserts it.
+
+---
+
+# The lifecycle cases
+
+```
+python3 tests/sql/run-diamond-tournament-lifecycle.py
+```
+
+That runner loads everything above, plus four more files, and then runs the
+lifecycle cases. It never connects to production, needs no credential, and
+**never opens an arena switch**: `cash_games_enabled` and `tournaments_enabled`
+arrive false as production holds them, and the runner refuses to pass if either
+is on when the cases finish.
+
+| #   | File                                      | What it is                                                                                                          |
+| --- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 5   | `diamond-tournament-lifecycle-schema.sql` | two relations, four `tournaments` columns and four `tournaments` constraints the base lacks, sliced verbatim        |
+| 6   | `diamond-tournament-lifecycle-doors.sql`  | 22 more installed doors, md5-pinned, plus the nine `tournaments` triggers production carries that the base does not |
+| 7   | `diamond-tournament-lifecycle-seed.sql`   | one Diamond arena, four synthetic accounts, the staff account, the arena settings row and the MTT admission ABI     |
+| 8   | `diamond-tournament-lifecycle-cases.sql`  | the cases                                                                                                           |
+
+## Why a second capture
+
+The first capture holds the functions the Diamond tournament money path
+**calls**. The second holds the functions production **fires**: `tournaments`
+has a trigger chain, and the create door's own INSERT runs it.
+
+The historical base and production disagree there. Measured read-only on
+2026-09-20: production attaches **60** triggers to `public.tournaments` naming
+**58** distinct functions. Of those 58, **34** are already byte-identical in the
+base, **13** render to different text and **11** are absent from it. Twelve of
+the 60 triggers are not attached in the base at all, and one trigger the base
+carries - `a0_tournament_manager_write_scope` - names
+`trg_tournament_manager_write_scope`, a function production does not have.
+
+Loaded against the base alone, a Diamond MTT is refused by a creation guard 165
+bytes shorter than the installed one and never reaches nine refusals production
+runs. So the 22 functions the create path needs are captured the same md5-pinned
+way, 20 of them recovered from bytes already committed in this repository and 2
+transported from production in this session, and the nine INSERT triggers are
+installed in production's own `pg_get_triggerdef()` text.
+
+## The arena's membership boundary, and how the seed satisfies it
+
+`poker_arena_membership_guard` (`fn_poker_guard_arena_structure`) is
+`BEFORE INSERT OR UPDATE` on `club_members`, and for a club whose asset is
+`diamonds` its first test is `TG_OP='INSERT'`. **An INSERT is refused
+unconditionally**, with no exemption for `postgres`, for `service_role` or for a
+platform admin. That is deliberate, and the doors say so in their own words -
+`fn_ca_entry_scope_ok` carries the comment "The Diamond arena has no membership
+rows by design: every account with a profile is a member", and
+`fn_poker_arena_context` sets `member=true, role='player'` for a Diamond arena
+without consulting `club_members` at all.
+
+Production's single Diamond arena membership row is a pre-guard artefact, not a
+condition the guard admits: the club and that row were both created at
+2026-09-08T11:28:12.386252Z, the guard arrived with migration `20260908152855`
+four hours later, and the row's `updated_at` is that migration's own timestamp
+reshaping it into the only shape the guard tolerates on UPDATE.
+
+So the seed creates **no membership row**, and therefore gives the arena no
+`owner_id`: `clubs.owner_id` is nullable in production, and
+`fn_club_owner_has_a_player_wallet` - the deferred constraint trigger that would
+otherwise create the owner's wallet row at COMMIT - returns on its first line
+when `owner_id IS NULL`. Nothing is disabled. The seed then proves the guard is
+still armed by attempting production's exact row and being refused.
+
+## What the cases prove, and what the closed switch stops
+
+`fn_poker_diamond_reserve` refuses a tournament entry while
+`tournaments_enabled` is off, and `fn_poker_diamond_tournament_charge` refuses a
+rebuy, re-entry or add-on at the same test. So **no Diamond can be taken for an
+entry here**, and every case that would need a funded custody row is a refusal
+case, asserted to move nothing. That closed switch is itself the sixth case.
+
+The changelog,
+`docs/changelog/2026-09-20-the-diamond-tournament-lifecycle-cases-run.md`,
+lists case by case what runs, what each one asserts, and the exact place the
+funded half stops.

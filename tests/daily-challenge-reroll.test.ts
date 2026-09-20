@@ -318,8 +318,11 @@ describe('the page ships the casino-realism surface without the old stubs', () =
     expect(page).toContain('mutationEpochRef.current += 1');
     expect(page).toContain('if (!initialLoadSettledRef.current) return;');
     expect(page).toContain('const acceptedAt = Date.now();');
-    expect(page).toContain('lastDashboardReceiptAtRef.current = acceptedAt;');
-    expect(page).toContain('const stale = resumedAt - lastDashboardReceiptAtRef.current > 60_000;');
+    // A resumed tab asks the durable revision cursor whether it is stale; a
+    // wall-clock guess about the last receipt no longer decides a full reload.
+    expect(page).not.toContain('lastDashboardReceiptAtRef');
+    expect(page).not.toContain('60_000');
+    expect(page).toContain('requestCursorCatchUp();');
     expect(page).toContain('const serverSyncedAt = Date.parse(dashboard.syncedAt);');
     expect(page).toContain('const nextServerClockOffsetMs = serverSyncedAt - acceptedAt;');
     expect(page).toContain('periodKeysRef.current = dashboard.periodKeys;');

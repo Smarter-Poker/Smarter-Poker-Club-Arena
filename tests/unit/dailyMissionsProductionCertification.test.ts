@@ -59,6 +59,26 @@ describe('Daily Missions production certification', () => {
     expect(spec.indexOf('expect(completed.every((row) => row.completed)).toBe(true)')).toBeLessThan(
       spec.indexOf('No Daily Mission revision frame crossed the routed socket')
     );
+    // The page owns no repair timer. The missed-frame step must prove that a
+    // healthy socket with suppressed frames issues no revision cursor read,
+    // then interrupt the socket itself so the reconnect lifecycle owns the
+    // catch-up. A step that waits for a timer-driven repair is forbidden.
+    expect(spec).toContain('const NO_POLL_QUIET_WINDOW_MS = 20_000;');
+    expect(spec).toContain(
+      "const REVISION_CURSOR_PATH = '/rest/v1/daily_challenge_dashboard_revisions';"
+    );
+    expect(spec).toContain('routedRealtimeServers.push(server)');
+    expect(spec).toContain('routedRealtimeServers.splice(0)');
+    expect(spec).toContain(
+      "await server.close({ code: 1012, reason: 'Certification Realtime Interruption' })"
+    );
+    expect(spec.indexOf('await page.waitForTimeout(NO_POLL_QUIET_WINDOW_MS)')).toBeLessThan(
+      spec.indexOf('routedRealtimeServers.splice(0)')
+    );
+    expect(spec.indexOf('routedRealtimeServers.splice(0)')).toBeLessThan(
+      spec.indexOf('name: /^Claim (?:All|Next) / })')
+    );
+    expect(spec).not.toMatch(/revision cursor watchdog/);
     // dashboard_loaded is intentionally sampled at 20%; certification proves
     // the actual receipt and only requires unsampled mutation operations.
     const operationGate = spec.slice(

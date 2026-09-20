@@ -976,10 +976,6 @@ export default function DailyChallengesPage() {
 
   const loadRequestRef = useRef(0);
   const mutationEpochRef = useRef(0);
-  // Keep transport freshness on the browser's clock. `dashboard.syncedAt` is
-  // server-authored presentation data and can be ahead of or behind this
-  // device, so it must never decide whether a resumed tab is stale.
-  const lastDashboardReceiptAtRef = useRef(0);
   const serverClockOffsetRef = useRef<number | null>(null);
   const periodKeysRef = useRef<Record<Tier, string> | null>(null);
   const lastResumeRefreshRef = useRef(0);
@@ -991,7 +987,15 @@ export default function DailyChallengesPage() {
   const queuedUnversionedRealtimeRef = useRef(false);
   const realtimeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const realtimeStatusRef = useRef<'connecting' | 'live' | 'degraded'>('connecting');
-  const realtimeJoinEpochRef = useRef(0);
+  // Every subscription status, channel error, account change and unmount opens
+  // a new catch-up generation. A cursor reply from an older generation is
+  // discarded, so a retired channel can never repaint this page.
+  const catchUpGenerationRef = useRef(0);
+  // One bounded cursor read at a time. A lifecycle wake that lands while a
+  // read is in flight is folded into exactly one follow-up read.
+  const cursorReadInFlightRef = useRef(false);
+  const cursorCatchUpPendingRef = useRef(false);
+  const userIdRef = useRef<string | null>(null);
   const loadChallengesRef = useRef<
     (uid: string, mode: 'initial' | 'refresh' | 'silent') => Promise<void>
   >(async () => undefined);
@@ -1050,7 +1054,6 @@ export default function DailyChallengesPage() {
         throw new Error('The challenge clock receipt was invalid');
       }
       const nextServerClockOffsetMs = serverSyncedAt - acceptedAt;
-      lastDashboardReceiptAtRef.current = acceptedAt;
       serverClockOffsetRef.current = nextServerClockOffsetMs;
       periodKeysRef.current = dashboard.periodKeys;
       dashboardRevisionRef.current = dashboard.revision;
@@ -1085,6 +1088,7 @@ export default function DailyChallengesPage() {
         const dashboard = await dailyChallengeService.getDashboard(uid);
         if (
           !isMountedRef.current ||
+          uid !== userIdRef.current ||
           !isCurrentDailyMissionDashboardReceipt(
             requestId,
             loadRequestRef.current,
@@ -1181,6 +1185,18 @@ export default function DailyChallengesPage() {
           setIsLoading(false);
           return;
         }
+        if (userIdRef.current !== authUser.id) {
+          // A different account has nothing rendered yet. Retire every cursor
+          // and queued event that belonged to the previous account so its
+          // revision numbers cannot fence out the new account's first receipt.
+          userIdRef.current = authUser.id;
+          catchUpGenerationRef.current += 1;
+          cursorCatchUpPendingRef.current = false;
+          dashboardRevisionRef.current = 0;
+          queuedRealtimeRevisionRef.current = null;
+          queuedUnversionedRealtimeRef.current = false;
+          initialLoadSettledRef.current = false;
+        }
         setUserId(authUser.id);
         await loadChallenges(authUser.id, 'initial');
         if (!cancelled) initialLoadSettledRef.current = true;
@@ -1238,41 +1254,6 @@ export default function DailyChallengesPage() {
     return () => clearTimeout(timer);
   }, [userId, serverClockOffsetMs, loadChallenges]);
 
-  // Browsers throttle timers and live sockets in background tabs. Reconcile on
-  // resume so a table left open overnight never shows yesterday's contracts.
-  useEffect(() => {
-    if (!userId) return undefined;
-
-    const refreshAfterResume = () => {
-      if (document.visibilityState !== 'visible') return;
-      // setUserId installs this listener before the first dashboard receipt
-      // settles. A focus event in that window used to see receiptAt=0 and start
-      // a duplicate cold-load request.
-      if (!initialLoadSettledRef.current) return;
-      const resumedAt = Date.now();
-      if (resumedAt - lastResumeRefreshRef.current < 1000) return;
-
-      const clockOffset = serverClockOffsetRef.current;
-      const renderedDailyKey = periodKeysRef.current?.daily;
-      const dateChanged =
-        clockOffset === null ||
-        renderedDailyKey === undefined ||
-        getUtcDateKey(resumedAt + clockOffset) !== renderedDailyKey;
-      const stale = resumedAt - lastDashboardReceiptAtRef.current > 60_000;
-      if (dateChanged || stale) {
-        lastResumeRefreshRef.current = resumedAt;
-        loadChallenges(userId, 'silent');
-      }
-    };
-
-    document.addEventListener('visibilitychange', refreshAfterResume);
-    window.addEventListener('focus', refreshAfterResume);
-    return () => {
-      document.removeEventListener('visibilitychange', refreshAfterResume);
-      window.removeEventListener('focus', refreshAfterResume);
-    };
-  }, [userId, loadChallenges]);
-
   const scheduleRealtimeRefresh = useCallback(
     (payload?: unknown) => {
       if (!userId) return;
@@ -1308,37 +1289,80 @@ export default function DailyChallengesPage() {
     [userId, loadChallenges]
   );
 
-  // Realtime is the immediate path, while this tiny cursor read is the durable
-  // repair path for a WebSocket event that was lost after subscription. It
-  // never polls the full dashboard and only schedules a receipt when the
-  // server cursor is newer than the one rendered on screen.
+  // Realtime is the immediate path. Everything else is a lifecycle event (a
+  // new subscription generation or a tab resume) that performs ONE bounded
+  // read of the durable per-user revision cursor and fetches the dashboard
+  // only when that cursor is newer than the revision on screen. There is no
+  // repeating timer: the cursor row is the durable record of the obligation
+  // and the owned reconnect lifecycle is what re-enters this path.
+  const requestCursorCatchUp = useCallback(() => {
+    const uid = userIdRef.current;
+    if (!uid || !isMountedRef.current) return;
+    if (cursorReadInFlightRef.current) {
+      cursorCatchUpPendingRef.current = true;
+      return;
+    }
+    const generation = catchUpGenerationRef.current;
+    cursorReadInFlightRef.current = true;
+    void dailyChallengeService
+      .getDashboardRevision(uid)
+      .then((revision) => {
+        if (!isMountedRef.current || uid !== userIdRef.current) return;
+        if (generation !== catchUpGenerationRef.current) return;
+        if (revision > dashboardRevisionRef.current) scheduleRealtimeRefresh({ revision });
+      })
+      .catch(() => {
+        // The service records the read failure. Keep the confirmed page; the
+        // next lifecycle event (rejoin or resume) performs the next read.
+      })
+      .finally(() => {
+        cursorReadInFlightRef.current = false;
+        const followUp = cursorCatchUpPendingRef.current;
+        cursorCatchUpPendingRef.current = false;
+        if (followUp && isMountedRef.current && uid === userIdRef.current) {
+          requestCursorCatchUp();
+        }
+      });
+  }, [isMountedRef, scheduleRealtimeRefresh]);
+
+  // Browsers throttle timers and live sockets in background tabs. Reconcile on
+  // resume so a table left open overnight never shows yesterday's contracts.
+  // The resume is an event: one bounded cursor read decides whether the
+  // dashboard is fetched again. A UTC date change is product timing and still
+  // reloads directly, because the rendered contracts belong to a finished day.
   useEffect(() => {
     if (!userId) return undefined;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
 
-    const reconcileRevision = async () => {
-      try {
-        if (document.visibilityState === 'visible' && initialLoadSettledRef.current) {
-          const revision = await dailyChallengeService.getDashboardRevision(userId);
-          if (!cancelled && revision > dashboardRevisionRef.current) {
-            scheduleRealtimeRefresh();
-          }
-        }
-      } catch {
-        // The Realtime channel remains the primary path. The service records
-        // the cursor error, and the next visible-tab pass retries naturally.
-      } finally {
-        if (!cancelled) timer = setTimeout(reconcileRevision, 15_000);
+    const refreshAfterResume = () => {
+      if (document.visibilityState !== 'visible') return;
+      // setUserId installs this listener before the first dashboard receipt
+      // settles. A focus event in that window used to see receiptAt=0 and start
+      // a duplicate cold-load request.
+      if (!initialLoadSettledRef.current) return;
+      const resumedAt = Date.now();
+      if (resumedAt - lastResumeRefreshRef.current < 1000) return;
+
+      const clockOffset = serverClockOffsetRef.current;
+      const renderedDailyKey = periodKeysRef.current?.daily;
+      const dateChanged =
+        clockOffset === null ||
+        renderedDailyKey === undefined ||
+        getUtcDateKey(resumedAt + clockOffset) !== renderedDailyKey;
+      lastResumeRefreshRef.current = resumedAt;
+      if (dateChanged) {
+        loadChallenges(userId, 'silent');
+        return;
       }
+      requestCursorCatchUp();
     };
 
-    timer = setTimeout(reconcileRevision, 15_000);
+    document.addEventListener('visibilitychange', refreshAfterResume);
+    window.addEventListener('focus', refreshAfterResume);
     return () => {
-      cancelled = true;
-      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', refreshAfterResume);
+      window.removeEventListener('focus', refreshAfterResume);
     };
-  }, [userId, scheduleRealtimeRefresh]);
+  }, [userId, loadChallenges, requestCursorCatchUp]);
 
   useEffect(
     () => () => {
@@ -1349,7 +1373,8 @@ export default function DailyChallengesPage() {
 
   useEffect(
     () => () => {
-      realtimeJoinEpochRef.current += 1;
+      catchUpGenerationRef.current += 1;
+      cursorCatchUpPendingRef.current = false;
     },
     [userId]
   );
@@ -1361,39 +1386,29 @@ export default function DailyChallengesPage() {
     private: true,
     onPayload: scheduleRealtimeRefresh,
     onSubscriptionError: () => {
-      realtimeJoinEpochRef.current += 1;
+      // A channel error, timeout or closure only marks the page degraded and
+      // retires any cursor reply still in flight. No fetch happens here: the
+      // owned reconnect lifecycle (supabase-js rejoin, the MasterBus channel
+      // factory and the connection watchdog) ends in a new SUBSCRIBED status,
+      // and that status is what performs the bounded catch-up read.
+      catchUpGenerationRef.current += 1;
       realtimeStatusRef.current = 'degraded';
       setRealtimeState('degraded');
       recordDailyMissionOperation({ userId, event: 'realtime_degraded' });
-      // Reconcile immediately while the channel factory reconnects. The
-      // visible-tab cursor watchdog below remains the bounded missed-frame
-      // fallback when a joined channel never reports an error.
-      scheduleRealtimeRefresh();
     },
     onSubscriptionStatus: (status) => {
-      const joinEpoch = ++realtimeJoinEpochRef.current;
+      catchUpGenerationRef.current += 1;
       if (status !== 'SUBSCRIBED') return;
       const recovered = realtimeStatusRef.current === 'degraded';
       realtimeStatusRef.current = 'live';
       setRealtimeState('live');
-      if (recovered) {
-        recordDailyMissionOperation({ userId, event: 'realtime_recovered' });
-        scheduleRealtimeRefresh();
-      } else if (userId) {
-        // The first snapshot can precede the first joined channel. Reconcile
-        // that gap with the small cursor read, preserving one dashboard RPC
-        // when the cold receipt already covers the server's current revision.
-        void dailyChallengeService
-          .getDashboardRevision(userId)
-          .then((revision) => {
-            if (!isMountedRef.current || joinEpoch !== realtimeJoinEpochRef.current) return;
-            if (revision > dashboardRevisionRef.current) scheduleRealtimeRefresh({ revision });
-          })
-          .catch(() => {
-            // The service records the read failure. Keep the confirmed page;
-            // the existing visible-tab cursor watchdog remains its recovery.
-          });
-      }
+      if (recovered) recordDailyMissionOperation({ userId, event: 'realtime_recovered' });
+      // The first snapshot can precede the first joined channel, and a rejoin
+      // can follow any number of dropped frames. Both are the same event: one
+      // bounded cursor read per subscription generation, which preserves a
+      // single dashboard RPC when the receipt on screen already covers the
+      // server's current revision.
+      requestCursorCatchUp();
     },
   });
 
@@ -1736,7 +1751,7 @@ export default function DailyChallengesPage() {
 
     try {
       // Reconcile with the authoritative vault at the instant of settlement.
-      // Realtime and the revision watchdog deliberately coalesce bursts, so
+      // Realtime and the cursor catch-up deliberately coalesce bursts, so
       // the rendered vault can briefly contain only the first completed row.
       // Claim All must never turn that transient view into a partial payout.
       const dashboard = await dailyChallengeService.getDashboard(userId);

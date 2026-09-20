@@ -36,6 +36,23 @@ verification, and what it changed.
 3. **A long bucket label beside a six-figure amount would have clipped at
    375px.** `.flow-row__label` wraps instead of ellipsising; a money label is
    read in full.
+4. **Six days of other programmes wrote kinds the map had never seen.** Read
+   from the ledger today: the Diamond Games (wheel, plinko, crash, mines;
+   #4682, #4001) charge a bet as `diamond_game` and a bonus ticket as
+   `daily_bonus_spin`, and pay a player's prize AND a host's intake as the
+   bare kind `transfer` ("Diamond Wheel Intake (500 Diamonds)"), which the
+   map filed under Gifts From Friends - 51 rows, 53,300 diamonds, wrongly
+   called gifts. The Diamond Spins perks (throwables, time bank, rabbit hunt)
+   are charged as the bare kind `deduction` - 8 rows, 5,190 diamonds in
+   Other. Two more replacements of the one map, applied today as
+   `20260920141527 the_diamond_kind_map_learns_the_diamond_games` and
+   `20260920141807 the_diamond_kind_map_names_the_spins_perks`: `transfer`
+   is its own honest bucket, Transfers, on both sides (the map cannot tell a
+   payout from a gift by kind alone); the game kinds are named exactly; the
+   wheel prizes join Prizes And Winnings now that the wheel is a game; the
+   perks file under Store Items And Perks. After both, only test rows and one
+   bare `credit` of 20 remain in Other, and the bucketed totals still equal
+   `fn_diamond_lifetime_totals` for the heaviest player.
 
 Verified again, not assumed: the RPC's bucketed totals still equal
 `fn_diamond_lifetime_totals` for the same player to the diamond; every
@@ -44,6 +61,13 @@ writer kind is pinned as an exact literal in the map by
 or CI says so; the diamonds-only law pins the live map.
 
 ## Findings outside phase 5, recorded, not fixed here
+
+- The Diamond Games' writers (`fn_diamond_game_pay_diamonds`,
+  `fn_wheel_spin_core`, `fn_wheel_spin_v2`, `fn_diamond_spin_settle_day`)
+  carry a player's prize and a host's intake under the bare kind `transfer`,
+  and the Diamond Spins perks under `deduction` with a table id in the copy a
+  player reads ("Diamond Spins: Throwables for <uuid>"). Each should carry its
+  own kind; the wallet buckets them honestly meanwhile.
 
 - `fn_poker_diamond_tournament_drain` journals the tournament fee as a
   second debit row (`tournament_fee`, `balance_after` = the unchanged

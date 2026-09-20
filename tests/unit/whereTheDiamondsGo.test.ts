@@ -186,12 +186,13 @@ describe('the wiring', () => {
     const body = migration.slice(migration.indexOf('BEGIN;'));
     expect(body).toContain('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_bucket(');
     expect(body).toContain('CREATE OR REPLACE FUNCTION public.fn_diamond_flow_by_kind(');
-    /* The kind map production runs is the later same-day redefinition in
-       20260914114052 (every writer named); the flow function is unchanged
+    /* The kind map production runs is the latest redefinition (20260914114052
+       named every writer; 20260920141527 learned the Diamond Games;
+       20260920141807 the Diamond Spins perks). The flow function is unchanged
        and still lives here. The kind resolution below is pinned on the live
        version. */
     const liveMap = read(
-      'supabase/migrations/20260914114052_the_diamond_kind_map_names_every_writer.sql'
+      'supabase/migrations/20260920141807_the_diamond_kind_map_names_the_spins_perks.sql'
     );
     expect(liveMap).toContain('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_bucket(');
     expect(liveMap).toContain("NULLIF(BTRIM(p_transaction_type), '')");
@@ -256,6 +257,10 @@ describe('the wiring', () => {
       'adjustment',
       'reconciliation',
       'burn',
+      // the Diamond Games (2026-09-19) and the Diamond Spins perks
+      'diamond_game',
+      'daily_bonus_spin',
+      'deduction',
       // earned
       'arena_withdraw',
       'diamond_gift_received',
@@ -324,7 +329,7 @@ describe('the wiring', () => {
       'house',
     ];
     const migration = read(
-      'supabase/migrations/20260914114052_the_diamond_kind_map_names_every_writer.sql'
+      'supabase/migrations/20260920141807_the_diamond_kind_map_names_the_spins_perks.sql'
     );
     const map = migration.slice(
       migration.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_bucket'),
@@ -332,6 +337,12 @@ describe('the wiring', () => {
     );
     const missing = writerKinds.filter((k) => !map.includes(`'${k}'`));
     expect(missing).toEqual([]);
+    // A bare `transfer` is a game payout, a host intake or an old gift: the
+    // map cannot tell which by kind alone, so it is Transfers, never a gift.
+    expect(map).toMatch(/p_amount < 0 AND k = 'transfer'\s+THEN 'transfers'/);
+    expect(map).toMatch(/WHEN k = 'transfer'\s+THEN 'transfers'/);
+    expect(map).not.toMatch(/'transfer'\)\s+THEN 'gifts_/);
+    expect(map).toMatch(/WHEN 'transfers'\s+THEN 'Transfers'/);
     // Same signature as the first migration: nothing that calls it changes.
     expect(map).toContain('p_type             text,');
     expect(map).toContain('p_amount           bigint');

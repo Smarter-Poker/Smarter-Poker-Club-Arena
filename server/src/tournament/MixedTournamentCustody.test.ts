@@ -488,8 +488,8 @@ it('freezes detached nested local and canonical proof before durable capture', a
 });
 
 /** Transport is modeled; real manager, guards, RPC parsers and replay execute. */
-async function recoverableMixedScene(interrupt?: string) {
-  const { s, m, engines, permit } = await mixedStopped();
+async function recoverableMixedScene(interrupt?: string, absentSource = false) {
+  let { s, m, engines, permit } = await mixedStopped();
   const inputs = [11, 21].map((user, i) => ({
     user_id: id(user),
     source_seat_id: id(user + 20),
@@ -538,7 +538,46 @@ async function recoverableMixedScene(interrupt?: string) {
       },
     });
   await s.transferDrainedF06Custody(id(1), m);
-  const transfer = s.drainedF06TournamentCustody.get(id(1)).mixed;
+  let transfer = s.drainedF06TournamentCustody.get(id(1)).mixed;
+  if (absentSource) {
+    transfer = structuredClone(transfer);
+    const original = { table_id: id(3), break_id: id(5), lifecycle: '1' };
+    transfer.local.retained = [];
+    transfer.local.historical_loss_pending_arrivals = [
+      {
+        original,
+        absence: {
+          table_id: id(3),
+          global_absent: true,
+          owned_absent: true,
+          retirement_absent: true,
+        },
+      },
+    ];
+    transfer.canonical.operations[0] = {
+      ...transfer.canonical.operations[0],
+      tournament_id: id(1),
+      source_table_id: id(3),
+      lifecycle: '1',
+    };
+    transfer.canonical.historical_loss = {
+      kind: 'historical_loss_normal_session_v1',
+      pending_arrivals: [
+        {
+          source: { table_id: id(3) },
+          proof: {
+            historical_loss: {
+              original_kind: 'pending_arrival_historical_loss_v1',
+              observations: [{ original }],
+            },
+          },
+        },
+      ],
+    };
+    transfer.receipt.local_proof = transfer.local;
+    transfer.receipt.canonical_proof = transfer.canonical;
+    s = server();
+  }
   const winners = new Map<string, any>(),
     intents = new Map<string, unknown>(),
     calls: Array<{ name: string; args: any }> = [];
@@ -989,3 +1028,25 @@ it.each(['confirmed', 'lost-reply'])(
     expect([...s.enginesIncludingMixedF06Custody()]).toEqual([]);
   }
 );
+
+it('receipt-only successor consumes separately absent original move before completion and later ordinary restart', async () => {
+  const { s, successor, transfer, winners, calls, resume } = await recoverableMixedScene(
+    undefined,
+    true
+  );
+  expect(winners.size).toBe(2);
+  expect(
+    calls.filter((c) => c.name === 'fn_move_tournament_player').map((c) => c.args.p_request_id)
+  ).toEqual([id(12), id(12), id(24)]);
+  expect(calls.some((c) => c.name === 'fn_f06_ack_cleanup')).toBe(true);
+  expect(calls.some((c) => c.name === 'fn_f06_complete_mixed_manager_custody')).toBe(true);
+  expect(successor.pendingTournamentSeatMoveOutcomes.size).toBe(0);
+  expect(s.mixedF06PreparationBlockers()).toEqual([]);
+  expect(resume).toHaveBeenCalledOnce();
+  const replacement = server();
+  await replacement.performTournamentManagerAdmission(id(1), 'resume', 'ordinary later restart', 1);
+  const ordinary = replacement.tournamentEngines.get(id(1));
+  managers.push(ordinary);
+  expect(ordinary.isF06RecoveryOwner()).toBe(false);
+  expect(ordinary.getTournamentLeaseGeneration()).not.toBe(transfer.successorGeneration);
+});

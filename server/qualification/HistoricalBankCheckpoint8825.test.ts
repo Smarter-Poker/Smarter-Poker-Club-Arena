@@ -1,30 +1,63 @@
+/**
+ * LOCAL NATIVE QUALIFICATION AGAINST THE ARCHIVED 8825 BUILD - NOT A CI TEST.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This file executes the SAME 31 cases as
+ * `server/src/engine/EngineLifecycleDiagnostics.test.ts`, but against the
+ * archived `8825af51817f379c4261658ca29ecc9d8d81932d` engine build instead of
+ * current source. The twin under `src/` is the one that ships and runs in CI;
+ * this one is the native qualification that the changelog keeps separate from
+ * source ("Source, native qualification, protected integration, installation
+ * and live recovery remain separate").
+ *
+ * IT LIVES OUTSIDE `src/` ON PURPOSE. The imports below name an absolute
+ * machine-local path - the archived `dist/` - which exists on the
+ * qualification machine and nowhere else. `server/tsconfig.json` includes
+ * `src/**` and `server/vitest.config.ts` globs `src/**\/*.test.ts`, so a copy
+ * under `src/` puts a path that cannot resolve on a GitHub runner into two
+ * REQUIRED checks: the `TypeScript Check (server)` step and the sharded
+ * `Full server test suite`. It did: 13 errors, ten of them TS7016 for
+ * declarations the archived build never emitted (it was built through
+ * `tsconfig.emit.json` -> `tsconfig.runtime.json`, which sets
+ * `"declaration": false`, so those 508 .js files have no .d.ts to find and
+ * never will).
+ *
+ * Run it with its own config, from `server/`:
+ *
+ *   npx vitest run --config qualification/vitest.config.ts
+ *
+ * The archived build must be mounted at the path the imports name. `dist` is
+ * itself a symlink into the evidence archive; if it is gone, this file does
+ * not run at all - that is the intended failure, not a silent skip.
+ */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ServerTableEngine } from './ServerTableEngine.js';
-import * as base from './ServerTableEngineBase.js';
-import * as manager from '../tournament/TournamentManager.js';
-import * as managerBase from '../tournament/TournamentManagerBase.js';
-import * as gameServer from '../GameServer.js';
-import * as maintenance from '../maintenance/MaintenanceBreak.js';
-import * as freezeState from '../maintenance/freezeState.js';
-import * as permitModule from '../services/F06HandPermit.js';
-import * as retirement from '../services/TournamentRetirementCustody.js';
-import * as dataActorContext from '../services/supabase/dataActorContext.js';
+import { ServerTableEngine } from '/Volumes/SmarterWork/agent-work/mtt-8825-checkpoint-evidence/native-8825/server/dist/engine/ServerTableEngine.js';
+import * as base from '/Volumes/SmarterWork/agent-work/mtt-8825-checkpoint-evidence/native-8825/server/dist/engine/ServerTableEngineBase.js';
+import * as manager from '/Volumes/SmarterWork/agent-work/mtt-8825-checkpoint-evidence/native-8825/server/dist/tournament/TournamentManager.js';
+import * as managerBase from '/Volumes/SmarterWork/agent-work/mtt-8825-checkpoint-evidence/native-8825/server/dist/tournament/TournamentManagerBase.js';
+import * as gameServer from '/Volumes/SmarterWork/agent-work/mtt-8825-checkpoint-evidence/native-8825/server/dist/GameServer.js';
+import * as maintenance from '/Volumes/SmarterWork/agent-work/mtt-8825-checkpoint-evidence/native-8825/server/dist/maintenance/MaintenanceBreak.js';
+import * as freezeState from '/Volumes/SmarterWork/agent-work/mtt-8825-checkpoint-evidence/native-8825/server/dist/maintenance/freezeState.js';
+import * as permitModule from '/Volumes/SmarterWork/agent-work/mtt-8825-checkpoint-evidence/native-8825/server/dist/services/F06HandPermit.js';
+import * as retirement from '/Volumes/SmarterWork/agent-work/mtt-8825-checkpoint-evidence/native-8825/server/dist/services/TournamentRetirementCustody.js';
+import * as dataActorContext from '/Volumes/SmarterWork/agent-work/mtt-8825-checkpoint-evidence/native-8825/server/dist/services/supabase/dataActorContext.js';
 import { readFileSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 // @ts-expect-error The serialized publisher artifact has no emitted declaration.
-import { legacyEngineCheckpointGuard } from '../../scripts/legacy-engine-checkpoint-guard.mjs';
+import { legacyEngineCheckpointGuard } from '../scripts/legacy-engine-checkpoint-guard.mjs';
 const checkpointIo = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
-vi.mock('../services/supabase/client.js', () => ({
-  supabase: checkpointIo,
-  maintenanceSupabase: {},
-}));
+vi.mock(
+  '/Volumes/SmarterWork/agent-work/mtt-8825-checkpoint-evidence/native-8825/server/dist/services/supabase/client.js',
+  () => ({
+    supabase: checkpointIo,
+    maintenanceSupabase: {},
+  })
+);
 
-vi.mock('../services/tableLease.js', async () => ({
-  ...(await vi.importActual<Record<string, unknown>>('../services/tableLease.js')),
-  INSTANCE_ID: '1-3846b8bb',
-}));
-
-vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
+vi.mock(
+  '/Volumes/SmarterWork/agent-work/mtt-8825-checkpoint-evidence/native-8825/server/dist/services/errorReporter.js',
+  () => ({ reportError: vi.fn() })
+);
 const id = (n: number) => '00000000-0000-4000-8000-' + String(n).padStart(12, '0');
 function deferred() {
   let resolve!: () => void;
@@ -118,13 +151,13 @@ const release8825 = '8825af51817f379c4261658ca29ecc9d8d81932d';
 const events8825 = ['5a387a75-754a-416e-8fee-b85b15fc2702', '615783bf-15e3-40b7-9368-75f21b6ac53b'];
 const historicalCohorts = JSON.parse(
   readFileSync(
-    new URL('../../../scripts/ci/probes/f06-historical-bank-loss-cohorts.json', import.meta.url),
+    new URL('../../scripts/ci/probes/f06-historical-bank-loss-cohorts.json', import.meta.url),
     'utf8'
   )
 );
 const retiredCohorts = JSON.parse(
   readFileSync(
-    new URL('../../../scripts/ci/probes/f06-retired-origin-cohorts.json', import.meta.url),
+    new URL('../../scripts/ci/probes/f06-retired-origin-cohorts.json', import.meta.url),
     'utf8'
   )
 );
@@ -140,10 +173,6 @@ async function nativeCheckpoint(
     let ids: string[] = [];
     const q: any = {
       select: () => q,
-      upsert: async (row: any) => {
-        bankRows.set(row.table_id, structuredClone(row));
-        return { error: null };
-      },
       in: (_key: string, values: string[]) => {
         ids = values;
         return q;
@@ -209,7 +238,7 @@ async function nativeCheckpoint(
         hand_number: '2',
         custody_id: id(840 + i),
       },
-      async (_n, a) => ({
+      async (_n: string, a: Record<string, unknown>) => ({
         error: null,
         data: {
           ok: true,
@@ -273,10 +302,13 @@ async function nativeCheckpoint(
       e.applyParkedTimeBanks(e.seatedPlayers);
       const players = e.captureParkedTimeBanks();
       expect(players[player].unlimitedActivations).toBe(true);
-      // Current-source stop additionally needs its actual acknowledged park.
-      // The pinned 8825 run has no new custody state, and uses the same writer.
-      await e.persistPresenceForRestart('parked');
-      expect(bankRows.get(e.tableId).time_bank_snapshot.players).toEqual(players);
+      bankRows.set(e.tableId, {
+        table_id: e.tableId,
+        engine_instance: '1-3846b8bb:parked',
+        parked_at: new Date().toISOString(),
+        disconnect_states: {},
+        time_bank_snapshot: { version: 1, handNumber: e.handCount, players },
+      });
     }
     // An ordinary previously played table has neither a current permit nor a
     // movement admission. The actual accepted-hand method clears its permit,
@@ -296,7 +328,7 @@ async function nativeCheckpoint(
       const evidenceId = id(960 + i);
       const oldPermit = new permitModule.F06HandPermit(
         binding,
-        async (name) => ({
+        async (name: string) => ({
           error: null,
           data: {
             ok: true,
@@ -613,7 +645,7 @@ async function nativeCheckpoint(
   // Independent file-admission cases cover pins. This current-source test isolates
   // native behavior; the archived qualification sets a root and hashes real bytes.
   const text = readFileSync(
-    new URL('../../scripts/legacy-engine-checkpoint-guard.mjs', import.meta.url),
+    new URL('../scripts/legacy-engine-checkpoint-guard.mjs', import.meta.url),
     'utf8'
   );
   const pins = new Map(
@@ -675,8 +707,7 @@ describe('native retained 8825 release checkpoint', () => {
   it('retains the exact native original bank snapshot after stop disposes live banks', async () => {
     const f = await nativeCheckpoint(false, true);
     const prior = structuredClone([...f.bankRows]);
-    const result = await f.run();
-    expect(result, JSON.stringify(result)).toMatchObject({ ok: true, readyForRestart: true });
+    expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
     expect([...f.bankRows]).toEqual(prior);
     for (const o of f.originals) {
       expect(o.e.timeBankEngine.playerBanks.size).toBe(0);

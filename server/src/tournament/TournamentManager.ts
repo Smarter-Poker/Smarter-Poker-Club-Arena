@@ -206,10 +206,44 @@ export class TournamentManager extends TournamentManagerEliminations {
       load('custody_ids', this.pendingTournamentBreakCustodyIds);
       load('cleanup_kinds', this.pendingTournamentCleanupKinds);
       const retained = local.retained as { table_id: string; break_id: string }[];
+      const sources = new Map(retained.map((row) => [row.table_id, row.break_id]));
+      const historical = (transfer.canonical as any).historical_loss;
+      const pendingSources = historical?.pending_arrivals ?? [];
+      if (!Array.isArray(pendingSources)) throw new Error('f06_mixed_pending_source_unproven');
+      for (const entry of pendingSources) {
+        const proof = entry?.proof?.historical_loss;
+        const original = proof?.observations?.[0]?.original;
+        const captured = (local.historical_loss_pending_arrivals as any[])?.find(
+          (row) => custodyJSON(row.original) === custodyJSON(original)
+        );
+        const operation = (transfer.canonical as any).operations?.find(
+          (row: any) => row.break_id === original?.break_id
+        );
+        if (
+          historical.kind !== 'historical_loss_normal_session_v1' ||
+          proof?.original_kind !== 'pending_arrival_historical_loss_v1' ||
+          !original ||
+          !captured ||
+          !operation ||
+          entry.source?.table_id !== original.table_id ||
+          captured.absence?.table_id !== original.table_id ||
+          captured.absence.global_absent !== true ||
+          captured.absence.owned_absent !== true ||
+          captured.absence.retirement_absent !== true ||
+          operation.source_table_id !== original.table_id ||
+          String(operation.lifecycle) !== String(original.lifecycle) ||
+          operation.tournament_id !== this.tournamentId ||
+          sources.has(original.table_id)
+        )
+          throw new Error('f06_mixed_pending_source_unproven');
+        // This receipt owns an already absent original source, separately from
+        // the stopped engine cohort. No old dealer is recreated.
+        sources.set(original.table_id, original.break_id);
+      }
       this.mixedRecovery = {
         transfer,
         assertCurrent,
-        sources: new Map(retained.map((row) => [row.table_id, row.break_id])),
+        sources,
         completion: null,
       };
     }

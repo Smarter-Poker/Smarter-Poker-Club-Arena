@@ -225,10 +225,10 @@
       "acl": "{postgres=X/postgres}",
       "owner": "postgres",
       "config": ["search_path=pg_catalog, public, smarter_private"],
-      "body_md5": "5e64168fd92de18b7794f8d5ccb7cabf",
+      "body_md5": "eef2b4beccc02dffd5efeffe57081a0e",
       "signature": "smarter_private.f06_retired_origin_snapshot(jsonb)",
       "volatility": "v",
-      "definition_md5": "d677bf2f98d317a013ca7e289f962b5a",
+      "definition_md5": "e821cf8a38c6718237f1d45110bf7f00",
       "security_definer": true
     },
     {

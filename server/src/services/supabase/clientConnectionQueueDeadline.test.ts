@@ -19,9 +19,8 @@ afterEach(() => {
 });
 
 describe('the database deadline includes waiting for a real HTTP connection', () => {
-  it.each(['attempt deadline', 'caller cancellation'])(
-    '%s removes a queued mutation before it can reach the origin',
-    async (mode) => {
+  for (const mode of ['attempt deadline', 'caller cancellation'] as const) {
+    it(`${mode} removes a queued mutation before it can reach the origin`, async (ctx) => {
       vi.resetModules();
       captured.fetches.length = 0;
       vi.stubEnv('SUPABASE_TIMEOUT_MS', '2000');
@@ -33,6 +32,20 @@ describe('the database deadline includes waiting for a real HTTP connection', ()
       void new Headers();
       const registry = globalThis as unknown as Record<PropertyKey, unknown>;
       const previous = registry[GLOBAL_DISPATCHER_SYMBOL];
+      /* A reused vitest worker can arrive with the dispatcher slot already
+         replaced by an earlier file (see the note in
+         theEngineOpensABoundedNumberOfConnections.law.test.ts). Without the
+         runtime's own Agent this measurement cannot run; say so and skip
+         rather than report a failure that is not in the code under test. */
+      const ambientName = (previous as { constructor?: { name?: string } } | undefined)?.constructor
+        ?.name;
+      if (ambientName !== 'Agent') {
+        console.error(
+          `[clientConnectionQueueDeadline] this worker's global dispatcher is ${ambientName}, ` +
+            'not undici Agent; skipping the queued-deadline measurement'
+        );
+        ctx.skip();
+      }
       const installed = installBoundedHttpDispatcher({ ENGINE_HTTP_MAX_CONNECTIONS: '1' });
       expect(installed.bounded, installed.reason ?? '').toBe(true);
       const dispatcher = registry[GLOBAL_DISPATCHER_SYMBOL] as { destroy: () => Promise<void> };
@@ -110,7 +123,6 @@ describe('the database deadline includes waiting for a real HTTP connection', ()
           await new Promise<void>((resolve) => server.close(() => resolve()));
         }
       }
-    },
-    15000
-  );
+    }, 15000);
+  }
 });

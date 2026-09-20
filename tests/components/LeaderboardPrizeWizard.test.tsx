@@ -113,6 +113,42 @@ describe('LeaderboardPrizeWizard', () => {
     expect(onSaved).toHaveBeenCalledWith(saved);
   });
 
+  it('reports a refused publish in plain words and tells the page its snapshot is stale', async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    const onSaveError = vi.fn();
+    saveLeaderboardRewardSetup.mockRejectedValue(
+      new Error('Leaderboard Prize Setup Changed In Another Session. Reload And Try Again.')
+    );
+
+    render(
+      <LeaderboardPrizeWizard
+        isOpen
+        setup={setup}
+        onClose={vi.fn()}
+        onSaved={onSaved}
+        onSaveError={onSaveError}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /Yes, Show Prizes/i }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.click(screen.getByRole('button', { name: 'Publish Prize Program' }));
+
+    await waitFor(() => expect(saveLeaderboardRewardSetup).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Leaderboard Prize Setup Changed In Another Session. Reload And Try Again.'
+    );
+    expect(onSaveError).toHaveBeenCalledTimes(1);
+    expect(onSaved).not.toHaveBeenCalled();
+    /* The custom amount inputs keep their accessible period in Title Case. */
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    await user.click(screen.getByRole('button', { name: /Custom/i }));
+    expect(screen.getAllByLabelText(/^Weekly Prize For Rank 1$/)).toHaveLength(1);
+  });
+
   it('skips funding and plan steps when a first-time owner declines prizes', async () => {
     const user = userEvent.setup();
     const saved = { ...setup, setup_complete: true };

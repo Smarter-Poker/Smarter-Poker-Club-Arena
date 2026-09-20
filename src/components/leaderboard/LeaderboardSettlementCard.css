@@ -54,11 +54,13 @@
 }
 .lb-settlement-card p,
 .lb-settlement-window,
-.lb-settlement-retry {
+.lb-settlement-retry,
+.lb-settlement-rule {
   color: #9aa5b3;
 }
 .lb-settlement-window,
-.lb-settlement-retry {
+.lb-settlement-retry,
+.lb-settlement-rule {
   font-size: 0.8em;
 }
 .lb-settlement-ledger {

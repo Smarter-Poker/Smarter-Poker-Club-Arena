@@ -9,6 +9,7 @@ import { LeaderboardService } from '../../services/LeaderboardService';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { compactChips } from '../../utils/format';
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import {
   MAX_PRIZE_PLAN_BUDGET,
   clampPrizeBudget,
@@ -26,6 +27,11 @@ interface LeaderboardPrizeWizardProps {
   setup: LeaderboardSettings;
   onClose: () => void;
   onSaved: (setup: LeaderboardSettings) => void;
+  /* A refused publish (a version conflict, a funding refusal, a lost
+     response) means the snapshot the wizard was opened with may no longer be
+     the club's current program. The page uses this to refetch the owner
+     record when the dialog closes, so the next attempt starts from truth. */
+  onSaveError?: (error: Error) => void;
 }
 
 const METRICS: Array<{ value: LeaderboardSettings['payout_metric']; label: string }> = [
@@ -53,6 +59,7 @@ export function LeaderboardPrizeWizard({
   setup,
   onClose,
   onSaved,
+  onSaveError,
 }: LeaderboardPrizeWizardProps) {
   const dialogRef = useFocusTrap(isOpen);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -189,9 +196,10 @@ export function LeaderboardPrizeWizard({
       });
       onSaved(saved);
     } catch (saveError) {
-      const message =
-        saveError instanceof Error ? saveError.message : 'Prize Setup Could Not Be Saved';
-      setError(message);
+      const failure =
+        saveError instanceof Error ? saveError : new Error('Prize Setup Could Not Be Saved');
+      setError(safeErrorMessage(failure, 'Prize Setup Could Not Be Saved'));
+      onSaveError?.(failure);
     } finally {
       setSaving(false);
     }
@@ -217,7 +225,7 @@ export function LeaderboardPrizeWizard({
       >
         <SpadeConsole
           crest="flat"
-          eyebrow="Owner Prize Circuit"
+          eyebrow="Prize Program"
           title="Leaderboard Prize Setup"
           titleId="lb-prize-wizard-title"
           subtitle={setup.club_name}
@@ -439,7 +447,7 @@ export function LeaderboardPrizeWizard({
                                 onChange={(event) =>
                                   updateCustomPrize(rewardPeriod, row.rank, event.target.value)
                                 }
-                                aria-label={`${rewardPeriod} Prize For Rank ${row.rank}`}
+                                aria-label={`${rewardPeriod === 'weekly' ? 'Weekly' : 'Monthly'} Prize For Rank ${row.rank}`}
                               />
                             </label>
                           ))}

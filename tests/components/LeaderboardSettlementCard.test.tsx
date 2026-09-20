@@ -117,6 +117,48 @@ describe('LeaderboardSettlementCard', () => {
     expect(screen.getByText('Your Verified Receipt')).toBeInTheDocument();
     expect(screen.getByText('75 Chips')).toBeInTheDocument();
     expect(screen.getByText(/Receipt ABCDEF12/)).toBeInTheDocument();
+    expect(screen.getByText('Promo Wallet')).toBeInTheDocument();
+    expect(screen.getByText('Tied Places Share Their Occupied Prizes.')).toBeInTheDocument();
+  });
+
+  it('prints the funding the batch row actually recorded when a seed paid part of it', () => {
+    render(
+      <LeaderboardSettlementCard
+        status={{
+          ...openStatus,
+          state: 'paid',
+          planned_total: 150,
+          batch: {
+            id: 'batch-5678',
+            program_id: 'program-1',
+            program_version: 3,
+            program_hash: 'a'.repeat(64),
+            metric: 'profit',
+            funding_owner_type: 'club',
+            funding_union_id: null,
+            total_paid: 150,
+            seed_funded: 100,
+            promo_funded: 50,
+            winner_count: 2,
+            tie_policy: 'split_occupied_places',
+            settled_at: '2026-09-13T00:20:00Z',
+          },
+        }}
+        onRetry={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Seed 100 And Promo 50 Chips')).toBeInTheDocument();
+    expect(screen.queryByText('Promo Only')).not.toBeInTheDocument();
+  });
+
+  it('states the tie rule on a pending round, not only the live one', () => {
+    render(
+      <LeaderboardSettlementCard status={{ ...openStatus, state: 'pending' }} onRetry={vi.fn()} />
+    );
+
+    expect(screen.getByRole('heading', { name: 'Settlement Pending' })).toBeInTheDocument();
+    expect(screen.getByText('Tied Places Share Their Occupied Prizes.')).toBeInTheDocument();
   });
 
   it('keeps a transport failure explicit and retryable', async () => {

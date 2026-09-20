@@ -8,7 +8,10 @@
   justify-content: center;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: rgb(0 0 0 / 90%);
+  /* The console interior is glass: anything behind it shows through. The
+     setup is a full-screen surface, so the backdrop is the same black the
+     page sits on, not a dimmed copy of the rankings underneath. */
+  background: #000;
   padding: 12px 0;
 }
 .lb-prize-wizard.lb-prize-wizard[role='dialog'] {
@@ -65,6 +68,11 @@
 }
 .lb-prize-wizard .sc__body button:active {
   color: #f4f7fb;
+}
+.lb-prize-wizard .sc__body h3:focus {
+  /* The step heading takes programmatic focus for screen readers; the ring
+     belongs on controls, not on a title. */
+  outline: none;
 }
 .lb-prize-wizard .sc__body :is(button, input, select):focus-visible {
   outline: 2px solid #45adff;

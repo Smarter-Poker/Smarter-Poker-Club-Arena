@@ -198,6 +198,26 @@
 .leaderboard-page .lb-prize-program-copy p {
   color: #9aa5b3;
 }
+.leaderboard-page .lb-prize-rules {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.35em;
+  color: #9aa5b3;
+  font-size: 0.85em;
+}
+.leaderboard-page .lb-prize-rules li {
+  padding-left: 1.1em;
+  text-indent: -1.1em;
+}
+.leaderboard-page .lb-prize-rules li::before {
+  content: '\00B7';
+  display: inline-block;
+  width: 1.1em;
+  text-indent: 0;
+  color: #45adff;
+}
 .leaderboard-page .lb-prize-program-totals {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

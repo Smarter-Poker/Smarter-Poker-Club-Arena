@@ -59,6 +59,21 @@ interface LeaderboardCacheRecord {
   entries: LeaderboardEntry[];
 }
 
+// Program history is stated in the calendar the rules run on (UTC), so the
+// published moment reads the same for every member wherever they sit.
+function formatUtcTimestamp(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return `${new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  }).format(parsed)} UTC`;
+}
+
 function isLeaderboardEntry(value: unknown): value is LeaderboardEntry {
   if (!value || typeof value !== 'object') return false;
   const entry = value as Partial<LeaderboardEntry>;
@@ -245,6 +260,7 @@ export default function LeaderboardPage() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsReloadKey, setSettingsReloadKey] = useState(0);
+  const settingsStaleRef = useRef(false);
   const [ownerToolsError, setOwnerToolsError] = useState<string | null>(null);
   const [rewardPlan, setRewardPlan] = useState<LeaderboardRewardPlan | null>(null);
   const [settlementStatus, setSettlementStatus] = useState<LeaderboardSettlementStatus | null>(
@@ -1061,6 +1077,8 @@ export default function LeaderboardPage() {
   })();
 
   const activeMetric = METRIC_OPTIONS.find((option) => option.value === metric);
+  const programMetricLabel =
+    METRIC_OPTIONS.find((option) => option.value === settings?.payout_metric)?.label || 'Profit';
   const selectedClubName = userClubs.find((club) => club.id === selectedClubId)?.name;
   const currentError = activeTab === 'rankings' ? loadError : tournamentError;
   const canExport =
@@ -1661,10 +1679,40 @@ export default function LeaderboardPage() {
             </div>
           ) : null}
         </div>
+        {activeTab === 'rankings' &&
+          scope === 'my-clubs' &&
+          canManagePrizes &&
+          settings &&
+          !settings.setup_complete && (
+            /* First eligible use: the owner of a club that has never published
+               a program sees the decision in front of them instead of having to
+               find the control in the deck or the hamburger. */
+            <section className="lb-prize-program" aria-label="Leaderboard Prize Program">
+              <div className="lb-prize-program-copy">
+                <span className="lb-prize-program-kicker">Prize Program</span>
+                <h2>No Prize Program Yet</h2>
+                <p>
+                  {`${settings.funding_label} Funds Leaderboard Prizes For ${settings.club_name}. Decide Whether To Reward Players, Then Publish A Plan.`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingSettings(settings);
+                  setShowSettings(true);
+                }}
+              >
+                Set Up Prizes
+              </button>
+              <span className="lb-prize-program-safety">
+                Nothing Is Paid Until A Plan Is Published And Its Period Closes.
+              </span>
+            </section>
+          )}
         {activeTab === 'rankings' && scope === 'my-clubs' && settings?.setup_complete && (
           <section className="lb-prize-program" aria-label="Leaderboard Prize Program">
             <div className="lb-prize-program-copy">
-              <span className="lb-prize-program-kicker">Owner Prize Circuit</span>
+              <span className="lb-prize-program-kicker">Prize Program</span>
               <h2>
                 {settings.rewards_enabled && settings.funding_status === 'funded'
                   ? 'Prize Program Published And Funded'
@@ -1673,17 +1721,32 @@ export default function LeaderboardPage() {
                     : 'Prize Program Disabled'}
               </h2>
               <p>
-                {settings.rewards_enabled && settings.funding_status === 'funded'
-                  ? `${settings.program_funding_label || settings.funding_label} Published A ${prizePlanLabel(settings.suggestion_key)} Plan Ranked By ${METRIC_OPTIONS.find((option) => option.value === settings.payout_metric)?.label || 'Profit'}.`
-                  : settings.rewards_enabled
-                    ? `Planned Prizes Are Hidden Until ${settings.program_funding_label || settings.funding_label} Covers Every Published Commitment.`
-                    : `A Prize Plan Is Saved For ${settings.club_name}, But Rewards Are Not Published.`}
+                {settings.rewards_enabled
+                  ? `${settings.program_funding_label || settings.funding_label} Published A ${prizePlanLabel(settings.suggestion_key)} Plan Ranked By ${programMetricLabel}.`
+                  : `A Prize Plan Is Saved For ${settings.club_name}, But Rewards Are Not Published.`}
               </p>
+              {settings.rewards_enabled && (
+                <ul className="lb-prize-rules" aria-label="Prize Rules">
+                  <li>{`Ranked By ${programMetricLabel} Across Each Weekly And Monthly Round.`}</li>
+                  <li>Weeks Start Sunday At 00:00 UTC. Months Start On The First At 00:00 UTC.</li>
+                  <li>Rule Changes Start At The Next Weekly Or Monthly UTC Boundary.</li>
+                  <li>Tied Places Share Their Occupied Prizes.</li>
+                  <li>{`Paid From ${settings.program_funding_label || settings.funding_label} After The Period Closes.`}</li>
+                  <li>
+                    {
+                      'Prize Marks A Planned Amount While A Round Is Live. Paid Marks A Verified Receipt.'
+                    }
+                  </li>
+                </ul>
+              )}
             </div>
             <dl className="lb-prize-program-totals">
               <div>
                 <dt>Program Version</dt>
                 <dd>V{settings.program_version}</dd>
+                {settings.published_at && (
+                  <small>Published {formatUtcTimestamp(settings.published_at)}</small>
+                )}
               </div>
               <div>
                 <dt>Weekly</dt>
@@ -1748,6 +1811,17 @@ export default function LeaderboardPage() {
           onClose={() => {
             setShowSettings(false);
             setEditingSettings(null);
+            if (settingsStaleRef.current) {
+              /* A refused publish means the owner record we opened with may
+                 have been superseded (another session, a funding change).
+                 Refetch so the next Set Up starts from the current version
+                 instead of repeating the same conflict. */
+              settingsStaleRef.current = false;
+              setSettingsReloadKey((value) => value + 1);
+            }
+          }}
+          onSaveError={() => {
+            settingsStaleRef.current = true;
           }}
           onSaved={(savedSetup) => {
             setSettings(savedSetup);

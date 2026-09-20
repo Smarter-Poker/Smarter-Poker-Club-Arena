@@ -65,6 +65,11 @@ import { signInUrl } from '../../lib/signIn';
    and description this drawer renders passes through here. */
 const tc = formatPopupText;
 
+/* The words an owner reaches for when looking for the prize tools. Lower case
+   on purpose: the query is lower-cased before matching. */
+const REWARD_TOOL_SEARCH_VOCABULARY =
+  'leaderboard leaderboards prize prizes setup set up owner rewards reward promo wallet program plan';
+
 interface HamburgerMenuProps {
   isOpen: boolean;
   onClose: () => void;
@@ -287,9 +292,16 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const pinnedItems = pinnedPaths
     .map((path) => allNavigationItems.find((item) => item.path === path))
     .filter((item): item is (typeof allNavigationItems)[number] => Boolean(item));
+  // Every typed word has to land somewhere in the vocabulary, in any order,
+  // so "prizes", "leaderboard setup" and "setup prize" all find the tools
+  // instead of only an exact substring of one fixed phrase.
   const rewardToolMatchesSearch =
     !searchQuery.trim() ||
-    'leaderboard prize setup owner rewards promo wallet'.includes(searchQuery.trim().toLowerCase());
+    searchQuery
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .every((word) => REWARD_TOOL_SEARCH_VOCABULARY.includes(word));
 
   useEffect(() => {
     try {

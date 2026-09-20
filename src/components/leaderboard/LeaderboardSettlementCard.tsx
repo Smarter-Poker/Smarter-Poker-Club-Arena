@@ -116,6 +116,12 @@ export function LeaderboardSettlementCard({
             Retry Active
           </span>
         )}
+        {status.state !== 'open' && status.program && status.program.rewards_enabled && (
+          /* The tie rule is the same in every settled state, so a player
+             reading a pending, delayed or paid round sees the policy their
+             rank was resolved under, not only the live round's copy. */
+          <span className="lb-settlement-rule">Tied Places Share Their Occupied Prizes.</span>
+        )}
       </div>
 
       <dl className="lb-settlement-ledger">
@@ -136,7 +142,14 @@ export function LeaderboardSettlementCard({
         {status.batch && (
           <div>
             <dt>Funding</dt>
-            <dd>Promo Only</dd>
+            {/* The batch row records exactly which pool paid: a club's one-time
+                leaderboard seed is drawn down first, the Promo Wallet covers the
+                rest. Print what the ledger says rather than a fixed label. */}
+            <dd>
+              {status.batch.seed_funded > 0
+                ? `Seed ${compactChips(status.batch.seed_funded)} And Promo ${compactChips(status.batch.promo_funded)} Chips`
+                : 'Promo Wallet'}
+            </dd>
           </div>
         )}
       </dl>

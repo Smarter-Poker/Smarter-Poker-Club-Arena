@@ -138,6 +138,7 @@ import {
   leaseRenewalLoopRelaunchesTotal,
 } from './observability/engineInstruments.js';
 import { processMemoryHealth } from './observability/processMemory.js';
+import { httpDispatcherReport } from './services/httpDispatcher.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
   planTableReopens,
@@ -4322,6 +4323,11 @@ export class GameServer {
       // Unavailable /proc observations are null. The legacy arena field is
       // [heap] virtual extent, not RSS or allocation ownership.
       memory: processMemoryHealth(),
+      // Whether the process-wide fetch pool is bounded, and to what. The
+      // connection cap and longer keep-alive address measured churn; their
+      // effect on memory remains to be established. Failed installation is
+      // visible here (services/httpDispatcher.ts).
+      httpDispatcher: httpDispatcherReport(),
       // The one process-wide FIFO that owns live HorseLogic state. Queue depth
       // and phase distinguish worker pressure/failure from main-loop pressure;
       // solver store counts prove the worker reached an authoritative READY.

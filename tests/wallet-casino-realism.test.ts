@@ -81,8 +81,13 @@ describe('wallets can send, receive and earn - wired to the real doors', () => {
     expect(LEDGER).toContain(".gt('amount', 0)");
     // `metadata` carries the other player's id (recipient_id / sender_id),
     // which the page resolves to a name through the friend list (2026-09-13).
+    // Pinned as the column LIST, not as `select('...')` on one line: with
+    // `player_line` in it (phase 6) the call is over the print width, so the
+    // formatter wraps the argument onto its own line and a pin that spelled
+    // out `select(` would fail on correctly formatted code.
+    expect(LEDGER).toContain('.select(');
     expect(LEDGER).toContain(
-      "select('id, type, transaction_type, amount, description, created_at, metadata')"
+      "'id, type, transaction_type, amount, description, player_line, created_at, metadata'"
     );
     expect(PAGE).toContain("useDiamondLedger(user?.id, 'in', isMounted)");
   });

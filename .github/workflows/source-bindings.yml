@@ -1,0 +1,39 @@
+# A source-binding.json pins the exact bytes of the files a financial
+# qualification was reviewed against. Until 2026-09-20 the only thing that read
+# those pins was the protected accounting runner, inside a job that `changes`
+# gates on server/, supabase/migrations/, scripts/dev/ and the accounting
+# fixture directories. Most pinned paths are tests/unit/*.test.ts, which match
+# none of those prefixes, so the pull request that broke a pin was exactly the
+# pull request that skipped the check. #4943 did that: it changed two pinned
+# test files, merged green, and left main refusing the bundle for everyone.
+#
+# This job is UNGATED on purpose, for the same reason the matte gate in ci.yml
+# is. It needs no database, no node_modules and no network; it reads files and
+# hashes them. A gate here would recreate the exact hole it exists to close, so
+# tests/every-pinned-source-stays-bound.law.test.ts fails if one appears.
+name: Source bindings
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-bindings-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Every pinned source stays bound
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Every pinned source stays bound
+        run: python3 scripts/ci/verify-source-bindings.py

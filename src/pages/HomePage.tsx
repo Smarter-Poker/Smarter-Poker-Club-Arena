@@ -661,11 +661,11 @@ function HomePageInner() {
           break;
         case '2':
           haptic.light();
-          navigate('/stats'); // Player Stats
+          navigate('/leaderboard'); // Leaderboards (tile 2, matches lobbyTiles.config)
           break;
         case '3':
           haptic.light();
-          navigate('/leaderboard'); // Leaderboards
+          navigate('/stats'); // Player Stats (tile 3, matches lobbyTiles.config)
           break;
         case '4': {
           haptic.light();
@@ -1463,11 +1463,19 @@ function HomePageInner() {
                   <img
                     src={tile.img}
                     alt={tile.alt}
-                    className={styles.tileImage}
+                    className={`${styles.tileImage} ${
+                      tile.preserveNativeRatio ? styles.tileImageNative : ''
+                    }`}
                     loading="eager"
-                    width={640}
-                    height={1024}
+                    width={tile.width || 640}
+                    height={tile.height || 1024}
                   />
+                  {tile.portalStatus ? (
+                    <span className={styles.tileLabel} aria-hidden="true">
+                      <strong>{tile.alt}</strong>
+                      <small>{tile.portalStatus}</small>
+                    </span>
+                  ) : null}
                 </div>
               </button>
             )

@@ -1,151 +1,103 @@
 # Engine Memory
 
-Use this runbook when any of these alerts fires:
+Use this runbook for `EngineHostNearOOM`, `EngineBuildHeadroomLost` and
+`EngineProcessMemoryHigh` in the `engine-memory` group. They observe pressure;
+none initiates, advances, retries or certifies a release or a restart.
 
-- `EngineHostNearOOM` (critical)
-- `EngineBuildHeadroomLost` (warning)
-- `EngineProcessMemoryHigh` (warning)
+## Current provider route and thresholds
 
-All three are in the `engine-memory` group of `infra/monitoring/alert-rules.yml`
-and every threshold there is derived from a measurement written beside it.
-The numbers below are from 2026-09-14; re-measure before changing a threshold.
+The restored flow uses protected GitHub checks and the original Hetzner engine
+publisher. `server/scripts/build-engine-image.sh` builds the engine image on
+`engine-01`. Its existing gate requires **1179648 KiB available** at the actual
+build attempt: `BUILD_MEMORY_BYTES=939524096` (896 MiB) plus
+`BUILD_RESERVE_KIB=262144` (256 MiB), totaling **1207959552 bytes / 1152 MiB**.
+Keep that gate and all publication, maintenance, lease and financial safeguards.
+Retired local/custom pipelines remain unavailable under the shared owner policy.
 
-## The Shape Of The Host
+- `EngineHostNearOOM`: host MemAvailable below 256 MiB for two minutes, critical.
+- `EngineBuildHeadroomLost`: host MemAvailable below 1152 MiB for thirty minutes,
+  warning. It reports sustained pressure relative to the current on-host build
+  gate; conditions can change before the next authorized attempt.
+- `EngineProcessMemoryHigh`: engine RSS above 1717986918 bytes (approximately
+  1.6 GiB) for fifteen minutes, warning. This retained historical threshold is
+  not a process cap, a precise current build-fit calculation or proof of a leak.
 
-`engine-01` has 3819 MiB (`node_memory_MemTotal_bytes` = 4,005,085,184). The
-engine is one Node process and the largest thing on the box. Beside it live
-dockerd (~280 MiB), Prometheus (~100), Grafana (~70), fail2ban (~50),
-Alertmanager, node_exporter and the kernel: about 1060 MiB together that
-never goes away. The release train (`auto-deploy-hetzner.yml` via
-`server/scripts/build-engine-image.sh`) builds the next engine image ON THIS
-HOST and refuses to start below **1179648 KiB available** (`BUILD_MEMORY_BYTES /
-1024 + BUILD_RESERVE_KIB`). So:
+The September 13/14 incident recorded a roughly 3819 MiB host, approximately
+1060 MiB of other residents, rising engine RSS and repeated refused builds.
+Those measurements explain the historical thresholds; they are not a current
+inventory, a future process budget or demonstrated allocation ownership.
+Re-measure through approved observation before proposing threshold changes.
 
-    available  ~=  3819 - 1060 - engine RSS
-    a build fits only while engine RSS  <  ~1600 MiB
+## Read the observations together
 
-A freshly restarted engine weighs ~600 MiB, 1640 MiB after an hour, 2097 MiB
-after ninety minutes. On the night of 2026-09-13 the build was refused 11 of
-14 times, and on 2026-09-12 06:21:57 UTC the kernel OOM-killed the engine
-(`dmesg`: `Out of memory: Killed process ... (node)`), which drops every table
-mid-hand with no drain. The build's own memory is contained since 2026-09-12
-(`docs/changelog/2026-09-12-engine-builds-have-a-separate-memory-budget.md`);
-that change said in its own words it was "not an application memory-leak
-fix". This runbook is about the application.
-
-## First Checks
-
-Read these together (the engine job is `engine_game_server`; the host job is
-`node_engine01`, label `host="engine-01"`):
+Bind the installed release and process identity before interpreting `/health`
+or `/metrics`. The host job is `node_engine01` with `host="engine-01"`; the
+existing engine scrape job is `engine_game_server`.
 
 ```promql
 node_memory_MemAvailable_bytes{host="engine-01"}
 poker_engine_process_rss_bytes
 poker_engine_heap_used_bytes
 poker_engine_heap_total_bytes
-poker_engine_native_main_arena_bytes
 poker_engine_external_bytes
 poker_engine_array_buffers_bytes
+poker_engine_native_main_arena_bytes
 poker_engine_rss_anon_bytes
 poker_engine_threads
 ```
 
-The same numbers are on `/health` as `memory` (megabytes) together with
-`httpDispatcher` (whether the fetch pool is bounded, see below), so a single
-`curl -s http://localhost:8080/health | jq '.memory, .httpDispatcher'` on the
-box answers the first question without Grafana.
+The engine's `/health.memory` block reports rounded decimal MB and thread count;
+Prometheus reports bytes and thread count. Unavailable `/proc` observations are
+`-1` in the sampler/metrics and `null` in health. An absent block or series means
+unknown, not zero use or successful installation. Source and a merged commit
+alone do not prove the running process emits these metrics.
 
-Then decide which of three things is growing:
+Whole-process RSS includes every isolate and arena. V8 heap and external-memory
+fields describe the main isolate. The legacy `nativeMainArenaBytes` name measures
+only the current Linux `[heap]` virtual mapping extent: it is not per-mapping
+RSS, allocated bytes, a historical maximum or proof of main-thread/TLS ownership.
+Inspect RSS, anonymous RSS and worker activity separately. Threads also include
+libuv and V8 helpers; external memory includes C++ objects and buffers. A growing
+series can guide investigation but does not independently establish a leak.
 
-1. **`poker_engine_native_main_arena_bytes` climbing while main-isolate
-   `heap_used` is flat.** This series is the current virtual extent of the
-   Linux `[heap]` mapping. It is not resident memory, allocated native bytes,
-   a historical maximum or proof of a particular thread's allocations.
-   Compare whole-process RSS and anonymous RSS separately, including worker
-   activity. The incident recorded 378 -> 501 MB and a +111 MB change around
-   a tournament storm alongside connection churn; TLS allocation/fragmentation
-   is a hypothesis, not a measured allocation profile or established cause.
-   A flat extent after release would support further investigation, not prove
-   the hypothesis. No live heap traversal is justified to settle it.
+This scoped implementation does not install an HTTP dispatcher or establish
+connection limits. Memory measurements do not require that independent change.
 
-   `server/src/services/httpDispatcher.ts` caps connections per origin in the
-   main engine isolate. `/health.httpDispatcher` reports installation, not live
-   socket counts or a process memory ceiling. Other origins, workers and queued
-   request bodies remain separate sources of memory. If `bounded` is false,
-   inspect `reason`. Read connection counts in the engine network namespace:
+## Recovery and measurement limits
 
-   ```bash
-   PID=$(docker inspect -f '{{.State.Pid}}' club-arena-engine)
-   nsenter -t "$PID" -n ss -tan | awk '{print $1}' | sort | uniq -c
-   ```
+A memory drop or alert recovery proves only that a threshold cleared. Maintenance
+time alone is not restart authority. Follow the existing owner-approved incident
+and protected release lifecycle, with exact drain, lease, journal and rollback
+evidence. Never use a bare restart to make an alert green. Critical pressure
+requires fresh measurements and the established incident response authority.
 
-   This command aggregates TCP states across destinations. Inspect the relevant
-   peer/origin before comparing counts with a per-origin cap. TIME-WAIT is
-   historical TCP state, not a count of live TLS allocations or a direct
-   handshake-rate measurement. Compare trends under similar table/tournament
-   workloads; do not infer installation failure from these totals alone.
+Compare other resident processes before attributing pressure to the engine.
+Do not kill another service merely to create room. `MemAvailable` already accounts
+for reclaimable cache. Missing sampler data cannot identify an allocation owner.
+Changing the builder memory limit/reserve does not repair runtime retention;
+`--max-old-space-size` does not cap native or whole-process RSS. Do not add a cron,
+watcher or restart/release repair loop to clear these alerts.
 
-2. **`poker_engine_heap_used_bytes` climbing across GC cycles.** A JavaScript
-   retention: a Map that is only ever added to, listeners never removed,
-   closed tables still referenced. Correlate with `poker_engine_active_tables`
-   and the tournament counts; a heap that tracks table count is a working
-   set; growth at flat table count warrants retention investigation but alone
-   does not prove a leak. Do NOT take a
-   heap snapshot or run `Runtime.queryObjects` on the live engine: a
-   full-heap walk pauses the process long enough to miss lease renewals
-   (measured 2026-09-14 10:07 UTC: one probe fenced ~750 tournament
-   managers). Sample on a replica, or reason from the code.
+The existing sampler reads `process.memoryUsage()`, `/proc/self/status` and
+`/proc/self/maps`, cached for five seconds. This limits frequency, not latency.
+It uses no inspector, heap snapshot, `Runtime.queryObjects` or `smaps`. Do not
+run live heap traversals: historical probes paused lease renewals. Sampler latency
+and event-loop impact require representative isolated qualification before any
+cost-bound claim; use already-published observations for production verification.
 
-3. **`poker_engine_threads` or `poker_engine_external_bytes` climbing.**
-   Worker isolates being created and not terminated, or Buffers held. Each
-   worker isolate is ~440 MB heapTotal on this engine; a thread count that
-   steps up on every restart of a worker warrants lifecycle investigation;
-   threads also include libuv and V8 helpers. External memory includes C++
-   objects as well as Buffers.
+## Source and verification provenance
 
-## What Clears It
+The memory implementation originated in `77df88a1eec912b4bfa8be321c6e86bf2f55bf22`,
+with corrected measurement semantics in `b2b0988f8232f78a49dee44e63cf21c438078da2`,
+merged as `3a6cb22d38f17690a54c01ff3965a14936e2831d` (PR 4631). This selection
+retains its memory sampler, direct tests, scrape/health wiring and alert identities.
+The independent HTTP queue/dispatcher implementation is outside this selection.
+The missing-data and recovery distinctions from `5ad105ebcc5e2101dad39cbdf497cb4e42ff93bd`
+are retained with wording corrected for the restored on-host build route.
 
-- **A restart inside the next :55 break** returns the process to ~600 MiB.
-  Never restart outside the break: CLAUDE.md section 13. `EngineHostNearOOM`
-  is the one case where waiting may not be an option; if `MemAvailable` is
-  under 100 MiB and falling, the kernel is about to do the restart for you
-  without a drain. Announce a break through the maintenance-break path and
-  restart inside it; never a bare `docker restart` on live tables.
-- **Nothing else on the box should be freed to make room.** Prometheus's
-  retention and Grafana are not the problem, and the page cache is already
-  reclaimable (it is counted in `MemAvailable`).
-
-## What Does Not Fix It
-
-- Raising `BUILD_RESERVE_KIB` or lowering the build's memory limit. The build
-  needs what it needs; the engine is the thing that grew.
-- A cron that restarts the engine when memory is high. That is a repair job
-  (CLAUDE.md 10.12); the hourly break already restarts it, and the cause is
-  what has to be fixed.
-- `--max-old-space-size` alone does not cap native or whole-process RSS.
-  The recorded main-isolate heap band does not exclude worker heap growth.
-
-## History
-
-- 2026-09-12 06:21:57 UTC: kernel OOM-kill of the engine, anon RSS 1.29 GB at
-  the moment of death (something else held the rest).
-- 2026-09-13/14 overnight: 11 of 14 engine deploys refused,
-  `insufficient memory headroom for the bounded engine build`.
-- 2026-09-14: the eight memory gauges, the `/health.memory` and
-  `/health.httpDispatcher` blocks, the three alerts, and the bounded fetch
-  pool were added together. `docs/changelog/2026-09-14-the-engine-weighs-itself.md`.
-
-## Measurement Cost And Interpretation
-
-The sampler avoids inspector APIs, heap snapshots, `Runtime.queryObjects` and
-`smaps`. Its synchronous `process.memoryUsage()`, status and maps reads are
-cached for five seconds. This bounds sample frequency, not latency. Node 22
-warns that `memoryUsage()` can iterate pages and may be slow; `memoryUsage.rss()`
-is faster for an RSS-only reader. Establish sampler latency and event-loop
-impact on a representative replica, and use already-published health/metrics
-for production observation. Never call a live heap traversal harmless because
-it is read-only.
-
-Sources: [Node 22 memory usage](https://nodejs.org/docs/latest-v22.x/api/process.html#processmemoryusage),
-[Linux maps semantics](https://man7.org/linux/man-pages/man5/proc_pid_maps.5.html),
-[glibc heap page release](https://man7.org/linux/man-pages/man3/malloc_trim.3.html).
+Required evidence remains separate: hosted sampler/server tests and monitoring
+contracts; protected merge and original engine/monitoring publishers; exact live
+release/process identity; emitted series and health block; loaded rule expressions,
+labels and durations; Grafana panels. A loaded rule alone does not prove delivery
+of an actual notification. Do not manufacture a production memory incident to
+qualify this observability change.

@@ -33,6 +33,34 @@ afterEach(() => {
 });
 
 describe('table-engine distributed lease proof deadline', () => {
+  it('passive leave diagnostics do not expire an overdue proof or create authority', () => {
+    vi.useFakeTimers();
+    let now = 0;
+    _setEngineLeaseMonotonicNowForTests(() => now);
+    const engine = new ServerTableEngine(TABLE, verifiedCash(20_000)) as any;
+    activate(engine);
+    now = 20_001;
+    const expire = vi.spyOn(engine, 'expireEngineLeaseAuthority');
+    const guard = vi.spyOn(engine, 'lifecycleCanMutate');
+    const current = vi.spyOn(engine, 'hasCurrentEngineLeaseAuthority');
+    const renewal = vi.spyOn(engine, 'renewEngineLeaseProof');
+    const before = vi.getTimerCount();
+    expect(engine.leavePendingLifecycleSnapshot()).toMatchObject({
+      running: true,
+      terminal: false,
+      lease_expired: false,
+      lease_generation: GENERATION,
+      proof_deadline_monotonic_ms: 20_000,
+      observed_monotonic_ms: 20_001,
+      first_terminal: null,
+    });
+    expect(vi.getTimerCount()).toBe(before);
+    expect(expire).not.toHaveBeenCalled();
+    expect(guard).not.toHaveBeenCalled();
+    expect(current).not.toHaveBeenCalled();
+    expect(renewal).not.toHaveBeenCalled();
+    engine.fenceForEngineLeaseLoss('test_cleanup', false);
+  });
   it('refuses a late renewal before an overdue expiry timer has run', () => {
     vi.useFakeTimers();
     let now = 0;

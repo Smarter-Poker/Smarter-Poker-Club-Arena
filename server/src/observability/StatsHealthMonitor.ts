@@ -16,7 +16,7 @@
  *   indexLagSeconds          now() minus the index ceiling
  *   recentHandsWithoutStat   hands from the last 3.5 minutes (less a 90 s
  *                            write grace) that have no ca_hand_player_stat
- *                            row - the live trigger failed if this is > 0
+ *                            row - publication is delayed if this is > 0
  *   repair.*                 where the money repair cursor is
  *   lastAudit.*              what the 15-minute witness audit last found:
  *                            button_seat vs the blind posts, the derived
@@ -26,7 +26,7 @@
  *
  * The monitor raises through the same engine alert path as clock skew
  * (raiseEngineAlert / resolveEngineAlert), so a lagging index or a witness
- * disagreement lands in Sentry and Alertmanager within a minute of the read
+ * disagreement lands in error reporting and Alertmanager within a minute of the read
  * that saw it, and resolves itself on the next healthy read.
  *
  * TWO THINGS IT MUST NEVER DO
@@ -146,6 +146,113 @@ const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const bool = (v: unknown): boolean | null => (typeof v === 'boolean' ? v : null);
 const obj = (v: unknown): Record<string, unknown> | null =>
   v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+
+/** Validate diagnostic timestamps without rounding their database precision. */
+function isMeasurementTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 64) return false;
+  const parts =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(
+      value
+    );
+  if (!parts) return false;
+  const [
+    ,
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText,
+    secondText,
+    offsetHour,
+    offsetMinute,
+  ] = parts;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return (
+    year >= 1 &&
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= days[month - 1]! &&
+    Number(hourText) <= 23 &&
+    Number(minuteText) <= 59 &&
+    Number(secondText) <= 59 &&
+    (offsetHour === undefined || (Number(offsetHour) <= 23 && Number(offsetMinute) <= 59)) &&
+    Number.isFinite(Date.parse(value))
+  );
+}
+
+/**
+ * Text only: no new labels, reads, clocks or classification fields. Keep this
+ * tied to its successful read while evaluate() awaits earlier alert deliveries.
+ */
+function statsGapMeasurement(raw: unknown, snapshot: StatsHealthSnapshot): string {
+  try {
+    const measurement = obj(raw);
+    const checkedAt = measurement?.checkedAt;
+    let time: string;
+    if (isMeasurementTimestamp(checkedAt)) {
+      time = `database checkedAt=${checkedAt}`;
+    } else if (typeof checkedAt === 'string') {
+      // The existing parser preserves invalid strings; do not call one a
+      // database time or pretend it used the parser's monitor fallback.
+      time = 'database checkedAt=unknown (invalid string; no verified database time)';
+    } else {
+      const reason = checkedAt == null ? 'missing' : 'invalid type';
+      const fallback = isMeasurementTimestamp(snapshot.checkedAt) ? snapshot.checkedAt : 'unknown';
+      time = `database checkedAt=unknown (${reason}); monitor fallback checkedAt=${fallback}`;
+    }
+    const count = (value: unknown): string => {
+      // Do not turn a fractional/rounded/coerced raw value into exact count
+      // evidence merely because the existing classification parser does.
+      const candidate =
+        typeof value === 'number'
+          ? value
+          : typeof value === 'string' && /^(?:0|[1-9]\d{0,15})$/.test(value)
+            ? Number(value)
+            : NaN;
+      return Number.isSafeInteger(candidate) && candidate >= 0 ? String(candidate) : 'unknown';
+    };
+    const sample = count(measurement?.recentHands);
+    const empty = sample === '0' ? ' (empty sample)' : '';
+    // These offsets describe the current source contract, not retained SQL
+    // window fields. Do not synthesize an observed timestamp interval.
+    return (
+      `Current measurement: recentHands=${sample}${empty}; ` +
+      `recentHandsWithoutStat=${count(measurement?.recentHandsWithoutStat)}; ${time}. ` +
+      'Window reference: current source-contract reconstruction only, 120 seconds ending ' +
+      '90 seconds before database checkedAt; exact observed bounds unknown. ' +
+      'This does not certify repair of previously missing hands.'
+    ).slice(0, 512);
+  } catch {
+    // Diagnostics must never turn an otherwise parsed read into a failed tick.
+    return 'Current measurement details unavailable; exact observed bounds and historical repair unknown.';
+  }
+}
+
+/** Bounded text for this read; use the parsed decision value, never a guessed ceiling. */
+function indexLagMeasurement(raw: unknown, snapshot: StatsHealthSnapshot): string {
+  let measuredAt = 'unknown';
+  let indexCeil = 'unknown';
+  try {
+    const measurement = obj(raw);
+    const checkedAt = measurement?.checkedAt;
+    if (isMeasurementTimestamp(checkedAt)) measuredAt = checkedAt;
+    const ceiling = measurement?.indexCeil;
+    if (isMeasurementTimestamp(ceiling)) indexCeil = ceiling;
+  } catch {
+    // Diagnostic inspection cannot erase the parsed alert decision. A missing
+    // database time stays unknown rather than becoming the monitor fallback.
+  }
+  return (
+    `Current index watermark measurement: measuredAt=${measuredAt}; indexCeil=${indexCeil}; ` +
+    `lagSeconds=${snapshot.indexLagSeconds ?? 'unknown'}; ` +
+    `thresholdSeconds=${STATS_INDEX_LAG_THRESHOLD_S}.`
+  );
+}
 
 /** Shape the jsonb from ca_stats_health() defensively; never throw on it. */
 export function parseStatsHealth(raw: unknown, fallbackCheckedAt: string): StatsHealthSnapshot {
@@ -325,7 +432,12 @@ export class StatsHealthMonitor {
         this.snapshot = parseStatsHealth(raw, new Date(this.now()).toISOString());
         this.snapshotAt = this.now();
         this.lastError = null;
-        await this.evaluate(this.snapshot, generation);
+        await this.evaluate(
+          this.snapshot,
+          generation,
+          statsGapMeasurement(raw, this.snapshot),
+          indexLagMeasurement(raw, this.snapshot)
+        );
       } catch (err) {
         if (this.lifecycleEnded(generation)) return;
         // A failed read is not a stats failure and never an engine failure:
@@ -414,7 +526,12 @@ export class StatsHealthMonitor {
     ];
   }
 
-  private async evaluate(s: StatsHealthSnapshot, generation: number | null): Promise<void> {
+  private async evaluate(
+    s: StatsHealthSnapshot,
+    generation: number | null,
+    gapMeasurement: string,
+    indexMeasurement: string
+  ): Promise<void> {
     // 1. Index lag. Suppressed during a break (the ceiling cannot move while
     //    no hands are written), evaluated on the very next healthy read.
     const lag = s.indexLagSeconds;
@@ -425,12 +542,13 @@ export class StatsHealthMonitor {
             alertname: STATS_INDEX_LAG_ALERT,
             severity: 'warning',
             component: STATS_HEALTH_COMPONENT,
-            summary: `Stats hand index is ${Math.round(lag / 60)} minutes behind the hands`,
+            summary: `Bulk stats index watermark is ${Math.round(lag / 60)} minutes old`,
             description:
-              'ca_hand_player_idx is advanced by /api/cron/club-stats-maintenance (Open Claw, ' +
-              'every 15 minutes) and this lag means that route has not completed for two or more ' +
-              'ticks. "Hands Played" on every stats page is stale by this much. Check the Open Claw ' +
-              "dispatcher on the Hetzner host and the route's own errors array.",
+              'The bulk index watermark exceeds the age threshold; individual hand index rows ' +
+              'may already be present. This measurement does not identify a failed scheduled run ' +
+              'or establish staleness for every stats page. Inspect index refresh/projector ' +
+              "failures and the maintenance route's results. " +
+              indexMeasurement,
             labels: { lag_seconds: String(Math.round(lag)) },
           })
         ))
@@ -442,7 +560,9 @@ export class StatsHealthMonitor {
           this.deps.resolve(
             STATS_INDEX_LAG_ALERT,
             STATS_HEALTH_COMPONENT,
-            'Stats hand index caught up'
+            'Bulk stats index watermark age is within the threshold. ' +
+              indexMeasurement +
+              ' This does not certify repair of all previously unindexed hands.'
           )
         ))
       )
@@ -466,7 +586,8 @@ export class StatsHealthMonitor {
               'stats trigger intentionally skips that work. Match each missing hand to its atomic ' +
               'receipt and outbox row, then inspect projection progress and the active drain. ' +
               'For hands outside that path, inspect trg_ca_stats_live_from_hand warnings. ' +
-              'A maintenance run can clear the gap temporarily; verify the writer before closing the incident.',
+              'A maintenance run can clear the gap temporarily; verify the writer before closing the incident. ' +
+              gapMeasurement,
             labels: { hands_without_stat: String(gap) },
           })
         ))
@@ -478,7 +599,7 @@ export class StatsHealthMonitor {
           this.deps.resolve(
             STATS_TRIGGER_GAP_ALERT,
             STATS_HEALTH_COMPONENT,
-            'Every recent hand has a stat row'
+            `Current stats gap is zero. ${gapMeasurement}`
           )
         ))
       )

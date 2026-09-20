@@ -1,0 +1,3253 @@
+{
+  "tables": [
+    {
+      "rls": true,
+      "name": "accounting_period_recompute_requests",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        }
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "period_start",
+          "type": "date",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "period_end",
+          "type": "date",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "default": "'pending'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "requested_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "last_requested_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "attempted_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "attempts",
+          "type": "bigint",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "last_result",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "accounting_period_recompute_r_club_id_period_start_period_e_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX accounting_period_recompute_r_club_id_period_start_period_e_key ON public.accounting_period_recompute_requests USING btree (club_id, period_start, period_end)"
+        },
+        {
+          "name": "accounting_period_recompute_requests_pending",
+          "constraint": false,
+          "definition": "CREATE INDEX accounting_period_recompute_requests_pending ON public.accounting_period_recompute_requests USING btree (period_start, club_id) WHERE (status <> 'complete'::text)"
+        },
+        {
+          "name": "accounting_period_recompute_requests_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX accounting_period_recompute_requests_pkey ON public.accounting_period_recompute_requests USING btree (id)"
+        }
+      ],
+      "policies": null,
+      "triggers": null,
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "accounting_period_recompute_r_club_id_period_start_period_e_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (club_id, period_start, period_end)"
+        },
+        {
+          "name": "accounting_period_recompute_requests_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((EXTRACT(isodow FROM period_start) = (1)::numeric) AND (period_end = (period_start + 6))))"
+        },
+        {
+          "name": "accounting_period_recompute_requests_club_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id)"
+        },
+        {
+          "name": "accounting_period_recompute_requests_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "accounting_period_recompute_requests_status_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'blocked'::text, 'complete'::text])))"
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "name": "accounting_routed_settlement_runs",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        }
+      ],
+      "columns": [
+        {
+          "name": "union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "period_start",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "period_end",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "round_no",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "routing_version",
+          "type": "integer",
+          "default": "3",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_fingerprint",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "result",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "standalone_club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "scope_kind",
+          "type": "text",
+          "default": "\nCASE\n    WHEN (union_id IS NULL) THEN 'club'::text\n    ELSE 'union'::text\nEND",
+          "notnull": true,
+          "identity": "",
+          "generated": "s"
+        },
+        {
+          "name": "scope_id",
+          "type": "uuid",
+          "default": "COALESCE(union_id, standalone_club_id)",
+          "notnull": true,
+          "identity": "",
+          "generated": "s"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "accounting_routed_settlement_runs_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX accounting_routed_settlement_runs_pkey ON public.accounting_routed_settlement_runs USING btree (scope_kind, scope_id, period_start, period_end, round_no)"
+        }
+      ],
+      "policies": null,
+      "triggers": [
+        {
+          "name": "accounting_routed_run_immutable",
+          "enabled": "O",
+          "function": "fn_accounting_agreement_history_immutable()",
+          "definition": "CREATE TRIGGER accounting_routed_run_immutable BEFORE DELETE OR UPDATE ON public.accounting_routed_settlement_runs FOR EACH ROW EXECUTE FUNCTION fn_accounting_agreement_history_immutable()"
+        },
+        {
+          "name": "accounting_routed_run_no_truncate",
+          "enabled": "O",
+          "function": "fn_accounting_agreement_history_immutable()",
+          "definition": "CREATE TRIGGER accounting_routed_run_no_truncate BEFORE TRUNCATE ON public.accounting_routed_settlement_runs FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_agreement_history_immutable()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "accounting_routed_run_one_scope",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((num_nonnulls(union_id, standalone_club_id) = 1))"
+        },
+        {
+          "name": "accounting_routed_settlement_runs_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((period_start < period_end))"
+        },
+        {
+          "name": "accounting_routed_settlement_runs_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (scope_kind, scope_id, period_start, period_end, round_no)"
+        },
+        {
+          "name": "accounting_routed_settlement_runs_round_no_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((round_no = ANY (ARRAY[2, 3])))"
+        },
+        {
+          "name": "accounting_routed_settlement_runs_routing_version_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((routing_version = 3))"
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "name": "accounting_tournament_fee_batches",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        }
+      ],
+      "columns": [
+        {
+          "name": "rake_record_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_fingerprint",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "default": "'captured'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_version",
+          "type": "integer",
+          "default": "2",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_manifest",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rake_amount",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "captured_at",
+          "type": "timestamp with time zone",
+          "default": "transaction_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "accounting_tournament_fee_batches_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_batches_pkey ON public.accounting_tournament_fee_batches USING btree (rake_record_id)"
+        }
+      ],
+      "policies": null,
+      "triggers": [
+        {
+          "name": "accounting_tournament_fee_batches_immutable",
+          "enabled": "O",
+          "function": "fn_accounting_tournament_fee_receipt_immutable()",
+          "definition": "CREATE TRIGGER accounting_tournament_fee_batches_immutable BEFORE DELETE OR UPDATE ON public.accounting_tournament_fee_batches FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()"
+        },
+        {
+          "name": "accounting_tournament_fee_batches_no_truncate",
+          "enabled": "O",
+          "function": "fn_accounting_tournament_fee_receipt_immutable()",
+          "definition": "CREATE TRIGGER accounting_tournament_fee_batches_no_truncate BEFORE TRUNCATE ON public.accounting_tournament_fee_batches FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "accounting_tournament_fee_batches_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((status = 'legacy_unverified'::text) OR (jsonb_typeof(source_manifest) = 'object'::text)))"
+        },
+        {
+          "name": "accounting_tournament_fee_batches_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (rake_record_id)"
+        },
+        {
+          "name": "accounting_tournament_fee_batches_rake_amount_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((rake_amount > (0)::numeric) AND (rake_amount = round(rake_amount, 2)) AND ((rake_amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))"
+        },
+        {
+          "name": "accounting_tournament_fee_batches_rake_record_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (rake_record_id) REFERENCES rake_records(id)"
+        },
+        {
+          "name": "accounting_tournament_fee_batches_source_version_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((source_version = 2))"
+        },
+        {
+          "name": "accounting_tournament_fee_batches_status_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((status = ANY (ARRAY['captured'::text, 'legacy_unverified'::text])))"
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "name": "accounting_tournament_fee_cutover",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        }
+      ],
+      "columns": [
+        {
+          "name": "singleton",
+          "type": "boolean",
+          "default": "true",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "starts_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "accounting_tournament_fee_cutover_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_cutover_pkey ON public.accounting_tournament_fee_cutover USING btree (singleton)"
+        }
+      ],
+      "policies": null,
+      "triggers": [
+        {
+          "name": "accounting_tournament_fee_cutover_immutable",
+          "enabled": "O",
+          "function": "fn_accounting_tournament_fee_receipt_immutable()",
+          "definition": "CREATE TRIGGER accounting_tournament_fee_cutover_immutable BEFORE DELETE OR UPDATE ON public.accounting_tournament_fee_cutover FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()"
+        },
+        {
+          "name": "accounting_tournament_fee_cutover_no_truncate",
+          "enabled": "O",
+          "function": "fn_accounting_tournament_fee_receipt_immutable()",
+          "definition": "CREATE TRIGGER accounting_tournament_fee_cutover_no_truncate BEFORE TRUNCATE ON public.accounting_tournament_fee_cutover FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "accounting_tournament_fee_cutover_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (singleton)"
+        },
+        {
+          "name": "accounting_tournament_fee_cutover_singleton_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (singleton)"
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "name": "accounting_tournament_fee_recognitions",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        }
+      ],
+      "columns": [
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "recognized_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "net_rake",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "bank_club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "union_wallet_transaction_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "bank_journal_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_fingerprint",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "plan",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "accounting_tournament_fee_recog_union_wallet_transaction_id_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_recog_union_wallet_transaction_id_key ON public.accounting_tournament_fee_recognitions USING btree (union_wallet_transaction_id)"
+        },
+        {
+          "name": "accounting_tournament_fee_recognitions_bank_journal_id_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_recognitions_bank_journal_id_key ON public.accounting_tournament_fee_recognitions USING btree (bank_journal_id)"
+        },
+        {
+          "name": "accounting_tournament_fee_recognitions_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_recognitions_pkey ON public.accounting_tournament_fee_recognitions USING btree (tournament_id)"
+        }
+      ],
+      "policies": null,
+      "triggers": [
+        {
+          "name": "accounting_tournament_fee_recognitions_immutable",
+          "enabled": "O",
+          "function": "fn_accounting_tournament_fee_receipt_immutable()",
+          "definition": "CREATE TRIGGER accounting_tournament_fee_recognitions_immutable BEFORE DELETE OR UPDATE ON public.accounting_tournament_fee_recognitions FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()"
+        },
+        {
+          "name": "accounting_tournament_fee_recognitions_no_truncate",
+          "enabled": "O",
+          "function": "fn_accounting_tournament_fee_receipt_immutable()",
+          "definition": "CREATE TRIGGER accounting_tournament_fee_recognitions_no_truncate BEFORE TRUNCATE ON public.accounting_tournament_fee_recognitions FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "accounting_tournament_fee_reco_union_wallet_transaction_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (union_wallet_transaction_id) REFERENCES union_wallet_transactions(id)"
+        },
+        {
+          "name": "accounting_tournament_fee_recog_union_wallet_transaction_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (union_wallet_transaction_id)"
+        },
+        {
+          "name": "accounting_tournament_fee_recognitions_bank_journal_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (bank_journal_id) REFERENCES chip_ledger(id)"
+        },
+        {
+          "name": "accounting_tournament_fee_recognitions_bank_journal_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (bank_journal_id)"
+        },
+        {
+          "name": "accounting_tournament_fee_recognitions_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((net_rake = (0)::numeric) OR (bank_club_id IS NOT NULL)))"
+        },
+        {
+          "name": "accounting_tournament_fee_recognitions_check1",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((((net_rake = (0)::numeric) AND (union_wallet_transaction_id IS NULL) AND (bank_journal_id IS NULL)) OR ((net_rake > (0)::numeric) AND ((((union_wallet_transaction_id IS NOT NULL))::integer + ((bank_journal_id IS NOT NULL))::integer) = 1))))"
+        },
+        {
+          "name": "accounting_tournament_fee_recognitions_net_rake_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((net_rake >= (0)::numeric) AND (net_rake = round(net_rake, 2)) AND ((net_rake)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))"
+        },
+        {
+          "name": "accounting_tournament_fee_recognitions_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (tournament_id)"
+        },
+        {
+          "name": "accounting_tournament_fee_recognitions_status_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((status = ANY (ARRAY['recognized'::text, 'cancelled'::text, 'banked_accrual_deferred'::text])))"
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "name": "accounting_tournament_fee_sources",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        }
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rake_record_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "player_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "coordinator_union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "game_type",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "registration_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_charge_ledger_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_entitlement_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "charged_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rake_credit",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "contract",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "recorded_at",
+          "type": "timestamp with time zone",
+          "default": "transaction_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "accounting_tournament_fee_sources_event",
+          "constraint": false,
+          "definition": "CREATE INDEX accounting_tournament_fee_sources_event ON public.accounting_tournament_fee_sources USING btree (tournament_id, rake_record_id)"
+        },
+        {
+          "name": "accounting_tournament_fee_sources_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_sources_pkey ON public.accounting_tournament_fee_sources USING btree (id)"
+        },
+        {
+          "name": "accounting_tournament_fee_sources_rake_record_id_player_id_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_sources_rake_record_id_player_id_key ON public.accounting_tournament_fee_sources USING btree (rake_record_id, player_id)"
+        },
+        {
+          "name": "accounting_tournament_fee_sources_source_entitlement_id_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_sources_source_entitlement_id_key ON public.accounting_tournament_fee_sources USING btree (source_entitlement_id)"
+        }
+      ],
+      "policies": null,
+      "triggers": [
+        {
+          "name": "accounting_tournament_fee_sources_immutable",
+          "enabled": "O",
+          "function": "fn_accounting_tournament_fee_receipt_immutable()",
+          "definition": "CREATE TRIGGER accounting_tournament_fee_sources_immutable BEFORE DELETE OR UPDATE ON public.accounting_tournament_fee_sources FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()"
+        },
+        {
+          "name": "accounting_tournament_fee_sources_no_truncate",
+          "enabled": "O",
+          "function": "fn_accounting_tournament_fee_receipt_immutable()",
+          "definition": "CREATE TRIGGER accounting_tournament_fee_sources_no_truncate BEFORE TRUNCATE ON public.accounting_tournament_fee_sources FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "accounting_tournament_fee_sources_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "accounting_tournament_fee_sources_rake_credit_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((rake_credit >= (0)::numeric) AND (rake_credit = round(rake_credit, 2)) AND ((rake_credit)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))"
+        },
+        {
+          "name": "accounting_tournament_fee_sources_rake_record_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (rake_record_id) REFERENCES accounting_tournament_fee_batches(rake_record_id)"
+        },
+        {
+          "name": "accounting_tournament_fee_sources_rake_record_id_player_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (rake_record_id, player_id)"
+        },
+        {
+          "name": "accounting_tournament_fee_sources_source_entitlement_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (source_entitlement_id)"
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "name": "accounting_tournament_recognized_sources",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        }
+      ],
+      "columns": [
+        {
+          "name": "source_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "recognized_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "disposition",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rake_credit",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "accounting_tournament_recognized_sources_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX accounting_tournament_recognized_sources_pkey ON public.accounting_tournament_recognized_sources USING btree (source_id)"
+        },
+        {
+          "name": "accounting_tournament_recognized_sources_week",
+          "constraint": false,
+          "definition": "CREATE INDEX accounting_tournament_recognized_sources_week ON public.accounting_tournament_recognized_sources USING btree (recognized_at, tournament_id)"
+        }
+      ],
+      "policies": null,
+      "triggers": [
+        {
+          "name": "accounting_tournament_recognized_sources_immutable",
+          "enabled": "O",
+          "function": "fn_accounting_tournament_fee_receipt_immutable()",
+          "definition": "CREATE TRIGGER accounting_tournament_recognized_sources_immutable BEFORE DELETE OR UPDATE ON public.accounting_tournament_recognized_sources FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()"
+        },
+        {
+          "name": "accounting_tournament_recognized_sources_no_truncate",
+          "enabled": "O",
+          "function": "fn_accounting_tournament_fee_receipt_immutable()",
+          "definition": "CREATE TRIGGER accounting_tournament_recognized_sources_no_truncate BEFORE TRUNCATE ON public.accounting_tournament_recognized_sources FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "accounting_tournament_recognized_sources_disposition_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((disposition = ANY (ARRAY['earned'::text, 'refunded'::text])))"
+        },
+        {
+          "name": "accounting_tournament_recognized_sources_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (source_id)"
+        },
+        {
+          "name": "accounting_tournament_recognized_sources_rake_credit_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((rake_credit >= (0)::numeric) AND (rake_credit = round(rake_credit, 2)) AND ((rake_credit)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))"
+        },
+        {
+          "name": "accounting_tournament_recognized_sources_source_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (source_id) REFERENCES accounting_tournament_fee_sources(id)"
+        },
+        {
+          "name": "accounting_tournament_recognized_sources_tournament_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (tournament_id) REFERENCES accounting_tournament_fee_recognitions(tournament_id)"
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "name": "tournament_payouts",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "position",
+          "type": "integer",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "amount",
+          "type": "numeric(15,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "idempotency_key",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "paid_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "tournament_type",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "field_size",
+          "type": "integer",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "prize_pool",
+          "type": "numeric",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "payout_structure",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "recorded_by",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "metadata",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "terminal_closed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_tournament_payouts_satellite_target",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_tournament_payouts_satellite_target ON public.tournament_payouts USING btree (((metadata ->> 'satellite_target_id'::text))) WHERE (source = 'satellite_seat'::text)"
+        },
+        {
+          "name": "idx_tournament_payouts_tournament",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_tournament_payouts_tournament ON public.tournament_payouts USING btree (tournament_id)"
+        },
+        {
+          "name": "idx_tournament_payouts_tournament_position",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_tournament_payouts_tournament_position ON public.tournament_payouts USING btree (tournament_id, \"position\")"
+        },
+        {
+          "name": "tournament_payouts_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_payouts_pkey ON public.tournament_payouts USING btree (id)"
+        },
+        {
+          "name": "uq_tournament_payouts_idempotency_key",
+          "constraint": false,
+          "definition": "CREATE UNIQUE INDEX uq_tournament_payouts_idempotency_key ON public.tournament_payouts USING btree (idempotency_key) WHERE (idempotency_key IS NOT NULL)"
+        }
+      ],
+      "policies": [
+        {
+          "name": "tpay_read_self_field_or_staff",
+          "qual": "((user_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n   FROM tournament_players tp\n  WHERE ((tp.tournament_id = tournament_payouts.tournament_id) AND (tp.user_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM tournaments t\n  WHERE ((t.id = tournament_payouts.tournament_id) AND (t.club_id IS NOT NULL) AND fn_is_club_admin_uid(t.club_id)))))",
+          "check": null,
+          "roles": ["authenticated"],
+          "command": "r",
+          "permissive": true
+        },
+        {
+          "name": "tpay_service_all",
+          "qual": "true",
+          "check": "true",
+          "roles": ["service_role"],
+          "command": "*",
+          "permissive": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "cancelled_tournament_evidence_is_immutable",
+          "enabled": "O",
+          "function": "fn_cancelled_tournament_evidence_is_immutable()",
+          "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_payouts FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+        },
+        {
+          "name": "terminal_tournament_evidence_is_immutable",
+          "enabled": "O",
+          "function": "fn_terminal_tournament_evidence_is_immutable()",
+          "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_payouts FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+        },
+        {
+          "name": "trg_tournament_payouts_append_only",
+          "enabled": "O",
+          "function": "fn_tournament_payouts_are_append_only()",
+          "definition": "CREATE TRIGGER trg_tournament_payouts_append_only BEFORE DELETE OR UPDATE ON public.tournament_payouts FOR EACH ROW EXECUTE FUNCTION fn_tournament_payouts_are_append_only()"
+        },
+        {
+          "name": "zz_a_payout_row_carries_its_key",
+          "enabled": "O",
+          "function": "zz_a_payout_row_carries_its_key()",
+          "definition": "CREATE TRIGGER zz_a_payout_row_carries_its_key BEFORE INSERT ON public.tournament_payouts FOR EACH ROW EXECUTE FUNCTION zz_a_payout_row_carries_its_key()"
+        },
+        {
+          "name": "zz_ca_escrow_seat_payout",
+          "enabled": "O",
+          "function": "fn_ca_escrow_on_seat_payout()",
+          "definition": "CREATE TRIGGER zz_ca_escrow_seat_payout AFTER INSERT ON public.tournament_payouts FOR EACH ROW WHEN ((new.source = 'satellite_seat'::text)) EXECUTE FUNCTION fn_ca_escrow_on_seat_payout()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "chk_prize_pool_is_two_decimal_places",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((prize_pool IS NULL) OR (prize_pool = round(prize_pool, 2))))"
+        },
+        {
+          "name": "tournament_payouts_amount_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((amount >= (0)::numeric) OR (source = 'clawback'::text)))"
+        },
+        {
+          "name": "tournament_payouts_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "tournament_payouts_source_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((source = ANY (ARRAY['structure'::text, 'reconcile'::text, 'hu_shortfall'::text, 'bounty'::text, 'bounty_residual'::text, 'own_bounty'::text, 'late_reg_adjustment'::text, 'clawback'::text, 'final_table_deal'::text, 'mystery_bounty'::text, 'mystery_bounty_residual'::text, 'spin_backpay'::text, 'overlay_backpay'::text, 'bubble_protection'::text, 'satellite_remainder'::text, 'satellite_seat'::text, 'satellite_ticket'::text, 'finish_position_correction'::text])))"
+        },
+        {
+          "name": "tournament_payouts_tournament_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE"
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "name": "tournament_players",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "username",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "chips",
+          "type": "integer",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "default": "'registered'::text",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "position",
+          "type": "integer",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "prize",
+          "type": "numeric(15,2)",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rebuys",
+          "type": "integer",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "add_on",
+          "type": "boolean",
+          "default": "false",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "registered_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "eliminated_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "bounties_collected",
+          "type": "integer",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "bounty_winnings",
+          "type": "numeric(15,2)",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "mystery_bounty_value",
+          "type": "numeric(15,2)",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "current_bounty",
+          "type": "numeric",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "seat_number",
+          "type": "integer",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "chip_count",
+          "type": "numeric",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "is_satellite_qualifier",
+          "type": "boolean",
+          "default": "false",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rebuy_prompt_until",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "push_15m_sent",
+          "type": "boolean",
+          "default": "false",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "push_2m_sent",
+          "type": "boolean",
+          "default": "false",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_satellite_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "elimination_sequence",
+          "type": "bigint",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "terminal_closed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_tourn_players_tourn",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_tourn_players_tourn ON public.tournament_players USING btree (tournament_id)"
+        },
+        {
+          "name": "idx_tourn_players_user",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_tourn_players_user ON public.tournament_players USING btree (user_id)"
+        },
+        {
+          "name": "idx_tournament_players_basis",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_tournament_players_basis ON public.tournament_players USING btree (tournament_id) INCLUDE (club_id, rebuys, add_on)"
+        },
+        {
+          "name": "idx_tournament_players_chips",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_tournament_players_chips ON public.tournament_players USING btree (tournament_id, status, chips)"
+        },
+        {
+          "name": "idx_tournament_players_club",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_tournament_players_club ON public.tournament_players USING btree (club_id, tournament_id)"
+        },
+        {
+          "name": "idx_tournament_players_live_by_id",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_tournament_players_live_by_id ON public.tournament_players USING btree (id) WHERE (status = ANY (ARRAY['registered'::text, 'playing'::text]))"
+        },
+        {
+          "name": "idx_tournament_players_live_user_table",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_tournament_players_live_user_table ON public.tournament_players USING btree (user_id, table_id) WHERE ((status = 'playing'::text) AND (table_id IS NOT NULL))"
+        },
+        {
+          "name": "idx_tournament_players_rebuy_prompt_open",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_tournament_players_rebuy_prompt_open ON public.tournament_players USING btree (tournament_id, rebuy_prompt_until) WHERE (rebuy_prompt_until IS NOT NULL)"
+        },
+        {
+          "name": "idx_tournament_players_registered_at",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_tournament_players_registered_at ON public.tournament_players USING btree (registered_at)"
+        },
+        {
+          "name": "idx_tournament_players_status",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_tournament_players_status ON public.tournament_players USING btree (tournament_id, status)"
+        },
+        {
+          "name": "idx_tournament_players_user_open",
+          "constraint": false,
+          "definition": "CREATE INDEX idx_tournament_players_user_open ON public.tournament_players USING btree (user_id) WHERE (status = ANY (ARRAY['registered'::text, 'playing'::text]))"
+        },
+        {
+          "name": "tournament_players_one_elimination_sequence",
+          "constraint": false,
+          "definition": "CREATE UNIQUE INDEX tournament_players_one_elimination_sequence ON public.tournament_players USING btree (tournament_id, elimination_sequence) WHERE (elimination_sequence IS NOT NULL)"
+        },
+        {
+          "name": "tournament_players_one_finish_position",
+          "constraint": false,
+          "definition": "CREATE UNIQUE INDEX tournament_players_one_finish_position ON public.tournament_players USING btree (tournament_id, \"position\") WHERE (\"position\" IS NOT NULL)"
+        },
+        {
+          "name": "tournament_players_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_players_pkey ON public.tournament_players USING btree (id)"
+        },
+        {
+          "name": "tournament_players_tournament_id_user_id_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_players_tournament_id_user_id_key ON public.tournament_players USING btree (tournament_id, user_id)"
+        }
+      ],
+      "policies": [
+        {
+          "name": "tournament_players_select",
+          "qual": "true",
+          "check": null,
+          "roles": ["public"],
+          "command": "r",
+          "permissive": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "a00_f06_source_roster",
+          "enabled": "O",
+          "function": "smarter_private.f06_source_guard()",
+          "definition": "CREATE TRIGGER a00_f06_source_roster BEFORE INSERT OR DELETE OR UPDATE OF table_id, user_id, seat_number, status ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_source_guard()"
+        },
+        {
+          "name": "aa_serialize_tournament_player_insert",
+          "enabled": "O",
+          "function": "fn_serialize_entry_statement()",
+          "definition": "CREATE TRIGGER aa_serialize_tournament_player_insert BEFORE INSERT ON public.tournament_players FOR EACH STATEMENT EXECUTE FUNCTION fn_serialize_entry_statement()"
+        },
+        {
+          "name": "aa_tournament_player_launch_proof_lock",
+          "enabled": "O",
+          "function": "trg_lock_tournament_player_launch_proof()",
+          "definition": "CREATE TRIGGER aa_tournament_player_launch_proof_lock BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION trg_lock_tournament_player_launch_proof()"
+        },
+        {
+          "name": "cancelled_tournament_evidence_is_immutable",
+          "enabled": "O",
+          "function": "fn_cancelled_tournament_evidence_is_immutable()",
+          "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+        },
+        {
+          "name": "satellite_target_player_provenance_is_immutable",
+          "enabled": "O",
+          "function": "fn_satellite_target_player_provenance_is_immutable()",
+          "definition": "CREATE TRIGGER satellite_target_player_provenance_is_immutable BEFORE INSERT OR DELETE OR UPDATE OF id, tournament_id, user_id, is_satellite_qualifier, source_satellite_id ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_satellite_target_player_provenance_is_immutable()"
+        },
+        {
+          "name": "seed_bounty_head",
+          "enabled": "O",
+          "function": "trg_seed_bounty_head()",
+          "definition": "CREATE TRIGGER seed_bounty_head AFTER INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION trg_seed_bounty_head()"
+        },
+        {
+          "name": "terminal_tournament_evidence_is_immutable",
+          "enabled": "O",
+          "function": "fn_terminal_tournament_evidence_is_immutable()",
+          "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+        },
+        {
+          "name": "tournament_elimination_has_a_place",
+          "enabled": "O",
+          "function": "fn_tournament_elimination_has_a_place()",
+          "definition": "CREATE CONSTRAINT TRIGGER tournament_elimination_has_a_place AFTER INSERT OR UPDATE OF status, \"position\" ON public.tournament_players DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_tournament_elimination_has_a_place()"
+        },
+        {
+          "name": "tournament_place_collision_watch",
+          "enabled": "O",
+          "function": "trg_tournament_place_collision()",
+          "definition": "CREATE TRIGGER tournament_place_collision_watch BEFORE INSERT OR UPDATE OF \"position\" ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION trg_tournament_place_collision()"
+        },
+        {
+          "name": "tournament_player_name",
+          "enabled": "O",
+          "function": "trg_tournament_player_name()",
+          "definition": "CREATE TRIGGER tournament_player_name BEFORE INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION trg_tournament_player_name()"
+        },
+        {
+          "name": "tournament_roster_cannot_orphan_live_seat",
+          "enabled": "O",
+          "function": "trg_assert_live_tournament_seat_has_roster()",
+          "definition": "CREATE CONSTRAINT TRIGGER tournament_roster_cannot_orphan_live_seat AFTER DELETE ON public.tournament_players DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION trg_assert_live_tournament_seat_has_roster()"
+        },
+        {
+          "name": "tournament_roster_update_cannot_orphan_live_seat",
+          "enabled": "O",
+          "function": "trg_assert_live_tournament_seat_has_roster()",
+          "definition": "CREATE CONSTRAINT TRIGGER tournament_roster_update_cannot_orphan_live_seat AFTER UPDATE OF tournament_id, user_id, status ON public.tournament_players DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION trg_assert_live_tournament_seat_has_roster()"
+        },
+        {
+          "name": "trg_ca_tournament_entry_gate",
+          "enabled": "O",
+          "function": "fn_ca_tournament_entry_gate()",
+          "definition": "CREATE TRIGGER trg_ca_tournament_entry_gate BEFORE INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_ca_tournament_entry_gate()"
+        },
+        {
+          "name": "trg_daily_missions_tournament_registered",
+          "enabled": "O",
+          "function": "fn_daily_missions_tournament_registered_updated()",
+          "definition": "CREATE TRIGGER trg_daily_missions_tournament_registered AFTER UPDATE ON public.tournament_players REFERENCING OLD TABLE AS previous_rows NEW TABLE AS updated_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_daily_missions_tournament_registered_updated()"
+        },
+        {
+          "name": "trg_daily_missions_tournament_registered_insert",
+          "enabled": "O",
+          "function": "fn_daily_missions_tournament_registered_inserted()",
+          "definition": "CREATE TRIGGER trg_daily_missions_tournament_registered_insert AFTER INSERT ON public.tournament_players REFERENCING NEW TABLE AS inserted_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_daily_missions_tournament_registered_inserted()"
+        },
+        {
+          "name": "trg_enforce_booking_game_cap",
+          "enabled": "O",
+          "function": "fn_enforce_booking_game_cap()",
+          "definition": "CREATE TRIGGER trg_enforce_booking_game_cap BEFORE INSERT OR UPDATE OF status ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_enforce_booking_game_cap()"
+        },
+        {
+          "name": "trg_enforce_tournament_capacity",
+          "enabled": "O",
+          "function": "fn_enforce_tournament_capacity()",
+          "definition": "CREATE TRIGGER trg_enforce_tournament_capacity BEFORE INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_enforce_tournament_capacity()"
+        },
+        {
+          "name": "trg_guard_retired_club_mutation",
+          "enabled": "O",
+          "function": "fn_guard_retired_club_mutation()",
+          "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()"
+        },
+        {
+          "name": "trg_refuse_reentry_with_pending_bounty",
+          "enabled": "O",
+          "function": "fn_refuse_reentry_with_pending_bounty()",
+          "definition": "CREATE TRIGGER trg_refuse_reentry_with_pending_bounty BEFORE UPDATE OF status ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_refuse_reentry_with_pending_bounty()"
+        },
+        {
+          "name": "trg_refuse_zero_chip_field_elimination",
+          "enabled": "O",
+          "function": "fn_refuse_zero_chip_field_elimination()",
+          "definition": "CREATE TRIGGER trg_refuse_zero_chip_field_elimination BEFORE UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_refuse_zero_chip_field_elimination()"
+        },
+        {
+          "name": "trg_sync_tournament_current_players",
+          "enabled": "O",
+          "function": "fn_sync_tournament_current_players()",
+          "definition": "CREATE TRIGGER trg_sync_tournament_current_players AFTER INSERT OR DELETE OR UPDATE OF status, tournament_id ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_sync_tournament_current_players()"
+        },
+        {
+          "name": "trg_tournament_players_human_user_club_only",
+          "enabled": "O",
+          "function": "fn_ca_reject_automated_user_club_row()",
+          "definition": "CREATE TRIGGER trg_tournament_players_human_user_club_only BEFORE INSERT OR UPDATE OF tournament_id, user_id ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_ca_reject_automated_user_club_row()"
+        },
+        {
+          "name": "trg_tournament_players_stamp_club",
+          "enabled": "O",
+          "function": "fn_stamp_entry_club()",
+          "definition": "CREATE TRIGGER trg_tournament_players_stamp_club BEFORE INSERT OR UPDATE ON public.tournament_players FOR EACH ROW WHEN ((new.club_id IS NULL)) EXECUTE FUNCTION fn_stamp_entry_club()"
+        },
+        {
+          "name": "zz_freeze_entry_guard",
+          "enabled": "O",
+          "function": "fn_refuse_new_entries_while_frozen()",
+          "definition": "CREATE TRIGGER zz_freeze_entry_guard BEFORE INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_refuse_new_entries_while_frozen()"
+        },
+        {
+          "name": "zz_restriction_tourney_guard",
+          "enabled": "O",
+          "function": "fn_ca_refuse_restricted_entry()",
+          "definition": "CREATE TRIGGER zz_restriction_tourney_guard BEFORE INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_ca_refuse_restricted_entry('tournaments')"
+        },
+        {
+          "name": "zz_stamp_tournament_elimination_sequence",
+          "enabled": "O",
+          "function": "fn_stamp_tournament_elimination_sequence()",
+          "definition": "CREATE TRIGGER zz_stamp_tournament_elimination_sequence BEFORE INSERT OR UPDATE OF status, elimination_sequence ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_stamp_tournament_elimination_sequence()"
+        },
+        {
+          "name": "zzzz_freeze_batched_tournament_result",
+          "enabled": "O",
+          "function": "trg_freeze_batched_tournament_result()",
+          "definition": "CREATE TRIGGER zzzz_freeze_batched_tournament_result BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION trg_freeze_batched_tournament_result()"
+        },
+        {
+          "name": "zzzz_refuse_finalized_tournament_entry",
+          "enabled": "O",
+          "function": "trg_refuse_finalized_tournament_entry()",
+          "definition": "CREATE TRIGGER zzzz_refuse_finalized_tournament_entry BEFORE INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION trg_refuse_finalized_tournament_entry()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "fk_tournament_players_user_id_profiles",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "tournament_elimination_has_a_place",
+          "type": "t",
+          "validated": true,
+          "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+        },
+        {
+          "name": "tournament_players_club_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id)"
+        },
+        {
+          "name": "tournament_players_elimination_sequence_positive",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((elimination_sequence IS NULL) OR (elimination_sequence > 0)))"
+        },
+        {
+          "name": "tournament_players_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "tournament_players_status_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((status = ANY (ARRAY['registered'::text, 'playing'::text, 'eliminated'::text, 'winner'::text])))"
+        },
+        {
+          "name": "tournament_players_tournament_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "tournament_players_tournament_id_user_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (tournament_id, user_id)"
+        },
+        {
+          "name": "tournament_roster_cannot_orphan_live_seat",
+          "type": "t",
+          "validated": true,
+          "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+        },
+        {
+          "name": "tournament_roster_update_cannot_orphan_live_seat",
+          "type": "t",
+          "validated": true,
+          "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "name": "tournament_satellite_awards",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "columns": [
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "place",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "delivery_kind",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "amount",
+          "type": "numeric(15,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "payout_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "payout_source",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "idempotency_key",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "registration_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "ticket_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "obligation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "obligation_kind",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "tournament_satellite_awards_idempotency_key_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_satellite_awards_idempotency_key_key ON public.tournament_satellite_awards USING btree (idempotency_key)"
+        },
+        {
+          "name": "tournament_satellite_awards_payout_id_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_satellite_awards_payout_id_key ON public.tournament_satellite_awards USING btree (payout_id)"
+        },
+        {
+          "name": "tournament_satellite_awards_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_satellite_awards_pkey ON public.tournament_satellite_awards USING btree (tournament_id, place)"
+        },
+        {
+          "name": "tournament_satellite_awards_registration_id_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_satellite_awards_registration_id_key ON public.tournament_satellite_awards USING btree (registration_id)"
+        },
+        {
+          "name": "tournament_satellite_awards_ticket_id_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_satellite_awards_ticket_id_key ON public.tournament_satellite_awards USING btree (ticket_id)"
+        },
+        {
+          "name": "tournament_satellite_awards_tournament_id_user_id_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_satellite_awards_tournament_id_user_id_key ON public.tournament_satellite_awards USING btree (tournament_id, user_id)"
+        }
+      ],
+      "policies": null,
+      "triggers": [
+        {
+          "name": "terminal_tournament_evidence_is_immutable",
+          "enabled": "O",
+          "function": "fn_terminal_tournament_evidence_is_immutable()",
+          "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_satellite_awards FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+        },
+        {
+          "name": "tournament_satellite_award_captures_refund_entitlement",
+          "enabled": "O",
+          "function": "fn_ca_capture_satellite_seat_entitlement()",
+          "definition": "CREATE TRIGGER tournament_satellite_award_captures_refund_entitlement AFTER INSERT ON public.tournament_satellite_awards FOR EACH ROW WHEN ((new.delivery_kind = 'seat'::text)) EXECUTE FUNCTION fn_ca_capture_satellite_seat_entitlement()"
+        },
+        {
+          "name": "tournament_satellite_awards_append_only",
+          "enabled": "O",
+          "function": "fn_satellite_settlement_receipts_are_append_only()",
+          "definition": "CREATE TRIGGER tournament_satellite_awards_append_only BEFORE DELETE OR UPDATE ON public.tournament_satellite_awards FOR EACH ROW EXECUTE FUNCTION fn_satellite_settlement_receipts_are_append_only()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "tournament_satellite_awards_amount_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((amount > (0)::numeric) AND (amount = round(amount, 2))))"
+        },
+        {
+          "name": "tournament_satellite_awards_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((((delivery_kind = 'seat'::text) AND (registration_id IS NOT NULL) AND (ticket_id IS NULL) AND (obligation_id IS NULL) AND (obligation_kind IS NULL) AND (payout_source = 'satellite_seat'::text)) OR ((delivery_kind = 'cash'::text) AND (registration_id IS NULL) AND (ticket_id IS NULL) AND (obligation_id IS NOT NULL) AND (obligation_kind = ANY (ARRAY['seat'::text, 'place'::text])) AND (payout_source <> 'satellite_seat'::text)) OR ((delivery_kind = 'ticket'::text) AND (registration_id IS NULL) AND (ticket_id IS NOT NULL) AND (obligation_id IS NULL) AND (obligation_kind IS NULL) AND (payout_source = 'satellite_ticket'::text))) IS TRUE))"
+        },
+        {
+          "name": "tournament_satellite_awards_delivery_kind_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((delivery_kind = ANY (ARRAY['seat'::text, 'cash'::text, 'ticket'::text])))"
+        },
+        {
+          "name": "tournament_satellite_awards_idempotency_key_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((length(btrim(idempotency_key)) > 0))"
+        },
+        {
+          "name": "tournament_satellite_awards_idempotency_key_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (idempotency_key)"
+        },
+        {
+          "name": "tournament_satellite_awards_obligation_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (obligation_id) REFERENCES tournament_obligations(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "tournament_satellite_awards_payout_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (payout_id) REFERENCES tournament_payouts(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "tournament_satellite_awards_payout_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (payout_id)"
+        },
+        {
+          "name": "tournament_satellite_awards_payout_source_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((length(btrim(payout_source)) > 0))"
+        },
+        {
+          "name": "tournament_satellite_awards_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (tournament_id, place)"
+        },
+        {
+          "name": "tournament_satellite_awards_place_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((place > 0))"
+        },
+        {
+          "name": "tournament_satellite_awards_registration_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (registration_id)"
+        },
+        {
+          "name": "tournament_satellite_awards_ticket_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (ticket_id) REFERENCES tournament_tickets(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "tournament_satellite_awards_ticket_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (ticket_id)"
+        },
+        {
+          "name": "tournament_satellite_awards_tournament_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (tournament_id) REFERENCES tournament_satellite_settlements(tournament_id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "tournament_satellite_awards_tournament_id_user_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (tournament_id, user_id)"
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "name": "tournament_satellite_settlements",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "columns": [
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "target_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "target_was_missing",
+          "type": "boolean",
+          "default": "false",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "target_contract_version",
+          "type": "bigint",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "winner_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "field_size",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "advertised_seats",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "pool",
+          "type": "numeric(15,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "target_buy_in",
+          "type": "numeric(15,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "target_fee",
+          "type": "numeric(15,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "ticket_cost",
+          "type": "numeric(15,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "ticket_award_count",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "seat_count",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "cash_ticket_count",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "entry_ticket_count",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "remainder",
+          "type": "numeric(15,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "bubble_user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "bubble_position",
+          "type": "integer",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_table_count",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_table_ids",
+          "type": "uuid[]",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_seat_count",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_seat_ids",
+          "type": "uuid[]",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "released_seat_count",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "released_seat_ids",
+          "type": "uuid[]",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_closed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_escrow_closed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_escrow_close_note",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "settled_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "receipt_version",
+          "type": "integer",
+          "default": "2",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "tournament_satellite_settlements_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_satellite_settlements_pkey ON public.tournament_satellite_settlements USING btree (tournament_id)"
+        }
+      ],
+      "policies": null,
+      "triggers": [
+        {
+          "name": "tournament_satellite_settlements_append_only",
+          "enabled": "O",
+          "function": "fn_satellite_settlement_receipts_are_append_only()",
+          "definition": "CREATE TRIGGER tournament_satellite_settlements_append_only BEFORE DELETE OR UPDATE ON public.tournament_satellite_settlements FOR EACH ROW EXECUTE FUNCTION fn_satellite_settlement_receipts_are_append_only()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "tournament_satellite_settlements_advertised_seats_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((advertised_seats >= 0))"
+        },
+        {
+          "name": "tournament_satellite_settlements_cash_ticket_count_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((cash_ticket_count >= 0))"
+        },
+        {
+          "name": "tournament_satellite_settlements_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((target_id <> tournament_id))"
+        },
+        {
+          "name": "tournament_satellite_settlements_check1",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((ticket_cost = (target_buy_in + target_fee)))"
+        },
+        {
+          "name": "tournament_satellite_settlements_check10",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((released_seat_count = cardinality(released_seat_ids)))"
+        },
+        {
+          "name": "tournament_satellite_settlements_check11",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((source_closed_at <= settled_at))"
+        },
+        {
+          "name": "tournament_satellite_settlements_check12",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((source_escrow_closed_at <= settled_at))"
+        },
+        {
+          "name": "tournament_satellite_settlements_check13",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((released_seat_ids <@ source_seat_ids))"
+        },
+        {
+          "name": "tournament_satellite_settlements_check14",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((((remainder = (0)::numeric) AND (bubble_user_id IS NULL) AND (bubble_position IS NULL)) OR ((remainder > (0)::numeric) AND (bubble_user_id IS NOT NULL) AND (bubble_position = (ticket_award_count + 1)) AND (bubble_position <= field_size))) IS TRUE))"
+        },
+        {
+          "name": "tournament_satellite_settlements_check2",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((ticket_award_count = ((seat_count + cash_ticket_count) + entry_ticket_count)))"
+        },
+        {
+          "name": "tournament_satellite_settlements_check3",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((ticket_award_count <= field_size))"
+        },
+        {
+          "name": "tournament_satellite_settlements_check4",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((pool = (((ticket_award_count)::numeric * ticket_cost) + remainder)))"
+        },
+        {
+          "name": "tournament_satellite_settlements_check5",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((pool >= ((advertised_seats)::numeric * ticket_cost)))"
+        },
+        {
+          "name": "tournament_satellite_settlements_check6",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((remainder < ticket_cost))"
+        },
+        {
+          "name": "tournament_satellite_settlements_check7",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((target_was_missing IS FALSE) AND (target_contract_version IS NULL)))"
+        },
+        {
+          "name": "tournament_satellite_settlements_check8",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((source_table_count = cardinality(source_table_ids)))"
+        },
+        {
+          "name": "tournament_satellite_settlements_check9",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((source_seat_count = cardinality(source_seat_ids)))"
+        },
+        {
+          "name": "tournament_satellite_settlements_entry_ticket_count_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((entry_ticket_count >= 0))"
+        },
+        {
+          "name": "tournament_satellite_settlements_field_size_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((field_size > 0))"
+        },
+        {
+          "name": "tournament_satellite_settlements_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (tournament_id)"
+        },
+        {
+          "name": "tournament_satellite_settlements_pool_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((pool >= (0)::numeric) AND (pool = round(pool, 2))))"
+        },
+        {
+          "name": "tournament_satellite_settlements_receipt_version_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((receipt_version = 2))"
+        },
+        {
+          "name": "tournament_satellite_settlements_released_seat_count_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((released_seat_count >= 0))"
+        },
+        {
+          "name": "tournament_satellite_settlements_released_seat_ids_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((array_position(released_seat_ids, NULL::uuid) IS NULL))"
+        },
+        {
+          "name": "tournament_satellite_settlements_remainder_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((remainder >= (0)::numeric) AND (remainder = round(remainder, 2))))"
+        },
+        {
+          "name": "tournament_satellite_settlements_seat_count_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((seat_count >= 0))"
+        },
+        {
+          "name": "tournament_satellite_settlements_source_escrow_close_note_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((length(btrim(source_escrow_close_note)) > 0))"
+        },
+        {
+          "name": "tournament_satellite_settlements_source_seat_count_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((source_seat_count >= 0))"
+        },
+        {
+          "name": "tournament_satellite_settlements_source_seat_ids_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((array_position(source_seat_ids, NULL::uuid) IS NULL))"
+        },
+        {
+          "name": "tournament_satellite_settlements_source_table_count_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((source_table_count > 0))"
+        },
+        {
+          "name": "tournament_satellite_settlements_source_table_ids_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((array_position(source_table_ids, NULL::uuid) IS NULL))"
+        },
+        {
+          "name": "tournament_satellite_settlements_target_buy_in_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((target_buy_in >= (0)::numeric) AND (target_buy_in = round(target_buy_in, 2))))"
+        },
+        {
+          "name": "tournament_satellite_settlements_target_fee_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((target_fee >= (0)::numeric) AND (target_fee = round(target_fee, 2))))"
+        },
+        {
+          "name": "tournament_satellite_settlements_target_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (target_id) REFERENCES tournaments(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "tournament_satellite_settlements_ticket_award_count_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((ticket_award_count >= 0))"
+        },
+        {
+          "name": "tournament_satellite_settlements_ticket_cost_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((ticket_cost > (0)::numeric) AND (ticket_cost = round(ticket_cost, 2))))"
+        },
+        {
+          "name": "tournament_satellite_settlements_tournament_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE RESTRICT"
+        }
+      ]
+    }
+  ],
+  "observed_at": "2026-09-17T20:00:28.300928+00:00"
+}

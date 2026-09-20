@@ -1,0 +1,71 @@
+{
+  "format": 1,
+  "original_runner": "provenance/backup_adapter/run_integration.py.txt",
+  "original_sha256": "3b7488dbba156bc99f527b1a456ae1121e9eaa689f8ca81e6a84db5ef10b1884",
+  "retained_body_start": "    def write(path,obj,emergency=False):",
+  "retained_body_end": "\n\nif __name__=='__main__':",
+  "changes": [
+    {
+      "before": "row=space_probe(stage,root if root else Path('/private/tmp'),evidence,required)",
+      "after": "binding.operation.assert_pristine()\n        row=space_probe(stage,root if root else temp_parent,evidence,required)"
+    },
+    {
+      "before": "root=Path(tempfile.mkdtemp(prefix='g8bbjbackup-' ,dir='/private/tmp'))",
+      "after": "root=Path(tempfile.mkdtemp(prefix='bbj-funded-',dir=temp_parent))"
+    },
+    {
+      "before": "PGAPPNAME='g8-bbj-backup-0001'",
+      "after": "PGAPPNAME='bbj-ci-'+review['case_attempt_id']"
+    },
+    {
+      "before": "if '17.11' not in version: raise RuntimeError('Unpinned PostgreSQL binary')",
+      "after": "if not re.search(r'\\(PostgreSQL\\) 17\\.11(?:\\s|$)',version): raise RuntimeError('Unpinned PostgreSQL binary')"
+    },
+    {
+      "before": "command([BIN/'initdb','-D',data,'-U','postgres','--auth=trust','--encoding=UTF8','--no-locale'])",
+      "after": "command([BIN/'initdb','-D',data,'-U','postgres','--auth-local=trust','--auth-host=reject','--encoding=UTF8','--no-locale'])"
+    },
+    {
+      "before": "extension.validate_physical(base_physical_raw,base_physical)\n        ledger['physical_identity']=base_physical_raw",
+      "after": "extension.validate_physical(base_physical_raw,base_physical)\n        runtime_minor=json.loads(command(psql+['-d','fixture_base','-A','-t','-c',\n            \"SELECT to_jsonb(current_setting('server_version_num')::integer)\"]).stdout)\n        if runtime_minor != 170011: raise RuntimeError('Actual server must be PostgreSQL17.11')\n        ledger['actual_server_version_num']=runtime_minor\n        ledger['physical_identity']=base_physical_raw"
+    },
+    {
+      "before": "install_path=fixture/name if name=='registry-overlay.sql' else schema_fixture/'build'/name",
+      "after": "install_path=binding.custody.source_path('registry/'+name if name=='registry-overlay.sql' else 'schema/build/'+name)"
+    },
+    {
+      "before": "        # No case remains as a template for another case. Each starts from the",
+      "after": "        # Retained modeled regressions use fresh validated base responses, never a historical run.\n        regression_report=regression_check(binding,pf['events'])\n        write(evidence/'REGRESSIONS.json',regression_report)\n        ledger['regressions']=regression_report\n        if regression_report.get('passed') is not True: raise RuntimeError('Retained regression stage failed')\n        # No case remains as a template for another case. Each starts from the"
+    },
+    {
+      "before": "admit('before_seed:'+db,WORKING_HEADROOM)\n                    command(psql+['-d',db,'-f',seed_path],timeout=120)",
+      "after": "admit('before_seed:'+db,WORKING_HEADROOM)\n                    binding.operation.claim_seed(case)\n                    command(psql+['-d',db,'-f',binding.custody.source_path('resources/seed.sql')],timeout=120)"
+    },
+    {
+      "before": "sql=(HERE/'COMBINED-COMMAND.sql').read_text()",
+      "after": "sql=binding.custody.read_bytes(binding.group+'/COMBINED-COMMAND.sql').decode()"
+    },
+    {
+      "before": "                try:\n                    result=extension.execute_prepared_case",
+      "after": "                # Constructor-issued identity is completed from an actual pristine physical clone.\n                clone_events=[]\n                clone=None\n                clone_report={'status':'ATTEMPTED','events':clone_events}\n                ledger['case_clone_admission']=clone_report\n                write(evidence/'RUN.json',ledger)\n                try:\n                    clone=connect('current_clone_admission',clone_events)\n                    observed=clone.one(extension.PHYSICAL_SQL)\n                    observed['server_version_num']=clone.one(\"SELECT to_jsonb(current_setting('server_version_num')::integer)\")\n                    raw=binding.backup.capture(clone)\n                    extension.validate_physical(clone.one(extension.PHYSICAL_SQL),case_physical)\n                    binding.operation.bind_clone(case,observed,case_physical,extension.validate_physical,raw)\n                    clone_report.update(status='PRISTINE_PHYSICAL_CLONE_BOUND',physical=observed,raw=raw)\n                finally:\n                    clone_report['cleanup']=extension.cleanup_connection(clone)\n                    if any(row['status']=='ERROR' for row in clone_report['cleanup']):\n                        clone_report['status']='CLEANUP_FAILED'\n                    write(evidence/'RUN.json',ledger,emergency=clone_report['status']!='PRISTINE_PHYSICAL_CLONE_BOUND')\n                if clone_report['status']!='PRISTINE_PHYSICAL_CLONE_BOUND':\n                    raise RuntimeError('Pristine clone admission cleanup unproven')\n                try:\n                    result=extension.execute_prepared_case"
+    },
+    {
+      "before": "ledger['remaining_cases']='Only fresh opening100 setup plus backup25 continuation; original side-filter/subxid and fullSEQ06/08 remain open; no production claim'",
+      "after": "ledger['remaining_cases']='Only fresh opening100 setup plus selected backup25 or pool-promo25 continuation; original side-filter/subxid and fullSEQ06/08 remain open; no production claim'"
+    },
+    {
+      "before": "    except Exception as e:\n        ledger.update(status='SETUP_OR_EXECUTION_FAILURE',error_type=type(e).__name__,error=str(e))",
+      "after": "    except BaseException as e:\n        ledger.update(status='SETUP_OR_EXECUTION_FAILURE',error_type=type(e).__name__,error=str(e),\n                      financial_outcome='UNQUALIFIED_OR_UNCERTAIN_NO_RETRY')"
+    },
+    {
+      "before": "                    state=catalog(\"SELECT jsonb_build_object('oid',(SELECT oid FROM pg_database WHERE datname='\"+db+\"'),\"\n                        \"'sessions',(SELECT count(*) FROM pg_stat_activity WHERE datname='\"+db+\"'))\",'existing_database',cleanup=True)\n                    disposal['before']=state\n                    if state['oid'] is not None:\n                        actual_oid=require_owned_database_identity(owned_oid,state['oid'],state['sessions'])\n                        disposal['normalized_existing_oid']=actual_oid\n                        command(psql+['-c',f'DROP DATABASE {db}'],cleanup=True)\n                    absent=catalog(\"SELECT to_jsonb(NOT EXISTS(SELECT FROM pg_database WHERE datname='\"+db+\"'))\",'absence',cleanup=True)\n                    if absent is not True:\n                        raise RuntimeError('Case database disposal was not proven')\n                    disposal.update(status='ABSENT_PROVEN',absent=True)\n",
+      "after": "                    dispose_owned_case_database(db,owned_oid,case_cleanup,disposal,command,\n                                                psql,canonical_oid,decode_catalog_result,case_names)\n"
+    },
+    {
+      "before": "# No FORCE/termination of sessions is used to make disposal succeed.",
+      "after": "# No FORCE/client termination: ordinary DROP owns the backend-exit barrier."
+    }
+  ],
+  "physical_cleanup_tail_unchanged": true,
+  "original_26_transforms_unchanged": true
+}

@@ -1,0 +1,75 @@
+{
+  "tables": [
+    "tournament_participant_funding_receipts",
+    "tournament_accounting_credit_receipts",
+    "tournament_obligation_events"
+  ],
+  "functions": [
+    "fn_ca_tournament_accounting_evidence_immutable",
+    "fn_ca_capture_tournament_credit_ledger",
+    "fn_ca_record_tournament_participant_funding",
+    "fn_ca_record_tournament_accounting_credit",
+    "fn_ca_capture_tournament_obligation_event"
+  ],
+  "columns": {
+    "tournament_participant_funding_receipts": [
+      "id",
+      "transaction_id",
+      "observed_at",
+      "registration_id",
+      "tournament_id",
+      "user_id",
+      "operation",
+      "purchase_key",
+      "asset",
+      "amount",
+      "entitlement_id",
+      "ledger_id",
+      "wallet_transaction_id",
+      "funding_club_id",
+      "registration_snapshot",
+      "tournament_snapshot",
+      "entitlement_snapshot",
+      "ledger_snapshot",
+      "wallet_snapshot",
+      "custody_result"
+    ],
+    "tournament_accounting_credit_receipts": [
+      "transaction_id",
+      "id",
+      "observed_at",
+      "idempotency_key",
+      "tournament_id",
+      "user_id",
+      "asset",
+      "amount",
+      "ledger_id",
+      "wallet_transaction_id",
+      "payout_id",
+      "credited_club_id",
+      "ledger_snapshot",
+      "wallet_snapshot",
+      "payout_snapshot",
+      "registration_snapshot",
+      "tournament_snapshot",
+      "entry_receipt_ids"
+    ],
+    "tournament_obligation_events": [
+      "transaction_id",
+      "event_id",
+      "observed_at",
+      "obligation_id",
+      "asset",
+      "tournament_id",
+      "user_id",
+      "operation",
+      "before_row",
+      "after_row",
+      "tournament_snapshot",
+      "registration_snapshot",
+      "entry_receipt_ids",
+      "credit_receipt_id",
+      "refund_tranche_ids"
+    ]
+  }
+}

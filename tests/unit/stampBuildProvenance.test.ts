@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -14,13 +14,8 @@ const cleanEnv = Object.fromEntries(
   Object.entries(process.env).filter(
     ([key]) =>
       !key.startsWith('GIT_') &&
-      ![
-        'GITHUB_ACTIONS',
-        'GITHUB_RUN_ID',
-        'GITHUB_REPOSITORY',
-        'STRICT_PROVENANCE',
-        'CA_DIST',
-      ].includes(key)
+      !key.startsWith('GITHUB_') &&
+      !['STRICT_PROVENANCE', 'CA_DIST', 'CA_BUILD_PURPOSE'].includes(key)
   )
 );
 const fixtureEnv = {
@@ -125,7 +120,105 @@ function stamp(dir: string, overrides: Record<string, string> = {}) {
   return { ...result, info: JSON.parse(readFileSync(artifact, 'utf8')) };
 }
 
+function pullRequestBuild() {
+  const dir = repository('current');
+  const base = git(dir, 'rev-parse', 'HEAD');
+  git(dir, 'checkout', '--quiet', '-b', 'feature');
+  git(dir, 'commit', '--quiet', '--allow-empty', '-m', 'assigned client change');
+  const head = git(dir, 'rev-parse', 'HEAD');
+  git(dir, 'checkout', '--quiet', 'main');
+  git(dir, 'merge', '--quiet', '--no-ff', 'feature', '-m', 'immutable PR merge');
+  const merge = git(dir, 'rev-parse', 'HEAD');
+  git(dir, 'checkout', '--quiet', '--detach', base);
+  git(dir, 'commit', '--quiet', '--allow-empty', '-m', 'unrelated newer database merge');
+  git(dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  git(dir, 'checkout', '--quiet', '--detach', merge);
+  const eventPath = path.join(directory(), 'pull-request.json');
+  const repositoryName = 'Smarter-Poker/Smarter-Poker-Club-Arena';
+  const event = {
+    number: 4788,
+    repository: { full_name: repositoryName },
+    pull_request: {
+      number: 4788,
+      state: 'open',
+      base: { ref: 'main', sha: base, repo: { full_name: repositoryName } },
+      head: { sha: head },
+    },
+  };
+  writeFileSync(eventPath, JSON.stringify(event));
+  const env = {
+    CA_BUILD_PURPOSE: 'ci-validation',
+    GITHUB_WORKFLOW_REF: `${repositoryName}/.github/workflows/ci.yml@refs/pull/4788/merge`,
+    GITHUB_ACTIONS: 'true',
+    GITHUB_EVENT_NAME: 'pull_request',
+    GITHUB_EVENT_PATH: eventPath,
+    GITHUB_REPOSITORY: repositoryName,
+    GITHUB_REF: 'refs/pull/4788/merge',
+    GITHUB_SHA: merge,
+    GITHUB_RUN_ID: '12345',
+  };
+  return { dir, base, head, merge, eventPath, event, env };
+}
+
 describe('actual build provenance subprocess', () => {
+  it('validates the immutable PR merge when unrelated main moves, retaining non-publishable provenance', () => {
+    const { dir, env, base, head, merge } = pullRequestBuild();
+    const result = stamp(dir, env);
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.info).toMatchObject({
+      commit: merge,
+      behindMain: 1,
+      aheadMain: 2,
+      validationOnly: true,
+      pullRequest: { number: 4788, base, head, merge },
+    });
+  });
+
+  it.each(['push', 'repository_dispatch', 'workflow_dispatch', 'pull_request_target'])(
+    'still refuses the identical stale tree for the %s release context',
+    (eventName) => {
+      const { dir, env } = pullRequestBuild();
+      const result = stamp(dir, {
+        ...env,
+        GITHUB_EVENT_NAME: eventName,
+        CA_BUILD_PURPOSE: 'release-build',
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('BEHIND origin/main');
+      expect(result.info.validationOnly).toBe(false);
+    }
+  );
+
+  it('keeps an explicit strict release strict even in a PR environment', () => {
+    const { dir, env } = pullRequestBuild();
+    const result = stamp(dir, { ...env, STRICT_PROVENANCE: '1' });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('BEHIND origin/main');
+  });
+
+  it.each([
+    'wrong-head',
+    'wrong-base',
+    'wrong-merge',
+    'wrong-ref',
+    'wrong-repository',
+    'closed',
+    'unreadable',
+  ])('refuses a PR validation context with %s', (problem) => {
+    const { dir, env, event, eventPath, base, head } = pullRequestBuild();
+    if (problem === 'wrong-head') event.pull_request.head.sha = base;
+    if (problem === 'wrong-base') event.pull_request.base.sha = head;
+    if (problem === 'wrong-merge') env.GITHUB_SHA = head;
+    if (problem === 'wrong-ref') env.GITHUB_REF = 'refs/heads/main';
+    if (problem === 'wrong-repository') env.GITHUB_REPOSITORY = 'unrelated/repository';
+    if (problem === 'closed') event.pull_request.state = 'closed';
+    writeFileSync(eventPath, problem === 'unreadable' ? 'not JSON' : JSON.stringify(event));
+    const result = stamp(dir, env);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Invalid PR build validation identity');
+    expect(result.info.validationOnly).toBe(false);
+  });
+
   it.each([
     ['GitHub Actions', { GITHUB_ACTIONS: 'true' }],
     ['strict local release', { STRICT_PROVENANCE: '1' }],
@@ -258,5 +351,87 @@ describe('actual build provenance subprocess', () => {
       behindMain: null,
       aheadMain: null,
     });
+  });
+});
+
+describe('actual client publisher provenance admission', () => {
+  const workflow = readFileSync(path.resolve('.github/workflows/publish-club-arena.yml'), 'utf8');
+  const blocks = [...workflow.matchAll(/<<'NODE'\n([\s\S]*?)^\s*NODE$/gm)];
+  const courier = blocks.find((block) =>
+    block[1].includes("fs.readFileSync('dist/ca-provenance.json'")
+  )?.[1];
+  const origin = workflow.match(
+    /<<'PYTHON_RELEASE_IDENTITY'\n([\s\S]*?)^\s*PYTHON_RELEASE_IDENTITY$/m
+  )?.[1];
+  const dedent = (source: string) => source.replace(/^ {10}/gm, '');
+
+  const cases: [string, Record<string, unknown>, number][] = [
+    ['current publisher', { validationOnly: false }, 0],
+    ['retained legacy publisher', {}, 0],
+    ['PR validation artifact even with otherwise matching metadata', { validationOnly: true }, 1],
+    ['string validation marker', { validationOnly: 'false' }, 1],
+    ['null validation marker', { validationOnly: null }, 1],
+    ['stale main artifact', { behindMain: 1 }, 1],
+    ['unmerged artifact', { aheadMain: 1 }, 1],
+    ['wrong source', { commit: 'b'.repeat(40) }, 1],
+    [
+      'wrong run',
+      { ciRun: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/999' },
+      1,
+    ],
+    ['dirty source', { dirty: true }, 1],
+    ['incomplete ancestry', { historyComplete: false }, 1],
+  ];
+  it.each(cases)('both maintained admission gates judge %s', (_name, changes, expected) => {
+    expect(courier).toBeTruthy();
+    expect(origin).toBeTruthy();
+    const dir = directory();
+    const dist = path.join(dir, 'dist');
+    mkdirSync(dist);
+    const sha = 'a'.repeat(40);
+    const repositoryName = 'Smarter-Poker/Smarter-Poker-Club-Arena';
+    const provenance = {
+      schema: 1,
+      commit: sha,
+      builtBy: 'github-actions',
+      dirty: false,
+      historyComplete: true,
+      behindMain: 0,
+      aheadMain: 0,
+      ciRun: `https://github.com/${repositoryName}/actions/runs/12345`,
+      ...changes,
+    };
+    const provenancePath = path.join(dist, 'ca-provenance.json');
+    const buildInfoPath = path.join(dist, 'build-info.json');
+    writeFileSync(provenancePath, JSON.stringify(provenance));
+    writeFileSync(
+      buildInfoPath,
+      JSON.stringify({
+        ca_sha: sha,
+        built_by: 'publish-club-arena.yml',
+        built_at: '2026-09-17T20:00:00Z',
+        run_id: '12345',
+      })
+    );
+    const envelope = spawnSync(process.execPath, ['-', sha, repositoryName, '12345'], {
+      cwd: dir,
+      env: fixtureEnv,
+      input: dedent(courier!),
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+    expect(envelope.status, envelope.stderr).toBe(expected);
+    const retained = spawnSync(
+      'python3',
+      ['-', provenancePath, buildInfoPath, sha, repositoryName],
+      {
+        cwd: dir,
+        env: fixtureEnv,
+        input: dedent(origin!),
+        encoding: 'utf8',
+        timeout: 10000,
+      }
+    );
+    expect(retained.status, retained.stderr).toBe(expected);
   });
 });

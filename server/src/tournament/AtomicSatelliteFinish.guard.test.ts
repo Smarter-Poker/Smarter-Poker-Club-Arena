@@ -613,7 +613,8 @@ describe('the server treats the atomic receipt as the only success signal', () =
     expect(branch).toMatch(
       /this\.fenceUnknownTerminalOutcome\(\s*'Tournament\.atomic_satellite_finish_manager_stop_failed'\s*\)/
     );
-    expect(branch).toContain('await raiseFinancialAlert(');
+    // 2026-09-18: raised through alertFinishRefusalOnce, once per reason.
+    expect(branch).toContain('await this.alertFinishRefusalOnce(');
     expect(branch).toContain('return;');
     expect(branch).not.toContain("status: 'COMPLETING'");
     expect(branch).not.toContain('readDurableTournamentStatus');

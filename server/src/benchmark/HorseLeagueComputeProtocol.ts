@@ -9,6 +9,7 @@ import type { TournamentLeagueRequest, TournamentLeagueResult } from './HorseTou
 import type { AgreementResult } from './HorseSolverAgreement.js';
 import type { GtoV31AgreementResult } from './HorseSolverAgreementV31.js';
 import type { HorseDecisionWorkerReady } from '../engine/horseDecision/protocol.js';
+import type { HorseLeagueProcessPriorityProof } from './HorseLeagueProcessPriority.js';
 
 export type SolverStoreCounts = HorseDecisionWorkerReady['solverStores'];
 
@@ -27,7 +28,12 @@ export type HorseLeagueComputeRequest =
 
 export type HorseLeagueComputeResponse =
   | { type: 'TOURNAMENT_RESULT'; jobId: number; result: TournamentLeagueResult }
-  | { type: 'READY'; solverStores: SolverStoreCounts; executionNice?: number }
+  | {
+      type: 'READY';
+      solverStores: SolverStoreCounts;
+      executionNice?: number;
+      executionPriority?: HorseLeagueProcessPriorityProof;
+    }
   | { type: 'HEARTBEAT'; jobId: number }
   | { type: 'MATCHUP_RESULT'; jobId: number; result: LeagueResult }
   | { type: 'AGREEMENT_RESULT'; jobId: number; result: AgreementResult }

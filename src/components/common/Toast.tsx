@@ -137,7 +137,7 @@ function ToastInstrumentIcon({ type }: { type: ToastType }) {
         />
         <circle className="toast__instrument-rotor" cx="20" cy="20" r="13.1" />
         <path className="toast__instrument-scan" d="M9.8 27.2 27.2 9.8" />
-        <g className="toast__instrument-mark">{mark}</g>
+        <g>{mark}</g>
         <circle
           className="toast__instrument-lamp toast__instrument-status"
           cx="31.2"
@@ -187,6 +187,7 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
           setTimeout(onRemove, 300);
         }}
       >
+        <span className="toast__close-label">Dismiss</span>
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="m7 7 10 10M17 7 7 17" />
         </svg>
@@ -224,9 +225,9 @@ function ToastContainer({
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastIdRef = useRef(0);
-  // Originals already sent to Sentry, with the time they were sent. A retrying
+  // Originals already sent to error reporting, with the time they were sent. A retrying
   // caller (heartbeat, poll loop) throws the same error every few seconds; the
-  // toast dedupes on screen, so the Sentry report dedupes here to match.
+  // toast dedupes on screen, so the error reporting report dedupes here to match.
   const reportedRef = useRef<Map<string, number>>(new Map());
 
   /**
@@ -283,7 +284,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
         text = safeErrorMessage(original);
         if (wasSanitized(original, text)) {
-          // The player is spared the detail; Sentry is not. Diagnostics survive.
+          // The player is spared the detail; error reporting is not. Diagnostics survive.
           const now = Date.now();
           const lastSeen = reportedRef.current.get(original);
           if (lastSeen === undefined || now - lastSeen > 30_000) {

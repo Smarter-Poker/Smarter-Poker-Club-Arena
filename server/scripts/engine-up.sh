@@ -18,9 +18,6 @@
 #   --restart always        Covers process crash + daemon restart + host reboot.
 #                           It does NOT cover an intentional manual stop; no
 #                           periodic mutator is allowed to reverse one.
-#   --stop-timeout 45        Preserves the shutdown grace for stop/restart callers
-#                           that omit a timeout. The Linux default is only 10s,
-#                           shorter than the engine's 40s ownership deadline.
 #   --log-opt max-size      Unbounded json-file logs fill the disk, and a full
 #                           disk wedges the engine in exactly the way this whole
 #                           workstream exists to prevent.
@@ -52,6 +49,8 @@ CONTROL_DIR="${ENGINE_CONTROL_DIR:-/usr/local/lib/club-arena/engine-control}"
 RELEASE_SEAL="${ENGINE_RELEASE_SEAL:-$CONTROL_DIR/engine-release-seal.py}"
 ALERT_JOURNAL_HOST_DIR="${ENGINE_ALERT_JOURNAL_HOST_DIR:-/var/lib/club-arena/engine-alerts}"
 ALERT_JOURNAL_CONTAINER_DIR=/var/lib/club-arena/engine-alerts
+HORSE_JOURNAL_HOST_DIR="${ENGINE_HORSE_JOURNAL_HOST_DIR:-/var/lib/club-arena/horse-decisions}"
+HORSE_JOURNAL_CONTAINER_DIR=/var/lib/club-arena/horse-decisions
 
 # HEALTHCHECK is also an availability control: sp-autoheal restarts the whole
 # engine when Docker marks it unhealthy. Under a saturated event loop the
@@ -199,6 +198,58 @@ finally:
     os.close(fd)
 JOURNAL_PREFLIGHT
 
+# Private Horse decision evidence must survive replacement too. Validate its
+# existing ownership and permissions without changing or deleting retained data.
+# The image currently runs as root, matching this canonical host launch owner.
+python3 - "$HORSE_JOURNAL_HOST_DIR" <<'HORSE_JOURNAL_PREFLIGHT'
+import os, secrets, signal, stat, sys
+
+def expired(_signal, _frame):
+    raise TimeoutError('Horse journal preflight deadline')
+
+signal.signal(signal.SIGALRM, expired)
+signal.alarm(5)
+directory = sys.argv[1]
+if not os.path.isabs(directory) or os.path.normpath(directory) != directory or ',' in directory:
+    raise RuntimeError('Horse journal requires an absolute bind-mount path')
+os.makedirs(directory, mode=0o700, exist_ok=True)
+info = os.lstat(directory)
+if not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.geteuid():
+    raise RuntimeError('Horse journal directory is not private')
+directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+try:
+    held = os.fstat(directory_fd)
+    if (held.st_dev, held.st_ino) != (info.st_dev, info.st_ino):
+        raise RuntimeError('Horse journal directory changed')
+    try:
+        existing = os.stat('horse-decisions.sqlite', dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        existing = None
+    if existing is not None and (
+        not stat.S_ISREG(existing.st_mode) or existing.st_nlink != 1
+        or existing.st_mode & 0o077 or existing.st_uid != os.geteuid()
+    ):
+        raise RuntimeError('Horse journal file is not private')
+    probe = '.write-proof-' + secrets.token_hex(12)
+    fd = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                 0o600, dir_fd=directory_fd)
+    try:
+        remaining = memoryview(b'horse journal write proof\n')
+        while remaining:
+            written = os.write(fd, remaining)
+            if written <= 0:
+                raise RuntimeError('Horse journal write proof incomplete')
+            remaining = remaining[written:]
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+        os.unlink(probe, dir_fd=directory_fd)
+    os.fsync(directory_fd)
+finally:
+    os.close(directory_fd)
+    signal.alarm(0)
+HORSE_JOURNAL_PREFLIGHT
+
 log "replacing $CONTAINER with $AUTHORIZED_CLASS image $AUTHORIZED_IMAGE_ID ($AUTHORIZED_SHA; requested as $IMAGE)"
 # STOP, then remove. NOT `docker rm -f`, which is SIGKILL with no grace period.
 # The engine drains its table engines and flushes hand-state snapshots on
@@ -240,7 +291,6 @@ fi
 docker run -d \
   --name "$CONTAINER" \
   --restart "$RESTART_POLICY" \
-  --stop-timeout 45 \
   --health-interval="$HEALTH_INTERVAL" \
   --health-timeout="$HEALTH_TIMEOUT" \
   --health-start-period="$HEALTH_START_PERIOD" \
@@ -256,6 +306,8 @@ docker run -d \
   --env-file "$ENV_FILE" \
   --env "ENGINE_ALERT_JOURNAL_DIR=$ALERT_JOURNAL_CONTAINER_DIR" \
   --mount "type=bind,source=$ALERT_JOURNAL_HOST_DIR,target=$ALERT_JOURNAL_CONTAINER_DIR" \
+  --env "HORSE_DECISION_JOURNAL_DIR=$HORSE_JOURNAL_CONTAINER_DIR" \
+  --mount "type=bind,source=$HORSE_JOURNAL_HOST_DIR,target=$HORSE_JOURNAL_CONTAINER_DIR" \
   "$AUTHORIZED_IMAGE_ID"
 
 log "started $(docker inspect -f '{{.Id}}' "$CONTAINER" | cut -c1-12) from $AUTHORIZED_IMAGE_ID (restart=$RESTART_POLICY)"

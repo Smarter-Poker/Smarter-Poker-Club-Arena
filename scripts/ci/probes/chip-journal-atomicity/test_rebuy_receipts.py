@@ -15,12 +15,17 @@ def verify_rebuy_receipts(run):
  original=os.environ.get("PGDATABASE","postgres")
  run("CREATE DATABASE rebuy_receipt_probe");os.environ["PGDATABASE"]="rebuy_receipt_probe"
  try:
-  schema=latest("atomic_table_rebuy_before_maintenance_announcement_gate")
-  run((here/"fixture.sql").read_text()+latest("fn_club_members_ledger_writer")+(here/"rebuy-receipt-fixture.sql").read_text()+schema+latest("atomic_table_rebuy"))
+  parser={"__name__":"rebuy_receipt_parser"}
+  source=here/"test_atomicity.py"
+  exec(compile(source.read_text().split("\npg=os.environ",1)[0],str(source),"exec"),parser)
+  fixture=(here/"fixture.sql").read_text()+latest("fn_club_members_ledger_writer")+(here/"rebuy-receipt-fixture.sql").read_text()+parser["original_cash_funding_tables"](root)
+  definitions=parser["authoritative_function_closure"](root,fixture,{"atomic_table_rebuy_before_maintenance_announcement_gate"})
+  schema="\n".join(body for _,body in definitions)+latest("atomic_table_rebuy")
+  run(fixture+schema)
   C="a0000000-0000-4000-8000-000000000001";I="a0000000-0000-4000-8000-000000000002";T="a0000000-0000-4000-8000-000000000003";U="a0000000-0000-4000-8000-000000000004";K="a0000000-0000-4000-8000-000000000005";J="a0000000-0000-4000-8000-000000000006"
   seed=f"INSERT INTO clubs(id) VALUES('{C}');INSERT INTO club_members(id,user_id,club_id) VALUES('{I}','{I}','{C}');INSERT INTO tables(id,club_id) VALUES('{T}','{C}'),('{U}','{C}');INSERT INTO table_seats(table_id,user_id,club_id,seat_number,stack) VALUES('{T}','{I}','{C}',1,0),('{U}','{I}','{C}',1,0);SELECT set_config('test.actor','{I}',true);"
   call=lambda table=T,amount="5",key=K:f"atomic_table_rebuy('{I}','{table}',{amount},{'NULL' if key is None else chr(39)+key+chr(39)})"
-  names=["club_members","table_seats","transaction_idempotency_keys","table_pending_addons","wallet_transactions","chip_ledger","entry_purchase_idempotency_receipts"]
+  names=["club_members","table_seats","transaction_idempotency_keys","table_pending_addons","wallet_transactions","chip_ledger","entry_purchase_idempotency_receipts","cash_participant_funding_receipts"]
   state="jsonb_build_array("+",".join(f"(SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]'::jsonb) FROM {n} t)" for n in names)+")"
   context=f"SELECT set_config('app.money_path','outer',true),set_config('app.ledger_category','outer',true),set_config('app.ledger_counterparty','outer',true),set_config('app.ledger_counterparty_entity','{U}',true),set_config('app.ledger_tournament','{U}',true);"
   correct=f"current_setting('app.money_path')='outer' AND current_setting('app.ledger_category')='outer' AND current_setting('app.ledger_counterparty')='outer' AND current_setting('app.ledger_counterparty_entity')='{U}' AND current_setting('app.ledger_tournament')='{U}'"
@@ -56,10 +61,9 @@ def verify_rebuy_receipts(run):
   for mutation in [f"DELETE FROM transaction_idempotency_keys WHERE key='{K}';",f"UPDATE table_seats SET left_at=now() WHERE table_id='{T}';",f"UPDATE club_members SET chip_balance=90 WHERE user_id='{I}';"]:
    run("BEGIN;"+seed+f"SELECT {call()};"+mutation+f"""DO $t$ DECLARE r numeric;s jsonb;BEGIN SELECT {state} INTO s;r:={call()};
     IF r<>95 OR s IS DISTINCT FROM {state} THEN RAISE EXCEPTION 'Receipt was replaced by current state';END IF;END $t$;ROLLBACK;""");count+=1
-  for table in ["club_members","chip_ledger","table_pending_addons","wallet_transactions","entry_purchase_idempotency_receipts"]:
-   insert_guard="IF TG_OP='INSERT' THEN RETURN NEW;END IF;" if table=="entry_purchase_idempotency_receipts" else ""
+  for table in ["club_members","chip_ledger","table_pending_addons","wallet_transactions","entry_purchase_idempotency_receipts","cash_participant_funding_receipts"]:
    for fault in ["55P03","40P01","23514","23505","XX001"]:
-    run("BEGIN;"+seed+context+f"""CREATE FUNCTION rebuy_fault() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN {insert_guard} RAISE EXCEPTION 'injected failure' USING ERRCODE='{fault}';END $f$;
+    run("BEGIN;"+seed+context+f"""CREATE FUNCTION rebuy_fault() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN {'IF TG_OP=\'INSERT\' THEN RETURN NEW;END IF;' if table=='entry_purchase_idempotency_receipts' else ''} RAISE EXCEPTION 'injected failure' USING ERRCODE='{fault}';END $f$;
      CREATE TRIGGER rebuy_fault BEFORE INSERT OR UPDATE ON {table} FOR EACH ROW EXECUTE FUNCTION rebuy_fault();
      DO $t$ DECLARE s jsonb;caught boolean:=false;BEGIN SELECT {state} INTO s;
       BEGIN PERFORM {call()};EXCEPTION WHEN SQLSTATE '{fault}' THEN caught:=true;END;
@@ -77,7 +81,7 @@ def verify_rebuy_receipts(run):
    if conflict:params["conflict"]=True
    # Each committed concurrency case uses a fresh database fixture.
    if conflict:
-    run((here/"fixture.sql").read_text().replace("CREATE SCHEMA auth;","").replace("CREATE FUNCTION auth.uid()","CREATE OR REPLACE FUNCTION auth.uid()")+latest("fn_club_members_ledger_writer")+(here/"rebuy-receipt-fixture.sql").read_text()+schema+latest("atomic_table_rebuy"))
+    run(fixture.replace("CREATE SCHEMA auth;","").replace("CREATE FUNCTION auth.uid()","CREATE OR REPLACE FUNCTION auth.uid()")+schema)
    r=subprocess.run([os.environ["PGNODE"],str(here/"test_transaction_concurrency.mjs")],input=json.dumps(params),text=True,capture_output=True)
    if r.returncode:raise RuntimeError(r.stderr)
    print(r.stdout.strip(),flush=True);count+=1

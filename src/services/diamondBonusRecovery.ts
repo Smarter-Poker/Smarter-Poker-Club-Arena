@@ -1,5 +1,5 @@
 import type { BonusGame, BonusStart } from './DiamondBonusService';
-import { validSpinAmount, bonusTotal, PLINKO_DIAMONDS_PER_DROP } from '../utils/bonusGameBudget';
+import { validBonusBudget, bonusTotal } from '../utils/bonusGameBudget';
 const key = (user: string, club: string, game: BonusGame) =>
   `diamond-spins-pending:${user}:${club}:${game}`;
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -12,13 +12,18 @@ export function pendingBonus(user: string, club: string, game: BonusGame): Bonus
     v.clubId !== club ||
     v.game !== game ||
     !uuid.test(v.commitId) ||
+    (v.serverSeedHash !== undefined &&
+      (typeof v.serverSeedHash !== 'string' || !/^[a-f0-9]{64}$/.test(v.serverSeedHash))) ||
     typeof v.seed !== 'string' ||
     !v.seed.length ||
     v.seed.length > 64 ||
     !v.budget ||
-    !validSpinAmount(v.budget.base) ||
+    !validBonusBudget(v.budget) ||
     typeof v.budget.doubled !== 'boolean' ||
-    !PLINKO_DIAMONDS_PER_DROP.includes(v.budget.denomination as 1) ||
+    // A saved request keeps the drop value it was sent with, so a completed game
+    // from before ten drops became the one setting still replays its receipt.
+    !Number.isSafeInteger(v.budget.denomination) ||
+    v.budget.denomination < 1 ||
     bonusTotal(v.budget) % v.budget.denomination !== 0
   ) {
     throw new Error('The Saved Bonus Needs To Be Checked');
@@ -29,6 +34,10 @@ export function rememberBonus(user: string, input: BonusStart) {
   const prior = pendingBonus(user, input.clubId, input.game);
   if (prior && JSON.stringify(prior) !== JSON.stringify(input))
     throw new Error('Check Your Previous Bonus Before Starting Another');
+  // Never invent a commitment for an older saved wager. Replay its exact request,
+  // but require the displayed commitment before accepting any fresh wager.
+  if (!prior && !/^[a-f0-9]{64}$/.test(input.serverSeedHash ?? ''))
+    throw new Error('Prepare A Sealed Game Ticket Before Starting');
   // If the request cannot be retained, stop before sending any money request.
   sessionStorage.setItem(key(user, input.clubId, input.game), JSON.stringify(input));
 }

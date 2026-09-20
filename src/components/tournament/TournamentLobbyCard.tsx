@@ -1,14 +1,27 @@
+import {
+  tournamentEntryWindow,
+  type TournamentEntryWindowRow,
+} from '../../utils/tournamentEntryWindow';
+import {
+  isKnownTournamentFormat,
+  isUnlimitedTournamentFormat,
+  getTournamentFormatKind,
+  isSeatFirstTournamentFormat,
+  isTournamentEntryUnavailable,
+  getTournamentEntryCapacity,
+} from '../../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT LOBBY CARD — Tournament Registration Display
  * Shows tournament info with registration countdown and join button
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * THE CONSOLE (#ClubArenaConsole, 2026-09-08). The card was a rounded sheet
- * with a strip of coloured badge pills, a six-cell info GRID, a second strip of
- * feature pills, a gradient progress bar and a gradient button. Dan, on exactly
- * that shape: "I'M NOT A BIG FAN OF THESE CARDS. I DON'T LIKE THE 4 BOXES ...
- * I'D MUCH RATHER SEE THEM LOOK MORE LIKE [the plain console]."
+ * THE CONSOLE (#ClubArenaConsole, 2026-09-08; re-landed 2026-09-20 on the
+ * fixed-format entry contract). The card was a rounded sheet with a strip of
+ * coloured badge pills, a six-cell info GRID, a second strip of feature pills,
+ * a gradient progress bar and a gradient button. Dan, on exactly that shape:
+ * "I'M NOT A BIG FAN OF THESE CARDS. I DON'T LIKE THE 4 BOXES ... I'D MUCH
+ * RATHER SEE THEM LOOK MORE LIKE [the plain console]."
  *
  * So it is Dan's approved spade master now: the format is the eyebrow, the
  * event name is engraved in the header well, the state (Open / Late Reg /
@@ -24,8 +37,10 @@
  * has always done, now said out loud.
  *
  * Every behaviour is unchanged: the registration check and its three states,
- * the countdowns, the seat-first branch, the watch intent in the URL and the
- * useAppNavigate routing that keeps a seated player inside their lobby tab.
+ * the countdowns, the entry-window projection, the recorded-format tests
+ * (`tournamentPresentation`), the seat-first branch, the watch intent in the
+ * URL and the useAppNavigate routing that keeps a seated player inside their
+ * lobby tab.
  */
 
 import { useState, useEffect, memo } from 'react';
@@ -42,22 +57,29 @@ import { reportError } from '../../utils/errorReporter';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 // Whole-number tournament money (Dan 2026-08-20).
 import { money } from '../../utils/buyIn';
+import {
+  describeMttStructure,
+  describeStoredMttStructure,
+  mttClockDescription,
+  type MttStructureDescription,
+} from '../../../server/src/tournament/mttStructureDescription';
 import { compactChips } from '../../utils/format';
-import { chipsCompact } from './details/types';
 import { SpadeConsole, type ConsoleInk, type PlateButtonProps } from '../console/SpadeConsole';
 
-interface Tournament {
+interface Tournament extends TournamentEntryWindowRow {
+  format_contract?: unknown;
   id: string;
   name: string;
   type: 'sng' | 'mtt' | 'satellite' | 'spin' | 'bounty' | 'pko' | 'mystery';
   /** The TOTAL a player pays, whole chips. Never the prize half on its own. */
   buyIn: number;
   prizePool: number;
-  maxPlayers: number;
+  maxPlayers: number | null;
   registeredPlayers: number;
   startsAt?: string;
   status: 'registering' | 'running' | 'finished' | 'cancelled';
   blindStructure: string;
+  structureFacts?: MttStructureDescription;
   gameType?: string;
   startingChips?: number;
   lateRegMins?: number;
@@ -78,10 +100,10 @@ interface Tournament {
   rebuyAllowed?: boolean;
   addonAllowed?: boolean;
   spinMultiplier?: number;
-  started_at?: string;
-  late_reg_mins?: number;
-  late_reg_levels?: number;
-  current_level?: number;
+  started_at?: string | null;
+  late_reg_mins?: number | null;
+  late_reg_levels?: number | null;
+  current_level?: number | null;
   addon_levels?: number;
   is_reentry?: boolean;
 }
@@ -122,7 +144,7 @@ export function isStartingSoon(msToStart: number | null): boolean {
 }
 
 export interface LateRegState {
-  /** Registration is still open (or believed open). */
+  /** The projected entry window is open; the server decides actual eligibility. */
   active: boolean;
   /** What to print after "Late Reg:". Empty when there is no window at all. */
   label: string;
@@ -141,8 +163,8 @@ export interface LateRegState {
  *     window, forever, so the countdown never counted down and never closed.
  *
  * The units are kept apart here and neither is ever invented from the other:
- * when the input needed to measure the window is missing, this says "Open"
- * rather than printing a number nobody supplied.
+ * when the input needed to measure the window is missing, this says
+ * "Unavailable" and does not offer a speculative registration.
  */
 export function lateRegState(opts: {
   levels: number;
@@ -150,11 +172,18 @@ export function lateRegState(opts: {
   currentLevel?: number | null;
   startedAtMs?: number | null;
   nowMs: number;
+  finalized?: boolean | null;
 }): LateRegState {
   const { levels, minutes, currentLevel, startedAtMs, nowMs } = opts;
+  if (
+    opts.finalized === true ||
+    [levels, minutes, currentLevel ?? 0].some((v) => !Number.isSafeInteger(v) || v < 0)
+  ) {
+    return { active: false, label: 'Closed' };
+  }
 
   if (levels > 0) {
-    if (currentLevel == null) return { active: true, label: 'Open' };
+    if (currentLevel == null) return { active: false, label: 'Unavailable' };
     if (currentLevel >= levels) return { active: false, label: 'Closed' };
     const left = levels - currentLevel;
     return { active: true, label: `${left} Lvl${left !== 1 ? 's' : ''} Left` };
@@ -162,7 +191,7 @@ export function lateRegState(opts: {
 
   if (minutes > 0) {
     if (startedAtMs == null || !Number.isFinite(startedAtMs)) {
-      return { active: true, label: 'Open' };
+      return { active: false, label: 'Unavailable' };
     }
     const msLeft = startedAtMs + minutes * 60_000 - nowMs;
     if (msLeft <= 0) return { active: false, label: 'Closed' };
@@ -228,8 +257,12 @@ function TournamentLobbyCardInner({
   }, [tournament.id, tournament.startsAt, knownRegistration]);
 
   // See lateRegState() above for why these two are not one variable.
-  const lateRegLevels = tournament.late_reg_levels ?? 0;
-  const lateRegMinutes = tournament.late_reg_mins ?? tournament.lateRegMins ?? 0;
+  const entryWindow = tournamentEntryWindow({
+    ...tournament,
+    late_reg_mins: tournament.late_reg_mins ?? tournament.lateRegMins,
+  });
+  const lateRegLevels = entryWindow.mode === 'levels' ? entryWindow.cap : 0;
+  const lateRegMinutes = entryWindow.mode === 'minutes' ? entryWindow.minutes : 0;
   const hasLateReg = lateRegLevels > 0 || lateRegMinutes > 0;
 
   useEffect(() => {
@@ -245,6 +278,8 @@ function TournamentLobbyCardInner({
     tournament.late_reg_levels,
     tournament.late_reg_mins,
     tournament.lateRegMins,
+    tournament.rebuy_levels,
+    tournament.prize_pool_finalized,
     tournament.current_level,
     tournament.started_at,
   ]);
@@ -299,7 +334,7 @@ function TournamentLobbyCardInner({
   };
 
   const updateLateRegCountdown = () => {
-    const startedAt = tournament.started_at ?? tournament.startsAt;
+    const startedAt = tournament.started_at;
     const startedMs = startedAt ? new Date(startedAt).getTime() : null;
     const next = lateRegState({
       levels: lateRegLevels,
@@ -307,13 +342,19 @@ function TournamentLobbyCardInner({
       currentLevel: tournament.current_level,
       startedAtMs: startedMs,
       nowMs: Date.now(),
+      finalized: tournament.prize_pool_finalized,
     });
     setLateRegActive(next.active);
     setLateRegCountdown(next.label);
   };
 
   const handleRegister = async () => {
-    if (!user?.id || registering) return;
+    if (
+      !user?.id ||
+      registering ||
+      isTournamentEntryUnavailable(tournament, tournament.registeredPlayers)
+    )
+      return;
     setRegistering(true);
 
     try {
@@ -394,48 +435,27 @@ function TournamentLobbyCardInner({
       case 'running':
         return 'Running';
       case 'finished':
-        return 'Done';
+        return 'Completed';
       case 'cancelled':
-        return 'Off';
+        return 'Cancelled';
       default:
         return status;
     }
   };
 
-  const getSpeedTier = (tournament: Tournament): string | null => {
-    // Get blind duration from blind_duration field or infer from blindStructure
-    let blindDuration = tournament.blindDuration;
-
-    if (!blindDuration && tournament.blindStructure) {
-      // Try to parse blindStructure if it's a JSON string
-      try {
-        let structure = tournament.blindStructure;
-        if (typeof structure === 'string') {
-          // Only attempt JSON.parse if it looks like JSON (starts with [ or {)
-          const trimmed = structure.trim();
-          if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
-            structure = JSON.parse(trimmed);
-          } else {
-            return null; // Not parseable JSON — skip silently
-          }
+  const structureFacts =
+    tournament.structureFacts ??
+    (tournament.blindDuration !== undefined
+      ? {
+          ...describeMttStructure(
+            [{ durationMinutes: tournament.blindDuration, bigBlind: 0, isBreak: false }],
+            tournament.startingChips ?? 0
+          ),
+          // A legacy opening-clock prop does not describe every later level.
+          minimumMinutes: null,
+          maximumMinutes: null,
         }
-        if (Array.isArray(structure) && structure.length > 0) {
-          blindDuration = structure[0].durationMinutes || structure[0].duration_minutes;
-        }
-      } catch (e) {
-        reportError(e, 'TournamentLobbyCard.getSpeedTier');
-        // If parsing fails, return no badge (non-critical)
-        return null;
-      }
-    }
-
-    if (!blindDuration) return null;
-
-    if (blindDuration <= 3) return 'Hyper';
-    if (blindDuration <= 5) return 'Turbo';
-    if (blindDuration <= 10) return null; // Regular - no tag needed
-    return 'Deep Stack';
-  };
+      : describeStoredMttStructure(tournament.blindStructure, tournament.startingChips));
 
   const isCountdownCritical = isStartingSoon(msToStart);
 
@@ -446,27 +466,15 @@ function TournamentLobbyCardInner({
    * them run a late-reg window.
    */
   const isFreezout = (tournament: Tournament): boolean => {
-    return (
-      !tournament.isRebuy &&
-      !tournament.rebuyAllowed &&
-      !tournament.addonAllowed &&
-      !tournament.is_reentry
-    );
-  };
-
-  const hasMaxPlayers = tournament.maxPlayers > 0;
-  // current_players drifts UP (see the Entries note below), so the subtraction
-  // can go negative. "-3 spots remaining" is not a thing.
-  const spotsRemaining = hasMaxPlayers
-    ? Math.max(0, tournament.maxPlayers - tournament.registeredPlayers)
-    : Infinity;
-  const isFull = hasMaxPlayers && tournament.registeredPlayers >= tournament.maxPlayers;
-  /* Seat-first: a Spin, or any game with two seats. Same rule as
-     isSeatFirstFormat on the server and isSeatFirstTournament in the lobby. */
-  const isSeatFirstCard =
-    tournament.type === 'spin' || (tournament.maxPlayers > 0 && tournament.maxPlayers <= 2);
-
-  const speedTier = getSpeedTier(tournament);
+    /* The speed as ONE word on the glass, from the recorded structure - the
+     same facts the details page prints, never re-derived from a parsed
+     blind array. */
+  const speedTier =
+    structureFacts.speed === 'hyper_turbo' ||
+    structureFacts.speed === 'turbo' ||
+    structureFacts.speed === 'slow'
+      ? structureFacts.speedLabel
+      : null;
   const tags: string[] = [];
   if (tournament.isPinned) tags.push('Pinned');
   if (tournament.isNew) tags.push('New');
@@ -500,7 +508,11 @@ function TournamentLobbyCardInner({
    * THE ACTION, on the blue glass. One branch per state, exactly the branches
    * this card has always had - only their chrome changed.
    */
-  let primary: PlateButtonProps;
+  /* A finished or cancelled event offers no admission control at all, and the
+     foot paints both plates or neither (SKILL.md 1.5): so it paints neither,
+     the state prints in the pill, and the card itself is still the way to its
+     history. */
+  let primary: PlateButtonProps | null = null;
   if (tournament.status === 'registering' && regCheckFailed) {
     // We could not ask whether this player is already in. Offering
     // "Register" here risks a duplicate paid entry; offering "Registered"
@@ -517,13 +529,15 @@ function TournamentLobbyCardInner({
        succeed - the same dead end lobbyEntries.isSeatFirstTournament was
        written to prevent on the main board, which this tab never learned.
 
-       Seats are the test, as everywhere else: two or fewer, or a Spin. */
+       The recorded fixed format owns this route, including funded legacy
+       satellites. */
     primary = {
-      label: `Take A Seat (${money(tournament.buyIn)})`,
-      ink: 'white',
+      label: isFull ? 'Entry Unavailable' : `Take A Seat (${money(tournament.buyIn)})`,
+      ink: isFull ? 'muted' : 'white',
+      disabled: isFull,
       onClick: (e) => {
         e.stopPropagation();
-        navigate(`/tournaments/${tournament.id}?seat=1`);
+        if (!isFull) navigate(`/tournaments/${tournament.id}?seat=1`);
       },
     };
   } else if (tournament.status === 'registering' && isRegistered) {
@@ -539,10 +553,12 @@ function TournamentLobbyCardInner({
     primary = {
       label: registering
         ? 'Registering...'
-        : isFull
-          ? 'Tournament Full'
-          : `Register (${money(tournament.buyIn)})`,
-      ink: isFull ? 'muted' : 'white',
+        : !entryDetailsKnown
+          ? 'Entry Status Unavailable'
+          : isFull
+            ? 'Tournament Full'
+            : `Register (${money(tournament.buyIn)})`,
+      ink: isFull || !entryDetailsKnown ? 'muted' : 'white',
       disabled: registering || isFull,
       onClick: (e) => {
         e.stopPropagation();
@@ -576,15 +592,15 @@ function TournamentLobbyCardInner({
         );
       },
     };
-  } else {
-    primary = { label: getStatusLabel(tournament.status), ink: 'muted', disabled: true };
   }
 
   return (
     <SpadeConsole
       as="div"
       className={styles.card}
-      eyebrow={getTypeLabel(tournament.type)}
+      /* The recorded format names the card; a format nobody has recorded is
+         plainly a Tournament, never a guess. */
+      eyebrow={formatKnown ? getTypeLabel(displayType) : 'Tournament'}
       /* The name, and only the name. Prefixing the guarantee pushed the title
          past the header well and truncated it ("5K GTD SUNDAY DEEPSTAC"); the
          guarantee already prints, in gold, on the PRIZE POOL row below. */
@@ -599,16 +615,21 @@ function TournamentLobbyCardInner({
         transition:
           'opacity 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
       }}
-      plates={{
-        secondary: {
-          label: 'Details',
-          onClick: (e) => {
-            e.stopPropagation();
-            navigate(`/tournaments/${tournament.id}`);
-          },
-        },
-        primary,
-      }}
+      foot={primary ? undefined : 'foot'}
+      plates={
+        primary
+          ? {
+              secondary: {
+                label: 'Details',
+                onClick: (e) => {
+                  e.stopPropagation();
+                  navigate(`/tournaments/${tournament.id}`);
+                },
+              },
+              primary,
+            }
+          : undefined
+      }
     >
       {tags.length > 0 && (
         <p className={styles.tags}>
@@ -654,7 +675,7 @@ function TournamentLobbyCardInner({
           <span className="sc-label sc-ink--blue">Entries</span>
           <span className={`${styles.value} sc-ink--silver`}>
             {tournament.registeredPlayers.toLocaleString()}
-            {hasMaxPlayers ? `/${tournament.maxPlayers.toLocaleString()}` : ''}
+            {entryCapacity !== null ? `/${entryCapacity.toLocaleString()}` : ''}
           </span>
         </div>
 
@@ -662,6 +683,8 @@ function TournamentLobbyCardInner({
           <span className="sc-label sc-ink--blue">Starting Chips</span>
           <span className={`${styles.value} sc-ink--silver`}>
             {tournament.startingChips ? compactChips(tournament.startingChips) : '-'}
+            {structureFacts.startingDepthBB !== null &&
+              ` · ${structureFacts.startingDepthBB.toLocaleString(undefined, { maximumFractionDigits: 2 })} BB`}
           </span>
         </div>
 
@@ -689,21 +712,24 @@ function TournamentLobbyCardInner({
 
         <div className={styles.row}>
           <span className="sc-label sc-ink--blue">Structure</span>
-          <span className={`${styles.value} sc-ink--silver`}>{tournament.blindStructure}</span>
+          <span className={`${styles.value} sc-ink--silver`}>
+            {structureFacts.speedLabel ?? 'Unconfirmed'}
+          </span>
         </div>
 
-        {hasLateReg && (
+        <div className={styles.row}>
+          <span className="sc-label sc-ink--blue">Levels</span>
+          <span className={`${styles.value} sc-ink--silver`}>
+            {mttClockDescription(structureFacts)}
+          </span>
+        </div>
+
+        {hasLateReg && (tournament.status !== 'running' || lateRegActive) && (
           <div className={styles.row}>
             <span className="sc-label sc-ink--blue">Late Reg</span>
-            <span
-              className={`${styles.value} ${
-                tournament.status === 'running' && !lateRegActive ? 'sc-ink--muted' : 'sc-ink--gold'
-              }`}
-            >
+            <span className={`${styles.value} sc-ink--gold`}>
               {tournament.status === 'running'
-                ? lateRegActive
-                  ? lateRegCountdown || 'Open'
-                  : 'Closed'
+                ? lateRegCountdown || 'Open'
                 : lateRegLevels > 0
                   ? `Through Lvl ${lateRegLevels}`
                   : `${lateRegMinutes} Min`}
@@ -729,7 +755,9 @@ function TournamentLobbyCardInner({
               ? isFull
                 ? 'Tournament Full'
                 : `${spotsRemaining.toLocaleString()} Spots Remaining`
-              : 'Open Entry'}
+              : unlimited
+                ? 'Open Entry'
+                : 'Entry Details Unavailable'}
           </span>
         </div>
       </div>

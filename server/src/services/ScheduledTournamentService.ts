@@ -1,3 +1,9 @@
+import {
+  isUnlimitedMtt,
+  isPersistedUnlimitedMtt,
+  isPersistedSeatFirst,
+  readPersistedTournamentFormatContract,
+} from '../tournament/tournamentEntryCapacity.js';
 import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -39,11 +45,17 @@ import { reportError } from './errorReporter.js';
 import { buyInFor, freeBuyColumns, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
 import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
-import { TournamentRecurringService, MTT_PUBLISH_LEAD_MS } from './TournamentRecurringService.js';
+import {
+  TournamentRecurringService,
+  MTT_PUBLISH_LEAD_MS,
+  satelliteTargetIsDeliverable,
+  type SatelliteTargetRow,
+} from './TournamentRecurringService.js';
 import {
   MTT_BLIND_PRESETS,
   mttSpeedColumns,
   mttPayoutPercent,
+  mttLateRegistrationMinutes,
 } from '../tournament/mttStructurePolicy.js';
 import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
 import {
@@ -351,15 +363,18 @@ export function restartCloneStartMs(args: {
   return next;
 }
 
-/** Same normalization fn_create_tournament and TournamentRecurringService use. */
+/** Canonical engine games plus legacy aliases retained in saved schedules. */
 const GAME_TYPE_MAP: Record<string, string> = {
   nlh: 'NLH',
+  plo: 'PLO4',
   plo4: 'PLO4',
   plo5: 'PLO5',
   plo6: 'PLO6',
   plo8: 'PLO8',
   shortdeck: 'SHORT_DECK',
   short_deck: 'SHORT_DECK',
+  flh: 'FLH',
+  flo8: 'FLO8',
 };
 
 const KNOWN_TYPES = new Set([
@@ -371,6 +386,18 @@ const KNOWN_TYPES = new Set([
   'satellite',
   'sng',
   'spin',
+  'xmtt',
+  'mtt_freezeout',
+  'mtt_free_buy',
+  'mtt_rebuy',
+  'mtt_reentry',
+  'rebuy',
+  'reentry',
+  'progressive',
+  'pko',
+  'mystery',
+  'hu_sng',
+  'heads_up',
 ]);
 
 /** Mystery bounty multiplier bounds — identical to TournamentRecurringService. */
@@ -888,7 +915,15 @@ export class ScheduledTournamentService {
     cfg: Record<string, unknown>,
     startTime: Date
   ): Promise<Record<string, unknown> | null> {
-    const rawType = String(cfg.type ?? 'mtt').toLowerCase();
+    const linkedSatellite = isUnlimitedMtt({
+      satellite_target_id: cfg.satellite_target_id,
+      satelliteTargetId: cfg.satelliteTargetId,
+      satellite_target: cfg.satellite_target,
+      satelliteTarget: cfg.satelliteTarget,
+    });
+    const rawType = String(cfg.type ?? 'mtt')
+      .trim()
+      .toLowerCase();
     if (!KNOWN_TYPES.has(rawType)) {
       reportError(
         new Error(
@@ -898,11 +933,40 @@ export class ScheduledTournamentService {
       );
       return null;
     }
-    const type = rawType === 'mtt' ? 'freezeout' : rawType;
+    const typeAliases: Record<string, string> = {
+      mtt: 'freezeout',
+      xmtt: 'freezeout',
+      mtt_freezeout: 'freezeout',
+      mtt_free_buy: 'freezeout',
+      mtt_rebuy: 'rebuy',
+      mtt_reentry: 'reentry',
+      progressive: 'progressive_bounty',
+      pko: 'progressive_bounty',
+      mystery: 'mystery_bounty',
+      hu_sng: 'sng',
+      heads_up: 'sng',
+    };
+    const normalizedType = typeAliases[rawType] ?? rawType;
+    const type =
+      linkedSatellite && ['sng', 'spin', 'hu_sng', 'heads_up'].includes(normalizedType)
+        ? 'satellite'
+        : normalizedType;
     const isSpin = type === 'spin';
     const isSng = type === 'sng';
-    const isSatellite = type === 'satellite';
+    const isSatellite = linkedSatellite || type === 'satellite';
     const isBountyType = ['bounty', 'progressive_bounty', 'mystery_bounty'].includes(type);
+    if (
+      isSatellite &&
+      (isBountyType || asBool(cfg.isBounty) || asBool(cfg.isPko) || asBool(cfg.isMysteryBounty))
+    ) {
+      reportError(
+        new Error(
+          `[ScheduledTournaments] schedule ${schedule.id}: bounty satellite settlement is unsupported`
+        ),
+        'ScheduledTournaments.unsupported_bounty_satellite'
+      );
+      return null;
+    }
 
     /**
      * ═══════════════════════════════════════════════════════════════════════
@@ -949,8 +1013,20 @@ export class ScheduledTournamentService {
       return null;
     }
 
-    const gameVariant = String(cfg.gameVariant ?? 'nlh').toLowerCase();
-    const dbGameType = GAME_TYPE_MAP[gameVariant] || 'NLH';
+    const configuredGame = cfg.gameVariant ?? 'nlh';
+    const gameVariant = typeof configuredGame === 'string' ? configuredGame.toLowerCase() : '';
+    // An explicit unsupported game must not silently become Hold'em. Resolve
+    // this before spawnInstance claims a key or writes a tournament.
+    if (!Object.hasOwn(GAME_TYPE_MAP, gameVariant)) {
+      reportError(
+        new Error(
+          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} has unknown game variant "${String(configuredGame)}" - skipping`
+        ),
+        'ScheduledTournaments.unknown_game_variant'
+      );
+      return null;
+    }
+    const dbGameType = GAME_TYPE_MAP[gameVariant];
 
     // Explicit arrays win; otherwise a named preset resolves them. This keeps
     // schedule rows (and the seed migration) readable instead of embedding
@@ -1036,6 +1112,8 @@ export class ScheduledTournamentService {
        2026-08-19) and the multiplier maths, the reserve booking and the payout
        shape are all built around exactly three. A duel is two by the same
        argument -- see headsUpSpec. Everything else keeps its configured field. */
+    // Keep the authored legacy write contract in both modes. The owning DB
+    // insertion transaction normalizes MTT capacity to NULL after activation.
     const maxPlayers = isSpin
       ? SPIN_SEATS
       : clampInt(cfg.maxPlayers, 2, 10000, 0) || (isSng ? HEADS_UP_SEATS : 100);
@@ -1060,7 +1138,7 @@ export class ScheduledTournamentService {
      * misconfigured. Paying every seat is legal (a Spin pays 3 of 3); paying
      * more places than can enter is not.
      */
-    if (payouts.length > maxPlayers) {
+    if ((isSng || isSpin) && payouts.length > maxPlayers) {
       reportError(
         new Error(
           `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} pays ${payouts.length} places on ${maxPlayers} seats - skipping`
@@ -1069,7 +1147,11 @@ export class ScheduledTournamentService {
       );
       return null;
     }
-    const minPlayers = Math.min(Math.max(clampInt(cfg.minPlayers, 2, 10000, 3), 2), maxPlayers);
+    const requestedMinPlayers = Math.max(clampInt(cfg.minPlayers, 2, 10000, 3), 2);
+    const minPlayers =
+      isSng || isSpin
+        ? Math.min(requestedMinPlayers, maxPlayers)
+        : Math.max(3, requestedMinPlayers);
 
     /**
      * ═══════════════════════════════════════════════════════════════════════
@@ -1142,7 +1224,22 @@ export class ScheduledTournamentService {
     let satelliteSeats: number | null = null;
     if (isSatellite) {
       const targetName = String(cfg.satelliteTargetName ?? '').trim();
-      const target = targetName ? await this.resolveSatelliteTarget(schedule, targetName) : null;
+      const targetObject = cfg.satelliteTarget ?? cfg.satellite_target;
+      const targetRecord =
+        targetObject && typeof targetObject === 'object'
+          ? (targetObject as Record<string, unknown>)
+          : {};
+      const rawTargetId =
+        cfg.satelliteTargetId ??
+        cfg.satellite_target_id ??
+        targetRecord.tournamentId ??
+        targetRecord.tournament_id ??
+        (typeof targetObject === 'string' ? targetObject : null);
+      const targetId = typeof rawTargetId === 'string' ? rawTargetId.trim() : '';
+      const target =
+        targetName || targetId
+          ? await this.resolveSatelliteTarget(schedule, targetName, targetId, startTime)
+          : null;
       if (!target) {
         console.log(
           `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)}: no pre-start satellite target matching "${targetName}" - skipping this spawn`
@@ -1150,11 +1247,12 @@ export class ScheduledTournamentService {
         return null;
       }
       satelliteTargetId = target;
-      const seats = clampInt(cfg.satelliteSeats, 1, 10000, 0);
+      const seats = clampInt(cfg.satelliteSeats ?? targetRecord.seatsAwarded, 1, 10000, 0);
       satelliteSeats = seats > 0 ? seats : null;
     }
 
-    const isRebuy = asBool(cfg.isRebuy) || asBool(cfg.rebuy);
+    const isRebuy = type === 'rebuy' || asBool(cfg.isRebuy) || asBool(cfg.rebuy);
+    const isReentry = type === 'reentry' || isRebuy || asBool(cfg.isReentry);
     const addOn = asBool(cfg.addOnAvailable) || asBool(cfg.addOn);
     const lateRegLevels = isSng || isSpin ? 0 : clampInt(cfg.lateRegistrationLevels, 0, 100, 8);
 
@@ -1180,6 +1278,9 @@ export class ScheduledTournamentService {
       name: String(cfg.name ?? schedule.name),
       game_type: dbGameType,
       variant: type,
+      // Scheduled satellites retain the existing MTT writer shape in both ABIs.
+      // Their target and variant identify the feeder; SATELLITE/sng is the
+      // separately purchased legacy seat-first contract.
       tournament_type: isSng ? 'SNG' : isSpin ? 'SPIN' : 'MTT',
       buy_in_amount: buyInAmount,
       buy_in_fee: buyInFee,
@@ -1195,7 +1296,7 @@ export class ScheduledTournamentService {
       payout_percent: mttPayoutPercent(cfg.payoutPercent),
       start_time: startTime.toISOString(),
       late_reg_levels: lateRegLevels,
-      late_reg_mins: lateRegLevels,
+      late_reg_mins: mttLateRegistrationMinutes(blinds, lateRegLevels),
       is_bounty: isBountyType,
       is_pko: type === 'progressive_bounty',
       is_mystery_bounty: type === 'mystery_bounty',
@@ -1206,12 +1307,13 @@ export class ScheduledTournamentService {
       // Rebuy / add-on: cost and chips default to the snapped total and the
       // starting stack, matching what process_tournament_rebuy computes.
       is_rebuy: isRebuy,
-      is_reentry: isRebuy || asBool(cfg.isReentry),
-      rebuy_cost: isRebuy ? wholeChips(cfg.rebuyCost) || split.total : null,
-      rebuy_chips: isRebuy
-        ? clampInt(cfg.rebuyChips, 1, 100_000_000, 0) ||
-          clampInt(cfg.startingStack, 1, 100_000_000, 10000)
-        : null,
+      is_reentry: isReentry,
+      rebuy_cost: isRebuy || isReentry ? wholeChips(cfg.rebuyCost) || split.total : null,
+      rebuy_chips:
+        isRebuy || isReentry
+          ? clampInt(cfg.rebuyChips, 1, 100_000_000, 0) ||
+            clampInt(cfg.startingStack, 1, 100_000_000, 10000)
+          : null,
       rebuy_levels: isRebuy ? clampInt(cfg.rebuyLevels, 1, 100, 6) : null,
       add_on_available: addOn,
       /**
@@ -1325,21 +1427,38 @@ export class ScheduledTournamentService {
    */
   private async resolveSatelliteTarget(
     schedule: TournamentScheduleRow,
-    namePrefix: string
+    namePrefix: string,
+    targetId?: string,
+    feederStartTime?: Date
   ): Promise<string | null> {
     let query = supabase
       .from('tournaments')
-      .select('id, name, start_time')
+      .select(
+        'format_contract, id, name, start_time, tournament_type, variant, max_players, buy_in_amount, buy_in_fee, satellite_target_id, satellite_target, is_bounty, is_pko, is_mystery_bounty, is_premium_spin'
+      )
       .in('status', ['ANNOUNCED', 'REGISTERING'])
-      .gt('start_time', new Date().toISOString())
-      .ilike('name', `${namePrefix.replace(/[%_]/g, '')}%`)
+      .gt(
+        'start_time',
+        new Date(Math.max(Date.now(), feederStartTime?.getTime() ?? 0)).toISOString()
+      )
       .order('start_time', { ascending: true })
       .limit(1);
+    query = targetId
+      ? query.eq('id', targetId)
+      : query.ilike('name', `${namePrefix.replace(/[%_]/g, '')}%`);
     query = schedule.union_id
       ? query.eq('union_id', schedule.union_id)
       : query.eq('club_id', schedule.club_id);
     const { data, error } = await query.maybeSingle();
-    if (error || !data) return null;
+    if (
+      error ||
+      !data ||
+      !isPersistedUnlimitedMtt(data) ||
+      data.satellite_target_id ||
+      data.satellite_target ||
+      !satelliteTargetIsDeliverable(data as SatelliteTargetRow)
+    )
+      return null;
     return data.id as string;
   }
 
@@ -1394,6 +1513,7 @@ export class ScheduledTournamentService {
     'mystery_bounty_top_percent',
     'spin_type',
     'satellite_target_id',
+    'satellite_target',
     'satellite_seats',
     'is_private',
     'short_description',
@@ -1447,7 +1567,7 @@ export class ScheduledTournamentService {
   }
 
   private async maybeRestartTournament(old: Record<string, unknown>): Promise<void> {
-    if (!old.ended_at || !old.club_id || !old.name) return;
+    if (typeof old.id !== 'string' || !old.id || !old.ended_at || !old.club_id || !old.name) return;
 
     /**
      * A SEAT-FIRST FORMAT IS NEVER RESTARTED ON A CLOCK (Dan, 2026-09-01).
@@ -1460,9 +1580,10 @@ export class ScheduledTournamentService {
      * clock gate. The board already replaces both continuously the moment one
      * finishes, which is what "restart" was reaching for.
      */
-    const clonedVariant = String(old.variant ?? '').toLowerCase();
-    const clonedSeats = Number(old.max_players ?? 0);
-    if (clonedVariant === 'spin' || (clonedSeats > 0 && clonedSeats <= HEADS_UP_SEATS)) return;
+    // A restart is a new admission: an unqualified historical row cannot
+    // choose its child format from labels or an old numeric capacity.
+    readPersistedTournamentFormatContract(old);
+    if (isPersistedSeatFirst(old)) return;
 
     const endedAt = new Date(String(old.ended_at));
 
@@ -1475,18 +1596,12 @@ export class ScheduledTournamentService {
       .in('status', ['ANNOUNCED', ...LIVE_STATUSES]);
     if (liveErr || liveCount === null || liveCount === undefined || liveCount > 0) return;
 
-    // DEDUPE `restart:${old.id}` — tournament_schedule_spawns.schedule_id is
-    // NOT NULL and these are schedule-less manual events, so the claim cannot
-    // live there. The equivalent invariant, enforced against the tournaments
-    // table itself: this instance has been restarted iff a same-club,
-    // same-name tournament was created AFTER it ended. The clone always
-    // satisfies that, so each completed instance is cloned at most once.
+    // The immediate source identity, enforced in the insert transaction,
+    // survives ambiguous transport and prevents concurrent restart children.
     const { count: cloneCount, error: cloneErr } = await supabase
       .from('tournaments')
       .select('id', { count: 'exact', head: true })
-      .eq('club_id', old.club_id)
-      .eq('name', old.name)
-      .gt('created_at', String(old.ended_at));
+      .eq('restart_source_id', old.id);
     if (cloneErr || cloneCount === null || cloneCount === undefined || cloneCount > 0) return;
 
     const restartMinutes = Number(old.restart_every_minutes) || 0;
@@ -1523,6 +1638,7 @@ export class ScheduledTournamentService {
     );
 
     const row: Record<string, unknown> = {
+      restart_source_id: old.id,
       current_players: 0,
       status: 'REGISTERING',
       start_time: startTime.toISOString(),
@@ -1531,10 +1647,32 @@ export class ScheduledTournamentService {
     for (const col of ScheduledTournamentService.RESTART_COPY_COLUMNS) {
       if (old[col] !== undefined) row[col] = old[col];
     }
+    const targetId = row.satellite_target_id ?? row.satellite_target;
+    if (targetId) {
+      if (!satelliteTargetIsDeliverable(old as unknown as SatelliteTargetRow)) return;
+      const target = await this.resolveSatelliteTarget(
+        {
+          id: String(old.id),
+          club_id: String(old.club_id),
+          union_id: typeof old.union_id === 'string' ? old.union_id : null,
+        } as TournamentScheduleRow,
+        '',
+        String(targetId),
+        startTime
+      );
+      if (!target) return;
+      row.satellite_target_id = target;
+    } else if (
+      String(row.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      String(row.variant ?? '').toLowerCase() === 'satellite'
+    ) {
+      return;
+    }
     const cloneBlinds =
       typeof row.blind_structure === 'string'
         ? JSON.parse(row.blind_structure)
         : row.blind_structure;
+    if (isPersistedUnlimitedMtt(old)) validateMttBlindStructure(cloneBlinds, row.starting_chips);
     if (Array.isArray(cloneBlinds)) Object.assign(row, mttSpeedColumns(cloneBlinds));
 
     // A legacy instance can carry a pre-floor fee split (e.g. 22+3 = 12%)

@@ -7,6 +7,7 @@ const m = vi.hoisted(() => ({
   complete: vi.fn(),
   prepare: vi.fn(),
   extraHorse: false,
+  leaks: { big_loss: 7 } as Record<string, number>,
   report: vi.fn(),
   raw: { style: 'lag', persona: { gtoAdherence: 0.9 } },
 }));
@@ -19,12 +20,14 @@ vi.mock('./HorseTunerStudyCompletion.js', () => ({
   TUNER_STUDY_MAX_HORSES: 2048,
 }));
 vi.mock('./errorReporter.js', () => ({ reportError: m.report }));
+import { TAG_CONSUMERS } from '../engine/HorseDataLedger.js';
 import { runSelfTune } from './HorseSelfTuner.js';
 const actor = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const second = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 beforeEach(() => {
   vi.clearAllMocks();
   m.extraHorse = false;
+  m.leaks = { big_loss: 7 };
   m.progress.mockResolvedValue({ status: 'snapshot', horseIds: [] });
   m.complete.mockResolvedValue(true);
   m.prepare.mockImplementation(async (_day, studied, horseIds) => ({
@@ -45,7 +48,7 @@ beforeEach(() => {
       data = ids.map((id) => ({
         horse_user_id: id,
         game_variant: 'plo4',
-        leak_counts: { big_loss: 7 },
+        leak_counts: m.leaks,
         big_wins: 3,
         big_losses: 7,
       }));
@@ -80,6 +83,43 @@ describe('nightly tuner atomic write integration', () => {
     expect(m.from.mock.calls.some(([table]) => table === 'horse_self_tune_log')).toBe(false);
     expect(m.complete).toHaveBeenCalledWith('2026-09-13', 1, [actor]);
   });
+  it.each(TAG_CONSUMERS.filter((t) => t.source.startsWith('horse_hand_reviews')))(
+    'actually carries $key from rollup to the observational study without policy authority',
+    async (tag) => {
+      m.leaks = {};
+      await runSelfTune('2026-09-13');
+      const baseline = m.write.mock.calls.at(-1)![0].audit.stats;
+      m.write.mockClear();
+      m.leaks = { [tag.key]: 8 };
+      expect(await runSelfTune('2026-09-13')).toEqual({ studied: 1, tuned: 0 });
+      expect(m.write).toHaveBeenCalledTimes(1);
+      const r = m.write.mock.calls[0][0];
+      expect(r.audit.stats[`review_all_${tag.key}`]).toBe(8);
+      expect(r.audit.stats[`review_omaha_${tag.key}`]).toBe(8);
+      expect(r.audit.stats.causal_permission).toBe(0);
+      expect(r.intent).toBe('observational_only');
+      expect(r.nextProfile).toEqual(r.expectedProfile);
+      expect(r.audit.modsAfter).toEqual(r.audit.modsBefore);
+      const changed = [
+        'proposed_tightness',
+        'proposed_aggression',
+        'proposed_bluff_frequency',
+      ].some((key) => r.audit.stats[key] !== baseline[key]);
+      // Eight is sufficient for each stackoff gate; big_bet_fold needs ten.
+      if (tag.consumer === 'measurement') expect(changed).toBe(false);
+      else if (tag.key !== 'big_bet_fold') expect(changed).toBe(true);
+      else {
+        m.leaks = { big_bet_fold: 10 };
+        await runSelfTune('2026-09-13');
+        const next = m.write.mock.calls.at(-1)![0];
+        expect(next.audit.stats.proposed_bluff_frequency).not.toBe(
+          baseline.proposed_bluff_frequency
+        );
+        expect(next.nextProfile).toEqual(next.expectedProfile);
+      }
+    }
+  );
+
   it.each([
     { status: 'unknown' },
     { status: 'unavailable', reason: 'profile_changed' },

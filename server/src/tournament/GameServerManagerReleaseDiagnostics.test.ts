@@ -7,6 +7,12 @@ const tournamentId = 'aaaaaaaa-0000-4000-8000-000000000001';
 const generation = 'bbbbbbbb-0000-4000-8000-000000000001';
 const successorGeneration = 'cccccccc-0000-4000-8000-000000000001';
 class Harness extends TournamentManagerBase {
+  async captureDrainedF06Custody() {
+    return null;
+  }
+  async captureMixedF06Custody() {
+    return null;
+  }
   protected startEliminationChecker() {}
   protected async recalculateEliminatedPrizes() {
     return true;
@@ -21,7 +27,11 @@ function manager(gen = generation): any {
 function server(original: any): any {
   return Object.assign(Object.create(GameServer.prototype), {
     tournamentEngines: new Map([[tournamentId, original]]),
+    drainedF06TournamentCustody: new Map(),
+    tournamentManagerAdmissionLeaseGenerations: new Map(),
+    completedF06TournamentCustody: new Map(),
     tournamentManagerRetirementOperations: new WeakMap(),
+    tournamentDiagnosticRetirements: new Map(),
     tournamentManagerLeaseReleaseOperations: new Map(),
     tournamentManagerPendingLeaseReleases: new Map(),
   });
@@ -37,13 +47,14 @@ test('records the awaited exact release before deleting pending state, including
       attempts: 1,
       releasedCount,
     });
+    const emissionObservations: Array<{
+      pendingGeneration: string | undefined;
+      serialized: string;
+    }> = [];
     const emission = vi.spyOn(console, 'info').mockImplementation((_prefix, serialized) => {
-      expect(game.tournamentManagerPendingLeaseReleases.get(tournamentId)).toBe(generation);
-      expect(JSON.parse(serialized)).toMatchObject({
-        managerInstanceId: original.getLeaseReleaseDiagnosticSnapshot().instanceId,
-        tournamentId,
-        leaseGeneration: generation,
-        releasedCount,
+      emissionObservations.push({
+        pendingGeneration: game.tournamentManagerPendingLeaseReleases.get(tournamentId),
+        serialized,
       });
     });
     await expect(game.stopTournamentManagerIfOwned(tournamentId, original, 'test')).resolves.toBe(
@@ -53,6 +64,14 @@ test('records the awaited exact release before deleting pending state, including
       { tournamentId, leaseGeneration: generation },
     ]);
     expect(emission).toHaveBeenCalledOnce();
+    expect(emissionObservations).toHaveLength(1);
+    expect(emissionObservations[0].pendingGeneration).toBe(generation);
+    expect(JSON.parse(emissionObservations[0].serialized)).toMatchObject({
+      managerInstanceId: original.getLeaseReleaseDiagnosticSnapshot().instanceId,
+      tournamentId,
+      leaseGeneration: generation,
+      releasedCount,
+    });
     expect(game.tournamentManagerPendingLeaseReleases.size).toBe(0);
     expect(original.getLeaseReleaseDiagnosticSnapshot().leaseRelease).toMatchObject({
       diagnosticOnly: true,
@@ -187,4 +206,153 @@ test('stop failure neither invokes release nor fabricates a release observation'
   expect(original.getLeaseReleaseDiagnosticSnapshot().leaseRelease).toBe(
     'unobserved-owner-boundary'
   );
+});
+
+function observeRetirement(operation: Promise<boolean>) {
+  return operation.then(
+    (stopped) => ({ stopped, error: null as unknown }),
+    (error: unknown) => ({ stopped: null, error })
+  );
+}
+
+test('diagnostic capture failure cannot prevent physical stop or exact lease release', async () => {
+  const original = manager();
+  const game = server(original);
+  const capture = vi
+    .spyOn(original, 'captureLeaseReleaseDiagnosticObserver')
+    .mockImplementation(() => {
+      throw new Error('diagnostic capture unavailable');
+    });
+  const stop = vi.spyOn(original, 'stop');
+  const release = vi.spyOn(leases, 'releaseTournaments').mockResolvedValue({
+    status: 'confirmed',
+    attempts: 1,
+    releasedCount: 1,
+  });
+  const completion = observeRetirement(
+    game.stopTournamentManagerIfOwned(tournamentId, original, 'test')
+  );
+  const barrier = game.tournamentManagerLeaseReleaseOperations.get(tournamentId);
+  const result = await completion;
+  try {
+    expect(result).toEqual({ stopped: true, error: null });
+    expect(capture).toHaveBeenCalledOnce();
+    expect(capture).toHaveBeenCalledWith(tournamentId, generation);
+    expect(stop).toHaveBeenCalledOnce();
+    expect(release).toHaveBeenCalledOnce();
+    expect(release).toHaveBeenCalledWith([{ tournamentId, leaseGeneration: generation }]);
+    await expect(barrier).resolves.toBe(true);
+    expect(game.tournamentEngines.has(tournamentId)).toBe(false);
+    expect(game.tournamentManagerPendingLeaseReleases.has(tournamentId)).toBe(false);
+    expect(game.tournamentManagerRetirementOperations.has(original)).toBe(false);
+    expect(game.tournamentReleaseDiagnosticFailures).toBe(1);
+    expect(original.getLeaseReleaseDiagnosticSnapshot().leaseRelease).toBe(
+      'unobserved-owner-boundary'
+    );
+  } finally {
+    await original.stop();
+  }
+});
+
+test('a failed original release observer cannot erase a replacement or change a confirmed barrier', async () => {
+  const original = manager();
+  const game = server(original);
+  const observer = vi.fn(() => {
+    throw new Error('diagnostic record unavailable');
+  });
+  const capture = vi
+    .spyOn(original, 'captureLeaseReleaseDiagnosticObserver')
+    .mockReturnValue(observer);
+  let resolve!: (result: leases.TournamentLeaseReleaseOutcome) => void;
+  const release = vi.spyOn(leases, 'releaseTournaments').mockImplementation(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  const completion = observeRetirement(
+    game.stopTournamentManagerIfOwned(tournamentId, original, 'test')
+  );
+  const barrier = game.tournamentManagerLeaseReleaseOperations.get(tournamentId);
+  await new Promise<void>((done) => setImmediate(done));
+  const successor = manager(successorGeneration);
+  game.tournamentEngines.set(tournamentId, successor);
+  game.tournamentManagerPendingLeaseReleases.set(tournamentId, successorGeneration);
+  const releaseResult = Object.freeze({
+    status: 'confirmed' as const,
+    attempts: 2,
+    releasedCount: 1,
+  });
+  resolve(releaseResult);
+  const result = await completion;
+  try {
+    expect(result).toEqual({ stopped: true, error: null });
+    expect(capture).toHaveBeenCalledOnce();
+    expect(capture).toHaveBeenCalledWith(tournamentId, generation);
+    expect(observer).toHaveBeenCalledOnce();
+    expect(observer).toHaveBeenCalledWith(releaseResult);
+    expect(release).toHaveBeenCalledOnce();
+    expect(release).toHaveBeenCalledWith([{ tournamentId, leaseGeneration: generation }]);
+    await expect(barrier).resolves.toBe(true);
+    expect(game.tournamentEngines.get(tournamentId)).toBe(successor);
+    expect(game.tournamentManagerPendingLeaseReleases.get(tournamentId)).toBe(successorGeneration);
+    expect(successor.getLeaseReleaseDiagnosticSnapshot().leaseRelease).toBe(
+      'unobserved-owner-boundary'
+    );
+    expect(game.tournamentManagerRetirementOperations.has(original)).toBe(false);
+    expect(game.tournamentReleaseDiagnosticFailures).toBe(1);
+  } finally {
+    await successor.stop();
+  }
+});
+
+test('diagnostic log failure preserves confirmed and uncertain authoritative release outcomes', async () => {
+  const outcomes: leases.TournamentLeaseReleaseOutcome[] = [
+    { status: 'confirmed', attempts: 1, releasedCount: 0 },
+    { status: 'uncertain', attempts: 2, reason: 'rpc_error', detail: 'release unavailable' },
+  ];
+  for (const releaseResult of outcomes) {
+    const original = manager();
+    const game = server(original);
+    const release = vi.spyOn(leases, 'releaseTournaments').mockResolvedValue(releaseResult);
+    const emission = vi.spyOn(console, 'info').mockImplementation(() => {
+      throw new Error('diagnostic log unavailable');
+    });
+    const completion = observeRetirement(
+      game.stopTournamentManagerIfOwned(tournamentId, original, 'test')
+    );
+    const barrier = game.tournamentManagerLeaseReleaseOperations.get(tournamentId);
+    const result = await completion;
+    try {
+      expect(release).toHaveBeenCalledOnce();
+      expect(release).toHaveBeenCalledWith([{ tournamentId, leaseGeneration: generation }]);
+      expect(emission).toHaveBeenCalledOnce();
+      expect(game.tournamentReleaseDiagnosticFailures).toBe(1);
+      expect(game.tournamentManagerRetirementOperations.has(original)).toBe(false);
+      expect(game.tournamentEngines.has(tournamentId)).toBe(false);
+      if (releaseResult.status === 'confirmed') {
+        expect(result).toEqual({ stopped: true, error: null });
+        await expect(barrier).resolves.toBe(true);
+        expect(game.tournamentManagerPendingLeaseReleases.has(tournamentId)).toBe(false);
+        expect(original.getLeaseReleaseDiagnosticSnapshot().leaseRelease).toMatchObject({
+          status: 'confirmed',
+          releasedCount: 0,
+        });
+      } else {
+        expect(result.stopped).toBeNull();
+        expect(result.error).toMatchObject({
+          message: expect.stringContaining('Tournament lease release was not confirmed'),
+        });
+        await expect(barrier).resolves.toBe(false);
+        expect(game.tournamentManagerPendingLeaseReleases.get(tournamentId)).toBe(generation);
+        expect(original.getLeaseReleaseDiagnosticSnapshot().leaseRelease).toMatchObject({
+          status: 'uncertain',
+          releasedCount: null,
+        });
+      }
+    } finally {
+      vi.restoreAllMocks();
+      await original.stop();
+    }
+  }
 });

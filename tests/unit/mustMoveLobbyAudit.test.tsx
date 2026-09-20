@@ -18,6 +18,7 @@
  *   - the corner and the lobby are on the #SmarterCasinoRealism chassis: the
  *     shared tokens with fallbacks, no :hover, illuminated pills, no em dash.
  */
+import { useState } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -862,4 +863,61 @@ describe('the corner and the lobby are on the realism chassis', () => {
       expect(css).not.toMatch(/#ffd700|#ffc93c|#d4af37|#ffb74d/i);
     }
   });
+});
+
+describe('the Must Move dialog owns keyboard focus', () => {
+  function FocusHarness() {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button onClick={() => setOpen(true)}>Open Game Lobby</button>
+        <MustMoveLobbyModal
+          isOpen={open}
+          gameId={GAME}
+          currentTableId={FEEDER}
+          onClose={() => setOpen(false)}
+        />
+      </>
+    );
+  }
+
+  async function openLobby() {
+    mocks.rpc.mockResolvedValue({
+      data: lobby({
+        seated: false,
+        seat_change: { available: false, used_at: null, request: null },
+      }),
+      error: null,
+    });
+    render(<FocusHarness />);
+    const trigger = screen.getByRole('button', { name: 'Open Game Lobby' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const close = screen.getByRole('button', { name: 'Close' });
+    await waitFor(() => expect(close).toHaveFocus());
+    return { trigger, close, join: await screen.findByRole('button', { name: 'Join Game' }) };
+  }
+
+  it('focuses Close on entry and contains forward, reverse and escaped focus', async () => {
+    const { close, join, trigger } = await openLobby();
+    fireEvent.keyDown(close, { key: 'Tab' });
+    expect(join).toHaveFocus();
+    fireEvent.keyDown(join, { key: 'Tab', shiftKey: true });
+    expect(close).toHaveFocus();
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'Tab' });
+    expect(join).toHaveFocus();
+    expect(mocks.rpc.mock.calls.every(([name]) => name === 'fn_cash_game_lobby')).toBe(true);
+  });
+
+  it.each(['Close', 'Escape'])(
+    'returns focus to the trigger after %s dismissal',
+    async (method) => {
+      const { close, trigger } = await openLobby();
+      if (method === 'Close') fireEvent.click(close);
+      else fireEvent.keyDown(close, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(trigger).toHaveFocus();
+    }
+  );
 });

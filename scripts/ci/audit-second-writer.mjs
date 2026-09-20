@@ -19,6 +19,9 @@
  *   missing_function                  the door does not exist (PGRST202)
  *   closed_door                       the register closed it; the route still calls it
  *   not_executable_by_service_role    "permission denied" on every call
+ *   not_executable_by_authenticated   the same, for a route that forwards
+ *                                     the caller's token instead of holding
+ *                                     the service key (see clientRoleOf)
  *   signature_mismatch                no overload accepts these parameter NAMES -
  *                                     PostgREST resolves by name, so this is a
  *                                     404 and whatever the route does next is
@@ -132,6 +135,50 @@ function topLevelKeys(body) {
   return keys;
 }
 
+/**
+ * WHICH ROLE A CALL ACTUALLY RUNS AS.
+ *
+ * Every verdict about EXECUTE used to be asked of `service_role`, because the
+ * World Hub's API routes are server side and almost all of them hold the
+ * service key. Five of them do not. They build a client from the ANON key and
+ * forward the caller's `Authorization` header, so the RPC runs as
+ * `authenticated` and the function reads `auth.uid()` to know who is asking.
+ *
+ * MEASURED 2026-09-19, and it is wrong in both directions:
+ *
+ *   FALSE POSITIVE. `pages/api/store/diamond-transfer.js` calls
+ *     `send_wallet_diamond_transfer`, granted to `authenticated` and
+ *     deliberately not to `service_role` (its first statement is
+ *     `auth.uid()`). The audit called it "permission denied on every call"
+ *     and had been red on it alone, keeping Schema Integrity Audit red.
+ *
+ *   FALSE NEGATIVE, which is the one that matters. `mint-chips.js` calls
+ *     `fn_mint_chips_from_diamonds` and `live/gift.js` calls
+ *     `send_stream_gift`, both approved money doors, both user scoped. The
+ *     grant that has to hold for those routes to work is `authenticated`, and
+ *     nothing was ever asking about it. Revoking it would have broken the
+ *     mint with the audit still green.
+ *
+ * Unresolvable receivers return null and the check falls back to
+ * `service_role`, which is the behaviour every other call already had.
+ */
+export function clientRoleOf(source, receiver) {
+  if (!receiver) return null;
+  const decl = new RegExp(
+    `(?:const|let|var)\\s+${receiver.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=\\s*(?:await\\s+)?[A-Za-z_$][\\w$]*\\s*\\(`
+  );
+  const m = decl.exec(source);
+  if (!m) return null;
+  // The whole argument list, read with balanced brackets. A fixed-size window
+  // would cut a multi-line client construction in half, and
+  // tests/unit/noFixedSizeSourceWindows.test.ts forbids one anyway.
+  const args = objectBody(source, m.index + m[0].length - 1);
+  if (args === null) return null;
+  if (/SERVICE_ROLE|serviceRole/i.test(args)) return 'service_role';
+  if (/ANON_KEY|anonKey/i.test(args) && /Authorization/i.test(args)) return 'authenticated';
+  return null;
+}
+
 export function scanRoute(source, file) {
   const calls = [];
   const directWrites = [];
@@ -156,7 +203,18 @@ export function scanRoute(source, file) {
     const line = lineOf(m.index);
     const above = source.split('\n').slice(Math.max(0, line - 2), line).join('\n');
     const ex = /second-writer-exempt:\s*([^\n*]+)/.exec(above);
-    calls.push({ file, line, fn, keys, exempt: ex ? ex[1].trim() : null });
+    // The receiver is whatever identifier the call was made on. Read backwards
+    // from the match rather than folded into the rpc pattern above, because
+    // widening that pattern is how a call stops being seen at all.
+    const recv = /([A-Za-z_$][\w$]*)\s*$/.exec(source.slice(0, m.index));
+    calls.push({
+      file,
+      line,
+      fn,
+      keys,
+      role: clientRoleOf(source, recv ? recv[1] : null),
+      exempt: ex ? ex[1].trim() : null,
+    });
   }
 
   // .from('money_table') ... .update({...}) / .insert({...}) / .upsert({...})
@@ -209,7 +267,9 @@ async function main() {
     allDirect.push(...directWrites);
   }
   const exempt = allCalls.filter((c) => c.exempt);
-  const sent = allCalls.filter((c) => !c.exempt).map(({ file, line, fn, keys }) => ({ file, line, fn, keys }));
+  const sent = allCalls
+    .filter((c) => !c.exempt)
+    .map(({ file, line, fn, keys, role }) => ({ file, line, fn, keys, role }));
 
   const res = await fetch(`${url}/rest/v1/rpc/fn_ca_second_writer_check`, {
     method: 'POST',

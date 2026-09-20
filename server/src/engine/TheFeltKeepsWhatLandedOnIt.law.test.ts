@@ -65,11 +65,12 @@ vi.mock('../services/supabase.js', () => ({
   logInsuranceSettlement: vi.fn(),
   logHandHistory: vi.fn(),
   processBBJPayout: vi.fn(),
-  completeHandSnapshot: vi.fn(),
+  completeHandSnapshot: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 
 const { ServerTableEngineSettlement } = await import('./ServerTableEngineSettlement.js');
+const { completeHandSnapshot } = await import('../services/supabase.js');
 
 const deferred = <T = void>() => {
   let resolveFn!: (v: T) => void;
@@ -89,6 +90,29 @@ const settled = async (p: Promise<unknown>): Promise<boolean> => {
 };
 
 describe('LAW 1: the settlement barrier covers postHandTasks', () => {
+  it('keeps the durable snapshot unresolved when completion fails before atomic acceptance', async () => {
+    vi.mocked(completeHandSnapshot).mockClear();
+    const beforeAcceptance = new Error('fixture pre-commit interruption');
+    const engine = Object.assign(Object.create(ServerTableEngineSettlement.prototype), {
+      tableId: '34076355-b232-420e-93e8-2deab277f6bc',
+      handCount: 12468543,
+      currentHandRake: 0,
+      currentHandBBJFee: 0,
+      currentHandWinnerIds: [],
+      handController: null,
+      actionValidator: {
+        clearTable() {
+          throw beforeAcceptance;
+        },
+      },
+    });
+    // Actual HAND_COMPLETE settlement body reaches the real pre-commit
+    // boundary. No accepted database receipt exists at this point.
+    await expect(engine.settleCompletedHand({ type: 'HAND_COMPLETE' }, [], 1)).rejects.toBe(
+      beforeAcceptance
+    );
+    expect(completeHandSnapshot).not.toHaveBeenCalled();
+  });
   it('the common path: the body sets the chain synchronously, and the wrapper KEEPS it', async () => {
     const postTasks = deferred();
     const engine = Object.create(ServerTableEngineSettlement.prototype) as Record<string, unknown>;
@@ -178,9 +202,11 @@ describe('LAW 2: the hand write is a difference, declared, and written once', ()
        `club_member_daily_stats.profit`, which had 720 and 1,328 non-cent
        rows between them. The writer this replaced rounded (services/supabase/
        tables.ts `rounded()`); the replacement dropped it, which is how those
-       rows appeared. The dealt-from value is still the one asserted. */
+       rows appeared. The original pre-deal database observation now takes precedence;
+       handSeatGeneration.test.ts also pins the zero-stack case and legacy
+       fallback. The settled stack remains rounded at this call site. */
     expect(acceptedHandCall).toMatch(
-      /stack_before:\s*cents\(snap\.dealtStacks\.get\(p\.user_id\)\s*\?\?\s*p\.stack\)/
+      /stack_before:\s*cents\(\s*handStackBefore\(snap\.seatGenerations,\s*snap\.dealtStacks,\s*p\.user_id,\s*p\.stack\)\s*\)/
     );
     expect(acceptedHandCall).toMatch(/stack:\s*cents\(p\.stack\)/);
   });

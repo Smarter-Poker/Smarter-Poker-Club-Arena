@@ -7,6 +7,7 @@ import { spinRuleManifest } from './SpinDrawReceipt.js';
 import { spinPostRevealMs, spinRevealToDealMs } from '../config/spinSpec.js';
 import { HEADS_UP_BLIND_STRUCTURE } from '../config/headsUpSpec.js';
 import { deadlineScheduler } from '../engine/DeadlineScheduler.js';
+import { TournamentRetirementCustody } from '../services/TournamentRetirementCustody.js';
 
 const { from, rpc, reportError } = vi.hoisted(() => ({
   from: vi.fn(),
@@ -51,11 +52,18 @@ function fixture(
     rejectCompletion?: boolean;
     preseatLead?: number;
     entrants?: number;
+    timed?: boolean;
+    satellite?: boolean;
+    resume?: boolean;
+    realClock?: boolean;
+    resumeOnBreak?: boolean;
+    resumeRebuild?: boolean;
+    breakClearGate?: Promise<void>;
   } = {}
 ) {
   const spin = options.spin !== false;
   const stack = options.stack ?? 1000;
-  const count = spin ? 3 : 2;
+  const count = spin || options.timed ? 3 : 2;
   const seats = Array.from({ length: options.entrants ?? count }, (_, index) => ({
     user_id: 'c1000000-0000-4000-8000-00000000000' + (index + 1),
     seat_number: index + 1,
@@ -69,21 +77,40 @@ function fixture(
   }));
   const row: any = {
     id: EVENT,
-    variant: spin ? 'spin' : 'sng',
-    tournament_type: spin ? 'SPIN' : 'SNG',
+    variant: options.timed
+      ? options.satellite
+        ? 'satellite'
+        : 'freezeout'
+      : spin
+        ? 'spin'
+        : 'sng',
+    tournament_type: options.timed
+      ? options.satellite
+        ? 'SATELLITE'
+        : 'MTT'
+      : spin
+        ? 'SPIN'
+        : 'SNG',
+    format_contract: options.timed ? 'mtt-v1' : spin ? 'spin-v1' : 'sng-v1',
     game_type: options.variant ?? 'nlh',
-    max_players: count,
+    max_players: options.timed ? 200 : count,
     min_players: count,
-    status: 'REGISTERING',
+    status: options.resume ? 'RUNNING' : 'REGISTERING',
     starting_chips: stack,
     buy_in_amount: spin ? 1 : 0.95,
     buy_in_fee: spin ? 0 : 0.05,
     prize_pool: spin ? 3 : 1.9,
-    blind_structure: HEADS_UP_BLIND_STRUCTURE,
+    blind_structure: options.timed
+      ? [{ smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 10 }]
+      : HEADS_UP_BLIND_STRUCTURE,
     payout_structure: [{ place: 1, percentage: 100 }],
     start_time: options.preseatLead ? new Date(NOW + options.preseatLead).toISOString() : null,
-    started_at: null,
-    current_level: 1,
+    started_at: options.resume ? new Date(NOW + (options.preseatLead ?? 0)).toISOString() : null,
+    level_started_at: options.resumeOnBreak ? new Date(NOW - 600_000).toISOString() : null,
+    on_break: options.resumeOnBreak ?? false,
+    break_started_at: options.resumeOnBreak ? new Date(NOW - 300_000).toISOString() : null,
+    break_ends_at: options.resumeOnBreak ? new Date(NOW - 1000).toISOString() : null,
+    current_level: 0,
   };
   const table = {
     id: TABLE,
@@ -145,7 +172,7 @@ function fixture(
             value = entitlements;
             break;
           case 'tables':
-            value = [table];
+            value = options.resumeRebuild ? [] : [table];
             break;
           case 'table_seats':
             value = seats.map((seat) => ({ ...seat, tables: table }));
@@ -156,11 +183,23 @@ function fixture(
           default:
             throw new Error('Unexpected relation ' + relation);
         }
-        return Promise.resolve({
-          data: patch || head ? null : singular && Array.isArray(value) ? value[0] : value,
+        const response = {
+          data:
+            head || (patch && !singular)
+              ? null
+              : singular && Array.isArray(value)
+                ? value[0]
+                : value,
           count: head ? roster.length : null,
           error: null,
-        }).then(resolve, reject);
+        };
+        const gate =
+          relation === 'tournaments' && patch?.on_break === false
+            ? options.breakClearGate
+            : undefined;
+        return Promise.resolve(gate)
+          .then(() => response)
+          .then(resolve, reject);
       },
     };
     return builder;
@@ -171,6 +210,59 @@ function fixture(
   const rule_manifest = spinRuleManifest(1, stack);
   const tier = rule_manifest.tiers.find((candidate) => candidate.multiplier === 10)!;
   rpc.mockImplementation(async (name: string, args: any) => {
+    if (name === 'fn_ca_resume_hand_submission') return { error: null, data: { found: false } };
+    if (name === 'fn_f06_hand_number_state' || name === 'fn_f06_allocate_hand_number') {
+      expect(args).toEqual({
+        p_tournament_id: EVENT,
+        p_lease_generation: LEASE,
+        p_table_id: TABLE,
+      });
+      return {
+        error: null,
+        data:
+          name === 'fn_f06_hand_number_state'
+            ? {
+                ok: true,
+                table_id: TABLE,
+                lifecycle: '1',
+                can_reserve: true,
+                blocked_reason: null,
+                used_hand_number_max: '1000000',
+                next_hand_number_candidate: '1000001',
+                unresolved_permit: null,
+              }
+            : {
+                ok: true,
+                table_id: TABLE,
+                lifecycle: '1',
+                hand_number: '1000001',
+                hand_number_high_water: '1000000',
+              },
+      };
+    }
+    if (name === 'fn_f06_begin_hand') {
+      expect(args).toMatchObject({
+        p_tournament_id: EVENT,
+        p_lease_generation: LEASE,
+        p_table_id: TABLE,
+        p_lifecycle: '1',
+        p_hand_number: '1000001',
+      });
+      return {
+        error: null,
+        data: {
+          ok: true,
+          tournament_id: EVENT,
+          generation: LEASE,
+          table_id: TABLE,
+          lifecycle: '1',
+          hand_number: '1000001',
+          permit_id: args.p_permit_id,
+          custody_id: args.p_custody_id,
+          state: 'reserved',
+        },
+      };
+    }
     if (name === 'fn_begin_tournament_launch_atomic') {
       launchId = args.p_launch_id;
       admittedStart = args.p_started_at ?? admittedStart;
@@ -184,6 +276,7 @@ function fixture(
           launch_id: launchId,
           started_at: admittedStart,
           lease_generation: LEASE,
+          format_contract: row.format_contract,
         },
       };
     }
@@ -224,6 +317,7 @@ function fixture(
         return { error: null, data: { ok: false, reason: 'launch_short_field' } };
       completedAt = Date.now();
       row.status = 'RUNNING';
+      row.started_at = admittedStart;
       return {
         error: null,
         data: {
@@ -233,6 +327,7 @@ function fixture(
           started_at: admittedStart,
           completed_at: new Date().toISOString(),
           lease_generation: LEASE,
+          format_contract: row.format_contract,
         },
       };
     }
@@ -276,10 +371,19 @@ function fixture(
   // Hydration/persistence are external boundaries. The real dealing loop,
   // dealHand, HandController, hand event routing and deadline timer stay intact.
   engine.prepareNextHand = async () => seats;
-  engine.takePreparedHandNumber = () => 1;
+  // No prefetched number: exercise the manager-installed allocator and permit.
+  engine.takePreparedHandNumber = () => null;
   engine.refreshRakeConfig = async () => {};
   engine.fetchTimeBankExtras = async () =>
-    new Map([[seats[0].user_id, { extraSeconds: 20, unlimitedActivations: false }]]);
+    new Map([
+      [
+        seats[0].user_id,
+        {
+          extraSeconds: 20,
+          unlimitedActivations: false,
+        },
+      ],
+    ]);
   engine.restoreSitOutsFromSeats = () => {};
   engine.evictExpiredSitOuts = async () => {};
   engine.announcePendingSeatMoves = async () => true;
@@ -296,14 +400,23 @@ function fixture(
     if (event.type === 'HAND_COMPLETE') return;
     return realEvent(event, players, generation);
   };
+  const ownedEngines = new Map([[TABLE, engine]]);
+  const ownedTables = new Set([TABLE]);
+  const gameServer = {
+    tableEngines: ownedEngines,
+    tournamentOwnedTables: ownedTables,
+    tournamentRetirementCustody: new TournamentRetirementCustody(),
+    ownsTournamentTableEngine: (tableId: string, incumbent: ServerTableEngine) =>
+      ownedTables.has(tableId) && ownedEngines.get(tableId) === incumbent,
+  };
   const manager = new TournamentManager(
     EVENT,
-    {} as any,
+    gameServer as any,
     LEASE,
     performance.now() + 120_000
   ) as any;
   const blindStarts: number[] = [];
-  manager.startBlindTimer = vi.fn(() => blindStarts.push(Date.now()));
+  if (!options.realClock) manager.startBlindTimer = vi.fn(() => blindStarts.push(Date.now()));
   manager.startEliminationChecker = () => {};
   manager.reconcileTournamentEntryWindow = async () => {};
   manager.scheduleSpinPostReveal = () => {};
@@ -312,12 +425,19 @@ function fixture(
     manager.tableEngines.set(TABLE, engine);
   };
   manager.admitManagedTableEngine = vi.fn();
+  manager.createManagedTableEngine = () => engine;
+  manager.restoreDrawnFirstButtons = async () => {};
+  manager.broadcast = async () => true;
+  manager.breakApplies = async () => true;
   let dealing: Promise<void> | undefined;
-  manager.startManagedTableEngine = vi.fn(() => {
-    expect(completedAt).toBeGreaterThan(0);
+  engine.ready = Promise.resolve(true);
+  engine.start = vi.fn(() => {
+    if (!options.resume) expect(completedAt).toBeGreaterThan(0);
     engine.running = true;
     dealing = engine.dealingLoop();
+    return dealing;
   });
+  vi.spyOn(manager, 'startManagedTableEngine');
   manager.drainTableEngineStartJobs = async () => {};
   cleanup.push(() => {
     manager.running = false;
@@ -337,7 +457,7 @@ function fixture(
     hub,
     handStarts,
     blindStarts,
-    started: manager.start(),
+    started: options.resume ? manager.resume() : manager.start(),
     completedAt: () => completedAt,
     dealing: () => dealing,
   };
@@ -462,6 +582,140 @@ describe('actual manager launch reaches the first hand and action timer after th
     await expectFirstHand(f, NOW + 60_000);
     expect(f.blindStarts).toEqual([NOW + 60_000]);
   });
+
+  it('starts a timed MTT at the admitted instant even when preparation consumes part of the lead', async () => {
+    const f = fixture({ spin: false, timed: true, preseatLead: 60_000, setupDelay: 20_000 });
+    await settle();
+    await vi.advanceTimersByTimeAsync(20_000);
+    await f.started;
+    await vi.advanceTimersByTimeAsync(39_999);
+    expectNoHand(f);
+    expect(f.blindStarts).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    await expectFirstHand(f, NOW + 60_000);
+    expect(f.blindStarts).toEqual([NOW + 60_000]);
+  });
+
+  it('restores the receipt hold on a replacement dealer before it can deal', async () => {
+    const f = fixture({ spin: false, timed: true, preseatLead: 60_000 });
+    await f.started;
+    await settle();
+    // A new dealer has no process-local hold. Exercise the actual replacement
+    // preparation method before the existing real dealing loop wakes.
+    f.engine.dealHoldUntilMs = 0;
+    f.manager.prepareManagedTableEngineForPlay(f.engine);
+    expect(f.engine.dealHoldUntilMs).toBe(NOW + 60_000);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expectNoHand(f);
+    await vi.advanceTimersByTimeAsync(1);
+    await expectFirstHand(f, NOW + 60_000);
+  });
+
+  it.each([false, true])(
+    'a replacement manager holds real cards and the clock until its persisted launch start (satellite=%s)',
+    async (satellite) => {
+      const f = fixture({
+        spin: false,
+        timed: true,
+        resume: true,
+        realClock: true,
+        preseatLead: 60_000,
+        satellite,
+      });
+      await f.started;
+      await settle();
+      expect(f.manager.running).toBe(true);
+      expect(f.manager.startManagedTableEngine).toHaveBeenCalledOnce();
+      expect(f.engine.dealHoldUntilMs).toBe(NOW + 60_000);
+      expect(f.row.level_started_at).toBeNull();
+      expect(f.manager.blindTimer).toBeNull();
+      await f.manager.advanceBlindLevel(f.row.blind_structure);
+      expect(f.manager.currentLevel).toBe(0);
+      expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+        'fn_ca_resume_hand_submission',
+        'fn_f06_hand_number_state',
+      ]);
+      await vi.advanceTimersByTimeAsync(59_999);
+      expectNoHand(f);
+      expect(f.row.level_started_at).toBeNull();
+      await vi.advanceTimersByTimeAsync(1);
+      await expectFirstHand(f, NOW + 60_000);
+      expect(f.row.level_started_at).toBe(new Date(NOW + 60_000).toISOString());
+      expect(f.manager.currentLevel).toBe(0);
+      expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+        'fn_ca_resume_hand_submission',
+        'fn_f06_hand_number_state',
+        'fn_f06_allocate_hand_number',
+        'fn_f06_hand_number_state',
+        'fn_f06_begin_hand',
+      ]); // Resume proves hand authority without minting a new launch receipt.
+    }
+  );
+
+  it.each([false, true])(
+    'an earlier synchronized break preserves the actual timed first hand and full first level (satellite=%s)',
+    async (satellite) => {
+      const f = fixture({
+        spin: false,
+        timed: true,
+        realClock: true,
+        preseatLead: 60_000,
+        satellite,
+      });
+      await f.started;
+      await settle();
+      await vi.advanceTimersByTimeAsync(10_000);
+      await f.manager.pauseForBreak(10_000);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await f.manager.resumeFromBreak();
+      expect(f.manager.onBreak).toBe(false);
+      expect(f.row.level_started_at).toBeNull();
+      expect(f.manager.blindTimer).toBeNull();
+      await vi.advanceTimersByTimeAsync(39_999);
+      expectNoHand(f);
+      expect(f.row.level_started_at).toBeNull();
+      await vi.advanceTimersByTimeAsync(1);
+      await expectFirstHand(f, NOW + 60_000);
+      expect(f.row.level_started_at).toBe(new Date(NOW + 60_000).toISOString());
+      expect(f.manager.currentLevel).toBe(0);
+    }
+  );
+
+  it.each([false, true])(
+    'keeps a replacement dealer parked until its expired-break clock is acknowledged (rebuild=%s)',
+    async (resumeRebuild) => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const f = fixture({
+        spin: false,
+        timed: true,
+        resume: true,
+        realClock: true,
+        resumeOnBreak: true,
+        resumeRebuild,
+        breakClearGate: gate,
+      });
+      try {
+        await settle();
+        expect(f.manager.startManagedTableEngine).toHaveBeenCalledOnce();
+        expectNoHand(f);
+        expect(f.manager.onBreak).toBe(true);
+        expect(f.engine.pauseRequiresExplicitResume).toBe(true);
+        expect(f.manager.blindTimer).toBeNull();
+        release();
+        await f.started;
+        await settle();
+        await expectFirstHand(f, NOW);
+        expect(f.manager.onBreak).toBe(false);
+        expect(f.manager.blindTimerStartedAt).toBe(Date.parse(f.row.level_started_at));
+      } finally {
+        release();
+        await f.started;
+      }
+    }
+  );
 
   it('does not arm a delayed Spin level after its owning lifecycle stops', async () => {
     const f = fixture();

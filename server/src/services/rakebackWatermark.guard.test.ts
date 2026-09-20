@@ -35,14 +35,33 @@ const SRC = fs.readFileSync(
 const code = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 describe('the rakeback settlement watermark', () => {
+  it('accepts canonical source receipts before checkpointing the page', () => {
+    const settle = sliceMethod(code, 'private async _runSettlementInner(');
+    expect(settle).toContain('readCashSourceBatch(data, ids)');
+    expect(settle.indexOf('readCashSourceBatch(data, ids)')).toBeLessThan(
+      settle.indexOf('saveHighWaterMark(nextCursor)')
+    );
+    expect(settle).not.toContain('fn_apply_rakeback_player_stats_batch');
+    expect(settle).not.toContain('sharesForRakeRecord');
+  });
+  it('updates the in-memory cursor only after the database accepted its checkpoint', () => {
+    const save = sliceMethod(code, 'private async saveHighWaterMark(');
+    const settle = sliceMethod(code, 'private async _runSettlementInner(');
+    expect(save.indexOf('if (error) throw error')).toBeGreaterThan(-1);
+    expect(save.indexOf('if (error) throw error')).toBeLessThan(
+      save.indexOf('this.cursor = cursor')
+    );
+    expect(settle).toContain("if (!(await this.saveHighWaterMark(nextCursor))) return 'halted'");
+  });
   it('holds the cursor when a period recompute failed', () => {
     /* There are TWO cursor advances in this method and only one of them is a
        bug. The first sits in the `buckets.size === 0` branch -- no eligible
        player-credits, so there is nothing to recompute and nothing that can
        fail, and advancing there is correct. The one that matters is the LAST
        one, after the recompute loop, which is why this uses lastIndexOf. */
-    const guard = code.indexOf('if (failures > 0)');
-    const finalAdvance = code.lastIndexOf('this.cursor = nextCursor');
+    const inner = sliceMethod(code, 'private async _runSettlementInner(');
+    const guard = inner.indexOf('if (failures > 0)');
+    const finalAdvance = inner.lastIndexOf('this.saveHighWaterMark(nextCursor)');
     expect(guard, 'no failures > 0 guard before the watermark advances').toBeGreaterThan(-1);
     expect(finalAdvance).toBeGreaterThan(-1);
     expect(

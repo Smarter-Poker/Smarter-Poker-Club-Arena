@@ -1,0 +1,50 @@
+{
+  "_owner": "agent/codex/diamond-replays-settlement-20260919; daily custody migration 20260919152614. Candidate declarations, not installation evidence.",
+  "tables": ["diamond_spin_days", "diamond_spin_movements"],
+  "columns": {
+    "diamond_spin_days": [
+      "owner_id",
+      "day",
+      "status",
+      "pending_diamonds",
+      "entry_diamonds",
+      "bonus_diamonds",
+      "mint_entry_diamonds",
+      "diamond_prizes",
+      "throwables",
+      "time_banks",
+      "rabbit_hunts",
+      "other_expenses",
+      "movement_count",
+      "settled_net",
+      "wallet_transaction_id",
+      "notification_id",
+      "created_at",
+      "settled_at"
+    ],
+    "diamond_spin_movements": [
+      "id",
+      "operation_id",
+      "owner_id",
+      "day",
+      "club_id",
+      "host_id",
+      "host_kind",
+      "player_id",
+      "kind",
+      "amount",
+      "description",
+      "created_at"
+    ]
+  },
+  "functions": [
+    "fn_diamond_spin_immutable",
+    "fn_diamond_spin_wallet_reserve",
+    "fn_diamond_spin_available",
+    "fn_diamond_spin_book",
+    "fn_diamond_spin_settle_day",
+    "fn_diamond_spin_settlement_receipt",
+    "fn_diamond_spin_statements",
+    "fn_diamond_spin_settle_daily"
+  ]
+}

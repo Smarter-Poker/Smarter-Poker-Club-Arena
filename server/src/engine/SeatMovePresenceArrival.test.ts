@@ -26,10 +26,10 @@ const fsm = { state: 'SAT_OUT' as const, sinceMs: 1, graceDeadlineMs: null };
 const bank = {
   remainingSeconds: 11,
   usesRemaining: 1,
-  unlimitedActivations: false,
   initialSeconds: 40,
   baseSeconds: 30,
   dbConsumedSeconds: 4,
+  unlimitedActivations: false,
 };
 function deposit() {
   depositMovedPresence(player, table, {

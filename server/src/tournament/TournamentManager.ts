@@ -1,3 +1,12 @@
+import {
+  custodyJSON,
+  immutableCustody,
+  prepareMixedF06Transfer,
+  retainMixedF06Intent,
+  completeMixedF06Transfer,
+  type MixedF06Transfer,
+  type MixedF06Proposal,
+} from './mixedF06Custody.js';
 /**
  * TournamentManager, layer 3/3 — table balancing, satellites, late reg.
  *
@@ -9,18 +18,31 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { readF06RecoveryAdmission, type DrainedF06Custody } from './drainedF06Custody.js';
+import { verifyF06MovementAdmission } from './f06MovementAdmission.js';
+import {
+  TournamentTableBreakRpc,
+  TournamentTableBreakCapacityError,
+  TournamentNoStartContinuationRefusedError,
+  type TableBreakMemberInput,
+  type TournamentTableBreakState,
+} from './tournamentTableBreakRpc.js';
 import { supabase } from '../services/supabase.js';
 import { type BalancerTable, type MoveInstruction } from '../engine/TableBalancer.js';
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { reportError } from '../services/errorReporter.js';
 import { selectInChunks } from '../services/supabase/chunkedIn.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
-import { TournamentManagerEliminations } from './TournamentManagerEliminations.js';
+import {
+  TournamentManagerEliminations,
+  type TournamentBalanceProgress,
+} from './TournamentManagerEliminations.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { requestSatelliteSettlementReceipt } from './satelliteSettlementRpc.js';
 import type { VerifiedSatelliteSettlementReceipt } from './satelliteSettlementReceipt.js';
 import {
   moveTournamentPlayerAtomically,
+  resolveCommittedTournamentSeatMove,
   TournamentSeatMoveOutcomeUnknownError,
   type TournamentSeatMoveInput,
   type TournamentSeatMoveSourceMode,
@@ -33,6 +55,33 @@ import {
   type OrphanTableRow,
   type OrphanSeatRow,
 } from './orphanedSeatRepair.js';
+
+/** Lease owns the implementation and the actual global registry. */
+interface BreakRetirementBinding {
+  breakId: string;
+  tableId: string;
+  tableIncarnation: string;
+  tournamentId: string;
+  custodyId: string;
+  durableRevision: string;
+  leaseGeneration: string;
+}
+interface BreakRetirementCustody {
+  binding: BreakRetirementBinding;
+  revision: string;
+  engine: ServerTableEngine | null;
+  assertCurrent(): void;
+  confirmAbsent(): void;
+}
+interface BreakRetirementHost {
+  withRetirementCustody<T>(
+    binding: BreakRetirementBinding,
+    local: Map<string, ServerTableEngine>,
+    current: () => boolean,
+    work: (custody: BreakRetirementCustody) => Promise<T>,
+    prepare: () => Promise<void>
+  ): Promise<T>;
+}
 
 interface LateRegistrationCapacityResult {
   ok: boolean;
@@ -59,6 +108,7 @@ interface TournamentTableCloseResult {
 interface ClaimedTournamentMoveBoundary {
   sourceMode: TournamentSeatMoveSourceMode;
   engine: ServerTableEngine | null;
+  mixedTransferId?: string;
 }
 
 interface PendingTournamentSeatMoveOutcome {
@@ -67,6 +117,256 @@ interface PendingTournamentSeatMoveOutcome {
 }
 
 export class TournamentManager extends TournamentManagerEliminations {
+  private mixedRecovery: {
+    transfer: MixedF06Transfer;
+    assertCurrent: () => void;
+    sources: Map<string, string>;
+    completion: Readonly<Record<string, unknown>> | null;
+  } | null = null;
+  private mixedRecoveryOperation: Promise<Readonly<Record<string, unknown>>> | null = null;
+
+  protected override eliminationMutationAllowed(): boolean {
+    if (super.eliminationMutationAllowed()) return true;
+    if (!this.mixedRecovery || !this.isF06RecoveryOwner() || this.mixedRecovery.completion)
+      return false;
+    try {
+      this.mixedRecovery.assertCurrent();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private receiptOwnsSource(tableId: string): boolean {
+    if (!this.mixedRecovery?.sources.has(tableId) || !this.isF06RecoveryOwner()) return false;
+    this.mixedRecovery.assertCurrent();
+    if (this.tableEngines.size || this.gameServer.getTableEngine(tableId))
+      throw new Error('f06_mixed_receipt_has_live_dealer');
+    return true;
+  }
+
+  /** Finite continuation of the original admission, not a scheduler or dealer. */
+  recoverMixedF06Custody(
+    transfer: MixedF06Transfer,
+    assertCurrent: () => void
+  ): Promise<Readonly<Record<string, unknown>>> {
+    if (this.mixedRecoveryOperation) return this.mixedRecoveryOperation;
+    if (!this.isF06RecoveryOwner()) throw new Error('f06_mixed_recovery_owner_required');
+    assertCurrent();
+    if (this.mixedRecovery && this.mixedRecovery.transfer !== transfer)
+      throw new Error('f06_mixed_recovery_identity_changed');
+    if (!this.mixedRecovery) {
+      const local = transfer.local;
+      const continuations = (transfer.canonical as { no_start_continuations?: unknown })
+        .no_start_continuations;
+      if (!Array.isArray(local.no_start) || !Array.isArray(continuations))
+        throw new Error('f06_mixed_no_start_evidence_unavailable');
+      for (const [breakId, pending] of local.no_start as [
+        string,
+        { binding: BreakRetirementBinding },
+      ][]) {
+        const binding = pending.binding;
+        if (
+          !continuations.some(
+            (item: any) =>
+              item.break_id === breakId &&
+              item.tournament_id === this.tournamentId &&
+              item.table_id === binding.tableId &&
+              String(item.lifecycle) === binding.tableIncarnation &&
+              item.park?.custody_id === binding.custodyId &&
+              item.park?.custody_generation === binding.leaseGeneration &&
+              String(item.park?.revision) === binding.durableRevision
+          )
+        )
+          throw new Error('f06_mixed_no_start_unresolved');
+      }
+      const load = <T>(name: string, into: Map<string, T>) => {
+        const entries = local[name];
+        if (!Array.isArray(entries) || into.size !== 0)
+          throw new Error('f06_mixed_pending_vector_invalid');
+        for (const entry of entries) {
+          if (
+            !Array.isArray(entry) ||
+            entry.length !== 2 ||
+            typeof entry[0] !== 'string' ||
+            into.has(entry[0])
+          )
+            throw new Error('f06_mixed_pending_identity_invalid');
+          into.set(entry[0], immutableCustody(entry[1]) as T);
+        }
+      };
+      load('durable', this.durableTournamentBreaks);
+      load('pending_moves', this.pendingTournamentSeatMoveOutcomes);
+      load('parks', this.pendingTournamentParkRequests);
+      load('begins', this.pendingTournamentBreakBegins);
+      load('amendments', this.pendingTournamentBreakAmendments);
+      load('rejected_begins', this.rejectedTournamentBreakBegins);
+      load('resolved_proposals', this.resolvedTournamentBreakProposals);
+      load('custody_ids', this.pendingTournamentBreakCustodyIds);
+      load('cleanup_kinds', this.pendingTournamentCleanupKinds);
+      const retained = local.retained as { table_id: string; break_id: string }[];
+      this.mixedRecovery = {
+        transfer,
+        assertCurrent,
+        sources: new Map(retained.map((row) => [row.table_id, row.break_id])),
+        completion: null,
+      };
+    }
+    const owned = this.mixedRecovery;
+    const work = this.trackLifecycleJob(
+      (async () => {
+        assertCurrent();
+        const rpc = this.tableBreakRpc();
+        // Every possibly sent original park/begin/amend input is replayed exactly.
+        for (const [source, pending] of this.pendingTournamentParkRequests) {
+          const state = await rpc.requestPark(
+            pending.breakId,
+            source,
+            pending.lifecycle,
+            pending.boundaryId
+          );
+          assertCurrent();
+          if (state.source_table_id !== source || state.lifecycle !== pending.lifecycle)
+            throw new Error('f06_mixed_park_identity_changed');
+          this.rememberTournamentBreak(state);
+          this.pendingTournamentParkRequests.delete(source);
+        }
+        for (const [breakId, members] of this.pendingTournamentBreakBegins) {
+          const source = [...owned.sources].find(([, id]) => id === breakId)?.[0];
+          if (!source) throw new Error('f06_mixed_begin_source_missing');
+          await this.beginTournamentBreak(breakId, source, members);
+          assertCurrent();
+        }
+        for (const [key, amendment] of this.pendingTournamentBreakAmendments) {
+          const next = await rpc.amend(amendment);
+          assertCurrent();
+          const member = next.members.find((m) => m.user_id === amendment.userId);
+          if (
+            !member ||
+            (!member.winner_request_id && member.active_request_id !== amendment.newRequestId)
+          )
+            throw new Error('f06_mixed_amendment_unresolved');
+          this.rememberTournamentBreak(next);
+          this.pendingTournamentBreakAmendments.delete(key);
+        }
+        if (!(await this.redrivePendingTournamentSeatMoveOutcomes()))
+          throw new Error('f06_mixed_original_move_unresolved');
+        assertCurrent();
+        const operations = (
+          transfer.canonical as { operations: { break_id: string; state: string }[] }
+        ).operations;
+        for (const [source, breakId] of owned.sources) {
+          const original = operations.find((row) => row.break_id === breakId);
+          if (!original) throw new Error('f06_mixed_original_operation_missing');
+          // A recorded no-start continuation is terminal already; completion SQL
+          // requires its immutable original receipt. No new no-start is inferred.
+          if (original.state === 'withdrawn_before_manifest') continue;
+          const state = await rpc.reconcile(breakId);
+          assertCurrent();
+          if (state.source_table_id !== source) throw new Error('f06_mixed_source_changed');
+          this.rememberTournamentBreak(state);
+          await this.recoverTournamentBreak(state);
+          assertCurrent();
+          const terminal = await rpc.reconcile(breakId);
+          assertCurrent();
+          if (terminal.state !== 'acknowledged') throw new Error('f06_mixed_operation_incomplete');
+        }
+        if (
+          this.pendingTournamentSeatMoveOutcomes.size ||
+          this.pendingTournamentParkRequests.size ||
+          this.pendingTournamentBreakBegins.size ||
+          this.pendingTournamentBreakAmendments.size
+        )
+          throw new Error('f06_mixed_pending_original_unresolved');
+        const completion = await completeMixedF06Transfer(
+          this.tournamentId,
+          this.getTournamentLeaseGeneration()!,
+          transfer,
+          assertCurrent
+        );
+        owned.completion = completion;
+        return completion;
+      })()
+    );
+    this.mixedRecoveryOperation = work;
+    void work
+      .finally(() => {
+        if (this.mixedRecoveryOperation === work) this.mixedRecoveryOperation = null;
+      })
+      .catch(() => {});
+    return work;
+  }
+
+  finishMixedF06RecoveryAdmission(completion: Readonly<Record<string, unknown>>): void {
+    if (this.mixedRecovery?.completion !== completion || this.mixedRecoveryOperation)
+      throw new Error('f06_mixed_completion_not_owned');
+    this.leaveCompletedF06RecoveryOwnership();
+    // Evidence remains in mixedRecovery; normal manager state starts clean only
+    // after every canonical operation and the completion receipt are verified.
+    this.durableTournamentBreaks.clear();
+    this.pendingTournamentBreakCustodyIds.clear();
+    this.pendingTournamentCleanupKinds.clear();
+    this.rejectedTournamentBreakBegins.clear();
+    this.resolvedTournamentBreakProposals.clear();
+  }
+
+  private async retireTransferredTournamentBreak(state: TournamentTableBreakState): Promise<void> {
+    const owned = this.mixedRecovery;
+    if (!owned || !this.receiptOwnsSource(state.source_table_id))
+      throw new Error('f06_mixed_retirement_unproven');
+    owned.assertCurrent();
+    const rpc = this.tableBreakRpc();
+    let next = await rpc.reconcile(state.break_id);
+    owned.assertCurrent();
+    if (next.state === 'acknowledged') return;
+    if (
+      next.terminal_handoff_required ||
+      next.members.length === 0 ||
+      next.members.some((m) => !m.winner_request_id)
+    )
+      throw new Error('f06_mixed_retirement_has_unresolved_members');
+    let custodyId = this.pendingTournamentBreakCustodyIds.get(next.break_id);
+    if (!custodyId) {
+      custodyId = next.custody_id ?? randomUUID();
+      this.pendingTournamentBreakCustodyIds.set(next.break_id, custodyId);
+    }
+    await retainMixedF06Intent(
+      this.tournamentId,
+      this.getTournamentLeaseGeneration()!,
+      owned.transfer,
+      `custody:${next.break_id}`,
+      { custodyId },
+      owned.assertCurrent
+    );
+    next = await rpc.claimCustody(next.break_id, custodyId, next.revision);
+    owned.assertCurrent();
+    const revision = next.revision;
+    if (
+      next.custody_id !== custodyId ||
+      next.custody_generation !== this.getTournamentLeaseGeneration()
+    )
+      throw new Error('f06_mixed_custody_claim_unproven');
+    if (next.state !== 'close_confirmed') next = await rpc.close(next.break_id);
+    owned.assertCurrent();
+    if (
+      next.state !== 'close_confirmed' ||
+      next.custody_id !== custodyId ||
+      next.revision !== revision
+    )
+      throw new Error('f06_mixed_close_unproven');
+    const kind = this.pendingTournamentCleanupKinds.get(next.break_id) ?? 'retired';
+    this.pendingTournamentCleanupKinds.set(next.break_id, kind);
+    next = await rpc.ackCleanup(next.break_id, custodyId, revision, kind);
+    owned.assertCurrent();
+    if (
+      next.state !== 'acknowledged' ||
+      next.custody_id !== custodyId ||
+      next.revision !== revision
+    )
+      throw new Error('f06_mixed_ack_unproven');
+    this.rememberTournamentBreak(next);
+  }
+
   private static readonly MOVE_BOUNDARY_PROBE_MS = 1_000;
   /** Exact manager generation that owns every live-source move fence it arms. */
   private readonly tournamentMoveBoundaryOwner = randomUUID();
@@ -75,8 +375,1486 @@ export class TournamentManager extends TournamentManagerEliminations {
     string,
     PendingTournamentSeatMoveOutcome
   >();
+  private tournamentBreakCursorRevision = '0';
+  private tournamentBreakTraversalStarted = false;
+  private tournamentBreakCleanupFirst = false;
+  private tournamentBreakDiscoveryComplete = false;
+  private readonly durableTournamentBreaks = new Map<string, TournamentTableBreakState>();
+  /** A response loss must not mint a new begin/request identity in this process. */
+  private readonly pendingTournamentBreakBegins = new Map<
+    string,
+    readonly TableBreakMemberInput[]
+  >();
+
+  // A resolved capacity failure allows placement changes only. Keep the rejected
+  // payload until a durable manifest is adopted, including delayed-send races.
+  private readonly rejectedTournamentBreakBegins = new Map<
+    string,
+    readonly TableBreakMemberInput[]
+  >();
+  private readonly resolvedTournamentBreakProposals = new Map<string, unknown[]>();
+
+  private retainResolvedBreakProposal(breakId: string, proposal: unknown): void {
+    const history = this.resolvedTournamentBreakProposals.get(breakId) ?? [];
+    history.push(proposal);
+    this.resolvedTournamentBreakProposals.set(breakId, history);
+  }
+
+  private assertBreakMembership(
+    expected: readonly TableBreakMemberInput[],
+    actual: readonly TableBreakMemberInput[]
+  ): void {
+    const identity = (members: readonly TableBreakMemberInput[]) =>
+      members
+        .map((m) => [
+          m.user_id,
+          m.source_seat_id,
+          m.source_seat_number,
+          m.occupancy_id,
+          m.request_id,
+        ])
+        .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    if (JSON.stringify(identity(expected)) !== JSON.stringify(identity(actual)))
+      throw new Error('F06 original source membership mismatch');
+  }
+
+  protected tableBreakRpc(): TournamentTableBreakRpc {
+    const generation = this.getTournamentLeaseGeneration();
+    if (!generation || !this.eliminationMutationAllowed())
+      throw new Error('F06 manager authority unavailable');
+    return new TournamentTableBreakRpc(this.tournamentId, generation);
+  }
+
+  protected async startParkedMovementEngine(
+    engine: ServerTableEngine,
+    tableId: string,
+    tableLifecycle: string,
+    current: () => boolean
+  ): Promise<void> {
+    const rpc = this.tableBreakRpc();
+    const table = await rpc.tableState(tableId);
+    if (!current() || !table.excluded || !table.break_id || table.lifecycle !== tableLifecycle)
+      throw new Error('f06_movement_source_changed');
+    const state = await rpc.reconcile(table.break_id);
+    const generation = this.getTournamentLeaseGeneration();
+    if (
+      !current() ||
+      !generation ||
+      state.source_table_id !== tableId ||
+      state.lifecycle !== tableLifecycle ||
+      state.terminal_handoff_required ||
+      !['park_requested', 'begun'].includes(state.state)
+    )
+      throw new Error('f06_movement_break_changed');
+    const expected = Object.freeze({
+      admission_id: randomUUID(),
+      tournament_id: this.tournamentId,
+      lease_generation: generation,
+      table_id: tableId,
+      lifecycle: tableLifecycle,
+      break_id: state.break_id,
+      custody_id: randomUUID(),
+    });
+    const request = Object.freeze({
+      p_tournament_id: expected.tournament_id,
+      p_lease_generation: generation,
+      p_table_id: tableId,
+      p_lifecycle: tableLifecycle,
+      p_break_id: state.break_id,
+      p_admission_id: expected.admission_id,
+      p_custody_id: expected.custody_id,
+      p_expected_revision: state.revision,
+    });
+    const readAdmission = async () => {
+      if (!current()) throw new Error('f06_movement_owner_changed');
+      const { data, error } = await supabase.rpc('fn_f06_admit_parked_movement', request);
+      if (!current() || error) throw new Error('f06_movement_admission_unproven');
+      return verifyF06MovementAdmission(data, expected);
+    };
+    const admission = await readAdmission();
+    engine.installF06MovementAdmission(
+      this.tournamentMoveBoundaryOwner,
+      admission,
+      current,
+      async () => {
+        const repeated = await readAdmission();
+        if (
+          repeated.revision !== admission.revision ||
+          repeated.proof_hash !== admission.proof_hash
+        )
+          throw new Error('f06_movement_proof_changed');
+      }
+    );
+    await engine.start();
+  }
+
+  private rememberTournamentBreak(state: TournamentTableBreakState): void {
+    if (state.state === 'acknowledged') {
+      this.durableTournamentBreaks.delete(state.break_id);
+      this.resolvedTournamentBreakProposals.delete(state.break_id);
+      this.tournamentBreakArrivalWakes.delete(state.break_id);
+    } else this.durableTournamentBreaks.set(state.break_id, state);
+  }
+
+  private readonly tournamentBreakArrivalWakes = new Map<string, Map<string, ServerTableEngine>>();
+
+  /** Direct and reconciled receipts name the same committed arrival. */
+  private wakeTournamentBreakArrival(
+    breakId: string,
+    receipt: VerifiedTournamentSeatMoveReceipt
+  ): void {
+    if (!this.eliminationMutationAllowed()) return;
+    const engine = this.tableEngines.get(receipt.destinationTableId);
+    if (!engine || !this.gameServer.ownsTournamentTableEngine(receipt.destinationTableId, engine))
+      return;
+    const arrivals =
+      this.tournamentBreakArrivalWakes.get(breakId) ?? new Map<string, ServerTableEngine>();
+    if (arrivals.get(receipt.requestId) === engine) return;
+    engine.wakeWaitingForPlayers();
+    arrivals.set(receipt.requestId, engine);
+    this.tournamentBreakArrivalWakes.set(breakId, arrivals);
+  }
+
+  /** Discovery advances the server-owned cursor even when earlier entries refuse. */
+  protected async discoverTournamentBreaks(): Promise<TournamentTableBreakState[] | null> {
+    const page = await this.tableBreakRpc().discover(this.tournamentBreakCursorRevision, 1);
+    // Receipt bookkeeping is safe after budget expiry; it grants no new authority.
+    this.tournamentBreakCursorRevision = page.cursor_revision;
+    if (!page.ok) {
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return null;
+    }
+    if (page.wrapped) {
+      if (this.tournamentBreakTraversalStarted) this.tournamentBreakDiscoveryComplete = true;
+      this.tournamentBreakTraversalStarted = true;
+    }
+    if (this.tournamentBreakTraversalStarted && page.operations.length < 1)
+      this.tournamentBreakDiscoveryComplete = true;
+    for (const state of page.operations) this.rememberTournamentBreak(state);
+    return page.operations;
+  }
+
+  /** Persist a caller-owned original member set; exact retries retain every UUID. */
+  protected async beginTournamentBreak(
+    breakId: string,
+    sourceId: string,
+    members: readonly TableBreakMemberInput[]
+  ): Promise<TournamentTableBreakState> {
+    const prior = this.pendingTournamentBreakBegins.get(breakId);
+    const canonical = [...members].sort((a, b) => a.user_id.localeCompare(b.user_id));
+    if (prior && JSON.stringify(prior) !== JSON.stringify(canonical))
+      throw new Error('F06 original begin membership changed');
+    const exact = prior ?? Object.freeze(canonical.map((member) => Object.freeze({ ...member })));
+    const rejected = this.rejectedTournamentBreakBegins.get(breakId);
+    if (rejected) this.assertBreakMembership(rejected, exact);
+    this.pendingTournamentBreakBegins.set(breakId, exact);
+    if (this.mixedRecovery && this.isF06RecoveryOwner())
+      await retainMixedF06Intent(
+        this.tournamentId,
+        this.getTournamentLeaseGeneration()!,
+        this.mixedRecovery.transfer,
+        `begin:${breakId}`,
+        exact,
+        this.mixedRecovery.assertCurrent
+      );
+    let state: TournamentTableBreakState;
+    try {
+      state = await this.tableBreakRpc().begin(breakId, exact);
+    } catch (error) {
+      if (
+        !(error instanceof TournamentTableBreakCapacityError) ||
+        error.rpc !== 'fn_f06_begin_break' ||
+        error.parameters.p_break_id !== breakId ||
+        JSON.stringify(error.parameters.p_members) !== JSON.stringify(exact)
+      )
+        throw error;
+      state = await this.tableBreakRpc().reconcile(breakId);
+      if (
+        state.source_table_id !== sourceId ||
+        state.break_id !== breakId ||
+        state.tournament_id !== this.tournamentId
+      )
+        throw new Error('F06 begin resolution identity mismatch');
+      const known = this.durableTournamentBreaks.get(breakId);
+      if (known && state.lifecycle !== known.lifecycle)
+        throw new Error('F06 begin resolution lifecycle mismatch');
+      if (state.state === 'park_requested' && state.members.length === 0) {
+        this.retainResolvedBreakProposal(breakId, exact);
+        this.rejectedTournamentBreakBegins.set(breakId, exact);
+        this.pendingTournamentBreakBegins.delete(breakId);
+      } else this.assertBreakMembership(exact, state.members);
+    }
+    if (state.source_table_id !== sourceId) throw new Error('F06 begin source mismatch');
+    if (state.ok && state.state !== 'park_requested') {
+      this.assertBreakMembership(exact, state.members);
+      this.pendingTournamentBreakBegins.delete(breakId);
+      this.rejectedTournamentBreakBegins.delete(breakId);
+      this.resolvedTournamentBreakProposals.delete(breakId);
+    }
+    this.rememberTournamentBreak(state);
+    return state;
+  }
+
+  /** Dispatch stored active identities only; SQL's unavoidable guard owns winners. */
+  protected async dispatchTournamentBreakMembers(state: TournamentTableBreakState): Promise<void> {
+    if (!state.ok || state.state !== 'begun' || state.terminal_handoff_required) return;
+    await this.runWithTournamentSeatMoveAuthority(async () => {
+      // An unrelated unknown movement still invalidates this board's plan.
+      if (this.pendingTournamentSeatMoveOutcomes.size > 0) return;
+      const engine = this.tableEngines.get(state.source_table_id);
+      if (
+        !this.receiptOwnsSource(state.source_table_id) &&
+        (!engine ||
+          !this.retainTournamentBreakSource(state.break_id, state.source_table_id, engine))
+      )
+        return;
+      for (const member of state.members) {
+        if (member.winner_request_id) continue;
+        if (
+          !member.active_request_id ||
+          !member.destination_table_id ||
+          member.destination_seat_number === null
+        )
+          throw new Error('F06 active attempt has no exact destination');
+        if (!this.eliminationMutationAllowed()) return;
+        const move: MoveInstruction = {
+          playerId: member.user_id,
+          fromTableId: state.source_table_id,
+          fromSeat: member.source_seat_number,
+          toTableId: member.destination_table_id,
+          toSeat: member.destination_seat_number,
+          reason: 'table_break',
+        };
+        const boundary = await this.claimTournamentMoveBoundary(move, 'live_source');
+        if (!boundary || !this.eliminationMutationAllowed()) return;
+        const input: TournamentSeatMoveInput = {
+          requestId: member.active_request_id,
+          tournamentId: this.tournamentId,
+          userId: member.user_id,
+          sourceTableId: state.source_table_id,
+          destinationTableId: member.destination_table_id,
+          destinationSeatNumber: member.destination_seat_number,
+          sourceMode: 'live_source',
+        };
+        try {
+          const receipt = await this.requestTournamentSeatMoveAtBoundary(input, boundary, true);
+          if (
+            receipt.sourceSeatId !== member.source_seat_id ||
+            receipt.sourceSeatNumber !== member.source_seat_number
+          )
+            throw new Error('F06 committed source receipt differs from original member');
+          this.wakeTournamentBreakArrival(state.break_id, receipt);
+        } catch (error) {
+          // Durable reconciliation/amendment decides the outcome. Never turn a
+          // transport refusal into a new UUID or release whole-break custody.
+          reportError(error, 'Tournament.break_member_outcome_unresolved', {
+            tournamentId: this.tournamentId,
+            breakId: state.break_id,
+            requestId: input.requestId,
+          });
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+          return;
+        }
+      }
+    });
+  }
+
+  private readonly pendingTournamentParkRequests = new Map<
+    string,
+    { breakId: string; lifecycle: string; boundaryId: string }
+  >();
+
+  /** The durable park request precedes the physical drain; never invert them. */
+  protected async requestTournamentBreakPark(
+    sourceId: string
+  ): Promise<TournamentTableBreakState | null> {
+    const rpc = this.tableBreakRpc();
+    let pending = this.pendingTournamentParkRequests.get(sourceId);
+    if (!pending) {
+      const table = await rpc.tableState(sourceId);
+      if (!this.eliminationMutationAllowed() || !table.ok) return null;
+      if (table.excluded) {
+        // Discovery owns an already existing operation, including restart.
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+        return null;
+      }
+      pending = {
+        breakId: randomUUID(),
+        lifecycle: table.lifecycle,
+        boundaryId: randomUUID(),
+      };
+      this.pendingTournamentParkRequests.set(sourceId, pending);
+    }
+    const state = await rpc.requestPark(
+      pending.breakId,
+      sourceId,
+      pending.lifecycle,
+      pending.boundaryId
+    );
+    if (state.source_table_id !== sourceId || state.lifecycle !== pending.lifecycle)
+      throw new Error('F06 park source lifecycle mismatch');
+    this.rememberTournamentBreak(state);
+    if (state.ok) this.pendingTournamentParkRequests.delete(sourceId);
+    return state;
+  }
+
+  protected async prepareParkedTournamentBreak(
+    state: TournamentTableBreakState
+  ): Promise<TournamentTableBreakState | null> {
+    if (!state.ok || state.state !== 'park_requested' || state.terminal_handoff_required)
+      return state;
+    const receiptOwned = this.receiptOwnsSource(state.source_table_id);
+    const engine = this.tableEngines.get(state.source_table_id);
+    if (!receiptOwned) {
+      if (
+        !engine ||
+        !this.retainTournamentBreakSource(state.break_id, state.source_table_id, engine)
+      )
+        return null;
+      const parked = await engine.parkForTournamentMove(
+        this.tournamentMoveBoundaryOwner,
+        TournamentManager.MOVE_BOUNDARY_PROBE_MS
+      );
+      if (
+        !this.eliminationMutationAllowed() ||
+        !parked ||
+        this.tableEngines.get(state.source_table_id) !== engine ||
+        !this.gameServer.ownsTournamentTableEngine(state.source_table_id, engine)
+      )
+        return null;
+    }
+    const retained = this.pendingTournamentBreakBegins.get(state.break_id);
+    if (retained) return this.beginTournamentBreak(state.break_id, state.source_table_id, retained);
+
+    const { data, error } = await supabase
+      .from('table_seats')
+      .select('id, user_id, seat_number, stack, occupancy_id')
+      .eq('table_id', state.source_table_id)
+      .is('left_at', null);
+    if (!this.eliminationMutationAllowed() || error || !data || data.length === 0) return null;
+    const rows = data as {
+      id: string;
+      user_id: string;
+      seat_number: number;
+      stack: number;
+      occupancy_id: string;
+    }[];
+    if (
+      rows.some(
+        (row) =>
+          !row.user_id ||
+          !row.occupancy_id ||
+          !Number.isFinite(Number(row.stack)) ||
+          Number(row.stack) <= 0
+      )
+    )
+      return null;
+    const others = await this.eligibleBreakDestinations(state.source_table_id, state.break_id);
+    if (!this.eliminationMutationAllowed() || !others) return null;
+    const source: BalancerTable = {
+      tableId: state.source_table_id,
+      playerCount: rows.length,
+      maxSeats: 10,
+      players: rows.map((row) => ({
+        userId: row.user_id,
+        seat: row.seat_number,
+        stack: Number(row.stack),
+      })),
+    };
+    const moves = this.tableBalancer.breakTable(source, others);
+    if (moves.length !== rows.length) {
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return null; // Existing capacity owner must supply legal space.
+    }
+    const members = rows.map((row) => {
+      const move = moves.find((candidate) => candidate.playerId === row.user_id);
+      if (!move) throw new Error('F06 complete original roster cannot be placed');
+      return {
+        user_id: row.user_id,
+        source_seat_id: row.id,
+        source_seat_number: row.seat_number,
+        occupancy_id: row.occupancy_id,
+        request_id:
+          this.rejectedTournamentBreakBegins
+            .get(state.break_id)
+            ?.find((member) => member.user_id === row.user_id)?.request_id ?? randomUUID(),
+        destination_table_id: move.toTableId,
+        destination_seat_number: move.toSeat,
+      };
+    });
+    if (
+      !receiptOwned &&
+      (!engine ||
+        this.tableEngines.get(state.source_table_id) !== engine ||
+        !this.gameServer.ownsTournamentTableEngine(state.source_table_id, engine))
+    )
+      return null;
+    if (receiptOwned) this.mixedRecovery!.assertCurrent();
+    return this.beginTournamentBreak(state.break_id, state.source_table_id, members);
+  }
+
+  private readonly pendingTournamentBreakAmendments = new Map<
+    string,
+    Parameters<TournamentTableBreakRpc['amend']>[0]
+  >();
+
+  protected async amendTournamentBreakMember(
+    state: TournamentTableBreakState,
+    userId: string,
+    destinationTableId: string,
+    destinationSeatNumber: number
+  ): Promise<TournamentTableBreakState> {
+    const member = state.members.find((candidate) => candidate.user_id === userId);
+    if (!member || member.winner_request_id || !member.active_request_id || state.state !== 'begun')
+      return state;
+    const key = `${state.break_id}:${userId}:${member.active_request_id}`;
+    let amendment = this.pendingTournamentBreakAmendments.get(key);
+    if (!amendment) {
+      amendment = Object.freeze({
+        breakId: state.break_id,
+        userId,
+        expectedRequestId: member.active_request_id,
+        amendmentId: randomUUID(),
+        newRequestId: randomUUID(),
+        destinationTableId,
+        destinationSeatNumber,
+        reason: 'original destination unavailable',
+      });
+      this.pendingTournamentBreakAmendments.set(key, amendment);
+    }
+    if (this.mixedRecovery && this.isF06RecoveryOwner())
+      await retainMixedF06Intent(
+        this.tournamentId,
+        this.getTournamentLeaseGeneration()!,
+        this.mixedRecovery.transfer,
+        `amend:${state.break_id}:${amendment.amendmentId}`,
+        amendment,
+        this.mixedRecovery.assertCurrent
+      );
+    let next: TournamentTableBreakState;
+    try {
+      next = await this.tableBreakRpc().amend(amendment);
+    } catch (error) {
+      if (
+        !(error instanceof TournamentTableBreakCapacityError) ||
+        error.rpc !== 'fn_f06_amend_attempt' ||
+        error.parameters.p_break_id !== amendment.breakId ||
+        error.parameters.p_amendment_id !== amendment.amendmentId ||
+        error.parameters.p_new_request_id !== amendment.newRequestId ||
+        error.parameters.p_expected_request_id !== amendment.expectedRequestId ||
+        error.parameters.p_user_id !== amendment.userId ||
+        error.parameters.p_destination_table_id !== amendment.destinationTableId ||
+        error.parameters.p_destination_seat_number !== amendment.destinationSeatNumber ||
+        error.parameters.p_reason !== amendment.reason
+      )
+        throw error;
+      next = await this.reconcileTournamentBreak(state);
+      this.assertBreakMembership(state.members, next.members);
+      // Capacity refusal is correlated to this exact proposal; the subsequent
+      // state is authoritative even if an older in-flight send won meanwhile.
+      this.retainResolvedBreakProposal(state.break_id, amendment);
+      this.pendingTournamentBreakAmendments.delete(key);
+      this.rememberTournamentBreak(next);
+      return next;
+    }
+    if (next.source_table_id !== state.source_table_id || next.lifecycle !== state.lifecycle)
+      throw new Error('F06 amendment source lifecycle mismatch');
+    this.rememberTournamentBreak(next);
+    const updated = next.members.find((candidate) => candidate.user_id === userId);
+    if (
+      next.ok &&
+      updated &&
+      (updated.winner_request_id || updated.active_request_id !== member.active_request_id)
+    )
+      this.pendingTournamentBreakAmendments.delete(key);
+    return next;
+  }
+
+  protected async reconcileTournamentBreak(
+    state: TournamentTableBreakState
+  ): Promise<TournamentTableBreakState> {
+    const next = await this.tableBreakRpc().reconcile(state.break_id);
+    if (next.source_table_id !== state.source_table_id || next.lifecycle !== state.lifecycle)
+      throw new Error('F06 reconciliation source lifecycle mismatch');
+    const original =
+      this.pendingTournamentBreakBegins.get(state.break_id) ??
+      this.rejectedTournamentBreakBegins.get(state.break_id);
+    if (original && next.state !== 'park_requested') {
+      this.assertBreakMembership(original, next.members);
+      this.pendingTournamentBreakBegins.delete(state.break_id);
+      this.rejectedTournamentBreakBegins.delete(state.break_id);
+      this.resolvedTournamentBreakProposals.delete(state.break_id);
+    }
+    // The RPC decoder proves the winner's original member/occupancy, break,
+    // lifecycle and destination. A lost move reply is not a new dispatch.
+    if (next.ok && !next.terminal_handoff_required && next.state !== 'acknowledged') {
+      for (const member of next.members) {
+        if (member.winning_receipt)
+          this.wakeTournamentBreakArrival(next.break_id, member.winning_receipt);
+      }
+    }
+    this.rememberTournamentBreak(next);
+    return next;
+  }
+
+  /** A refused prefix never prevents the next discovered operation being visited. */
+  protected async visitTournamentBreakPage(
+    visit: (state: TournamentTableBreakState) => Promise<void>
+  ): Promise<boolean> {
+    const page = await this.discoverTournamentBreaks();
+    if (page === null) return false;
+    // One durable page item per pass prevents a slow first item from forever
+    // hiding the rest of a pre-advanced page. Alternate retained ACK cleanup
+    // with discovery so a committed/lost ACK can release its local reservation.
+    const retainedId = [...this.pendingTournamentCleanupKinds.keys()].find(
+      (id) => !page.some((op) => op.break_id === id)
+    );
+    const retained = retainedId ? this.durableTournamentBreaks.get(retainedId) : undefined;
+    this.tournamentBreakCleanupFirst = !this.tournamentBreakCleanupFirst;
+    const work = retained
+      ? this.tournamentBreakCleanupFirst
+        ? [retained, ...page]
+        : [...page, retained]
+      : page;
+    if (retainedId) {
+      const kind = this.pendingTournamentCleanupKinds.get(retainedId)!;
+      this.pendingTournamentCleanupKinds.delete(retainedId);
+      this.pendingTournamentCleanupKinds.set(retainedId, kind);
+    }
+    for (const state of work) {
+      if (!this.eliminationMutationAllowed()) return false;
+      try {
+        await visit(state);
+      } catch (error) {
+        reportError(error, 'Tournament.break_recovery_unresolved', {
+          tournamentId: this.tournamentId,
+          breakId: state.break_id,
+        });
+      }
+    }
+    if (page.length)
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+    return true;
+  }
+
+  /** Exact original source kept through no-start, movement and final ACK. */
+  private readonly stoppedOriginalBreaks = new Map<string, ServerTableEngine>();
+  private readonly activeStoppedOriginalCustody = new Set<string>();
+  private originalAdmissionCursor = 0;
+
+  /** One original admission decision per RUNNING sweep; never a dealer restart. */
+  protected async recoverF06OriginalAdmissions(): Promise<void> {
+    const pendingContinuation = this.pendingNoStartContinuations.keys().next().value;
+    if (pendingContinuation && (await this.replayNoStartContinuation(pendingContinuation))) return;
+    const entries = [...this.tableEngines.entries()];
+    if (!entries.length || !this.eliminationMutationAllowed()) return;
+    const [tableId, engine] = entries[this.originalAdmissionCursor++ % entries.length];
+    const token = this.captureLifecycleToken();
+    const generation = this.getTournamentLeaseGeneration();
+    if (!token || !generation) return;
+    const current = () =>
+      this.lifecycleIsCurrent(token) &&
+      this.getTournamentLeaseGeneration() === generation &&
+      this.eliminationMutationAllowed() &&
+      this.tableEngines.get(tableId) === engine &&
+      this.gameServer.ownsTournamentTableEngine(tableId, engine);
+    if (!current()) return;
+    const permit = engine.getF06RecoverablePermit?.();
+    if (permit) {
+      if (!['unknown', 'reserved', 'terminated'].includes(permit.phase)) return;
+      if (
+        permit.binding.tournament_id !== this.tournamentId ||
+        permit.binding.lease_generation !== generation ||
+        permit.binding.table_id !== tableId
+      )
+        throw new Error('F06 original permit owner mismatch');
+      const state = await this.requestTournamentBreakPark(tableId);
+      if (!current()) throw new Error('F06 original park owner changed');
+      if (state) {
+        if (state.lifecycle !== permit.binding.lifecycle)
+          throw new Error('F06 original park lifecycle mismatch');
+        this.stoppedOriginalBreaks.set(state.break_id, engine);
+        await this.retireTournamentBreak(state);
+      }
+      // An excluded source/lost park reply is recovered through durable discovery.
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return;
+    }
+    const ticket = engine.getF06FailedAllocation?.();
+    if (!ticket) return;
+    const table = await this.tableBreakRpc().tableState(tableId);
+    if (!current() || !table.ok || table.excluded) return;
+    // Lease owns the epoch-to-admitted-lifecycle binding and verifies the
+    // allocator response against that original lifecycle before publishing it.
+    // A failed allocation can burn a number; no BEGIN identity is discarded.
+    await engine.retryF06FailedAllocation(
+      ticket,
+      () => current() && this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId)
+    );
+    if (!current()) throw new Error('F06 allocation recovery owner changed');
+  }
+
+  private bindStoppedOriginalBreak(state: TournamentTableBreakState): boolean {
+    const engine = this.tableEngines.get(state.source_table_id);
+    const retained = this.stoppedOriginalBreaks.get(state.break_id);
+    if (
+      retained &&
+      !engine &&
+      state.state === 'close_confirmed' &&
+      this.pendingTournamentCleanupKinds.has(state.break_id) &&
+      !this.gameServer.getTableEngine(state.source_table_id)
+    )
+      return false;
+    if (
+      retained &&
+      (retained !== engine ||
+        !this.gameServer.ownsTournamentTableEngine(state.source_table_id, retained))
+    )
+      throw new Error('F06 stopped original registry changed');
+    if (!engine || !this.gameServer.ownsTournamentTableEngine(state.source_table_id, engine))
+      return false;
+    if (this.stoppedOriginalBreaks.get(state.break_id) === engine) return true;
+    const permit = engine.getF06RecoverablePermit?.();
+    if (!permit || !['unknown', 'reserved', 'terminated'].includes(permit.phase)) return false;
+    const b = permit.binding;
+    if (
+      b.tournament_id !== this.tournamentId ||
+      b.lease_generation !== this.getTournamentLeaseGeneration() ||
+      b.table_id !== state.source_table_id ||
+      b.lifecycle !== state.lifecycle
+    )
+      return false;
+    this.stoppedOriginalBreaks.set(state.break_id, engine);
+    return true;
+  }
+
+  private readonly pendingTournamentBreakCustodyIds = new Map<string, string>();
+  private readonly pendingTournamentCleanupKinds = new Map<string, 'retired' | 'verified_absent'>();
+
+  /** Release only this process's already-proven absent reservation after lost ACK. */
+  private async finishAcknowledgedTournamentBreak(state: TournamentTableBreakState): Promise<void> {
+    const kind = this.pendingTournamentCleanupKinds.get(state.break_id);
+    const custodyId = this.pendingTournamentBreakCustodyIds.get(state.break_id);
+    if (!kind || !custodyId) {
+      this.rememberTournamentBreak(state);
+      return;
+    }
+    const generation = this.getTournamentLeaseGeneration();
+    if (!generation || state.custody_id !== custodyId || state.custody_generation !== generation)
+      throw new Error('F06 acknowledged custody differs from retained cleanup');
+    const host = this.gameServer as typeof this.gameServer & Partial<BreakRetirementHost>;
+    if (!host.withRetirementCustody)
+      throw new Error('F06 Lease withRetirementCustody adapter unavailable');
+    const binding: BreakRetirementBinding = {
+      breakId: state.break_id,
+      tableId: state.source_table_id,
+      tableIncarnation: state.lifecycle,
+      tournamentId: this.tournamentId,
+      custodyId,
+      durableRevision: state.revision,
+      leaseGeneration: generation,
+    };
+    const current = () =>
+      this.getTournamentLeaseGeneration() === generation && this.eliminationMutationAllowed();
+    await host.withRetirementCustody(
+      binding,
+      this.tableEngines,
+      current,
+      async (custody) => {
+        custody.assertCurrent();
+        if (custody.engine) throw new Error('F06 old acknowledgement cannot stop an engine');
+        custody.confirmAbsent();
+      },
+      async () => {
+        // The retained local reservation excludes admission. Never use historical
+        // ACK to select a current engine, even if table UUID happens to match.
+        if (
+          !current() ||
+          this.tableEngines.has(binding.tableId) ||
+          this.gameServer.getTableEngine(binding.tableId)
+        )
+          throw new Error('F06 acknowledged absence is not current');
+      }
+    );
+    this.pendingTournamentCleanupKinds.delete(state.break_id);
+    this.pendingTournamentBreakCustodyIds.delete(state.break_id);
+    this.stoppedOriginalBreaks.delete(state.break_id);
+    const retained = this.retainedTournamentBreakSources.get(state.source_table_id);
+    if (retained?.breakId === state.break_id)
+      this.retainedTournamentBreakSources.delete(state.source_table_id);
+    this.rememberTournamentBreak(state);
+  }
+
+  private readonly pendingNoStartContinuations = new Map<
+    string,
+    {
+      state: TournamentTableBreakState;
+      engine: ServerTableEngine;
+      binding: BreakRetirementBinding;
+    }
+  >();
+
+  private forgetContinuedNoStartPark(
+    state: TournamentTableBreakState,
+    engine: ServerTableEngine
+  ): void {
+    if (
+      this.tableEngines.get(state.source_table_id) !== engine ||
+      !this.gameServer.ownsTournamentTableEngine(state.source_table_id, engine) ||
+      !engine.hasReleasedProcessOwnership() ||
+      engine.getF06RetainedPermit()
+    )
+      throw new Error('F06 continued dealer drain changed');
+    const retained = this.retainedTournamentBreakSources.get(state.source_table_id);
+    if (retained && retained.breakId !== state.break_id)
+      throw new Error('F06 continued source belongs to another break');
+    if (
+      [...this.pendingTournamentSeatMoveOutcomes.values()].some(
+        (item) => item.input.sourceTableId === state.source_table_id
+      )
+    )
+      throw new Error('F06 continued source has a pending move');
+    this.pendingNoStartContinuations.delete(state.break_id);
+    this.durableTournamentBreaks.delete(state.break_id);
+    this.resolvedTournamentBreakProposals.delete(state.break_id);
+    this.tournamentBreakArrivalWakes.delete(state.break_id);
+    this.pendingTournamentBreakCustodyIds.delete(state.break_id);
+    this.pendingTournamentCleanupKinds.delete(state.break_id);
+    this.stoppedOriginalBreaks.delete(state.break_id);
+    if (retained) this.retainedTournamentBreakSources.delete(state.source_table_id);
+    engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+  }
+
+  private async replayNoStartContinuation(breakId: string): Promise<boolean> {
+    const pending = this.pendingNoStartContinuations.get(breakId);
+    if (!pending) return false;
+    const { state, engine, binding } = pending;
+    const lifecycle = this.captureLifecycleToken();
+    const current = () =>
+      !!lifecycle &&
+      this.lifecycleIsCurrent(lifecycle) &&
+      this.eliminationMutationAllowed() &&
+      this.getTournamentLeaseGeneration() === binding.leaseGeneration &&
+      this.pendingNoStartContinuations.get(breakId) === pending &&
+      this.tableEngines.get(binding.tableId) === engine &&
+      this.gameServer.ownsTournamentTableEngine(binding.tableId, engine);
+    const host = this.gameServer as typeof this.gameServer & Partial<BreakRetirementHost>;
+    if (!host.withRetirementCustody) throw new Error('F06 retirement adapter unavailable');
+    await host.withRetirementCustody(
+      binding,
+      this.tableEngines,
+      current,
+      async (custody) => {
+        custody.assertCurrent();
+        if (custody.engine !== engine || engine.getF06RetainedPermit())
+          throw new Error('F06 no-start original disposition unresolved');
+        try {
+          if (!(await this.tableBreakRpc().continueNoStartLastTable(state))) {
+            this.pendingNoStartContinuations.delete(breakId);
+            throw new Error(
+              'F06 continuation is not eligible; ordinary retirement remains pending'
+            );
+          }
+        } catch (error) {
+          if (error instanceof TournamentNoStartContinuationRefusedError)
+            this.pendingNoStartContinuations.delete(breakId);
+          throw error;
+        }
+        custody.assertCurrent();
+      },
+      async () => {
+        // Only an already positively drained exact pending request reaches here.
+        // Re-claiming a withdrawn park would strand a committed lost reply.
+        if (!current() || !engine.hasReleasedProcessOwnership())
+          throw new Error('F06 continuation replay custody changed');
+      }
+    );
+    this.forgetContinuedNoStartPark(state, engine);
+    await this.readmitContinuedNoStartTable(state.source_table_id, engine);
+    return true;
+  }
+
+  protected async continueExcludedNoStartTable(
+    tableId: string,
+    engine: ServerTableEngine,
+    current: () => boolean
+  ): Promise<boolean> {
+    if (!current() || engine.getF06RetainedPermit()) return false;
+    // A read-only hint keeps ordinary multi-table movement admission intact.
+    // The RPC repeats the complete locked scope check before any transition.
+    const { data: openTables, error: tablesError } = await supabase
+      .from('tables')
+      .select('id')
+      .eq('tournament_id', this.tournamentId)
+      .neq('status', 'closed')
+      .or('is_deleted.is.null,is_deleted.eq.false');
+    if (!current() || tablesError || !openTables) throw new Error('F06 open table scope unproven');
+    if (openTables.length !== 1 || openTables[0]?.id !== tableId) return false;
+    const rpc = this.tableBreakRpc();
+    const table = await rpc.tableState(tableId);
+    if (!current() || !table.ok || !table.excluded || !table.break_id) return false;
+    const state = await rpc.reconcile(table.break_id);
+    if (
+      !current() ||
+      state.state !== 'park_requested' ||
+      state.members.length ||
+      state.source_table_id !== tableId ||
+      state.lifecycle !== table.lifecycle ||
+      !state.custody_id
+    )
+      return false;
+    const continued = await this.gameServer.tournamentRetirementCustody.withAdmission(
+      tableId,
+      current,
+      async (assertCurrent) => {
+        try {
+          await engine.stop();
+        } catch (error) {
+          if (!engine.hasReleasedProcessOwnership()) throw error;
+        }
+        assertCurrent();
+        if (!engine.hasReleasedProcessOwnership() || engine.getF06RetainedPermit())
+          throw new Error('F06 continuation candidate not drained');
+        const continued = await rpc.continueNoStartLastTable(state);
+        assertCurrent();
+        return continued;
+      }
+    );
+    // The scope may change while stopping. A terminal candidate cannot fall
+    // through to movement start; ordinary exact-owner recovery must replace it.
+    if (!continued)
+      throw new TournamentNoStartContinuationRefusedError(
+        'F06 continuation eligibility changed after drain'
+      );
+    this.forgetContinuedNoStartPark(state, engine);
+    return true;
+  }
+
+  protected async retireTournamentBreak(state: TournamentTableBreakState): Promise<void> {
+    if (this.receiptOwnsSource(state.source_table_id))
+      return this.retireTransferredTournamentBreak(state);
+    if (await this.replayNoStartContinuation(state.break_id)) return;
+    // Historical completion cannot select or stop whichever engine exists now.
+    if (state.state === 'acknowledged') {
+      await this.finishAcknowledgedTournamentBreak(state);
+      return;
+    }
+    if (state.terminal_handoff_required) return;
+    const stoppedOriginal = this.bindStoppedOriginalBreak(state);
+    const managerLifecycle = this.captureLifecycleToken();
+    if (stoppedOriginal && (!managerLifecycle || !this.lifecycleIsCurrent(managerLifecycle)))
+      return;
+    if (
+      !stoppedOriginal &&
+      state.state !== 'close_confirmed' &&
+      (state.state !== 'begun' ||
+        !state.members.length ||
+        state.members.some((member) => !member.winner_request_id))
+    )
+      return;
+    const generation = this.getTournamentLeaseGeneration();
+    if (!generation || !this.eliminationMutationAllowed()) return;
+    const rpc = this.tableBreakRpc();
+    const fresh = await this.reconcileTournamentBreak(state);
+    if (!fresh.ok || fresh.terminal_handoff_required || !this.eliminationMutationAllowed()) return;
+    if (stoppedOriginal && (!managerLifecycle || !this.lifecycleIsCurrent(managerLifecycle)))
+      throw new Error('F06 original retirement owner changed');
+    if (fresh.state === 'acknowledged') {
+      await this.finishAcknowledgedTournamentBreak(fresh);
+      return;
+    }
+    let custodyId = this.pendingTournamentBreakCustodyIds.get(state.break_id);
+    if (!custodyId) {
+      custodyId =
+        fresh.custody_generation === generation && fresh.custody_id
+          ? fresh.custody_id
+          : randomUUID();
+      this.pendingTournamentBreakCustodyIds.set(state.break_id, custodyId);
+    }
+    // The local reservation must precede durable claim and stop. The exact
+    // successful CAS revision is predictable from the published +1 contract.
+    const expectedRevision =
+      fresh.custody_id === custodyId && fresh.custody_generation === generation
+        ? fresh.revision
+        : (BigInt(fresh.revision) + 1n).toString();
+    let owned = fresh;
+    const binding: BreakRetirementBinding = {
+      breakId: fresh.break_id,
+      tableId: fresh.source_table_id,
+      tableIncarnation: fresh.lifecycle,
+      tournamentId: this.tournamentId,
+      custodyId,
+      durableRevision: expectedRevision,
+      leaseGeneration: generation,
+    };
+    const host = this.gameServer as typeof this.gameServer & Partial<BreakRetirementHost>;
+    if (!host.withRetirementCustody)
+      throw new Error('F06 Lease withRetirementCustody adapter unavailable');
+    let acknowledged = false;
+    let continued = false;
+    const current = () =>
+      (!stoppedOriginal || (!!managerLifecycle && this.lifecycleIsCurrent(managerLifecycle))) &&
+      this.getTournamentLeaseGeneration() === generation &&
+      this.eliminationMutationAllowed() &&
+      (acknowledged ||
+        continued ||
+        (this.durableTournamentBreaks.get(owned.break_id)?.revision === owned.revision &&
+          this.durableTournamentBreaks.get(owned.break_id)?.lifecycle ===
+            binding.tableIncarnation));
+    await host.withRetirementCustody(
+      binding,
+      this.tableEngines,
+      current,
+      async (custody) => {
+        custody.assertCurrent();
+        if (stoppedOriginal && owned.state !== 'close_confirmed') {
+          const engine = this.stoppedOriginalBreaks.get(owned.break_id);
+          if (!engine || custody.engine !== engine)
+            throw new Error('F06 stopped original engine changed');
+          await engine.admitF06StoppedOriginalMovement(
+            this.tournamentMoveBoundaryOwner,
+            custody,
+            async () => {
+              custody.assertCurrent();
+              const park = await this.reconcileTournamentBreak(owned);
+              custody.assertCurrent();
+              return park;
+            }
+          );
+          custody.assertCurrent();
+          if (!this.retainTournamentBreakSource(owned.break_id, binding.tableId, engine))
+            throw new Error('F06 stopped original source retention refused');
+          this.activeStoppedOriginalCustody.add(binding.tableId);
+          try {
+            if (!(await this.redrivePendingTournamentSeatMoveOutcomes()))
+              throw new Error('F06 original movement remains unknown');
+            custody.assertCurrent();
+            if (owned.state === 'park_requested') {
+              const begun = await this.prepareParkedTournamentBreak(owned);
+              custody.assertCurrent();
+              if (!begun) {
+                // The last physical table cannot move its roster elsewhere.
+                // SQL accepts only the original immutable never-started outcome.
+                this.pendingNoStartContinuations.set(owned.break_id, {
+                  state: owned,
+                  engine,
+                  binding,
+                });
+                try {
+                  if (!(await rpc.continueNoStartLastTable(owned))) {
+                    this.pendingNoStartContinuations.delete(owned.break_id);
+                    throw new Error('F06 original placement remains pending');
+                  }
+                } catch (error) {
+                  if (error instanceof TournamentNoStartContinuationRefusedError)
+                    this.pendingNoStartContinuations.delete(owned.break_id);
+                  throw error;
+                }
+                custody.assertCurrent();
+                continued = true;
+                return;
+              }
+              if (begun.state !== 'begun')
+                throw new Error('F06 original placement remains pending');
+              owned = begun;
+            }
+            owned = await this.repairTournamentBreakDestinations(owned);
+            custody.assertCurrent();
+            await this.dispatchTournamentBreakMembers(owned);
+            custody.assertCurrent();
+            owned = await this.reconcileTournamentBreak(owned);
+            custody.assertCurrent();
+            if (
+              owned.state !== 'begun' ||
+              !owned.members.length ||
+              owned.members.some((member) => !member.winner_request_id)
+            )
+              throw new Error('F06 original movement remains pending');
+          } finally {
+            this.activeStoppedOriginalCustody.delete(binding.tableId);
+          }
+        }
+        const closed = owned.state === 'close_confirmed' ? owned : await rpc.close(owned.break_id);
+        custody.assertCurrent();
+        if (
+          !closed.ok ||
+          closed.state !== 'close_confirmed' ||
+          closed.lifecycle !== binding.tableIncarnation ||
+          closed.source_table_id !== binding.tableId ||
+          closed.custody_id !== binding.custodyId ||
+          closed.custody_generation !== generation ||
+          closed.revision !== binding.durableRevision
+        )
+          throw new Error('F06 exact close confirmation unavailable');
+        this.rememberTournamentBreak(closed);
+        const cleanupKind =
+          this.pendingTournamentCleanupKinds.get(owned.break_id) ??
+          (custody.engine ? 'retired' : 'verified_absent');
+        this.pendingTournamentCleanupKinds.set(owned.break_id, cleanupKind);
+        if (custody.engine) {
+          if (!this.gameServer.unregisterTournamentTableEngine(binding.tableId, custody.engine))
+            throw new Error('F06 global registry CAS refused');
+          if (this.tableEngines.get(binding.tableId) !== custody.engine)
+            throw new Error('F06 local registry CAS refused');
+          this.tableEngines.delete(binding.tableId);
+        }
+        this.retireManagedTableFromHandForHand(binding.tableId);
+        custody.confirmAbsent();
+        const ack = await rpc.ackCleanup(
+          owned.break_id,
+          binding.custodyId,
+          binding.durableRevision,
+          cleanupKind
+        );
+        custody.assertCurrent();
+        if (
+          !ack.ok ||
+          ack.state !== 'acknowledged' ||
+          ack.source_table_id !== binding.tableId ||
+          ack.lifecycle !== binding.tableIncarnation ||
+          ack.custody_id !== binding.custodyId ||
+          ack.custody_generation !== generation ||
+          ack.revision !== binding.durableRevision
+        )
+          throw new Error('F06 cleanup acknowledgement unproven');
+        acknowledged = true;
+        this.rememberTournamentBreak(ack);
+        const retained = this.retainedTournamentBreakSources.get(binding.tableId);
+        if (retained?.breakId === binding.breakId)
+          this.retainedTournamentBreakSources.delete(binding.tableId);
+        this.pendingTournamentBreakCustodyIds.delete(binding.breakId);
+        this.pendingTournamentCleanupKinds.delete(binding.breakId);
+        this.stoppedOriginalBreaks.delete(binding.breakId);
+      },
+      async () => {
+        const claimed = await rpc.claimCustody(binding.breakId, binding.custodyId, fresh.revision);
+        if (
+          !this.eliminationMutationAllowed() ||
+          !claimed.ok ||
+          claimed.state === 'acknowledged' ||
+          claimed.custody_id !== binding.custodyId ||
+          claimed.custody_generation !== generation ||
+          claimed.lifecycle !== binding.tableIncarnation ||
+          claimed.source_table_id !== binding.tableId ||
+          claimed.revision !== binding.durableRevision
+        )
+          throw new Error('F06 custody claim identity mismatch before stop');
+        owned = claimed;
+        this.rememberTournamentBreak(claimed);
+      }
+    );
+    if (continued) {
+      const engine = this.stoppedOriginalBreaks.get(owned.break_id);
+      if (!engine) throw new Error('F06 continued original missing');
+      this.forgetContinuedNoStartPark(owned, engine);
+      await this.readmitContinuedNoStartTable(owned.source_table_id, engine);
+      return;
+    }
+    // Registry work is finished. Client reconstruction owns a lost broadcast.
+    if (acknowledged && this.eliminationMutationAllowed())
+      await this.broadcast('table_rebalance', {
+        closedTableId: owned.source_table_id,
+        movedPlayers: owned.members.length,
+        reason: 'table_break',
+      });
+  }
+
+  private async eligibleBreakDestinations(
+    sourceId: string,
+    breakId: string
+  ): Promise<BalancerTable[] | null> {
+    const { data, error } = await supabase
+      .from('tables')
+      .select('id')
+      .eq('tournament_id', this.tournamentId)
+      .in('status', ['running', 'waiting', 'active'])
+      .or('is_deleted.is.null,is_deleted.eq.false');
+    if (!this.eliminationMutationAllowed() || error || !data) return null;
+    const eligible = data.map((row) => String(row.id)).filter((id) => id !== sourceId);
+    return this.loadBalancerTables(eligible, 'breakReplacement', breakId);
+  }
+
+  protected async repairTournamentBreakDestinations(
+    state: TournamentTableBreakState
+  ): Promise<TournamentTableBreakState> {
+    let current = state;
+    for (const member of state.members) {
+      if (member.winner_request_id) continue;
+      if (!this.eliminationMutationAllowed()) return current;
+      const destinations = await this.eligibleBreakDestinations(
+        state.source_table_id,
+        state.break_id
+      );
+      if (!destinations || !this.eliminationMutationAllowed()) return current;
+      const destination = destinations.find(
+        (table) => table.tableId === member.destination_table_id
+      );
+      const occupied = destination?.players.some(
+        (player) => player.seat === member.destination_seat_number
+      );
+      if (
+        destination &&
+        !occupied &&
+        member.destination_seat_number !== null &&
+        member.destination_seat_number <= destination.maxSeats
+      )
+        continue;
+      // The existing balancer chooses legal available space; SQL revalidates it
+      // atomically when fencing the predecessor and installing the new UUID.
+      const replacement = this.tableBalancer.breakTable(
+        {
+          tableId: state.source_table_id,
+          maxSeats: 10,
+          playerCount: 1,
+          players: [{ userId: member.user_id, seat: member.source_seat_number, stack: 1 }],
+        },
+        destinations
+      )[0];
+      if (!replacement) {
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+        return current;
+      }
+      current = await this.amendTournamentBreakMember(
+        current,
+        member.user_id,
+        replacement.toTableId,
+        replacement.toSeat
+      );
+      if (!current.ok) return current;
+    }
+    return current;
+  }
+
+  protected async recoverTournamentBreak(state: TournamentTableBreakState): Promise<void> {
+    if (state.state === 'acknowledged') {
+      if (this.receiptOwnsSource(state.source_table_id)) return;
+      await this.finishAcknowledgedTournamentBreak(state);
+      return;
+    }
+    let current = await this.reconcileTournamentBreak(state);
+    if (!this.eliminationMutationAllowed() || !current.ok) return;
+    if (!current.terminal_handoff_required && this.bindStoppedOriginalBreak(current)) {
+      await this.retireTournamentBreak(current);
+      return;
+    }
+    if (current.terminal_handoff_required) {
+      reportError(
+        new Error('F06 terminal owner disposition required'),
+        'Tournament.break_terminal_handoff',
+        { tournamentId: this.tournamentId, breakId: current.break_id }
+      );
+      return;
+    }
+    if (current.state === 'park_requested') {
+      const begun = await this.prepareParkedTournamentBreak(current);
+      if (!begun || !begun.ok || !this.eliminationMutationAllowed()) return;
+      current = begun;
+    }
+    if (current.state === 'begun') {
+      current = await this.repairTournamentBreakDestinations(current);
+      if (!current.ok || !this.eliminationMutationAllowed()) return;
+      await this.dispatchTournamentBreakMembers(current);
+      if (!this.eliminationMutationAllowed()) return;
+      current = await this.reconcileTournamentBreak(current);
+    }
+    if (this.eliminationMutationAllowed()) await this.retireTournamentBreak(current);
+  }
+
+  /** Local custody only; durable discovery and completion belong to the break RPC. */
+  private readonly retainedTournamentBreakSources = new Map<
+    string,
+    { breakId: string; engine: ServerTableEngine }
+  >();
+
+  /** Called only after a durable begin/adoption proves this break's source. */
+  protected retainTournamentBreakSource(
+    breakId: string,
+    tableId: string,
+    engine: ServerTableEngine
+  ): boolean {
+    if (
+      !breakId ||
+      !this.eliminationMutationAllowed() ||
+      this.tableEngines.get(tableId) !== engine ||
+      !this.gameServer.ownsTournamentTableEngine(tableId, engine)
+    )
+      return false;
+    const prior = this.retainedTournamentBreakSources.get(tableId);
+    if (prior && (prior.breakId !== breakId || prior.engine !== engine)) return false;
+    this.retainedTournamentBreakSources.set(tableId, { breakId, engine });
+    return true;
+  }
+
+  private retainsTournamentBreakSource(tableId: string, engine: ServerTableEngine): boolean {
+    return this.retainedTournamentBreakSources.get(tableId)?.engine === engine;
+  }
+
+  /** Transfer only a positively drained pre-manifest park, never an unknown move. */
+  async captureDrainedF06Custody(): Promise<DrainedF06Custody | null> {
+    return this.runWithTournamentSeatMoveAuthority(async () => {
+      const engines = this.captureDrainedF06Originals();
+      const originGeneration = this.getTournamentLeaseGeneration();
+      if (!engines || !originGeneration || this.retainedTournamentBreakSources.size === 0)
+        return null;
+      const retained = [...this.retainedTournamentBreakSources];
+      const durable = [...this.durableTournamentBreaks];
+      const authorityRevision = this.tournamentSeatMoveAuthorityRevision;
+      const sources = Object.freeze(
+        retained
+          .map(([table_id, value]) =>
+            Object.freeze({
+              break_id: value.breakId,
+              table_id,
+              lifecycle: this.durableTournamentBreaks.get(value.breakId)?.lifecycle ?? '',
+            })
+          )
+          .sort((a, b) => a.table_id.localeCompare(b.table_id))
+      );
+      const current = () =>
+        this.tournamentSeatMoveAuthorityRevision === authorityRevision &&
+        this.captureDrainedF06Originals() === engines &&
+        this.pendingTournamentSeatMoveOutcomes.size === 0 &&
+        this.pendingTournamentParkRequests.size === 0 &&
+        this.pendingTournamentBreakBegins.size === 0 &&
+        this.pendingTournamentBreakAmendments.size === 0 &&
+        this.rejectedTournamentBreakBegins.size === 0 &&
+        this.resolvedTournamentBreakProposals.size === 0 &&
+        this.pendingTournamentBreakCustodyIds.size === 0 &&
+        this.pendingTournamentCleanupKinds.size === 0 &&
+        this.pendingNoStartContinuations.size === 0 &&
+        this.activeStoppedOriginalCustody.size === 0 &&
+        this.stoppedOriginalBreaks.size === 0 &&
+        this.tournamentBreakArrivalWakes.size === 0 &&
+        this.pendingTableBreakRetirement === null &&
+        this.retainedTournamentBreakSources.size === retained.length &&
+        retained.every(
+          ([id, value]) =>
+            this.retainedTournamentBreakSources.get(id) === value &&
+            this.tableEngines.get(id) === value.engine
+        ) &&
+        this.durableTournamentBreaks.size === durable.length &&
+        durable.length === retained.length &&
+        durable.every(
+          ([id, value]) =>
+            this.durableTournamentBreaks.get(id) === value &&
+            value.state === 'park_requested' &&
+            value.revision === '0' &&
+            value.members.length === 0 &&
+            value.custody_id === null &&
+            value.custody_generation === null &&
+            !value.terminal_handoff_required
+        ) &&
+        sources.every((source) => /^[1-9][0-9]*$/.test(source.lifecycle)) &&
+        engines.every(
+          ([id, engine]) =>
+            this.gameServer.tournamentRetirementCustody.admissionAllowed(id) &&
+            (!engine.hasClaimedTournamentMoveBoundary() ||
+              retained.some(
+                ([sourceId, value]) =>
+                  sourceId === id &&
+                  value.engine === engine &&
+                  engine.hasOnlyDrainedTournamentMoveOwner(this.tournamentMoveBoundaryOwner)
+              ))
+        );
+      if (!current()) return null;
+      const state = await readF06RecoveryAdmission(this.tournamentId, null, {
+        originGeneration,
+        sources,
+        proof: null,
+      });
+      if (!current()) return null;
+      return Object.freeze({
+        manager: this,
+        tournamentId: this.tournamentId,
+        originGeneration,
+        engines,
+        sources,
+        current,
+        proof: state.proof,
+      });
+    });
+  }
+
+  private mixedF06Proposal: MixedF06Proposal | null = null;
+
+  /** A separate mixed-state transfer; the strict premanifest path stays intact. */
+  async captureMixedF06Custody(successorGeneration: string): Promise<DrainedF06Custody | null> {
+    return this.runWithTournamentSeatMoveAuthority(async () => {
+      const engines = this.captureDrainedF06Originals();
+      const originGeneration = this.getTournamentLeaseGeneration();
+      if (
+        !engines ||
+        !originGeneration ||
+        originGeneration === successorGeneration ||
+        !this.retainedTournamentBreakSources.size ||
+        this.activeStoppedOriginalCustody.size
+      )
+        return null;
+      const reservations = this.gameServer.tournamentRetirementCustody.captureDrained(
+        this.tournamentId,
+        originGeneration,
+        engines.map(([id]) => id)
+      );
+      if (!reservations) return null;
+      const sorted = <T>(map: Map<string, T>) => [...map].sort(([a], [b]) => a.localeCompare(b));
+      const physical = () =>
+        engines.map(
+          ([id, engine]) =>
+            engine.captureDrainedF06Identity?.(id, this.tournamentId, originGeneration) ?? null
+        );
+      const initial = physical();
+      if (initial.some((value) => value === null)) return null;
+      const { data: presence, error: presenceError } = await supabase
+        .from('engine_presence_parked')
+        .select('*')
+        .in(
+          'table_id',
+          engines.map(([id]) => id)
+        );
+      if (
+        presenceError ||
+        !presence ||
+        new Set(presence.map((row) => row.table_id)).size !== presence.length
+      )
+        throw new Error('f06_mixed_bank_evidence_unavailable');
+      const presenceByTable = new Map(presence.map((row) => [row.table_id, immutableCustody(row)]));
+      const vector = () => ({
+        manager_id: this.getLifecycleDiagnosticSnapshot().instanceId,
+        move_owner: this.tournamentMoveBoundaryOwner,
+        engines: physical().map(
+          (engine) =>
+            engine && {
+              ...engine,
+              bank_custody: {
+                ...engine.bank_custody,
+                durable_presence: presenceByTable.get(engine.table_id) ?? null,
+              },
+            }
+        ),
+        retained: sorted(this.retainedTournamentBreakSources).map(([table_id, value]) => ({
+          table_id,
+          break_id: value.breakId,
+          engine_id:
+            value.engine.captureDrainedF06Identity?.(table_id, this.tournamentId, originGeneration)
+              ?.engine_id ?? null,
+        })),
+        durable: sorted(this.durableTournamentBreaks),
+        pending_moves: sorted(this.pendingTournamentSeatMoveOutcomes),
+        parks: sorted(this.pendingTournamentParkRequests),
+        begins: sorted(this.pendingTournamentBreakBegins),
+        amendments: sorted(this.pendingTournamentBreakAmendments),
+        rejected_begins: sorted(this.rejectedTournamentBreakBegins),
+        resolved_proposals: sorted(this.resolvedTournamentBreakProposals),
+        custody_ids: sorted(this.pendingTournamentBreakCustodyIds),
+        cleanup_kinds: sorted(this.pendingTournamentCleanupKinds),
+        no_start: sorted(this.pendingNoStartContinuations).map(([id, value]) => [
+          id,
+          {
+            state: value.state,
+            binding: value.binding,
+            table_id: value.binding.tableId,
+            engine_id:
+              value.engine.captureDrainedF06Identity?.(
+                value.binding.tableId,
+                this.tournamentId,
+                originGeneration
+              )?.engine_id ?? null,
+          },
+        ]),
+        stopped_originals: sorted(this.stoppedOriginalBreaks).map(([id, engine]) => [
+          id,
+          engines.find(([, value]) => value === engine)?.[0] ?? null,
+        ]),
+        arrival_wakes: sorted(this.tournamentBreakArrivalWakes).map(([id, map]) => [
+          id,
+          sorted(map).map(([table, engine]) => [
+            table,
+            engines.find(([, value]) => value === engine)?.[0] ?? null,
+          ]),
+        ]),
+        retirement: this.pendingTableBreakRetirement
+          ? {
+              table_id: this.pendingTableBreakRetirement.tableId,
+              moved_players: this.pendingTableBreakRetirement.movedPlayers,
+              engine_id:
+                this.pendingTableBreakRetirement.engine.captureDrainedF06Identity?.(
+                  this.pendingTableBreakRetirement.tableId,
+                  this.tournamentId,
+                  originGeneration
+                )?.engine_id ?? null,
+            }
+          : null,
+        reservations: reservations.reservations,
+      });
+      const local = immutableCustody(vector());
+      if (
+        local.retained.some((entry) => !entry.engine_id) ||
+        local.no_start.some((entry) => !(entry[1] as { engine_id: string | null }).engine_id) ||
+        local.stopped_originals.some(([, table]) => !table) ||
+        local.arrival_wakes.some(([, entries]) =>
+          (entries as (string | null)[][]).some(([, table]) => !table)
+        ) ||
+        (local.retirement && !local.retirement.engine_id)
+      )
+        return null;
+      const revision = this.tournamentSeatMoveAuthorityRevision;
+      const current = () =>
+        this.tournamentSeatMoveAuthorityRevision === revision &&
+        this.captureDrainedF06Originals() === engines &&
+        reservations.current() &&
+        this.gameServer.hasCompleteMixedF06PhysicalMap(this.tournamentId, this, engines) &&
+        this.activeStoppedOriginalCustody.size === 0 &&
+        engines.every(
+          ([id, engine]) =>
+            this.gameServer.ownsTournamentTableEngine(id, engine) ||
+            this.gameServer.hasMixedF06CustodyOriginal(this.tournamentId, this, id, engine)
+        ) &&
+        physical().every((value) => value !== null) &&
+        custodyJSON(vector()) === custodyJSON(local) &&
+        [...this.retainedTournamentBreakSources].every(([id, value]) =>
+          engines.some(([key, engine]) => key === id && engine === value.engine)
+        ) &&
+        engines.every(
+          ([, engine]) =>
+            !engine.hasClaimedTournamentMoveBoundary() ||
+            engine.hasOnlyDrainedTournamentMoveOwner(this.tournamentMoveBoundaryOwner)
+        );
+      if (!current()) return null;
+      if (!this.mixedF06Proposal)
+        this.mixedF06Proposal = {
+          transferId: randomUUID(),
+          successorGeneration,
+          local,
+          canonical: null,
+        };
+      if (
+        this.mixedF06Proposal.successorGeneration !== successorGeneration ||
+        custodyJSON(this.mixedF06Proposal.local) !== custodyJSON(local)
+      )
+        throw new Error('f06_mixed_original_transfer_changed');
+      const mixed = await prepareMixedF06Transfer(
+        this.tournamentId,
+        originGeneration,
+        this.mixedF06Proposal,
+        current
+      );
+      if (!current()) return null;
+      return Object.freeze({
+        manager: this,
+        tournamentId: this.tournamentId,
+        originGeneration,
+        engines,
+        sources: Object.freeze([]),
+        current,
+        proof: mixed.canonical,
+        mixed,
+      });
+    });
+  }
+
   /** One manager generation has exactly one seat-move authority at a time. */
   private tournamentSeatMoveSerialTail: Promise<void> = Promise.resolve();
+  private tournamentSeatMoveAuthorityRevision = 0;
   /** One break per pass; retain its exact generation across ambiguous closes. */
   private pendingTableBreakRetirement: {
     tableId: string;
@@ -85,6 +1863,7 @@ export class TournamentManager extends TournamentManagerEliminations {
   } | null = null;
 
   private runWithTournamentSeatMoveAuthority<T>(operation: () => Promise<T>): Promise<T> {
+    this.tournamentSeatMoveAuthorityRevision++;
     const result = this.tournamentSeatMoveSerialTail.then(operation);
     this.tournamentSeatMoveSerialTail = result.then(
       () => undefined,
@@ -101,10 +1880,24 @@ export class TournamentManager extends TournamentManagerEliminations {
    */
   private async loadBalancerTables(
     tableIds: string[],
-    label: string
+    label: string,
+    recoveringBreakId?: string
   ): Promise<BalancerTable[] | null> {
     if (!this.eliminationMutationAllowed()) return null;
-    const tableRead = await selectInChunks<{ id: string; max_players: number | null }>(
+    const excluded = new Set<string>();
+    for (const pending of this.durableTournamentBreaks.values()) {
+      excluded.add(pending.source_table_id);
+      if (pending.break_id !== recoveringBreakId) {
+        for (const member of pending.members) {
+          if (!member.winner_request_id) excluded.add(member.destination_table_id);
+        }
+      }
+    }
+    tableIds = tableIds.filter((id) => !excluded.has(id));
+    const tableRead = await selectInChunks<{
+      id: string;
+      max_players: number | null;
+    }>(
       tableIds,
       (batch) => supabase.from('tables').select('id, max_players').in('id', batch),
       `Tournament.${label}.tables(${this.tournamentId.slice(0, 8)})`
@@ -224,9 +2017,8 @@ export class TournamentManager extends TournamentManagerEliminations {
    * this manager, the hub, and hand-for-hand.
    *
    * Any refusal leaves both registries pointing at the stopped/quarantined
-   * engine. The occupied-table reader deliberately excludes empty tables,
-   * including a table whose close committed but whose response was lost.
-   * Retain the retirement explicitly for the next shared scheduler pass.
+   * engine. Retained legacy close work is retried before new break discovery;
+   * new whole-break requests use the durable original membership above.
    */
   protected async closeBrokenTableAndReleaseEngine(
     tableId: string,
@@ -326,14 +2118,16 @@ export class TournamentManager extends TournamentManagerEliminations {
   /**
    * Own the exact source-table generation before a seat can be vacated.
    *
-   * A source table with no engine generation in EITHER registry has no hand in
-   * flight to fence. Closed-orphan recovery and a table of one both take that
-   * vacuous boundary; the database function independently proves the rest.
+   * A live source requires its retained, physically parked original engine.
+   * Empty local registries do not prove original hand disposition. Only the
+   * existing closed_orphan mode permits an engineless mutation boundary.
    */
   private async claimTournamentMoveBoundary(
     move: MoveInstruction,
     sourceMode: TournamentSeatMoveSourceMode
   ): Promise<ClaimedTournamentMoveBoundary | null> {
+    if (sourceMode === 'live_source' && this.receiptOwnsSource(move.fromTableId))
+      return { sourceMode, engine: null, mixedTransferId: this.mixedRecovery!.transfer.transferId };
     const managerEngine = this.tableEngines.get(move.fromTableId);
     const serverEngine = this.gameServer.getTableEngine(move.fromTableId);
 
@@ -349,29 +2143,6 @@ export class TournamentManager extends TournamentManagerEliminations {
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
         return null;
       }
-      return { sourceMode, engine: null };
-    }
-
-    // ════════════════════════════════════════════════════════════════════════
-    //  A TABLE OF ONE HAS NO HAND TO FENCE (2026-09-12)
-    // ════════════════════════════════════════════════════════════════════════
-    //
-    // A table holding exactly one player cannot deal, so it holds no engine
-    // generation anywhere in this process. The live-source fence below then
-    // refused the move for ever: this method returned null, every planned move
-    // was skipped, `movedCount !== breakMoves.length`, and the balancer
-    // re-planned the identical move every five seconds. That is a STABLE
-    // DEADLOCK, not a starvation - nothing in it can ever change. 65 events
-    // were in that state. The database had always permitted the move:
-    // `fn_move_tournament_player(..., 'live_source')` succeeded on exactly
-    // these tables, so only this in-process fence refused.
-    //
-    // No engine generation means no hand in flight and the boundary is
-    // satisfied vacuously — the same reasoning that makes closed_orphan safe.
-    // The lease still fences other processes, and fn_move_tournament_player
-    // re-proves exactly-one-live-seat, the exact stack against the roster
-    // mirror, and the destination chair under its own locks.
-    if (!managerEngine && !serverEngine) {
       return { sourceMode, engine: null };
     }
 
@@ -396,7 +2167,8 @@ export class TournamentManager extends TournamentManagerEliminations {
       TournamentManager.MOVE_BOUNDARY_PROBE_MS
     );
     if (!this.eliminationMutationAllowed()) {
-      managerEngine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+      if (!this.retainsTournamentBreakSource(move.fromTableId, managerEngine))
+        managerEngine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
       return null;
     }
     if (!parked) {
@@ -409,7 +2181,8 @@ export class TournamentManager extends TournamentManagerEliminations {
       this.tableEngines.get(move.fromTableId) !== managerEngine ||
       !this.gameServer.ownsTournamentTableEngine(move.fromTableId, managerEngine)
     ) {
-      managerEngine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+      if (!this.retainsTournamentBreakSource(move.fromTableId, managerEngine))
+        managerEngine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
       return null;
     }
@@ -422,20 +2195,37 @@ export class TournamentManager extends TournamentManagerEliminations {
     boundary: ClaimedTournamentMoveBoundary,
     outcomeWasAlreadyUnknown = false
   ): Promise<VerifiedTournamentSeatMoveReceipt> {
-    if (!boundary.engine) {
-      // The mode no longer decides this: an engineless source is exact in ANY
-      // mode (2026-09-12, a table of one). What must still hold is that no
-      // engine generation has appeared in either registry since the claim.
+    if (boundary.mixedTransferId) {
+      const owned = this.mixedRecovery;
       if (
+        !owned ||
+        owned.transfer.transferId !== boundary.mixedTransferId ||
+        input.sourceMode !== 'live_source' ||
+        !this.receiptOwnsSource(input.sourceTableId)
+      )
+        return Promise.reject(new Error('f06_mixed_move_boundary_changed'));
+      owned.assertCurrent();
+      return moveTournamentPlayerAtomically(input, { outcomeWasAlreadyUnknown }).then((receipt) => {
+        owned.assertCurrent();
+        return receipt;
+      });
+    }
+    if (!boundary.engine) {
+      if (
+        input.sourceMode !== 'closed_orphan' ||
+        boundary.sourceMode !== 'closed_orphan' ||
         this.tableEngines.has(input.sourceTableId) ||
         this.gameServer.getTableEngine(input.sourceTableId)
       ) {
-        return Promise.reject(new Error('engineless source boundary is no longer exact'));
+        return Promise.reject(new Error('closed-orphan source boundary is no longer exact'));
       }
-      return moveTournamentPlayerAtomically(input, { outcomeWasAlreadyUnknown });
+      return moveTournamentPlayerAtomically(input, {
+        outcomeWasAlreadyUnknown,
+      });
     }
     if (
       input.sourceMode !== 'live_source' ||
+      boundary.sourceMode !== 'live_source' ||
       this.tableEngines.get(input.sourceTableId) !== boundary.engine ||
       !this.gameServer.ownsTournamentTableEngine(input.sourceTableId, boundary.engine)
     ) {
@@ -457,8 +2247,48 @@ export class TournamentManager extends TournamentManagerEliminations {
   }
 
   private async redrivePendingTournamentSeatMoveOutcomesOwned(): Promise<boolean> {
+    for (const pending of this.pendingTournamentSeatMoveOutcomes.values()) {
+      if (
+        [...this.stoppedOriginalBreaks.values()].some(
+          (engine) => this.tableEngines.get(pending.input.sourceTableId) === engine
+        ) &&
+        !this.activeStoppedOriginalCustody.has(pending.input.sourceTableId)
+      )
+        return false;
+    }
     for (const [requestId, pending] of this.pendingTournamentSeatMoveOutcomes) {
       if (!this.eliminationMutationAllowed()) return false;
+      if (
+        pending.input.sourceMode === 'live_source' &&
+        !this.receiptOwnsSource(pending.input.sourceTableId) &&
+        !this.tableEngines.has(pending.input.sourceTableId) &&
+        !this.gameServer.getTableEngine(pending.input.sourceTableId)
+      ) {
+        // Unknown UUIDs authorize only a receipt read when the original engine
+        // is absent. A missing receipt is not proof of no commit or no start.
+        try {
+          const receipt = await resolveCommittedTournamentSeatMove(pending.input);
+          if (
+            !this.eliminationMutationAllowed() ||
+            this.pendingTournamentSeatMoveOutcomes.get(requestId) !== pending
+          )
+            return false;
+          if (!receipt) {
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+            return false;
+          }
+          this.pendingTournamentSeatMoveOutcomes.delete(requestId);
+          continue;
+        } catch (error) {
+          reportError(error, 'Tournament.atomic_move_receipt_only_unresolved', {
+            tournamentId: this.tournamentId,
+            requestId,
+            sourceTableId: pending.input.sourceTableId,
+          });
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+          return false;
+        }
+      }
       const boundary = await this.claimTournamentMoveBoundary(
         pending.move,
         pending.input.sourceMode
@@ -473,6 +2303,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           true
         );
         this.pendingTournamentSeatMoveOutcomes.delete(requestId);
+        this.tableEngines.get(pending.move.toTableId)?.wakeWaitingForPlayers();
         console.log(
           `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic move ${receipt.requestId.slice(0, 8)} replay certified for ${pending.move.playerId.slice(0, 8)}`
         );
@@ -499,7 +2330,11 @@ export class TournamentManager extends TournamentManagerEliminations {
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
         return false;
       } finally {
-        if (releaseBoundary && boundary.engine) {
+        if (
+          releaseBoundary &&
+          boundary.engine &&
+          !this.retainsTournamentBreakSource(pending.move.fromTableId, boundary.engine)
+        ) {
           boundary.engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
         }
       }
@@ -517,6 +2352,13 @@ export class TournamentManager extends TournamentManagerEliminations {
     engine: ServerTableEngine | null
   ): Promise<boolean> {
     return this.runWithTournamentSeatMoveAuthority(async () => {
+      if (
+        engine?.getF06RetainedPermit?.() ||
+        (engine && [...this.stoppedOriginalBreaks.values()].includes(engine))
+      ) {
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+        return false;
+      }
       const pending = [...this.pendingTournamentSeatMoveOutcomes.entries()].filter(
         ([, item]) => tableId === null || item.input.sourceTableId === tableId
       );
@@ -570,12 +2412,13 @@ export class TournamentManager extends TournamentManagerEliminations {
         const stillPending = [...this.pendingTournamentSeatMoveOutcomes.values()].some(
           (item) => item.input.sourceTableId === tableId
         );
-        if (stillPending) return false;
+        if (stillPending || this.retainsTournamentBreakSource(tableId, engine)) return false;
         engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
         return !engine.hasClaimedTournamentMoveBoundary();
       }
 
       if (this.pendingTournamentSeatMoveOutcomes.size > 0) return false;
+      if (this.retainedTournamentBreakSources.size > 0) return false;
       for (const sourceEngine of this.tableEngines.values()) {
         sourceEngine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
         if (sourceEngine.hasClaimedTournamentMoveBoundary()) return false;
@@ -584,11 +2427,19 @@ export class TournamentManager extends TournamentManagerEliminations {
     });
   }
 
-  protected async checkTableBalance(): Promise<void> {
+  protected async checkTableBalance(): Promise<TournamentBalanceProgress | void> {
     if (!this.eliminationMutationAllowed()) return;
-    if (!(await this.redrivePendingTournamentSeatMoveOutcomes())) return;
+    try {
+      await this.recoverF06OriginalAdmissions();
+    } catch (error) {
+      reportError(error, 'Tournament.original_admission_recovery_pending', {
+        tournamentId: this.tournamentId,
+      });
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+    }
     const pendingRetirement = this.pendingTableBreakRetirement;
     if (pendingRetirement) {
+      if (!(await this.redrivePendingTournamentSeatMoveOutcomes())) return;
       // Finish the exact prior break even with zero/one occupied tables, or
       // with a now-closed source absent from the database's live-table list.
       // One attempt per scheduler pass; no new move plan while it is unknown.
@@ -602,12 +2453,20 @@ export class TournamentManager extends TournamentManagerEliminations {
           movedPlayers,
           reason: 'table_break',
         });
+        return { kind: 'table-retired', tableId };
       }
+      return;
+    }
+    if (!(await this.visitTournamentBreakPage((state) => this.recoverTournamentBreak(state))))
+      return;
+    if (!(await this.redrivePendingTournamentSeatMoveOutcomes())) return;
+    if (!this.tournamentBreakDiscoveryComplete) {
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
       return;
     }
     // Check for final table (table_size or fewer players remaining, 2026-08-22
     // parity: was hardcoded 9) — only announce once
-    if (!this.isFinalTable) {
+    if (!this.isFinalTable && this.durableTournamentBreaks.size === 0) {
       const { count: remainingPlayers, error: remainingPlayersErr } = await supabase
         .from('tournament_players')
         .select('*', { count: 'exact', head: true })
@@ -704,7 +2563,9 @@ export class TournamentManager extends TournamentManagerEliminations {
               'Tournament.final_table_flag_write_failed'
             );
           }
-          await this.broadcast('final_table', { playerCount: remainingPlayers });
+          await this.broadcast('final_table', {
+            playerCount: remainingPlayers,
+          });
           if (!this.eliminationMutationAllowed()) return;
         } else if (liveTables !== null && liveTables > 1) {
           console.log(
@@ -745,102 +2606,31 @@ export class TournamentManager extends TournamentManagerEliminations {
         // The balancer says this table should close but cannot yet place its
         // full roster. That is outstanding work, not a balanced state. Keep a
         // single coalesced retry due without reviving the old per-manager poll.
-        // An empty table is already fully moved and must proceed to the durable
-        // close. Treating its intentionally-empty move plan as failure left a
-        // table whose prior close response was lost stuck forever.
+        // Empty-source retirement is discovered through its original durable
+        // operation above; emptiness never creates a new whole-break intent.
         if (bt.playerCount > 0 && breakMoves.length !== bt.playerCount) {
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
           continue;
         }
 
-        if (breakMoves.length === bt.playerCount) {
-          console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Breaking table ${bt.tableId.slice(0, 8)} - moving ${breakMoves.length} players`
-          );
-
-          // AUDIT FIX 2026-07-19: wait for the source table's current hand to
-          // finish (so the accepted-hand transaction has persisted final stacks) BEFORE moving
-          // players. Previously executePlayerMoves ran first and read the
-          // pre-hand stack, so a player who won/lost the in-flight hand arrived
-          // at the new table with the wrong stack (chips created/destroyed).
-          const engine = this.tableEngines.get(bt.tableId);
-          if (engine) {
-            const safe = await this.waitForHandComplete(bt.tableId);
-            if (!this.eliminationMutationAllowed()) return;
-            if (!safe) {
-              // TOURNEY-AUDIT 2026-07-24 (sweep 4): never move players mid-hand.
-              console.warn(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Table ${bt.tableId.slice(0, 8)} still in-hand after 60s - deferring break to next balance cycle`
-              );
-              this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-              continue;
-            }
-          }
-
-          const movedCount = await this.executePlayerMoves(breakMoves);
+        if (breakMoves.length === bt.playerCount && bt.playerCount > 0) {
+          const requested = await this.requestTournamentBreakPark(bt.tableId);
           if (!this.eliminationMutationAllowed()) return;
-
-          // LIVE E2E FIX 2026-08-15: the table was previously closed even when
-          // some moves FAILED — the unmoved players kept 'playing' status and
-          // chips but pointed at a closed table no balance pass ever looks at
-          // again (checkTableBalance iterates tableEngines only). Seen live on
-          // 3 frozen tournaments + "Late Night Grind", where the stall ended in
-          // a force-complete that paid 1st place to an already-eliminated
-          // player. Close ONLY when every player actually arrived; otherwise
-          // keep the table alive and let the next cycle retry the remainder.
-          if (movedCount !== breakMoves.length) {
-            console.warn(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Table break of ${bt.tableId.slice(0, 8)} incomplete - ${movedCount}/${breakMoves.length} moved. Deferring close to next balance cycle.`
-            );
-            this.breakOccurredThisCycle = true;
-            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-            break;
-          }
-
-          if (!engine) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] cannot retire broken table ${bt.tableId.slice(0, 8)} because its exact engine generation is missing`
-              ),
-              'Tournament.broken_table_engine_missing'
-            );
-            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-            continue;
-          }
-
-          const retired = await this.closeBrokenTableAndReleaseEngine(
-            bt.tableId,
-            engine,
-            breakMoves.length
-          );
-          if (!this.eliminationMutationAllowed()) return;
-          if (!retired) {
-            // The stopped generation remains in both registries and in the
-            // hand-for-hand roster. The next scheduler pass replays the retained
-            // retirement and retries this exact durable close; no successor may
-            // overlap an unproved retirement.
-            this.breakOccurredThisCycle = true;
-            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-            break;
-          }
-
-          await this.broadcast('table_rebalance', {
-            closedTableId: bt.tableId,
-            movedPlayers: breakMoves.length,
-            reason: 'table_break',
-          });
-          if (!this.eliminationMutationAllowed()) return;
-
-          // Round 51 RE-RUN-2: signal expansion to skip this cycle so we
-          // don't immediately re-create the table we just broke.
+          if (requested?.ok) await this.recoverTournamentBreak(requested);
           this.breakOccurredThisCycle = true;
-
-          // One break per pass is intentional because balancerTables is now
-          // stale. Re-enter promptly with fresh rows (also announces a final
-          // table immediately when this break collapsed the field to one).
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-
-          break; // One break per cycle to avoid stale data
+          // Preserve the current admitted sweep's continuation only after this
+          // exact durable operation acknowledged cleanup. A park request or an
+          // unresolved move/close is not a retired table.
+          if (
+            requested?.ok &&
+            this.eliminationMutationAllowed() &&
+            !this.durableTournamentBreaks.has(requested.break_id) &&
+            !this.tableEngines.has(bt.tableId) &&
+            !this.gameServer.getTableEngine(bt.tableId)
+          )
+            return { kind: 'table-retired', tableId: bt.tableId };
+          break; // Rebuild board after the new durable source exclusion.
         }
       }
     }
@@ -1058,12 +2848,18 @@ export class TournamentManager extends TournamentManagerEliminations {
         try {
           const receipt = await this.requestTournamentSeatMoveAtBoundary(input, boundary);
           moved++;
+          // The destination may be waiting below its deal minimum on a
+          // backed-off roster read; it looks now rather than in a minute.
+          this.tableEngines.get(move.toTableId)?.wakeWaitingForPlayers();
           console.log(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic move ${receipt.requestId.slice(0, 8)} certified for ${move.playerId.slice(0, 8)}: table ${move.fromTableId.slice(0, 8)} seat ${receipt.sourceSeatNumber} to table ${move.toTableId.slice(0, 8)} seat ${receipt.destinationSeatNumber}`
           );
         } catch (moveErr) {
           if (moveErr instanceof TournamentSeatMoveOutcomeUnknownError) {
-            this.pendingTournamentSeatMoveOutcomes.set(requestId, { move, input });
+            this.pendingTournamentSeatMoveOutcomes.set(requestId, {
+              move,
+              input,
+            });
             retainedUnknownSources.add(move.fromTableId);
           } else {
             refusedSources.add(move.fromTableId);
@@ -1084,7 +2880,11 @@ export class TournamentManager extends TournamentManagerEliminations {
       }
     } finally {
       for (const [sourceTableId, boundary] of boundaries) {
-        if (boundary?.engine && !retainedUnknownSources.has(sourceTableId)) {
+        if (
+          boundary?.engine &&
+          !retainedUnknownSources.has(sourceTableId) &&
+          !this.retainsTournamentBreakSource(sourceTableId, boundary.engine)
+        ) {
           boundary.engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
         }
       }

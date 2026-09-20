@@ -83,7 +83,7 @@ const FEATURES = [
   },
   {
     key: 'throwable',
-    label: 'Throwables',
+    label: 'All Throwables',
     vipValue: `${VIP_MONTHLY_ALLOWANCES.throwables.toLocaleString()} / Mo`,
     lifetimeValue: 'Unlimited',
   },
@@ -94,6 +94,9 @@ export function VIPCardsModal({ isOpen, onClose, vipStatus }: VIPInfoModalProps)
   const isLifetime = vipStatus === 'lifetime';
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   /**
    * Bumped once the server's own price table has been read, purely to re-render
    * with whatever it said. THIS TABLE IS A PRICE LIST AND IT MUST BE TRUE:
@@ -132,6 +135,59 @@ export function VIPCardsModal({ isOpen, onClose, vipStatus }: VIPInfoModalProps)
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const focusable = () =>
+      Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        ) ?? []
+      );
+    const focusFrame = window.requestAnimationFrame(() => {
+      (focusable()[0] ?? dialogRef.current)?.focus();
+    });
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const controls = focusable();
+      if (controls.length === 0) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
+
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialogRef.current?.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialogRef.current?.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const pill = isLifetime ? 'Lifetime' : isVIP ? 'Active' : 'Pay Per Use';
@@ -146,10 +202,12 @@ export function VIPCardsModal({ isOpen, onClose, vipStatus }: VIPInfoModalProps)
   return (
     <div className="vip-modal-overlay" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="vipc"
         role="dialog"
         aria-modal="true"
         aria-labelledby="vip-modal-title"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <SpadeConsole

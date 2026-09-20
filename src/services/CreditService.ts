@@ -1,4 +1,6 @@
 import { getIdentityDNAStatus } from '../core/IdentityDNA';
+import { runCreditReduction, type CreditReductionStart } from './CreditReductionOperation';
+import type { CreditReductionEnvelope } from '../lib/CreditReductionContract';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * 💳 CREDIT SERVICE — Agent Credit Line Management
@@ -21,6 +23,7 @@ import { getIdentityDNAStatus } from '../core/IdentityDNA';
 
 import { supabase } from '../lib/supabase';
 import { WalletService } from './WalletService';
+import { creditRequestService } from './CreditRequestService';
 import { SettlementService } from './SettlementService';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { masterBus } from '../core/MasterBus';
@@ -91,6 +94,7 @@ export const OWED_INVOICE_STATUSES: ReadonlySet<InvoiceStatus> = new Set<Invoice
 
 export interface CreditAccount {
   agentId: string;
+  userId?: string;
   /** The club this agent belongs to. Required by every credit_requests row. */
   clubId: string | null;
   agentName: string;
@@ -171,6 +175,24 @@ masterBus.subscribe('AUTH_STATE_CHANGED', (event) => {
   creditReadGeneration += 1;
 });
 
+function currentCreditRequestActor(): string | null {
+  const snapshot = getIdentityDNAStatus();
+  const actor = snapshot?.loaded && snapshot.authenticated ? snapshot.userId : null;
+  if (actor !== creditIdentity) {
+    creditIdentity = actor;
+    creditReadGeneration += 1;
+  }
+  return actor;
+}
+
+function assertCreditRequestActor(actor: string, generation: number): void {
+  if (currentCreditRequestActor() !== actor || creditReadGeneration !== generation) {
+    throw new Error(
+      'Account Changed. This Credit Request May Have Committed. Refresh Its Status In The Original Account.'
+    );
+  }
+}
+
 export const CreditService = {
   // ─────────────────────────────────────────────────────────────────────────────
   // CREDIT LINE MANAGEMENT
@@ -213,6 +235,7 @@ export const CreditService = {
 
     return {
       agentId: agent.id,
+      userId: agent.user_id,
       clubId: (agent as { club_id?: string | null }).club_id ?? null,
       agentName,
       creditLimit: agent.credit_limit || 0,
@@ -266,62 +289,9 @@ export const CreditService = {
     return true;
   },
 
-  /**
-   * Take some of an agent's credit line back.
-   *
-   * "Revoke Credit" on the agent dashboard used to call a player-wallet
-   * transfer, which moved chips between two people and left credit_limit and
-   * credit_used exactly where they were. Revoking credit is lowering the line.
-   *
-   * fn_admin_update_agent owns every rule that applies: it refuses a new limit
-   * below what the agent has already drawn, and it refuses to leave an agent
-   * on credit with a limit of zero, naming the amount in both cases. When the
-   * reduction takes the line to nothing and nothing is owed, the agent moves
-   * to prepaid, which is the only way that function will accept a zero limit.
-   */
-  async lowerCreditLine(
-    userId: string,
-    clubId: string,
-    amount: number,
-    reason?: string
-  ): Promise<{ newLimit: number; movedToPrepaid: boolean }> {
-    /* The error is bound and thrown, not dropped. This read decides the new
-       limit, so a refused or failed read must not be indistinguishable from
-       "this agent has no line" - that difference is the difference between
-       leaving a limit alone and taking it to zero. */
-    const { data: agentRow, error: readError } = await supabase
-      .from('agents')
-      .select('id, credit_limit, credit_used')
-      .eq('user_id', userId)
-      .eq('club_id', clubId)
-      .maybeSingle();
-    if (readError) throw new Error(`Could not read this agent's credit line: ${readError.message}`);
-    if (!agentRow?.id) throw new Error('No agent found for this club');
-
-    const current = Number(agentRow.credit_limit) || 0;
-    const drawn = Number(agentRow.credit_used) || 0;
-    const target = Math.max(current - amount, 0);
-    const toPrepaid = target === 0;
-
-    if (toPrepaid && drawn > 0) {
-      throw new Error(
-        `This agent still owes ${drawn.toLocaleString()} chips on their credit line. Take a payment before closing it.`
-      );
-    }
-
-    const { data: res, error } = await supabase.rpc('fn_admin_update_agent', {
-      p_agent_id: agentRow.id,
-      p_credit_limit: target,
-      p_is_prepaid: toPrepaid ? true : null,
-      p_credit_reason: reason || 'Credit line reduced',
-    });
-    if (error || !res?.success) {
-      throw new Error(error?.message || res?.error || 'credit update failed');
-    }
-    if (res.club_id) {
-      masterBus.emit('CREDIT_UPDATED', { clubId: res.club_id, amount: target });
-    }
-    return { newLimit: target, movedToPrepaid: toPrepaid };
+  /** Reduce only a prepared, captured durable intent. Historical receipts never overwrite current balances. */
+  async lowerCreditLine(start: CreditReductionStart): Promise<Readonly<CreditReductionEnvelope>> {
+    return runCreditReduction(start);
   },
 
   /**
@@ -332,31 +302,67 @@ export const CreditService = {
     requestedLimit: number,
     reason: string
   ): Promise<CreditLimitRequest> {
-    const account = await this.getCreditAccount(agentId);
+    const actor = currentCreditRequestActor();
+    if (!actor) throw new Error('Sign In To Request Credit');
+    const generation = creditReadGeneration;
+    const account = await this.getCreditAccount(agentId).catch((error: unknown) => {
+      assertCreditRequestActor(actor, generation);
+      throw error;
+    });
+    assertCreditRequestActor(actor, generation);
     if (!account) throw new Error('Agent not found');
-    // club_id is NOT NULL with no default. Omitting it made EVERY credit
-    // increase request a rejected statement: the caller saw a thrown error with
-    // a Postgres message and no request was ever recorded. Refuse with
-    // something readable instead of sending a write that cannot land.
-    if (!account.clubId) {
-      throw new Error('This agent has no club, so a credit request cannot be raised');
+    if (!account.clubId || account.userId !== actor || account.agentId !== agentId) {
+      throw new Error('This Credit Account Does Not Match Your User And Club');
     }
-
-    const { data, error } = await supabase
-      .from('credit_requests')
-      .insert({
-        // credit_requests schema: requester_id, requested_amount (NOT agent_id, current_limit, requested_limit)
-        requester_id: agentId,
-        club_id: account.clubId,
-        requested_amount: requestedLimit,
-        reason,
-        status: 'pending',
-      })
-      .select()
-      .maybeSingle();
-
+    const { data: owners, error } = await Promise.resolve(
+      supabase.from('clubs').select('id, owner_id').eq('id', account.clubId).limit(2)
+    ).catch((error: unknown) => {
+      assertCreditRequestActor(actor, generation);
+      throw error;
+    });
+    assertCreditRequestActor(actor, generation);
     if (error) throw error;
-    return this.mapCreditRequest(data, account.agentName);
+    const owner = owners?.length === 1 ? owners[0] : null;
+    if (
+      !owner ||
+      owner.id !== account.clubId ||
+      typeof owner.owner_id !== 'string' ||
+      !owner.owner_id ||
+      owner.owner_id === actor
+    ) {
+      throw new Error('A Different Current Club Owner Must Review This Credit Request');
+    }
+    const receipt = await creditRequestService
+      .submitRequest(actor, {
+        clubId: account.clubId,
+        approverId: owner.owner_id,
+        requestedAmount: requestedLimit,
+        reason,
+      })
+      .catch((error: unknown) => {
+        assertCreditRequestActor(actor, generation);
+        throw error;
+      });
+    assertCreditRequestActor(actor, generation);
+    if (
+      receipt.status !== 'pending' ||
+      receipt.requesterId !== actor ||
+      receipt.clubId !== account.clubId ||
+      receipt.approverId !== owner.owner_id ||
+      receipt.requestedAmount !== requestedLimit
+    ) {
+      throw new Error('Credit Request Creation Was Not Confirmed By The Server');
+    }
+    return {
+      id: receipt.id,
+      agentId: account.agentId,
+      agentName: account.agentName,
+      currentLimit: account.creditLimit,
+      requestedLimit: receipt.requestedAmount,
+      reason: receipt.reason,
+      status: 'pending',
+      createdAt: receipt.createdAt,
+    };
   },
 
   /**
@@ -367,51 +373,8 @@ export const CreditService = {
     approved: boolean,
     reviewerId: string
   ): Promise<boolean> {
-    const status = approved ? 'approved' : 'denied';
-
-    const { data: request, error: fetchError } = await supabase
-      .from('credit_requests')
-      .select('requester_id, requested_amount')
-      .eq('id', requestId)
-      .maybeSingle();
-
-    if (fetchError || !request) throw fetchError || new Error('Credit request not found');
-
-    // Update request
-    const { error: reqUpdateErr } = await supabase
-      .from('credit_requests')
-      .update({
-        status,
-        reviewed_by: reviewerId,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq('id', requestId);
-
-    if (reqUpdateErr) throw new Error(`Failed to update credit request: ${reqUpdateErr.message}`);
-
-    // If approved, update credit limit
-    if (approved) {
-      const { error: limitErr } = await supabase
-        .from('agents')
-        .update({ credit_limit: request.requested_amount })
-        .eq('id', request.requester_id);
-
-      if (limitErr) throw new Error(`Failed to update credit limit: ${limitErr.message}`);
-
-      // Emit CREDIT_UPDATED
-      const { data: agent } = await supabase
-        .from('agents')
-        .select('club_id')
-        .eq('id', request.requester_id)
-        .maybeSingle();
-      if (agent?.club_id) {
-        masterBus.emit('CREDIT_UPDATED', {
-          clubId: agent.club_id,
-          amount: request.requested_amount,
-        });
-      }
-    }
-
+    if (approved) await creditRequestService.approveRequest(requestId, reviewerId);
+    else await creditRequestService.denyRequest(requestId, reviewerId);
     return true;
   },
 

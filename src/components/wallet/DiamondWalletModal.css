@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   DIAMOND WALLET - on the spade console wearing the diamond crest
+   DIAMOND WALLET - on the flat Club Arena console
    (#ClubArenaConsole)
 
    PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
@@ -257,18 +257,12 @@
 
 .dwc__tx {
   display: grid;
-  grid-template-columns: 7cqw minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 0 2.4cqw;
   align-items: center;
   padding: 2.6cqw 0;
   border-top: var(--dwc-rule);
   box-shadow: var(--dwc-rule-lit);
-}
-
-.dwc__tx-glyph {
-  font-size: 5cqw;
-  line-height: 1;
-  text-align: center;
 }
 
 .dwc__tx-body {

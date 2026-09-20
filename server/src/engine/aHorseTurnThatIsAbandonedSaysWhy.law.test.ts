@@ -54,6 +54,7 @@ const REASONS = [
   'lifecycle_locked',
   'seat_moved',
   'lease_lost',
+  'clock_expired',
 ] as const;
 
 const STAGES = [

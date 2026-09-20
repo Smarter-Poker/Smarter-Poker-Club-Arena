@@ -158,6 +158,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
     const at = (h: number) => new Date(now + h * 3_600_000).toISOString();
     // The flags are read from the row; a feeder never assumes them.
     const plain = {
+      format_contract: 'mtt-v1',
       is_bounty: false,
       is_pko: false,
       is_mystery_bounty: false,
@@ -218,6 +219,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
         ...plain,
         id: 'f',
         name: 'NLH Heads-Up 100',
+        format_contract: 'sng-v1',
         start_time: at(1),
         buy_in_amount: 95,
         buy_in_fee: 5,
@@ -279,12 +281,14 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
     const now = Date.parse('2026-09-11T03:00:00Z');
     const at = (h: number) => new Date(now + h * 3_600_000).toISOString();
     const plain = {
+      format_contract: 'mtt-v1',
       is_bounty: false,
       is_pko: false,
       is_mystery_bounty: false,
       is_premium_spin: false,
     };
     const pko: SatelliteTargetRow = {
+      format_contract: 'mtt-v1',
       id: '8171f9f6-1243-4d51-ac4b-9acabce110dc',
       name: 'Sunday Funday High Roller PKO',
       start_time: at(72),

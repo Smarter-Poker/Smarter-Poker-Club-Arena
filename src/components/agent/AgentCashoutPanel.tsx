@@ -34,7 +34,20 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import { cashoutService, newOpId, CashoutRequest } from '../../services/CashoutService';
+import { cashoutService, CashoutRequest } from '../../services/CashoutService';
+import { CashoutReceiptChecks, useCashoutReceiptChecks } from '../wallet/CashoutReceiptChecks';
+import { useCashoutScope, useCashoutScopeKey } from '../../hooks/useCashoutScope';
+import {
+  runCashoutOperation,
+  recoverCashoutOperation,
+  captureCashoutStart,
+  assertCashoutStartCurrent,
+  type CashoutStart,
+} from '../../services/CashoutOperation';
+import {
+  usePreparedCashoutOperations,
+  isCashoutStartCurrent,
+} from '../../hooks/usePreparedCashoutOperations';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
 import { checkSettlementLock } from '../../utils/settlementLock';
@@ -51,9 +64,21 @@ interface AgentCashoutPanelProps {
   onCashoutProcessed?: () => void;
 }
 
-export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentCashoutPanelProps) {
+export default function AgentCashoutPanel(props: AgentCashoutPanelProps) {
+  const { user } = useAuthUser();
+  const key = useCashoutScopeKey(user?.id, JSON.stringify([props.clubId]));
+  return <AgentCashoutContent key={key} {...props} />;
+}
+
+function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelProps) {
   const isMounted = useIsMounted();
   const { user } = useAuthUser();
+  const isCurrent = useCashoutScope(user?.id, clubId ?? 'all-clubs');
+  const loadGeneration = useRef(0);
+  const rowsCurrent = useRef<(() => boolean) | null>(null);
+  // Visibility belongs to the original account/view, even during a same-scope
+  // refresh. The stricter row generation still controls financial actions.
+  const rowsScope = useRef<(() => boolean) | null>(null);
   const [cashouts, setCashouts] = useState<CashoutRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState<string | null>(null);
@@ -72,30 +97,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
    * would leave the second card looking tappable and doing nothing.
    */
   const inFlightRef = useRef<Set<string>>(new Set());
-
-  /**
-   * One op id PER CASHOUT PER ACTION, minted once, held across a failure,
-   * dropped on success. The service used to mint a fresh one inside every call,
-   * which is no protection at all: the retry that matters is the agent's SECOND
-   * tap after their connection dropped, and a second call carried a second key.
-   * With this, that retry lands on fn_cashout_approve's replay branch instead of
-   * trying to release the escrow twice.
-   *
-   * Keyed by ACTION as well as id because the unique index behind the
-   * idempotency check spans every cashout transaction type at once
-   * (chip_transactions_agent_wallet_op_id_uidx). Reusing an approve's key for a
-   * later decline of the same request would collide on that index rather than
-   * replay, and fn_cashout_release has no unique_violation handler to soften it.
-   */
-  const opIdsRef = useRef<Map<string, string>>(new Map());
-  const opIdFor = (action: 'approve' | 'reject', cashoutId: string): string => {
-    const key = `${action}:${cashoutId}`;
-    const held = opIdsRef.current.get(key);
-    if (held) return held;
-    const fresh = newOpId();
-    opIdsRef.current.set(key, fresh);
-    return fresh;
-  };
+  const queuedCashoutReload = useRef(false);
 
   /**
    * The skeleton belongs to the FIRST load only. `setLoading(true)` on every
@@ -108,12 +110,22 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
 
   // Load pending cashouts
   const loadCashouts = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id || !isCurrent()) return;
+    // Own realtime/balance events must not retire the accepted row while its
+    // verified receipt is being acknowledged. Account/route fences stay live.
+    if (inFlightRef.current.size > 0) {
+      queuedCashoutReload.current = true;
+      return;
+    }
+    const generation = ++loadGeneration.current;
+    const current = () => isCurrent() && generation === loadGeneration.current;
 
     if (!hasLoadedRef.current) setLoading(true);
     try {
       const pending = await cashoutService.getAgentPendingCashouts(user.id, clubId);
-      if (!isMounted.current) return;
+      if (!current()) return;
+      rowsCurrent.current = current;
+      rowsScope.current = isCurrent;
       setCashouts(pending);
       // A load that succeeded clears the previous failure. Without this the
       // error banner sat above a perfectly fresh list forever.
@@ -122,15 +134,23 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       // Clear previous stagger timers
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
       staggerTimersRef.current = pending.map((_, i) =>
-        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+        setTimeout(() => {
+          if (current()) setVisibleItems((prev) => new Set(prev).add(i));
+        }, i * 60)
       );
     } catch (err) {
       reportError(err, 'AgentCashoutPanel.Failed_to_load_cashouts');
-      if (isMounted.current) setError(safeErrorMessage(err, 'Failed to load cashout requests'));
+      if (current()) {
+        rowsScope.current = isCurrent;
+        setCashouts([]);
+        setError(safeErrorMessage(err, 'Failed to load cashout requests'));
+      }
     }
-    hasLoadedRef.current = true;
-    if (isMounted.current) setLoading(false);
-  }, [user?.id, clubId, isMounted]);
+    if (current()) {
+      hasLoadedRef.current = true;
+      setLoading(false);
+    }
+  }, [user?.id, clubId, isMounted, isCurrent]);
 
   useEffect(() => {
     loadCashouts();
@@ -205,100 +225,106 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     };
   }, [loadCashouts, user?.id, clubId, isMounted]);
 
-  const handleApprove = async (cashout: CashoutRequest) => {
-    if (!user?.id) return;
+  const decisions = usePreparedCashoutOperations(
+    cashouts.flatMap((row) => [
+      {
+        key: `${row.id}:approve`,
+        intent: {
+          userId: user?.id ?? '',
+          receiptViewCurrent: isCurrent,
+          playerId: row.playerId,
+          clubId: row.clubId,
+          targetId: row.id,
+          kind: 'cashout_approve' as const,
+          amount: row.amount,
+        },
+      },
+      {
+        key: `${row.id}:reject`,
+        intent: {
+          userId: user?.id ?? '',
+          receiptViewCurrent: isCurrent,
+          playerId: row.playerId,
+          clubId: row.clubId,
+          targetId: row.id,
+          kind: 'cashout_decline' as const,
+          amount: row.amount,
+          note: 'Request declined',
+        },
+      },
+    ]),
+    rowsCurrent.current,
+    cashouts
+  );
+
+  const receiptChecks = useCashoutReceiptChecks(isCurrent, () => {
+    void loadCashouts();
+    onCashoutProcessed?.();
+  });
+
+  const processCashout = async (
+    cashout: CashoutRequest,
+    action: 'approve' | 'reject',
+    reason?: string
+  ) => {
+    if (!user?.id || !isCurrent() || !rowsCurrent.current?.() || cashout.status !== 'pending')
+      return;
     if (inFlightRef.current.has(cashout.id)) return;
     inFlightRef.current.add(cashout.id);
-
     setProcessing(cashout.id);
     setError(null);
-
-    // SETTLEMENT FREEZE CHECK
+    let start: CashoutStart | null = null;
+    let checkingOutcome = false;
     try {
-      const lockResult = await checkSettlementLock(clubId || '');
-      if (lockResult.locked) {
-        if (isMounted.current) setError('Settlement In Progress. Cashout Actions Are Frozen');
-        inFlightRef.current.delete(cashout.id);
-        if (isMounted.current) setProcessing(null);
-        return;
-      }
-    } catch (e) {
-      reportError(e, 'AgentCashoutPanel.handleApprove');
-      // Fail-open
-    }
-
-    try {
-      // Atomic and terminal. fn_cashout_approve releases the escrow into THIS
-      // approver's agent wallet (Dan 2026-08-25: "Once approved the chips go
-      // into the agent's wallet"), writes the ledger row and notifies the
-      // player, all in one transaction. It used to credit the approver's
-      // club_members.chip_balance, which is their player wallet.
-      await cashoutService.approveCashout(
-        cashout.id,
-        user.id,
-        undefined,
-        opIdFor('approve', cashout.id)
+      if (action === 'reject' && reason !== 'Request declined')
+        throw new Error('Refresh To Verify This Cashout Decision');
+      const prepared = decisions.get(
+        `${cashout.id}:${action}`,
+        action === 'approve' ? 'cashout_approve' : 'cashout_decline'
       );
-      opIdsRef.current.delete(`approve:${cashout.id}`);
-      loadCashouts();
-      onCashoutProcessed?.();
-      // The BALANCE_UPDATED event is emitted by approveCashout itself, carrying
-      // the player id under the `userId` key every listener filters on. The
-      // duplicate emitted here used the key `playerId`, which matched nothing,
-      // and fired a second refresh of every wallet surface for no reason.
-    } catch (err: any) {
-      // The op id is held, not dropped: this may have committed with the
-      // response lost, and the retry has to replay rather than release twice.
-      const msg = err instanceof Error ? err.message : err?.message || String(err);
-      if (isMounted.current) setError(msg);
-    }
-    inFlightRef.current.delete(cashout.id);
-    if (isMounted.current) setProcessing(null);
-  };
-
-  const handleReject = async (cashout: CashoutRequest, reason?: string) => {
-    if (!user?.id) return;
-    if (inFlightRef.current.has(cashout.id)) return;
-    inFlightRef.current.add(cashout.id);
-
-    setProcessing(cashout.id);
-    setError(null);
-
-    // SETTLEMENT FREEZE CHECK
-    try {
-      const lockResult = await checkSettlementLock(clubId || '');
-      if (lockResult.locked) {
-        if (isMounted.current) setError('Settlement In Progress. Cashout Actions Are Frozen');
-        inFlightRef.current.delete(cashout.id);
-        if (isMounted.current) setProcessing(null);
-        return;
+      if (!prepared) throw new Error('Wait For This Cashout Request To Be Verified');
+      start = captureCashoutStart(prepared);
+      checkingOutcome = true;
+      const recovery = await recoverCashoutOperation(start);
+      checkingOutcome = false;
+      assertCashoutStartCurrent(start);
+      if (!recovery.found) {
+        const lock = await checkSettlementLock(start.clubId);
+        assertCashoutStartCurrent(start);
+        if (lock.locked) throw new Error('Settlement In Progress. Cashout Actions Are Frozen');
+        checkingOutcome = true;
+        await runCashoutOperation(start);
+        checkingOutcome = false;
       }
-    } catch (e) {
-      reportError(e, 'AgentCashoutPanel.handleReject');
-      // Fail-open
-    }
-
-    try {
-      await cashoutService.rejectCashout(
-        cashout.id,
-        user.id,
-        reason,
-        opIdFor('reject', cashout.id)
-      );
-      opIdsRef.current.delete(`reject:${cashout.id}`);
-      loadCashouts();
+      assertCashoutStartCurrent(start);
+      void loadCashouts();
       onCashoutProcessed?.();
-      // See handleApprove: rejectCashout already emits BALANCE_UPDATED with the
-      // correct `userId` key.
-    } catch (err: any) {
-      const msg = err instanceof Error ? err.message : err?.message || String(err);
-      if (isMounted.current) setError(msg);
+    } catch (err) {
+      if (checkingOutcome && start && isCurrent())
+        receiptChecks.retain(
+          `${cashout.id}:${action}`,
+          cashout.amount,
+          action === 'approve' ? 'Cashout Approval' : 'Cashout Decline',
+          start
+        );
+      if (isCurrent() && (!start || isCashoutStartCurrent(start)))
+        setError(safeErrorMessage(err, 'Refresh To Check The Cashout Outcome'));
+    } finally {
+      inFlightRef.current.delete(cashout.id);
+      if (isCurrent()) {
+        setProcessing(null);
+        if (inFlightRef.current.size === 0 && queuedCashoutReload.current) {
+          queuedCashoutReload.current = false;
+          void loadCashouts();
+        }
+      }
     }
-    inFlightRef.current.delete(cashout.id);
-    if (isMounted.current) setProcessing(null);
   };
+  const handleApprove = (cashout: CashoutRequest) => processCashout(cashout, 'approve');
+  const handleReject = (cashout: CashoutRequest, reason?: string) =>
+    processCashout(cashout, 'reject', reason);
 
-  if (loading) {
+  if (loading || !rowsScope.current?.()) {
     return (
       <SpadeConsole
         eyebrow="Agent Desk"
@@ -307,6 +333,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
         foot="foot"
         className="acp"
       >
+        <CashoutReceiptChecks checks={receiptChecks} />
         {/* The first-load skeleton: three engraved rows carrying the SAME two
             shimmer animations, at the same durations and the same stagger. */}
         <div className="acp-skeleton" aria-hidden="true">
@@ -340,6 +367,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
         foot="foot"
         className="acp"
       >
+        <CashoutReceiptChecks checks={receiptChecks} />
         <div className="acp-state">
           <span className="acp-state-mark" aria-hidden="true">
             ⚠
@@ -362,6 +390,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       foot="foot"
       className="acp"
     >
+      <CashoutReceiptChecks checks={receiptChecks} />
       <div className="acp-tools">
         <button
           type="button"
@@ -373,9 +402,9 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
         </button>
       </div>
 
-      {error && (
+      {(error || decisions.error) && (
         <div className="acp-error sc-ink--red" role="alert">
-          {error}
+          {error || decisions.error}
         </div>
       )}
 
@@ -429,23 +458,29 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
                   type="button"
                   className="acp-word acp-word-white"
                   onClick={() => handleApprove(cashout)}
-                  disabled={processing === cashout.id}
+                  disabled={
+                    processing === cashout.id ||
+                    !decisions.get(`${cashout.id}:approve`, 'cashout_approve')
+                  }
                 >
-                  {processing === cashout.id ? 'Approving...' : 'Approve & Complete'}
+                  {processing === cashout.id ? 'Approving...' : 'Approve Cashout'}
                 </button>
                 <button
                   type="button"
                   className="acp-word acp-word-red"
                   onClick={() => handleReject(cashout, 'Request declined')}
-                  disabled={processing === cashout.id}
+                  disabled={
+                    processing === cashout.id ||
+                    !decisions.get(`${cashout.id}:reject`, 'cashout_decline')
+                  }
                 >
                   {processing === cashout.id ? 'Working...' : 'Reject'}
                 </button>
               </div>
 
               <div className="acp-escrow sc-copy">
-                Chips Are Locked In Escrow. Approving Moves Them Into Your Agent Wallet. Rejecting
-                Returns Them To The Player.
+                Approval Transfers The Verified Hold Into Your Agent Wallet. Rejection Returns The
+                Verified Hold To The Player.
               </div>
             </div>
           ))}

@@ -22,22 +22,7 @@ concurrency:
 jobs:
   verify:
     name: Trusted verifier execution
-    # UNTIL THE REPORTER IS PROVISIONED, A PULL REQUEST RUN IS SKIPPED, NOT RED
-    # (2026-09-13). The bootstrap shipped with this trigger live and the
-    # reporter app unset, so `Money trigger proof` failed on every pull request
-    # in the repo at "client-id must be set" - a check nobody could act on,
-    # teaching everyone to ignore it (CLAUDE.md 10.83, 10.86). Skipped is the
-    # honest outcome: the proof did not run, and a skipped run is neither a
-    # success the consumer (`money-trigger-proof.mjs`) would accept nor a
-    # failure the main-is-green detector would page on. A `workflow_dispatch`
-    # from main still runs unconditionally, because that path mints no
-    # reporter. To activate: set the repository VARIABLE
-    # MONEY_TRIGGER_REPORTER_APP_ID and, in the `money-trigger-recovery-trusted`
-    # environment, the secret MONEY_TRIGGER_REPORTER_PRIVATE_KEY (a GitHub App
-    # with checks: write and nothing else). An agent never sets either.
-    if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
-      || (github.event.pull_request.base.ref == 'main' && vars.MONEY_TRIGGER_REPORTER_APP_ID != '')
+    if: github.event.pull_request.base.ref == 'main' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     # MUST be configured for main-only deployment branches before activation.
     # Reporter app key is environment-scoped, never a repository/PR secret.
     environment: money-trigger-recovery-trusted
@@ -76,6 +61,22 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/ci/produce-money-trigger-recovery.mjs
+      # GitHub reveals bypass_actors only to a ruleset writer. This existing
+      # infrastructure App is restricted to this repository and Administration;
+      # trusted finish code performs one GET, then immediately revokes it.
+      # It is never the financial check reporter or a PR/SQL credential.
+      - name: Mint short-lived protection reader
+        if: success() && github.event_name == 'pull_request_target'
+        id: protection-reader
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: '4680372'
+          private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
+          owner: Smarter-Poker
+          repositories: Smarter-Poker-Club-Arena
+          permission-administration: write
+          # Keep automatic cancellation cleanup; normal finish revokes sooner.
+          skip-token-revoke: false
       - name: Finish explicit captured-head check
         if: always() && github.event_name == 'pull_request_target'
         env:
@@ -84,6 +85,7 @@ jobs:
           REPORTER_APP_ID: ${{ vars.MONEY_TRIGGER_REPORTER_APP_ID }}
           REPORTER_TOKEN: ${{ steps.reporter.outputs.token }}
           VERIFY_OUTCOME: ${{ steps.proof.outcome }}
+          PROTECTION_READER_TOKEN: ${{ steps.protection-reader.outputs.token }}
         run: node scripts/ci/money-trigger-check-report.mjs finish
       - uses: actions/upload-artifact@v4
         if: success() && github.event_name == 'workflow_dispatch'

@@ -72,9 +72,10 @@ groups:
       # who cannot act and cannot leave.
       # Keep the millisecond threshold, then give humanizeDuration seconds.
       - alert: SLOTableHasStalled
+        # The fleet record has no labels; maintenance retains instance/job.
         expr: |
           (sp:table_stall:max_ms > 900000) / 1000
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 5m
         labels:
           severity: critical

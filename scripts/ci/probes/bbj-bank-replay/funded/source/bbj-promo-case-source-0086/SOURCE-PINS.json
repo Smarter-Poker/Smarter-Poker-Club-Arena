@@ -1,0 +1,722 @@
+[
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-metadata-recovery-0001/CAPTURE-TOOL.json",
+    "role": "sealed input",
+    "sha256": "9d590a18296cc59d77d5ee15c73511b910cfb84569bdb8abc353bd1cf710023a"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-metadata-recovery-0001/CAPTURE.sql",
+    "role": "sealed input",
+    "sha256": "915370c78cb07708ea9e84e6d1082305162cfbe11da465e172f55daf85f9649f"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-metadata-recovery-0001/DEPENDENCIES-TOOL.json",
+    "role": "sealed input",
+    "sha256": "0a7f6c1565d73cf262013b79d4c60c63ea7fa4e5124841629caaae711eea27b3"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-metadata-recovery-0001/DEPENDENCIES.json",
+    "role": "sealed input",
+    "sha256": "bdf4404af0791be7079aff13da82faba172b226425164824528699dbc0d54245"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-metadata-recovery-0001/DEPENDENCIES.sql",
+    "role": "sealed input",
+    "sha256": "3c17ccd9c5fa24746013ecfa60902bc2d29a5ea5451f5f84c3a9378023f8b18a"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-metadata-recovery-0001/DEPENDENCY-ATTEMPT1-TOOL.json",
+    "role": "sealed input",
+    "sha256": "26eeb1a72bd735ae9c4ba6cc819d711ca93bd4f4e5c7cc25290adbe901700e0b"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-metadata-recovery-0001/DEPENDENCY-ATTEMPT1.sql",
+    "role": "sealed input",
+    "sha256": "7bd93f0de5a7d1a3295e67eb4426b93b2bdbfe15aa6e46a266b73eba7f25a950"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-metadata-recovery-0001/HANDOFF.md",
+    "role": "sealed input",
+    "sha256": "939e4c1b7a76bea1545334f6f6471623645c1aa6de700288321c43005942a067"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-metadata-recovery-0001/INPUTS.json",
+    "role": "sealed input",
+    "sha256": "6aab0340d50c87c35578e1e91f8b9f2fb556bb70499cb96c85d8f8634fc984d2"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-metadata-recovery-0001/METADATA.json",
+    "role": "sealed input",
+    "sha256": "b8f5ab1b1b4cdb777beb3e1e7c6f904c9353eb36a2cf2ab3c8ce696a9073dc5f"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-metadata-recovery-0001/RESULT.json",
+    "role": "sealed input",
+    "sha256": "4de0088161d058d4220233f5fd72117c16f4bf84cebe21c477cc1753d58c693c"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-metadata-recovery-0001/INTEGRITY.json",
+    "role": "input seal",
+    "sha256": "85c7c91f02b69ce43fa769e5d0dc11b7a7d0e61ae27adcd4cf79cd741e327ead"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/CASE-RECIPE.json",
+    "role": "sealed input",
+    "sha256": "17c7513a6c2514ea829325a421391f5c00bfc4306b358c03bb1571434d5171a8"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/CURRENT-RELATIONS.json",
+    "role": "sealed input",
+    "sha256": "ee8be1b8fe0feebb9000e1519a08eee8225d1ed924047cea135b2334b9f5a735"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/DELTA-FROM-0117.patch",
+    "role": "sealed input",
+    "sha256": "58c774feda2f22b8577a19fbb89c4793ae3503e98b8fff68653cbb9db3bcbd81"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/DELTA-FROM-0118.patch",
+    "role": "sealed input",
+    "sha256": "4ab65c7aaa84f9b4a2ebd758b5759c78da77ca86178d9c8828fe0608460f76ac"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/DEPENDENCY-DELTA.json",
+    "role": "sealed input",
+    "sha256": "e50453957474f2bdb8c53e4f72b4a40f15ae3fe64dfef23e3ccc9160ed233ee7"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/DETECTOR-HISTORY-RESULTS.json",
+    "role": "sealed input",
+    "sha256": "9e632c4aa798335f35aa88fc59a4bd709ec27cab58b816d61ff25f243a57e6a1"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/EXPRESSION-AUDIT.json",
+    "role": "sealed input",
+    "sha256": "fa35317c6da0db2d9baa2802542612e3e52d53523dbd0ce2afed928b1d697fd0"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/FINGERPRINT-CONTRACT.json",
+    "role": "sealed input",
+    "sha256": "a4bc93ffc2a2119ba03a407ea619c04a7683a311456e8aa56b7f6bf1c0944fb1"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/FULLCASE-RESULTS.json",
+    "role": "sealed input",
+    "sha256": "293b5324d4f160914238425dda4759642567341d46b5fa1b08fb3e7b37dd70a5"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/GENERATED-SUPPLEMENTAL-SQL.json",
+    "role": "sealed input",
+    "sha256": "28b15c427c1174c28d05a2822f984dc4f6738b9d38a74d6c43e20a4cf599da52"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/HANDOFF.md",
+    "role": "sealed input",
+    "sha256": "9be32574641dbe57d45841143c44ba3b5fb0e75b1846f0de7d2375c94110fe0c"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/HISTORICAL-PREIMAGES.json",
+    "role": "sealed input",
+    "sha256": "a8a6510eb17f1558e60a8543a0c99e77ab366ba27dc1edaf3bf0105636a0d1f9"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/NONINTERFERENCE-RESULTS.json",
+    "role": "sealed input",
+    "sha256": "487a0ed14bce522ccd6307fc8a16fedfa8830608119e1fecf813e9e2c4415b17"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/ORACLE-SOURCE.json",
+    "role": "sealed input",
+    "sha256": "576a9d192c56d9495d4cf5c37b9a2b0c514b9a39880495b402c3cd778f5f7534"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/PREDECESSOR-PRESERVATION.json",
+    "role": "sealed input",
+    "sha256": "3d6c6f86bdfba488835db2f003c7700a91e21f3e5da111ed67eb3cbc5ea62396"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/RAW-SCOPE-RESULTS.json",
+    "role": "sealed input",
+    "sha256": "8faf0d8755020dc88853ac8a340c014bedeb73dd1057b515f222d6e5bc393cf3"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/REGRESSION-RUNS.json",
+    "role": "sealed input",
+    "sha256": "7d975c303d4ab5f78d7708913a9443786003c26965c152b6c45cd0325ac37f6e"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/RESIDUAL-DEDUPLICATION.json",
+    "role": "sealed input",
+    "sha256": "1e2c60bb24cdfd50d2e2d837f70c888603a3f815582801cd76e9835512e32a4a"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/SOURCE-CHECKS.json",
+    "role": "sealed input",
+    "sha256": "a4f63900daa2b896bfb53a37fc29c11f8674c8b096728ee04f595ca0c1edf589"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/SOURCE-DELTA.patch",
+    "role": "sealed input",
+    "sha256": "93f6f48d196b043053c1dbc970dc23aa66ae36909b3927c549d03cd21b68d6ea"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/SOURCE-PINS.json",
+    "role": "sealed input",
+    "sha256": "f37a9bcbd958c56dcbd4be41d8cc50d82106168fde8ce50058abe41491872ecf"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/SQL-CONSTRUCTION-RESULTS.json",
+    "role": "sealed input",
+    "sha256": "80d0f75e65dd855818d283633e2dc8e6ec51764e6f7ec7954356fa7d8ef6aff0"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/STATUS.json",
+    "role": "sealed input",
+    "sha256": "8ab53c37917c26f67cd4eec5cb5477078c0f4cdefe847775f8368d4d4d579e6b"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/SUPPLEMENTAL-FUNCTIONS.json",
+    "role": "sealed input",
+    "sha256": "5f4d195349bc4f872c8f17d16971187b549f149221904b802b4d7b9d828f658a"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/VALID-PRIZE.json",
+    "role": "sealed input",
+    "sha256": "19e47f2ee5c3edf59e76c782ff1ac4ac0cbf69151d029045dac3c5a8379331ae"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/VERIFICATION.json",
+    "role": "sealed input",
+    "sha256": "df0e1d8cfb8ad17c61a2bc8fc4e698ca7bd730a59a104d9f8f8be9985ce2b2db"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/case_module.py",
+    "role": "sealed input",
+    "sha256": "e041c4b649303dcb93e900d9458b32514cf1a25c13309d7436c061d9bab83d0d"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/noninterference.py",
+    "role": "sealed input",
+    "sha256": "8866372c0a9ee7f19196b71f01b216ddb02d31af5c2a05f8ae6245999f4bed84"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/oracle_fixtures.py",
+    "role": "sealed input",
+    "sha256": "e6d627de1194f7e8ec5eb37b90c2ef53cd7fdc17dd5a8c8c514b42184b2ceaf2"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/packet_contract.py",
+    "role": "sealed input",
+    "sha256": "80d1b2cb30b1fa8a0ace1977f5abe7f6493592e3c00a98f95ef40abc76568f18"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/pair_support.py",
+    "role": "sealed input",
+    "sha256": "886140539cd3fda9d5899b207df764ab858995ed4a9676055c9a9ad854d53d5a"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/supplemental.py",
+    "role": "sealed input",
+    "sha256": "cf38ee75bc16416ff00fc55078651189558563fd1ccf4140a1af86e034ab2704"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/test_detector_history.py",
+    "role": "sealed input",
+    "sha256": "2c825fd5a40bc2ce29d92062b233cbd71bbbb89f404b8868ee4ca0ad51ac667d"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/test_fullcase.py",
+    "role": "sealed input",
+    "sha256": "08a88cc4158fe91cb0f3818e2ccb4d5e59504264bf78ebcc78e1830d4c4fad23"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/test_noninterference.py",
+    "role": "sealed input",
+    "sha256": "db6d130d25872a10349c020035f90cb981e22707d3ef55d916fa9b0c9a773ddf"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/test_raw_scope.py",
+    "role": "sealed input",
+    "sha256": "658f3112c50f46c7b3fd0344bb5863c63739469b4009937cc03935d7ae860167"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/test_supplemental_sql.py",
+    "role": "sealed input",
+    "sha256": "439d0d5b5883138635ab5ba8fb5e3435a66a0b1ec5ac09f94cd1bfe007e3734f"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/verify_case.py",
+    "role": "sealed input",
+    "sha256": "725d981bdcdc4f3889e7aefaece18f0ab15500a7014ccf35c2e449e3e5eb87f5"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/verify_source.py",
+    "role": "sealed input",
+    "sha256": "a68783da4f8cf44166dcf5d9bc46c1cbb19ed99e819c7697cfbf9741e1ecd755"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/INTEGRITY.json",
+    "role": "input seal",
+    "sha256": "741c5f4ff9b8f50a52703079ee02d52f76c1d9a9300d748b7bfa97fbd642698f"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/AUTHORIZATION-TEMPLATE.json",
+    "role": "sealed input",
+    "sha256": "671d62dd86d452e1828d101d72a89842e8f691e818d06bb0b5d73615e4cab11f"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/CASE-DISPOSITIONS.json",
+    "role": "sealed input",
+    "sha256": "8c84b6280425d303760c6eb338848bc90bf9fa39a722ca6481646781a8987ed4"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/COMBINED-COMMAND.sql",
+    "role": "sealed input",
+    "sha256": "b9ea8f516f71a34010d5b7883a7242ea87c14ab808babefa7fcc9cca420b8f4f"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/COMPOSITION.json",
+    "role": "sealed input",
+    "sha256": "7802c965cdc81c929f55ba4a91e76b3f24b9773d9e60698f4fcdb8129e440704"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/DELTA0120-case_module.py.patch",
+    "role": "sealed input",
+    "sha256": "969aa309bd7cb922e0827ff2c577989392ee39a6b9459b6b0b80c2e1eb9c1eca"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/DELTA0120-run_integration.py.patch",
+    "role": "sealed input",
+    "sha256": "9d05ddd0cd7b15a5feeb339c7900f22e16c05773b9ea4dafe2ba613c2ff55a14"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/DEPENDENCIES-QUERY.sql",
+    "role": "sealed input",
+    "sha256": "f261f2d7bb43482029e19fd7d8ab51819a039721741616cc4fceb210d599d948"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/DERIVATION.json",
+    "role": "sealed input",
+    "sha256": "f47d7ba4bfece8d3e9939caa7938676ebfa162ae02dcd7b1d1fd78acfad50598"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/EVENT-TRIGGERS-EXPECTED.json",
+    "role": "sealed input",
+    "sha256": "3d1d5702c0cf0699dbdf028e64fd1a8c54748ef727a0ddb24a6744f23908108e"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/EXACT0120-PRESERVATION.json",
+    "role": "sealed input",
+    "sha256": "2e863bbc2c30c8e813e5a1e237aae4bfc81646c3280562717353cbce6c747e45"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/FUNCTION-TRANSITIONS.json",
+    "role": "sealed input",
+    "sha256": "69702e8debe8748f57e2922933c41ebbc53f5a89b7a13be8cf11060799c21301"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/HANDOFF.md",
+    "role": "sealed input",
+    "sha256": "71271625b54e7505ea860b634eaa7e8d3e5d5f9ea1489791387af9bf4932f698"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/REBIND-CHECKS.json",
+    "role": "sealed input",
+    "sha256": "f95d6de22034cc67a4db0e5fd610c2483ddc275fe6191c638d72b5a2f5f6cf20"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/RELATION-QUERY.sql",
+    "role": "sealed input",
+    "sha256": "cb049d4d08fb8a2cbb14ca906d8dbbc74b3ee6924294bb9e5c635cb817f4a2d8"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/SOURCE-DERIVATION-PROOF.json",
+    "role": "sealed input",
+    "sha256": "f4dcb420342f5f296c941905ff77979e43ce5f9c89b63485c75e9aed920802b3"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/SOURCE-PINS.json",
+    "role": "sealed input",
+    "sha256": "325512642a6e20fa4274885a8ed6c2f93b8333b4d6fdcf1b5d5c57fd69e16c01"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/STATUS.json",
+    "role": "sealed input",
+    "sha256": "a195df0ad4cfc1716ba6abac35848dda290ccb37a8af7cd798c95277ca487a52"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/TABLE-TRANSITIONS.json",
+    "role": "sealed input",
+    "sha256": "3d36f8b0586bde4203e21f41ac88ca43ab7e76c1b98f40d0de82f816100dbb4b"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/VERIFICATION.json",
+    "role": "sealed input",
+    "sha256": "88f5031e258282ab64345f38804bd7f54fbe8abc0db74f30889ec073cb1ad175"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/binding.py",
+    "role": "sealed input",
+    "sha256": "e908191ea1e24319d147c5d8a5dbdca8eda506746006c8bc4e85476e02a9ee57"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/binding.py.patch",
+    "role": "sealed input",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/build_models.py",
+    "role": "sealed input",
+    "sha256": "3bc91e6dd846dae0338b75e7409729ea4f9acf1a1dcbf56741126be975a336e5"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/case_module.py",
+    "role": "sealed input",
+    "sha256": "b75a11c2dc6491e0467f7ab6e0ceb1796660f059dcf457f0b466851f072e9e77"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/case_module.py.patch",
+    "role": "sealed input",
+    "sha256": "c579d97886cfd3b9eaab63cb41c2c1453156d7609af8abe34a93b75f524f35c1"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/catalog_queries.py",
+    "role": "sealed input",
+    "sha256": "6c19a430c6784dd5522cadaa3a25348b53ed1120d1edec6363fd92a0567766c2"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/check_rebinding.py",
+    "role": "sealed input",
+    "sha256": "ec69b8354119655edafe59274f91baa7eae29b2d788586b56d8d164bc831f9bb"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/normalization.py",
+    "role": "sealed input",
+    "sha256": "b67697002487de10024bc49d2b3730ddca60d408c608b4fa7c1323eddf80e0f3"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/run_integration.py",
+    "role": "sealed input",
+    "sha256": "b312325140993b5cefe07485fd5765a930620e7bc9be4f84dd2ea4a491ec0bbc"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/run_integration.py.patch",
+    "role": "sealed input",
+    "sha256": "28af3b9372dec2517d4aaaf8ea23675c36d2d3ae2259e1451220a221f267dab1"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/verify.py",
+    "role": "sealed input",
+    "sha256": "d38aa43cade552a738ce55cd612ccfb9268b4969fe16594f129621f896b93f12"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/INTEGRITY.json",
+    "role": "input seal",
+    "sha256": "388c24a7c4e836b3b043aef94d7e5a946004ade5c5a8eab550033a4d443ba808"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/acceptance/bbj0124-independent0091-intake.json",
+    "role": "accepted original opening intake",
+    "sha256": "48af34ce166fef959bbb5111cf406fc88d31e143d0fdd21b08461e8347c49ff6"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/execution-runs/ec5d102b7b694b0abedf9d7afbdea441/SEQ08_BBJ_MAIN_POSITIVE_OPENING_SETUP.json",
+    "role": "saved accepted opening fixture for pure continuation tests",
+    "sha256": "bdf34bd819119719cfa87e77a5bc15cde8999390f8cb0fd76e5ae500445304a1"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/work/bbj0124-actual-positive-review-0091/ACTUAL-FACTS.json",
+    "role": "sealed input",
+    "sha256": "2f004785d743e5ea1512f57d7251ddb5c9aee86ff6d741b8b4ec4208a1bb21f5"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/work/bbj0124-actual-positive-review-0091/DECISION.json",
+    "role": "sealed input",
+    "sha256": "38a67fb37351efcad94cae947c61723c8c1cf9fc2fed5e76bd6e2620ca739dbd"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/work/bbj0124-actual-positive-review-0091/HANDOFF.md",
+    "role": "sealed input",
+    "sha256": "2735f0e9a8e8597ad12ff87314b69aaf836a0fbaf4a11b7390fb0f05c7952d40"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/work/bbj0124-actual-positive-review-0091/PLATFORM-REQUIREMENTS.md",
+    "role": "sealed input",
+    "sha256": "e6c05e2ca9ed4730067536a003639fc17d9de2b7b073ea958cea2e28adf09949"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/work/bbj0124-actual-positive-review-0091/RECORD-RECOVERY.json",
+    "role": "sealed input",
+    "sha256": "5145f597f0507dfb0dabfb2e0c80578e7d60792d83d452de34c7466b6784f26b"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/work/bbj0124-actual-positive-review-0091/RECOVERY-HANDOFF.md",
+    "role": "sealed input",
+    "sha256": "3655a9f65c41589e70d8aaefc157901d0ec45c4cfde519621de60b2beef55b7e"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/work/bbj0124-actual-positive-review-0091/REMOTE-INPUT-PINS.json",
+    "role": "sealed input",
+    "sha256": "a2cb39ddfbba8e95df593ef3a04b513d84f359ed9619d885974070e25dcfeeab"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/work/bbj0124-actual-positive-review-0091/REPLAY-CHECKS.json",
+    "role": "sealed input",
+    "sha256": "ed67b3a04c0d8c84f26c354a1c4b31e359de8e86378af43091e57a32db6efb9e"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/work/bbj0124-actual-positive-review-0091/audit_facts.py",
+    "role": "sealed input",
+    "sha256": "b9dde3487bda8dda9abdb74570cb2008e9a37d5a857f0f3a582cc11ffda9f8b6"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/work/bbj0124-actual-positive-review-0091/replay_saved.py",
+    "role": "sealed input",
+    "sha256": "97c3bce6f1b465c12d38eccb3df8c58f6712e725b3ab795389c83639c7d2ad84"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/work/bbj0124-actual-positive-review-0091/INTEGRITY.json",
+    "role": "input seal",
+    "sha256": "90dc46610618a80cdba61ceac2696c974b3fc50984f12e7c79dd7cb4f3b7e5f5"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-backup-positive-source-gap-0121/HANDOFF.md",
+    "role": "scope source gap",
+    "sha256": "a8490662c85bfd95ac5971d2b483d4dd943b0aae72cec797826780c79604295a"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/FUNCTION-OVERLAY-INPUTS.json",
+    "role": "original immutable source",
+    "sha256": "a7b99f4323253a06375eba61d7f5ea724be081a8f349bc62c6df777584e52db7"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/TABLE-OVERLAY-INPUTS.json",
+    "role": "original immutable source",
+    "sha256": "8eac6706146731ca97584c85c8e16bcf00847ba9313ee5a53affc1d2c4d05de2"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/10-historical-schema.sql",
+    "role": "original immutable source",
+    "sha256": "83eaf66eb3c7e7110740b4cedeb3c6c5c445a905b9c70d3b882113ce127b250f"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/40-replay-candidate.sql",
+    "role": "original immutable source",
+    "sha256": "fe609f6502fec2183a7dadf4126828e2df957aff1f2958a4ca797d393d4645e6"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/30-current-functions.sql",
+    "role": "original immutable source",
+    "sha256": "470bb118cb13c7fde17e94284dd7173cf924ce2b75551c418a0cfb3a7dfd6343"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/50-current-attachments-acl.sql",
+    "role": "original immutable source",
+    "sha256": "cff67c65cee3ef4d517f44b67f48a42744ecf6603f4819d70c4799a0fe596b7a"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/preflight.py",
+    "role": "original immutable source",
+    "sha256": "fb94ef5aa2a98ee266953bd81f1d37521a0c725c5ffbf7d5b21f9a0a31adf3f7"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/sequence_driver.py",
+    "role": "original base driver",
+    "sha256": "12c1d9b92c8d3ede4caa8cea8aa137faaccb1dcb92eb23a38c22026a4edf65e2"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0007/seed.sql",
+    "role": "original seed0007",
+    "sha256": "51967e20d0a839fa693e3adee98889bf018e632b4c952a681b3cca3213df1306"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0010/REGISTRY-EXPECTED.json",
+    "role": "original registry",
+    "sha256": "6da171811c3ff9c9c27e4c20577a77412efaeed06d43b7efe931c3df17c38199"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/AGENTS.md",
+    "role": "controlled local policy",
+    "sha256": "5c544a5e6f64c243124f4a47d48c26bdfbc2b217278b994806989b8fc02d7291"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/.agent-trees/club-arena/g5-financial-input-refusal/supabase/migrations/20260907203446_bbj_preserves_parked_funding_and_replays_stored_obligations.sql",
+    "role": "authoritative source migration",
+    "sha256": "c439dbba1270d130484b40698dd3d2771971437a3dd3be833c864128472dd59f"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/.agent-trees/club-arena/g5-financial-input-refusal/supabase/migrations/20260904210917_phase_4_3_one_bbj_allocator_and_every_jackpot_door_declares_itself.sql",
+    "role": "authoritative source migration",
+    "sha256": "61e651eee9a0ae8f6b5064243e4a1e27eb1dcb69d37b5f514b9e99671c004e5b"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/.agent-trees/club-arena/g5-financial-input-refusal/supabase/migrations/20260912070357_bbj_bank_move_replay_matches_payload.sql",
+    "role": "authoritative source migration",
+    "sha256": "c70c4ee46dab55852206cfa31cc3adcfe721cd2746a79c436cc555fb66ddb6d4"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/case_module.py",
+    "role": "shared case source",
+    "sha256": "cd033e36f2c19edc5758c5185491faa7099ba0a611a9b4359fc9a7aa34397166"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/INTEGRITY.json",
+    "role": "shared case seal",
+    "sha256": "81d1be4c513e2e8c3764a1f70ed13b9fcaf0ef71ed33145dce4cf7ba16a23dac"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-supplemental-0001/INTEGRITY.json",
+    "role": "shared supplemental seal",
+    "sha256": "2f5978b183f527b367e5fec03389a49f63f3a1dad63d0008edb44b4cf6608d74"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/AUTHORIZATION-TEMPLATE.json",
+    "role": "immutable shared source member",
+    "sha256": "b7cd6a70def8bd4375506a19c14c28ac22e0f88d6439980c738f5ed5a606ce39"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/CASE-RECIPE.json",
+    "role": "immutable shared source member",
+    "sha256": "07d90d2bb35a2649e9b454c2da8b761d651c180632c7cb9b531498f7244186b6"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/CURRENT-FUNCTIONS.json",
+    "role": "immutable shared source member",
+    "sha256": "a861a6f96a7b2319d28de202a149bb620f5b3a47aac061cdd653fc2630dc8b8f"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/CURRENT-RELATIONS.json",
+    "role": "immutable shared source member",
+    "sha256": "782875c31339b4ea929422d1688c9a9c512baa2e94bb985a4ca546a0c8b4748c"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/CURRENT-TRIGGER-FUNCTIONS.json",
+    "role": "immutable shared source member",
+    "sha256": "caf0ba193b689e3bc1164f7d4e36a078a99baf78984ba2cad4b3dfafb3016a3c"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/DEPENDENCY-CONTRACT.json",
+    "role": "immutable shared source member",
+    "sha256": "76803edfd3c4bcee5b6de30ae5f5aab333493b4e7272308d9852f31cb6910087"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/DETECTOR-CHECKS.json",
+    "role": "immutable shared source member",
+    "sha256": "f14449d367b13cb5f82418fe752435e6d6fdaac73348f2de2473108878be46d9"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/EXPRESSION-AUDIT.json",
+    "role": "immutable shared source member",
+    "sha256": "b3f5d494ac997f56287110af94cdee2bfc4ea29df0a8aaa67b3a1c27bfce5a83"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/FAULT-CHECKS.json",
+    "role": "immutable shared source member",
+    "sha256": "edcb457a3a989d5797878af90cb23fd209882100e5804b6091265b60adcbd124"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/FINAL-CHECKS.json",
+    "role": "immutable shared source member",
+    "sha256": "6faec25ac663190751e9fa84f866da0a284acfe788e7e19fce053330dadebaf8"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/FINGERPRINT-CONTRACT.json",
+    "role": "immutable shared source member",
+    "sha256": "b29727d3dd3e07c47a12a72f1fa24e5059a73bdfcfc1c2d83eb2fe5ba4ab49e9"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/FUNCTION-TRANSITION.json",
+    "role": "immutable shared source member",
+    "sha256": "1d14204b86d694651f4542b5cb94fc75d382977982c798e2fe66ed0876ffd726"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/HANDOFF.md",
+    "role": "immutable shared source member",
+    "sha256": "c64cc6db4a761c918cca607e722b8eaa820cbe3acd6c30c99a1eeefbdd52eeb9"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/HISTORICAL-COLD-FUNCTIONS.json",
+    "role": "immutable shared source member",
+    "sha256": "3c2bbf9bc0ead1229cdcc6eb4afd3ed0efeb01622d8e637bc03182828f2569e2"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/HISTORICAL-FUNCTIONS.json",
+    "role": "immutable shared source member",
+    "sha256": "6b4f38ceb0e8ee0cb7c389f6c92214c6dcaf25c414e1cdb03a1f7cd733a0b396"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/HISTORICAL-RELATION-SECTIONS.json",
+    "role": "immutable shared source member",
+    "sha256": "372f0ffdb618cdd73e52d16ad9dbc615d8a5ae69172b16d677c947daee490a88"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/INPUT-SEALS.json",
+    "role": "immutable shared source member",
+    "sha256": "0aca10d266a6021ac1e8dfabc45ddb04a3501fc4fc8429a04af653a4a60ff246"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/OFFLINE-CHECKS.json",
+    "role": "immutable shared source member",
+    "sha256": "294110838db9492f7db5c68c8d72504cc08322ac51c4919dd1d9ab7a19f75d11"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/ORIGINAL-POOL-JOURNAL-MODELS.json",
+    "role": "immutable shared source member",
+    "sha256": "387e7073ee9adb1ce5ced42eafb12371ae54e9e60ff998706563a4aecb8b735f"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/ORIGINAL-SOURCE-CLOSURE.json",
+    "role": "immutable shared source member",
+    "sha256": "12c83e246ff4aac5a105dc026fd5c9bb3f0ddaea2c211e3766b606ff202f0053"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/POLICY-OBSERVATION.json",
+    "role": "immutable shared source member",
+    "sha256": "212c4e0feb5a6fefd7198d1bdb4a2c1d96bee4614bacbdfeb760bd670bc7aca1"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/SEQUENCE-AUTHORITY.json",
+    "role": "immutable shared source member",
+    "sha256": "5ae7ba2f5baa02dfee0dee68ef853b8efb44db79d0dc382ce19d1f6f79f8182b"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/SOURCE-DECISION.json",
+    "role": "immutable shared source member",
+    "sha256": "f3cebd6d04d271a1133cc6b42f24680a34f2cfa9a4d475316b709132bdd626de"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/SOURCE-PINS.json",
+    "role": "immutable shared source member",
+    "sha256": "1b8567c7afa4c33b79b440b66ce9f8f8f79ad132b321a3d350a41f8c77334ec3"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/SUPPLEMENTAL-TRIGGER-MODELS.json",
+    "role": "immutable shared source member",
+    "sha256": "1fbf459c59fe76d481de8ef3a1e22f811ca965ab506f40f84f9899936b61b9f3"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/build_sources.py",
+    "role": "immutable shared source member",
+    "sha256": "86cd473ed96536f4ac3621ffd9228ce97c536ef24b86dde6cdbcbafdae6994a6"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/test_detectors.py",
+    "role": "immutable shared source member",
+    "sha256": "cbec0bc46e2303fe1ac78dc2faf43d1e68e4cb2fbf2bd3fd426de46f9587b454"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/test_faults.py",
+    "role": "immutable shared source member",
+    "sha256": "dce904527178492c484ab403d82241884386c30acbdfe3bba70b59a32eb40717"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/test_source.py",
+    "role": "immutable shared source member",
+    "sha256": "1091584c84978a30cd3f9d2705b6b60b7f3b1b7421b48133713216b04a931740"
+  },
+  {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/write_contracts.py",
+    "role": "immutable shared source member",
+    "sha256": "9af573a2d630037d944054f94a4cd38cdbf008769d533305b92554f175a227c3"
+  }
+]

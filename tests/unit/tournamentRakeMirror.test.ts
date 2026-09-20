@@ -22,7 +22,7 @@ describe('server buyIn mirrors client buyIn', () => {
   it('the three rate constants are identical in both copies (Dan 2026-08-25)', () => {
     // SNG_RAKE_RATE was replaced on 2026-08-27: it named a FORMAT, and the
     // format label is exactly the thing that varied between the six writers.
-    // The rate is keyed on seats now, and lives in both copies identically.
+    // Fixed heads-up and Spin rates remain identical in both copies.
     expect(server.HEADS_UP_RAKE_RATE).toBe(0.05);
     expect(client.HEADS_UP_RAKE_RATE).toBe(server.HEADS_UP_RAKE_RATE);
     expect(server.DEFAULT_RAKE_RATE).toBe(0.1);
@@ -47,10 +47,17 @@ describe('server buyIn mirrors client buyIn', () => {
     });
   });
 
-  it('rakeRateFor answers the same in both copies, and keys on SEATS', () => {
+  it('rakeRateFor agrees and only fixed formats use heads-up seats', () => {
     const subjects = [
       { tournamentType: 'SNG', maxPlayers: 2 },
       { tournamentType: 'MTT', maxPlayers: 2 },
+      { tournamentType: 'SATELLITE', variant: 'sng', maxPlayers: 2 },
+      { tournamentType: 'SNG', maxPlayers: 2, satellite_target_id: 'target' },
+      { tournamentType: 'SNG', variant: 'sng', maxPlayers: 2, satellite_target_id: 'target' },
+      { tournamentType: 'SNG', maxPlayers: 2, satelliteTargetId: 'target' },
+      { tournamentType: 'SNG', maxPlayers: 2, satellite_target: 'target' },
+      { tournamentType: 'SNG', maxPlayers: 2, satelliteTarget: { tournamentId: 'target' } },
+      { tournamentType: 'SNG', maxPlayers: 2, satelliteTarget: { tournamentId: '' } },
       { tournamentType: 'sng', maxPlayers: 9 },
       { tournamentType: 'MTT', maxPlayers: 180 },
       { tournamentType: 'SPIN', maxPlayers: 3 },
@@ -66,7 +73,18 @@ describe('server buyIn mirrors client buyIn', () => {
     for (const s of subjects) {
       expect(client.rakeRateFor(s), JSON.stringify(s)).toBe(server.rakeRateFor(s));
     }
-    expect(server.rakeRateFor({ tournamentType: 'MTT', maxPlayers: 2 })).toBe(0.05);
+    expect(server.rakeRateFor({ tournamentType: 'MTT', maxPlayers: 2 })).toBe(0.1);
+    expect(client.rakeRateFor({ tournamentType: 'SATELLITE', variant: 'sng', maxPlayers: 2 })).toBe(
+      0.1
+    );
+    expect(client.rakeRateFor({ tournamentType: 'SNG', maxPlayers: 2 })).toBe(0.05);
+    expect(
+      client.rakeRateFor({
+        tournamentType: 'SNG',
+        maxPlayers: 2,
+        satelliteTarget: { tournamentId: '' },
+      })
+    ).toBe(0.05);
     expect(server.rakeRateFor({ variant: 'Heads-Up', maxPlayers: 9 })).toBe(0.1);
     expect(server.rakeRateFor({ tournamentType: 'SNG' })).toBe(0.1);
     expect(server.rakeRateFor({ tournamentType: 'MTT', maxPlayers: 0 })).toBe(0.1);

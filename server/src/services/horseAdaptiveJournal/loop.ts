@@ -1,3 +1,4 @@
+import type { CommittedPotAuditReceipt } from './commitmentReceipt.js';
 import type { AdaptiveJournalWorkResult } from '../HorseAdaptiveJournalWork.js';
 import type { JournaledModelCycle } from '../HorseJournaledOpponentModels.js';
 import type { pruneAdaptiveJournal } from '../HorseAdaptiveJournalRetention.js';
@@ -15,12 +16,14 @@ export type JournalCycle = Readonly<{
   acquisition?: ObservationCaptureResult['status'];
   discovery?: DiscoveryReceipt;
   model?: JournaledModelCycle;
+  commitment?: CommittedPotAuditReceipt;
 }>;
 type Dependencies = {
   processWork: () => Promise<AdaptiveJournalWorkResult>;
   processCapture?: () => Promise<ObservationCaptureResult>;
   discover?: () => Promise<DiscoveryReceipt>;
   processModels?: () => Promise<JournaledModelCycle>;
+  processCommitments?: () => Promise<CommittedPotAuditReceipt>;
   prune: typeof pruneAdaptiveJournal;
   pruneCaptures?: typeof pruneObservationCaptures;
   pruneDiscovery?: typeof pruneObservationDiscovery;
@@ -50,6 +53,8 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
   let nextDiscoveryAt = 0;
   let discoveryEligible = false;
   let discoveryFailures = 0;
+  let commitmentTurns = 0;
+  let nextCommitmentAt = 0;
   let modelTurns = 0;
   let nextModelAt = 0;
   while (!signal.aborted) {
@@ -103,6 +108,36 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
       if (signal.aborted) return;
       d.completed(Object.freeze({ work: 'skipped', retention: 'skipped', model }));
       nextModelAt = d.now() + (model === 'recorded' || model === 'refused' ? 1000 : 60000);
+      try {
+        await d.wait(1000, signal);
+      } catch (error) {
+        if (!signal.aborted) throw error;
+      }
+      continue;
+    }
+    // A bounded, separately recoverable daily commitment-review pass. Four
+    // ordinary journal turns remain between attempts; errors back off only
+    // this consumer and cannot starve journal acquisition or model work.
+    if (d.processCommitments && commitmentTurns >= 4 && d.now() >= nextCommitmentAt) {
+      commitmentTurns = 0;
+      let commitment: CommittedPotAuditReceipt;
+      try {
+        commitment = await d.processCommitments();
+      } catch {
+        commitment = {
+          status: 'unknown',
+          scannedHands: 0,
+          horseHands: 0,
+          flaggedHorseHands: 0,
+          unknownHorseHands: 0,
+          handGaps: 0,
+        };
+      }
+      if (signal.aborted) return;
+      d.completed(Object.freeze({ work: 'skipped', retention: 'skipped', commitment }));
+      nextCommitmentAt =
+        d.now() +
+        (commitment.status === 'recorded' || commitment.status === 'pass_complete' ? 1000 : 60000);
       try {
         await d.wait(1000, signal);
       } catch (error) {
@@ -187,6 +222,7 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
     }
     d.completed(Object.freeze({ work: result.status, retention }));
     modelTurns = Math.min(modelTurns + 1, 8);
+    commitmentTurns = Math.min(commitmentTurns + 1, 4);
     if (d.processCapture) journalTurns = Math.min(journalTurns + 1, CAPTURE_FAIRNESS_JOURNAL_TURNS);
     captureFromBacklog = result.status !== 'idle';
     captureNext =

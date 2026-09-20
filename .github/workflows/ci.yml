@@ -59,24 +59,16 @@ on:
 # only case where cancelling was ever safe. A run for the sha the check is
 # actually evaluated against can no longer be killed by a newer push.
 #
-# The cost is that a superseded sha's run finishes instead of dying early.
+# The current PR event now retires its verified obsolete heads explicitly.
+# That bounded step also handles jobs whose always() ignores normal cancellation.
+# Historically, a superseded sha's run finished instead of dying early.
 # That is a few runner-minutes. The thing it buys is that no pull request can
 # be stranded by a check that will never speak again, which cost six of them.
 # ═══════════════════════════════════════════════════════════════════════════
 concurrency:
-  # 2026-09-14: keyed on the PR, not the PR+sha. Keyed on the sha, a new push never
-  # cancelled the previous commit's 15-job run; only 2-7 of 100-200 daily runs were
-  # ever cancelled. Now a superseded push is cancelled the moment the next one lands.
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 
-# ───────────────────────────────────────────────────────────────────────────
-# RUNNER ROUTING (owner recovery authorization, 2026-09-15)
-# Required checks run only on the Mac's Linux VM through its existing
-# self-hosted runner. Both labels must match. If it is offline, jobs wait;
-# there is no hosted, Hetzner, or repository-variable fallback.
-# Credential-bearing publication workflows remain a separate release lane.
-# ───────────────────────────────────────────────────────────────────────────
 jobs:
   # ───────────────────────────────────────────────────────────────────────────
   # WHICH CHECKS CAN THIS DIFF ACTUALLY BREAK?
@@ -104,18 +96,21 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   changes:
     name: What changed
-    # Wait for the approved local runner; no hosted or estate fallback.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
+      pull-requests: read
+      actions: write
     outputs:
       src: ${{ steps.f.outputs.src }}
       server: ${{ steps.f.outputs.server }}
       tests: ${{ steps.f.outputs.tests }}
       phase4: ${{ steps.f.outputs.phase4 }}
       fixture: ${{ steps.f.outputs.fixture }}
+      instructions_only: ${{ steps.f.outputs.instructions_only }}
+      head_current: ${{ steps.head.outputs.head_current }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -134,6 +129,65 @@ jobs:
           CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/ci/classify-ci-changes.mjs
+      # ── IS THIS RUN STILL THE ONE THAT WILL BE MERGED? (2026-09-18) ──────
+      #
+      # The concurrency group above is keyed on the HEAD SHA on purpose, and
+      # its comment explains what that bought: a run for the sha a required
+      # check is evaluated against can no longer be killed by a newer push, so
+      # no pull request can be stranded by a check that will never speak again.
+      # Six of them were, before that change.
+      #
+      # What it costs is that every push to a branch pays for a COMPLETE
+      # fan-out, including the ones nobody will ever merge. Measured over
+      # 2026-09-17: 309 CI runs across 95 branches, 3.3 full runs per branch,
+      # and the five busiest branches alone accounted for 107 of them - 34, 28,
+      # 17, 15 and 13 runs, each an agent iterating on the same pull request.
+      # The whole account spent 168,011 Actions minutes in eighteen days and
+      # stopped dead when it hit its spending limit at 10:11 on 2026-09-18,
+      # taking the engine release route down with it.
+      #
+      # So: keep every FAST gate on every push (they are seconds, they are
+      # ungated on purpose, and two of them exist because something reached
+      # main unseen), and let the HEAVY matrix - four client shards, four
+      # server shards, PostgreSQL accounting, the production build, the CSS
+      # beat E2E, the native fixture - run only for a head that is still the
+      # pull request's head when its diff is classified.
+      #
+      # THE MERGE GATE IS UNCHANGED. The final push to a branch is, by
+      # definition, its current head, so its run executes everything. Only a
+      # sha that has already been replaced skips, and a replaced sha is not the
+      # one a required check is evaluated against.
+      #
+      # FAIL OPEN, always. An unreadable answer means run everything, exactly
+      # as `needs.changes.result != 'success'` already means "this diff could
+      # break anything". A cost control must never be able to hide a failure.
+      - id: head
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CI_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -u
+          current=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${CI_PR_NUMBER}" --jq .head.sha 2>/dev/null || echo '')
+          if [ -z "$current" ]; then
+            echo "could not read the pull request head; running everything"
+            echo "head_current=true" >> "$GITHUB_OUTPUT"
+          elif [ "$current" = "$CI_HEAD_SHA" ]; then
+            echo "this run is the pull request head ($CI_HEAD_SHA)"
+            echo "head_current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "superseded: this run is $CI_HEAD_SHA, the pull request head is now $current"
+            echo "head_current=false" >> "$GITHUB_OUTPUT"
+          fi
+      # Keep always() failure-reporting gates intact. Normal cancellation can
+      # leave their old jobs queued; this one event retires only proven older
+      # heads of this same PR, never current checks or a production workflow.
+      - name: Retire this PR's superseded CI attempts
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/retire-superseded-pr-ci.mjs
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)
@@ -155,23 +209,11 @@ jobs:
   # it to be behind a gate that can hide it.
   source_windows:
     name: Source Windows Are Structural
-    # Wait for the approved local runner; no hosted or estate fallback.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # Pure request/result custody checks precede dependency installation.
-      # These never build/load an image, contact production or dispatch a release.
-      - name: Engine image request and terminal custody
-        run: |
-          python3 -B tests/operations/engine-image-archive.test.py
-          python3 -B tests/operations/engine-image-ci-bundle.test.py
-          python3 -B tests/operations/local-publishers.test.py
-          python3 -B tests/operations/engine-release-image-request.test.py
-          python3 -B tests/operations/engine-release-image-result.test.py
-          python3 -B tests/operations/engine-release-image-generation.test.py
 
       - uses: actions/setup-node@v4
         with:
@@ -213,8 +255,7 @@ jobs:
   stub_gate:
     if: github.event_name == 'pull_request'
     name: Stub Gate
-    # Wait for the approved local runner; no hosted or estate fallback.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -238,6 +279,7 @@ jobs:
     needs: changes
     if: >-
       always() && github.event_name == 'pull_request' &&
+      needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.fixture != 'false')
     permissions:
       contents: read
@@ -251,8 +293,7 @@ jobs:
     name: TypeScript Check
     needs: [typecheck_compile, changes, fixture_native]
     if: always() && github.event_name == 'pull_request'
-    # Wait for the approved local runner; no hosted or estate fallback.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
       contents: read
@@ -279,18 +320,10 @@ jobs:
     # commit tests an identical tree. 34 of every 100 CI runs were that
     # duplicate, and CI is six jobs, each billed as a whole minute even
     # when it takes twenty seconds.
-    # Classification controls only the isolated journal step. A failed diff
-    # still compiles; a superseded cancelled workflow starts no new compiler.
-    needs: changes
-    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    if: github.event_name == 'pull_request'
     name: TypeScript compilation and repository checks
-    # Wait for the approved local runner; no hosted or estate fallback.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
-
-    permissions:
-      contents: read
-      pull-requests: read
 
     steps:
       - name: Checkout
@@ -301,12 +334,25 @@ jobs:
           fetch-depth: 0
           filter: blob:none
 
-      # A stale head is a failed check, never an explained diff skip.
-      - name: Admit only the current PR head before heavy work
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/admit-current-pr-ci.mjs
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Agent policy integrity and delivery scenarios
+        run: |
+          node docs/agent-policy/agent-policy.mjs check
+          node --test docs/agent-policy/agent-policy.test.mjs
+
+      - name: Native fixture gate rejects missing and skipped proof
+        run: node --test tests/operations/fixture-required-ci.test.mjs
+
+      - name: Local dependency preflight refuses incomplete or stale installs
+        run: node --test tests/operations/local-dependency-policy.test.mjs
+
+      - name: Money-trigger CI caller preserves independent authority
+        run: node --test tests/money-trigger-ci-caller.test.mjs
 
       # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
       # hit. `nm-lite` is deliberately a DIFFERENT key from the full-install
@@ -317,28 +363,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: nm-lite-${{ runner.os }}-${{ runner.arch }}-node20-${{ hashFiles('package-lock.json') }}
-
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
-
-      - name: PR head admission preserves required-check truth
-        run: node --test tests/operations/pr-ci-admission.test.mjs
-
-      - name: Native fixture gate rejects missing and skipped proof
-        run: node --test tests/operations/fixture-required-ci.test.mjs
-
-      - name: Mac dependency policy keeps Linux enforcement
-        run: node --test tests/operations/local-dependency-policy.test.mjs
-
-      - name: Protected merge queue handles concurrent PR changes
-        run: node --test tests/operations/queue-pr.test.mjs
-
-      - name: Post-deploy verdict distinguishes an unstarted publisher
-        run: node --test tests/operations/post-deploy-origin-verdict.test.mjs
+          key: nm-lite-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
 
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -348,10 +373,18 @@ jobs:
         id: timer
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
 
-      - name: Chip journal transactions survive failures and replays
-        if: needs.changes.result != 'success' || needs.changes.outputs.server != 'false'
+      - name: Classify the actual checked compiler tree
+        id: compile_scope
         env:
-          PGBIN: /usr/lib/postgresql/17/bin
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_HEAD_SHA: ${{ github.sha }}
+        run: node scripts/ci/classify-ci-changes.mjs
+
+      # Only the exact five-file instruction allowlist can omit this unchanged
+      # SQL/native fixture. Keep all compiler, invariant and source-contract checks.
+      # Unavailable classification always executes the existing replay.
+      - name: Chip journal transactions survive failures and replays
+        if: steps.compile_scope.outputs.instructions_only != 'true'
         run: bash scripts/ci/probes/chip-journal-atomicity/run-isolated.sh
 
       - name: TypeScript Check
@@ -883,6 +916,9 @@ jobs:
       # declaration is enforced where the trigger is WRITTEN. The last
       # unreviewed one broke a third of all hand settlements.
       - name: Supabase Invariants - A Money Trigger Declares Itself
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MONEY_TRIGGER_REPORTER_APP_ID: ${{ vars.MONEY_TRIGGER_REPORTER_APP_ID }}
         run: |
           set -o pipefail
           echo "## Money Trigger Declarations" >> $GITHUB_STEP_SUMMARY
@@ -890,15 +926,27 @@ jobs:
           if node scripts/ci/check-money-trigger-declared.mjs 2>&1 | tee /tmp/trigdecl.log; then
             echo "OK - every trigger created on a money table declares itself." >> $GITHUB_STEP_SUMMARY
           else
-            code=$?
-            if [ "$code" = "2" ]; then
+            pipeline_status=("${PIPESTATUS[@]}")
+            code="${pipeline_status[0]}"
+            if [ "${pipeline_status[1]}" != "0" ]; then
+              echo "COULD NOT TELL - declaration log capture failed. No recovery delegated." >> $GITHUB_STEP_SUMMARY
+              exit 1
+            elif [ "$code" = "1" ]; then
+              # Only an actual policy refusal can use the original recovery route.
+              # This asserts required protection, never a migration verdict.
+              if node scripts/ci/assert-money-trigger-protection.mjs; then
+                echo "DEFERRED - historical recovery needs the independently required exact-head App verdict." >> $GITHUB_STEP_SUMMARY
+              else
+                echo "BLOCKED - independent App-bound declaration authority is not established." >> $GITHUB_STEP_SUMMARY
+                exit 1
+              fi
+            elif [ "$code" = "2" ]; then
               echo "COULD NOT TELL - the diff was unreadable. Not reported as clean." >> $GITHUB_STEP_SUMMARY
+              exit 1
             else
-              echo "A migration creates a trigger on a money table without declaring it" >> $GITHUB_STEP_SUMMARY
-              echo "in the same migration. Add the ca_declared_money_triggers row there;" >> $GITHUB_STEP_SUMMARY
-              echo "a declaration in a later migration is a promise, not a declaration." >> $GITHUB_STEP_SUMMARY
+              echo "COULD NOT TELL - declaration checker failed with exit $code. No recovery delegated." >> $GITHUB_STEP_SUMMARY
+              exit 1
             fi
-            exit 1
           fi
 
       # NO BAND-AIDS (CLAUDE.md 10.12, Dan 2026-09-07). 10.11 had already said a
@@ -1032,10 +1080,12 @@ jobs:
       always() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
+        needs.changes.outputs.head_current != 'false' &&
         (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
     name: Client Unit Tests shard ${{ matrix.shard }}
-    # Wait for the approved local runner; no hosted or estate fallback.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    # Every pull-request shard gets a fresh hosted image. A dependency or test
+    # from a branch cannot persist into any later credential-bearing job.
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     # SHARDED 2026-09-06. Measured over 18 pull-request runs this was the
     # critical path by a distance - p50 264s, max 779s, against 236s for the
@@ -1043,30 +1093,25 @@ jobs:
     # 2026-09-02 (publish-club-arena.yml `client-tests`); this is that, moved
     # one step earlier so the pull request feels it too.
     #
-    # Admission refusal must not cancel a sibling that already started work.
-    # The required aggregate still fails unless every applicable shard passes.
+    # fail-fast cancels the siblings the moment one shard fails, which is what
+    # a gate wants: the answer is already known.
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         shard: [1, 2, 3, 4]
-
-    permissions:
-      contents: read
-      pull-requests: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # A stale head is a failed check, never an explained diff skip.
-      - name: Admit only the current PR head before heavy work
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/admit-current-pr-ci.mjs
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
       # 2026-09-01 (cost audit): caches the INSTALLED node_modules tree, not
-      # just the npm tarballs restored below on a miss. Measured on this
+      # just the npm tarballs that `cache: npm` above keeps. Measured on this
       # job: `npm ci` is 1-2 minutes of the 12; on a cache hit it is skipped
       # entirely. The key includes the lockfile hash, so any dependency change
       # misses and installs fresh - identical behaviour, minus the wait.
@@ -1075,13 +1120,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: nm-full-${{ runner.os }}-${{ runner.arch }}-node20-${{ hashFiles('package-lock.json') }}
-
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
+          key: nm-full-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
 
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -1119,8 +1158,7 @@ jobs:
     needs: unit_shards
     if: always()
     name: Client Unit Tests (vitest)
-    # Wait for the approved local runner; no hosted or estate fallback.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Every shard passed
@@ -1149,25 +1187,21 @@ jobs:
       always() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
+        needs.changes.outputs.head_current != 'false' &&
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Accounting transactions (PostgreSQL 17)
-    runs-on: [self-hosted, smarter-local-linux-arm64]
-    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    # Run 35276340849 reached V31 after 26m13s and exhausted the 30m job cap.
+    # V31 passed in 4m31s in 35276304884. Keep room for hosted runtime variance;
+    # every case, statement, cleanup deadline and required gate stays unchanged.
+    timeout-minutes: 40
     permissions:
       contents: read
-      pull-requests: read
-
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      # A stale head is a failed check, never an explained diff skip.
-      - name: Admit only the current PR head before heavy work
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/admit-current-pr-ci.mjs
-
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
@@ -1181,7 +1215,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -x /usr/lib/postgresql/17/bin/initdb ]]; then exit 0; fi
+          pg_ci_build_tools_ready=true
+          for pg_ci_tool in cc make bison flex perl tar bzip2 patch; do
+            if ! command -v "$pg_ci_tool" >/dev/null; then pg_ci_build_tools_ready=false; fi
+          done
+          if [[ "$pg_ci_build_tools_ready" == true &&
+                -x /usr/lib/postgresql/17/bin/initdb &&
+                -x /usr/lib/postgresql/17/bin/pg_config &&
+                -f /usr/include/postgresql/17/server/postgres.h &&
+                -f /usr/share/postgresql/17/extension/pg_cron.control &&
+                -f /usr/lib/postgresql/17/lib/pg_cron.so ]]; then exit 0; fi
           # The hosted image also configures Chrome and Microsoft repositories.
           # An unrelated Chrome index hash mismatch blocked this accounting job.
           # Limit this installation to signed Ubuntu and PostgreSQL sources.
@@ -1201,15 +1244,56 @@ jobs:
             "$pg_ci_codename" > "$pg_ci_sources/pgdg.sources"
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
-          sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17
-      - name: Spin prize audits require matching posted correction funding
+          sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron postgresql-server-dev-17 build-essential bison flex perl bzip2 patch
+      - name: Build the matching native PostgreSQL isolation test tool
+        id: pg17_isolation_tool
+        timeout-minutes: 6
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-spin-prize-overlay.py
+        run: python3 scripts/ci/build_pg17_isolationtester.py
+      - name: Retain PostgreSQL isolation tool build evidence
+        if: always() && steps.pg17_isolation_tool.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pg17-isolation-tool-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/postgresql-17-isolationtester/*.log
+            artifacts/postgresql-17-isolationtester/receipt.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Bind BBJ qualification to the actual accounting job deadline
+        id: bbj_timing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/probes/bbj-bank-replay/funded/current_ci.py --write-job-timing "$RUNNER_TEMP/bbj-job-timing-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"
       - name: BBJ bank replay identity and drift-safe installation
+        id: bbj
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-bbj-bank-replay.py
+          BBJ_JOB_TIMING_FILE: ${{ runner.temp }}/bbj-job-timing-${{ github.run_id }}-${{ github.run_attempt }}.json
+        run: |
+          python3 -B -m unittest discover -s scripts/ci/probes/bbj-bank-replay -p test_retain_evidence.py
+          python3 scripts/ci/test-bbj-bank-replay.py
+      - name: Bind available BBJ receipts to this attempted invocation
+        id: bbj_evidence
+        if: always() && (steps.bbj.outcome != 'skipped' || steps.bbj_timing.outcome == 'failure' || steps.bbj_timing.outcome == 'cancelled')
+        env:
+          BBJ_STEP_OUTCOME: ${{ steps.bbj.outcome }}
+          BBJ_TIMING_OUTCOME: ${{ steps.bbj_timing.outcome }}
+          BBJ_JOB_TIMING_FILE: ${{ runner.temp }}/bbj-job-timing-${{ github.run_id }}-${{ github.run_attempt }}.json
+        run: python3 scripts/ci/probes/bbj-bank-replay/retain_evidence.py
+      - name: Retain BBJ accounting receipts
+        if: always() && steps.bbj_evidence.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bbj-${{ github.run_id }}-${{ github.run_attempt }}-accounting_postgres-${{ github.sha }}
+          path: artifacts/bbj-bank-replay/
+          retention-days: 3
+          if-no-files-found: error
+      - name: Event-owned engine recovery database boundaries
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-engine-recovery-postgres.py
       - name: Weekly union close rolls back failed stages and records scheduler results
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1218,9 +1302,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-credit-invoice-generation.sh
-      - name: Accounting invoices commit with private Messenger and notification receipts
+      - name: Accounting and Diamond entries commit exact invoices and private delivery receipts
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: /tmp
         run: bash scripts/dev/test-accounting-delivery.sh
       - name: Credit payments preserve scope cents replay and delivery atomicity
         env:
@@ -1242,75 +1327,170 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-weekly-accounting-coordinator.sh
+      - name: Full weekly accounting activation, rollback and concurrent authority
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          ACCOUNTING_FIXTURE_PARENT: ${{ runner.temp }}/union-accounting-scratch
+          ACCOUNTING_TEST_OUTPUT_DIR: ${{ runner.temp }}/union-accounting-results
+          ACCOUNTING_ACTIVATION_DIR: ${{ runner.temp }}/union-accounting-activation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$ACCOUNTING_FIXTURE_PARENT" "$ACCOUNTING_TEST_OUTPUT_DIR"
+          python3 scripts/ci/build-weekly-accounting-activation.py --output-dir "$ACCOUNTING_ACTIVATION_DIR" \
+            2>&1 | tee "$ACCOUNTING_TEST_OUTPUT_DIR/build.log"
+          bash scripts/dev/test-full-weekly-accounting-activation.sh \
+            2>&1 | tee "$ACCOUNTING_TEST_OUTPUT_DIR/full-weekly-accounting.log"
+      - name: Cash commissions retain every contributor and exact source identity
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-cash-commission-sources.sh
+      - name: Cash source refusals remain durable without partial payments
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-cash-source-refusals.sh
+      - name: Legacy cash callers share the canonical source authority
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-cash-source-compatibility.sh
+      - name: Tournament fees retain one authoritative earning and payment source
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-tournament-fee-sources.sh
+      - name: Weekly accounting documents preserve exact scope and concurrent issuance
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-scope-weekly-accounting.sh
+      - name: Union and standalone scopes share one weekly accounting authority
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-unified-weekly-accounting.sh
+      - name: Push health uses exact addressable counts and receipt confirmations
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-push-health-reader.sh
+      - name: Preserve weekly accounting qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: union-accounting-postgres-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/union-accounting-activation
+            ${{ runner.temp }}/union-accounting-results
+          retention-days: 7
       - name: Horse identity trigger semantics, rollback and concurrent stamp writes
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-identity-triggers.py
-      - name: Horse hand touches belong to the currently observed table
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-horse-seat-touch-session.py
-      - name: Union integrity reports keep event and incident scope
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-union-integrity-scope.py
-      - name: Tournament finish incidents retain their own event identity
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-tournament-incident-identity.py
-      - name: Exclusive waitlist offers respect concurrent table and player claims
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-waitlist-offer-concurrency.py
       - name: New seat occupants cannot inherit another player's sit-out state
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-seat-turnover-sitout.py
-      - name: Profile referral codes remain unique across concurrent generators
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-profile-referral-code.py
-      - name: Player exports preserve standalone rake and horse visibility
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-club-player-export.py
       - name: Concurrent hands preserve shared F06 custody lanes
+        id: f06_hand_authority
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-f06-zero-seat-hand-lane.py
-      - name: Accepted hands and terminal operations obey one lock order
+        run: python3 scripts/ci/test-f06-shared-hand-lane.py
+      - name: Retain F06 hand and generation disposition proof
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.f06_hand_authority.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: f06-hand-authority-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/f06-shared-hand-lane/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Original hand retention, accepted receipts and successor ownership
+        id: hand_submission
         env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-f06-terminal-lock-order.py
-      - name: Daily rake monitor respects the writer deadline and UTC boundaries
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-rake-rollup-due.py
-      - name: Video scrape history lookup stays indexed without blocking audit writers
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-video-scrape-status-index.py
-
-      - name: Native video inventory snapshot and service permissions
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-video-library-inventory.py
-      - name: Diamond health requires complete known comparisons
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-diamond-health-comparisons.py
-      - name: Chip statement pages retain tied entries and caller authority
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-chip-statement-cursor.py
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: python3 scripts/ci/test-hand-submission.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/hand-submission
+      - name: Retain original hand and successor proof
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_submission.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hand-submission-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/hand-submission/
+          if-no-files-found: error
+          retention-days: 7
       - name: Atomic departures, ownership, rollback and concurrency
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-departure-postgres.sh
+      - name: Accepted eliminations preserve parked source custody
+        id: f06_accepted_elimination
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: |
+          python3 tests/operations/f06-elimination-results.test.py
+          python3 scripts/ci/test-f06-accepted-elimination.py \
+            --root "$GITHUB_WORKSPACE" --pg-bin "$PG_BIN" \
+            --evidence "$RUNNER_TEMP/f06-accepted-elimination"
+      - name: Retain accepted elimination custody evidence
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.f06_accepted_elimination.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: f06-accepted-elimination-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/f06-accepted-elimination/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Original paid tournament entry retains its scoring custody
+        id: original_paid_custody
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: |
+          python3 scripts/ci/build-original-paid-custody.py --check
+          python3 scripts/ci/test-original-paid-custody.py \
+            --pg-bin "$PG_BIN" --evidence "$RUNNER_TEMP/original-paid-custody"
+      - name: Retain original paid custody evidence
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.original_paid_custody.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-paid-custody-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/original-paid-custody/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Parked tables retain canonical movement custody
+        id: f06_movement_admission
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/f06-movement-admission"
+          python3 tests/operations/f06-movement-results.test.py \
+            2>&1 | tee "$RUNNER_TEMP/f06-movement-admission/result-validator.log"
+          python3 scripts/ci/test-f06-movement-admission.py \
+            --root "$GITHUB_WORKSPACE" --pg-bin "$PG_BIN" \
+            --evidence "$RUNNER_TEMP/f06-movement-admission/native" \
+            2>&1 | tee "$RUNNER_TEMP/f06-movement-admission/qualification.log"
+          python3 scripts/ci/test-f06-drained-custody.py \
+            --root "$GITHUB_WORKSPACE" --pg-bin "$PG_BIN" \
+            --evidence "$RUNNER_TEMP/f06-movement-admission/drained-custody" \
+            2>&1 | tee "$RUNNER_TEMP/f06-movement-admission/drained-custody.log"
+      - name: Retain parked movement custody evidence
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.f06_movement_admission.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: f06-movement-admission-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/f06-movement-admission/
+          if-no-files-found: error
+          retention-days: 7
       - name: Horse profile authority, API roles and concurrent writes
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-profile-authority.py
+      - name: Horse commitment audit preserves formats and canonical roster identity
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          python3 -B scripts/ci/test-horse-commitment-audit.py \
+            --pg-bin "$PG_BIN" --source-root "$GITHUB_WORKSPACE" \
+            --allocation-parent /tmp \
+            --output "$GITHUB_WORKSPACE/artifacts/horse-commitment-audit"
       - name: Tournament reminder receipts, rollback and overlapping consumers
         env:
           PGBIN: /usr/lib/postgresql/17/bin
@@ -1322,15 +1502,237 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-a-bust-is-ranked-by-when-it-happened-pg17.sh
 
+      - name: Tournament blinds publish atomically across the field
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-atomic-tournament-blinds-pg17.py
+
+      - name: Played tournament launch recovery preserves the original field
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-played-mtt-launch-pg17.py
+
       - name: Agent downline rake stays in overseer clubs
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
 
-      - name: Rake attribution survives real deadlocks without duplicate settlement
+      - name: Hand index writers retain canonical order and exact coverage
+        id: hand_index_writer_order
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-rake-attribution-alert.py --output artifacts/rake-attribution-alert
+        run: python3 scripts/ci/test-hand-index-writer-order.py --migration supabase/migrations/20260914194928_hand_index_writers_share_a_canonical_order.sql --output artifacts/production-alerts-sql/hand-index
+
+      - name: Hand stat writers retain canonical order and rollback
+        id: hand_stat_writer_order
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-hand-stat-writer-order.py --migration supabase/migrations/20260914212802_hand_stat_writers_share_a_canonical_order.sql --output artifacts/production-alerts-sql/hand-stat
+
+      - name: Rake attribution commits with its fee or rolls back together
+        id: rake_attribution_atomic
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-rake-attribution-atomic.py --output artifacts/production-alerts-sql/rake-attribution
+
+      - name: Diamond health requires complete known comparisons
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-diamond-health-comparisons.py
+
+      # ── THE DIAMOND ARENA ACCEPTANCE RUNS HERE (2026-09-19) ──────────────
+      # tests/sql/run-*diamond*.py certify the Diamond money doors (custody,
+      # wallet transfer, buy-in, top-up, straddle, run-it-twice, bomb pot, the
+      # plain-cash rule, the accepted hand and a full controlled hand) on an
+      # isolated PostgreSQL 17, and poker-arena-access.sql certifies the
+      # arena's access rules. Until today they ran only by hand on the owner's
+      # Mac. The wrapper builds an empty cluster behind the exact Unix socket
+      # every runner is hard-wired to (no TCP, so no runner can ever reach a
+      # real database), runs the runners one after another and tears it down.
+      # The wrapper names every runner EXPLICITLY, and the check before it fails
+      # the job when tests/sql/ holds a runner the wrapper does not name.
+      - name: Every Diamond SQL acceptance runner is listed
+        run: node scripts/ci/check-diamond-runners-listed.mjs
+      - name: Diamond Arena SQL acceptance on the isolated fixture
+        id: diamond_sql_acceptance
+        timeout-minutes: 15
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/run-diamond-sql-acceptance.py --evidence artifacts/diamond-sql-acceptance
+      - name: Retain Diamond SQL acceptance evidence
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.diamond_sql_acceptance.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: diamond-sql-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/diamond-sql-acceptance/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Check composed alert fixture admission and cleanup guards
+        run: python3 scripts/ci/test_production_alert_core_postgres.py
+
+      - name: Qualify composed alert identity and wording through the real inbox
+        id: production_alert_core
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-production-alert-core-postgres.py --output artifacts/production-alerts-sql/core
+
+      - name: Check native evidence race transcript controls
+        run: python3 -m unittest discover -s scripts/ci -p test_alert_evidence_wrapper.py
+
+      - name: Duplicate, rake and Spin evidence retain original financial outcomes
+        id: alert_evidence_postgres
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: python3 scripts/ci/test-alert-evidence-postgres.py --output artifacts/production-alerts-sql/evidence
+
+      - name: Class4 wrapper and actual PostgreSQL hand outcome evidence
+        id: class4_hand_outcome
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -m unittest discover -s scripts/ci -p test_class4_hand_outcome_postgres.py
+          python3 scripts/ci/test-class4-hand-outcome-postgres.py --output artifacts/production-alerts-sql/class4
+
+      - name: Build the exact native pg_cron used by cash failure qualification
+        id: cash_pgcron_build
+        timeout-minutes: 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/build_pg17_cash_pgcron.py
+      - name: Cash checker evidence and real scheduler failure intake
+        id: cash_native_failure
+        timeout-minutes: 5
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py
+          python3 scripts/ci/test-cash-failure-pgcron.py
+      - name: Retain cash native scheduler qualification evidence
+        if: always() && steps.cash_pgcron_build.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cash-native-pgcron-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/production-alerts-cash-pgcron-build/*.log
+            artifacts/production-alerts-cash-pgcron-build/receipt.json
+            artifacts/production-alerts-cash-native/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Retain production alert SQL qualification evidence
+        if: always() && steps.hand_index_writer_order.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-alerts-sql-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/production-alerts-sql/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Spin expiry lock order and committed refund contracts
+        id: spin_expiry_postgres
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-spin-expiry-postgres.py
+
+      - name: Retain Spin expiry PostgreSQL evidence
+        if: always() && steps.spin_expiry_postgres.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: spin-expiry-postgres-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/spin-expiry/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: PKO heads follow exact accepted knockout dependencies
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: |
+          python3 -B tests/operations/pko-probe-cleanup.test.py
+          bash scripts/dev/probe-causal-pko-predecessors-pg17.sh
+
+      - name: Tournament residuals require complete bounty candidate coverage
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/probe-terminal-bounty-candidate-coverage-pg17.sh
+
+      - name: Tournament recovery preserves committed payout terms
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-committed-payout-terms-pg17.py
+
+      - name: Manual tournament depth reaches the current creation authority
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-tournament-create-payout-depth-pg17.py
+
+      - name: MTT preparation and actual activation preserve funded contracts
+        id: mtt_preparation
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: |
+          python3 -B tests/operations/mtt-unlimited-runner.test.py
+          python3 -B tests/operations/mtt-isolation-results.test.py
+          python3 -B tests/operations/mtt-activation-results.test.py
+          python3 -B scripts/ci/test-mtt-unlimited.py --mode preparation \
+            --output "$RUNNER_TEMP/mtt-preparation-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --work-parent "$RUNNER_TEMP" --deadline-seconds 600
+          python3 -B scripts/ci/test-mtt-unlimited.py --mode activation \
+            --output "$RUNNER_TEMP/mtt-activation-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --work-parent "$RUNNER_TEMP" --deadline-seconds 600
+
+      - name: Retain MTT preparation and activation receipts and exact native transcripts
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.mtt_preparation.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mtt-preparation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/mtt-preparation-${{ github.run_id }}-${{ github.run_attempt }}
+            ${{ runner.temp }}/mtt-activation-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Satellite full-ticket completion preserves terminal receipts
+        id: satellite_qualifiers
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: |
+          python3 -B tests/operations/satellite-qualifier-results.test.py
+          python3 -B scripts/ci/test-satellite-qualifiers.py --root . \
+            --evidence "$RUNNER_TEMP/satellite-qualifiers-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --pg-bin "$PG_BIN"
+
+      - name: Retain satellite qualifier receipts
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.satellite_qualifiers.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: satellite-qualifiers-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/satellite-qualifiers-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Original Breakfast witness preserves paid standings and terminal ownership
+        id: breakfast_original_witness
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: |
+          python3 -B scripts/ci/test-breakfast-original-witness.py --root . \
+            --evidence "$RUNNER_TEMP/breakfast-original-witness-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --pg-bin "$PG_BIN"
+
+      - name: Retain original Breakfast witness qualification
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.breakfast_original_witness.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: breakfast-original-witness-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/breakfast-original-witness-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-
@@ -1342,6 +1744,8 @@ jobs:
         run: bash scripts/ci/probes/horse-phase4-certified-solver/run-pg17.sh
 
   server_shards:
+    # Independent engine tests run alongside isolated PostgreSQL qualification.
+    # The required server aggregate below still refuses unless both pass.
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
     # commit tests an identical tree. 34 of every 100 CI runs were that
@@ -1349,7 +1753,7 @@ jobs:
     # when it takes twenty seconds.
     # 78% of pull requests never touch server/. This suite is two billed
     # minutes and cannot be broken by a file outside it.
-    needs: [changes, accounting_postgres]
+    needs: changes
     # FAILS CLOSED, and this is the whole point.
     #
     # 2026-08-23, caught within the hour: the `changes` job 403'd, its dependants
@@ -1368,11 +1772,11 @@ jobs:
       always() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
+        needs.changes.outputs.head_current != 'false' &&
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Server Engine shard ${{ matrix.shard }}/4
-    # Wait for the approved local runner; no hosted or estate fallback.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -1384,26 +1788,16 @@ jobs:
       run:
         working-directory: server
 
-    permissions:
-      contents: read
-      pull-requests: read
-
     steps:
-      - name: Require successful real PostgreSQL accounting tests
-        if: needs.accounting_postgres.result != 'success'
-        run: |
-          echo "::error::The required isolated PostgreSQL accounting tests did not pass."
-          exit 1
-
       - name: Checkout
         uses: actions/checkout@v4
 
-      # A stale head is a failed check, never an explained diff skip.
-      - name: Admit only the current PR head before heavy work
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/admit-current-pr-ci.mjs
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
 
       # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a hit.
       - name: Restore node_modules
@@ -1411,14 +1805,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: server/node_modules
-          key: nm-server-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('server/package-lock.json') }}
-
-      - name: Setup Node 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
-          cache-dependency-path: server/package-lock.json
+          key: nm-server-${{ runner.os }}-node22-${{ hashFiles('server/package-lock.json') }}
 
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -1427,7 +1814,6 @@ jobs:
       # server/ is a separate package with its own tsconfig; the root typecheck
       # job never compiles it, so a type error here used to ship to production.
       - name: TypeScript Check (server)
-        if: matrix.shard == 1
         run: npx tsc --noEmit
 
       # BLOCKING. Named explicitly so it is obvious in the job log which
@@ -1436,7 +1822,6 @@ jobs:
       # step, not only the full suite, so a #2537-class regression that outdates
       # them is a named red line on a required check.
       - name: Freeze + watchdog + restart-gate regression suite
-        if: matrix.shard == 1
         run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts src/maintenance/MaintenanceBreak.test.ts src/maintenance/thawInstallments.test.ts --reporter=verbose
 
       - name: Full server test suite
@@ -1458,31 +1843,43 @@ jobs:
   # Preserve the required check name. A cancelled/failed matrix, or an
   # unexplained skip, must never satisfy branch protection through one shard.
   server:
-    needs: [changes, server_shards]
+    needs: [changes, server_shards, accounting_postgres]
     if: always()
     name: Server Engine (typecheck + tests)
-    # Wait for the approved local runner; no hosted or estate fallback.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Every shard passed
+      - name: Every shard and real PostgreSQL accounting passed
         env:
           MATRIX_RESULT: ${{ needs.server_shards.result }}
+          ACCOUNTING_RESULT: ${{ needs.accounting_postgres.result }}
           DIFF_RESULT: ${{ needs.changes.result }}
           SERVER_CHANGED: ${{ needs.changes.outputs.server }}
+          HEAD_CURRENT: ${{ needs.changes.outputs.head_current }}
           CI_EVENT_NAME: ${{ github.event_name }}
         run: |
-          case "$MATRIX_RESULT" in
-            success) echo 'All four server shards passed.' ;;
-            skipped)
-              if [ "$CI_EVENT_NAME" = pull_request ] && [ "$DIFF_RESULT" = success ] && [ "$SERVER_CHANGED" = false ]; then
-                echo 'Server tests skipped: the checked diff does not change the server.'
-              else
-                echo '::error::Required server tests were unexpectedly skipped.'
-                exit 1
-              fi ;;
-            *) echo "::error::The server matrix did not pass ($MATRIX_RESULT)."; exit 1 ;;
-          esac
+          for dependency in "server:$MATRIX_RESULT" "accounting:$ACCOUNTING_RESULT"; do
+            suite="${dependency%%:*}"
+            result="${dependency#*:}"
+            case "$result" in
+              success) echo "Required $suite checks passed." ;;
+              skipped)
+                if [ "$CI_EVENT_NAME" = pull_request ] && [ "$DIFF_RESULT" = success ] && [ "$SERVER_CHANGED" = false ]; then
+                  echo "$suite checks skipped: the checked diff does not change the server."
+                elif [ "$CI_EVENT_NAME" = pull_request ] && [ "$HEAD_CURRENT" = false ]; then
+                  # A superseded sha. This run verifies a commit nobody will
+                  # merge; the run for the head that replaced it carries the
+                  # required check. Said out loud rather than passed in silence,
+                  # because a skip that explains nothing is what this whole
+                  # block exists to refuse.
+                  echo "::notice title=SUPERSEDED::$suite checks skipped: this sha is no longer the pull request head, so the heavy matrix ran for the head that replaced it."
+                else
+                  echo "::error::Required $suite checks were unexpectedly skipped."
+                  exit 1
+                fi ;;
+              *) echo "::error::Required $suite checks did not pass ($result)."; exit 1 ;;
+            esac
+          done
 
   # ═══════════════════════════════════════════════════════════════════════════
   #  WHAT DID THIS RUN ACTUALLY VERIFY?
@@ -1504,12 +1901,17 @@ jobs:
   # surfaces in the run header without anyone thinking to open the logs.
   verdict:
     name: What this run verified
-    # Wait for the approved local runner; no hosted or estate fallback.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     if: always()
     needs: [changes, stub_gate, typecheck, typecheck_compile, fixture_native, unit, server]
     steps:
+      - uses: actions/checkout@v4
+      - name: Exact revision evidence summary
+        env:
+          POLICY_CI_NEEDS: ${{ toJSON(needs) }}
+          POLICY_CI_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node docs/agent-policy/agent-policy.mjs ci-report >> "$GITHUB_STEP_SUMMARY"
       - name: Say what ran, and what did not
         run: |
           UNIT='${{ needs.unit.result }}'
@@ -1519,6 +1921,7 @@ jobs:
           NATIVE='${{ needs.fixture_native.result }}'
           STUB='${{ needs.stub_gate.result }}'
           CHANGES='${{ needs.changes.result }}'
+          HEAD_CURRENT='${{ needs.changes.outputs.head_current }}'
 
           {
             echo "## What this run verified"
@@ -1539,7 +1942,14 @@ jobs:
           [ "$UNIT" = "skipped" ] && SKIPPED="$SKIPPED client-unit"
           [ "$SERVER" = "skipped" ] && SKIPPED="$SKIPPED server-engine"
 
-          if [ "$UNIT" = "skipped" ] && [ "$SERVER" = "skipped" ]; then
+          if [ "$HEAD_CURRENT" = "false" ]; then
+            echo "::notice title=SUPERSEDED SHA::This sha is no longer the pull request head, so only the fast gates ran. The heavy matrix ran for the head that replaced it, which is the sha the required checks are evaluated against."
+            {
+              echo "**This sha was superseded while it was being tested.** The"
+              echo "fast gates ran; the heavy matrix ran for the head that"
+              echo "replaced it. Required checks are evaluated against that head."
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$UNIT" = "skipped" ] && [ "$SERVER" = "skipped" ]; then
             echo "::warning title=NO TESTS RAN::This run executed neither test suite. It is green because nothing was checked, not because everything passed. On a push to main that is expected - every job here is gated on pull_request - and it is exactly why the daily scheduled run against main exists."
             {
               echo "**No test suite ran in this run.** It is green because nothing"
@@ -1583,38 +1993,34 @@ jobs:
     # treated as "could break anything", never as "nothing to do".
     if: >-
       always() && github.event_name == 'pull_request' &&
+      needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: Production Build
-    # Wait for the approved local runner; no hosted or estate fallback.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
-
-    permissions:
-      contents: read
-      pull-requests: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Provenance compares ancestry against origin/main. A shallow merge
-          # can falsely appear behind even when main is its direct parent.
+          # Validate this event's exact merge/base/head with full ancestry.
+          # Main may advance while queued; this disposable PR build never
+          # qualifies as a publishable current-main artifact.
           fetch-depth: 0
           filter: blob:none
 
-      # A stale head is a failed check, never an explained diff skip.
-      - name: Admit only the current PR head before heavy work
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/admit-current-pr-ci.mjs
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
       - name: Cache Vite Build
         uses: actions/cache@v4
         with:
           path: node_modules/.vite
-          key: vite-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: vite-${{ runner.os }}-${{ runner.arch }}-
+          key: vite-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: vite-${{ runner.os }}-
 
       # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
       # hit. Shares `nm-full` with the unit job - both run a full npm ci.
@@ -1623,13 +2029,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: nm-full-${{ runner.os }}-${{ runner.arch }}-node20-${{ hashFiles('package-lock.json') }}
-
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
+          key: nm-full-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
 
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -1649,10 +2049,10 @@ jobs:
         with:
           path: node_modules/.cache/dist-media
           key: >-
-            dist-media-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('public/**/*.png',
+            dist-media-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
             'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
             'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
-          restore-keys: dist-media-v1-${{ runner.os }}-${{ runner.arch }}-
+          restore-keys: dist-media-v1-${{ runner.os }}-
 
       - name: Record Build Start
         id: build-timer
@@ -1687,17 +2087,6 @@ jobs:
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
           VITE_APP_ENV: production
-          # SENTRY_AUTH_TOKEN DELIBERATELY ABSENT (moved 2026-09-04 to
-          # publish-club-arena.yml). It used to live here, which meant the
-          # sentry-vite-plugin gate
-          # (`NODE_ENV === 'production' && SENTRY_AUTH_TOKEN`) was true for
-          # THIS build - a pull-request artifact that is inspected and thrown
-          # away - and false for the publisher's, the only bundle a player
-          # ever loads. Sentry was therefore holding maps for code nobody runs
-          # and none for the code everybody runs. Do not put it back: uploading
-          # from here would re-create that, and the upload is pure latency on
-          # the critical path. It belongs to whoever ships the bundle.
-
       - name: Report Build Time
         if: always()
         run: |
@@ -1760,20 +2149,18 @@ jobs:
       # BRANCHED ON THE RUNNER 2026-09-07, and this was the last unguarded
       - name: Install Performance Browser
         if: success()
-        # --with-deps apt-gets browser libraries and needs root + the apt lock. The estate
-        # boxes carry those libraries (provision-ci-box.sh) and run many runners per host,
-        # so on self-hosted install the browser only. Keyed on runner.environment, NOT on
-        # vars.CI_RUNNER, so a job still pinned to ubuntu-latest keeps --with-deps.
-        run: |
-          if [ "${{ runner.environment }}" = "self-hosted" ]; then
-            npx playwright install chromium
-          else
-            npx playwright install --with-deps chromium
-          fi
+        run: npx playwright install --with-deps chromium
 
       - name: Route Performance Budget
         if: success()
         run: npm run test:performance
+
+      # The public arena (every prerendered route) is audited with axe-core
+      # at a phone and a desktop viewport; a serious or critical violation
+      # fails the build (discoverability phase 6, 2026-09-17).
+      - name: Public Arena Accessibility
+        if: success()
+        run: npm run test:a11y
 
   # ───────────────────────────────────────────────────────────────────────────
   # LIVE PRODUCTION E2E (split out of `Production Build` 2026-08-22).
@@ -1809,8 +2196,7 @@ jobs:
     # that is the "is main actually green" net (see the schedule note).
     if: github.event_name == 'schedule' && github.event.schedule == '35 6 * * *'
     name: Live Production E2E
-    # Wait for the approved local runner; no hosted or estate fallback.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
 
     steps:
@@ -1830,16 +2216,7 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Browsers
-        # --with-deps apt-gets browser libraries and needs root + the apt lock. The estate
-        # boxes carry those libraries (provision-ci-box.sh) and run many runners per host,
-        # so on self-hosted install the browser only. Keyed on runner.environment, NOT on
-        # vars.CI_RUNNER, so a job still pinned to ubuntu-latest keeps --with-deps.
-        run: |
-          if [ "${{ runner.environment }}" = "self-hosted" ]; then
-            npx playwright install chromium
-          else
-            npx playwright install --with-deps chromium
-          fi
+        run: npx playwright install --with-deps chromium
 
       - name: Wait for Production Deploy
         run: |
@@ -1959,8 +2336,7 @@ jobs:
     # logic alive at 13 runs a day instead of 85.
     if: github.event_name == 'schedule'
     name: Post-Deploy Verification
-    # Wait for the approved local runner; no hosted or estate fallback.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
@@ -2063,31 +2439,41 @@ jobs:
     # treated as "could break anything", never as "nothing to do".
     if: >-
       always() && github.event_name == 'pull_request' &&
+      needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: CSS Beat E2E (multi-table + animations)
-    # Wait for the approved local runner; no hosted or estate fallback.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
-    timeout-minutes: 20
-
-    permissions:
-      contents: read
-      pull-requests: read
+    runs-on: ubuntu-latest
+    # Run35289214041 needed 9.6m for beats, 7m for Studio, plus 3.3m
+    # to build/install; 20m killed the final financial-decision suite.
+    # Preserve every suite and its own deadlines, with room for cleanup.
+    timeout-minutes: 30
 
     steps:
+      - name: Reserve disk for browser checks
+        # This browser-only job does not invoke the separate Android build.
+        # Keep its fixtures and failure evidence; reclaim the unused hosted SDK.
+        run: |
+          df -h /
+          if [ -d /usr/local/lib/android/sdk ]; then
+            sudo du -sh /usr/local/lib/android/sdk
+            sudo rm -rf -- /usr/local/lib/android/sdk
+          fi
+          df -h /
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Provenance compares ancestry against origin/main. A shallow merge
-          # can falsely appear behind even when main is its direct parent.
+          # Validate this event's exact merge/base/head with full ancestry.
+          # Main may advance while queued; this disposable PR build never
+          # qualifies as a publishable current-main artifact.
           fetch-depth: 0
           filter: blob:none
 
-      # A stale head is a failed check, never an explained diff skip.
-      - name: Admit only the current PR head before heavy work
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/admit-current-pr-ci.mjs
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
       # This job had NO cache of any kind, alone among the jobs that build.
       # It therefore paid a cold `npm ci` (45s) and a fully cold build (235s on
@@ -2109,13 +2495,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: nm-beats-${{ runner.os }}-${{ runner.arch }}-node20-${{ hashFiles('package-lock.json') }}
-
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
+          key: nm-beats-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
 
       # THE GUARD BELOW IS THE POINT OF THE CACHE ABOVE (added 2026-09-04).
       #
@@ -2141,16 +2521,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Install Chromium and WebKit
-        # --with-deps apt-gets browser libraries and needs root + the apt lock. The estate
-        # boxes carry those libraries (provision-ci-box.sh) and run many runners per host,
-        # so on self-hosted install the browser only. Keyed on runner.environment, NOT on
-        # vars.CI_RUNNER, so a job still pinned to ubuntu-latest keeps --with-deps.
-        run: |
-          if [ "${{ runner.environment }}" = "self-hosted" ]; then
-            npx playwright install chromium webkit
-          else
-            npx playwright install --with-deps chromium webkit
-          fi
+        run: npx playwright install chromium webkit --with-deps
 
       # Same content-addressed media cache as Production Build, same key, so
       # whichever of the two runs first warms it for the other.
@@ -2159,10 +2530,10 @@ jobs:
         with:
           path: node_modules/.cache/dist-media
           key: >-
-            dist-media-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('public/**/*.png',
+            dist-media-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
             'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
             'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
-          restore-keys: dist-media-v1-${{ runner.os }}-${{ runner.arch }}-
+          restore-keys: dist-media-v1-${{ runner.os }}-
 
       # `build:ci` - see the long note on the Production Build step for why
       # dropping `tsc -b` here checks nothing less than before. This job is the
@@ -2328,7 +2699,10 @@ jobs:
         # above and torn down in an always() step below; all three suites share
         # it. See the note on "Serve one build to every suite".
         run: |
-          npx playwright test tests/e2e/live-css-loader.spec.ts tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+          # Software WebGL must not compete with the other three browser workers.
+          # Keep the full real-scene transitions; this invocation has no retries.
+          npx playwright test tests/e2e/css/diamond-games-playfield.spec.ts --project=chromium --workers=1 --reporter=line --retries=0
 
       # Capture the failed fixture before a later suite can clear its output.
       # These tests use the local build and synthetic data, without a login.

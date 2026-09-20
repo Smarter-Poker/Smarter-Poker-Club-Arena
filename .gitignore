@@ -219,3 +219,12 @@ infra/monitoring/.deployed-from
 
 # Visual-harness screenshots are build output, not source.
 tests/visual/__shots__/
+
+# Release-journal test Postgres clusters. Each run of the release-journal
+# suite initdb's a throwaway cluster into work/release-journal-pg-<random>/
+# and leaves it behind. Untracked and unignored, they are indistinguishable
+# from real untracked work in `git status`: the 2026-09-18 work-at-risk survey
+# found 389,960 such files across the agent worktrees - 8.3 GB in three trees
+# alone - burying the handful of genuinely unsaved edits sitting beside them.
+# That is how uncommitted work gets lost: not deleted, just never noticed.
+work/release-journal-pg-*/

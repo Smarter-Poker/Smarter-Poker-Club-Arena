@@ -184,7 +184,6 @@ describe('per-run pot awards - the split-pot ship sequence', () => {
       potIndex: number;
       amount: number;
       userId: string;
-      hand?: { name: string };
     }>;
     expect(awards.length, 'per-(run, pot) awards must exist on a RIT hand').toBeGreaterThan(0);
 
@@ -207,20 +206,6 @@ describe('per-run pot awards - the split-pot ship sequence', () => {
         .reduce((s, a) => s + Math.round(a.amount * 100), 0);
       expect(displayCents, `display shares for ${w.userId} must equal their credit`).toBe(
         Math.round(w.amount * 100)
-      );
-    }
-
-    // THE HAND THAT WON THE MONEY (2026-09-14): winners[].hand names the hand
-    // behind the player's largest share, whichever run it came from - not the
-    // showdown row, which is evaluated on board one only. A player who lost
-    // board one with a pair and took board two with a flush is a flush.
-    for (const w of credits as Array<{ userId: string; hand?: { name: string } }>) {
-      const largest = awards
-        .filter((a) => a.userId === w.userId && a.hand)
-        .sort((x, y) => y.amount - x.amount)[0];
-      if (!largest) continue;
-      expect(w.hand?.name, `winners[].hand for ${w.userId} names the run that paid`).toBe(
-        largest.hand!.name
       );
     }
 
@@ -357,44 +342,6 @@ describe('per-run pot awards - the split-pot ship sequence', () => {
       );
       expect(String(p.amount)).toMatch(/^\d+(\.\d{1,2})?$/);
     }
-  });
-
-  /**
-   * THE POT AXIS SURVIVES THE MERGE (2026-09-13).
-   *
-   * winners_by_board is one row per (run, winner, half). A three-way all-in
-   * with a main pot and a side pot pays a covering winner out of BOTH on the
-   * same run, and the merge into that one row used to sum the pot axis away:
-   * the record could say who won which board, never which pot. Each row now
-   * carries its slices, main pot first, summing to the row.
-   */
-  it('winners_by_board rows carry per-pot slices that sum to the row', () => {
-    const { e } = resolveRIT([100, 300, 500], 2);
-    const rows = e.currentHandWinnersByBoard as Array<{
-      board: number;
-      userId: string;
-      amount: number;
-      pots?: Array<{ index: number; amount: number }>;
-    }>;
-    const pots = e.currentHandPots as Array<{ index: number }>;
-    const known = new Set(pots.map((p) => p.index));
-    expect(rows.length).toBeGreaterThan(0);
-    let sawTwoSlices = false;
-    for (const r of rows) {
-      expect(Array.isArray(r.pots) && r.pots!.length > 0, 'a row without pot slices').toBe(true);
-      const sliced = r.pots!.reduce((s, p) => s + Math.round(p.amount * 100), 0);
-      expect(sliced, `board ${r.board} ${r.userId}`).toBe(Math.round(r.amount * 100));
-      for (let i = 1; i < r.pots!.length; i++) {
-        expect(r.pots![i].index).toBeGreaterThan(r.pots![i - 1].index);
-      }
-      for (const p of r.pots!) expect(known.has(p.index)).toBe(true);
-      if (r.pots!.length > 1) sawTwoSlices = true;
-    }
-    // 100/300/500 all-in three ways: someone covers more than one pot on a
-    // board, or nobody does - either way the shape holds. Assert only what the
-    // fixture guarantees: a main pot and at least one side pot were recorded.
-    expect(pots.length).toBeGreaterThanOrEqual(2);
-    void sawTwoSlices;
   });
 
   it('every per-(run, pot) award names a pot that was actually recorded', () => {

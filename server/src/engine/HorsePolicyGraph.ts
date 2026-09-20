@@ -1,4 +1,5 @@
 import type { HorseDecision } from '../types.js';
+import { noteFire, noteDecisionMs } from './BrainTelemetry.js';
 
 /** Executable outer decision order. Reference internals and the authoritative
  * table executor retain their own contracts; this is not a full Phase15 ledger. */
@@ -44,13 +45,19 @@ function same(a: HorsePolicyAction, b: HorsePolicyAction): boolean {
 }
 
 /** One instance owns exactly one decision. A node executes only after its
- * predecessor and must consume that predecessor's action. No I/O or RNG. */
+ * predecessor and must consume that predecessor's action. No I/O or RNG.
+ * Optional finite counters measure node invocation, not candidate eligibility:
+ * a registered node may retain the input because its policy is disabled or
+ * outside the domain. Policy-specific receipts retain those distinctions. */
 export class HorsePolicyGraph {
   private readonly transitions: HorsePolicyTransition[] = [];
   private sealed = false;
   private executing = false;
   private failed = false;
-  constructor(private readonly now: () => number = () => performance.now()) {}
+  constructor(
+    private readonly now: () => number = () => performance.now(),
+    private readonly telemetry = false
+  ) {}
 
   run<T extends { decision: HorseDecision }>(
     node: HorsePolicyNode,
@@ -72,8 +79,12 @@ export class HorsePolicyGraph {
     )
       throw new Error('Horse policy graph predecessor does not match');
     this.executing = true;
-    const start = this.now();
+    if (this.telemetry) {
+      if (node === 'reference') noteFire('phase15_graph_started');
+      noteFire(`phase15_node_${node}_entered`);
+    }
     try {
+      const start = this.now();
       const result = execute();
       const after = snapshot(result.decision);
       // Think-time can consume its usual private RNG but cannot reopen policy.
@@ -82,16 +93,22 @@ export class HorsePolicyGraph {
       const elapsedMs = this.now() - start;
       if (!Number.isFinite(elapsedMs) || elapsedMs < 0)
         throw new Error('Horse policy graph clock is invalid');
-      this.transitions.push({
-        node,
-        before,
-        after,
-        changed: before !== null && !same(before, after),
-        elapsedMs,
-      });
+      const changed = before !== null && !same(before, after);
+      this.transitions.push({ node, before, after, changed, elapsedMs });
+      if (this.telemetry) {
+        noteFire(`phase15_node_${node}_completed`);
+        noteFire(
+          `phase15_node_${node}_${before === null ? 'produced' : changed ? 'changed' : 'retained'}`
+        );
+        noteDecisionMs(`phase15_node_${node}`, elapsedMs);
+      }
       return result;
     } catch (error) {
       this.failed = true;
+      if (this.telemetry) {
+        noteFire(`phase15_node_${node}_failed`);
+        noteFire('phase15_graph_failed');
+      }
       throw error;
     } finally {
       this.executing = false;
@@ -110,6 +127,7 @@ export class HorsePolicyGraph {
     if (!same(finalAction, this.transitions.at(-1)!.after))
       throw new Error('Horse policy graph final action does not match');
     this.sealed = true;
+    if (this.telemetry) noteFire('phase15_graph_completed');
     return {
       ...decision,
       policyGraph: { version: 'horse-policy-order-v1', transitions: this.transitions, finalAction },

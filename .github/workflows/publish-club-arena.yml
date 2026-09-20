@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # PUBLISH CLUB ARENA — the Club Arena-owned Hetzner publisher, isolated on
-# a dedicated local publisher VM reserved for protected-main publication.
+# fresh hosted runners so prior pull-request code cannot reach release secrets.
 #
 # WHY THIS FILE EXISTS (2026-09-02). build-for-world-hub.yml stopped being
 # scheduled by GitHub at 16:33 UTC. Six runs sat at `queued` with ZERO jobs
@@ -75,12 +75,10 @@ jobs:
   # A push is new work, and a recovery event carries one explicit
   # protected-main SHA to publish.
   publish-needed:
-    # Credential-free checks use only the local CI VM.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
-      # The existing exact-tree proof reads the source PR and its CI verdict.
       pull-requests: read
       checks: read
     outputs:
@@ -181,7 +179,7 @@ jobs:
       # publish pipeline to ~7. The gate is exactly as strong: publish-to-origin
       # `needs: [build-and-store, client-tests]`, and `needs` on a matrix waits for
       # EVERY shard, so one red shard still stops the bundle. fail-fast cancels the
-      # siblings the moment one fails, which is what a gate wants. Separate local
+      # siblings the moment one fails, which is what a gate wants. Fresh hosted
       # images keep the test and release trust domains isolated.
       # ── HAS THIS EXACT TREE ALREADY PASSED THE CLIENT SUITE? ──────────────
       #
@@ -238,8 +236,7 @@ jobs:
     # request head. See "Has this exact tree already passed" above - it compares
     # tree hashes, not merge lineage, and fails closed.
     if: needs.publish-needed.outputs.tests_proven != 'true'
-    # Credential-free checks use only the local CI VM.
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
@@ -255,6 +252,12 @@ jobs:
         with:
           ref: ${{ needs.publish-needed.outputs.target_sha }}
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
       # Cache the installed tree so npm ci is skipped on a hit - ~2 min off
       # each shard. Keyed on the lockfile, so any dependency change installs
       # fresh; identical behaviour, minus the wait.
@@ -263,13 +266,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: nm-bfwh-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('package-lock.json') }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
+          key: nm-bfwh-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -280,10 +277,7 @@ jobs:
 
   build-and-store:
     needs: publish-needed
-    # Carries secrets: stays OFF the shared estate-linux pool that runs pull-request code.
-    # A dedicated local publisher VM must admit only protected-main workflows.
-    runs-on: [self-hosted, smarter-local-publish]
-    environment: Production
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a
@@ -329,6 +323,12 @@ jobs:
       # accumulated 716 ci-marker branches out of 1025 total on this repo —
       # every one of them a permanent ref that `actions/checkout` and every
       # `git ls-remote` pays for. Deleted here so it stops growing.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
       # ── THE PUBLISHER WAS BUILDING COLD, EVERY TIME ──────────────────────
       #
       # CI's `Production Build` job caches both `node_modules` and
@@ -351,19 +351,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: nm-publish-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('package-lock.json') }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
+          key: nm-publish-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
 
       - name: Cache Vite Build
         uses: actions/cache@v4
         with:
           path: node_modules/.vite
-          key: vite-publish-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('**/package-lock.json') }}
+          key: vite-publish-${{ runner.os }}-node22-${{ hashFiles('**/package-lock.json') }}
 
       - name: Install dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -379,10 +373,10 @@ jobs:
         with:
           path: node_modules/.cache/dist-media
           key: >-
-            dist-media-publish-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('public/**/*.png',
+            dist-media-publish-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
             'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
             'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
-          restore-keys: dist-media-publish-v1-${{ runner.os }}-${{ runner.arch }}-
+          restore-keys: dist-media-publish-v1-${{ runner.os }}-
 
       # This job runs the FULL `npm run build`, `tsc -b` included, while
       # ci.yml's two build jobs run `build:ci` without it. That asymmetry is
@@ -390,18 +384,6 @@ jobs:
       # before it ships, and the throwaway PR-head builds are not, because the
       # required `TypeScript Check` job has already checked that same tree.
       #
-      # SENTRY_AUTH_TOKEN lives HERE now, and only here (moved 2026-09-04).
-      # Originally the sentry-vite-plugin activated on
-      # `NODE_ENV === 'production' && SENTRY_AUTH_TOKEN`, which was true in
-      # ci.yml's build - the bundle that is thrown away - and false in this
-      # one, the bundle that ships. So maps were uploaded for an artifact no
-      # player ever loads, no map was ever uploaded for the shipped sha, and
-      # `filesToDeleteAfterUpload` never ran on this path, which is why 267
-      # `.map` files (27MB) went out to players on every deploy. The release
-      # name is now `club-arena@<sha>` on both sides - the plugin used to tag
-      # `club-arena@1.0.1` from npm_package_version while SentryInit.ts
-      # reported `club-arena@${VITE_APP_VERSION}`, so even a successful upload
-      # could not have symbolicated anything.
       - name: Build Club Arena
         env:
           NODE_ENV: production
@@ -410,25 +392,12 @@ jobs:
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
           VITE_APP_ENV: production
-          VITE_SENTRY_DSN: 'https://842977a65e398b038728a05e8d892089@o4510810580779008.ingest.us.sentry.io/4510816835600384'
           VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
           VITE_ONESIGNAL_APP_ID: '2fde0e83-cd01-4f93-a9a0-9be6cfe36e8c'
-          # Only this verified web release may upload source maps.
-          CA_SENTRY_UPLOAD: '1'
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          # Verified 2026-04-23 via the Sentry API: the live org is
-          # `smarter-software-inc`, the CA project is `javascript-react`.
-          SENTRY_ORG: smarter-software-inc
-          SENTRY_PROJECT: javascript-react
         run: npm run build
 
-      # Belt to the plugin's braces. `filesToDeleteAfterUpload` only runs when
-      # the upload SUCCEEDS, and the plugin is configured with an errorHandler
-      # that warns rather than failing the build - correct, because a Sentry
-      # outage must not stop a deploy, but it means a failed upload would ship
-      # every source map to players. Maps are for Sentry's server side; nothing
-      # in the browser needs them. This step is unconditional and idempotent.
-      - name: Source maps go to Sentry, never to players
+      # Keep source private even if an older tool emits a map.
+      - name: Source maps never ship to players
         run: |
           BEFORE=$(find dist -name '*.map' | wc -l | tr -d ' ')
           find dist -name '*.map' -delete
@@ -581,10 +550,7 @@ jobs:
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
-    # Carries secrets: stays OFF the shared estate-linux pool that runs pull-request code.
-    # A dedicated local publisher VM must admit only protected-main workflows.
-    runs-on: [self-hosted, smarter-local-publish]
-    environment: Production
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
@@ -608,18 +574,18 @@ jobs:
           fetch-depth: 0
           filter: blob:none
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
       - name: Restore node_modules
         id: nm-cache
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: nm-publish-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('package-lock.json') }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
+          key: nm-publish-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -636,7 +602,6 @@ jobs:
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
           VITE_APP_ENV: production
-          VITE_SENTRY_DSN: 'https://842977a65e398b038728a05e8d892089@o4510810580779008.ingest.us.sentry.io/4510816835600384'
           VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
           VITE_REVENUECAT_IOS_KEY: ${{ secrets.VITE_REVENUECAT_IOS_KEY }}
           VITE_REVENUECAT_ANDROID_KEY: ${{ secrets.VITE_REVENUECAT_ANDROID_KEY }}
@@ -684,10 +649,7 @@ jobs:
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
-    # Carries secrets: stays OFF the shared estate-linux pool that runs pull-request code.
-    # A dedicated local publisher VM must admit only protected-main workflows.
-    runs-on: [self-hosted, smarter-local-publish]
-    environment: Production
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
       contents: read
@@ -710,22 +672,6 @@ jobs:
           ref: ${{ needs.publish-needed.outputs.target_sha }}
           fetch-depth: 1
           persist-credentials: false
-
-      - name: Use Node for the read-only publication prerequisite
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      # publish-needed proved this exact target is protected main. A failed
-      # catalog check stops before origin keys, SSH or any remote mutation.
-      # The later post-deploy check protects fresh fixture cleanup against
-      # database changes after this publication boundary.
-      - name: Prove every club foreign key is indexed before client publication
-        timeout-minutes: 2
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: node scripts/ci/check-club-fk-indexes.mjs
 
       - name: Download the dist built by the previous job
         uses: actions/download-artifact@v4

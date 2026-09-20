@@ -1,0 +1,5 @@
+# Validate the original hand after outer transaction sealing
+
+Production observation found that the inner accepted-hand snapshot correctly preceded the public wrapper's post-commit seal. Comparing every column against the final live row incorrectly rejected those legitimate later fields. The guarded successor keeps the six immutable monetary fields exact and checks the canonical payload hash, reconstructed original request hash, accepted hand facts and subsequent processor completion identity. It changes only the evidence reader and adds an owner-only identity helper.
+
+Direct native red/green coverage calls the exact current public twelve-argument wrapper and original post-commit processor. It also checks all monetary identity fields, both hashes, changed/rehashed facts, wrong completion identity, missing original manifests, frozen blocked outcomes and retained proof after hand pruning. The existing weekly native verification invokes this regression. Installed migrations remain immutable and no historical outcome is rewritten.

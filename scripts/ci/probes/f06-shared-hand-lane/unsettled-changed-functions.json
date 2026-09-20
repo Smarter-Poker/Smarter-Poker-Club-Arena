@@ -1,0 +1,72 @@
+[
+  {
+    "signature": "fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)",
+    "before_md5": "c451a6859a15bf62fea00fb31ef7ffa0",
+    "after_md5": "f50408947a84ee5901e2e59d0be61d94"
+  },
+  {
+    "signature": "fn_f06_discover_breaks(uuid,uuid,bigint,integer)",
+    "before_md5": "37d4e80dff9e31034559675e1cc14008",
+    "after_md5": "ee849383bac8962af9d110341293317a"
+  },
+  {
+    "signature": "fn_f06_hand_number_state(uuid,uuid,uuid)",
+    "before_md5": "28fbcb112405885065690597e28e6da0",
+    "after_md5": "cfb6d1f8b0793c0e4ef4e0b5f147779c"
+  },
+  {
+    "signature": "fn_f06_table_state(uuid,uuid,uuid)",
+    "before_md5": "57e913c4b1001a17dbf6f5b50943a495",
+    "after_md5": "912feb4ac2e7759d240ef1309d5ab4d0"
+  },
+  {
+    "signature": "smarter_private.f06_hand_dispatch_guard(uuid,bigint)",
+    "before_md5": "9d41bbdff8f01245211be8f9d52d0c83",
+    "after_md5": "fa3b6cc670788a490c42f324ecf74a76"
+  },
+  {
+    "signature": "smarter_private.f06_immutable_identity()",
+    "before_md5": "1e1861693424c5350c74fe3acc9a672c",
+    "after_md5": "008d3e5674205e2f5a4e7510585bceca"
+  },
+  {
+    "signature": "smarter_private.f06_move_guard(uuid,uuid,uuid,uuid,integer,uuid,text,uuid,uuid)",
+    "before_md5": "7c2371b25235eb49b6f043f077dd0c4d",
+    "after_md5": "67043ce7cbe35b5582b625aaea29d12b"
+  },
+  {
+    "signature": "smarter_private.f06_source_guard()",
+    "before_md5": "d89dc77965f1abea47e366ad6f6a426f",
+    "after_md5": "6c108a5830fa520b8e48b7cab04b053a"
+  },
+  {
+    "signature": "smarter_private.f06_table_guard()",
+    "before_md5": "e472174e4289d124b672aa6e2a897244",
+    "after_md5": "d8775467cf3f807b1992be752638d308"
+  },
+  {
+    "signature": "smarter_private.f06_validate_destination(uuid,uuid,uuid,integer)",
+    "before_md5": "628c6623e3d5bdc8daf3072c95ba8eff",
+    "after_md5": "16e687b5cd55ad66166bc76479985f23"
+  },
+  {
+    "signature": "heartbeat_tournament_leases_v4(text,jsonb,integer)",
+    "before_md5": "4a41b0124e75e46ed8121e6a56014758",
+    "after_md5": "01fa17de7097d3c42748e6879b478411"
+  },
+  {
+    "signature": "claim_tournament_lease_v2(uuid,text,text,uuid,integer)",
+    "before_md5": "73abfc4523de42cb4b8bca5443602cbd",
+    "after_md5": "1d5fdcf284efb107c4f5e2a3be364fb0"
+  },
+  {
+    "signature": "heartbeat_tournament_leases_v3(text,jsonb,integer)",
+    "before_md5": "52cb6d75f301564351e9b0021805844b",
+    "after_md5": "d0266630abef45edf1cff78783b2a154"
+  },
+  {
+    "signature": "smarter_private.fn_smarter_data_api_pre_request()",
+    "before_md5": "8110794298f7f310a62944357c525fd3",
+    "after_md5": "88d1373951b8e9184c50f703701bd28f"
+  }
+]

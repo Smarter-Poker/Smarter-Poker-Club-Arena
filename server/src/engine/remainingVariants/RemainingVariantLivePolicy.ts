@@ -1,4 +1,5 @@
 import type { HorseDecision, SeatPlayer } from '../../types.js';
+import { horsePolicyDealtPlayers } from '../multiway/DealtSeatCensus.js';
 import type { HorseGameStateV2 } from '../HorseLogic.js';
 import { calculateContestablePot, calculateRake } from '../PokerEngine.js';
 import { nlhNutStatus } from '../HorseEval.js';
@@ -110,7 +111,12 @@ export function evaluateRemainingVariantPolicy(
   )
     return finish('multiboard_owned_by_phase13');
   if (s.stage === 'pineapple_discard') return finish('discard_owned_by_worker');
-  const seats = s.players.filter((p) => !p.is_sitting_out);
+  let seats: SeatPlayer[];
+  try {
+    seats = horsePolicyDealtPlayers(s.players, hero.seat, s.dealtSeatIds);
+  } catch {
+    return finish('canonical_state_unavailable');
+  }
   if (
     s.stateSchemaVersion !== 1 ||
     s.bettingStructure !== pack.structure ||
@@ -183,7 +189,9 @@ export function evaluateRemainingVariantPolicy(
           Math.abs(s.maxRaiseTo! - s.minRaiseTo!) > 0.011)))
   )
     return finish('fixed_limit_geometry_unavailable');
-  const active = seats.filter((p) => p.user_id !== hero.user_id && !p.is_folded);
+  const active = seats.filter(
+    (p) => p.user_id !== hero.user_id && !p.is_folded && (!p.is_sitting_out || p.is_all_in)
+  );
   const depth =
     Math.min(hero.stack + hero.bet, Math.max(...active.map((p) => p.stack + p.bet))) / s.bigBlind;
   receipt.depthBB = depth;
@@ -246,7 +254,9 @@ export function evaluateRemainingVariantPolicy(
       (a) =>
         a.userId !== hero.user_id &&
         a.stage === s.stage &&
-        ['bet', 'raise', 'all_in'].includes(a.action)
+        (a.action === 'bet' ||
+          a.action === 'raise' ||
+          (a.action === 'all_in' && a.isFullRaise !== undefined))
     )
     .at(-1);
   receipt.aggressorPosition = aggressor ? plo4Position(aggressor.seat, s) : null;

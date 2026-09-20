@@ -11,26 +11,12 @@
  *   weekly settlement flow has no rows to settle. If the engine restarts, the
  *   in-memory accumulator is lost.
  *
- * FIX:
- *   This daemon runs every 30 minutes. For each completed hand in rake_records
- *   that hasn't been settled yet, it derives the per-player rake credit under
- *   the methodology the hand was SETTLED with (rake_records.rake_method) and
- *   upserts rakeback_periods rows by (user_id, club_id, period_start_week).
- *   Idempotent: re-running over already-settled hands has no effect.
- *
- * ATTRIBUTION (Dan 2026-08-29, BINDING — supersedes DECISION D-001 / FIX 144):
- *   New cash hands use WEIGHTED CONTRIBUTED rake — a player's credit is
- *   proportional to their eligible contribution to the rakeable pot. Rows
- *   stamped DEALT_EQUAL (historical, plus any settled by a pre-deploy engine)
- *   keep reproducing their historical equal split. The single source of the
- *   share math is services/rakeAllocation.ts (SQL twin:
- *   fn_allocate_rake_credits) — never re-derive shares here.
- *
- * SAFETY:
- *   - Reads only from rake_records (durable per-hand audit log)
- *   - Writes only to rakeback_periods (no chip movement)
- *   - Idempotent via period-week bucketing + ON CONFLICT update
- *   - 30-minute interval; can be tuned per traffic
+ * The worker submits each positive cash source to one database authority.
+ * That authority uses immutable earning attribution and observed agreements,
+ * records commissions and original player statistics atomically, and queues
+ * the existing complete-week calculator. A refusal has a durable retry receipt
+ * and blocks the affected book; it never becomes an acknowledged credit.
+ * Tournament sources remain under their terminal recognition authority.
  *
  * RELATED:
  *   - Dan 2026-08-29: weighted contributed rake law (this file's split logic)
@@ -42,12 +28,11 @@
 import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
-import { sharesForRakeRecord, sharesForRakeRecordWithLedger } from './rakeAllocation.js';
 import {
-  ATTRIBUTION_PAGE_SIZE,
-  readRakeAttributionLedger,
-  assertCashAttributionComplete,
-} from './rakeAttributionLedger.js';
+  readCashSourceBatch,
+  verifyCashSourceRefusal,
+  type CashSourceReceipt,
+} from './cashSourceReceipts.js';
 
 const SETTLEMENT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 /**
@@ -78,6 +63,7 @@ const CATCH_UP_DELAY_MS = 60 * 1000; // 1 minute
  * 150, so a chunk is comfortably inside even a slow window with headroom.
  */
 const CREDIT_BATCH_SIZE = 150;
+const PERIOD_USER_BATCH_SIZE = 2000;
 const DAEMON_KEY = 'rakeback_settler';
 
 /**
@@ -86,27 +72,8 @@ const DAEMON_KEY = 'rakeback_settler';
  * hard-coding a number that could drift away from the real one.
  */
 export const FETCH_LIMIT = 1000;
-/*
- * ═══ THIS NUMBER MUST NOT EXCEED PostgREST's db-max-rows (1000) ═══
- *
- * THE bug behind the 2-day backlog, found 2026-08-20 by measuring three
- * consecutive pages: each advanced the cursor by EXACTLY 999 rows, whatever
- * FETCH_LIMIT said. PostgREST caps a response at 1,000 rows, so asking for
- * 2,000 (or the previous 10,000) returns ~1,000 — and the drain loop then
- * evaluates `rawPageSize >= FETCH_LIMIT` as FALSE, concludes "fewer rows than
- * I asked for, therefore I am fully caught up", returns 'idle', and sleeps the
- * full 30-minute interval. With 287,000 rows outstanding.
- *
- * So the settler could never drain more than ~1,000 rows per 30 minutes
- * (~2,000/hour) against ~2,900/hour arriving: a permanent structural deficit
- * that no amount of per-call speed could fix, which is why batching the
- * credits and shrinking the page from 10,000 to 2,000 both failed to move it.
- *
- * At 1,000 a full page now reports 'more' truthfully, so the loop drains
- * MAX_DRAIN_BATCHES pages per cycle and scheduleCatchUp() re-arms in 60s while
- * backlog remains. If PostgREST's cap ever drops below this, the same silent
- * stall returns — keep them equal.
- */
+// Responses may be capped below this requested size. A nonempty page always
+// keeps the bounded drain active; only an empty indexed range proves catch-up.
 /*
  * AUDIT PASS 3 (2026-08-19) — page size reduced 10,000 -> 2,000.
  *
@@ -170,39 +137,118 @@ interface RakeCursor {
 
 /**
  * Outcome of one batch, so the drain loop knows whether to go round again.
- *   'idle'   — fewer than FETCH_LIMIT rows: fully caught up, nothing to drain
- *   'more'   — exactly FETCH_LIMIT rows: the cursor advanced, call again
- *   'halted' - a read or attribution failed: retain the cursor and retry later
+ *   'idle'   — an empty range proves there is no more visible source work
+ *   'more'   — a nonempty page was durably acknowledged; check the next range
+ *   'halted' — a read, source or checkpoint failed; retain the cursor and retry
  */
 type CycleResult = 'idle' | 'more' | 'halted';
 
-/** Commission counts acknowledge inputs; stats counts report new inserts, so
- * a successful idempotent stats replay can acknowledge zero new rows. */
-function readAttributionBatchReceipt(
+/** An immutable refusal without its durable retry work is not permission to
+ * advance the source cursor. A later successful retry may supersede the receipt. */
+async function confirmCashSourceRefusals(receipts: CashSourceReceipt[]): Promise<void> {
+  for (const receipt of receipts) {
+    if (receipt.status !== 'blocked') continue;
+    const { data: stored, error: receiptError } = await supabase
+      .from('accounting_cash_source_receipts')
+      .select('id,rake_record_id,status,attempt,source_fingerprint,reason,result')
+      .eq('id', receipt.receipt_id)
+      .maybeSingle();
+    if (receiptError)
+      throw new Error('Cash source refusal receipt read failed', { cause: receiptError });
+    const { data: work, error: workError } = await supabase
+      .from('accounting_cash_source_work')
+      .select('rake_record_id,receipt_id,status,attempts')
+      .eq('rake_record_id', receipt.rake_record_id)
+      .maybeSingle();
+    if (workError) throw new Error('Cash source retry work read failed', { cause: workError });
+    verifyCashSourceRefusal(receipt, stored, work);
+  }
+}
+
+/** A transport success does not prove that the period was written. */
+interface PeriodRecomputeReceipt {
+  written: number;
+  deferred?: { requestId: string; requestedAt: string; reason: string };
+}
+
+function readPeriodRecomputeReceipt(
   data: unknown,
   submitted: number,
-  countsEveryInput: boolean
-): { ok: number; failed: number } {
+  expected: { club_id: string; period_start: string; period_end: string }
+): PeriodRecomputeReceipt {
   const receipt = Array.isArray(data) && data.length === 1 ? data[0] : data;
-  if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)) {
-    throw new Error('Missing attribution batch receipt');
-  }
-  const { ok, failed, error, first_error } = receipt as Record<string, unknown>;
+  if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt))
+    throw new Error('Missing period recompute receipt');
+  const {
+    written,
+    error,
+    failed,
+    status,
+    accounting_version,
+    confirmed_players,
+    club_id,
+    period_start,
+    period_end,
+    request_id,
+    requested_at,
+    request_state,
+    request_recorded,
+    reason,
+  } = receipt as Record<string, unknown>;
   if (
-    typeof ok !== 'number' ||
-    !Number.isSafeInteger(ok) ||
-    ok < 0 ||
-    typeof failed !== 'number' ||
-    !Number.isSafeInteger(failed) ||
-    failed < 0 ||
-    ok + failed > submitted ||
-    (countsEveryInput && ok + failed !== submitted) ||
+    typeof written !== 'number' ||
+    !Number.isSafeInteger(written) ||
+    written < 0 ||
+    written > submitted ||
     (error !== undefined && error !== null) ||
-    (failed === 0 && first_error !== undefined && first_error !== null)
-  ) {
-    throw new Error('Invalid attribution batch receipt');
-  }
-  return { ok, failed };
+    (failed !== undefined && failed !== 0) ||
+    accounting_version !== 2 ||
+    club_id !== expected.club_id ||
+    period_start !== expected.period_start ||
+    period_end !== expected.period_end
+  )
+    throw new Error('Invalid period recompute receipt');
+  if (status === 'ready' && confirmed_players === submitted) return { written };
+  if (
+    status === 'blocked' &&
+    written === 0 &&
+    request_recorded === true &&
+    request_state === 'blocked' &&
+    typeof request_id === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(request_id) &&
+    typeof requested_at === 'string' &&
+    Number.isFinite(new Date(requested_at).getTime()) &&
+    typeof reason === 'string' &&
+    reason.length > 0
+  )
+    return { written: 0, deferred: { requestId: request_id, requestedAt: requested_at, reason } };
+  throw new Error('Invalid period recompute receipt');
+}
+
+async function confirmDeferredPeriodRequest(
+  receipt: NonNullable<PeriodRecomputeReceipt['deferred']>,
+  expected: { club_id: string; period_start: string; period_end: string }
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('accounting_period_recompute_requests')
+    .select('id,status,last_result')
+    .eq('id', receipt.requestId)
+    .eq('club_id', expected.club_id)
+    .eq('period_start', expected.period_start)
+    .eq('period_end', expected.period_end)
+    .eq('requested_at', receipt.requestedAt)
+    .maybeSingle();
+  if (
+    error ||
+    !data ||
+    data.id !== receipt.requestId ||
+    data.status !== 'blocked' ||
+    data.last_result?.reason !== receipt.reason ||
+    data.last_result?.status !== 'blocked' ||
+    data.last_result?.accounting_version !== 2 ||
+    data.last_result?.written !== 0
+  )
+    throw new Error('Deferred accounting request is not durably confirmed');
 }
 
 /**
@@ -231,53 +277,11 @@ function keysetFilter(createdAt: string, id: string): string {
   return `created_at.gt."${createdAt}",and(created_at.eq."${createdAt}",id.gt."${id}")`;
 }
 
-const RAKEBACK_TIERS = [
-  { minRake: 0, rakebackPercent: 5, name: 'Bronze' },
-  { minRake: 100, rakebackPercent: 10, name: 'Silver' },
-  { minRake: 500, rakebackPercent: 15, name: 'Gold' },
-  { minRake: 2000, rakebackPercent: 20, name: 'Platinum' },
-  { minRake: 10000, rakebackPercent: 30, name: 'Diamond' },
-];
-
-/**
- * WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): the per-hand share math lives in
- * services/rakeAllocation.ts and is method-aware — sharesForRakeRecord(row)
- * allocates proportionally to eligible contribution for rows stamped
- * WEIGHTED_CONTRIBUTED and reproduces the historical exact integer-cents equal
- * split for legacy DEALT_EQUAL rows. Values always sum EXACTLY to the row's
- * rake_amount (verified by scripts/verification-harness/
- * 02-weighted-contributed-rake.sql and rakeAllocation.test.ts).
- */
-
-function tierFor(rakeContributed: number): { rate: number; name: string } {
-  let chosen = RAKEBACK_TIERS[0];
-  for (const tier of RAKEBACK_TIERS) {
-    if (rakeContributed >= tier.minRake) chosen = tier;
-  }
-  return { rate: chosen.rakebackPercent / 100, name: chosen.name };
-}
-
-/** Returns the Monday 00:00 UTC of the week containing `d`. */
-function weekStart(d: Date): string {
-  const day = d.getUTCDay(); // 0=Sun
-  const offset = (day + 6) % 7; // days since Monday
-  const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - offset));
-  return monday.toISOString().slice(0, 10);
-}
-
-function weekEnd(d: Date): string {
-  const day = d.getUTCDay();
-  const offset = (day + 6) % 7;
-  const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - offset));
-  const sunday = new Date(monday.getTime() + 6 * 86400 * 1000);
-  return sunday.toISOString().slice(0, 10);
-}
-
 interface RakeRecordRow {
   id?: string;
   is_tournament?: boolean | null;
   tournament_id?: string | null;
-  hand_id: string;
+  hand_id: string | null;
   club_id: string;
   rake_amount: number;
   player_contributions: Record<string, number> | null;
@@ -499,10 +503,10 @@ export class RakebackSettlerService {
     }
   }
 
-  /** Persist the cursor durably (survives engine restarts). */
-  private async saveHighWaterMark(cursor: RakeCursor): Promise<void> {
+  /** Advance memory only after the durable checkpoint accepts the same cursor. */
+  private async saveHighWaterMark(cursor: RakeCursor): Promise<boolean> {
     try {
-      await supabase.from('daemon_state').upsert(
+      const { error } = await supabase.from('daemon_state').upsert(
         {
           daemon: DAEMON_KEY,
           high_water_mark: cursor.createdAt,
@@ -511,11 +515,15 @@ export class RakebackSettlerService {
         },
         { onConflict: 'daemon' }
       );
+      if (error) throw error;
+      this.cursor = cursor;
+      return true;
     } catch (e) {
       reportError(
         new Error((e as { message?: string })?.message || String(e)),
         'RakebackSettler.saveHighWaterMark'
       );
+      return false;
     }
   }
 
@@ -565,8 +573,8 @@ export class RakebackSettlerService {
           if (batch >= MAX_DRAIN_BATCHES) {
             backlogRemains = true;
             console.warn(
-              `[RakebackSettler] drain cap reached after ${batch} full batches ` +
-                `(${batch * FETCH_LIMIT} records) - backlog REMAINS, resuming in ` +
+              `[RakebackSettler] drain cap reached after ${batch} source pages ` +
+                `(up to ${batch * FETCH_LIMIT} records) - backlog may remain; resuming in ` +
                 `${CATCH_UP_DELAY_MS / 1000}s instead of waiting the full interval`
             );
             break;
@@ -1171,29 +1179,28 @@ export class RakebackSettlerService {
       this.cursor = hwm.value;
     }
 
-    // ════════════════════════════════════════════════════════════════════════
-    // AUDIT M6 — composite (created_at, id) keyset read.
-    //
-    // The original filter was `.gt('created_at', since).limit(10000)` with the
-    // new watermark taken from the LAST row's created_at. Two rows sharing one
-    // created_at that straddle the LIMIT boundary are then lost forever: row
-    // 10000 sets the watermark to T and row 10001 (also at T) is excluded by
-    // the strict `>` on every subsequent cycle. Production has 12 such
-    // duplicate-timestamp groups today, so the collision is real.
-    //
-    // The direction of the danger is asymmetric and decides the design: every
-    // downstream accumulator is idempotent (credit_agent_commission_from_rake
-    // dedupes on (user_id, source_id, source_type), apply_rakeback_player_stats
-    // claims through rakeback_stats_applied, rakeback_periods recomputes from
-    // source), so RE-processing a row costs nothing while SKIPPING one loses a
-    // player's money with no trace. Everything below therefore prefers the
-    // wider read whenever it is unsure.
-    //
-    // `.gt(created_at)` is still the fallback when the cursor has no id — the
-    // first cycle after this deploy, when high_water_mark_id is still NULL.
-    // That path is byte-for-byte the old behaviour, so the deploy is a no-op
-    // until the first cycle writes an id, and exact from the second onward.
-    // ════════════════════════════════════════════════════════════════════════
+    // Retry durable refusals independently of the global cursor. The same
+    // source authority restores commissions, original player stats and the
+    // existing weekly recomputation queue before acknowledging a retry.
+    let retriedSources: CashSourceReceipt[];
+    try {
+      const { data, error } = await supabase.rpc('fn_retry_cash_accounting_sources', {
+        p_limit: 50,
+      });
+      if (error) throw new Error('Cash source retry failed', { cause: error });
+      retriedSources = readCashSourceBatch(data);
+      if (retriedSources.length > 50)
+        throw new Error('Cash retry exceeded its requested source bound');
+      await confirmCashSourceRefusals(retriedSources);
+    } catch (error) {
+      reportError(error, 'RakebackSettler.source_retry_holds_cursor');
+      return 'halted';
+    }
+
+    // Keep PostgreSQL microseconds unchanged. Complete the remaining timestamp
+    // ties before moving to later timestamps: both queries are index ranges.
+    // A widened >= page with a client-side prefix filter can fill entirely
+    // with already-processed ties and permanently hide the remaining records.
     const sinceIso =
       this.cursor?.createdAt ?? new Date(Date.now() - 7 * 86400 * 1000).toISOString();
     const useKeyset =
@@ -1201,92 +1208,40 @@ export class RakebackSettlerService {
       isFilterSafe(this.cursor.createdAt) &&
       isFilterSafe(this.cursor.id);
     const startedAt = Date.now();
-
-    // 1. Pull rake_records STRICTLY AFTER the last processed record (exclusive
-    // cursor => exactly-once processing) that have player_contributions.
-    // RAKE-AUDIT 2026-07-24: id + is_tournament added — tournament/SNG fee rows
-    // have no hand_id (they are not hands), so agent-commission crediting keys
-    // idempotency on rake_records.id for those rows instead of skipping them.
-    const base = supabase
-      .from('rake_records')
-      .select(
-        'id, is_tournament, tournament_id, hand_id, club_id, rake_amount, player_contributions, rake_method, created_at'
-      );
-    // ── 2026-08-17: the OR keyset predicate WAS the timeout ──
-    //
-    // `or=(created_at.gt."X",and(created_at.eq."X",id.gt."Y"))` is the textbook
-    // composite keyset, and Postgres cannot use idx_rake_records_created_at_id
-    // for it. It runs a full ordered index scan and applies the OR as a FILTER.
-    // Measured against production:
-    //
-    //   OR keyset form   21,534 ms   Rows Removed by Filter: 560,302
-    //   plain range         259 ms   same table, same LIMIT
-    //
-    // That is the [RakebackSettler.fetch_failed] "canceling statement due to
-    // statement timeout" of 2026-08-17, and it explains why the failure looked
-    // intermittent: the cold-start path (useKeyset false) already used the fast
-    // form, so only cycles WITH a cursor died — the daemon that pays players
-    // stalled precisely when it had made progress.
-    //
-    // Fix: ask for `created_at >= cursor` — sargable, index-friendly — then drop
-    // the already-processed head of the page in memory (see the skip below).
-    // Exactly-once is preserved: `gte` is a strict SUPERSET of the OR predicate
-    // (it additionally returns the cursor row itself and any timestamp ties),
-    // and the skip removes precisely that surplus. Ties on a timestamptz are
-    // rare, so the overlap is a handful of rows per cycle.
-    const filtered = useKeyset ? base.gte('created_at', sinceIso) : base.gt('created_at', sinceIso);
-    const { data: rows, error: fetchErr } = await filtered
-      .gt('rake_amount', 0)
-      .not('player_contributions', 'is', null)
-      // Both ORDER BY keys are required: the LIMIT boundary is only
-      // deterministic if the sort is total, and a non-deterministic boundary
-      // reintroduces the skip this fix exists to remove.
-      .order('created_at', { ascending: true })
-      .order('id', { ascending: true })
-      .limit(FETCH_LIMIT);
-
-    if (fetchErr) {
-      reportError(
-        new Error(fetchErr?.message || JSON.stringify(fetchErr) || String(fetchErr)),
-        'RakebackSettler.fetch_failed'
-      );
+    const sourceQuery = () =>
+      supabase
+        .from('rake_records')
+        .select(
+          'id, is_tournament, tournament_id, hand_id, club_id, rake_amount, player_contributions, rake_method, created_at'
+        )
+        .gt('rake_amount', 0)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(FETCH_LIMIT);
+    let rows: RakeRecordRow[];
+    try {
+      let page;
+      if (useKeyset) {
+        page = await sourceQuery().eq('created_at', sinceIso).gt('id', this.cursor!.id!);
+        if (page.error) throw page.error;
+        if (!Array.isArray(page.data)) throw new Error('Cash source page missing');
+        // A short response is not proof that all ties were returned: the server
+        // may cap a page below FETCH_LIMIT. Only an empty tie page admits later times.
+        if (page.data.length === 0) page = await sourceQuery().gt('created_at', sinceIso);
+      } else {
+        // A legacy timestamp without an ID may cover only part of that instant.
+        // Replay it conservatively; the source authority already deduplicates it.
+        page = await sourceQuery().gte('created_at', sinceIso);
+      }
+      if (page.error) throw page.error;
+      if (!Array.isArray(page.data)) throw new Error('Cash source page missing');
+      rows = page.data as RakeRecordRow[];
+    } catch (error) {
+      reportError(error, 'RakebackSettler.fetch_failed');
       return 'halted';
     }
 
-    // Remove the surplus the `gte` widening introduced. On the keyset path the
-    // page can begin with the cursor row itself plus any rows sharing its exact
-    // timestamp that were already settled. Dropping them restores the old OR
-    // predicate's semantics EXACTLY — strictly after (created_at, id) — without
-    // asking Postgres for a filter it cannot index. Rows arrive ordered by
-    // (created_at, id) ascending, so the already-seen entries are always a
-    // contiguous prefix.
-    // Page size AS POSTGRES RETURNED IT, captured before the skip below.
-    //
-    // `hitLimit` (further down) decides 'more' vs 'idle', i.e. whether the
-    // drain loop goes round again. It must be judged on the RAW page: if the
-    // skip removes even one row, a genuinely full 10,000-row page reads as
-    // 9,999 and the settler concludes it is caught up while backlog remains.
-    // The AUDIT M6 drain test caught exactly that.
-    const rawPageSize = rows?.length ?? 0;
-
-    if (useKeyset && rows && rows.length > 0) {
-      const cursorId = this.cursor!.id as string;
-      const before = rows.length;
-      let drop = 0;
-      while (drop < rows.length) {
-        const r = rows[drop] as { created_at: string; id: string };
-        if (r.created_at === sinceIso && r.id <= cursorId) drop++;
-        else break;
-      }
-      if (drop > 0) {
-        rows.splice(0, drop);
-        console.log(
-          `[RakebackSettler] keyset: skipped ${drop} already-settled row(s) at the cursor timestamp (page was ${before})`
-        );
-      }
-    }
-
-    if (!rows || rows.length === 0) {
+    if ((!rows || rows.length === 0) && retriedSources.length === 0) {
       console.log(`[RakebackSettler] No new rake_records since ${sinceIso}`);
       // Nothing processed — leave the cursor untouched so any late-arriving
       // record with an earlier timestamp is still picked up next run.
@@ -1296,273 +1251,74 @@ export class RakebackSettlerService {
     // The exact position of the last row we will have fully processed this
     // batch. Persisting THIS (not now(), and not a Date-truncated copy of it)
     // guarantees no record after it is skipped and none before it is lost.
-    const lastRow = rows[rows.length - 1] as RakeRecordRow;
-    const nextCursor: RakeCursor = {
-      createdAt: lastRow.created_at,
-      id: lastRow.id ?? null,
-    };
-    // A full batch means there is almost certainly more behind it.
-    // rawPageSize, not rows.length — see the note where it is captured. The
-    // keyset skip can shorten `rows`, and judging fullness on the shortened
-    // array would end the drain one page early and leave backlog unsettled.
-    const hitLimit = rawPageSize >= FETCH_LIMIT;
+    const sourceRows = (rows ?? []) as RakeRecordRow[];
+    const lastRow = sourceRows[sourceRows.length - 1];
+    const nextCursor: RakeCursor | null = lastRow
+      ? {
+          createdAt: lastRow.created_at,
+          id: lastRow.id ?? null,
+        }
+      : null;
+    // Ask again after every nonempty page, including short responses. The
+    // bounded drain/catch-up loop stops only after an actually empty range.
+    const backlogMayRemain = sourceRows.length > 0;
 
-    // A read failure or partial hand cannot become a newly calculated share.
-    // Page the immutable attribution ledger before making any financial call.
-    let ledger: Map<string, Map<string, number>>;
+    // Submit each positive cash record exactly once, even when its hand or
+    // attribution is absent. The database alone decides whether its original
+    // evidence can accrue or must remain a durable refusal. Tournament sources
+    // remain under their existing terminal recognition authority.
+    const sources = [...retriedSources];
+    const cashRows = sourceRows.filter((row) => !isTournamentRakeRow(row));
     try {
-      const handIds = (rows as RakeRecordRow[])
-        .map((r) => r.hand_id)
-        .filter((id): id is string => typeof id === 'string' && id.length > 0);
-      ledger = await readRakeAttributionLedger(handIds, async (chunk, afterId) => {
-        let query = supabase
-          .from('rake_attributions')
-          .select('id, hand_id, player_id, weighted_rake_credit')
-          .in('hand_id', chunk)
-          .order('id', { ascending: true })
-          .limit(ATTRIBUTION_PAGE_SIZE);
-        if (afterId !== null) query = query.gt('id', afterId);
-        return await query;
-      });
-      assertCashAttributionComplete(rows as RakeRecordRow[], ledger);
+      for (let offset = 0; offset < cashRows.length; offset += CREDIT_BATCH_SIZE) {
+        const chunk = cashRows.slice(offset, offset + CREDIT_BATCH_SIZE);
+        const ids = chunk.map((row) => {
+          if (!row.id) throw new Error('Cash source has no durable record identity');
+          return row.id;
+        });
+        const { data, error } = await supabase.rpc('fn_credit_agent_commissions_batch', {
+          p_items: ids.map((id) => ({ source_type: 'cash_rake_record', source_id: id })),
+        });
+        if (error) throw new Error('Cash source batch failed', { cause: error });
+        const receipts = readCashSourceBatch(data, ids);
+        await confirmCashSourceRefusals(receipts);
+        sources.push(...receipts);
+      }
     } catch (error) {
-      reportError(error, 'RakebackSettler.ledger_incomplete_holds_cursor');
+      reportError(error, 'RakebackSettler.attribution_failures_hold_cursor');
       return 'halted';
     }
-
-    // 2. Aggregate per (user_id, club_id, week)
+    // The source transaction has already delegated the original idempotent
+    // player-stats writer and queued each earning club's complete week. These
+    // credits only select which existing period calculator to refresh now.
     type Bucket = {
       user_id: string;
       club_id: string;
       period_start: string;
       period_end: string;
-      rake_generated: number;
     };
     const buckets = new Map<string, Bucket>();
-
-    for (const row of rows as RakeRecordRow[]) {
-      if (!row.player_contributions) continue;
-      // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): method-aware, canonical
-      // allocator. Weighted for new cash hands; historical DEALT_EQUAL rows
-      // reproduce their historical equal split. Shares sum exactly to rake.
-      const shares = sharesForRakeRecordWithLedger(row, ledger);
-      if (shares.size === 0) continue;
-      const created = new Date(row.created_at);
-      const ws = weekStart(created);
-      const we = weekEnd(created);
-
-      for (const [userId, credit] of shares.entries()) {
-        const key = `${userId}:${row.club_id}:${ws}`;
-        const cur = buckets.get(key);
-        if (cur) {
-          cur.rake_generated = Math.round((cur.rake_generated + credit) * 100) / 100;
-        } else {
-          buckets.set(key, {
-            user_id: userId,
-            club_id: row.club_id,
-            period_start: ws,
-            period_end: we,
-            rake_generated: credit,
-          });
-        }
+    for (const source of sources) {
+      for (const c of source.credits) {
+        buckets.set(`${c.player_id}:${c.club_id}:${c.period_start}`, {
+          user_id: c.player_id,
+          club_id: c.club_id,
+          period_start: c.period_start,
+          period_end: c.period_end,
+        });
       }
     }
-
+    const blockedSources = sources.filter((r) => r.status === 'blocked').length;
+    if (blockedSources > 0) {
+      console.warn(
+        `[RakebackSettler] ${blockedSources} cash source(s) remain durably refused and scheduled for retry`
+      );
+    }
     if (buckets.size === 0) {
-      console.log(
-        `[RakebackSettler] Processed ${rows.length} rake_records - no eligible player-credits`
-      );
-      this.cursor = nextCursor;
-      await this.saveHighWaterMark(nextCursor);
-      return hitLimit ? 'more' : 'idle';
-    }
-
-    // 2b. BUG 009 FIX — Agent commission credit (per-rake-record, not aggregated).
-    // For each player credited above, look up their agent (if any) and credit the
-    // commission via credit_agent_commission_from_rake RPC. The RPC handles the
-    // commission_rate lookup, ROUND, audit insert, and accumulator updates atomically.
-    let agentCreditsAttempted = 0;
-    let agentCreditsFailed = 0;
-    let agentCreditsSkippedNoHand = 0;
-    let agentCreditsSkippedTournament = 0;
-    const commissionItems: Record<string, unknown>[] = [];
-    for (const row of rows as RakeRecordRow[]) {
-      if (!row.player_contributions) continue;
-      // Round 73: skip pre-R38-backfill rake_records that have no hand_id —
-      // they can't be linked back to a hand for audit, and the settler used
-      // to reprocess them on every restart (the cursor was in-memory only),
-      // emitting NULL-source-id agent_commission rows on every cycle. Skipping
-      // is correct: any commission for these legacy rows was already created
-      // before the bug surfaced; reprocessing only creates duplicates.
-      const handId = (row as { hand_id?: string | null }).hand_id;
-      // TOURNAMENT RAKE IS ATTRIBUTED ONCE, AT SETTLEMENT (Phase 6, 2026-09-07).
-      // fn_settle_tournament_rake -> fn_attribute_tournament_rake credits the
-      // agent commission for every tournament rake row (entry fees, rebuys,
-      // satellite seats, spin books) by metadata.user_id, keyed
-      // md5('trs:' || tournament || user). The RAKE-AUDIT 2026-07-24 path here
-      // predates that function and paid the same rake AGAIN for every
-      // tournament row that carries player_contributions - spin books since
-      // 2026-09-02: 6,753 spins settled on 2026-09-05 carrying 38,922.72 of
-      // rake earned agents 23,263.81 here ('tournament_fee') and 26,742.03 at
-      // settlement; 90,396.99 of 'tournament_fee' commission in the week of
-      // 2026-08-31. Settlement is the one door; this loop is cash only.
-      if (isTournamentRakeRow(row)) {
-        agentCreditsSkippedTournament++;
-        continue;
+      if (nextCursor) {
+        if (!(await this.saveHighWaterMark(nextCursor))) return 'halted';
       }
-      // Legacy NULL-hand CASH rows (pre-R38) are still skipped, as before:
-      // they cannot be linked back to a hand for audit and were already paid.
-      const sourceId = handId ?? null;
-      const sourceType = 'rake_settlement';
-      if (!sourceId) {
-        agentCreditsSkippedNoHand++;
-        continue;
-      }
-      // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): method-aware shares — the
-      // commission basis is the player's credited rake under the hand's own
-      // methodology. Shares sum exactly to the rake collected.
-      const shares = sharesForRakeRecordWithLedger(row, ledger);
-      if (shares.size === 0) continue;
-      for (const [userId, credit] of shares.entries()) {
-        agentCreditsAttempted++;
-        commissionItems.push({
-          user_id: userId,
-          club_id: row.club_id,
-          rake_credit: credit,
-          source_type: sourceType,
-          // Round 43: link the commission audit row + club_wallet_transactions
-          // commission_out audit row back to the originating hand for
-          // ledger reconciliation. For hands, sourceId is hand_history.id
-          // (Round 38 FK); for tournament fees it is the rake_records.id.
-          source_id: sourceId,
-          notes: `RakebackSettler ${sourceType} at ${row.created_at}`,
-        });
-      }
-    }
-
-    // Ship the page's credits server-side in chunks. Identical semantics: the
-    // batch function calls the SAME idempotent per-item function, and wraps
-    // each element in its own exception block, so one bad element is isolated
-    // exactly as a failed single call used to be.
-    for (let i = 0; i < commissionItems.length; i += CREDIT_BATCH_SIZE) {
-      const chunk = commissionItems.slice(i, i + CREDIT_BATCH_SIZE);
-      try {
-        const { data, error } = await supabase.rpc('fn_credit_agent_commissions_batch', {
-          p_items: chunk,
-        });
-        if (error) {
-          agentCreditsFailed += chunk.length;
-          reportError(
-            new Error(`fn_credit_agent_commissions_batch failed: ${error.message}`),
-            'RakebackSettler.commission_batch'
-          );
-        } else {
-          const r = readAttributionBatchReceipt(data, chunk.length, true);
-          agentCreditsFailed += r.failed;
-        }
-      } catch (e) {
-        agentCreditsFailed += chunk.length;
-        reportError(
-          new Error((e as { message?: string })?.message || String(e)),
-          'RakebackSettler.commission_batch_threw'
-        );
-      }
-    }
-    if (
-      agentCreditsAttempted > 0 ||
-      agentCreditsSkippedNoHand > 0 ||
-      agentCreditsSkippedTournament > 0
-    ) {
-      console.log(
-        `[RakebackSettler] Agent-commission credits: ${agentCreditsAttempted - agentCreditsFailed}/${agentCreditsAttempted} OK` +
-          (agentCreditsSkippedNoHand > 0
-            ? `, ${agentCreditsSkippedNoHand} skipped (no hand_id - pre-R38 legacy rows)`
-            : '') +
-          (agentCreditsSkippedTournament > 0
-            ? `, ${agentCreditsSkippedTournament} tournament rows left to settlement (fn_attribute_tournament_rake)`
-            : '') +
-          ' (RPC silently skips non-agent players)'
-      );
-    }
-
-    // 2c. player_stats refresh — IDEMPOTENT per (rake_record, user).
-    // RAKE-AUDIT 2026-07-24 [money-adjacent]: the old JS read-then-update
-    // aggregate was NON-idempotent — a crash between the player_stats increment
-    // and saveHighWaterMark() re-incremented every stat on the next cycle (the
-    // watermark had not advanced). Now each (rake_record, user) is applied
-    // exactly once via apply_rakeback_player_stats, which claims on
-    // rakeback_stats_applied in the SAME transaction as the increment, so a
-    // re-scan of already-processed rows can never double-count. (rakeback_periods
-    // is recompute-from-source and agent commission dedupes, so this was the last
-    // non-idempotent accumulator; the watermark no longer needs to be atomic
-    // with the increment for correctness.)
-    let psApplied = 0;
-    let psFailures = 0;
-    const statsItems: Record<string, unknown>[] = [];
-    for (const row of rows as RakeRecordRow[]) {
-      if (!row.player_contributions) continue;
-      // Phase 6 (2026-09-07): tournament rake reaches player_stats once, at
-      // settlement (fn_attribute_tournament_rake -> apply_rakeback_player_stats).
-      if (isTournamentRakeRow(row)) continue;
-      const rrId = (row as { id?: string }).id;
-      if (!rrId) continue; // no durable id -> cannot key idempotency; skip (safe)
-      // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): method-aware shares.
-      const psShares = sharesForRakeRecordWithLedger(row, ledger);
-      if (psShares.size === 0) continue;
-      for (const [userId, credit] of psShares.entries()) {
-        statsItems.push({
-          rake_record_id: rrId,
-          user_id: userId,
-          club_id: row.club_id,
-          hands: 1,
-          rake: credit,
-        });
-      }
-    }
-
-    for (let i = 0; i < statsItems.length; i += CREDIT_BATCH_SIZE) {
-      const chunk = statsItems.slice(i, i + CREDIT_BATCH_SIZE);
-      try {
-        const { data, error } = await supabase.rpc('fn_apply_rakeback_player_stats_batch', {
-          p_items: chunk,
-        });
-        if (error) {
-          psFailures += chunk.length;
-          reportError(
-            new Error(`fn_apply_rakeback_player_stats_batch failed: ${error.message}`),
-            'RakebackSettler.player_stats_batch'
-          );
-        } else {
-          const r = readAttributionBatchReceipt(data, chunk.length, false);
-          psApplied += r.ok;
-          psFailures += r.failed;
-        }
-      } catch (e) {
-        psFailures += chunk.length;
-        reportError(
-          new Error((e as { message?: string })?.message || String(e)),
-          'RakebackSettler.player_stats_batch_threw'
-        );
-      }
-    }
-    if (psApplied > 0 || psFailures > 0) {
-      console.log(
-        `[RakebackSettler] player_stats idempotent applies: ${psApplied} OK (failures: ${psFailures})`
-      );
-    }
-
-    // Both operations commit independently and dedupe their own retries. A
-    // failure must retain the source page: later period recomputation cannot
-    // reconstruct a missing agent commission or player_stats application.
-    if (agentCreditsFailed > 0 || psFailures > 0) {
-      reportError(
-        new Error(
-          `[RakebackSettler] ${agentCreditsFailed} commission item(s) and ${psFailures} player stats item(s) failed; ` +
-            `holding the watermark at ${this.cursor?.createdAt ?? 'start'} for an idempotent retry.`
-        ),
-        'RakebackSettler.attribution_failures_hold_cursor'
-      );
-      return 'halted';
+      return backlogMayRemain ? 'more' : 'idle';
     }
 
     // 3. Upsert into rakeback_periods. Round 45 RE-RUN fix: recompute the
@@ -1578,6 +1334,7 @@ export class RakebackSettlerService {
     // rake_records, so re-running over the same window converges to the
     // correct value rather than diverging.
     let upserts = 0;
+    let deferredPeriods = 0;
     let failures = 0;
     {
       // ═══ AUDIT 2026-08-20 — this loop was the settler's dominant cost ═══
@@ -1592,7 +1349,7 @@ export class RakebackSettlerService {
       // Now: each (club, week) window is fetched ONCE and every bucket in it is
       // computed from that single dataset, then all rows are persisted in one
       // call. The share arithmetic is the canonical method-aware allocator
-      // (sharesForRakeRecord here, fn_allocate_rake_credits in SQL), so the
+      // (the database reads the original immutable attribution), so the
       // totals agree between the two by construction; only the transport
       // changed. (rake_generated decides the rakeback tier, so JS/SQL parity
       // is pinned by shared test vectors, not assumed.)
@@ -1630,42 +1387,49 @@ export class RakebackSettlerService {
       // tie-break) — then upserts while leaving paid weeks immutable. One call
       // per (club, week) instead of a truncated download.
       for (const g of groups.values()) {
-        const userIds = [...buckets.values()]
+        const groupUserIds = [...buckets.values()]
           .filter((b) => b.club_id === g.club_id && b.period_start === g.period_start)
           .map((b) => b.user_id);
-        if (userIds.length === 0) continue;
-        try {
-          const { data, error } = await supabase.rpc('fn_rakeback_recompute_periods', {
-            p_club_id: g.club_id,
-            p_period_start: g.period_start,
-            p_period_end: g.period_end,
-            p_user_ids: userIds,
-          });
-          if (error) {
+        for (let offset = 0; offset < groupUserIds.length; offset += PERIOD_USER_BATCH_SIZE) {
+          const userIds = groupUserIds.slice(offset, offset + PERIOD_USER_BATCH_SIZE);
+          try {
+            const { data, error } = await supabase.rpc('fn_rakeback_recompute_periods', {
+              p_club_id: g.club_id,
+              p_period_start: g.period_start,
+              p_period_end: g.period_end,
+              p_user_ids: userIds,
+            });
+            if (error) {
+              failures += userIds.length;
+              reportError(
+                new Error(
+                  `fn_rakeback_recompute_periods failed for ${g.club_id} ${g.period_start}: ${error.message}`
+                ),
+                'RakebackSettler.period_recompute'
+              );
+            } else {
+              const receipt = readPeriodRecomputeReceipt(data, userIds.length, g);
+              if (receipt.deferred) {
+                await confirmDeferredPeriodRequest(receipt.deferred, g);
+                deferredPeriods++;
+              } else {
+                upserts += receipt.written;
+              }
+            }
+          } catch (e) {
             failures += userIds.length;
             reportError(
-              new Error(
-                `fn_rakeback_recompute_periods failed for ${g.club_id} ${g.period_start}: ${error.message}`
-              ),
-              'RakebackSettler.period_recompute'
+              new Error((e as { message?: string })?.message || String(e)),
+              'RakebackSettler.period_recompute_threw'
             );
-          } else {
-            const r = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
-            upserts += Number(r?.written ?? 0);
           }
-        } catch (e) {
-          failures += userIds.length;
-          reportError(
-            new Error((e as { message?: string })?.message || String(e)),
-            'RakebackSettler.period_recompute_threw'
-          );
         }
       }
     }
 
     const elapsedMs = Date.now() - startedAt;
     console.log(
-      `[RakebackSettler] Settled ${upserts}/${buckets.size} period rows from ${rows.length} hand records in ${elapsedMs}ms (failures: ${failures})`
+      `[RakebackSettler] Acknowledged ${sources.length - blockedSources} source records; confirmed ${upserts}/${buckets.size} period rows, ${deferredPeriods} durable deferred periods in ${elapsedMs}ms (failures: ${failures})`
     );
 
     /**
@@ -1707,8 +1471,9 @@ export class RakebackSettlerService {
       return 'halted';
     }
 
-    this.cursor = nextCursor;
-    await this.saveHighWaterMark(nextCursor);
-    return hitLimit ? 'more' : 'idle';
+    if (nextCursor) {
+      if (!(await this.saveHighWaterMark(nextCursor))) return 'halted';
+    }
+    return backlogMayRemain ? 'more' : 'idle';
   }
 }

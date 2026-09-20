@@ -408,3 +408,88 @@
   padding: 8px 0;
   min-width: 0;
 }
+
+/* The four games use the entire viewport, with secondary information below play. */
+.fullscreenPage {
+  max-width: none;
+  margin: 0;
+  padding: 0 0 env(safe-area-inset-bottom);
+  gap: 0;
+  min-height: 100dvh;
+  display: block;
+  background: #060d18;
+  container-type: inline-size;
+}
+.fullscreenPage > .back {
+  margin: 4px 12px;
+  min-height: 36px;
+  letter-spacing: 0;
+  text-transform: none;
+  text-shadow: none;
+}
+.fullscreenPage > .spinsTabs {
+  display: none;
+}
+.fullscreenPage :global(.sc-copy) {
+  font:
+    400 14px/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-transform: none;
+  letter-spacing: 0;
+  margin: 8px 0;
+}
+.fullscreenPage :global(.sc-label) {
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.fullscreenPage .seedInput {
+  font-size: 14px;
+}
+.fullscreenPage .rowValue {
+  font-size: 22px;
+}
+.fullscreenPage .row {
+  padding: 10px 0;
+  gap: 12px;
+}
+.fullscreenPage .stage {
+  gap: 8px;
+}
+.fullscreenPage .readout {
+  gap: 5px;
+}
+.fullscreenPage .readoutValue {
+  font-size: clamp(40px, 7vw, 88px);
+}
+.fullscreenPage .readoutSub {
+  max-width: 660px;
+}
+.fullscreenPage .strip {
+  gap: 12px;
+}
+.fullscreenPage .stripItem {
+  font-size: 14px;
+}
+
+.fullscreenPage .crashStage {
+  position: relative;
+}
+.fullscreenPage .crashStage .readout {
+  width: 100%;
+  padding: 12px;
+  box-sizing: border-box;
+}
+.fullscreenPage .crashStage .readoutValue {
+  text-shadow: 0 0 28px #5bbaf55c;
+  font-size: clamp(52px, 7vw, 90px);
+}
+
+/* The multiplier hero moved onto the glass over the curve (2026-09-19); the
+   console readout beneath prints the same figure at bay size, so one number
+   is the big one. */
+.fullscreenPage .crashStage .readoutCompact {
+  font-size: 26px;
+  text-shadow: 0 0 12px #5bbaf55c;
+}

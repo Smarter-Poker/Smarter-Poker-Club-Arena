@@ -36,6 +36,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spinRevealToDealMs, spinPostRevealMs } from '../config/spinSpec.js';
+import { sliceMethod, sliceBlockAfter } from '../testHelpers/sourceWindow.js';
 
 const here = new URL('.', import.meta.url).pathname;
 const BASE = readFileSync(join(here, 'TournamentManagerBase.ts'), 'utf8');
@@ -135,10 +136,12 @@ describe('the deal is still held, and the hold can only grow', () => {
   });
 
   it('every engine is held, whether or not it was announced to', () => {
-    const loop = CODE.slice(CODE.indexOf('for (const [tableId, engine] of this.tableEngines)'));
+    const launch = sliceMethod(CODE, 'private async startLifecycle(');
+    const loop = sliceBlockAfter(launch, 'for (const [tableId, engine] of this.tableEngines)');
     const hold = loop.indexOf('engine.holdDealingUntil(effectiveHold);');
     const skip = loop.indexOf('continue;');
     expect(hold).toBeGreaterThan(-1);
+    expect(skip, 'the re-announce skip must be in the same launch loop').toBeGreaterThan(-1);
     expect(hold, 'the hold must be applied before the re-announce skip').toBeLessThan(skip);
   });
 

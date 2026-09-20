@@ -1,5 +1,7 @@
 # Automatic observation intake
 
+> September 17 delivery status: see the [restored-provider release record](horse-restored-provider-release-2026-09-17.md). Dated verification below remains evidence of its named source, not a fresh release or whole-program completion claim.
+
 The durable capture queue had no automatic producer. The existing isolated
 journal worker now discovers actors from retained, atomically committed hand
 rosters, persists their original source window, and admits their capture work.

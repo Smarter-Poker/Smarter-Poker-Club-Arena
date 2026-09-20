@@ -23,8 +23,203 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
+import { sharedPopupFixture } from './helpers/shared-popup-fixture.mjs';
+import { dismissClubEntryMessage } from './global-setup';
 
 const css = (p: string) => readFileSync(p, 'utf8');
+
+test('production setup persists the club message through an eligible Diamond invitation', async ({
+  page,
+}) => {
+  await page.route('https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      body: JSON.stringify({ ok: true }),
+    });
+  });
+  await page.setContent(`
+    <div role="dialog" aria-label="Club Message From Fixture">
+      <button onclick="fetch('https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message', {method:'POST'}).then(() => this.parentElement.remove())">Do Not Show Me This Message Again</button>
+    </div>
+    <output id="declines">0</output>
+    <div role="dialog" aria-label="Diamond Spins" style="position:fixed;inset:0;background:white">
+      <button id="decline" disabled onclick="document.getElementById('declines').textContent='1';this.parentElement.remove()">Not Now</button>
+    </div>
+    <script>setTimeout(() => document.getElementById('decline').disabled = false, 3000)</script>
+  `);
+  await expect(dismissClubEntryMessage(page)).resolves.toBe(true);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('#declines')).toHaveText('1');
+});
+
+for (const clubMessage of [false, true]) {
+  test(`cash lobby dismissal survives a delayed offer control with club message ${clubMessage}`, async ({
+    page,
+  }) => {
+    await page.setContent(`
+      <button role="tab" aria-selected="false"
+        onclick="this.setAttribute('aria-selected', 'true')">NLH</button>
+      ${clubMessage ? '<button onclick="this.remove()">Close Club Message</button>' : ''}
+      <output id="declines">0</output>
+      <div role="dialog" aria-label="Diamond Spins" style="position:fixed;inset:0;background:white">
+        <button id="decline" disabled onclick="document.getElementById('declines').textContent='1';this.parentElement.remove()">Not Now</button>
+      </div>
+      <script>setTimeout(() => document.getElementById('decline').disabled = false, 3000)</script>
+    `);
+    // The control becomes actionable after the optional two-second probe.
+    // The old ordering stranded its handler when that probe timed out.
+    await prepareCashLobbyActions(page);
+    const tab = page.getByRole('tab', { name: 'NLH', exact: true });
+    await tab.click({ timeout: 6_000 });
+    await expect(page.getByRole('dialog', { name: 'Diamond Spins', exact: true })).toBeHidden();
+    await expect(page.locator('#declines')).toHaveText('1');
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('button', { name: 'Close Club Message' })).toBeHidden();
+  });
+}
+
+test('cash navigation finishes a late invitation before its short visibility assertion', async ({
+  page,
+}) => {
+  await page.setContent('<button>View Table</button><output id="declines">0</output>');
+  await prepareCashLobbyActions(page);
+  // Engine readiness uses API requests, so the invitation may arrive after
+  // lobby selection, without triggering the registered browser handler.
+  await page.evaluate(() => {
+    const prompt = document.createElement('div');
+    prompt.setAttribute('role', 'dialog');
+    prompt.setAttribute('aria-label', 'Diamond Spins');
+    prompt.style.cssText = 'position:fixed;inset:0;background:white';
+    prompt.innerHTML = '<button disabled>Not Now</button>';
+    const decline = prompt.querySelector('button')!;
+    decline.onclick = () => {
+      document.getElementById('declines')!.textContent = '1';
+      prompt.remove();
+    };
+    document.body.append(prompt);
+    // Longer than the unchanged 5s assertion plus the optional 2s greeting
+    // probe: the old deferred handler outlives the assertion and test body.
+    setTimeout(() => {
+      decline.disabled = false;
+    }, 9_000);
+  });
+  await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+  await expect(page.getByRole('button', { name: 'View Table', exact: true })).toBeVisible();
+  await expect(page.locator('#declines')).toHaveText('1');
+  await expect(page.getByRole('dialog', { name: 'Diamond Spins', exact: true })).toBeHidden();
+});
+
+/**
+ * A POPUP LANDS ON ITS OWN CLOCK, NOT ON THE FRAME RATE (2026-09-20).
+ *
+ * `.ca-modal` carried two animators for one entrance: the `caModalSlideUp`
+ * keyframes in Modal.css, and a framer-motion spring writing the same
+ * transform into the element's inline style. A CSS animation outranks an
+ * inline style while it runs, so the keyframes are what a player saw, and when
+ * they ended the card snapped to wherever the spring had got to.
+ *
+ * The two keep different clocks, and that is what made it a defect rather than
+ * an untidiness. The keyframes are time-based and land 350ms after they start.
+ * framer-motion integrates on requestAnimationFrame and clamps each step to
+ * 40ms, so on a thread that is not giving out frames it barely advances.
+ * Measured on the real Diamond Spins invitation at an iPhone 13 viewport, with
+ * the main thread held: the card sat at the spring's inline
+ * `translateY(30px) scale(0.92)` start pose and only came to rest at 466ms
+ * with ~16ms frames, 1280ms with 250ms frames and 3030ms with 1000ms frames.
+ *
+ * So a player was being asked to hit a dismiss control that was still
+ * travelling, and the live lobby certificate could not hit it at all:
+ * production run 35505980028 failed with `element is not stable` on that
+ * invitation's Not Now plate while measuring the footer behind it.
+ *
+ * This pins the cause. The entrance is the stylesheet's, it plays, and nothing
+ * writes a competing transform into the card's inline style frame by frame.
+ * The exit is still framer-motion's and still closes the popup, so the pin
+ * cannot be satisfied by deleting an animation (CLAUDE.md 10.6).
+ */
+test("the popup entrance is the stylesheet's alone, and it plays", async ({ page }) => {
+  const { javascript, css } = await sharedPopupFixture();
+  await page.setContent(
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
+      `<style>${css}</style></head><body><div id="root"></div></body></html>`
+  );
+  await page.addScriptTag({ content: javascript });
+
+  const entrance = await page.evaluate(async () => {
+    (window as unknown as { mountPopup: () => void }).mountPopup();
+    const samples: { animationName: string; computed: string; inline: string; opacity: string }[] =
+      [];
+    await new Promise<void>((done) => {
+      const started = performance.now();
+      const step = () => {
+        const card = document.querySelector('.ca-modal') as HTMLElement | null;
+        if (card)
+          samples.push({
+            animationName: getComputedStyle(card).animationName,
+            computed: getComputedStyle(card).transform,
+            inline: card.style.transform,
+            opacity: card.style.opacity,
+          });
+        if (performance.now() - started < 300) requestAnimationFrame(step);
+        else done();
+      };
+      requestAnimationFrame(step);
+    });
+    return samples;
+  });
+
+  expect(entrance.length, 'the popup never rendered').toBeGreaterThan(0);
+
+  /* The entrance is owed, it comes from the stylesheet, and it plays. */
+  expect(
+    entrance[0].animationName,
+    'the card no longer carries its own entrance animation'
+  ).toContain('caModalSlideUp');
+  expect(
+    entrance.some((s) => s.computed !== 'none' && s.computed !== ''),
+    'the entrance did not play: the card was never transformed on its way in'
+  ).toBe(true);
+
+  /* ...and it is the only thing moving the card. An inline transform written
+     per frame is a second animator on a different clock, and on a busy thread
+     it is what leaves the dismiss control travelling for seconds. */
+  const competing = entrance.filter((s) => s.inline !== '' || s.opacity !== '');
+  expect(
+    competing.slice(0, 3),
+    'something is writing the card transform inline while its keyframes run'
+  ).toEqual([]);
+
+  /* The exit still plays and still closes: a dismissed popup does not sit on
+     the page (see DiamondBustPrompt, which stopped relying on it for that). */
+  await page.getByRole('button', { name: 'Not Now', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Fixture Popup', exact: true })).toBeHidden({
+    timeout: 8_000,
+  });
+});
+
+test('cash navigation retires its handler and still refuses a missing View action', async ({
+  page,
+}) => {
+  await page.setContent('<output id="declines">0</output>');
+  await prepareCashLobbyActions(page);
+  await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+  await page.evaluate(() => {
+    const prompt = document.createElement('div');
+    prompt.setAttribute('role', 'dialog');
+    prompt.setAttribute('aria-label', 'Diamond Spins');
+    prompt.innerHTML =
+      "<button onclick=\"document.getElementById('declines').textContent='1';this.parentElement.remove()\">Not Now</button>";
+    document.body.append(prompt);
+  });
+  await expect(
+    expect(page.getByRole('button', { name: 'View Table', exact: true })).toBeVisible({
+      timeout: 100,
+    })
+  ).rejects.toThrow('toBeVisible');
+  await expect(page.locator('#declines')).toHaveText('0');
+});
 
 const SHEETS = [
   'src/styles/globals.css',

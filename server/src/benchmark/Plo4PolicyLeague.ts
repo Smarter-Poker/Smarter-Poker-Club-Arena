@@ -172,7 +172,6 @@ export async function playPlo4PolicyHand(
   button: number,
   heroSeat: number,
   mode: Plo4PolicyMode,
-  samples: number,
   shouldContinue = () => true
 ): Promise<Plo4HandReceipt> {
   const variant = profile.variant ?? 'plo4';
@@ -525,11 +524,14 @@ export async function runOmahaPolicyLeague(
     pairs: number;
     seed: number;
     mode?: Plo4PolicyMode;
-    samples?: number;
   },
   shouldContinue = () => true,
   profiles: readonly Readonly<Plo4LeagueProfile>[] = PLO4_LEAGUE_PROFILES
 ) {
+  if ('samples' in options)
+    throw new Error(
+      'League sample overrides are unsupported; the frozen runtime policy owns effective work'
+    );
   const profile = profiles.find((p) => p.id === options.profileId);
   if (
     !profile ||
@@ -552,10 +554,7 @@ export async function runOmahaPolicyLeague(
     !Number.isInteger(options.seed) ||
     options.seed < 1 ||
     options.seed > 0xffffffff ||
-    !['off', 'shadow', 'candidate'].includes(options.mode ?? 'candidate') ||
-    !Number.isInteger(options.samples ?? 32) ||
-    (options.samples ?? 32) < 1 ||
-    (options.samples ?? 32) > 128
+    !['off', 'shadow', 'candidate'].includes(options.mode ?? 'candidate')
   )
     throw new Error('Invalid bounded PLO4 league request');
   const pairs: {
@@ -578,7 +577,6 @@ export async function runOmahaPolicyLeague(
       button,
       heroSeat,
       options.mode ?? 'candidate',
-      options.samples ?? 32,
       shouldContinue
     );
     if (!candidate.complete) {
@@ -591,7 +589,6 @@ export async function runOmahaPolicyLeague(
       button,
       heroSeat,
       'off',
-      options.samples ?? 32,
       shouldContinue
     );
     if (!baseline.complete) {

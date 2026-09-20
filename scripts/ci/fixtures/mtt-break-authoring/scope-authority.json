@@ -1,0 +1,41 @@
+{
+  "source_path": "scripts/ci/fixtures/mtt-format-preparation/projection-dependencies-20260917.json",
+  "source_sha256": "b45147af3482d7585c64bcbe049b64c63bb38bb5b3d5329ec8840a89fa57af18",
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SELECT transaction_timestamp() captured_at,p.proname,p.oid::regprocedure::text signature,pg_get_functiondef(p.oid) definition,md5(p.prosrc) source_md5,md5(pg_get_functiondef(p.oid)) definition_md5,pg_get_userbyid(p.proowner) owner,p.prosecdef,p.provolatile,p.proconfig,(SELECT jsonb_agg(jsonb_build_object('grantor',pg_get_userbyid(a.grantor),'grantee',CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,'privilege_type',a.privilege_type,'is_grantable',a.is_grantable) ORDER BY a.grantee::regrole::text,a.privilege_type) FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner)))a) grants FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname='fn_club_scope_ids'; COMMIT;",
+  "row": {
+    "captured_at": "2026-09-17 06:28:12.999671+00",
+    "proname": "fn_club_scope_ids",
+    "signature": "fn_club_scope_ids(uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_club_scope_ids(p_club_id uuid)\n RETURNS uuid[]\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT CASE\n    WHEN coalesce((SELECT is_union FROM public.clubs WHERE id = p_club_id), false)\n      THEN (\n        SELECT array_agg(DISTINCT x)\n        FROM (\n          SELECT p_club_id AS x\n          UNION SELECT id      FROM public.clubs       WHERE union_id = p_club_id\n          UNION SELECT club_id FROM public.union_clubs WHERE union_id = p_club_id\n        ) s\n        WHERE x IS NOT NULL\n      )\n    ELSE ARRAY[p_club_id]\n  END;\n$function$\n",
+    "source_md5": "9fc3bbf5ebbf941e06141b3a65584ef4",
+    "definition_md5": "be6fa7f8c21cddebf68d4e23099b977f",
+    "owner": "postgres",
+    "prosecdef": true,
+    "provolatile": "s",
+    "proconfig": [
+      "search_path=public"
+    ],
+    "grants": [
+      {
+        "grantee": "authenticated",
+        "grantor": "postgres",
+        "is_grantable": false,
+        "privilege_type": "EXECUTE"
+      },
+      {
+        "grantee": "postgres",
+        "grantor": "postgres",
+        "is_grantable": false,
+        "privilege_type": "EXECUTE"
+      },
+      {
+        "grantee": "service_role",
+        "grantor": "postgres",
+        "is_grantable": false,
+        "privilege_type": "EXECUTE"
+      }
+    ],
+    "expected_presence": "absent"
+  }
+}

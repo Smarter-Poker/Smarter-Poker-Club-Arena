@@ -1064,10 +1064,10 @@ class DailyChallengeServiceClass {
    * The complete Daily Missions page in one authenticated receipt.
    *
    * Active contracts, career totals, streak state, spendable diamonds, and
-   * every still-claimable completed reward are read from the same database
-   * snapshot. Historical rows carry immutable assignment snapshots, while
-   * the reward vault intentionally excludes rewards after their seven-day
-   * claim window closes.
+   * every completed-but-unclaimed reward are read from the same database
+   * snapshot. Historical rows carry immutable assignment snapshots, so a
+   * later catalog edit cannot rewrite what a player earned or make an old
+   * reward disappear after its period rolls over.
    */
   async getDashboard(userId: string): Promise<DailyChallengeDashboard> {
     const { data, error } = await retryFetch(
@@ -1154,6 +1154,9 @@ class DailyChallengeServiceClass {
       return invalidDailyMissionReceipt(context, 'challenge totals');
     }
     const vault = this.mapRewardVault(payload.vault, userId, context);
+    if (vault.count !== totalCompleted - totalClaimed) {
+      return invalidDailyMissionReceipt(context, 'challenge reward vault total');
+    }
     const currentStreak = readReceiptInteger(stats.currentStreak, context, 'current streak');
     const streakCount = readReceiptInteger(streak.streak, context, 'streak count');
     if (currentStreak !== streakCount || stats.milestoneRewardCurrency !== 'diamonds') {

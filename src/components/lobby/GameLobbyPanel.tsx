@@ -28,7 +28,7 @@ import type { LobbyEntry, LobbyTableRow, LobbyTournamentRow, RuleMedallion } fro
 import { parseBlindStructure, tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import { parseTableSettings, seatsTakenLabel, seatFirstJoinable } from './lobbyEntries';
 import { cashBuyInRange } from '../../lib/cashBuyIn';
-import { tournamentService } from '../../services/TournamentService';
+import { tournamentService, type TournamentWithArena } from '../../services/TournamentService';
 import { waitlistService, type WaitlistEntry } from '../../services/WaitlistService';
 import { tableService } from '../../services/TableService';
 import { supabase } from '../../lib/supabase';
@@ -41,6 +41,7 @@ import {
   effectivePlaceLadderPool,
   placePrize,
   resolvePayoutStructure,
+  tournamentRowUnitCents,
 } from '../tournament/details/types';
 import type { PayoutPlace } from '../tournament/details/types';
 import { staffTickLine, tickIsStale } from './cashGameTick';
@@ -48,7 +49,7 @@ import { SpadeConsole } from '../console/SpadeConsole';
 import { titleCase } from '../../utils/titleCase';
 import './GameLobbyPanel.css';
 import './PremiumGameLobbyPanel.css';
-import { formatTableChips } from '../../utils/format';
+import { formatPrizeAtUnit, formatTableChips } from '../../utils/format';
 
 export interface GameLobbyPanelProps {
   entry: LobbyEntry;
@@ -197,7 +198,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   }, [onClose]);
 
   // ── Detail data (read-only enrichment; actions never depend on it) ──
-  const [tournament, setTournament] = useState<Tournament | null>(null);
+  const [tournament, setTournament] = useState<TournamentWithArena | null>(null);
   const [tournamentFieldSize, setTournamentFieldSize] = useState<number | null>(null);
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
   const [waitlistError, setWaitlistError] = useState(false);
@@ -446,6 +447,16 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
 
     const t = entry.raw as LobbyTournamentRow;
     const st = entry.status;
+    if (entry.kind === 'unknown') {
+      if (st === 'completed' || st === 'running') {
+        return {
+          label: st === 'completed' ? 'Results' : 'Watch',
+          kind: 'secondary' as const,
+          link: `/tournaments/${entry.id}`,
+        };
+      }
+      return { label: 'Entry Unavailable', kind: 'disabled' as const };
+    }
     // The lobby labels a filled seat-first game Running before the engine
     // starts it. Only the authoritative RUNNING row enables this exception.
     const hasStarted = String(t.status || '').toUpperCase() === 'RUNNING';
@@ -669,6 +680,21 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     );
   }, [panelIsSatellite, panelPayouts, tournament, tournamentFieldSize]);
 
+  /**
+   * THE UNIT THIS EVENT PAYS IN, read from the arena `getTournament` embedded
+   * rather than assumed. The projected ladder below is the surface the Diamond
+   * build programme named as still speaking chips for a Diamond event, and
+   * this is what it speaks instead: `computePlacePrize` snaps every share to
+   * this unit and `formatPrizeAtUnit` prints it at the same one, so a player
+   * reading a Diamond event sees the whole Diamonds the settlement will pay.
+   *
+   * `null` while the tournament is still loading is the SQL's own "join found
+   * nothing" answer, a cent - and the ladder does not render at all until
+   * `tournament` is non-null, so no chip-denominated row is ever painted and
+   * then corrected.
+   */
+  const panelUnitCents = useMemo(() => tournamentRowUnitCents(tournament), [tournament]);
+
   const cashRaw = isCash ? (entry.raw as LobbyTableRow) : null;
   /* One helper, so the panel and the card behind it cannot quote different
      buy-ins for the same table — see src/lib/cashBuyIn.ts for why the raw
@@ -722,7 +748,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       <PlaqueSeats
         players={entry.players}
         capacity={entry.capacity}
-        bareCount={entry.kind === 'mtt'}
+        bareCount={entry.kind === 'mtt' || entry.kind === 'unknown'}
         gameTables={entry.game ? entry.game.tables : null}
       />
       {cta.link && !busy ? (
@@ -1227,8 +1253,14 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                                         same cent-rounded amount settlement uses. */}
                                     {panelPlaceLadderPool === null
                                       ? '-'
-                                      : formatTableChips(
-                                          placePrize(panelPlaceLadderPool, panelPayouts, p.place)
+                                      : formatPrizeAtUnit(
+                                          placePrize(
+                                            panelPlaceLadderPool,
+                                            panelPayouts,
+                                            p.place,
+                                            panelUnitCents
+                                          ),
+                                          panelUnitCents
                                         )}
                                   </td>
                                 )}

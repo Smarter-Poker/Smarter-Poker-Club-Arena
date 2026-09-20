@@ -1,3 +1,5 @@
+> Current execution authority: root `AGENTS.md`, `docs/agent-policy/OPERATING-LAW.md`, and `PUBLISHING.md`. This dated plan supplies scope/dependency context only; it does not assign new work or override current delivery policy.
+
 # Real-Time Connections Programme
 
 ## Current Continuation Checkpoint (September 10, 2026)
@@ -113,7 +115,7 @@ and repaired; 71 focused tests pass. PR4085 is published; post-release browser,
 natural reconnect and physical-device acceptance remain open.
 Exact publication evidence: `docs/audits/2026-09-10-realtime-phase13-release.md`.
 Scope: `docs/changelog/2026-09-10-realtime-phase13-lobby-recovery.md`.
-Engine release sealing and Stage-B cutover remain with the coordinating task.
+Historical coordination assignment: use current owner instructions for independent delivery; preserve actual engine and schema cutover dependencies.
 
 Phase 12 scope: `docs/changelog/2026-09-10-realtime-phase12-notification-recovery.md`.
 Published client/API and controlled-browser evidence: `docs/audits/2026-09-10-realtime-phase12-release.md`.

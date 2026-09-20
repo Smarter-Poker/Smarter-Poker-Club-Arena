@@ -245,6 +245,7 @@ describe('TournamentLobbyCard — an unanswered entry check is not "not entered"
     id: 't1',
     name: 'Sunday Major',
     type: 'mtt' as const,
+    format_contract: 'mtt-v2',
     buyIn: 100,
     prizePool: 5000,
     maxPlayers: 0,
@@ -345,17 +346,63 @@ describe('TournamentLobbyCard — numbers measured, not parsed back out of copy'
     expect(label).not.toMatch(/lvl/i);
   });
 
-  it('says "Open" rather than inventing a count when the window cannot be measured', () => {
+  it('does not advertise registration when its window cannot be measured', () => {
     // Level window with no current_level, which is exactly what the only call
     // site passes. "6 Lvls Left" here would be a number nobody supplied.
     expect(lateRegState({ levels: 6, minutes: 0, currentLevel: null, nowMs: 0 })).toEqual({
-      active: true,
-      label: 'Open',
+      active: false,
+      label: 'Unavailable',
     });
     expect(lateRegState({ levels: 0, minutes: 45, startedAtMs: null, nowMs: 0 })).toEqual({
-      active: true,
-      label: 'Open',
+      active: false,
+      label: 'Unavailable',
     });
+  });
+
+  it('rerenders the actual card when finalization closes its window', async () => {
+    const tournament = {
+      id: 'late-card',
+      name: 'Live Window',
+      type: 'mtt' as const,
+      format_contract: 'mtt-v2',
+      buyIn: 10,
+      prizePool: 100,
+      maxPlayers: 100,
+      registeredPlayers: 10,
+      status: 'running' as const,
+      blindStructure: '5m',
+      late_reg_levels: 3,
+      current_level: 2,
+      prize_pool_finalized: false,
+    };
+    const { rerender } = render(
+      <MemoryRouter>
+        <TournamentLobbyCard tournament={tournament} knownRegistration={false} />
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      /* On the console the window prints as a label/value row: LATE REG
+         in the master's blue, the countdown in gold beside it. */
+      expect(screen.getByText('Late Reg')).toBeTruthy();
+      expect(screen.getByText('1 Lvl Left')).toBeTruthy();
+    });
+    rerender(
+      <MemoryRouter>
+        <TournamentLobbyCard
+          tournament={{ ...tournament, prize_pool_finalized: true }}
+          knownRegistration={false}
+        />
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(screen.queryByText(/1 Lvl Left/)).toBeNull());
+    expect(screen.queryByText('Late Reg')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Watch' })).toBeTruthy();
+  });
+
+  it('closes a previously open card when the pool is finalized', () => {
+    expect(
+      lateRegState({ levels: 6, minutes: 60, currentLevel: 2, nowMs: 0, finalized: true })
+    ).toEqual({ active: false, label: 'Closed' });
   });
 
   it('reports no window at all when the tournament has none', () => {

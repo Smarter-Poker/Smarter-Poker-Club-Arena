@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 1,
+  "status": "SOURCE_ONLY_UNRUN",
+  "scope": "Cash positive checker evidence and immediate job259 failed-row intake; real pg_cron SPI fixture, not production financial reconciliation",
+  "sourceDonor": "14898e64111c71ee3f4afbffa412ecce4c641002",
+  "core": {
+    "bridge": "00a43ae03ab12cec9505e2bfed71d937",
+    "raiser": "a6df5f2eef07aa3f606db79d93944590"
+  },
+  "files": {
+    ".github/workflows/ci.yml": {
+      "bytes": 151754,
+      "sha256": "eab4a307624077af69afd7daa1016aaa0265bf5fc980215fb3cafff8879532b9"
+    },
+    "scripts/ci/build_pg17_cash_pgcron.py": {
+      "bytes": 6283,
+      "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
+    },
+    "scripts/ci/classify-ci-changes.mjs": {
+      "bytes": 22175,
+      "sha256": "2ba475d3ae45a4f8a50d8be839019d1356e8644fd71bb2bcb84803398565d92e"
+    },
+    "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
+      "bytes": 6379,
+      "sha256": "21252e49797dc8f43af3c06d9d66b2d57b8c7861d91dd3d503bcf36f4f4ac562"
+    },
+    "scripts/ci/probes/production-alert-core/notification/manifest.json": {
+      "bytes": 10378,
+      "sha256": "9f490c9970870e0e6b442e28bddc081768ba0927361aff4539e401eacc8327a3"
+    },
+    "scripts/ci/test-cash-failure-pgcron.py": {
+      "bytes": 30583,
+      "sha256": "8ff722bd3390bc24ad1d273a8cb70647bd960df8fca6dfc48f45d89318c0d94d"
+    },
+    "scripts/ci/test-production-alert-core-postgres.py": {
+      "bytes": 30159,
+      "sha256": "6ae1a688bcdeea4cb59a29c89129ff10dc4b4d5746d303a7cf3ec4b0fc052c83"
+    },
+    "scripts/ci/test_cash_native_pgcron.py": {
+      "bytes": 3454,
+      "sha256": "032a0942d016fcd97f763e000da4666caa14f464920cb04ef0f243de4cb6d3c8"
+    },
+    "scripts/ci/test_production_alert_core_postgres.py": {
+      "bytes": 7903,
+      "sha256": "868cf2000502522cf1374bf4bd3763763e56172d2fb9f8672b885b0970d00589"
+    },
+    "scripts/operational-alerts/cash-pot-failed-run-intake.md": {
+      "bytes": 1677,
+      "sha256": "f3ffb2bc3a19c46d4b73ec9807dd468f4ce63a0957334328a4ace32b8334a64a"
+    },
+    "scripts/operational-alerts/cash-pot-failed-run-intake.sql": {
+      "bytes": 11540,
+      "sha256": "a8526d6955533b95318f575c3486e475a6a0e926f63685b00741366ab047c750"
+    },
+    "scripts/qualification/cash-pot-check-connected.sql": {
+      "bytes": 18817,
+      "sha256": "9e270f4bccbacdcf4c650509937d87a7798bf925faf837ed51b47eb38594191a"
+    },
+    "scripts/qualification/cash-pot-check-evidence-concurrency.spec": {
+      "bytes": 7637,
+      "sha256": "0c465d42787dacb497578030a25e434de240546de18e4fb4b89ce805faf710cf"
+    },
+    "scripts/qualification/cash-pot-check-evidence.manifest.json": {
+      "bytes": 15491,
+      "sha256": "b4a5c6cdde99bbf9f0b33472bc9beff507ec4c5e0453b28e0508be6741fd1a08"
+    },
+    "scripts/qualification/cash-pot-check-evidence.md": {
+      "bytes": 16263,
+      "sha256": "56ed6bd6ce7f38fa60414da0e018dc4a176c0705e84e457495d5908855219988"
+    },
+    "scripts/qualification/cash-pot-check-evidence.sql": {
+      "bytes": 29023,
+      "sha256": "16a42a635eb0e1376798727772520065234d96a5849d1deac384865ca4156a02"
+    },
+    "scripts/qualification/cash-pot-failed-run-intake.sql": {
+      "bytes": 19643,
+      "sha256": "1d1651261bd34b5c9ce6e12e91139fcfb47f718d3791675fec36f6412418c7b8"
+    },
+    "scripts/qualification/fixtures/cash-native-pgcron/pg_cron-heap-tables.patch": {
+      "bytes": 912,
+      "sha256": "47134f2c718dfb6bdad59da4fde12af4fb82db1f7725c02729aaf7521392bc0c"
+    },
+    "scripts/qualification/fixtures/cash-pot-check-evidence/original-40538.sql": {
+      "bytes": 2324,
+      "sha256": "cf691185d04b52be799a122d9c0ecfa1df76f10701c76a6f111e677350458142"
+    },
+    "scripts/qualification/fixtures/cash-pot-check-evidence/preimage.sql": {
+      "bytes": 25281,
+      "sha256": "9c551cddfe93d80df1b28d91fa65dffc801f8f3deff38a61a01640d84f4d3d52"
+    },
+    "scripts/qualification/fixtures/cash-pot-failed-run-intake/reader-source.sql": {
+      "bytes": 11784,
+      "sha256": "0db1a08ceb7aef5b151cef28bdd02cc94947593364d9293c29821007f3c6b242"
+    },
+    "scripts/qualification/fixtures/cash-pot-failed-run-intake/writer.sql": {
+      "bytes": 957,
+      "sha256": "ce860cf1066ec51dcfaaccaef8cb03c07282c2cef2d766edfa3afc7757e362a8"
+    },
+    "supabase/components/cash-failed-run-intake.rollback.sql": {
+      "bytes": 31016,
+      "sha256": "2f14ebcc798eb73e411f7dceb3c40738d3317ac415bacb58a6261d3654856c4e"
+    },
+    "supabase/components/cash-failed-run-intake.sql": {
+      "bytes": 31017,
+      "sha256": "9e2b0f7d2645a3fb7ee1efff928a87cfa7ae920294da4066d90f040cbf460fd9"
+    },
+    "supabase/components/cash-pot-check-evidence.rollback.sql": {
+      "bytes": 50461,
+      "sha256": "2c60e14442fa14e0933b70e93f3200163812186c5858e41c8f4fcac61a7408ca"
+    },
+    "supabase/components/cash-pot-check-evidence.sql": {
+      "bytes": 50456,
+      "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
+    },
+    "tests/unit/fixtureNativeCi.test.ts": {
+      "bytes": 88814,
+      "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
+    }
+  },
+  "nativePgCron": {
+    "upstreamCommit": "9490f9cc9803f75105f2f7d89839a998f011f8d8",
+    "upstreamArchiveSha256": "52d1850ee7beb85a4cb7185731ef4e5a90d1de216709d8988324b0d02e76af61",
+    "providerPackagingCommit": "93b885ae18c2f3ee9dc271389f7069f09627ee08",
+    "heapPatchSha256": "47134f2c718dfb6bdad59da4fde12af4fb82db1f7725c02729aaf7521392bc0c"
+  },
+  "remainingAcceptance": [
+    "All compilation and native checks unrun in this helper task",
+    "Production provider binary identity not captured; source/schema compatibility only",
+    "Existing positive donor fixture is a narrow synthetic schema; current full financial-trigger graph closure is not proved by this native scheduler test",
+    "Production resource/extension lifecycle behavior unqualified; no production failure injection"
+  ],
+  "handSubmissionIntegration": {
+    "reason": "Existing Accounting job directly invokes retained-hand native qualification; selector and routing regression expanded. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 139539,
+        "sha256": "50fa46ccf228dca4be463240f9ebd9d59725586a4ae6f6b122fbb3c1d976106d"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 17771,
+        "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 88814,
+        "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
+      }
+    },
+    "mainIntegration": {
+      "revision": "59759374f63503f046b00fc54d3e0c161b87a0f4",
+      "previousPins": {
+        ".github/workflows/ci.yml": {
+          "bytes": 140716,
+          "sha256": "f223211fc49a26cadaca69b275569d416b36565d612052ab2298d5dba3d97687"
+        },
+        "scripts/ci/classify-ci-changes.mjs": {
+          "bytes": 17771,
+          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
+        },
+        "tests/unit/fixtureNativeCi.test.ts": {
+          "bytes": 88814,
+          "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
+        }
+      },
+      "reason": "Preserves accepted elimination, Spin fee, PKO and cash-week routes while adding the same retained-submission route; exact merged workflow and selector bytes."
+    },
+    "noStartParent": "1d1a6cced3cd956e99dd94e3a63de159fcda1010",
+    "movementParent": {
+      "revision": "f3e5bae43395980fc49ca02876b3f94818a54672",
+      "previousPins": {
+        ".github/workflows/ci.yml": {
+          "bytes": 141427,
+          "sha256": "94ec280b980b29ba5450cfea1eebf05449e97b8bdeb60b0c8de7861ce244fe4b"
+        },
+        "scripts/ci/classify-ci-changes.mjs": {
+          "bytes": 17771,
+          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
+        },
+        "tests/unit/fixtureNativeCi.test.ts": {
+          "bytes": 88814,
+          "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
+        }
+      },
+      "reason": "Compose both existing Accounting native routes and all routing assertions. Cash SQL and capture inputs unchanged."
+    },
+    "stockToolchainBinding": {
+      "previousPins": {
+        ".github/workflows/ci.yml": {
+          "bytes": 142687,
+          "sha256": "8f1a33be99429876bf59cb820f32931961a0d1b2dd7c7fcf7cb04ea92b8eb7d9"
+        },
+        "scripts/ci/classify-ci-changes.mjs": {
+          "bytes": 17771,
+          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
+        },
+        "tests/unit/fixtureNativeCi.test.ts": {
+          "bytes": 88814,
+          "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
+        }
+      },
+      "reason": "Pass the already-built PG_ISOLATION_TESTER artifact explicitly to the journal native runner; routing assertion reproduced missing environment before repair."
+    },
+    "finalMovementParent": {
+      "revision": "546421d4a8080b6cf8127c538e9043f3219beb6a",
+      "movementParentPins": {
+        ".github/workflows/ci.yml": {
+          "bytes": 141976,
+          "sha256": "9a1f06bf566d36eec5d84fe340eaf434309059eb9097e692292782bb8f43a21e"
+        },
+        "scripts/ci/classify-ci-changes.mjs": {
+          "bytes": 17771,
+          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
+        },
+        "tests/unit/fixtureNativeCi.test.ts": {
+          "bytes": 88814,
+          "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
+        }
+      },
+      "reason": "Preserves final movement native metadata and result-validator correction, both qualification routes and exact merged source bytes; Cash SQL untouched."
+    }
+  },
+  "mixedCustodyIntegration": {
+    "reason": "Mixed custody qualification is routed through the existing accounting lane; both existing and retained-MTT selectors are preserved. Cash SQL and immutable fixture inputs are unchanged.",
+    "previousPins": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 17771,
+        "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 88814,
+        "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
+      }
+    }
+  }
+}

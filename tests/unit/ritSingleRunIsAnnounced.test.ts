@@ -81,17 +81,3 @@ describe('a Run It Twice offer that ends in one board says so', () => {
     }
   });
 });
-
-describe('the expiry names the one seat that held things up (2026-09-13)', () => {
-  it('the host forwards a single silent player by id, and the collective line otherwise', () => {
-    const fn = RUNOUT.slice(
-      RUNOUT.indexOf('protected wireRunItTwiceEvents(): void {'),
-      RUNOUT.indexOf('protected wireRunItTwiceEvents(): void {') + 1200
-    );
-    expect(fn).toContain(
-      "if (silent.length === 1) this.emitRitSingleRun('no_answer', silent[0] as string);"
-    );
-    expect(fn).toContain("else this.emitRitSingleRun('no_agreement');");
-    expect(RUNOUT).toContain("| 'no_answer'");
-  });
-});

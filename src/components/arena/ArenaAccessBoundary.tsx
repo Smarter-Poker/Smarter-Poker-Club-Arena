@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { getArenaContext } from '../../services/ArenaContextService';
@@ -6,12 +6,10 @@ import type { ArenaAccessContext } from '../../../server/src/domain/ArenaContext
 import PageSkeleton from '../common/PageSkeleton';
 import DiamondCustodyBalance from './DiamondCustodyBalance';
 import DiamondArenaWallet from './DiamondArenaWallet';
-import PokerArenaNavigation from './PokerArenaNavigation';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { ArenaAccessProvider } from './arenaAccess';
+import { isDiamondArenaLobbyPath, isDiamondArenaPlayerPath } from './diamondArenaRoutes';
 import './DiamondArenaShell.css';
-
-const DiamondsToChipsButton = lazy(() => import('../games/DiamondsToChipsButton'));
 
 interface AccessState {
   key: string;
@@ -36,6 +34,16 @@ export default function ArenaAccessBoundary({
   const path = useLocation().pathname;
   const navigate = useNavigate();
   const showCashLobby = cashLobby || /\/clubs\/[^/]+\/?$/.test(path);
+  /* THE PLAYER DOORS OPEN (2026-09-19). The lobby was the only route under
+     the arena that rendered its page; Tournaments, Players, a member's own
+     profile and Messages all fell to the safe shell below, so a Diamond
+     player had the lobby and no way out of it. `isDiamondArenaPlayerPath`
+     is the allowlist (src/components/arena/diamondArenaRoutes.ts): those
+     routes render their page, and every operator, finance, agent and union
+     route keeps the shell, which is what "no unions or agents" on a typed
+     URL means. The closed-games notice stays on the lobby only. */
+  const showArenaPlayerSurface = showCashLobby || isDiamondArenaPlayerPath(path);
+  const showClosedNotice = showCashLobby || isDiamondArenaLobbyPath(path);
   const [retry, setRetry] = useState(0);
   const [state, setState] = useState<AccessState>({
     key: '',
@@ -139,28 +147,27 @@ export default function ArenaAccessBoundary({
 
        The closed-games line stays above the lobby while `cash_games_enabled`
        is false. An empty game board is honest, but silently empty is not: the
-       player is told why there is nothing to sit down at. */
-    return showCashLobby ? (
+       player is told why there is nothing to sit down at.
+
+       THE ARENA HAS NO CHIP BRIDGE (2026-09-19). This notice used to carry the
+       Diamonds To Chips button underneath it. That button leads to the host
+       club's diamonds-to-chips wheel, which pays chip prizes into that club's
+       `club_members.chip_balance`, and the programme's rule is that the arena
+       club must never acquire chip balances. It was silent only because the
+       Diamond host has no wheel configured; the day staff enabled one, every
+       Diamond player would have been sent to it. The chip bridge is a chip
+       club feature and is not mounted here. tests/the-diamond-arena-has-no-
+       chip-bridge.law.test.ts holds this. */
+    return showArenaPlayerSurface ? (
       <ArenaAccessProvider value={state.context}>
-        <PokerArenaNavigation />
-        {state.context.cashGamesEnabled !== true && (
-          <>
-            <p className="diamond-arena-notice">Diamond Games Are Not Open For Play Yet.</p>
-            <Suspense fallback={null}>
-              <DiamondsToChipsButton
-                clubId={key || null}
-                size="compact"
-                onGo={(to) => navigate(to)}
-              />
-            </Suspense>
-          </>
+        {showClosedNotice && state.context.cashGamesEnabled !== true && (
+          <p className="diamond-arena-notice">Diamond Games Are Not Open For Play Yet.</p>
         )}
         {children}
       </ArenaAccessProvider>
     ) : (
       <ArenaAccessProvider value={state.context}>
         <section className="club-home diamond-arena-shell" aria-label="Diamond Arena">
-          <PokerArenaNavigation />
           <SpadeConsole
             eyebrow="Welcome To"
             title="Diamond Arena"
@@ -183,7 +190,6 @@ export default function ArenaAccessBoundary({
   if (!state.context.member)
     return (
       <section className="club-home error">
-        <PokerArenaNavigation />
         <SpadeConsole
           eyebrow="Poker Arena"
           title="Join This Club To Enter"
@@ -204,10 +210,5 @@ export default function ArenaAccessBoundary({
         </SpadeConsole>
       </section>
     );
-  return (
-    <ArenaAccessProvider value={state.context}>
-      <PokerArenaNavigation />
-      {children}
-    </ArenaAccessProvider>
-  );
+  return <ArenaAccessProvider value={state.context}>{children}</ArenaAccessProvider>;
 }

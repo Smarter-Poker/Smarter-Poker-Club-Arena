@@ -1,0 +1,12 @@
+{
+  "tests/fixtures/spin-mixed-cutover/after.sql": "974ed60679be90e1de843e4fe1ab0ce63497aac9774081a8b48f2785d6c30f52",
+  "tests/fixtures/spin-mixed-cutover/build-candidate.py": "464fd067a55084049a1e87992fad3437a9ca585d0ebb0243e4f8414a4aa2f200",
+  "tests/fixtures/spin-mixed-cutover/captured-preimages.json": "5f45190f58aabfe2c8d873a2fb203403001a16dde111681151d564804e34cef6",
+  "tests/fixtures/spin-mixed-cutover/captured-scope-authority.json": "6b48e52bbd561ad73b974ce043a1919e33a52ff6610b9703a698643b9221818d",
+  "tests/fixtures/spin-mixed-cutover/concurrency.sql": "bf39ec7606f799b4542d5bcd45cce6f641a0b022c6b8b839d6a458cd8de4fcee",
+  "tests/fixtures/spin-mixed-cutover/proof-authority.sql": "56d0f2337776aec187ed5f4833f81652a500b0896277d636c3c3150580cea66a",
+  "tests/fixtures/spin-mixed-cutover/setup.sql": "023ca3e1c6b4614d83190bcd7c1ad8f8a1e7d5ceea8ffa419564b59aa5d2e06c",
+  "scripts/dev/qualify-spin-mixed-cutover.py": "4b50779f6ed435262e7281057d4dbf588dab131fb0a6862fb743d7b13e5d402f",
+  "scripts/dev/test-full-weekly-accounting-activation.sh": "16fe6fad30c597f76c5d7d7dcb3c0679e58de325ad0fef0495e07d3a48a51af6",
+  "supabase/migrations/20260918085836_original_mixed_cutover_spin_fee_proof.sql": "a79d6e958f06bf17470a870e20167fa2e9b0cc358cb79a22f75f5866e737f8c6"
+}

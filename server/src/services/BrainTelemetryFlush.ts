@@ -31,15 +31,21 @@ const publisher = new HorseBrainTelemetryPublisher({
       .abortSignal(AbortSignal.timeout(5000)),
 });
 
-async function flush(generation: number): Promise<void> {
-  if (!lifecycleActive || lifecycleGeneration !== generation) return;
-  if ((await publisher.flush()) === 'expired') {
+async function publishBatch(): Promise<'idle' | 'recorded' | 'replayed' | 'expired'> {
+  const result = await publisher.flush();
+  if (result === 'expired') {
     noteFire('phase15_telemetry_batch_expired');
     reportError(
       new Error('Horse telemetry batch exceeded the retained receipt window'),
       'BrainTelemetryFlush.expired'
     );
   }
+  return result;
+}
+
+async function flush(generation: number): Promise<void> {
+  if (!lifecycleActive || lifecycleGeneration !== generation) return;
+  await publishBatch();
 }
 
 function launchFlush(context: string): void {
@@ -54,6 +60,19 @@ function launchFlush(context: string): void {
 
 async function drainFlushes(): Promise<void> {
   while (inFlightFlushes.size > 0) await Promise.allSettled([...inFlightFlushes]);
+}
+
+/** The worker calls stop only after its accepted decision FIFO has drained.
+ * Finish an uncertain retained batch first, then capture the partial interval
+ * behind it. At most two existing five-second writes; no retry loop or disk
+ * durability claim. A restart takes ownership before either new capture. */
+async function finishFlushes(generation: number, wasActive: boolean): Promise<void> {
+  await drainFlushes();
+  if (!wasActive) return;
+  for (let batch = 0; batch < 2; batch++) {
+    if (lifecycleActive || lifecycleGeneration !== generation) return;
+    if ((await publishBatch()) === 'idle') return;
+  }
 }
 
 export function startBrainTelemetryFlush(): void {
@@ -71,12 +90,16 @@ export function startBrainTelemetryFlush(): void {
 
 export function stopBrainTelemetryFlush(): Promise<void> {
   if (stopOperation) return stopOperation;
+  const wasActive = lifecycleActive;
   lifecycleActive = false;
   lifecycleGeneration += 1;
   if (timer) {
     clearInterval(timer);
     timer = null;
   }
-  stopOperation = drainFlushes();
+  stopOperation = finishFlushes(lifecycleGeneration, wasActive).catch((error) => {
+    reportError(error, 'BrainTelemetryFlush.stop');
+    throw error;
+  });
   return stopOperation;
 }

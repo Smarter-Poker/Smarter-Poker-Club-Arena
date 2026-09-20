@@ -38,6 +38,115 @@ async function start() {
   return { service, telemetry };
 }
 describe('actual Horse telemetry flush service', () => {
+  it('holds the shutdown acknowledgement until the final partial batch commits', async () => {
+    const { service, telemetry } = await start();
+    let finish!: (value: any) => void;
+    mocked.rpc.mockImplementationOnce(() => ({
+      abortSignal: () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    }));
+    telemetry.noteFire('final_decision');
+    const pending = service.stopBrainTelemetryFlush();
+    let stopped = false;
+    void pending.then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mocked.rpc).toHaveBeenCalledOnce();
+    expect(stopped).toBe(false);
+    finish(ack(mocked.rpc.mock.calls[0][1].p_payload));
+    await pending;
+    expect(stopped).toBe(true);
+    expect(mocked.rpc).toHaveBeenCalledOnce();
+  });
+  it('lets a restarted lifecycle own counts that arrive after the final capture', async () => {
+    const { service, telemetry } = await start();
+    let finish!: (value: any) => void;
+    mocked.rpc.mockImplementationOnce(() => ({
+      abortSignal: () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    }));
+    telemetry.noteFire('old_final');
+    const pending = service.stopBrainTelemetryFlush();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mocked.rpc).toHaveBeenCalledOnce();
+    service.startBrainTelemetryFlush();
+    telemetry.noteFire('new_generation');
+    finish(ack(mocked.rpc.mock.calls[0][1].p_payload));
+    await pending;
+    expect(mocked.rpc).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(JSON.parse(mocked.rpc.mock.calls[1][1].p_payload).fires).toEqual([
+      { feature: 'new_generation', fires: 1 },
+    ]);
+  });
+  it('does not start a final write when telemetry was explicitly disabled', async () => {
+    vi.stubEnv('BRAIN_TELEMETRY_ENABLED', 'false');
+    const { service, telemetry } = await start();
+    telemetry.noteFire('disabled');
+    await service.stopBrainTelemetryFlush();
+    expect(mocked.rpc).not.toHaveBeenCalled();
+  });
+  it('publishes the last partial interval before graceful stop resolves', async () => {
+    const { service, telemetry } = await start();
+    telemetry.noteFire('final_decision');
+    telemetry.noteDecisionMs('nlh', 3);
+    await service.stopBrainTelemetryFlush();
+    expect(mocked.rpc).toHaveBeenCalledOnce();
+    const batch = JSON.parse(mocked.rpc.mock.calls[0][1].p_payload);
+    expect(batch.fires).toContainEqual({ feature: 'final_decision', fires: 1 });
+    expect(batch.latency).toContainEqual(expect.objectContaining({ scope: 'nlh', samples: 1 }));
+  });
+  it('reconciles an uncertain old batch and publishes the later counters during stop', async () => {
+    const { service, telemetry } = await start();
+    mocked.rpc.mockImplementationOnce(() => ({
+      abortSignal: () =>
+        Promise.resolve({ data: null, error: { message: 'lost acknowledgement' } }),
+    }));
+    telemetry.noteFire('old_decision');
+    await vi.advanceTimersByTimeAsync(60_000);
+    const original = mocked.rpc.mock.calls[0][1].p_payload;
+    telemetry.noteFire('final_decision');
+    await service.stopBrainTelemetryFlush();
+    expect(mocked.rpc).toHaveBeenCalledTimes(3);
+    expect(mocked.rpc.mock.calls[1][1].p_payload).toBe(original);
+    const final = JSON.parse(mocked.rpc.mock.calls[2][1].p_payload);
+    expect(final.fires).toEqual([{ feature: 'final_decision', fires: 1 }]);
+    expect(final.sequence).toBe(2);
+  });
+  it('cannot acknowledge shutdown while its final batch is unconfirmed', async () => {
+    const { service, telemetry } = await start();
+    mocked.rpc.mockImplementation(() => ({
+      abortSignal: () => Promise.resolve({ data: null, error: { message: 'not committed' } }),
+    }));
+    telemetry.noteFire('final_decision');
+    const pending = service.stopBrainTelemetryFlush();
+    void pending.catch(() => undefined);
+    let outcome = 'pending';
+    void pending.then(
+      () => {
+        outcome = 'resolved';
+      },
+      () => {
+        outcome = 'rejected';
+      }
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    // An unconfirmed final write must never report a clean shutdown.
+    expect(outcome).not.toBe('resolved');
+    await expect(pending).rejects.toThrow('write unconfirmed');
+    expect(service.stopBrainTelemetryFlush()).toBe(pending);
+    stop = undefined;
+  });
+
   it('atomically flushes both streams and retries the exact batch while new counts accumulate', async () => {
     const { service, telemetry } = await start();
     service.startBrainTelemetryFlush();

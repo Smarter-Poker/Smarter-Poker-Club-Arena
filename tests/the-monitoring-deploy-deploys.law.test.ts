@@ -180,6 +180,13 @@ describe('the verify step can reach the box', () => {
     expect(WF).not.toContain('docker compose up -d --force-recreate prometheus');
   });
 
+  it('runs the existing publication verification when either verifier input changes', () => {
+    const paths = WF.slice(WF.indexOf('    paths:'), WF.indexOf('  repository_dispatch:'));
+    expect(paths).toContain("'scripts/ci/check-alert-rules-match.mjs'");
+    expect(paths).toContain("'scripts/ci/rule-metric-producers.mjs'");
+    expect(WF).not.toContain('sleep 20');
+  });
+
   it('pins every SSH call to the declared key and host key, then removes both', () => {
     expect(WF).toContain('SSH_HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}');
     expect(WF).not.toContain('echo "${{ secrets.HETZNER_HOST_KEY }}"');

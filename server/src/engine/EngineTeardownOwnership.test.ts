@@ -26,6 +26,38 @@ function rejectableDeferred(): {
 }
 
 describe('table-engine lifecycle ownership', () => {
+  it('retains the first terminal reason across duplicate kills and subsequent cleanup', async () => {
+    const engine = new ServerTableEngine('21212121-2121-4121-8121-212121212121') as any;
+    engine.flushSnapshot = vi.fn().mockResolvedValue(undefined);
+    const owner = vi.fn();
+    engine.onRestartRequired(owner);
+    engine.killForRestartPublic('cash_lease_proof_expired');
+    const first = engine.leavePendingLifecycleSnapshot().first_terminal;
+    engine.killForRestartPublic('later_duplicate');
+    await engine.stop();
+    expect(engine.leavePendingLifecycleSnapshot().first_terminal).toEqual(first);
+    expect(first).toMatchObject({ reason: 'cash_lease_proof_expired', truncated: false });
+    expect(owner).toHaveBeenCalledOnce();
+    expect(owner).toHaveBeenCalledWith('cash_lease_proof_expired');
+  });
+
+  it('ordinary stop records only its known cause and cannot manufacture a restart request', async () => {
+    const engine = new ServerTableEngine('22212121-2121-4121-8121-212121212121') as any;
+    engine.flushSnapshot = vi.fn().mockResolvedValue(undefined);
+    const owner = vi.fn();
+    engine.onRestartRequired(owner);
+    const stopping = engine.stop();
+    const first = engine.leavePendingLifecycleSnapshot();
+    expect(first).toMatchObject({
+      terminal: true,
+      running: false,
+      first_terminal: { reason: 'stop_requested', truncated: false },
+    });
+    expect(engine.stop()).toBe(stopping);
+    await stopping;
+    expect(owner).not.toHaveBeenCalled();
+    expect(engine.leavePendingLifecycleSnapshot().first_terminal).toEqual(first.first_terminal);
+  });
   it('shares one in-flight teardown promise and preserves it after completion', async () => {
     const tableId = '10101010-1010-4010-8010-101010101010';
     const flush = deferred();
@@ -201,57 +233,6 @@ describe('table-engine lifecycle ownership', () => {
     expect(engine.hasSettlementInFlight()).toBe(false);
     expect(successor.claimProcessOwnership()).toBe(true);
     await successor.stop();
-  });
-
-  it('a closed cluster table does not await the dealing loop from inside that loop', async () => {
-    const tableId = '22212121-2121-4212-8212-212121212121';
-    const loop = deferred();
-    const flush = deferred();
-    const engine = new ServerTableEngine(tableId) as any;
-    expect(engine.claimProcessOwnership()).toBe(true);
-    engine.running = true;
-    engine.tableInfo = { cluster_id: 'cluster' };
-    engine.seatedPlayers = [];
-    engine.dealingLoopPromise = loop.promise;
-    engine.flushSnapshot = vi.fn(() => flush.promise);
-    const query: any = {
-      select: vi.fn(() => query),
-      eq: vi.fn(() => query),
-      maybeSingle: vi.fn(async () => ({
-        data: { lifecycle: 'closed', status: 'closed' },
-        error: null,
-      })),
-    };
-    const from = vi.spyOn(supabase, 'from').mockReturnValue(query);
-    const successor = new ServerTableEngine(tableId) as any;
-    let boundaryReturned = false;
-    const closing = engine.stopIfClusterTableClosed().then(() => {
-      boundaryReturned = true;
-    });
-    try {
-      for (let i = 0; i < 10; i++) await Promise.resolve();
-      expect(engine.running).toBe(false);
-      expect(boundaryReturned).toBe(true);
-      expect(engine.flushSnapshot).not.toHaveBeenCalled();
-      expect(successor.claimProcessOwnership()).toBe(false);
-      // The caller can now return from the captured dealing loop. Physical
-      // teardown still owns both that loop and the later snapshot writer.
-      loop.resolve();
-      for (let i = 0; i < 10; i++) await Promise.resolve();
-      expect(engine.flushSnapshot).toHaveBeenCalledOnce();
-      expect(successor.claimProcessOwnership()).toBe(false);
-      flush.resolve();
-      await engine.stop();
-      expect(successor.claimProcessOwnership()).toBe(true);
-    } finally {
-      // Also let the old-source counterexample dispose its exact owned work.
-      loop.resolve();
-      flush.resolve();
-      await closing;
-      await engine.stop();
-      from.mockRestore();
-      await successor.stop();
-    }
   });
 
   it('retains ownership until an accepted seat cashout releases its boundary', async () => {

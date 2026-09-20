@@ -35,7 +35,7 @@ describe('heads-up pays 5%, not the schedule 10%', () => {
 
   it('still rakes three-handed and fuller tables at the schedule rate', () => {
     /* Dan specified heads-up only. Three-handed keeps the schedule percent and
-       its existing 67% CAP reduction; inventing a rate he did not state would
+       its existing short-handed CAP reduction; inventing a rate he did not state would
        be worse than leaving it. */
     expect(calculateRake(100, true, cfg(10, 1000), 3)).toBe(10);
     expect(calculateRake(100, true, cfg(10, 1000), 6)).toBe(10);

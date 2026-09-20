@@ -2,13 +2,22 @@
 import { hmacSha256Hex, sha256Hex } from './wheelFairness';
 
 export type ChoiceGame = 'crossing' | 'mines';
+/** One road is dealt today (2026-09-19): twelve streets, 1.10x to 20.00x, so
+ * every street sits inside every award's cover. The three risk ladders remain
+ * so a sealed round and its replay keep verifying; no new round may name them.
+ * Mirrors public.fn_choice_ladder. */
 export const ROAD_LADDERS = {
+  road: [110, 145, 185, 245, 315, 410, 535, 700, 910, 1180, 1540, 2000],
   steady: [110, 135, 170, 215, 275, 355, 460, 600, 800, 1100, 1600, 2400],
   bold: [150, 220, 330, 500, 800, 1300, 2200, 4000, 7500, 15000],
   extreme: [200, 400, 800, 1600, 3200, 6400, 12800, 25600],
 } as const;
 export type RoadRisk = keyof typeof ROAD_LADDERS;
-export const MINE_COUNTS = [5, 10, 15] as const;
+/** Six mines are dealt today; five, ten and fifteen remain readable for sealed boards. */
+export const MINE_COUNTS = [5, 6, 10, 15] as const;
+/** The one setting per game. Nobody chooses a difficulty: the payout carries it.
+ * Mirrors public.fn_choice_mode. */
+export const CHOICE_MODE = { crossing: 'road', mines: '6' } as const;
 export const RANDOM_SPACE = 281474976710656n;
 
 export function choose(n: number, k: number): bigint {
@@ -19,21 +28,27 @@ export function choose(n: number, k: number): bigint {
 }
 
 /** An exact rational number of chip cents, before unbiased settlement rounding. */
-export function minePrize(betChips: number, mines: number, picks: number) {
+export function minePrize(betChips: number, mines: number, picks: number, minimumPayoutChips = 0) {
   if (
     !Number.isFinite(betChips) ||
     betChips < 0.01 ||
     Math.abs(betChips * 100 - Math.round(betChips * 100)) > 1e-8 ||
-    !MINE_COUNTS.includes(mines as 5 | 10 | 15) ||
+    !MINE_COUNTS.includes(mines as (typeof MINE_COUNTS)[number]) ||
     !Number.isInteger(picks) ||
     picks < 1 ||
     picks > 25 - mines
   ) {
     throw new Error('Invalid Mines Prize');
   }
+  const betCents = BigInt(Math.round(betChips * 100));
+  const minimumCents = BigInt(Math.round(minimumPayoutChips * 100));
+  if (minimumCents < 0n || minimumCents * 5n >= betCents * 4n)
+    throw new Error('Invalid Mines Prize');
+  const surviving = choose(25 - mines, picks);
   return {
-    numerator: BigInt(Math.round(betChips * 100)) * 4n * choose(25, picks),
-    denominator: 5n * choose(25 - mines, picks),
+    numerator:
+      minimumCents * 5n * surviving + (betCents * 4n - minimumCents * 5n) * choose(25, picks),
+    denominator: 5n * surviving,
   };
 }
 
@@ -44,7 +59,8 @@ export async function mineBoard(
   nonce: number,
   mines: number
 ) {
-  if (!MINE_COUNTS.includes(mines as 5 | 10 | 15)) throw new Error('Invalid Mine Count');
+  if (!MINE_COUNTS.includes(mines as (typeof MINE_COUNTS)[number]))
+    throw new Error('Invalid Mine Count');
   const cells = Array.from({ length: 25 }, (_, i) => i);
   let cursor = 0;
   for (let i = 24; i > 0; i--) {
@@ -62,11 +78,23 @@ export async function mineBoard(
 }
 
 /** The edge is charged once. Every selectable crossing target has the same expectation. */
-export function roadSurvives(roll: bigint, targetCents: number) {
+export function roadSurvives(
+  roll: bigint,
+  targetCents: number,
+  betChips = 1,
+  minimumPayoutChips = 0
+) {
   if (roll < 0n || roll >= RANDOM_SPACE || !Number.isInteger(targetCents) || targetCents < 101) {
     throw new Error('Invalid Crossing Outcome');
   }
-  return (roll + 1n) * BigInt(targetCents) <= 80n * RANDOM_SPACE;
+  const betCents = BigInt(Math.round(betChips * 100));
+  const minimumCents = BigInt(Math.round(minimumPayoutChips * 100));
+  if (betCents <= 0n || minimumCents < 0n || minimumCents * 5n >= betCents * 4n)
+    throw new Error('Invalid Crossing Outcome');
+  return (
+    (roll + 1n) * 5n * (betCents * BigInt(targetCents) - 100n * minimumCents) <=
+    100n * (4n * betCents - 5n * minimumCents) * RANDOM_SPACE
+  );
 }
 
 /** Rounding happens only after the cash-out decision, on an independent sealed draw. */
@@ -110,7 +138,7 @@ export async function verifyChoiceRound(
   for (let i = 0; i < round.prizes.length; i++) {
     const exact =
       round.game === 'mines'
-        ? minePrize(round.bet_chips, Number(round.mode), i + 1)
+        ? minePrize(round.bet_chips, Number(round.mode), i + 1, round.minimum_payout_chips ?? 0)
         : {
             numerator: BigInt(Math.round(round.bet_chips * 100)) * BigInt(ladder[i]),
             denominator: 100n,
@@ -122,15 +150,21 @@ export async function verifyChoiceRound(
     const safe =
       round.game === 'mines'
         ? !proof.mine_cells.includes(round.picked[i])
-        : round.picked[i] === i && roadSurvives(BigInt(proof.road_roll), ladder[i]);
+        : round.picked[i] === i &&
+          roadSurvives(
+            BigInt(proof.road_roll),
+            ladder[i],
+            round.bet_chips,
+            round.minimum_payout_chips ?? 0
+          );
     if (safe === (round.status === 'lost' && i === round.picked.length - 1)) return false;
   }
-  if (round.status === 'lost') return round.payout_chips === 0;
+  if (round.status === 'lost') return round.payout_chips === (round.minimum_payout_chips ?? 0);
   if (round.status !== 'cashed') return false;
   const n = round.picked.length;
   const rational =
     round.game === 'mines'
-      ? minePrize(round.bet_chips, Number(round.mode), n)
+      ? minePrize(round.bet_chips, Number(round.mode), n, round.minimum_payout_chips ?? 0)
       : {
           numerator: BigInt(Math.round(round.bet_chips * 100)) * BigInt(ladder[n - 1]),
           denominator: 100n,

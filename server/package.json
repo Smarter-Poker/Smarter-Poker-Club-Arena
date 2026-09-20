@@ -24,7 +24,6 @@
     "horse:joint-evaluate": "node --import tsx src/scripts/jointPolicyEvaluate.ts"
   },
   "dependencies": {
-    "@sentry/node": "^10.46.0",
     "@supabase/supabase-js": "^2.49.1",
     "@types/uuid": "^10.0.0",
     "fast-json-patch": "^3.1.1",

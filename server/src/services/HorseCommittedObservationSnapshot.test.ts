@@ -49,6 +49,7 @@ const node = {
   },
 };
 const action = (userId = actor, ordinal = 0, handId = id) => ({
+  seat: node.actorSeat,
   userId,
   action: 'check',
   stage: 'preflop',
@@ -107,6 +108,17 @@ beforeEach(() => {
 });
 afterEach(() => vi.clearAllMocks());
 describe('committed observation snapshot reader', () => {
+  it('excludes a persisted action whose seat disagrees with its bound public node', async () => {
+    const data = hand();
+    data.actions[0].seat = 2;
+    respond(snapshot([data]));
+    const result = await read(request);
+    expect(result.status).toBe('snapshot');
+    if (result.status !== 'snapshot') throw Error('missing snapshot');
+    expect(result.observations).toEqual([]);
+    expect(result.rejected).toEqual({ unavailable_public_node: 1 });
+    expect(result.source.hands).toBe(1);
+  });
   it('refuses a legacy source envelope even when its history rows committed', async () => {
     const s = snapshot([hand()]);
     delete (s as Partial<typeof s>).acceptance;

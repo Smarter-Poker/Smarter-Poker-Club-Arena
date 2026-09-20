@@ -1,0 +1,229 @@
+{
+  "triggers": [
+    [
+      "cash_funding_application_receipts",
+      "original_union_pnl_frame",
+      "CREATE TRIGGER original_union_pnl_frame BEFORE INSERT ON public.cash_funding_application_receipts FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_receipt_frame()",
+      "O"
+    ],
+    [
+      "cash_hand_provenance_receipts",
+      "original_union_pnl_frame",
+      "CREATE TRIGGER original_union_pnl_frame BEFORE INSERT ON public.cash_hand_provenance_receipts FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_receipt_frame()",
+      "O"
+    ],
+    [
+      "cash_participant_funding_receipts",
+      "original_union_pnl_frame",
+      "CREATE TRIGGER original_union_pnl_frame BEFORE INSERT ON public.cash_participant_funding_receipts FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_receipt_frame()",
+      "O"
+    ],
+    [
+      "chip_ledger",
+      "original_union_pnl_flow",
+      "CREATE TRIGGER original_union_pnl_flow AFTER INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_capture_original_flow()",
+      "O"
+    ],
+    [
+      "table_seats",
+      "union_pnl_original_inventory",
+      "CREATE TRIGGER union_pnl_original_inventory AFTER INSERT OR DELETE OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_inventory_observe()",
+      "O"
+    ],
+    [
+      "table_seats",
+      "union_pnl_original_inventory_no_truncate",
+      "CREATE TRIGGER union_pnl_original_inventory_no_truncate BEFORE TRUNCATE ON public.table_seats FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_observe()",
+      "O"
+    ],
+    [
+      "tables",
+      "union_pnl_original_inventory",
+      "CREATE TRIGGER union_pnl_original_inventory AFTER INSERT OR DELETE OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_inventory_observe()",
+      "O"
+    ],
+    [
+      "tables",
+      "union_pnl_original_inventory_no_truncate",
+      "CREATE TRIGGER union_pnl_original_inventory_no_truncate BEFORE TRUNCATE ON public.tables FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_observe()",
+      "O"
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "original_union_pnl_frame",
+      "CREATE TRIGGER original_union_pnl_frame BEFORE INSERT ON public.tournament_accounting_credit_receipts FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_receipt_frame()",
+      "O"
+    ],
+    [
+      "tournament_obligation_events",
+      "original_union_pnl_frame",
+      "CREATE TRIGGER original_union_pnl_frame BEFORE INSERT ON public.tournament_obligation_events FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_receipt_frame()",
+      "O"
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "original_union_pnl_frame",
+      "CREATE TRIGGER original_union_pnl_frame BEFORE INSERT ON public.tournament_participant_funding_receipts FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_receipt_frame()",
+      "O"
+    ],
+    [
+      "tournament_players",
+      "union_pnl_original_inventory",
+      "CREATE TRIGGER union_pnl_original_inventory AFTER INSERT OR DELETE OR UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_inventory_observe()",
+      "O"
+    ],
+    [
+      "tournament_players",
+      "union_pnl_original_inventory_no_truncate",
+      "CREATE TRIGGER union_pnl_original_inventory_no_truncate BEFORE TRUNCATE ON public.tournament_players FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_observe()",
+      "O"
+    ],
+    [
+      "tournament_refund_tranches",
+      "original_union_pnl_frame",
+      "CREATE TRIGGER original_union_pnl_frame BEFORE INSERT ON public.tournament_refund_tranches FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_receipt_frame()",
+      "O"
+    ],
+    [
+      "tournaments",
+      "union_pnl_original_inventory",
+      "CREATE TRIGGER union_pnl_original_inventory AFTER INSERT OR DELETE OR UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_inventory_observe()",
+      "O"
+    ],
+    [
+      "tournaments",
+      "union_pnl_original_inventory_no_truncate",
+      "CREATE TRIGGER union_pnl_original_inventory_no_truncate BEFORE TRUNCATE ON public.tournaments FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_observe()",
+      "O"
+    ],
+    [
+      "union_clubs",
+      "union_pnl_original_inventory",
+      "CREATE TRIGGER union_pnl_original_inventory AFTER INSERT OR DELETE OR UPDATE ON public.union_clubs FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_inventory_observe()",
+      "O"
+    ],
+    [
+      "union_clubs",
+      "union_pnl_original_inventory_no_truncate",
+      "CREATE TRIGGER union_pnl_original_inventory_no_truncate BEFORE TRUNCATE ON public.union_clubs FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_observe()",
+      "O"
+    ],
+    [
+      "union_pnl_cash_outcomes",
+      "original_pnl_immutable",
+      "CREATE TRIGGER original_pnl_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_cash_outcomes FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()",
+      "O"
+    ],
+    [
+      "union_pnl_eco_observations",
+      "original_pnl_immutable",
+      "CREATE TRIGGER original_pnl_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_eco_observations FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()",
+      "O"
+    ],
+    [
+      "union_pnl_inventory_capture",
+      "original_pnl_inventory_capture_immutable",
+      "CREATE TRIGGER original_pnl_inventory_capture_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_inventory_capture FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()",
+      "O"
+    ],
+    [
+      "union_pnl_inventory_events",
+      "original_pnl_inventory_events_immutable",
+      "CREATE TRIGGER original_pnl_inventory_events_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_inventory_events FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()",
+      "O"
+    ],
+    [
+      "union_pnl_original_flows",
+      "original_pnl_immutable",
+      "CREATE TRIGGER original_pnl_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_original_flows FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()",
+      "O"
+    ],
+    [
+      "union_pnl_transaction_frames",
+      "original_pnl_immutable",
+      "CREATE TRIGGER original_pnl_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_transaction_frames FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()",
+      "O"
+    ],
+    [
+      "union_pnl_weekly_capture",
+      "original_pnl_immutable",
+      "CREATE TRIGGER original_pnl_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_weekly_capture FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()",
+      "O"
+    ]
+  ],
+  "functions": [
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_union_pnl_capture_original_flow()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_capture_original_flow()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE frame public.union_pnl_transaction_frames; scope jsonb;\nBEGIN\n -- These are the original cash/table and tournament/liability journal legs.\n -- Other wallet transfers, rakeback and P&L payments are not poker winnings.\n IF NOT ((NEW.from_type IN ('player_wallet','club_treasury') AND NEW.to_type IN ('table_stack','prize_liability'))\n  OR (NEW.to_type IN ('player_wallet','club_treasury') AND NEW.from_type IN ('table_stack','prize_liability'))) THEN RETURN NULL; END IF;\n frame:=public.fn_union_pnl_original_frame();\n IF NEW.tournament_id IS NOT NULL THEN\n  SELECT jsonb_build_object('game_union_id',t.union_id,'host_club_id',t.club_id,'tournament_id',t.id,'is_private',t.is_private,'asset','chips','unit_scale',2)\n  INTO scope FROM public.tournaments t WHERE t.id=NEW.tournament_id;\n ELSE\n  SELECT jsonb_build_object('game_union_id',t.union_id,'host_club_id',t.club_id,'tournament_id',t.tournament_id,'is_private',t.is_private,'asset','chips','unit_scale',2)\n  INTO scope FROM public.tables t WHERE t.id=NEW.table_id;\n END IF;\n INSERT INTO public.union_pnl_original_flows VALUES(NEW.id,frame.transaction_id,frame.observed_at,COALESCE(scope,'{}'),to_jsonb(NEW));\n RETURN NULL;\nEND $function$\n",
+      "source_md5": "7bd1369bb797366f9c60c45b766a3225",
+      "definition_md5": "df060874f0ffaf8105cce1d3bdaed35b"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_union_pnl_inventory_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_inventory_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN RAISE EXCEPTION 'original_pnl_inventory_is_immutable' USING ERRCODE='55000'; END $function$\n",
+      "source_md5": "a08d06c4b6ae1332ac07ab1405c1a494",
+      "definition_md5": "307d83a1ee3d912bade24c48144aa801"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_union_pnl_inventory_observe()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_inventory_observe()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE prior jsonb; following jsonb; frame public.union_pnl_transaction_frames;\nBEGIN\n IF TG_OP='TRUNCATE' THEN RAISE EXCEPTION 'pnl_inventory_source_truncate_refused' USING ERRCODE='55000'; END IF;\n IF TG_OP<>'INSERT' THEN prior:=public.fn_union_pnl_inventory_project(TG_TABLE_NAME,to_jsonb(OLD)); END IF;\n IF TG_OP<>'DELETE' THEN following:=public.fn_union_pnl_inventory_project(TG_TABLE_NAME,to_jsonb(NEW)); END IF;\n IF prior IS NOT DISTINCT FROM following THEN RETURN NULL; END IF;\n frame:=public.fn_union_pnl_original_frame();\n INSERT INTO public.union_pnl_inventory_events(source_name,row_id,observed_at,transaction_id,operation,before_row,after_row)\n VALUES(TG_TABLE_NAME,(COALESCE(following,prior)->>'id')::uuid,frame.observed_at,frame.transaction_id,TG_OP,prior,following);\n RETURN NULL;\nEND $function$\n",
+      "source_md5": "b3fdc3d1ea04214046bb8fa49502b534",
+      "definition_md5": "11c7c788d943a11375a15819e78873ba"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_union_pnl_inventory_project(text,jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_inventory_project(p_source text, p_row jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE keys text[]; result jsonb;\nBEGIN\n IF p_row IS NULL THEN RETURN NULL; END IF;\n keys:=CASE p_source\n  WHEN 'union_clubs' THEN ARRAY['id','union_id','club_id','joined_at']\n  WHEN 'tables' THEN ARRAY['id','club_id','union_id','tournament_id','is_private']\n  WHEN 'table_seats' THEN ARRAY['id','table_id','user_id','club_id','occupancy_id','joined_at','left_at','stack']\n  WHEN 'tournaments' THEN ARRAY['id','club_id','union_id','is_private','status','started_at','ended_at','prize_pool','bounty_pool','bounty_pool_paid']\n  WHEN 'tournament_players' THEN ARRAY['id','tournament_id','user_id','club_id','status','registered_at','eliminated_at','prize','bounty_winnings','source_satellite_id']\n  ELSE NULL END;\n IF keys IS NULL OR NOT p_row ?& keys THEN RAISE EXCEPTION 'pnl_inventory_source_contract_changed:%',p_source USING ERRCODE='55000'; END IF;\n SELECT jsonb_object_agg(k,p_row->k) INTO result FROM unnest(keys) k;\n RETURN result;\nEND $function$\n",
+      "source_md5": "9c5918e63b427b9f930f92a23ddf601f",
+      "definition_md5": "cc819d2476a0252326e7bdd4e72d468f"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_union_pnl_original_frame()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_original_frame()\n RETURNS union_pnl_transaction_frames\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE frame public.union_pnl_transaction_frames; observed timestamptz; book timestamptz;\nBEGIN\n SELECT * INTO frame FROM public.union_pnl_transaction_frames WHERE transaction_id=pg_current_xact_id();\n IF FOUND THEN RETURN frame; END IF;\n observed:=clock_timestamp(); book:=public.fn_union_week_start(observed);\n PERFORM pg_advisory_xact_lock_shared(hashtextextended('union-pnl-inventory:'||extract(epoch FROM book)::bigint::text,0));\n observed:=clock_timestamp();\n IF public.fn_union_week_start(observed)<>book THEN\n  book:=public.fn_union_week_start(observed);\n  PERFORM pg_advisory_xact_lock_shared(hashtextextended('union-pnl-inventory:'||extract(epoch FROM book)::bigint::text,0));\n  observed:=clock_timestamp();\n  IF public.fn_union_week_start(observed)<>book THEN RAISE EXCEPTION 'pnl_frame_clock_crossed_twice' USING ERRCODE='40001'; END IF;\n END IF;\n INSERT INTO public.union_pnl_transaction_frames VALUES(pg_current_xact_id(),observed,book) RETURNING * INTO frame;\n RETURN frame;\nEND $function$\n",
+      "source_md5": "687fd60a83e750f63f872c6e721256b5",
+      "definition_md5": "9a6559774cc1ed4ed49b315a3428abdb"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_union_pnl_receipt_frame()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_receipt_frame()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n PERFORM public.fn_union_pnl_original_frame();\n NEW.transaction_id:=pg_current_xact_id();\n RETURN NEW;\nEND $function$\n",
+      "source_md5": "e45de74ec9953d4defa01e6047baf545",
+      "definition_md5": "dd4dbe3a58dc48bd67aab9ac818280d2"
+    },
+    {
+      "acl": [
+        "authenticated=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_union_week_start(timestamp with time zone)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_union_week_start(p_at timestamp with time zone DEFAULT now())\n RETURNS timestamp with time zone\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'extensions'\nAS $function$\n  SELECT date_trunc('week', (p_at AT TIME ZONE 'America/Los_Angeles'))\n           AT TIME ZONE 'America/Los_Angeles';\n$function$\n",
+      "source_md5": "271c8a1269dc2e570ee20bd781493e9d",
+      "definition_md5": "103f192a228084dad0e4268c36c82c4b"
+    }
+  ],
+  "captured_at": "2026-09-18T00:58:04.898323+00:00"
+}

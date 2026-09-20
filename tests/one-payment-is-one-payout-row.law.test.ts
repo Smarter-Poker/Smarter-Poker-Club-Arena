@@ -59,6 +59,18 @@ const ALREADY_CORRECTED = [
 const CREDIT_PATHS = /fn_credit_and_log|credit_and_log\(/i;
 const HAND_WRITES = /INSERT\s+INTO\s+(public\.)?tournament_payouts/i;
 
+/** Find the matched dollar quote and its statement terminator, including whitespace. */
+function functionDefinitionEnd(sql: string, start: number): number {
+  const as = sql.slice(start).match(/\bAS\s+(\$[A-Za-z0-9_]*\$)/i);
+  if (!as) return -1;
+  const tag = as[1];
+  const bodyStart = start + (as.index ?? 0) + as[0].length;
+  const close = sql.indexOf(tag, bodyStart);
+  if (close < 0) return -1;
+  const terminator = sql.slice(close + tag.length).match(/^\s*;/);
+  return terminator ? close + tag.length + terminator[0].length : -1;
+}
+
 /**
  * The credit primitive itself owns the payout-evidence INSERT. Remove that
  * definition before asking whether a caller both invokes the primitive and
@@ -69,13 +81,9 @@ function withoutCreditPrimitive(sql: string): string {
   let result = sql;
   let start = signature.exec(result)?.index ?? -1;
   while (start >= 0) {
-    const as = result.slice(start).match(/\bAS\s+(\$[A-Za-z0-9_]*\$)/i);
-    if (!as) break;
-    const tag = as[1];
-    const bodyStart = start + (as.index ?? 0);
-    const end = result.indexOf(`${tag};`, bodyStart + tag.length);
+    const end = functionDefinitionEnd(result, start);
     if (end < 0) break;
-    result = result.slice(0, start) + result.slice(end + tag.length + 1);
+    result = result.slice(0, start) + result.slice(end);
     signature.lastIndex = 0;
     start = signature.exec(result)?.index ?? -1;
   }
@@ -83,25 +91,30 @@ function withoutCreditPrimitive(sql: string): string {
 }
 
 /**
- * A whole-event satellite has three mutually exclusive delivery branches.
+ * Both maintained satellite settlement authorities have three mutually
+ * exclusive delivery branches.
  * Cash uses fn_credit_and_log (which owns its payout row); an actual target
  * seat and a noncash tournament ticket move no wallet money, so those branches
  * write their own payout evidence. Remove that authority from the generic
  * mixed-writer scan only when the separation and whole-pool proof are visible.
+ *
+ * THE AUTHORITY KEPT ITS BODY AND CHANGED ITS NAME (2026-09-17). The same
+ * three branches now live in fn_settle_satellite_tournament_pre_money_path_gate,
+ * which is what the finish path calls; a migration that carries that body
+ * forward (20260917191322 takes the satellite off the global settlement lane)
+ * was refused by this rule for writing the seat and ticket rows the cash
+ * branch does not write. Both names are admitted HERE ONLY, and each still has
+ * to prove the separation below: the exception is the proof, never the name.
  */
 function withoutSeparatedSatelliteDelivery(sql: string): string {
   const signature =
-    /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_settle_satellite_tournament\s*\(/gi;
+    /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.(?:fn_settle_satellite_tournament(?:_pre_money_path_gate)?|fn_ca_settle_satellite_cohort)\s*\(/gi;
   let result = sql;
   let start = signature.exec(result)?.index ?? -1;
   while (start >= 0) {
-    const as = result.slice(start).match(/\bAS\s+(\$[A-Za-z0-9_]*\$)/i);
-    if (!as) break;
-    const tag = as[1];
-    const bodyStart = start + (as.index ?? 0);
-    const end = result.indexOf(`${tag};`, bodyStart + tag.length);
+    const end = functionDefinitionEnd(result, start);
     if (end < 0) break;
-    const definition = result.slice(start, end + tag.length + 1);
+    const definition = result.slice(start, end);
     const seatStart = definition.lastIndexOf("IF v_delivery_kind = 'seat' THEN");
     const ticketStart = definition.indexOf("ELSIF v_delivery_kind = 'ticket' THEN", seatStart);
     const cashStart = definition.indexOf("ELSIF v_delivery_kind = 'cash' THEN", ticketStart);
@@ -128,7 +141,7 @@ function withoutSeparatedSatelliteDelivery(sql: string): string {
       cash.includes("p_payout_source => 'satellite_ticket'") &&
       definition.includes('v_paid IS DISTINCT FROM v_pool');
     if (separated) {
-      result = result.slice(0, start) + result.slice(end + tag.length + 1);
+      result = result.slice(0, start) + result.slice(end);
       signature.lastIndex = 0;
       start = signature.exec(result)?.index ?? -1;
     } else {
@@ -138,7 +151,72 @@ function withoutSeparatedSatelliteDelivery(sql: string): string {
   return result;
 }
 
+function hasMixedPayoutWriters(sql: string): boolean {
+  const code = withoutSeparatedSatelliteDelivery(withoutCreditPrimitive(sql))
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/'(?:''|[^'])*'/g, "''")
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+  return CREDIT_PATHS.test(code) && HAND_WRITES.test(code);
+}
+
 describe('one payment is one payout row', () => {
+  const cohortMigration = readFileSync(
+    join(MIGRATIONS, '20260917201651_satellite_multi_qualifier_receipt_v3.sql'),
+    'utf8'
+  );
+  const cohortDefinition =
+    cohortMigration.match(
+      /CREATE FUNCTION public\.fn_ca_settle_satellite_cohort\([\s\S]*?\bAS \$function\$[\s\S]*?\$function\$\s*;/
+    )?.[0] ?? '';
+
+  it('the qualifier cohort uses the same proved separation of noncash evidence and cash credit', () => {
+    expect(cohortDefinition).toContain('CREATE FUNCTION public.fn_ca_settle_satellite_cohort(');
+    const nextStatement = '\nSELECT fn_credit_and_log();';
+    expect(withoutSeparatedSatelliteDelivery(cohortDefinition + nextStatement)).toBe(nextStatement);
+  });
+
+  it('does not grant the separated-delivery exemption to an unknown owner', () => {
+    const unknown = cohortDefinition.replace('fn_ca_settle_satellite_cohort(', 'unknown_owner(');
+    expect(withoutSeparatedSatelliteDelivery(unknown)).toBe(unknown);
+  });
+
+  it.each([
+    {
+      name: 'a payout insert in the cash branch',
+      from: "ELSIF v_delivery_kind = 'cash' THEN",
+      to: "ELSIF v_delivery_kind = 'cash' THEN\n      INSERT INTO public.tournament_payouts DEFAULT VALUES;",
+    },
+    {
+      name: 'a credit in the noncash seat branch',
+      from: "IF v_delivery_kind = 'seat' THEN\n",
+      to: "IF v_delivery_kind = 'seat' THEN\n      PERFORM public.fn_credit_and_log();\n",
+    },
+    {
+      name: 'a credit in the noncash ticket branch',
+      from: "ELSIF v_delivery_kind = 'ticket' THEN\n",
+      to: "ELSIF v_delivery_kind = 'ticket' THEN\n      PERFORM public.fn_credit_and_log();\n",
+    },
+    {
+      name: 'a third payout write outside the delivery branches',
+      from: '  IF v_remainder > 0 THEN\n',
+      to: '  INSERT INTO public.tournament_payouts DEFAULT VALUES;\n  IF v_remainder > 0 THEN\n',
+    },
+    {
+      name: 'missing whole-pool proof',
+      from: 'v_paid IS DISTINCT FROM v_pool',
+      to: 'false',
+    },
+  ])('still refuses $name in the cohort authority', ({ from, to }) => {
+    expect(cohortDefinition).toContain(from);
+    // There is an earlier planning branch with the same seat condition. Mutate
+    // the final delivery branch that actually owns the payout-evidence write.
+    const at = cohortDefinition.lastIndexOf(from);
+    const unsafe = cohortDefinition.slice(0, at) + to + cohortDefinition.slice(at + from.length);
+    expect(withoutSeparatedSatelliteDelivery(unsafe)).toBe(unsafe);
+  });
+
   it('the corrective migration exists and removes exactly the duplicate record', () => {
     const f = files.find((x) => x.includes('one_payment_is_one_payout_row'));
     expect(f, 'the corrective migration must not be deleted').toBeTruthy();
@@ -172,6 +250,47 @@ describe('one payment is one payout row', () => {
     }
   });
 
+  const creditCall = 'SELECT public.fn_credit_and_log(NULL, 1);';
+  const directPayout = 'INSERT INTO public.tournament_payouts(amount) VALUES (1);';
+  const primitive = (tag: string, terminator: string) =>
+    `CREATE OR REPLACE FUNCTION public.fn_credit_and_log() RETURNS void
+     LANGUAGE plpgsql AS ${tag} BEGIN ${directPayout} END; ${tag}${terminator}`;
+
+  it.each(['$function$', '$$', '$credit_17$'])(
+    'recognizes the primitive with matched %s delimiters and legal terminator whitespace',
+    (tag) => {
+      for (const terminator of [';', '\n;', ' \t\r\n;']) {
+        const sql = primitive(tag, terminator) + '\n' + creditCall;
+        expect(withoutCreditPrimitive(sql)).toBe('\n' + creditCall);
+        expect(hasMixedPayoutWriters(sql)).toBe(false);
+      }
+    }
+  );
+
+  it.each([';', '\n;', ' \t\r\n;'])(
+    'still rejects a separate duplicate payout before or after a primitive ending with %j',
+    (terminator) => {
+      const owner = primitive('$function$', terminator);
+      const duplicate = `${creditCall}\n${directPayout}`;
+      expect(hasMixedPayoutWriters(`${owner}\n${duplicate}`)).toBe(true);
+      expect(hasMixedPayoutWriters(`${duplicate}\n${owner}`)).toBe(true);
+      expect(
+        hasMixedPayoutWriters(`${owner}\n${creditCall}
+          CREATE OR REPLACE FUNCTION public.other_writer() RETURNS void
+          LANGUAGE plpgsql AS $function$ BEGIN ${directPayout} END; $function$;`)
+      ).toBe(true);
+    }
+  );
+
+  it('does not exempt a malformed or unterminated primitive', () => {
+    for (const ending of ['', '$other$;', '$function$ unexpected;']) {
+      const sql = `CREATE OR REPLACE FUNCTION public.fn_credit_and_log() RETURNS void
+        LANGUAGE plpgsql AS $function$ BEGIN ${directPayout} END; ${ending}`;
+      expect(withoutCreditPrimitive(sql)).toBe(sql);
+      expect(hasMixedPayoutWriters(sql)).toBe(true);
+    }
+  });
+
   it('no migration credits through the platform path AND writes the payout row itself', () => {
     const offenders: string[] = [];
     for (const f of files) {
@@ -180,13 +299,7 @@ describe('one payment is one payout row', () => {
       // Comments and verifier string literals quote both freely; only look at
       // executable SQL after removing the primitive that legitimately owns
       // the one payout-evidence insert.
-      const code = withoutSeparatedSatelliteDelivery(withoutCreditPrimitive(sql))
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/'(?:''|[^'])*'/g, "''")
-        .split('\n')
-        .filter((l) => !l.trimStart().startsWith('--'))
-        .join('\n');
-      if (CREDIT_PATHS.test(code) && HAND_WRITES.test(code)) offenders.push(f);
+      if (hasMixedPayoutWriters(sql)) offenders.push(f);
     }
     expect(
       offenders,

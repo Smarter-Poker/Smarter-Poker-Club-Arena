@@ -1,0 +1,1066 @@
+[
+  {
+    "acl": "{postgres=arwdDxtm/postgres,anon=rm/postgres,authenticated=rm/postgres,service_role=arwdDxtm/postgres}",
+    "attachments_complete": true,
+    "columns": [
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "notnull": true,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "notnull": false,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "union_id",
+        "notnull": false,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "pool_amount",
+        "notnull": true,
+        "type": "numeric(14,2)"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "hands_contributed",
+        "notnull": false,
+        "type": "bigint"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "last_hit_at",
+        "notnull": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "last_hit_amount",
+        "notnull": false,
+        "type": "numeric(14,2)"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "last_winner_id",
+        "notnull": false,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "notnull": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "notnull": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "main_balance",
+        "notnull": true,
+        "type": "numeric(14,2)"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "backup_balance",
+        "notnull": true,
+        "type": "numeric(14,2)"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "promo_balance",
+        "notnull": true,
+        "type": "numeric(14,2)"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "'active'::text",
+        "generated": "",
+        "identity": "",
+        "name": "status",
+        "notnull": true,
+        "type": "text"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "total_contributed",
+        "notnull": false,
+        "type": "numeric"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "0.00",
+        "generated": "",
+        "identity": "",
+        "name": "total_paid_out",
+        "notnull": true,
+        "type": "numeric(15,2)"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "hit_count",
+        "notnull": true,
+        "type": "integer"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "last_loser_id",
+        "notnull": false,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "merged_into_pool_id",
+        "notnull": false,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "alloc_cum_amount",
+        "notnull": true,
+        "type": "numeric(14,4)"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "fn_bbj_default_mini_floor()",
+        "generated": "",
+        "identity": "",
+        "name": "mini_reserve_floor",
+        "notnull": true,
+        "type": "numeric(14,2)"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "true",
+        "generated": "",
+        "identity": "",
+        "name": "mini_enabled",
+        "notnull": true,
+        "type": "boolean"
+      }
+    ],
+    "columns_complete": true,
+    "constraints": [
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK ((backup_balance >= (0)::numeric))",
+        "name": "bbj_pools_backup_balance_nonneg",
+        "type": "c",
+        "validated": true
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "UNIQUE (club_id)",
+        "name": "bbj_pools_club_id_key",
+        "type": "u",
+        "validated": true
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK ((main_balance >= (0)::numeric))",
+        "name": "bbj_pools_main_balance_nonneg",
+        "type": "c",
+        "validated": true
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "PRIMARY KEY (id)",
+        "name": "bbj_pools_pkey",
+        "type": "p",
+        "validated": true
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK ((promo_balance >= (0)::numeric))",
+        "name": "bbj_pools_promo_balance_nonneg",
+        "type": "c",
+        "validated": true
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK (((alloc_cum_amount IS NULL) OR (alloc_cum_amount = round(alloc_cum_amount, 2))))",
+        "name": "chk_alloc_cum_amount_is_two_decimal_places",
+        "type": "c",
+        "validated": true
+      }
+    ],
+    "constraints_complete": true,
+    "force_rls": false,
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX bbj_pools_club_id_key ON public.bbj_pools USING btree (club_id)",
+        "name": "bbj_pools_club_id_key",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX bbj_pools_pkey ON public.bbj_pools USING btree (id)",
+        "name": "bbj_pools_pkey",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_bbj_pools_union ON public.bbj_pools USING btree (union_id) WHERE (union_id IS NOT NULL)",
+        "name": "idx_bbj_pools_union",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX uq_bbj_pools_club_active ON public.bbj_pools USING btree (club_id) WHERE ((club_id IS NOT NULL) AND (status = 'active'::text))",
+        "name": "uq_bbj_pools_club_active",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX uq_bbj_pools_union_active ON public.bbj_pools USING btree (union_id) WHERE ((club_id IS NULL) AND (union_id IS NOT NULL) AND (status = 'active'::text))",
+        "name": "uq_bbj_pools_union_active",
+        "ready": true,
+        "valid": true
+      }
+    ],
+    "indexes_complete": true,
+    "name": "bbj_pools",
+    "observed_at": "2026-09-13 19:58:49.90803+00",
+    "owner": "postgres",
+    "policies": [
+      {
+        "check": null,
+        "command": "r",
+        "name": "bbj_pools_select",
+        "permissive": true,
+        "roles": [
+          "public"
+        ],
+        "using": "true"
+      }
+    ],
+    "policies_complete": true,
+    "relkind": "r",
+    "reloptions": null,
+    "rls": true,
+    "schema": "public",
+    "triggers": [
+      {
+        "definition": "CREATE TRIGGER trg_ca_autoledger AFTER INSERT OR UPDATE OF main_balance, backup_balance, promo_balance ON public.bbj_pools FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('main_balance=bbj_pool', 'backup_balance=bbj_pool', 'promo_balance=bbj_pool')",
+        "enabled": "O",
+        "function": "fn_ca_autoledger()",
+        "name": "trg_ca_autoledger"
+      },
+      {
+        "definition": "CREATE TRIGGER trg_ca_autoledger_delete BEFORE DELETE ON public.bbj_pools FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger_delete('main_balance=bbj_pool', 'backup_balance=bbj_pool', 'promo_balance=bbj_pool')",
+        "enabled": "O",
+        "function": "fn_ca_autoledger_delete()",
+        "name": "trg_ca_autoledger_delete"
+      },
+      {
+        "definition": "CREATE TRIGGER trg_ca_block_browser BEFORE INSERT OR DELETE OR UPDATE ON public.bbj_pools FOR EACH ROW EXECUTE FUNCTION fn_ca_block_browser_money_table()",
+        "enabled": "O",
+        "function": "fn_ca_block_browser_money_table()",
+        "name": "trg_ca_block_browser"
+      },
+      {
+        "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.bbj_pools FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()",
+        "enabled": "O",
+        "function": "fn_guard_retired_club_mutation()",
+        "name": "trg_guard_retired_club_mutation"
+      }
+    ],
+    "view_definition": null
+  },
+  {
+    "acl": "{postgres=arwdDxtm/postgres,anon=rm/postgres,authenticated=rm/postgres,service_role=arwdDxtm/postgres}",
+    "attachments_complete": true,
+    "columns": [
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "notnull": true,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "performed_by",
+        "notnull": true,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "from_type",
+        "notnull": true,
+        "type": "text"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "from_entity_id",
+        "notnull": false,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "from_label",
+        "notnull": false,
+        "type": "text"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "to_type",
+        "notnull": true,
+        "type": "text"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "to_entity_id",
+        "notnull": false,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "to_label",
+        "notnull": false,
+        "type": "text"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "amount",
+        "notnull": true,
+        "type": "numeric(15,2)"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "'transfer'::text",
+        "generated": "",
+        "identity": "",
+        "name": "category",
+        "notnull": true,
+        "type": "text"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "description",
+        "notnull": false,
+        "type": "text"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "notes",
+        "notnull": false,
+        "type": "text"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "notnull": false,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "union_id",
+        "notnull": false,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_id",
+        "notnull": false,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_id",
+        "notnull": false,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "tournament_id",
+        "notnull": false,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "notnull": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "idempotency_key",
+        "notnull": false,
+        "type": "text"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "correlation_id",
+        "notnull": false,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "causation_id",
+        "notnull": false,
+        "type": "uuid"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "settlement_id",
+        "notnull": false,
+        "type": "text"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "epoch_id",
+        "notnull": false,
+        "type": "integer"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "actor_service",
+        "notnull": false,
+        "type": "text"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "db_role",
+        "notnull": false,
+        "type": "text"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "pre_from_balance",
+        "notnull": false,
+        "type": "numeric"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "post_from_balance",
+        "notnull": false,
+        "type": "numeric"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "pre_to_balance",
+        "notnull": false,
+        "type": "numeric"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "post_to_balance",
+        "notnull": false,
+        "type": "numeric"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": "'posted'::text",
+        "generated": "",
+        "identity": "",
+        "name": "status",
+        "notnull": true,
+        "type": "text"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "metadata",
+        "notnull": false,
+        "type": "jsonb"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "chain_seq",
+        "notnull": false,
+        "type": "bigint"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "prev_hash",
+        "notnull": false,
+        "type": "text"
+      },
+      {
+        "acl": null,
+        "acl_captured": true,
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "row_hash",
+        "notnull": false,
+        "type": "text"
+      }
+    ],
+    "columns_complete": true,
+    "constraints": [
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK ((amount > (0)::numeric))",
+        "name": "chip_ledger_amount_check",
+        "type": "c",
+        "validated": true
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK ((category = ANY (ARRAY['buyin'::text, 'cashout'::text, 'rake'::text, 'commission'::text, 'transfer'::text, 'player_funding'::text, 'agent_funding'::text, 'mint'::text, 'burn'::text, 'legacy_seed_reconcile'::text, 'rakeback'::text, 'settlement'::text, 'tournament_buyin'::text, 'tournament_prize'::text, 'bounty'::text, 'adjustment'::text, 'refund'::text, 'addon'::text, 'rebuy'::text, 'table_cashout'::text, 'tournament_refund'::text, 'bbj_contribution'::text, 'bbj_payout'::text, 'promo'::text, 'promo_release'::text, 'promo_send'::text, 'credit_draw'::text, 'credit_repayment'::text, 'insurance'::text, 'spin_entry'::text, 'spin_prize'::text, 'overlay'::text, 'correction'::text, 'reversal'::text, 'escrow_hold'::text, 'escrow_release'::text, 'treasury_transfer'::text, 'horse_funding'::text, 'fee'::text, 'eco'::text, 'pnl_settlement'::text, 'union_send'::text, 'cashier_send'::text, 'cashier_claim_back'::text, 'ticket_issue'::text, 'ticket_redeem'::text, 'club_opening_allocation'::text, 'leaderboard_payout'::text, 'club_bank_send'::text, 'club_bank_claim'::text, 'agent_send'::text, 'agent_claim'::text, 'union_settlement'::text, 'wheel_prize'::text, 'plinko_prize'::text, 'crash_prize'::text]))) NOT VALID",
+        "name": "chip_ledger_category_check",
+        "type": "c",
+        "validated": false
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK ((amount = round(amount, 2))) NOT VALID",
+        "name": "chip_ledger_exact_scale",
+        "type": "c",
+        "validated": false
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK ((from_type = ANY (ARRAY['player_wallet'::text, 'club_treasury'::text, 'union_bank'::text, 'agent_wallet'::text, 'system_mint'::text, 'system_burn'::text, 'table_stack'::text, 'promo_wallet'::text, 'club_wallet'::text, 'union_wallet'::text, 'bbj_pool'::text, 'spin_reserve'::text, 'insurance_bank'::text, 'escrow'::text, 'prize_liability'::text, 'bounty_liability'::text, 'rakeback_payable'::text, 'refund_payable'::text, 'settlement_suspense'::text, 'issuance_reserve'::text, 'chip_retirement'::text, 'credit_facility'::text, 'credit_receivable'::text, 'opening_setup'::text, 'leaderboard_round'::text]))) NOT VALID",
+        "name": "chip_ledger_from_type_check",
+        "type": "c",
+        "validated": false
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK (((category !~* '^diamond'::text) AND (category !~* '_diamond'::text)))",
+        "name": "chip_ledger_no_diamond_category_check",
+        "type": "c",
+        "validated": true
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "FOREIGN KEY (performed_by) REFERENCES auth.users(id)",
+        "name": "chip_ledger_performed_by_fkey",
+        "type": "f",
+        "validated": true
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "PRIMARY KEY (id)",
+        "name": "chip_ledger_pkey",
+        "type": "p",
+        "validated": true
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK ((amount > (0)::numeric))",
+        "name": "chip_ledger_positive_amount",
+        "type": "c",
+        "validated": true
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK ((status = ANY (ARRAY['posted'::text, 'correction'::text, 'reversal'::text])))",
+        "name": "chip_ledger_status_check",
+        "type": "c",
+        "validated": true
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK ((to_type = ANY (ARRAY['player_wallet'::text, 'club_treasury'::text, 'union_bank'::text, 'agent_wallet'::text, 'system_mint'::text, 'system_burn'::text, 'table_stack'::text, 'promo_wallet'::text, 'club_wallet'::text, 'union_wallet'::text, 'bbj_pool'::text, 'spin_reserve'::text, 'insurance_bank'::text, 'escrow'::text, 'prize_liability'::text, 'bounty_liability'::text, 'rakeback_payable'::text, 'refund_payable'::text, 'settlement_suspense'::text, 'issuance_reserve'::text, 'chip_retirement'::text, 'credit_facility'::text, 'credit_receivable'::text, 'opening_setup'::text, 'leaderboard_round'::text]))) NOT VALID",
+        "name": "chip_ledger_to_type_check",
+        "type": "c",
+        "validated": false
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK (((post_from_balance IS NULL) OR (post_from_balance = round(post_from_balance, 2))))",
+        "name": "chk_post_from_balance_is_two_decimal_places",
+        "type": "c",
+        "validated": true
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK (((post_to_balance IS NULL) OR (post_to_balance = round(post_to_balance, 2))))",
+        "name": "chk_post_to_balance_is_two_decimal_places",
+        "type": "c",
+        "validated": true
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK (((pre_from_balance IS NULL) OR (pre_from_balance = round(pre_from_balance, 2))))",
+        "name": "chk_pre_from_balance_is_two_decimal_places",
+        "type": "c",
+        "validated": true
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK (((pre_to_balance IS NULL) OR (pre_to_balance = round(pre_to_balance, 2))))",
+        "name": "chk_pre_to_balance_is_two_decimal_places",
+        "type": "c",
+        "validated": true
+      },
+      {
+        "deferrable": false,
+        "deferred": false,
+        "definition": "CHECK (((created_at < '2026-09-07 22:00:00+00'::timestamp with time zone) OR (amount = round(amount, 2)))) NOT VALID",
+        "name": "ck_whole_cents",
+        "type": "c",
+        "validated": false
+      },
+      {
+        "deferrable": true,
+        "deferred": true,
+        "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED",
+        "name": "zz_ca_issuance_leg_is_registered",
+        "type": "t",
+        "validated": true
+      }
+    ],
+    "constraints_complete": true,
+    "force_rls": false,
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX chip_ledger_chain_seq_key ON public.chip_ledger USING btree (chain_seq)",
+        "name": "chip_ledger_chain_seq_key",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX chip_ledger_pkey ON public.chip_ledger USING btree (id)",
+        "name": "chip_ledger_pkey",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_chip_ledger_club_created_desc ON public.chip_ledger USING btree (club_id, created_at DESC)",
+        "name": "idx_chip_ledger_club_created_desc",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_chip_ledger_club_from_created ON public.chip_ledger USING btree (club_id, from_entity_id, created_at)",
+        "name": "idx_chip_ledger_club_from_created",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_chip_ledger_club_to_created ON public.chip_ledger USING btree (club_id, to_entity_id, created_at)",
+        "name": "idx_chip_ledger_club_to_created",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_chip_ledger_created_at ON public.chip_ledger USING btree (created_at)",
+        "name": "idx_chip_ledger_created_at",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_chip_ledger_from_entity_created ON public.chip_ledger USING btree (from_entity_id, created_at DESC)",
+        "name": "idx_chip_ledger_from_entity_created",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_chip_ledger_overlay_by_tournament ON public.chip_ledger USING btree (tournament_id) INCLUDE (amount) WHERE ((tournament_id IS NOT NULL) AND (category = 'overlay'::text) AND (to_type = 'prize_liability'::text))",
+        "name": "idx_chip_ledger_overlay_by_tournament",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_chip_ledger_performed_by ON public.chip_ledger USING btree (performed_by)",
+        "name": "idx_chip_ledger_performed_by",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_chip_ledger_promo_from ON public.chip_ledger USING btree (from_entity_id, created_at DESC) WHERE (from_type = 'promo_wallet'::text)",
+        "name": "idx_chip_ledger_promo_from",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_chip_ledger_promo_to ON public.chip_ledger USING btree (to_entity_id, created_at DESC) WHERE (to_type = 'promo_wallet'::text)",
+        "name": "idx_chip_ledger_promo_to",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_chip_ledger_rebuy_probe ON public.chip_ledger USING btree (from_entity_id, tournament_id, created_at) WHERE ((category = 'rebuy'::text) AND (from_type = 'player_wallet'::text) AND (to_type = 'prize_liability'::text) AND (status = 'posted'::text))",
+        "name": "idx_chip_ledger_rebuy_probe",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_chip_ledger_to_entity ON public.chip_ledger USING btree (to_entity_id)",
+        "name": "idx_chip_ledger_to_entity",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_chip_ledger_to_entity_created ON public.chip_ledger USING btree (to_entity_id, created_at DESC)",
+        "name": "idx_chip_ledger_to_entity_created",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX ix_chip_ledger_settlement ON public.chip_ledger USING btree (settlement_id) WHERE (settlement_id IS NOT NULL)",
+        "name": "ix_chip_ledger_settlement",
+        "ready": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX ux_chip_ledger_idempotency_key ON public.chip_ledger USING btree (idempotency_key) WHERE (idempotency_key IS NOT NULL)",
+        "name": "ux_chip_ledger_idempotency_key",
+        "ready": true,
+        "valid": true
+      }
+    ],
+    "indexes_complete": true,
+    "name": "chip_ledger",
+    "observed_at": "2026-09-13 19:58:49.90803+00",
+    "owner": "postgres",
+    "policies": [
+      {
+        "check": null,
+        "command": "r",
+        "name": "Users can view their own transactions",
+        "permissive": true,
+        "roles": [
+          "public"
+        ],
+        "using": "((( SELECT auth.uid() AS uid) = performed_by) OR (( SELECT auth.uid() AS uid) = from_entity_id) OR (( SELECT auth.uid() AS uid) = to_entity_id))"
+      }
+    ],
+    "policies_complete": true,
+    "relkind": "r",
+    "reloptions": [
+      "autovacuum_enabled=true",
+      "autovacuum_analyze_scale_factor=0.0",
+      "autovacuum_analyze_threshold=1000",
+      "autovacuum_vacuum_scale_factor=0.0",
+      "autovacuum_vacuum_threshold=1000",
+      "autovacuum_vacuum_cost_delay=2",
+      "autovacuum_vacuum_cost_limit=2000"
+    ],
+    "rls": true,
+    "schema": "public",
+    "triggers": [
+      {
+        "definition": "CREATE TRIGGER aa_ca_capture_tournament_charge_entitlement AFTER INSERT ON public.chip_ledger FOR EACH ROW WHEN (((new.tournament_id IS NOT NULL) AND (new.from_type = 'player_wallet'::text) AND (new.to_type = 'prize_liability'::text))) EXECUTE FUNCTION fn_ca_capture_tournament_charge_entitlement()",
+        "enabled": "O",
+        "function": "fn_ca_capture_tournament_charge_entitlement()",
+        "name": "aa_ca_capture_tournament_charge_entitlement"
+      },
+      {
+        "definition": "CREATE TRIGGER ab_ca_chip_store_declared BEFORE INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_chip_store_declared()",
+        "enabled": "O",
+        "function": "fn_ca_chip_store_declared()",
+        "name": "ab_ca_chip_store_declared"
+      },
+      {
+        "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+        "enabled": "O",
+        "function": "fn_cancelled_tournament_evidence_is_immutable()",
+        "name": "cancelled_tournament_evidence_is_immutable"
+      },
+      {
+        "definition": "CREATE TRIGGER satellite_transfer_ledger_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_satellite_transfer_ledger_is_immutable()",
+        "enabled": "O",
+        "function": "fn_satellite_transfer_ledger_is_immutable()",
+        "name": "satellite_transfer_ledger_is_immutable"
+      },
+      {
+        "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()",
+        "enabled": "O",
+        "function": "fn_terminal_tournament_evidence_is_immutable()",
+        "name": "terminal_tournament_evidence_is_immutable"
+      },
+      {
+        "definition": "CREATE TRIGGER trg_ca_append_only BEFORE DELETE OR UPDATE ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only()",
+        "enabled": "O",
+        "function": "fn_ca_journal_append_only()",
+        "name": "trg_ca_append_only"
+      },
+      {
+        "definition": "CREATE TRIGGER trg_ca_chip_ledger_enrich BEFORE INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_chip_ledger_enrich()",
+        "enabled": "O",
+        "function": "fn_ca_chip_ledger_enrich()",
+        "name": "trg_ca_chip_ledger_enrich"
+      },
+      {
+        "definition": "CREATE TRIGGER trg_chip_ledger_performed_by BEFORE INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION enforce_chip_ledger_performed_by()",
+        "enabled": "O",
+        "function": "enforce_chip_ledger_performed_by()",
+        "name": "trg_chip_ledger_performed_by"
+      },
+      {
+        "definition": "CREATE TRIGGER zz_ca_attested_day_is_restated_del AFTER DELETE ON public.chip_ledger REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_attested_day_is_restated()",
+        "enabled": "O",
+        "function": "fn_ca_attested_day_is_restated()",
+        "name": "zz_ca_attested_day_is_restated_del"
+      },
+      {
+        "definition": "CREATE TRIGGER zz_ca_attested_day_is_restated_upd AFTER UPDATE ON public.chip_ledger REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_attested_day_is_restated()",
+        "enabled": "O",
+        "function": "fn_ca_attested_day_is_restated()",
+        "name": "zz_ca_attested_day_is_restated_upd"
+      },
+      {
+        "definition": "CREATE TRIGGER zz_ca_escrow_overlay_leg AFTER INSERT ON public.chip_ledger FOR EACH ROW WHEN (((new.to_type = 'prize_liability'::text) AND ((new.category = 'overlay'::text) OR ((new.category = 'correction'::text) AND (new.from_type = ANY (ARRAY['union_bank'::text, 'club_treasury'::text])))))) EXECUTE FUNCTION fn_ca_escrow_on_overlay_leg()",
+        "enabled": "O",
+        "function": "fn_ca_escrow_on_overlay_leg()",
+        "name": "zz_ca_escrow_overlay_leg"
+      },
+      {
+        "definition": "CREATE TRIGGER zz_ca_escrow_reserve_leg AFTER INSERT ON public.chip_ledger FOR EACH ROW WHEN ((new.category = ANY (ARRAY['spin_entry'::text, 'spin_prize'::text]))) EXECUTE FUNCTION fn_ca_escrow_on_reserve_leg()",
+        "enabled": "O",
+        "function": "fn_ca_escrow_on_reserve_leg()",
+        "name": "zz_ca_escrow_reserve_leg"
+      },
+      {
+        "definition": "CREATE TRIGGER zz_ca_escrow_seat_transfer_leg AFTER INSERT ON public.chip_ledger FOR EACH ROW WHEN (((new.to_type = 'prize_liability'::text) AND (new.idempotency_key ~~ 'tourney:%:seat:%:pool_transfer'::text))) EXECUTE FUNCTION fn_ca_escrow_on_seat_transfer_leg()",
+        "enabled": "O",
+        "function": "fn_ca_escrow_on_seat_transfer_leg()",
+        "name": "zz_ca_escrow_seat_transfer_leg"
+      },
+      {
+        "definition": "CREATE CONSTRAINT TRIGGER zz_ca_issuance_leg_is_registered AFTER INSERT ON public.chip_ledger DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (((new.from_type = ANY (ARRAY['system_mint'::text, 'system_burn'::text, 'issuance_reserve'::text, 'chip_retirement'::text])) OR (new.to_type = ANY (ARRAY['system_mint'::text, 'system_burn'::text, 'issuance_reserve'::text, 'chip_retirement'::text])))) EXECUTE FUNCTION fn_ca_issuance_leg_is_registered()",
+        "enabled": "O",
+        "function": "fn_ca_issuance_leg_is_registered()",
+        "name": "zz_ca_issuance_leg_is_registered"
+      },
+      {
+        "definition": "CREATE TRIGGER zz_chip_ledger_key_is_claimed_once BEFORE INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION zz_chip_ledger_key_is_claimed_once()",
+        "enabled": "O",
+        "function": "zz_chip_ledger_key_is_claimed_once()",
+        "name": "zz_chip_ledger_key_is_claimed_once"
+      },
+      {
+        "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen()",
+        "enabled": "O",
+        "function": "fn_refuse_while_frozen()",
+        "name": "zz_freeze_guard"
+      }
+    ],
+    "view_definition": null
+  }
+]

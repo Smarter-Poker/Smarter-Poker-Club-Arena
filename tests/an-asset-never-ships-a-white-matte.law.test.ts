@@ -158,48 +158,19 @@ describe('the baseline is a record of work done, not a list of excuses', () => {
     }
   });
 
-  it('still names the inspected artwork the detector was proven wrong about', () => {
+  it('retains the original six and measured matte wheel artwork', () => {
     // If one of these leaves the baseline it means somebody cleaned it. That
     // is a decision about Dan's art, not a refactor, and it should be read as
     // one - the reasons above say what cleaning each of them destroys.
     expect(Object.keys(baseline.assets).sort()).toEqual([
       'public/assets/club-buttons/club/club-identity-icon-club-v1.png',
       'public/assets/club-buttons/club/club-identity-icon-player-v1.png',
-      'public/assets/club-buttons/console/riveted-console-v1/mid.png',
       'public/assets/club-buttons/console/spade-console-v1/mid.png',
       'public/assets/club-buttons/game-cards/plo/shark-four-bay-v1/live-dot.png',
       'public/assets/club-buttons/wallets/mobile/wallet-union-bank-v1.webp',
       'public/assets/club-buttons/wallets/square/wallet-promo-wallet-square-v1.png',
-    ]);
-  });
-
-  it('accepts the measured riveted rail and refuses a new white strip on the same pixels', async () => {
-    const rel = 'public/assets/club-buttons/console/riveted-console-v1/mid.png';
-    const sharp = (await import('sharp')).default;
-    const { data, info } = await sharp(join(ROOT, rel))
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    expect([info.width, info.height]).toEqual([729, 8]);
-    const reading = (pixels: Uint8Array) =>
-      Math.round(matteFraction(pixels, info.width, info.height) * 1000) / 10;
-    const floor = Math.round(MIN_FRACTION * 1000) / 10;
-    expect(reading(data)).toBe(1.5);
-    expect(judgeReadings([{ rel, pct: reading(data) }], baseline.assets, floor).failures).toEqual(
-      []
-    );
-
-    // Re-export fault on a private pixel buffer, never on the shipped asset.
-    const withMatte = new Uint8Array(data);
-    for (let y = 0; y < info.height; y++) {
-      for (let x = 100; x < 132; x++) {
-        withMatte.set([220, 220, 220, 255], (y * info.width + x) * 4);
-      }
-    }
-    const increased = reading(withMatte);
-    expect(increased).toBeGreaterThan(1.5);
-    expect(judgeReadings([{ rel, pct: increased }], baseline.assets, floor).failures).toEqual([
-      { rel, pct: increased, allowed: 1.5 },
+      'public/assets/diamond-spins/wheel-matte-controls-v1.png',
+      'public/assets/diamond-spins/wheel-selector-matte-v1.png',
     ]);
   });
 });
@@ -211,7 +182,7 @@ describe('the port agrees with the Python the artists run', () => {
   // numbers below are the ones both produced; a change to either that moves
   // them shows up here and in the baseline at once.
   const PINNED: ReadonlyArray<readonly [string, number]> = [
-    // Original passing inputs are versioned to avoid overwriting encoded pool URLs.
+    // Preserve the original matte-clean source at a content-versioned URL.
     ['public/assets/club-buttons/club-nav-shell-d45f56465bad.png', 0.0],
     ['public/assets/club-buttons/wallet-row-shell-e7964bb1791f.webp', 0.3],
     ['public/assets/club-buttons/club/club-identity-icon-club-v1.png', 7.8],

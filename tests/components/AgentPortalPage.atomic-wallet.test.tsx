@@ -10,7 +10,7 @@ const m = vi.hoisted(() => ({
   readMember: vi.fn(),
   readCommissions: vi.fn(),
   balanceRefresh: () => undefined as unknown,
-  commissionRefresh: undefined as (() => unknown) | undefined,
+  commissionRefresh: undefined as undefined | (() => unknown),
   owner: '10000000-0000-4000-8000-000000000001',
   agentBalance: 100,
   memberBalance: 456,
@@ -109,8 +109,8 @@ beforeEach(() => {
   m.agentBalance = 100;
   m.memberError = false;
   m.filters = [];
-  m.clubId = '20000000-0000-4000-8000-000000000001';
   m.commissionRefresh = undefined;
+  m.clubId = '20000000-0000-4000-8000-000000000001';
   m.readMember.mockReset().mockImplementation(() => ({
     data: m.memberError ? null : { chip_balance: m.memberBalance },
     error: m.memberError ? new Error('denied') : null,
@@ -225,13 +225,14 @@ describe('agent page response ordering', () => {
     m.readCommissions.mockReturnValue(commissionResult(31));
     const view = mount();
     await screen.findByText('Total: 31 Chips');
-    await waitFor(() => expect(m.commissionRefresh).toEqual(expect.any(Function)));
-    const refreshCommissions = m.commissionRefresh!;
+    // The initial read can render before the realtime effect registers. Never
+    // dispatch through an unmounted prior test's callback or a pending channel.
+    await waitFor(() => expect(m.commissionRefresh).toBeTypeOf('function'));
     const older = deferred<ReturnType<typeof commissionResult>>();
     m.readCommissions.mockReturnValueOnce(older.promise).mockReturnValue(commissionResult(37));
     const calls = m.readCommissions.mock.calls.length;
     act(() => {
-      refreshCommissions();
+      m.commissionRefresh!();
     });
     await waitFor(() => expect(m.readCommissions).toHaveBeenCalledTimes(calls + 1));
     m.clubId = clubB;
@@ -255,19 +256,16 @@ describe('agent page response ordering', () => {
     m.readCommissions.mockReturnValue(commissionResult(31));
     mount();
     await screen.findByText('Total: 31 Chips');
-    // The initial read can render before the realtime subscription effect.
-    // Wait for this mount's callback, never a prior mount's retained closure.
-    await waitFor(() => expect(m.commissionRefresh).toEqual(expect.any(Function)));
-    const refreshCommissions = m.commissionRefresh!;
+    await waitFor(() => expect(m.commissionRefresh).toBeTypeOf('function'));
     const older = deferred<ReturnType<typeof commissionResult>>();
     m.readCommissions.mockReturnValueOnce(older.promise).mockReturnValueOnce(commissionResult(37));
     const calls = m.readCommissions.mock.calls.length;
     act(() => {
-      refreshCommissions();
+      m.commissionRefresh!();
     });
     await waitFor(() => expect(m.readCommissions).toHaveBeenCalledTimes(calls + 1));
     act(() => {
-      refreshCommissions();
+      m.commissionRefresh!();
     });
     await screen.findByText('Total: 37 Chips');
     await act(async () => {

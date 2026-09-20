@@ -28,12 +28,20 @@ const openInAppBrowser = vi.fn(async (_u: string) => {});
 vi.mock('../../src/lib/native/browser', () => ({
   openInAppBrowser: (u: string) => openInAppBrowser(u),
 }));
+const nativePurchaseMocks = vi.hoisted(() => ({
+  purchaseNative: vi.fn(async (..._args: unknown[]) => ({ ok: true })),
+}));
+vi.mock('../../src/lib/native/purchases', () => ({
+  purchaseNative: (...args: unknown[]) => nativePurchaseMocks.purchaseNative(...args),
+}));
 
 function pretendNative(on: boolean) {
   const w = window as unknown as { Capacitor?: unknown };
   if (on) w.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios' };
   else delete w.Capacitor;
 }
+
+afterEach(() => pretendNative(false));
 
 describe('push inside the app goes to the device token, and the web path is untouched', () => {
   beforeEach(() => {
@@ -42,8 +50,6 @@ describe('push inside the app goes to the device token, and the web path is unto
     hasNativeSubscription.mockClear();
     localStorage.clear();
   });
-  afterEach(() => pretendNative(false));
-
   it('the app supports push (the OS does it) and IS the installed app', async () => {
     const pc = await import('../../src/lib/pushClient');
     pretendNative(true);
@@ -130,16 +136,68 @@ describe('the store sheet asks for the same product the web would have sent Stri
     });
     expect(nativePurchaseRequestFor('diamonds', [{}])).toBeNull();
   });
+
+  it('keeps both native payment types closed before any provider call while web stays ready', async () => {
+    const marketplace = await import('../../src/pages/marketplace/marketplaceShared');
+    nativePurchaseMocks.purchaseNative.mockClear();
+    pretendNative(true);
+    expect(marketplace.checkoutProviderReadyForCurrentPlatform('diamonds')).toBe(false);
+    expect(marketplace.checkoutProviderReadyForCurrentPlatform('subscription')).toBe(false);
+
+    const accountId = 'fade0000-0000-4000-8000-000000000001';
+    await expect(
+      marketplace.startCheckout(
+        'diamonds',
+        [{ packageId: 'starter', quantity: 1 }],
+        'tab=diamonds',
+        {
+          requestId: 'fade0000-0000-4000-8000-000000000002',
+          expectedUserId: accountId,
+          offerConfirmation: {
+            version: 1,
+            accountId,
+            type: 'diamonds',
+            currency: 'usd',
+            totalCents: 399,
+            totalDiamonds: 500,
+            totalBonus: 50,
+            items: [
+              {
+                packageId: 'starter',
+                quantity: 1,
+                unitCents: 399,
+                diamonds: 500,
+                bonus: 50,
+              },
+            ],
+          },
+        }
+      )
+    ).rejects.toMatchObject({ checkoutPrecommitRefusal: true });
+    expect(nativePurchaseMocks.purchaseNative).not.toHaveBeenCalled();
+
+    pretendNative(false);
+    expect(marketplace.checkoutProviderReadyForCurrentPlatform('diamonds')).toBe(true);
+    expect(marketplace.checkoutProviderReadyForCurrentPlatform('subscription')).toBe(true);
+  });
 });
 
 describe('wiring that only a phone can exercise', () => {
   it('startCheckout branches to the store before Stripe, only inside the app', () => {
     const src = read('src/pages/marketplace/marketplaceShared.ts');
-    const branch = src.indexOf('if (isNativePlatform()) {');
-    const stripe = src.indexOf("'/api/store/create-checkout-session'");
+    const purchases = read('src/lib/native/purchases.ts');
+    const branch = src.indexOf('if (isNativeMarketplaceRuntime()) {');
+    const hold = src.indexOf('if (!NATIVE_MARKETPLACE_PAYMENTS_READY)', branch);
+    const providerImport = src.indexOf("await import('../../lib/native/purchases')", branch);
+    const stripe = src.indexOf("'/api/store/create-checkout-session'", branch);
     expect(branch).toBeGreaterThan(-1);
+    expect(hold).toBeGreaterThan(branch);
+    expect(providerImport).toBeGreaterThan(hold);
+    expect(providerImport).toBeLessThan(stripe);
     expect(branch).toBeLessThan(stripe);
     expect(src).toContain("await import('../../lib/native/purchases')");
+    expect(purchases).toContain('PRODUCT_CATEGORY.NON_SUBSCRIPTION');
+    expect(purchases).toContain('PRODUCT_CATEGORY.SUBSCRIPTION');
   });
 
   it('the membership tab has Restore Purchases and store subscription management, native only', () => {
@@ -147,6 +205,8 @@ describe('wiring that only a phone can exercise', () => {
     expect(src).toContain('Restore Purchases');
     expect(src).toContain('restoreNativePurchases(userId)');
     expect(src).toContain('openNativeSubscriptionManagement()');
+    expect(src).toContain("checkoutProviderReadyForCurrentPlatform('subscription')");
+    expect(src).toContain('disabled={busy !== null || !cardPaymentAvailable}');
     // the web keeps its link
     expect(src).toContain('href="/hub/diamond-store?tab=vip"');
   });

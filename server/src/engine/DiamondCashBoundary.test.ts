@@ -306,7 +306,7 @@ describe('the first Diamond game stays inside the custody boundary', () => {
     enabled = true;
     await expect(loadTable('table')).resolves.toMatchObject({ arena: diamond });
     settingsError = { message: 'unavailable' };
-    await expect(loadTable('table')).rejects.toThrow('Diamond Cash Games Are Not Open');
+    await expect(loadTable('table')).rejects.toThrow('Diamond cash settings read failed');
     expect(from.mock.calls.filter(([name]) => name === 'ca_arena_settings')).toHaveLength(3);
   });
 

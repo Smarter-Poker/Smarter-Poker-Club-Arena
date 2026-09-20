@@ -17,7 +17,7 @@
  * budget is fine in isolation (11-13 ms) - it is the SUM over ~90 tables
  * dealing 1.5 hands a second that pegs the core. When the event loop is that
  * saturated, every timer and every await in the process runs late, and the
- * two "error loops" the Sentry budget named (Club Arena #2970) turned out to
+ * two "error loops" the error reporting budget named (Club Arena #2970) turned out to
  * be symptoms of exactly this:
  *
  *   - TournamentBrainContext.refresh "timed out": a 5 s deadline on three

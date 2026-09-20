@@ -300,11 +300,13 @@ describe('diamond purchases: the errors a lifetime member and a retrying buyer u
     expect(MEMBERSHIP).toMatch(/if \(isLifetime\) \{\s*toast\.info\(/);
   });
 
-  it('a refused purchase does not replay under the same idempotency key', () => {
-    const catchBlock = STORE.slice(
-      STORE.indexOf("toast.error(err instanceof Error ? err.message : 'Purchase failed')")
+  it('a definitive refusal retires only its exact protected purchase key', () => {
+    expect(STORE).toContain('const definitiveRefusal = apiError.definitive === true;');
+    expect(STORE).toContain('if (definitiveRefusal) {');
+    expect(STORE).toContain(
+      'clearSessionPurchaseRequestIfMatches(purchaseScope, purchaseIntent.requestId)'
     );
-    expect(catchBlock).toContain('purchaseKeyRef.current = mintPurchaseKey()');
+    expect(STORE).not.toContain('purchaseKeyRef.current = mintPurchaseKey()');
   });
 
   it('the marketplace opens the club that actually has stock, not the first membership row', () => {

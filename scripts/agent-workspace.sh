@@ -92,8 +92,11 @@ fi
 # MAC_DEPENDENCIES_CI_ONLY_V1
 # User policy, 2026-09-11: Mac worktrees receive no dependency copies or installs.
 # APFS clones still grow when tools write them, and the fallback is a full copy.
-# Existing shared tools may be read without mutation; missing dependencies must
-# be installed and checked in CI. The non-Mac provisioner below is unchanged.
+# Superseded in part September 17: applicable local prechecks must run before
+# push. The helper still never copies or installs Mac dependencies. Prepare
+# exact locked dependencies explicitly in a unique owned SSD checkout after
+# checking mounted/writable storage and ensuring node_modules is not shared.
+# Existing shared tools may be read without mutation. Non-Mac behavior is unchanged.
 #
 # 2026-08-23. This used to be `ln -s`, and a symlink is not a safe thing to hand
 # an agent, because npm WRITES THROUGH IT. `npm ci` deletes node_modules before
@@ -133,7 +136,7 @@ fi
 # per package root.
 provision_node_modules() {
   if [ "$(uname -s)" = Darwin ]; then
-    echo "# ${1:-.}/node_modules: Mac provisioning disabled; run dependency checks in CI" >&2
+    echo "# ${1:-.}/node_modules: automatic Mac provisioning disabled; prepare owned SSD dependencies for required local prechecks" >&2
     return 0
   fi
   # $1 = package dir relative to the repo root ("" for the root itself)
@@ -451,6 +454,8 @@ if [ -d "$DIR" ] && git -C "$DIR" rev-parse --git-dir >/dev/null 2>&1; then
     # startup, and a workspace script that said "leaving it as it is" and did.
     provision_all_package_roots
     verify_all_native_deps
+    node "$DIR/docs/agent-policy/agent-policy.mjs" check >&2
+    echo "# Read current policy: node '$DIR/docs/agent-policy/agent-policy.mjs' read" >&2
     [ "$MODE" = "--print-path" ] && echo "$DIR" || echo "cd '$DIR'"
     exit 0
   fi
@@ -497,6 +502,8 @@ bash "$ROOT/scripts/check-unpushed-work.sh" --quiet 2>&1 | sed "s/^/# /" >&2 || 
 provision_all_package_roots
 verify_all_native_deps
 
+node "$DIR/docs/agent-policy/agent-policy.mjs" check >&2
+echo "# Read current policy: node '$DIR/docs/agent-policy/agent-policy.mjs' read" >&2
 echo "# worktree: $DIR" >&2
 echo "# branch:   $BRANCH  (from origin/main)" >&2
 if [ "$MODE" = "--print-path" ]; then

@@ -15,6 +15,8 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { validateCrashSettlement } from '../utils/crashReceipt';
+import { bonusAdded, bonusTotal, earnedReceiptBudget } from '../utils/bonusGameBudget';
 
 export type DiamondGame = 'plinko' | 'crash' | 'crossing' | 'mines';
 
@@ -163,6 +165,16 @@ export interface CrashRound {
   status: CrashStatus;
   bet_diamonds: number;
   bet_chips: number;
+  award_id?: string;
+  bonus?: {
+    base_diamonds: number;
+    entry_diamonds: number;
+    boost_multiplier: 1 | 2;
+    added_diamonds: number;
+    total_diamonds: number;
+  };
+  minimum_payout_chips?: number;
+  payout_version?: 1 | 2;
   diamonds_per_chip: number;
   cap_cents: number;
   growth_k: number;
@@ -447,8 +459,10 @@ export function normaliseCrash(raw: Record<string, unknown>): CrashRound {
   const fairness = rec(raw.fairness);
   const balances = rec(raw.balances);
   const pool = rec(raw.pool);
+  const funded = earnedReceiptBudget(raw);
+  if (raw.award_id != null && !funded) throw new Error('The Crash Award Could Not Be Verified');
   return {
-    ok: Boolean(raw.ok),
+    ok: raw.ok === true,
     error: raw.error ? String(raw.error) : undefined,
     detail: raw.detail ? String(raw.detail) : undefined,
     replayed: Boolean(raw.replayed),
@@ -462,6 +476,22 @@ export function normaliseCrash(raw: Record<string, unknown>): CrashRound {
     status: (raw.status as CrashStatus) ?? 'open',
     bet_diamonds: num(raw.bet_diamonds),
     bet_chips: num(raw.bet_chips),
+    ...(funded?.award
+      ? {
+          award_id: funded.award.id,
+          bonus: {
+            base_diamonds: funded.base,
+            entry_diamonds: funded.award.entryDiamonds,
+            boost_multiplier: funded.award.boostMultiplier,
+            added_diamonds: bonusAdded(funded),
+            total_diamonds: bonusTotal(funded),
+          },
+        }
+      : {}),
+    minimum_payout_chips:
+      raw.minimum_payout_chips === undefined ? undefined : num(raw.minimum_payout_chips),
+    payout_version:
+      raw.payout_version === 1 || raw.payout_version === 2 ? raw.payout_version : undefined,
     diamonds_per_chip: num(raw.diamonds_per_chip),
     cap_cents: num(raw.cap_cents),
     growth_k: num(raw.growth_k),
@@ -537,7 +567,7 @@ function normaliseDrop(raw: Record<string, unknown>): PlinkoDrop {
   };
 }
 
-function normaliseState(raw: Record<string, unknown>): GameState {
+export function normaliseState(raw: Record<string, unknown>): GameState {
   const config = raw.config ? rec(raw.config) : undefined;
   const pool = raw.pool ? rec(raw.pool) : undefined;
   const player = raw.player ? rec(raw.player) : undefined;
@@ -674,16 +704,32 @@ const DiamondGamesService = {
   },
 
   /**
-   * A tick (cashout = false) asks the server what the round is now; a cash-out
-   * (cashout = true) asks it to settle at the multiplier its clock reads.
+   * A tick reads server state. New manual cash-outs bind the displayed hundredth;
+   * the server still owns crash, cap, automatic targets and wallet settlement.
    */
-  async crashSettle(roundId: string, cashout: boolean): Promise<CrashRound> {
-    const { data, error } = await supabase.rpc('fn_crash_settle', {
-      p_round_id: roundId,
-      p_cashout: cashout,
-    });
+  async crashSettle(
+    roundId: string,
+    cashout: boolean,
+    expected?: CrashRound,
+    displayedCents?: number
+  ): Promise<CrashRound> {
+    if (
+      cashout &&
+      displayedCents !== undefined &&
+      (!Number.isSafeInteger(displayedCents) || displayedCents < 101)
+    )
+      throw new Error('Cash Out Starts At 1.01x');
+    const { data, error } =
+      cashout && displayedCents !== undefined
+        ? await supabase.rpc('fn_crash_cashout', {
+            p_round_id: roundId,
+            p_multiplier_cents: displayedCents,
+          })
+        : await supabase.rpc('fn_crash_settle', { p_round_id: roundId, p_cashout: cashout });
     if (error) throw error;
-    return normaliseCrash(rec(data));
+    const receipt = rec(data);
+    validateCrashSettlement(receipt, roundId, expected);
+    return normaliseCrash(receipt);
   },
 
   async plinkoHistory(clubId: string, limit = 25): Promise<PlinkoDrop[]> {

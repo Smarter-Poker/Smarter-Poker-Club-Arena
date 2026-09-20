@@ -41,9 +41,8 @@ import { viteMediaIdentity } from '../scripts/optimize-dist-media.mjs';
 const ROOT = join(__dirname, '..');
 const SCRIPT = join(ROOT, 'scripts', 'optimize-dist-media.mjs');
 
-// Permanent public URLs: sealed 29aa/run34836323037 bytes, with five new
-// assets from sealed 5305/run35070339226. Two raw 29aa/5305 matte-clean inputs
-// use new hash-versioned URLs. New artwork must use a new URL.
+// Exact sealed production bytes for artwork sources unchanged since September 13.
+// Later artwork paths and layouts are excluded; permanent URLs must retain bytes.
 const SEALED_PUBLIC_ASSET_BYTES: Readonly<Record<string, string>> = {
   'assets/ads/bbj-running-hub-promotions-v1.webp':
     '76323b90264ca9f7687caad16f6d2a6bbffb735e66f295d67e61c55939974441',
@@ -129,18 +128,6 @@ const SEALED_PUBLIC_ASSET_BYTES: Readonly<Record<string, string>> = {
     'dc5170185f051870cd32f3c79ae719b0d8024836ac157c474238130bce34a879',
   'assets/club-buttons/club/kingfish-v1/source/approved-reference.jpg':
     'b14ab0aa333f266c7898134dd7b50203342a8ecf9aed31dd856174815b4e85ae',
-  'assets/club-buttons/console/riveted-console-v1/bottom.png':
-    '30b448c6b422077aa9b1baad72dfc3a05891d1e10ac830da5d78eef94681f1eb',
-  'assets/club-buttons/console/riveted-console-v1/mid.png':
-    '3a167b0f63161ba133e795184233c6c281609e96b70a5e1aa0b02adce1e73d50',
-  'assets/club-buttons/console/riveted-console-v1/top.png':
-    '124081ee7ec50d6aa299390e3f96fda8c005e1fe053aba688d503123acdc738f',
-  'assets/club-buttons/console/shark-console-v1/bottom-plate.png':
-    '1851fa6b356a71e76f1df74bb51698b97eea9a8a615b170e47212c1d76249bd1',
-  'assets/club-buttons/console/shark-console-v1/mid.png':
-    '1d7efadd41691ea8b4eca1de784ba185c24260fca9d2b6eaec469671143115b5',
-  'assets/club-buttons/console/shark-console-v1/top.png':
-    'eb92f01f6e8848313ee187640235f92cd9a8100cbd346dcc818591f069c888b9',
   'assets/club-buttons/console/spade-console-v1/bottom-foot.png':
     'db0e738eff21ed434e3c6823fe28c276dbb3f28948de96a3812d9fdf308d3d0f',
   'assets/club-buttons/console/spade-console-v1/bottom-plates.png':
@@ -213,12 +200,8 @@ const SEALED_PUBLIC_ASSET_BYTES: Readonly<Record<string, string>> = {
     'e762762a6b2576dab84f27c545857ce105863e22692f9851817b0f4dc0a99c3f',
   'assets/club-buttons/game-cards/nlh/shell-mobile-v4-tall-reference.png':
     'd858e4fb990d32c8b42cf33443d933f9a424c60d0879df5f2e3ce77398584510',
-  'assets/club-buttons/game-cards/nlh/spade-nlh-premium-v1/buttons/join-plate.png':
-    'a757504077213aaa88a852e255c421d45d8e2ff60a7567e382bebc732e2816c6',
   'assets/club-buttons/game-cards/nlh/spade-nlh-premium-v1/buttons/join-table.png':
     '01af1f8b0196617b697afebe29c1d65aa8dd352c86ff9d223af49a5c70ba7556',
-  'assets/club-buttons/game-cards/nlh/spade-nlh-premium-v1/buttons/view-plate-10e21c24e5d6.png':
-    '10e21c24e5d628c00b6b7f2d2cbc487a087fce7c8f218352245922d59c1d7b72',
   'assets/club-buttons/game-cards/nlh/spade-nlh-premium-v1/buttons/view-table.png':
     'cc2b3d9a213b38dbc975df58a5613dd4f57ae6302ca40588e3655d6fc6fd3139',
   'assets/club-buttons/game-cards/nlh/spade-nlh-premium-v1/chassis.png':
@@ -253,8 +236,6 @@ const SEALED_PUBLIC_ASSET_BYTES: Readonly<Record<string, string>> = {
     'fd939565f30e3e53133a71a8551a3704138485609ddfc20692b44521578d7d08',
   'assets/club-buttons/game-cards/plo/shell-mobile-v4-reference-clean.png':
     'ac7d86ba8dfcc5787e566f14dce4fd92868d308df568c63a059c7deba59d48f1',
-  'assets/club-buttons/game-cards/plo/spade-plo-premium-v1/chassis-b0b05b302c99.png':
-    '460b8a9858ce5601e32d6ba20789bd0d48fedd9f0798f3f1aee561369424b4b2',
   'assets/club-buttons/game-cards/plo/spade-plo-premium-v1/chassis.png':
     '9411a09e2a61040170b87300652239013677ffe75ec26f77d110d235372e8eb3',
   'assets/club-buttons/game-cards/plo/spade-plo-premium-v1/source/approved-reference.png':
@@ -319,18 +300,14 @@ const SEALED_PUBLIC_ASSET_BYTES: Readonly<Record<string, string>> = {
     '1aa104a2ee157ac4392ba084ff17e56ca5bb2a933ca0e0c5895d8f143bf07f5e',
   'assets/club-buttons/lobby/shark-panel-v1/top.png':
     '36f29b5d01fa5163a40c143edecb2eaa178fdb2f62a6a3eb81a508ca34de884f',
-  'assets/club-buttons/popups/buy-in-v1/deck-d5664b815000.png':
-    'd5664b8150009134494edd6ad5e3986dd31ba375f9c1848da4e4c576f4c4f5c5',
-  'assets/club-buttons/popups/buy-in-v1/source/approved-reference-37716019dbbf.png':
-    '36aaa95d0c8256b5af7626e7295c60d86f18a4403c40ed9c27f8944b5e3d1b85',
   'assets/club-buttons/table-management/command-rail-v1/README.md':
     '6fa732cf8bcfdc376f8f8ea6f6741ab99229fe22110298bd01457a201a6b7a48',
   'assets/club-buttons/table-management/command-rail-v1/chassis.png':
     '28f6ea07b14e0ae51ed224feb9fa2d0e67d227ceb21fd5f73cece80ab6944a17',
-  'assets/club-buttons/wallet-row-shell.png':
-    'eda8a07f19b2bbb0a9e53058c0465b4912ea2d58145733324f531ab06c3f70d1',
   'assets/club-buttons/wallet-row-shell-e7964bb1791f.webp':
     'e7964bb1791f5584f39b798419a3c4dd86903218761d80f3d23c559e1630f2c1',
+  'assets/club-buttons/wallet-row-shell.png':
+    'eda8a07f19b2bbb0a9e53058c0465b4912ea2d58145733324f531ab06c3f70d1',
   'assets/club-buttons/wallets/desktop/wallet-agent-wallet-v1.webp':
     '5f65106b4d0e9b6887787deabaeaecd11dcbc78f6c97b0e7770c2370e4a16f76',
   'assets/club-buttons/wallets/desktop/wallet-backup-bbj-wallet-v1.webp':

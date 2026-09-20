@@ -27,7 +27,6 @@
  */
 
 import { Page, expect, test } from '@playwright/test';
-import { handleDiamondBustPrompt } from '../support/ensureClubMembership';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ROUTE ASSERTIONS
@@ -70,7 +69,6 @@ export async function expectRoute(
   path: string,
   opts: { expectText?: string | RegExp; settleMs?: number } = {}
 ): Promise<boolean> {
-  await handleDiamondBustPrompt(page);
   await page.goto(path);
   await page.waitForLoadState('domcontentloaded');
   await page.waitForTimeout(opts.settleMs ?? 3000);
@@ -92,7 +90,6 @@ export async function assertRendered(
     return false;
   }
 
-  await handleDiamondBustPrompt(page);
   await expect(page.locator('#root'), `${path}: no #root — the SPA never mounted`).toBeAttached({
     timeout: 15000,
   });

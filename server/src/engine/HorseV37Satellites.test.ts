@@ -67,6 +67,8 @@ describe('V37 flat payout curves are priced as survival', () => {
 
 describe('V37 the brain context builds the real satellite curve', () => {
   const row = (o: Record<string, unknown> = {}) => ({
+    format_contract: 'mtt-v1',
+    effective_max_players: 200,
     tournament_type: 'MTT',
     variant: 'nlh',
     max_players: 100,
@@ -232,6 +234,24 @@ function gsFor(stacks: number[], heroChips: number, playersLeft: number, seats: 
 }
 
 describe('V37 satelliteRead: locked, urgent, or in the field', () => {
+  it.each([false, true])(
+    'prices the dealt ante population even when a player sits out (%s)',
+    (dealt) => {
+      const { gs, hero } = gsFor([200, 170, 100], 170, 3, 2);
+      gs.bigBlind = 10;
+      gs.ante = 10;
+      gs.players[2].is_sitting_out = true;
+      gs.players[2].is_folded = true;
+      const read = satelliteRead(
+        { ...gs, dealtSeatIds: dealt ? [1, 2, 3] : [1, 2] } as never,
+        hero,
+        17
+      );
+      expect(read.rank).toBe(2);
+      // Four orbits require 18BB at the dealt three-seat table, 14BB at two.
+      expect(read.locked).toBe(!dealt);
+    }
+  );
   it('a covering chip leader on the bubble is LOCKED and covers the table', () => {
     const { gs, hero } = gsFor([40000, 8000, 6000, 3000, 2500], 40000, 5, 4);
     const r = satelliteRead(gs as never, hero, 200);

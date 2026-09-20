@@ -1,24 +1,38 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  DIAMOND STORE — Full-page redesign (2026-08-25)
+ *  DIAMOND STORE : Full-page redesign (2026-08-25)
  *
  *  Replaces the plain card grid with the cinematic sci-fi design from the
- *  uploaded reference image.  Every package card is fully clickable and
- *  redirects to Stripe Checkout (no popup).  Nav tabs link to actual landing
- *  pages on smarter.poker rather than opening a modal.
+ *  uploaded reference image. Every package card starts the verified Card
+ *  provider for its platform in the same app or browser surface. Nav tabs link
+ *  to actual landing pages on smarter.poker rather than opening a modal.
  *
  *  Mobile-first: single-column stack on ≤ 480 px, 2-col grid on wider.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { useToast } from '../../components/common/Toast';
 import { leaveForHub } from '../../lib/openExternal';
-import { startCheckout, uuid, type DiamondPackage, type WalletInfo } from './marketplaceShared';
+import { formatPopupText } from '../../utils/popupStyle';
+import {
+  diamondCheckoutOfferConfirmation,
+  isVerifiedCheckoutPrecommitRefusal,
+  isVerifiedCheckoutTerminalExpiration,
+  checkoutProviderReadyForCurrentPlatform,
+  marketplacePurchaseScope,
+  readOrCreateMarketplacePurchaseIntent,
+  retireMarketplacePurchaseIntent,
+  startCheckout,
+  NATIVE_MARKETPLACE_PAYMENT_HOLD_MESSAGE,
+  type DiamondPackage,
+  type StoreCatalog,
+  type WalletInfo,
+} from './marketplaceShared';
 import styles from './DiamondsTab.module.css';
 
-const DIAMOND_ICON = `${import.meta.env.BASE_URL}images/diamond-icon.webp`;
+const DIAMOND_PACKAGE_ATLAS = `${import.meta.env.BASE_URL}images/marketplace/diamond-packages/diamond-package-atlas-v1.webp`;
 
 /* Navigation destinations stay in the current app page. */
 const NAV_LINKS = [
@@ -28,58 +42,159 @@ const NAV_LINKS = [
   { label: 'Club Shop', href: '/marketplace?tab=store', destination: 'arena' },
 ] as const;
 
-/* ── Tier config: maps package index → visual tier ──────────────────────── */
-const TIER_SIZES = ['sm', 'sm', 'md', 'md', 'lg', 'lg'] as const;
-
-function DiamondGem({ size }: { size: (typeof TIER_SIZES)[number] }) {
-  const px = size === 'lg' ? 72 : size === 'md' ? 56 : 44;
+function DiamondPackageArt({ tier }: { tier: number }) {
   return (
-    <img
-      src={DIAMOND_ICON}
-      alt=""
-      width={px}
-      height={px}
-      className={styles.gem}
+    <span
+      className={styles.packageArt}
+      data-tier={Math.min(Math.max(tier, 0), 5)}
+      style={{ '--diamond-package-atlas': `url(${DIAMOND_PACKAGE_ATLAS})` } as CSSProperties}
       aria-hidden="true"
-      draggable={false}
-      decoding="async"
     />
   );
 }
 
 interface DiamondsTabProps {
   clubId: string;
+  userId: string;
   wallet: WalletInfo;
   packages: DiamondPackage[];
+  /** True only after the server confirms the current package and price table. */
+  catalogVerified: boolean;
+  /** Bypasses the catalog TTL immediately before a payment is authorized. */
+  refreshCatalogForPurchase: () => Promise<StoreCatalog>;
   /** Where to offer the player onward after a successful purchase (phase 3). */
   nextPath?: string | null;
 }
 
-export default function DiamondsTab({ clubId, wallet, packages, nextPath }: DiamondsTabProps) {
+export default function DiamondsTab({
+  clubId,
+  userId,
+  wallet,
+  packages,
+  catalogVerified,
+  refreshCatalogForPurchase,
+  nextPath,
+}: DiamondsTabProps) {
   const toast = useToast();
   const [redirecting, setRedirecting] = useState<string | null>(null);
   const checkoutInFlightRef = useRef(false);
-  const checkoutKeyRef = useRef<string | null>(null);
+  const activeOwnerRef = useRef({ userId, clubId });
+  const checkoutAttemptRef = useRef(0);
+  const checkoutAbortRef = useRef<AbortController | null>(null);
+  const cardPaymentAvailable = checkoutProviderReadyForCurrentPlatform('diamonds');
+
+  useLayoutEffect(() => {
+    activeOwnerRef.current = { userId, clubId };
+    checkoutAttemptRef.current += 1;
+    checkoutAbortRef.current?.abort();
+    checkoutAbortRef.current = null;
+    checkoutInFlightRef.current = false;
+    setRedirecting(null);
+  }, [clubId, userId]);
+
+  useEffect(
+    () => () => {
+      checkoutAttemptRef.current += 1;
+      checkoutAbortRef.current?.abort();
+      checkoutAbortRef.current = null;
+    },
+    []
+  );
 
   /* ── Stripe checkout ───────────────────────────────────────────────────── */
   const handleBuy = async (pkg: DiamondPackage) => {
     if (checkoutInFlightRef.current) return;
+    if (!cardPaymentAvailable) {
+      toast.error(NATIVE_MARKETPLACE_PAYMENT_HOLD_MESSAGE);
+      return;
+    }
+    if (!catalogVerified) {
+      toast.error('Live Pricing Is Temporarily Unavailable');
+      return;
+    }
     checkoutInFlightRef.current = true;
-    checkoutKeyRef.current = uuid();
     setRedirecting(pkg.id);
+    let purchaseScope: string | null = null;
+    let purchaseRequestId: string | null = null;
+    let purchaseWasResumed = false;
+    const attemptId = ++checkoutAttemptRef.current;
+    checkoutAbortRef.current?.abort();
+    const controller = new AbortController();
+    checkoutAbortRef.current = controller;
+    const attemptIsCurrent = () =>
+      !controller.signal.aborted &&
+      checkoutAttemptRef.current === attemptId &&
+      activeOwnerRef.current.userId === userId &&
+      activeOwnerRef.current.clubId === clubId;
     try {
+      const currentCatalog = await refreshCatalogForPurchase();
+      if (!attemptIsCurrent()) return;
+      const currentPackage = currentCatalog.diamondPackages.find((entry) => entry.id === pkg.id);
+      if (!currentCatalog.fromServer || !currentPackage) {
+        throw new Error('Live Pricing Could Not Be Verified. No Payment Was Started.');
+      }
+      if (
+        currentPackage.diamonds !== pkg.diamonds ||
+        currentPackage.bonus !== pkg.bonus ||
+        currentPackage.priceUsd !== pkg.priceUsd
+      ) {
+        throw new Error('Pricing Was Updated. Review The Current Package Before Purchasing.');
+      }
+      const offerConfirmation = diamondCheckoutOfferConfirmation(userId, currentPackage);
+      if (!offerConfirmation) {
+        throw new Error('The Checkout Terms Could Not Be Verified. No Payment Was Started.');
+      }
+      purchaseScope = marketplacePurchaseScope(userId, 'diamond-package-card', currentPackage.id);
+      const purchaseIntent = readOrCreateMarketplacePurchaseIntent(
+        purchaseScope,
+        JSON.stringify({
+          version: 1,
+          type: 'diamonds',
+          packageId: currentPackage.id,
+          quantity: 1,
+          diamonds: currentPackage.diamonds,
+          bonus: currentPackage.bonus,
+          priceUsd: currentPackage.priceUsd,
+          priceCents: currentPackage.priceCents,
+        })
+      );
+      purchaseRequestId = purchaseIntent.requestId;
+      purchaseWasResumed = purchaseIntent.resumed;
       await startCheckout(
         'diamonds',
-        [{ packageId: pkg.id, quantity: 1 }],
+        [{ packageId: currentPackage.id, quantity: 1 }],
         `club=${encodeURIComponent(clubId)}&tab=diamonds${nextPath ? `&next=${encodeURIComponent(nextPath)}` : ''}`,
-        checkoutKeyRef.current
+        {
+          requestId: purchaseIntent.requestId,
+          expectedUserId: userId,
+          offerConfirmation,
+          signal: controller.signal,
+        }
       );
-      // startCheckout navigates away on success — the line below only runs on error.
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Could not start checkout');
-      checkoutInFlightRef.current = false;
-      checkoutKeyRef.current = null;
-      setRedirecting(null);
+      if (!attemptIsCurrent()) return;
+      if (
+        purchaseScope &&
+        purchaseRequestId &&
+        (isVerifiedCheckoutTerminalExpiration(err) ||
+          (!purchaseWasResumed && isVerifiedCheckoutPrecommitRefusal(err)))
+      ) {
+        if (!retireMarketplacePurchaseIntent(purchaseScope, purchaseRequestId)) {
+          toast.warning(
+            'Checkout Did Not Start, But Its Protected Recovery Record Changed And Was Not Cleared. Review The Pending Purchase Before Trying Again.'
+          );
+        }
+      }
+      toast.error(err instanceof Error ? err.message : 'Could Not Start Checkout');
+    } finally {
+      // Native StoreKit/Play purchase and cancel flows navigate inside the SPA
+      // and return here. Release the synchronous latch on every result so one
+      // completed sheet cannot leave every package disabled until unmount.
+      if (checkoutAbortRef.current === controller) {
+        checkoutAbortRef.current = null;
+        checkoutInFlightRef.current = false;
+        setRedirecting(null);
+      }
     }
   };
 
@@ -96,6 +211,14 @@ export default function DiamondsTab({ clubId, wallet, packages, nextPath }: Diam
           Choose A Bundle. Your Wallet Updates After Payment Clears.
         </p>
       </div>
+
+      {(!catalogVerified || !cardPaymentAvailable) && (
+        <p className={styles.catalogNotice} role="alert">
+          {!cardPaymentAvailable
+            ? NATIVE_MARKETPLACE_PAYMENT_HOLD_MESSAGE
+            : 'Live Pricing Is Temporarily Unavailable. Packages Are Display Only Until Verification Returns.'}
+        </p>
+      )}
 
       {/* ── Navigation tabs ────────────────────────────────────────────── */}
       <nav className={styles.navBar} aria-label="Diamond Store Navigation">
@@ -137,13 +260,12 @@ export default function DiamondsTab({ clubId, wallet, packages, nextPath }: Diam
       {/* ── Package grid ───────────────────────────────────────────────── */}
       <div className={styles.grid}>
         {visiblePackages.map((pkg, idx) => {
-          const tier = TIER_SIZES[Math.min(idx, TIER_SIZES.length - 1)];
           const isRedirecting = redirecting === pkg.id;
-          const disabled = redirecting !== null;
+          const disabled = redirecting !== null || !catalogVerified || !cardPaymentAvailable;
           const totalDiamonds = pkg.diamonds + pkg.bonus;
 
           return (
-            /* The entire card is a button-like area — clicking anywhere buys */
+            /* The entire card is a button-like area : clicking anywhere buys */
             <button
               key={pkg.id}
               className={`${styles.card} ${pkg.popular ? styles.cardPopular : ''} ${disabled ? styles.cardDisabled : ''}`}
@@ -160,7 +282,7 @@ export default function DiamondsTab({ clubId, wallet, packages, nextPath }: Diam
               <div className={styles.cardInner}>
                 {/* Gem art */}
                 <div className={styles.gemWrap}>
-                  <DiamondGem size={tier} />
+                  <DiamondPackageArt tier={idx} />
                 </div>
 
                 {/* Package info */}
@@ -168,7 +290,7 @@ export default function DiamondsTab({ clubId, wallet, packages, nextPath }: Diam
                   <span className={styles.pkgLabel}>Diamonds</span>
                   <span className={styles.pkgAmount}>{totalDiamonds.toLocaleString()}</span>
                   <span className={styles.pkgSub}>
-                    {pkg.name} - ${pkg.priceUsd.toFixed(2)}
+                    {formatPopupText(pkg.name)} - ${pkg.priceUsd.toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -176,7 +298,11 @@ export default function DiamondsTab({ clubId, wallet, packages, nextPath }: Diam
               {/* Direct, secure checkout CTA */}
               <div className={styles.ctaRow}>
                 <span className={styles.ctaBtn}>
-                  {isRedirecting ? 'Opening Checkout' : 'Buy Securely'}
+                  {isRedirecting
+                    ? 'Opening Checkout'
+                    : cardPaymentAvailable
+                      ? 'Buy Securely'
+                      : 'App Store Checkout Paused'}
                 </span>
               </div>
             </button>
@@ -186,7 +312,9 @@ export default function DiamondsTab({ clubId, wallet, packages, nextPath }: Diam
 
       {/* ── Footer note ────────────────────────────────────────────────── */}
       <p className={styles.footNote}>
-        Secure Checkout Via Stripe · Balance Updates Automatically After Payment
+        {cardPaymentAvailable
+          ? 'Secure Checkout · Balance Updates Automatically After Payment'
+          : 'Web Checkout Remains Available At Smarter.Poker'}
       </p>
     </div>
   );

@@ -187,15 +187,26 @@ describe('sit down from the wallet (phase 3)', () => {
   });
 
   it('after the purchase lands the store offers the way onward, and only then', () => {
-    expect(market).toContain('if (nextPath) setContinueOffered(true);');
-    expect(market).toContain("{tab === 'diamonds' && continueOffered && nextPath && (");
-    expect(market).toContain("'Continue To The Diamond Arena' : 'Continue'");
-    // The way onward is a navigation, never a window.location write.
+    /* Re-landed 2026-09-19 on the hardened shape #4805 shipped: the offer is
+       made only from a VERIFIED checkout receipt (`receipt.accountId`), is
+       owned by the account that paid, and is dropped when the account or the
+       validated `next` changes. The archived pin named the older
+       `continueOffered` latch; the behaviour it guarded is the same. */
+    expect(market).toContain(
+      'setVerifiedContinuation({ ownerId: receipt.accountId, path: nextPath });'
+    );
+    expect(market).toContain(
+      '{verifiedContinuation?.ownerId === user?.id && verifiedContinuation?.path === nextPath && ('
+    );
+    expect(market).toContain("? 'Continue To The Diamond Arena'\n      : 'Continue'");
+    // The way onward is a navigation, never a window.location write, and it
+    // refuses a continuation that belongs to another account.
     const onward = market.slice(
       market.indexOf('const goOnward = () => {'),
       market.indexOf('const goOnward = () => {') + 300
     );
-    expect(onward).toContain('navigate(nextPath);');
+    expect(onward).toContain('navigate(destination);');
+    expect(onward).toContain('verifiedContinuation.ownerId !== user?.id) return;');
     expect(onward).not.toMatch(/window\.location/);
   });
 

@@ -65,8 +65,7 @@ describe('seat-first lobby routing', () => {
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const gate = club.slice(start, end);
-    expect(gate).toContain("variantWord === 'spin'");
-    expect(gate).toContain('Number(t.max_players) <= 2');
+    expect(gate).toContain('isSeatFirstTournament(t)');
     expect(gate).toContain('spinQuickJoin(');
   });
 

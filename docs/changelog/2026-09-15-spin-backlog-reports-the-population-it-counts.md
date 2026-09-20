@@ -26,6 +26,6 @@ later engine revision do not prove the complete September 13 installation.
 
 Validation status: source review only; protected checks, publication and live
 readback remain pending. The required existing monitoring and Spin checks must
-bind the final source bytes through the protected local pipeline. A wording
-change, a disappearing alert, or a lower later count cannot close the original
+bind final source bytes through restored GitHub checks and provider publication.
+A wording change, a disappearing alert, or a lower later count cannot close the original
 incident. Exact original outcomes remain part of the active FIFO completion gate.

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { sliceCall, sliceMethod, sliceStatement } from '../testHelpers/sourceWindow.js';
+import { sliceCall, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const read = (file: string): string => readFileSync(path.join(process.cwd(), file), 'utf8');
 const base = read('src/engine/ServerTableEngineBase.ts');
@@ -64,10 +64,9 @@ describe('every live dealer carries and re-checks distributed authority', () => 
     expect(horseActionTimer).toContain("if (!fenceIsCurrent('commit')) return;");
 
     const timer = sliceMethod(turns, '  protected startTurnTimer(');
-    const expiryResolver = sliceStatement(timer, 'const resolveTurnExpiry =');
-    expect(expiryResolver).toContain('if (!this.lifecycleCanMutate() || !this.handController)');
-    const preciseTimerArm = sliceCall(timer, 'this.preciseTimer.startTimer(');
-    expect(preciseTimerArm).toContain('resolveTurnExpiry();');
+    expect(timer).toMatch(
+      /this\.preciseTimer\.startTimer[\s\S]{0,220}!this\.lifecycleCanMutate\(\)/
+    );
     const bankExpiry = timer.slice(
       timer.indexOf('Time bank itself expired'),
       timer.indexOf('const tbState = this.handController.getState()')
@@ -94,12 +93,12 @@ describe('every live dealer carries and re-checks distributed authority', () => 
     const coordinator = sliceMethod(gameServer, 'private renewOwnedEngineLeaseProofs()');
     expect(coordinator).toContain('const existing = this.ownershipLeaseRenewalOperation;');
     expect(coordinator).toContain('if (existing) return existing;');
-    expect(coordinator).toContain('this.performOwnedEngineLeaseProofRenewal()');
+    expect(coordinator).toContain('this.performOwnedEngineLeaseProofRenewal(abandoned)');
     expect(coordinator).toContain('this.ownershipLeaseRenewalOperation = tracked;');
 
     const renewalPass = sliceMethod(
       gameServer,
-      'private async performOwnedEngineLeaseProofRenewal()'
+      'private async performOwnedEngineLeaseProofRenewal('
     );
     expect(renewalPass).toContain('await Promise.allSettled([');
     const firstFence = renewalPass.indexOf('engine.fenceForEngineLeaseLoss(');

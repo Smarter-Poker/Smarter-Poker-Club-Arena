@@ -45,62 +45,6 @@ interface DiamondTransaction {
 // TX TYPE CONFIG
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
- * ICON NAMES ARE NOT ICONS. AUDIT 2026-08-25.
- *
- * Every entry below carries an `icon` like 'cart', 'gem' or 'crossed_swords' —
- * names left behind when the emoji purge (house rule 5.3, emoji break SWC)
- * replaced the glyphs with identifiers. Nothing ever mapped the identifiers
- * back to anything renderable, and the list rendered `{config.icon}` directly:
- * so every row of the diamond wallet showed the literal word "cart", "gem" or
- * "crossed_swords" inside its icon circle.
- *
- * This map closes that loop with typographic symbols — no emoji, no font
- * dependency, no SWC risk. A name with no glyph falls back to the diamond,
- * which is at least true of every row in this wallet.
- */
-const ICON_GLYPHS: Record<string, string> = {
-  cart: '▤',
-  unlock: '⊘',
-  gamepad: '▣',
-  joystick: '▣',
-  gift: '⊞',
-  celebration: '★',
-  calendar: '▦',
-  puzzle: '◈',
-  flame: '▲',
-  crown: '♛',
-  trophy: '★',
-  /* Deliberately NO codepoint that Unicode lists as an RGI emoji, even where a
-     text-presentation form exists: U+26A1 lightning, U+2694 crossed swords and
-     U+2699 gear all render as full-colour emoji on iOS and Android, which is
-     the thing house rule 5.3 is about. These are geometric shapes and
-     dingbats, the same family the wallet rows already use. */
-  lightning: '◈',
-  gold_medal: '★',
-  refresh: '↻',
-  crossed_swords: '✦',
-  target: '◎',
-  brain: '◈',
-  memo: '≡',
-  person: '◍',
-  heart: '♥',
-  comment: '❝',
-  link: '↗',
-  handshake: '≈',
-  checkmark: '✓',
-  camera: '▢',
-  filmstrip: '▤',
-  star: '★',
-  location: '◈',
-  ticket: '▭',
-  settings: '⊙',
-  coin: '◉',
-  gem: '◆',
-};
-
-const iconGlyph = (name: string) => ICON_GLYPHS[name] || '◆';
-
 const TX_TYPES: Record<string, { icon: string; label: string; color: string }> = {
   purchase: { icon: 'cart', label: 'Purchase', color: '#ef4444' },
   feature_unlock: { icon: 'unlock', label: 'Feature Unlock', color: '#f97316' },
@@ -123,11 +67,11 @@ const TX_TYPES: Record<string, { icon: string; label: string; color: string }> =
   chip_purchase: { icon: 'cart', label: 'Chip Purchase', color: '#ef4444' },
   game_cost: { icon: 'gamepad', label: 'Game Entry', color: '#ef4444' },
   arcade_entry: { icon: 'joystick', label: 'Arcade Entry', color: '#ef4444' },
-  bonus: { icon: 'gift', label: 'Bonus', color: '#a855f7' },
-  signup_bonus: { icon: 'celebration', label: 'Welcome Bonus', color: '#a855f7' },
+  bonus: { icon: 'gift', label: 'Bonus', color: '#38bdf8' },
+  signup_bonus: { icon: 'celebration', label: 'Welcome Bonus', color: '#38bdf8' },
   daily_bonus: { icon: 'calendar', label: 'Daily Bonus', color: '#3b82f6' },
   daily_login: { icon: 'calendar', label: 'Daily Login', color: '#3b82f6' },
-  daily_trivia: { icon: 'puzzle', label: 'Daily Trivia', color: '#8b5cf6' },
+  daily_trivia: { icon: 'puzzle', label: 'Daily Trivia', color: '#38bdf8' },
   streak_reward: { icon: 'flame', label: 'Streak Reward', color: '#ff6600' },
   vip_reward: { icon: 'crown', label: 'VIP Reward', color: '#eab308' },
   vip_stipend: { icon: 'crown', label: 'VIP Stipend', color: '#eab308' },
@@ -135,29 +79,29 @@ const TX_TYPES: Record<string, { icon: string; label: string; color: string }> =
   challenge: { icon: 'lightning', label: 'Challenge', color: '#06b6d4' },
   tournament_prize: { icon: 'gold_medal', label: 'Tournament Prize', color: '#eab308' },
   tournament_refund: { icon: 'refresh', label: 'Tournament Refund', color: '#94a3b8' },
-  pvp_win: { icon: 'crossed_swords', label: 'PvP Win', color: '#22c55e' },
+  pvp_win: { icon: 'crossed_swords', label: 'PvP Win', color: '#38bdf8' },
   pvp_refund: { icon: 'refresh', label: 'PvP Refund', color: '#94a3b8' },
-  game_reward: { icon: 'target', label: 'Game Reward', color: '#22c55e' },
-  trivia_reward: { icon: 'brain', label: 'Trivia Reward', color: '#8b5cf6' },
+  game_reward: { icon: 'target', label: 'Game Reward', color: '#38bdf8' },
+  trivia_reward: { icon: 'brain', label: 'Trivia Reward', color: '#38bdf8' },
   social_post: { icon: 'memo', label: 'Social Post', color: '#ec4899' },
   follow: { icon: 'person', label: 'Follow Reward', color: '#06b6d4' },
   reaction: { icon: 'heart', label: 'Reaction Reward', color: '#f43f5e' },
   comment: { icon: 'comment', label: 'Comment Reward', color: '#06b6d4' },
   share: { icon: 'link', label: 'Share Reward', color: '#3b82f6' },
-  referral: { icon: 'handshake', label: 'Referral Bonus', color: '#10b981' },
-  profile_complete: { icon: 'checkmark', label: 'Profile Bonus', color: '#22c55e' },
+  referral: { icon: 'handshake', label: 'Referral Bonus', color: '#38bdf8' },
+  profile_complete: { icon: 'checkmark', label: 'Profile Bonus', color: '#38bdf8' },
   profile_pic: { icon: 'camera', label: 'Profile Pic Bonus', color: '#06b6d4' },
-  video_watch: { icon: 'filmstrip', label: 'Video Watch', color: '#8b5cf6' },
+  video_watch: { icon: 'filmstrip', label: 'Video Watch', color: '#38bdf8' },
   video_favorite: { icon: 'star', label: 'Video Favorite', color: '#eab308' },
-  hendonmob_link: { icon: 'link', label: 'HendonMob Link', color: '#10b981' },
+  hendonmob_link: { icon: 'link', label: 'HendonMob Link', color: '#38bdf8' },
   venue_review: { icon: 'location', label: 'Venue Review', color: '#f59e0b' },
-  promo_code: { icon: 'ticket', label: 'Promo Code', color: '#a855f7' },
+  promo_code: { icon: 'ticket', label: 'Promo Code', color: '#38bdf8' },
   refund: { icon: 'refresh', label: 'Refund', color: '#94a3b8' },
   adjustment: { icon: 'settings', label: 'Adjustment', color: '#94a3b8' },
-  mint: { icon: 'coin', label: 'Chip Mint', color: '#22c55e' },
+  mint: { icon: 'coin', label: 'Chip Mint', color: '#38bdf8' },
   diamond_purchase: { icon: 'gem', label: 'Diamond Purchase', color: '#00d4ff' },
   diamond_deduction: { icon: 'gem', label: 'Diamond Spent', color: '#ef4444' },
-  diamond_reward: { icon: 'gem', label: 'Diamond Reward', color: '#22c55e' },
+  diamond_reward: { icon: 'gem', label: 'Diamond Reward', color: '#38bdf8' },
   diamond_refund: { icon: 'gem', label: 'Diamond Refund', color: '#94a3b8' },
 
   /* ── ADDED 2026-09-13, read from the writers and the live ledger ──────────
@@ -168,15 +112,15 @@ const TX_TYPES: Record<string, { icon: string; label: string; color: string }> =
      label and fell through to the humaniser (daily_challenge_claim alone is
      55,183 of the 57,000 rows written in that window). */
   arena_deposit: { icon: 'gem', label: 'Diamond Arena Buy-In', color: '#00d4ff' },
-  arena_withdraw: { icon: 'gem', label: 'Diamond Arena Cash-Out', color: '#22c55e' },
+  arena_withdraw: { icon: 'gem', label: 'Diamond Arena Cash-Out', color: '#38bdf8' },
   debt_settlement: { icon: 'settings', label: 'Owed Diamonds Settled', color: '#94a3b8' },
-  daily_challenge_claim: { icon: 'gem', label: 'Daily Challenge', color: '#22c55e' },
+  daily_challenge_claim: { icon: 'gem', label: 'Daily Challenge', color: '#38bdf8' },
   daily_challenge_reroll: { icon: 'refresh', label: 'Challenge Reroll', color: '#ef4444' },
-  daily_mission_milestone: { icon: 'gem', label: 'Mission Milestone', color: '#22c55e' },
+  daily_mission_milestone: { icon: 'gem', label: 'Mission Milestone', color: '#38bdf8' },
   plinko_drop: { icon: 'gem', label: 'Plinko Drop', color: '#ef4444' },
   crash_bet: { icon: 'gem', label: 'Crash Bet', color: '#ef4444' },
   wheel_spin: { icon: 'gem', label: 'Wheel Spin', color: '#ef4444' },
-  wheel_prize: { icon: 'gem', label: 'Wheel Prize', color: '#22c55e' },
+  wheel_prize: { icon: 'gem', label: 'Wheel Prize', color: '#38bdf8' },
   transfer: { icon: 'gem', label: 'Transfer', color: '#94a3b8' },
 
   /* ── ADDED 2026-08-25, from the live `diamond_transactions` table ──────────
@@ -187,17 +131,17 @@ const TX_TYPES: Record<string, { icon: string; label: string; color: string }> =
      the table rendered as if an admin had corrected the player's balance. */
   reconciliation: { icon: 'settings', label: 'Balance Reconciliation', color: '#94a3b8' },
   live_gift_sent: { icon: 'gift', label: 'Gift Sent', color: '#ef4444' },
-  live_gift_received: { icon: 'gift', label: 'Gift Received', color: '#22c55e' },
+  live_gift_received: { icon: 'gift', label: 'Gift Received', color: '#38bdf8' },
   diamond_gift_sent: { icon: 'gift', label: 'Diamond Gift Sent', color: '#ef4444' },
-  diamond_gift_received: { icon: 'gift', label: 'Diamond Gift Received', color: '#22c55e' },
+  diamond_gift_received: { icon: 'gift', label: 'Diamond Gift Received', color: '#38bdf8' },
   diamond_gift_refund: { icon: 'refresh', label: 'Diamond Gift Refund', color: '#94a3b8' },
   pvp_stake: { icon: 'crossed_swords', label: 'PvP Stake', color: '#ef4444' },
-  training_reward: { icon: 'target', label: 'Training Reward', color: '#22c55e' },
-  easter_egg: { icon: 'gift', label: 'Easter Egg', color: '#a855f7' },
-  chip_mint: { icon: 'coin', label: 'Chip Mint', color: '#22c55e' },
-  trivia_arcade: { icon: 'puzzle', label: 'Trivia Arcade', color: '#8b5cf6' },
-  trivia_run: { icon: 'puzzle', label: 'Trivia Run', color: '#8b5cf6' },
-  credit: { icon: 'gem', label: 'Diamond Credit', color: '#22c55e' },
+  training_reward: { icon: 'target', label: 'Training Reward', color: '#38bdf8' },
+  easter_egg: { icon: 'gift', label: 'Easter Egg', color: '#38bdf8' },
+  chip_mint: { icon: 'coin', label: 'Chip Mint', color: '#38bdf8' },
+  trivia_arcade: { icon: 'puzzle', label: 'Trivia Arcade', color: '#38bdf8' },
+  trivia_run: { icon: 'puzzle', label: 'Trivia Run', color: '#38bdf8' },
+  credit: { icon: 'gem', label: 'Diamond Credit', color: '#38bdf8' },
 };
 
 /**
@@ -264,6 +208,9 @@ export default function DiamondWalletModal({
   const [balanceRevision, setBalanceRevision] = useState(0);
   const [historyOwnerId, setHistoryOwnerId] = useState<string | null>(null);
   const historyRequest = useRef(0);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const isMounted = useIsMounted();
 
   const fetchTransactions = useCallback(async () => {
@@ -308,7 +255,7 @@ export default function DiamondWalletModal({
          Both reads here discarded `error` entirely, so an RLS denial or a
          dropped connection produced an empty array and this modal told the
          player "No Transactions Yet" — a statement about their money that was
-         not true, with no error, no retry and nothing in Sentry. */
+         not true, with no error, no retry and nothing in local diagnostics. */
       if (dtError) throw dtError;
 
       const combined: DiamondTransaction[] = (dtData || []).map((t: any) => ({
@@ -337,34 +284,72 @@ export default function DiamondWalletModal({
   }, [user?.id, isOpen, isMounted]);
 
   useEffect(() => {
+    const requestRef = historyRequest;
     setTransactions([]);
     setHistoryOwnerId(null);
     setLoadError(false);
     setLoading(true);
     if (isOpen) void fetchTransactions();
     return () => {
-      ++historyRequest.current;
+      ++requestRef.current;
     };
   }, [isOpen, fetchTransactions]);
 
-  /* Escape closes and the page behind stops scrolling. This is a FULL-SCREEN
-     sheet with a fixed backdrop and it had neither: on a phone the wallet page
-     underneath scrolled with the modal's own gestures, and there was no
-     keyboard way out of it at all — the only exit was hitting the small close
-     glyph. Same manners as PlayerWalletModal, for the same reasons. */
+  /* The full-screen wallet owns keyboard focus while it is open. Keep focus
+     inside its controls, stop the page behind it from scrolling, and return
+     the player to the exact control that opened it when the sheet closes. */
   useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    const prevOverflow = document.body.style.overflow;
+    if (!isOpen) return undefined;
+
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prevOverflow;
+
+    const focusable = () =>
+      Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        ) ?? []
+      );
+    const focusFrame = window.requestAnimationFrame(() => {
+      (focusable()[0] ?? dialogRef.current)?.focus();
+    });
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const controls = focusable();
+      if (controls.length === 0) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
+
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialogRef.current?.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialogRef.current?.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-  }, [isOpen, onClose]);
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
+    };
+  }, [isOpen]);
 
   // Refresh when diamond balance changes from another component
   useMasterBusSubscription('DIAMOND_BALANCE_CHANGED', () => {
@@ -387,8 +372,9 @@ export default function DiamondWalletModal({
 
   if (!isOpen) return null;
 
-  /* ONE CONSOLE (#ClubArenaConsole): the spade master wearing the diamond
-     crest. The balances, the transfer, the filters and every receipt are
+  /* ONE CONSOLE (#ClubArenaConsole): the flat master keeps the wallet title
+     in the approved frame without adding a floating or mismatched crest. The
+     balances, the transfer, the filters and every receipt are
      printed on the black glass between the rails in the master's own inks,
      with an engraved rule between rows. The two painted plates in the foot
      are the wallet's controls: Close on steel, Buy Diamonds on the blue
@@ -396,14 +382,16 @@ export default function DiamondWalletModal({
   return (
     <div className="diamond-wallet-backdrop" onClick={onClose} role="presentation">
       <div
+        ref={dialogRef}
         className="dwc"
         role="dialog"
         aria-modal="true"
         aria-labelledby="dwc-title"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <SpadeConsole
-          crest="diamond"
+          crest="flat"
           eyebrow="Club Arena"
           title="Diamond Wallet"
           titleId="dwc-title"
@@ -480,16 +468,12 @@ export default function DiamondWalletModal({
             ) : (
               filteredTx.map((tx) => {
                 const txType = tx.transaction_type || tx.type || '';
-                const config = TX_TYPES[txType];
                 const label = diamondTxLabel(txType);
                 const isPositive = tx.amount >= 0;
                 const dt = new Date(tx.created_at);
 
                 return (
                   <div key={tx.id} className="dwc__tx">
-                    <span className="dwc__tx-glyph sc-ink--blue" aria-hidden="true">
-                      {iconGlyph(config?.icon || 'gem')}
-                    </span>
                     <div className="dwc__tx-body">
                       <span className="dwc__tx-label sc-ink--silver">{label}</span>
                       <span className="dwc__tx-desc sc-ink--muted">
@@ -498,14 +482,14 @@ export default function DiamondWalletModal({
                     </div>
                     <div className="dwc__tx-figures">
                       <span
-                        className={`dwc__tx-amount ${isPositive ? 'sc-ink--green' : 'sc-ink--red'}`}
+                        className={`dwc__tx-amount ${isPositive ? 'sc-ink--blue' : 'sc-ink--red'}`}
                       >
                         {isPositive ? '+' : ''}
                         {tx.amount.toLocaleString()}
                       </span>
                       {tx.balance_after != null && (
                         <span className="dwc__tx-meta sc-ink--muted">
-                          Bal: {tx.balance_after.toLocaleString()}
+                          Balance {tx.balance_after.toLocaleString()}
                         </span>
                       )}
                       <span className="dwc__tx-meta sc-ink--muted">

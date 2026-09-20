@@ -45,7 +45,7 @@ describe('the web bundle does not know the native app exists', () => {
     expect(vite).toContain("const WEB_BASE = '/hub/club-arena/';");
     expect(vite).toContain("base: NATIVE ? '/' : WEB_BASE,");
     expect(vite).toContain("outDir: NATIVE ? 'dist-native' : 'dist',");
-    expect(vite).toContain("sourcemap: NATIVE ? false : 'hidden',");
+    expect(vite).toContain('sourcemap: false,');
   });
 
   it('the entry point derives the basename instead of hardcoding it', () => {
@@ -54,9 +54,12 @@ describe('the web bundle does not know the native app exists', () => {
        [[...slug]].js; that file and its directory were deleted on 2026-09-02
        when Club Arena moved to its own origin, and index.html:98 boots
        src/main.tsx. The root was a second entry nothing loaded, and its stale
-       header made tooling treat it as live. Deleted; this pin now names the
-       only entry there is. */
-    for (const entry of ['src/main.tsx']) {
+       header made tooling treat it as live. Deleted. A second entry that IS
+       loaded arrived 2026-09-19: diamond-test.html boots src/diamond-test.tsx,
+       the wallet-free Diamond bonus test page, built by its own Vite pass
+       (scripts/build-diamond-test.mjs). It mounts a router too, so it derives
+       the same basename the same way. */
+    for (const entry of ['src/main.tsx', 'src/diamond-test.tsx']) {
       const src = read(entry);
       expect(src, `${entry} must derive its basename`).toContain('basename={ROUTER_BASENAME}');
       expect(src, `${entry} must not hardcode a basename`).not.toMatch(/basename="[^"]*"/);

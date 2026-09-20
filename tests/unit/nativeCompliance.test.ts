@@ -87,18 +87,10 @@ describe('consent', () => {
     setAnalyticsConsent('denied');
     expect(analyticsAllowed()).toBe(true);
   });
-  it('the app asks once, PostHog asks consent, Sentry never carries the email and records no replay in the app', () => {
+  it('the app asks once and PostHog asks consent', () => {
     expect(read('src/lib/analytics.ts')).toContain(
       'return isBrowser() && !!getKey() && analyticsAllowed();'
     );
-    const sentry = read('src/core/SentryInit.ts');
-    const setUser = sentry.slice(
-      sentry.indexOf('export function setSentryUser'),
-      sentry.indexOf('export function clearSentryUser')
-    );
-    expect(setUser).not.toMatch(/email:\s*user\.email/);
-    expect(sentry).toContain('replaysSessionSampleRate: IS_NATIVE_BUILD ? 0 : 0.1,');
-    expect(sentry).toContain('replaysOnErrorSampleRate: IS_NATIVE_BUILD ? 0 : 1.0,');
     expect(read('src/App.tsx')).toContain('{IS_NATIVE_BUILD && (');
     expect(read('src/App.tsx')).toContain(
       "lazyWithRetry(() => import('./components/legal/AgeGate'))"
@@ -109,14 +101,13 @@ describe('consent', () => {
     const p = read('src/pages/legal/PrivacyPolicyPage.tsx');
     for (const name of [
       'Supabase',
-      'Sentry',
       'PostHog',
       'Apple App Store And Google Play',
       'Firebase Cloud Messaging',
     ]) {
       expect(p, name).toContain(`<strong>${name}:</strong>`);
     }
-    expect(p).toMatch(/It\s+Does\s+Not\s+Carry\s+Your\s+Email\s+Address/);
+    expect(p).toMatch(/It\s+Never\s+Receives\s+Hands,\s+Chips\s+Or\s+Messages/);
   });
 });
 

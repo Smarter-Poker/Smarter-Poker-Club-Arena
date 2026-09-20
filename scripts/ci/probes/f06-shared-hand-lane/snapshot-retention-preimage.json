@@ -1,0 +1,26 @@
+{
+  "at": "2026-09-18T23:05:07.78008+00:00",
+  "pruner": "CREATE OR REPLACE FUNCTION public.sp_prune_hand_state_snapshots(p_batch integer DEFAULT 5000)\n RETURNS integer\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\ndeclare\n  -- A time budget, like sp_prune_hand_history: the cron gives this call a 30s\n  -- statement_timeout, and a single 10,000-row delete measured 19-30s under\n  -- load (2026-09-07). One over-budget statement rolls back WHOLE and deletes\n  -- nothing, so the backlog would never drain. Rounds of 2,000 (~4-6s each)\n  -- until 20s have passed keep the WHOLE call inside the cron's 30s, so it\n  -- is never cut off - the rounds share one transaction; the budget is what\n  -- protects it.\n  v_budget   constant interval := interval '20 seconds';\n  v_round    constant integer  := 2000;\n  v_deadline timestamptz := clock_timestamp() + v_budget;\n  v_deleted  int := 0;\n  v_n        int;\nbegin\n  loop\n    with doomed as (\n      select id from public.hand_state_snapshots\n       where (is_complete = true  and created_at < now() - interval '6 hours')\n          or (is_complete = false and created_at < now() - interval '30 days')\n       order by created_at\n       limit least(v_round, greatest(p_batch, 1))\n    )\n    delete from public.hand_state_snapshots h using doomed d where h.id = d.id;\n    get diagnostics v_n = row_count;\n    v_deleted := v_deleted + v_n;\n    exit when v_n = 0 or clock_timestamp() >= v_deadline;\n  end loop;\n  return v_deleted;\nend\n$function$\n",
+  "triggers": [
+    "CREATE TRIGGER a00_f06_cancelled_preparation BEFORE INSERT OR UPDATE ON public.hand_state_snapshots FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_cancelled_preparation_writer_guard()",
+    "CREATE TRIGGER hand_submission_snapshot_guard AFTER INSERT OR UPDATE OF is_complete ON public.hand_state_snapshots FOR EACH ROW EXECUTE FUNCTION smarter_private.hand_submission_snapshot_guard()"
+  ],
+  "pruner_meta": {
+    "owner": "postgres",
+    "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+    "proconfig": ["search_path=public"],
+    "prosecdef": true
+  },
+  "permit_indexes": [
+    "CREATE UNIQUE INDEX f06_hand_permits_pkey ON smarter_private.f06_hand_permits USING btree (permit_id)",
+    "CREATE UNIQUE INDEX f06_hand_permits_table_id_hand_number_key ON smarter_private.f06_hand_permits USING btree (table_id, hand_number)",
+    "CREATE UNIQUE INDEX f06_one_hand ON smarter_private.f06_hand_permits USING btree (table_id) WHERE (state = 'reserved'::text)"
+  ],
+  "snapshot_guard": "CREATE OR REPLACE FUNCTION smarter_private.hand_submission_snapshot_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE d smarter_private.hand_submission_dispositions;\nBEGIN\n IF NOT NEW.is_complete THEN RETURN NEW; END IF;\n IF EXISTS(SELECT 1 FROM public.hand_atomic_commits a WHERE a.table_id=NEW.table_id\n   AND a.hand_number=NEW.hand_number AND a.hand_id IS NOT NULL AND a.post_commit_payload IS NOT NULL) THEN RETURN NEW; END IF;\n INSERT INTO smarter_private.hand_submission_dispositions(table_id,hand_number,disposition,submission_id)\n VALUES(NEW.table_id,NEW.hand_number,'disposed',NULL) ON CONFLICT(table_id,hand_number) DO NOTHING;\n SELECT * INTO STRICT d FROM smarter_private.hand_submission_dispositions WHERE table_id=NEW.table_id AND hand_number=NEW.hand_number;\n IF d.disposition<>'disposed' THEN\n  RAISE EXCEPTION 'HAND_SUBMISSION_ACCEPTANCE_REQUIRED_FOR_COMPLETION' USING ERRCODE='55000'; END IF;\n RETURN NEW;\nEND $function$\n",
+  "snapshot_indexes": [
+    "CREATE INDEX idx_hand_state_snapshots_table_hand ON public.hand_state_snapshots USING btree (table_id, hand_number)",
+    "CREATE UNIQUE INDEX hand_state_snapshots_pkey ON public.hand_state_snapshots USING btree (id)",
+    "CREATE UNIQUE INDEX idx_hand_snapshots_one_active_per_table ON public.hand_state_snapshots USING btree (table_id) WHERE (is_complete = false)",
+    "CREATE INDEX idx_hand_state_snapshots_created_at ON public.hand_state_snapshots USING btree (created_at DESC)"
+  ]
+}

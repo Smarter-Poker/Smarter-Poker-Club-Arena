@@ -9,6 +9,7 @@ import {
   type HorseEquityOutcomeSample,
 } from '../HorseEval.js';
 import { equityGovernor } from '../EquityLoadGovernor.js';
+import { horsePolicyDealtPlayers } from '../multiway/DealtSeatCensus.js';
 import { variantEquityFromShowdowns } from '../omaha/OmahaVariantEquity.js';
 import {
   REMAINING_VARIANT_PACKS,
@@ -96,11 +97,17 @@ export function sampleRemainingVariantEquity(
     )
   )
     return null;
-  const dealt = state.players
-    .filter((p) => !p.is_sitting_out && p.user_id !== hero.user_id)
+  let players: SeatPlayer[];
+  try {
+    players = horsePolicyDealtPlayers(state.players, hero.seat, state.dealtSeatIds);
+  } catch {
+    return null;
+  }
+  const dealt = players
+    .filter((p) => p.user_id !== hero.user_id)
     .slice()
     .sort((a, b) => a.seat - b.seat);
-  const active = dealt.filter((p) => !p.is_folded);
+  const active = dealt.filter((p) => !p.is_folded && (!p.is_sitting_out || p.is_all_in));
   const deck: Card[] = SUITS.flatMap((suit) =>
     RANKS.filter((rank) => variant !== 'short_deck' || RANKS.indexOf(rank) >= 4).map((rank) => ({
       rank,

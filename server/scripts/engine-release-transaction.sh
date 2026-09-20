@@ -11,6 +11,11 @@ RELEASE_SEAL="$CONTROL_DIR/engine-release-seal.py"
 ENGINE_UP="$CONTROL_DIR/engine-up.sh"
 IMAGE_BUILDER="$CONTROL_DIR/build-engine-image.sh"
 DATABASE_PROOF="$CONTROL_DIR/engine-release-database-proof.py"
+LEGACY_CHECKPOINT="$CONTROL_DIR/legacy-engine-checkpoint.sh"
+LEGACY_CHECKPOINT_SHA=2f4e33560bcd23bfb5cc731f31816b2c2e2847e5
+CHECKPOINT_758_SHA=758610f3f844406bbbaee2f5100ced36d84fb943
+CHECKPOINT_A0_SHA=a0ab287d902879280f0c915e44f5222c5db4d7df
+CHECKPOINT_8825_SHA=8825af51817f379c4261658ca29ecc9d8d81932d
 REPO_DIR="${REPO_DIR:-/opt/club-arena}"
 ENV_FILE="${ENV_FILE:-$REPO_DIR/server/.env}"
 REQUEST_ROOT="${ENGINE_RELEASE_REQUEST_ROOT:-/var/lib/club-arena/engine-release-requests}"
@@ -141,6 +146,7 @@ BREAK_DEADLINE_FILE="$REQUEST_ROOT/$RUN_ID.break-deadline"
 LOCK_HELD=0
 PREPARED=0
 MUTATION_STARTED=0
+LEGACY_CHECKPOINT_ATTEMPTED=0
 
 recover_on_exit() {
   local rc=$? recovery_deadline recovery_remaining non_break_deadline
@@ -409,13 +415,107 @@ maintenance_certificate() {
 import json, sys
 d=json.load(sys.stdin); m=d.get("maintenance")
 remaining=int(m.get("remainingMs") or 0) if isinstance(m,dict) else 0
-ok=(d.get("running") is True and isinstance(m,dict) and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True and m.get("readyForRestart") is True and m.get("unparkedTables")==0)
-if not ok: raise SystemExit(1)
+window=(d.get("running") is True and isinstance(m,dict) and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True)
+if not window: raise SystemExit(1)
+# A straggler can prevent restart certification for the entire real window.
+# Record that missed opportunity separately from permission to cut over. Only
+# this durable health observation qualifies; missing/unreadable health does not.
 if remaining<int(__import__("os").environ["MIN_BREAK_MS"]):
     print(remaining)
     raise SystemExit(2)
+ok=(m.get("readyForRestart") is True and m.get("unparkedTables")==0)
+if not ok: raise SystemExit(1)
 print(remaining)
 ' 2>/dev/null
+}
+
+# Entry to the exact predecessor's checkpoint, NOT restart authority. Its old
+# unparked count combines physical hands with missing bank durability, and its
+# saved-bank bit can remain true after the final announced write erased a row.
+# The helper independently checks every physical table before writing. Only
+# the unchanged maintenance_certificate below can admit a replacement.
+legacy_checkpoint_countdown() {
+  local response http_code body
+  response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
+    http://127.0.0.1:8080/health 2>/dev/null)" || return 1
+  http_code="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+  case "$http_code" in 200|503) ;; *) return 1 ;; esac
+  printf '%s' "$body" | MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS" python3 -c '
+import json, math, os, sys, time
+d=json.load(sys.stdin); m=d.get("maintenance")
+if not isinstance(m,dict): raise SystemExit(1)
+remaining=m.get("remainingMs"); ends=m.get("breakEndsAt")
+valid_number=lambda n: isinstance(n,(int,float)) and not isinstance(n,bool) and math.isfinite(n)
+if not (d.get("running") is True and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True and valid_number(remaining) and valid_number(ends)):
+    raise SystemExit(1)
+minimum=int(os.environ["MIN_BREAK_MS"])
+if remaining<minimum or ends-time.time()*1000<minimum:
+    raise SystemExit(1)
+print(math.floor(ends/1000))
+' 2>/dev/null
+}
+
+# This is one optional event in the existing bounded transaction, not a
+# background retry owner. The immutable seal reservation survives SSH loss,
+# systemd retries and unknown HTTP outcomes without sliding the break end.
+RECOVERY_REQUESTED=0
+RECOVERY_CHECKED_CAUSE=-1
+RECOVERY_ADMISSION_MISSED=0
+request_recovery_window() {
+  local health minute stamp outcome
+  local reserve_args
+  [ "$RECOVERY_REQUESTED" = 0 ] || return 0
+  minute=$(( ($(date +%s) % 3600) / 60 ))
+  # Leave the normal announcement and its database buffer intact.
+  [ "$minute" -ge 3 ] && [ "$minute" -lt 45 ] || return 0
+  [ "$RECOVERY_CHECKED_CAUSE" != "$RECOVERY_ADMISSION_MISSED" ] || return 0
+  health="$(curl -sS --max-time 5 http://127.0.0.1:8080/health 2>/dev/null)" || return 0
+  printf '%s' "$health" | python3 -c '
+import json,sys
+d=json.load(sys.stdin); m=d.get("maintenance") or {}
+raise SystemExit(0 if d.get("running") is True and m.get("active") is False and m.get("recoveryWindowReady") is True and m.get("recoveryWindowProtocol")=="engine-recovery-window-v1" else 1)
+' || return 0
+  acquire_engine_lock 'one recovery announcement'
+  source_target_is_current
+  if EXACT_INSTANCE="$(exact_runtime_instance)"; then
+    emit_already_released "$EXACT_INSTANCE"
+  fi
+  reserve_args=(--sha "$SHA" --run-id "$RUN_ID" --repo "$REPO_DIR")
+  [ "$RECOVERY_ADMISSION_MISSED" = 0 ] || reserve_args+=(--missed-window)
+  if ! stamp="$(timeout --signal=TERM --kill-after=1s 15s "$RELEASE_SEAL" reserve-recovery-window \
+    "${reserve_args[@]}")"; then
+    release_engine_lock
+    die 'recovery announcement reservation could not be established'
+  fi
+  RECOVERY_CHECKED_CAUSE="$RECOVERY_ADMISSION_MISSED"
+  if [ "$stamp" = unavailable ]; then
+    release_engine_lock
+    return 0
+  fi
+  [[ "$stamp" =~ ^[1-9][0-9]{12}$ ]] || die 'invalid recovery announcement timestamp'
+  RECOVERY_REQUESTED=1
+  # The configured key stays inside the running engine container. The API is
+  # loopback-only and has the same maintenance/database owner as hourly work.
+  # A lost response is UNKNOWN; observe the certificate, never allocate a new
+  # timestamp or send another announcement in this invocation.
+  outcome="$(timeout --signal=TERM --kill-after=1s 20s docker exec -i "$CONTAINER" \
+    node - "$stamp" <<'NODE'
+const announcedAt=Number(process.argv[2]);
+const key=process.env.INTERNAL_API_KEY;
+if (!key) process.exit(1);
+fetch('http://127.0.0.1:8080/internal/maintenance-recovery-window', {
+  method:'POST', headers:{authorization:`Bearer ${key}`,'content-type':'application/json'},
+  body:JSON.stringify({announcedAt}), signal:AbortSignal.timeout(15000)
+}).then(async r=>{
+  const d=await r.json();
+  if (!r.ok || !['accepted','active','pending','busy','expired','use_hourly','unavailable'].includes(d.status)) process.exit(1);
+  console.log(d.status);
+}).catch(()=>process.exit(1));
+NODE
+)" || outcome=unknown
+  release_engine_lock
+  echo "[engine-release-transaction] fixed recovery announcement $stamp: $outcome; existing certificate and rollback budget remain required"
 }
 
 persist_break_deadline() {
@@ -488,7 +588,17 @@ bounded_break_command() {
 }
 
 persist_result() {
-  local result="$1" instance="$2" image_id container_id started_at recorded
+  local result="$1" instance="$2" image_id container_id started_at recorded result_timeout
+  local -a recovery_args=()
+  result_timeout=10
+  if [ "$result" = already-released ] && [ "${BREAK_END_EPOCH:-0}" -eq 0 ]; then
+    # Only the existing duplicate-completion event can retire an orphaned
+    # foreign finalization; the seal independently proves both native owners,
+    # the actual inherited lock and fresh same-image runtime/database proof.
+    recovery_args=(--recover-orphan-finalization-fd 9)
+    result_timeout="$(remaining_seconds)" || die 'deadline expired before completion proof'
+    [ "$result_timeout" -le 60 ] || result_timeout=60
+  fi
   if [ "${BREAK_END_EPOCH:-0}" -gt 0 ]; then
     image_id="$(bounded_break_command 10 "$RELEASE_SEAL" get desired-image-id)"
     container_id="$(bounded_break_command 10 docker container inspect -f '{{.Id}}' "$CONTAINER")"
@@ -510,11 +620,12 @@ persist_result() {
       --run-id "$RUN_ID" --control-sha "$CONTROL_SHA" --invocation-id "$INVOCATION_ID")" \
       || die 'durable per-run release result could not be recorded'
   else
-    recorded="$(timeout --signal=TERM --kill-after=2s 10s \
+    recorded="$(timeout --signal=TERM --kill-after=2s "${result_timeout}s" \
       "$RELEASE_SEAL" record-result \
       --sha "$SHA" --image-id "$image_id" --result "$result" \
       --instance-id "$instance" --container-id "$container_id" --started-at "$started_at" \
-      --run-id "$RUN_ID" --control-sha "$CONTROL_SHA" --invocation-id "$INVOCATION_ID")" \
+      --run-id "$RUN_ID" --control-sha "$CONTROL_SHA" --invocation-id "$INVOCATION_ID" \
+      "${recovery_args[@]}")" \
       || die 'durable per-run release result could not be recorded'
   fi
   case "$recorded" in sealed|already-released) ;; *) die 'durable result returned an invalid outcome' ;; esac
@@ -835,23 +946,39 @@ if EXACT_INSTANCE="$(exact_runtime_instance)"; then
 fi
 release_engine_lock
 
-# The same original timeout now bounds only immutable local-image validation
-# and the host image lock. Hetzner cannot compile: absence or mismatch refuses
-# before release mutation. Forward-only source admission is repeated afterward.
-# Keep the original maximum budget and absolute not-after epoch unchanged.
+# The durable unit, not the SSH session, owns image construction. The outer
+# timeout bounds both the host build-lock wait and Docker itself. A source
+# check after the build repeats protected-main containment and the sealed
+# high-water ordering before the candidate waits for a certified table break.
 assert_time_remaining
 create_image_lease
+# The builder owns up to 1,800s of FIFO lock wait and 1,500s of bounded Docker
+# work. Its parent must cover both phases; otherwise a current SHA queued
+# behind a stale long build can be killed five minutes into its own build and
+# leave no surviving release for the next certified break.
 BUILD_REMAINING="$(remaining_seconds)" \
-  || die 'immutable release not-after epoch expired before image validation'
+  || die 'immutable release not-after epoch expired before image construction'
 [ "$BUILD_REMAINING" -gt 16 ] \
-  || die 'immutable release not-after epoch has no bounded image-validation budget'
+  || die 'immutable release not-after epoch has no bounded image-build budget'
 BUILD_TIMEOUT=$((BUILD_REMAINING - 16))
 [ "$BUILD_TIMEOUT" -le 3450 ] || BUILD_TIMEOUT=3450
 timeout --signal=TERM --kill-after=15s "${BUILD_TIMEOUT}s" \
-  "$IMAGE_BUILDER" "$REPO_DIR" "$SHA" "$IMAGE_REF" --require-prebuilt \
-  || die 'required locally built immutable engine image is unavailable'
+  "$IMAGE_BUILDER" "$REPO_DIR" "$SHA" "$IMAGE_REF" \
+  || die 'bounded immutable engine image build failed'
 source_target_is_current
 NEXT_FRESHNESS_CHECK=$(( $(date +%s) + 60 ))
+# This is a compatibility operation for three pinned immutable predecessors, not a
+# general checkpoint API. The helper rebinds the seal/image/process under the
+# engine lock immediately before its one durable intent and checkpoint.
+CHECKPOINT_PREDECESSOR_SHA="$(timeout --signal=TERM --kill-after=1s 10s \
+  "$RELEASE_SEAL" get desired-sha)" || die 'sealed checkpoint predecessor is unreadable'
+LEGACY_CHECKPOINT_REQUIRED=0
+if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$LEGACY_CHECKPOINT_SHA" ] \
+  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_758_SHA" ] \
+  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_A0_SHA" ] \
+  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_8825_SHA" ]; then
+  LEGACY_CHECKPOINT_REQUIRED=1
+fi
 
 while :; do
   [ "$(date +%s)" -lt "$CERTIFICATE_DEADLINE" ] \
@@ -866,16 +993,34 @@ while :; do
   BREAK_REMAINING_MS="$(maintenance_certificate)"
   CERTIFICATE_RC=$?
   set -e
-  if [ "$CERTIFICATE_RC" -eq 2 ]; then
+  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
+    # Counting down follows the final announcement. Run even when the old
+    # certificate says ready: that predecessor can retain a stale saved bit.
+    if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown)"; then
+      # These exact successors already implement the original bounded recovery
+      # event. Retain that opportunity; the helper still needs its real durable
+      # countdown, and an unknown request can never create another announcement.
+      if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_758_SHA" ] \
+        || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_A0_SHA" ] \
+        || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_8825_SHA" ]; then
+        if [ "$CERTIFICATE_RC" -eq 2 ]; then RECOVERY_ADMISSION_MISSED=1; fi
+        request_recovery_window
+      fi
+      bounded_sleep 5
+      continue
+    fi
+  elif [ "$CERTIFICATE_RC" -eq 2 ]; then
+    RECOVERY_ADMISSION_MISSED=1
     # A predecessor or image build can consume the beginning of this break.
     # No prepare or break deadline exists yet. Keep the original request's
     # absolute deadline and source-freshness checks while waiting for a later
     # complete certificate; never reduce the candidate-and-recovery reserve.
-    echo "[engine-release-transaction] the certified table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; refusing before mutation and waiting for a later certificate"
+    echo "[engine-release-transaction] the durable table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; refusing before mutation and waiting for a later certificate"
     bounded_sleep 15
     continue
   fi
-  if [ "$CERTIFICATE_RC" -ne 0 ]; then
+  if [ "$LEGACY_CHECKPOINT_REQUIRED" != 1 ] && [ "$CERTIFICATE_RC" -ne 0 ]; then
+    request_recovery_window
     bounded_sleep 5
     continue
   fi
@@ -885,11 +1030,46 @@ while :; do
   if EXACT_INSTANCE="$(exact_runtime_instance)"; then
     emit_already_released "$EXACT_INSTANCE"
   fi
+  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
+    CHECKPOINT_PREDECESSOR_SHA="$(timeout --signal=TERM --kill-after=1s 10s \
+      "$RELEASE_SEAL" get desired-sha)" || die 'locked checkpoint predecessor is unreadable'
+    if [ "$CHECKPOINT_PREDECESSOR_SHA" != "$LEGACY_CHECKPOINT_SHA" ] \
+      && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_758_SHA" ] \
+      && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_A0_SHA" ] \
+      && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_8825_SHA" ]; then
+      # A different release may have advanced desired while this run waited.
+      # Source/high-water admission above still owns whether our target may
+      # follow it. Never apply the old-image compatibility path to its successor.
+      LEGACY_CHECKPOINT_REQUIRED=0
+    fi
+  fi
+  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
+    if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown)"; then
+      release_engine_lock
+      bounded_sleep 5
+      continue
+    fi
+    [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 0 ] \
+      || die 'legacy checkpoint was already attempted; refusing a retry'
+    # This provisional deadline bounds predecessor proof only. It is not
+    # persisted as a cutover certificate. Checkpoint cleanup may consume entry
+    # slack; it must complete before the strict 285000ms certificate is read.
+    BREAK_END_EPOCH="$LEGACY_COUNTDOWN_END"
+    prove_rollback_readiness
+    LEGACY_CHECKPOINT_ATTEMPTED=1
+    "$LEGACY_CHECKPOINT" "$RUN_ID" \
+      || die 'legacy checkpoint or cleanup refused; release cannot continue'
+    BREAK_END_EPOCH=0
+  fi
   set +e
   BREAK_REMAINING_MS="$(maintenance_certificate)"
   CERTIFICATE_RC=$?
   set -e
+  if [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ] && [ "$CERTIFICATE_RC" -ne 0 ]; then
+    die 'legacy checkpoint did not retain the full restart certificate and 285000ms reserve'
+  fi
   if [ "$CERTIFICATE_RC" -eq 2 ]; then
+    RECOVERY_ADMISSION_MISSED=1
     release_engine_lock
     echo "[engine-release-transaction] the locked table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; waiting for a later certificate"
     bounded_sleep 15
@@ -1052,6 +1232,7 @@ if [ -n "$SUPERSEDED_BY" ]; then
 fi
 bounded_break_command 10 "$RELEASE_SEAL" commit \
   --sha "$SHA" --image "$TARGET_IMAGE_ID" --container "$CONTAINER" \
+  --container-id "$CANDIDATE_CID" --started-at "$CANDIDATE_STARTED_AT" \
   --run-id "$RUN_ID" --run-url "$RUN_URL" --actor "$ACTOR" \
   --reason "$SEAL_REASON"
 COMMIT_RC=$?

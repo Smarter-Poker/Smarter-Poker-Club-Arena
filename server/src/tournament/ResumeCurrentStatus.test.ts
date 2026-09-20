@@ -11,6 +11,7 @@ afterEach(() => vi.restoreAllMocks());
 function fixture(status: unknown = 'RUNNING') {
   const row: any = {
     id: 'resume-current-event',
+    format_contract: 'mtt-v1',
     club_id: 'club',
     status,
     blind_structure: [{ smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 10 }],
@@ -20,17 +21,18 @@ function fixture(status: unknown = 'RUNNING') {
     on_break: false,
   };
   const read = vi.fn(async () => ({ data: row, error: null as any }));
+  const tableRead = vi.fn(async () => ({
+    data: [{ id: 'source', small_blind: 25, big_blind: 50, ante: 0, stakes: '25/50' }] as any,
+    error: null as any,
+  }));
+  const entrantRead = vi.fn(async () => ({ count: 1 as any, error: null as any }));
   const from = vi.spyOn(supabase, 'from').mockImplementation(
     (name: string) =>
       ({
         select: () => ({
           eq: () => ({
             maybeSingle: read,
-            in: async () => ({
-              data: [{ id: 'source', small_blind: 25, big_blind: 50, ante: 0, stakes: '25/50' }],
-              count: 1,
-              error: null,
-            }),
+            in: name === 'tables' ? tableRead : entrantRead,
           }),
         }),
       }) as never
@@ -44,6 +46,7 @@ function fixture(status: unknown = 'RUNNING') {
     readTournamentClub: vi.fn(async () => {}),
     tableEngines: new Map(),
     createManagedTableEngine: vi.fn(() => ({ setHub: vi.fn() })),
+    createTablesAndSeatPlayers: vi.fn(async () => {}),
     wireEliminationWake: vi.fn(),
     admitManagedTableEngine: vi.fn(),
     startManagedTableEngine: vi.fn(),
@@ -55,7 +58,23 @@ function fixture(status: unknown = 'RUNNING') {
     reconcileTournamentEntryWindow: vi.fn(async () => {}),
     requestEliminationSweep: vi.fn(),
   });
-  return { row, read, from, state };
+  return { row, read, tableRead, entrantRead, from, state };
+}
+
+function expectInventoryRefusal({ state }: ReturnType<typeof fixture>) {
+  expect(state.running).toBe(false);
+  expect(state.tableEngines.size).toBe(0);
+  for (const method of [
+    'createTablesAndSeatPlayers',
+    'createManagedTableEngine',
+    'admitManagedTableEngine',
+    'startManagedTableEngine',
+    'startBlindTimer',
+    'startEliminationChecker',
+    'reconcileTournamentEntryWindow',
+    'requestEliminationSweep',
+  ])
+    expect(state[method], method).not.toHaveBeenCalled();
 }
 
 function expectNoGameplay({ state, from }: ReturnType<typeof fixture>) {
@@ -101,6 +120,15 @@ describe('a discovery row is not authority to resume a completed tournament', ()
     await f.state.resumeLifecycle(1);
     expectNoGameplay(f);
   });
+  it.each([undefined, null, 'future-format'])(
+    'does not admit gameplay from an unknown recorded format %s',
+    async (format) => {
+      const f = fixture();
+      f.row.format_contract = format;
+      await f.state.resumeLifecycle(1);
+      expectNoGameplay(f);
+    }
+  );
   it('still restores a running field and its clock', async () => {
     const f = fixture();
     await f.state.resumeLifecycle(1);
@@ -111,6 +139,56 @@ describe('a discovery row is not authority to resume a completed tournament', ()
     expect(f.state.startEliminationChecker).toHaveBeenCalledOnce();
     expect(f.state.requestEliminationSweep).toHaveBeenCalledWith('engine.resume');
   });
+  it.each([null, [], [{ id: 'source' }]])(
+    'refuses an errored table inventory even with data %j',
+    async (data) => {
+      const f = fixture();
+      f.tableRead.mockResolvedValueOnce({ data, error: { message: 'inventory unavailable' } });
+      await f.state.resumeLifecycle(1);
+      expectInventoryRefusal(f);
+      expect(f.entrantRead).not.toHaveBeenCalled();
+    }
+  );
+  it.each([null, undefined, {}])(
+    'does not treat unreadable table inventory %j as empty',
+    async (data) => {
+      const f = fixture();
+      f.tableRead.mockResolvedValueOnce({ data, error: null });
+      await f.state.resumeLifecycle(1);
+      expectInventoryRefusal(f);
+      expect(f.entrantRead).not.toHaveBeenCalled();
+    }
+  );
+  it.each([
+    { count: null, error: { message: 'count unavailable' } },
+    { count: 2, error: { message: 'count unavailable' } },
+    { count: null, error: null },
+    { count: undefined, error: null },
+    { count: -1, error: null },
+    { count: 1.5, error: null },
+    { count: Number.NaN, error: null },
+  ])('refuses unproven entrants after a confirmed empty table inventory: %j', async (result) => {
+    const f = fixture();
+    f.tableRead.mockResolvedValueOnce({ data: [], error: null });
+    f.entrantRead.mockResolvedValueOnce(result);
+    await f.state.resumeLifecycle(1);
+    expectInventoryRefusal(f);
+    expect(f.entrantRead).toHaveBeenCalledOnce();
+  });
+  it.each([0, 2])(
+    'preserves confirmed empty-table recovery with %i live entrants',
+    async (count) => {
+      const f = fixture();
+      f.tableRead.mockResolvedValueOnce({ data: [], error: null });
+      f.entrantRead.mockResolvedValueOnce({ count, error: null });
+      await f.state.resumeLifecycle(1);
+      expect(f.state.running).toBe(true);
+      expect(f.state.createTablesAndSeatPlayers).toHaveBeenCalledTimes(count > 0 ? 1 : 0);
+      expect(f.state.startBlindTimer).toHaveBeenCalledOnce();
+      expect(f.state.startEliminationChecker).toHaveBeenCalledOnce();
+      expect(f.state.requestEliminationSweep).toHaveBeenCalledWith('engine.resume');
+    }
+  );
   it('routes a completion racing discovery back to the existing exact-manager retirement', async () => {
     const f = fixture();
     let release!: (value: any) => void;

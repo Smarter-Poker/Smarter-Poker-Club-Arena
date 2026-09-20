@@ -358,7 +358,7 @@ function DealAnimationComponent({
         // ANIMATION LAW TELEMETRY 2026-08-28: this is the ONE path where a
         // hand can open with no deal animation (the roster/geometry never
         // arrived inside SEAT_WAIT_MS). It used to happen in total silence —
-        // report it so a regression here is SEEN in Sentry, not discovered by
+        // report it so a regression here is SEEN in error reporting, not discovered by
         // a player. The give-up itself stays: a player frozen out of their
         // turn is worse than a missing animation.
         try {

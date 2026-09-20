@@ -1,47 +1,22 @@
+import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
+import BonusReplayLibrary from '../components/games/BonusReplayLibrary';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  DIAMOND WHEEL - the player's page, on the console
- * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Dan 2026-09-07: "I want to add a Diamond To Chip spinning wheel game to the
- * Club Arena, where players can potentially convert their diamonds into chips
- * ... costing a certain amount of diamonds per spin, and awarding prizes,
- * chips, diamonds, or nothing. House edge on this should be 20% and never pay
- * more out than we take in." Rates, same day: 1 diamond = $0.01, 1 chip = $1.00.
- *
- * WHAT THIS PAGE IS. The wheel, the odds beside it, the player's own limits,
- * the fairness panel and their spin history, all read from fn_wheel_state /
- * fn_wheel_history and moved by fn_wheel_spin. Nothing on this screen is
- * computed here except the fairness re-check, which exists precisely so the
- * browser can disagree with the server if it ever has reason to.
- *
- * THE PICTURE (#ClubArenaConsole, Dan 2026-09-09). Every frame, bay, plate
- * and pill is the approved spade master (components/console): the game sits
- * on the deck console (head, the wheel on the glass, four bays, two plates),
- * the odds, the fairness check and the history each on their own console.
- * Nothing is drawn but the wheel itself and the line the client seed is
- * typed on. Title Case, no em dashes, no emoji, no :hover.
- *
- * THE FREE SPIN (2026-09-09). One spin a day on the house, per player per
- * host, on the same wheel and the same odds as a paid spin: a welcome spin
- * takes nothing in, and the games never pay out more than they take in. When
- * fn_wheel_welcome_state says it is available the page opens in welcome mode - the
- * pill, the Spin bay and the primary plate say so in gold, the wheel and the
- * odds show the welcome table - and the SAME commit and the same verifier serve
- * it. When it lands, the paid wheel returns.
- */
+/** The player chooses an entry, then watches a committed server result open.
+ * Free entries retain their welcome or claimed Daily Bonus identity. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { useIdleSpinCountdown } from '../hooks/useIdleSpinCountdown';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { Modal } from '../components/common/Modal';
 import { ErrorState } from '../components/common/EmptyState';
-import DiamondWheel from '../components/wheel/DiamondWheel';
+import { wheelPrizeTitle, WheelExperience } from '../components/wheel/WheelExperience';
 import { SpadeConsole } from '../components/console/SpadeConsole';
-import { DeckConsole } from '../components/console/DeckConsole';
+import { WheelCabinet, WheelEntry, WheelPrizeGallery } from '../components/wheel/WheelCabinet';
+import { validSpinAmount } from '../utils/bonusGameBudget';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
 import DiamondWheelService, {
   type WheelWelcomeState,
@@ -49,10 +24,11 @@ import DiamondWheelService, {
   type WheelSegment,
   type WheelSpinResult,
   type WheelState,
+  type WheelBonusAward,
 } from '../services/DiamondWheelService';
 import {
   randomClientSeed,
-  verifyWheelSpin,
+  verifyWheelReceiptFairness,
   type WheelFairnessVerdict,
 } from '../utils/wheelFairness';
 import { compactChips } from '../utils/format';
@@ -61,10 +37,10 @@ import { autoRunVerdict, cycleRunSize, type AutoRun } from '../utils/autoRun';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
-import { soundService } from '../services/SoundService';
 import FloorFeed from '../components/games/FloorFeed';
 import { useGameFloor } from '../hooks/useGameFloor';
 import styles from './diamondGames.module.css';
+import wheelStyles from '../components/wheel/WheelCabinet.module.css';
 import {
   assertWheelReceipt,
   clearWheelPending,
@@ -74,22 +50,13 @@ import {
   type WheelSpinMode,
 } from '../utils/wheelPendingSpin';
 
-function odds(probability: number): string {
-  if (probability <= 0) return '';
-  const oneIn = 1 / probability;
-  return oneIn >= 100 ? `1 In ${Math.round(oneIn).toLocaleString()}` : `1 In ${oneIn.toFixed(1)}`;
-}
-
 /** A prize as the player reads it. Chips under one stay exact: they ARE the prize. */
-function prizeLabel(seg: { kind: string; amount: number; label: string }): string {
-  if (seg.kind === 'nothing') return 'Nothing';
-  if (seg.kind === 'diamonds') return `${seg.amount.toLocaleString()} Diamonds`;
-  const chips = Number.isInteger(seg.amount) ? compactChips(seg.amount) : seg.amount.toFixed(2);
-  return `${chips} ${seg.amount === 1 ? 'Chip' : 'Chips'}`;
+function prizeLabel(seg: WheelSpinResult['outcome']): string {
+  return seg.kind === 'nothing' ? 'Nothing' : wheelPrizeTitle(seg);
 }
 
 function outcomeHeadline(result: WheelSpinResult): string {
-  const o = result.outcome;
+  const o = result.secondary?.outcome ?? result.outcome;
   if (o.kind === 'nothing') return 'No Prize This Spin';
   return result.welcome ? `Welcome Spin: You Won ${prizeLabel(o)}` : `You Won ${prizeLabel(o)}`;
 }
@@ -147,12 +114,32 @@ export default function DiamondWheelPage() {
 
   const [clubUuid, setClubUuid] = useState<string | null>(null);
   const [state, setState] = useState<WheelState | null>(null);
-  const [welcome, setWelcome] = useState<WheelWelcomeState | null>(null);
+  const [welcomeState, setWelcome] = useState<WheelWelcomeState | null>(null);
+  const welcome =
+    welcomeState &&
+    (state?.contract_version === 2 || state?.contract_version === 3) &&
+    state.welcome
+      ? {
+          ...welcomeState,
+          available: state.welcome.available,
+          spin_price_diamonds: state.welcome.entry_diamonds,
+          reason: state.welcome.available ? null : (welcomeState.reason ?? ('unfunded' as const)),
+        }
+      : welcomeState;
   /** The welcome spin is on offer: the plates, the odds and the next spin are welcome. */
   const [mode, setMode] = useState<WheelSpinMode>('paid');
   const welcomeMode = mode === 'welcome';
   const dailyBonusMode = mode === 'daily_bonus';
   const freeMode = mode !== 'paid';
+  const [entryDiamonds, setEntryDiamonds] = useState(100);
+  const entryRef = useRef(100);
+  entryRef.current = freeMode ? 100 : entryDiamonds;
+  const stateRead = useRef(0);
+  const quotedEntry = useRef<number | null>(null);
+  const [quoting, setQuoting] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [preparationError, setPreparationError] = useState<string | null>(null);
+  const preparingRef = useRef(false);
   const [dailyBonus, setDailyBonus] = useState<WheelDailyBonusState | null>(null);
   const [dailyBonusError, setDailyBonusError] = useState(false);
   const [recovery, setRecovery] = useState<WheelPendingSpin | null>(null);
@@ -177,15 +164,21 @@ export default function DiamondWheelPage() {
   const [verifying, setVerifying] = useState(false);
   const [waitSeconds, setWaitSeconds] = useState(0);
   const busyRef = useRef(false);
-  const oddsRef = useRef<HTMLDivElement | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [idleArmed, setIdleArmed] = useState(true);
+  const [idleChoice, setIdleChoice] = useState(0);
   const [stageRef, stageWidth] = useMeasuredWidth<HTMLDivElement>(300);
   const { floor, refresh: refreshFloor } = useGameFloor(clubUuid, 20);
 
   const loadState = useCallback(
-    async (uuid: string) => {
+    async (uuid: string, stillCurrent: () => boolean = () => true) => {
       const scope = scopeRef.current;
-      const next = await DiamondWheelService.getState(uuid);
-      if (!live() || scopeRef.current !== scope) return next;
+      const request = ++stateRead.current;
+      const entry = validSpinAmount(entryRef.current) ? entryRef.current : 100;
+      const next = await DiamondWheelService.getStateV2(uuid, entry);
+      if (!live() || !stillCurrent() || scopeRef.current !== scope || request !== stateRead.current)
+        return next;
+      quotedEntry.current = entry;
       setState(next);
       setWaitSeconds(next.player?.seconds_until_next ?? 0);
       return next;
@@ -234,7 +227,8 @@ export default function DiamondWheelPage() {
     const scope = scopeRef.current;
     const c = await DiamondWheelService.commit();
     if (!live() || scopeRef.current !== scope) return;
-    setCommit(c.ok ? { id: c.commit_id, hash: c.server_seed_hash } : null);
+    if (!c.ok) throw new Error('The Next Spin Ticket Could Not Be Prepared');
+    setCommit({ id: c.commit_id, hash: c.server_seed_hash });
   }, [live]);
 
   const loadHistory = useCallback(
@@ -256,12 +250,44 @@ export default function DiamondWheelPage() {
     [live]
   );
 
+  /** Retire a consumed ticket before any asynchronous refresh. The next debit
+   * needs both a new ticket and the new availability/balance quote. */
+  const prepareNextSpin = useCallback(
+    async (uuid: string) => {
+      const scope = scopeRef.current;
+      preparingRef.current = true;
+      setPreparing(true);
+      setPreparationError(null);
+      setCommit(null);
+      try {
+        const next = await loadState(uuid);
+        if (!live() || scopeRef.current !== scope) return;
+        if (next.available) await freshCommit();
+      } catch (err) {
+        reportError(err, 'DiamondWheelPage.prepare');
+        if (live() && scopeRef.current === scope)
+          setPreparationError('The Next Spin Could Not Be Prepared. Refresh The Wheel To Retry.');
+      } finally {
+        if (live() && scopeRef.current === scope) {
+          preparingRef.current = false;
+          setPreparing(false);
+        }
+      }
+    },
+    [loadState, freshCommit, live]
+  );
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!routeClubId || !user?.id) return;
       setLoading(true);
+      setIdleArmed(true);
       busyRef.current = false;
+      preparingRef.current = false;
+      setPreparing(false);
+      setPreparationError(null);
+      setCommit(null);
       setLoadError(null);
       try {
         const uuid = await resolveClubUUID(routeClubId);
@@ -269,6 +295,7 @@ export default function DiamondWheelPage() {
         setClubUuid(uuid);
         const saved = readWheelPending(user.id, uuid);
         setRecovery(saved);
+        setEntryDiamonds(saved?.entryDiamonds ?? 100);
         setAutoRun(null);
         setAutoSize(0);
         setPending(null);
@@ -284,7 +311,7 @@ export default function DiamondWheelPage() {
           saved?.mode ??
           (requestedBonus
             ? 'daily_bonus'
-            : next.available && onTheHouse?.available
+            : next.available && (next.welcome?.available ?? onTheHouse?.available)
               ? 'welcome'
               : (bonus?.ticket_count ?? 0) > 0
                 ? 'daily_bonus'
@@ -324,32 +351,97 @@ export default function DiamondWheelPage() {
     return () => clearTimeout(t);
   }, [waitSeconds]);
 
+  useEffect(() => {
+    const entry = freeMode ? 100 : entryDiamonds;
+    if (
+      !clubUuid ||
+      (state?.contract_version !== 2 && state?.contract_version !== 3) ||
+      !validSpinAmount(entry) ||
+      quotedEntry.current === entry ||
+      spinning ||
+      recovery
+    ) {
+      setQuoting(false);
+      return;
+    }
+    let current = true;
+    setQuoting(true);
+    void loadState(clubUuid, () => current)
+      .then(async (next) => {
+        // A lower stake can reopen a wheel that had no funded ticket on entry.
+        if (current && next.available && !commit && !preparingRef.current) await freshCommit();
+      })
+      .catch((err) => {
+        reportError(err, 'DiamondWheelPage.entry');
+        if (current) setLoadError('The Spin Amount Could Not Be Checked');
+      })
+      .finally(() => {
+        if (current) setQuoting(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [
+    clubUuid,
+    entryDiamonds,
+    freeMode,
+    state?.contract_version,
+    spinning,
+    recovery,
+    loadState,
+    commit,
+    freshCommit,
+  ]);
+
   const segments: WheelSegment[] = state?.segments ?? [];
   const welcomeSegments: WheelSegment[] = welcome?.segments ?? [];
   /* The odds follow the offer; the rim follows the last spin (see `face`). */
-  const table = welcomeMode
-    ? welcomeSegments
-    : dailyBonusMode
-      ? (dailyBonus?.segments ?? segments)
-      : segments;
+  const table =
+    state?.contract_version === 2 || state?.contract_version === 3
+      ? segments
+      : welcomeMode
+        ? welcomeSegments
+        : dailyBonusMode
+          ? (dailyBonus?.segments ?? segments)
+          : segments;
   const rim =
-    face === 'welcome'
-      ? welcomeSegments
-      : face === 'daily_bonus'
-        ? (dailyBonus?.segments ?? segments)
-        : segments;
+    pending?.segments ??
+    (state?.contract_version === 2 || state?.contract_version === 3
+      ? segments
+      : face === 'welcome'
+        ? welcomeSegments
+        : face === 'daily_bonus'
+          ? (dailyBonus?.segments ?? segments)
+          : segments);
   const cfg = state?.config;
   const player = state?.player;
-  const price = freeMode ? 100 : (cfg?.spin_price_diamonds ?? 0);
+  const price =
+    recovery?.entryDiamonds ??
+    (freeMode
+      ? 100
+      : state?.contract_version === 2 || state?.contract_version === 3
+        ? entryDiamonds
+        : (cfg?.spin_price_diamonds ?? 0));
 
   const blocker = useMemo<string | null>(() => {
     if (!state) return null;
     if (!user?.id) return 'Sign In To Spin';
     if (recovery) return null; // Receipt recovery must work even if the host has since closed.
+    if (state.pending_awards?.length) return 'Opening Your Bonus Game';
+    if (preparationError) return preparationError;
+    if (!validSpinAmount(price)) return 'Choose 25 To 2,500 Whole Diamonds';
+    if (
+      quoting ||
+      ((state.contract_version === 2 || state.contract_version === 3) &&
+        quotedEntry.current !== price)
+    )
+      return 'Checking Your Spin';
     if (!state.available)
       return state.reason === 'not_configured'
         ? 'The Diamond Wheel Is Not Open Here Yet'
-        : 'The Diamond Wheel Is Paused';
+        : (state.contract_version === 2 || state.contract_version === 3) && state.reason
+          ? state.reason
+          : 'The Diamond Wheel Is Paused';
     if (state.frozen) return 'The Platform Is In Its Maintenance Break';
     if (player && !player.is_member) return 'Join The Club To Spin';
     if (dailyBonusMode)
@@ -360,7 +452,7 @@ export default function DiamondWheelPage() {
           : !dailyBonus.available
             ? (dailyBonus.reason ?? 'Bonus Spins Are Unavailable')
             : null;
-    if (welcomeMode) return null; // the house pays: no price, no limit, no purchased-only rule
+    if (welcomeMode) return welcome?.available ? null : 'Your Welcome Spin Is Unavailable'; // the house pays: no price, no limit, no purchased-only rule
     if (player && cfg && player.spins_today >= cfg.max_spins_per_player_per_day)
       return 'You Have Reached Today’s Spin Limit';
     if (player && player.spendable < price) {
@@ -371,6 +463,8 @@ export default function DiamondWheelPage() {
     return null;
   }, [
     state,
+    quoting,
+    welcome,
     player,
     cfg,
     price,
@@ -379,6 +473,7 @@ export default function DiamondWheelPage() {
     dailyBonus,
     dailyBonusError,
     recovery,
+    preparationError,
     user?.id,
   ]);
 
@@ -387,12 +482,12 @@ export default function DiamondWheelPage() {
   const shortOfDiamonds = blocker === SHORT_OF_DIAMONDS;
   const running = autoRun !== null;
 
-  /* A WELCOME SPIN IS NEVER AUTO-PLAYED. It is once per member, ever, and it
-     costs nothing, so there is no run to make of it: the size cannot be set and
-     a run cannot be started while the wheel is on the house. */
+  /* Free entries cannot start a paid batch. The owner's visible 30-second
+     countdown can consume one selected entry, then holds until another choice. */
   const cycleAuto = useCallback(() => {
     if (running || spinning || freeMode || recovery) return;
     setAutoSize(cycleRunSize);
+    setIdleArmed(false);
     triggerHaptic('light');
   }, [running, spinning, freeMode, recovery]);
 
@@ -413,11 +508,18 @@ export default function DiamondWheelPage() {
 
   const stopAuto = useCallback(() => endAuto('Auto Spin Stopped'), [endAuto]);
   const canSpin = Boolean(
-    clubUuid && commit && !spinning && !blocker && (recovery || welcomeMode || waitSeconds <= 0)
+    clubUuid &&
+    commit &&
+    !spinning &&
+    !preparing &&
+    !blocker &&
+    (recovery || welcomeMode || waitSeconds <= 0)
   );
 
   const handleSpin = useCallback(async () => {
-    if (!user?.id || !clubUuid || !commit || busyRef.current || spinning) return;
+    if (!user?.id || !clubUuid || !commit || busyRef.current || preparingRef.current || spinning)
+      return;
+    setIdleArmed(false);
     const scope = scopeRef.current;
     busyRef.current = true;
     setVerdict(null);
@@ -432,24 +534,33 @@ export default function DiamondWheelPage() {
         commitHash: commit.hash,
         clientSeed: clientSeed.trim().slice(0, MAX_CLIENT_SEED) || randomClientSeed(),
         ticketId: dailyBonusMode ? (dailyBonus?.ticket_id ?? null) : null,
+        ...(state?.contract_version === 2 || state?.contract_version === 3
+          ? { contractVersion: state.contract_version, entryDiamonds: price }
+          : {}),
       };
       saveWheelPending(attempt);
       setRecovery(attempt);
       const result =
-        attempt.mode === 'daily_bonus'
-          ? await DiamondWheelService.dailyBonusSpin(
-              attempt.clubId,
-              attempt.commitId,
-              attempt.clientSeed,
-              attempt.ticketId!
-            )
-          : attempt.mode === 'welcome'
-            ? await DiamondWheelService.welcomeSpin(
+        attempt.contractVersion === 2 || attempt.contractVersion === 3
+          ? await DiamondWheelService.spinV2({ ...attempt, entryDiamonds: attempt.entryDiamonds! })
+          : attempt.mode === 'daily_bonus'
+            ? await DiamondWheelService.dailyBonusSpin(
                 attempt.clubId,
                 attempt.commitId,
-                attempt.clientSeed
+                attempt.clientSeed,
+                attempt.ticketId!
               )
-            : await DiamondWheelService.spin(attempt.clubId, attempt.commitId, attempt.clientSeed);
+            : attempt.mode === 'welcome'
+              ? await DiamondWheelService.welcomeSpin(
+                  attempt.clubId,
+                  attempt.commitId,
+                  attempt.clientSeed
+                )
+              : await DiamondWheelService.spin(
+                  attempt.clubId,
+                  attempt.commitId,
+                  attempt.clientSeed
+                );
       if (!live() || scopeRef.current !== scope) return;
       if (!result.ok) {
         clearWheelPending(attempt);
@@ -467,12 +578,12 @@ export default function DiamondWheelPage() {
             setFace('paid');
           }
         }
-        await freshCommit();
+        await prepareNextSpin(clubUuid);
         return;
       }
       assertWheelReceipt(result, attempt);
-      clearWheelPending(attempt);
-      setRecovery(null);
+      // Keep the exact request durable until the whole prize reveal is complete.
+      // A reload during either wheel replays its receipt without another debit.
       setFace(attempt.mode);
       setPending(result);
       setSpinKey((k) => k + 1);
@@ -500,24 +611,83 @@ export default function DiamondWheelPage() {
     dailyBonusMode,
     dailyBonus,
     recovery,
+    state?.contract_version,
+    price,
     user?.id,
     endAuto,
+    prepareNextSpin,
   ]);
+
+  const idleSeconds = useIdleSpinCountdown(
+    idleArmed,
+    !loading && canSpin && !recovery && !detailsOpen && !running && autoSize === 0,
+    `${scopeRef.current}:${mode}:${entryDiamonds}:${idleChoice}`,
+    () => {
+      setIdleArmed(false);
+      if (canSpin && !busyRef.current && !recovery) void handleSpin();
+    }
+  );
+
+  const openBonus = useCallback(
+    (award: WheelBonusAward) => {
+      const awardId = encodeURIComponent(award.id);
+      switch (award.game) {
+        case 'plinko':
+          navigate(`/clubs/${routeClubId}/plinko?wheelAward=${awardId}`);
+          break;
+        case 'crash':
+          navigate(`/clubs/${routeClubId}/crash?wheelAward=${awardId}`);
+          break;
+        case 'crossing':
+          navigate(`/clubs/${routeClubId}/crossing?wheelAward=${awardId}`);
+          break;
+        case 'mines':
+          navigate(`/clubs/${routeClubId}/mines?wheelAward=${awardId}`);
+          break;
+        default: {
+          // A game this build cannot route: a newer server-side game or a
+          // malformed award. The server refuses new spins until it is finished
+          // and the banked-game list is gone, so say why the control is held
+          // instead of sitting on 'Opening Your Bonus Game' forever.
+          const unrouted: never = award.game;
+          reportError(
+            new Error(`Wheel bonus game cannot be routed: ${String(unrouted)}`),
+            'DiamondWheelPage.openBonus'
+          );
+          toast.error('Update The App To Open This Bonus Game.');
+        }
+      }
+    },
+    [navigate, routeClubId, toast]
+  );
+
+  // An unfinished entitlement is resumed immediately, never offered as a banked game.
+  useEffect(() => {
+    const award = state?.pending_awards?.[0];
+    if (award && !spinning && !pending && !recovery && !loading) openBonus(award);
+  }, [state?.pending_awards, spinning, pending, recovery, loading, openBonus]);
+
+  const releaseNavigation = useLiveBonusGuard(
+    spinning || Boolean(pending) || Boolean(recovery),
+    () => toast.error('Wait For Your Spin To Finish.')
+  );
 
   const handleLanded = useCallback(() => {
     if (!pending) return;
     const result = pending;
+    if (recovery) {
+      try {
+        clearWheelPending(recovery);
+      } catch (error) {
+        reportError(error, 'DiamondWheelPage.clearReceipt');
+      }
+    }
+    setRecovery(null);
     setPending(null);
     setSpinning(false);
     setLastResult(result);
     if (result.outcome.kind === 'nothing') triggerHaptic('light');
     else {
-      /* The prize decides the voice: a big win is a big win, the rest of the
-         paying segments get the ordinary one. The wheel itself has already
-         ticked and stopped; this is the prize speaking, not the wheel. */
-      if (result.outcome.value_chips >= 5) soundService.playBigWin();
-      else soundService.playWin();
-      triggerHaptic('success');
       toast.success(outcomeHeadline(result));
     }
     setClientSeed(randomClientSeed());
@@ -527,14 +697,22 @@ export default function DiamondWheelPage() {
       setAutoSize(0);
     }
     if (clubUuid) {
-      void loadState(clubUuid).catch((err) => reportError(err, 'DiamondWheelPage.reload'));
+      void prepareNextSpin(clubUuid);
       void loadWelcome(clubUuid);
       void loadDailyBonus(clubUuid);
       void loadHistory(clubUuid);
       if (!result.welcome) void refreshFloor();
     }
-    void freshCommit();
+    if (result.bonus) {
+      releaseNavigation();
+      endAuto(null);
+      openBonus(result.bonus);
+    }
   }, [
+    releaseNavigation,
+    endAuto,
+    openBonus,
+    recovery,
     pending,
     toast,
     clubUuid,
@@ -544,6 +722,7 @@ export default function DiamondWheelPage() {
     loadHistory,
     freshCommit,
     refreshFloor,
+    prepareNextSpin,
   ]);
 
   /* The runner. It presses Spin when the page would let a thumb press it: a
@@ -554,7 +733,7 @@ export default function DiamondWheelPage() {
   useEffect(() => {
     const verdict = autoRunVerdict(
       autoRun,
-      { busy: spinning || pending !== null, blocker, ready: canSpin },
+      { busy: spinning || pending !== null || preparing, blocker, ready: canSpin },
       AUTO_PAUSE_MS
     );
     if (verdict.kind === 'wait') return;
@@ -570,27 +749,42 @@ export default function DiamondWheelPage() {
     }
     const t = setTimeout(() => void handleSpin(), verdict.delayMs);
     return () => clearTimeout(t);
-  }, [autoRun, spinning, pending, blocker, canSpin, handleSpin, toast]);
+  }, [autoRun, spinning, pending, preparing, blocker, canSpin, handleSpin, toast]);
+
+  const refreshWheel = useCallback(async () => {
+    if (!clubUuid || busyRef.current || spinning || preparingRef.current) return;
+    endAuto(null);
+    if (!recovery) {
+      await prepareNextSpin(clubUuid);
+    } else {
+      // Refresh is read-only. An unknown spin keeps its exact durable identity;
+      // only Recover Spin may resubmit that same idempotent request.
+      const scope = scopeRef.current;
+      preparingRef.current = true;
+      setPreparing(true);
+      try {
+        await loadState(clubUuid);
+      } catch (err) {
+        reportError(err, 'DiamondWheelPage.refresh');
+        if (live() && scopeRef.current === scope)
+          toast.error('The Wheel Could Not Be Refreshed. Your Spin Is Still Saved.');
+      } finally {
+        if (live() && scopeRef.current === scope) {
+          preparingRef.current = false;
+          setPreparing(false);
+        }
+      }
+    }
+  }, [clubUuid, spinning, recovery, endAuto, prepareNextSpin, loadState, live, toast]);
 
   const handleVerify = useCallback(
     async (result: WheelSpinResult) => {
       setVerifying(true);
       try {
-        /* A welcome spin was drawn over the welcome table's weights, a paid one
-           over the paid table's: the check walks the table the spin used. */
-        const eligible = (result.welcome ? welcomeSegments : segments)
-          .filter((s) => result.fairness.eligible_ords.includes(s.ord))
-          .map((s) => ({ ord: s.ord, weight: s.weight }));
-        const v = await verifyWheelSpin({
-          serverSeed: result.fairness.server_seed,
-          serverSeedHash: result.fairness.server_seed_hash,
-          clientSeed: result.fairness.client_seed,
-          nonce: result.fairness.nonce,
-          roll: result.fairness.roll,
-          weightTotal: result.fairness.weight_total,
-          eligible,
-          outcomeOrd: result.outcome.ord,
-        });
+        const v = await verifyWheelReceiptFairness(
+          result,
+          result.welcome ? welcomeSegments : segments
+        );
         if (!live()) return;
         setVerdict(v);
         if (v.fair) toast.success('This Spin Verifies');
@@ -608,7 +802,7 @@ export default function DiamondWheelPage() {
   if (loading) return <PageSkeleton />;
   if (loadError || !state) {
     return (
-      <div className={styles.page}>
+      <div className={`${styles.page} ${styles.fullscreenPage}`}>
         <ErrorState
           message={loadError || 'The Wheel Could Not Be Loaded'}
           onRetry={() => window.location.reload()}
@@ -617,38 +811,43 @@ export default function DiamondWheelPage() {
     );
   }
 
-  const landingOrd = pending?.outcome.ord ?? null;
-  const spinLabel = recovery
-    ? 'Recover Spin'
-    : dailyBonusMode && !spinning
-      ? 'Use Bonus Spin'
-      : autoRun
-        ? `Spin ${Math.min(autoRun.done + 1, autoRun.total)} Of ${autoRun.total}`
-        : spinning
-          ? 'Spinning'
-          : welcomeMode
-            ? 'Welcome Spin'
-            : waitSeconds > 0
-              ? `Ready In ${waitSeconds}s`
-              : autoSize
-                ? `Auto Spin ${autoSize}`
-                : `Spin ${price.toLocaleString()}`;
+  const spinLabel = spinning
+    ? 'Spinning'
+    : recovery
+      ? 'Recover Spin'
+      : dailyBonusMode && !spinning
+        ? 'Bonus Spin'
+        : autoRun
+          ? `Spin ${Math.min(autoRun.done + 1, autoRun.total)} Of ${autoRun.total}`
+          : spinning
+            ? 'Spinning'
+            : welcomeMode
+              ? 'Welcome Spin'
+              : waitSeconds > 0
+                ? `Ready In ${waitSeconds}s`
+                : autoSize
+                  ? `Auto Spin ${autoSize}`
+                  : `Spin ${price.toLocaleString()}`;
   /* The run plate, the same one Plinko and Crash carry. The Odds plate it
      replaces was a scroll shortcut to a console that sits immediately below
      this one, and the wheel is the only one of the three that had it; the run
      is the control the other two put here and the wheel had nowhere. */
   const autoLabel = running ? 'Stop' : autoSize ? `Run ${autoSize}` : 'Run Off';
-  const pill = dailyBonusMode
-    ? 'Bonus Spin'
-    : state.frozen
-      ? 'Break'
-      : state.available
-        ? welcomeMode
-          ? 'Welcome'
-          : 'Open'
-        : state.reason === 'not_configured'
-          ? 'Closed'
-          : 'Paused';
+  const pill = preparing
+    ? 'Checking'
+    : preparationError
+      ? 'Retry'
+      : dailyBonusMode
+        ? 'Bonus Spin'
+        : state.frozen
+          ? 'Break'
+          : state.available
+            ? welcomeMode
+              ? 'Welcome'
+              : 'Open'
+            : state.reason === 'not_configured'
+              ? 'Closed'
+              : 'Paused';
   const pillInk = state.frozen
     ? 'gold'
     : state.available
@@ -656,7 +855,7 @@ export default function DiamondWheelPage() {
         ? 'gold'
         : 'green'
       : 'red';
-  const wheelSize = Math.max(200, Math.min(340, stageWidth - 8));
+  const wheelSize = Math.max(240, stageWidth);
   /* The welcome spin is once and for all, so the idle line says so rather than
      promising another one tomorrow (Dan 2026-09-10). */
   const welcomeNote =
@@ -671,39 +870,144 @@ export default function DiamondWheelPage() {
               ? ' The Club Pays The Welcome Spin, So Its Owner Does Not Take One.'
               : ''
       : '';
-  const readoutSubCopy = lastResult
-    ? lastResult.outcome.kind === 'nothing'
-      ? 'Better Luck On The Next Spin'
-      : lastResult.outcome.kind === 'diamonds'
-        ? lastResult.welcome
-          ? 'Paid Into Your Diamonds, On The Club'
-          : 'Paid Into Your Diamonds'
-        : lastResult.welcome
-          ? 'Paid Into Your Club Chips, On The Club'
-          : 'Paid Into Your Club Chips'
-    : '';
+  const finalOutcome = lastResult?.secondary?.outcome ?? lastResult?.outcome;
+  const readoutSubCopy = !lastResult
+    ? ''
+    : finalOutcome?.kind === 'nothing'
+      ? 'This Previous Spin Had No Prize'
+      : lastResult.bonus
+        ? 'Your Awarded Game Is Ready'
+        : finalOutcome?.kind === 'chips'
+          ? 'Paid Into Your Club Chips'
+          : finalOutcome?.kind === 'diamonds'
+            ? 'Paid Into Your Diamonds'
+            : 'Added To Your Account';
 
   return (
-    <div className={styles.page}>
-      <button
-        type="button"
-        className={styles.back}
-        onClick={() => navigate(`/clubs/${routeClubId}/diamond-games`)}
-      >
-        ‹ Diamond Spins
-      </button>
-
-      <DiamondSpinsTabs clubId={routeClubId ?? ''} />
-      <DeckConsole
+    <div className={`${styles.page} ${styles.fullscreenPage} ${wheelStyles.page}`}>
+      <WheelCabinet
         eyebrow="Diamond Games"
         title="Diamond Spins"
         titleId="diamond-wheel-title"
         pill={pill}
         pillInk={pillInk}
         aria-labelledby="diamond-wheel-title"
+        navigation={
+          <>
+            <button
+              type="button"
+              className={styles.back}
+              disabled={spinning || running || Boolean(recovery) || autoSize > 0}
+              aria-label={idleArmed ? 'Hold Automatic Spin' : 'Start 30 Second Spin Countdown'}
+              onClick={() => setIdleArmed((value) => !value)}
+            >
+              {idleArmed ? `Hold ${idleSeconds}s` : 'Auto Held'}
+            </button>
+            <button
+              type="button"
+              className={styles.back}
+              disabled={spinning || running}
+              onClick={() => setDetailsOpen(true)}
+            >
+              Prizes & More
+            </button>
+            <button
+              type="button"
+              className={styles.back}
+              disabled={spinning || preparing}
+              onClick={() => void refreshWheel()}
+            >
+              {preparing ? 'Refreshing Wheel' : 'Refresh Wheel'}
+            </button>
+          </>
+        }
+        notice={
+          blocker ? (
+            <p role="status">{blocker}</p>
+          ) : recovery ? (
+            <p role="status">Recover Your Previous Spin Before Starting Another.</p>
+          ) : lastResult && !spinning ? (
+            <p role="status">{outcomeHeadline(lastResult)}</p>
+          ) : null
+        }
+        setup={
+          <>
+            <nav aria-label="Spin Entry" className={wheelStyles.entryModes}>
+              {(Boolean(welcome?.available) || (dailyBonus?.ticket_count ?? 0) > 0 || freeMode) && (
+                <button
+                  type="button"
+                  className={styles.back}
+                  disabled={spinning || running || Boolean(recovery)}
+                  aria-pressed={mode === 'paid'}
+                  onClick={() => {
+                    setMode('paid');
+                    setIdleArmed(true);
+                    setIdleChoice((v) => v + 1);
+                    setAutoSize(0);
+                  }}
+                >
+                  Use Diamonds
+                </button>
+              )}
+              {welcome?.available && (
+                <button
+                  type="button"
+                  className={styles.back}
+                  disabled={spinning || running || Boolean(recovery)}
+                  aria-pressed={welcomeMode}
+                  onClick={() => {
+                    setMode('welcome');
+                    setIdleArmed(true);
+                    setIdleChoice((v) => v + 1);
+                    setAutoSize(0);
+                  }}
+                >
+                  Welcome Spin
+                </button>
+              )}
+              {(dailyBonus?.ticket_count ?? 0) > 0 && (
+                <button
+                  type="button"
+                  className={styles.back}
+                  disabled={spinning || running || Boolean(recovery)}
+                  aria-pressed={dailyBonusMode}
+                  onClick={() => {
+                    setMode('daily_bonus');
+                    setIdleArmed(true);
+                    setIdleChoice((v) => v + 1);
+                    setAutoSize(0);
+                  }}
+                >
+                  Bonus Spins ({dailyBonus?.ticket_count})
+                </button>
+              )}
+              {dailyBonusError && (
+                <button
+                  type="button"
+                  className={styles.back}
+                  disabled={spinning || Boolean(recovery)}
+                  onClick={() => clubUuid && void loadDailyBonus(clubUuid)}
+                >
+                  Retry Bonus Spins
+                </button>
+              )}
+            </nav>
+            {(state.contract_version === 2 || state.contract_version === 3) && (
+              <WheelEntry
+                value={freeMode ? 100 : entryDiamonds}
+                disabled={freeMode || spinning || running || Boolean(recovery)}
+                onChange={(amount) => {
+                  setEntryDiamonds(amount);
+                  setIdleArmed(true);
+                  setIdleChoice((v) => v + 1);
+                }}
+              />
+            )}
+          </>
+        }
         bays={[
           { label: 'Diamonds', value: compactChips(player?.diamonds ?? 0), ink: 'blue' },
-          { label: 'Chips', value: compactChips(player?.member_chips ?? 0), ink: 'silver' },
+          { label: 'Club Chips', value: compactChips(player?.member_chips ?? 0), ink: 'silver' },
           freeMode
             ? { label: 'Spin', value: welcomeMode ? 'Welcome' : 'Bonus', ink: 'gold' }
             : { label: 'Spin', value: compactChips(price), ink: 'silver' },
@@ -718,9 +1022,9 @@ export default function DiamondWheelPage() {
             ? { label: autoLabel, ink: 'red', onClick: stopAuto }
             : freeMode || recovery
               ? {
-                  label: 'Odds',
-                  onClick: () =>
-                    oddsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+                  label: 'Prizes',
+                  disabled: spinning,
+                  onClick: () => setDetailsOpen(true),
                 }
               : {
                   label: autoLabel,
@@ -744,296 +1048,209 @@ export default function DiamondWheelPage() {
                   }
         }
       >
-        <nav aria-label="Spin Entry" className={styles.rows}>
-          <button
-            type="button"
-            className={styles.back}
-            disabled={spinning || running || Boolean(recovery)}
-            aria-pressed={mode === 'paid'}
-            onClick={() => {
-              setMode('paid');
-              setAutoSize(0);
-            }}
-          >
-            Paid Spin
-          </button>
-          {welcome?.available && (
-            <button
-              type="button"
-              className={styles.back}
-              disabled={spinning || running || Boolean(recovery)}
-              aria-pressed={welcomeMode}
-              onClick={() => {
-                setMode('welcome');
-                setAutoSize(0);
-              }}
-            >
-              Welcome Spin
-            </button>
-          )}
-          {(dailyBonus?.ticket_count ?? 0) > 0 && (
-            <button
-              type="button"
-              className={styles.back}
-              disabled={spinning || running || Boolean(recovery)}
-              aria-pressed={dailyBonusMode}
-              onClick={() => {
-                setMode('daily_bonus');
-                setAutoSize(0);
-              }}
-            >
-              Bonus Spins ({dailyBonus?.ticket_count})
-            </button>
-          )}
-          {dailyBonusError && (
-            <button
-              type="button"
-              className={styles.back}
-              disabled={spinning || Boolean(recovery)}
-              onClick={() => clubUuid && void loadDailyBonus(clubUuid)}
-            >
-              Retry Bonus Spins
-            </button>
-          )}
-          <button
-            type="button"
-            className={styles.back}
-            disabled={spinning || Boolean(recovery)}
-            onClick={() => navigate('/bonuses')}
-          >
-            Daily Bonus Rewards
-          </button>
-        </nav>
-        <TodayLine
-          used={player?.spins_today ?? 0}
-          cap={cfg?.max_spins_per_player_per_day ?? 0}
-          spentDiamonds={player?.diamonds_today ?? 0}
-          noun="Spins"
-          /* The Today bay already prints the count; this line carries the cost. */
-          showCount={false}
-        />
-        <div className={styles.stage} ref={stageRef}>
-          <DiamondWheel
+        <div className={wheelStyles.stage} ref={stageRef}>
+          <WheelExperience
+            key={spinKey}
+            receipt={pending}
             segments={rim}
-            landingOrd={landingOrd}
+            upgradeSegments={state.upgrade_segments ?? []}
             spinKey={spinKey}
             spinning={spinning}
-            onLanded={handleLanded}
+            autoContinue={running}
+            onFinished={handleLanded}
+            fitViewport
             size={wheelSize}
           />
-          {lastResult && !spinning ? (
-            <div className={styles.readout} role="status">
-              <span className="sc-label sc-ink--blue">
-                {lastResult.outcome.kind === 'nothing' ? 'No Prize' : 'You Won'}
-              </span>
-              <span
-                className={`${styles.readoutValue} ${lastResult.outcome.kind === 'nothing' ? 'sc-ink--muted' : 'sc-ink--gold'}`}
-              >
-                {lastResult.outcome.kind === 'nothing' ? 'Nothing' : prizeLabel(lastResult.outcome)}
-              </span>
-              <span className={`sc-copy ${styles.readoutSub}`}>{readoutSubCopy}</span>
-            </div>
-          ) : (
-            <p className={`sc-copy sc-copy--center ${styles.readoutSub}`}>
-              {blocker
-                ? blocker
+        </div>
+      </WheelCabinet>
+
+      <Modal
+        isOpen={detailsOpen}
+        onClose={() => setDetailsOpen(false)}
+        title="Diamond Spins Details"
+        className={wheelStyles.details}
+        size="large"
+      >
+        <DiamondSpinsTabs clubId={routeClubId ?? ''} />
+        <button
+          type="button"
+          className={styles.back}
+          disabled={spinning || Boolean(recovery)}
+          onClick={() => navigate('/bonuses')}
+        >
+          Daily Bonus Rewards
+        </button>
+        {lastResult && !spinning ? (
+          <div className={styles.readout} role="status">
+            <span className="sc-label sc-ink--blue">
+              {finalOutcome?.kind === 'nothing' ? 'No Prize' : 'You Won'}
+            </span>
+            <span
+              className={`${styles.readoutValue} ${finalOutcome?.kind === 'nothing' ? 'sc-ink--muted' : 'sc-ink--gold'}`}
+            >
+              {finalOutcome?.kind === 'nothing'
+                ? 'Nothing'
+                : prizeLabel(lastResult.secondary?.outcome ?? lastResult.outcome)}
+            </span>
+            <span className={`sc-copy ${styles.readoutSub}`}>{readoutSubCopy}</span>
+          </div>
+        ) : (
+          <p className={`sc-copy sc-copy--center ${styles.readoutSub}`}>
+            {spinning
+              ? 'Your Spin Is Playing. Your Prize Opens Next.'
+              : blocker
+                ? 'Check The Spin Controls Below To Continue'
                 : recovery
                   ? 'Your Previous Spin Needs Its Receipt. Recover It Before Starting Another.'
                   : dailyBonusMode
                     ? 'One Claimed Bonus Spin. 100 Diamond Value, No Diamonds Taken From You.'
                     : welcomeMode
-                      ? `Your Welcome Spin, On The Club. A ${price.toLocaleString()} Diamond Spin On The Same Wheel, For Nothing, Once.`
-                      : `Every Spin Is ${price.toLocaleString()} Diamonds. Explore The Prizes Below.${welcomeNote}`}
-            </p>
-          )}
+                      ? `Your Welcome Spin, On The Club. A ${price.toLocaleString()} Diamond Spin On The Same Wheel, At No Cost To You, Once.`
+                      : `Spin ${price.toLocaleString()} Diamonds.${state.contract_version === 2 || state.contract_version === 3 ? ' Every Spin Wins A Prize.' : ' Explore The Prizes Below.'}${welcomeNote}`}
+          </p>
+        )}
+        <TodayLine
+          used={player?.spins_today ?? 0}
+          cap={cfg?.max_spins_per_player_per_day ?? 0}
+          spentDiamonds={player?.diamonds_today ?? 0}
+          noun="Spins"
+          showCount={false}
+        />
+        <div>
+          <WheelPrizeGallery segments={table} />
         </div>
-      </DeckConsole>
 
-      <div ref={oddsRef}>
         <SpadeConsole
-          eyebrow={freeMode ? 'Your Free Spin' : 'The Prizes'}
-          title={dailyBonusMode ? 'Bonus Spin Prizes' : welcomeMode ? 'Welcome Spin Odds' : 'Odds'}
-          foot="foot"
+          eyebrow="Provably Fair"
+          title="Check Any Spin"
+          plates={{
+            secondary: {
+              label: 'New Seed',
+              onClick: () => setClientSeed(randomClientSeed()),
+              disabled: spinning || Boolean(recovery),
+            },
+            primary: {
+              label: verifying ? 'Checking' : 'Verify Spin',
+              ink: 'white',
+              onClick: () => lastResult && handleVerify(lastResult),
+              disabled: verifying || !lastResult,
+            },
+          }}
         >
-          <div className={styles.rows}>
-            <div className={`${styles.grid4} ${styles.grid4Head}`}>
-              <span className="sc-label sc-ink--blue">Prize</span>
-              <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Odds</span>
-              <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Chance</span>
-              <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Worth</span>
-            </div>
-            {[...table]
-              .sort((a, b) => b.value_chips - a.value_chips)
-              .map((seg) => (
-                <div key={seg.ord} className={styles.grid4}>
-                  <span
-                    className={`${styles.cell} ${seg.locked ? 'sc-ink--muted' : 'sc-ink--silver'}`}
-                  >
-                    {prizeLabel(seg)}
-                    {seg.locked ? (
-                      <span className={styles.rowMeta}>Locked Until The Club Can Cover It</span>
-                    ) : null}
-                  </span>
-                  <span className={`${styles.cell} ${styles.cellRight} sc-ink--muted`}>
-                    {odds(seg.probability)}
-                  </span>
-                  <span className={`${styles.cell} ${styles.cellRight} sc-ink--silver`}>
-                    {(seg.probability * 100).toFixed(seg.probability < 0.01 ? 2 : 1)}%
-                  </span>
-                  <span className={`${styles.cell} ${styles.cellRight} sc-ink--gold`}>
-                    {seg.kind === 'nothing' ? '' : worth(seg.value_chips)}
+          <p className="sc-copy">
+            Before You Spin, A Sealed Seed Commits To Your Draw. Afterward, Verify Spin Checks The
+            Revealed Seed And Your Prize Against The Saved Wheel. An Upgrade Checks Both Draws.
+          </p>
+          <label className={styles.seedField}>
+            <span className="sc-label sc-ink--blue">Your Client Seed</span>
+            <input
+              className={styles.seedInput}
+              value={clientSeed}
+              maxLength={MAX_CLIENT_SEED}
+              onChange={(e) => setClientSeed(e.target.value)}
+              disabled={spinning || Boolean(recovery)}
+              spellCheck={false}
+            />
+          </label>
+          <div className={styles.seedField}>
+            <span className="sc-label sc-ink--blue">Next Spin Commitment</span>
+            <code className={styles.mono}>{commit?.hash || 'Taking A Fresh Commitment'}</code>
+          </div>
+          {lastResult ? (
+            /* The seeds are 64 hex characters: printed under their labels, not
+             beside them, or the label column collapses to nothing. */
+            <>
+              <div className={styles.seedField}>
+                <span className="sc-label sc-ink--blue">
+                  {lastResult.welcome ? 'Server Seed (Welcome Spin)' : 'Server Seed'}
+                </span>
+                <code className={styles.mono}>{lastResult.fairness.server_seed}</code>
+              </div>
+              <div className={styles.seedField}>
+                <span className="sc-label sc-ink--blue">Its Hash</span>
+                <code className={styles.mono}>{lastResult.fairness.server_seed_hash}</code>
+              </div>
+              <div className={styles.seedField}>
+                <span className="sc-label sc-ink--blue">Client Seed</span>
+                <code className={styles.mono}>{lastResult.fairness.client_seed}</code>
+              </div>
+              <div className={`${styles.rows} ${styles.rowsCompact}`}>
+                <div className={styles.row}>
+                  <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Nonce</span>
+                  <span className={`${styles.rowValue} sc-ink--silver`}>
+                    {lastResult.fairness.nonce}
                   </span>
                 </div>
-              ))}
-          </div>
-          {dailyBonusMode ? (
-            <p className="sc-copy">
-              A Claimed Daily Bonus Gives You One 100 Diamond Spin. Winnings Are Paid By Your Club
-              Or Union.
-            </p>
-          ) : welcomeMode ? (
-            <p className="sc-copy">
-              Your Welcome Spin Is The Same Wheel, The Same Prizes And The Same Odds As A Paid Spin.
-              The Club Takes No Diamonds For It And Pays Whatever It Lands On Out Of Its Promo
-              Wallet. It Uses The Same Sealed Seed, So You Can Check It The Same Way. One Per
-              Member, Once.
-            </p>
+                <div className={styles.row}>
+                  <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Roll</span>
+                  <code className={styles.mono}>{lastResult.fairness.roll.toLocaleString()}</code>
+                </div>
+                <div className={styles.row}>
+                  <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Outcome</span>
+                  <span className={`${styles.rowValue} sc-ink--silver`}>
+                    {lastResult.outcome.label}
+                  </span>
+                </div>
+                {verdict ? (
+                  <p
+                    className={`sc-copy sc-copy--center ${verdict.fair ? 'sc-ink--green' : 'sc-ink--red'}`}
+                  >
+                    {verdict.fair
+                      ? 'Verified: The Hash, The Roll And The Outcome All Match'
+                      : `Mismatch: Hash ${verdict.hashMatches ? 'Ok' : 'Differs'}, Roll ${verdict.rollMatches ? 'Ok' : 'Differs'}, Outcome ${verdict.outcomeMatches ? 'Ok' : 'Differs'}`}
+                  </p>
+                ) : null}
+              </div>
+            </>
           ) : (
-            <p className="sc-copy">
-              Every Prize Is Paid By The Club Itself, Out Of Its Promo Wallet. A Locked Prize Is One
-              The Club Cannot Cover Right Now; It Unlocks When It Can.
+            <p className="sc-copy sc-copy--center sc-ink--muted">
+              Spin Once And The Revealed Seed Will Appear Here For You To Check.
             </p>
           )}
         </SpadeConsole>
-      </div>
 
-      <SpadeConsole
-        eyebrow="Provably Fair"
-        title="Check Any Spin"
-        plates={{
-          secondary: {
-            label: 'New Seed',
-            onClick: () => setClientSeed(randomClientSeed()),
-            disabled: spinning,
-          },
-          primary: {
-            label: verifying ? 'Checking' : 'Verify Spin',
-            ink: 'white',
-            onClick: () => lastResult && handleVerify(lastResult),
-            disabled: verifying || !lastResult,
-          },
-        }}
-      >
-        <p className="sc-copy">
-          Before You Spin, The Server Commits To A Secret Seed By Showing You Its SHA-256 Hash. Your
-          Spin Reveals The Seed. The Result Is HMAC-SHA256(Server Seed, Your Seed:Nonce), Read As A
-          Number From 0 To 2^48 And Mapped Onto The Prizes That Were Available.
-        </p>
-        <label className={styles.seedField}>
-          <span className="sc-label sc-ink--blue">Your Client Seed</span>
-          <input
-            className={styles.seedInput}
-            value={clientSeed}
-            maxLength={MAX_CLIENT_SEED}
-            onChange={(e) => setClientSeed(e.target.value)}
-            disabled={spinning || Boolean(recovery)}
-            spellCheck={false}
-          />
-        </label>
-        <div className={styles.seedField}>
-          <span className="sc-label sc-ink--blue">Next Spin Commitment</span>
-          <code className={styles.mono}>{commit?.hash || 'Taking A Fresh Commitment'}</code>
-        </div>
-        {lastResult ? (
-          /* The seeds are 64 hex characters: printed under their labels, not
-             beside them, or the label column collapses to nothing. */
-          <>
-            <div className={styles.seedField}>
-              <span className="sc-label sc-ink--blue">
-                {lastResult.welcome ? 'Server Seed (Welcome Spin)' : 'Server Seed'}
-              </span>
-              <code className={styles.mono}>{lastResult.fairness.server_seed}</code>
-            </div>
-            <div className={styles.seedField}>
-              <span className="sc-label sc-ink--blue">Its Hash</span>
-              <code className={styles.mono}>{lastResult.fairness.server_seed_hash}</code>
-            </div>
-            <div className={styles.seedField}>
-              <span className="sc-label sc-ink--blue">Client Seed</span>
-              <code className={styles.mono}>{lastResult.fairness.client_seed}</code>
-            </div>
+        <FloorFeed
+          wins={floor?.wins ?? []}
+          game="wheel"
+          eyebrow="The Floor"
+          title="Recent Wins"
+          limit={8}
+        />
+
+        {clubUuid && <BonusReplayLibrary clubId={clubUuid} />}
+
+        <SpadeConsole eyebrow="Your Spins" title="History" foot="foot">
+          {history.length === 0 ? (
+            <p className="sc-copy sc-copy--center sc-ink--muted">No Spins Yet.</p>
+          ) : (
             <div className={`${styles.rows} ${styles.rowsCompact}`}>
-              <div className={styles.row}>
-                <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Nonce</span>
-                <span className={`${styles.rowValue} sc-ink--silver`}>
-                  {lastResult.fairness.nonce}
-                </span>
-              </div>
-              <div className={styles.row}>
-                <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Roll</span>
-                <code className={styles.mono}>{lastResult.fairness.roll.toLocaleString()}</code>
-              </div>
-              <div className={styles.row}>
-                <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Outcome</span>
-                <span className={`${styles.rowValue} sc-ink--silver`}>
-                  {lastResult.outcome.label}
-                </span>
-              </div>
-              {verdict ? (
-                <p
-                  className={`sc-copy sc-copy--center ${verdict.fair ? 'sc-ink--green' : 'sc-ink--red'}`}
-                >
-                  {verdict.fair
-                    ? 'Verified: The Hash, The Roll And The Outcome All Match'
-                    : `Mismatch: Hash ${verdict.hashMatches ? 'Ok' : 'Differs'}, Roll ${verdict.rollMatches ? 'Ok' : 'Differs'}, Outcome ${verdict.outcomeMatches ? 'Ok' : 'Differs'}`}
-                </p>
-              ) : null}
-            </div>
-          </>
-        ) : (
-          <p className="sc-copy sc-copy--center sc-ink--muted">
-            Spin Once And The Revealed Seed Will Appear Here For You To Check.
-          </p>
-        )}
-      </SpadeConsole>
-
-      <FloorFeed
-        wins={floor?.wins ?? []}
-        game="wheel"
-        eyebrow="The Floor"
-        title="Recent Wins"
-        limit={8}
-      />
-
-      <SpadeConsole eyebrow="Your Spins" title="History" foot="foot">
-        {history.length === 0 ? (
-          <p className="sc-copy sc-copy--center sc-ink--muted">No Spins Yet.</p>
-        ) : (
-          <div className={`${styles.rows} ${styles.rowsCompact}`}>
-            {history.map((h) => (
-              <div key={h.spin_id} className={styles.row}>
-                <span className={`${styles.rowLabel} sc-ink--silver`}>
-                  {prizeLabel(h.outcome)}
-                  <span className={`${styles.rowMeta} sc-ink--muted`}>
-                    {h.daily_bonus
-                      ? `Daily Bonus Spin, ${historyTime(h.created_at)}`
-                      : h.welcome
-                        ? `Welcome Spin, ${historyTime(h.created_at)}`
-                        : historyTime(h.created_at)}
+              {history.map((h) => (
+                <div key={h.spin_id} className={styles.row}>
+                  <span className={`${styles.rowLabel} sc-ink--silver`}>
+                    {prizeLabel(h.secondary?.outcome ?? h.outcome)}
+                    <span className={`${styles.rowMeta} sc-ink--muted`}>
+                      {h.daily_bonus
+                        ? `Daily Bonus Spin, ${historyTime(h.created_at)}`
+                        : h.welcome
+                          ? `Welcome Spin, ${historyTime(h.created_at)}`
+                          : historyTime(h.created_at)}
+                    </span>
                   </span>
-                </span>
-                <span
-                  className={`${styles.rowValue} ${h.outcome.kind === 'nothing' ? 'sc-ink--muted' : 'sc-ink--gold'}`}
-                >
-                  {h.outcome.kind === 'nothing' ? '0' : worth(h.outcome.value_chips)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </SpadeConsole>
+                  <span
+                    className={`${styles.rowValue} ${h.outcome.kind === 'nothing' ? 'sc-ink--muted' : 'sc-ink--gold'}`}
+                  >
+                    {h.outcome.kind === 'nothing'
+                      ? '0'
+                      : worth((h.secondary?.outcome ?? h.outcome).value_chips)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </SpadeConsole>
 
-      {!user ? <p className="sc-copy sc-copy--center sc-ink--muted">Sign In To Spin.</p> : null}
+        {!user ? <p className="sc-copy sc-copy--center sc-ink--muted">Sign In To Spin.</p> : null}
+      </Modal>
     </div>
   );
 }

@@ -1,7 +1,11 @@
 import type { HandConfig } from '../types.js';
 import type { TournamentBrainContextSnapshot } from '../services/TournamentBrainContext.js';
 
-export type HorsePublicTournamentReader = () => TournamentBrainContextSnapshot;
+// Public action nodes read only the public projection, never private Horse provenance.
+export type HorsePublicTournamentReader = () => Pick<
+  TournamentBrainContextSnapshot,
+  'context' | 'status' | 'issues' | 'ageMs'
+>;
 
 export type HorsePublicTournamentStage =
   | Readonly<{ version: 1; status: 'not_applicable' }>
@@ -59,7 +63,7 @@ export function captureHorsePublicTournamentStage(
   ): HorsePublicTournamentStage => Object.freeze({ version: 1, status: 'unavailable', reason });
   if (!config.isTournament) return Object.freeze({ version: 1, status: 'not_applicable' });
   if (!read) return unavailable('context_missing');
-  let s: TournamentBrainContextSnapshot;
+  let s: ReturnType<HorsePublicTournamentReader>;
   try {
     s = read();
   } catch {

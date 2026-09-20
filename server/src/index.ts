@@ -21,10 +21,6 @@
  * Deploy to: Hetzner VPS (primary), or any Node.js host.
  */
 
-// FIRST, before any module that can fetch: bound the process-wide HTTP client
-// pool (2026-09-14). Imports evaluate in source order; keep this line on top.
-// See services/httpDispatcher.ts for the memory measurements behind it.
-import './services/httpDispatcher.install.js';
 import { AsyncResource } from 'node:async_hooks';
 import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorker.js';
 import { createEngineHttpServer } from './http/createEngineHttpServer.js';
@@ -39,10 +35,7 @@ import { startHorseSelfTuner, stopHorseSelfTuner } from './services/HorseSelfTun
 import { sweepIncompleteHorses } from './services/HorseOnboarding.js';
 import { startHorseLeague, stopHorseLeague } from './benchmark/HorseLeague.js';
 import { startHorseDailyAudit, stopHorseDailyAudit } from './services/HorseDailyAudit.js';
-import {
-  startBrainTelemetryFlush,
-  stopBrainTelemetryFlush,
-} from './services/BrainTelemetryFlush.js';
+import { startBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
 import {
   startHorseDataLedgerSync,
   stopHorseDataLedgerSync,
@@ -102,6 +95,7 @@ const engineWs = new EngineWebSocketServer({
   // cards for the current hand (public state alone leaves reconnecting players
   // blind and auto-folded).
   onResync: (tableId, userId) => {
+    gameServer.replayMaintenancePresentation(tableId);
     const engine = gameServer.getTableEngine(tableId);
     void engine?.rePushHoleCards(userId);
     // 2026-09-04 (disconnect audit item 11): and the engine's copy of this
@@ -125,7 +119,9 @@ const engineWs = new EngineWebSocketServer({
 });
 
 // Phase U4: Channel WebSocket server at /ws/channel (Realtime migration).
-const channelWs = new ChannelWebSocketServer();
+const channelWs = new ChannelWebSocketServer((tournamentId) =>
+  gameServer.getTournamentHandForHand(tournamentId)
+);
 
 const httpServer = createEngineHttpServer(
   createRouter({ gameServer, tableStateHub, engineWs, channelHub })
@@ -264,7 +260,8 @@ function stopLeaderOwnedServices(): Promise<void> {
     ['HorseSelfTuner', stopHorseSelfTuner],
     ['HorseLeague', stopHorseLeague],
     ['HorseDailyAudit', stopHorseDailyAudit],
-    ['BrainTelemetryFlush', stopBrainTelemetryFlush],
+    // GameServer stops Horse execution telemetry after its dealers drain;
+    // stopping it at this early producer fence loses their final outcomes.
     ['HorseAdaptiveJournalWorker', () => horseAdaptiveJournalWorker.stop()],
     ['HorseDataLedgerSync', stopHorseDataLedgerSync],
     ['HorseLaneLoader', stopHorseLaneLoader],

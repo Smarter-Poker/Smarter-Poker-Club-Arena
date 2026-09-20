@@ -173,11 +173,10 @@ describe('direct table-engine terminal recovery', () => {
     const start = method('private async performStart(');
     const stopFence = method('stop(): Promise<void>');
     const stop = method('private async performStop(');
-    expect(start.match(/this\.launchDiscoveryJob\(/g) ?? []).toHaveLength(5);
+    expect(start.match(/this\.launchDiscoveryJob\(/g) ?? []).toHaveLength(4);
     for (const loop of [
       'private async discoverCashTables()',
       'private async discoverTournaments()',
-      'private async discoverScheduledMttStarts()',
       'private async discoverRunningResumes()',
       'private async discoverSeatFirstStarts()',
     ]) {
@@ -232,12 +231,14 @@ describe('direct table-engine terminal recovery', () => {
     const wrapper = method('private renewOwnedEngineLeaseProofs()');
     expect(wrapper).toContain('const existing = this.ownershipLeaseRenewalOperation;');
     expect(wrapper).toContain('if (existing) return existing;');
-    expect(wrapper).toContain('this.performOwnedEngineLeaseProofRenewal()');
+    expect(wrapper).toContain('this.performOwnedEngineLeaseProofRenewal(abandoned)');
 
-    const pass = method('private async performOwnedEngineLeaseProofRenewal()');
+    const pass = method('private async performOwnedEngineLeaseProofRenewal(');
     expect(pass).toContain('await Promise.allSettled([');
-    expect(pass).toContain('this.renewVerifiedCashTableLeaseProofs()');
-    expect(pass).toContain('this.renewVerifiedTournamentManagerLeaseProofs()');
+    expect(pass).toContain(
+      'this.renewVerifiedCashTableLeaseProofs(this.tableEngines.keys(), current)'
+    );
+    expect(pass).toContain('this.renewVerifiedTournamentManagerLeaseProofs(current)');
     expect(pass).not.toContain('discoverCashTables');
     expect(pass).not.toContain('discoverTournaments');
   });

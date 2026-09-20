@@ -134,11 +134,14 @@ describe('the migration proves itself', () => {
   });
 });
 
-describe('the client still calls the canonical invoice RPCs', () => {
-  it('generation and the unified replay-safe payment transaction are wired', () => {
+describe('the client generates debt invoices and uses the unified payment authority', () => {
+  it('generation stays wired and all payments retain one operation identity', () => {
     expect(CREDIT_SERVICE).toMatch(/rpc\('fn_generate_credit_invoice'/);
     expect(CREDIT_SERVICE).toMatch(/rpc\('fn_process_credit_invoice_payment'/);
-    expect(CREDIT_SERVICE).toMatch(/p_operation_id: operationId/);
+    expect(CREDIT_SERVICE).toMatch(/p_operation_id:\s*operationId/);
+    expect(CREDIT_SERVICE).not.toMatch(
+      /rpc\('fn_(?:pay_credit_invoice_from_wallet|apply_credit_payment)'/
+    );
   });
 });
 
@@ -196,7 +199,7 @@ describe('the client knows what a void invoice is', () => {
 
   it('the pay button asks the status, not only the number', () => {
     expect(INVOICES_PANEL).toMatch(
-      /const canPay\s*=\s*OWED_INVOICE_STATUSES\.has\(inv\.status\)[\s\S]{0,120}inv\.amountRemaining > 0/
+      /const canPay =\s*OWED_INVOICE_STATUSES\.has\(inv\.status\) &&\s*inv\.status !== 'disputed' &&\s*inv\.amountRemaining > 0/
     );
   });
 

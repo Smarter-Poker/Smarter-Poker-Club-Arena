@@ -6,5 +6,7 @@
     "recalculate_leaderboard_ranks": "Recomputes dense_rank() over scores that are already in promotion_leaderboards for one promotion. It reads no input beyond the promotion id, writes no new value, moves no money, and is idempotent, so the worst an attacker achieves is the correct answer. Caller: src/services/PromotionService.ts:365, immediately after the RLS-gated score upsert."
   },
   "_comment_anonPublicSurface": "RULE 2, the anon rule, added 2026-08-31 after THREE read-only SECURITY DEFINER functions arrived anon-executable in one afternoon and the writer rule cleared all three, because it only ever looked at functions that write. An entry here is a written decision that a caller WITH NO ACCOUNT may run this function. The reason must say what an unauthenticated caller is allowed to learn from it. If the answer involves schema shape, operator metrics, or another player's private state, it does not belong here - revoke it instead. Starts EMPTY on purpose: the rule only fires on functions a branch newly declares, so the existing public surface never needed grandfathering, and the first entry should cost somebody a paragraph of thought.",
-  "anonPublicSurface": {}
+  "anonPublicSurface": {
+    "fn_shared_bonus_replay": "Public bonus replay links reveal only the immutable game/prize snapshot explicitly shared by its authenticated owner after settlement. The caller must possess a random share UUID; private entry IDs, identities, club data, wallet balances, seeds and unshared games are excluded. This read-only RPC never creates a share, publishes a post or changes a wallet."
+  }
 }

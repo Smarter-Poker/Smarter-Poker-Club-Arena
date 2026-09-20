@@ -351,8 +351,6 @@ export default function ClubFinancialsPage() {
     const unsubs = [
       masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 500),
       masterBus.subscribeDebounced('WALLET_REFRESHED', refresh, 500),
-      masterBus.subscribeDebounced('COMMISSION_PAID', refresh, 500),
-      masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', refresh, 500),
       masterBus.subscribeDebounced('CHIPS_ADDED', refresh, 500),
       masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 1000),
       masterBus.subscribeDebounced('CLUB_UPDATED', refresh, 1000),

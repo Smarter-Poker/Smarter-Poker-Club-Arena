@@ -1,8 +1,8 @@
 /**
- * MARKETPLACE — club-wide purchase ledger (owner/admin only).
+ * MARKETPLACE : club-wide purchase ledger (owner/admin only).
  *
  * The refund endpoint always accepted any purchase in the club, but the only
- * control that called it lived in the buyer's OWN history table — so an admin
+ * control that called it lived in the buyer's OWN history table : so an admin
  * could only refund themselves, and the case refunds were built for (a member
  * bought the wrong item) was unreachable. This is that list.
  *
@@ -11,12 +11,14 @@
  * automatically. The server enforces the same rule.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useDebounce } from '../../hooks/useDebounce';
 import { callClubArenaApi } from '../../services/clubArenaApi';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../components/common/Toast';
 import { confirmDialog } from '../../components/common/confirmDialog';
 import { fmt, timeAgo } from '../../utils/format';
+import { formatPopupText } from '../../utils/popupStyle';
 import styles from '../MarketplacePage.module.css';
 
 interface LedgerRow {
@@ -38,19 +40,76 @@ const unitOf = (currency?: string | null) => (currency === 'chips' ? 'Chips' : '
 
 const PAGE = 25;
 
-export default function PurchaseLedger({ clubId }: { clubId: string }) {
+export default function PurchaseLedger({ clubId, userId }: { clubId: string; userId: string }) {
   const toast = useToast();
   const [rows, setRows] = useState<LedgerRow[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [query, setQuery] = useState('');
+  /* One request per pause in typing, not one per keystroke: every change to
+     the search box used to refetch /api/club-arena/shop-purchases through the
+     World Hub. 300 ms is the same window the roster and hand searches use. */
+  const debouncedQuery = useDebounce(query, 300);
+  /* Between a keystroke and the pause, the box holds a newer question than
+     the rows below it. Paging during that gap asks the server for an offset
+     into a list that is about to be replaced, so the pager is held until the
+     rows and the box agree again. */
+  const searching = query !== debouncedQuery;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refunding, setRefunding] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  /* Only the newest request for the same signed-in owner may update this
+     money-moving table. The attempt and abort guards also invalidate an old
+     request when the account or club changes while it is in flight. */
+  const refundingRef = useRef(false);
+  const mountedRef = useRef(true);
+  const activeOwnerRef = useRef({ userId, clubId });
+  const loadAttemptRef = useRef(0);
+  const loadAbortRef = useRef<AbortController | null>(null);
+  const refundAttemptRef = useRef(0);
+  const refundAbortRef = useRef<AbortController | null>(null);
+
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    activeOwnerRef.current = { userId, clubId };
+    loadAttemptRef.current += 1;
+    loadAbortRef.current?.abort();
+    loadAbortRef.current = null;
+    refundAttemptRef.current += 1;
+    refundAbortRef.current?.abort();
+    refundAbortRef.current = null;
+    refundingRef.current = false;
+    setRefunding(null);
+    setRows([]);
+    setTotal(0);
+    setError(null);
+    return () => {
+      mountedRef.current = false;
+      loadAttemptRef.current += 1;
+      loadAbortRef.current?.abort();
+      loadAbortRef.current = null;
+      refundAttemptRef.current += 1;
+      refundAbortRef.current?.abort();
+      refundAbortRef.current = null;
+      refundingRef.current = false;
+    };
+  }, [clubId, userId]);
 
   const load = useCallback(async () => {
-    if (!open) return;
+    if (!open || !userId) return;
+    const expectedUserId = userId;
+    const expectedClubId = clubId;
+    const attemptId = ++loadAttemptRef.current;
+    loadAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
+    const isCurrent = () =>
+      mountedRef.current &&
+      !controller.signal.aborted &&
+      loadAttemptRef.current === attemptId &&
+      activeOwnerRef.current.userId === expectedUserId &&
+      activeOwnerRef.current.clubId === expectedClubId;
     setLoading(true);
     setError(null);
     try {
@@ -58,31 +117,57 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
         data: { session },
       } = await supabase.auth.getSession();
       const token = session?.access_token;
-      if (!token) throw new Error('Not authenticated');
+      if (!token || session?.user?.id !== expectedUserId) {
+        throw new Error('The Signed-In Player Changed Before This Request Started.');
+      }
       const url =
-        `/api/club-arena/shop-purchases?clubId=${encodeURIComponent(clubId)}` +
+        `/api/club-arena/shop-purchases?clubId=${encodeURIComponent(expectedClubId)}` +
         `&limit=${PAGE}&offset=${offset}` +
-        (query.trim() ? `&q=${encodeURIComponent(query.trim())}` : '');
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        (debouncedQuery.trim() ? `&q=${encodeURIComponent(debouncedQuery.trim())}` : '');
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      });
       const data = await res.json().catch(() => ({ success: false }));
       if (!data.success) throw new Error(data.error || 'Failed to load purchases');
+      if (!isCurrent()) return;
       setRows(data.purchases || []);
       setTotal(data.total || 0);
     } catch (err: unknown) {
+      // A request nobody is waiting on cannot replace the current rows or
+      // leave an error banner over a newer successful response.
+      if (!isCurrent() || (err instanceof Error && err.name === 'AbortError')) return;
       const msg = err instanceof Error ? err.message : 'Failed to load purchases';
       setError(msg);
       toast.error(msg);
     } finally {
-      setLoading(false);
+      if (loadAbortRef.current === controller && loadAttemptRef.current === attemptId) {
+        loadAbortRef.current = null;
+        setLoading(false);
+      }
     }
-  }, [clubId, offset, query, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clubId, offset, debouncedQuery, open, userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     load();
   }, [load]);
 
   const handleRefund = async (row: LedgerRow) => {
-    if (refunding) return;
+    if (refundingRef.current || !userId) return;
+    const expectedUserId = userId;
+    const expectedClubId = clubId;
+    const attemptId = ++refundAttemptRef.current;
+    refundAbortRef.current?.abort();
+    const controller = new AbortController();
+    refundAbortRef.current = controller;
+    const isCurrent = () =>
+      mountedRef.current &&
+      !controller.signal.aborted &&
+      refundAttemptRef.current === attemptId &&
+      activeOwnerRef.current.userId === expectedUserId &&
+      activeOwnerRef.current.clubId === expectedClubId;
+    refundingRef.current = true;
+    setRefunding(row.id);
     if (
       !(await confirmDialog({
         title: 'Refund Purchase',
@@ -90,15 +175,30 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
         confirmText: 'Refund',
         variant: 'danger',
       }))
-    )
+    ) {
+      if (isCurrent()) {
+        refundAbortRef.current = null;
+        refundingRef.current = false;
+        setRefunding(null);
+      }
       return;
-    setRefunding(row.id);
+    }
+    if (!isCurrent()) return;
     try {
       const res = await callClubArenaApi<{
         amount: number;
         currency?: string;
         alreadyRefunded?: boolean;
-      }>('refund-purchase', { clubId, purchaseId: row.id });
+      }>(
+        'refund-purchase',
+        { clubId: expectedClubId, purchaseId: row.id },
+        {
+          idempotencyKey: `refund:${expectedClubId}:${row.id}`,
+          expectedUserId,
+          signal: controller.signal,
+        }
+      );
+      if (!isCurrent()) return;
       toast.success(
         res.alreadyRefunded
           ? 'That Purchase Was Already Refunded'
@@ -106,9 +206,14 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
       );
       load();
     } catch (err: unknown) {
+      if (!isCurrent() || (err instanceof Error && err.name === 'AbortError')) return;
       toast.error(err instanceof Error ? err.message : 'Refund failed');
     } finally {
-      setRefunding(null);
+      if (refundAbortRef.current === controller && refundAttemptRef.current === attemptId) {
+        refundAbortRef.current = null;
+        refundingRef.current = false;
+        setRefunding(null);
+      }
     }
   };
 
@@ -158,7 +263,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
       ) : rows.length === 0 ? (
         <div className={styles.emptyState}>
           <span className={styles.emptyText}>
-            {query.trim() ? 'No Purchases Match That Search.' : 'No Purchases Yet.'}
+            {debouncedQuery.trim() ? 'No Purchases Match That Search.' : 'No Purchases Yet.'}
           </span>
         </div>
       ) : (
@@ -181,14 +286,14 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
                 {rows.map((r) => (
                   <tr key={r.id}>
                     <td data-label="Member" className={styles.dataItemName}>
-                      {r.buyerName}
+                      {formatPopupText(r.buyerName)}
                     </td>
-                    <td data-label="Item">{r.itemName}</td>
+                    <td data-label="Item">{formatPopupText(r.itemName)}</td>
                     <td data-label="Paid" className={styles.dataValuePrice}>
                       {fmt(r.pricePaid)} {unitOf(r.currency)}
                     </td>
                     <td data-label="When" className={styles.dataValueMuted}>
-                      {timeAgo(r.createdAt)}
+                      {formatPopupText(timeAgo(r.createdAt))}
                     </td>
                     <td data-label="Status">
                       <span className={styles.categorySmall}>
@@ -207,6 +312,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
                           className={styles.btnDeleteSmall}
                           onClick={() => handleRefund(r)}
                           disabled={refunding !== null}
+                          aria-label={`Refund ${formatPopupText(r.itemName)} For ${formatPopupText(r.buyerName)}`}
                         >
                           {refunding === r.id ? 'Refunding' : 'Refund'}
                         </button>
@@ -221,7 +327,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
                                 : 'No Delivered Copy To Revoke'
                           }
                         >
-                          -
+                          Unavailable
                         </span>
                       )}
                     </td>
@@ -234,7 +340,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
           <div className={styles.crossSell}>
             <button
               className={styles.inlineLink}
-              disabled={offset === 0 || loading}
+              disabled={offset === 0 || loading || searching}
               onClick={() => setOffset(Math.max(0, offset - PAGE))}
             >
               Previous
@@ -244,7 +350,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
             </span>
             <button
               className={styles.inlineLink}
-              disabled={offset + PAGE >= total || loading}
+              disabled={offset + PAGE >= total || loading || searching}
               onClick={() => setOffset(offset + PAGE)}
             >
               Next

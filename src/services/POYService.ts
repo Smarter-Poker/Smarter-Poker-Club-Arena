@@ -60,7 +60,7 @@ const POY_LEADERBOARD_URL = '/api/poy/leaderboard';
  * `pages/api/club-arena/results.js` and no `pages/api/poy/`; `/api/poker/
  * results` is the live-series results feed, a different thing. So every cash
  * session a human finished and every tournament result POSTed into a 404 and
- * reported a failure to Sentry, and the leaderboard read 404'd on every open.
+ * reported a failure to error reporting, and the leaderboard read 404'd on every open.
  * Until the World Hub grows the routes this flag stays false: the session
  * tracking below keeps its accounting (the tests pin it), but nothing is sent
  * and nothing is reported as failed. Flip it in the PR that lands the routes.

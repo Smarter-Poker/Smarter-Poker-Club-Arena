@@ -142,13 +142,6 @@ export default function SettlementHistoryPage() {
   }, []);
 
   useEffect(() => {
-    const unsub = masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', () => loadHistory(), 1000);
-    const unsub2 = masterBus.subscribeDebounced(
-      'SETTLEMENT_CYCLE_COMPLETED',
-      () => loadHistory(),
-      1000
-    );
-
     // WebSocket: live settlement updates
     const channelKey = 'settlement-history-updates';
     const channel = masterBus.getOrCreateChannel(channelKey);
@@ -179,8 +172,6 @@ export default function SettlementHistoryPage() {
       });
 
     return () => {
-      unsub();
-      unsub2();
       masterBus.removeRegisteredChannel(channelKey);
     };
   }, [loadHistory]);

@@ -50,13 +50,10 @@ export default defineConfig({
   retries: 0,
   timeout: 60_000,
   reporter: 'line',
-  // Preserve the reviewed Mac references at their original paths. The same
-  // build renders differently in Linux WebKit, so its references are reviewed
-  // separately; both platforms retain the same tests and 2% comparison limit.
-  snapshotPathTemplate:
-    process.platform === 'linux'
-      ? '{testDir}/__screenshots__/{testFilePath}/linux-webkit/{arg}{ext}'
-      : '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
+  // The preview is image-backed and font-stable across our Chromium runners.
+  // Keep one reviewed baseline instead of blessing a separate picture for
+  // every host OS (which would let Linux CI drift away from the Mac review).
+  snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
   use: {
     // Keep this suite isolated from the repo's many other local Vite servers.
     // Reusing port 5173 can silently test a different worktree and bless the

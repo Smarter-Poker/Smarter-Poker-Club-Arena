@@ -76,11 +76,13 @@ const ALLOWED_ORPHANS: Record<string, string> = {
   'share/hand/:handId':
     "a hand's own address - Copy Link on the replay writes it, and a player bookmarks it; " +
     'reads hand_history, so it is for the people who played the hand',
+  'bonus-replay/:shareId':
+    'External replay link built by DiamondReplayService after an explicit owner share; Copy Link, native share and the social feed deliver its private random token.',
   'clubs/create': 'legacy redirect to /?create=club, kept so old links resolve',
-  // `advertise` (the sponsor's door) sat here for one afternoon on 2026-09-13,
-  // between #4534 opening the route and the ad popup gaining its Advertise
-  // With Us link. The link is a `to=` target this test can see, so the entry
-  // had to go - the list can only shrink. Not a revert: the route is reached.
+  advertise:
+    "the outside sponsor's door (2026-09-13): an advertiser is not a player, and the link is " +
+    'handed to them by whoever sold the flight. Whether players are shown an "Advertise With ' +
+    "Us\" link (on the ad popup, say) is Dan's call, not a test's",
 
   // ── Developer and diagnostic surfaces, never advertised to players ───────
   replay:

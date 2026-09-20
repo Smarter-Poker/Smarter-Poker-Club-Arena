@@ -88,6 +88,132 @@ export const formatTableChips = (n: number | null | undefined): string => {
 };
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A PRIZE PRINTED AT THE UNIT ITS TOURNAMENT PAYS IN (2026-09-15)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `formatTableChips` is the CHIP contract and it is right for chips: a chip
+ * divides into cents, so an amount under one chip shows two places and 7.5
+ * reads "7.50". Applied to a Diamond prize that contract prints a quantity
+ * that cannot exist - a Diamond does not divide, the custody reserve floors
+ * it, the hand settler refuses it and the wallet stores diamonds as an integer
+ * column - so "0.50" beside a Diamond is not a small imprecision, it is an
+ * amount no door in this estate will accept.
+ *
+ * The ladder arithmetic already snaps every Diamond share to a whole Diamond
+ * (`computePlacePrize` rounds each share to the unit and hands the remainder,
+ * itself a whole Diamond by induction, to the last paid place). So this is not
+ * a second rounding and must never become one: at a Diamond unit the number
+ * arriving here is already whole, and this only chooses how to SAY it.
+ *
+ * `Math.round` on that already-whole number is there to absorb binary float
+ * noise from the `/ 100` that ends `computePlacePrize` - 17 arriving as
+ * 16.999999999999996 would otherwise print "17" from toLocaleString anyway,
+ * but would print "16.999999999999996" the day someone widens the digit cap.
+ * It is a statement that a Diamond amount is an integer, not arithmetic.
+ *
+ * The chip path is `formatTableChips` unchanged, by construction rather than
+ * by inspection: a unit of 1 takes the first branch and nothing else in this
+ * function runs.
+ *
+ * @example formatPrizeAtUnit(17.5,  1)   -> "17.50"   (chips keep their cents)
+ * @example formatPrizeAtUnit(0.5,   1)   -> "0.50"
+ * @example formatPrizeAtUnit(17,    100) -> "17"      (whole Diamonds)
+ * @example formatPrizeAtUnit(1250,  100) -> "1,250"
+ * @example formatPrizeAtUnit(0,     100) -> "0"
+ */
+export const formatPrizeAtUnit = (amount: number | null | undefined, unitCents: number): string => {
+  const unit = Number.isSafeInteger(unitCents) && unitCents >= 1 ? unitCents : 1;
+  if (unit === 1) return formatTableChips(amount);
+  const v = Number(amount ?? 0);
+  if (!Number.isFinite(v)) return '0';
+  const whole = Math.round(v);
+  if (whole === 0) return '0';
+  const sign = whole < 0 ? '-' : '';
+  return `${sign}${Math.abs(whole).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+};
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE SAME RULE IN THE CENTS DOMAIN, FOR THE MYSTERY LADDER
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `formatPrizeAtUnit` takes an amount. Every mystery bounty figure in this
+ * client is CENTS instead - `tournament_bounty_chests.amount_cents`, and the
+ * integer cents `fn_mystery_bounty_inventory`, `fn_mystery_bounty_awards` and
+ * `fn_mystery_bounty_leaderboard` return - because a chest ladder is built in
+ * the smallest chip a chest can hold. So the chest half of the estate needs
+ * the same rule expressed over cents, and it must be ONE rule rather than a
+ * second reading of it: this is `formatPrizeAtUnit` with the `/ 100` moved
+ * inside, and the chip path is `MysteryBountyService.formatCents`' old body
+ * character for character.
+ *
+ * At a Diamond unit a chest is a whole number of Diamonds by construction -
+ * `mysteryPoolCents` floors the pool to the unit and the seed sites draw tiers
+ * on that grid - so this only chooses how to SAY the number, exactly as
+ * `formatPrizeAtUnit` does. It is not a second rounding.
+ *
+ * @example formatPrizeCentsAtUnit(500000, 1)   -> "5,000"   (whole chips)
+ * @example formatPrizeCentsAtUnit(750,    1)   -> "7.50"    (a chest with cents)
+ * @example formatPrizeCentsAtUnit(500000, 100) -> "5,000"   (whole Diamonds)
+ * @example formatPrizeCentsAtUnit(0,      100) -> "0"
+ */
+export const formatPrizeCentsAtUnit = (
+  cents: number | null | undefined,
+  unitCents: number
+): string => {
+  const unit = Number.isSafeInteger(unitCents) && unitCents >= 1 ? unitCents : 1;
+  const raw = Number(cents ?? 0);
+  const c = Math.round(Number.isFinite(raw) ? raw : 0);
+  if (unit === 1) {
+    const rem = Math.abs(c % 100);
+    if (rem === 0) return Math.trunc(c / 100).toLocaleString('en-US');
+    return (c / 100).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+  return formatPrizeAtUnit(c / 100, unit);
+};
+
+/**
+ * THE WORD A PLAYER READS BESIDE A TOURNAMENT MONEY FIGURE.
+ *
+ * Dan 2026-09-11: the Diamond Arena is "PLAYED WITH DIAMONDS INSTEAD OF
+ * CHIPS". A Diamond bounty printed as a bare number beside the word "Chips" is
+ * the same defect as printing it on the cent grid, one level up: the figure is
+ * right and the sentence is wrong. Title Case, because every player-facing
+ * string in this estate is.
+ *
+ * Derived from the unit rather than from an asset string, so the noun and the
+ * grid can never disagree: there is one input and both answers come off it.
+ */
+export const moneyWordAtUnit = (unitCents: number): 'Diamonds' | 'Chips' => {
+  const unit = Number.isSafeInteger(unitCents) && unitCents >= 1 ? unitCents : 1;
+  return unit === 1 ? 'Chips' : 'Diamonds';
+};
+
+/** The singular, for a phrase that already carries its own noun: "Chip Pool". */
+export const moneyAdjectiveAtUnit = (unitCents: number): 'Diamond' | 'Chip' =>
+  moneyWordAtUnit(unitCents) === 'Diamonds' ? 'Diamond' : 'Chip';
+
+/**
+ * THE WORD, WHERE TODAY THERE IS NO WORD AT ALL.
+ *
+ * Several of these surfaces print a bare figure - "Won 500", "for 500." - and
+ * a bare figure in the Diamond Arena does not say what it is. This adds the
+ * noun for a Diamond event and adds NOTHING for a chip one, so every chip
+ * string stays byte-identical rather than gaining a "Chips" it never had.
+ *
+ * That asymmetry is deliberate and is the whole point: the requirement is that
+ * a Diamond figure names its unit, not that every figure in the estate grows a
+ * noun. Use `moneyWordAtUnit` where a word is already printed and only its
+ * value has to follow the unit.
+ */
+export const moneySuffixAtUnit = (unitCents: number): string =>
+  moneyWordAtUnit(unitCents) === 'Diamonds' ? ' Diamonds' : '';
+
+/**
  * THE "+N" THAT RIDES WITH MONEY ARRIVING AT A SEAT (pot push, bounty,
  * insurance). Dan 2026-08-29, binding: "THERE CAN NEVER BE 'ROUNDING' IT MUST
  * ALWAYS BE DOWN TO THE CENT."
@@ -124,6 +250,38 @@ export const formatChipAward = (amount: number | null | undefined): string => {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+};
+
+/**
+ * THE SAME "+N", AT THE UNIT THE TABLE PAYS IN.
+ *
+ * `formatChipAward` is the CHIP contract and stays exactly as it is: the
+ * knockout audit of 2026-09-04 measured 401 of 7,508 bounties carrying cents
+ * and every one of them shown rounded, and the fix was that the float and the
+ * seat's own stack delta print through one formatter. That pairing is still
+ * the rule for a chip table.
+ *
+ * A Diamond bounty has no cents to keep. The engine's bounty bank holds whole
+ * Diamonds (`a-diamond-bounty-is-paid-from-its-own-bank`), so the float that
+ * rides up from a Diamond seat is a whole Diamond, and the two-place branch
+ * above would print a decimal point that the payment cannot contain.
+ *
+ * The chip path is `formatChipAward` unchanged, by construction: a unit of 1
+ * returns it and nothing else here runs.
+ *
+ * @example formatAwardAtUnit(7.5,  1)   -> "+7.50"
+ * @example formatAwardAtUnit(1234, 1)   -> "+1,234"
+ * @example formatAwardAtUnit(12,   100) -> "+12"
+ * @example formatAwardAtUnit(0,    100) -> "+0"
+ */
+export const formatAwardAtUnit = (amount: number | null | undefined, unitCents: number): string => {
+  const unit = Number.isSafeInteger(unitCents) && unitCents >= 1 ? unitCents : 1;
+  if (unit === 1) return formatChipAward(amount);
+  const v = Number(amount ?? 0);
+  if (!Number.isFinite(v)) return '+0';
+  const whole = Math.round(v);
+  const sign = whole < 0 ? '-' : '+';
+  return `${sign}${Math.abs(whole).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 };
 
 /**

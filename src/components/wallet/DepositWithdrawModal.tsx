@@ -378,7 +378,7 @@ export default function DepositWithdrawModal({
    *     default that fits a pending request.
    *
    * So both hero buttons on the Player Wallet page have been a guaranteed
-   * failure toast plus one Sentry report per click, for as long as this code
+   * failure toast plus one error reporting report per click, for as long as this code
    * has existed.
    *
    * AND IT SHOULD NOT BE REPAIRED INTO WORKING. `wallet_transactions` is the

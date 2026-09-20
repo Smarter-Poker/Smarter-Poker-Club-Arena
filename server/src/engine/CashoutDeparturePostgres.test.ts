@@ -3,13 +3,19 @@ import { execFileSync, spawn } from 'node:child_process';
 import { realpathSync, readFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-const transport = vi.hoisted(() => ({ rpc: vi.fn() }));
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import { WebSocket } from 'ws';
+const transport = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
 vi.mock('../services/supabase/client.js', () => ({
   supabase: transport,
   maintenanceSupabase: transport,
 }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 const { ServerTableEngine } = await import('./ServerTableEngine.js');
+const { TableStateHub } = await import('../transport/TableStateHub.js');
+const { EngineWebSocketServer } = await import('../transport/EngineWebSocketServer.js');
+const { resetMovedPresence } = await import('./SeatMovePresence.js');
 const TABLE = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const USER = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const CLUB = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
@@ -57,6 +63,9 @@ function snapshot() {
 describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetMovedPresence();
+    transport.from.mockReset();
+    sql('TRUNCATE engine_presence_parked,vip_feature_usage_monthly,feature_purchases');
     sql(
       'TRUNCATE table_waitlist,cash_game_waitlist,cash_seat_move_receipts,cash_seat_moves,cash_player_session,cash_cluster_events,cash_games,seat_admin_departure_authorizations,anti_cheat_events,profiles,seat_departure_requests,seat_cashout_receipts,tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
     );
@@ -64,7 +73,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
 
   const seedOccupancy = (stack = 25, tournament = false) => {
     if (tournament) sql(`INSERT INTO tournaments VALUES('${CLUB}')`);
-    sql(`INSERT INTO profiles VALUES('${USER}');
+    sql(`INSERT INTO profiles(id) VALUES('${USER}');
       INSERT INTO tables(id,tournament_id,current_players) VALUES('${TABLE}',${tournament ? "'" + CLUB + "'" : 'NULL'},1);
       INSERT INTO club_members VALUES('${USER}','${CLUB}',100,NULL);
       INSERT INTO table_seats VALUES(gen_random_uuid(),'${TABLE}','${USER}',2,
@@ -476,6 +485,357 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
     expect(calls).toBe(2);
     expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(1);
   });
+
+  function connectTransferComponents() {
+    const hub = new TableStateHub();
+    const roster = (tableId: string) =>
+      sql(`SELECT coalesce(jsonb_agg(to_jsonb(s)), '[]'::jsonb)
+      FROM table_seats s WHERE table_id='${tableId}' AND left_at IS NULL`);
+    const pending = (tableId: string) =>
+      sql(`SELECT coalesce(jsonb_agg(to_jsonb(m)), '[]'::jsonb)
+      FROM fn_cash_seat_moves_pending('${tableId}') m`);
+    const cohort = () =>
+      sql(`SELECT jsonb_build_object(
+      'wallets',(SELECT sum(chip_balance) FROM club_members),
+      'stacks',(SELECT sum(stack) FROM table_seats WHERE left_at IS NULL),
+      'wallet_transactions',(SELECT count(*) FROM wallet_transactions),
+      'chip_transactions',(SELECT count(*) FROM chip_transactions),
+      'receipts',(SELECT count(*) FROM cash_seat_move_receipts))`);
+    const engine = (tableId: string) => {
+      const e = new ServerTableEngine(tableId) as any;
+      e.tableInfo = { id: tableId, cluster_id: GAME, tournament_id: null };
+      // The fixture owns these exact two dealers; no game loop is started.
+      e.lifecycleCanMutate = () => true;
+      e.seatedPlayers = roster(tableId);
+      e.setHub(hub);
+      e.broadcastCurrentState = async () => {};
+      e.wakeClusterGame = () => {};
+      return e;
+    };
+    transport.rpc.mockImplementation(async (name: string, args: any) => {
+      if (name === 'fn_cash_seat_move_execute') return { data: move(args.p_move_id), error: null };
+      if (name === 'fn_cash_seat_move_arrivals') {
+        expect(args.p_occupancy_ids).toHaveLength(1);
+        return { data: arrivals(args.p_table_id, args.p_occupancy_ids[0]), error: null };
+      }
+      throw new Error('Unexpected transfer RPC: ' + name);
+    });
+    const seedPresence = (e: any, userId: string, satOut: boolean) => {
+      const since = Date.now() - 45000;
+      e.disconnectEngine.restoreFsmStates(e.tableId, {
+        [userId]: {
+          state: satOut ? 'SAT_OUT' : 'DISCONNECTED',
+          sinceMs: since,
+          graceDeadlineMs: satOut ? null : since + 30000,
+          reconnectDeadlineMs: satOut ? undefined : since + 30000,
+          sitOutSinceMs: satOut ? since : null,
+          sitOutOrbits: 1,
+          sitOutReason: 'voluntary',
+          strikes: 2,
+          awayBlindSbCharged: true,
+          awayBlindBbCharged: true,
+        },
+      });
+      e.timeBankEngine.initializePlayer(e.tableId, userId, {
+        remainingSeconds: 7,
+        usesRemaining: 1,
+      });
+      e.timeBankMeta.set(userId, { initialSeconds: 80, baseSeconds: 40, dbConsumedSeconds: 33 });
+      return e.disconnectEngine.getFsmState(e.tableId, userId);
+    };
+    const reconnect = async (tableId: string, userId: string) => {
+      const frames: any[] = [];
+      // Real HTTP upgrade, engine WebSocket transport and hub replay. Identity
+      // and ACL are explicit test fixtures; this is not a GoTrue/RLS proof.
+      const server = createServer();
+      const wire = new EngineWebSocketServer({
+        hub,
+        tableExists: (id) => [TABLE, OTHER_TABLE].includes(id),
+        verifyToken: async (token) => (token === 'fixture.session.signature' ? { userId } : null),
+        authorizeConnection: async (id, user) => ({
+          allowed: id === tableId && user === userId,
+          reason: 'club_member',
+          clubId: CLUB,
+          banned: false,
+          ipRestricted: false,
+        }),
+      });
+      (wire as any).logConnectionAudit = () => {};
+      wire.attach(server);
+      server.listen(0, '127.0.0.1');
+      await once(server, 'listening');
+      const port = (server.address() as { port: number }).port;
+      hub.publish(tableId, { tableId, players: roster(tableId) });
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/ws/table/${tableId}`, [
+        'bearer',
+        'fixture.session.signature',
+      ]);
+      try {
+        const firstMove = new Promise<void>((resolve, reject) => {
+          socket.once('error', reject);
+          socket.on('message', (raw) => {
+            const frame = JSON.parse(String(raw));
+            frames.push(frame);
+            if (frame.type === 'EVENT' && frame.payload.type === 'seat_moved') resolve();
+          });
+        });
+        await firstMove;
+        const resynced = new Promise<void>((resolve) => {
+          const read = (raw: unknown) => {
+            if (JSON.parse(String(raw)).type === 'SNAPSHOT') {
+              socket.off('message', read);
+              resolve();
+            }
+          };
+          socket.on('message', read);
+        });
+        socket.send(JSON.stringify({ type: 'RESYNC' }));
+        await resynced;
+        const closed = once(socket, 'close');
+        socket.close();
+        await closed;
+        return frames.filter((frame) => frame.type === 'EVENT').map((frame) => frame.payload);
+      } finally {
+        socket.terminate();
+        await wire.close();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    };
+    return { hub, roster, pending, cohort, engine, seedPresence, reconnect };
+  }
+
+  it('composes real SQL, both table engines, presence/time bank and a missed-move reconnect', async () => {
+    seedMove();
+    const c = connectTransferComponents();
+    const source = c.engine(TABLE),
+      destination = c.engine(OTHER_TABLE);
+    const before = c.seedPresence(source, USER, true);
+    expect(c.cohort()).toEqual({
+      wallets: 100,
+      stacks: 25,
+      wallet_transactions: 0,
+      chip_transactions: 0,
+      receipts: 0,
+    });
+    const original = transport.rpc.getMockImplementation()!;
+    let release!: () => void;
+    const committed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    transport.rpc.mockImplementation(async (name: string, args: any) => {
+      const result = await original(name, args);
+      if (name === 'fn_cash_seat_move_execute' && ++calls === 1) {
+        await committed;
+        return { data: null, error: { message: 'response lost after commit' } };
+      }
+      return result;
+    });
+    const moving = source.executePendingSeatMoves({ announcedOnly: false }, c.pending(TABLE));
+    // The transaction is committed, but the source has no response yet.
+    await Promise.resolve();
+    destination.adoptSeatRoster(c.roster(OTHER_TABLE));
+    expect(await destination.adoptMovedPresence()).toBe(true);
+    expect(destination.disconnectEngine.getFsmState(OTHER_TABLE, USER)).toEqual(before);
+    expect(destination.timeBankEngine.getPlayerBank(OTHER_TABLE, USER)).toMatchObject({
+      remainingSeconds: 7,
+      usesRemaining: 1,
+    });
+    release();
+    expect(await moving).toEqual([USER]);
+    expect(calls).toBe(2);
+    expect(source.disconnectEngine.getFsmState(TABLE, USER)).toBeNull();
+    expect(source.timeBankEngine.getPlayerBank(TABLE, USER)).toBeNull();
+    expect(source.seatedPlayers).toEqual([]);
+    const frames = await c.reconnect(TABLE, USER);
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toMatchObject({
+      type: 'seat_moved',
+      user_id: USER,
+      to_table_id: OTHER_TABLE,
+      stack: 25,
+      replayed: true,
+    });
+    destination.disconnectEngine.heartbeat(OTHER_TABLE, USER);
+    expect(destination.disconnectEngine.getFsmState(OTHER_TABLE, USER)).toMatchObject({
+      state: 'SAT_OUT',
+      strikes: 2,
+      sitOutSinceMs: before.sitOutSinceMs,
+    });
+    expect(c.cohort()).toEqual({
+      wallets: 100,
+      stacks: 25,
+      wallet_transactions: 0,
+      chip_transactions: 0,
+      receipts: 1,
+    });
+    expect(await destination.adoptMovedPresence()).toBe(true);
+    expect(destination.timeBankEngine.getPlayerBank(OTHER_TABLE, USER).remainingSeconds).toBe(7);
+  });
+
+  it('composes both swap boundaries without changing the independently counted chip cohort', async () => {
+    seedSwap();
+    sql(`INSERT INTO club_members VALUES('${PARTNER_USER}','${CLUB}',50,NULL)`);
+    const c = connectTransferComponents();
+    const first = c.engine(TABLE),
+      second = c.engine(OTHER_TABLE);
+    const firstPresence = c.seedPresence(first, USER, true);
+    const secondPresence = c.seedPresence(second, PARTNER_USER, false);
+    expect(c.cohort()).toEqual({
+      wallets: 150,
+      stacks: 95,
+      wallet_transactions: 0,
+      chip_transactions: 0,
+      receipts: 0,
+    });
+    expect(await first.executePendingSeatMoves({ announcedOnly: false }, c.pending(TABLE))).toEqual(
+      []
+    );
+    expect(first.heldForSwap.has(USER)).toBe(true);
+    expect(
+      await second.executePendingSeatMoves({ announcedOnly: false }, c.pending(OTHER_TABLE))
+    ).toEqual([PARTNER_USER]);
+    // The next real pending read is empty: the partner already committed both seats.
+    expect(await first.executePendingSeatMoves({ announcedOnly: false }, c.pending(TABLE))).toEqual(
+      []
+    );
+    first.adoptSeatRoster(c.roster(TABLE));
+    second.adoptSeatRoster(c.roster(OTHER_TABLE));
+    expect(await first.adoptMovedPresence()).toBe(true);
+    expect(await second.adoptMovedPresence()).toBe(true);
+    expect(first.disconnectEngine.getFsmState(TABLE, PARTNER_USER)).toEqual(secondPresence);
+    expect(second.disconnectEngine.getFsmState(OTHER_TABLE, USER)).toEqual(firstPresence);
+    expect(first.timeBankEngine.getPlayerBank(TABLE, PARTNER_USER)).toMatchObject({
+      remainingSeconds: 7,
+      usesRemaining: 1,
+    });
+    expect(second.timeBankEngine.getPlayerBank(OTHER_TABLE, USER)).toMatchObject({
+      remainingSeconds: 7,
+      usesRemaining: 1,
+    });
+    expect(first.seatedPlayers.map((p: any) => [p.user_id, Number(p.stack)])).toEqual([
+      [PARTNER_USER, 70],
+    ]);
+    expect(second.seatedPlayers.map((p: any) => [p.user_id, Number(p.stack)])).toEqual([
+      [USER, 25],
+    ]);
+    expect(c.cohort()).toEqual({
+      wallets: 150,
+      stacks: 95,
+      wallet_transactions: 0,
+      chip_transactions: 0,
+      receipts: 2,
+    });
+    expect(
+      (await c.reconnect(OTHER_TABLE, PARTNER_USER)).filter((e) => e.type === 'seat_moved')
+    ).toEqual([expect.objectContaining({ user_id: PARTNER_USER, to_table_id: TABLE, stack: 70 })]);
+  });
+
+  it.each([false, true])(
+    'composes durable parked state and unchanged chip cohort (active bank=%s)',
+    async (activeBank) => {
+      seedMove();
+      const c = connectTransferComponents();
+      const source = c.engine(TABLE),
+        destination = c.engine(OTHER_TABLE);
+      c.seedPresence(source, USER, true);
+      await source.executePendingSeatMoves({ announcedOnly: false }, c.pending(TABLE));
+      destination.adoptSeatRoster(c.roster(OTHER_TABLE));
+      await destination.adoptMovedPresence();
+      const expectedPresence = destination.disconnectEngine.getFsmState(OTHER_TABLE, USER);
+      const before = c.cohort();
+      const literal = (value: string) => "'" + value.replaceAll("'", "''") + "'";
+      transport.from.mockImplementation((table: string) => {
+        expect(table).toBe('engine_presence_parked');
+        return {
+          upsert: async (row: any) => {
+            sql(`INSERT INTO engine_presence_parked(table_id,disconnect_states,parked_at,engine_instance,time_bank_snapshot)
+            VALUES('${row.table_id}',${literal(JSON.stringify(row.disconnect_states))}::jsonb,
+              ${literal(row.parked_at)}::timestamptz,${literal(row.engine_instance)},${literal(JSON.stringify(row.time_bank_snapshot))}::jsonb)
+            ON CONFLICT(table_id) DO UPDATE SET disconnect_states=EXCLUDED.disconnect_states,
+              parked_at=EXCLUDED.parked_at,engine_instance=EXCLUDED.engine_instance,time_bank_snapshot=EXCLUDED.time_bank_snapshot`);
+            return { error: null };
+          },
+          select: () => ({
+            eq: (_column: string, id: string) => ({
+              maybeSingle: async () => ({
+                data: sql(
+                  `SELECT to_jsonb(p) FROM engine_presence_parked p WHERE table_id='${id}'`
+                ),
+                error: null,
+              }),
+            }),
+          }),
+        };
+      });
+      if (activeBank) {
+        sql(`UPDATE profiles SET is_vip=true WHERE id='${USER}';
+        INSERT INTO vip_feature_usage_monthly VALUES('${USER}','time_bank_seconds',to_char(now() AT TIME ZONE 'UTC','YYYY-MM'),10,now())`);
+        const previousRpc = transport.rpc.getMockImplementation()!;
+        transport.rpc.mockImplementation((name: string, args: any) =>
+          name === 'fn_consume_time_bank'
+            ? Promise.resolve({
+                data: sql(`SELECT fn_consume_time_bank('${args.p_user_id}',${args.p_seconds})`),
+                error: null,
+              })
+            : previousRpc(name, args)
+        );
+        destination.timeBankEngine.rebase(OTHER_TABLE, USER, 30);
+        destination.timeBankEngine.configure(OTHER_TABLE, { secondsPerUse: 20 });
+        destination.timeBankMeta.set(USER, {
+          initialSeconds: 80,
+          baseSeconds: 40,
+          dbConsumedSeconds: 10,
+        });
+        expect(destination.timeBankEngine.activate(OTHER_TABLE, USER, () => undefined)).toBe(true);
+      }
+      destination.handCount = 12;
+      await destination.persistPresenceForRestart('parked');
+      if (activeBank) destination.timeBankEngine.playerActed(OTHER_TABLE, USER);
+      // Stop the old component's timers and erase process-local handoff state.
+      destination.preciseTimer.clearTable(OTHER_TABLE);
+      destination.timeBankEngine.disposeAll();
+      resetMovedPresence();
+      const replacement = c.engine(OTHER_TABLE);
+      replacement.handCount = 12;
+      const snapshots = await import('../services/supabase/snapshots.js');
+      const parked = await snapshots.loadPresenceFromPark(OTHER_TABLE);
+      replacement.disconnectEngine.restoreFsmStates(OTHER_TABLE, parked!);
+      await replacement.readParkedTimeBanks();
+      replacement.adoptSeatRoster(c.roster(OTHER_TABLE));
+      expect(replacement.disconnectEngine.getFsmState(OTHER_TABLE, USER)).toEqual(expectedPresence);
+      expect(replacement.timeBankEngine.getPlayerBank(OTHER_TABLE, USER)).toMatchObject({
+        remainingSeconds: activeBank ? 10 : 7,
+        usesRemaining: 1,
+      });
+      expect(replacement.timeBankMeta.get(USER)).toEqual({
+        initialSeconds: 80,
+        baseSeconds: 40,
+        dbConsumedSeconds: activeBank ? 30 : 33,
+      });
+      if (activeBank) {
+        replacement.onTimeBankAccounting({
+          type: 'TIME_BANK_STOPPED',
+          tableId: OTHER_TABLE,
+          playerId: USER,
+        });
+        expect(
+          transport.rpc.mock.calls.filter(([name]) => name === 'fn_consume_time_bank')
+        ).toHaveLength(1);
+        expect(
+          sql(`SELECT usage_count FROM vip_feature_usage_monthly WHERE user_id='${USER}'`)
+        ).toBe(30);
+      }
+      expect(c.cohort()).toEqual(before);
+      expect(before).toEqual({
+        wallets: 100,
+        stacks: 25,
+        wallet_transactions: 0,
+        chip_transactions: 0,
+        receipts: 1,
+      });
+    }
+  );
 
   it('the pending RPC retains original occupancy and durable swap readiness', () => {
     seedSwap();

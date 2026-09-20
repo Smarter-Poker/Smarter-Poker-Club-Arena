@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/codex/f06-lease-reaper-custody-20260919",
+  "_comment": "Existing lease housekeeping retains unresolved F06 evidence; native PostgreSQL admission race and ordinary cleanup controls run in the existing F06 fixture owner.",
+  "functions": ["reap_dead_engine_leases", "smarter_private.f06_lease_has_pending_custody"]
+}

@@ -40,6 +40,10 @@ const SRC = join(ROOT, 'src');
 
 /** Unreachable today, each with the reader that still names it by path. */
 const RETAINED: Record<string, string> = {
+  'src/prerender/HelpPrerender.tsx':
+    'imported only by another retained file (src/prerender/entry-server.tsx)',
+  'src/prerender/entry-server.tsx':
+    'built by path: vite.prerender.config.ts, run by scripts/prerender-public-routes.mjs at the end of build:ci (the public arena, readable without JavaScript)',
   'src/assets/customization-thumbs/sources.json':
     'read by path: scripts/lib/customization-thumbnail-policy.mjs',
   'src/components/ClubLogoSelector.css': 'imported only by another retained file',
@@ -148,6 +152,8 @@ const RETAINED: Record<string, string> = {
     'read by path: tests/promotion-assigns-the-rate.law.test.ts tests/theArenaIsAlwaysTheAlias.law.test.ts tests/unit/CompleteSetReadsDoNotTruncate.test.ts',
   'src/services/ChipFlowService.ts':
     'read by path: supabase/migrations/20260902130000_the_dead_pool_stops_taking_deposits.sql tests/cashier-ui-role-scoping.test.ts tests/config/roleScopedCashier.test.ts',
+  'src/services/SettlementCronService.ts':
+    'tested retired browser API: tests/unit/SettlementCronService.test.ts tests/unit/ServiceBootstrap.test.ts',
   'src/services/ClubMessagingPermissions.ts':
     'read by path: tests/promotion-assigns-the-rate.law.test.ts tests/unit/ClubMessagingPermissions.test.ts',
   'src/styles/design-system.css': 'documentation anchor: 47 live stylesheets cite it in comments',
@@ -218,12 +224,20 @@ function deps(file: string): string[] {
 
 function roots(): Set<string> {
   const out = new Set<string>();
-  const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
-  for (const m of html.matchAll(/["'](\/src\/[^"']+)["']/g)) {
-    const r = resolveSpec(ROOT, m[1]);
-    if (r) out.add(r);
-  }
   const vite = readFileSync(join(ROOT, 'vite.config.ts'), 'utf8');
+  // Vite publishes separate HTML entries as well as the account application.
+  // Follow only entries named in the build, not arbitrary preview HTML files.
+  const entries = new Set(['index.html']);
+  for (const m of vite.matchAll(/path\.resolve\(__dirname,\s*['"]([^'"]+\.html)['"]\)/g)) {
+    entries.add(m[1]);
+  }
+  for (const entry of entries) {
+    const html = readFileSync(join(ROOT, entry), 'utf8');
+    for (const m of html.matchAll(/["'](\/src\/[^"']+)["']/g)) {
+      const r = resolveSpec(ROOT, m[1]);
+      if (r) out.add(r);
+    }
+  }
   for (const m of vite.matchAll(/['"]\.?\/?src\/([^'"]+)['"]/g)) {
     const r = resolveSpec(ROOT, '/src/' + m[1]);
     if (r) out.add(r);
@@ -255,6 +269,7 @@ describe('every file under src/ is reachable from the entry, or it is listed', (
 
   it('the walk starts from the real entry', () => {
     expect([...roots()].map((r) => relative(ROOT, r))).toContain('src/main.tsx');
+    expect([...roots()].map((r) => relative(ROOT, r))).toContain('src/diamond-test.tsx');
   });
 
   it('no unlisted file under src/ is unreachable', () => {

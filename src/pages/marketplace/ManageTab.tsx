@@ -1,20 +1,21 @@
 /**
- * MARKETPLACE — Manage tab (owner/admin only).
+ * MARKETPLACE : Manage tab (owner/admin only).
  * All CRUD goes through the server route /api/club-arena/manage-shop (the old
  * anon-key supabase writes were silently blocked by the 2026-05-01 RLS lockdown).
  *
  * 2026-08-19 audit pass: added inline editing (the server always supported
- * 'update' but the UI had no editor), and a delete guard — items with sales
+ * 'update' but the UI had no editor), and a delete guard : items with sales
  * can only be hidden, because club_shop_purchases.item_id is ON DELETE CASCADE
  * and a hard delete would erase the club's purchase history.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { callClubArenaApi } from '../../services/clubArenaApi';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../components/common/Toast';
 import { confirmDialog } from '../../components/common/confirmDialog';
 import { fmt } from '../../utils/format';
+import { formatPopupText } from '../../utils/popupStyle';
 import styles from '../MarketplacePage.module.css';
 import ShopAnalytics from './ShopAnalytics';
 import PurchaseLedger from './PurchaseLedger';
@@ -31,6 +32,7 @@ import {
 
 interface ManageTabProps {
   clubId: string;
+  userId: string;
   /** category -> grant mapping from /api/club-arena/store-catalog */
   categories: ShopCategoryInfo[];
   /** false when the catalog request failed and we are on bundled defaults */
@@ -62,8 +64,26 @@ interface EditDraft {
 const MARKETPLACE_THEME_PRESETS = THEME_PRESET_CATALOG.filter((preset) => preset.tier === 'vip');
 const MARKETPLACE_THEME_IDS = new Set(MARKETPLACE_THEME_PRESETS.map((preset) => preset.id));
 
+// The single all-access throwables offer is a platform contract. Club admins
+// may tune its commercial fields, but may not split it into tomato/egg/etc.
+// packs, replace its clean composite, hide it, or delete its receipt anchor.
+const ALL_THROWABLES_NAME = 'All Throwables Pack (10)';
+const ALL_THROWABLES_DESCRIPTION =
+  'Ten Uses Across All 49 Table Throwables, Including Boxing Gloves, Water Guns, Eggs, Tomatoes, Snowballs, And More.';
+const ALL_THROWABLES_IMAGE_URL =
+  '/hub/club-arena/images/marketplace/throwables/all-throwables-access-v1.png';
+
+const isThrowableItem = (item: MarketplaceItem) =>
+  String(item.category || '').toLowerCase() === 'throwables' ||
+  String(item.item_type || '').toLowerCase() === 'throwable' ||
+  item.grant_spec?.type === 'throwable';
+
+const isAllThrowablesOffer = (item: MarketplaceItem) =>
+  isThrowableItem(item) && item.name.trim().toLowerCase() === ALL_THROWABLES_NAME.toLowerCase();
+
 export default function ManageTab({
   clubId,
+  userId,
   categories,
   catalogFromServer,
   onShopChanged,
@@ -93,23 +113,101 @@ export default function ManageTab({
   const [avatarCatalogState, setAvatarCatalogState] = useState<
     'idle' | 'loading' | 'ready' | 'error'
   >('idle');
+  const mountedRef = useRef(true);
+  const activeOwnerRef = useRef({ userId, clubId });
+  const mutationAttemptRef = useRef(0);
+  const mutationAbortRef = useRef<AbortController | null>(null);
+  const processingRef = useRef(false);
+  const loadAttemptRef = useRef(0);
+  const loadAbortRef = useRef<AbortController | null>(null);
+
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    activeOwnerRef.current = { userId, clubId };
+    mutationAttemptRef.current += 1;
+    mutationAbortRef.current?.abort();
+    mutationAbortRef.current = null;
+    loadAttemptRef.current += 1;
+    loadAbortRef.current?.abort();
+    loadAbortRef.current = null;
+    processingRef.current = false;
+    setProcessing(false);
+    return () => {
+      mountedRef.current = false;
+      mutationAttemptRef.current += 1;
+      mutationAbortRef.current?.abort();
+      mutationAbortRef.current = null;
+      loadAttemptRef.current += 1;
+      loadAbortRef.current?.abort();
+      loadAbortRef.current = null;
+      processingRef.current = false;
+    };
+  }, [clubId, userId]);
+
+  const beginMutation = () => {
+    if (processingRef.current || !userId || !clubId) return null;
+    const expectedUserId = userId;
+    const expectedClubId = clubId;
+    const attemptId = ++mutationAttemptRef.current;
+    mutationAbortRef.current?.abort();
+    const controller = new AbortController();
+    mutationAbortRef.current = controller;
+    processingRef.current = true;
+    setProcessing(true);
+    const isCurrent = () =>
+      mountedRef.current &&
+      !controller.signal.aborted &&
+      mutationAttemptRef.current === attemptId &&
+      activeOwnerRef.current.userId === expectedUserId &&
+      activeOwnerRef.current.clubId === expectedClubId;
+    return { attemptId, controller, expectedUserId, expectedClubId, isCurrent };
+  };
+
+  const finishMutation = (operation: NonNullable<ReturnType<typeof beginMutation>>) => {
+    if (
+      mutationAbortRef.current === operation.controller &&
+      mutationAttemptRef.current === operation.attemptId
+    ) {
+      mutationAbortRef.current = null;
+      processingRef.current = false;
+      setProcessing(false);
+    }
+  };
 
   const loadItems = useCallback(async () => {
+    if (!userId || !clubId) return;
+    const expectedUserId = userId;
+    const expectedClubId = clubId;
+    const attemptId = ++loadAttemptRef.current;
+    loadAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
+    const isCurrent = () =>
+      mountedRef.current &&
+      !controller.signal.aborted &&
+      loadAttemptRef.current === attemptId &&
+      activeOwnerRef.current.userId === expectedUserId &&
+      activeOwnerRef.current.clubId === expectedClubId;
     setLoadError(null);
     try {
       const {
         data: { session },
       } = await supabase.auth.getSession();
       const token = session?.access_token;
-      if (!token) throw new Error('Not authenticated');
-      const res = await fetch(`/api/club-arena/manage-shop?clubId=${encodeURIComponent(clubId)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      if (!token || session?.user?.id !== expectedUserId) {
+        throw new Error('The Signed-In Player Changed Before This Request Started.');
+      }
+      const res = await fetch(
+        `/api/club-arena/manage-shop?clubId=${encodeURIComponent(expectedClubId)}`,
+        { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal }
+      );
       const data = await res.json().catch(() => ({ success: false }));
       if (!data.success) throw new Error(data.error || 'Failed to load shop items');
+      if (!isCurrent()) return;
       setItems(data.items || []);
       setTotalRevenue(Number(data.totalRevenue) || 0);
     } catch (err: unknown) {
+      if (!isCurrent() || (err instanceof Error && err.name === 'AbortError')) return;
       const msg = err instanceof Error ? err.message : 'Failed to load shop items';
       // Keep whatever was already listed: blanking the catalogue on a transient
       // failure is worse than showing slightly stale rows behind a banner.
@@ -118,9 +216,12 @@ export default function ManageTab({
     } finally {
       // Must be in `finally`: leaving it in the try left the tab stuck on
       // "Loading items..." forever whenever the request failed.
-      setLoaded(true);
+      if (loadAbortRef.current === controller && loadAttemptRef.current === attemptId) {
+        loadAbortRef.current = null;
+        setLoaded(true);
+      }
     }
-  }, [clubId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clubId, userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     loadItems();
@@ -160,6 +261,11 @@ export default function ManageTab({
   const grantNeedsRef = grantInfo?.grantType === 'table_skin' || grantInfo?.grantType === 'avatar';
   const categoryNames =
     categories.length > 0 ? categories.map((c) => c.name) : CATEGORIES.filter((c) => c !== 'All');
+  const creatableCategoryNames = categoryNames.filter(
+    (categoryName) =>
+      categoryName !== 'Throwables' &&
+      categories.find((candidate) => candidate.name === categoryName)?.grantType !== 'throwable'
+  );
 
   const stats = {
     total: items.length,
@@ -188,6 +294,14 @@ export default function ManageTab({
   };
 
   const handleCreate = async () => {
+    if (!catalogFromServer) {
+      toast.error('Live Catalog Verification Is Temporarily Unavailable');
+      return;
+    }
+    if (category === 'Throwables' || grantInfo?.grantType === 'throwable') {
+      toast.error('The All Throwables Pack Is Platform Managed And Cannot Be Split');
+      return;
+    }
     const numPrice = validate(name, price);
     if (numPrice == null) return;
     if (grantInfo?.grantType === 'table_skin' && !MARKETPLACE_THEME_IDS.has(grantRef)) {
@@ -198,34 +312,43 @@ export default function ManageTab({
       toast.error('Choose A Real Avatar From The 97-Avatar Library For This Item');
       return;
     }
-    setProcessing(true);
+    const operation = beginMutation();
+    if (!operation) return;
     try {
-      await callClubArenaApi('manage-shop', {
-        action: 'create',
-        clubId,
-        name: name.trim(),
-        price: numPrice,
-        description: desc.trim() || null,
-        category,
-        imageUrl: imageUrl.trim() || null,
-        // Only assert a grant type when the catalog is server-truth. On the
-        // bundled fallback we omit it so the SERVER derives it from category --
-        // sending a fabricated 'none' silently created items that granted
-        // nothing while still displaying as Time Banks/Throwables.
-        grantType: catalogFromServer ? grantInfo?.grantType : undefined,
-        grantQty: grantInfo?.grantUnit ? Math.max(1, Math.floor(Number(grantQty) || 1)) : undefined,
-        grantRef: grantNeedsRef ? grantRef.trim() || undefined : undefined,
-        stock: stock.trim() === '' ? null : Math.max(0, Math.floor(Number(stock) || 0)),
-        salePrice: salePrice.trim() === '' ? null : Math.max(0, Math.floor(Number(salePrice) || 0)),
-        perUserLimit:
-          perUserLimit.trim() === '' ? null : Math.max(1, Math.floor(Number(perUserLimit) || 1)),
-        // datetime-local carries no offset, so it must be converted to a real
-        // instant here. Sending it raw made the server (UTC) read the admin's
-        // wall clock as UTC — an admin in UTC+10 setting 18:00 got 04:00 next day.
-        availableUntil: localInputToIso(availableUntil),
-        availableFrom: localInputToIso(availableFrom),
-        sortOrder: sortOrder.trim() === '' ? undefined : Math.floor(Number(sortOrder) || 0),
-      });
+      await callClubArenaApi(
+        'manage-shop',
+        {
+          action: 'create',
+          clubId: operation.expectedClubId,
+          name: name.trim(),
+          price: numPrice,
+          description: desc.trim() || null,
+          category,
+          imageUrl: imageUrl.trim() || null,
+          // Only assert a grant type when the catalog is server-truth. On the
+          // bundled fallback we omit it so the SERVER derives it from category --
+          // sending a fabricated 'none' silently created items that granted
+          // nothing while still displaying as Time Banks/Throwables.
+          grantType: catalogFromServer ? grantInfo?.grantType : undefined,
+          grantQty: grantInfo?.grantUnit
+            ? Math.max(1, Math.floor(Number(grantQty) || 1))
+            : undefined,
+          grantRef: grantNeedsRef ? grantRef.trim() || undefined : undefined,
+          stock: stock.trim() === '' ? null : Math.max(0, Math.floor(Number(stock) || 0)),
+          salePrice:
+            salePrice.trim() === '' ? null : Math.max(0, Math.floor(Number(salePrice) || 0)),
+          perUserLimit:
+            perUserLimit.trim() === '' ? null : Math.max(1, Math.floor(Number(perUserLimit) || 1)),
+          // datetime-local carries no offset, so it must be converted to a real
+          // instant here. Sending it raw made the server (UTC) read the admin's
+          // wall clock as UTC : an admin in UTC+10 setting 18:00 got 04:00 next day.
+          availableUntil: localInputToIso(availableUntil),
+          availableFrom: localInputToIso(availableFrom),
+          sortOrder: sortOrder.trim() === '' ? undefined : Math.floor(Number(sortOrder) || 0),
+        },
+        { expectedUserId: operation.expectedUserId, signal: operation.controller.signal }
+      );
+      if (!operation.isCurrent()) return;
       toast.success('Item Created');
       setName('');
       setPrice('');
@@ -243,9 +366,10 @@ export default function ManageTab({
       loadItems();
       onShopChanged();
     } catch (err: unknown) {
+      if (!operation.isCurrent() || (err instanceof Error && err.name === 'AbortError')) return;
       toast.error(err instanceof Error ? err.message : 'Create failed');
     } finally {
-      setProcessing(false);
+      finishMutation(operation);
     }
   };
 
@@ -278,9 +402,23 @@ export default function ManageTab({
 
   const handleSaveEdit = async (item: MarketplaceItem) => {
     if (!draft) return;
-    const numPrice = validate(draft.name, draft.price);
+    if (!catalogFromServer) {
+      toast.error('Live Catalog Verification Is Temporarily Unavailable');
+      return;
+    }
+    const platformThrowables = isAllThrowablesOffer(item);
+    if (isThrowableItem(item) && !platformThrowables) {
+      toast.error('Historical Throwable Rows Are Preserved For Receipts And Cannot Be Edited');
+      return;
+    }
+    const nextName = platformThrowables ? ALL_THROWABLES_NAME : draft.name.trim();
+    const nextDescription = platformThrowables
+      ? ALL_THROWABLES_DESCRIPTION
+      : draft.description.trim();
+    const nextCategory = platformThrowables ? 'Throwables' : draft.category;
+    const numPrice = validate(nextName, draft.price);
     if (numPrice == null) return;
-    const nextGrant = categories.find((c) => c.name === draft.category);
+    const nextGrant = categories.find((c) => c.name === nextCategory);
     if (nextGrant?.grantType === 'table_skin' && !MARKETPLACE_THEME_IDS.has(draft.grantRef)) {
       toast.error('Choose A Real Table Studio Theme For This Item');
       return;
@@ -300,78 +438,109 @@ export default function ManageTab({
         return;
       }
     }
-    setProcessing(true);
+    const operation = beginMutation();
+    if (!operation) return;
     try {
       // The grant MUST travel with the category. Updating category alone left
       // e.g. a time-bank grant on a row now labelled "Avatars", so the card
       // advertised table time and redeeming granted time bank seconds.
-      await callClubArenaApi('manage-shop', {
-        action: 'update',
-        clubId,
-        itemId: item.id,
-        name: draft.name.trim(),
-        price: numPrice,
-        description: draft.description.trim(),
-        category: draft.category,
-        imageUrl: draft.imageUrl.trim() || null,
-        grantType: nextGrant?.grantType,
-        grantQty: nextGrant?.grantUnit
-          ? Math.max(1, Math.floor(Number(draft.grantQty) || 1))
-          : undefined,
-        grantRef: draft.grantRef.trim() || undefined,
-        // Restocking was impossible: a limited drop that sold out (or lost a
-        // unit to a failed purchase) could never be revived from the UI.
-        stock: draft.stock.trim() === '' ? null : Math.max(0, Math.floor(Number(draft.stock) || 0)),
-        // Explicit null clears. Omitting these is what made promos write-once:
-        // a sale could be started and then never ended except by hiding the item.
-        salePrice:
-          draft.salePrice.trim() === ''
+      await callClubArenaApi(
+        'manage-shop',
+        {
+          action: 'update',
+          clubId: operation.expectedClubId,
+          itemId: item.id,
+          name: nextName,
+          price: numPrice,
+          description: nextDescription,
+          category: nextCategory,
+          imageUrl: platformThrowables ? ALL_THROWABLES_IMAGE_URL : draft.imageUrl.trim() || null,
+          grantType: platformThrowables ? 'throwable' : nextGrant?.grantType,
+          grantQty: platformThrowables
+            ? 10
+            : nextGrant?.grantUnit
+              ? Math.max(1, Math.floor(Number(draft.grantQty) || 1))
+              : undefined,
+          grantRef: platformThrowables ? '' : draft.grantRef.trim() || undefined,
+          // Restocking was impossible: a limited drop that sold out (or lost a
+          // unit to a failed purchase) could never be revived from the UI.
+          stock:
+            draft.stock.trim() === '' ? null : Math.max(0, Math.floor(Number(draft.stock) || 0)),
+          // Explicit null clears. Omitting these is what made promos write-once:
+          // a sale could be started and then never ended except by hiding the item.
+          salePrice:
+            draft.salePrice.trim() === ''
+              ? null
+              : Math.max(0, Math.floor(Number(draft.salePrice) || 0)),
+          perUserLimit: platformThrowables
             ? null
-            : Math.max(0, Math.floor(Number(draft.salePrice) || 0)),
-        perUserLimit:
-          draft.perUserLimit.trim() === ''
-            ? null
-            : Math.max(1, Math.floor(Number(draft.perUserLimit) || 1)),
-        availableFrom: localInputToIso(draft.availableFrom),
-        availableUntil: localInputToIso(draft.availableUntil),
-        sortOrder: draft.sortOrder.trim() === '' ? 0 : Math.floor(Number(draft.sortOrder) || 0),
-        stackable: draft.stackable,
-      });
+            : draft.perUserLimit.trim() === ''
+              ? null
+              : Math.max(1, Math.floor(Number(draft.perUserLimit) || 1)),
+          availableFrom: localInputToIso(draft.availableFrom),
+          availableUntil: localInputToIso(draft.availableUntil),
+          sortOrder: draft.sortOrder.trim() === '' ? 0 : Math.floor(Number(draft.sortOrder) || 0),
+          stackable: platformThrowables ? true : draft.stackable,
+        },
+        {
+          expectedUserId: operation.expectedUserId,
+          signal: operation.controller.signal,
+        }
+      );
+      if (!operation.isCurrent()) return;
       toast.success('Item Updated');
       setEditingId(null);
       setDraft(null);
       loadItems();
       onShopChanged();
     } catch (err: unknown) {
+      if (!operation.isCurrent() || (err instanceof Error && err.name === 'AbortError')) return;
       toast.error(err instanceof Error ? err.message : 'Update failed');
     } finally {
-      setProcessing(false);
+      finishMutation(operation);
     }
   };
 
   const handleToggle = async (item: MarketplaceItem) => {
-    if (processing) return;
-    setProcessing(true);
+    if (processingRef.current) return;
+    if (isThrowableItem(item)) {
+      toast.error('Throwable Offers Are Platform Managed And Cannot Be Hidden');
+      return;
+    }
+    const operation = beginMutation();
+    if (!operation) return;
     try {
-      await callClubArenaApi('manage-shop', { action: 'toggle', clubId, itemId: item.id });
+      await callClubArenaApi(
+        'manage-shop',
+        { action: 'toggle', clubId: operation.expectedClubId, itemId: item.id },
+        { expectedUserId: operation.expectedUserId, signal: operation.controller.signal }
+      );
+      if (!operation.isCurrent()) return;
       toast.success(item.is_active ? 'Item Hidden' : 'Item Activated');
       loadItems();
       onShopChanged();
     } catch (err: unknown) {
+      if (!operation.isCurrent() || (err instanceof Error && err.name === 'AbortError')) return;
       toast.error(err instanceof Error ? err.message : 'Toggle failed');
     } finally {
-      setProcessing(false);
+      finishMutation(operation);
     }
   };
 
   const handleDelete = async (item: MarketplaceItem) => {
-    if (processing) return;
+    if (processingRef.current) return;
+    if (isThrowableItem(item)) {
+      toast.error('Throwable Offers Are Platform Managed And Cannot Be Deleted');
+      return;
+    }
     if ((item.purchase_count || 0) > 0) {
       toast.error(
         'This Item Has Sales. Deleting It Would Erase Its Purchase History - Hide It Instead.'
       );
       return;
     }
+    const operation = beginMutation();
+    if (!operation) return;
     if (
       !(await confirmDialog({
         title: 'Delete Item',
@@ -379,19 +548,26 @@ export default function ManageTab({
         confirmText: 'Delete',
         variant: 'danger',
       }))
-    )
+    ) {
+      finishMutation(operation);
       return;
-    if (processing) return;
-    setProcessing(true);
+    }
+    if (!operation.isCurrent()) return;
     try {
-      await callClubArenaApi('manage-shop', { action: 'delete', clubId, itemId: item.id });
+      await callClubArenaApi(
+        'manage-shop',
+        { action: 'delete', clubId: operation.expectedClubId, itemId: item.id },
+        { expectedUserId: operation.expectedUserId, signal: operation.controller.signal }
+      );
+      if (!operation.isCurrent()) return;
       toast.success('Item Deleted');
       loadItems();
       onShopChanged();
     } catch (err: unknown) {
+      if (!operation.isCurrent() || (err instanceof Error && err.name === 'AbortError')) return;
       toast.error(err instanceof Error ? err.message : 'Delete failed');
     } finally {
-      setProcessing(false);
+      finishMutation(operation);
     }
   };
 
@@ -413,13 +589,25 @@ export default function ManageTab({
         </div>
         <div className={styles.statCard}>
           <span className={styles.statValue}>{fmt(stats.totalRevenue)}</span>
-          <span className={styles.statLabel}>Diamond Revenue</span>
+          <span className={styles.statLabel}>Diamonds Burned</span>
         </div>
       </div>
 
+      <div className={styles.grantHint}>
+        Club Shop Sales Are 100% Platform-Owned Diamond Burns. No Club, Owner, Agent, Affiliate, Or
+        Commission Ledger Is Credited.
+      </div>
+
+      {!catalogFromServer && (
+        <div className={styles.grantHint} role="alert">
+          Live Catalog Verification Is Temporarily Unavailable. Item Creation And Editing Are
+          Disabled Until It Returns.
+        </div>
+      )}
+
       <ShopAnalytics clubId={clubId} />
 
-      <PurchaseLedger clubId={clubId} />
+      <PurchaseLedger clubId={clubId} userId={userId} />
 
       {/* Create form */}
       <div className={styles.createForm}>
@@ -458,9 +646,9 @@ export default function ManageTab({
             className={styles.formSelect}
             aria-label="Item Category"
           >
-            {categoryNames.map((cat) => (
+            {creatableCategoryNames.map((cat) => (
               <option key={cat} value={cat}>
-                {cat}
+                {formatPopupText(cat)}
               </option>
             ))}
           </select>
@@ -469,7 +657,10 @@ export default function ManageTab({
             onChange={(e) => setImageUrl(e.target.value)}
             placeholder="Image URL (Https Only, Optional)"
             aria-label="Item Image URL"
-            className={styles.formInput}
+            className={`${styles.formInput} ${styles.identifierInput}`}
+            inputMode="url"
+            autoCapitalize="none"
+            spellCheck={false}
           />
         </div>
         <div className={styles.formRow}>
@@ -535,6 +726,10 @@ export default function ManageTab({
           Stock Is A Limited Drop; Max-Per-Member Caps Lifetime Purchases; A Sale Price Is What Is
           Actually Charged; &quot;Available Until&quot; Ends The Offer Automatically.
         </div>
+        <div className={styles.grantHint}>
+          The All Throwables Pack Is Added Automatically And Includes Every Table Throwable. Edit
+          Its Commercial Terms Below; Individual Throwable Packs Cannot Be Created.
+        </div>
         {grantInfo?.grantUnit && (
           <div className={styles.formRow}>
             <input
@@ -561,12 +756,12 @@ export default function ManageTab({
                 value={grantRef}
                 onChange={(event) => setGrantRef(event.target.value)}
                 aria-label="Table Studio Theme"
-                className={styles.formInput}
+                className={`${styles.formInput} ${styles.identifierInput}`}
               >
                 <option value="">Choose A Table Studio Theme</option>
                 {MARKETPLACE_THEME_PRESETS.map((preset) => (
                   <option key={preset.id} value={preset.id}>
-                    {preset.name}
+                    {formatPopupText(preset.name)}
                   </option>
                 ))}
               </select>
@@ -575,7 +770,7 @@ export default function ManageTab({
                 value={grantRef}
                 onChange={(event) => setGrantRef(event.target.value)}
                 aria-label="Avatar Library Selection"
-                className={styles.formInput}
+                className={`${styles.formInput} ${styles.identifierInput}`}
                 disabled={avatarCatalogState === 'loading' || avatarCatalogState === 'error'}
               >
                 <option value="">
@@ -587,7 +782,7 @@ export default function ManageTab({
                 </option>
                 {avatarOptions.map((avatar) => (
                   <option key={avatar.id} value={avatar.id}>
-                    {avatar.name} ({avatar.category === 'vip' ? 'VIP' : 'Free'})
+                    {formatPopupText(avatar.name)} ({avatar.category === 'vip' ? 'VIP' : 'Free'})
                   </option>
                 ))}
               </select>
@@ -609,13 +804,13 @@ export default function ManageTab({
         {grantInfo && !grantInfo.grantUnit && (
           <div className={styles.grantHint}>
             {grantInfo.grantType === 'none'
-              ? 'Exclusive Items Grant Nothing Automatically - Your Club Fulfils Them.'
+              ? 'This Historical Item Has No Verified Digital Delivery And Cannot Be Sold.'
               : 'Redeeming Unlocks This Permanently For The Member.'}
           </div>
         )}
         <button
           className={styles.btnPrimary}
-          disabled={processing || !name.trim() || !price}
+          disabled={processing || !catalogFromServer || !name.trim() || !price}
           onClick={handleCreate}
         >
           {processing ? 'Creating' : 'Create Item'}
@@ -630,7 +825,7 @@ export default function ManageTab({
       ) : loadError ? (
         <div className={styles.emptyState}>
           <span className={styles.emptyText}>Could Not Load Shop Items.</span>
-          <span className={styles.emptySubText}>{loadError}</span>
+          <span className={styles.emptySubText}>{formatPopupText(loadError)}</span>
           <button className={styles.emptyButton} onClick={loadItems}>
             Retry
           </button>
@@ -646,20 +841,18 @@ export default function ManageTab({
               <div className={styles.adminRow}>
                 <div>
                   <div
-                    style={{
-                      fontWeight: 700,
-                      color: item.is_active ? '#e4e6eb' : '#6B7280',
-                      fontSize: '14px',
-                    }}
+                    className={item.is_active ? styles.adminItemName : styles.adminItemNameMuted}
                   >
-                    {item.name}
+                    {formatPopupText(item.name)}
                   </div>
-                  <div style={{ fontSize: 12, color: '#8b8d91', marginTop: 2 }}>
+                  <div className={styles.adminItemMeta}>
                     {fmt(item.price)} Diamonds {' - '}
-                    <span className={styles.categorySmall}>{item.category || 'Time Banks'}</span>
+                    <span className={styles.categorySmall}>
+                      {formatPopupText(item.category || 'Time Banks')}
+                    </span>
                     {' - '}
                     {item.purchase_count || 0} Sold
-                    {item.revenue ? ` - ${fmt(item.revenue)} Earned` : ''}
+                    {item.revenue ? ` - ${fmt(item.revenue)} Burned` : ''}
                     {item.stock !== null && item.stock !== undefined ? ` - ${item.stock} Left` : ''}
                     {item.sale_price !== null && item.sale_price !== undefined
                       ? ` - On Sale At ${fmt(item.sale_price)}`
@@ -677,39 +870,56 @@ export default function ManageTab({
                   )}
                 </div>
                 <div className={styles.adminActions}>
-                  <button
-                    onClick={() => {
-                      if (editingId === item.id) {
-                        setEditingId(null);
-                        setDraft(null);
-                      } else {
-                        startEdit(item);
-                      }
-                    }}
-                    disabled={processing}
-                    className={styles.btnEditSmall}
-                  >
-                    {editingId === item.id ? 'Close' : 'Edit'}
-                  </button>
-                  <button
-                    onClick={() => handleToggle(item)}
-                    disabled={processing}
-                    className={item.is_active ? styles.btnActiveToggle : styles.btnInactiveToggle}
-                  >
-                    {item.is_active ? 'Active' : 'Hidden'}
-                  </button>
-                  <button
-                    onClick={() => handleDelete(item)}
-                    className={styles.btnDeleteSmall}
-                    disabled={processing || (item.purchase_count || 0) > 0}
-                    title={
-                      (item.purchase_count || 0) > 0
-                        ? 'Items With Sales Cannot Be Deleted - Hide Them Instead'
-                        : 'Delete This Item'
-                    }
-                  >
-                    Delete
-                  </button>
+                  {isThrowableItem(item) && !isAllThrowablesOffer(item) ? (
+                    <span className={styles.categorySmall}>Historical Receipt Row</span>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => {
+                          if (editingId === item.id) {
+                            setEditingId(null);
+                            setDraft(null);
+                          } else {
+                            startEdit(item);
+                          }
+                        }}
+                        disabled={processing}
+                        className={styles.btnEditSmall}
+                        aria-label={`${editingId === item.id ? 'Close' : 'Edit'} ${formatPopupText(item.name)}`}
+                      >
+                        {editingId === item.id ? 'Close' : 'Edit'}
+                      </button>
+                      {isAllThrowablesOffer(item) ? (
+                        <span className={styles.categorySmall}>Platform Managed</span>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleToggle(item)}
+                            disabled={processing}
+                            className={
+                              item.is_active ? styles.btnActiveToggle : styles.btnInactiveToggle
+                            }
+                            aria-label={`${item.is_active ? 'Hide' : 'Activate'} ${formatPopupText(item.name)}`}
+                          >
+                            {item.is_active ? 'Active' : 'Hidden'}
+                          </button>
+                          <button
+                            onClick={() => handleDelete(item)}
+                            className={styles.btnDeleteSmall}
+                            disabled={processing || (item.purchase_count || 0) > 0}
+                            title={
+                              (item.purchase_count || 0) > 0
+                                ? 'Items With Sales Cannot Be Deleted - Hide Them Instead'
+                                : 'Delete This Item'
+                            }
+                            aria-label={`Delete ${formatPopupText(item.name)}`}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -723,6 +933,8 @@ export default function ManageTab({
                       placeholder="Item Name"
                       className={styles.formInput}
                       maxLength={100}
+                      readOnly={isAllThrowablesOffer(item)}
+                      aria-readonly={isAllThrowablesOffer(item)}
                     />
                     <input
                       type="number"
@@ -740,6 +952,8 @@ export default function ManageTab({
                     aria-label="Item Description"
                     className={styles.formInput}
                     maxLength={500}
+                    readOnly={isAllThrowablesOffer(item)}
+                    aria-readonly={isAllThrowablesOffer(item)}
                   />
                   <div className={styles.formRow}>
                     <select
@@ -747,13 +961,16 @@ export default function ManageTab({
                       onChange={(e) => setDraft({ ...draft, category: e.target.value })}
                       className={styles.formSelect}
                       aria-label="Item Category"
+                      disabled={isAllThrowablesOffer(item)}
                     >
-                      {(categoryNames.includes(draft.category)
-                        ? categoryNames
-                        : [draft.category, ...categoryNames]
+                      {(isAllThrowablesOffer(item)
+                        ? ['Throwables']
+                        : creatableCategoryNames.includes(draft.category)
+                          ? creatableCategoryNames
+                          : [draft.category, ...creatableCategoryNames]
                       ).map((cat) => (
                         <option key={cat} value={cat}>
-                          {cat}
+                          {formatPopupText(cat)}
                         </option>
                       ))}
                     </select>
@@ -761,7 +978,12 @@ export default function ManageTab({
                       value={draft.imageUrl}
                       onChange={(e) => setDraft({ ...draft, imageUrl: e.target.value })}
                       placeholder="Image URL (Optional)"
-                      className={styles.formInput}
+                      className={`${styles.formInput} ${styles.identifierInput}`}
+                      inputMode="url"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      readOnly={isAllThrowablesOffer(item)}
+                      aria-readonly={isAllThrowablesOffer(item)}
                     />
                   </div>
                   <div className={styles.formRow}>
@@ -799,6 +1021,8 @@ export default function ManageTab({
                       placeholder="Max Per Member (Blank = No Cap)"
                       aria-label="Maximum Purchases Per Member"
                       className={styles.formInput}
+                      readOnly={isAllThrowablesOffer(item)}
+                      aria-readonly={isAllThrowablesOffer(item)}
                     />
                     <input
                       type="number"
@@ -833,6 +1057,7 @@ export default function ManageTab({
                         checked={draft.stackable}
                         onChange={(e) => setDraft({ ...draft, stackable: e.target.checked })}
                         style={{ marginRight: 8 }}
+                        disabled={isAllThrowablesOffer(item)}
                       />
                       Stackable - Members May Hold Several Unredeemed Copies
                     </label>
@@ -852,6 +1077,8 @@ export default function ManageTab({
                             placeholder={`How Many ${g.grantUnit}?`}
                             aria-label={`Number Of ${g.grantUnit} Granted`}
                             className={styles.formInput}
+                            readOnly={isAllThrowablesOffer(item)}
+                            aria-readonly={isAllThrowablesOffer(item)}
                           />
                         )}
                         {g.grantType === 'table_skin' && (
@@ -861,7 +1088,7 @@ export default function ManageTab({
                               setDraft({ ...draft, grantRef: event.target.value })
                             }
                             aria-label="Table Studio Theme"
-                            className={styles.formInput}
+                            className={`${styles.formInput} ${styles.identifierInput}`}
                           >
                             {!MARKETPLACE_THEME_IDS.has(draft.grantRef) && draft.grantRef && (
                               <option value={draft.grantRef}>Legacy: {draft.grantRef}</option>
@@ -869,7 +1096,7 @@ export default function ManageTab({
                             <option value="">Choose A Table Studio Theme</option>
                             {MARKETPLACE_THEME_PRESETS.map((preset) => (
                               <option key={preset.id} value={preset.id}>
-                                {preset.name}
+                                {formatPopupText(preset.name)}
                               </option>
                             ))}
                           </select>
@@ -880,7 +1107,7 @@ export default function ManageTab({
                               value={draft.grantRef}
                               onChange={(e) => setDraft({ ...draft, grantRef: e.target.value })}
                               aria-label="Avatar Library Selection"
-                              className={styles.formInput}
+                              className={`${styles.formInput} ${styles.identifierInput}`}
                               disabled={avatarCatalogState === 'loading'}
                             >
                               {!isRealAvatarId(draft.grantRef) && draft.grantRef && (
@@ -897,7 +1124,8 @@ export default function ManageTab({
                               </option>
                               {avatarOptions.map((avatar) => (
                                 <option key={avatar.id} value={avatar.id}>
-                                  {avatar.name} ({avatar.category === 'vip' ? 'VIP' : 'Free'})
+                                  {formatPopupText(avatar.name)} (
+                                  {avatar.category === 'vip' ? 'VIP' : 'Free'})
                                 </option>
                               ))}
                             </select>

@@ -1,0 +1,1104 @@
+{
+  "source": "physical-conflicts-20260918-0902.json",
+  "source_sha256": "62f1768626936d06f9c1225b6bc6224099772219ac2e144d802e290e377ace08",
+  "evidence": {
+    "at": "2026-09-18T09:02:04.503147+00:00",
+    "atomic": [],
+    "history": [],
+    "candidates": [],
+    "table_leases": [],
+    "active_snapshots": [
+      {
+        "id": "b563669d-16fe-4d1b-90f3-dde43810aa4d",
+        "stage": "preflop",
+        "table_id": "fd319d05-3a4b-4032-a8a4-3724652764fa",
+        "created_at": "2026-09-08T14:39:03.105196+00:00",
+        "state_json": {
+          "pot": 26500,
+          "pots": [],
+          "stage": "preflop",
+          "players": [
+            {
+              "bet": 7500,
+              "seat": 1,
+              "cards": [
+                {
+                  "rank": "T",
+                  "suit": "spades"
+                },
+                {
+                  "rank": "A",
+                  "suit": "hearts"
+                }
+              ],
+              "stack": 40450,
+              "user_id": "7e464f21-760d-4682-a6df-f8d89030d519",
+              "is_horse": true,
+              "username": "FloatRanger",
+              "is_all_in": false,
+              "is_folded": false,
+              "avatar_url": "/avatars/table/free_android@2x.webp",
+              "deadInvested": 0,
+              "equipped_aura": "",
+              "totalInvested": 7500,
+              "equipped_frame": "",
+              "is_sitting_out": false,
+              "returnedUncalled": 0
+            },
+            {
+              "bet": 15000,
+              "seat": 3,
+              "cards": [
+                {
+                  "rank": "3",
+                  "suit": "hearts"
+                },
+                {
+                  "rank": "6",
+                  "suit": "diamonds"
+                }
+              ],
+              "stack": 48888,
+              "user_id": "e8b32dc2-6c5b-407e-ab46-451422d0a6c5",
+              "is_horse": true,
+              "username": "CallKing",
+              "is_all_in": false,
+              "is_folded": false,
+              "avatar_url": "/avatars/table/vip_artist@2x.webp",
+              "deadInvested": 4000,
+              "equipped_aura": "",
+              "totalInvested": 19000,
+              "equipped_frame": "",
+              "is_sitting_out": false,
+              "returnedUncalled": 0
+            }
+          ],
+          "sawFlop": false,
+          "minRaise": 15000,
+          "lastRaise": 15000,
+          "currentBet": 15000,
+          "dealerSeat": 1,
+          "actionHistory": [],
+          "communityCards": [],
+          "communityCards2": [],
+          "communityCards3": [],
+          "currentPlayerSeat": 1,
+          "lastAggressorSeat": -1
+        },
+        "updated_at": "2026-09-08T14:39:03.105196+00:00",
+        "config_json": {
+          "ante": 2000,
+          "tableId": "fd319d05-3a4b-4032-a8a4-3724652764fa",
+          "bigBlind": 15000,
+          "bbjConfig": {
+            "feeBB": 0.03,
+            "enabled": false,
+            "minPotBB": 10,
+            "minPlayersDealt": 3
+          },
+          "handNumber": 8214017,
+          "rakeConfig": {
+            "cap": 0,
+            "percent": 0,
+            "noFlopNoDrop": true
+          },
+          "smallBlind": 7500,
+          "gameVariant": "nlh"
+        },
+        "dealer_seat": 1,
+        "hand_number": 8214017,
+        "is_complete": false,
+        "players_json": [
+          {
+            "seat": 1,
+            "stack": 40450,
+            "user_id": "7e464f21-760d-4682-a6df-f8d89030d519",
+            "is_horse": true,
+            "username": "FloatRanger"
+          },
+          {
+            "seat": 3,
+            "stack": 48888,
+            "user_id": "e8b32dc2-6c5b-407e-ab46-451422d0a6c5",
+            "is_horse": true,
+            "username": "CallKing"
+          }
+        ],
+        "disconnect_states": {
+          "13133bc4-9139-4066-8b55-8edd31ef2318": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788878228896,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788878273896,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788878273896,
+            "reconnectGrantedAtMs": 1788878228896
+          },
+          "4f0bbf2a-7a7e-43f1-bc19-c0f937419388": {
+            "state": "MISSING",
+            "sinceMs": 1788878339701,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788878384701,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788878384701,
+            "reconnectGrantedAtMs": 1788878339701
+          },
+          "586f1543-8f0b-4486-bde5-cb937657ca30": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788877937596,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877982596,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877982596,
+            "reconnectGrantedAtMs": 1788877937596
+          },
+          "6258f768-cb01-4edf-9508-a40fedcdd49e": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788878339701,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877026849,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877026849,
+            "reconnectGrantedAtMs": 1788876981849
+          },
+          "7e464f21-760d-4682-a6df-f8d89030d519": {
+            "state": "CONNECTED",
+            "sinceMs": 1788878339701,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": null,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false
+          },
+          "8a7faa73-bf76-4940-9b80-39e95163ffd1": {
+            "state": "MISSING",
+            "sinceMs": 1788878309514,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788878354514,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788878354514,
+            "reconnectGrantedAtMs": 1788878309514
+          },
+          "9dc34048-3e89-4d93-8fcb-d3cac17474c5": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788878068077,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788878113077,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788878113077,
+            "reconnectGrantedAtMs": 1788878068077
+          },
+          "ad7951e6-88d8-4b9e-807c-bd9753790e66": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788877816927,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877861927,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877861927,
+            "reconnectGrantedAtMs": 1788877816927
+          },
+          "bb01946f-5753-44d8-93f1-5c32062c3d6b": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788877515096,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877560096,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877560096,
+            "reconnectGrantedAtMs": 1788877515096
+          },
+          "bbca3b33-152a-44da-91f2-d63e5a2354d5": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788877515096,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877560096,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877560096,
+            "reconnectGrantedAtMs": 1788877515096
+          },
+          "c058ae6e-8331-4d25-8245-4da7fbfa3fd5": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788876931625,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788876976625,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788876976625,
+            "reconnectGrantedAtMs": 1788876931625
+          },
+          "c2bbe90b-bd79-43a2-8d22-5c60a0ec3855": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788878148445,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788878193445,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788878193445,
+            "reconnectGrantedAtMs": 1788878148445
+          },
+          "dec9ad0a-55c3-4dfe-9ece-5315f9a44544": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788877867162,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877912162,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877912162,
+            "reconnectGrantedAtMs": 1788877867162
+          },
+          "e8b32dc2-6c5b-407e-ab46-451422d0a6c5": {
+            "state": "CONNECTED",
+            "sinceMs": 1788878339701,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": null,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false
+          }
+        },
+        "pending_deadlines": [
+          {
+            "eventId": "timer_countdown:5000",
+            "deadlineMs": 1788878342783
+          },
+          {
+            "eventId": "timer_countdown:3000",
+            "deadlineMs": 1788878344783
+          },
+          {
+            "eventId": "timer_countdown:2000",
+            "deadlineMs": 1788878345783
+          },
+          {
+            "eventId": "timer_countdown:1000",
+            "deadlineMs": 1788878346783
+          },
+          {
+            "eventId": "heartbeat_check",
+            "deadlineMs": 1788878349701
+          }
+        ]
+      },
+      {
+        "id": "1d18086f-1d92-416f-a305-a91de022a032",
+        "stage": "preflop",
+        "table_id": "de7d292b-b356-4574-a1fc-6395c8180c82",
+        "created_at": "2026-09-08T14:32:22.95441+00:00",
+        "state_json": {
+          "pot": 8000,
+          "pots": [],
+          "stage": "preflop",
+          "players": [
+            {
+              "bet": 2000,
+              "seat": 1,
+              "cards": [
+                {
+                  "rank": "4",
+                  "suit": "diamonds"
+                },
+                {
+                  "rank": "4",
+                  "suit": "spades"
+                }
+              ],
+              "stack": 58218,
+              "user_id": "8a7faa73-bf76-4940-9b80-39e95163ffd1",
+              "is_horse": true,
+              "username": "FoldPhantom",
+              "is_all_in": false,
+              "is_folded": false,
+              "avatar_url": "/avatars/table/vip_basketball@2x.webp",
+              "deadInvested": 0,
+              "equipped_aura": "",
+              "totalInvested": 2000,
+              "equipped_frame": "",
+              "is_sitting_out": false,
+              "returnedUncalled": 0
+            },
+            {
+              "bet": 4000,
+              "seat": 7,
+              "cards": [
+                {
+                  "rank": "K",
+                  "suit": "clubs"
+                },
+                {
+                  "rank": "T",
+                  "suit": "hearts"
+                }
+              ],
+              "stack": 24572,
+              "user_id": "7e464f21-760d-4682-a6df-f8d89030d519",
+              "is_horse": true,
+              "username": "FloatRanger",
+              "is_all_in": false,
+              "is_folded": false,
+              "avatar_url": "/avatars/table/free_android@2x.webp",
+              "deadInvested": 2000,
+              "equipped_aura": "",
+              "totalInvested": 6000,
+              "equipped_frame": "",
+              "is_sitting_out": false,
+              "returnedUncalled": 0
+            },
+            {
+              "bet": 0,
+              "seat": 8,
+              "cards": [
+                {
+                  "rank": "Q",
+                  "suit": "clubs"
+                },
+                {
+                  "rank": "2",
+                  "suit": "hearts"
+                }
+              ],
+              "stack": 36275,
+              "user_id": "7a720598-8e36-48e1-9826-7bc99a81bdb6",
+              "is_horse": true,
+              "username": "CheckWarden",
+              "is_all_in": false,
+              "is_folded": false,
+              "avatar_url": "/avatars/table/vip_viking_warrior@2x.webp",
+              "deadInvested": 0,
+              "equipped_aura": "",
+              "totalInvested": 0,
+              "equipped_frame": "",
+              "is_sitting_out": false,
+              "returnedUncalled": 0
+            },
+            {
+              "bet": 0,
+              "seat": 9,
+              "cards": [
+                {
+                  "rank": "J",
+                  "suit": "diamonds"
+                },
+                {
+                  "rank": "3",
+                  "suit": "diamonds"
+                }
+              ],
+              "stack": 33055,
+              "user_id": "dec9ad0a-55c3-4dfe-9ece-5315f9a44544",
+              "is_horse": true,
+              "username": "FloatQueenRush",
+              "is_all_in": false,
+              "is_folded": false,
+              "avatar_url": "/avatars/table/vip_luchador@2x.webp",
+              "deadInvested": 0,
+              "equipped_aura": "",
+              "totalInvested": 0,
+              "equipped_frame": "",
+              "is_sitting_out": false,
+              "returnedUncalled": 0
+            }
+          ],
+          "sawFlop": false,
+          "minRaise": 4000,
+          "lastRaise": 4000,
+          "currentBet": 4000,
+          "dealerSeat": 9,
+          "actionHistory": [],
+          "communityCards": [],
+          "communityCards2": [],
+          "communityCards3": [],
+          "currentPlayerSeat": 8,
+          "lastAggressorSeat": -1
+        },
+        "updated_at": "2026-09-08T14:32:22.95441+00:00",
+        "config_json": {
+          "ante": 500,
+          "tableId": "de7d292b-b356-4574-a1fc-6395c8180c82",
+          "bigBlind": 4000,
+          "bbjConfig": {
+            "feeBB": 0.03,
+            "enabled": false,
+            "minPotBB": 10,
+            "minPlayersDealt": 3
+          },
+          "handNumber": 8211594,
+          "rakeConfig": {
+            "cap": 0,
+            "percent": 0,
+            "noFlopNoDrop": true
+          },
+          "smallBlind": 2000,
+          "gameVariant": "nlh"
+        },
+        "dealer_seat": 9,
+        "hand_number": 8211594,
+        "is_complete": false,
+        "players_json": [
+          {
+            "seat": 1,
+            "stack": 58218,
+            "user_id": "8a7faa73-bf76-4940-9b80-39e95163ffd1",
+            "is_horse": true,
+            "username": "FoldPhantom"
+          },
+          {
+            "seat": 7,
+            "stack": 24572,
+            "user_id": "7e464f21-760d-4682-a6df-f8d89030d519",
+            "is_horse": true,
+            "username": "FloatRanger"
+          },
+          {
+            "seat": 8,
+            "stack": 36275,
+            "user_id": "7a720598-8e36-48e1-9826-7bc99a81bdb6",
+            "is_horse": true,
+            "username": "CheckWarden"
+          },
+          {
+            "seat": 9,
+            "stack": 33055,
+            "user_id": "dec9ad0a-55c3-4dfe-9ece-5315f9a44544",
+            "is_horse": true,
+            "username": "FloatQueenRush"
+          }
+        ],
+        "disconnect_states": {
+          "4f0bbf2a-7a7e-43f1-bc19-c0f937419388": {
+            "state": "CONNECTED",
+            "sinceMs": 1788877937597,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": null,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false
+          },
+          "6258f768-cb01-4edf-9508-a40fedcdd49e": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788877625702,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877670702,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877670702,
+            "reconnectGrantedAtMs": 1788877625702
+          },
+          "761b4352-ee05-4423-a791-65303d364989": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788877494989,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877539989,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877539989,
+            "reconnectGrantedAtMs": 1788877494989
+          },
+          "7a720598-8e36-48e1-9826-7bc99a81bdb6": {
+            "state": "CONNECTED",
+            "sinceMs": 1788877937597,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": null,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false
+          },
+          "7a74d9fe-baef-4224-b20e-cea476853795": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788877696207,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877741207,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877741207,
+            "reconnectGrantedAtMs": 1788877696207
+          },
+          "7e464f21-760d-4682-a6df-f8d89030d519": {
+            "state": "CONNECTED",
+            "sinceMs": 1788877937597,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": null,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false
+          },
+          "8a7faa73-bf76-4940-9b80-39e95163ffd1": {
+            "state": "CONNECTED",
+            "sinceMs": 1788877937597,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": null,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false
+          },
+          "91dfbccd-e521-4821-9cdc-3d058a0060e4": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788877364084,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877409084,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877409084,
+            "reconnectGrantedAtMs": 1788877364084
+          },
+          "9ee591b7-2360-4ea8-ad3b-942ef829fbda": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788877696207,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877741207,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877741207,
+            "reconnectGrantedAtMs": 1788877696207
+          },
+          "ad7951e6-88d8-4b9e-807c-bd9753790e66": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788877846993,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877891993,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877891993,
+            "reconnectGrantedAtMs": 1788877846993
+          },
+          "b82cb704-5ea3-469e-b05a-88e768e8834c": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788877726298,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877771298,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877771298,
+            "reconnectGrantedAtMs": 1788877726298
+          },
+          "d7b99137-4394-41e0-909c-5211c5ad1f20": {
+            "state": "MISSING",
+            "sinceMs": 1788877937597,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877982597,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877982597,
+            "reconnectGrantedAtMs": 1788877937597
+          },
+          "dec9ad0a-55c3-4dfe-9ece-5315f9a44544": {
+            "state": "CONNECTED",
+            "sinceMs": 1788877937597,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": null,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false
+          },
+          "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788877696207,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877741207,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877741207,
+            "reconnectGrantedAtMs": 1788877696207
+          }
+        },
+        "pending_deadlines": [
+          {
+            "eventId": "timer_countdown:10000",
+            "deadlineMs": 1788877946468
+          },
+          {
+            "eventId": "timer_countdown:5000",
+            "deadlineMs": 1788877951468
+          },
+          {
+            "eventId": "timer_countdown:3000",
+            "deadlineMs": 1788877953468
+          },
+          {
+            "eventId": "timer_countdown:2000",
+            "deadlineMs": 1788877954468
+          },
+          {
+            "eventId": "timer_countdown:1000",
+            "deadlineMs": 1788877955468
+          },
+          {
+            "eventId": "heartbeat_check",
+            "deadlineMs": 1788877947597
+          }
+        ]
+      },
+      {
+        "id": "e13564aa-fcd9-413b-b4be-f5649f09a134",
+        "stage": "preflop",
+        "table_id": "fa6d8c35-3f0d-47af-bb85-422aa2869a16",
+        "created_at": "2026-09-08T14:27:20.583059+00:00",
+        "state_json": {
+          "pot": 3250,
+          "pots": [],
+          "stage": "preflop",
+          "players": [
+            {
+              "bet": 0,
+              "seat": 2,
+              "cards": [
+                {
+                  "rank": "4",
+                  "suit": "hearts"
+                },
+                {
+                  "rank": "9",
+                  "suit": "spades"
+                }
+              ],
+              "stack": 29341,
+              "user_id": "7a720598-8e36-48e1-9826-7bc99a81bdb6",
+              "is_horse": true,
+              "username": "CheckWarden",
+              "is_all_in": false,
+              "is_folded": false,
+              "avatar_url": "/avatars/table/vip_viking_warrior@2x.webp",
+              "deadInvested": 0,
+              "equipped_aura": "",
+              "totalInvested": 0,
+              "equipped_frame": "",
+              "is_sitting_out": false,
+              "returnedUncalled": 0
+            },
+            {
+              "bet": 0,
+              "seat": 3,
+              "cards": [
+                {
+                  "rank": "5",
+                  "suit": "hearts"
+                },
+                {
+                  "rank": "8",
+                  "suit": "clubs"
+                }
+              ],
+              "stack": 10580,
+              "user_id": "e8b32dc2-6c5b-407e-ab46-451422d0a6c5",
+              "is_horse": true,
+              "username": "CallKing",
+              "is_all_in": false,
+              "is_folded": false,
+              "avatar_url": "/avatars/table/vip_artist@2x.webp",
+              "deadInvested": 0,
+              "equipped_aura": "",
+              "totalInvested": 0,
+              "equipped_frame": "",
+              "is_sitting_out": false,
+              "returnedUncalled": 0
+            },
+            {
+              "bet": 0,
+              "seat": 6,
+              "cards": [
+                {
+                  "rank": "4",
+                  "suit": "clubs"
+                },
+                {
+                  "rank": "6",
+                  "suit": "hearts"
+                }
+              ],
+              "stack": 18262,
+              "user_id": "9e5abf96-3fe6-4bd5-8641-d6c95d5b64bf",
+              "is_horse": true,
+              "username": "ValueQueen",
+              "is_all_in": false,
+              "is_folded": false,
+              "avatar_url": "/avatars/table/free_cowboy@2x.webp",
+              "deadInvested": 0,
+              "equipped_aura": "",
+              "totalInvested": 0,
+              "equipped_frame": "",
+              "is_sitting_out": false,
+              "returnedUncalled": 0
+            },
+            {
+              "bet": 750,
+              "seat": 7,
+              "cards": [
+                {
+                  "rank": "6",
+                  "suit": "clubs"
+                },
+                {
+                  "rank": "T",
+                  "suit": "clubs"
+                }
+              ],
+              "stack": 13108,
+              "user_id": "586f1543-8f0b-4486-bde5-cb937657ca30",
+              "is_horse": true,
+              "username": "BlockerPhantom",
+              "is_all_in": false,
+              "is_folded": false,
+              "avatar_url": "/avatars/table/vip_fire_demon@2x.webp",
+              "deadInvested": 0,
+              "equipped_aura": "",
+              "totalInvested": 750,
+              "equipped_frame": "",
+              "is_sitting_out": false,
+              "returnedUncalled": 0
+            },
+            {
+              "bet": 1500,
+              "seat": 9,
+              "cards": [
+                {
+                  "rank": "J",
+                  "suit": "clubs"
+                },
+                {
+                  "rank": "A",
+                  "suit": "clubs"
+                }
+              ],
+              "stack": 21588,
+              "user_id": "4f0bbf2a-7a7e-43f1-bc19-c0f937419388",
+              "is_horse": true,
+              "username": "CoolerWarden",
+              "is_all_in": false,
+              "is_folded": false,
+              "avatar_url": "/avatars/table/vip_pug@2x.webp",
+              "deadInvested": 1000,
+              "equipped_aura": "",
+              "totalInvested": 2500,
+              "equipped_frame": "",
+              "is_sitting_out": false,
+              "returnedUncalled": 0
+            }
+          ],
+          "sawFlop": false,
+          "minRaise": 1500,
+          "lastRaise": 1500,
+          "currentBet": 1500,
+          "dealerSeat": 6,
+          "actionHistory": [],
+          "communityCards": [],
+          "communityCards2": [],
+          "communityCards3": [],
+          "currentPlayerSeat": 2,
+          "lastAggressorSeat": -1
+        },
+        "updated_at": "2026-09-08T14:27:20.583059+00:00",
+        "config_json": {
+          "ante": 200,
+          "tableId": "fa6d8c35-3f0d-47af-bb85-422aa2869a16",
+          "bigBlind": 1500,
+          "bbjConfig": {
+            "feeBB": 0.03,
+            "enabled": false,
+            "minPotBB": 10,
+            "minPlayersDealt": 3
+          },
+          "handNumber": 8209641,
+          "rakeConfig": {
+            "cap": 0,
+            "percent": 0,
+            "noFlopNoDrop": true
+          },
+          "smallBlind": 750,
+          "gameVariant": "nlh"
+        },
+        "dealer_seat": 6,
+        "hand_number": 8209641,
+        "is_complete": false,
+        "players_json": [
+          {
+            "seat": 2,
+            "stack": 29341,
+            "user_id": "7a720598-8e36-48e1-9826-7bc99a81bdb6",
+            "is_horse": true,
+            "username": "CheckWarden"
+          },
+          {
+            "seat": 3,
+            "stack": 10580,
+            "user_id": "e8b32dc2-6c5b-407e-ab46-451422d0a6c5",
+            "is_horse": true,
+            "username": "CallKing"
+          },
+          {
+            "seat": 6,
+            "stack": 18262,
+            "user_id": "9e5abf96-3fe6-4bd5-8641-d6c95d5b64bf",
+            "is_horse": true,
+            "username": "ValueQueen"
+          },
+          {
+            "seat": 7,
+            "stack": 13108,
+            "user_id": "586f1543-8f0b-4486-bde5-cb937657ca30",
+            "is_horse": true,
+            "username": "BlockerPhantom"
+          },
+          {
+            "seat": 9,
+            "stack": 21588,
+            "user_id": "4f0bbf2a-7a7e-43f1-bc19-c0f937419388",
+            "is_horse": true,
+            "username": "CoolerWarden"
+          }
+        ],
+        "disconnect_states": {
+          "44f1ff92-b5de-44c5-9f7b-319318ff2a74": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788877203425,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877248425,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877248425,
+            "reconnectGrantedAtMs": 1788877203425
+          },
+          "4f0bbf2a-7a7e-43f1-bc19-c0f937419388": {
+            "state": "CONNECTED",
+            "sinceMs": 1788877635731,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": null,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false
+          },
+          "586f1543-8f0b-4486-bde5-cb937657ca30": {
+            "state": "CONNECTED",
+            "sinceMs": 1788877635731,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": null,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false
+          },
+          "7a720598-8e36-48e1-9826-7bc99a81bdb6": {
+            "state": "CONNECTED",
+            "sinceMs": 1788877635731,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": null,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false
+          },
+          "9e5abf96-3fe6-4bd5-8641-d6c95d5b64bf": {
+            "state": "CONNECTED",
+            "sinceMs": 1788877635731,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": null,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false
+          },
+          "b439692b-fd8f-4a99-85fa-38f37111e733": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788877494989,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877539989,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877539989,
+            "reconnectGrantedAtMs": 1788877494989
+          },
+          "c1ecb590-e6bb-4a7a-87de-95bb44673efc": {
+            "state": "MISSING",
+            "sinceMs": 1788877605600,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788877650600,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788877650600,
+            "reconnectGrantedAtMs": 1788877605600
+          },
+          "d7b99137-4394-41e0-909c-5211c5ad1f20": {
+            "state": "DISCONNECTED",
+            "sinceMs": 1788876780592,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": 1788876825592,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false,
+            "reconnectDeadlineMs": 1788876825592,
+            "reconnectGrantedAtMs": 1788876780592
+          },
+          "e8b32dc2-6c5b-407e-ab46-451422d0a6c5": {
+            "state": "CONNECTED",
+            "sinceMs": 1788877635731,
+            "strikes": 0,
+            "pageLeftAtMs": null,
+            "sitOutOrbits": 0,
+            "sitOutReason": null,
+            "sitOutSinceMs": null,
+            "graceDeadlineMs": null,
+            "awayBlindBbCharged": false,
+            "awayBlindSbCharged": false
+          }
+        },
+        "pending_deadlines": [
+          {
+            "eventId": "timer_countdown:5000",
+            "deadlineMs": 1788877644278
+          },
+          {
+            "eventId": "timer_countdown:3000",
+            "deadlineMs": 1788877646278
+          },
+          {
+            "eventId": "timer_countdown:2000",
+            "deadlineMs": 1788877647278
+          },
+          {
+            "eventId": "timer_countdown:1000",
+            "deadlineMs": 1788877648278
+          },
+          {
+            "eventId": "heartbeat_check",
+            "deadlineMs": 1788877645731
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -76,23 +76,31 @@ describe('the Diamond Arena is diamonds only', () => {
   });
 
   it('where the diamonds go buckets the arena as diamonds and the panel has no chip vocabulary (phase 5)', () => {
-    const migration = read('supabase/migrations/20260914110559_where_the_diamonds_go.sql');
+    /* The LIVE map is the latest redefinition of fn_diamond_kind_bucket
+       (20260914110559 first draft, 20260914114052 every writer, 20260920141527
+       the Diamond Games, 20260920141807 the Diamond Spins perks). Pin the
+       version production runs. */
+    const migration = read(
+      'supabase/migrations/20260920141807_the_diamond_kind_map_names_the_spins_perks.sql'
+    );
     const map = migration.slice(
       migration.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_bucket'),
       migration.indexOf('COMMENT ON FUNCTION public.fn_diamond_kind_bucket')
     );
     expect(map.length).toBeGreaterThan(100);
     // The arena kinds have their own buckets, named as diamonds.
-    expect(map).toMatch(/k = 'arena_deposit'\s+THEN 'arena'/);
-    expect(map).toMatch(/k = 'arena_withdraw'\s+THEN 'arena_cash_outs'/);
-    expect(map).toContain("WHEN 'arena'           THEN 'Diamond Arena Seats'");
-    expect(map).toContain("WHEN 'arena_cash_outs' THEN 'Diamond Arena Cash-Outs'");
+    expect(map).toMatch(/k IN \('arena_deposit', 'tournament_fee'\)\s+THEN 'arena'/);
+    expect(map).toMatch(/k IN \('arena_withdraw', 'arena'\)\s+THEN 'arena_cash_outs'/);
+    expect(map).toMatch(/WHEN 'arena'\s+THEN 'Diamond Arena Seats'/);
+    expect(map).toMatch(/WHEN 'arena_cash_outs'\s+THEN 'Diamond Arena Cash-Outs'/);
     // Nothing that says "arena" ever lands in the club-chips bucket, and the
     // only chip bucket is a member-club purchase, named so.
-    for (const line of map.split('\n').filter((l) => /THEN 'club_chips'/.test(l))) {
+    const chipLines = map.split('\n').filter((l) => /THEN 'club_chips'/.test(l));
+    expect(chipLines.length).toBeGreaterThan(0);
+    for (const line of chipLines) {
       expect(line).not.toMatch(/arena/i);
     }
-    expect(map).toContain("WHEN 'club_chips'      THEN 'Club Chip Purchases'");
+    expect(map).toMatch(/WHEN 'club_chips'\s+THEN 'Club Chip Purchases'/);
     // Every label a player reads: Title Case words, no em dash.
     for (const [, label] of map.matchAll(/THEN '([A-Z][^']*)'/g)) {
       expect(label).not.toContain('\u2014');

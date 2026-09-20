@@ -78,15 +78,9 @@ export default function FinancialHealthPage() {
   // Bus listeners: refresh when financial events fire
   useEffect(() => {
     const unsubAlert = masterBus.subscribeDebounced('FINANCIAL_ALERT', () => loadStatus(), 500);
-    const unsubSettlement = masterBus.subscribeDebounced(
-      'SETTLEMENT_COMPLETED',
-      () => loadStatus(),
-      1000
-    );
     const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadStatus(), 1000);
     return () => {
       unsubAlert();
-      unsubSettlement();
       unsubBalance();
     };
   }, []);

@@ -179,6 +179,39 @@ export const BLIND_STRUCTURES = {
   ]),
 };
 
+/** New draft projection only. Never apply to a stored/funded ladder: its
+ * current_level and entry/add-on cutoffs refer to the original array indices.
+ * The engine skips these legacy markers; new forms must not sell them as pauses. */
+export function newTournamentPlayingLevels(preset: readonly BlindLevel[]): BlindLevel[] {
+  return preset.filter((row) => !row.isBreak).map((row, index) => ({ ...row, level: index + 1 }));
+}
+
+/** New MTT authoring only. Historical parsing and stored schedule execution
+ * retain their accepted arrays and zero-based level indices. */
+export function assertNoNewMttBreakRows(structure: unknown, type: unknown): void {
+  if (type === 'sng' || type === 'spin') return;
+  if (Array.isArray(structure) && structure.some((row) => row?.isBreak === true)) {
+    throw new Error(
+      'Custom Level Breaks Are Not Supported. Remove Break Rows Before Creating. Use Synchronized Breaks For Hourly Pauses.'
+    );
+  }
+}
+
+/** The manual form's existing ramp keys. Both its setup presets and its
+ * submitted ladder must resolve the same opening blind. */
+export function manualTournamentBlindPreset(key: string): BlindLevel[] {
+  switch (key) {
+    case 'slow':
+      return BLIND_STRUCTURES.deepStack;
+    case 'turbo':
+      return BLIND_STRUCTURES.turbo;
+    case 'hyper_turbo':
+      return BLIND_STRUCTURES.hyperTurbo;
+    default:
+      return BLIND_STRUCTURES.regular;
+  }
+}
+
 /**
  * SPIN ladder — DERIVED from the canonical spinSpec (2026-08-30 audit fix).
  * There used to be a hand-typed 15-level ladder here that diverged from

@@ -1,3 +1,4 @@
+import { useTournamentHandForHand } from '../../hooks/useTournamentHandForHand';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT HUD — Compact in-game heads-up display (felt overlay)
@@ -38,6 +39,7 @@ import type { Tournament } from '../../types/database.types';
 import { masterBus } from '../../core/MasterBus';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
+import { relayTournamentEvent } from '../../services/tournamentEventBridge';
 
 interface TournamentHUDProps {
   tournamentId: string;
@@ -82,6 +84,11 @@ export function TournamentHUD({
 }: TournamentHUDProps) {
   const { user } = useAuthUser();
   const [tournament, setTournament] = useState<Tournament | null>(null);
+  const handForHand = useTournamentHandForHand(
+    tournamentId,
+    user?.id,
+    tournament?.status === 'RUNNING'
+  );
   const [tick, setTick] = useState(0); // forces a 1s re-render for the countdown
   const [derivedRemaining, setDerivedRemaining] = useState<number | null>(null);
   const [derivedAvgStack, setDerivedAvgStack] = useState<number | null>(null);
@@ -205,6 +212,70 @@ export function TournamentHUD({
      */
     resyncRef.current = setInterval(() => void refresh(), POLL_MS);
 
+    /* THE CARRIER THE COMMENT BELOW SAID DID NOT EXIST YET: IT DOES.
+       The engine has been broadcasting the blind level on `t-break-<id>` all
+       along - `TournamentManagerBase.broadcast('level_up', {...})`, sent over
+       Realtime Broadcast, which is independent of the postgres_changes
+       publication and needs no row image. TournamentPage has consumed it since
+       it was written. This HUD, the one every seated player reads while betting,
+       never did, and it was the only tournament surface in the client with no
+       bus fallback of ANY kind: no BLIND_LEVEL_CHANGE listener, no
+       PLAYER_ELIMINATED listener, nothing. Its 45s poll, degrading to five
+       minutes after a sustained fault, was the entire mechanism.
+
+       So it now joins that broadcast. On a level change or an elimination it
+       re-reads the authoritative row immediately instead of waiting out the
+       poll. `refresh()` rather than merging the broadcast payload is a
+       deliberate choice: the payload carries `level` as a zero-based index and
+       no `level_started_at`, so merging it would mean re-deriving the display
+       convention and the countdown here, which is exactly the arithmetic that
+       has shipped wrong twice. The authoritative read has neither problem.
+
+       `getOrCreateChannel` is refcounted, so when TablePage (which mounts this
+       HUD) already holds `t-break-<id>`, this adds a listener to that same
+       subscription rather than a second socket.
+
+       THE SUBSCRIPTION FURTHER DOWN STILL CANNOT FIRE, and saying so is still
+       the point. `tournaments` is NOT in the supabase_realtime publication:
+       5,477,895 writes over 117 columns, measured at 39.40ms per change on
+       2026-09-06, which is why the trim keeps it out. It is kept rather than
+       deleted because it is correct code for a delivery path that does not
+       exist yet: the filter is row-scoped, and UPDATE payloads carry a full
+       `new` row regardless of replica identity, so the day `tournaments` gains
+       a scoped carrier it works unchanged.
+
+       What was NOT kept is the silence. The comment above has named
+       "a subscribe() that returned CHANNEL_ERROR (nothing here even looked at
+       the status)" since it was written, while this very call still passed no
+       callback - so a genuine transport failure and a permanently unpublished
+       table looked identical from here, which is exactly how this stayed
+       unnoticed. The status is now read and a real error is reported. */
+    const breakKey = `t-break-${tournamentId}`;
+    const breakChannel = masterBus.getOrCreateChannel(breakKey);
+    breakChannel
+      .on('broadcast', { event: 'tournament_event' }, (message: { payload?: unknown }) => {
+        const envelope = message?.payload as { type?: string } | undefined;
+        if (!envelope?.type) return;
+        /* Feed the bus from here too, so the clock and the details pages get
+           the level and the bust even when no other consumer of this channel
+           happens to be mounted. The relay dedupes, so TablePage also relaying
+           the same broadcast costs one extra map lookup. */
+        relayTournamentEvent(tournamentId, envelope);
+        switch (envelope.type) {
+          case 'level_up':
+          case 'break_ended':
+          case 'player_eliminated':
+          case 'bubble_burst':
+          case 'final_table':
+          case 'late_reg_closed':
+            void refresh();
+            break;
+          default:
+            break;
+        }
+      })
+      .subscribe();
+
     const channel = masterBus.getOrCreateChannel(`tournament-hud-${tournamentId}`);
     channel
       .on(
@@ -216,7 +287,18 @@ export function TournamentHUD({
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR' && err) {
+          reportError(err?.message || err, 'TournamentHUD.Realtime_channel_error', {
+            tournamentId,
+          });
+        }
+        if (status === 'TIMED_OUT') {
+          reportError('realtime channel timed out', 'TournamentHUD.Realtime_channel_timeout', {
+            tournamentId,
+          });
+        }
+      });
 
     return () => {
       mounted = false;
@@ -226,6 +308,11 @@ export function TournamentHUD({
         masterBus.removeRegisteredChannel(`tournament-hud-${tournamentId}`);
       } catch {
         /* channel cleanup is best-effort */
+      }
+      try {
+        masterBus.removeRegisteredChannel(breakKey);
+      } catch {
+        /* refcounted: this releases our listener, not a sibling's subscription */
       }
     };
   }, [tournamentId]);
@@ -318,7 +405,7 @@ export function TournamentHUD({
     tRow.is_reentry === true;
   const sellsAddon = Number(tRow.addon_cost ?? 0) > 0 || Number(tRow.addon_chips ?? 0) > 0;
   const addonWindow = Number(tRow.addon_levels ?? 1);
-  const windowBanner =
+  const purchaseWindowBanner =
     tournament.status === 'RUNNING' && rebuyCap > 0
       ? sellsRebuys && displayLevel === rebuyCap
         ? 'Last Rebuy Level'
@@ -326,6 +413,10 @@ export function TournamentHUD({
           ? 'Add-On Period'
           : null
       : null;
+
+  const windowBanner = [handForHand === true ? 'Hand For Hand' : null, purchaseWindowBanner]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <div
@@ -427,7 +518,7 @@ export function TournamentHUD({
           Blinds
         </span>
         <span style={{ fontSize: 15, fontWeight: 700 }}>
-          {isBreak ? '-' : `${fmtChips(cur?.smallBlind ?? 0)} / ${fmtChips(cur?.bigBlind ?? 0)}`}
+          {isBreak || !cur ? '-' : `${fmtChips(cur.smallBlind)} / ${fmtChips(cur.bigBlind)}`}
         </span>
         {!isBreak && (cur?.ante ?? 0) > 0 && (
           <span style={{ fontSize: 10, opacity: 0.7 }}>Ante {fmtChips(cur!.ante)}</span>

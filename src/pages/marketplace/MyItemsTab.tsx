@@ -1,5 +1,5 @@
 /**
- * MARKETPLACE — My Items tab: delivered inventory (club_shop_inventory) with
+ * MARKETPLACE : My Items tab: delivered inventory (club_shop_inventory) with
  * redemption, plus full purchase history from club_shop_purchases.
  * Reads are RLS-scoped to the owner; redemption goes through fn_redeem_shop_item.
  */
@@ -9,7 +9,8 @@ import { confirmDialog } from '../../components/common/confirmDialog';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
 import { fmt, timeAgo } from '../../utils/format';
-import { useMemo, useRef, useState } from 'react';
+import { formatPopupText } from '../../utils/popupStyle';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { callClubArenaApi } from '../../services/clubArenaApi';
 import { masterBus } from '../../core/MasterBus';
 import styles from '../MarketplacePage.module.css';
@@ -26,6 +27,7 @@ const unitOf = (currency?: string | null) => (currency === 'chips' ? 'Chips' : '
 
 interface MyItemsTabProps {
   clubId: string | null;
+  userId: string;
   /** owners/admins may reverse a purchase that has not been redeemed */
   isAdmin: boolean;
   inventory: InventoryRow[];
@@ -38,6 +40,7 @@ interface MyItemsTabProps {
 
 export default function MyItemsTab({
   clubId,
+  userId,
   isAdmin,
   inventory,
   purchases,
@@ -58,9 +61,48 @@ export default function MyItemsTab({
    */
   const refundingRef = useRef(false);
   const redeemingRef = useRef(false);
+  const mountedRef = useRef(true);
+  const activeOwnerRef = useRef({ userId, clubId });
+  const refundAttemptRef = useRef(0);
+  const refundAbortRef = useRef<AbortController | null>(null);
+  const redeemAttemptRef = useRef(0);
+
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    activeOwnerRef.current = { userId, clubId };
+    refundAttemptRef.current += 1;
+    refundAbortRef.current?.abort();
+    refundAbortRef.current = null;
+    redeemAttemptRef.current += 1;
+    refundingRef.current = false;
+    redeemingRef.current = false;
+    setRefunding(null);
+    setRedeeming(null);
+    return () => {
+      mountedRef.current = false;
+      refundAttemptRef.current += 1;
+      refundAbortRef.current?.abort();
+      refundAbortRef.current = null;
+      redeemAttemptRef.current += 1;
+      refundingRef.current = false;
+      redeemingRef.current = false;
+    };
+  }, [clubId, userId]);
 
   const handleRefund = async (purchaseId: string, itemName: string, currency?: string | null) => {
-    if (refundingRef.current || !clubId) return;
+    if (refundingRef.current || !clubId || !userId) return;
+    const expectedUserId = userId;
+    const expectedClubId = clubId;
+    const attemptId = ++refundAttemptRef.current;
+    refundAbortRef.current?.abort();
+    const controller = new AbortController();
+    refundAbortRef.current = controller;
+    const isCurrent = () =>
+      mountedRef.current &&
+      !controller.signal.aborted &&
+      refundAttemptRef.current === attemptId &&
+      activeOwnerRef.current.userId === expectedUserId &&
+      activeOwnerRef.current.clubId === expectedClubId;
     const unit = unitOf(currency);
     // CLAIM THE FLAG BEFORE THE DIALOG (Dan 2026-08-25). It was set after the
     // await, so for the whole time the confirm dialog was open `refunding` was
@@ -76,10 +118,14 @@ export default function MyItemsTab({
         variant: 'danger',
       }))
     ) {
-      refundingRef.current = false;
-      setRefunding(null);
+      if (isCurrent()) {
+        refundAbortRef.current = null;
+        refundingRef.current = false;
+        setRefunding(null);
+      }
       return;
     }
+    if (!isCurrent()) return;
     try {
       const res = await callClubArenaApi<{
         amount: number;
@@ -87,13 +133,18 @@ export default function MyItemsTab({
         alreadyRefunded?: boolean;
       }>(
         'refund-purchase',
-        { clubId, purchaseId },
+        { clubId: expectedClubId, purchaseId },
         // ONE KEY PER REFUND INTENT, derived from the purchase itself. A retry
         // of the same refund must carry the same key or the server sees two
         // distinct intents; the default in callClubArenaApi mints a fresh uuid
         // per CALL, which defends nothing against the retry it exists for.
-        { idempotencyKey: `refund:${clubId}:${purchaseId}` }
+        {
+          idempotencyKey: `refund:${expectedClubId}:${purchaseId}`,
+          expectedUserId,
+          signal: controller.signal,
+        }
       );
+      if (!isCurrent()) return;
       toast.success(
         res.alreadyRefunded
           ? 'That Purchase Was Already Refunded'
@@ -101,16 +152,28 @@ export default function MyItemsTab({
       );
       onRedeemed();
     } catch (err: unknown) {
+      if (!isCurrent() || (err instanceof Error && err.name === 'AbortError')) return;
       toast.error(err instanceof Error ? err.message : 'Refund failed');
     } finally {
-      refundingRef.current = false;
-      setRefunding(null);
+      if (refundAbortRef.current === controller && refundAttemptRef.current === attemptId) {
+        refundAbortRef.current = null;
+        refundingRef.current = false;
+        setRefunding(null);
+      }
     }
   };
   const [showHistory, setShowHistory] = useState(false);
 
   const handleRedeem = async (inventoryId: string) => {
-    if (redeemingRef.current) return;
+    if (redeemingRef.current || !userId) return;
+    const expectedUserId = userId;
+    const expectedClubId = clubId;
+    const attemptId = ++redeemAttemptRef.current;
+    const isCurrent = () =>
+      mountedRef.current &&
+      redeemAttemptRef.current === attemptId &&
+      activeOwnerRef.current.userId === expectedUserId &&
+      activeOwnerRef.current.clubId === expectedClubId;
     // Same shape as handleRefund: claim first, release on cancel.
     redeemingRef.current = true;
     setRedeeming(inventoryId);
@@ -123,17 +186,30 @@ export default function MyItemsTab({
         variant: 'default',
       }))
     ) {
-      redeemingRef.current = false;
-      setRedeeming(null);
+      if (isCurrent()) {
+        redeemingRef.current = false;
+        setRedeeming(null);
+      }
       return;
     }
+    if (!isCurrent()) return;
     try {
+      const {
+        data: { session: initiatingSession },
+      } = await supabase.auth.getSession();
+      if (!isCurrent() || initiatingSession?.user?.id !== expectedUserId) {
+        throw new Error('The Signed-In Player Changed Before This Request Started.');
+      }
       const { data, error } = await supabase.rpc('fn_redeem_shop_item', {
         p_inventory_id: inventoryId,
       });
       if (error || !data?.success) {
         throw new Error(data?.error || error?.message || 'Redeem failed');
       }
+      const {
+        data: { session: confirmedSession },
+      } = await supabase.auth.getSession();
+      if (!isCurrent() || confirmedSession?.user?.id !== expectedUserId) return;
       // fn_redeem_shop_item now grants a real entitlement and reports it back.
       const g = data?.granted as
         | {
@@ -147,7 +223,7 @@ export default function MyItemsTab({
       if (g?.type === 'time_bank' && g.seconds) {
         toast.success(`Redeemed - +${fmt(g.seconds)}s Of Table Time Added`);
       } else if (g?.type === 'throwable' && g.uses) {
-        toast.success(`Redeemed - ${fmt(g.uses)} Free Throws Added`);
+        toast.success(`Redeemed - ${fmt(g.uses)} All Throwables Uses Added`);
       } else if (g?.type === 'emote_pack') {
         toast.success('Redeemed - Emote Pack Unlocked');
       } else if (g?.type === 'table_skin') {
@@ -155,7 +231,7 @@ export default function MyItemsTab({
       } else if (g?.type === 'avatar') {
         toast.success('Redeemed - Avatar Unlocked');
       } else {
-        toast.success('Redeemed - Your Club Will Fulfil This Perk');
+        toast.error('Redemption Did Not Return A Verified Digital Grant');
       }
       if (g?.type === 'table_skin' || g?.type === 'avatar') {
         masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
@@ -178,11 +254,14 @@ export default function MyItemsTab({
       }
       onRedeemed();
     } catch (err: unknown) {
+      if (!isCurrent()) return;
       toast.error(err instanceof Error ? err.message : 'Redeem failed');
       reportError(err, 'MyItemsTab.handleRedeem');
     } finally {
-      redeemingRef.current = false;
-      setRedeeming(null);
+      if (redeemAttemptRef.current === attemptId) {
+        redeemingRef.current = false;
+        setRedeeming(null);
+      }
     }
   };
 
@@ -197,7 +276,7 @@ export default function MyItemsTab({
   const entitlementChips = ent.loaded
     ? [
         ent.timeBankSeconds > 0 ? `${fmt(ent.timeBankSeconds)}s Table Time` : null,
-        ent.throwables > 0 ? `${fmt(ent.throwables)} Throws` : null,
+        ent.throwables > 0 ? `${fmt(ent.throwables)} All Throwables Uses` : null,
         ent.emotePack ? 'Emote Pack' : null,
         themeCount > 0 ? `${fmt(themeCount)} Table Theme${themeCount > 1 ? 's' : ''}` : null,
         ent.avatars.length > 0
@@ -248,9 +327,6 @@ export default function MyItemsTab({
       <>
         {entitlementStrip}
         <div className={styles.emptyState}>
-          <div className={styles.emptyArt}>
-            <ItemArt category="Avatars" seed="empty-inventory" />
-          </div>
           <span className={styles.emptyText}>You Have Not Purchased Any Items Yet.</span>
           <button className={styles.emptyButton} onClick={onGoStore}>
             Browse Store
@@ -311,19 +387,25 @@ export default function MyItemsTab({
                     <td data-label="Item" className={styles.dataItemName}>
                       <span className={styles.rowWithArt}>
                         <span className={styles.rowArt} aria-hidden="true">
-                          <ItemArt category={it.category} seed={it.item_id || it.id} />
+                          <ItemArt
+                            category={it.category}
+                            name={it.item_name}
+                            seed={it.item_id || it.id}
+                          />
                         </span>
-                        {it.item_name || 'Unknown Item'}
+                        {formatPopupText(it.item_name || 'Unknown Item')}
                       </span>
                     </td>
                     <td data-label="Category">
-                      <span className={styles.categorySmall}>{it.category || '-'}</span>
+                      <span className={styles.categorySmall}>
+                        {formatPopupText(it.category || 'Uncategorized')}
+                      </span>
                     </td>
                     <td data-label="Price Paid" className={styles.dataValuePrice}>
                       {fmt(it.price_paid)} {rowUnit}
                     </td>
                     <td data-label="Acquired" className={styles.dataValueMuted}>
-                      {timeAgo(it.acquired_at)}
+                      {formatPopupText(timeAgo(it.acquired_at))}
                     </td>
                     <td data-label="Status">
                       <span
@@ -388,16 +470,18 @@ export default function MyItemsTab({
                   {purchases.map((p) => (
                     <tr key={p.id}>
                       <td data-label="Item" className={styles.dataItemName}>
-                        {p.item_name || 'Unknown Item'}
+                        {formatPopupText(p.item_name || 'Unknown Item')}
                       </td>
                       <td data-label="Category">
-                        <span className={styles.categorySmall}>{p.item_category || '-'}</span>
+                        <span className={styles.categorySmall}>
+                          {formatPopupText(p.item_category || 'Uncategorized')}
+                        </span>
                       </td>
                       <td data-label="Paid" className={styles.dataValuePrice}>
                         {fmt(p.price_paid)} {unitOf(p.currency)}
                       </td>
                       <td data-label="When" className={styles.dataValueMuted}>
-                        {timeAgo(p.created_at)}
+                        {formatPopupText(timeAgo(p.created_at))}
                       </td>
                       <td data-label="Status">
                         <span
@@ -406,14 +490,18 @@ export default function MyItemsTab({
                               ? styles.inventoryStatusMuted
                               : styles.inventoryStatusActive
                           }`}
-                          title={p.refunded_at ? `Refunded ${timeAgo(p.refunded_at)}` : undefined}
+                          title={
+                            p.refunded_at
+                              ? `Refunded ${formatPopupText(timeAgo(p.refunded_at))}`
+                              : undefined
+                          }
                         >
                           {p.refunded_at ? 'Refunded' : 'Paid'}
                         </span>
                       </td>
                       {isAdmin && (
                         <td data-label="Actions">
-                          {/* A refunded purchase cannot be refunded again — the
+                          {/* A refunded purchase cannot be refunded again : the
                               server answers "already refunded". Say so here
                               instead of offering the action. */}
                           {p.refunded_at || deliveredPurchaseIds.has(p.id) ? (
@@ -425,6 +513,7 @@ export default function MyItemsTab({
                                 handleRefund(p.id, p.item_name || 'This Item', p.currency)
                               }
                               disabled={refunding !== null}
+                              aria-label={`Refund ${formatPopupText(p.item_name || 'This Item')}`}
                             >
                               {refunding === p.id ? 'Refunding' : 'Refund'}
                             </button>

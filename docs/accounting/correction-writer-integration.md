@@ -1,0 +1,39 @@
+# Correction writer integration — component 36
+
+This is source-only, UNRUN. It composes the reviewed correction writer after the preserved 35-component accounting authority. The base is `aedb5cc9dae3120f4c08bc719c4726cf55d74db2`. Execution, source admission and publication are held separately. No production correction, balance repair, scheduler or alert closure was performed.
+
+## What changes
+
+`20260915140000_correction_writer_retains_exact_request_and_journal_intent.sql` creates the private request-intent contract and replaces the existing `fn_ca_post_correction` with the exact reviewed owner definition. The embedded owner fragments and provenance copies are byte-identical. The original 35 components remain unchanged.
+
+The writer rejects nonfinite, nonpositive and fractional-cent amounts before replay. A fresh request retains the complete request identity, including the actor, both endpoints, exact amount, untruncated reason, both linkage IDs, declared scopes and original metadata; SQL NULL metadata remains distinct from an empty object or JSON null. Matching replay must also prove the retained journal's complete allowed projection and `posted` status. A legacy journal without this private intent returns `legacy_correction_intent_unavailable`; the component never invents an old intent or adopts history. A changed request refuses as `correction_intent_conflict`.
+
+A fresh journal, its existing trigger effects, correction document, incident reference/event and private intent remain in one database transaction. The same incident row is locked before its retained reference is checked. Quietly suppressed or transformed writes fail the reviewed readbacks. The original overlay trigger remains intact, including its prize-liability behavior. This component adds no payer or alternate balance mutation path.
+
+Existing component 34 supplies record-only correction documents and the private messenger projection. These records do not claim a new payment, an amount due or a newly transferred balance. Historical identity-only unavailable receipts remain separate. Component 36 does not broaden document recipients, expose incident/reason/balance data, or change the weekly club-summary rule.
+
+## Admission and metadata bounds
+
+The install transaction requires the postgres owner on PostgreSQL 17 and the preserved component 35 observation authority. It refuses a preexisting private relation/type, index name or immutable function rather than adopting it. The full-bundle negative fixture uses `correction_writer_contract_preexists` with detail `public.ca_correction_request_intents_v1` after the prior 35 components have loaded.
+
+The 67-function inventory distinguishes exact retained full-definition hashes from literal final-35 source body hashes. It binds the original writer, ledger trigger dependencies, the actual incident triggers and the changed component 6/34 helpers with their owner, applicable language/volatility/argument/security/configuration attributes and semantic EXECUTE grants. Effective API execution is checked in addition to direct grants. Named declaration arguments are normalized to actual identity argument types before lookup.
+
+The ledger guard uses the actual 13:50:02.90319 UTC metadata capture: ordinary relations, all 34+3 columns, column permissions, relation permissions and effective access, constraints, all 16+1 indexes, options, policies and external triggers. Internal RI trigger OID names are not portable identities; the retained relation constraints are compared instead. The expected external ledger triggers add only component 6's recorded-bank immutability trigger to the captured 17. Exact rich incident-table metadata comes from the retained correction dependency capture, using the fields that capture actually supplies. It does not fabricate uncaptured incident collation/options/index attributes.
+
+The original metadata query explicitly covered public and global default-ACL rows. It returned six public rows and no explicit global override. Component 36 compares that scope but changes no defaults. New private objects explicitly revoke PUBLIC, anon, authenticated and service_role access, and their exact schema/owner/RLS/ACL/trigger/function postconditions are checked before commit. No historical intent rows are inserted by installation.
+
+API roles must lack superuser, role-creation, database-creation, replication and public-schema CREATE authority and must not inherit or SET the postgres owner. Anon/authenticated also cannot bypass RLS or inherit/SET service_role. Managed postgres is not a superuser in the retained catalog; isolated fixture postgres is a local superuser. The guard deliberately does not claim that the fixture reproduces all 33 provider roles, 28 membership edges or provider login/configuration behavior. It verifies the relevant effective boundary and leaves broader topology qualification explicit.
+
+## Fixture composition
+
+The separate `tests/fixtures/correction-writer-authority/catalog-bootstrap.sql` supplies only omissions in the original disposable capture generator: 13 nonunique ledger indexes, five captured incident indexes, seven ledger options and six public default ACL rows. It guards the original shape and refuses preexisting/unrelated public or global defaults. The original captured schema and function files remain unchanged. The bootstrap must precede the legacy seed and the complete candidate.
+
+The fixture author owns an actual predecessor invocation before candidate installation and keeps its temporary identity evidence in the same psql session. The complete 36-component candidate then runs, followed by a distinct successor of the existing correction-document regression and the exact copied owner fixture. Original component-34 assertions remain preserved as historical regression source. Runtime cases must cover independent API roles, complete intent conflicts and nonfinite values, actual legacy refusal, exact journal projection on fresh and replay paths, suppressed/transformed ledger/private-intent/incident writes, the original overlay effects, and rollback of all earlier effects on late refusal. The parent runner must retain original root SQLSTATE/error detail, not merely a later aborted-transaction message.
+
+## Qualification still required
+
+All SQL, fixtures, syntax/catalog deparsing, owner-role equivalence and nested full-loader behavior are UNRUN. Catalog-body equality is a source admission guard, not evidence of successful installation. The complete protected baseline/candidate and negative-refusal runs must execute with exact final source custody, including the supplemented catalog. Independent database sessions must exercise lock ordering, serialization and late failures; immediate readbacks alone do not prove commit-stable behavior under every deferred trigger or privileged concurrent DDL change. The installation assumes coordinated owner DDL and fails on unrecognized metadata drift.
+
+The function inventory covers the retained named/static paths and explicitly composed accounting helpers. It is not a proof of every dynamic caller, provider role edge or all downstream table dependencies throughout the engine. The predecessor's existing incident-status-to-alert trigger is retained, but this writer changes only the correction reference and does not claim an alert repair. Full ledger reconciliation, transport/delivery qualification, historical hold/refund coverage, expiry scheduling, whole-departure atomicity and production Monday operation remain separate open work.
+
+Provenance is retained in `supabase/accounting/correction-writer-v1/source-provenance.json`, with owner input pins, captured-query identity, the source guard inventories and all 35 predecessor hashes. A final source handoff binds the new component and these supporting files after independent review.

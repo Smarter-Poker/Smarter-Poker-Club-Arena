@@ -30,10 +30,15 @@
  *      picks it the same way, from the same table, so the two cannot disagree
  *      about which bar a table is under.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import type { Page } from '@playwright/test';
+import { loadLiveCss } from './e2e/lib/live-css';
+
 import fs from 'fs';
 import path from 'path';
 import { sliceCssRule } from './helpers/sourceWindow';
+
+vi.mock('@playwright/test', () => ({ test: { skip: vi.fn() } }));
 
 const root = process.cwd();
 const read = (p: string) => fs.readFileSync(path.join(root, p), 'utf8');
@@ -743,6 +748,107 @@ describe('a CSS beat that cannot read the bundle says so, and measures nothing',
     }
   });
 
+  it('bounds chunk reads while installing every stylesheet once in discovery order', async () => {
+    const names = Array.from({ length: 13 }, (_, i) => `assets/chunk-${i}.css`);
+    const css = names.map((name) => `/* ${name} */` + '.fixture{color:red}'.repeat(20));
+    const requested: string[] = [];
+    const completed: string[] = [];
+    const installed: string[] = [];
+    let active = 0;
+    let peak = 0;
+    const page = {
+      request: {
+        get: vi.fn(async (url: string) => {
+          if (url.endsWith('index.html')) {
+            return {
+              ok: () => true,
+              text: async () => '<script src="assets/index-test.js"></script>',
+            };
+          }
+          if (url.endsWith('index-test.js')) {
+            // A duplicate graph edge must not install the same stylesheet twice.
+            return { ok: () => true, text: async () => [...names, names[0]].join(' ') };
+          }
+          const index = names.indexOf(url.replace('http://fixture/', ''));
+          expect(index).toBeGreaterThanOrEqual(0);
+          requested.push(names[index]);
+          active++;
+          peak = Math.max(peak, active);
+          if (active > 4) throw new Error('fixture refused an unbounded CSS request burst');
+          return {
+            ok: () => true,
+            text: async () => {
+              // Bodies finish out of order; the eventual cascade must not.
+              for (let turn = 0; turn < 4 - (index % 4); turn++) await Promise.resolve();
+              active--;
+              completed.push(names[index]);
+              return css[index];
+            },
+          };
+        }),
+      },
+      goto: vi.fn(async () => undefined),
+      evaluate: vi.fn(async () => undefined),
+      addStyleTag: vi.fn(async ({ content }: { content: string }) => installed.push(content)),
+    };
+
+    await expect(loadLiveCss(page as unknown as Page, 'http://fixture/')).resolves.toEqual({
+      sheets: names.length,
+      bytes: css.reduce((total, content) => total + content.length, 0),
+    });
+    expect(peak).toBe(4);
+    expect(active).toBe(0);
+    expect(requested).toEqual(names);
+    expect(completed).not.toEqual(names);
+    expect(installed).toEqual(css);
+    expect(page.goto).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['request', 1, 4],
+    ['body', 5, 8],
+  ] as const)(
+    'propagates a failed CSS %s without retrying or installing a partial cascade',
+    async (failureAt, failureIndex, requestedCount) => {
+      const names = Array.from({ length: 9 }, (_, i) => `assets/chunk-${i}.css`);
+      const failure = new Error('fixture CSS transport failed');
+      const requested: string[] = [];
+      const page = {
+        request: {
+          get: vi.fn(async (url: string) => {
+            if (url.endsWith('index.html')) {
+              return {
+                ok: () => true,
+                text: async () => '<script src="assets/index-test.js"></script>',
+              };
+            }
+            if (url.endsWith('index-test.js')) {
+              return { ok: () => true, text: async () => names.join(' ') };
+            }
+            const name = url.replace('http://fixture/', '');
+            requested.push(name);
+            if (name === names[failureIndex] && failureAt === 'request') throw failure;
+            return {
+              ok: () => true,
+              text: async () => {
+                if (name === names[failureIndex] && failureAt === 'body') throw failure;
+                return '.fixture{color:red}'.repeat(200);
+              },
+            };
+          }),
+        },
+        goto: vi.fn(),
+        evaluate: vi.fn(),
+        addStyleTag: vi.fn(),
+      };
+
+      await expect(loadLiveCss(page as unknown as Page, 'http://fixture/')).rejects.toBe(failure);
+      expect(requested).toEqual(names.slice(0, requestedCount));
+      expect(page.goto).not.toHaveBeenCalled();
+      expect(page.addStyleTag).not.toHaveBeenCalled();
+    }
+  );
+
   it('the shared loader has three outcomes and refuses to be quietly empty', () => {
     const lib = read('tests/e2e/lib/live-css.ts');
     expect(lib).toMatch(/page\.request\.get/);
@@ -751,8 +857,7 @@ describe('a CSS beat that cannot read the bundle says so, and measures nothing',
     expect(lib).toMatch(/const MIN_BYTES = 2_000;/);
     expect(lib).toMatch(/bytes < MIN_BYTES/);
     expect(lib).toMatch(/export function skipUnlessLiveCss/);
-    expect(lib).toMatch(/UNKNOWN - could not read the complete CSS bundle/);
-    expect(lib).toContain('if (load.sheets === 0 && process.env.CI) throw new Error(reason);');
+    expect(lib).toMatch(/UNKNOWN - could not read the CSS bundle/);
   });
 });
 

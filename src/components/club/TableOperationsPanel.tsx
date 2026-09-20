@@ -508,7 +508,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
       // AUDIT M17: this used to discard kickPlayer's boolean return entirely, so
       // a refund that failed produced no error anywhere — the admin saw the
       // dialog close and assumed it worked. kickPlayer now throws, and the
-      // failure is shown rather than only reported to Sentry.
+      // failure is shown rather than only reported to error reporting.
       const removal = await tableService.kickPlayer(
         confirmAction.tableId,
         confirmAction.userId,

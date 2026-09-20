@@ -61,9 +61,11 @@ describe('atomic club-shop fulfillment', () => {
 describe('same-frame and cross-tab delivery', () => {
   it('uses synchronous refs and stable keys on every checkout launcher', () => {
     expect(MEMBERSHIP).toContain('inFlightRef.current');
-    expect(MEMBERSHIP).toContain('intentKeyRef.current');
+    expect(MEMBERSHIP).toContain('readOrCreateMarketplacePurchaseIntent(');
+    expect(MEMBERSHIP).toContain('purchaseIntent.requestId');
     expect(DIAMONDS).toContain('checkoutInFlightRef.current');
-    expect(DIAMONDS).toContain('checkoutKeyRef.current');
+    expect(DIAMONDS).toContain('readOrCreateMarketplacePurchaseIntent(');
+    expect(DIAMONDS).toContain('purchaseIntent.requestId');
     expect(VIP_PAGE).toContain('purchaseInFlightRef.current');
   });
 

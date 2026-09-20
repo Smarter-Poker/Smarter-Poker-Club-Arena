@@ -341,7 +341,10 @@ describe('topUpWithHorses - the pre-check in front of the RPC', () => {
 
   function seatRows(rows: Array<{ user_id: string; seat_number: number }>): void {
     tableResults = {
-      tournaments: { data: { variant: 'spin', max_players: 3, club_id: 'club' }, error: null },
+      tournaments: {
+        data: { variant: 'spin', format_contract: 'spin-v1', max_players: 3, club_id: 'club' },
+        error: null,
+      },
       table_seats: { data: rows, error: null },
       tables: { data: { max_players: 3 }, error: null },
     };
@@ -494,7 +497,10 @@ describe('topUpWithHorses - the pre-check in front of the RPC', () => {
     // Three seats taken at a three-seat table while the caller asks for four:
     // the RPC would say table_full for every candidate, after the lock.
     tableResults = {
-      tournaments: { data: { variant: 'spin', max_players: 4, club_id: 'club' }, error: null },
+      tournaments: {
+        data: { variant: 'spin', format_contract: 'spin-v1', max_players: 4, club_id: 'club' },
+        error: null,
+      },
       table_seats: {
         data: [
           { user_id: 'a', seat_number: 1 },

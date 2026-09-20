@@ -18,17 +18,18 @@ import {
 import type { VipStatus } from '../utils/vipStatus';
 import { reportError } from '../utils/errorReporter';
 import { VIPCardsModal } from '../components/vip/VIPCardsModal';
-import { VIPPerksGrid } from '../components/vip/VIPPerksGrid';
+import { VIPPerksGrid, type VIPPerk } from '../components/vip/VIPPerksGrid';
 import { DiamondTopUpModal } from '../components/vip/DiamondTopUpModal';
 import { VIPMembershipPlate } from '../components/vip/VIPMembershipPlate';
 import { RewardsMarketplace, Reward } from '../components/vip/RewardsMarketplace';
-import { VIPActivityHistory, VIPActivity } from '../components/vip/VIPActivityHistory';
+import { VIPActivityHistory, type DiamondActivity } from '../components/vip/VIPActivityHistory';
 import { useToast } from '../components/common/Toast';
 import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import './VIPPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import { formatPopupText } from '../utils/popupStyle';
 
 const FEATURE_ACRONYMS: Record<string, string> = {
   ai: 'AI',
@@ -36,6 +37,8 @@ const FEATURE_ACRONYMS: Record<string, string> = {
   gto: 'GTO',
   vip: 'VIP',
 };
+
+const ALL_THROWABLES_ART = `${MEDIA_BASE}images/marketplace/throwables/all-throwables-access-v1.png`;
 
 const formatFeatureName = (feature: string) =>
   feature
@@ -78,6 +81,14 @@ export default function VIPPage() {
   // identity ref during render so an old response cannot paint a new account.
   activeUserIdRef.current = user?.id;
 
+  // Toasts render through a document-level portal. Scope the shared success
+  // palette to this Marketplace route only, then restore the rest of the app's
+  // existing toast presentation as soon as the route unmounts.
+  useEffect(() => {
+    document.body.classList.add('marketplace-color-scope');
+    return () => document.body.classList.remove('marketplace-color-scope');
+  }, []);
+
   // VIP Points System
   const [vipPoints, setVipPoints] = useState({
     current: 0,
@@ -86,14 +97,17 @@ export default function VIPPage() {
     activeStreak: 0,
   });
 
-  const [recentActivities, setRecentActivities] = useState<VIPActivity[]>([]);
+  const [recentDiamondActivities, setRecentDiamondActivities] = useState<DiamondActivity[]>([]);
+  const [diamondActivityState, setDiamondActivityState] = useState<'loading' | 'ready' | 'error'>(
+    'loading'
+  );
 
   const membershipPerks = useMemo(() => {
     const isLifetime = vipGrade === 'lifetime';
-    const perks = [
+    const perks: VIPPerk[] = [
       {
         id: 'rabbit',
-        icon: '\u25C6',
+        icon: 'rabbit',
         title: 'Rabbit Hunt',
         description: isLifetime
           ? 'Unlimited Rabbit Hunts With No Diamond Charge'
@@ -102,7 +116,7 @@ export default function VIPPage() {
       },
       {
         id: 'timebank',
-        icon: '\u25F7',
+        icon: 'timer',
         title: 'Time Bank',
         description: isLifetime
           ? 'Unlimited Standard 20-Second Time Bank Activations'
@@ -111,7 +125,7 @@ export default function VIPPage() {
       },
       {
         id: 'emojis',
-        icon: '\u25C6',
+        icon: 'chat',
         title: 'Emojis',
         description: isLifetime
           ? 'Every Digital Emoji Pack Included'
@@ -120,7 +134,7 @@ export default function VIPPage() {
       },
       {
         id: 'tags',
-        icon: '\u25C6',
+        icon: 'stats',
         title: 'Player Tags',
         description: isLifetime
           ? 'Every Digital Player Tag Included'
@@ -129,8 +143,9 @@ export default function VIPPage() {
       },
       {
         id: 'throwable',
-        icon: '\u25C6',
-        title: 'Throwables',
+        icon: 'diamond',
+        artworkSrc: ALL_THROWABLES_ART,
+        title: 'All Throwables',
         description: isLifetime
           ? 'Unlimited Throwables With No Diamond Charge'
           : `${VIP_MONTHLY_ALLOWANCES.throwables} Free Per Month`,
@@ -138,21 +153,21 @@ export default function VIPPage() {
       },
       {
         id: 'stack',
-        icon: '\u25A6',
+        icon: 'stats',
         title: 'Show Stack In Big Blinds',
         description: 'Otherwise 5 Diamonds Per Session',
         value: 'Included',
       },
       {
         id: 'offline',
-        icon: '\u25C8',
+        icon: 'settings',
         title: 'Offline Protection',
         description: 'Otherwise 10 Diamonds Per Session',
         value: 'Included',
       },
       {
         id: 'autobank',
-        icon: '\u25F7',
+        icon: 'timer',
         title: 'Auto Time Bank',
         description: 'Otherwise 5 Diamonds Per Activation',
         value: 'Included',
@@ -163,21 +178,21 @@ export default function VIPPage() {
       perks.push(
         {
           id: 'table-cosmetics',
-          icon: '\u25C8',
+          icon: 'settings',
           title: 'Table Skins And Backgrounds',
           description: 'All Cataloged Digital Options Included',
           value: 'Included',
         },
         {
           id: 'card-cosmetics',
-          icon: '\u25A6',
+          icon: 'spade',
           title: 'Card Backs And Dealer Buttons',
           description: 'All Cataloged Digital Options Included',
           value: 'Included',
         },
         {
           id: 'avatar-cosmetics',
-          icon: '\u25C6',
+          icon: 'info',
           title: 'VIP Avatars, Frames, And Auras',
           description: 'All VIP-Only Digital Options Included',
           value: 'Included',
@@ -239,7 +254,11 @@ export default function VIPPage() {
         return;
       }
 
-      if (isCurrent()) setLoading(true);
+      if (isCurrent()) {
+        setLoading(true);
+        setRecentDiamondActivities([]);
+        setDiamondActivityState('loading');
+      }
       try {
         const vipStatus = await vipService.checkVIPStatus(requestedUserId);
         if (!isCurrent()) return;
@@ -284,6 +303,8 @@ export default function VIPPage() {
           reportError(ledgerError, 'VIPPage.Diamond_activity_load_failed', {
             userId: requestedUserId,
           });
+          setRecentDiamondActivities([]);
+          setDiamondActivityState('error');
         } else if (ledgerData) {
           const mapped = ledgerData.map((entry) => {
             const amount = Number(entry.amount ?? 0);
@@ -294,15 +315,22 @@ export default function VIPPage() {
               action: amount > 0 ? 'earned' : 'spent',
               description:
                 entry.description || kind || (amount > 0 ? 'Diamonds Earned' : 'Diamonds Spent'),
-              points: Math.abs(amount),
+              diamonds: Math.abs(amount),
               balanceAfter: Number(entry.balance_after ?? 0),
-              icon: amount > 0 ? '▲' : '▼',
-            } as VIPActivity;
+            } as DiamondActivity;
           });
-          setRecentActivities(mapped);
+          setRecentDiamondActivities(mapped);
+          setDiamondActivityState('ready');
+        } else {
+          setRecentDiamondActivities([]);
+          setDiamondActivityState('ready');
         }
       } catch {
-        if (isCurrent()) toast.error('Failed To Load VIP Status');
+        if (isCurrent()) {
+          setRecentDiamondActivities([]);
+          setDiamondActivityState('error');
+          toast.error('Failed To Load VIP Status');
+        }
       } finally {
         if (isCurrent()) {
           setStateUserId(requestedUserId);
@@ -334,7 +362,8 @@ export default function VIPPage() {
     });
     setDiamonds(0);
     setVipPoints({ current: 0, lifetime: 0, monthly: 0, activeStreak: 0 });
-    setRecentActivities([]);
+    setRecentDiamondActivities([]);
+    setDiamondActivityState('loading');
     setStateUserId(undefined);
     setLoading(true);
 
@@ -529,7 +558,13 @@ export default function VIPPage() {
       )}
 
       {/* Activity History */}
-      {vipEntranceComplete && <VIPActivityHistory activities={recentActivities} />}
+      {vipEntranceComplete && (
+        <VIPActivityHistory
+          activities={recentDiamondActivities}
+          state={diamondActivityState}
+          onRetry={() => void loadVIPStatus()}
+        />
+      )}
 
       {/* THE CARD, AND ONLY WHAT IT ACTUALLY BUYS.
           Was headed "VIP Diamond" over a "Diamond Member" label in #ffd700 on a
@@ -567,8 +602,8 @@ export default function VIPPage() {
           }}
         >
           <h3>Your Card</h3>
-          <div className="vip-card-active" style={{ textAlign: 'center' }}>
-            <div style={{ marginBottom: 16 }}>
+          <div className="vip-card-active">
+            <div className="vip-card-art">
               <img
                 /* /vip-card.webp does not exist at the hub root and 404d in
                    production. The real asset is images/vip-card.png, which is
@@ -576,15 +611,10 @@ export default function VIPPage() {
                    under the /hub/club-arena/ base path. */
                 src={`${MEDIA_BASE}images/vip-card.png`}
                 alt="VIP Card"
-                style={{
-                  width: '100%',
-                  maxWidth: 300,
-                  height: 'auto',
-                  borderRadius: 12,
-                }}
+                className="vip-card-image"
               />
             </div>
-            <div className="vip-card-info" style={{ textAlign: 'center' }}>
+            <div className="vip-card-info">
               <span className="vip-card-tier">
                 {vipGrade === 'lifetime' ? 'Lifetime VIP' : 'VIP'}
               </span>
@@ -605,41 +635,46 @@ export default function VIPPage() {
             </button>
           </div>
 
-          <VIPPerksGrid currentTier="vip" perks={membershipPerks} />
+          <VIPPerksGrid perks={membershipPerks} />
         </section>
       )}
 
       {/* Diamond Balance */}
       <section className="vip-section">
         <div className="diamond-balance">
-          {/* The glyph is IN THE MARKUP, the way Shell.tsx does it. It used to
-              come from a `.diamond-icon::before { content: '◆' }` declared in
-              ClubHomePage.css - a page-scoped stylesheet that is loaded
-              globally, so this element rendered blank on any session that had
-              not visited a club lobby, and blank permanently once that leaked
-              rule was removed. */}
-          <span className="diamond-icon" aria-hidden="true">
-            ◆
-          </span>
-          <span className="diamond-count">{diamonds.toLocaleString()}</span>
-          <span className="diamond-label">Diamonds</span>
-          <button className="diamond-buy-btn" onClick={() => setShowTopUpModal(true)}>
-            + Buy Diamonds
-          </button>
-          <button
-            className="diamond-buy-btn"
-            style={{ background: 'rgba(255,255,255,0.08)', marginLeft: '6px' }}
-            onClick={() => setShowDiamondHistory(true)}
-          >
-            History
-          </button>
+          <div className="diamond-balance__identity">
+            <img
+              className="diamond-balance__icon"
+              src={`${MEDIA_BASE}images/diamond-icon.webp`}
+              alt=""
+              aria-hidden="true"
+            />
+            <div className="diamond-balance__copy">
+              <span className="diamond-count">{diamonds.toLocaleString()}</span>
+              <span className="diamond-label">Diamonds</span>
+            </div>
+          </div>
+          <div className="diamond-balance__actions">
+            <button
+              className="diamond-buy-btn diamond-buy-btn--primary"
+              onClick={() => setShowTopUpModal(true)}
+            >
+              Buy Diamonds
+            </button>
+            <button
+              className="diamond-buy-btn diamond-buy-btn--secondary"
+              onClick={() => setShowDiamondHistory(true)}
+            >
+              View History
+            </button>
+          </div>
         </div>
       </section>
 
       {/* A-la-Carte Purchases */}
       {!isVIP && (
         <section className="vip-section">
-          <h3> Buy Features</h3>
+          <h3>Buy Features</h3>
           <p className="section-desc">
             Not A Member? Purchase Features Individually With Diamonds.
           </p>
@@ -655,16 +690,16 @@ export default function VIPPage() {
                 <div key={feature} className="purchase-card">
                   <div className="purchase-info">
                     <span className="purchase-name">{formatFeatureName(feature)}</span>
-                    <span className="purchase-desc">{pricing.description}</span>
+                    <span className="purchase-desc">{formatPopupText(pricing.description)}</span>
                   </div>
                   <div className="purchase-action">
-                    <span className="purchase-cost">{pricing.cost} </span>
+                    <span className="purchase-cost">{pricing.cost} Diamonds</span>
                     <button
                       className="purchase-btn"
                       onClick={() => handlePurchase(feature as VIPFeature)}
                       disabled={purchasing === feature || diamonds < pricing.cost}
                     >
-                      {purchasing === feature ? '...' : 'Buy'}
+                      {purchasing === feature ? 'Processing' : 'Buy'}
                     </button>
                   </div>
                 </div>

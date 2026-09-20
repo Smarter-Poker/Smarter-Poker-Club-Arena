@@ -214,25 +214,35 @@ jobs:
           node scripts/ci/check-cosmetic-catalog-drift.mjs 2>&1 | tee /tmp/drift-cosmetics.log
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
+      - name: Only the functions anon is meant to reach are reachable
+        id: anondefiners
+        env:
+          SUPABASE_DB_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set +e
+          node scripts/ci/check-anon-definer-grants.mjs 2>&1 | tee /tmp/drift-anon-definers.log
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
       - name: Carry the live-drift verdict
         if: always()
         env:
           RT: ${{ steps.realtime.outputs.code }}
           BBJ: ${{ steps.bbj.outputs.code }}
           COS: ${{ steps.cosmetics.outputs.code }}
+          ANON: ${{ steps.anondefiners.outputs.code }}
         run: |
           set -euo pipefail
-          for code in "$RT" "$BBJ" "$COS"; do
+          for code in "$RT" "$BBJ" "$COS" "$ANON"; do
             [[ "$code" =~ ^[0-9]+$ ]] || {
               echo "::error::A live-drift detector produced no trustworthy verdict."
               exit 1
             }
           done
-          if [ "$RT" = 0 ] && [ "$BBJ" = 0 ] && [ "$COS" = 0 ]; then
+          if [ "$RT" = 0 ] && [ "$BBJ" = 0 ] && [ "$COS" = 0 ] && [ "$ANON" = 0 ]; then
             echo 'All live-drift readers and repository rebuild guards returned clean evidence.'
             exit 0
           fi
-          echo "::error title=INTEGRITY DRIFT OR UNKNOWN::realtime=$RT bbj_rebuild=$BBJ cosmetics=$COS. Read the detector logs; no repair was attempted."
+          echo "::error title=INTEGRITY DRIFT OR UNKNOWN::realtime=$RT bbj_rebuild=$BBJ cosmetics=$COS anon_definers=$ANON. Read the detector logs; no repair was attempted."
           exit 1
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -576,4 +586,81 @@ jobs:
           CODE: ${{ steps.open-prs.outputs.code }}
         run: |
           [[ "$CODE" =~ ^[0-9]+$ ]] || { echo '::error::Open-PR verdict is missing.'; exit 1; }
+          exit "$CODE"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # DID WHAT MERGED ACTUALLY REACH THE DATABASE? (2026-09-19)
+  #
+  # `check-migrations-applied.mjs` asks this of the migrations a PULL REQUEST
+  # adds, against a nightly snapshot. Once a branch merges, nothing asks again.
+  # `check-applied-migrations-are-recorded.mjs` asks the opposite direction.
+  # So a migration could merge, never be applied, and look shipped.
+  #
+  # Measured the day this job was added, across the 202 migrations merged in
+  # the preceding seven days, THREE had never reached the database:
+  #
+  #   the responsible-gaming SELECT policy, without which a self-excluded
+  #     player asking about themselves was told ok: true - six days
+  #   thirteen anon EXECUTE grants the repository described as revoked
+  #   27 Early Bird fees still held in escrow
+  #
+  # Two of the three are player protection or money, and all three were green
+  # and closed.
+  #
+  # ubuntu-latest and read-only, like the two alarm jobs at the top of this
+  # file: a detector must not share a failure domain with what it inspects,
+  # and this one has no authority to apply anything it finds. Exit 2 is
+  # "COULD NOT TELL" and is never folded into "everything is live" (10.86).
+  # ───────────────────────────────────────────────────────────────────────────
+  migrations_are_live:
+    name: Every merged migration is live
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Every migration merged in the window exists in production
+        id: live
+        env:
+          SUPABASE_DB_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          # PIPESTATUS[0], not the pipeline's code - `tee` always succeeds.
+          set +e
+          node scripts/ci/check-migrations-are-live.mjs 2>&1 | tee /tmp/migrations-live.log
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "check-migrations-are-live exited ${code}"
+          if [ "$code" = "2" ]; then
+            echo "::warning title=Merged migrations::COULD NOT TELL - see the log. Not reported as live."
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Migrations merged but not live"
+            echo ""
+            echo '```'
+            cat /tmp/migrations-live.log 2>/dev/null || echo "(the check produced no output)"
+            echo '```'
+            echo ""
+            echo "Apply each one with the Supabase MCP \`apply_migration\`, or - if it was"
+            echo "superseded - delete the file in the pull request that says why."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The detector always finishes so it can publish its code. This final
+      # step makes the native job conclusion the only durable verdict.
+      - name: Carry the verdict
+        if: always()
+        env:
+          CODE: ${{ steps.live.outputs.code }}
+        run: |
+          [[ "$CODE" =~ ^[0-9]+$ ]] || { echo '::error::The merged-migration verdict is missing.'; exit 1; }
           exit "$CODE"

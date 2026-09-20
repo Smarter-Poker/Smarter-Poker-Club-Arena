@@ -1,4 +1,6 @@
 import { buildLadder, type GeneratedBlindLevel } from './blindLadder.js';
+import { mttSpeedForMinutes, type MttClockSpeed } from './mttStructureDescription.js';
+import { isSupportedMttPayoutDepth } from './mttPayoutDepth.js';
 
 /** One engine-owned definition for both scheduled and recurring MTT creators.
  * Existing advertised ladders are preserved; speed and stack depth are separate.
@@ -46,7 +48,7 @@ MTT_BLIND_PRESETS.DEEPSTACK = MTT_BLIND_PRESETS.SLOW;
  * an explicit ladder. Later tapering/acceleration does not relabel the event.
  * Duration precedence and fallback match TournamentManagerBase's clock. */
 export function mttSpeedColumns(structure: readonly unknown[]): {
-  blind_speed: 'standard' | 'slow' | 'turbo' | 'hyper_turbo';
+  blind_speed: MttClockSpeed;
   is_turbo: boolean;
 } {
   const opening = structure.find(
@@ -61,14 +63,7 @@ export function mttSpeedColumns(structure: readonly unknown[]): {
       : Number.isFinite(seconds) && seconds > 0
         ? seconds / 60
         : 10;
-  const speed =
-    openingMinutes <= 2
-      ? 'hyper_turbo'
-      : openingMinutes <= 5
-        ? 'turbo'
-        : openingMinutes >= 12
-          ? 'slow'
-          : 'standard';
+  const speed = mttSpeedForMinutes(openingMinutes)!;
   return { blind_speed: speed, is_turbo: speed === 'turbo' || speed === 'hyper_turbo' };
 }
 
@@ -78,5 +73,38 @@ export function mttPayoutPercent(value: unknown): 10 | 15 | 20 {
   if (typeof value === 'string' && !/^[+-]?\d+$/.test(value.trim())) return 10;
   if (typeof value !== 'string' && typeof value !== 'number') return 10;
   const depth = Number(value);
-  return depth === 15 || depth === 20 ? depth : 10;
+  return isSupportedMttPayoutDepth(depth) ? depth : 10;
+}
+
+/** Nominal playing minutes through the indexed registration cutoff. The engine
+ * skips structure break markers and extends the final playable clock beyond the
+ * ladder. Its level gate stays authoritative; maintenance credits are separate.
+ * The persisted minute column is an integer, so never truncate a partial minute.
+ * Call after validating the authored MTT structure, before inserting the event. */
+export function mttLateRegistrationMinutes(structure: readonly unknown[], levels: number): number {
+  if (!Number.isSafeInteger(levels) || levels < 0) {
+    throw new Error('Invalid tournament late-registration level count');
+  }
+  if (levels === 0) return 0;
+  let totalMs = 0;
+  let lastPlayableMs = 0;
+  for (const [index, entry] of structure.entries()) {
+    const level = entry as Record<string, unknown>;
+    if (level?.isBreak === true) continue;
+    const minutes = Number(level?.durationMinutes ?? level?.duration_minutes);
+    const seconds = Number(level?.duration);
+    const duration = Number.isFinite(minutes) && minutes > 0 ? minutes * 60_000 : seconds * 1000;
+    if (!Number.isFinite(duration) || duration <= 0) {
+      throw new Error('Invalid tournament late-registration clock');
+    }
+    lastPlayableMs = duration;
+    if (index < levels) totalMs += duration;
+  }
+  if (lastPlayableMs <= 0) throw new Error('Missing tournament late-registration clock');
+  if (levels > structure.length) totalMs += (levels - structure.length) * lastPlayableMs;
+  const result = Math.ceil(totalMs / 60_000);
+  if (!Number.isSafeInteger(result) || result > 2_147_483_647) {
+    throw new Error('Tournament late-registration minutes exceed the database range');
+  }
+  return result;
 }

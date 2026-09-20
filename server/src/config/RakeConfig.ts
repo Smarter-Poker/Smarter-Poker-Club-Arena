@@ -111,11 +111,21 @@ export const RAKE_SCHEDULE: readonly RakeScheduleEntry[] = RAKE_SPEC.schedule;
 // Standard poker rule: heads-up and short-handed games get lower rake caps.
 // Each entry defines a player threshold and its corresponding cap MULTIPLIER.
 // The engine finds the highest tier where playerCount >= players, then applies: cap × multiplier.
-// Factors (0.5 heads-up, 0.67 three-handed, full at 4+) are RAKE_SPEC.rules;
+// Factors (0.5 heads-up, 0.75 three-handed, full at 4+) are RAKE_SPEC.rules;
 // the derivation is capsByPlayersDealt so `ca_rake_schedule_caps` and this
 // list are one computation.
-export function getPlayerCountCaps(fullCap: number): { players: number; cap: number }[] {
-  return capsByPlayersDealt(fullCap);
+//
+// `seats` is the table's `max_players`. Dan 2026-09-14: the three-handed
+// discount is NINE-MAX ONLY - "once any 6-8 handed game reaches 3+ players
+// full rake + BBJ is applied" - so a 6/7/8-max table's three-handed rung is
+// the full cap. Heads-up is not gated: 50% at every table size. A caller with
+// no table in hand (the published ladder, a pricing preview) omits it and
+// gets the nine-max ladder, which is what the database publishes.
+export function getPlayerCountCaps(
+  fullCap: number,
+  seats?: number | null
+): { players: number; cap: number }[] {
+  return capsByPlayersDealt(fullCap, seats);
 }
 
 // BBJ POOL ALLOCATION (Dan, 2026-08-18 — authoritative)
@@ -534,8 +544,8 @@ export function getFullRakeConfig(
     ? clamp(Number(override!.rakePercent), 0, MAX_RAKE_PERCENT)
     : null;
   // BIG BLINDS -> DOLLARS happens here and nowhere else. Everything downstream
-  // (calculateRake's Math.min, getPlayerCountCaps' 0.5x / 0.67x short-handed
-  // multipliers) assumes an absolute cash cap.
+  // (calculateRake's Math.min, getPlayerCountCaps' 0.5x heads-up and 0.75x
+  // nine-max three-handed multipliers) assumes an absolute cash cap.
   const overrideCap = isRakeSet(override?.rakeCapBB)
     ? round2(clamp(Number(override!.rakeCapBB), 0, MAX_RAKE_CAP_BB) * bigBlind)
     : null;
@@ -1225,18 +1235,7 @@ export type BBJMiniNearMissReason =
   | 'mini_not_enough_players'
   | 'mini_pot_too_small'
   | 'mini_double_board'
-  | 'mini_winner_not_quads'
-  /* BACK, AND THIS TIME IT MEANS SOMETHING (2026-09-12). It was removed as a
-     value with no reader: under the old family bar, "nobody cleared it" meant
-     an ordinary hand - two pair, a straight - and recording that would bury
-     the real near misses. Dan's ranked bars changed what the phrase covers.
-     On PLO5/FLO5 the bar is Quad Tens, so a loser BELOW it can be quad nines
-     beaten by quad aces: a monster that paid the mini yesterday and does not
-     today. That is the most interesting refusal the mini has, it is the only
-     way to measure what the new bar costs, and the panel already has a label
-     for it. It is emitted ONLY where a ranked bar exists AND the loser
-     actually holds quads - never for the ordinary hands it was deleted over. */
-  | 'mini_loser_below_bar';
+  | 'mini_winner_not_quads';
 
 export interface BBJMiniNearMissResult {
   nearMiss: boolean;
@@ -1312,37 +1311,13 @@ export function detectMiniBBJNearMiss(
   const bar =
     qualifying.miniBarLabel ?? (isHoldemFamily ? 'Aces Full or better' : 'Quads or better');
   if (!best) {
-    /* Nobody cleared the bar. Under the family default that is an ordinary
-       hand and recording it would bury the real near misses - which is why
-       `mini_loser_below_bar` was deleted as a value with no reader.
-
-       A RANKED BAR CHANGED THAT (Dan, 2026-09-12). Where the bar is a quad
-       RANK, the hand that just missed it is itself quads: on PLO5/FLO5 a
-       player can hold quad nines, lose to quad aces, and take nothing, when
-       the same hand paid the mini the day before. Silently dropping that makes
-       the cost of the new bar unmeasurable - nobody could say how many beats
-       it turned away, which is exactly the hole `bbj_near_misses` was built to
-       close for the main jackpot.
-
-       So: quads below a ranked bar IS a near miss, and nothing else here is.
-       An ordinary hand still returns `none`. */
-    const rankedBar = qualifying.miniMinQuadRank;
-    if (rankedBar != null) {
-      const bestQuads = losers
-        .filter((r) => r.handRanking === HAND_RANK.FOUR_OF_A_KIND && (r.kickers?.length ?? 0) >= 1)
-        .reduce<
-          (typeof losers)[number] | null
-        >((acc, r) => (acc === null || r.kickers[0] > acc.kickers[0] ? r : acc), null);
-      if (bestQuads) {
-        return {
-          nearMiss: true,
-          userId: bestQuads.userId,
-          handName: bestQuads.handName,
-          reason: 'mini_loser_below_bar',
-          message: `So close! ${bestQuads.handName} lost, but the Mini needs ${bar} in this game.`,
-        };
-      }
-    }
+    /* Nobody cleared the bar. That is not a near miss - it is an ordinary hand,
+       and recording it would bury the real ones.
+       This used to return `reason: 'mini_loser_below_bar'` "so the caller can
+       distinguish no-candidate from not-evaluated", and no caller ever did:
+       the one call site tests `nearMiss` alone and cannot tell it from the
+       four other reason-less refusals. A value with no reader is the thing
+       10.86 is about, so it is gone rather than left looking meaningful. */
     return none;
   }
 

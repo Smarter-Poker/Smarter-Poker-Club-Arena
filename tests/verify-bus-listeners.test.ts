@@ -28,10 +28,48 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../src/core/MasterBus', async () => await vi.importActual('../src/core/MasterBus'));
 
 import { masterBus } from '../src/core/MasterBus';
+import { useUnionStore } from '../src/stores/useUnionStore';
+import { useClubStore } from '../src/stores/useClubStore';
+import { useWalletStore } from '../src/stores/useWalletStore';
 
 describe('MasterBus subscriber contract (real bus)', () => {
   beforeEach(() => {
     vi.useRealTimers();
+  });
+
+  it('synchronously clears union accounting on every auth event, including account ABA', () => {
+    const loadMemberships = useClubStore.getState().loadMemberships;
+    const refreshAll = useWalletStore.getState().refreshAll;
+    useClubStore.setState({ loadMemberships: vi.fn(async () => {}) });
+    useWalletStore.setState({ refreshAll: vi.fn(async () => {}) });
+    masterBus.reset();
+    masterBus.init();
+
+    try {
+      const actorA = '11111111-1111-4111-8111-111111111111';
+      const actorB = '22222222-2222-4222-8222-222222222222';
+      for (const userId of [actorA, actorB, actorA, actorA, null]) {
+        useUnionStore.setState({
+          accountingScopeId: '33333333-3333-4333-8333-333333333333',
+          accountingCurrent: () => true,
+          accountingUnavailable: true,
+          isLoadingSettlement: true,
+        });
+
+        masterBus.emit('AUTH_STATE_CHANGED', { userId, isAuthenticated: userId !== null });
+
+        expect(useUnionStore.getState()).toMatchObject({
+          accountingScopeId: null,
+          accountingCurrent: null,
+          accountingUnavailable: false,
+          isLoadingSettlement: false,
+        });
+      }
+    } finally {
+      useClubStore.setState({ loadMemberships });
+      useWalletStore.setState({ refreshAll });
+      masterBus.reset();
+    }
   });
 
   it('hands subscribers the wrapper, with payload fields ONLY under .payload', () => {

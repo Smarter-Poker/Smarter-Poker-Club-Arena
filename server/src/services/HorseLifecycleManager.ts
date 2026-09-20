@@ -354,7 +354,7 @@ export class HorseLifecycleManager {
    * runtime_error, state_desync) drowned in lifecycle noise.
    *
    * Lifecycle events are still emitted as console.log for runtime tail
-   * visibility + Sentry breadcrumbs (Sentry ingests stdout in production).
+   * visibility + error reporting breadcrumbs (error reporting ingests stdout in production).
    * Real bugs continue to write to horse_bug_reports via separate paths.
    */
   private async persistLifecycleLog(

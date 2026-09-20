@@ -21,6 +21,7 @@ import { describe, expect, it } from 'vitest';
 import { ESLint } from 'eslint';
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 
 const ROOT = resolve(__dirname, '..');
 const FILES = [
@@ -67,6 +68,53 @@ const BASELINE: Record<string, string[]> = {
   'src/components/table/TableModalsLayer.tsx': [],
 };
 
+/**
+ * These two purchase reads are deferred by their exact React hook callbacks.
+ * Do not add their names to the blanket baseline: a new render/dependency read
+ * of either ref must still fail the law.
+ */
+function isDeferredPurchaseRead(ast: ts.SourceFile, offset: number, name: string): boolean {
+  if (!['rebuyPurchasePendingRef', 'rebuyJustSucceededRef'].includes(name)) return false;
+  let reference: ts.Identifier | undefined;
+  const visit = (node: ts.Node) => {
+    if (ts.isIdentifier(node) && node.text === name && node.getStart(ast) === offset)
+      reference = node;
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  for (let node: ts.Node | undefined = reference?.parent; node; node = node.parent) {
+    if (!ts.isArrowFunction(node)) continue;
+    const call = node.parent;
+    if (
+      !ts.isCallExpression(call) ||
+      call.arguments[0] !== node ||
+      !ts.isIdentifier(call.expression)
+    )
+      return false;
+    if (name === 'rebuyPurchasePendingRef') {
+      return (
+        call.expression.text === 'useCallback' &&
+        ts.isVariableDeclaration(call.parent) &&
+        ts.isIdentifier(call.parent.name) &&
+        call.parent.name.text === 'releaseBustHold'
+      );
+    }
+    const dependencies = call.arguments[1];
+    return (
+      call.expression.text === 'useEffect' &&
+      !!dependencies &&
+      ts.isArrayLiteralExpression(dependencies) &&
+      dependencies.elements.length === 2 &&
+      dependencies.elements.every(
+        (element, index) =>
+          ts.isIdentifier(element) &&
+          element.text === ['tournamentPurchaseContext', 'endRebuyPrompt'][index]
+      )
+    );
+  }
+  return false;
+}
+
 describe('LAW: no use-before-declare on the table route', () => {
   it('names used before their declaration are only the baselined, deferred ones', async () => {
     const eslint = new ESLint({
@@ -86,9 +134,25 @@ describe('LAW: no use-before-declare on the table route', () => {
     for (const r of results) {
       const rel = r.filePath.slice(ROOT.length + 1);
       const allowed = new Set(BASELINE[rel] ?? []);
+      const ast = ts.createSourceFile(
+        r.filePath,
+        readFileSync(r.filePath, 'utf8'),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TSX
+      );
       for (const m of r.messages) {
         if (m.ruleId !== '@typescript-eslint/no-use-before-define') continue;
         const name = /'([^']+)'/.exec(m.message)?.[1] ?? m.message;
+        if (
+          rel === 'src/pages/TablePage.tsx' &&
+          isDeferredPurchaseRead(
+            ast,
+            ast.getPositionOfLineAndCharacter(m.line - 1, m.column - 1),
+            name
+          )
+        )
+          continue;
         if (!allowed.has(name)) offenders.push(`${rel}:${m.line} ${name}`);
       }
     }
@@ -97,6 +161,50 @@ describe('LAW: no use-before-declare on the table route', () => {
       'A name is read before its declaration. If the read happens during render this is the parseTimed crash again; move the helper above the component. If it is genuinely inside a deferred callback, add it to BASELINE with your eyes open.'
     ).toEqual([]);
   }, 60_000);
+
+  it.each([
+    [
+      'const releaseBustHold = useCallback(() => rebuyPurchasePendingRef.current, []);',
+      'rebuyPurchasePendingRef',
+      true,
+    ],
+    [
+      'useEffect(() => { rebuyJustSucceededRef.current = false; }, [tournamentPurchaseContext, endRebuyPrompt]);',
+      'rebuyJustSucceededRef',
+      true,
+    ],
+    ['const value = rebuyPurchasePendingRef.current;', 'rebuyPurchasePendingRef', false],
+    ['const value = rebuyJustSucceededRef.current;', 'rebuyJustSucceededRef', false],
+    [
+      'const releaseBustHold = useCallback(() => {}, [rebuyPurchasePendingRef.current]);',
+      'rebuyPurchasePendingRef',
+      false,
+    ],
+    [
+      'const releaseBustHold = useMemo(() => rebuyPurchasePendingRef.current, []);',
+      'rebuyPurchasePendingRef',
+      false,
+    ],
+    [
+      'const releaseBustHold = useCallback((() => rebuyPurchasePendingRef.current)(), []);',
+      'rebuyPurchasePendingRef',
+      false,
+    ],
+    [
+      'useEffect(() => { rebuyJustSucceededRef.current = false; }, []);',
+      'rebuyJustSucceededRef',
+      false,
+    ],
+  ])('scopes the deferred purchase allowance: %s', (source, name, allowed) => {
+    const ast = ts.createSourceFile(
+      'case.tsx',
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX
+    );
+    expect(isDeferredPurchaseRead(ast, source.indexOf(name), name)).toBe(allowed);
+  });
 
   it('the helper that crashed the table lives above the component', () => {
     const src = readFileSync(resolve(ROOT, 'src/pages/MultiTablePage.tsx'), 'utf8');

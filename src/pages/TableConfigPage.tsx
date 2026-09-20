@@ -46,6 +46,9 @@ import { HelpPopover } from '../components/common/HelpPopover';
 import { Toggle, Slider, NumberField } from '../components/table-config/controls';
 import CashGameCreateFlow from '../components/cash/CashGameCreateFlow';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import { MttCreationStructurePreview } from '../components/tournament/MttCreationStructurePreview';
+import { MttPayoutDepthOptions } from '../components/tournament/MttPayoutDepthOptions';
+import { MttCreationProfileSelect } from '../components/tournament/MttCreationProfileSelect';
 import {
   FREE_BUY_ADDON_COST,
   FREE_BUY_HELPER,
@@ -61,7 +64,7 @@ type GameMode = 'regular' | 'sng' | 'mtt';
 
 type RunItMode = 'none' | 'player_choice' | 'mandatory_twice' | 'mandatory_three';
 type BlindStructure = 'slow' | 'standard' | 'turbo' | 'hyper_turbo';
-type PayoutStructure = 'payout1' | 'payout2' | 'payout3' | 'winner_take_all';
+type PayoutStructure = 'payout1' | 'payout2' | 'payout3' | 'payout20' | 'winner_take_all';
 
 interface TableTemplate {
   id: string;
@@ -208,7 +211,6 @@ interface TableConfig {
   bubbleProtection: boolean;
   featuredTournament: boolean;
   minPlayers: number;
-  maxPlayersRange: number;
   multiDayMtt: boolean;
   saveStartTime: boolean;
   startTime: string;
@@ -383,8 +385,7 @@ const DEFAULT_CONFIG: TableConfig = {
   earlyBirdRegistration: false,
   bubbleProtection: false,
   featuredTournament: false,
-  minPlayers: 30,
-  maxPlayersRange: 300,
+  minPlayers: 3,
   multiDayMtt: false,
   saveStartTime: false,
   startTime: '',
@@ -1286,6 +1287,11 @@ export default function TableConfigPage({
               </div>
             )}
 
+            <MttCreationProfileSelect
+              config={config}
+              onApply={(values) => setConfig((current) => ({ ...current, ...values }))}
+            />
+
             {/* Blind Structure Radio */}
             <div className="config-radio-group">
               <span className="radio-group-label">Blind Structure</span>
@@ -1340,11 +1346,20 @@ export default function TableConfigPage({
                 value={config.payoutStructure}
                 onChange={(e) => updateConfig('payoutStructure', e.target.value as PayoutStructure)}
               >
-                <option value="payout1">Top 10% Of Field</option>
-                <option value="payout2">Top 12.5% Of Field</option>
-                <option value="payout3">Top 15% Of Field (Standard)</option>
-                {config.gameMode === 'sng' && (
-                  <option value="winner_take_all">Winner Take All</option>
+                {config.gameMode === 'mtt' ? (
+                  <MttPayoutDepthOptions currentChoice={config.payoutStructure} />
+                ) : (
+                  <>
+                    {config.payoutStructure === 'payout20' && (
+                      <option value="payout20" disabled>
+                        Choose A Sit And Go Payout Structure
+                      </option>
+                    )}
+                    <option value="payout1">Top 10% Of Field</option>
+                    <option value="payout2">Top 12.5% Of Field</option>
+                    <option value="payout3">Top 15% Of Field (Standard)</option>
+                    <option value="winner_take_all">Winner Take All</option>
+                  </>
                 )}
               </select>
             </div>
@@ -1367,6 +1382,8 @@ export default function TableConfigPage({
               suffix=" min"
             />
 
+            <MttCreationStructurePreview config={config} gameType={gameType} />
+
             <Toggle
               label="Big Blind Ante"
               value={config.bigBlindAnte}
@@ -1383,7 +1400,7 @@ export default function TableConfigPage({
               label="Synchronized Breaks"
               value={config.synchronizedBreaks}
               onChange={(v) => updateConfig('synchronizedBreaks', v)}
-              tooltip="All Tables Break At The Same Time"
+              tooltip="Eligible Tournaments Break Together At :55 Each Hour. Turning This Off Does Not Disable Platform Maintenance Or Add-On Pauses."
             />
           </>
         )}
@@ -1613,32 +1630,13 @@ export default function TableConfigPage({
               </span>
               <span className="toggle-status off">NOT AVAILABLE YET</span>
             </div>
-            {/* Player Number Range */}
-            <div className="config-slider">
-              <div className="slider-header">
-                <span className="slider-label">
-                  Player Number: {config.minPlayers} - {config.maxPlayersRange}
-                </span>
-              </div>
-              <div className="buyin-sliders">
-                <input
-                  type="range"
-                  min={2}
-                  max={config.maxPlayersRange}
-                  value={config.minPlayers}
-                  onChange={(e) => updateConfig('minPlayers', Number(e.target.value))}
-                  className="slider-input"
-                />
-                <input
-                  type="range"
-                  min={config.minPlayers}
-                  max={1000}
-                  value={config.maxPlayersRange}
-                  onChange={(e) => updateConfig('maxPlayersRange', Number(e.target.value))}
-                  className="slider-input"
-                />
-              </div>
-            </div>
+            <NumberField
+              label="Minimum Players To Start"
+              value={config.minPlayers}
+              onChange={(value) => updateConfig('minPlayers', value)}
+              min={3}
+              tooltip="Minimum Registrations Needed To Start. Tournament Entries Are Unlimited."
+            />
 
             {/* Start Time */}
             <div className="config-toggle">

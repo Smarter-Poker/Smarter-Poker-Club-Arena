@@ -99,7 +99,7 @@ export interface ShadowRecorderOptions {
   now?: () => number;
   /** Reducer deps (custom shuffle). Must MATCH the engine's deck derivation. */
   reducer?: ReducerDeps;
-  /** Divergence callback (telemetry / Sentry). Never throws into the recorder. */
+  /** Divergence callback (telemetry / error reporting). Never throws into the recorder. */
   onDivergence?: (report: DivergenceReport) => void;
   /** Logger. Defaults to console. */
   logger?: Pick<Console, 'warn' | 'error'>;

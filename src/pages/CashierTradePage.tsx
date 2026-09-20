@@ -61,6 +61,13 @@ import { roleLabel, roleRank, type ClubRole } from '../types/clubRoles';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { useCashoutScope } from '../hooks/useCashoutScope';
+import {
+  readClubWeeklyStatements,
+  formatWeeklyChips,
+  CLUB_WEEKLY_STATEMENT_LIMIT,
+  type ClubWeeklyStatement,
+} from '../services/ClubWeeklyAccountingReader';
 import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { cashierReasonCode, recordCashierOperation } from '../services/CashierOperationsTelemetry';
@@ -193,14 +200,7 @@ interface TicketRow {
   held: boolean;
 }
 
-interface InvoiceRow {
-  id: string;
-  createdAt: string;
-  type: string;
-  gross: number;
-  net: number;
-  status: string;
-}
+type InvoiceRow = ClubWeeklyStatement;
 
 type TabKey = 'trade' | 'record' | 'leaderboard' | 'request' | 'tickets';
 
@@ -328,6 +328,8 @@ export default function CashierTradePage() {
   const [invoicesError, setInvoicesError] = useState<string | null>(null);
   /** Bumped by Retry; the invoice fetch lives inline in an effect. */
   const [invoicesReload, setInvoicesReload] = useState(0);
+  const weeklyReadScope = useCashoutScope(user?.id, JSON.stringify([clubParam, clubUuid]));
+  const invoiceReadScopeRef = useRef<(() => boolean) | null>(null);
   // The Tickets tab (audit 2026-08-26). See TicketRow for why it exists.
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [ticketsLoading, setTicketsLoading] = useState(false);
@@ -871,13 +873,12 @@ export default function CashierTradePage() {
   // Refresh on any balance event
   useEffect(() => {
     // AUDIT 2026-08-21: BALANCE_UPDATED alone missed mints, distributions and
-    // settlement credits, so the strip could sit stale after real money moved.
+    // cashier changes, so the strip could sit stale after real money moved.
     const events = [
       'BALANCE_UPDATED',
       'CHIPS_ADDED',
       'CHIPS_DISTRIBUTED',
       'CASHIER_BALANCE_CHANGED',
-      'SETTLEMENT_COMPLETED',
     ] as const;
     // Only OUR club. CHIPS_DISTRIBUTED and CASHIER_BALANCE_CHANGED both carry a
     // clubId that was thrown away, so a chip event anywhere on the platform
@@ -1347,53 +1348,37 @@ export default function CashierTradePage() {
     requestOpIdRef.current = null;
   }, [askAmount, askNote, clubUuid]);
 
-  // ── Settlement invoices (Leaderboard Record tab) ───────────────────────────
+  // ── Settlement invoices: club weekly statements only ───────────────────────
   const loadInvoices = useCallback(async () => {
-    if (!clubUuid) return false;
+    if (!clubUuid || !user?.id || isHydrating) return false;
     const seq = ++invoiceSeqRef.current;
+    const readCurrent = weeklyReadScope;
+    invoiceReadScopeRef.current = readCurrent;
+    setInvoices([]);
     setInvoicesLoading(true);
     setInvoicesError(null);
     try {
-      const { data, error } = await supabase
-        .from('settlement_invoices')
-        .select('id, created_at, invoice_type, gross_amount, net_amount, status')
-        .eq('club_id', clubUuid)
-        .order('created_at', { ascending: false })
-        .limit(50);
+      const { rows } = await readClubWeeklyStatements({
+        clubId: clubUuid,
+        userId: user.id,
+        limit: CLUB_WEEKLY_STATEMENT_LIMIT,
+        isCurrent: readCurrent,
+      });
       if (!isMounted.current || seq !== invoiceSeqRef.current) return false;
-      if (error) {
-        reportError(error, 'CashierTradePage.loadInvoices');
-        // "No Settlement Records Yet" is a different statement from "we could
-        // not read them", and this page already makes that distinction on the
-        // trades tab. Make it here too.
-        setInvoicesError('Could Not Load Settlement Records.');
-        setInvoices([]);
-        return false;
-      } else {
-        setInvoicesError(null);
-        setInvoices(
-          (data || []).map((r) => ({
-            id: r.id as string,
-            createdAt: r.created_at as string,
-            type: (r.invoice_type as string) || 'settlement',
-            gross: Number(r.gross_amount) || 0,
-            net: Number(r.net_amount) || 0,
-            status: (r.status as string) || 'pending',
-          }))
-        );
-      }
+      if (!readCurrent()) throw new Error('Weekly Statement Account Or Club Changed');
+      setInvoices(rows);
       return true;
     } catch (error) {
       reportError(error, 'CashierTradePage.loadInvoices');
       if (isMounted.current && seq === invoiceSeqRef.current) {
-        setInvoicesError('Could Not Load Settlement Records.');
+        setInvoicesError('Weekly Statements Are Unavailable.');
         setInvoices([]);
       }
       return false;
     } finally {
       if (isMounted.current && seq === invoiceSeqRef.current) setInvoicesLoading(false);
     }
-  }, [clubUuid]);
+  }, [clubUuid, user?.id, isHydrating, weeklyReadScope]);
 
   useEffect(() => {
     if (tab === 'leaderboard') void loadInvoices();
@@ -1402,6 +1387,10 @@ export default function CashierTradePage() {
     // deps never changed, no refetch happened, and the error banner sat there
     // with a button that did nothing.
   }, [tab, loadInvoices, invoicesReload]);
+  const visibleInvoices = invoiceReadScopeRef.current?.() === true ? invoices : [];
+  const weeklyStatementsUnavailable =
+    invoicesError ||
+    (!weeklyReadScope() ? 'Weekly Statements Are Unavailable For This Account.' : null);
 
   // ── Derived list ───────────────────────────────────────────────────────────
   /* Everyone the viewer can SEND to: the roster minus the viewer's own row. */
@@ -1802,7 +1791,7 @@ export default function CashierTradePage() {
         batchFailureReason ||= 'item_refused';
         // Diagnostics receive counts and a bounded reason code only. Player
         // UUIDs, names and raw database messages remain in the operator UI and
-        // must not be copied into console/Sentry payloads.
+        // must not be copied into console/error reporting payloads.
         reportError(
           new Error(
             `${kind} batch: ${failed.length}/${targets.length} failed; reason=${batchFailureReason}`
@@ -2927,13 +2916,15 @@ export default function CashierTradePage() {
                 Settlement Record
               </h2>
             </div>
-            <span className={styles.sectionMeta}>{invoices.length.toLocaleString()} Entries</span>
+            <span className={styles.sectionMeta}>
+              Latest Up To {CLUB_WEEKLY_STATEMENT_LIMIT} Weekly Statements
+            </span>
           </div>
           <div className={styles.list}>
             {invoicesLoading && <div className={styles.empty}>Loading Settlement Records...</div>}
-            {!invoicesLoading && invoicesError && (
+            {!invoicesLoading && weeklyStatementsUnavailable && (
               <div className={styles.empty} role="alert">
-                {invoicesError}{' '}
+                {weeklyStatementsUnavailable}{' '}
                 <button
                   type="button"
                   className={styles.retryBtn}
@@ -2943,33 +2934,36 @@ export default function CashierTradePage() {
                 </button>
               </div>
             )}
-            {!invoicesLoading && !invoicesError && invoices.length === 0 && (
+            {!invoicesLoading && !weeklyStatementsUnavailable && visibleInvoices.length === 0 && (
               <div className={styles.empty}>
                 No Settlement Records Yet. They Appear Here After The First Weekly Close.
               </div>
             )}
-            {invoices.map((iv) => (
-              <div key={iv.id} className={styles.row}>
-                <div className={styles.rowInfo}>
-                  <span className={styles.rowName}>{txLabel(iv.type)}</span>
+            {!invoicesLoading &&
+              !weeklyStatementsUnavailable &&
+              visibleInvoices.map((iv) => (
+                <div key={iv.id} className={styles.row}>
+                  <div className={styles.rowInfo}>
+                    <span className={styles.rowName}>Club Weekly Accounting</span>
+                    <span className={styles.rowSub}>
+                      {new Date(iv.createdAt).toLocaleDateString([], {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}{' '}
+                      &middot; Weekly Summary
+                    </span>
+                  </div>
                   <span className={styles.rowSub}>
-                    {new Date(iv.createdAt).toLocaleDateString([], {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}{' '}
-                    &middot; {txLabel(iv.status)}
+                    Rake Funding {formatWeeklyChips(iv.rakeFunding)}
+                    <br />
+                    Paid By Club {formatWeeklyChips(iv.paidByClub)}
+                  </span>
+                  <span className={styles.rowBalance}>
+                    Retained {formatWeeklyChips(iv.retainedByClub)}
                   </span>
                 </div>
-                <span className={styles.rowSub}>Gross {fmt(iv.gross)}</span>
-                <span
-                  className={`${styles.rowBalance} ${iv.net >= 0 ? styles.amtIn : styles.amtOut}`}
-                >
-                  {iv.net >= 0 ? '+' : ''}
-                  {fmt(iv.net)}
-                </span>
-              </div>
-            ))}
+              ))}
           </div>
         </section>
       )}

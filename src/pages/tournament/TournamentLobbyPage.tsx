@@ -1,3 +1,11 @@
+import type { TournamentEntryWindowRow } from '../../utils/tournamentEntryWindow';
+import {
+  isUnlimitedTournamentFormat,
+  getTournamentFormatKind,
+  readTournamentFormat,
+  isTournamentEntryUnavailable,
+  getTournamentEntryCapacity,
+} from '../../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT LOBBY PAGE — Browse & Register for Tournaments
@@ -16,6 +24,10 @@ import {
   tournamentUnregisterSuccessText,
 } from '../../services/TournamentService';
 import TournamentLobbyCard from '../../components/tournament/TournamentLobbyCard';
+import {
+  describeStoredMttStructure,
+  type MttStructureDescription,
+} from '../../../server/src/tournament/mttStructureDescription';
 import { CardSkeleton } from '../../components/skeletons/CardSkeleton';
 import { useToast } from '../../components/common/Toast';
 
@@ -33,7 +45,8 @@ import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
 
-interface Tournament {
+interface Tournament extends TournamentEntryWindowRow {
+  format_contract?: unknown;
   id: string;
   name: string;
   clubId: string;
@@ -49,15 +62,16 @@ interface Tournament {
   startTime: string;
   status: 'ANNOUNCED' | 'REGISTERING' | 'RUNNING' | 'COMPLETED' | 'CANCELLED';
   currentPlayers: number;
-  maxPlayers: number;
+  maxPlayers: number | null;
   startingChips: number;
-  blindsUp: number;
+  structureFacts: MttStructureDescription;
   isRegistered: boolean;
   gameType: string;
   lateRegMins: number;
   isRebuy: boolean;
   variant: string;
   tournamentType: string;
+  satellite_target_id?: string | null;
   isBounty: boolean;
   isPko: boolean;
   isMysteryBounty: boolean;
@@ -303,6 +317,7 @@ export default function TournamentLobbyPage() {
       // Fetch active tournaments first (REGISTERING/RUNNING/ANNOUNCED), then completed
       // Two queries to ensure active tournaments always appear regardless of limit
       const fields = `
+                    format_contract,
                     id,
                     name,
                     club_id,
@@ -318,8 +333,12 @@ export default function TournamentLobbyPage() {
                     game_type,
                     variant,
                     tournament_type,
+                    satellite_target_id,
                     late_reg_mins,
                     late_reg_levels,
+                    rebuy_levels,
+                    prize_pool_finalized,
+                    started_at,
                     current_level,
                     is_rebuy,
                     is_reentry,
@@ -489,6 +508,7 @@ export default function TournamentLobbyPage() {
 
         const mapped: Tournament[] = data.map((t: any) => ({
           id: t.id,
+          format_contract: readTournamentFormat(t),
           name: t.name,
           clubId: t.club_id,
           // hide_club_name (2026-08-22): the owner chose to keep the club off
@@ -504,42 +524,25 @@ export default function TournamentLobbyPage() {
           startTime: t.start_time,
           status: t.status,
           currentPlayers: t.current_players || 0,
-          maxPlayers: t.max_players || 0, // 0 = unlimited (only SNG/Spin have caps)
+          maxPlayers: getTournamentEntryCapacity(t),
+          satellite_target_id: t.satellite_target_id,
           startingChips: t.starting_chips || 0,
-          blindsUp: (() => {
-            // Extract blind level duration from structure
-            let blinds: any[] = [];
-            if (Array.isArray(t.blind_structure)) blinds = t.blind_structure;
-            else if (typeof t.blind_structure === 'string') {
-              try {
-                const parsed = JSON.parse(t.blind_structure);
-                if (Array.isArray(parsed)) blinds = parsed;
-              } catch {
-                /* noop — fall through to named structure check */
-              }
-              if (blinds.length === 0) {
-                // Named structure — estimate duration
-                const key = (t.blind_structure || '').toLowerCase();
-                if (key.includes('turbo')) return 3;
-                if (key.includes('deep')) return 15;
-                return 8; // regular
-              }
-            }
-            return blinds.length > 0 && blinds[0]
-              ? blinds[0].durationMinutes || blinds[0].duration || 8
-              : 8;
-          })(),
+          structureFacts: describeStoredMttStructure(t.blind_structure, t.starting_chips),
           isRegistered: registrations.includes(t.id),
           gameType: t.game_type || 'NLH',
           lateRegMins: t.late_reg_mins || 0,
-          late_reg_levels: t.late_reg_levels || t.late_reg_mins || 0,
+          late_reg_levels: t.late_reg_levels,
+          late_reg_mins: t.late_reg_mins,
+          rebuy_levels: t.rebuy_levels,
+          prize_pool_finalized: t.prize_pool_finalized,
+          started_at: t.started_at,
           current_level: t.current_level || 0,
           is_reentry: t.is_reentry || false,
           addon_levels: t.addon_levels || 1,
           isRebuy: t.is_rebuy || false,
           guaranteedPrize: t.guaranteed_prize || 0,
           variant: t.variant || 'freezeout',
-          tournamentType: t.tournament_type || 'MTT',
+          tournamentType: t.tournament_type || '',
           isBounty: t.is_bounty || t.bounty_amount > 0 || /bounty/i.test(t.name) || false,
           isPko: t.is_pko || /\bpko\b/i.test(t.name) || /progressive\s*k/i.test(t.name) || false,
           isMysteryBounty: t.is_mystery_bounty || /mystery/i.test(t.name) || false,
@@ -581,6 +584,10 @@ export default function TournamentLobbyPage() {
     const t = tournamentsRef.current.find((x) => x.id === tournamentId);
     if (!t) {
       toast.error('That Tournament Is No Longer Listed');
+      return;
+    }
+    if (isTournamentEntryUnavailable(t, t.currentPlayers)) {
+      toast.error('Tournament entry is unavailable');
       return;
     }
     await registerMtt(
@@ -633,16 +640,11 @@ export default function TournamentLobbyPage() {
       if (typeFilter !== 'all') {
         switch (typeFilter) {
           case 'mtt':
-            return (
-              (t.variant === 'freezeout' || t.tournamentType === 'MTT') &&
-              !t.isBounty &&
-              !t.isPko &&
-              !t.isMysteryBounty
-            );
+            return isUnlimitedTournamentFormat(t) && !t.isBounty && !t.isPko && !t.isMysteryBounty;
           case 'sng':
-            return t.variant === 'sng';
+            return getTournamentFormatKind(t) === 'sng';
           case 'spin':
-            return t.variant === 'spin';
+            return getTournamentFormatKind(t) === 'spin';
           case 'bounty':
             return t.isBounty && !t.isPko && !t.isMysteryBounty;
           case 'pko':
@@ -852,11 +854,12 @@ export default function TournamentLobbyPage() {
                   <TournamentLobbyCard
                     tournament={{
                       id: tournament.id,
+                      format_contract: tournament.format_contract,
                       name: tournament.name,
                       type:
-                        tournament.variant === 'sng'
+                        getTournamentFormatKind(tournament) === 'sng'
                           ? 'sng'
-                          : tournament.variant === 'spin'
+                          : getTournamentFormatKind(tournament) === 'spin'
                             ? 'spin'
                             : tournament.isMysteryBounty
                               ? 'mystery'
@@ -880,10 +883,17 @@ export default function TournamentLobbyPage() {
                               : tournament.status === 'RUNNING'
                                 ? 'running'
                                 : 'cancelled',
-                      blindStructure: `${tournament.blindsUp}m`,
+                      blindStructure: tournament.structureFacts.speedLabel ?? 'Unconfirmed',
+                      structureFacts: tournament.structureFacts,
                       gameType: tournament.gameType,
                       startingChips: tournament.startingChips,
                       lateRegMins: tournament.lateRegMins,
+                      late_reg_levels: tournament.late_reg_levels,
+                      late_reg_mins: tournament.late_reg_mins,
+                      rebuy_levels: tournament.rebuy_levels,
+                      prize_pool_finalized: tournament.prize_pool_finalized,
+                      current_level: tournament.current_level,
+                      started_at: tournament.started_at,
                       isRebuy: tournament.isRebuy,
                       guaranteedPrize: tournament.guaranteedPrize,
                       isBounty: tournament.isBounty,

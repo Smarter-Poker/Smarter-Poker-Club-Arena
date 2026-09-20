@@ -3,7 +3,7 @@
  *  CLEAR USER CACHES — signing out must not leave the account behind
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * 2026-08-23: SIGNED_OUT cleared the store, Sentry and realtime, and no
+ * 2026-08-23: SIGNED_OUT cleared the store, error reporting and realtime, and no
  * storage at all. The next person to use the device was served the previous
  * account's cached club list, club lobby, hand history and — because
  * sessionStorage dies with the TAB, not the session — their profile,

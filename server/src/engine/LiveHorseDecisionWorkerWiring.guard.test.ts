@@ -31,9 +31,9 @@ describe('live horse decisions stay outside the table event loop', () => {
   it('counts queue and compute latency inside the chosen visible think time', () => {
     const schedule = sliceMethod(turns, '  protected scheduleHorseAction(');
 
-    expect(schedule).toContain(
-      'const remainingThinkMs = Math.max(0, thinkTimeMs - (Date.now() - decisionTimeMs))'
-    );
+    expect(schedule).toContain('const remainingThinkMs = Math.min(');
+    expect(schedule).toContain('Math.max(0, thinkTimeMs - (Date.now() - decisionTimeMs))');
+    expect(schedule).toContain('Math.max(0, protectedDeadlineMs - Date.now() - 100)');
     expect(schedule).toContain('fastResult.governorScale');
     expect(schedule).toContain('}, remainingThinkMs)');
   });
@@ -72,12 +72,27 @@ describe('live horse decisions stay outside the table event loop', () => {
     expect(workerRuntime).toContain('this.deps.captureDecisionEffects(() =>');
     expect(workerRuntime).toContain('decision: captured.value');
     expect(workerRuntime).toContain(
-      "effects: captured.value.policyFallback === 'brain_exception' ? [] : captured.effects"
+      'horseReferenceWagerWasRetained(captured.value) ? captured.effects : []'
     );
-    expect(workerRuntime).toContain('this.deps.applyDecisionEffects(request.effects)');
+    const commit = sliceMethod(workerRuntime, '  private executeEffectCommit(');
+    // The later IPC request may only select the exact batch this worker issued;
+    // it cannot supply replacement plan records or apply a duplicate twice.
+    expect(commit).toContain('const issued = this.issuedPlanBatches.get(key)');
+    expect(commit).toContain('horsePlanBatchBindingKey(request.planBinding) !== issued.bindingKey');
+    expect(commit).toContain('horseDecisionEffectsKey(request.effects) !== issued.effectsKey');
+    expect(commit).toContain("if (issued.state !== 'applied')");
+    expect(commit).toContain('this.deps.applyDecisionEffects(issued.effects)');
+    expect(commit).not.toContain('this.deps.applyDecisionEffects(request.effects)');
     expect(schedule).toContain('worker.runWithDispatchBarrier(() =>');
     expect(schedule).toContain('intendedApplied = applied');
-    expect(schedule).toContain('fastResult.effects.length > 0');
+    expect(schedule).toMatch(
+      /intendedApplied\s*&&\s*decision === fastResult\.decision\s*&&\s*exactWagerAccepted\s*&&/
+    );
+    // Empty or unissued batches report their outcome instead of entering COMMIT.
+    // The nonempty issued branch remains under the exact original FAST wager gate.
+    expect(schedule).toMatch(
+      /if \(fastResult\.effects\.length === 0\)\s*\{\s*noteFire\('phase15_plan_accepted_no_effects'\);\s*\} else if \(fastResult\.planIssueDisposition !== 'issued'\)\s*\{\s*noteFire\(`phase15_plan_accepted_\$\{fastResult\.planIssueDisposition\}`\);\s*\} else\s*void worker\.commitDecisionEffects\(fastResult\)/
+    );
     expect(schedule).toContain("action === 'bet' || action === 'raise'");
     expect(schedule).toContain('.commitDecisionEffects(');
     expect(schedule.indexOf('intendedApplied = applied')).toBeLessThan(

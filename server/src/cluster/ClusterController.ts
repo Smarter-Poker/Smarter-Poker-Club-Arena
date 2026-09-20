@@ -577,7 +577,7 @@ export class ClusterController {
           if (entry.error) {
             // The SQL caught it, rolled that game back, wrote the
             // controller_tick_error row and carried on. Reported here too so
-            // Sentry sees the same thing the table does.
+            // error reporting sees the same thing the table does.
             reportError(
               new Error(
                 `fn_cash_cluster_tick failed for ${row.game_id.slice(0, 8)}: ${entry.error.sqlstate ?? '?'} ${entry.error.message ?? ''}`

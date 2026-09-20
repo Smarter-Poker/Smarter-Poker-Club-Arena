@@ -55,6 +55,12 @@ export interface TournamentResult {
   name?: string;
   /** Finishing position. null while still in play or if the row is unreadable. */
   finishPlace: number | null;
+  /** Immutable v3 satellite outcome; equal qualifiers have no finishing rank. */
+  satelliteQualification?: {
+    targetId: string;
+    deliveryKind: 'seat' | 'ticket' | 'cash';
+    amount: number;
+  };
   /** Field size, for the "3rd of 128" line. null when unknown. */
   entrants: number | null;
   /** Prize money awarded for the finish. 0 for a non-cashing finish. */

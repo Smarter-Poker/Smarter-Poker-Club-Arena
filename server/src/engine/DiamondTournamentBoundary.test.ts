@@ -142,9 +142,16 @@ describe('the Diamond tournament table boundary', () => {
       arena: diamond,
       tournament_id: 'event',
     });
+    /* A settings read that FAILED is not a closure (the cash reader learned
+       the same distinction after this test was first written): the table is
+       still refused, but as an unknown, so nothing downstream treats a
+       Supabase blip as the switch being off. */
     settingsError = { message: 'unavailable' };
-    await expect(loadTable('table')).rejects.toThrow('Diamond Tournaments Are Not Open');
-    expect(from.mock.calls.filter(([name]) => name === 'ca_arena_settings')).toHaveLength(3);
+    await expect(loadTable('table')).rejects.toThrow(
+      'Diamond tournament settings read failed: unavailable'
+    );
+    await expect(loadTable('table')).rejects.not.toThrow('Diamond Tournaments Are Not Open');
+    expect(from.mock.calls.filter(([name]) => name === 'ca_arena_settings')).toHaveLength(4);
   });
 
   it('deals a Diamond tournament hand under the same no-deduction rule as a cash hand', () => {

@@ -36,6 +36,8 @@
 import type { Card, SeatPlayer, ActionRecord } from '../types.js';
 import { RANK_VALUES } from './PokerEngine.js';
 import type { OppPostflopRead } from './HorseEval.js';
+import { horseDecisionEffectsAreValid, horseMindHandKey } from './HorseDecisionEffects.js';
+import { horseMindHandIdentityKey, type HorseMindHandIdentity } from './HorseMindHandIdentity.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OPPONENT STATS
@@ -362,15 +364,23 @@ export class HorseMind {
   // ───────────────────────────────────────────────────────────────────────
 
   /**
-   * Ingest the current hand's action history. Called at the top of every
-   * horse decision; every record is processed exactly once no matter how many
-   * times the same history is replayed across turns or tables.
+   * Ingest the complete controller history or its growing prefix. A qualified
+   * table/hand coordinate separates interleaved tables while its dedup keys
+   * remain retained. This volatile bounded cache is not durable exactly-once
+   * delivery; callers without an identity keep the unqualified legacy keys.
    */
-  static observe(history: ActionRecord[] | undefined, _players: SeatPlayer[]): void {
+  static observe(
+    history: ActionRecord[] | undefined,
+    _players: SeatPlayer[],
+    identity?: HorseMindHandIdentity | null
+  ): void {
     if (!history || history.length === 0) return;
 
-    // The first action's timestamp identifies the hand (stable across turns).
-    const handKey = `${history[0].timestamp}:${history[0].userId}`;
+    // Explicit null/invalid identity refuses the new mutation. Only legacy
+    // direct/offline callers that omit the argument retain the old namespace.
+    const identifiedHand = identity === undefined ? undefined : horseMindHandIdentityKey(identity);
+    if (identity !== undefined && !identifiedHand) return;
+    const handKey = identifiedHand ?? `${history[0].timestamp}:${history[0].userId}`;
 
     // ── BOUNDED-MEMORY GUARDS (V12.3: evict oldest, never clear) ───────────
     // observe() runs at the TOP OF EVERY DECISION and many tables interleave,
@@ -420,7 +430,8 @@ export class HorseMind {
       return p;
     };
 
-    for (const a of history) {
+    for (let controllerOrdinal = 0; controllerOrdinal < history.length; controllerOrdinal++) {
+      const a = history[controllerOrdinal];
       const preflop = a.stage === 'preflop';
       // V28: the street change must be observed BEFORE the stat update reads
       // streetBettor, or the first action of a new street is judged against
@@ -445,7 +456,11 @@ export class HorseMind {
       const facingAggr = preflop
         ? preflopRaises >= 1
         : streetBettor != null && streetBettor !== a.userId;
-      const actKey = `${a.timestamp}:${a.userId}:${a.action}:${a.amount}`;
+      // This is the controller sequence position, not the canonical ordinal
+      // in the full accepted list. Projection must preserve the whole prefix.
+      const actKey = identifiedHand
+        ? `${identifiedHand}|controller:${controllerOrdinal}`
+        : `${a.timestamp}:${a.userId}:${a.action}:${a.amount}`;
       const isNew = !this.seenActions.has(actKey);
       if (isNew) this.seenActions.add(actKey);
 
@@ -626,8 +641,7 @@ export class HorseMind {
 
   /** Stable per-hand key shared by observe(), plans, and callers. */
   static handKeyOf(history: ActionRecord[] | undefined): string | null {
-    if (!history || history.length === 0) return null;
-    return `${history[0].timestamp}:${history[0].userId}`;
+    return horseMindHandKey(history);
   }
 
   /** Read-only access for diagnostics/tests. */
@@ -972,6 +986,9 @@ export class HorseMind {
 
   /** Apply one accepted decision's idempotent intent writes in FIFO order. */
   static applyDecisionEffects(effects: readonly HorseMindDecisionEffect[]): void {
+    if (!horseDecisionEffectsAreValid(effects)) {
+      throw new Error('HorseMind.applyDecisionEffects: invalid decision effects');
+    }
     if (this.decisionEffectSink) {
       throw new Error('HorseMind.applyDecisionEffects: cannot commit during capture');
     }
@@ -1011,12 +1028,70 @@ export class HorseMind {
     };
   }
 
+  /** Private read view for a second look at the same hand. Copy only the
+   * table's at-most-ten players, their scoped rows, pair reads and hand plans.
+   * No global-map scan, observation dedupe, dirty rows or pending writes enter
+   * this view. It is valid only with observation disabled and intent captured;
+   * it is not a full restart checkpoint or a persistence input.
+   */
+  static snapshotDecisionReads(
+    players: readonly SeatPlayer[],
+    handKey: string | null
+  ): HorseMindSandbox {
+    const ids = players.map((player) => player.user_id);
+    if (
+      ids.length < 1 ||
+      ids.length > 10 ||
+      new Set(ids).size !== ids.length ||
+      ids.some((id) => typeof id !== 'string' || id.length === 0 || id.length > 256) ||
+      (handKey !== null && (typeof handKey !== 'string' || handKey.length > 512)) ||
+      this.decisionEffectSink
+    )
+      throw new Error('HorseMind.snapshotDecisionReads: invalid boundary');
+    const view = this.createSandbox();
+    for (const id of ids) {
+      const stats = this.stats.get(id);
+      if (stats) view.stats.set(id, { ...stats });
+      for (const family of ['holdem', 'omaha', 'sixplus']) {
+        for (const size of ['hu', 'short', 'full']) {
+          const key = `${family}:${size}|${id}`;
+          const scoped = this.scoped.get(key);
+          if (scoped) view.scoped.set(key, { ...scoped });
+        }
+      }
+      for (const other of ids) {
+        const key = `${id}|${other}`;
+        const pair = this.pairs.get(key);
+        if (pair) view.pairs.set(key, { ...pair });
+      }
+      if (handKey === null) continue;
+      const key = `${handKey}|${id}`;
+      if (this.plans.has(key)) view.plans.set(key, this.plans.get(key)!);
+      for (const street of ['preflop', 'flop', 'turn', 'river']) {
+        const streetKey = `${key}|${street}`;
+        const plan = this.raisePlans.get(streetKey);
+        if (plan !== undefined) view.raisePlans.set(streetKey, plan);
+        const outlook = this.outlooks.get(streetKey);
+        if (outlook)
+          view.outlooks.set(streetKey, {
+            good: new Set(outlook.good),
+            scare: new Set(outlook.scare),
+          });
+      }
+    }
+    return view;
+  }
+
   static runInSandbox<T>(sandbox: HorseMindSandbox, fn: () => T): T {
     if (this.sandboxDepth > 0) {
       // Nested sandboxes have no use case; refusing beats silently mixing
       // two sandboxes' state.
       throw new Error('HorseMind.runInSandbox: already inside a sandbox');
     }
+    if (this.decisionEffectSink) {
+      throw new Error('HorseMind.runInSandbox: cannot cross an active effect capture');
+    }
+    const liveScope = this.decisionScope;
     const live = {
       stats: this.stats,
       seenActions: this.seenActions,
@@ -1042,6 +1117,7 @@ export class HorseMind {
     this.raisePlans = sandbox.raisePlans;
     this.outlooks = sandbox.outlooks;
     this.sandboxDepth = 1;
+    this.decisionScope = null;
     try {
       return fn();
     } finally {
@@ -1057,6 +1133,7 @@ export class HorseMind {
       this.scoped = live.scoped;
       this.dirtyScoped = live.dirtyScoped;
       this.sandboxDepth = 0;
+      this.decisionScope = liveScope;
     }
   }
 
@@ -1677,7 +1754,7 @@ export class HorseMind {
   ): Array<[number, number] | null> {
     const bands: Array<[number, number] | null> = [];
     for (const p of players) {
-      if (p.seat === heroSeat || p.is_folded || p.is_sitting_out) continue;
+      if (p.seat === heroSeat || p.is_folded || (p.is_sitting_out && !p.is_all_in)) continue;
       const readOut: OppPostflopRead | undefined = readsOut ? { aggrW: 0, checked: 0 } : undefined;
       bands.push(this.bandFor(p.user_id, history, bigBlind, sizedReads, board, readOut));
       if (readsOut)
@@ -1916,9 +1993,10 @@ export class HorseMind {
     players: SeatPlayer[],
     recencyBlend: boolean = true
   ): ExploitProfile {
-    const opps = players.filter((p) => p.seat !== heroSeat && !p.is_folded && !p.is_sitting_out);
+    const opps = players.filter(
+      (p) => p.seat !== heroSeat && !p.is_folded && (!p.is_sitting_out || p.is_all_in)
+    );
     if (opps.length === 0) return NEUTRAL_EXPLOIT;
-    if (opps.length === 1) return this.exploit(opps[0].user_id, recencyBlend);
 
     // V28 AUDIT FIX: bluffMod was seeded at the NEUTRAL 1 and only ever
     // min'd down — three 70% folders each returning 1.45 produced
@@ -1929,17 +2007,23 @@ export class HorseMind {
     let bluffMod = Infinity;
     let callDownMod = 0;
     let valueThinMod = 0;
+    let responders = 0;
     for (const o of opps) {
       const e = this.exploit(o.user_id, recencyBlend);
-      bluffMod = Math.min(bluffMod, e.bluffMod); // weakest link gates bluffs
+      // An all-in wager still carries the aggressor's observed tendencies;
+      // their old fold/call response cannot price a new bluff or value bet.
       callDownMod += e.callDownMod;
-      valueThinMod += e.valueThinMod;
+      if (!o.is_all_in && !o.is_sitting_out) {
+        responders++;
+        bluffMod = Math.min(bluffMod, e.bluffMod); // weakest responder gates bluffs
+        valueThinMod += e.valueThinMod;
+      }
     }
     if (!isFinite(bluffMod)) bluffMod = 1;
     return {
       bluffMod,
       callDownMod: callDownMod / opps.length,
-      valueThinMod: valueThinMod / opps.length,
+      valueThinMod: responders > 0 ? valueThinMod / responders : 1,
     };
   }
 }

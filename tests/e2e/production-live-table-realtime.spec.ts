@@ -12,6 +12,9 @@ import {
   collectVisibleCashCandidates,
 } from './support/cashTableCandidates';
 import { createProgressSilenceGuard } from './support/progressSilence';
+import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
+import { remainingObservationMs } from './support/observationDeadline';
+import { assertInitialTableOwnership } from './support/initialTableOwnership';
 
 const CERTIFICATION_ENABLED = process.env.LIVE_TABLE_REALTIME_CERTIFICATION === '1';
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
@@ -201,21 +204,6 @@ function healthyRunningTable(
   return table;
 }
 
-async function dismissClubMessage(page: Page): Promise<void> {
-  const close = page.getByRole('button', { name: 'Close Club Message' });
-  if (
-    await close
-      .waitFor({ state: 'visible', timeout: 2_000 })
-      .then(() => true)
-      .catch(() => false)
-  ) {
-    await close.click();
-    await expect(close, 'the club message blocked the live-table selector').toBeHidden({
-      timeout: 8_000,
-    });
-  }
-}
-
 async function visibleRunningCashCandidates(page: Page): Promise<RunningTableCandidate[]> {
   // Cluster game cards retain the representative table id. Their View/Watch
   // Game action uses the same spectator table route as manual cash tables.
@@ -236,7 +224,7 @@ async function selectOccupiedRunningCashTable(
   await expect(page.locator('.club-home'), 'the production club lobby did not render').toBeVisible({
     timeout: 30_000,
   });
-  await dismissClubMessage(page);
+  await prepareCashLobbyActions(page);
 
   await page
     .locator(
@@ -320,35 +308,73 @@ async function proveTableProgressedBeforeNavigation(
  */
 async function selectProgressingTournamentTable(
   request: APIRequestContext,
-  gameFormat: (typeof TOURNAMENT_FORMATS)[number]
+  gameFormat: (typeof TOURNAMENT_FORMATS)[number],
+  testInfo: TestInfo
 ): Promise<{ candidate: RunningTableCandidate; evidence: PreNavigationEngineEvidence }> {
-  const before = await readEngineHealth(request, { gameFormat });
+  let before = await readEngineHealth(request, { gameFormat });
   /* The live SNG board is presently heads-up, so two seats is a real SNG,
      not an unstable fallback. Spins and MTTs retain a three-player floor to
      avoid selecting a table already on its terminal heads-up hand. */
   const minimumStableSeats = gameFormat === 'sng' ? 2 : 3;
-  const baselines = before.tableLiveness
-    .filter(
-      (table) =>
-        table.gameFormat === gameFormat &&
-        (table.clubId === CLUB_ID || table.clubId === UNION_ID) &&
-        healthyRunningTable(before, table.tableId, gameFormat) !== null &&
-        table.seated >= minimumStableSeats &&
-        table.dealable >= minimumStableSeats
-    )
-    .sort(
-      (a, b) =>
-        b.seated - a.seated ||
-        (gameFormat === 'sng' ? a.handCount - b.handCount : 0) ||
-        a.msSinceProgress - b.msSinceProgress ||
-        a.tableId.localeCompare(b.tableId)
-    );
+  const readyTables = (health: EngineHealth): EngineTableLiveness[] =>
+    health.tableLiveness
+      .filter(
+        (table) =>
+          table.gameFormat === gameFormat &&
+          (table.clubId === CLUB_ID || table.clubId === UNION_ID) &&
+          healthyRunningTable(health, table.tableId, gameFormat) !== null &&
+          table.seated >= minimumStableSeats &&
+          table.dealable >= minimumStableSeats
+      )
+      .sort(
+        (a, b) =>
+          b.seated - a.seated ||
+          (gameFormat === 'sng' ? a.handCount - b.handCount : 0) ||
+          a.msSinceProgress - b.msSinceProgress ||
+          a.tableId.localeCompare(b.tableId)
+      );
+  let baselines = readyTables(before);
 
-  if (baselines.length === 0) {
-    throw new Error(
-      `production exposed no already-running ${gameFormat.toUpperCase()} table with ` +
-        `${minimumStableSeats}+ dealable players in fixture scope ${CLUB_ID}/${UNION_ID}`
-    );
+  // A publisher can finish while natural tournament tables are still resuming.
+  // Wait only for the same live-table prerequisites, before freezing identities.
+  try {
+    if (baselines.length === 0) {
+      await expect
+        .poll(
+          async () => {
+            before = await readEngineHealth(request, { gameFormat });
+            baselines = readyTables(before);
+            return baselines.length;
+          },
+          {
+            timeout: CAUSAL_HAND_TIMEOUT_MS,
+            intervals: [2_000, 3_000, 5_000, 5_000],
+            message:
+              `production exposed no already-running ${gameFormat.toUpperCase()} table with ` +
+              `${minimumStableSeats}+ dealable players in fixture scope ${CLUB_ID}/${UNION_ID} ` +
+              `inside ${CAUSAL_HAND_TIMEOUT_MS}ms`,
+          }
+        )
+        .toBeGreaterThan(0);
+    }
+  } catch (error) {
+    await testInfo.attach(`${gameFormat}-baseline-readiness-refusal`, {
+      body: Buffer.from(
+        JSON.stringify(
+          {
+            expectedVersion: EXPECTED_ENGINE_SHA,
+            gameFormat,
+            minimumStableSeats,
+            fixtureClubIds: [CLUB_ID, UNION_ID],
+            lastScopedHealth: before,
+          },
+          null,
+          2
+        )
+      ),
+      contentType: 'application/json',
+    });
+    throw error;
   }
 
   let after = before;
@@ -482,7 +508,11 @@ async function certifyReadOnlyTournamentFormat(
   testInfo: TestInfo,
   gameFormat: (typeof TOURNAMENT_FORMATS)[number]
 ): Promise<void> {
-  const selected = await selectProgressingTournamentTable(request, gameFormat);
+  // Poker's action clock bounds each turn, not the whole hand. Keep the
+  // existing runner's hard case limit and one fixed observation deadline;
+  // live poker events still must satisfy the unchanged silence limit.
+  const observationDeadline = Date.now() + testInfo.timeout;
+  const selected = await selectProgressingTournamentTable(request, gameFormat, testInfo);
   const { candidate, evidence } = selected;
   await testInfo.attach(`${gameFormat}-engine-before-navigation`, {
     body: Buffer.from(
@@ -591,7 +621,7 @@ async function certifyReadOnlyTournamentFormat(
       journal.waitForCausalHandCycle(
         candidate.id,
         progressStartedAt,
-        CAUSAL_HAND_TIMEOUT_MS,
+        remainingObservationMs(observationDeadline),
         MAX_GAMEPLAY_SILENCE_MS,
         `${candidate.name} did not progress through a hand and automatically start the next`
       ),
@@ -613,15 +643,20 @@ async function certifyReadOnlyTournamentFormat(
       preOutageTransports,
       `${candidate.name} did not have exactly one live transport before outage`
     ).toHaveLength(1);
-    expect(
+    // acquire() deliberately re-subscribes when a prepared facade hands over
+    // to the live client. The server keeps one subscriber for that transport
+    // and table. Require one transport throughout initial acquisition, then
+    // no further acquisition during the actual observed hand cycle.
+    assertInitialTableOwnership(
       journal.matchingFrames({
         direction: 'sent',
         tableId: candidate.id,
         type: 'SUBSCRIBE',
         since: navigationStartedAt,
       }),
-      `${candidate.name} created duplicate table owners`
-    ).toHaveLength(1);
+      preOutageTransports[0]!,
+      progressStartedAt
+    );
 
     try {
       await context.setOffline(true);
@@ -674,7 +709,7 @@ async function certifyReadOnlyTournamentFormat(
         journal.waitForCausalHandCycle(
           candidate.id,
           recoveredProgressStartedAt,
-          CAUSAL_HAND_TIMEOUT_MS,
+          remainingObservationMs(observationDeadline),
           MAX_GAMEPLAY_SILENCE_MS,
           `${candidate.name} did not resume causal gameplay after reconnect`
         ),
@@ -803,6 +838,8 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
       page,
       request,
     }, testInfo) => {
+      // Baseline readiness must not consume the existing continuity proof budget.
+      testInfo.setTimeout(testInfo.timeout + CAUSAL_HAND_TIMEOUT_MS);
       await certifyReadOnlyTournamentFormat(page, request, testInfo, gameFormat);
     });
   }
@@ -858,6 +895,9 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
       contentType: 'application/json',
     });
 
+    // The engine-progress wait above can outlast the optional invitation's
+    // arrival. Own its dismissal before the unchanged View visibility check.
+    await prepareCashLobbyActions(page, { retainInvitationHandler: false });
     const card = page.locator(
       `[data-testid="arena-lobby-game-card"][data-kind="cash"][data-id="${candidate.id}"]`
     );

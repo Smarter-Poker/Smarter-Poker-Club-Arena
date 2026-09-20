@@ -6,35 +6,35 @@
  * live in process memory, so every deploy or restart used to wipe them and
  * the horses re-learned every opponent from zero.
  *
- * This service replays the last 24 hours of REAL hand history through
- * HorseMind.observe() at boot. The persisted `hand_history.actions` arrays
- * are the exact ActionRecord objects the live engine produced (seat, userId,
- * action, amount, timestamp, stage, isFullRaise), so the replay rebuilds the
- * same statistics the engine would have accumulated had it never restarted.
+ * This service attempts bounded replay of the last 72 hours of retained hand history through
+ * HorseMind.observe() at boot. Only complete controller-compatible actions
+ * with the stored table UUID and safe allocated global hand number enter the
+ * new basic-read namespace. Missing identity is not reconstructed from time.
+ * This is a bounded pooled replay, not an equivalent scoped/deep checkpoint;
+ * aggregate persistence timestamps still cannot prove per-row replay coverage.
  *
  * Design constraints honored:
- *  - Non-blocking: fired after boot, never delays table startup. A horse that
- *    acts mid-hydration simply has fewer reads for a few hundred ms — the
- *    exact behavior of the pre-V6 engine, so this is strictly an upgrade.
- *  - Bounded: row limit + HorseMind's own memory caps (4000 players / 60k
- *    action keys / 20k hand flags). Flag-generation swaps during a one-pass
- *    replay are harmless because each historical hand is observed exactly
- *    once.
- *  - Fail-safe: any error is reported and swallowed — hydration can never
- *    take the engine down.
+ *  - The worker awaits hydration before READY; failures leave incomplete reads.
+ *  - Existing row limits and HorseMind's pre-call eviction thresholds remain
+ *    unchanged (4000 players / 60k action keys / 20k hand flags). Evicted keys
+ *    and prior aggregate counters cannot certify durable replay coverage.
+ *  - Query/page errors are reported; unusable rows and per-hand consumer
+ *    failures are skipped. None establishes complete restoration.
  *
  * NEVER refer to the horses as "bots" — they are HORSES only.
  */
 
 import { supabase } from './supabase.js';
 import { HorseMind } from '../engine/HorseMind.js';
+import { horseMindHandFromHistory } from '../engine/HorseMindHandIdentity.js';
+import { completedHandActionsForMind } from '../engine/horseDecision/completedHandActions.js';
 import { reportError } from './errorReporter.js';
 import { POSTGREST_PAGE } from './supabase/pagination.js';
 
 // V11 (Dan 2026-08-22): deeper memory — the horses keep improving the more
 // they play, and a restart should cost as little of that learning as
-// possible. 72h/12000 hands keeps replay under a few seconds while tripling
-// the retained sample per opponent (HorseMind's own caps still bound memory).
+// possible. The existing 72h/12000-hand limits remain unchanged; this source
+// change does not establish a replay latency or complete-population guarantee.
 const HYDRATION_WINDOW_HOURS = 72;
 const HYDRATION_MAX_HANDS = 12000;
 
@@ -81,16 +81,16 @@ export async function hydrateHorseMind(sinceIso?: string | null): Promise<void> 
        without a word - so the replay was the OLDEST thousand hands of the
        window, ascending from seventy-two hours ago, out of the 1.56 million
        the window holds. Keyset on (created_at, id), descending, up to the cap, then
-       replayed in the order they were dealt. A short read replays what it
-       read: fewer hands is the pre-V6 engine, not a wrong engine. */
-    type HandRow = HistoryCursor & { actions: unknown };
+       replayed oldest selected (created_at,id) first. This is persistence
+       ordering, not proof of deal order or a complete window. */
+    type HandRow = HistoryCursor & { actions: unknown; table_id?: unknown; hand_number?: unknown };
     const newestFirst: HandRow[] = [];
     let cursor: HistoryCursor | null = null;
     while (newestFirst.length < HYDRATION_MAX_HANDS) {
       const want = Math.min(POSTGREST_PAGE, HYDRATION_MAX_HANDS - newestFirst.length);
       let q = supabase
         .from('hand_history')
-        .select('id, actions, created_at')
+        .select('id, table_id, hand_number, actions, created_at')
         .gt('created_at', since)
         .lte('created_at', through)
         .order('created_at', { ascending: false })
@@ -155,9 +155,20 @@ export async function hydrateHorseMind(sinceIso?: string | null): Promise<void> 
       const a = (row as { actions?: unknown }).actions;
       if (!Array.isArray(a) || a.length === 0) continue;
       try {
-        HorseMind.observe(a as never, []);
+        const identity = horseMindHandFromHistory(row);
+        const projected = completedHandActionsForMind(a, null);
+        // Neither old low-number rows nor missing coordinates can be upgraded
+        // from a timestamp. Skip this new basic ingestion explicitly.
+        if (!identity || !projected) continue;
+        const previousScope = HorseMind.currentScope();
+        HorseMind.setDecisionScope(null);
+        try {
+          HorseMind.observe(projected.actions, [], identity);
+        } finally {
+          HorseMind.setDecisionScope(previousScope);
+        }
         hands++;
-        actions += a.length;
+        actions += projected.actions.length;
       } catch {
         /* one malformed historical row must never stop the replay */
       }

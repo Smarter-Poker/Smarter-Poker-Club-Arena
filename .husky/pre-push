@@ -126,22 +126,42 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-# The user prohibits Mac dependency installs and copies. A partial shared
-# install is not a source-code verdict. Keep all dependency-free guards here;
-# required PR CI and the publisher still compile/test their exact installed tree.
-# A complete Mac install and every non-Mac host retain the local gates as well.
+# September 17: applicable prechecks must run before submission. Probe this
+# owned checkout read-only; never install into a shared symlink from a hook.
+# Missing dependencies refuse the affected check instead of deferring it to CI.
 CA_TREE_TOP="$(git rev-parse --show-toplevel)"
+# Direct policy verification and one actual-result receipt in this worktree's
+# private Git metadata. A failed check keeps its original failing exit status.
+POLICY_PRECHECK_STARTED=$(date +%s)
+policy_precheck_result() {
+  policy_exit=$?
+  trap - EXIT
+  node "$CA_TREE_TOP/docs/agent-policy/agent-policy.mjs" hook-report "$POLICY_PRECHECK_STARTED" "$policy_exit" || policy_exit=1
+  exit "$policy_exit"
+}
+trap policy_precheck_result EXIT
+node "$CA_TREE_TOP/docs/agent-policy/agent-policy.mjs" check
+node --test "$CA_TREE_TOP/docs/agent-policy/agent-policy.test.mjs"
+
 CLIENT_DEPENDENCY_MODE=$(node "$CA_TREE_TOP/scripts/local-dependency-policy.mjs" "$CA_TREE_TOP")
 SERVER_DEPENDENCY_MODE=local
 if [ -f "$CA_TREE_TOP/server/package.json" ]; then
   SERVER_DEPENDENCY_MODE=$(node "$CA_TREE_TOP/scripts/local-dependency-policy.mjs" "$CA_TREE_TOP/server")
 fi
 
+ALL_FILES=""
 # Get the range of commits being pushed
 while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # Skip deletions
   if [ "$LOCAL_SHA" = "0000000000000000000000000000000000000000" ]; then
     continue
+  fi
+
+  # Tests read this checkout: a different ref or dirty tracked files cannot
+  # qualify the bytes being submitted. Commit intended fixes before pushing.
+  if [ "$LOCAL_SHA" != "$(git rev-parse HEAD)" ] || ! git diff --quiet HEAD --; then
+    echo "[club-arena pre-push] BLOCKED: prechecks require the pushed HEAD and clean tracked files."
+    exit 1
   fi
 
   case "$REMOTE_REF" in
@@ -265,14 +285,17 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # so the wall builds itself. The list is narrowed to the branch-owned diff;
   # mandatory checks remain active for every push.
   #
-  # So drop anything whose content matches origin/main. This only ever NARROWS,
-  # never skips: if main is not fetched, the list is left exactly as computed.
+  # Compare with the protected main ancestor actually inherited by this head.
+  # Another task can advance the shared origin/main while this push runs. Its
+  # newer engine bytes must not turn our unchanged inherited engine into a
+  # branch-owned change. Capture the base once; no known base keeps every input.
   # ═══════════════════════════════════════════════════════════════════════
   if [ -n "$FILES" ] && git rev-parse --verify -q "$REMOTE/main" >/dev/null 2>&1; then
+    QUALIFIED_MAIN_BASE=$(git merge-base "$LOCAL_SHA" "$REMOTE/main" 2>/dev/null || true)
     KEPT=""
     DROPPED=0
     for f in $FILES; do
-      if git diff --quiet "$REMOTE/main" -- "$f" 2>/dev/null; then
+      if [ -n "$QUALIFIED_MAIN_BASE" ] && git diff --quiet "$QUALIFIED_MAIN_BASE" "$LOCAL_SHA" -- "$f" 2>/dev/null; then
         DROPPED=$((DROPPED + 1))
         continue
       fi
@@ -282,9 +305,12 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     FILES="$KEPT"
     if [ "$DROPPED" -gt 0 ]; then
       echo "[club-arena pre-push] $DROPPED file(s) came in with a main merge and are"
-      echo "                      byte-identical to $REMOTE/main; judging the rest."
+      echo "                      byte-identical to inherited main $QUALIFIED_MAIN_BASE; judging the rest."
     fi
   fi
+
+  ALL_FILES="$ALL_FILES
+$FILES"
 
   # ═══════════════════════════════════════════════════════════════════════
   # 5. NON-FAST-FORWARD PUSH TO main — added 2026-08-21 after a real loss.
@@ -355,6 +381,19 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
       ;;
   esac
 
+  # Migration presence uses Git and the tracked schema manifest, not credentials.
+  # Check the whole branch: a follow-up push can otherwise hide an earlier
+  # migration behind HEAD~1 or the previous remote feature-branch tip.
+  MIGRATION_BASE=$(git merge-base "$LOCAL_SHA" "$REMOTE/main" 2>/dev/null \
+                   || git merge-base "$LOCAL_SHA" main 2>/dev/null || true)
+  if [ -z "$MIGRATION_BASE" ]; then
+    echo "[club-arena pre-push] BLOCKED: cannot establish the migration branch base."
+    FAIL=1
+  elif ! node scripts/ci/check-migrations-applied.mjs "$MIGRATION_BASE"; then
+    echo "[club-arena pre-push] BLOCKED by check-migrations-applied (CI runs this too)"
+    FAIL=1
+  fi
+
   # 0. Repo-wide invariants. Both are ~100ms.
   #
   #    CORRECTED 2026-08-28. This comment used to say branch protection was
@@ -363,40 +402,6 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   #    is ACTIVE on main with `bypass_actors: []` and six required checks. It
   #    enforces. These two guards run here because catching them in 100ms beats
   #    catching them in a three-minute CI cycle, not because nothing else will.
-  # ── THE GATES CI RUNS AND THIS HOOK DID NOT (2026-09-11) ──────────────────
-  #
-  # On 2026-09-11 a push went out green from this hook and CI turned red on
-  # check-route-targets: a console plate navigated to `/clubs/${id}/${game}`,
-  # a template the checker cannot resolve, so nobody could prove the button
-  # went anywhere. It was found only because the gates were finally run by
-  # hand. That is a three-minute CI cycle and a red main to learn something a
-  # local half-second knew.
-  #
-  # These are every gate ci.yml runs that this hook did not, minus three that
-  # cannot run here: check-club-fk-indexes and check-migrations-applied need
-  # SUPABASE_URL and a service role key, and check-phantom-tables is currently
-  # RED on nine tournament-deal RPCs that predate this work - adding it would
-  # block every push in the repo for a fault the pusher did not cause. It is
-  # written down rather than wired in, which is the honest way to leave it.
-  #
-  # Total added cost measured at ~9 seconds against a hook that already runs
-  # tsc and a vitest sweep.
-  for GATE in check-route-targets check-css-modules check-no-emoji \
-              check-maybe-single check-deprecated-tables check-phantom-columns \
-              check-esm-require check-horses-are-players check-bus-wiring \
-              check-stranded-writers check-discarded-read-then-write \
-              check-embed-relationships check-no-vercel-deploy \
-              check-new-migration-version-collisions check-rake-schedule-parity \
-              check-rakeconfig-parity check-rake-bbj-collection-law \
-              check-seat-law-parity; do
-    if [ -f "scripts/ci/$GATE.mjs" ]; then
-      if ! node "scripts/ci/$GATE.mjs"; then
-        echo "[club-arena pre-push] BLOCKED by $GATE (CI runs this too)"
-        FAIL=1
-      fi
-    fi
-  done
-
   if [ -f scripts/ci/check-allin-pointer-events.mjs ]; then
     if ! node scripts/ci/check-allin-pointer-events.mjs; then
       echo "[club-arena pre-push] BLOCKED: all-in action panel would lose pointer events"
@@ -495,13 +500,13 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   #    `incremental` with a tsBuildInfoFile, so only the first run pays. Runs
   #    at all only when the push touches src/**.ts(x).
   #
-  #    It SKIPS, loudly, when a worktree has no node_modules — same reasoning
-  #    as the formatter in .husky/pre-commit: a gate people wait on is a gate
-  #    developers stop trusting. The rewind guard must never be skipped.
-  if echo "$FILES" | grep -qE '^src/.*\.tsx?$'; then
+  #    Missing dependencies or compiler refuse this applicable local gate.
+  #    Hosted checks remain required after these faster local checks pass.
+  if echo "$FILES" | grep -qE '^(src/.*\.tsx?|tsconfig[^/]*\.json|package(-lock)?\.json)$'; then
     TSC="$(git rev-parse --show-toplevel)/node_modules/.bin/tsc"
-    if [ "$CLIENT_DEPENDENCY_MODE" = ci ]; then
-      echo "[club-arena pre-push] local typecheck not run: Mac dependencies are incomplete. Required CI must pass."
+    if [ "$CLIENT_DEPENDENCY_MODE" != local ]; then
+      echo "[club-arena pre-push] BLOCKED: required local compiler dependencies are incomplete."
+      FAIL=1
     elif [ -x "$TSC" ]; then
       echo "[club-arena pre-push] type-checking src/ ..."
       if ! "$TSC" --noEmit; then
@@ -514,7 +519,8 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
         FAIL=1
       fi
     else
-      echo "[club-arena pre-push] no local node_modules - skipped the type check."
+      echo "[club-arena pre-push] BLOCKED: the required local compiler is unavailable."
+      FAIL=1
     fi
   fi
 
@@ -610,6 +616,7 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     fi
   done
 done
+FILES=$(printf '%s\n' "$ALL_FILES" | sort -u)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HOUSE TEXT RULES (Dan 2026-08-21)
@@ -626,22 +633,17 @@ done
 # Autofix:  node scripts/ci/check-title-case.mjs --fix
 #           node scripts/ci/check-ui-text.mjs --fix
 # ─────────────────────────────────────────────────────────────────────────────
-# These three parse TypeScript, so they need the `typescript` package. A
-# worktree with no node_modules cannot run them, and until 2026-09-12 that was
-# not a skip: node exited ERR_MODULE_NOT_FOUND, the `if !` caught it as a
-# failure, and the push was BLOCKED with an error naming a missing package
-# rather than a missing rule. When agent trees were purged of node_modules that
-# evening - correctly, since `npm ci` in a worktree belongs in CI - every agent
-# could still commit and none could push.
-#
-# Same rule as the type check above and the formatter in pre-commit: SKIP, and
-# say so, because a gate people cannot satisfy is a gate they route around. CI
-# runs all three as required checks, so nothing merges uncased either way.
+# The copy guards parse TypeScript. Missing tooling refuses an applicable
+# source/configuration check before CI; prose-only changes use their own pins.
 copy_case_guard() {
   guard="$1"
   [ -f "$guard" ] || return 0
+  if ! echo "$FILES" | grep -qE '^(src/|package(-lock)?\.json$|scripts/ci/check-(title-case|painted-text-case|nav-title-case)\.mjs$|\.husky/)'; then
+    return 0
+  fi
   if ! node -e 'require("typescript")' >/dev/null 2>&1; then
-    echo "[club-arena pre-push] local TypeScript unavailable - $(basename "$guard") must run in CI."
+    echo "[club-arena pre-push] BLOCKED: local TypeScript unavailable for $(basename "$guard")."
+    FAIL=1
     return 0
   fi
   if ! node "$guard"; then
@@ -747,122 +749,107 @@ fi
 # on every push. scripts/agent-workspace.sh links node_modules in, so this
 # normally runs; when it truly cannot, it says so rather than letting a suite
 # that never ran look like a suite that passed.
-# A GUTTED node_modules LOOKS LIKE A BROKEN REPO. It is not.
-#
-# Every worktree shares the main clone's node_modules through a symlink, and an
-# `npm install` run inside ANY tree writes through it. Twice on 2026-08-23 that
-# left ~285 package directories empty, and every hook on the machine then died
-# on check-title-case.mjs with ERR_MODULE_NOT_FOUND - a message that names a
-# path and explains nothing. An agent seeing it reasonably concludes their own
-# tree is broken and starts reinstalling, which is how it becomes a loop.
-#
-# Probe first, so the diagnosis arrives before the confusion does.
-if [ "$CLIENT_DEPENDENCY_MODE" = local ]; then
-  bash "$CA_TREE_TOP/scripts/check-node-modules.sh" --check
-fi
-
-VITEST="$(git rev-parse --show-toplevel)/node_modules/.bin/vitest"
-
-# 2026-08-25: REPAIR IT, DO NOT NARRATE IT — corrected same day.
-#
-# This used to print a WARNING and push anyway, which meant the one rule that
-# stops a red test blocking the World Hub bundle was a printed sentence in the
-# 124 of 162 trees that had no server/node_modules.
-#
-# Dependencies are prepared by the workspace/bootstrap path. This hook never
-# copies or repairs a dependency tree while a push is in progress.
-CA_TREE_TOP="$(git rev-parse --show-toplevel)"
-
-if [ "$CLIENT_DEPENDENCY_MODE" = local ] && [ -f package.json ] && [ ! -x "$VITEST" ]; then
-  echo ""
-  echo "[club-arena pre-push] REFUSING: no vitest in this tree and it could not be"
-  echo "                      provisioned, so the test gate cannot run. Pushing now"
-  echo "                      would put an ungated commit on a branch CI publishes"
-  echo "                      from."
-  echo "                      Fix the workspace dependency installation, then retry."
-  echo ""
-  exit 1
-fi
-
-if [ "$CLIENT_DEPENDENCY_MODE" = ci ]; then
-  echo "[club-arena pre-push] local client tests not run: Mac dependencies are incomplete. Required CI must pass."
-elif [ -f package.json ] && [ -x "$VITEST" ]; then
-  CHANGED_TESTS=""
-  CHANGED_SRC=""
-  for f in $FILES; do
-    [ -f "$f" ] || continue
-    case "$f" in
-      tests/*.test.ts|tests/*.test.tsx|tests/**/*.test.ts|tests/**/*.test.tsx)
-        CHANGED_TESTS="$CHANGED_TESTS $f" ;;
-      src/*.ts|src/*.tsx|server/src/*.ts|src/**/*.ts|src/**/*.tsx|server/src/**/*.ts)
-        case "$f" in
-          *.test.ts|*.test.tsx|*.d.ts) ;;
-          *) CHANGED_SRC="$CHANGED_SRC $f" ;;
-        esac ;;
-    esac
-  done
-
-  if [ -n "$CHANGED_TESTS" ]; then
-    echo "[club-arena pre-push] running the test files you changed..."
-    if ! "$VITEST" run $CHANGED_TESTS; then
-      echo ""
-      echo "[club-arena pre-push] BLOCKED: a test you changed is failing."
-      echo "                      A red test on main stops the World Hub bundle"
-      echo "                      for EVERY agent, not just for you."
-      echo ""
-      echo "                      Writing the spec before the code is fine - but"
-      echo "                      mark it it.skip() or describe.skip() until the"
-      echo "                      implementation lands, so it documents the work"
-      echo "                      without holding the deploy hostage."
-      FAIL=1
-    fi
+# Qualification manifests are executable contracts too. Validate the existing
+# cash input set before an expensive hosted PostgreSQL job can reject stale pins.
+CASH_INPUT_CHANGED=$(node --input-type=module -e '
+  import { readFileSync } from "node:fs";
+  const manifestPath = "scripts/qualification/cash-native-hosted.manifest.json";
+  const pins = JSON.parse(readFileSync(manifestPath, "utf8")).files;
+  console.log(process.argv.slice(1).some(f => f === manifestPath || Object.hasOwn(pins, f)) ? "yes" : "no");
+' $FILES)
+if [ "$CASH_INPUT_CHANGED" = yes ]; then
+  if ! python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py; then
+    echo "[club-arena pre-push] BLOCKED: cash qualification input checks failed."
+    FAIL=1
   fi
+fi
 
-  if [ -n "$CHANGED_SRC" ]; then
-    echo "[club-arena pre-push] running the tests that cover your changes..."
-    if ! "$VITEST" related --run $CHANGED_SRC; then
-      echo ""
-      echo "[club-arena pre-push] BLOCKED: your change breaks a test that covers it."
-      echo "                      If the test pins behaviour you deliberately"
-      echo "                      replaced, UPDATE the test in this same commit."
-      echo "                      Leaving it red blocks every deploy until"
-      echo "                      somebody else finds it."
-      FAIL=1
+# BEGIN TARGETED CLIENT PREFLIGHT
+# Select executable contracts for every changed path, including documents,
+# workflows, scripts and deleted files. Import tracing alone misses readFileSync.
+# The read-only dependency probe above inspects THIS tree, not another clone.
+VITEST="$CA_TREE_TOP/node_modules/.bin/vitest"
+CHANGED_TESTS=""
+CHANGED_SRC=""
+NODE_TESTS=""
+for f in $FILES; do
+  if [ -f "$f" ]; then
+    case "$f" in
+      tests/*.test.ts|tests/*.test.tsx) CHANGED_TESTS="$CHANGED_TESTS $f" ;;
+      tests/*.test.mjs)
+        if grep -q 'node:test' "$f"; then NODE_TESTS="$NODE_TESTS $f"; fi ;;
+      src/*.ts|src/*.tsx|server/src/*.ts)
+        case "$f" in *.test.ts|*.test.tsx|*.d.ts) ;; *) CHANGED_SRC="$CHANGED_SRC $f" ;; esac ;;
+    esac
+  fi
+  base=$(basename "$f")
+  for t in $(grep -rl --include='*.test.ts' --include='*.test.tsx' -F "$base" tests/ 2>/dev/null); do
+    case " $CHANGED_TESTS " in *" $t "*) ;; *) CHANGED_TESTS="$CHANGED_TESTS $t" ;; esac
+  done
+  for t in $(grep -rl --include='*.test.mjs' -F "$base" tests/ 2>/dev/null); do
+    if grep -q 'node:test' "$t"; then
+      case " $NODE_TESTS " in *" $t "*) ;; *) NODE_TESTS="$NODE_TESTS $t" ;; esac
     fi
-
-    # THE PINS (2026-09-02). `vitest related` follows IMPORTS. A source pin
-    # does not import the file it pins - it readFileSync()s it - so `related`
-    # has never once run a pin for the file it reads. 96 files under tests/
-    # read server/src/** that way. #2695 changed isPausedByDesign() in
-    # ServerTableEngineBase.ts, this hook ran `related` on it, found nothing,
-    # let it through, and tests/unit/tournamentRakeAndBreaks.test.ts went red
-    # on main. Run every test under tests/ that names a changed file, too.
-    PINNED=""
-    for f in $CHANGED_SRC; do
-      base=$(basename "$f")
-      for t in $(grep -rl --include='*.test.ts' --include='*.test.tsx' -F "$base" tests/ 2>/dev/null); do
-        case " $PINNED $CHANGED_TESTS " in *" $t "*) ;; *) PINNED="$PINNED $t" ;; esac
-      done
-    done
-    if [ -n "$PINNED" ]; then
-      echo "[club-arena pre-push] running the pins that READ a file you changed..."
-      if ! "$VITEST" run $PINNED; then
-        echo ""
-        echo "[club-arena pre-push] BLOCKED: a test that reads a file you changed is red."
-        echo "                      It pins the source text. If you deliberately"
-        echo "                      changed what it pins, move the pin in this"
-        echo "                      same commit - never leave it for the merge."
+  done
+done
+# A changed test can also be found as a source contract; execute it once.
+CHANGED_TESTS=$(printf '%s\n' $CHANGED_TESTS | sort -u)
+NODE_TESTS=$(printf '%s\n' $NODE_TESTS | sort -u)
+if [ -n "$CHANGED_TESTS$CHANGED_SRC$NODE_TESTS" ]; then
+  if [ "$CLIENT_DEPENDENCY_MODE" != local ]; then
+    echo "[club-arena pre-push] BLOCKED: required local client dependencies are incomplete."
+    echo "  Prepare locked dependencies in an owned workspace, run the checks and retry."
+    echo "  Do not mutate shared dependencies or use hosted CI as the first test attempt."
+    FAIL=1
+  else
+    if [ -n "$CHANGED_TESTS$CHANGED_SRC" ] && [ ! -x "$VITEST" ]; then
+      echo "[club-arena pre-push] BLOCKED: the required local test runner is unavailable."
+      FAIL=1
+    else
+      if [ -n "$CHANGED_TESTS" ]; then
+        echo "[club-arena pre-push] running changed tests and contracts that read changed files..."
+        if ! "$VITEST" run $CHANGED_TESTS; then
+          echo "[club-arena pre-push] BLOCKED: an applicable local test failed. Repair the cause; never skip it."
+          FAIL=1
+        fi
+      fi
+      if [ -n "$CHANGED_SRC" ]; then
+        echo "[club-arena pre-push] running tests importing the changed source..."
+        if ! "$VITEST" related --run $CHANGED_SRC; then
+          echo "[club-arena pre-push] BLOCKED: a related local test failed."
+          FAIL=1
+        fi
+      fi
+    fi
+    if [ -n "$NODE_TESTS" ]; then
+      echo "[club-arena pre-push] running affected Node test contracts..."
+      if ! node --test $NODE_TESTS; then
+        echo "[club-arena pre-push] BLOCKED: an affected Node contract failed."
         FAIL=1
       fi
     fi
+  fi
+fi
+# END TARGETED CLIENT PREFLIGHT
+
+# Compile the engine inputs before submission, using its own package root.
+if echo "$FILES" | grep -qE '^server/(src/.*\.ts|tsconfig[^/]*\.json|package(-lock)?\.json)$'; then
+  SERVER_TSC="$CA_TREE_TOP/server/node_modules/.bin/tsc"
+  if [ "$SERVER_DEPENDENCY_MODE" != local ] || [ ! -x "$SERVER_TSC" ]; then
+    echo "[club-arena pre-push] BLOCKED: the required local server compiler is unavailable."
+    FAIL=1
+  elif ! (cd server && "$SERVER_TSC" --noEmit); then
+    echo "[club-arena pre-push] BLOCKED: the server does not type-check."
+    FAIL=1
   fi
 fi
 
 # ── THE SERVER GATE (2026-08-25) ──
 #
 # server/ is its OWN vitest project: server/vitest.config.ts includes
-# 'src/**/*.test.ts', while the root config includes only 'tests/**'. So the
-# gate above — which runs the ROOT vitest — can never execute a single one of
+# 'src/**/*.test.ts' and 'src/testing/horseRegression/**/*.test.mjs', while
+# the root config includes only 'tests/**'. So the gate above — which runs
+# the ROOT vitest — can never execute a single one of
 # the 137 server test files, whatever it is handed. A changed
 # server/src/x.test.ts matched no branch at all, and a changed server/src/x.ts
 # was passed to `vitest related` in a project that does not know those tests
@@ -881,9 +868,9 @@ if [ -f server/package.json ]; then
   for f in $FILES; do
     [ -f "$f" ] || continue
     case "$f" in
-      server/src/*.test.ts|server/src/**/*.test.ts)
+      server/src/*.test.ts|server/src/**/*.test.ts|server/src/*.test.mjs|server/src/**/*.test.mjs)
         SRV_TESTS="$SRV_TESTS ${f#server/}" ;;
-      server/src/*.ts|server/src/**/*.ts)
+      server/src/*.ts|server/src/**/*.ts|server/src/*.mjs|server/src/**/*.mjs)
         case "$f" in
           *.d.ts) ;;
           *) SRV_SRC="$SRV_SRC ${f#server/}" ;;
@@ -891,8 +878,9 @@ if [ -f server/package.json ]; then
     esac
   done
 
-  if [ -n "$SRV_TESTS$SRV_SRC" ] && [ "$SERVER_DEPENDENCY_MODE" = ci ]; then
-    echo "[club-arena pre-push] local server tests not run: Mac dependencies are incomplete. Required CI must pass."
+  if [ -n "$SRV_TESTS$SRV_SRC" ] && [ "$SERVER_DEPENDENCY_MODE" != local ]; then
+    echo "[club-arena pre-push] BLOCKED: required local server dependencies are incomplete."
+    FAIL=1
   elif [ -n "$SRV_TESTS$SRV_SRC" ] && [ ! -x "$SERVER_VITEST" ]; then
     echo ""
     echo "[club-arena pre-push] REFUSING: you changed server/** and there is no vitest"

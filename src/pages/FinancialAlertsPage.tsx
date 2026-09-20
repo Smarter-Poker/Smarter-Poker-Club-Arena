@@ -16,7 +16,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { masterBus } from '../core/MasterBus';
 import { FinancialAlertService, FinancialAlert } from '../services/FinancialAlertService';
-import { FinancialExportService } from '../services/FinancialExportService';
+import { FinancialExportService, type ExportColumn } from '../services/FinancialExportService';
+import { useCashoutScope, useCashoutScopeKey } from '../hooks/useCashoutScope';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import './FinancialAlertsPage.css';
@@ -36,6 +37,12 @@ const SEVERITY_INK: Record<FinancialAlert['severity'], string> = {
 
 export default function FinancialAlertsPage() {
   const { user } = useAuthUser();
+  const scopeKey = useCashoutScopeKey(user?.id, 'financial-alerts');
+  return <FinancialAlertsContent key={scopeKey} actorId={user?.id} />;
+}
+
+function FinancialAlertsContent({ actorId }: { actorId?: string }) {
+  const isCurrent = useCashoutScope(actorId, 'financial-alerts');
   useVisibilityRefresh(() => loadAlerts());
   const toast = useToast();
   const [alerts, setAlerts] = useState<FinancialAlert[]>([]);
@@ -45,10 +52,8 @@ export default function FinancialAlertsPage() {
   const [exporting, setExporting] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
   /**
-   * The TRUE unresolved counts, not the counts of what happened to load.
-   * The tabs used to count the rows in `alerts`, which is a capped page, so
-   * this screen reported "All (100)" while 472 were open. See
-   * FinancialAlertService.getUnresolved for the incident.
+   * Counts reported by separate permission-scoped reads. They are distinct
+   * from this capped list, and do not establish a complete or atomic snapshot.
    */
   const [counts, setCounts] = useState<{
     total: number;
@@ -58,28 +63,46 @@ export default function FinancialAlertsPage() {
   } | null>(null);
 
   const loadingRef = useRef(false);
+  const loadedCurrent = useRef<(() => boolean) | null>(null);
+  const [readUnavailable, setReadUnavailable] = useState(false);
 
-  const loadAlerts = useCallback(async (getIsMounted?: () => boolean) => {
-    if (loadingRef.current) return;
-    loadingRef.current = true;
-    setLoading(true);
-    try {
-      const [data, totals] = await Promise.all([
-        FinancialAlertService.getUnresolved(100),
-        FinancialAlertService.getUnresolvedCounts(),
-      ]);
-      if (getIsMounted && !getIsMounted()) return;
-      setAlerts(data);
-      setCounts(totals);
-    } catch (err) {
-      if (getIsMounted && !getIsMounted()) return;
-      reportError(err, 'FinancialAlertsPage.Failed_to_load_alerts');
-      toast.error('Failed to load financial alerts');
-    } finally {
-      loadingRef.current = false;
-      if (!getIsMounted || getIsMounted()) setLoading(false);
-    }
-  }, []);
+  const loadAlerts = useCallback(
+    async (getIsMounted?: () => boolean) => {
+      if (loadingRef.current) return;
+      if (!isCurrent()) {
+        setAlerts([]);
+        setCounts(null);
+        setReadUnavailable(true);
+        setLoading(false);
+        return;
+      }
+      loadingRef.current = true;
+      setLoading(true);
+      loadedCurrent.current = null;
+      try {
+        const [data, totals] = await Promise.all([
+          FinancialAlertService.getUnresolved(100),
+          FinancialAlertService.getUnresolvedCounts(),
+        ]);
+        if (!isCurrent() || (getIsMounted && !getIsMounted())) return;
+        loadedCurrent.current = isCurrent;
+        setReadUnavailable(false);
+        setAlerts(data);
+        setCounts(totals);
+      } catch (err) {
+        if (!isCurrent() || (getIsMounted && !getIsMounted())) return;
+        setAlerts([]);
+        setCounts(null);
+        setReadUnavailable(true);
+        reportError(err, 'FinancialAlertsPage.Failed_to_load_alerts');
+        toast.error('Failed to load financial alerts');
+      } finally {
+        loadingRef.current = false;
+        if (isCurrent() && (!getIsMounted || getIsMounted())) setLoading(false);
+      }
+    },
+    [isCurrent]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -141,11 +164,14 @@ export default function FinancialAlertsPage() {
   }, [loadAlerts]);
 
   const handleResolve = async (alertId: string) => {
+    if (!isCurrent()) return;
     setResolving(alertId);
     try {
       await FinancialAlertService.resolve(alertId);
+      if (!isCurrent()) return;
       setAlerts((prev) => prev.filter((a) => a.id !== alertId));
     } catch (err) {
+      if (!isCurrent()) return;
       reportError(err, 'FinancialAlertsPage.Failed_to_resolve_alert');
       toast.error('Failed to resolve alert');
     }
@@ -153,14 +179,17 @@ export default function FinancialAlertsPage() {
   };
 
   const handleBulkResolve = async () => {
+    if (!isCurrent()) return;
     const toResolve = filteredAlerts.filter((a) => a.id);
     if (toResolve.length === 0) return;
     setBulkResolving(true);
     try {
       await Promise.all(toResolve.map((a) => FinancialAlertService.resolve(a.id!)));
+      if (!isCurrent()) return;
       setAlerts((prev) => prev.filter((a) => !toResolve.find((r) => r.id === a.id)));
       toast.success(`Resolved ${toResolve.length} alert(s)`);
     } catch (err) {
+      if (!isCurrent()) return;
       reportError(err, 'FinancialAlertsPage.Bulk_resolve_failed');
       toast.error('Bulk resolve failed');
     }
@@ -168,34 +197,52 @@ export default function FinancialAlertsPage() {
   };
 
   const handleExport = async () => {
+    const current = loadedCurrent.current;
+    if (!current || !current() || !isCurrent()) return;
     setExporting(true);
     try {
-      const headers = ['Severity', 'Source', 'Message', 'Created At', 'Resolved'];
+      const columns: ExportColumn[] = [
+        { key: 'id', label: 'Alert ID', kind: 'uuid' },
+        { key: 'severity', label: 'Severity', kind: 'text' },
+        { key: 'source', label: 'Source', kind: 'text' },
+        { key: 'message', label: 'Message', kind: 'text' },
+        { key: 'created_at', label: 'Created At', kind: 'timestamp' },
+        { key: 'resolved', label: 'Resolved', kind: 'boolean' },
+        { key: 'record_scope', label: 'Record Scope', kind: 'text' },
+        { key: 'loaded_rows', label: 'Loaded Rows', kind: 'integer' },
+      ];
+      // Preserve the existing all-loaded export, regardless of severity tab.
+      // Neither the loaded set nor its counts prove full alert history.
       const rows = alerts.map((a) => ({
+        id: a.id,
         severity: a.severity,
         source: a.source,
         message: a.message,
         created_at: a.createdAt,
-        resolved: String(a.resolved),
+        resolved: a.resolved,
+        record_scope: 'All currently loaded alerts; bounded service read; not complete history',
+        loaded_rows: alerts.length,
       }));
-      const csv = FinancialExportService.generateCSV(headers, rows);
-      FinancialExportService.downloadCSV(
+      const csv = FinancialExportService.generateCSV(columns, rows);
+      await FinancialExportService.downloadCSV(
         csv,
-        `financial_alerts_${new Date().toISOString().split('T')[0]}.csv`
+        `financial_alerts_loaded_${new Date().toISOString().split('T')[0]}.csv`,
+        () => current() && isCurrent()
       );
-      toast.success(`Exported ${rows.length} alert(s)`);
-    } catch (e) {
-      reportError(e, 'FinancialAlertsPage.map');
-      toast.error('Export failed');
+      if (current() && isCurrent()) toast.success(`Exported ${rows.length} loaded alert(s)`);
+    } catch (error) {
+      if (!isCurrent()) return;
+      reportError(error, 'FinancialAlertsPage.export');
+      toast.error('Export unavailable');
+    } finally {
+      if (isCurrent()) setExporting(false);
     }
-    setExporting(false);
   };
 
   const filteredAlerts = filter === 'all' ? alerts : alerts.filter((a) => a.severity === filter);
 
-  // Every critical is loaded, so its count is exact either way; warning and
-  // info are the ones the page budget can cut, which is why they read from the
-  // database totals whenever those have arrived.
+  // Every severity is bounded. Prefer the separate reported counts once the
+  // read completes; neither those counts nor the loaded list prove completeness.
   const totalCount = counts?.total ?? alerts.length;
   const criticalCount = counts?.critical ?? alerts.filter((a) => a.severity === 'critical').length;
   const warningCount = counts?.warning ?? alerts.filter((a) => a.severity === 'warning').length;
@@ -207,6 +254,36 @@ export default function FinancialAlertsPage() {
     warning: warningCount,
     info: infoCount,
   };
+
+  if (readUnavailable) {
+    return (
+      <div className="financial-alerts-page">
+        <SpadeConsole
+          className="fap__console"
+          eyebrow="Financial Admin"
+          title="Financial Alerts"
+          titleId="financial-alerts-title"
+          pill="Unavailable"
+          pillInk="red"
+          foot="foot"
+        >
+          <p role="alert" className="sc-copy sc-copy--center sc-ink--red fap__state">
+            Financial Alerts Unavailable
+          </p>
+          <div className="fap__sync">
+            <button
+              type="button"
+              className="fap-word sc-ink--white"
+              onClick={() => loadAlerts()}
+              title="Refresh"
+            >
+              Refresh
+            </button>
+          </div>
+        </SpadeConsole>
+      </div>
+    );
+  }
 
   if (loading && alerts.length === 0) {
     return (
@@ -252,8 +329,8 @@ export default function FinancialAlertsPage() {
           secondary: {
             label: exporting ? 'Exporting...' : 'Export CSV',
             onClick: handleExport,
-            disabled: exporting || alerts.length === 0,
-            title: 'Export CSV',
+            disabled: exporting || loading || readUnavailable || alerts.length === 0,
+            title: 'Export Loaded Alerts CSV',
           },
           primary: {
             label: bulkResolving
@@ -295,22 +372,20 @@ export default function FinancialAlertsPage() {
           </div>
         </div>
 
-        {/*
-          Say plainly when the page is not showing everything. Every CRITICAL is
-          always loaded (see FinancialAlertService.getUnresolved); it is warnings
-          and info that get cut, and an operator who is not told that will read
-          an empty-looking list as "nothing left to do".
-        */}
+        {/* Critical rows are prioritized but remain bounded by query/provider caps. */}
         {notShown > 0 && (
           <p className="sc-copy fap__note sc-ink--muted">
-            Showing {alerts.length} Of {totalCount} Unresolved. Every Critical Is Shown.
+            Loaded {alerts.length} Alerts; Separate Reads Report {totalCount} Unresolved. This
+            List May Be Incomplete.
           </p>
         )}
 
         {/* Alert List */}
         {filteredAlerts.length === 0 ? (
           <p className="sc-copy sc-copy--center fap__state">
-            {filter === 'all' ? 'No Unresolved Alerts' : titleCase(`No ${filter} Alerts`)}
+            {filter === 'all'
+              ? 'No Loaded Alerts In This View'
+              : titleCase(`No Loaded ${filter} Alerts In This View`)}
           </p>
         ) : (
           <ul className="fap__list">

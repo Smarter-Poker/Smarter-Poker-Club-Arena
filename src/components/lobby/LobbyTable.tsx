@@ -658,7 +658,9 @@ function kindLabel(e: LobbyEntry): string {
       ? 'Spin'
       : e.kind === 'sng'
         ? 'Heads Up'
-        : 'MTT';
+        : e.kind === 'mtt'
+          ? 'MTT'
+          : 'Tournament';
 }
 const COL_KIND: ColumnDef = {
   key: 'kind',
@@ -941,6 +943,21 @@ const COL_ACTIONS: ColumnDef = {
                   : game
                     ? 'Join Game'
                     : 'Join Table'}
+            </button>
+          )}
+        </span>
+      );
+    }
+
+    if (e.kind === 'unknown') {
+      return (
+        <span className="lt-actions">
+          <button type="button" className="lt-act lt-act--ghost" data-act="view" onClick={run}>
+            {e.status === 'completed' ? 'Results' : e.status === 'running' ? 'Watch' : 'Details'}
+          </button>
+          {e.status !== 'completed' && (
+            <button type="button" className="lt-act" disabled>
+              Entry Unavailable
             </button>
           )}
         </span>

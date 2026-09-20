@@ -1,7 +1,55 @@
+import { horseTournamentProvenanceMatchesSnapshot } from '../HorseTournamentContextProvenance.js';
+import {
+  horsePlanContextFromDecision,
+  horsePlanBatchBindingFromRequest,
+  horsePlanBatchBindingIsValid,
+  horsePlanBatchBindingKey,
+  type HorsePlanBatchBinding,
+  type HorsePlanIssueDisposition,
+  type HorsePlanRefusal,
+} from '../HorsePlanHandIdentity.js';
 import { performance } from 'node:perf_hooks';
+import {
+  startHorseDecisionJournal,
+  stopHorseDecisionJournal,
+  journalHorseDecision,
+  journalHorseExecution,
+  journalHorseAcceptedHand,
+  journalHorseDiscard,
+  journalHorseDiscardExecution,
+  journalHorseRequestLifecycle,
+  horseDecisionJournalConfigured,
+} from '../../services/HorseDecisionJournal.js';
+import { horseJournalJson } from '../../services/horseDecisionJournal/record.js';
+import { validateHorseDiscardExecution } from '../../services/horseDecisionJournal/discard.js';
+import {
+  horseLifecycleKeys,
+  horseLifecycleRequestDigest,
+  isHorseLifecycleRequest,
+  type HorseLifecycleRequest,
+  type HorseLifecycleOutcome,
+  type HorseLifecycleOrigin,
+} from '../../services/horseDecisionJournal/lifecycle.js';
 
 import { HorseLogic } from '../HorseLogic.js';
 import { HorseMind } from '../HorseMind.js';
+import { completedHandActionsForMind } from './completedHandActions.js';
+import {
+  horseMindHandFromDecision,
+  horseMindHandFromCompletion,
+} from '../HorseMindHandIdentity.js';
+import {
+  encodeHorseDecisionReads,
+  decodeHorseDecisionReads,
+  type HorseDecisionReadFrame,
+} from '../HorseDecisionReadFrame.js';
+import {
+  horseDecisionEffectsAreValid,
+  horseDecisionEffectsKey,
+  horseDecisionEffectsMatchRequest,
+  horsePlanHandKey,
+  horseReferenceWagerWasRetained,
+} from '../HorseDecisionEffects.js';
 import { prepareTournamentFutureHandFacts } from '../HorseTournamentFutureHand.js';
 import type { CapturedHorseMindDecision, HorseMindDecisionEffect } from '../HorseMind.js';
 import { restoreFastRandom, saveFastRandom } from '../HorseEval.js';
@@ -57,11 +105,19 @@ import type {
   HorseDecisionWorkerResponse,
   ObserveCompletedHandRequest,
   CommitDecisionEffectsRequest,
+  RetireDecisionEffectsRequest,
   HorseDecisionStatusRequest,
 } from './protocol.js';
 import { buildHorseDecisionKey, validatedHorsePolicySamplingKey } from './protocol.js';
 
 export interface HorseDecisionWorkerDependencies {
+  journalEnabled?: () => boolean;
+  journalDecision?: typeof journalHorseDecision;
+  journalExecution?: typeof journalHorseExecution;
+  journalAcceptedHand?: typeof journalHorseAcceptedHand;
+  journalDiscard?: typeof journalHorseDiscard;
+  journalDiscardExecution?: typeof journalHorseDiscardExecution;
+  journalLifecycle?: typeof journalHorseRequestLifecycle;
   startServices(): Promise<HorseDecisionWorkerReadiness>;
   stopServices(): Promise<void>;
   decide: typeof HorseLogic.decide;
@@ -105,6 +161,7 @@ async function startOwnedServices(): Promise<HorseDecisionWorkerReadiness> {
     // a slow read may never prevent newly learned rows from becoming flushable.
     startHorseMindPersistence();
     startBrainTelemetryFlush();
+    startHorseDecisionJournal();
     equityGovernor.startSampling();
     startSolverPolicyArtifactLoader();
 
@@ -151,10 +208,18 @@ async function stopOwnedServices(): Promise<void> {
   stopGtoChartLoader();
   stopSolverPolicyArtifactLoader();
   equityGovernor.stopSampling();
+  await stopHorseDecisionJournal();
   await Promise.all([stopBrainTelemetryFlush(), stopHorseMindPersistence()]);
 }
 
 export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependencies = {
+  journalEnabled: horseDecisionJournalConfigured,
+  journalDecision: journalHorseDecision,
+  journalExecution: journalHorseExecution,
+  journalAcceptedHand: journalHorseAcceptedHand,
+  journalDiscard: journalHorseDiscard,
+  journalDiscardExecution: journalHorseDiscardExecution,
+  journalLifecycle: journalHorseRequestLifecycle,
   startServices: startOwnedServices,
   stopServices: stopOwnedServices,
   decide: HorseLogic.decide.bind(HorseLogic),
@@ -174,14 +239,28 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
     solverPolicyArtifact: solverPolicyArtifactStatus(),
     governor: equityGovernor.snapshot(),
   }),
-  observeCompletedHand: (request) =>
+  observeCompletedHand: (request) => {
+    // Complete the action stream after the last Horse decision. Forced posts
+    // must not shift observe()'s controller sequence positions.
+    const completed = completedHandActionsForMind(request.actions, request.scope);
+    const identity = horseMindHandFromCompletion(request);
+    if (completed && identity) {
+      const previousScope = HorseMind.currentScope();
+      HorseMind.setDecisionScope(completed.scope);
+      try {
+        HorseMind.observe(completed.actions, [], identity);
+      } finally {
+        HorseMind.setDecisionScope(previousScope);
+      }
+    }
     HorseMind.observeHandComplete(
       request.handKey,
       request.actions,
       request.bigBlind,
       request.showdown,
       request.scope
-    ),
+    );
+  },
   noteDecision: noteDecisionMs,
   noteFeature: noteFire,
   now: () => performance.now(),
@@ -213,8 +292,87 @@ function deepFreeze<T>(value: T): T {
  * fence-derived RNG stream or read and update worker-owned HorseMind state.
  */
 export class HorseDecisionWorkerRuntime {
+  /** Private, actor-bounded read views; never included in IPC or telemetry.
+   * Repeated identical fast identities are ambiguous and disable that second
+   * look. Eviction/expiry retains the already-returned fast decision.
+   */
+  private readonly secondLookReads = new Map<
+    string,
+    { at: number; frame: HorseDecisionReadFrame | null }
+  >();
+  private static readonly MAX_SECOND_LOOK_READS = 128;
+  private static readonly SECOND_LOOK_READ_TTL_MS = 60_000;
+
+  /** Pending ownership cannot be displaced by later traffic or elapsed compute
+   * time. Only explicit retirement/application makes an entry reclaimable.
+   * Still volatile: worker loss is not durable application/replay proof. */
+  private readonly issuedPlanBatches = new Map<
+    string,
+    {
+      at: number;
+      binding: HorsePlanBatchBinding;
+      bindingKey: string;
+      effects: HorseMindDecisionEffect[];
+      effectsKey: string;
+      state: 'issued' | 'ambiguous' | 'applied' | 'failed' | 'retired' | 'no_effects';
+    }
+  >();
+  private static readonly MAX_ISSUED_PLAN_BATCHES = 128;
+  private static readonly ISSUED_PLAN_BATCH_TTL_MS = 60_000;
+
+  private issuePlanBatch(
+    binding: HorsePlanBatchBinding,
+    effects: HorseMindDecisionEffect[],
+    at: number
+  ): HorsePlanIssueDisposition {
+    for (const [key, entry] of this.issuedPlanBatches) {
+      if (
+        entry.state !== 'issued' &&
+        at - entry.at > HorseDecisionWorkerRuntime.ISSUED_PLAN_BATCH_TTL_MS
+      ) {
+        this.issuedPlanBatches.delete(key);
+        this.deps.noteFeature('phase15_plan_terminal_expired');
+      }
+    }
+    const key = JSON.stringify([binding.generation, binding.fence]);
+    const old = this.issuedPlanBatches.get(key);
+    if (old) {
+      // Neither identical nor conflicting FAST reissue can replace its original
+      // local occurrence. An already applied original may still ACK idempotently.
+      if (old.state === 'issued') old.state = 'ambiguous';
+      return 'reissue_unavailable';
+    }
+    if (this.issuedPlanBatches.size >= HorseDecisionWorkerRuntime.MAX_ISSUED_PLAN_BATCHES) {
+      const terminal = [...this.issuedPlanBatches].find(([, entry]) => entry.state !== 'issued');
+      if (!terminal) return effects.length ? 'capacity_unavailable' : 'no_effects';
+      this.issuedPlanBatches.delete(terminal[0]);
+      this.deps.noteFeature('phase15_plan_terminal_evicted');
+    }
+    this.issuedPlanBatches.set(key, {
+      at,
+      binding,
+      bindingKey: horsePlanBatchBindingKey(binding)!,
+      effects: deepFreeze(structuredClone(effects)),
+      effectsKey: horseDecisionEffectsKey(effects)!,
+      state: effects.length ? 'issued' : 'no_effects',
+    });
+    return effects.length ? 'issued' : 'no_effects';
+  }
+
+  private readViewKey(
+    request: FastHorseDecisionRequest | DeepHorseDecisionRequest,
+    rng: number
+  ): string {
+    return JSON.stringify([
+      request.generation,
+      request.fence,
+      request.decisionKey,
+      request.decisionTimeMs,
+      rng,
+    ]);
+  }
   private operation: Promise<void> = Promise.resolve();
-  private readonly cancelled = new Set<number>();
+  private readonly cancelled = new Map<number, 'cancelled' | 'expired'>();
   /** Requests received but not yet terminal, independent of numeric order. */
   private readonly pendingRequestIds = new Set<number>();
   private accepting = true;
@@ -246,7 +404,12 @@ export class HorseDecisionWorkerRuntime {
       // A cancellation delivered after synchronous work returned is a normal
       // race. Retain it only while that exact request is known pending. This
       // remains correct when a priority effect commit overtakes queued work.
-      if (this.pendingRequestIds.has(message.requestId)) this.cancelled.add(message.requestId);
+      if (
+        this.pendingRequestIds.has(message.requestId) &&
+        !this.cancelled.has(message.requestId) &&
+        (message.reason === undefined || ['cancelled', 'expired'].includes(message.reason))
+      )
+        this.cancelled.set(message.requestId, message.reason ?? 'cancelled');
       return;
     }
 
@@ -317,6 +480,7 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private async execute(request: HorseDecisionJobRequest): Promise<void> {
+    let admitted: HorseLifecycleRequest | undefined;
     try {
       await this.readyPromise;
       try {
@@ -337,7 +501,11 @@ export class HorseDecisionWorkerRuntime {
         });
         return;
       }
-      if (this.cancelled.delete(request.requestId)) {
+      if (isHorseLifecycleRequest(request))
+        admitted = this.admitLifecycle(request, 'worker_compute');
+      const cancellation = this.cancelled.get(request.requestId);
+      if (cancellation) {
+        if (admitted) this.terminalLifecycle(admitted, cancellation);
         this.send({
           type: 'CANCELLED',
           requestId: request.requestId,
@@ -347,13 +515,55 @@ export class HorseDecisionWorkerRuntime {
         return;
       }
 
-      if (request.type === 'DECIDE_FAST') this.executeFast(request);
-      else if (request.type === 'DECIDE_DEEP') this.executeDeep(request);
-      else if (request.type === 'OBSERVE_COMPLETED_HAND') this.executeObservation(request);
+      let outcome: HorseLifecycleOutcome = 'success';
+      if (request.type === 'DECIDE_FAST') outcome = this.executeFast(request);
+      else if (request.type === 'DECIDE_DEEP') outcome = this.executeDeep(request);
+      else if (request.type === 'OBSERVE_REQUEST_RETIREMENT') {
+        // Canonical shape and attribution are checked without executing a
+        // policy. The origin explicitly says it never reached compute dispatch.
+        admitted = this.admitLifecycle(request.retiredRequest, 'client_not_dispatched');
+        outcome = request.outcome;
+        this.send({
+          type: 'ACK',
+          requestId: request.requestId,
+          generation: request.generation,
+          fence: request.fence,
+          operation: 'OBSERVE_REQUEST_RETIREMENT',
+        });
+      } else if (request.type === 'OBSERVE_COMPLETED_HAND') this.executeObservation(request);
       else if (request.type === 'COMMIT_DECISION_EFFECTS') this.executeEffectCommit(request);
-      else if (request.type === 'DECIDE_DISCARD') this.executeDiscard(request);
+      else if (request.type === 'RETIRE_DECISION_EFFECTS') this.executeEffectRetirement(request);
+      else if (request.type === 'OBSERVE_EXECUTION') {
+        try {
+          this.deps.journalExecution?.(request.witness);
+        } catch {
+          this.deps.noteFeature('phase15_journal_capture_unavailable');
+        }
+        this.send({
+          type: 'ACK',
+          requestId: request.requestId,
+          generation: request.generation,
+          fence: request.fence,
+          operation: 'OBSERVE_EXECUTION',
+        });
+      } else if (request.type === 'OBSERVE_DISCARD_EXECUTION') {
+        try {
+          this.deps.journalDiscardExecution?.(request.execution);
+        } catch {
+          this.deps.noteFeature('phase15_journal_discard_capture_unavailable');
+        }
+        this.send({
+          type: 'ACK',
+          requestId: request.requestId,
+          generation: request.generation,
+          fence: request.fence,
+          operation: 'OBSERVE_DISCARD_EXECUTION',
+        });
+      } else if (request.type === 'DECIDE_DISCARD') this.executeDiscard(request);
       else this.executeStatus(request);
+      if (admitted) this.terminalLifecycle(admitted, outcome);
     } catch (error) {
+      if (admitted) this.terminalLifecycle(admitted, 'exception');
       this.send({
         type: 'ERROR',
         requestId: request.requestId,
@@ -367,6 +577,42 @@ export class HorseDecisionWorkerRuntime {
     }
   }
 
+  private admitLifecycle(
+    request: HorseLifecycleRequest,
+    origin: HorseLifecycleOrigin
+  ): HorseLifecycleRequest | undefined {
+    if (!(this.deps.journalEnabled?.() ?? true) || !this.deps.journalLifecycle) return;
+    try {
+      // Capture the original validated bytes before mutable policy work.
+      const snapshot: HorseLifecycleRequest = JSON.parse(horseJournalJson(request));
+      horseLifecycleKeys(snapshot);
+      this.deps.journalLifecycle(snapshot, {
+        version: 1,
+        phase: 'requested',
+        request: snapshot,
+        requestDigest: horseLifecycleRequestDigest(snapshot),
+        origin,
+      });
+      return snapshot;
+    } catch {
+      this.deps.noteFeature('phase15_journal_capture_unavailable');
+      return;
+    }
+  }
+
+  private terminalLifecycle(request: HorseLifecycleRequest, outcome: HorseLifecycleOutcome): void {
+    try {
+      this.deps.journalLifecycle?.(request, {
+        version: 1,
+        phase: 'terminal',
+        requestDigest: horseLifecycleRequestDigest(request),
+        outcome,
+      });
+    } catch {
+      this.deps.noteFeature('phase15_journal_capture_unavailable');
+    }
+  }
+
   private assertEnvelope(request: HorseDecisionJobRequest): void {
     if (!Number.isSafeInteger(request.requestId) || request.requestId <= 0) {
       throw new Error('requestId must be a positive safe integer');
@@ -377,6 +623,20 @@ export class HorseDecisionWorkerRuntime {
     if (typeof request.fence !== 'string' || request.fence.length === 0) {
       throw new Error('fence must be a non-empty string');
     }
+    if (request.type === 'OBSERVE_REQUEST_RETIREMENT') {
+      if (
+        !request.retiredRequest ||
+        !isHorseLifecycleRequest(request.retiredRequest) ||
+        !['cancelled', 'expired'].includes(request.outcome) ||
+        request.retiredRequest.requestId >= request.requestId ||
+        request.retiredRequest.generation !== request.generation ||
+        request.retiredRequest.fence !== request.fence ||
+        this.pendingRequestIds.has(request.retiredRequest.requestId)
+      )
+        throw Error('invalid private Horse request retirement');
+      this.assertEnvelope(request.retiredRequest);
+      horseLifecycleKeys(request.retiredRequest);
+    }
     if (
       (request.type === 'DECIDE_FAST' || request.type === 'DECIDE_DEEP') &&
       (!Number.isFinite(request.decisionTimeMs) || request.decisionTimeMs < 0)
@@ -386,7 +646,9 @@ export class HorseDecisionWorkerRuntime {
     if (
       (request.type === 'DECIDE_FAST' || request.type === 'DECIDE_DEEP') &&
       request.opts &&
-      ('gtoV31DatasetChecksum' in request.opts ||
+      ('mindObservationHand' in request.opts ||
+        'mindPlanContext' in request.opts ||
+        'gtoV31DatasetChecksum' in request.opts ||
         'onGtoV31Decision' in request.opts ||
         request.opts.phase8Postflop === 'candidate' ||
         request.opts.phase10Plo4 === 'candidate' ||
@@ -411,10 +673,42 @@ export class HorseDecisionWorkerRuntime {
     ) {
       throw new Error('rngBefore must be an unsigned 32-bit integer');
     }
+    if (
+      request.type === 'DECIDE_DEEP' &&
+      (!Number.isFinite(request.deepEquity) || request.deepEquity <= 1)
+    )
+      throw Error('deepEquity must be finite and greater than one');
     if (request.type === 'COMMIT_DECISION_EFFECTS') {
-      if (!Array.isArray(request.effects) || request.effects.length > 16) {
-        throw new Error('decision effects must be an array of at most 16 entries');
+      if (
+        !horseDecisionEffectsAreValid(request.effects) ||
+        !horsePlanBatchBindingIsValid(request.planBinding) ||
+        request.planBinding.fastRequestId >= request.requestId ||
+        request.planBinding.generation !== request.generation ||
+        request.planBinding.fence !== request.fence
+      ) {
+        throw new Error('invalid decision effects: expected at most 16 bounded plan records');
       }
+    }
+    if (
+      request.type === 'RETIRE_DECISION_EFFECTS' &&
+      (!horsePlanBatchBindingIsValid(request.planBinding) ||
+        request.planBinding.fastRequestId >= request.requestId ||
+        request.planBinding.generation !== request.generation ||
+        request.planBinding.fence !== request.fence ||
+        !['decision_finalized', 'caller_settled', 'commit_unconfirmed'].includes(request.reason))
+    )
+      throw Error('invalid Horse plan retirement');
+    if (request.type === 'OBSERVE_EXECUTION') {
+      const witness = request.witness;
+      if (
+        !witness ||
+        witness.version !== 'horse-execution-witness-v4' ||
+        witness.executionStatus === 'pending' ||
+        witness.identity?.fence !== request.fence ||
+        witness.identity?.generation !== request.generation ||
+        horseJournalJson(witness).length > 65536
+      )
+        throw Error('invalid terminal Horse execution journal record');
     }
     if (request.type === 'DECIDE_DISCARD') {
       if (!Array.isArray(request.cards) || request.cards.length !== 3) {
@@ -435,6 +729,15 @@ export class HorseDecisionWorkerRuntime {
       ) {
         throw new Error('pineapple discard requires six distinct physical cards');
       }
+    }
+    if (request.type === 'OBSERVE_DISCARD_EXECUTION') {
+      validateHorseDiscardExecution(request.execution);
+      if (
+        request.execution.request.generation !== request.generation ||
+        request.execution.request.fence !== request.fence ||
+        horseJournalJson(request.execution).length > 65536
+      )
+        throw Error('invalid private Horse discard execution envelope');
     }
   }
 
@@ -771,6 +1074,9 @@ export class HorseDecisionWorkerRuntime {
     if (!tournament || tournament.schemaVersion !== 1) {
       throw new Error('Phase 6 tournament context schema version 1 is required');
     }
+    if (!horseTournamentProvenanceMatchesSnapshot(request)) {
+      throw new Error('Phase 6 tournament provenance does not bind the current hand snapshot');
+    }
     const status = tournament.contextStatus;
     if (!['complete', 'incomplete', 'warming', 'stale'].includes(status ?? '')) {
       throw new Error('Phase 6 tournament context status is invalid');
@@ -1033,7 +1339,9 @@ export class HorseDecisionWorkerRuntime {
     }
   }
 
-  private executeFast(request: FastHorseDecisionRequest): void {
+  private executeFast(request: FastHorseDecisionRequest): HorseLifecycleOutcome {
+    const planBinding = horsePlanBatchBindingFromRequest(request);
+    const planContext = planBinding.planContext;
     const canonicalRng = this.deps.saveRng();
     const rngBefore = this.requestRngSeed(
       { ...request, decisionKey: validatedHorsePolicySamplingKey(request) },
@@ -1053,7 +1361,182 @@ export class HorseDecisionWorkerRuntime {
           decisionTimeMs: request.decisionTimeMs,
           telemetry: true,
           observeMind: true,
+          mindObservationHand: horseMindHandFromDecision(request),
+          mindPlanContext: planContext,
         })
+      );
+      rngAfter = this.deps.saveRng();
+    } finally {
+      this.deps.restoreRng(canonicalRng);
+    }
+    if (!horseDecisionEffectsAreValid(captured.effects)) {
+      throw new Error('Horse decision captured invalid plan effects');
+    }
+    const effects = horseReferenceWagerWasRetained(captured.value) ? captured.effects : [];
+    if (
+      !horseDecisionEffectsMatchRequest(effects, {
+        userId: request.player.user_id,
+        history: request.gameState.actionHistory,
+        street: request.gameState.stage,
+        brainFallback: captured.value.policyFallback === 'brain_exception',
+        planContext,
+      })
+    )
+      throw Error('Horse decision captured mismatched plan effects');
+    if (captured.effects.length > 0 && effects.length === 0) {
+      this.deps.noteFeature('phase15_reference_plans_retired');
+    }
+    let readFrame: HorseDecisionReadFrame | null = null;
+    try {
+      const handKey = horsePlanHandKey(request.gameState.actionHistory, planContext);
+      readFrame = encodeHorseDecisionReads(
+        HorseMind.snapshotDecisionReads(request.gameState.players, handKey),
+        request.gameState.players,
+        handKey,
+        planContext
+      );
+    } catch {
+      // Missing replay evidence must not discard an already computed fast
+      // decision. A later second look will explicitly retain that decision.
+      this.deps.noteFeature('phase15_second_look_reads_unavailable');
+    }
+    const at = startedAt;
+    for (const [key, entry] of this.secondLookReads) {
+      if (at - entry.at > HorseDecisionWorkerRuntime.SECOND_LOOK_READ_TTL_MS)
+        this.secondLookReads.delete(key);
+    }
+    const readKey = this.readViewKey(request, rngBefore);
+    const ambiguous = this.secondLookReads.has(readKey);
+    this.secondLookReads.delete(readKey);
+    while (this.secondLookReads.size >= HorseDecisionWorkerRuntime.MAX_SECOND_LOOK_READS) {
+      this.secondLookReads.delete(this.secondLookReads.keys().next().value!);
+    }
+    this.secondLookReads.set(readKey, { at, frame: ambiguous ? null : readFrame });
+    const computeMs = Math.max(0, this.deps.now() - startedAt);
+    const governorScale = this.deps.governorScale();
+    this.deps.noteDecision(request.gameState.gameVariant || 'nlh', computeMs);
+    try {
+      if (this.deps.journalEnabled?.() ?? true)
+        this.deps.journalDecision?.(request, {
+          snapshot: request,
+          readFrame,
+          planContext,
+          planBinding,
+          decision: captured.value,
+          effects,
+          rngBefore,
+          rngAfter,
+          computeMs,
+          governorScale,
+          readiness: this.deps.workerReadiness(),
+          runtimePins: 'incomplete',
+          lifecycleVersion: 1,
+        });
+    } catch {
+      this.deps.noteFeature('phase15_journal_capture_unavailable');
+    }
+    // Reserve before promising issuance. The synchronous lane cannot run a
+    // commit until send returns; a failed send relinquishes only this reservation.
+    const planIssueDisposition = this.issuePlanBatch(planBinding, effects, startedAt);
+    try {
+      this.send({
+        type: 'FAST_RESULT',
+        requestId: request.requestId,
+        planBinding,
+        planIssueDisposition,
+        generation: request.generation,
+        fence: request.fence,
+        decision: captured.value,
+        rngBefore,
+        rngAfter,
+        computeMs,
+        governorScale,
+        // Retain intent only when the reference wager survived every later
+        // policy owner. The client separately binds its hand, horse and street.
+        effects,
+      });
+    } catch (error) {
+      const key = JSON.stringify([planBinding.generation, planBinding.fence]);
+      const entry = this.issuedPlanBatches.get(key);
+      if (
+        planIssueDisposition !== 'reissue_unavailable' &&
+        entry?.bindingKey === horsePlanBatchBindingKey(planBinding)
+      )
+        this.issuedPlanBatches.delete(key);
+      throw error;
+    }
+    this.deps.noteFeature(`phase15_plan_issue_${planIssueDisposition}`);
+    return captured.value.policyFallback === 'brain_exception' ? 'exception' : 'success';
+  }
+
+  private executeDeep(request: DeepHorseDecisionRequest): HorseLifecycleOutcome {
+    const planContext = horsePlanContextFromDecision(request);
+    if (!Number.isFinite(request.deepEquity) || request.deepEquity <= 1) {
+      throw new Error('deepEquity must be finite and greater than one');
+    }
+
+    const startedAt = this.deps.now();
+    const readKey = this.readViewKey(request, request.rngBefore);
+    const retained = this.secondLookReads.get(readKey);
+    this.secondLookReads.delete(readKey);
+    if (
+      !retained?.frame ||
+      startedAt - retained.at > HorseDecisionWorkerRuntime.SECOND_LOOK_READ_TTL_MS
+    ) {
+      this.deps.noteFeature('phase15_second_look_reads_unavailable');
+      this.send({
+        type: 'ERROR',
+        requestId: request.requestId,
+        generation: request.generation,
+        fence: request.fence,
+        message: 'second look original opponent reads unavailable',
+        recoverable: true,
+      });
+      return 'refused';
+    }
+    let readView;
+    try {
+      readView = decodeHorseDecisionReads(
+        retained.frame,
+        request.gameState.players,
+        horsePlanHandKey(request.gameState.actionHistory, planContext),
+        planContext
+      );
+    } catch {
+      this.deps.noteFeature('phase15_second_look_reads_unavailable');
+      this.send({
+        type: 'ERROR',
+        requestId: request.requestId,
+        generation: request.generation,
+        fence: request.fence,
+        message: 'Horse decision read frame is invalid',
+        recoverable: true,
+      });
+      return 'refused';
+    }
+    // The latest worker stream is canonical. The second look borrows the fast
+    // decision's starting point, then restores the canonical stream even if
+    // a future HorseLogic version throws outside its own safety net.
+    const canonicalRng = this.deps.saveRng();
+    this.deps.restoreRng(request.rngBefore);
+    let decision;
+    let rngAfter: number | null = null;
+    try {
+      const player = deepFreeze(request.player);
+      const gameState = deepFreeze(request.gameState);
+      decision = HorseMind.runInSandbox(
+        readView,
+        () =>
+          this.deps.captureDecisionEffects(() =>
+            this.deps.decide(player, gameState, request.style, request.mods, {
+              ...request.opts,
+              decisionTimeMs: request.decisionTimeMs,
+              telemetry: false,
+              deepEquity: request.deepEquity,
+              observeMind: false,
+              mindPlanContext: planContext,
+            })
+          ).value
       );
       rngAfter = this.deps.saveRng();
     } finally {
@@ -1061,67 +1544,45 @@ export class HorseDecisionWorkerRuntime {
     }
     const computeMs = Math.max(0, this.deps.now() - startedAt);
     const governorScale = this.deps.governorScale();
-    this.deps.noteDecision(request.gameState.gameVariant || 'nlh', computeMs);
-    this.send({
-      type: 'FAST_RESULT',
-      requestId: request.requestId,
-      generation: request.generation,
-      fence: request.fence,
-      decision: captured.value,
-      rngBefore,
-      rngAfter,
-      computeMs,
-      governorScale,
-      // A caught policy failure may have prepared plans before degrading to
-      // check/fold. Those plans do not belong to the fallback action and must
-      // never reach the later authoritative effect-commit path.
-      effects: captured.value.policyFallback === 'brain_exception' ? [] : captured.effects,
-    });
-  }
-
-  private executeDeep(request: DeepHorseDecisionRequest): void {
-    if (!Number.isFinite(request.deepEquity) || request.deepEquity <= 1) {
-      throw new Error('deepEquity must be finite and greater than one');
-    }
-
-    // The latest worker stream is canonical. The replay borrows the fast
-    // decision's starting point, then restores the canonical stream even if
-    // a future HorseLogic version throws outside its own safety net.
-    const canonicalRng = this.deps.saveRng();
-    this.deps.restoreRng(request.rngBefore);
-    const startedAt = this.deps.now();
-    let decision;
-    try {
-      const player = deepFreeze(request.player);
-      const gameState = deepFreeze(request.gameState);
-      decision = this.deps.captureDecisionEffects(() =>
-        this.deps.decide(player, gameState, request.style, request.mods, {
-          ...request.opts,
-          decisionTimeMs: request.decisionTimeMs,
-          telemetry: false,
-          deepEquity: request.deepEquity,
-          observeMind: false,
-        })
-      ).value;
-    } finally {
-      this.deps.restoreRng(canonicalRng);
-    }
-    const computeMs = Math.max(0, this.deps.now() - startedAt);
-    const governorScale = this.deps.governorScale();
     this.deps.noteDecision(`deep:${request.gameState.gameVariant || 'nlh'}`, computeMs);
     this.deps.noteFeature('v44_second_look');
+    try {
+      if (this.deps.journalEnabled?.() ?? true)
+        this.deps.journalDecision?.(request, {
+          snapshot: request,
+          readFrame: retained.frame,
+          planContext,
+          decision,
+          rngBefore: request.rngBefore,
+          rngAfter,
+          computeMs,
+          governorScale,
+          readiness: this.deps.workerReadiness(),
+          runtimePins: 'incomplete',
+          lifecycleVersion: 1,
+        });
+    } catch {
+      this.deps.noteFeature('phase15_journal_capture_unavailable');
+    }
     this.send({
       type: 'DEEP_RESULT',
       requestId: request.requestId,
+      planContext,
       generation: request.generation,
       fence: request.fence,
       decision,
       computeMs,
       governorScale,
     });
+    return decision.policyFallback === 'brain_exception' ? 'exception' : 'success';
   }
 
   private executeObservation(request: ObserveCompletedHandRequest): void {
+    try {
+      this.deps.journalAcceptedHand?.(request);
+    } catch {
+      this.deps.noteFeature('phase15_journal_capture_unavailable');
+    }
     this.deps.observeCompletedHand(request);
     this.send({
       type: 'ACK',
@@ -1133,27 +1594,123 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeEffectCommit(request: CommitDecisionEffectsRequest): void {
-    this.deps.applyDecisionEffects(request.effects);
+    const key = JSON.stringify([request.generation, request.fence]);
+    const issued = this.issuedPlanBatches.get(key);
+    const refusal: HorsePlanRefusal | null = !issued
+      ? 'issue_absent'
+      : horsePlanBatchBindingKey(request.planBinding) !== issued.bindingKey
+        ? 'binding_mismatch'
+        : horseDecisionEffectsKey(request.effects) !== issued.effectsKey
+          ? 'effects_mismatch'
+          : issued.state === 'ambiguous'
+            ? 'issue_ambiguous'
+            : issued.state === 'failed'
+              ? 'issue_failed'
+              : issued.state === 'retired'
+                ? 'issue_retired'
+                : issued.state === 'no_effects'
+                  ? 'no_effects'
+                  : null;
+    if (refusal || !issued) {
+      this.refusePlan(request, refusal ?? 'issue_absent');
+      return;
+    }
+    const alreadyApplied = issued.state === 'applied';
+    if (issued.state !== 'applied') {
+      try {
+        // Apply the detached issued records, not the later caller's object.
+        this.deps.applyDecisionEffects(issued.effects);
+        issued.state = 'applied';
+        issued.at = this.deps.now();
+      } catch (error) {
+        // An unexpected throw can leave partial volatile writes. Never ACK or
+        // retry this batch as applied; existing worker failure handling remains.
+        issued.state = 'failed';
+        issued.at = this.deps.now();
+        this.deps.noteFeature('phase15_plan_apply_failed');
+        throw error;
+      }
+    }
     this.send({
       type: 'ACK',
       requestId: request.requestId,
       generation: request.generation,
       fence: request.fence,
       operation: 'COMMIT_DECISION_EFFECTS',
+      planDisposition: alreadyApplied ? 'already_applied_volatile' : 'applied_volatile',
+    });
+    this.deps.noteFeature(
+      alreadyApplied ? 'phase15_plan_already_applied_volatile' : 'phase15_plan_applied_volatile'
+    );
+  }
+
+  private refusePlan(
+    request: CommitDecisionEffectsRequest | RetireDecisionEffectsRequest,
+    reason: HorsePlanRefusal
+  ): void {
+    this.deps.noteFeature(`phase15_plan_refused_${reason}`);
+    this.send({
+      type: 'ERROR',
+      requestId: request.requestId,
+      generation: request.generation,
+      fence: request.fence,
+      message: `Horse plan batch refused: ${reason}`,
+      recoverable: true,
+      planRefusal: reason,
+    });
+  }
+
+  private executeEffectRetirement(request: RetireDecisionEffectsRequest): void {
+    const entry = this.issuedPlanBatches.get(JSON.stringify([request.generation, request.fence]));
+    if (entry && horsePlanBatchBindingKey(request.planBinding) !== entry.bindingKey) {
+      this.refusePlan(request, 'binding_mismatch');
+      return;
+    }
+    const disposition = !entry
+      ? 'issue_absent'
+      : entry.state === 'applied'
+        ? 'already_applied_volatile'
+        : entry.state === 'failed'
+          ? 'issue_failed'
+          : entry.state === 'retired'
+            ? 'already_retired'
+            : 'retired';
+    if (entry && disposition === 'retired') {
+      entry.state = 'retired';
+      entry.at = this.deps.now();
+    }
+    this.deps.noteFeature(`phase15_plan_retirement_${disposition}`);
+    this.send({
+      type: 'ACK',
+      requestId: request.requestId,
+      generation: request.generation,
+      fence: request.fence,
+      operation: 'RETIRE_DECISION_EFFECTS',
+      planDisposition: disposition,
     });
   }
 
   private executeDiscard(request: DecidePineappleDiscardRequest): void {
+    let snapshot: DecidePineappleDiscardRequest | undefined;
+    try {
+      if ((this.deps.journalEnabled?.() ?? true) && this.deps.journalDiscard)
+        snapshot = JSON.parse(horseJournalJson(request));
+    } catch {
+      this.deps.noteFeature('phase15_journal_discard_capture_unavailable');
+    }
     const canonicalRng = this.deps.saveRng();
-    this.deps.restoreRng(this.requestRngSeed(request, 'discard'));
+    const rngBefore = this.requestRngSeed(request, 'discard');
+    this.deps.restoreRng(rngBefore);
     const startedAt = this.deps.now();
     let cardIndex: number;
+    let rngAfter: number;
     try {
       cardIndex = this.deps.decideDiscard(
         request.cards,
         request.communityCards,
         request.gameVariant
       );
+      rngAfter = this.deps.saveRng();
     } finally {
       this.deps.restoreRng(canonicalRng);
     }
@@ -1161,6 +1718,24 @@ export class HorseDecisionWorkerRuntime {
       throw new Error('pineapple discard worker returned an invalid card index');
     }
     const computeMs = Math.max(0, this.deps.now() - startedAt);
+    const governorScale = this.deps.governorScale();
+    if (snapshot) {
+      try {
+        this.deps.journalDiscard?.({
+          version: 1,
+          snapshot,
+          cardIndex,
+          rngBefore,
+          rngAfter,
+          computeMs,
+          governorScale,
+          runtimePins: 'incomplete',
+          lifecycleVersion: 1,
+        });
+      } catch {
+        this.deps.noteFeature('phase15_journal_discard_capture_unavailable');
+      }
+    }
     this.send({
       type: 'DISCARD_RESULT',
       requestId: request.requestId,
@@ -1168,7 +1743,7 @@ export class HorseDecisionWorkerRuntime {
       fence: request.fence,
       cardIndex,
       computeMs,
-      governorScale: this.deps.governorScale(),
+      governorScale,
     });
   }
 
@@ -1209,6 +1784,8 @@ export class HorseDecisionWorkerRuntime {
   private async shutdown(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
+    this.secondLookReads.clear();
+    this.issuedPlanBatches.clear();
     // Await boot first so a partially initialized writer is never abandoned.
     if (this.readyPromise) await this.readyPromise.catch(() => undefined);
     await this.deps.stopServices();

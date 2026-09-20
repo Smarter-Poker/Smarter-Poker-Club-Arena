@@ -44,6 +44,125 @@ groups:
             engine.smarter.poker/health -> stalledTables for the table ids.
           runbook: https://monitor.smarter.poker/runbooks/tables-frozen
 
+      # ── THE FLEET STOPPED TOGETHER (2026-09-18) ────────────────────────
+      # The zombie sweep now refuses to rebuild the whole estate at once, and
+      # counts each refusal. Zero is the healthy value. Anything else says a
+      # systemic pause made every dealable table cross the 180s line in the
+      # same pass - which for seven days ran on a clock: 97% of all zombie
+      # kills landed in minutes :03 and :04, because the maintenance break
+      # parks the fleet at :55, the break is five minutes, and the sweep
+      # condemns at 180 seconds. On 2026-09-18 at 03:03 that was 464 tables
+      # in one minute out of a fleet of about 500.
+      #
+      # The refusal is the SAFE outcome - nothing was destroyed - so this is a
+      # warning, not a page. What needs looking at is why the fleet stopped,
+      # not the refusal.
+      - alert: PokerFleetWideStall
+        expr: increase(poker_fleet_wide_zombie_refusals_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: 'a sweep declined to rebuild the whole fleet ({{ $value }} in 15m)'
+          description: |
+            More than a third of the tables that should be dealing made no
+            progress for 180 seconds in the same sweep. Nothing was rebuilt:
+            that many tables stopping together is one systemic pause, not that
+            many broken tables, and each one's own watchdog still answers for
+            it. Look for what stopped the fleet - the maintenance break
+            boundary, a database stall, or an event-loop stall - rather than at
+            the tables.
+      # ── THE ONE THE RULE ABOVE CANNOT SEE (2026-09-18) ─────────────────
+      # PokerTablesFrozen reads poker_stalled_tables, and that gauge counts
+      # tables with 2+ DEALABLE seats. A tournament table whose engine was
+      # registered and never started reports dealable 0 - it never loaded a
+      # seat - so it is outside that question rather than under its threshold,
+      # and GameServer's zombie reaper skips a not-running tournament engine on
+      # purpose because only its TournamentManager may replace that slot.
+      #
+      # Measured 2026-09-18 17:08Z: 391 of 554 RUNNING tournaments had dealt no
+      # hand for over thirty minutes and 239 for over six hours, across 567
+      # tables the database showed with two or more seated funded players.
+      # /health reported status ok, liveness ok, stalled 2. Nothing anywhere
+      # carried a number for it; the oldest such tournament had been RUNNING
+      # since 8 September.
+      #
+      # A newly admitted engine is legitimately not_started for a moment, so
+      # this waits on the AGE of the oldest one rather than the count, and the
+      # threshold is well past any plausible start.
+      - alert: PokerTournamentTableNeverStarted
+        expr: poker_tournament_table_never_started_oldest_seconds > 600
+        for: 5m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: 'a tournament table engine has been registered and never started for {{ $value }}s'
+          description: |
+            One or more tournament tables hold an engine whose dealing loop has
+            never run. Such a table reports dealable 0, so it cannot appear in
+            poker_stalled_tables however long it sits, and the zombie reaper
+            defers to the owning TournamentManager rather than rebuilding it.
+            The tournament stays RUNNING and deals nothing.
+            Check engine.smarter.poker/health ->
+            tableLivenessSummary.tournamentTablesNeverStarted, then
+            /health?liveness_table_ids=... for the loopPhase of each.
+          runbook: https://monitor.smarter.poker/runbooks/tables-frozen
+
+      # ── THE ENGINE CANNOT BE REPLACED (2026-09-19) ─────────────────────
+      # Whether a break ever certified a restart is recorded per break in
+      # engine_maintenance_break_log.ready_for_restart_at, and no alert rule
+      # reads a database table. On 2026-09-18 one table held an unresolved F06
+      # hand-number preparation from 21:56 onward; the restart gate never
+      # opened again; six consecutive engine releases failed, including two
+      # off-cycle recovery windows they asked for themselves; and production
+      # sat four and a half hours behind main.
+      #
+      # /health said `status: ok` throughout, and it was telling the truth.
+      # Every table was dealing. It was the RESTART that was impossible, which
+      # nothing measured. This is that measurement.
+      #
+      # One shut break is a lost window and gets retried. Two in a row means no
+      # fix, security or otherwise, can reach production until somebody acts.
+      - alert: PokerEngineCannotBeReplaced
+        expr: poker_maintenance_breaks_since_restart_certified >= 2
+        for: 0m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: '{{ $value }} consecutive breaks ended with no restart certificate'
+          description: |
+            The engine restart gate has not opened for two or more breaks in a
+            row, so no engine release can land. The felt is unaffected and will
+            look healthy; the deploy route is not.
+            Read engine.smarter.poker/health -> maintenance.unparkedReasons for
+            the reason the gate is refusing. A table holding an unresolved F06
+            preparation is process-local: only replacing that table's engine,
+            or restarting the process, clears it.
+          runbook: https://monitor.smarter.poker/runbooks/tables-frozen
+
+      # The bounded half of the same fault. Past ten minutes an unresolved F06
+      # preparation stops holding every other table's restart certificate shut,
+      # which is what keeps the deploy route open - but the table itself is
+      # still wedged and still needs its engine replaced.
+      - alert: PokerRestartGateHeldByStuckPermit
+        expr: poker_maintenance_unparked_tables{reason="f06_preparation_stuck"} > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: '{{ $value }} table(s) hold an F06 preparation past the restart gate'
+          description: |
+            A table has held an unresolved F06 hand-number preparation for over
+            ten minutes. It no longer blocks the platform's restart
+            certificate, so releases can proceed, but that table is wedged and
+            its permit only clears when its engine is replaced. The container
+            log names the table id.
+          runbook: https://monitor.smarter.poker/runbooks/tables-frozen
+
       # A settlement retry heartbeat can keep the existing progress watchdog
       # healthy while the same accepted hand remains blocked indefinitely.
       # Confirmed in the live Prometheus name catalog on 2026-09-08 after
@@ -321,12 +440,12 @@ groups:
           description: |
             Self-healing is firing repeatedly. It is doing its job, but a
             restart loop means an underlying defect is still present. Check
-            Sentry for watchdog_* and dealingLoop_died events.
+            engine logs for watchdog_* and dealingLoop_died events.
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STATS PIPELINE (Stats Page Programme phase 1, 2026-09-04)
   #
-  # The engine raises these itself through raiseEngineAlert (Sentry + the
+  # The engine raises these itself through raiseEngineAlert (engine logs + the
   # alert receiver) within a minute of the read that saw them. These rules are
   # the second, independent path: Prometheus reading the poker_stats_* gauges
   # the engine exposes, so a broken alert receiver cannot hide a lagging index.
@@ -358,9 +477,9 @@ groups:
             array from /api/cron/club-stats-maintenance. Found 17 hours behind
             on 2026-09-03 with nothing watching.
 
-      # A missing stat row after the grace proves delayed publication.
-      # Atomic hands skip the inline trigger and use the projection outbox;
-      # this aggregate alone cannot identify which writer is responsible.
+      # A hand with no ca_hand_player_stat row 90 s after it was written means
+      # trg_ca_stats_live_from_hand raised and swallowed it. The page is no
+      # longer live until this returns to 0.
       - alert: StatsLiveTriggerMissingHands
         expr: poker_stats_recent_hands_without_stat > 0
         for: 3m
@@ -370,13 +489,9 @@ groups:
         annotations:
           summary: '{{ $value }} recent hand(s) have no stat row'
           description: |
-            Accepted atomic hands publish stats through hand_projection_outbox;
-            their inline stats trigger intentionally skips that work. Match each
-            missing hand to its atomic receipt and outbox row, then inspect
-            projection progress and the active drain. For hands outside that
-            path, inspect trg_ca_stats_live_from_hand warnings. A maintenance
-            run can clear the gap temporarily; verify the writer before closing
-            the incident.
+            The live stats trigger is failing inside the hand insert (it WARNs
+            and lets the hand land). Read the Postgres log for
+            "trg_ca_stats_live_from_hand:".
 
       # Zero is the only healthy number. A disagreement is a recording defect
       # in the engine (button_seat or the showdown roster) or a failed writer.

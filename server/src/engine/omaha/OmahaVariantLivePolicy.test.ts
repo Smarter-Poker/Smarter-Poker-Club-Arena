@@ -8,6 +8,76 @@ import { sampleOmahaVariantEquity } from './OmahaVariantSampler.js';
 
 const variants = ['plo5', 'plo6', 'plo8'] as const;
 describe('Phase 11 real variant policy', () => {
+  it.each(variants)('%s excludes an explicitly undealt seat from the sampled deck', (variant) => {
+    const s = omahaVariantSpot(variant, 'turn', 2);
+    s.state.dealtSeatIds = [1, 2];
+    seedFastRandom(220913);
+    const before = sampleOmahaVariantEquity(variant, s.hero, s.state, () => true);
+    s.state.players.push({
+      ...s.state.players[1],
+      user_id: 'undealt',
+      seat: 3,
+      bet: 0,
+      totalInvested: 0,
+      is_sitting_out: true,
+    });
+    seedFastRandom(220913);
+    const after = sampleOmahaVariantEquity(variant, s.hero, s.state, () => true);
+    expect(before).not.toBeNull();
+    expect({ ...after, analysisMs: 0 }).toEqual({ ...before, analysisMs: 0 });
+  });
+  it.each(variants)('%s retains a sitting-out all-in opponent at showdown', (variant) => {
+    const s = omahaVariantSpot(variant, 'turn', 3);
+    s.state.players[2].stack = 0;
+    s.state.players[2].is_all_in = true;
+    seedFastRandom(220913);
+    const before = sampleOmahaVariantEquity(variant, s.hero, s.state, () => true);
+    s.state.players[2].is_sitting_out = true;
+    seedFastRandom(220913);
+    const after = sampleOmahaVariantEquity(variant, s.hero, s.state, () => true);
+    expect(before).not.toBeNull();
+    expect(after).not.toBeNull();
+    expect({ ...after, analysisMs: 0 }).toEqual({ ...before, analysisMs: 0 });
+  });
+  it.each(variants)('%s keeps a sitting-out dealer in the dealt ring', (variant) => {
+    const s = omahaVariantSpot(variant, 'preflop', 3, 'tournament');
+    s.state.dealerSeat = 3;
+    s.state.players[2].is_sitting_out = true;
+    s.state.players[2].is_folded = true;
+    const r = evaluateOmahaVariantPolicy(s.hero, s.state, s.baseline, null, 'shadow', () => 0);
+    expect(r.receipt.fired).toBe(true);
+    expect(r.receipt.position).toBe('small_blind');
+    expect(r.decision).toBe(s.baseline);
+  });
+  it.each(variants)('%s retains the actual aggressor after an all-in call', (variant) => {
+    const s = omahaVariantSpot(variant, 'river', 3);
+    s.state.players[2].stack = 0;
+    s.state.players[2].is_all_in = true;
+    s.state.players[2].bet = 20;
+    s.state.actionHistory!.push({
+      userId: 'v3',
+      seat: 3,
+      action: 'all_in',
+      amount: 20,
+      stage: 'river',
+      timestamp: 2,
+    });
+    const r = evaluateOmahaVariantPolicy(s.hero, s.state, s.baseline, null, 'shadow', () => 0);
+    expect(r.receipt.fired).toBe(true);
+    expect(r.receipt.aggressorPosition).toBe('small_blind');
+  });
+  it.each(variants)('%s keeps a folded seat in the sampled deck when it sits out', (variant) => {
+    const s = omahaVariantSpot(variant, 'turn', 3);
+    s.state.players[2].is_folded = true;
+    seedFastRandom(220913);
+    const before = sampleOmahaVariantEquity(variant, s.hero, s.state, () => true);
+    s.state.players[2].is_sitting_out = true;
+    seedFastRandom(220913);
+    const after = sampleOmahaVariantEquity(variant, s.hero, s.state, () => true);
+    expect(before).not.toBeNull();
+    expect(after).not.toBeNull();
+    expect({ ...after, analysisMs: 0 }).toEqual({ ...before, analysisMs: 0 });
+  });
   it.each(variants)(
     '%s covers each street and the actual cash/tournament seat limits',
     (variant) => {

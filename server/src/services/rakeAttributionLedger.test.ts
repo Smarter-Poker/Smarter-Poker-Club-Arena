@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   assertCashAttributionComplete,
   readRakeAttributionLedger,
+  rakeCreditClub,
+  type RakeAttributionLedger,
 } from './rakeAttributionLedger.js';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -10,8 +12,17 @@ const entry = (n: number) => ({
   hand_id: id(9001),
   player_id: id(n),
   weighted_rake_credit: '0.01',
+  club_id: id(8001),
+  rake_record_id: id(7001),
 });
-const cash = { hand_id: id(9001), rake_amount: 10.05, player_contributions: { [id(1)]: 100 } };
+const emptyLedger = (): RakeAttributionLedger => ({ credits: new Map(), provenance: new Map() });
+const cash = {
+  id: id(7001),
+  club_id: id(8000),
+  hand_id: id(9001),
+  rake_amount: 10.05,
+  player_contributions: { [id(1)]: 100 },
+};
 
 describe('complete stored rake attribution', () => {
   it('reads beyond the 1000-row API cap and a smaller server cap', async () => {
@@ -21,7 +32,7 @@ describe('complete stored rake attribution', () => {
       error: null,
     }));
     const ledger = await readRakeAttributionLedger([cash.hand_id, cash.hand_id], read);
-    expect(ledger.get(cash.hand_id)?.size).toBe(1005);
+    expect(ledger.credits.get(cash.hand_id)?.size).toBe(1005);
     expect(read).toHaveBeenCalledTimes(4);
     expect(() => assertCashAttributionComplete([cash], ledger)).not.toThrow();
   });
@@ -67,25 +78,63 @@ describe('complete stored rake attribution', () => {
     ).rejects.toThrow('Invalid rake attribution row');
   });
   it('refuses missing and partial cash attribution even when fallback math could sum correctly', () => {
-    expect(() => assertCashAttributionComplete([cash], new Map())).toThrow('incomplete');
-    const partial = new Map([[cash.hand_id, new Map([[id(1), 10]])]]);
+    expect(() => assertCashAttributionComplete([cash], emptyLedger())).toThrow('incomplete');
+    const partial: RakeAttributionLedger = {
+      credits: new Map([[cash.hand_id, new Map([[id(1), 10]])]]),
+      provenance: new Map(),
+    };
     expect(() => assertCashAttributionComplete([cash], partial)).toThrow('incomplete');
   });
-  it('does not impose cash attribution on tournament or null-hand records', () => {
+  it('does not impose cash attribution on tournament records', () => {
     expect(() =>
       assertCashAttributionComplete(
         [
           { ...cash, is_tournament: true },
           { ...cash, tournament_id: id(42) },
-          { ...cash, hand_id: null },
         ],
-        new Map()
+        emptyLedger()
       )
     ).not.toThrow();
   });
   it('does not read when there are no hand references', async () => {
     const read = vi.fn();
-    expect(await readRakeAttributionLedger([], read)).toEqual(new Map());
+    expect(await readRakeAttributionLedger([], read)).toEqual(emptyLedger());
     expect(read).not.toHaveBeenCalled();
+  });
+});
+
+describe('cash earning provenance', () => {
+  const readOne = (overrides: Record<string, unknown> = {}) =>
+    readRakeAttributionLedger([cash.hand_id], async (_hands, after) => ({
+      data: after ? [] : [{ ...entry(1), weighted_rake_credit: cash.rake_amount, ...overrides }],
+      error: null,
+    }));
+  it('retains the earned club even when it differs from the house club', async () => {
+    const ledger = await readOne();
+    assertCashAttributionComplete([cash], ledger);
+    expect(rakeCreditClub(cash, id(1), ledger)).toBe(id(8001));
+    expect(ledger.provenance.get(cash.hand_id)?.get(id(1))).toEqual({
+      credit: 10.05,
+      clubId: id(8001),
+      rakeRecordId: cash.id,
+    });
+  });
+  it.each(['club_id', 'rake_record_id'])(
+    'refuses missing %s rather than a membership fallback',
+    async (key) => {
+      await expect(readOne({ [key]: null })).rejects.toThrow('Invalid rake attribution row');
+    }
+  );
+  it('refuses attribution copied from another source record even when its cents match', async () => {
+    const ledger = await readOne({ rake_record_id: id(9999) });
+    expect(() => assertCashAttributionComplete([cash], ledger)).toThrow('incomplete');
+  });
+  it('refuses eligible cash with no durable hand/source identity', () => {
+    expect(() =>
+      assertCashAttributionComplete([{ ...cash, hand_id: null }], emptyLedger())
+    ).toThrow('durable hand');
+    expect(() =>
+      assertCashAttributionComplete([{ ...cash, id: undefined }], emptyLedger())
+    ).toThrow('durable hand');
   });
 });

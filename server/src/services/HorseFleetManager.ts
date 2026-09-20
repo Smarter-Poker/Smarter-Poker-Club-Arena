@@ -601,7 +601,7 @@ export class HorseFleetManager {
   private lastEligibleBuiltAt = 0;
   /* Last time a failed fleet-state publish was reported. The engine can ship
      before the World Hub migration that creates fn_ca_fleet_state_upsert, and
-     an unthrottled report would file one Sentry event and one console line
+     an unthrottled report would file one error reporting event and one console line
      every 30 seconds for ever, which is how a real signal becomes noise. */
   private lastStatePublishReportAt = 0;
   /**
@@ -2496,6 +2496,25 @@ export class HorseFleetManager {
           }
         }
       };
+      /* ── THE SEATING BUDGET STARTS WHEN SEATING STARTS (2026-09-16) ────────
+         The budget below was measured from the start of the cycle, load phase
+         included, on the strength of a 5.3-second load phase. On 2026-09-16
+         the load phase took 34 to 75 seconds every cycle (the database pool was
+         full: see theQuietTournamentTableBacksOff), so the budget was spent
+         before the first table, the "one table anyway" fallback tried the same
+         first table every cycle, every one of that table's thousand
+         horse/table pairs was excluded on membership or tags, and the floor
+         seated NOBODY for hours while 1,000 horses stood in the pool: 90 of
+         110 cash tables empty, "0 sit(s)" on every beat. A slow load phase is
+         reported on its own line; it does not also get to cancel seating. */
+      const seatingStartedAt = Date.now();
+      const loadPhaseMs = seatingStartedAt - cycleStartedAt;
+      if (loadPhaseMs >= SEED_CYCLE_SEATING_BUDGET_MS) {
+        console.warn(
+          `[HorseFleet] the load phase alone took ${loadPhaseMs}ms, past the ${SEED_CYCLE_SEATING_BUDGET_MS}ms ` +
+            'seating budget - seating still gets its own budget from here; the database is slow, not the floor'
+        );
+      }
       for (const table of tablesToSeed) {
         if (!readIsCurrent()) break;
         let diag: OpeningFeederDiag | null = null;
@@ -2622,30 +2641,20 @@ export class HorseFleetManager {
              five-second seeding deadline in supabase/client.ts, the worst case
              is this budget plus one abandoned call plus the state write, which
              lands inside the tick. */
-          if (tablesConsidered > 0 && Date.now() - cycleStartedAt >= SEED_CYCLE_SEATING_BUDGET_MS) {
+          if (
+            tablesConsidered > 0 &&
+            Date.now() - seatingStartedAt >= SEED_CYCLE_SEATING_BUDGET_MS
+          ) {
             beat.withheldTables++;
             if (firstTableWithheld === null) firstTableWithheld = 'cycle_time_budget';
             if (diag) diag.withheld = 'cycle_time_budget';
             continue;
           }
-          /* `tablesConsidered > 0` above is not a rounding detail. The budget is
-             measured from the START of the cycle, which includes the load phase
-             (tag book, doors, policy - 5.3 s measured). If that phase ever ran
-             past the budget, an unguarded check would withhold EVERY table and
-             the floor would stop being seeded at all, silently, with a reason
-             that reads like ordinary throttling. One table is always tried, so
-             a cycle can never seat nobody for want of time alone, and a load
-             phase that has eaten the budget says so on its own line. */
-          if (
-            tablesConsidered === 0 &&
-            Date.now() - cycleStartedAt >= SEED_CYCLE_SEATING_BUDGET_MS
-          ) {
-            console.warn(
-              `[HorseFleet] the load phase used the whole ${SEED_CYCLE_SEATING_BUDGET_MS}ms seating ` +
-                `budget (${Date.now() - cycleStartedAt}ms) - seeding one table anyway so the floor ` +
-                'is never starved by setup alone'
-            );
-          }
+          /* `tablesConsidered > 0` above is not a rounding detail: one table is
+             always tried, so a cycle can never seat nobody for want of time
+             alone. The budget is measured from `seatingStartedAt`, the end of
+             the load phase (tag book, doors, policy), never from the start of
+             the cycle - see the note above the loop. */
           tablesConsidered++;
 
           const target = occupancyTargetFor(
@@ -3876,7 +3885,7 @@ export class HorseFleetManager {
              that a bad counter write can never take the floor down with it -
              which is right, and which is also why nobody saw 23502 repeating
              every cycle from 08:42 to 23:07 on 2026-09-04. reportError was not
-             the backstop it looked like: Sentry's own budget was dropping
+             the backstop it looked like: error reporting own budget was dropping
              hundreds of events an hour that day. So the zero is raised HERE,
              where it is a fact about the platform rather than a log line, and
              throttled to once an hour so it stays readable. */

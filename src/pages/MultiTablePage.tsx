@@ -163,6 +163,9 @@ interface TableInstance {
   sitOutDeadlineMs?: number;
   /** Tournament tables sit out indefinitely; cash tables are on a clock. */
   isTournament?: boolean;
+  /** TablePage's `seatCanAddFunds` answer; the tab bar drops its Top Up items
+   *  on `false`. Reported, never derived here: this page cannot see the arena. */
+  canAddFunds?: boolean;
   /** Dan 2026-08-21: short game code the tab shows when no hand is live
    *  (NLH / PLO5 / SPIN / MTT / HU). Best-effort at first paint, replaced by
    *  TablePage's authoritative value the moment it loads. */
@@ -1759,6 +1762,7 @@ export default function MultiTablePage() {
              rebuild that reads table_seats WHERE left_at IS NULL, and by
              nothing else. */
           seated: t.seated,
+          canAddFunds: t.canAddFunds,
           // TablePage's value is authoritative; until it lands, recover what
           // the table NAME says so the box is never unlabeled.
           gameCode: isTableTab(t) ? t.gameCode || gameCodeFromName(t.name) : '',

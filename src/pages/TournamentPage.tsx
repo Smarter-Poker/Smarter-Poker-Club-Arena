@@ -6,7 +6,21 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { isClubStaff } from '../types/clubRoles';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { tournamentService, tournamentUnregisterSuccessText } from '../services/TournamentService';
+import {
+  tournamentService,
+  tournamentUnregisterSuccessText,
+  type TournamentWithArena,
+} from '../services/TournamentService';
+import {
+  tournamentEntryWindowOpen,
+  type TournamentEntryWindowRow,
+} from '../utils/tournamentEntryWindow';
+import {
+  getTournamentEntryCapacity,
+  getTournamentFormatKind,
+  isTournamentEntryUnavailable,
+} from '../utils/tournamentPresentation';
+import { moneySuffixAtUnit } from '../utils/format';
 import type { Tournament } from '../types/database.types';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import './TournamentPage.css';
@@ -39,6 +53,7 @@ import {
   effectivePlaceLadderPool,
   placePrize,
   resolvePayoutStructure,
+  tournamentRowUnitCents,
   type NormalisedBlindLevel,
   type TournamentTable,
 } from '../components/tournament/details/types';
@@ -81,25 +96,8 @@ type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
  * Levels take precedence over minutes when the tournament defines both, because
  * that is how the engine closes the window.
  */
-function isLateRegOpen(t: {
-  status?: string | null;
-  current_level?: number | null;
-  late_reg_levels?: number | null;
-  late_reg_mins?: number | null;
-  started_at?: string | null;
-}): boolean {
-  if (t.status !== 'RUNNING') return false;
-  const levels = Number(t.late_reg_levels ?? 0);
-  // 0-BASED (2026-08-23): current_level indexes blind_structure directly, so
-  // "through level N" is indices 0..N-1 and N is the cutoff. `<=` here left
-  // the Register button live for a level after the engine had closed late reg
-  // and finalized the pool. Matches TournamentManagerBase.isLateRegClosed.
-  if (levels > 0) return Number(t.current_level ?? 0) < levels;
-  const mins = Number(t.late_reg_mins ?? 0);
-  if (mins > 0 && t.started_at) {
-    return Date.now() - new Date(t.started_at).getTime() <= mins * 60_000;
-  }
-  return false;
+function isLateRegOpen(t: TournamentEntryWindowRow): boolean {
+  return tournamentEntryWindowOpen(t, Date.now());
 }
 
 // Default fallback for unauthed (shouldn't happen in real app)
@@ -124,7 +122,7 @@ export default function TournamentPage() {
   const currentUser = user || GUEST_USER;
 
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
-  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
+  const [selectedTournament, setSelectedTournament] = useState<TournamentWithArena | null>(null);
   /** Tables in the selected RUNNING tournament (see the live pane below). */
   const [tourneyTables, setTourneyTables] = useState<
     Array<{
@@ -158,7 +156,7 @@ export default function TournamentPage() {
   const endRebuyPrompt = useCallback(() => {
     rebuyPromptTokenRef.current = null;
   }, []);
-  const selectedTournamentRef = useRef<Tournament | null>(null);
+  const selectedTournamentRef = useRef<TournamentWithArena | null>(null);
   const [visibleTournaments, setVisibleTournaments] = useState<Set<string>>(new Set());
 
   /**
@@ -525,7 +523,11 @@ export default function TournamentPage() {
 
   // Register for tournament
   const handleRegister = () => {
-    if (!selectedTournament) return;
+    if (
+      !selectedTournament ||
+      isTournamentEntryUnavailable(selectedTournament, selectedTournament.current_players)
+    )
+      return;
     registerMtt(
       {
         id: selectedTournament.id,
@@ -739,7 +741,7 @@ export default function TournamentPage() {
       const { data, error } = await supabase
         .from('tournaments')
         .select(
-          'id, name, status, current_players, max_players, prize_pool, buy_in_amount, buy_in_fee, starting_chips, current_level, late_reg_levels, late_reg_mins, start_time, started_at, variant, tournament_type, spin_multiplier, payout_structure'
+          'id, name, status, current_players, max_players, prize_pool, buy_in_amount, buy_in_fee, starting_chips, current_level, late_reg_levels, late_reg_mins, rebuy_levels, prize_pool_finalized, start_time, started_at, variant, tournament_type, spin_multiplier, payout_structure'
         )
         .eq('id', id)
         .maybeSingle();
@@ -1060,6 +1062,16 @@ export default function TournamentPage() {
     Number(selectedTournament?.starting_chips) || 0
   );
 
+  /**
+   * The unit the selected event pays in, read off the `arena` embed that
+   * `getTournaments`/`getTournament` now carry. Both ladders on this page price
+   * through it, so the projection a player browses is on the same grid as the
+   * settlement they are eventually paid on.
+   */
+  const selectedUnitCents = useMemo(
+    () => tournamentRowUnitCents(selectedTournament),
+    [selectedTournament]
+  );
   const selectedPayouts = useMemo(
     () => resolvePayoutStructure(selectedTournament) ?? [],
     [selectedTournament]
@@ -1248,11 +1260,13 @@ export default function TournamentPage() {
         secondary: back,
         primary: isRegistered
           ? { label: 'Unregister', ink: 'red' as const, onClick: handleUnregister }
-          : {
-              label: `Register (${money(totalBuyIn(t.buy_in_amount, t.buy_in_fee))})`,
-              ink: 'white' as const,
-              onClick: handleRegister,
-            },
+          : isTournamentEntryUnavailable(t, t.current_players)
+            ? { label: 'Entry Unavailable', ink: 'muted' as const, disabled: true }
+            : {
+                label: `Register (${money(totalBuyIn(t.buy_in_amount, t.buy_in_fee))})`,
+                ink: 'white' as const,
+                onClick: handleRegister,
+              },
       };
     }
     if (t.status === 'RUNNING') {
@@ -1373,7 +1387,7 @@ export default function TournamentPage() {
                   <span className="sc-label sc-ink--blue">Entries</span>
                   <span className="tourn-value sc-ink--silver">
                     {tourn.current_players}
-                    {tourn.max_players ? `/${tourn.max_players}` : ''}
+                    {getTournamentEntryCapacity(tourn) !== null ? `/${tourn.max_players}` : ''}
                   </span>
                 </div>
                 <div className="tourn-row">
@@ -1438,7 +1452,9 @@ export default function TournamentPage() {
               <span className="sc-label sc-ink--blue">Entries</span>
               <span className="tourn-value sc-ink--silver">
                 {selectedTournament.current_players}
-                {selectedTournament.max_players ? `/${selectedTournament.max_players}` : ''}
+                {getTournamentEntryCapacity(selectedTournament) !== null
+                  ? `/${selectedTournament.max_players}`
+                  : ''}
               </span>
             </div>
             <div className="tourn-row">
@@ -1491,7 +1507,7 @@ export default function TournamentPage() {
                   <span className="sc-label sc-ink--blue">Top Mystery Bounty</span>
                   <span className="tourn-value sc-ink--gold">
                     {topBountyCents(mysteryBounty.inventory) > 0
-                      ? formatCents(topBountyCents(mysteryBounty.inventory))
+                      ? `${formatCents(topBountyCents(mysteryBounty.inventory), selectedUnitCents)}${moneySuffixAtUnit(selectedUnitCents)}`
                       : 'Drawn When The Mystery Phase Opens'}
                   </span>
                 </div>
@@ -1505,7 +1521,7 @@ export default function TournamentPage() {
             )}
 
             {/* Spin Info */}
-            {selectedTournament.variant === 'spin' && (
+            {getTournamentFormatKind(selectedTournament) === 'spin' && (
               <div className="tourn-row">
                 <span className="sc-label sc-ink--blue">Multiplier</span>
                 <span className="tourn-value sc-ink--gold">
@@ -1684,7 +1700,7 @@ export default function TournamentPage() {
               const amount =
                 selectedPlaceLadderPool === null
                   ? null
-                  : placePrize(selectedPlaceLadderPool, selectedPayouts, pos);
+                  : placePrize(selectedPlaceLadderPool, selectedPayouts, pos, selectedUnitCents);
               return (
                 <div key={i} className="tourn-row tourn-row--triple">
                   {/* The top three used to print NOTHING: an emoji had been
@@ -1711,6 +1727,7 @@ export default function TournamentPage() {
               data={mysteryBounty}
               currentUserId={currentUser.id === 'guest' ? null : currentUser.id}
               isCompleted={selectedTournament.status === 'COMPLETED'}
+              unitCents={selectedUnitCents}
             />
           )}
 
@@ -1728,7 +1745,12 @@ export default function TournamentPage() {
                       ? recorded
                       : selectedPlaceLadderPool === null
                         ? null
-                        : placePrize(selectedPlaceLadderPool, selectedPayouts, p.place);
+                        : placePrize(
+                            selectedPlaceLadderPool,
+                            selectedPayouts,
+                            p.place,
+                            selectedUnitCents
+                          );
                   return (
                     <div key={i} className="tourn-row">
                       <span className="sc-label sc-ink--blue">{ordinal(p.place)}</span>

@@ -37,9 +37,6 @@ class FakeEngine {
   holdBeforeNextHand = false;
   atGate = false;
   running = true;
-  hasSettlementInFlight(): boolean {
-    return false;
-  }
   budgets: number[] = [];
   resumeCount = 0;
   /** Set when hand-for-hand tries to resume this table. */
@@ -670,6 +667,18 @@ describe('the restart gate', () => {
     expect(mb.readyForRestart()).toBe(true);
   });
 
+  it('waits for the engine to durably save initialized banks after the hand settles', async () => {
+    const { mb, engines } = build(1);
+    const e = [...engines.values()][0];
+    let saved = false;
+    Object.assign(e, { isMaintenanceStateDurable: () => saved });
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+    expect(mb.readyForRestart()).toBe(false);
+    saved = true;
+    expect(mb.readyForRestart()).toBe(true);
+  });
+
   it('opens for a QUIET table that never reaches the gate at all', async () => {
     /**
      * The production bug. A quiet table waits in the start-up loop; it only
@@ -701,7 +710,7 @@ describe('the restart gate', () => {
     expect(mb.readyForRestart()).toBe(true);
   });
 
-  it('ignores a stopped engine with no settlement still in flight', async () => {
+  it('ignores a stopped engine: it has no hand to protect', async () => {
     const { mb, engines } = build(2);
     const list = [...engines.values()];
     list[0].deal();
@@ -710,47 +719,6 @@ describe('the restart gate', () => {
     await mb.beginCountdown();
     expect(mb.readyForRestart()).toBe(true);
   });
-
-  it.each([true, false])(
-    'keeps an owned settlement behind the restart gate when running=%s',
-    async (running) => {
-      const { mb, engines } = build(1);
-      const engine = engines.get('t0')!;
-      engine.running = running;
-      const completed = deferred<void>();
-      let pending = true;
-      void completed.promise.then(() => {
-        pending = false;
-      });
-      engine.hasSettlementInFlight = () => pending;
-      await mb.announceLastHand();
-      await mb.beginCountdown();
-      expect(engine.isBetweenHands()).toBe(true);
-      expect(mb.snapshot().unparkedTables).toBe(1);
-      expect(mb.readyForRestart()).toBe(false);
-      completed.resolve();
-      await completed.promise;
-      expect(mb.snapshot().unparkedTables).toBe(0);
-      expect(mb.readyForRestart()).toBe(true);
-      await mb.stop();
-    }
-  );
-
-  it.each(['hasSettlementInFlight', 'isRunning', 'isBetweenHands'] as const)(
-    'holds the restart gate when %s cannot be inspected',
-    async (method) => {
-      const { mb, engines } = build(1);
-      const engine = engines.get('t0')!;
-      engine[method] = () => {
-        throw new Error('inspection unavailable');
-      };
-      await mb.announceLastHand();
-      await mb.beginCountdown();
-      expect(mb.snapshot().unparkedTables).toBe(1);
-      expect(mb.readyForRestart()).toBe(false);
-      await mb.stop();
-    }
-  );
 
   it('shuts again once too little break remains to finish a restart inside it', async () => {
     const { mb } = build(1);
@@ -789,6 +757,55 @@ describe('the restart gate', () => {
     expect(outcomes[0].peakUnparked).toBe(3);
     expect(outcomes[0].readyForRestartAtMs).not.toBeNull();
     expect(outcomes[0].tablesResumed).toBe(3);
+  });
+
+  /**
+   * THE ALARM THAT WAS MISSING (2026-09-19).
+   *
+   * Whether a break ever certified a restart is recorded per break in
+   * `engine_maintenance_break_log.ready_for_restart_at`, and no alert rule
+   * reads a database table. On 2026-09-18 one table held an unresolved F06
+   * hand-number preparation from 21:56; the gate never opened again; six
+   * consecutive engine releases failed, including two off-cycle recovery
+   * windows they asked for themselves; and production sat four and a half
+   * hours behind main. `/health` read `status: ok` the whole time, correctly -
+   * every table was dealing. It was the RESTART that was impossible, and
+   * nothing measured that.
+   */
+  it('counts the breaks that ended without ever certifying a restart', async () => {
+    const { mb, engines, outcomes } = build(2);
+    const list = [...engines.values()];
+
+    // A break whose gate never opens: one table keeps a hand in the air.
+    list[0].deal();
+    await mb.announceLastHand();
+    list[1].park();
+    await mb.beginCountdown();
+    expect(mb.readyForRestart()).toBe(false);
+    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS + 1000);
+    await mb.end();
+    expect(outcomes[0].readyForRestartAtMs).toBeNull();
+    expect(mb.snapshot().breaksSinceRestartCertified, 'one shut break').toBe(1);
+
+    // And again. Two in a row is the state in which no release can land.
+    await mb.announceLastHand();
+    list[1].park();
+    await mb.beginCountdown();
+    expect(mb.readyForRestart()).toBe(false);
+    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS + 1000);
+    await mb.end();
+    expect(mb.snapshot().breaksSinceRestartCertified, 'the engine cannot be replaced').toBe(2);
+
+    // One certified break clears it. The count is consecutive, not cumulative:
+    // a single lost window is normal and must not page anybody.
+    list[0].finishHand();
+    await mb.announceLastHand();
+    parkAll(engines);
+    await mb.beginCountdown();
+    expect(mb.readyForRestart()).toBe(true);
+    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS + 1000);
+    await mb.end();
+    expect(mb.snapshot().breaksSinceRestartCertified, 'a certified break resets it').toBe(0);
   });
 });
 
@@ -1178,6 +1195,23 @@ describe('the resume arrives in installments (2026-09-05)', () => {
       'every table was offered its resume'
     ).toBe(true);
     expect(list.filter((e) => !bad.includes(e)).every((e) => e.paused === false)).toBe(true);
+  });
+
+  it('ends each table presentation only after that table resumes and retains failed resumes', async () => {
+    const f = buildFleet(360, 0);
+    const failed = [...f.engines.entries()][0];
+    failed[1].resumeFromMaintenance = () => {
+      throw new Error('still parked');
+    };
+    const timers = await runBreak(f);
+    expect(f.mb.presentation().phase).toBe('resuming');
+    for (const [id, engine] of f.engines) {
+      expect(f.mb.presentation(id).active).toBe(engine.resumeCount === 0);
+    }
+    for (const timer of timers) timer.fn();
+    expect(f.mb.presentation(failed[0])).toMatchObject({ active: true, phase: 'resuming' });
+    expect(f.mb.presentation().active).toBe(true);
+    for (const [id] of [...f.engines].slice(1)) expect(f.mb.presentation(id).active).toBe(false);
   });
 
   it('publishes resumeWaves {total, done, startedAt} on /health while the waves run', async () => {
@@ -1688,27 +1722,47 @@ describe('the dealing loop parks for the break, not only the wait loop', () => {
     const { readFileSync } = await import('node:fs');
     const { fileURLToPath } = await import('node:url');
     const { dirname, join } = await import('node:path');
+    const ts = await import('typescript');
     const here = dirname(fileURLToPath(import.meta.url));
-    const src = readFileSync(join(here, '../engine/ServerTableEngineDealing.ts'), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/^\s*\/\/.*$/gm, '');
-    const sites = [...src.matchAll(/await this\.awaitPauseGate\(\)/g)];
+    const src = readFileSync(join(here, '../engine/ServerTableEngineDealing.ts'), 'utf8');
+    const source = ts.createSourceFile(
+      'ServerTableEngineDealing.ts',
+      src,
+      ts.ScriptTarget.Latest,
+      true
+    );
+    const sites: string[] = [];
+    const visit = (node: import('typescript').Node): void => {
+      if (
+        ts.isAwaitExpression(node) &&
+        node.expression.getText(source) === 'this.awaitPauseGate()'
+      ) {
+        const guards: string[] = [];
+        // Only enclosing conditions own this call. A sibling checkpoint's
+        // maintenance guard must not relabel a terminal-only pause gate.
+        for (let child: import('typescript').Node = node; child.parent; child = child.parent) {
+          const parent = child.parent;
+          if (ts.isFunctionLike(parent)) break;
+          if (ts.isIfStatement(parent) && parent.thenStatement === child) {
+            guards.push(parent.expression.getText(source));
+          }
+        }
+        sites.push(guards.join(' && '));
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
     expect(sites.length, 'the dealing loop has two park gates').toBeGreaterThanOrEqual(2);
     let maintenanceSites = 0;
     let terminalOnlySites = 0;
-    for (const m of sites) {
-      // Pause ownership gained an exact tournament-move owner in front of the
-      // existing maintenance condition. Inspect the complete local guard, not
-      // a formatting-sized fragment that can silently stop at a longer list
-      // of authorities while the runtime condition remains correctly wired.
-      const guard = src.slice(Math.max(0, m.index! - 500), m.index!);
+    for (const guard of sites) {
       const hasMaintenance = /maintenancePaused/.test(guard);
       const hasTerminalCloseout = /terminalCloseoutPaused/.test(guard);
       expect(
         guard,
         'an awaitPauseGate call without a named pause authority can park or release the wrong hand: ' +
           guard.trim().slice(-120)
-      ).toMatch(/maintenancePaused|terminalCloseoutPaused/);
+      ).toMatch(/maintenancePaused|terminalCloseoutPaused|this\.isNextHandPaused\(\)/);
       if (hasMaintenance) maintenanceSites++;
       if (hasTerminalCloseout && !hasMaintenance) terminalOnlySites++;
     }
@@ -1921,38 +1975,6 @@ describe('the real engine treats a maintenance pause as paused', () => {
     ({ ServerTableEngine } = await import('../engine/ServerTableEngine.js'));
     new ServerTableEngine(TBL);
   }, 120_000);
-
-  it.each([true, false])(
-    'the real settlement promise holds restart readiness when running=%s',
-    async (running) => {
-      const engine = new ServerTableEngine(TBL);
-      engine.running = running;
-      const settlement = deferred<void>();
-      engine.trackSettlementInFlight(settlement.promise);
-      const mb = new MaintenanceBreak({
-        engines: () => [[TBL, engine]],
-        isRunning: () => true,
-        emit: () => {},
-        store: new FakeStore(),
-      });
-      try {
-        await mb.announceLastHand();
-        await mb.beginCountdown();
-        expect(engine.isBetweenHands()).toBe(true);
-        expect(engine.hasSettlementInFlight()).toBe(true);
-        expect(mb.snapshot().unparkedTables).toBe(1);
-        expect(mb.readyForRestart()).toBe(false);
-        settlement.resolve();
-        await settlement.promise;
-        expect(engine.hasSettlementInFlight()).toBe(false);
-        expect(mb.readyForRestart()).toBe(true);
-      } finally {
-        settlement.resolve();
-        await mb.stop();
-        await engine.stop();
-      }
-    }
-  );
 
   // A generous per-case budget for the same reason: none of these cases does
   // any real work, but a saturated runner can stall any of them for seconds.

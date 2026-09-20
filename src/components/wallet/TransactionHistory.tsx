@@ -390,13 +390,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
   }, [loadPage]);
 
   useMasterBusSubscriptions(
-    [
-      'BALANCE_UPDATED',
-      'WALLET_REFRESHED',
-      'CHIPS_DISTRIBUTED',
-      'CHIPS_ADDED',
-      'SETTLEMENT_COMPLETED',
-    ],
+    ['BALANCE_UPDATED', 'WALLET_REFRESHED', 'CHIPS_DISTRIBUTED', 'CHIPS_ADDED'],
     refresh,
     { debounce: 500 }
   );

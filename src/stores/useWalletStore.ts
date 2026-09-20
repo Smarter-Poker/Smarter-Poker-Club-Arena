@@ -13,7 +13,7 @@ import { DiamondService } from '../services/DiamondService';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MODULE-LEVEL CIRCUIT BREAKERS — prevent repeated Sentry floods on persistent RLS errors
+// MODULE-LEVEL CIRCUIT BREAKERS — prevent repeated error reporting floods on persistent RLS errors
 // Each breaker trips after 3 failures and resets after 5 min cooldown.
 // ═══════════════════════════════════════════════════════════════════════════════
 function makeCircuitBreaker(cooldownMs = 5 * 60_000) {

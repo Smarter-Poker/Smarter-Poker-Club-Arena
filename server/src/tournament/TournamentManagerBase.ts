@@ -1,4 +1,33 @@
-import { LifecycleDiagnostics } from '../services/LifecycleDiagnostics.js';
+import { F06HandPermit } from '../services/F06HandPermit.js';
+import { channelHub } from '../hub/ChannelHub.js';
+import {
+  LifecycleDiagnostics,
+  type LifecycleDetail,
+  type LifecycleTransition,
+} from '../services/LifecycleDiagnostics.js';
+
+export interface TournamentDiagnosticSelection {
+  tableIds?: readonly string[];
+}
+
+/** No more than limit iterator.next calls, including on a large registry. */
+function boundedDiagnosticEntries<T>(values: Iterable<T>, limit: number): T[] {
+  const iterator = values[Symbol.iterator]();
+  const entries: T[] = [];
+  for (let i = 0; i < limit; i++) {
+    const next = iterator.next();
+    if (next.done) break;
+    entries.push(next.value);
+  }
+  return entries;
+}
+import {
+  isPersistedUnlimitedMtt,
+  isPersistedSpin,
+  isPersistedSeatFirst,
+  readPersistedTournamentFormatContract,
+  type TournamentFormatContract,
+} from './tournamentEntryCapacity.js';
 import {
   continueBookedSpinBlinds,
   readFundedSpinDraw,
@@ -18,7 +47,8 @@ import {
 import nodeCrypto from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { ServerTableEngine } from '../engine/ServerTableEngine.js';
-import { supabase } from '../services/supabase.js';
+import { supabase, resumeRetainedHandSubmission } from '../services/supabase.js';
+import { INSTANCE_ID } from '../services/tableLease.js';
 import { ChipRaceEngine } from '../engine/ChipRaceEngine.js';
 import { TableBalancer } from '../engine/TableBalancer.js';
 import {
@@ -58,14 +88,14 @@ import { tableStateHub } from '../transport/TableStateHub.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
 import { spinRevealWouldSkipABeat, spinRevealLag } from './spinRevealWindow.js';
 import { SpinOverrunReporter, describeOverrun } from './spinOverrunReporter.js';
-import { isShortFormat, mayTakeSynchronizedBreak } from './breakEligibility.js';
+import { mayTakeSynchronizedBreak } from './breakEligibility.js';
 import {
   capLevelToChipsInPlay,
   escalatedBlindLevel,
   lastPlayableIndex,
 } from './blindEscalation.js';
 import { observedStepRatio } from './blindLadder.js';
-import { isSpinTournament, parsePayoutStructure } from './payoutStructure.js';
+import { parsePayoutStructure } from './payoutStructure.js';
 import { readTournamentPrizePool } from './tournamentPrizeContract.js';
 import { readPlayedMttLaunchProof } from './playedMttLaunchRecovery.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
@@ -86,12 +116,21 @@ import { applySpinDrawPatch } from './spinDrawSync.js';
 import { proveSpinDrawWithParking } from './spinLaunchParking.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import {
+  tournamentFinishRefusalAlertsSuppressedTotal,
+  classifyFinishRefusal,
+  finishRefusalRetryDelayMs,
+  type FinishRefusalReason,
+} from '../observability/engineInstruments.js';
+import {
   parsePlayedSpinLaunchRecoveryProof,
   type PlayedSpinLaunchRecoveryProof,
 } from './playedSpinLaunchRecovery.js';
 import { assignTournamentPlayerSeatAtomically } from './tournamentSeatAssignmentRpc.js';
 import type { GameServer } from '../GameServer.js';
-import { tournamentEliminationScheduler } from './TournamentEliminationScheduler.js';
+import {
+  tournamentEliminationScheduler,
+  diagnosticTableIds,
+} from './TournamentEliminationScheduler.js';
 import {
   TournamentLifecycleAbortedError,
   TournamentLifecycleEpoch,
@@ -138,6 +177,7 @@ interface TournamentEntryWindowResult {
 }
 
 interface TournamentLaunchBeginResult {
+  format_contract?: unknown;
   ok?: boolean;
   claimed?: boolean;
   launch_id?: string;
@@ -150,12 +190,14 @@ interface TournamentLaunchBeginResult {
 }
 
 interface TournamentLaunchClaim {
+  formatContract: TournamentFormatContract;
   launchId: string;
   startedAtIso: string;
   completed: boolean;
 }
 
 interface TournamentLaunchCompleteResult {
+  format_contract?: unknown;
   ok?: boolean;
   completed?: boolean;
   status?: string;
@@ -190,6 +232,72 @@ export abstract class TournamentManagerBase {
   private teardownPromise: Promise<void> | null = null;
   /** The synchronous half of stop may be applied before the graceful table drain. */
   private stopFenceApplied = false;
+  private f06RecoveryOwnership = false;
+  private drainedF06Originals: readonly (readonly [string, ServerTableEngine])[] | null = null;
+
+  /** Ownership for an existing disposition only. No gameplay lifecycle starts. */
+  enterF06RecoveryOwnership(): void {
+    if (
+      this.running ||
+      this.stopFenceApplied ||
+      this.teardownPromise ||
+      this.lifecycleOperation ||
+      this.lifecycleJobs.size ||
+      this.tableEngineStartJobs.size ||
+      this.tableEngineRunJobs.size ||
+      this.eliminationSchedulerJobs.size ||
+      this.tableEngines.size !== 0 ||
+      !this.tournamentLeaseGeneration ||
+      !this.hasCurrentTournamentLeaseAuthority()
+    )
+      throw new Error('f06_recovery_owner_invalid');
+    this.f06RecoveryOwnership = true;
+    this.armTournamentLeaseExpiryTimer();
+  }
+
+  isF06RecoveryOwner(): boolean {
+    return (
+      this.f06RecoveryOwnership &&
+      !this.stopFenceApplied &&
+      this.hasCurrentTournamentLeaseAuthority()
+    );
+  }
+
+  protected leaveCompletedF06RecoveryOwnership(): void {
+    if (!this.isF06RecoveryOwner() || this.tableEngines.size !== 0)
+      throw new Error('f06_recovery_completion_owner_changed');
+    this.f06RecoveryOwnership = false;
+  }
+
+  /** Positive completion of every exact stop, not merely loss of a registry slot. */
+  protected captureDrainedF06Originals(): readonly (readonly [string, ServerTableEngine])[] | null {
+    const originals = this.drainedF06Originals;
+    if (
+      !originals ||
+      !this.stopFenceApplied ||
+      !this.tournamentLeaseAuthorityExpired ||
+      this.running ||
+      this.teardownPromise ||
+      this.lifecycleOperation ||
+      this.lifecycleJobs.size ||
+      this.tableEngineStartJobs.size ||
+      this.tableEngineRunJobs.size ||
+      this.eliminationSchedulerJobs.size ||
+      this.lifecycleTimeouts.size ||
+      this.lifecycleIntervals.size ||
+      this.tableEngines.size !== originals.length ||
+      originals.some(
+        ([id, engine]) =>
+          this.tableEngines.get(id) !== engine ||
+          engine.isRunning() ||
+          !engine.hasReleasedProcessOwnership() ||
+          engine.hasSettlementInFlight()
+      )
+    )
+      return null;
+    return originals;
+  }
+
   /** Manager callbacks are stopped while its lease remains live for hand drain. */
   private shutdownDrainFenceApplied = false;
   private readonly lifecycleTimeouts = new Set<ReturnType<typeof setTimeout>>();
@@ -208,6 +316,19 @@ export abstract class TournamentManagerBase {
   /** Scheduler runs are separate because a finish can initiate stop from inside one. */
   private readonly eliminationSchedulerJobs = new Set<Promise<void>>();
   private readonly managerLifecycleDiagnostics = new LifecycleDiagnostics();
+  private readonly schedulerDiagnosticIds = new WeakMap<Promise<void>, string>();
+  private readonly stoppedDiagnosticOriginals = new Map<string, ServerTableEngine>();
+  private stoppedDiagnosticOriginalsCaptured = false;
+  private stoppedDiagnosticOriginalCount = 0;
+  private managerDiagnosticWriteFailures = 0;
+
+  private recordManagerDiagnostic(event: LifecycleTransition, detail: LifecycleDetail = {}): void {
+    try {
+      this.managerLifecycleDiagnostics.record(event, detail);
+    } catch {
+      this.managerDiagnosticWriteFailures++;
+    }
+  }
   private leaseReleaseDiagnostic: Readonly<{
     diagnosticOnly: true;
     managerInstanceId: string;
@@ -274,6 +395,64 @@ export abstract class TournamentManagerBase {
     });
   }
 
+  /** Synchronous local observation; unavailable originals are never replacements. */
+  getLifecycleDiagnosticSnapshot(selection: TournamentDiagnosticSelection = {}) {
+    const requestedTableIds = diagnosticTableIds(selection);
+    const retained = this.stoppedDiagnosticOriginalsCaptured;
+    const originals = retained ? this.stoppedDiagnosticOriginals : this.tableEngines;
+    const count = retained ? this.stoppedDiagnosticOriginalCount : this.tableEngines.size;
+    const tableIds = requestedTableIds
+      ? [...requestedTableIds]
+      : boundedDiagnosticEntries(originals.keys(), 8);
+    const selected = tableIds.map((tableId) => {
+      const engine = originals.get(tableId);
+      let snapshot: ReturnType<ServerTableEngine['getLifecycleDiagnosticSnapshot']> | null = null;
+      if (engine) {
+        try {
+          snapshot = engine.getLifecycleDiagnosticSnapshot();
+        } catch {
+          /* unknown */
+        }
+      }
+      return Object.freeze({
+        tableId,
+        availability: snapshot ? ('observed' as const) : ('unavailable' as const),
+        engine: snapshot,
+        session: null,
+        sessionCoverage: 'unavailable_on_selected_base' as const,
+      });
+    });
+    const returned = selected.filter((entry) => entry.engine !== null).length;
+    return Object.freeze({
+      ...this.managerLifecycleDiagnostics.snapshot(),
+      diagnosticWriteFailures: this.managerDiagnosticWriteFailures,
+      tournamentId: this.tournamentId,
+      leaseGeneration: this.tournamentLeaseGeneration,
+      proofDeadlineMonotonicMs: this.tournamentLeaseProofDeadlineMonotonicMs,
+      observedMonotonicMs: tournamentLeaseMonotonicNow(),
+      authorityExpired: this.tournamentLeaseAuthorityExpired,
+      stopPending: this.teardownPromise !== null,
+      schedulerPendingCount: this.eliminationSchedulerJobs.size,
+      lifecyclePendingCount: this.lifecycleJobs.size,
+      schedulerRecent: Object.freeze(
+        boundedDiagnosticEntries(this.eliminationSchedulerJobs, 32).map((job) =>
+          Object.freeze({ operationId: this.schedulerDiagnosticIds.get(job) ?? null })
+        )
+      ),
+      schedulerListTruncated: this.eliminationSchedulerJobs.size > 32,
+      originals: Object.freeze(selected),
+      originalSelection: retained ? ('retained-stop' as const) : ('current-live' as const),
+      originalsCount: count,
+      retainedOriginalCount: originals.size,
+      originalsReturned: returned,
+      originalsOmitted: Math.max(0, count - returned),
+      selectionMissingCount: selected.length - returned,
+      originalsTruncated: count > returned,
+      missingMeans: 'unknown' as const,
+      leaseRelease: this.getLeaseReleaseDiagnosticSnapshot().leaseRelease,
+    });
+  }
+
   protected blindTimer: NodeJS.Timeout | null = null;
   /** Removes this manager from the one process-wide elimination scheduler. */
   protected eliminationSchedulerUnregister: (() => void) | null = null;
@@ -326,6 +505,81 @@ export abstract class TournamentManagerBase {
   static readonly FINAL_TABLE_DEAL_POLL_MS = 10_000;
   /** Preserve fast recovery while a known zero-stack player is unresolved. */
   static readonly UNRESOLVED_BUST_RETRY_MS = 5_000;
+
+  /**
+   * WHY A REFUSED FINISH STOPPED ASKING EVERY FIVE SECONDS (2026-09-18)
+   *
+   * `releaseFinishGuard` hands a definitively refused finish back to the
+   * scheduler after UNRESOLVED_BUST_RETRY_MS, which is five seconds. That is
+   * right for a deadlock victim or a statement timeout, and it is what the
+   * 2026-09-09 law meant by "a refused finish asks for another pass".
+   *
+   * It is wrong for a refusal that is a rule. Measured on production at 03:46
+   * UTC on 2026-09-18: the elimination scheduler held 652 queued tournaments
+   * against four slots with its oldest wait at 469 seconds, because 547
+   * decided tournaments were asking, every five seconds, a question the
+   * database had already answered 1,462 times with
+   * tournament_fee_sources_require_reconciliation. Healthy tournaments waited
+   * nearly eight minutes behind them for an elimination to be recorded. Every
+   * one of those passes also raised its own critical money alert; 3,076 were
+   * open and unread.
+   *
+   * These two fields are the whole correction. The refusal stays eligible for
+   * a corrected retry. It stops re-asking on a five-second clock, and it tells
+   * an operator the same thing once instead of once a pass.
+   */
+  private finishRefusalStreak = 0;
+  private lastFinishRefusalReason: FinishRefusalReason | null = null;
+
+  /**
+   * Record a proven refusal and answer whether this is news: a reason this
+   * tournament has not already reported. An unproven (unknown-outcome) failure
+   * is always news, because it is never repeated on a clock.
+   */
+  protected noteFinishRefusal(provenRefusal: boolean, error: unknown): boolean {
+    if (!provenRefusal) return true;
+    const reason = classifyFinishRefusal(error instanceof Error ? error.message : String(error));
+    if (reason === this.lastFinishRefusalReason) {
+      this.finishRefusalStreak += 1;
+      return false;
+    }
+    this.lastFinishRefusalReason = reason;
+    this.finishRefusalStreak = 1;
+    return true;
+  }
+
+  /** The delay releaseFinishGuard hands the scheduler for the next pass. */
+  protected finishRetryDelayMs(): number {
+    const base = TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS;
+    const reason = this.lastFinishRefusalReason;
+    if (!reason || this.finishRefusalStreak < 1) return base;
+    return finishRefusalRetryDelayMs(reason, this.finishRefusalStreak, base);
+  }
+
+  /** A committed settlement ends the streak, so the next refusal is news. */
+  protected clearFinishRefusalStreak(): void {
+    this.finishRefusalStreak = 0;
+    this.lastFinishRefusalReason = null;
+  }
+
+  /**
+   * Raise a refusal's critical alert the first time this tournament reports
+   * this reason, and count the repeats instead of sending them.
+   */
+  protected async alertFinishRefusalOnce(
+    isNew: boolean,
+    severity: Parameters<typeof raiseFinancialAlert>[0],
+    source: string,
+    message: string,
+    context: Record<string, unknown> = {}
+  ): Promise<void> {
+    if (isNew) {
+      await raiseFinancialAlert(severity, source, message, context);
+      return;
+    }
+    const reason = this.lastFinishRefusalReason;
+    if (reason) tournamentFinishRefusalAlertsSuppressedTotal.inc(1, { reason });
+  }
   /**
    * How many times in a row the knockout door may refuse the SAME player
    * before the bust pass records the rest of the field without them.
@@ -436,6 +690,13 @@ export abstract class TournamentManagerBase {
    */
   protected breakCountdownStarted: boolean = false;
   private breakResumePersisting = false;
+  /** Retain the exact proposal if its database acknowledgement is lost. */
+  private pendingBreakResumeClock: {
+    lifecycle: TournamentLifecycleToken;
+    level: number;
+    startedAtMs: number;
+    durationMs: number;
+  } | null = null;
   private breakResumeRetryTimer: ReturnType<typeof setTimeout> | null = null;
   // Hand-for-hand sync
   protected handForHandRePauseTimer: NodeJS.Timeout | null = null;
@@ -457,16 +718,18 @@ export abstract class TournamentManagerBase {
    * How far ahead of the advertised `start_time` this start() ran, in ms, or 0
    * for a start at or past it. GameServer discovers a timed event
    * TOURNAMENT_PRESEAT_LEAD_MS early so the field is SEATED before the clock;
-   * this number is what stops the poker moving with it. Two consumers, both in
-   * start(): the `holdDealingUntil` deadline on every table, and the level
-   * clock, which is armed after this lead rather than at seating so level 1 is
-   * a full level of cards instead of a minute of waiting plus nine of poker.
+   * this number describes the launch lead. The immutable admitted timestamp
+   * holds every dealer and the first level clock, including after a break or
+   * manager replacement, so level 1 is a full level of cards rather than
+   * waiting time plus a shortened level of poker.
    *
    * Read it as "time the felt owes the clock", not as a state — nothing outside
    * start() branches on it, and it is 0 for every seat-first game and for every
    * event started late.
    */
   protected preStartLeadMs: number = 0;
+  /** One first-level wake, distinct from an already running level clock. */
+  private blindStartTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * ═════════════════════════════════════════════════════════════════════════
    *  THE SPIN REVEAL IS ANCHORED TO THE THIRD PAYMENT (2026-08-27)
@@ -563,6 +826,10 @@ export abstract class TournamentManagerBase {
    */
   standDownForDatabaseFence(): void {
     if (!this.tournamentLeaseGeneration || this.tournamentLeaseAuthorityExpired) return;
+    this.recordManagerDiagnostic('engine_fenced', {
+      reason: 'tournament_lease_proof_expired',
+      proofDeadlineMonotonicMs: this.tournamentLeaseProofDeadlineMonotonicMs,
+    });
     this.fenceForTournamentLeaseLoss();
     reportError(
       new Error(
@@ -580,6 +847,8 @@ export abstract class TournamentManagerBase {
 
   /** Every dealer owned by this manager carries the same tournament fence. */
   protected createManagedTableEngine(tableId: string): ServerTableEngine {
+    if (!this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
+      throw new Error('f06_retirement_custody_held');
     if (this.tournamentLeaseGeneration) {
       const deadline = this.tournamentLeaseProofDeadlineMonotonicMs;
       if (deadline === null || !Number.isFinite(deadline)) {
@@ -682,7 +951,7 @@ export abstract class TournamentManagerBase {
       this.tournamentLeaseGeneration.toLowerCase() !== leaseGeneration.toLowerCase() ||
       this.tournamentLeaseAuthorityExpired ||
       this.stopFenceApplied ||
-      (!this.running && !this.shutdownDrainFenceApplied) ||
+      (!this.running && !this.shutdownDrainFenceApplied && !this.f06RecoveryOwnership) ||
       !this.hasCurrentTournamentLeaseAuthority() ||
       !Number.isFinite(proofDeadlineMonotonicMs) ||
       tournamentLeaseMonotonicNow() >= proofDeadlineMonotonicMs
@@ -703,7 +972,20 @@ export abstract class TournamentManagerBase {
       tournamentId: this.tournamentId,
       proofDeadlineMonotonicMs: this.tournamentLeaseProofDeadlineMonotonicMs,
     };
-    for (const engine of this.tableEngines.values()) {
+    for (const [tableId, engine] of this.tableEngines) {
+      // A retired original can retain or replay F06 custody in both registries.
+      // The exact admitted replay keeps its own barrier and outcome checks;
+      // neither it nor an idle original needs a renewed gameplay proof.
+      if (
+        engine.isTerminalDrainedForTournamentLease?.(tableId, authority) ||
+        engine.isTerminalF06MovementForTournamentLease?.(tableId, authority)
+      ) {
+        if (!this.gameServer.ownsTournamentTableEngine(tableId, engine)) {
+          this.fenceForTournamentLeaseLoss();
+          return false;
+        }
+        continue;
+      }
       if (!engine.renewEngineLeaseProof(authority)) {
         this.fenceForTournamentLeaseLoss();
         return false;
@@ -736,7 +1018,8 @@ export abstract class TournamentManagerBase {
   stoodDownWithItsLeaseIntact(): boolean {
     return (
       !this.tournamentLeaseAuthorityExpired &&
-      (this.stopFenceApplied || (!this.running && !this.shutdownDrainFenceApplied))
+      (this.stopFenceApplied ||
+        (!this.running && !this.shutdownDrainFenceApplied && !this.f06RecoveryOwnership))
     );
   }
 
@@ -775,7 +1058,7 @@ export abstract class TournamentManagerBase {
     if (!this.running) throw new TournamentLifecycleAbortedError(token.generation);
   }
 
-  private trackLifecycleJob<T>(operation: Promise<T>): Promise<T> {
+  protected trackLifecycleJob<T>(operation: Promise<T>): Promise<T> {
     let tracked!: Promise<T>;
     tracked = operation.finally(() => this.lifecycleJobs.delete(tracked));
     this.lifecycleJobs.add(tracked);
@@ -862,8 +1145,59 @@ export abstract class TournamentManagerBase {
     this.tableEngineRecoveryAttempts.clear();
   }
 
+  /** Only the recorded new format can complete with an unranked qualifier cohort. */
+  protected isCohortSatellite(): boolean {
+    return (
+      this.tournamentCache?.format_contract === 'mtt-v2' &&
+      Boolean(this.tournamentCache.satellite_target_id || this.tournamentCache.satellite_target)
+    );
+  }
+
+  protected satelliteQualifierBoundaryPending = false;
+  protected satelliteQualifierBoundaryGeneration = 0;
+  private readonly satelliteQualifierEngines = new Map<string, ServerTableEngine>();
+
+  private holdSatelliteQualifierEngine(tableId: string, engine: ServerTableEngine): void {
+    this.satelliteQualifierEngines.set(tableId, engine);
+    // This call arms the existing sticky next-hand fence synchronously. Zero
+    // is a nonblocking probe, never a claim that physical parking succeeded.
+    void engine
+      .parkForTerminalCloseout(0)
+      .catch((error) =>
+        reportError(error, 'Tournament.satellite_qualifier_boundary_failed', { tableId })
+      );
+  }
+
+  protected holdSatelliteQualifierBoundary(): void {
+    this.satelliteQualifierBoundaryPending = true;
+    this.satelliteQualifierBoundaryGeneration++;
+    for (const [tableId, engine] of this.tableEngines) {
+      this.holdSatelliteQualifierEngine(tableId, engine);
+    }
+  }
+
+  /** A positive authoritative continuation releases only this exact generation. */
+  protected releaseSatelliteQualifierBoundary(generation: number): boolean {
+    if (generation !== this.satelliteQualifierBoundaryGeneration || !this.isRunning()) return false;
+    for (const [tableId, engine] of this.satelliteQualifierEngines) {
+      if (
+        this.tableEngines.get(tableId) !== engine ||
+        this.gameServer.getTableEngine(tableId) !== engine ||
+        !engine.isRunning()
+      )
+        return false;
+    }
+    this.satelliteQualifierBoundaryPending = false;
+    for (const engine of this.satelliteQualifierEngines.values())
+      engine.releaseTerminalCloseoutPause();
+    this.satelliteQualifierEngines.clear();
+    this.advanceHandForHandBarrier();
+    return true;
+  }
+
   /** A replacement inherits every pause authority before it can deal. */
   private prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
+    this.holdManagedTableUntilBookedStart(engine);
     if (this.addOnBreakActive && this.addOnBreakEndsAtMs > Date.now()) {
       // The absolute hold is independent of hand-for-hand's pause flag, so a
       // barrier resume cannot deal through an overlapping add-on break.
@@ -872,6 +1206,7 @@ export abstract class TournamentManagerBase {
     if (this.onBreak) {
       engine.pauseAfterHand(TournamentManagerBase.MAX_HEALTHY_PAUSE_MS, {
         beforeNextHand: true,
+        untilResumed: true,
       });
       return;
     }
@@ -1146,7 +1481,46 @@ export abstract class TournamentManagerBase {
     });
   }
 
+  /** Layer three owns the exact terminal park/receipt contract. */
+  protected async continueExcludedNoStartTable(
+    _tableId: string,
+    _engine: ServerTableEngine,
+    _current: () => boolean
+  ): Promise<boolean> {
+    return false;
+  }
+
+  protected async readmitContinuedNoStartTable(
+    tableId: string,
+    engine: ServerTableEngine
+  ): Promise<void> {
+    const lifecycle = this.captureLifecycleToken();
+    if (
+      !lifecycle ||
+      !this.lifecycleIsCurrent(lifecycle) ||
+      this.tableEngines.get(tableId) !== engine ||
+      !this.gameServer.ownsTournamentTableEngine(tableId, engine)
+    )
+      throw new Error('F06 continued source owner changed');
+    await this.recoverManagedTableEngine(
+      tableId,
+      engine,
+      lifecycle,
+      'f06_no_start_continued',
+      false
+    );
+  }
+
   /** A manager is not torn down until every table start it launched has settled. */
+  protected async startParkedMovementEngine(
+    _engine: ServerTableEngine,
+    _tableId: string,
+    _tableLifecycle: string,
+    _current: () => boolean
+  ): Promise<void> {
+    throw new Error('f06_movement_admission_unavailable');
+  }
+
   protected startManagedTableEngine(
     engine: ServerTableEngine,
     errorContext: string,
@@ -1154,7 +1528,178 @@ export abstract class TournamentManagerBase {
   ): void {
     const lifecycle = this.lifecycleEpoch.current();
     const tableId = this.tableIdForManagedEngine(engine);
-    const operation = engine.start().catch(async (error) => {
+    this.holdManagedTableUntilBookedStart(engine);
+    if (tableId && this.isCohortSatellite()) {
+      // Adoption cannot infer that a previous manager left more players than
+      // tickets. Read the serialized state before this generation deals.
+      this.holdSatelliteQualifierBoundary();
+    }
+    const operation = (async () => {
+      if (!lifecycle || !tableId || !this.tournamentLeaseGeneration)
+        throw new Error('f06_engine_admission_identity_missing');
+      const leaseGeneration = this.tournamentLeaseGeneration;
+      const current = () =>
+        this.lifecycleIsCurrent(lifecycle) &&
+        this.tournamentLeaseGeneration === leaseGeneration &&
+        this.tableEngines.get(tableId) === engine &&
+        this.gameServer.ownsTournamentTableEngine(tableId, engine);
+      if (!current() || !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
+        throw new Error('f06_engine_admission_fenced');
+      // Retained originals must finish before the existing unresolved-permit
+      // admission refusal. This never reconstructs or cancels a missing hand.
+      await resumeRetainedHandSubmission(tableId, INSTANCE_ID, leaseGeneration);
+      if (!current() || !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
+        throw new Error('f06_engine_admission_fenced');
+      const { data, error } = await supabase.rpc('fn_f06_hand_number_state', {
+        p_tournament_id: this.tournamentId,
+        p_lease_generation: leaseGeneration,
+        p_table_id: tableId,
+      });
+      const state = data as {
+        ok?: boolean;
+        table_id?: string;
+        lifecycle?: string;
+        can_reserve?: boolean;
+        blocked_reason?: string | null;
+        used_hand_number_max?: string;
+        unresolved_permit?: unknown;
+        next_hand_number_candidate?: string | null;
+      } | null;
+      if (
+        current() &&
+        !error &&
+        state?.ok === true &&
+        state.table_id === tableId &&
+        state.can_reserve === false &&
+        state.blocked_reason === 'source_excluded' &&
+        state.unresolved_permit === null &&
+        state.next_hand_number_candidate === null &&
+        typeof state.lifecycle === 'string' &&
+        /^[1-9][0-9]{0,18}$/.test(state.lifecycle) &&
+        BigInt(state.lifecycle) <= 9223372036854775807n
+      ) {
+        if (await this.continueExcludedNoStartTable(tableId, engine, current)) {
+          if (!current()) throw new Error('F06 continued startup owner changed');
+          await this.readmitContinuedNoStartTable(tableId, engine);
+          return;
+        }
+        // Ordinary multi-table custody remains reachable after explicit no-start noneligibility.
+        await this.startParkedMovementEngine(engine, tableId, state.lifecycle, current);
+        return;
+      }
+      if (
+        !current() ||
+        error ||
+        !state ||
+        state.ok !== true ||
+        state.table_id !== tableId ||
+        state.can_reserve !== true ||
+        state.blocked_reason !== null ||
+        typeof state.lifecycle !== 'string' ||
+        !/^[1-9][0-9]{0,18}$/.test(state.lifecycle) ||
+        BigInt(state.lifecycle) > 9223372036854775807n
+      )
+        throw new Error('f06_engine_admission_unproven');
+      // The singular projection is backed by f06_one_hand(table_id) WHERE
+      // state='reserved', across every lifecycle and owner generation.
+      if (
+        state.unresolved_permit !== null ||
+        typeof state.used_hand_number_max !== 'string' ||
+        !/^(0|[1-9][0-9]{0,18})$/.test(state.used_hand_number_max) ||
+        BigInt(state.used_hand_number_max) >= BigInt(Number.MAX_SAFE_INTEGER) ||
+        typeof state.next_hand_number_candidate !== 'string' ||
+        !/^[1-9][0-9]{0,18}$/.test(state.next_hand_number_candidate) ||
+        BigInt(state.next_hand_number_candidate) !== BigInt(state.used_hand_number_max) + 1n
+      )
+        throw new Error('f06_startup_permit_projection_unproven');
+      const tableLifecycle = state.lifecycle;
+      const handHighWater = BigInt(state.used_hand_number_max);
+      const custodyId = nodeCrypto.randomUUID();
+      engine.installF06Allocator(
+        custodyId,
+        async () => {
+          const { data: allocation, error: allocationError } = await supabase.rpc(
+            'fn_f06_allocate_hand_number',
+            {
+              p_tournament_id: this.tournamentId,
+              p_lease_generation: leaseGeneration,
+              p_table_id: tableId,
+            }
+          );
+          const a = allocation as {
+            ok?: boolean;
+            table_id?: string;
+            lifecycle?: string;
+            hand_number?: unknown;
+            hand_number_high_water?: unknown;
+          } | null;
+          if (
+            !current() ||
+            allocationError ||
+            !a ||
+            a.ok !== true ||
+            a.table_id !== tableId ||
+            a.lifecycle !== tableLifecycle ||
+            typeof a.hand_number !== 'string' ||
+            !/^[1-9][0-9]{0,18}$/.test(a.hand_number) ||
+            BigInt(a.hand_number) > BigInt(Number.MAX_SAFE_INTEGER) ||
+            typeof a.hand_number_high_water !== 'string' ||
+            !/^(0|[1-9][0-9]{0,18})$/.test(a.hand_number_high_water) ||
+            BigInt(a.hand_number) <= BigInt(a.hand_number_high_water)
+          )
+            throw new Error('f06_allocation_unproven');
+          return Number(a.hand_number);
+        },
+        () => current() && this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId),
+        tableLifecycle
+      );
+      engine.installF06HandAdmission(async (handNumber) => {
+        const refreshed = await supabase.rpc('fn_f06_hand_number_state', {
+          p_tournament_id: this.tournamentId,
+          p_lease_generation: leaseGeneration,
+          p_table_id: tableId,
+        });
+        const latest = refreshed.data as typeof state;
+        if (
+          !current() ||
+          refreshed.error ||
+          !latest ||
+          latest.ok !== true ||
+          latest.table_id !== tableId ||
+          latest.lifecycle !== tableLifecycle ||
+          latest.can_reserve !== true ||
+          latest.blocked_reason !== null ||
+          latest.unresolved_permit !== null ||
+          typeof latest.used_hand_number_max !== 'string' ||
+          !/^(0|[1-9][0-9]{0,18})$/.test(latest.used_hand_number_max) ||
+          BigInt(latest.used_hand_number_max) >= BigInt(Number.MAX_SAFE_INTEGER)
+        )
+          throw new Error('f06_fresh_hand_projection_unproven');
+        if (BigInt(handNumber) <= BigInt(latest.used_hand_number_max))
+          throw new Error('f06_allocator_below_durable_floor');
+        if (BigInt(handNumber) <= handHighWater)
+          throw new Error('f06_allocator_below_durable_floor');
+        return new F06HandPermit(
+          {
+            tournament_id: this.tournamentId,
+            lease_generation: leaseGeneration,
+            table_id: tableId,
+            lifecycle: tableLifecycle,
+            permit_id: nodeCrypto.randomUUID(),
+            hand_number: handNumber,
+            custody_id: custodyId,
+          },
+          async (name, input) => {
+            const result = await supabase.rpc(name, input);
+            return { data: result.data, error: result.error };
+          },
+          current
+        );
+      });
+      if (!current() || !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
+        throw new Error('f06_engine_admission_fenced');
+      await engine.start();
+    })().catch(async (error) => {
       reportError(error, errorContext, metadata);
       if (!lifecycle || !tableId || !this.lifecycleIsCurrent(lifecycle)) return;
       await this.recoverManagedTableEngine(tableId, engine, lifecycle, 'engine_start_failed', true);
@@ -1188,6 +1733,12 @@ export abstract class TournamentManagerBase {
         tableId,
       })
     );
+  }
+
+  /** The completed launch receipt survives dealer and manager replacement. */
+  private holdManagedTableUntilBookedStart(engine: ServerTableEngine): void {
+    const bookedStartMs = Date.parse(String(this.tournamentCache?.started_at ?? ''));
+    if (bookedStartMs > Date.now()) engine.holdDealingUntil(bookedStartMs);
   }
 
   /** Bind a delayed manager mutation to the exact lifecycle that scheduled it. */
@@ -1240,6 +1791,7 @@ export abstract class TournamentManagerBase {
     for (const timer of this.lifecycleIntervals) clearInterval(timer);
     this.lifecycleTimeouts.clear();
     this.lifecycleIntervals.clear();
+    this.blindStartTimer = null;
     this.breakResumeRetryTimer = null;
     this.pendingBlindTransition = null;
   }
@@ -1268,6 +1820,14 @@ export abstract class TournamentManagerBase {
     if (this.eliminationSchedulerUnregister) this.unregisterEliminationScheduler();
     this.eliminationSchedulerUnregister = tournamentEliminationScheduler.register({
       tournamentId: this.tournamentId,
+      diagnostics: Object.freeze({
+        managerInstanceId: this.managerLifecycleDiagnostics.instanceId,
+        leaseGeneration: this.tournamentLeaseGeneration,
+        operationIdFor: (operation: Promise<void>) =>
+          this.schedulerDiagnosticIds.get(operation) ?? null,
+        snapshot: (selection: TournamentDiagnosticSelection) =>
+          this.getLifecycleDiagnosticSnapshot(selection),
+      }),
       run: (signal) => {
         // Defer entry by one microtask so the promise is registered as active
         // before user code can reach its first await (or initiate stop).
@@ -1276,7 +1836,18 @@ export abstract class TournamentManagerBase {
           await run(signal);
         });
         let tracked!: Promise<void>;
-        tracked = operation.finally(() => this.eliminationSchedulerJobs.delete(tracked));
+        let operationId: string | undefined;
+        try {
+          operationId = nodeCrypto.randomUUID();
+        } catch {
+          this.managerDiagnosticWriteFailures++;
+        }
+        this.recordManagerDiagnostic('writer_pending', { operationId });
+        tracked = operation.finally(() => {
+          this.eliminationSchedulerJobs.delete(tracked);
+          this.recordManagerDiagnostic('writer_settled', { operationId, outcome: 'unknown' });
+        });
+        if (operationId) this.schedulerDiagnosticIds.set(tracked, operationId);
         this.eliminationSchedulerJobs.add(tracked);
         return tracked;
       },
@@ -1382,10 +1953,22 @@ export abstract class TournamentManagerBase {
   protected wireEliminationWake(engine: ServerTableEngine): void {
     engine.onHandComplete((_tableId, finalStacks) => {
       if (finalStacks.some((player) => Number(player.stack) <= 0)) {
+        if (this.isCohortSatellite()) {
+          const tableId = this.tableIdForManagedEngine(engine);
+          if (!tableId || !this.isRunning() || this.gameServer.getTableEngine(tableId) !== engine)
+            return;
+          // Stop the next deal before asynchronous elimination and HfH can
+          // release the boundary. Other hands may finish; none may start.
+          this.holdSatelliteQualifierBoundary();
+        }
         this.requestEliminationSweep();
       }
     });
-    engine.onPauseReady(() => this.advanceHandForHandBarrier());
+    engine.onPauseReady(() => {
+      if (this.satelliteQualifierBoundaryPending) {
+        this.requestEliminationSweep('satellite_qualifier_boundary');
+      } else this.advanceHandForHandBarrier();
+    });
     engine.onRestartRequired((reason) => {
       const lifecycle = this.captureLifecycleToken();
       const tableId = this.tableIdForManagedEngine(engine);
@@ -1409,6 +1992,39 @@ export abstract class TournamentManagerBase {
     return this.running;
   }
 
+  /** Display-only observation. Reading it never renews, fences or advances play. */
+  getHandForHandPresentation(): boolean | null {
+    if (
+      !this.running ||
+      this.stopFenceApplied ||
+      this.shutdownDrainFenceApplied ||
+      !this.tournamentLeaseAuthorityIsCurrent()
+    )
+      return null;
+    return this.handForHandActive;
+  }
+
+  private publishHandForHandPresentation(): void {
+    try {
+      channelHub.broadcastToTournament(this.tournamentId, {
+        type: 'TOURNAMENT_EVENT',
+        tournamentId: this.tournamentId,
+        event: {
+          type: 'tournament_presentation',
+          // A retiring continuation must never overwrite its replacement's
+          // presentation. Read the slot GameServer currently owns.
+          payload: {
+            handForHand: this.gameServer?.getTournamentHandForHand?.(this.tournamentId) ?? null,
+          },
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      // Disclosure cannot delay a hand barrier or prevent terminal teardown.
+      reportError(error, 'TournamentManager.hand_for_hand_presentation_failed');
+    }
+  }
+
   /** Generation GameServer must prove on every ownership heartbeat. */
   getTournamentLeaseGeneration(): string | null {
     return this.tournamentLeaseGeneration;
@@ -1423,7 +2039,12 @@ export abstract class TournamentManagerBase {
    * an incomplete admission rather than guessing a format.
    */
   getPublicLiveTableFormat(): Exclude<PublicLiveTableFormat, 'cash'> | null {
-    return this.tournamentCache ? publicTournamentTableFormat(this.tournamentCache) : null;
+    if (!this.tournamentCache) return null;
+    try {
+      return publicTournamentTableFormat(this.tournamentCache);
+    } catch {
+      return null;
+    } // Public observation never grants admission for an unknown format.
   }
 
   /** Public club scope paired with the format label; never an ownership id. */
@@ -1492,6 +2113,11 @@ export abstract class TournamentManagerBase {
    * `t-break-<tournamentId>` and still receive `tournament_event`.
    */
   protected async broadcast(eventType: string, payload: any): Promise<boolean> {
+    // Legacy announcements remain; the authenticated channel also carries the
+    // exact manager observation used by join/reconnect snapshots.
+    if (eventType === 'hand_for_hand' || eventType === 'bubble_burst') {
+      this.publishHandForHandPresentation();
+    }
     try {
       if (!this.broadcastChannel) {
         this.broadcastChannel = supabase.channel(`t-break-${this.tournamentId}`);
@@ -1570,6 +2196,10 @@ export abstract class TournamentManagerBase {
    * Every entry into a break now goes through this.
    */
   protected suspendLevelClock(): void {
+    if (this.blindStartTimer) {
+      this.clearLifecycleTimeout(this.blindStartTimer);
+      this.blindStartTimer = null;
+    }
     /**
      * DEAD LEVEL CLOCK (2026-08-23). This measurement used to live entirely
      * inside `if (this.blindTimer)`, so a break that landed while no timer was
@@ -1918,11 +2548,73 @@ export abstract class TournamentManagerBase {
   }
 
   /**
-   * Clear the persisted break flags. Split out of resumeFromBreak because a
-   * tournament that ENDS on a break has to come off it too, and that path does
-   * not resume anything.
+   * Clear the persisted break flags together with any resumed active clock.
+   * A tournament that ends on a break clears only its flags and resumes nothing.
    */
   protected async clearPersistedBreak(): Promise<void> {
+    const lifecycle = this.running ? this.captureLifecycleToken() : null;
+    if (
+      this.pendingBreakResumeClock &&
+      (!lifecycle ||
+        !this.lifecycleIsCurrent(this.pendingBreakResumeClock.lifecycle) ||
+        this.blindClockTerminalCommitted)
+    )
+      this.pendingBreakResumeClock = null;
+    const structure = this.tournamentCache?.blind_structure || [];
+    if (
+      !this.pendingBreakResumeClock &&
+      lifecycle &&
+      !this.blindClockTerminalCommitted &&
+      !this.pendingBlindTransition &&
+      !this.addOnBreakActive &&
+      !(Date.parse(String(this.tournamentCache?.started_at ?? '')) > Date.now()) &&
+      structure.length > 0
+    ) {
+      const level = this.resolveBlindLevel(structure, this.currentLevel) || structure[0];
+      const durationMs = this.levelDurationMs(level);
+      const remainingMs =
+        this.savedBlindTimerRemaining > 0
+          ? Math.min(Math.max(1000, this.savedBlindTimerRemaining), durationMs)
+          : durationMs;
+      this.pendingBreakResumeClock = {
+        lifecycle,
+        level: this.currentLevel,
+        startedAtMs: Date.now() - (durationMs - remainingMs),
+        durationMs,
+      };
+    }
+    const clock = this.pendingBreakResumeClock;
+    if (clock) {
+      // One row version contains both the release and its credited clock. A
+      // cold reader must never observe on_break=false with the old anchor.
+      const { data, error } = await supabase
+        .from('tournaments')
+        .update({
+          on_break: false,
+          break_ends_at: null,
+          level_started_at: new Date(clock.startedAtMs).toISOString(),
+        })
+        .eq('id', this.tournamentId)
+        .eq('status', 'RUNNING')
+        .eq('current_level', clock.level)
+        .select('id,status,current_level,on_break,break_ends_at,level_started_at')
+        .maybeSingle();
+      if (error) throw error;
+      if (
+        !data ||
+        data.id !== this.tournamentId ||
+        data.status !== 'RUNNING' ||
+        data.current_level !== clock.level ||
+        data.on_break !== false ||
+        data.break_ends_at !== null ||
+        Date.parse(String(data.level_started_at ?? '')) !== clock.startedAtMs
+      ) {
+        throw new Error('Tournament break release did not acknowledge its exact level clock');
+      }
+      return;
+    }
+    // A stopped event, an outstanding blind publication, an add-on pause or
+    // a future booked start has no active level clock to credit here.
     const { error } = await supabase
       .from('tournaments')
       .update({ on_break: false, break_ends_at: null })
@@ -2045,6 +2737,8 @@ export abstract class TournamentManagerBase {
       this.breakResumePersisting = false;
     }
     if (lifecycle && !this.lifecycleIsCurrent(lifecycle)) return;
+    const resumedClock = this.pendingBreakResumeClock;
+    this.pendingBreakResumeClock = null;
     if (this.breakResumeRetryTimer) {
       this.clearLifecycleTimeout(this.breakResumeRetryTimer);
       this.breakResumeRetryTimer = null;
@@ -2093,12 +2787,10 @@ export abstract class TournamentManagerBase {
      * a level with one minute left returned from the break with ten. Across an
      * hourly break cadence that is how a level stops going up.
      *
-     * startBlindTimer already solves this: it clamps the override to the level
-     * duration and BACK-DATES blindTimerStartedAt by the difference, so the
-     * next pause measures the true remaining time. Routing through it also
-     * re-persists level_started_at, so a restart mid-level resumes correctly,
-     * and wraps advanceBlindLevel in the catch that keeps a throw from
-     * silently ending escalation.
+     * The durable release uses the same clamp and back-dated anchor as
+     * startBlindTimer, so the next pause measures the true remaining time.
+     * Arm directly from that acknowledged anchor; another detached write
+     * would expose an unpaused row with an obsolete clock to cold readers.
      *
      * Arming is unconditional. A zero here used to mean "no clock at all"
      * (see pauseForBreak); startBlindTimer with no override grants a fresh
@@ -2110,7 +2802,17 @@ export abstract class TournamentManagerBase {
       // Cleared before arming: a stale value from a previous level must never
       // be readable by a later break that cannot measure the clock.
       this.savedBlindTimerRemaining = 0;
-      this.startBlindTimer(blindStructure, remaining > 0 ? remaining : undefined);
+      if (resumedClock) {
+        // Use the acknowledged anchor, including time spent awaiting its
+        // response. Do not write a later anchor and grant that time twice.
+        this.blindTimerStartedAt = resumedClock.startedAtMs;
+        this.scheduleBlindLevelWake(
+          blindStructure,
+          Math.max(1000, resumedClock.startedAtMs + resumedClock.durationMs - Date.now())
+        );
+      } else {
+        this.startBlindTimer(blindStructure, remaining > 0 ? remaining : undefined);
+      }
     }
 
     // If add-on period was deferred due to break, trigger it now
@@ -2163,7 +2865,7 @@ export abstract class TournamentManagerBase {
     if (this.tournamentCache) return mayTakeSynchronizedBreak(this.tournamentCache);
     const { data } = await supabase
       .from('tournaments')
-      .select('tournament_type, variant, synchronized_breaks')
+      .select('tournament_type, variant, format_contract, synchronized_breaks')
       .eq('id', this.tournamentId)
       .maybeSingle();
     return mayTakeSynchronizedBreak(data);
@@ -2291,6 +2993,11 @@ export abstract class TournamentManagerBase {
     return operation;
   }
 
+  /** Implemented by the receipt owner; a status/refusal alone cannot stop a dealer. */
+  protected async adoptCommittedTerminalOutcome(): Promise<boolean> {
+    return false;
+  }
+
   private async reconcileTournamentEntryWindowOnce(source: string): Promise<boolean> {
     const lifecycle = this.captureLifecycleToken();
     if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return false;
@@ -2310,6 +3017,13 @@ export abstract class TournamentManagerBase {
     if (!this.lifecycleIsCurrent(lifecycle)) return false;
 
     const result = (data ?? {}) as TournamentEntryWindowResult;
+    if (!error && result.ok === false && result.reason === 'tournament_not_running') {
+      // An external terminal transaction can commit while this manager still
+      // owns a stale entry-reprice wake. Adopt its verified receipt before
+      // that obsolete work prevents the ordinary finish stage from running.
+      if (await this.adoptCommittedTerminalOutcome()) return false;
+      if (!this.lifecycleIsCurrent(lifecycle)) return false;
+    }
     if (error || result.ok !== true || typeof result.entry_closed !== 'boolean') {
       reportError(
         new Error(
@@ -2694,7 +3408,7 @@ export abstract class TournamentManagerBase {
    * drift apart.
    */
   isMttOrXmtt(): boolean {
-    return !isShortFormat(this.tournamentCache?.tournament_type, this.tournamentCache?.variant);
+    return this.tournamentCache != null && isPersistedUnlimitedMtt(this.tournamentCache);
   }
 
   /**
@@ -2738,7 +3452,13 @@ export abstract class TournamentManagerBase {
    */
   private advanceHandForHandBarrier(): void {
     // The tournament break owns this shared pause until its own end edge.
-    if (!this.handForHandActive || !this.running || this.isOnBreak()) return;
+    if (
+      !this.handForHandActive ||
+      !this.running ||
+      this.isOnBreak() ||
+      this.satelliteQualifierBoundaryPending
+    )
+      return;
     const expectedIds = [...this.handForHandTableIds];
     if (expectedIds.length === 0) return;
     const engines = expectedIds.map((tableId) => this.tableEngines.get(tableId));
@@ -2772,6 +3492,7 @@ export abstract class TournamentManagerBase {
    * successfully broken/closed table must not hold every survivor forever.
    */
   protected retireManagedTableFromHandForHand(tableId: string): void {
+    this.satelliteQualifierEngines.delete(tableId);
     if (!this.handForHandTableIds.delete(tableId)) return;
     this.advanceHandForHandBarrier();
   }
@@ -2855,7 +3576,8 @@ export abstract class TournamentManagerBase {
   private async beginTournamentLaunch(
     lifecycle: TournamentLifecycleToken,
     requestedLaunchId: string,
-    requestedStartedAtIso: string | null
+    requestedStartedAtIso: string | null,
+    expectedFormat: TournamentFormatContract
   ): Promise<TournamentLaunchClaim | null> {
     if (!this.tournamentLeaseGeneration) {
       reportError(
@@ -2874,6 +3596,7 @@ export abstract class TournamentManagerBase {
         p_launch_id: requestedLaunchId,
         p_started_at: requestedStartedAtIso,
         p_lease_generation: this.tournamentLeaseGeneration,
+        p_expected_format: expectedFormat,
       });
       this.assertLifecycleCurrent(lifecycle);
 
@@ -2908,6 +3631,7 @@ export abstract class TournamentManagerBase {
         result.replay === true &&
         returnedLaunchId.toLowerCase() !== requestedLaunchId.toLowerCase();
       const exactReceipt =
+        result.format_contract === expectedFormat &&
         result.ok === true &&
         result.claimed === true &&
         typeof result.lease_generation === 'string' &&
@@ -2921,6 +3645,7 @@ export abstract class TournamentManagerBase {
           adoptsExistingReceipt);
       if (exactReceipt && result.completed === false) {
         return {
+          formatContract: expectedFormat,
           launchId: returnedLaunchId,
           startedAtIso: new Date(returnedStartedAtMs).toISOString(),
           completed: false,
@@ -2928,6 +3653,7 @@ export abstract class TournamentManagerBase {
       }
       if (exactReceipt && result.completed === true && result.status === 'RUNNING') {
         return {
+          formatContract: expectedFormat,
           launchId: returnedLaunchId,
           startedAtIso: new Date(returnedStartedAtMs).toISOString(),
           completed: true,
@@ -2955,7 +3681,8 @@ export abstract class TournamentManagerBase {
   private async completeTournamentLaunch(
     lifecycle: TournamentLifecycleToken,
     launchId: string,
-    startedAtIso: string
+    startedAtIso: string,
+    expectedFormat: TournamentFormatContract
   ): Promise<boolean> {
     if (!this.tournamentLeaseGeneration) {
       reportError(
@@ -2973,6 +3700,7 @@ export abstract class TournamentManagerBase {
         p_tournament_id: this.tournamentId,
         p_launch_id: launchId,
         p_lease_generation: this.tournamentLeaseGeneration,
+        p_expected_format: expectedFormat,
       });
       this.assertLifecycleCurrent(lifecycle);
 
@@ -2988,6 +3716,7 @@ export abstract class TournamentManagerBase {
 
       const result = (data ?? {}) as TournamentLaunchCompleteResult;
       const exactCompletion =
+        result.format_contract === expectedFormat &&
         result.ok === true &&
         result.completed === true &&
         result.status === 'RUNNING' &&
@@ -3047,10 +3776,8 @@ export abstract class TournamentManagerBase {
       return refuse(`the tournament status is ${String(tournamentProof.status ?? 'missing')}`);
     }
 
-    const spinLaunch =
-      String(tournament.variant ?? '').toLowerCase() === 'spin' ||
-      String(tournament.tournament_type ?? '').toUpperCase() === 'SPIN';
-    const seatFirstLaunch = spinLaunch || Number(tournament.max_players) <= 2;
+    const spinLaunch = isPersistedSpin(tournament);
+    const seatFirstLaunch = isPersistedSeatFirst(tournament);
     const startingChips = Number(tournament.starting_chips);
     if (!Number.isInteger(startingChips) || startingChips <= 0) {
       return refuse('the tournament has no valid integer starting stack contract');
@@ -3350,6 +4077,7 @@ export abstract class TournamentManagerBase {
   }
 
   async start(): Promise<void> {
+    if (this.f06RecoveryOwnership) throw new Error('f06_recovery_business_admission_held');
     if (this.teardownPromise) await this.teardownPromise;
     if (!this.tournamentLeaseAuthorityIsCurrent()) {
       this.expireTournamentLeaseAuthority();
@@ -3378,9 +4106,7 @@ export abstract class TournamentManagerBase {
     if (
       tournament.status !== 'REGISTERING' ||
       tournament.prize_pool_finalized !== true ||
-      !['MTT', 'SATELLITE'].includes(String(tournament.tournament_type).toUpperCase()) ||
-      !(Number(tournament.max_players) > 2) ||
-      isSpinTournament(tournament)
+      !isPersistedUnlimitedMtt(tournament)
     )
       return false;
 
@@ -3412,12 +4138,22 @@ export abstract class TournamentManagerBase {
 
     // Preserve PostgreSQL microseconds: converting this anchor through a JS
     // Date would make the receipt differ from the hand the SQL proof checks.
-    const claim = await this.beginTournamentLaunch(lifecycle, nodeCrypto.randomUUID(), firstHandAt);
+    const claim = await this.beginTournamentLaunch(
+      lifecycle,
+      nodeCrypto.randomUUID(),
+      firstHandAt,
+      readPersistedTournamentFormatContract(tournament)
+    );
     this.assertLifecycleCurrent(lifecycle);
     if (!claim) throw new Error('Played MTT launch claim was not confirmed');
     if (
       !claim.completed &&
-      !(await this.completeTournamentLaunch(lifecycle, claim.launchId, claim.startedAtIso))
+      !(await this.completeTournamentLaunch(
+        lifecycle,
+        claim.launchId,
+        claim.startedAtIso,
+        claim.formatContract
+      ))
     ) {
       throw new Error('Played MTT launch completion was not confirmed');
     }
@@ -3440,6 +4176,11 @@ export abstract class TournamentManagerBase {
       this.assertLifecycleCurrent(lifecycle);
 
       if (!tournament) throw new Error('Tournament not found');
+      if (['COMPLETING', 'COMPLETED', 'CANCELLED'].includes(tournament.status)) {
+        this.running = false;
+        return;
+      }
+      const format = readPersistedTournamentFormatContract(tournament);
 
       if (typeof tournament.blind_structure === 'string') {
         try {
@@ -3468,8 +4209,9 @@ export abstract class TournamentManagerBase {
         (tournament.mystery_bounty_stage as typeof this.mysteryBountyStage) || 'pending';
 
       /**
-       * Enforce a minimum field of three -- OR EVERY SEAT, WHEN THERE ARE
-       * FEWER THAN THREE OF THEM.
+       * Preserve the recorded MTT minimum, with a floor of two for existing
+       * mtt-v1 contracts and three for new mtt-v2 contracts. Fixed formats
+       * retain their actual seat requirement.
        *
        * FIX 2026-08-23 [P0]: the floor was the literal 3, which a HEADS-UP
        * game (max_players = 2) can never reach. It is not short of players --
@@ -3482,9 +4224,9 @@ export abstract class TournamentManagerBase {
        * The rule Dan set is about a Spin ("spins can NEVER START until 3
        * players are registered AND HAVE PAID") and a Spin has three seats, so
        * capping the floor at max_players leaves that rule bit-for-bit intact
-       * and changes behaviour ONLY for the formats the literal broke -- the
-       * ones with fewer than three seats. An MTT is unaffected: its floor is
-       * min(3, 50) = 3, exactly as before.
+       * and changes behaviour ONLY for the fixed formats the literal broke --
+       * the ones with fewer than three seats. MTT minima come from their
+       * immutable funded parent contract, not the entry capacity.
        *
        * FIX 2026-08-20 [P0]: this counted `status = 'registered'` ONLY, which
        * made any tournament that got PART WAY through starting permanently
@@ -3530,8 +4272,7 @@ export abstract class TournamentManagerBase {
        * trade made backwards.
        */
       const spinPaidGateWillRun =
-        (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') &&
-        Number(tournament.buy_in_amount || 0) > 0;
+        isPersistedSpin(tournament) && Number(tournament.buy_in_amount || 0) > 0;
 
       let regCount: number | null = null;
       let spinRoster: Array<{ user_id?: string | null; table_id?: string | null }> | null = null;
@@ -3580,7 +4321,11 @@ export abstract class TournamentManagerBase {
        * or 0 here must not silently lower the Spin floor.
        */
       const seatsAvailable = Number(tournament.max_players) || 0;
-      let requiredField = seatsAvailable > 0 ? Math.max(2, Math.min(3, seatsAvailable)) : 3;
+      let requiredField = isPersistedUnlimitedMtt(tournament)
+        ? Math.max(format === 'mtt-v2' ? 3 : 2, Number(tournament.min_players) || 3)
+        : seatsAvailable > 0
+          ? Math.max(2, Math.min(3, seatsAvailable))
+          : 3;
 
       /**
        * A PLAYED SPIN IS NOT A NEW TWO-PLAYER SPIN (2026-09-09).
@@ -3673,7 +4418,7 @@ export abstract class TournamentManagerBase {
       // gate demands. A mismatch is quarantined for operator review. The
       // launch path never deletes a roster, vacates a seat or reconciles a
       // counter in separate requests.
-      if (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') {
+      if (isPersistedSpin(tournament)) {
         const buyIn = Number(tournament.buy_in_amount || 0);
         if (buyIn > 0) {
           /* THE GATE MUST NOT DISABLE ITSELF ON A FAILED READ (2026-08-28).
@@ -3802,13 +4547,16 @@ export abstract class TournamentManagerBase {
       const launchClaim = await this.beginTournamentLaunch(
         lifecycle,
         requestedLaunchId,
-        requestedStartedAtIso
+        requestedStartedAtIso,
+        readPersistedTournamentFormatContract(tournament)
       );
       this.assertLifecycleCurrent(lifecycle);
       if (!launchClaim || launchClaim.completed) {
         this.running = false;
         return;
       }
+      // Only the parent-bound receipt authorizes the format used by launch setup.
+      tournament.format_contract = launchClaim.formatContract;
       const { launchId, startedAtIso } = launchClaim;
       const launchStartMs = Date.parse(startedAtIso);
       this.preStartLeadMs = launchStartMs > Date.now() ? launchStartMs - Date.now() : 0;
@@ -3836,7 +4584,7 @@ export abstract class TournamentManagerBase {
       //   house_rake = rake_rate x collected, FIXED, to rake_records
       //   reserve_in = the remainder, into the pool
       //   prize_pool = buy_in x multiplier, drawn FROM the pool
-      if (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') {
+      if (isPersistedSpin(tournament)) {
         const buyIn = Number(tournament.buy_in_amount) || 0;
         const ruleManifest = spinRuleManifest(buyIn, Number(tournament.starting_chips) || 0);
 
@@ -4215,7 +4963,7 @@ export abstract class TournamentManagerBase {
        * arming its own longer hold a few lines below cannot be shortened by
        * this one, and this cannot be shortened by it.
        *
-       * `preStartLeadMs` is what the level clock reads at the bottom of start():
+       * The level clock uses this same absolute receipt timestamp after setup:
        * arming it here would spend the first minute of level 1 on an empty
        * felt, and a 10-minute level would be a 9-minute level for everybody.
        *
@@ -4404,7 +5152,8 @@ export abstract class TournamentManagerBase {
       const launchCompleted = await this.completeTournamentLaunch(
         lifecycle,
         launchId,
-        startedAtIso
+        startedAtIso,
+        launchClaim.formatContract
       );
       this.assertLifecycleCurrent(lifecycle);
       if (!launchCompleted) {
@@ -4514,15 +5263,9 @@ export abstract class TournamentManagerBase {
       // hand. Setup can extend that hold, and completion can consume it: use
       // the admitted absolute deadline after those awaits, never a fresh full
       // reveal delay. Other formats keep their advertised pre-seat lead.
-      const blindStartDelayMs =
-        spinFirstDealHoldUntil > 0
-          ? Math.max(0, spinFirstDealHoldUntil - Date.now())
-          : this.preStartLeadMs;
-      if (blindStartDelayMs > 0) {
-        const structure = tournament.blind_structure || [];
-        this.setLifecycleTimeout(() => {
-          this.startBlindTimer(structure);
-        }, blindStartDelayMs);
+      const blindStartAtMs = spinFirstDealHoldUntil > 0 ? spinFirstDealHoldUntil : launchStartMs;
+      if (blindStartAtMs > Date.now()) {
+        this.scheduleBlindClockStart(tournament.blind_structure || [], blindStartAtMs);
       } else {
         this.startBlindTimer(tournament.blind_structure || []);
       }
@@ -4561,6 +5304,7 @@ export abstract class TournamentManagerBase {
   }
 
   async resume(): Promise<void> {
+    if (this.f06RecoveryOwnership) throw new Error('f06_recovery_business_admission_held');
     if (this.teardownPromise) await this.teardownPromise;
     if (!this.tournamentLeaseAuthorityIsCurrent()) {
       this.expireTournamentLeaseAuthority();
@@ -4604,6 +5348,7 @@ export abstract class TournamentManagerBase {
         this.running = false;
         return;
       }
+      readPersistedTournamentFormatContract(tournament);
 
       if (typeof tournament.blind_structure === 'string') {
         try {
@@ -4617,6 +5362,9 @@ export abstract class TournamentManagerBase {
       }
 
       this.tournamentCache = tournament;
+      // Restore the durable hold before admitting replacement dealers. Even
+      // an expired countdown remains paused until its release is acknowledged.
+      this.onBreak = tournament.on_break === true;
       await this.readTournamentClub(tournament.club_id);
       this.assertLifecycleCurrent(lifecycle);
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
@@ -4631,12 +5379,16 @@ export abstract class TournamentManagerBase {
       // Find existing tables. `first_button_seat` comes along so a Spin whose
       // button was drawn but never dealt keeps the seat it drew — see
       // restoreDrawnFirstButtons.
-      const { data: tables } = await supabase
+      const { data: tables, error: tablesError } = await supabase
         .from('tables')
         .select('id, first_button_seat, small_blind, big_blind, ante, stakes')
         .eq('tournament_id', this.tournamentId)
         .in('status', ['running', 'waiting']);
       this.assertLifecycleCurrent(lifecycle);
+      if (tablesError)
+        throw new Error(`Tournament resume table inventory read failed: ${tablesError.message}`);
+      if (!Array.isArray(tables))
+        throw new Error('Tournament resume table inventory was unreadable');
 
       /**
        * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
@@ -4647,15 +5399,23 @@ export abstract class TournamentManagerBase {
        * the tables and seat them — exactly what start() does. A room that lost
        * a table redeals it; it does not void the tournament.
        */
-      if (!tables || tables.length === 0) {
-        const { count: liveEntrants } = await supabase
+      if (tables.length === 0) {
+        const { count: liveEntrants, error: entrantsError } = await supabase
           .from('tournament_players')
           .select('id', { count: 'exact', head: true })
           .eq('tournament_id', this.tournamentId)
           .in('status', ['registered', 'playing']);
         this.assertLifecycleCurrent(lifecycle);
+        if (entrantsError)
+          throw new Error(`Tournament resume entrant count failed: ${entrantsError.message}`);
+        if (
+          typeof liveEntrants !== 'number' ||
+          !Number.isSafeInteger(liveEntrants) ||
+          liveEntrants < 0
+        )
+          throw new Error('Tournament resume entrant count was unreadable');
 
-        if ((liveEntrants || 0) > 0) {
+        if (liveEntrants > 0) {
           console.warn(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Resuming with NO open tables - rebuilding for ${liveEntrants} entrant(s) instead of abandoning the tournament`
           );
@@ -4682,6 +5442,7 @@ export abstract class TournamentManagerBase {
             // every recovered engine before this generation is admitted.
             for (const [tableId, engine] of this.tableEngines) {
               if (engine.isRunning()) continue;
+              this.prepareManagedTableEngineForPlay(engine);
               this.admitManagedTableEngine(tableId, engine);
               this.startManagedTableEngine(
                 engine,
@@ -4731,6 +5492,7 @@ export abstract class TournamentManagerBase {
           engine.setHub(tableStateHub); // Phase 1.1 PR-2
           this.wireEliminationWake(engine);
           this.tableEngines.set(table.id, engine);
+          this.prepareManagedTableEngineForPlay(engine);
           this.admitManagedTableEngine(table.id, engine);
           this.startManagedTableEngine(
             engine,
@@ -4830,7 +5592,7 @@ export abstract class TournamentManagerBase {
             remainingMs = Math.max(1000, durationMs - elapsed);
           }
         }
-        if (tournament.on_break && breakEndsAt - Date.now() > 1000) {
+        if (tournament.on_break) {
           // Arming would rewrite level_started_at. A second restart during
           // this same break would then count against a different anchor.
           this.savedBlindTimerRemaining = remainingMs ?? durationMs;
@@ -4951,21 +5713,8 @@ export abstract class TournamentManagerBase {
           // The break already expired while we were down — clear the flag so
           // the lobby does not show a phantom break. This is also what heals
           // a row stranded by the two defects described above.
-          this.onBreak = false;
-          this.breakCountdownStarted = false;
-          await this.clearPersistedBreak();
+          await this.resumeFromBreak();
           this.assertLifecycleCurrent(lifecycle);
-          // Entry-window reconciliation can outlast the remaining break.
-          if (restoredLevelClockSuspended) {
-            if (this.addOnBreakActive) {
-              this.addOnBreakOwnsPause = true;
-              this.addOnBreakOwnsLevelClock = true;
-            } else {
-              const remaining = this.savedBlindTimerRemaining;
-              this.savedBlindTimerRemaining = 0;
-              this.startBlindTimer(tournament.blind_structure || [], remaining);
-            }
-          }
         }
       }
 
@@ -5089,6 +5838,8 @@ export abstract class TournamentManagerBase {
     const lifecycleOperation = this.lifecycleOperation;
     if (this.stopFenceApplied) return lifecycleOperation;
     this.stopFenceApplied = true;
+    this.f06RecoveryOwnership = false;
+    this.publishHandForHandPresentation();
     this.unregisterDatabaseFenceHandler?.();
     this.unregisterDatabaseFenceHandler = null;
     return this.applyManagerMutationFence(true);
@@ -5097,6 +5848,16 @@ export abstract class TournamentManagerBase {
   stop(): Promise<void> {
     if (this.teardownPromise) return this.teardownPromise;
 
+    this.recordManagerDiagnostic('stop_initiated', {
+      proofDeadlineMonotonicMs: this.tournamentLeaseProofDeadlineMonotonicMs,
+    });
+    if (!this.stoppedDiagnosticOriginalsCaptured) {
+      this.stoppedDiagnosticOriginalsCaptured = true;
+      this.stoppedDiagnosticOriginalCount = this.tableEngines.size;
+      for (const [tableId, engine] of boundedDiagnosticEntries(this.tableEngines.entries(), 32)) {
+        this.stoppedDiagnosticOriginals.set(tableId, engine);
+      }
+    }
     const lifecycleOperation = this.applyStopFence();
     const teardown = (async () => {
       // Initiate every current engine stop before awaiting lifecycle startup.
@@ -5134,6 +5895,12 @@ export abstract class TournamentManagerBase {
       const stopResults = await Promise.allSettled(engines.map(([, engine]) => engine.stop()));
       await initialEngineStops;
       await this.drainTableEngineRunJobs();
+      this.recordManagerDiagnostic('owned_work_joined');
+      // A fulfilled engine stop is the positive terminal-teardown certificate.
+      // Cleanup failures that merely released process ownership do not qualify.
+      this.drainedF06Originals = stopResults.every((result) => result.status === 'fulfilled')
+        ? Object.freeze(engines.map(([id, engine]) => Object.freeze([id, engine] as const)))
+        : null;
       const stopFailures: unknown[] = [];
       for (let i = 0; i < engines.length; i++) {
         const [tableId, engine] = engines[i];
@@ -5180,6 +5947,12 @@ export abstract class TournamentManagerBase {
         }
       }
     })();
+    void teardown
+      .then(
+        () => this.recordManagerDiagnostic('stop_completed'),
+        () => this.recordManagerDiagnostic('stop_failed')
+      )
+      .catch((error) => reportError(error, 'Tournament.stop_diagnostic_failed'));
     const trackedTeardown = teardown.finally(() => {
       if (this.teardownPromise === trackedTeardown) this.teardownPromise = null;
     });
@@ -5689,12 +6462,11 @@ export abstract class TournamentManagerBase {
     }
 
     // Determine table size based on tournament type
-    let maxPerTable = tournament.max_players || 9;
-    const tType = (tournament.tournament_type || '').toUpperCase();
-    const variant = (tournament.variant || '').toLowerCase();
-    if (variant === 'spin' || tType === 'SPIN') {
+    let maxPerTable: number;
+    const format = readPersistedTournamentFormatContract(tournament);
+    if (format === 'spin-v1') {
       maxPerTable = 3;
-    } else if (variant === 'sng' || tType === 'SNG') {
+    } else if (format === 'sng-v1' || format === 'seat-first-satellite-v1') {
       maxPerTable = Math.min(tournament.max_players || 6, 9);
     } else {
       // table_size (2026-08-22 parity): seats per table INSIDE the MTT.
@@ -6039,9 +6811,7 @@ export abstract class TournamentManagerBase {
        identical across restarts for the same reason the generic path is. */
     {
       const t = this.tournamentCache;
-      const isSpin =
-        String(t?.variant ?? '').toLowerCase() === 'spin' ||
-        String(t?.tournament_type ?? '').toUpperCase() === 'SPIN';
+      const isSpin = t != null && isPersistedSpin(t);
       if (isSpin) {
         const lastRow = blindStructure[blindStructure.length - 1] ?? {};
         const b = continueBookedSpinBlinds(lastRow, i + 1) ?? spinBlindsForLevel(i + 1);
@@ -6217,9 +6987,37 @@ export abstract class TournamentManagerBase {
     }, delayMs);
   }
 
+  /** A waiting first level cannot spend time, persist an anchor or survive a newer arm. */
+  private scheduleBlindClockStart(blindStructure: any[], notBeforeMs: number): void {
+    if (this.blindStartTimer) this.clearLifecycleTimeout(this.blindStartTimer);
+    const timer = this.setLifecycleTimeout(
+      () => {
+        if (this.blindStartTimer !== timer) return;
+        this.blindStartTimer = null;
+        // The pause owner will arm the full first level when it releases play.
+        if (this.isOnBreak()) return;
+        this.startBlindTimer(blindStructure);
+      },
+      Math.max(0, notBeforeMs - Date.now())
+    );
+    this.blindStartTimer = timer;
+  }
+
   protected startBlindTimer(blindStructure: any[], remainingOverrideMs?: number): void {
     if (this.blindClockTerminalCommitted) return;
     if (blindStructure.length === 0) return;
+    // RUNNING may mean prepared and seated before the immutable launch start.
+    // Break release and replacement managers must honor the same receipt as
+    // the first dealer. Waiting time never consumes the first blind level.
+    const bookedStartMs = Date.parse(String(this.tournamentCache?.started_at ?? ''));
+    if (bookedStartMs > Date.now()) {
+      this.scheduleBlindClockStart(blindStructure, bookedStartMs);
+      return;
+    }
+    if (this.blindStartTimer) {
+      this.clearLifecycleTimeout(this.blindStartTimer);
+      this.blindStartTimer = null;
+    }
     // Never leave two level clocks running for the same tournament. Callers
     // normally arrive with blindTimer already null (it has just fired, or
     // pauseForBreak cleared it), but a double-arm doubles the escalation rate
@@ -6287,6 +7085,10 @@ export abstract class TournamentManagerBase {
       this.blindClockTerminalCommitted
     )
       return;
+    if (Date.parse(String(this.tournamentCache?.started_at ?? '')) > Date.now()) {
+      this.startBlindTimer(blindStructure);
+      return;
+    }
     this.blindTransitionInFlight = true;
     let committed: { level: any; startedAt: number } | null = null;
     let deferredWakeMs: number | undefined;

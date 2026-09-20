@@ -4,6 +4,7 @@ import { supabase } from '../services/supabase.js';
 import * as moves from '../services/supabase/seatMoves.js';
 
 const TABLE = 'aaaaaaaa-1111-4111-8111-111111111111';
+const SEAT = '99999999-8888-4888-8888-888888888888';
 const USER = 'bbbbbbbb-2222-4222-8222-222222222222';
 const ORIGINAL = 'cccccccc-3333-4333-8333-333333333333';
 const REPLACEMENT = 'dddddddd-4444-4444-8444-444444444444';
@@ -23,8 +24,12 @@ const pending = () => ({
 function setup() {
   const engine = Object.create(ServerTableEngine.prototype) as any;
   engine.tableId = TABLE;
+  engine.running = true;
+  engine.tournamentMovePauseOwners = new Set();
   engine.tableInfo = { cluster_id: 'game' };
-  engine.seatedPlayers = [{ user_id: USER, occupancy_id: ORIGINAL, seat_number: 1, stack: 10 }];
+  engine.seatedPlayers = [
+    { seat_id: SEAT, user_id: USER, occupancy_id: ORIGINAL, seat_number: 1, stack: 10 },
+  ];
   engine.lifecycleCanMutate = vi.fn(() => true);
   engine.isTournamentTable = vi.fn(() => false);
   engine.heldForSwap = new Set();
@@ -48,6 +53,7 @@ describe('Must-Move restart and occupancy boundaries', () => {
     );
     const rows = [
       {
+        id: SEAT,
         table_id: TABLE,
         user_id: USER,
         occupancy_id: REPLACEMENT,
@@ -89,6 +95,7 @@ describe('Must-Move restart and occupancy boundaries', () => {
     await tail;
     expect(writes).toHaveLength(1);
     expect(rows[0].entry_hold).toBe('waiting');
+    expect(writes[0].id).toBe(SEAT);
     expect(writes[0].occupancy_id).toBe(ORIGINAL);
   });
 

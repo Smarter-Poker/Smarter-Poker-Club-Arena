@@ -131,7 +131,7 @@ describe('the reserve offers no way to move money out', () => {
   });
 });
 
-describe('a tournament always resolves a format, so the theme always resolves', () => {
+describe('a tournament theme waits for its authoritative format', () => {
   it('the hook still waits rather than guessing', () => {
     // 2026-08-25: was a text match on the hook's source. The guard became an
     // exported function during the theme-persistence audit — same behaviour,
@@ -142,15 +142,13 @@ describe('a tournament always resolves a format, so the theme always resolves', 
     expect(resolveThemeBucket(undefined, true, 'mtt')).toBe('MTT');
   });
 
-  it('TablePage falls back when the tournament row cannot be read', () => {
-    // Without this the guard above never lifts and the felt stays default.
-    expect(table).toMatch(/setTournamentFormat\(\(prev\) => prev \?\? 'mtt'\)/);
+  it('TablePage clears unresolved format and seat-purchase eligibility on an unreadable row', () => {
+    expect(table).toMatch(/setTournamentFormat\(null\);\s*setSeatFirstBuyIn\(null\)/);
+    expect(table).toContain('getTournamentFormatKind(tournData)');
   });
 
-  it('the fallback cannot overwrite a format that did resolve', () => {
-    // `prev ?? 'mtt'` and not a bare 'mtt': the two branches can interleave
-    // with the spin reveal path, and clobbering a resolved 'spin' would swap
-    // the player's felt mid-sit - the exact fault the guard exists to prevent.
+  it('cannot relabel a missing or resolved format as a guessed MTT', () => {
     expect(table).not.toMatch(/setTournamentFormat\('mtt'\)/);
+    expect(table).not.toMatch(/setTournamentFormat\(\(prev\) => prev \?\? 'mtt'\)/);
   });
 });

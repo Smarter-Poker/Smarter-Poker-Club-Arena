@@ -54,6 +54,30 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
     };
   }, []);
 
+  // A RESULT LIST OUTLIVES THE CLUB IT WAS SEARCHED IN.
+  //
+  // The only mount is AgentManagementPage, which renders this without a `key`
+  // and takes `clubId` from `useParams`. React Router swaps a route param on
+  // the SAME component instance, so navigating /clubA/agents -> /clubB/agents
+  // re-renders this component with club B's id while `results` still holds the
+  // rows that were read out of club A - usernames, emails and chip balances,
+  // sitting on club B's Players tab until someone searches again.
+  //
+  // That is the same disclosure the `club_members!inner` scoping below exists
+  // to stop; it just arrives one navigation later instead of one query later.
+  // Scoping the query is not enough on its own while the previous club's
+  // answer is still on screen, so everything the old club's search produced is
+  // dropped the moment the club changes - including the pending stagger
+  // timers, which would otherwise fade in rows that are no longer rendered.
+  useEffect(() => {
+    setResults([]);
+    setSearched(false);
+    setSearchError(null);
+    setVisibleItems(new Set());
+    staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    staggerTimersRef.current = [];
+  }, [clubId]);
+
   const handleSearch = useCallback(async () => {
     if (!query.trim()) return;
 
@@ -199,7 +223,20 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
     } finally {
       if (isMounted.current) setLoading(false);
     }
-  }, [query, searchType]);
+    // `clubId` READS THE CLUB YOU ARE ON, NOT THE ONE YOU ARRIVED FROM.
+    //
+    // It was absent here while the body above scoped the query with it. A
+    // useCallback with a stale dependency array does not just skip a
+    // re-render - it keeps handing back the FIRST closure, so `clubId` inside
+    // this function stayed pinned to whichever club the component happened to
+    // mount on. AgentManagementPage passes no `key` and reads the id from
+    // `useParams`, so React Router's param swap never remounts: club B's
+    // Players tab ran club A's query, and the scoping the comment above was
+    // written for silently stopped applying on the second club you visited.
+    //
+    // `isMounted` is a ref and stable in practice; it is listed because a
+    // dependency array that is only mostly honest is how this started.
+  }, [clubId, query, searchType, isMounted]);
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return 'N/A';

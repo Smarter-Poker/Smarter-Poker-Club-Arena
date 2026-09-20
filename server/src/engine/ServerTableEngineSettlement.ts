@@ -43,7 +43,6 @@ import {
   processHandPostCommitObligations,
   recordBBJNearMiss,
   resolveJackpotSiblingClubIds,
-  completeHandSnapshot,
   supabase,
 } from '../services/supabase.js';
 import type { HandEvent, SeatedPlayer } from '../types.js';
@@ -61,7 +60,11 @@ import { checkTournamentChipConservation } from './tournamentChipConservation.js
 import { checkTournamentWholeChips, describeFractionalSeats } from './tournamentWholeChips.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { INSTANCE_ID } from '../services/tableLease.js';
-import { requireHandSeatGeneration } from './handSeatGeneration.js';
+import { handStackBefore, requireHandSeatGeneration } from './handSeatGeneration.js';
+import {
+  LeavePendingDiagnostic,
+  type LeavePendingAttempt,
+} from '../observability/LeavePendingDiagnostic.js';
 
 /**
  * A chip is two decimal places, everywhere it is stored (#3358).
@@ -474,12 +477,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     players: SeatedPlayer[],
     persistenceGeneration: number
   ): Promise<void> {
-    const wholeSettlement = this.observeSettlementAwait(
-      'hand_complete',
-      persistenceGeneration,
-      this.handCount,
-      () => this.settleCompletedHand(event, players, persistenceGeneration)
-    );
+    const wholeSettlement = this.settleCompletedHand(event, players, persistenceGeneration);
     /* CHAIN, NEVER OVERWRITE (chip standard 2026-09-04). settleCompletedHand
        runs synchronously to completion on the common path - its only awaits
        are the insurance-shortfall alerts - so by the time it returns it has
@@ -625,15 +623,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       }
     }
 
-    // SETTLEMENT STEP 8 (partial): Mark hand snapshot as complete
-    // FIX 137: Bible V8 §7.17
-    // Reported, not swallowed. A snapshot that never completes leaves the hand
-    // marked in-flight in the recovery path, and `.catch(() => {})` meant the
-    // only way to learn that was to go looking for it. It still must not throw
-    // into settlement — the hand is over and the money is already moved.
-    completeHandSnapshot(this.tableId, this.handCount).catch((err) =>
-      reportError(err, 'ServerTableEngine.complete_hand_snapshot_error')
-    );
+    // The retained original hand transaction completes this snapshot only
+    // after its accepted financial receipt. HAND_COMPLETE alone is not proof.
 
     // SETTLEMENT STEP 5: Capture rake and BBJ fee (calculated in HandController)
     if ((event as any).rake !== undefined) {
@@ -1454,12 +1445,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // this method and every post-hand task are done reading this hand's
     // capture fields.
     const priorBarrier = this.postHandTasksPromise;
-    const postTasks = this.observeSettlementAwait(
-      'post_hand',
-      persistenceGeneration,
-      this.handCount,
-      () => this.postHandTasks(players, persistenceGeneration)
-    ).catch((err) => {
+    const postTasks = this.postHandTasks(players, persistenceGeneration).catch((err) => {
       this.finishTerminalBoundaryPersistence(persistenceGeneration, false);
       reportError(err, `ServerTableEngine.${this.tableId}.posthand_error`);
       // A rejected settlement is not a completed hand. Publish the terminal
@@ -1734,17 +1720,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
        them - for want of a second try 250ms later. */
     const STEP_RETRY: Record<string, number> = {
       leave_pending: 2,
-      /* THE RECORD OF THE HAND IS WORTH THE SAME TWO WAITS AS THE SEATS
-         (2026-09-12). `hand_history` had no budget at all, so `attempts > 0`
-         was true on the first throw and every refusal was terminal - including
-         the one the database raises specifically to ask for another attempt.
-         Production, the two hours to 11:00 on 2026-09-12: 240 then 172 hands
-         whose history was never written, every one of them
-         `atomic hand commit refused (atomic_hand_rolled_back):
-         F06_RETRY_CANONICAL_LANE`, which is a contended advisory lock during
-         tournament terminal settlement and nothing else. The hand had already
-         been played; only its record was lost. */
-      hand_history: 2,
+      // Retry only the original captured request inside logHandHistory.
+      // This mutable callback also contains reflection and must run once.
     };
     /* Two short waits, inside one hand boundary. The felt already holds for
        2.1-3.5s between hands, so 250ms + 1s costs nothing a player can see,
@@ -1765,7 +1742,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     const runStep = async (
       stepName: string,
       moneyCritical: boolean,
-      fn: () => Promise<void>
+      fn: (diagnostic?: LeavePendingAttempt) => Promise<void>
     ): Promise<void> => {
       const exec = async (): Promise<void> => {
         // A successor generation may acquire the table while this step waits
@@ -1775,36 +1752,49 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         const started = performance.now();
         let outcome = 'returned';
         const budget = STEP_RETRY[stepName] ?? 0;
+        const diagnostic =
+          stepName === 'leave_pending'
+            ? new LeavePendingDiagnostic(this.tableId, snap.handNumber, persistenceGeneration)
+            : undefined;
         let attempts = 0;
         try {
           for (;;) {
             attempts++;
+            const attempt = diagnostic?.beginAttempt(attempts);
+            if (attempts === 1) this.recordLeavePendingGuard(attempt, 'runStep_entry', true);
             try {
-              await this.observeSettlementAwait(
-                'step:' + stepName,
-                persistenceGeneration,
-                snap.handNumber,
-                fn
-              );
+              await fn(attempt);
               if (attempts > 1) outcome = 'retried';
               break;
             } catch (err) {
+              attempt?.rejected(err);
               /* Only a database that BLINKED is worth another try, and only
                  while this generation still owns the table. Every refusal the
                  database gives on purpose is a decision, not a queue, and it
                  falls straight through to the report below exactly as before. */
-              if (
-                attempts > budget ||
-                !ServerTableEngineBase.isTransientDbError(err) ||
-                !this.lifecycleCanMutate()
-              ) {
+              // Preserve the original short-circuit order and exact calls.
+              if (attempts > budget) {
+                attempt?.retryDecision('budget_exhausted');
                 throw err;
               }
+              if (!ServerTableEngineBase.isTransientDbError(err)) {
+                attempt?.retryDecision('non_transient');
+                throw err;
+              }
+              const retryAllowed = this.lifecycleCanMutate();
+              this.recordLeavePendingGuard(attempt, 'runStep_retry', retryAllowed);
+              if (!retryAllowed) {
+                attempt?.retryDecision('lifecycle_denied');
+                throw err;
+              }
+              attempt?.retryDecision('retry_scheduled');
               await this.sleep(STEP_RETRY_BACKOFF_MS[attempts - 1] ?? 1_000);
             }
           }
         } catch (err) {
           outcome = 'threw';
+          // Copy before reportError can prefix the original Error message.
+          const failureEvidence = diagnostic?.snapshot();
           reportError(err, `postHandTasks.step_failed.${stepName}`, {
             tableId: this.tableId,
             handNumber: snap.handNumber,
@@ -1822,6 +1812,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 error: describeError(err),
                 attempts,
                 retry_budget: budget,
+                ...(stepName === 'hand_history'
+                  ? { hand_request_identity_v1: handRequestIdentity }
+                  : {}),
+                ...(failureEvidence ? { leave_pending_diagnostic_v1: failureEvidence } : {}),
               }
             );
           }
@@ -1985,6 +1979,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     let authoritativeCommitSucceeded = false;
     const settlementLeaseAuthority = this.getEngineLeaseAuthority();
     const durablePostCommitObligations = settlementLeaseAuthority?.verified === true;
+    // Identity of this request, not a claim that it committed or rolled back.
+    // Preserve the same UUID in both failure reports so later table progress
+    // cannot stand in for this hand's canonical completion receipt.
+    const handRequestIdentity = Object.freeze({
+      version: 1,
+      table_id: this.tableId,
+      hand_number: snap.handNumber,
+      hand_id: v_handId,
+      post_commit_required: durablePostCommitObligations,
+    });
     const isDiamondCash = this.tableInfo?.arena?.asset === 'diamonds';
     await runStep('hand_history', true, async () => {
       if (this.tableInfo) {
@@ -2249,7 +2253,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                   : null,
             }
           : undefined;
-        const commitAuthoritativeHand = (observeCommitProgress?: (detail: string) => void) =>
+        const commitAuthoritativeHand = () =>
           logHandHistory({
             tableId: this.tableId,
             handId: v_handId,
@@ -2364,7 +2368,6 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             buttonSeat: snap.dealerSeat,
             showdownReveal,
             atomicCommit: {
-              observeCommitProgress,
               /* Rounded, as the writer this replaced did (services/supabase/
                  tables.ts `rounded()`); the replacement dropped it and these
                  two fields are the source of the non-cent rows in
@@ -2373,7 +2376,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 ...requireHandSeatGeneration(snap.seatGenerations, p.user_id),
                 user_id: p.user_id,
                 stack: cents(p.stack),
-                stack_before: cents(snap.dealtStacks.get(p.user_id) ?? p.stack),
+                stack_before: cents(
+                  handStackBefore(snap.seatGenerations, snap.dealtStacks, p.user_id, p.stack)
+                ),
               })),
               rake: this.isTournamentTable() ? 0 : snap.rake,
               bbj: this.isTournamentTable() ? 0 : snap.bbjFee,
@@ -2398,41 +2403,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           if (!this.hasCurrentEngineLeaseAuthority()) {
             throw new Error('atomic hand commit refused (lease_proof_expired)');
           }
-          result = await this.observeSettlementAwait(
-            'hand_history_write',
-            persistenceGeneration,
-            snap.handNumber,
-            commitAuthoritativeHand
-          );
+          result = await commitAuthoritativeHand();
           if (!result.settlementCommitted || !result.handId) {
             throw new Error('atomic hand commit refused (missing_commit_receipt)');
           }
         } catch (err) {
           const message = describeError(err);
-          /* ═══ THE KILL MUST NOT PRE-EMPT THE RETRY BUDGET (2026-09-12) ═════
-             `killForRestart` below sets `terminal = true; running = false`
-             SYNCHRONOUSLY, and it used to run for every refusal - including
-             the one the database raises specifically to ask for another
-             attempt. `runStep` decides whether to retry AFTER this body
-             returns, and its third condition is `!this.lifecycleCanMutate()`,
-             which is false the instant this generation is terminal. So the
-             budget `hand_history` was given could never be spent: the step
-             killed the engine on attempt 1 and the retry loop then refused to
-             run attempt 2 because the engine was dead. A retry that is
-             unreachable is not a retry.
-
-             So a refusal the database rolled back whole, for a reason Postgres
-             defines as "run it again", leaves here untouched: no kill, no
-             critical alert, no terminal loop phase. `runStep` re-runs this
-             step - the body above is pure, and every write it performs goes
-             through one idempotent RPC keyed on (table_id, hand_number). If
-             the budget runs out, the throw reaches `await lanes.record`,
-             `authoritativeCommitSucceeded` is still false, and the existing
-             `authoritative_hand_commit_not_proved` kill and the step's own
-             `postHandTasks.hand_history_failed` critical alert both stand.
-
-             Production, 2026-09-12 10:04:25Z onward: 1,021 of 1,023 semantic
-             refusals were this, and every one killed a live table. */
+          // Qualified rollback retries now finish inside logHandHistory with
+          // the original captured payload. Preserve4453's diagnostic branch
+          // for an exhausted refusal; runStep does not rebuild this callback,
+          // and the final unproved-hand gate below still terminates the engine.
           if (ServerTableEngineBase.isRolledBackSerializationRefusal(err)) {
             this.setLoopPhase('settlement_lane_contended');
             reportError(err, 'ServerTableEngine.authoritative_hand_lane_contended', {
@@ -2468,7 +2448,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               semantic
                 ? `Table ${this.tableId} hand #${snap.handNumber} was refused by the atomic settlement contract; this engine generation was terminated before every downstream money step`
                 : `Table ${this.tableId} hand #${snap.handNumber} exhausted the bounded identical settlement replay; this engine generation was terminated with the same hand behind its causal barrier`,
-              { table_id: this.tableId, hand_number: snap.handNumber, error: message }
+              {
+                table_id: this.tableId,
+                hand_number: snap.handNumber,
+                error: message,
+                ...(semantic ? { hand_request_identity_v1: handRequestIdentity } : {}),
+              }
             );
           } catch (alertError) {
             reportError(alertError, `${alertCode}.alert_failed`, {
@@ -2636,14 +2621,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       while (!obligationsApplied && mayStillDrain()) {
         attempt++;
         try {
-          const outcome = await this.observeSettlementAwait(
-            'post_commit_obligations',
-            persistenceGeneration,
-            snap.handNumber,
-            () => processHandPostCommitObligations(v_handHistoryId!)
-          );
+          const outcome = await processHandPostCommitObligations(v_handHistoryId);
           if (outcome.ok !== true) {
             throw new Error(`post-commit obligations refused (${outcome.reason ?? 'unknown'})`);
+          }
+          // F06 consumes only the exact accepted envelope after durable postcommit
+          // completion. Failure stays in this existing retry/failure path.
+          if (this.f06CurrentPermit) {
+            if (!Number.isSafeInteger(snap.handNumber) || snap.handNumber < 0)
+              throw new Error('f06_hand_number_precision');
+            await this.finishF06AcceptedHand(String(snap.handNumber), v_handHistoryId);
           }
           resolvedAddOnCount =
             typeof outcome.pending_addons === 'number' && Number.isFinite(outcome.pending_addons)
@@ -2677,7 +2664,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
              one, and section 10.8's rule that an unseen check is no check
              cuts both ways.
 
-             `reportError` above still records every attempt to Sentry (with
+             `reportError` above still records every attempt to error reporting (with
              its own budget and throttle), so the transient stays observable.
              What moved is the FINANCIAL ALERT: it now fires only where the
              loop actually abandons the envelope - see `if (!obligationsApplied)`
@@ -3619,7 +3606,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     if (!this.lifecycleCanMutate()) return;
 
     // 6. Process leave-pending players (cash games only)
-    await runStep('leave_pending', true, async () => {
+    await runStep('leave_pending', true, async (diagnostic) => {
       if (!this.isTournamentTable()) {
         // Round 57: processLeavePending reports the user_ids it cashed out;
         // we use that to unregister DisconnectEngine tracking so player states
@@ -3630,9 +3617,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // 2026-09-11: that teardown now lives in tearDownDepartedSeats(), so
         // it can also run for a departure an EARLIER attempt or boundary made
         // and then lost when its sweep threw after the money had moved.
+        diagnostic?.phase('local_teardown');
         this.tearDownDepartedSeats();
-        const { cashedOutIds, pendingMoves } = await this.readCashHandDepartures();
-        if (!this.lifecycleCanMutate()) return;
+        const { cashedOutIds, pendingMoves } = await this.readCashHandDepartures(diagnostic);
+        const afterDepartures = this.lifecycleCanMutate();
+        this.recordLeavePendingGuard(diagnostic, 'after_departures', afterDepartures);
+        if (!afterDepartures) return;
+        diagnostic?.phase('local_teardown');
         this.tearDownDepartedSeats(cashedOutIds);
         // MUST-MOVE (Slice 2): planned moves land here, at the hand boundary,
         // after the leavers. A move is not a leave: no cash-out, no clock.
@@ -3640,8 +3631,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // This Hand"; a move planned during the hand waits for the next deal
         // to be announced, so nobody is moved off a hand they were not told
         // about.
-        await this.executePendingSeatMoves({ announcedOnly: true }, pendingMoves);
-        if (!this.lifecycleCanMutate()) return;
+        await this.executePendingSeatMoves({ announcedOnly: true }, pendingMoves, diagnostic);
+        const afterMirrors = this.lifecycleCanMutate();
+        this.recordLeavePendingGuard(diagnostic, 'after_move_mirrors', afterMirrors);
+        if (!afterMirrors) return;
       }
     });
     if (!this.lifecycleCanMutate()) return;
@@ -3756,33 +3749,49 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
    * still rechecks the live source seat, destination and expiry under its existing
    * database locks; the caller retains the announced-only filter. This list belongs to this boundary only.
    */
-  protected async readCashHandDepartures(): Promise<{
+  protected async readCashHandDepartures(diagnostic?: LeavePendingAttempt): Promise<{
     cashedOutIds: Array<{ userId: string; occupancyId: string }>;
     /** `null` is a read that FAILED - never an empty list (CLAUDE.md 10.86). */
     pendingMoves: PendingSeatMove[] | null;
   }> {
-    if (!this.lifecycleCanMutate()) return { cashedOutIds: [], pendingMoves: null };
+    const allowed = this.lifecycleCanMutate();
+    this.recordLeavePendingGuard(diagnostic, 'read_departures_entry', allowed);
+    if (!allowed) return { cashedOutIds: [], pendingMoves: null };
+    diagnostic?.departures.phase('departure_sweep');
     const [leaves, moves] = await Promise.allSettled([
       processLeavePending(
         this.tableId,
         this.tableInfo?.club_id || '',
         (lockedUserId, stayRemainingMs, occupancyId) => {
-          if (this.lifecycleCanMutate()) {
+          const callbackAllowed = this.lifecycleCanMutate();
+          this.recordLeavePendingGuard(diagnostic, 'departure_locked_callback', callbackAllowed);
+          if (callbackAllowed) {
             this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId);
           }
         },
         // Owed the moment the cash-out commits, so a later seat's timeout or a
         // rejected sibling read cannot take the teardown with it.
-        (departedUserId, occupancyId) => this.rememberDepartedSeat(departedUserId, occupancyId)
+        (departedUserId, occupancyId) => this.rememberDepartedSeat(departedUserId, occupancyId),
+        diagnostic?.departures
       ),
       this.tableInfo?.cluster_id
-        ? pendingSeatMoves(this.tableId)
-        : Promise.resolve<PendingSeatMove[] | null>([]),
+        ? pendingSeatMoves(this.tableId, diagnostic?.move_read)
+        : (diagnostic?.move_read.skip(), Promise.resolve<PendingSeatMove[] | null>([])),
     ]);
+    if (leaves.status === 'rejected') diagnostic?.departures.fail(leaves.reason);
+    else diagnostic?.departures.finish();
+    if (moves.status === 'rejected') diagnostic?.move_read.fail(moves.reason);
+    else diagnostic?.move_read.finish();
     // Own both rejections immediately and let neither attempt outlive the
     // boundary on a retry. No move may run after a failed leave sweep.
-    if (leaves.status === 'rejected') throw leaves.reason;
-    if (moves.status === 'rejected') throw moves.reason;
+    if (leaves.status === 'rejected') {
+      diagnostic?.selectFailure('departures');
+      throw leaves.reason;
+    }
+    if (moves.status === 'rejected') {
+      diagnostic?.selectFailure('move_read');
+      throw moves.reason;
+    }
     return { cashedOutIds: leaves.value, pendingMoves: moves.value };
   }
 }

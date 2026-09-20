@@ -12,6 +12,14 @@ type Intent = { version: 1; state: 'pending' | 'resolved'; request: TournamentPu
 const running = new Map<string, Promise<number>>();
 const prefix = 'ca:tournament-purchase:v1:';
 
+/** Fresh build/validation failed before any recoverable intent was published. */
+export class TournamentPurchaseNotSubmittedError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : 'The Tournament Purchase Was Not Submitted.');
+    this.name = 'TournamentPurchaseNotSubmittedError';
+  }
+}
+
 function read(raw: string | null, scope: Scope): Intent | null {
   if (raw === null) return null;
   const value = JSON.parse(raw) as Intent;
@@ -84,15 +92,21 @@ export function withTournamentPurchaseIntent(
       }
       const fresh = intent === null;
       if (!intent) {
-        const request = await build();
-        request.p_client_token =
-          scope.kind === 'addon' ? null : scope.token?.trim() || crypto.randomUUID();
-        intent = read(JSON.stringify({ version: 1, state: 'pending', request }), scope)!;
+        try {
+          const request = await build();
+          request.p_client_token =
+            scope.kind === 'addon' ? null : scope.token?.trim() || crypto.randomUUID();
+          intent = read(JSON.stringify({ version: 1, state: 'pending', request }), scope)!;
+        } catch (error) {
+          throw new TournamentPurchaseNotSubmittedError(error);
+        }
       }
       intent = { ...intent, state: 'pending' };
       const pending = JSON.stringify(intent);
       // Session storage retains this tab's original request if shared storage
       // advances while its response is unknown. Both writes precede the RPC.
+      // Once published, another queued tab may submit it even if this tab's
+      // readback fails. Persistence failures must therefore remain unknown.
       session.setItem(key, pending);
       if (session.getItem(key) !== pending)
         throw new Error('The Tournament Purchase Could Not Be Saved.');

@@ -33,6 +33,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { sliceMethod } from '../helpers/sourceWindow';
+import ts from 'typescript';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const tsCode = (src: string) =>
@@ -55,18 +56,56 @@ describe('horses take seats, not just places on a list', () => {
   });
 
   it('the past-start top-up seats rather than registers for seat-first', () => {
-    const topUp = recurring.slice(
-      recurring.indexOf('async topUpWithHorses'),
-      recurring.indexOf('private async registerHorses')
+    const topUp = sliceMethod(recurring, 'async topUpWithHorses(');
+    expect(topUp).toMatch(/const seatFirst = isPersistedSeatFirst\(tRow\)/);
+    const file = ts.createSourceFile(
+      'top-up.ts',
+      `class Recurring { ${topUp} }`,
+      ts.ScriptTarget.Latest,
+      true
     );
-    expect(topUp).toMatch(/isSeatFirstFormat\(/);
-    expect(topUp).toMatch(/fn_seat_horse_in_seat_first_game/);
-    // registerHorses is still correct for an MTT, so it must remain reachable.
-    // 2026-08-27: a third argument was added (the freeroll all-lanes
-    // override). The property here is REACHABILITY of the registration path
-    // with the computed shortfall, not the arity, so the trailing arguments
-    // are left open. The two leading arguments stay pinned.
-    expect(topUp).toMatch(/registerHorses\(tournamentId, shortfall[),]/);
+    const descendants = (root: ts.Node): ts.Node[] => {
+      const found: ts.Node[] = [];
+      const visit = (node: ts.Node): void => {
+        found.push(node);
+        ts.forEachChild(node, visit);
+      };
+      visit(root);
+      return found;
+    };
+    const nodes = descendants(file);
+    const registrationCalls = nodes
+      .filter(ts.isCallExpression)
+      .filter((call) => call.expression.getText(file) === 'this.registerHorses');
+    expect(registrationCalls).toHaveLength(1);
+    // Adding ticket policy arguments may wrap the call over several lines.
+    // The first two arguments must still be this event and its measured deficit.
+    expect(registrationCalls[0].arguments.slice(0, 2).map((arg) => arg.getText(file))).toEqual([
+      'tournamentId',
+      'shortfall',
+    ]);
+    const branch = nodes
+      .filter(ts.isIfStatement)
+      .find(
+        (node) =>
+          node.expression.getText(file) === 'seatFirst' &&
+          node.thenStatement.getText(file).includes('fn_seat_horse_in_seat_first_game')
+      );
+    expect(branch, 'seat-first seating must remain a distinct branch').toBeDefined();
+    expect(
+      branch!.elseStatement,
+      'ordinary MTT registration must be the other branch'
+    ).toBeDefined();
+    expect(descendants(branch!.thenStatement)).not.toContain(registrationCalls[0]);
+    expect(descendants(branch!.elseStatement!)).toContain(registrationCalls[0]);
+    const seatingCalls = descendants(branch!.thenStatement)
+      .filter(ts.isCallExpression)
+      .filter(
+        (call) =>
+          call.expression.getText(file) === 'supabase.rpc' &&
+          call.arguments[0]?.getText(file) === "'fn_seat_horse_in_seat_first_game'"
+      );
+    expect(seatingCalls).toHaveLength(1);
   });
 
   it('never takes a horse out of a game it is already in', () => {

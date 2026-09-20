@@ -38,6 +38,7 @@ class TournamentTimerServiceClass {
   private readonly TICK_INTERVAL_MS = 1000; // Check every second
   private breakIntervals: Map<string, number> = new Map(); // configurable break every N levels
   private headsUpTriggered: Set<string> = new Set(); // Guard against duplicate HEADS_UP_SWITCH emissions
+  private finalTableObserved: Set<string> = new Set();
   private playerEliminatedUnsub: (() => void) | null = null;
 
   constructor() {
@@ -97,6 +98,7 @@ class TournamentTimerServiceClass {
       masterBus.removeRegisteredChannel(`tournament:${tournamentId}`);
       // Clean up per-tournament tracking state
       this.headsUpTriggered.delete(tournamentId);
+      this.finalTableObserved.delete(tournamentId);
       this.breakIntervals.delete(tournamentId);
     }
   }
@@ -182,6 +184,7 @@ class TournamentTimerServiceClass {
        * to the value that reaches the database.
        */
       const newLevel = levelState.levelIndex;
+      if (!levelState.currentLevel) return;
 
       // Check if level changed. `timer.currentLevel` starts at -1 precisely so
       // that a genuine level 0 registers as a change on the first tick.
@@ -215,6 +218,7 @@ class TournamentTimerServiceClass {
     levelState: ReturnType<typeof tournamentService.getCurrentLevelState>
   ): Promise<void> {
     const { currentLevel } = levelState;
+    if (!currentLevel) return; // No confirmed amounts to broadcast.
     const displayLevel = newLevel + 1;
 
     // Client no longer writes to the database (engine is authoritative).
@@ -259,34 +263,30 @@ class TournamentTimerServiceClass {
    */
   async checkTableSize(tournamentId: string): Promise<void> {
     try {
-      const { data: entries } = await supabase
+      const { data: entries, error: entriesError } = await supabase
         .from('tournament_players')
         .select('user_id, username, chips')
         .eq('tournament_id', tournamentId)
         .eq('status', 'playing');
+      if (entriesError) throw entriesError;
 
       if (!entries || entries.length === 0) return;
 
       const playersRemaining = entries.length;
 
-      // ── Final Table Detection (9 or fewer from larger field) ──
-      const { data: tournament } = await supabase
+      // The engine confirms final-table consolidation. Entry capacity cannot
+      // establish that the surviving players share one playable table.
+      const { data: tournament, error: tournamentError } = await supabase
         .from('tournaments')
-        .select('id, name, prize_pool, max_players, final_table_triggered')
+        .select('id, name, prize_pool, final_table_triggered')
         .eq('id', tournamentId)
         .maybeSingle();
+      if (tournamentError) throw tournamentError;
 
       if (!tournament) return;
 
-      const maxPlayers = tournament.max_players || 0;
-      const alreadyTriggered = (tournament as any).final_table_triggered;
-
-      if (playersRemaining <= 9 && maxPlayers > 9 && !alreadyTriggered) {
-        // Mark as triggered so we only fire once
-        await supabase
-          .from('tournaments')
-          .update({ final_table_triggered: true } as any)
-          .eq('id', tournamentId);
+      if (tournament.final_table_triggered === true && !this.finalTableObserved.has(tournamentId)) {
+        this.finalTableObserved.add(tournamentId);
 
         masterBus.emit('FINAL_TABLE_REACHED', {
           tournamentId,
@@ -425,6 +425,7 @@ class TournamentTimerServiceClass {
     }
     // Defensive: clear any remaining state
     this.headsUpTriggered.clear();
+    this.finalTableObserved.clear();
     this.breakIntervals.clear();
   }
 
@@ -468,6 +469,7 @@ class TournamentTimerServiceClass {
     if (!tournament) return null;
 
     const levelState = tournamentService.getCurrentLevelState(tournament);
+    if (!levelState.currentLevel) return null;
     // Handle blind_structure being a JSON string (Supabase REST returns JSONB as string)
     let blindStructure: any[];
     const rawBlinds: unknown = tournament.blind_structure;

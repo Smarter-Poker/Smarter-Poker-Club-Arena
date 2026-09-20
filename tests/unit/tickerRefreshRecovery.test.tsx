@@ -158,6 +158,7 @@ function tournament(name = 'Confirmed Event') {
     current_players: 4,
     status: 'REGISTERING',
     tournament_type: 'MTT',
+    format_contract: 'mtt-v2',
   };
 }
 function answer(query: Query): Reply {
@@ -172,16 +173,6 @@ async function mount() {
   });
   return view;
 }
-/* THE CONTAINER'S SWEEP IS NO LONGER 1Hz (2026-09-14).
-
-   Both of the container's intervals used to run every second: one to advance a
-   countdown that has since moved into TickerClock, and one to walk every
-   announcement looking for the two toast thresholds. Neither needs a second,
-   and the strip sits above a live poker table on the same thread, so both are
-   CONTAINER_TICK_MS now. A test that advanced 1000ms and expected the sweep to
-   have run was pinned to the old cadence, not to any behaviour. */
-const TOAST_SWEEP_MS = 5_000;
-
 async function tick(ms = 30_000) {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms);
@@ -383,12 +374,12 @@ describe('the mounted ticker recovers without stale account data or overlapping 
         : answer(query)
     );
     await mount();
-    await tick(TOAST_SWEEP_MS);
+    await tick(1000);
     expect(mocks.toast).toHaveBeenCalledTimes(1);
     const reads = mocks.read.mock.calls.length;
     await emit('AUTH_STATE_CHANGED');
     expect(screen.getByText('Confirmed Event')).toBeTruthy();
-    await tick(TOAST_SWEEP_MS);
+    await tick(1000);
     expect(mocks.toast).toHaveBeenCalledTimes(1);
     expect(mocks.read).toHaveBeenCalledTimes(reads);
     expect(mocks.resetSettings).not.toHaveBeenCalled();
@@ -443,6 +434,7 @@ describe('the mounted ticker recovers without stale account data or overlapping 
         ? ok([
             {
               id: 'overlay',
+              format_contract: 'mtt-v2',
               name: 'Confirmed Overlay',
               status: 'RUNNING',
               start_time: new Date(Date.now() - 60_000).toISOString(),

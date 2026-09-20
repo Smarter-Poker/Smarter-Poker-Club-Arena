@@ -23,8 +23,15 @@
        fix the field. -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="description"
-    content="Poker Arena. Private Online Poker Clubs With Real Time Gameplay, Tournaments, Hand Histories, Player Stats, Leaderboards, And Club Management On Smarter.Poker." />
-  <meta name="robots" content="noindex, nofollow" />
+    content="Create Or Join A Private Online Poker Club On Smarter.Poker. Real Time Cash Games, Tournaments, Hand Histories, Player Stats, Leaderboards, Unions And Full Club Management." />
+  <!-- DISCOVERABILITY 2026-09-16: this said `noindex, nofollow`, which told
+       Google to drop every Poker Arena page. The static head now describes the
+       public landing page and is indexable; src/lib/seo.ts rewrites title,
+       description, canonical, robots and JSON-LD per route at render time, and
+       flips every signed-in route back to noindex. Do not put noindex back
+       here: it applies to the whole arena, not to one page. -->
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+  <link rel="canonical" href="https://smarter.poker/hub/club-arena" />
   <meta name="theme-color" content="#0a0a1a" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -34,24 +41,67 @@
   <!-- Open Graph / Social Sharing -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Smarter.Poker" />
-  <meta property="og:title" content="Poker Arena. Private Online Poker Clubs | Smarter.Poker" />
+  <meta property="og:title" content="Poker Arena | Private Online Poker Clubs | Smarter.Poker" />
   <meta property="og:description"
-    content="Create And Join Private Poker Clubs. Real Time Gameplay, Tournaments, Hand Histories, Player Stats, And Club Management." />
-  <meta property="og:image" content="https://smarter.poker/images/og-default.png" />
+    content="Create Or Join A Private Online Poker Club. Real Time Cash Games, Tournaments, Hand Histories, Player Stats, Leaderboards And Club Management." />
+  <meta property="og:image" content="https://smarter.poker/images/og-poker-arena.jpg" />
+  <!-- og-poker-arena.jpg is Poker Arena's own 1200x630 share card (World Hub
+       public/images/og-poker-arena.jpg, 2026-09-17). Mirrors src/lib/seo.ts
+       DEFAULT_OG_IMAGE. -->
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
+  <meta property="og:image:type" content="image/jpeg" />
   <meta property="og:url" content="https://smarter.poker/hub/club-arena" />
   <meta property="og:locale" content="en_US" />
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:site" content="@SmarterPoker" />
-  <meta name="twitter:title" content="Poker Arena. Private Online Poker Clubs | Smarter.Poker" />
+  <meta name="twitter:title" content="Poker Arena | Private Online Poker Clubs | Smarter.Poker" />
   <meta name="twitter:description"
-    content="Create And Join Private Poker Clubs. Real Time Gameplay, Tournaments, And Club Management." />
-  <meta name="twitter:image" content="https://smarter.poker/images/og-default.png" />
+    content="Create Or Join A Private Online Poker Club. Real Time Cash Games, Tournaments, Hand Histories, Player Stats, Leaderboards And Club Management." />
+  <meta name="twitter:image" content="https://smarter.poker/images/og-poker-arena.jpg" />
 
-    <title>♠ Poker Arena | Smarter.Poker</title>
+  <!-- Structured data for the landing page. Mirrors src/lib/seo.ts, which
+       replaces this block per route once the app has booted. Kept static so
+       crawlers that do not run JavaScript still get it. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://smarter.poker/#organization",
+        "name": "Smarter.Poker",
+        "url": "https://smarter.poker",
+        "logo": "https://smarter.poker/smarter-poker-logo.png"
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://smarter.poker/hub/club-arena#app",
+        "name": "Poker Arena",
+        "alternateName": ["Club Arena", "Smarter.Poker Club Arena"],
+        "url": "https://smarter.poker/hub/club-arena",
+        "applicationCategory": "GameApplication",
+        "applicationSubCategory": "Poker",
+        "operatingSystem": "Web, iOS, Android",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "publisher": { "@id": "https://smarter.poker/#organization" },
+        "description": "Private Online Poker Clubs On Smarter.Poker With Real Time Cash Games And Tournaments, Hand Histories, Player Statistics, Leaderboards, Unions And Full Club Management."
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Smarter.Poker", "item": "https://smarter.poker" },
+          { "@type": "ListItem", "position": 2, "name": "Poker Arena", "item": "https://smarter.poker/hub/club-arena" }
+        ]
+      }
+    ]
+  }
+  </script>
+
+    <title>Poker Arena | Private Online Poker Clubs | Smarter.Poker</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- PERF 2026-08-22: preconnect to Supabase — every boot's first real work is
@@ -62,14 +112,14 @@
        trick) instead of render-blocking. display=swap already renders text in
        fallback fonts, so nothing waits on this fetch anymore. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@700;800&family=Rajdhani:wght@400;500;600;700&family=Roboto+Condensed:wght@400;500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@700;800&family=Rajdhani:wght@400;500;600;700&family=Roboto+Condensed:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
       media="print"
       onload="this.media = 'all'"
     />
     <noscript>
       <link
-        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@700;800&family=Rajdhani:wght@400;500;600;700&family=Roboto+Condensed:wght@400;500;600;700;800&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@700;800&family=Rajdhani:wght@400;500;600;700&family=Roboto+Condensed:wght@400;500;600;700;800&display=swap"
         rel="stylesheet"
       />
     </noscript>

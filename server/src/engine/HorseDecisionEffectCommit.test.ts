@@ -1,3 +1,6 @@
+import { horsePlanBatchBindingFromRequest } from './HorsePlanHandIdentity.js';
+// These inherited scheduler tests stub worker emission. Their local batch binding is
+// fixture shape only; the new paired client/worker suite proves actual issue ownership.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastHorseDecisionResult } from './horseDecision/protocol.js';
 
@@ -5,12 +8,17 @@ const decisionWorker = vi.hoisted(() => {
   const commitDecisionEffects = vi.fn(async (authority: { generation: number; fence: string }) => ({
     type: 'ACK' as const,
     requestId: 999,
-    ...authority,
+    generation: authority.generation,
+    fence: authority.fence,
     operation: 'COMMIT_DECISION_EFFECTS' as const,
   }));
   const decideFast = vi.fn(
-    async (snapshot: { generation: number; fence: string }): Promise<FastHorseDecisionResult> => ({
+    async (
+      snapshot: import('./horseDecision/protocol.js').LiveHorseDecisionSnapshot
+    ): Promise<FastHorseDecisionResult> => ({
       type: 'FAST_RESULT' as const,
+      planIssueDisposition: 'issued' as const,
+      planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 1 }),
       requestId: 1,
       generation: snapshot.generation,
       fence: snapshot.fence,
@@ -56,6 +64,8 @@ import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
 import { HorseDecisionAbortedError, HorseDecisionExpiredError } from './horseDecision/index.js';
 import { drainFires, enableBrainTelemetry } from './BrainTelemetry.js';
 import { createHorseExecutionWitness } from './HorseExecutionWitness.js';
+import { bindHorseDecisionToCommittedHand } from './HorseDecisionHandBinding.js';
+import { bindHorseObservationIdentity } from './HorseObservationIdentity.js';
 
 const TABLE = 'fafafafa-fafa-fafa-fafa-fafafafafafa';
 
@@ -187,6 +197,111 @@ afterEach(() => {
 });
 
 describe('authoritative horse action effect commit', () => {
+  it.each([undefined, 2, 20])(
+    'reconciles the actual call price through the scheduled executor (selected %s)',
+    async (amount) => {
+      const { engine, player, enginePlayer } = harness(true);
+      player.user_id = '20000000-0000-4000-8000-000000000001';
+      enginePlayer.user_id = player.user_id;
+      engine.getEngineLeaseAuthority = () => ({ verified: true, generation: '9' });
+      engine.broadcastCurrentState = vi.fn();
+      const hc = new HandController(
+        {
+          tableId: TABLE,
+          handNumber: 12,
+          gameVariant: 'nlh',
+          smallBlind: 1,
+          bigBlind: 2,
+          ante: 1,
+          rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+        } as HandConfig,
+        [1, 2, 3, 4].map((seat) => ({
+          ...enginePlayer,
+          seat,
+          cards: [],
+          user_id: seat === 1 ? player.user_id : `20000000-0000-4000-8000-00000000000${seat}`,
+        })) as SeatPlayer[],
+        2
+      );
+      engine.handController = hc;
+      const events: Promise<void>[] = [];
+      hc.onEvent((event) => {
+        if (event.type === 'FORCED_BETS_POSTED' || event.type === 'PLAYER_ACTION')
+          events.push(engine.handleHandEvent(event, [player]));
+      });
+      hc.start();
+      await Promise.all(events);
+      const acceptedPrefixLength = engine.currentHandActions.length;
+      expect(acceptedPrefixLength).toBeGreaterThan(hc.getState().actionHistory.length);
+      let witness: ReturnType<typeof createHorseExecutionWitness>;
+      decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => {
+        const decision = { action: 'call' as const, amount, thinkTime: 1 };
+        witness = createHorseExecutionWitness(snapshot, decision, {
+          requestId: 1,
+          lane: 'fast',
+          computeMs: 1,
+          governorScale: 1,
+        });
+        return {
+          type: 'FAST_RESULT',
+          planIssueDisposition: 'no_effects' as const,
+          planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 1 }),
+          requestId: 1,
+          generation: snapshot.generation,
+          fence: snapshot.fence,
+          decision: { ...decision, executionWitness: witness },
+          rngBefore: 11,
+          rngAfter: 22,
+          computeMs: 1,
+          governorScale: 1,
+          effects: [],
+        };
+      });
+      const state = hc.getState();
+      expect(state.currentPlayerSeat).toBe(1);
+      const perform = vi.spyOn(hc, 'performAction');
+      engine.scheduleHorseAction(player, 1, state.players.find((p) => p.seat === 1)!, state);
+      await vi.advanceTimersByTimeAsync(300);
+      await Promise.all(events);
+      expect(perform).toHaveBeenCalledOnce();
+      expect(hc.getState().actionHistory.find((r) => r.seat === 1)).toMatchObject({
+        action: 'call',
+        amount: 2,
+      });
+      expect(witness!).toMatchObject({
+        executionStatus: amount === 20 ? 'coerced' : 'intended',
+        expectedExecutionAmount: amount ?? 2,
+        executedAction: 'call',
+        executedAmount: 2,
+      });
+      expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
+      expect(witness!.handAnchor).toMatchObject({
+        status: 'anchored',
+        actionOrdinal: acceptedPrefixLength,
+      });
+      const committedHandId = '30000000-0000-4000-8000-000000000001';
+      const actions = engine.currentHandActions.map((action: any, ordinal: number) => ({
+        ...action,
+        observationIdentity: bindHorseObservationIdentity(action, ordinal, {
+          handId: committedHandId,
+          tableId: TABLE,
+          seatGenerations: new Map([
+            [player.user_id, { seat_id: player.user_id, seat_joined_at: '2026-09-14T12:00:00Z' }],
+          ]) as never,
+        }),
+      }));
+      expect(
+        bindHorseDecisionToCommittedHand(witness!, {
+          generation: 12,
+          fence: `${TABLE}:12:9:observe`,
+          handKey: `${TABLE}:12`,
+          committedHandId,
+          bigBlind: 2,
+          actions,
+        })
+      ).toMatchObject({ status: 'bound', committedHandId, actionOrdinal: acceptedPrefixLength });
+    }
+  );
   it.each([
     ['check', 'throw'],
     ['check', 'false'],
@@ -205,6 +320,8 @@ describe('authoritative horse action effect commit', () => {
       });
       return {
         type: 'FAST_RESULT',
+        planIssueDisposition: 'no_effects' as const,
+        planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 1 }),
         requestId: 1,
         generation: snapshot.generation,
         fence: snapshot.fence,
@@ -281,6 +398,8 @@ describe('authoritative horse action effect commit', () => {
         });
         return {
           type: 'FAST_RESULT',
+          planIssueDisposition: 'issued' as const,
+          planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 1 }),
           requestId: 1,
           generation: snapshot.generation,
           fence: snapshot.fence,
@@ -400,6 +519,8 @@ describe('authoritative horse action effect commit', () => {
         });
         return {
           type: 'FAST_RESULT',
+          planIssueDisposition: 'no_effects' as const,
+          planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 1 }),
           requestId: 1,
           generation: snapshot.generation,
           fence: snapshot.fence,
@@ -424,7 +545,15 @@ describe('authoritative horse action effect commit', () => {
       expect(witness?.acceptedActions).toEqual([
         {
           intended: true,
-          record: { seat: 1, action: 'raise', amount: expectedAmount, stage: 'preflop' },
+          record: {
+            seat: 1,
+            action: 'raise',
+            amount: expectedAmount,
+            stage: 'preflop',
+            userId: player.user_id,
+            timestamp: hc.getState().actionHistory.find((r) => r.seat === 1)!.timestamp,
+            isFullRaise: true,
+          },
         },
       ]);
       for (const receipt of Object.values(policies)) {
@@ -607,6 +736,8 @@ describe('authoritative horse action effect commit', () => {
     (state as any).stage = 'preflop';
     decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
       type: 'FAST_RESULT' as const,
+      planIssueDisposition: 'no_effects' as const,
+      planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 40 }),
       requestId: 40,
       generation: snapshot.generation,
       fence: snapshot.fence,
@@ -638,6 +769,8 @@ describe('authoritative horse action effect commit', () => {
       async (snapshot: any) =>
         ({
           type: 'FAST_RESULT' as const,
+          planIssueDisposition: 'no_effects' as const,
+          planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 41 }),
           requestId: 41,
           generation: snapshot.generation,
           fence: snapshot.fence,
@@ -674,6 +807,8 @@ describe('authoritative horse action effect commit', () => {
       };
       decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
         type: 'FAST_RESULT' as const,
+        planIssueDisposition: 'no_effects' as const,
+        planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 41 }),
         requestId: 41,
         generation: snapshot.generation,
         fence: snapshot.fence,
@@ -714,6 +849,8 @@ describe('authoritative horse action effect commit', () => {
     };
     decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
       type: 'FAST_RESULT' as const,
+      planIssueDisposition: 'no_effects' as const,
+      planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 42 }),
       requestId: 42,
       generation: snapshot.generation,
       fence: snapshot.fence,
@@ -741,6 +878,46 @@ describe('authoritative horse action effect commit', () => {
     expect(performAction).not.toHaveBeenCalled();
   });
 
+  it.each(['capacity_unavailable', 'reissue_unavailable', 'no_effects'] as const)(
+    'records an accepted wager with %s without pretending plan application',
+    async (disposition) => {
+      enableBrainTelemetry();
+      drainFires();
+      const { engine, player, enginePlayer, state, performAction } = harness(true);
+      decisionWorker.decideFast.mockImplementationOnce(async (snapshot) => ({
+        type: 'FAST_RESULT',
+        requestId: 1,
+        generation: snapshot.generation,
+        fence: snapshot.fence,
+        planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 1 }),
+        planIssueDisposition: disposition,
+        decision: { action: 'bet', amount: 20, thinkTime: 1 },
+        rngBefore: 11,
+        rngAfter: 22,
+        computeMs: 2,
+        governorScale: 1,
+        effects:
+          disposition === 'no_effects'
+            ? []
+            : [
+                {
+                  type: 'raise_plan',
+                  handKey: 'table:hand',
+                  userId: 'horse-1',
+                  street: 'flop',
+                  plan: 'foldToRaise',
+                },
+              ],
+      }));
+      engine.scheduleHorseAction(player, 1, enginePlayer, state);
+      await vi.advanceTimersByTimeAsync(250);
+      expect(performAction).toHaveBeenCalledOnce();
+      expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
+      expect(drainFires()).toContainEqual(
+        expect.objectContaining({ feature: `phase15_plan_accepted_${disposition}`, fires: 1 })
+      );
+    }
+  );
   it('commits one captured plan only after the intended wager is accepted', async () => {
     const { engine, player, enginePlayer, state, performAction } = harness(true);
 
@@ -750,9 +927,20 @@ describe('authoritative horse action effect commit', () => {
     expect(performAction).toHaveBeenCalledTimes(1);
     expect(performAction).toHaveBeenCalledWith(1, 'bet', 20, 'horse_policy');
     expect(decisionWorker.commitDecisionEffects).toHaveBeenCalledTimes(1);
+    await expect(decisionWorker.commitDecisionEffects.mock.results[0]!.value).resolves.toEqual({
+      type: 'ACK',
+      requestId: 999,
+      generation: expect.any(Number),
+      fence: expect.any(String),
+      operation: 'COMMIT_DECISION_EFFECTS',
+    });
     expect(decisionWorker.commitDecisionEffects).toHaveBeenCalledWith(
-      expect.objectContaining({ generation: expect.any(Number), fence: expect.any(String) }),
-      [expect.objectContaining({ type: 'raise_plan', handKey: 'table:hand' })]
+      expect.objectContaining({
+        generation: expect.any(Number),
+        fence: expect.any(String),
+        planBinding: expect.objectContaining({ version: 'horse-plan-batch-v1' }),
+        effects: [expect.objectContaining({ type: 'raise_plan', handKey: 'table:hand' })],
+      })
     );
   });
 
@@ -811,6 +999,8 @@ describe('Phase 10 authoritative execution receipts', () => {
       };
       decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
         type: 'FAST_RESULT' as const,
+        planIssueDisposition: 'no_effects' as const,
+        planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 41 }),
         requestId: 41,
         generation: snapshot.generation,
         fence: snapshot.fence,
@@ -848,6 +1038,8 @@ describe('Phase 10 authoritative execution receipts', () => {
     };
     decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
       type: 'FAST_RESULT' as const,
+      planIssueDisposition: 'no_effects' as const,
+      planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 42 }),
       requestId: 42,
       generation: snapshot.generation,
       fence: snapshot.fence,
@@ -899,6 +1091,8 @@ describe('Phase 11 authoritative execution receipts', () => {
       );
       decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
         type: 'FAST_RESULT' as const,
+        planIssueDisposition: 'no_effects' as const,
+        planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 45 }),
         requestId: 45,
         generation: snapshot.generation + Number(mismatch === 'generation'),
         fence: mismatch === 'fence' ? 'retired-fence' : snapshot.fence,
@@ -933,6 +1127,8 @@ describe('Phase 11 authoritative execution receipts', () => {
       };
       decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
         type: 'FAST_RESULT' as const,
+        planIssueDisposition: 'no_effects' as const,
+        planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 41 }),
         requestId: 41,
         generation: snapshot.generation,
         fence: snapshot.fence,
@@ -970,6 +1166,8 @@ describe('Phase 11 authoritative execution receipts', () => {
     };
     decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
       type: 'FAST_RESULT' as const,
+      planIssueDisposition: 'no_effects' as const,
+      planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 42 }),
       requestId: 42,
       generation: snapshot.generation,
       fence: snapshot.fence,
@@ -1048,6 +1246,8 @@ describe.each([
     }
     return {
       type: 'FAST_RESULT' as const,
+      planIssueDisposition: 'no_effects' as const,
+      planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 81 }),
       requestId: 81,
       generation: snapshot.generation,
       fence: snapshot.fence,
@@ -1114,6 +1314,8 @@ describe.each([
       mode === 'accepted' || mode === 'cancelled' ? 'not_executed' : 'intended'
     );
     expect(deep.executionStatus).toBe(mode === 'accepted' ? 'intended' : 'not_executed');
+    // DEEP only replaces call/fold/all-in. Its retired FAST cannot supply plans.
+    expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
     if (mode === 'cancelled') expect(performAction).not.toHaveBeenCalled();
     else {
       expect(performAction).toHaveBeenCalledOnce();
@@ -1201,6 +1403,8 @@ describe.each(['remainingVariantPolicy', 'jointPolicy'] as const)(
         );
         decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
           type: 'FAST_RESULT' as const,
+          planIssueDisposition: 'no_effects' as const,
+          planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 45 }),
           requestId: 45,
           generation: snapshot.generation + Number(mismatch === 'generation'),
           fence: mismatch === 'fence' ? 'retired-fence' : snapshot.fence,
@@ -1235,6 +1439,8 @@ describe.each(['remainingVariantPolicy', 'jointPolicy'] as const)(
         };
         decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
           type: 'FAST_RESULT' as const,
+          planIssueDisposition: 'no_effects' as const,
+          planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 41 }),
           requestId: 41,
           generation: snapshot.generation,
           fence: snapshot.fence,
@@ -1272,6 +1478,8 @@ describe.each(['remainingVariantPolicy', 'jointPolicy'] as const)(
       };
       decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
         type: 'FAST_RESULT' as const,
+        planIssueDisposition: 'no_effects' as const,
+        planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 42 }),
         requestId: 42,
         generation: snapshot.generation,
         fence: snapshot.fence,

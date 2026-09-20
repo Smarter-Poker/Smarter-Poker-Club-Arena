@@ -30,10 +30,6 @@
       "source_credit_invoice_id",
       "source_credit_payment_id"
     ],
-    "credit_payments": [
-      "operation_id",
-      "payer_user_id",
-      "payment_reference"
-    ]
+    "credit_payments": ["operation_id", "payer_user_id", "payment_reference"]
   }
 }

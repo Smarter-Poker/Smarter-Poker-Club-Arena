@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Isolated PostgreSQL custody contract; never connects to production."""
+import os
 import concurrent.futures
 import json
 import pathlib
@@ -8,7 +9,8 @@ import sys
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-PSQL = '/opt/homebrew/opt/postgresql@17/bin/psql'
+PG_BIN = os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin')
+PSQL = PG_BIN + '/psql'
 CMD = [PSQL, '-X', '-h', '/tmp/codex-diamond-phase2-pg', '-p', '55472',
        '-d', 'poker_diamond_phase6_test', '-v', 'ON_ERROR_STOP=1', '-At']
 SQL_DIR = ROOT / 'tests/sql'

@@ -1,0 +1,82 @@
+{
+  "packet": "internal-ledger-native-fixture-0009",
+  "sealed_at": "2026-09-14T00:22:44.007418+00:00",
+  "source_only": true,
+  "files": [
+    {
+      "path": "CATALOG-CALL-CONTRACT.json",
+      "sha256": "de0796fb2f1a28a60f96c5d25fd704965c0d9abe5d367914ca82cbb595b30bce",
+      "bytes": 3531
+    },
+    {
+      "path": "CATALOG-SERIALIZATION-PROOF.json",
+      "sha256": "6c55dbcfeab3561c63403a3db7a8930d7e1aba94a33d9764e7c43d8585a710d3",
+      "bytes": 9131
+    },
+    {
+      "path": "FIXTURE-INPUTS.json",
+      "sha256": "e8ac5fe1378b0fd88088a049597968ddee3608395a6f660ddd7e123ce66b264b",
+      "bytes": 5032
+    },
+    {
+      "path": "HANDOFF.json",
+      "sha256": "981c2a0f615faa81de8cca13d2b6f2ebe8c373f6f080118c1c4bee883bbd2075",
+      "bytes": 3811
+    },
+    {
+      "path": "LOCAL-STATUS.json",
+      "sha256": "1e5b24b4ed1b523151dd2f3046cfb7d206f2c9def081787c713d80b9576a8fac",
+      "bytes": 522
+    },
+    {
+      "path": "PREDECESSOR-ATTEMPT.json",
+      "sha256": "05d40282b96f9cda3a5f3372b8c92180b9aa007d7e215d9089bd76160f9bc36b",
+      "bytes": 2235
+    },
+    {
+      "path": "PRIMARY-SOURCE-REFERENCES.json",
+      "sha256": "29cb4fe8ada2d5209ff4d23d0ff64ee7598204003b202c7fd3abd18b4580d6d3",
+      "bytes": 522
+    },
+    {
+      "path": "REVIEW.md",
+      "sha256": "2a57ed20ee1e8cdecd4d869fd6dae4390d393ad378a176e62b2c71ae4a3890d9",
+      "bytes": 3066
+    },
+    {
+      "path": "RUN-INSTRUCTIONS.md",
+      "sha256": "51a0aa7c8f24bc37bb192ed0848047622418484c5f411fca106ae596754af070",
+      "bytes": 1159
+    },
+    {
+      "path": "SOURCE-CHECKS.json",
+      "sha256": "378bbd2d20e74d5634b82500d6678240f043e4bc5cffd050c4687052bc6c8454",
+      "bytes": 1885
+    },
+    {
+      "path": "SOURCE-DELTA.patch",
+      "sha256": "39bc2a9d4853a0a74f5433d880512ce391d243c176cb7699a5368f753f4841be",
+      "bytes": 8451
+    },
+    {
+      "path": "SOURCE-MANIFEST.json",
+      "sha256": "19042ccbe11bf084acd61ecf3ef75d6a2bcd6b192b85e1cf3ced5145d4d14e45",
+      "bytes": 3892
+    },
+    {
+      "path": "catalog_contract.py",
+      "sha256": "e92aa955c84ba18029789d02423292d7787fceb4cf665b3736a03b0ba5368ee5",
+      "bytes": 1616
+    },
+    {
+      "path": "check_catalog_serialization.py",
+      "sha256": "55ce0f7c4d3c21a7c1082c6fb771286ce30dfe08ed51ef7dbf1133bbf0619d44",
+      "bytes": 6080
+    },
+    {
+      "path": "run_fixture.py",
+      "sha256": "cbbce4b6a380a5e94614294cac43cffe5b1f875f76e64b2f6dc48a597e719d35",
+      "bytes": 21469
+    }
+  ]
+}

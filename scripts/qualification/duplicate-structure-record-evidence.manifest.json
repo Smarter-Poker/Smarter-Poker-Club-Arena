@@ -1,0 +1,113 @@
+{
+  "kind": "duplicate-structure-record-evidence-source-v1",
+  "status": "SOURCE_ONLY_UNRUN",
+  "owner": "/root/alert_intake",
+  "custody_owner": "/root",
+  "worktree": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-monitoring-worktree",
+  "branch": "fix/duplicate-payout-record-evidence",
+  "base_commit": "6790a6c28d76f40d0c8ac0694925c35ed4ef19df",
+  "received_inbox_id": 40430,
+  "original_financial_alert_id": "77bdb12a-c757-4aad-8b35-1baf02754ba7",
+  "installed_preimage": {
+    "definition_md5": "c2ceec953ff4cb6b31741fe20b75b635",
+    "prosrc_md5": "69cac3aac05f25b5d2078825aa22ec89"
+  },
+  "source_files": [
+    {
+      "path": "supabase/components/duplicate-structure-record-evidence.sql",
+      "bytes": 11636,
+      "sha256": "fcb25b510a1540b499a576c0261d4c95b0ff11a44f23e434b4e9694e088a3d70"
+    },
+    {
+      "path": "supabase/components/duplicate-structure-record-evidence.rollback.sql",
+      "bytes": 6298,
+      "sha256": "f308689bd62f98b9aa4aba7bd5a79cd6527a890458cabdff4e49232b6a61213f"
+    },
+    {
+      "path": "scripts/qualification/duplicate-structure-record-evidence.sql",
+      "bytes": 23122,
+      "sha256": "82067498b0d8e766c7e8cf9529227c80f7820248aaba294c78ddc96199c5bca9"
+    },
+    {
+      "path": "scripts/qualification/duplicate-structure-record-evidence.md",
+      "bytes": 13621,
+      "sha256": "abf561e9533ec363b8711e3d6717e72b378a670a641d3d517c2846b7a023c806"
+    },
+    {
+      "path": "scripts/qualification/fixtures/duplicate-structure-record-evidence/preimage.sql",
+      "bytes": 2814,
+      "sha256": "a51dc7ca8816bb0c1190b761746300454fe0db8b684bb45cc12c8131140bf4a8"
+    },
+    {
+      "path": "scripts/qualification/fixtures/duplicate-structure-record-evidence/original-40430.sql",
+      "bytes": 33530,
+      "sha256": "66436a3d84ed73e48b540b4cb14d4ad8a3599e75bf1a9387d00ab0bfde2dfa08"
+    }
+  ],
+  "evidence_root": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence",
+  "evidence": [
+    {
+      "path": "helper-alert-intake-40430-detector-authority.json",
+      "bytes": 38283,
+      "sha256": "0816305261496ab74fd3f43b145b29c47818dd98d3c8276ba3df160e8bfafdfc"
+    },
+    {
+      "path": "helper-alert-intake-40430-detector-ddl-authority.json",
+      "bytes": 45314,
+      "sha256": "3bf5387816c7d96993f79150a11555edfb881ee1d51d4081e15a42ec2e91483c"
+    },
+    {
+      "path": "helper-alert-sources-money-six-final-classification.json",
+      "bytes": 278111,
+      "sha256": "b04a6047ab57b1d19b2c680fd52ac11e5918a5def760edf6a94d5a81bd849cad"
+    },
+    {
+      "path": "helper-alert-sources-money-six-duplicate-detector-proposal.md",
+      "bytes": 5793,
+      "sha256": "7e960619089008fa87b6995bcc159efe35198a924fd1379730460d8c10a48f0f"
+    },
+    {
+      "path": "helper-alert-intake-40430-detector-local-source-pins.json",
+      "bytes": 1821,
+      "sha256": "a04b6729e92340dc5e9b6a88cf862240aed378c3cf1518da0eb2002f056badec"
+    }
+  ],
+  "native_execution": {
+    "executed": false,
+    "execution_uuid": null,
+    "receipt": null,
+    "runner": "protected owner must supply pinned PostgreSQL 17 and psql in admitted allocation",
+    "declared_model": "minimal consumed-column schema, not full financial or trigger installation",
+    "original_rows": 60,
+    "original_registry_rows": 60,
+    "original_pairs": 30,
+    "original_tournaments": 24,
+    "nominal_record_discrepancy": "688.30",
+    "bounds": {
+      "groups": 30,
+      "records_per_group": 4,
+      "total_record_details": 120,
+      "display_key_characters": 512
+    },
+    "legacy_sample": "complete, still unbounded",
+    "clock": "only modeled created_at shifted uniformly relative to original alert; exact source inputs preserved"
+  },
+  "pending_equivalent_fix_search": "No equivalent report/provenance implementation found in bounded local search; separate dirty fee-disbursement retirement must be coordinated and excludes this component if selected.",
+  "expected_candidate_postimage": {
+    "canonical_definition_md5": "67d372ba4b1071cae4ac0d9f97035b31",
+    "basis": "captured installed canonical declaration with candidate body; derived source expectation, not native receipt",
+    "required_native_evidence": "exact pg_get_functiondef and MD5 emitted by fixture and bound by protected owner before installation"
+  },
+  "replay_rollback": {
+    "install": "exact candidate definition, authority and schema are a no-op; any other non-preimage is refused",
+    "rollback": "separate guarded artifact, exact candidate MD5/authority/schema, restores literal preimage and reads back",
+    "rollback_replay": "exact preimage and matching authority/schema are a no-op",
+    "execution_status": "UNRUN"
+  },
+  "replay_proposal": {
+    "source_ref": "cce31a586e6bed94fb7e0c58352ab5fca0a2feb6",
+    "status": "SCRATCH_PROPOSAL_UNRUN_UNINSTALLED",
+    "execution_path": "existing GitHub-hosted accounting_postgres job",
+    "historical_fields": "Earlier branch/worktree/admission and evidence paths are provenance only; current Documents/AGENTS.md is authoritative."
+  }
+}

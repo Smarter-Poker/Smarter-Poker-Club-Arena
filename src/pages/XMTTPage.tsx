@@ -1,3 +1,4 @@
+import { isTournamentEntryUnavailable } from '../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE - XMTT (Cross-Club Multi-Table Tournament) Lobby
@@ -20,7 +21,7 @@
  * and the error banner are all exactly as they were.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -75,6 +76,7 @@ function statusInk(status: string): { ink: ConsoleInk; label: string } {
 }
 
 interface Tournament {
+  format_contract?: unknown;
   id: string;
   name: string;
   status: string;
@@ -82,7 +84,7 @@ interface Tournament {
   /** The PRIZE half of the split. Never render it alone - see totalBuyIn. */
   buy_in: number;
   buy_in_fee?: number | null;
-  max_players: number;
+  max_players: number | null;
   registered_count?: number;
   start_time?: string;
   created_at: string;
@@ -147,7 +149,7 @@ export default function XMTTPage() {
         let query = supabase
           .from('tournaments')
           .select(
-            'id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, club_id, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
+            'format_contract, id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, club_id, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
           )
           .or(await clubGamesOrFilter(uuid))
           .order('start_time', { ascending: false });
@@ -172,7 +174,7 @@ export default function XMTTPage() {
         supabase
           .from('tournaments')
           .select(
-            'id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
+            'format_contract, id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
           )
           .eq('id', tournamentId)
           .maybeSingle(),
@@ -284,6 +286,10 @@ export default function XMTTPage() {
       setActionError('That Tournament Is No Longer Listed');
       return;
     }
+    if (isTournamentEntryUnavailable(t, t.registered_count ?? 0)) {
+      setActionError('Tournament Entry Is Unavailable');
+      return;
+    }
     await registerMtt(
       {
         id: t.id,
@@ -328,41 +334,68 @@ export default function XMTTPage() {
   const [waitlistPositions, setWaitlistPositions] = useState<Record<string, number | null>>({});
   const [waitlistProcessing, setWaitlistProcessing] = useState<string | null>(null);
 
-  // Load existing waitlist positions on mount for full-capacity tournaments
+  /* The SET of tournaments on screen, as one comparable value.
+     Sorted, so a poll that hands back the same events in a different order is
+     not a change; memoized, so it is a new string only when the ids differ and
+     the effect below cannot chase its own identity. */
+  const tournamentIdKey = useMemo(
+    () =>
+      tournaments
+        .map((t) => t.id)
+        .sort()
+        .join(','),
+    [tournaments]
+  );
+  const userId = user?.id;
+
+  // Load legacy waitlist positions so their owners can leave.
+  //
+  // A COUNT IS NOT AN IDENTITY. This was keyed on `tournaments.length`, and the
+  // lobby is a live list: one tournament closing registration as another opens
+  // leaves the length at 6 and the ids completely different. The effect
+  // therefore did not re-run, the new tournament's position was never fetched,
+  // and the player queued for it had no "Leave Waitlist" button to press -
+  // on a queue they cannot otherwise get out of. Keyed on the ids themselves,
+  // which change exactly when the set changes.
+  //
+  // A MERGE NEVER FORGETS. `setWaitlistPositions(prev => ({ ...prev, ... }))`
+  // only ever ADDED keys, so a tournament that left the list kept its entry in
+  // the map for as long as the page stayed open. Combined with the above, the
+  // page could print "Position #4" for a tournament that had already finished.
+  // The map is rebuilt from this run's answers instead of merged into, so an
+  // event that is no longer listed has no position - and a player who is no
+  // longer on a waitlist loses the stale number rather than keeping it.
   useEffect(() => {
-    if (!user || tournaments.length === 0) return;
-    const fullTournaments = tournaments.filter(
-      (t) => t.max_players && (t.registered_count || 0) >= t.max_players
-    );
-    if (fullTournaments.length === 0) return;
-
-    fullTournaments.forEach(async (t) => {
-      try {
-        const result = await tournamentService.getTournamentWaitlistPosition(t.id, user.id);
-        if (result) {
-          setWaitlistPositions((prev) => ({ ...prev, [t.id]: result.position }));
-        }
-      } catch (e) {
-        reportError(e, 'XMTTPage.setWaitlistPositions');
-        // Non-critical - position just won't show
-      }
-    });
-  }, [user?.id, tournaments.length]);
-
-  const handleJoinWaitlist = async (tournamentId: string) => {
-    if (!user) return;
-    setWaitlistProcessing(tournamentId);
-    try {
-      const { position } = await tournamentService.joinTournamentWaitlist(tournamentId, user.id);
-      setWaitlistPositions((prev) => ({ ...prev, [tournamentId]: position }));
-    } catch (err: any) {
-      setActionError(safeErrorMessage(err));
-      clearTimeout(errorTimerRef.current);
-      errorTimerRef.current = setTimeout(() => setActionError(null), 5000);
-    } finally {
-      setWaitlistProcessing(null);
+    const ids = tournamentIdKey ? tournamentIdKey.split(',') : [];
+    if (!userId || ids.length === 0) {
+      // Preserve identity when it is already empty; a fresh {} here would be a
+      // new state value on every poll and re-render the whole lobby for it.
+      setWaitlistPositions((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+      return;
     }
-  };
+    // A superseded run must not land its answers on top of a newer one.
+    let cancelled = false;
+    // Keep legacy queue exits available while registration stays unlimited.
+    void (async () => {
+      const entries = await Promise.all(
+        ids.map(async (id): Promise<[string, number | null]> => {
+          try {
+            const result = await tournamentService.getTournamentWaitlistPosition(id, userId);
+            return [id, result ? result.position : null];
+          } catch (e) {
+            reportError(e, 'XMTTPage.setWaitlistPositions');
+            // Non-critical - position just won't show
+            return [id, null];
+          }
+        })
+      );
+      if (cancelled || !mountedRef.current) return;
+      setWaitlistPositions(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, tournamentIdKey, mountedRef]);
 
   const handleLeaveWaitlist = async (tournamentId: string) => {
     if (!user) return;
@@ -388,7 +421,6 @@ export default function XMTTPage() {
 
   /** The two plates a listed tournament offers. Both, or neither. */
   const platesFor = (t: Tournament): { secondary: PlateButtonProps; primary: PlateButtonProps } => {
-    const atCapacity = (t.registered_count || 0) >= (t.max_players || Infinity) && !!t.max_players;
 
     if (t.status !== 'registering') {
       return {
@@ -404,8 +436,9 @@ export default function XMTTPage() {
       };
     }
 
-    if (atCapacity) {
-      const inLine = waitlistPositions[t.id];
+    /* A legacy waitlist position can still be left; nothing new can be joined
+       (the queue was retired with the fixed-format entry contract). */
+    if (waitlistPositions[t.id]) {
       return {
         secondary: {
           label: 'Details',
@@ -415,25 +448,15 @@ export default function XMTTPage() {
             loadDetail(t.id);
           },
         },
-        primary: inLine
-          ? {
-              label: waitlistProcessing === t.id ? 'Working...' : 'Leave Waitlist',
-              ink: 'red',
-              disabled: waitlistProcessing === t.id,
-              onClick: (e) => {
-                e.stopPropagation();
-                handleLeaveWaitlist(t.id);
-              },
-            }
-          : {
-              label: waitlistProcessing === t.id ? 'Joining...' : 'Join Waitlist',
-              ink: 'white',
-              disabled: waitlistProcessing === t.id,
-              onClick: (e) => {
-                e.stopPropagation();
-                handleJoinWaitlist(t.id);
-              },
-            },
+        primary: {
+          label: waitlistProcessing === t.id ? 'Working...' : 'Leave Waitlist',
+          ink: 'red',
+          disabled: waitlistProcessing === t.id,
+          onClick: (e) => {
+            e.stopPropagation();
+            handleLeaveWaitlist(t.id);
+          },
+        },
       };
     }
 
@@ -447,9 +470,13 @@ export default function XMTTPage() {
         },
       },
       primary: {
-        label: isRegisteringMtt ? 'Working...' : 'Register',
-        ink: 'white',
-        disabled: isRegisteringMtt,
+        label: isTournamentEntryUnavailable(t, t.registered_count ?? 0)
+          ? 'Entry Unavailable'
+          : isRegisteringMtt
+            ? 'Working...'
+            : 'Register',
+        ink: isTournamentEntryUnavailable(t, t.registered_count ?? 0) ? 'muted' : 'white',
+        disabled: isRegisteringMtt || isTournamentEntryUnavailable(t, t.registered_count ?? 0),
         onClick: (e) => {
           e.stopPropagation();
           handleRegister(t.id);

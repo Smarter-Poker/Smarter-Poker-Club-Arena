@@ -66,6 +66,104 @@ function harness() {
 }
 
 describe('accepted action origin is an executor fact, not a roster inference', () => {
+  it.each([0, 2])(
+    'records forced contributions and the already-returned amount without another chip movement (ante=%s)',
+    async (ante) => {
+      const players: SeatPlayer[] = [1, 2].map((seat) => ({
+        seat,
+        user_id: `u${seat}`,
+        username: 'offline',
+        stack: 1000,
+        bet: 0,
+        totalInvested: 0,
+        cards: [],
+        is_folded: false,
+        is_all_in: false,
+        is_sitting_out: false,
+      }));
+      const controller = new HandController(
+        {
+          tableId: 'origin-money-events',
+          handNumber: 1,
+          gameVariant: 'nlh',
+          smallBlind: 5,
+          bigBlind: 10,
+          ante,
+          rakeConfig: { percent: 5, cap: 100, noFlopNoDrop: true },
+        },
+        players,
+        1
+      );
+      class HistoryEngine extends ServerTableEngine {
+        constructor() {
+          super('origin-money-events');
+          this.handController = controller;
+        }
+        record(event: HandEvent) {
+          return this.handleHandEvent(event, []);
+        }
+        get history() {
+          return this.currentHandActions;
+        }
+      }
+      const engine = new HistoryEngine();
+      const pending: Promise<void>[] = [];
+      const events: HandEvent[] = [];
+      controller.onEvent((event) => {
+        events.push(event);
+        if (event.type === 'FORCED_BETS_POSTED' || event.type === 'UNCALLED_BET_RETURNED')
+          pending.push(engine.record(event));
+      });
+      controller.start();
+      const postedPot = controller.getState().pot;
+      await Promise.all(pending);
+      const postings = events.flatMap((event) =>
+        event.type === 'FORCED_BETS_POSTED' ? event.postings : []
+      );
+      expect(engine.history).toEqual(
+        postings.map(({ kind, ...posting }) => ({
+          ...posting,
+          action: kind,
+          stage: 'preflop',
+          timestamp: expect.any(Number),
+          origin: 'forced',
+        }))
+      );
+      expect(postedPot).toBe(15 + ante * 2);
+      expect(controller.getState().pot).toBe(postedPot);
+      const prefix = structuredClone(engine.history);
+      expect(controller.performAction(1, 'call', 0, 'player')).toBe(true);
+      expect(controller.performAction(2, 'check', 0, 'player')).toBe(true);
+      expect(controller.performAction(2, 'check', 0, 'player')).toBe(true);
+      expect(controller.performAction(1, 'bet', 100, 'player')).toBe(true);
+      expect(controller.performAction(2, 'fold', 0, 'player')).toBe(true);
+      const settled = structuredClone(controller.getState());
+      await Promise.all(pending);
+      expect(engine.history.slice(0, prefix.length)).toEqual(prefix);
+      expect(engine.history.slice(prefix.length)).toEqual([
+        {
+          seat: 1,
+          userId: 'u1',
+          action: 'return',
+          amount: 100,
+          timestamp: expect.any(Number),
+          stage: 'flop',
+          historyEvent: 'uncalled_bet_returned',
+        },
+      ]);
+      expect(engine.history.at(-1)).not.toHaveProperty('origin');
+      expect(events.filter((event) => event.type === 'UNCALLED_BET_RETURNED')).toHaveLength(1);
+      expect(controller.getState()).toEqual(settled);
+      const completion = events.find((event) => event.type === 'HAND_COMPLETE');
+      const rake = ante === 0 ? 1 : 1.2;
+      expect(completion).toMatchObject({ rake });
+      expect(settled.players.map((player) => player.stack)).toEqual(
+        ante === 0 ? [1009, 990] : [1010.8, 988]
+      );
+      expect(settled.players.reduce((sum, player) => sum + player.stack, 0) + rake).toBe(2000);
+    }
+  );
+
   it.each(['player', 'pre_action', 'horse_policy', 'horse_fallback', 'forced', 'unknown'] as const)(
     'preserves %s only on accepted internal/durable facts',
     (origin) => {

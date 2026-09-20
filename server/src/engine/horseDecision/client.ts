@@ -1,8 +1,29 @@
+import {
+  horsePlanBatchBindingIsValid,
+  horsePlanBatchBindingMatchesRequest,
+  horsePlanContextFromDecision,
+  horsePlanContextMatchesRequest,
+  HORSE_PLAN_ISSUE_DISPOSITIONS,
+  type HorsePlanBatchBinding,
+  type HorsePlanRetirementReason,
+} from '../HorsePlanHandIdentity.js';
+import { horsePhase6AttributionMatchesSnapshot } from '../HorsePhase6Attribution.js';
 import { Worker } from 'node:worker_threads';
+import { HorseCommittedDecisionTracker } from '../HorseCommittedDecisionTracker.js';
+import { noteFire } from '../BrainTelemetry.js';
+import { horseDecisionJournalConfigured } from '../../services/HorseDecisionJournal.js';
+import { horseJournalJson } from '../../services/horseDecisionJournal/record.js';
+import { isHorseLifecycleRequest } from '../../services/horseDecisionJournal/lifecycle.js';
+import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
+import {
+  horseDecisionEffectsMatchRequest,
+  horseReferenceWagerWasRetained,
+} from '../HorseDecisionEffects.js';
 
 import {
   createHorseExecutionWitness,
   retireHorseExecutionWitness,
+  onHorseExecutionFinalized,
 } from '../HorseExecutionWitness.js';
 import type {
   CommitDecisionEffectsRequest,
@@ -30,7 +51,6 @@ import {
   horseComputeMetadataIsValid,
   horseSamplingStateIsValid,
 } from './responseValidation.js';
-import type { HorseMindDecisionEffect } from '../HorseMind.js';
 
 export interface WorkerLike {
   postMessage(message: HorseDecisionWorkerRequest): void;
@@ -39,6 +59,19 @@ export interface WorkerLike {
   on(event: 'exit', listener: (code: number) => void): this;
   terminate(): Promise<number>;
   unref?(): void;
+}
+
+/**
+ * Per-job options a caller may pass with a decision request.
+ *
+ * `deadlineMs`: how long this job may spend in queue plus compute before it
+ * expires into the caller's fallback, measured from enqueue. A turn-bound
+ * caller derives it from the action clock (`decisionDeadline.ts`); absent or
+ * invalid, the client's fixed `jobTimeoutMs` applies. The worker-integrity
+ * (execution) deadline armed at dispatch is separate and unaffected.
+ */
+export interface HorseDecisionJobOptions {
+  deadlineMs?: number;
 }
 
 export interface LiveHorseDecisionWorkerClientOptions {
@@ -138,6 +171,8 @@ interface QueuedJob {
   abortListener?: () => void;
   settled: boolean;
   enqueuedAt: number;
+  /** How long this job may live from enqueue: the caller's turn-clock deadline, or the client's fixed window. */
+  callerDeadlineMs: number;
   /** Caller/action-clock deadline measured from enqueue. */
   deadlineTimer: ReturnType<typeof setTimeout> | null;
   /** Worker-integrity deadline measured only after this job is posted. */
@@ -228,6 +263,10 @@ function errorMessage(error: unknown): string {
  * or its governor's sampler.
  */
 export class LiveHorseDecisionWorkerClient {
+  private readonly journalConfigured = horseDecisionJournalConfigured();
+  private retirementCaptureCount = 0;
+  private retirementCaptureBytes = 0;
+  private readonly committedDecisions = new HorseCommittedDecisionTracker();
   private static readonly DEFAULT_READY_TIMEOUT_MS = 90_000;
   private static readonly DEFAULT_JOB_TIMEOUT_MS = 8_000;
   /**
@@ -311,6 +350,14 @@ export class LiveHorseDecisionWorkerClient {
    * is the job it is running (or about to run).
    */
   private readonly inFlight: QueuedJob[] = [];
+  /** Owned by the delivered FAST object; does not retain abandoned results. */
+  private readonly planOwners = new WeakMap<
+    FastHorseDecisionResult,
+    {
+      binding: HorsePlanBatchBinding;
+      state: 'available' | 'committing' | 'retired';
+    }
+  >();
   /** When the current head of `inFlight` became the worker's running job. */
   private activeStartedAt: number | null = null;
   private dispatchHoldDepth = 0;
@@ -438,32 +485,54 @@ export class LiveHorseDecisionWorkerClient {
 
   decideFast(
     snapshot: LiveHorseDecisionSnapshot,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: HorseDecisionJobOptions
   ): Promise<FastHorseDecisionResult> {
     const request: FastHorseDecisionRequest = {
       ...snapshot,
       type: 'DECIDE_FAST',
       requestId: this.nextRequestId++,
     };
-    return this.enqueue<FastHorseDecisionResult>(request, 'FAST_RESULT', signal);
+    return this.enqueue<FastHorseDecisionResult>(
+      request,
+      'FAST_RESULT',
+      signal,
+      false,
+      options?.deadlineMs
+    );
   }
 
   decideDeep(
     snapshot: LiveHorseDecisionSnapshot & { rngBefore: number; deepEquity: number },
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: HorseDecisionJobOptions
   ): Promise<DeepHorseDecisionResult> {
     const request: DeepHorseDecisionRequest = {
       ...snapshot,
       type: 'DECIDE_DEEP',
       requestId: this.nextRequestId++,
     };
-    return this.enqueue<DeepHorseDecisionResult>(request, 'DEEP_RESULT', signal);
+    return this.enqueue<DeepHorseDecisionResult>(
+      request,
+      'DEEP_RESULT',
+      signal,
+      false,
+      options?.deadlineMs
+    );
   }
 
   observeCompletedHand(
     observation: CompletedHandObservation,
     signal?: AbortSignal
   ): Promise<HorseDecisionWorkerAck> {
+    // The accepted producer calls here only after its authoritative commit.
+    // This local reconciliation does not await I/O or delay worker dispatch.
+    try {
+      this.committedDecisions.observe(observation);
+    } catch {
+      // Incomplete audit evidence cannot suppress the committed-hand learner.
+      noteFire('phase15_hand_binding_internal_error');
+    }
     const request = {
       ...observation,
       type: 'OBSERVE_COMPLETED_HAND' as const,
@@ -472,17 +541,63 @@ export class LiveHorseDecisionWorkerClient {
     return this.enqueue<HorseDecisionWorkerAck>(request, 'ACK', signal);
   }
 
-  commitDecisionEffects(
-    authority: { generation: number; fence: string },
-    effects: readonly HorseMindDecisionEffect[]
-  ): Promise<HorseDecisionWorkerAck> {
+  async commitDecisionEffects(result: FastHorseDecisionResult): Promise<HorseDecisionWorkerAck> {
+    if (
+      !horsePlanBatchBindingIsValid(result.planBinding) ||
+      result.planBinding.fastRequestId !== result.requestId ||
+      result.planBinding.generation !== result.generation ||
+      result.planBinding.fence !== result.fence
+    ) {
+      return Promise.reject(new Error('Horse plan commit lacks its original FAST binding'));
+    }
+    const owner = this.planOwners.get(result);
+    if (!owner || owner.state === 'retired' || result.planIssueDisposition !== 'issued')
+      return Promise.reject(new Error('Horse plan commit has no available client ownership'));
     const request: CommitDecisionEffectsRequest = {
-      ...authority,
+      generation: result.generation,
+      fence: result.fence,
       type: 'COMMIT_DECISION_EFFECTS',
       requestId: this.nextRequestId++,
-      effects: structuredClone([...effects]),
+      planBinding: structuredClone(result.planBinding),
+      effects: structuredClone(result.effects),
     };
-    return this.enqueue<HorseDecisionWorkerAck>(request, 'ACK', undefined, true);
+    // Transfer only after the detached request exists and before enqueue.
+    // A caller timeout cannot prove whether the accepted plan applied.
+    owner.state = 'committing';
+    // Worker issue ownership is checked separately. This transport method does
+    // not certify table acceptance; Turns retains its exact accepted-wager gate.
+    return this.enqueue<HorseDecisionWorkerAck>(request, 'ACK', undefined, true).catch((error) => {
+      // Retirement is ordered after a posted commit, never a blind replay.
+      // If that commit applied, the worker preserves its applied terminal state.
+      this.retireDecisionEffects(result, 'commit_unconfirmed', true);
+      throw error;
+    });
+  }
+
+  private retireDecisionEffects(
+    result: FastHorseDecisionResult,
+    reason: HorsePlanRetirementReason = 'decision_finalized',
+    afterCommitFailure = false
+  ): void {
+    const owner = this.planOwners.get(result);
+    if (
+      !owner ||
+      owner.state === 'retired' ||
+      (owner.state === 'committing' && !afterCommitFailure)
+    )
+      return;
+    owner.state = 'retired';
+    void this.enqueue<HorseDecisionWorkerAck>(
+      {
+        type: 'RETIRE_DECISION_EFFECTS',
+        requestId: this.nextRequestId++,
+        generation: owner.binding.generation,
+        fence: owner.binding.fence,
+        planBinding: structuredClone(owner.binding),
+        reason,
+      },
+      'ACK'
+    ).catch(() => noteFire('phase15_plan_retirement_unconfirmed'));
   }
 
   decideDiscard(
@@ -495,6 +610,27 @@ export class LiveHorseDecisionWorkerClient {
       requestId: this.nextRequestId++,
     };
     return this.enqueue<PineappleDiscardResult>(request, 'DISCARD_RESULT', signal);
+  }
+
+  /** Private audit evidence from the controller's actual accepted discard. */
+  observeDiscardExecution(execution: HorseDiscardExecutionObservation): void {
+    if (!this.journalConfigured) return;
+    try {
+      void this.enqueue<HorseDecisionWorkerAck>(
+        {
+          type: 'OBSERVE_DISCARD_EXECUTION',
+          requestId: this.nextRequestId++,
+          generation: execution.request.generation,
+          fence: execution.request.fence,
+          execution: structuredClone(execution),
+        },
+        'ACK',
+        undefined,
+        true
+      ).catch(() => noteFire('phase15_discard_capture_unavailable'));
+    } catch {
+      noteFire('phase15_discard_capture_unavailable');
+    }
   }
 
   /**
@@ -564,7 +700,8 @@ export class LiveHorseDecisionWorkerClient {
     request: HorseDecisionJobRequest,
     expected: T['type'],
     signal?: AbortSignal,
-    priority = false
+    priority = false,
+    deadlineMs?: number
   ): Promise<T> {
     if (this.phase === 'stopping' || this.phase === 'stopped') {
       return Promise.reject(new Error('live horse decision worker is stopping'));
@@ -576,6 +713,15 @@ export class LiveHorseDecisionWorkerClient {
 
     return new Promise<T>((resolve, reject) => {
       const enqueuedAt = Date.now();
+      // THE DECISION DEADLINE IS THE TURN CLOCK (2026-09-17): a caller that
+      // knows how much of the turn is left passes it (decisionDeadline.ts);
+      // everything else keeps the fixed window. The execution (worker-
+      // integrity) deadline armed at dispatch is still `jobTimeoutMs` and
+      // does not move with this number.
+      const callerDeadlineMs =
+        typeof deadlineMs === 'number' && Number.isFinite(deadlineMs) && deadlineMs > 0
+          ? Math.floor(deadlineMs)
+          : this.jobTimeoutMs;
       const job: QueuedJob = {
         request,
         expected,
@@ -584,11 +730,12 @@ export class LiveHorseDecisionWorkerClient {
         signal,
         settled: false,
         enqueuedAt,
+        callerDeadlineMs,
         deadlineTimer: null,
         executionTimer: null,
         executionDeadlineCheck: null,
       };
-      job.deadlineTimer = setTimeout(() => this.onJobDeadline(job), this.jobTimeoutMs);
+      job.deadlineTimer = setTimeout(() => this.onJobDeadline(job), callerDeadlineMs);
       job.deadlineTimer.unref?.();
       if (signal) {
         job.abortListener = () => this.abort(job);
@@ -621,7 +768,47 @@ export class LiveHorseDecisionWorkerClient {
     const index = this.queue.indexOf(job);
     if (index >= 0) this.queue.splice(index, 1);
     this.clearJobDeadline(job);
+    this.observeUndispatchedRetirement(job, 'cancelled');
     this.maybeDispatch();
+  }
+
+  /** Only an actual admitted client job can enter this route. It reports the
+   * observed queue retirement and never asks the worker to decide expired work.
+   * Admission and terminal evidence remain best effort within explicit bounds. */
+  private observeUndispatchedRetirement(job: QueuedJob, outcome: 'cancelled' | 'expired'): void {
+    if (!this.journalConfigured || !isHorseLifecycleRequest(job.request)) return;
+    try {
+      const encoded = horseJournalJson(job.request);
+      const bytes = Buffer.byteLength(encoded);
+      if (
+        this.retirementCaptureCount >= 64 ||
+        this.retirementCaptureBytes + bytes > 4 * 1024 * 1024
+      ) {
+        noteFire('phase15_journal_queue_capacity');
+        return;
+      }
+      const retiredRequest = JSON.parse(encoded);
+      this.retirementCaptureCount++;
+      this.retirementCaptureBytes += bytes;
+      void this.enqueue<HorseDecisionWorkerAck>(
+        {
+          type: 'OBSERVE_REQUEST_RETIREMENT',
+          requestId: this.nextRequestId++,
+          generation: retiredRequest.generation,
+          fence: retiredRequest.fence,
+          retiredRequest,
+          outcome,
+        },
+        'ACK'
+      )
+        .catch(() => noteFire('phase15_journal_capture_unavailable'))
+        .finally(() => {
+          this.retirementCaptureCount--;
+          this.retirementCaptureBytes -= bytes;
+        });
+    } catch {
+      noteFire('phase15_journal_capture_unavailable');
+    }
   }
 
   private maybeDispatch(): void {
@@ -794,17 +981,42 @@ export class LiveHorseDecisionWorkerClient {
     }
     if (message.type === 'ACK') {
       const expectedOperation =
-        active.request.type === 'OBSERVE_COMPLETED_HAND'
-          ? 'OBSERVE_COMPLETED_HAND'
-          : active.request.type === 'COMMIT_DECISION_EFFECTS'
-            ? 'COMMIT_DECISION_EFFECTS'
-            : null;
+        active.request.type === 'OBSERVE_REQUEST_RETIREMENT'
+          ? 'OBSERVE_REQUEST_RETIREMENT'
+          : active.request.type === 'OBSERVE_COMPLETED_HAND'
+            ? 'OBSERVE_COMPLETED_HAND'
+            : active.request.type === 'OBSERVE_EXECUTION'
+              ? 'OBSERVE_EXECUTION'
+              : active.request.type === 'OBSERVE_DISCARD_EXECUTION'
+                ? 'OBSERVE_DISCARD_EXECUTION'
+                : active.request.type === 'COMMIT_DECISION_EFFECTS'
+                  ? 'COMMIT_DECISION_EFFECTS'
+                  : active.request.type === 'RETIRE_DECISION_EFFECTS'
+                    ? 'RETIRE_DECISION_EFFECTS'
+                    : null;
       if (message.operation !== expectedOperation) {
         this.fail(
           new Error(
             `horse decision worker ACK operation mismatch: expected ${String(expectedOperation)}, received ${message.operation}`
           )
         );
+        return;
+      }
+      if (
+        (expectedOperation === 'COMMIT_DECISION_EFFECTS' &&
+          !['applied_volatile', 'already_applied_volatile'].includes(
+            message.planDisposition ?? ''
+          )) ||
+        (expectedOperation === 'RETIRE_DECISION_EFFECTS' &&
+          ![
+            'retired',
+            'already_retired',
+            'already_applied_volatile',
+            'issue_absent',
+            'issue_failed',
+          ].includes(message.planDisposition ?? ''))
+      ) {
+        this.fail(new Error('horse decision worker ACK has no valid plan disposition'));
         return;
       }
     }
@@ -849,6 +1061,37 @@ export class LiveHorseDecisionWorkerClient {
     }
 
     if (
+      message.type === 'FAST_RESULT' &&
+      active.request.type === 'DECIDE_FAST' &&
+      (typeof message.planIssueDisposition !== 'string' ||
+        !HORSE_PLAN_ISSUE_DISPOSITIONS.includes(message.planIssueDisposition) ||
+        (message.planIssueDisposition === 'issued' && message.effects?.length === 0) ||
+        (message.planIssueDisposition === 'no_effects' && message.effects?.length !== 0) ||
+        !horsePlanBatchBindingMatchesRequest(message.planBinding, active.request) ||
+        !horseDecisionEffectsMatchRequest(message.effects, {
+          userId: active.request.player.user_id,
+          history: active.request.gameState.actionHistory,
+          street: active.request.gameState.stage,
+          brainFallback: message.decision?.policyFallback === 'brain_exception',
+          planContext: horsePlanContextFromDecision(active.request),
+        }) ||
+        (message.effects.length > 0 &&
+          (!message.decision || !horseReferenceWagerWasRetained(message.decision))))
+    ) {
+      this.fail(new Error('horse decision worker returned invalid decision effects'));
+      return;
+    }
+
+    if (
+      message.type === 'DEEP_RESULT' &&
+      active.request.type === 'DECIDE_DEEP' &&
+      !horsePlanContextMatchesRequest(message.planContext, active.request)
+    ) {
+      this.fail(new Error('horse decision worker returned invalid plan context'));
+      return;
+    }
+
+    if (
       (message.type === 'FAST_RESULT' && active.request.type === 'DECIDE_FAST') ||
       (message.type === 'DEEP_RESULT' && active.request.type === 'DECIDE_DEEP')
     ) {
@@ -862,7 +1105,10 @@ export class LiveHorseDecisionWorkerClient {
         this.fail(new Error('horse decision worker returned invalid fallback provenance'));
         return;
       }
-      if (!horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant)) {
+      if (
+        !horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant) ||
+        !horsePhase6AttributionMatchesSnapshot(message.decision, active.request)
+      ) {
         this.fail(new Error('horse decision worker returned invalid policy receipt'));
         return;
       }
@@ -873,6 +1119,39 @@ export class LiveHorseDecisionWorkerClient {
         governorScale: message.governorScale,
       });
       message.decision.executionWitness = witness;
+      this.committedDecisions.track(witness);
+      const ownedFast =
+        message.type === 'FAST_RESULT' && message.planIssueDisposition === 'issued'
+          ? message
+          : null;
+      if (ownedFast)
+        this.planOwners.set(ownedFast, {
+          binding: structuredClone(ownedFast.planBinding),
+          state: 'available',
+        });
+      // The witness has one finalizer. Retirement and optional journal capture
+      // share it so enabling the journal cannot overwrite application ownership.
+      if (ownedFast || this.journalConfigured)
+        onHorseExecutionFinalized(witness, (record) => {
+          if (ownedFast)
+            this.retireDecisionEffects(
+              ownedFast,
+              record.retirementReason === 'caller_settled' ? 'caller_settled' : 'decision_finalized'
+            );
+          if (this.journalConfigured)
+            void this.enqueue<HorseDecisionWorkerAck>(
+              {
+                type: 'OBSERVE_EXECUTION',
+                requestId: this.nextRequestId++,
+                generation: record.identity.generation,
+                fence: record.identity.fence,
+                witness: structuredClone(record),
+              },
+              'ACK',
+              undefined,
+              true
+            ).catch(() => noteFire('phase15_journal_capture_unavailable'));
+        });
       // A result received after abort/expiry is never delivered to the table.
       // Retire it here; an executor callback cannot account for this response.
       if (active.settled) retireHorseExecutionWitness(witness, 'caller_settled');
@@ -967,8 +1246,8 @@ export class LiveHorseDecisionWorkerClient {
     job.reject(
       new HorseDecisionExpiredError(
         posted
-          ? `horse decision expired after ${this.jobTimeoutMs}ms of queue-plus-compute time`
-          : `horse decision expired after ${this.jobTimeoutMs}ms before worker dispatch`
+          ? `horse decision expired after ${job.callerDeadlineMs}ms of queue-plus-compute time`
+          : `horse decision expired after ${job.callerDeadlineMs}ms before worker dispatch`
       )
     );
     if (posted) {
@@ -978,11 +1257,12 @@ export class LiveHorseDecisionWorkerClient {
       // full-fleet restart when a 7.8-second queue wait left a healthy request
       // only milliseconds of the enqueue deadline to compute. CANCEL lets the
       // worker skip it if it is still waiting behind older posted work.
-      this.safePost({ type: 'CANCEL', requestId: job.request.requestId });
+      this.safePost({ type: 'CANCEL', requestId: job.request.requestId, reason: 'expired' });
       return;
     }
     const index = this.queue.indexOf(job);
     if (index >= 0) this.queue.splice(index, 1);
+    this.observeUndispatchedRetirement(job, 'expired');
     this.maybeDispatch();
   }
 

@@ -193,8 +193,9 @@ class PayoutEngineClass {
    * produced identical payouts. They now mean what they say:
    *
    *   payout1         top-heavy, ~10% of the field paid
-   *   payout2         ~15% of the field paid
-   *   payout3         ~20% of the field paid (flattest)
+   *   payout2         legacy SNG ~12.5% of the field paid
+   *   payout3         ~15% of the field paid
+   *   payout20        ~20% of the field paid
    *   winner_take_all 100% to first
    *
    * Paid places are clamped to (field - 1) so a bubble always exists — the
@@ -207,6 +208,7 @@ class PayoutEngineClass {
       payout1: { pct: 0.1, minPlaces: 1, alpha: 1.5 },
       payout2: { pct: 0.125, minPlaces: 1, alpha: 1.25 },
       payout3: { pct: 0.15, minPlaces: 1, alpha: 1.0 },
+      payout20: { pct: 0.2, minPlaces: 1, alpha: 0.8 },
     };
     const s = spec[choice] ?? spec.payout1;
     const paidPlaces = Math.max(1, Math.min(n - 1, Math.max(s.minPlaces, Math.round(n * s.pct))));

@@ -100,7 +100,13 @@ try:
     for name, rows, expected in cases[:4]:
         seed(rows)
         check('baseline-false-healthy-' + name, reading()['status'] == 'ok')
-    migration = (ROOT/'supabase/migrations/20260914062900_diamond_health_requires_known_comparisons.sql').read_text()
+    # Found by slug, not by stamp: the file was archived on 2026-09-16 and is
+    # restored under the version production recorded (20260914063002), not the
+    # one it was first written with.
+    candidates = sorted((ROOT/'supabase/migrations').glob('*_diamond_health_requires_known_comparisons.sql'))
+    if len(candidates) != 1:
+        raise RuntimeError('expected exactly one diamond_health_requires_known_comparisons migration, found %d' % len(candidates))
+    migration = candidates[-1].read_text()
     run(trial + migration)
     run(fixture_trial)
     for name, rows, expected in cases:

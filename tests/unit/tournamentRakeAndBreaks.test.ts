@@ -26,7 +26,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { blankNonCode, sliceMethod } from '../helpers/sourceWindow';
-import { isShortFormat } from '../../server/src/tournament/breakEligibility';
+import { isPersistedUnlimitedMtt } from '../../server/src/tournament/tournamentEntryCapacity';
 
 const GAME_SERVER = readFileSync(resolve(__dirname, '../../server/src/GameServer.ts'), 'utf8');
 const BASE = readFileSync(
@@ -308,13 +308,14 @@ describe('a restart mid-break does not resume play', () => {
   });
 
   it('clears a break that already expired while the engine was down', () => {
-    /* The UPDATE moved into clearPersistedBreak() in #801, so it is no longer
-       inside the sliced resume() body. Both halves are pinned: resume() must
-       call it, and it must be the write that clears both columns. */
-    expect(resumeFn).toMatch(/await this\.clearPersistedBreak\(\);/);
-    const clearFn = BASE.slice(
-      BASE.indexOf('protected async clearPersistedBreak'),
-      BASE.indexOf('protected async clearPersistedBreak') + 600
+    /* Expired adoption now uses the same acknowledged release as a live
+       deadline. Pin that caller chain and the atomic active-clock write. */
+    expect(resumeFn).toMatch(/await this\.resumeFromBreak\(\);/);
+    const releaseFn = sliceMethod(BASE, 'async resumeFromBreak()');
+    expect(releaseFn).toMatch(/await this\.clearPersistedBreak\(\);/);
+    const clearFn = sliceMethod(BASE, 'protected async clearPersistedBreak');
+    expect(clearFn).toMatch(
+      /on_break: false,\s*break_ends_at: null,\s*level_started_at: new Date\(clock\.startedAtMs\)\.toISOString\(\)/
     );
     expect(clearFn).toMatch(/on_break: false, break_ends_at: null/);
   });
@@ -484,37 +485,30 @@ describe('the :55 break covers every format, not only the MTTs', () => {
     expect(gate).not.toMatch(/spin|sng|tournament_type|variant/i);
   });
 
-  it('isMttOrXmtt still exists but normalises case', () => {
-    /* UPDATED 2026-08-27, house rule 8 — the behaviour this pinned moved, it
-       was not removed.
-
-       The `toUpperCase()` / `toLowerCase()` literals left this method when the
-       format rule was lifted into `isShortFormat` in breakEligibility.ts, so
-       that ONE predicate could serve both `isMttOrXmtt()` and
-       `mayTakeSynchronizedBreak()` (the reason is in that file's docstring: a
-       rule stated twice is one forgotten edit away from disagreeing with
-       itself). Grepping this method for a literal it no longer contains says
-       nothing about whether case is still normalised.
-
-       So the INTENT is asserted instead, in two halves: this method still
-       delegates rather than growing a second copy of the rule, and the rule it
-       delegates to is genuinely case-insensitive. The second half is now a
-       BEHAVIOURAL assertion, which is strictly stronger than the regex it
-       replaces — a `toUpperCase()` compared against a lowercase literal would
-       have passed the old pin and matched nothing in production. */
+  it('isMttOrXmtt uses the purchased format rather than reinterpreting labels or seats', () => {
     const fn = sliceMethod(BASE, 'isMttOrXmtt(): boolean');
-    expect(fn).toMatch(/isShortFormat\(/);
+    expect(fn).toMatch(/isPersistedUnlimitedMtt\(this\.tournamentCache\)/);
 
-    // Either column identifies the format, in any casing. See the docstring on
-    // isShortFormat for why both are read: the two disagree in the wild.
-    for (const format of ['SPIN', 'spin', 'Spin', 'SNG', 'sng', 'Sng']) {
-      expect(isShortFormat(format, null)).toBe(true);
-      expect(isShortFormat(null, format)).toBe(true);
+    for (const format_contract of ['mtt-v1', 'mtt-v2']) {
+      expect(
+        isPersistedUnlimitedMtt({ format_contract, tournament_type: 'SNG', max_players: 2 })
+      ).toBe(true);
     }
-    // And an MTT is an MTT whatever case it arrives in.
-    for (const format of ['MTT', 'mtt', 'XMTT', 'xmtt']) {
-      expect(isShortFormat(format, null)).toBe(false);
-      expect(isShortFormat(null, format)).toBe(false);
+    for (const format_contract of ['seat-first-satellite-v1', 'sng-v1', 'spin-v1']) {
+      expect(
+        isPersistedUnlimitedMtt({
+          format_contract,
+          tournament_type: 'MTT',
+          variant: 'satellite',
+          max_players: 200,
+        })
+      ).toBe(false);
+    }
+    // Missing/unknown authority cannot silently select either active format.
+    for (const format_contract of [undefined, null, 'MTT-V1', 'future']) {
+      expect(() => isPersistedUnlimitedMtt({ format_contract, tournament_type: 'MTT' })).toThrow(
+        'TOURNAMENT_FORMAT_CONTRACT_INVALID'
+      );
     }
   });
 });

@@ -257,3 +257,139 @@
     transition: none;
   }
 }
+
+/* Union variant — gold interior lines */
+.club-card-panel--union .club-card-name-plate,
+.club-card-panel--union .club-card-stats-bar {
+  border-top: 2px solid rgba(240, 208, 112, 0.75);
+}
+
+/* ── Stat type scales WITH the card ────────────────────────────────────────
+   Dan 2026-08-24: "THE NUMBER FONTS DON'T MATCH THE REST OF THE SCALE
+   REGRESSION." The values were a flat 18px, so as the card shrank the art,
+   the name plate and the labels all came down while the numbers stayed put
+   and took over the card.
+
+   1cqw = 1% of the stats bar's width, which is the card's width, so the type
+   is now a fixed proportion of whatever the carousel solved for that card.
+
+   LAST IN THE FILE ON PURPOSE. @supports adds no specificity, so this block
+   only wins over the fixed .club-card-stat-value / --level sizes above by
+   source order. Measured live when it sat higher up: the LABEL scaled (its
+   base rule came earlier) and the VALUE did not (its base rule came later),
+   which is exactly the half-applied result Dan photographed. */
+@supports (font-size: 1cqw) {
+  .club-card-stat-label {
+    font-size: clamp(7px, 5cqw, 10px);
+    letter-spacing: 0.2px;
+  }
+  .club-card-stat-value {
+    font-size: clamp(11px, 7.5cqw, 15px);
+  }
+  .club-card-stat-value--level {
+    font-size: clamp(12px, 8cqw, 16px);
+    line-height: 1;
+  }
+  .club-card-stat-split {
+    font-size: clamp(6px, 4cqw, 8px);
+    letter-spacing: 0.1px;
+  }
+  /* A phone card (165px) has no room for "94 CASH · 544 EVENTS" on one line
+     inside its third of the rail (Dan: "MAKE SURE FONT SIZES NEVER GO OVER THE
+     EDGES OF THE FRAME"), so the split stacks: CASH above, EVENTS below, and
+     the dot between them goes. */
+  @container (max-width: 230px) {
+    .club-card-stat-split {
+      flex-direction: column;
+      gap: 0;
+      line-height: 1.25;
+    }
+    .club-card-stat-split-dot {
+      display: none;
+    }
+  }
+  /* Two figures on the rail (the Diamond Arena card) share the width a
+     third-each row spreads over three, so the labels come down a step. */
+  .club-card-stats-row--two .club-card-stat-label {
+    font-size: clamp(7px, 4.6cqw, 10px);
+    letter-spacing: 0.1px;
+  }
+  /* The name plate scales with the card too (Dan 2026-09-09: DIAMOND ARENA
+     printed as "DIAMOND A..." on a 165px phone card). Desktop cards are wide
+     enough that the 16px cap holds and nothing there moves. */
+  .club-card-name-text {
+    font-size: clamp(11px, 8cqw, 16px);
+    letter-spacing: clamp(0.8px, 1cqw, 2px);
+  }
+}
+
+/* ── Diamond Arena variant (Dan 2026-09-09) ───────────────────────────────
+   "THE DIAMOND ARENA CARD HAS TO LOOK AND FEEL EXACTLY LIKE THE CLUB ARENA
+   CARDS DO, SAME SQUARE SHAPE, ON THE BOTTOM HAVE AN ACTIVE PLAYERS TAB, AND
+   NEXT FREE ROLL STARTS IN X:XX TIMER."
+
+   Same chassis as every club card. The dress is the diamond's: an ice-white
+   exterior where a club is nickel and a union is gold, and the countdown in
+   the console's gold, red inside the last ten seconds. Nothing structural
+   changes - the frame, the plates, the square viewport and the rail are the
+   rules above, untouched. */
+.club-card-panel--arena {
+  border-color: rgba(214, 236, 255, 0.95); /* Diamond ice exterior */
+}
+
+.club-card-panel--arena .club-card-id-plate {
+  border-bottom: 2px solid rgba(214, 236, 255, 0.7);
+}
+
+.club-card-panel--arena .club-card-id-text {
+  color: #e8f6ff;
+  text-shadow:
+    0 0 6px rgba(0, 0, 0, 0.8),
+    0 0 10px rgba(120, 200, 255, 0.45);
+}
+
+.club-card-panel--arena .club-card-name-plate,
+.club-card-panel--arena .club-card-stats-bar {
+  border-top: 2px solid rgba(214, 236, 255, 0.7);
+}
+
+/* Two figures share the rail, so each gets half of it instead of a third. */
+.club-card-stats-row--two .club-card-stat {
+  flex: 1 1 50%;
+}
+
+/* The countdown: gold, like every countdown on the console. */
+.club-card-stat-value--timer {
+  color: #ffe66d;
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 0 4px rgba(255, 215, 0, 0.8),
+    0 0 12px rgba(255, 200, 0, 0.7),
+    0 0 20px rgba(255, 160, 0, 0.45);
+}
+
+/* A word where a clock would be ("None Scheduled", "Unavailable"): the slot
+   was sized for five tabular digits, so the word comes down a step and drops
+   the digit tracking to stay inside its half of the rail on a 165px card. */
+.club-card-stat-value--word {
+  font-size: 10px;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+@supports (font-size: 1cqw) {
+  .club-card-stat-value--word {
+    font-size: clamp(7px, 5cqw, 10px);
+  }
+}
+
+/* Inside the last ten seconds it turns red and pulses. */
+.club-card-stat--imminent .club-card-stat-value--timer {
+  color: #ff5b6e;
+  text-shadow:
+    0 0 4px rgba(240, 40, 73, 0.8),
+    0 0 12px rgba(240, 40, 73, 0.6),
+    0 0 20px rgba(240, 40, 73, 0.4);
+  animation:
+    clubCardPanelStatReveal 0.6s ease-out both,
+    activePulse 1s ease-in-out infinite;
+}

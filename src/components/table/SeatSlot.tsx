@@ -67,7 +67,16 @@ import { cardSlideTelemetry } from '../../services/CardSlideTelemetry';
 import { computePeel, flatPeel, liftAtProgress, type PeelFrame } from './cardPeel';
 import { seatCardSide, type CardSide } from '../../lib/tableSeatGeometry';
 import './avatarChoreography.css';
-import { formatStackChips, formatTableChips } from '../../utils/format';
+import {
+  formatPrizeAtUnit,
+  formatStackChips,
+  formatTableChips,
+  moneyWordAtUnit,
+} from '../../utils/format';
+import {
+  DIAMOND_UNIT_CENTS,
+  UNIT_CENTS_ASSET_NOT_READ,
+} from '../../../server/src/tournament/tournamentUnit';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -271,6 +280,20 @@ export interface SeatSlotProps {
   bigBlind?: number;
   isTournament?: boolean;
   bountyValue?: number;
+  /**
+   * THE GRID THE BOUNTY IS PAID ON (2026-09-20).
+   *
+   * The badge below printed `toLocaleString` with two places whenever the head
+   * carried cents, which is the CHIP contract and is right for a chip table.
+   * A Diamond bounty has no cents to print: the bank it is paid from holds
+   * whole Diamonds, so a decimal point here advertises a payment that cannot
+   * be made. TablePage passes `arenaAssetUnitCents(tableState.arenaAsset)`.
+   *
+   * Absent means the table's arena has not been read yet, which is the same
+   * answer as a chip table and is stated as `UNIT_CENTS_ASSET_NOT_READ` at the
+   * call rather than defaulted here.
+   */
+  bountyUnitCents?: number;
   /*
    * `bombPotAnte` — REMOVED 2026-09-04. It hung a magenta "BOMB" pill under
    * every live seat for the length of a bomb-pot hand. Dan: "THERE SHOULDN'T
@@ -797,6 +820,7 @@ export const SeatSlot = memo(
       // removing it from every call site is a bigger change than it is worth.
       sitOutAt,
       bountyValue,
+      bountyUnitCents,
       isWinner = false,
       netWinAmount,
       bbjCreditAmount,
@@ -3396,20 +3420,27 @@ export const SeatSlot = memo(
         {bountyValue != null && bountyValue > 0 && (
           <div
             className="seat__bounty"
-            aria-label={`Bounty ${bountyValue.toLocaleString('en-US', {
-              maximumFractionDigits: 2,
-            })} Chips`}
+            aria-label={`Bounty ${
+              bountyUnitCents === DIAMOND_UNIT_CENTS
+                ? formatPrizeAtUnit(bountyValue, DIAMOND_UNIT_CENTS)
+                : bountyValue.toLocaleString('en-US', { maximumFractionDigits: 2 })
+            } ${moneyWordAtUnit(bountyUnitCents ?? UNIT_CENTS_ASSET_NOT_READ)}`}
           >
             <span className="seat__bounty-target" aria-hidden="true">
               ◎
             </span>
             <span className="seat__bounty-val" aria-hidden="true">
               {/* Two places when there ARE cents (2026-09-09): a 7.50 bounty
-                  rendered "7.5" beside a 2-dp BBJ credit on the same seat. */}
-              {bountyValue.toLocaleString('en-US', {
-                minimumFractionDigits: Number.isInteger(bountyValue) ? 0 : 2,
-                maximumFractionDigits: 2,
-              })}
+                  rendered "7.5" beside a 2-dp BBJ credit on the same seat.
+                  A DIAMOND head has none (2026-09-20): the bounty bank holds
+                  whole Diamonds, so the chip branch would print a fraction the
+                  payment cannot contain. The chip branch is untouched. */}
+              {bountyUnitCents === DIAMOND_UNIT_CENTS
+                ? formatPrizeAtUnit(bountyValue, DIAMOND_UNIT_CENTS)
+                : bountyValue.toLocaleString('en-US', {
+                    minimumFractionDigits: Number.isInteger(bountyValue) ? 0 : 2,
+                    maximumFractionDigits: 2,
+                  })}
             </span>
           </div>
         )}
@@ -3464,6 +3495,10 @@ export const SeatSlot = memo(
     if (prev.isTournament !== next.isTournament) return false;
     if (prev.bigBlind !== next.bigBlind) return false;
     if (prev.bountyValue !== next.bountyValue) return false;
+    /* A table SWITCH inside MultiTablePage reuses seat nodes across two
+       tables. Without this a Diamond seat could keep a chip table's grid
+       (or the reverse) until something else on the seat changed. */
+    if (prev.bountyUnitCents !== next.bountyUnitCents) return false;
     if (prev.isWinner !== next.isWinner) return false;
     if (prev.winningHandName !== next.winningHandName) return false;
     if (prev.handStrength !== next.handStrength) return false;

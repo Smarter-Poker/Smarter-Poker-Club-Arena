@@ -29,10 +29,35 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import ts from 'typescript';
 import { useTableKeyboard, type UseTableKeyboardOptions } from '../../src/hooks/useTableKeyboard';
 import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const TABLE_TSX = readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
+
+/** Execute the actual TablePage wiring without mounting its unrelated services. */
+function keyboardProperty(name: string): ts.Expression {
+  const source = ts.createSourceFile(
+    'TablePage.tsx',
+    TABLE_TSX,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  let object: ts.ObjectLiteralExpression | undefined;
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node) && node.expression.getText(source) === 'useTableKeyboard') {
+      const argument = node.arguments[0];
+      if (ts.isObjectLiteralExpression(argument)) object = argument;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  const property = object?.properties.find((item) => item.name?.getText(source) === name);
+  if (!property || !ts.isPropertyAssignment(property))
+    throw new Error(`Missing keyboard option ${name}`);
+  return property.initializer;
+}
 
 /** A table where hero is seated, in a hand, and on the clock. */
 function opts(over: Partial<UseTableKeyboardOptions> = {}): UseTableKeyboardOptions {
@@ -68,6 +93,59 @@ describe('the keyboard reaches only the table the player is looking at', () => {
     renderHook(() => useTableKeyboard(opts({ onFold })));
     press('f');
     expect(onFold).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks betting shortcuts while the actual Must Move lobby flag is open', () => {
+    const expression = keyboardProperty('isModalOpen');
+    const flags: Record<string, boolean> = { showMustMoveLobby: true };
+    const visit = (node: ts.Node) => {
+      if (ts.isIdentifier(node)) flags[node.text] = node.text === 'showMustMoveLobby';
+      ts.forEachChild(node, visit);
+    };
+    visit(expression);
+    const modalOpen = () =>
+      Function(...Object.keys(flags), `return (${expression.getText()})`)(...Object.values(flags));
+    const onAction = vi.fn();
+    const { rerender } = renderHook(() =>
+      useTableKeyboard(
+        opts({
+          isModalOpen: modalOpen(),
+          isSizingOpen: true,
+          onFold: onAction,
+          onCallCheck: onAction,
+          onRaise: onAction,
+          onAllIn: onAction,
+          onBetPreset: onAction,
+          onRabbitHunt: onAction,
+        })
+      )
+    );
+    for (const key of ['f', 'q', 'c', 'w', 'r', 'e', 'a', '1', '2', '3', '4', 'b']) press(key);
+    expect(onAction).not.toHaveBeenCalled();
+    flags.showMustMoveLobby = false;
+    rerender();
+    press('f');
+    expect(onAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes Must Move through the shared Escape handler without hiding a pending buy-in', () => {
+    const expression = keyboardProperty('onClosePanel');
+    const callbacks: Record<string, ReturnType<typeof vi.fn>> = { setShowMustMoveLobby: vi.fn() };
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression))
+        callbacks[node.expression.text] = vi.fn();
+      ts.forEachChild(node, visit);
+    };
+    visit(expression);
+    const close = Function(
+      ...Object.keys(callbacks),
+      'seatFirstPending',
+      `return (${expression.getText()})`
+    )(...Object.values(callbacks), true);
+    renderHook(() => useTableKeyboard(opts({ isModalOpen: true, onClosePanel: close })));
+    press('Escape');
+    expect(callbacks.setShowMustMoveLobby).toHaveBeenCalledWith(false);
+    expect(callbacks.setSeatFirstConfirm).not.toHaveBeenCalled();
   });
 
   it('does NOT fold a table the player is not looking at', () => {

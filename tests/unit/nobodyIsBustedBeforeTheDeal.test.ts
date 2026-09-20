@@ -23,7 +23,7 @@
  *     a Spin, so it released the hold and `exitIfBusted` ejected him.
  *
  * Silent by construction — an ordinary path, nothing thrown — which is why
- * Sentry showed zero events for the incident and why the first pass at this
+ * error reporting showed zero events for the incident and why the first pass at this
  * bug found "nothing wrong".
  *
  * Verified against production, tournament c53bd1f6 ("1 Chip Spin PLO6"):

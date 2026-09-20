@@ -23,7 +23,6 @@ describe('remaining variants actual-controller paired populations', () => {
           pairs: 2,
           seed: 12101101,
           mode: 'candidate',
-          samples: 16,
         });
       const first = await run();
       expect(first.complete, JSON.stringify(first)).toBe(true);

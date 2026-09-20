@@ -23,7 +23,8 @@ export interface TournamentContinuationConfig {
   streets: TournamentContinuationStreet[];
 }
 export const CONTINUATION_POLICY = {
-  version: 'one-wager-per-street-v1',
+  version: 'one-wager-per-street-v2',
+  sittingOut: 'check-free-fold-facing-wager',
   maxStreets: 3,
   maxSeats: 10,
   maxOutcomeSamples: 32,
@@ -70,10 +71,9 @@ export function simulateTournamentContinuation(
     !Number.isFinite(config.bigBlind)
   )
     return false;
-  const ordered = players
-    .filter((p) => !p.is_sitting_out)
-    .slice()
-    .sort((a, b) => a.seat - b.seat);
+  // A sitting-out dealer still determines order. Such seats never make a
+  // voluntary wager, but a forced all-in keeps its showdown eligibility.
+  const ordered = players.slice().sort((a, b) => a.seat - b.seat);
   const button = ordered.findIndex((p) => p.seat === config.dealerSeat);
   const hero = ordered.find((p) => p.user_id === config.heroId);
   if (button < 0 || !hero) return false;
@@ -99,9 +99,11 @@ export function simulateTournamentContinuation(
     if (live.length <= 1 || live.filter((p) => !p.is_all_in).length <= 1) break;
     if (!isCurrent) for (const player of players) player.bet = 0;
     const strength = (player: SeatPlayer): number =>
-      player.user_id === config.heroId
-        ? street.heroStrength
-        : (street.opponentStrength[config.opponentIds.indexOf(player.user_id)] ?? 0);
+      player.is_sitting_out
+        ? 0
+        : player.user_id === config.heroId
+          ? street.heroStrength
+          : (street.opponentStrength[config.opponentIds.indexOf(player.user_id)] ?? 0);
     // The checked-to continuation starts strictly after hero. A future street
     // starts after the dealer. Never grant hero a second opening action.
     const actors = isCurrent ? live.slice(live.indexOf(hero) + 1) : live;

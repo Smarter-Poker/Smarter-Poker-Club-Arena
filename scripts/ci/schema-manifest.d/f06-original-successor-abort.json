@@ -1,0 +1,8 @@
+{
+  "_owner": "codex/g8-f06-successor-abort-20260918",
+  "_comment": "Installed provider20260918062854; actual2026-09-18T06:29:07Z catalog confirms qualified successor RPC3d8695093433344cef51d4d158658c77 and generation helper3c74c8c78714677ae35f82d01ef72720 with postgres owners and exact ACLs. Source migration486214db1b05c5a8b8db8e0cd63310540ee870f4c651a3ed9a0aa7d08030d45c. NullableUUID retirement column/distinct-generation constraint/partialuniqueindex verified. Actuation and runtime proof remain separate.",
+  "functions": ["fn_f06_abort_successor_unsettled_hand"],
+  "columns": {
+    "smarter_private.f06_unsettled_hand_aborts": ["retired_lease_generation"]
+  }
+}

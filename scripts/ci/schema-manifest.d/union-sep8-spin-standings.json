@@ -1,0 +1,13 @@
+{
+  "_owner": "agent/codex/union-sep8-spin-custody-20260918",
+  "functions": [
+    "fn_complete_sep8_spin_original_standings",
+    "smarter_private.spin_original_sorted",
+    "smarter_private.spin_original_retained_case",
+    "smarter_private.spin_original_standings_immutable",
+    "smarter_private.spin_original_current_case",
+    "smarter_private.spin_original_standings_witness",
+    "smarter_private.spin_original_standings_requires_terminal"
+  ],
+  "tables": ["smarter_private.spin_original_standings"]
+}

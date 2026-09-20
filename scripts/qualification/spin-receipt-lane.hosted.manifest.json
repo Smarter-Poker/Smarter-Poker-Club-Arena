@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "scope": "empty receipt statement lane, zero-rake request compatibility and compactor early path only",
+  "image": "candidate",
+  "full_qualification": false,
+  "historical_rows_qualified": false,
+  "financial_completion_qualified": false,
+  "authority_observed_at": "2026-09-17T18:21:53.810361+00:00",
+  "work_seconds": 240,
+  "cleanup_seconds": 30,
+  "stage_order": [
+    "receipt_lane_provider",
+    "receipt_lane_catalog",
+    "receipt_lane_before",
+    "receipt_lane_install",
+    "receipt_lane_statements",
+    "receipt_lane_rollback",
+    "receipt_lane_after"
+  ],
+  "files": {
+    "scripts/qualification/fixtures/spin-history-retention/database-state.sql": {
+      "sha256": "35534bfff51d3bae651cc85e8165679c93ea14ec04de6d30c16283834e774b12",
+      "bytes": 3095
+    },
+    "scripts/qualification/fixtures/spin-receipt-lane/authority.json": {
+      "sha256": "a4aadc81c0b50396dbed0c3d9b8bf7c72887ecb897ffd2e0b05e96534d78c39c",
+      "bytes": 18524
+    },
+    "scripts/qualification/fixtures/spin-receipt-lane/boundary.sql": {
+      "sha256": "ce344c93571ba4e6163321d33c2fb858cc8e73b68d56ef1aecc228a2497b51af",
+      "bytes": 689
+    },
+    "scripts/qualification/fixtures/spin-receipt-lane/component-inputs.sql": {
+      "sha256": "b00e734f280a434235fdb97bb73b7cd2c095d51c2c60c800a1fa60763dd2be65",
+      "bytes": 28730
+    },
+    "scripts/qualification/fixtures/spin-receipt-lane/provider.sql": {
+      "sha256": "e52f3be200df700de3eb5659e9cd9a658141c01b909ba5d9224bfa405a3acd0d",
+      "bytes": 37562
+    },
+    "scripts/qualification/fixtures/spin-receipt-lane/snapshot.sql": {
+      "sha256": "506d3b331a2606ab6f5d7b09355cb8f7fdfca0a896c070c8ccad53c88da54252",
+      "bytes": 553
+    },
+    "scripts/qualification/fixtures/spin-receipt-lane/state.sql": {
+      "sha256": "aa1b44359ea0279e236f99554ffb7a94ca81205fa94211d258e0666d737608a4",
+      "bytes": 1983
+    },
+    "scripts/qualification/spin-expiry-business-races.py": {
+      "sha256": "619267d012bb64257d639006c133d03c95f16c7e243b334e6af661d5900b95c5",
+      "bytes": 26932
+    },
+    "scripts/qualification/spin-receipt-lane-compactor.sql": {
+      "sha256": "fc0709bbfd4325a47a96b3246617351a512ca4eba4672afa3b6ef7724a554c60",
+      "bytes": 1869
+    },
+    "scripts/qualification/spin-receipt-lane.md": {
+      "sha256": "790ab7664ae4f4b4b6d392dc1bec73bbdc6a91536eba3590154af7e23d48c5d8",
+      "bytes": 5738
+    },
+    "scripts/qualification/spin-receipt-lane.py": {
+      "sha256": "4a1780865e06c5577ae230605d5f0b6d1d14390348a4eb143f6e6b9fea3b1df0",
+      "bytes": 17798
+    },
+    "scripts/qualification/spin-receipt-lane.sql": {
+      "sha256": "cccbba45bb171919ae12be892493556c7d45f46bb5596ebb525a4ae992a2bf71",
+      "bytes": 13777
+    },
+    "supabase/components/spin-mixed-basis-receipt-lane.rollback.sql": {
+      "sha256": "b4506629162e3603df25dc98f2e7910f795fdbac23e64665215a41953c15f41c",
+      "bytes": 12986
+    },
+    "supabase/components/spin-mixed-basis-receipt-lane.sql": {
+      "sha256": "29483714a1cf90c85e76f93fd0a388de53812c10214c6b998a72769e6d2d491c",
+      "bytes": 13661
+    }
+  },
+  "relative_include_graph": {
+    "scripts/qualification/spin-receipt-lane.sql": [
+      "scripts/qualification/fixtures/spin-receipt-lane/boundary.sql",
+      "scripts/qualification/fixtures/spin-history-retention/database-state.sql",
+      "scripts/qualification/fixtures/spin-receipt-lane/state.sql",
+      "scripts/qualification/fixtures/spin-receipt-lane/component-inputs.sql"
+    ],
+    "scripts/qualification/fixtures/spin-receipt-lane/provider.sql": [
+      "scripts/qualification/fixtures/spin-receipt-lane/boundary.sql"
+    ],
+    "scripts/qualification/fixtures/spin-receipt-lane/snapshot.sql": [
+      "scripts/qualification/fixtures/spin-receipt-lane/boundary.sql",
+      "scripts/qualification/fixtures/spin-history-retention/database-state.sql",
+      "scripts/qualification/fixtures/spin-receipt-lane/state.sql"
+    ]
+  },
+  "held_forward_sha256": "e41376e2fbfa4d5dcf57d009fa0f660b105abc3a30c5b5f731601b679ef84a9d",
+  "forward_delta": "Only exact captured share-helper authority admission and existing reverse-installer complete-terminal/places preimage guards; runtime function bodies and reverse component unchanged.",
+  "cohort_guard_preimage": {
+    "commit": "79d045d4fb522fdc5382b4e2b1735c17ce214279",
+    "forward_sha256": "e65954462b3cc9b90b304e5bf62ae87e48555f2c0e2ad88051668c9dcc5e52ee",
+    "transaction_body_sha256": "8d8674cd09ec62b5739dca2d6535d0a1b40e3c773193d8fddde04db35278558e",
+    "transaction_body_md5": "a8be23df9188a91c63fb88c2813954ad"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "_owner": "codex-mustmove/restart-bank-preservation",
+  "tables": [],
+  "functions": [],
+  "columns": { "engine_presence_parked": ["time_bank_snapshot"] }
+}

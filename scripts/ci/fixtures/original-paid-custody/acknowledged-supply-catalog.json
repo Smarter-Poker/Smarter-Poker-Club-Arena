@@ -1,0 +1,82 @@
+{
+  "observed_at": "2026-09-18 12:34:39.146992+00",
+  "function": {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "owner": "postgres",
+    "config": ["search_path=public"],
+    "body_md5": "5f0419da3379135c8a612cdd96740b49",
+    "signature": "fn_ca_tournament_chip_supply(uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_tournament_chip_supply(p_tournament_id uuid)\n RETURNS numeric\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT COALESCE(r.entrants,0)*COALESCE(t.starting_chips,0)\n       + COALESCE(r.rebuys,0)\n         *COALESCE(NULLIF(t.rebuy_chips,0),t.starting_chips,0)\n       + COALESCE(r.addons,0)\n         *COALESCE(NULLIF(t.addon_chips,0),t.starting_chips,0)\n       + COALESCE(a.chips,0)\n    FROM public.tournaments t\n    LEFT JOIN LATERAL (\n      SELECT count(*) AS entrants,\n             COALESCE(sum(GREATEST(COALESCE(tp.rebuys,0),0)),0) AS rebuys,\n             count(*) FILTER (WHERE tp.add_on) AS addons\n        FROM public.tournament_players tp\n       WHERE tp.tournament_id=t.id\n    ) r ON true\n    LEFT JOIN public.tournament_felt_supply_acknowledgements a\n           ON a.tournament_id = t.id\n   WHERE t.id=p_tournament_id;\n$function$\n",
+    "definition_md5": "c29dfa4a0ebef95fddeb8a0982ef07e1"
+  },
+  "table": {
+    "relation": "tournament_felt_supply_acknowledgements",
+    "owner": "postgres",
+    "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+    "rls": true,
+    "force_rls": false,
+    "columns": [
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "chips",
+        "type": "numeric",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "incident_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": ""
+      },
+      {
+        "name": "recorded_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "tournament_felt_supply_acknowledgements_chips_check",
+        "validated": true,
+        "definition": "CHECK ((chips > (0)::numeric))"
+      },
+      {
+        "name": "tournament_felt_supply_acknowledgements_pkey",
+        "validated": true,
+        "definition": "PRIMARY KEY (tournament_id)"
+      },
+      {
+        "name": "tournament_felt_supply_acknowledgements_tournament_id_fkey",
+        "validated": true,
+        "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE"
+      }
+    ],
+    "indexes": [
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX tournament_felt_supply_acknowledgements_pkey ON public.tournament_felt_supply_acknowledgements USING btree (tournament_id)"
+      }
+    ],
+    "triggers": null,
+    "policies": null
+  }
+}

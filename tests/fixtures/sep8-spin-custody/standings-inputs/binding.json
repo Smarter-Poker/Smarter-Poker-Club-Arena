@@ -1,0 +1,13 @@
+{
+  "original_files": {
+    "original-cases.json": "30643fcf68dcc10ab11cab91a4d8dedc6f58ac8601ed2180cef9efebc019f260",
+    "physical.json": "0983597dc6b536105845cab97bb2ac00e7409154c1e3192763907b893848e818",
+    "financial.json": "0c2c51f12b1d8ac5a9537f5b4fa5de524f96127c0ac5cc5f904d311f0059a7ea",
+    "later-hand-inventory.json": "417cd176f17c3367fab48d9f6afa5759bc795c5f2512f19add753254451ec4a8"
+  },
+  "breakfast_migration_sha256": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
+  "breakfast_cash_definition_md5": "38fdc9a98ccfe1edf34f8016efac9e6d",
+  "breakfast_cash_sha256": "cfb04f5a8218f20791f5c2592bc454b64871e2a9145038c76903f8fb6e0d44a4",
+  "breakfast_source_head": "6d901937f17395ee64c6c5c0d0d0042ddc6e3b8b",
+  "breakfast_migration_file_sha256": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7"
+}

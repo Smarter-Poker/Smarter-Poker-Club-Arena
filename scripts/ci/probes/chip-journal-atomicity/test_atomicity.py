@@ -464,6 +464,21 @@ def authoritative_function_closure(root, fixture, roots, through=None):
  return ordered
 
 
+def original_cash_funding_tables(root):
+ # Original money cores now retain the actual debit and occupancy. Reuse their
+ # maintained table DDL so this journal probe exercises those real writes.
+ funding=(root/"tests/fixtures/cash-participant-funding/new-authority.sql").read_text()
+ start=funding.index("CREATE TABLE public.cash_participant_funding_receipts (")
+ end=funding.index("CREATE INDEX cash_participant_funding_occupancy",start)
+ captured=(root/"tests/fixtures/full-weekly-accounting/schema.sql").read_text()
+ wallet=re.search(r'CREATE TABLE "public"\."wallet_transactions"\(.*?;',captured,re.S)
+ if wallet is None:
+  raise RuntimeError("Original wallet transaction schema is missing")
+ defaults="\n".join(line for line in captured.splitlines()
+  if line.startswith('ALTER TABLE "public"."wallet_transactions" ALTER COLUMN '))
+ return funding[start:end]+"\n"+wallet.group(0)+"\n"+defaults
+
+
 pg=os.environ.get("PSQL", "/opt/homebrew/opt/postgresql@17/bin/psql")
 if os.environ.get("PGNODE"):
  args=[os.environ["PGNODE"],str(Path(__file__).resolve().parent/"postgres-runtime/query.mjs")]
@@ -480,6 +495,7 @@ if "--bootstrap" in sys.argv:
  root=here.parents[3]
  names={"fn_award_satellite_seat","atomic_distribute_rake","credit_club_rake_to_treasury","fn_ca_autoledger","fn_ca_autoledger_delete","fn_ca_post_leg","fn_club_members_ledger_writer","fn_horse_fund_from_treasury","fn_horse_seat_from_treasury","trg_entry_purchase_receipt_is_immutable"}
  fixture=here.joinpath("fixture.sql").read_text()
+ fixture+="\n"+original_cash_funding_tables(root)
  definitions=authoritative_function_closure(root,fixture,names)
  receipt_trigger="""
 CREATE TRIGGER z_entry_purchase_receipt_is_immutable
@@ -521,7 +537,7 @@ cases={
  "seat_funding":f"SELECT fn_horse_seat_from_treasury({b},{c},2,5,{op})",
  "reload_funding":f"SELECT fn_horse_fund_from_treasury({b},{u},5,{op})",
 }
-state_tables=["clubs","bbj_pools","club_members","table_seats","chip_ledger","chip_transactions","cash_baselines","rake_records","rake_distribution_legs","club_wallets","club_wallet_transactions","entry_purchase_idempotency_receipts"]
+state_tables=["clubs","bbj_pools","club_members","table_seats","chip_ledger","chip_transactions","cash_baselines","rake_records","rake_distribution_legs","club_wallets","club_wallet_transactions","entry_purchase_idempotency_receipts","cash_participant_funding_receipts"]
 state="jsonb_build_array("+",".join(f"(SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]'::jsonb) FROM {t} t)" for t in state_tables)+")"
 faults=["55P03","40P01","23514","23505","XX001"]
 mode=sys.argv[1]

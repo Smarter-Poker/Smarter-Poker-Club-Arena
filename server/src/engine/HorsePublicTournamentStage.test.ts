@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { captureHorsePublicTournamentStage as capture } from './HorsePublicTournamentStage.js';
+import {
+  captureHorsePublicTournamentStage as capture,
+  type HorsePublicTournamentReader,
+} from './HorsePublicTournamentStage.js';
 import { HandController } from './HandController.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
-import type {
-  TournamentBrainContext,
-  TournamentBrainContextSnapshot,
-} from '../services/TournamentBrainContext.js';
+import type { TournamentBrainContext } from '../services/TournamentBrainContext.js';
 
 function fixture() {
   const config: HandConfig = {
@@ -66,7 +66,7 @@ function fixture() {
       },
     });
   }
-  const snapshot: TournamentBrainContextSnapshot = {
+  const snapshot: ReturnType<HorsePublicTournamentReader> = {
     context,
     status: 'complete',
     issues: [],

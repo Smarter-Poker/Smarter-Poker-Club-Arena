@@ -13,6 +13,7 @@ import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayNa
 import { buildReplay, replayInputFromRow, type ReplayModel } from '../utils/handReplay';
 import { reportError } from '../utils/errorReporter';
 import { readLocalSession } from '../lib/authUtils';
+import { DIAMOND_ARENA_CLUB_ID } from '../lib/constants';
 
 /**
  * ONE SELECT LIST (2026-09-04). `getHand` and `getPlayerHands` each carried
@@ -47,6 +48,28 @@ export const HAND_HISTORY_COLUMNS = [
   'pots',
   'bomb_pot',
 ].join(', ');
+
+/**
+ * THE ARENA A HAND WAS PLAYED IN, FOR THE ARENA-SCOPED ARCHIVE (2026-09-19).
+ *
+ * `hand_history` carries no club column and no foreign key to `tables`, so
+ * the club cannot be filtered through the `tables -> clubs` join that labels
+ * each row's asset (that join is `fetchTableNames`, a second query keyed by
+ * table id, and PostgREST cannot filter the first query through it). What
+ * `hand_history` DOES have is `ca_hand_facts`, the per-human-per-hand fact
+ * row the engine writes at settlement with the table's `club_id` on it,
+ * under a foreign key to `hand_history.id` and an RLS policy that shows each
+ * viewer their own row only. Embedding it `!inner` and filtering on its
+ * `club_id` is a server-side filter on exactly the hands THIS player played
+ * in THAT club, one row per hand by the facts table's primary key, so the
+ * page, the order and the offset are all still the database's.
+ *
+ * Named constraint, for the same reason `TournamentService` names its arena
+ * embed: `clubs(...)` alone resolves today and errors the day a second path
+ * appears, at runtime, on a player's page.
+ */
+export const HAND_HISTORY_ARENA_EMBED = 'ca_hand_facts!ca_hand_facts_hand_id_fkey!inner(club_id)';
+export const HAND_HISTORY_ARENA_FILTER_COLUMN = 'ca_hand_facts.club_id';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -338,6 +361,38 @@ class HandHistoryServiceClass {
        * `offset .. offset + limit - 1`, in play order.
        */
       offset?: number;
+      /**
+       * THE ARENA (2026-09-19). The Diamond footer's Hand History door opens
+       * the archive scoped to the arena club, and the scope is the SERVER's:
+       * see HAND_HISTORY_ARENA_EMBED. Null or absent is the cross-club view
+       * the page has always shown. A UUID, never a slug: the facts row stores
+       * the club id.
+       */
+      clubId?: string | null;
+      /**
+       * THE ASSET, FOR A CALLER THAT KNOWS THE ROOM AND NOT THE ROW (2026-09-20).
+       *
+       * The Diamond footer knows it is in the Diamond Arena; it does not carry a
+       * club row. `'diamonds'` resolves to `DIAMOND_ARENA_CLUB_ID` because there
+       * is exactly ONE club on this platform with that asset and it is the
+       * platform arena - Dan 2026-09-11: the Diamond Arena is "ALL 'ONE OPEN
+       * CLUB'" - verified against production on 2026-09-20, one row, the arena.
+       * So the asset names a club, and the filter stays the server-side club
+       * filter above rather than becoming a second mechanism.
+       *
+       * ONLY `'diamonds'` IS EXPRESSIBLE, and the type says so rather than
+       * accepting `'chips'` and quietly ignoring it. `hand_history` has no
+       * reachable asset column (no foreign key to `tables`; see
+       * HAND_HISTORY_ARENA_EMBED) and there are hundreds of chip clubs, so
+       * "every chip hand" is not one club id and cannot be expressed as one.
+       * CLAUDE.md 10.86 rule 1: an answer we cannot give must not be given a
+       * well-formed shape. Making it unrepresentable is the strongest form of
+       * that - it cannot be asked for at all.
+       *
+       * `clubId` wins if both are given, because it is the more specific
+       * statement of the same thing.
+       */
+      asset?: 'diamonds' | null;
     } = {}
   ): Promise<HandRecord[]> {
     // BUG 021 Layer D (2026-04-16): Supabase JS `.contains('column', [{key: val}])` serializes
@@ -345,11 +400,16 @@ class HandHistoryServiceClass {
     //   {"code":"22P02","details":"Expected string or '}', but found '['","message":"invalid input syntax for type json"}
     // Fix: pass a pre-stringified JSON string, which Supabase JS URL-encodes verbatim.
     const containmentJson = JSON.stringify([{ userId }]);
+    const clubId =
+      opts.clubId?.trim() || (opts.asset === 'diamonds' ? DIAMOND_ARENA_CLUB_ID : null);
     let query = supabase
       .from('hand_history')
-      .select(HAND_HISTORY_COLUMNS)
+      .select(
+        clubId ? `${HAND_HISTORY_COLUMNS}, ${HAND_HISTORY_ARENA_EMBED}` : HAND_HISTORY_COLUMNS
+      )
       .contains('players', containmentJson);
     if (opts.tableId) query = query.eq('table_id', opts.tableId);
+    if (clubId) query = query.eq(HAND_HISTORY_ARENA_FILTER_COLUMN, clubId);
     /* PLAY ORDER, NOT INSERT ORDER (Dan 2026-09-04: "un organized"). This
        sorted by created_at, which is when the ROW landed: the writer's retry
        queue drains failed inserts minutes later, so during any database

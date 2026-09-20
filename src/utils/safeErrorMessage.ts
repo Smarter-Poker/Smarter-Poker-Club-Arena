@@ -37,9 +37,9 @@
  * DIAGNOSTICS ARE NOT LOST
  *
  * This module only decides WHAT THE PLAYER READS. The real error still goes to
- * the console and to Sentry via `reportError` — the Toast provider reports the
+ * the console and to error reporting via `reportError` — the Toast provider reports the
  * original whenever this sanitizer suppressed it, so a hidden message is
- * actually MORE visible in Sentry than it was before, not less.
+ * actually MORE visible in error reporting than it was before, not less.
  *
  * DEV ESCAPE HATCH
  *
@@ -87,7 +87,7 @@ export type SafeErrorCategory = keyof typeof SAFE_MESSAGES;
  * true by the time it is read. They arrive from retry loops, so they arrive
  * again, and again.
  *
- * These are dropped before they reach the screen and reported to Sentry
+ * These are dropped before they reach the screen and reported to error reporting
  * instead. What is NOT on this list is the class of error that answers
  * something the player deliberately just did: not enough chips, no permission,
  * session expired. Swallowing those would mean a player taps Buy In and
@@ -164,7 +164,7 @@ export function isSelfHealingMessage(text: unknown): boolean {
  * Responses, strings, and the odd `undefined` all arrive at catch blocks in
  * this codebase.
  *
- * Exported because callers reporting to Sentry want the same extraction.
+ * Exported because callers reporting to error reporting want the same extraction.
  */
 export function extractRawErrorText(err: unknown): string {
   if (err == null) return '';
@@ -444,7 +444,7 @@ export function safeErrorMessage(err: unknown, fallback?: string): string {
 
 /**
  * True when `safeErrorMessage` would hide something. The Toast layer uses this
- * to decide whether the original is worth reporting to Sentry.
+ * to decide whether the original is worth reporting to error reporting.
  */
 export function wasSanitized(original: string, shown: string): boolean {
   return original.trim() !== shown.trim();

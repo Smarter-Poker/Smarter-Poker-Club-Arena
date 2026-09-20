@@ -12,12 +12,13 @@
  * against the container log, because the process said nothing either way.
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
+import { BoundedLeaseRenewalScope } from './services/BoundedLeaseRenewalScope.js';
 
 type Renewer = {
   ownershipLeaseRenewalOperation: Promise<void> | null;
   ownershipLeaseRenewalCompletedAtMs: number;
   ownershipLeaseRenewalOutstanding: { cash: boolean; tournament: boolean } | null;
-  performOwnedEngineLeaseProofRenewal: () => Promise<void>;
+  performOwnedEngineLeaseProofRenewal: (abandoned: () => void) => Promise<boolean | void>;
   renewOwnedEngineLeaseProofs: () => Promise<void>;
 };
 
@@ -84,11 +85,18 @@ describe('an abandoned renewal pass names the half that hung', () => {
     const outstanding = { cash: true, tournament: true };
     const server = Object.assign(Object.create(GameServer.prototype), {
       ownershipLeaseRenewalOutstanding: null,
+      cashLeaseRenewalScope: new BoundedLeaseRenewalScope(),
+      tournamentLeaseRenewalScope: new BoundedLeaseRenewalScope(),
+      tableEngines: new Map(),
+      tournamentEngines: new Map(),
+      lifecycleGeneration: 1,
+      shutdownOwnershipLeaseRenewalActive: false,
+      directAdmissionIsCurrent: () => true,
       renewVerifiedCashTableLeaseProofs: () => Promise.reject(new Error('rpc blew up')),
       renewVerifiedTournamentManagerLeaseProofs: () => new Promise(() => {}),
     }) as unknown as Renewer & { ownershipLeaseRenewalOutstanding: typeof outstanding | null };
 
-    void server.performOwnedEngineLeaseProofRenewal();
+    void server.performOwnedEngineLeaseProofRenewal(() => {});
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();

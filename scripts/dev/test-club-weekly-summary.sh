@@ -26,4 +26,8 @@ started=1
   -f "$root/supabase/migrations/20260914124421_clubs_receive_one_weekly_accounting_statement.sql" \
   -f "$root/supabase/migrations/20260914124554_weekly_summary_respects_text_journal_settlement_identity.sql" \
   -f "$root/supabase/migrations/20260914130611_invoice_inboxes_only_show_visible_documents_and_discussions.sql" \
-  -f "$root/tests/fixtures/club-weekly-summary/regression.sql"
+  -f "$root/tests/fixtures/club-weekly-summary/regression.sql" \
+ -f "$root/supabase/migrations/20260914132940_invoice_search_only_returns_visible_verified_messages.sql" \
+ -f "$root/tests/fixtures/club-weekly-summary/search-regression.sql" \
+ -f "$root/supabase/accounting/weekly-v3/components/20260914133404_routed_invoice_roles_follow_the_recorded_payment.sql" \
+ -f "$root/tests/fixtures/club-weekly-summary/routed-role-regression.sql"

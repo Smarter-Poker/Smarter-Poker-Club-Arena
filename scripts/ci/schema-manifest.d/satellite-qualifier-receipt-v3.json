@@ -1,0 +1,15 @@
+{
+  "_owner": "agent/codex/mtt-satellite-award-depth-20260917",
+  "functions": [
+    "fn_ca_assert_satellite_cohort_standings",
+    "fn_ca_satellite_cohort_receipt",
+    "fn_ca_settle_satellite_cohort",
+    "fn_settle_satellite_qualifiers",
+    "fn_resolve_satellite_qualifier_outcome",
+    "fn_get_satellite_qualifier_state",
+    "fn_get_my_satellite_qualifier_result"
+  ],
+  "columns": {
+    "tournament_satellite_settlements": ["qualifier_ids"]
+  }
+}

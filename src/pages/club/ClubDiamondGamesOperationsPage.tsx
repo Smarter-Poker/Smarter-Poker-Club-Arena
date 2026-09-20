@@ -45,7 +45,9 @@ import { compactChips } from '../../utils/format';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
 import DiamondGamesMoney from '../../components/club/DiamondGamesMoney';
+import DiamondSpinStatements from '../../components/club/DiamondSpinStatements';
 import DiamondSpinsOwnerTerms from '../../components/games/DiamondSpinsOwnerTerms';
+import { DIAMOND_GAME_TITLES } from '../../utils/diamondGameTitles';
 import { uuid } from '../../utils/uuid';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import styles from '../diamondGames.module.css';
@@ -68,7 +70,7 @@ interface Draft {
   allow_fixture_accounts: boolean;
 }
 
-function draftFrom(m: GameMetrics | null): Draft {
+function draftFrom(m: GameMetrics | null, game: DiamondGame = 'plinko'): Draft {
   const c = m?.config;
   return {
     bet_options: (c?.bet_options ?? [25, 50, 100, 250, 500, 1000, 2500, 5000]).join(', '),
@@ -76,8 +78,8 @@ function draftFrom(m: GameMetrics | null): Draft {
     max_bet_diamonds: String(c?.max_bet_diamonds ?? 5000),
     exposure_allowance_chips: String(c?.exposure_allowance_chips ?? 1250),
     cap_fraction: String(c?.cap_fraction ?? 0.95),
-    max_multiplier: String((c?.max_multiplier_cents ?? 100000) / 100),
-    growth_k: String(c?.growth_k ?? 0.12),
+    max_multiplier: String((c?.max_multiplier_cents ?? (game === 'crash' ? 10000 : 100000)) / 100),
+    growth_k: String(c?.growth_k ?? (game === 'crash' ? 0.04 : 0.12)),
     max_rounds_per_player_per_day: String(c?.max_rounds_per_player_per_day ?? 500),
     min_seconds_between_rounds: String(c?.min_seconds_between_rounds ?? 2),
     purchased_only: false,
@@ -85,12 +87,8 @@ function draftFrom(m: GameMetrics | null): Draft {
   };
 }
 
-const GAME_WORD: Record<DiamondGame, string> = {
-  plinko: 'Plinko',
-  crash: 'Crash',
-  crossing: 'Donkey Crossing',
-  mines: 'Mines',
-};
+/** One name per game, from the single source, so no console can drift from it. */
+const GAME_WORD: Record<DiamondGame, string> = DIAMOND_GAME_TITLES;
 
 function Row({
   label,
@@ -206,7 +204,7 @@ export default function ClubDiamondGamesOperationsPage() {
           return;
         }
         setMetrics(m);
-        setDraft(draftFrom(m));
+        setDraft(draftFrom(m, which));
       } catch (err) {
         reportError(err, 'ClubDiamondGamesOperationsPage.load');
         if (isMountedRef.current) setError('The Readings Could Not Be Loaded');
@@ -313,6 +311,8 @@ export default function ClubDiamondGamesOperationsPage() {
     if (!Number.isFinite(maxMult) || maxMult < 1.01)
       return toast.error('The Multiplier Ceiling Must Be At Least 1.01');
     if (!Number.isFinite(growthK) || growthK <= 0) return toast.error('The Curve Must Climb');
+    if (game === 'crash' && (maxMult > 100 || growthK > 0.04))
+      return toast.error('Crash Is Limited To 100x And A Curve Of 0.04 Or Slower');
     if (!Number.isInteger(rounds) || rounds <= 0)
       return toast.error('The Daily Limit Must Be A Whole Number Of Rounds');
     if (!Number.isInteger(gap) || gap < 0)
@@ -363,10 +363,11 @@ export default function ClubDiamondGamesOperationsPage() {
       </button>
 
       <DiamondSpinsOwnerTerms clubId={clubUuid} onAccepted={() => void load(game)} />
+      <DiamondSpinStatements />
 
       <SpadeConsole
         eyebrow="Operations"
-        title={`Diamond ${word}`}
+        title={word}
         titleId="diamond-games-ops-title"
         pill={enabled ? 'Open' : 'Closed'}
         pillInk={enabled ? 'green' : 'red'}
@@ -417,7 +418,7 @@ export default function ClubDiamondGamesOperationsPage() {
             label="Owner Diamonds"
             value={compactChips(metrics?.owner_diamonds ?? 0)}
             ink="blue"
-            meta="Where The Diamonds Taken In Land"
+            meta="Daily Net Diamonds Arrive In One Settlement"
           />
           <Row
             label="Exposure"
@@ -599,7 +600,7 @@ export default function ClubDiamondGamesOperationsPage() {
             onChange={set('max_multiplier')}
             hint={
               game === 'crash'
-                ? 'Where A Round Auto Cashes If It Never Crashed.'
+                ? 'Auto Cash Out At This Limit, Up To 100x.'
                 : 'Never Above The Board Itself.'
             }
           />
@@ -608,7 +609,7 @@ export default function ClubDiamondGamesOperationsPage() {
               label="Curve (K Per Second)"
               value={draft.growth_k}
               onChange={set('growth_k')}
-              hint="Multiplier = Exp(K Times Seconds). 0.12 Reaches 2x In 5.8s And 1000x In 57.6s."
+              hint="0.04 Reaches 2x In 17.3 Seconds And 100x In 115 Seconds. A Smaller Value Is Slower."
             />
           ) : null}
           <Field
@@ -643,7 +644,10 @@ export default function ClubDiamondGamesOperationsPage() {
             onClick: () => navigate(`/clubs/${routeClubId}/wheel-operations`),
           },
           primary: {
-            label: `Players ${word}`,
+            /* The plate carries the game's full title now that GAME_WORD is the
+               single source, so "Players Plinko" would read as "Players Diamond
+               Plinko". The verb makes it a sentence again. */
+            label: `Play ${word}`,
             ink: 'white',
             /* Both targets spelled out. `/clubs/${id}/${game}` resolves at
                runtime, but check-route-targets reads the source, not the

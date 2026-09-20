@@ -117,7 +117,9 @@ describe('the wheel and crash share their repeat-round runner', () => {
 
 describe('the run stops wherever a thumb would be stopped', () => {
   it('on any blocker the page would print', () => {
-    expect(WHEEL).toContain('{ busy: spinning || pending !== null, blocker, ready: canSpin }');
+    expect(WHEEL).toContain(
+      '{ busy: spinning || pending !== null || preparing, blocker, ready: canSpin }'
+    );
   });
 
   it('on a refusal from the server', () => {
@@ -156,14 +158,14 @@ describe('a welcome spin is never auto-played', () => {
     expect(WHEEL).toContain('autoSize && !freeMode && !recovery');
   });
 
-  it('and the Odds plate is what the welcome spin keeps in the run plate seat', () => {
+  it('and the Prizes plate is what the welcome spin keeps in the run plate seat', () => {
     // Nothing is lost on the one screen where a run is meaningless.
     const sec = WHEEL.slice(
       WHEEL.indexOf('        secondary={'),
       WHEEL.indexOf('        primary={')
     );
     expect(sec).toContain('freeMode');
-    expect(sec).toContain("label: 'Odds'");
+    expect(sec).toContain("label: 'Prizes'");
   });
 });
 

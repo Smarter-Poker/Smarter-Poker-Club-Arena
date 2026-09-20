@@ -83,8 +83,14 @@ async function main() {
     process.exit(1);
   }
 
+  // `diamond-test.*` is the standalone Diamond bonus test entry, built by a
+  // second Vite pass (vite.config.ts, TEST_ENTRY). It shares the directory so
+  // the origin pools it and the service worker caches it like every other
+  // chunk, but no player downloads it, so it is not charged to the budget that
+  // guards what players download.
   const all = (await readdir(ASSETS))
     .filter((f) => f.endsWith('.js') || f.endsWith('.css'))
+    .filter((f) => !f.startsWith('diamond-test.'))
     .map((f) => path.join(ASSETS, f));
 
   if (all.length === 0) {
@@ -147,7 +153,7 @@ async function main() {
    *  Measured before raising it, so the growth is known to be growth:
    *    main                          2328kB gz / 388 files  (local build)
    *    same tree + table management  2355kB gz / 393 files  (local build)
-   *    ten heaviest chunks inspected: one copy each of react, sentry,
+   *    ten heaviest chunks inspected: one copy each of react, error reporting,
    *      supabase, motion and the chart runtime. No duplicated vendor, no
    *      library arriving twice.
    *
@@ -166,7 +172,9 @@ async function main() {
   // Paired builds with the same dependencies/config: main a00f5c5c measured
   // 2527kB gz / 8963kB raw; Diamond Spins measured 2723kB gz / 9674kB raw.
   // Source-map inspection found one copy of Three.js (129kB gz shared chunk)
-  // and unchanged single React, Supabase, Sentry, Motion and chart vendors.
+  // and unchanged single React, Supabase, Motion and chart vendors.
+  // Restored hosted build35184528688: 2651kB gz / 9444kB raw, initial297kB gz;
+  // reuse the original game-feature envelope below, with telemetry still removed.
   // The remaining growth is the four game routes and their controls. The
   // eager game-door imports were fixed first: initial load fell 311 -> 298kB
   // gz, versus main's 296kB. No new source module enters first paint.

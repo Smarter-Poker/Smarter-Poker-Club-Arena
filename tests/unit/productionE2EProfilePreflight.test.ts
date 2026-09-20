@@ -1,15 +1,13 @@
 import type { Page } from '@playwright/test';
+import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { evaluateAcrossDocumentReplacement } from '../e2e/support/evaluateAcrossDocumentReplacement';
-import {
-  ensureClubMembership,
-  handleDiamondBustPrompt,
-  dismissClubEntryMessage,
-} from '../e2e/support/ensureClubMembership';
+import { ensureClubMembership } from '../e2e/support/ensureClubMembership';
 import { ensureAcceptedTerms } from '../e2e/support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from '../e2e/support/ensurePlayableProfile';
+import { observeSetupFailure } from '../e2e/support/setupFailureObservation';
 
 const source = (path: string) => readFileSync(resolve(__dirname, '../..', path), 'utf8');
 
@@ -98,31 +96,6 @@ function termsPage(statuses: Array<'accepted' | 'not_accepted' | 'unknown'>, res
   return { page, decision, acceptedMarker, heading, agreement, accept };
 }
 
-function clubMessagePage(responseStatus = 200, result: unknown = { ok: true }) {
-  const dialog = { waitFor: vi.fn().mockResolvedValue(undefined) };
-  const dismiss = {
-    waitFor: vi.fn().mockResolvedValue(undefined),
-    click: vi.fn().mockResolvedValue(undefined),
-  };
-  const response = {
-    request: () => ({ method: () => 'POST' }),
-    url: () => 'https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message',
-    ok: () => responseStatus >= 200 && responseStatus < 300,
-    status: () => responseStatus,
-    json: async () => result,
-  };
-  const page = {
-    getByRole: vi.fn((role: string) => (role === 'dialog' ? dialog : dismiss)),
-    waitForResponse: vi.fn(async (predicate: (candidate: typeof response) => boolean) => {
-      expect(predicate(response)).toBe(true);
-      expect(predicate({ ...response, request: () => ({ method: () => 'GET' }) })).toBe(false);
-      expect(predicate({ ...response, url: () => 'https://fixture.invalid/other' })).toBe(false);
-      return response;
-    }),
-  };
-  return { page, dialog, dismiss, response };
-}
-
 describe('authenticated production account preflight', () => {
   beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -130,97 +103,6 @@ describe('authenticated production account preflight', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-  });
-
-  it('handles a late Diamond offer through only its real Not Now control in each context', async () => {
-    for (let context = 0; context < 2; context++) {
-      const decline = { click: vi.fn().mockResolvedValue(undefined) };
-      const dialog = { getByRole: vi.fn(() => decline) };
-      const page = {
-        getByRole: vi.fn(() => dialog),
-        addLocatorHandler: vi.fn().mockResolvedValue(undefined),
-      };
-      await handleDiamondBustPrompt(page as unknown as Page);
-      await handleDiamondBustPrompt(page as unknown as Page);
-      expect(page.getByRole).toHaveBeenCalledWith('dialog', { name: 'Diamond Spins', exact: true });
-      expect(page.addLocatorHandler).toHaveBeenCalledOnce();
-      expect(page.addLocatorHandler).toHaveBeenCalledWith(dialog, expect.any(Function));
-      expect(decline.click).not.toHaveBeenCalled();
-
-      // The overlay may arrive after navigation; Playwright invokes this only
-      // at an action/assertion, then waits for this exact dialog to disappear.
-      const handler = page.addLocatorHandler.mock.calls[0][1];
-      await handler();
-      expect(dialog.getByRole).toHaveBeenCalledWith('button', { name: 'Not Now', exact: true });
-      expect(decline.click).toHaveBeenCalledWith();
-      const clickFailure = new Error('Not Now remains blocked');
-      decline.click.mockRejectedValueOnce(clickFailure);
-      await expect(handler()).rejects.toBe(clickFailure);
-    }
-  });
-
-  it('registers the real prompt handler in setup and fresh lobby/route contexts', () => {
-    const setup = source('tests/e2e/global-setup.ts');
-    expect(setup.indexOf('await handleDiamondBustPrompt(page)')).toBeLessThan(
-      setup.indexOf('await ensureClubMembership(page,')
-    );
-    const routes = source('tests/e2e/routes/utils.ts');
-    expect(routes.indexOf('await handleDiamondBustPrompt(page)')).toBeLessThan(
-      routes.indexOf('await page.goto(path)')
-    );
-    expect(routes.slice(routes.indexOf('export async function assertRendered'))).toContain(
-      'await handleDiamondBustPrompt(page)'
-    );
-    expect(source('tests/e2e/club-lobby.spec.ts')).toContain('await expectRoute(page, LOBBY)');
-    const mobile = source('tests/e2e/production-mobile-lobby-chrome.spec.ts');
-    expect(mobile.indexOf('await handleDiamondBustPrompt(page)')).toBeLessThan(
-      mobile.indexOf('await page.goto(')
-    );
-  });
-
-  it('persists the club message only after its exact RPC and hidden dialog succeed', async () => {
-    const fixture = clubMessagePage();
-    await expect(dismissClubEntryMessage(fixture.page as unknown as Page)).resolves.toBe(true);
-    expect(fixture.page.waitForResponse).toHaveBeenCalledWith(expect.any(Function), {
-      timeout: 15_000,
-    });
-    expect(fixture.dismiss.click).toHaveBeenCalledWith({ timeout: 10_000 });
-    expect(fixture.dialog.waitFor).toHaveBeenCalledWith({ state: 'hidden', timeout: 10_000 });
-  });
-
-  it.each([
-    [500, { ok: true }],
-    [200, { ok: false }],
-  ])('rejects a club-message write with HTTP %s and result %j', async (status, result) => {
-    const fixture = clubMessagePage(status, result);
-    await expect(dismissClubEntryMessage(fixture.page as unknown as Page)).rejects.toThrow(
-      'Club entry message dismissal did not persist'
-    );
-    expect(fixture.dialog.waitFor).not.toHaveBeenCalled();
-  });
-
-  it('preserves the click error and already owns the response rejection when the browser closes', async () => {
-    const fixture = clubMessagePage();
-    const clickFailure = new Error('Club Message is intercepted by an overlay');
-    fixture.dismiss.click.mockRejectedValueOnce(clickFailure);
-    let rejectResponse!: (reason: Error) => void;
-    const pendingResponse = new Promise<typeof fixture.response>((_resolve, reject) => {
-      rejectResponse = reject;
-    });
-    const subscribe = vi.spyOn(pendingResponse, 'then');
-    // A plain function is essential here: vi.fn itself subscribes to returned
-    // promises to record settled results, which would hide the missing owner.
-    const page = { ...fixture.page, waitForResponse: () => pendingResponse };
-    try {
-      await expect(dismissClubEntryMessage(page as unknown as Page)).rejects.toBe(clickFailure);
-      // This fails under the former sequential awaits without itself producing
-      // an unhandled rejection in the negative regression run.
-      expect(subscribe).toHaveBeenCalledWith(expect.any(Function), expect.any(Function));
-    } finally {
-      const cleanup = pendingResponse.catch(() => undefined);
-      rejectResponse(new Error('Target page, context or browser has been closed'));
-      await cleanup;
-    }
   });
 
   it('leaves an account with durably accepted Terms untouched', async () => {
@@ -277,6 +159,174 @@ describe('authenticated production account preflight', () => {
       'The production Terms Of Service query did not answer; acceptance is unknown.'
     );
     expect(fixture.agreement.check).not.toHaveBeenCalled();
+  });
+
+  it('records the original Terms HTTP failure and script rejection without private inputs', () => {
+    const page = Object.assign(new EventEmitter(), { mainFrame: () => 'main' });
+    const observation = observeSetupFailure(
+      page as unknown as Page,
+      'https://smarter.poker/hub/club-arena/',
+      'https://project.supabase.co'
+    );
+    observation.stage('terms');
+    const request = {
+      url: () =>
+        'https://project.supabase.co/rest/v1/profiles?select=club_arena_tos_accepted_at&id=eq.private-account&token=private-token#private-fragment',
+      resourceType: () => 'fetch',
+      failure: () => ({ errorText: 'net::ERR_HTTP2_PROTOCOL_ERROR private-token' }),
+    };
+    page.emit('request', request);
+    page.emit('response', { request: () => request, status: () => 503 });
+    page.emit('requestfailed', request);
+    page.emit('console', {
+      type: () => 'error',
+      text: () => '[ProfileService.getTOSStatus] TypeError: Failed to fetch private-token',
+    });
+    const script = {
+      url: () =>
+        'https://smarter.poker/hub/club-arena/assets/ProfileService-secret.js?token=private-token',
+      resourceType: () => 'script',
+      failure: () => ({ errorText: 'net::ERR_CONNECTION_RESET' }),
+    };
+    page.emit('requestfailed', script);
+    page.emit('console', {
+      type: () => 'error',
+      text: () =>
+        '[TOSGuard.status_check_failed] Failed to fetch dynamically imported module: https://private-user:private-password@example.com/private-account',
+    });
+    const result = observation.snapshot();
+    expect(result.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'response',
+          kind: 'terms-query',
+          status: 503,
+          request: 1,
+        }),
+        expect.objectContaining({
+          event: 'requestfailed',
+          kind: 'terms-query',
+          errorClass: 'ERR_HTTP2_PROTOCOL_ERROR',
+          request: 1,
+        }),
+        expect.objectContaining({
+          event: 'requestfailed',
+          kind: 'script',
+          errorClass: 'ERR_CONNECTION_RESET',
+          request: 2,
+        }),
+        expect.objectContaining({
+          event: 'reported-error',
+          kind: 'terms-query',
+          errorClass: 'FetchError',
+        }),
+        expect.objectContaining({
+          event: 'reported-error',
+          kind: 'terms-status-chain',
+          errorClass: 'ModuleImportError',
+        }),
+      ])
+    );
+    expect(JSON.stringify(result)).not.toMatch(/private-|secret|\?|#|id=|token=/);
+    expect(result.events.every((event) => event.stage === 'terms')).toBe(true);
+    observation.dispose();
+  });
+
+  it('distinguishes navigation failure from a successful Terms response and premature close', () => {
+    const page = Object.assign(new EventEmitter(), { mainFrame: () => 'main' });
+    const observation = observeSetupFailure(
+      page as unknown as Page,
+      'https://smarter.poker/hub/club-arena/',
+      'https://project.supabase.co'
+    );
+    observation.stage('protected-navigation');
+    const navigation = {
+      url: () => 'https://private-account.example.test/private-id?token=secret',
+      resourceType: () => 'document',
+      isNavigationRequest: () => true,
+      frame: () => 'main',
+      failure: () => ({ errorText: 'net::ERR_SECRET_TOKEN' }),
+    };
+    page.emit('requestfailed', navigation);
+    page.emit('framenavigated', 'main');
+    observation.stage('terms');
+    const terms = {
+      url: () => 'https://project.supabase.co/rest/v1/profiles?select=club_arena_tos_accepted_at',
+      resourceType: () => 'fetch',
+    };
+    page.emit('response', { request: () => terms, status: () => 200 });
+    page.emit('close');
+    const result = observation.snapshot();
+    expect(result.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'requestfailed',
+          stage: 'protected-navigation',
+          kind: 'navigation',
+          host: '[other-origin]',
+          path: '/[document]',
+          errorClass: 'NetworkError',
+        }),
+        expect.objectContaining({ event: 'response', kind: 'terms-query', status: 200 }),
+        expect.objectContaining({ event: 'page-closed' }),
+      ])
+    );
+    expect(JSON.stringify(result)).not.toMatch(/private|SECRET|secret/);
+    observation.dispose();
+  });
+
+  it('ignores unrelated traffic and console data and bounds the retained failure evidence', () => {
+    const page = Object.assign(new EventEmitter(), { mainFrame: () => 'main' });
+    const observation = observeSetupFailure(
+      page as unknown as Page,
+      'https://smarter.poker/hub/club-arena/',
+      'https://project.supabase.co'
+    );
+    page.emit('console', {
+      type: () => 'error',
+      text: () => 'Authorization: Bearer secret-token user@example.com',
+    });
+    page.emit('requestfailed', {
+      url: () => 'https://project.supabase.co/auth/v1/token?access_token=secret',
+      resourceType: () => 'fetch',
+      isNavigationRequest: () => false,
+      headers: () => {
+        throw new Error('must never read headers');
+      },
+    });
+    page.emit('pageerror', new Error('private-account private-token'));
+    expect(observation.snapshot().events).toEqual([]);
+    for (let index = 0; index < 70; index += 1)
+      page.emit(
+        'pageerror',
+        new Error('Failed to fetch dynamically imported module: private-token')
+      );
+    expect(observation.snapshot().events).toHaveLength(64);
+    expect(observation.snapshot().discarded).toBe(6);
+    expect(JSON.stringify(observation.snapshot())).not.toMatch(/private|secret|Bearer/);
+    observation.dispose();
+    expect(page.eventNames()).toEqual([]);
+    page.emit('close');
+    expect(observation.snapshot().events).toHaveLength(64);
+  });
+
+  it('attaches failure observation before navigation and preserves the original failure exit', () => {
+    const setup = source('tests/e2e/global-setup.ts');
+    expect(setup.indexOf('observation = observeSetupFailure(')).toBeLessThan(
+      setup.indexOf('await page.goto(baseURL')
+    );
+    expect(setup).toContain("observation.stage('terms');\n    await ensureAcceptedTerms(page)");
+    const catchBlock = setup.slice(
+      setup.indexOf('  } catch (err) {', setup.indexOf('export default'))
+    );
+    expect(catchBlock.indexOf('observation?.snapshot()')).toBeLessThan(
+      catchBlock.indexOf('throw err;')
+    );
+    expect(catchBlock).toContain("if (process.env.E2E_REQUIRE_AUTH === '1') {\n      throw err;");
+    expect(catchBlock).toContain('if (authenticated) {');
+    expect(catchBlock.indexOf('observation?.dispose()')).toBeLessThan(
+      catchBlock.indexOf('await browser.close()')
+    );
   });
 
   it('leaves an already complete account untouched', async () => {
@@ -349,9 +399,9 @@ describe('authenticated production account preflight', () => {
     const setup = source('tests/e2e/global-setup.ts');
     expect(setup).toContain('ensureClubMembership(');
     expect(setup).toContain('dismissClubEntryMessage(page)');
+    expect(setup).toContain('/rest/v1/rpc/fn_dismiss_club_message');
+    expect(setup).toContain("name: 'Do Not Show Me This Message Again'");
     const helper = source('tests/e2e/support/ensureClubMembership.ts');
-    expect(helper).toContain('/rest/v1/rpc/fn_dismiss_club_message');
-    expect(helper).toContain("name: 'Do Not Show Me This Message Again'");
     expect(helper).toContain("getByRole('button', { name: 'Join Club', exact: true })");
     expect(helper).toContain("locator('.club-home')");
     expect(helper).toContain("locator('.invite-pending')");
@@ -408,7 +458,31 @@ describe('authenticated production account preflight', () => {
     expect(lobby).toContain("locator('.arena-game-card')");
     expect(lobby).toContain('.lt-row[data-kind="cash"]');
     expect(lobby).toContain("locator('.agc-action--primary')");
-    expect(lobby).toContain('test.setTimeout(75_000)');
+    // Every fresh lobby context can take the cold read, including the first
+    // shell case. A timeout inside only one test does not protect its siblings.
+    expect(lobby).toMatch(
+      /test\.describe\('Club lobby', \(\) => \{\s*(?:\/\*[\s\S]*?\*\/\s*)?test\.describe\.configure\(\{ timeout: 75_000 \}\);/
+    );
+    const settle = lobby.slice(
+      lobby.indexOf('async function lobbySettled'),
+      lobby.indexOf("test.describe('Club lobby'")
+    );
+    expect(settle).toContain("waitFor({ state: 'visible', timeout: 45000 });");
+    expect(settle).not.toContain('.catch(');
+    expect(lobby).toContain(
+      "import { prepareCashLobbyActions } from './support/cashLobbyOverlays'"
+    );
+    expect(lobby).toMatch(
+      /async function lobbySettled\(page: Page\)[\s\S]*await prepareCashLobbyActions\(page\);/
+    );
+
+    const liveMobileLobby = source('tests/e2e/production-mobile-lobby-chrome.spec.ts');
+    expect(liveMobileLobby).toContain(
+      "import { prepareCashLobbyActions } from './support/cashLobbyOverlays'"
+    );
+    expect(liveMobileLobby).toMatch(
+      /async function openLobby\(page: Page\)[\s\S]*await prepareCashLobbyActions\(page\);[\s\S]*lobby-wallets-trigger/
+    );
 
     const mobile = source('tests/e2e/mobile-chrome-occlusion.spec.ts');
     expect(mobile).toContain("const CLUB_ARENA_PATH = '/hub/club-arena'");

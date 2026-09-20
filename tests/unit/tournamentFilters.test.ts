@@ -19,6 +19,7 @@ import {
 const NOW = new Date('2026-08-19T02:10:00Z').getTime();
 
 const mk = (over: Partial<FilterableTournament>): FilterableTournament => ({
+  format_contract: 'mtt-v1',
   name: 'Midnight Bounty (NLH)',
   status: 'REGISTERING',
   start_time: '2026-08-19T02:05:00Z',
@@ -28,16 +29,19 @@ const mk = (over: Partial<FilterableTournament>): FilterableTournament => ({
 
 // Shapes taken from the live lobby (start times ALREADY PAST while registering).
 const SPIN_OVERDUE = mk({
+  format_contract: 'spin-v1',
   name: '1 Chip Spin NLH (2x)',
   max_players: 3,
   start_time: '2026-08-19T01:44:02Z',
 });
 const SNG_OVERDUE = mk({
+  format_contract: 'sng-v1',
   name: '5 Chip Turbo SNG 6-Max NLH',
   max_players: 6,
   start_time: '2026-08-19T02:03:11Z',
 });
 const MTT_RUNNING = mk({
+  format_contract: 'mtt-v1',
   name: 'Midnight Bounty (NLH)',
   status: 'RUNNING',
   max_players: 50,
@@ -113,7 +117,13 @@ describe('LATE REG', () => {
   });
 
   it('still honours an explicit LATE_REG status if one ever appears', () => {
-    expect(matchesTournamentSubFilter(mk({ status: 'LATE_REG' }), 'late_reg', NOW)).toBe(true);
+    expect(
+      matchesTournamentSubFilter(
+        mk({ status: 'LATE_REG', late_reg_levels: 3, current_level: 1 }),
+        'late_reg',
+        NOW
+      )
+    ).toBe(true);
   });
 
   it('excludes tournaments that have not started', () => {

@@ -4,105 +4,7 @@ import FeedbackForm from '../components/support/FeedbackForm';
 import SystemStatus from '../components/support/SystemStatus';
 import styles from './HelpPage.module.css';
 import { mediaUrl } from '../utils/mediaBase';
-
-interface FAQItem {
-  category: 'Account' | 'Clubs' | 'Play' | 'Rewards' | 'Safety';
-  question: string;
-  answer: string;
-}
-
-const FAQ_ITEMS: FAQItem[] = [
-  {
-    category: 'Account',
-    question: 'How Do I Customize My Profile?',
-    answer:
-      'Open My Profile To Update Your Avatar, Display Name, Bio, And Player Identity. Account And Device Controls Remain In Settings.',
-  },
-  {
-    category: 'Account',
-    question: 'How Do I Change My Password?',
-    answer:
-      'Open Settings, Find Account, And Choose Change Password. Club Arena Sends The Reset Through Your Verified Account Email.',
-  },
-  {
-    category: 'Account',
-    // 2026-08-28: this said 2FA was "Coming Soon" for a feature that SHIPPED —
-    // SettingsPage implements enrol / challenge / verify / unenrol against
-    // Supabase MFA, with a QR modal. Telling a player a security feature does
-    // not exist yet, while it sits two taps away, is a false statement about
-    // their account security.
-    question: 'Is Two-Factor Authentication Available?',
-    answer:
-      'Yes. Go To Settings → Account → Account Security And Choose Enable Two-Factor Authentication. Scan The QR Code With Your Authenticator App, Then Enter The Six-Digit Code To Confirm.',
-  },
-  {
-    category: 'Account',
-    question: 'How Do I Delete My Account?',
-    answer:
-      'Open Settings, Then Account Data And Closure, And Choose Close Account. After You Confirm, Smarter Poker Permanently Deletes The Account. Settle Every Club Chip Balance And Leave Any Table First, Or The Request Is Refused.',
-  },
-  {
-    category: 'Clubs',
-    question: 'How Do I Find Or Join A Club?',
-    answer:
-      'Use Find Players And Clubs From The Menu. Some Clubs Accept Requests Immediately; Private Clubs Require Approval Or An Invite.',
-  },
-  {
-    category: 'Clubs',
-    question: 'Where Do Club Operators Manage A Club?',
-    answer:
-      'Open The Club, Then Open Operations Center. Available People, Finance, Safety, And Control Tools Match Your Confirmed Club Role.',
-  },
-  {
-    category: 'Play',
-    question: 'How Do I Join A Tournament?',
-    answer:
-      'Open Tournaments, Select An Event, Review Its Live Structure And Entry Requirements, Then Choose Register When Registration Is Open.',
-  },
-  {
-    category: 'Play',
-    question: 'Where Can I Review A Hand?',
-    answer:
-      'Open Hand History To Find Completed Hands, Inspect The Action Record, And Launch The Hand Replayer When Replay Data Is Available.',
-  },
-  {
-    category: 'Play',
-    question: 'What Is The Bad Beat Jackpot?',
-    answer:
-      'Eligible Clubs Can Fund A Progressive Bad Beat Jackpot. The Live Club Rules And Jackpot Panel Show Qualification, Funding, And Payout Details.',
-  },
-  {
-    category: 'Rewards',
-    question: 'Where Can I See My Rewards?',
-    answer:
-      'Open Rewards Center For Wallet Balances, Transactions, VIP Status, Rakeback, Promotions, Bonuses, Achievements, And Challenges.',
-  },
-  {
-    category: 'Rewards',
-    question: 'Why Can A Bonus Or Rakeback Rate Change?',
-    answer:
-      'Reward Amounts Come From The Live Offer, Club, Or Rakeback Record. Review The Current Promotion And Claim Terms Before Participating.',
-  },
-  {
-    category: 'Safety',
-    question: 'How Do I Report Suspected Unfair Play?',
-    answer:
-      'Use Report Player From The Table Or Player Profile And Include The Hand Number And Specific Conduct. You Can Also Send A Support Request Here.',
-  },
-  {
-    category: 'Safety',
-    question: 'How Do I Report A Product Problem?',
-    answer:
-      'Choose Send Support Request, Select Bug, And Describe What Happened. The Form Only Confirms Success After The Request Reaches The Support Queue.',
-  },
-];
-
-const QUICK_LINKS = [
-  { label: 'Find A Club', path: '/search' },
-  { label: 'Hand History', path: '/hand-history' },
-  { label: 'Rewards Center', path: '/rewards' },
-  { label: 'Fair Gaming', path: '/legal/fair-gaming' },
-];
+import { FAQ_ITEMS, QUICK_LINKS } from './helpContent';
 
 export default function HelpPage() {
   const [expandedQuestion, setExpandedQuestion] = useState<string | null>(null);
@@ -110,7 +12,7 @@ export default function HelpPage() {
   const [showFeedbackForm, setShowFeedbackForm] = useState(false);
 
   useEffect(() => {
-    document.title = 'Help Center | Smarter.Poker';
+    document.title = 'Poker Arena Help Center | Smarter.Poker';
   }, []);
 
   const closeFeedbackForm = useCallback(() => setShowFeedbackForm(false), []);
@@ -128,13 +30,13 @@ export default function HelpPage() {
   );
 
   return (
-    <main className={styles.page}>
+    <article className={styles.page} aria-labelledby="help-title">
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
           <span className={styles.eyebrow}>Player Support Circuit</span>
-          <h1>Help Center</h1>
+          <h1 id="help-title">Help Center</h1>
           <p>
-            Search Verified Club Arena Guidance, Check The Live Data Circuit, Or Send A Request
+            Search Verified Poker Arena Guidance, Check The Live Data Circuit, Or Send A Request
             Directly To Support.
           </p>
           <div className={styles.heroActions}>
@@ -145,7 +47,22 @@ export default function HelpPage() {
           </div>
         </div>
         <div className={styles.heroArt} aria-hidden="true">
-          <img src={mediaUrl('assets/club-buttons/lobby/lobby-command-chassis-v2.png')} alt="" />
+          {/* Discoverability phase 5 (2026-09-17): the 462 KB palette PNG was a
+              third of the Help Center's bytes on a phone; the WebP is 49 KB of the
+              same pixels, and the PNG stays the fallback for a browser without it. */}
+          <picture>
+            <source
+              type="image/webp"
+              srcSet={mediaUrl('assets/club-buttons/lobby/lobby-command-chassis-v2.webp')}
+            />
+            <img
+              src={mediaUrl('assets/club-buttons/lobby/lobby-command-chassis-v2.png')}
+              alt=""
+              width="960"
+              height="1280"
+              decoding="async"
+            />
+          </picture>
           <span>Support Terminal / Online</span>
         </div>
       </header>
@@ -201,11 +118,13 @@ export default function HelpPage() {
                     {isExpanded ? '−' : '+'}
                   </span>
                 </button>
-                {isExpanded && (
-                  <div className={styles.answer} id={answerId}>
-                    {item.answer}
-                  </div>
-                )}
+                {/* AEO PHASE 1 (2026-09-17): the answer is always in the DOM and
+                    hidden when collapsed, instead of not rendered at all. A
+                    crawler that renders the page, and a screen reader, now
+                    get every answer; the toggle behaves as it did. */}
+                <div className={styles.answer} id={answerId} hidden={!isExpanded}>
+                  {item.answer}
+                </div>
               </article>
             );
           })}
@@ -229,6 +148,6 @@ export default function HelpPage() {
       </footer>
 
       <FeedbackForm isOpen={showFeedbackForm} onClose={closeFeedbackForm} />
-    </main>
+    </article>
   );
 }

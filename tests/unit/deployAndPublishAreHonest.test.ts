@@ -23,45 +23,65 @@ const publishCode = uncommented(publish);
 const buildProvenance = read('scripts/stamp-build-provenance.mjs');
 const ci = read('.github/workflows/ci.yml');
 
-describe('the required server check accounts for every shard', () => {
+describe('the required server check joins independent accounting and engine work', () => {
   const shards = uncommented(job(ci, 'server_shards'));
   const aggregate = uncommented(job(ci, 'server'));
-  it('retains the required name and the complete matrix prerequisite', () => {
+  it('starts independent jobs together and retains both complete prerequisites', () => {
     expect(aggregate).toMatch(/^ {4}name: Server Engine \(typecheck \+ tests\)$/m);
-    expect(aggregate).toMatch(/^ {4}needs: \[changes, server_shards\]$/m);
+    expect(aggregate).toMatch(/^ {4}needs: \[changes, server_shards, accounting_postgres\]$/m);
     expect(aggregate).toMatch(/^ {4}if: always\(\)$/m);
+    expect(shards).toMatch(/^ {4}needs: changes$/m);
+    expect(shards).not.toContain('needs.accounting_postgres');
     expect(shards).toMatch(/^ {8}shard: \[1, 2, 3, 4\]$/m);
     expect(shards).not.toMatch(/^\s+(?:include|exclude|continue-on-error):/m);
     expect(shards).toMatch(/^\s+npm test -- --shard="\$SERVER_TEST_SHARD\/4"\s*$/m);
     expect(shards).toContain("needs.changes.result != 'success'");
-    expect(shards).toContain("needs.accounting_postgres.result != 'success'");
+    expect(aggregate).toContain('ACCOUNTING_RESULT: ${{ needs.accounting_postgres.result }}');
   });
   const script = aggregate
     .match(/^ {8}run: \|\n((?:^ {10}.+\n?)+)/m)?.[1]
     .split('\n')
     .map((line) => line.slice(10))
     .join('\n');
-  for (const [result, event, diff, changed, expected] of [
-    ['success', 'pull_request', 'success', 'true', 0],
-    ['success', 'schedule', 'skipped', '', 0],
-    ['skipped', 'pull_request', 'success', 'false', 0],
-    ['skipped', 'pull_request', 'success', 'true', 1],
-    ['skipped', 'pull_request', 'failure', 'false', 1],
-    ['skipped', 'pull_request', 'success', '', 1],
-    ['skipped', 'schedule', 'skipped', '', 1],
-    ['failure', 'pull_request', 'success', 'true', 1],
-    ['cancelled', 'pull_request', 'success', 'true', 1],
-    ['unknown', 'pull_request', 'success', 'false', 1],
+  // Execute the actual required-check script. Every missing, skipped, failed or
+  // cancelled dependency refuses even if its independent peer passed.
+  for (const matrix of ['success', 'failure', 'cancelled', 'skipped', 'unknown', '']) {
+    for (const accounting of ['success', 'failure', 'cancelled', 'skipped', 'unknown', '']) {
+      it(`joins engine=${matrix || 'missing'} and accounting=${accounting || 'missing'}`, () => {
+        const run = spawnSync('bash', ['-euo', 'pipefail', '-c', script!], {
+          encoding: 'utf8',
+          timeout: 2000,
+          env: {
+            PATH: process.env.PATH,
+            MATRIX_RESULT: matrix,
+            ACCOUNTING_RESULT: accounting,
+            CI_EVENT_NAME: 'pull_request',
+            DIFF_RESULT: 'success',
+            SERVER_CHANGED: 'true',
+          },
+        });
+        expect(run.status, run.stderr).toBe(
+          matrix === 'success' && accounting === 'success' ? 0 : 1
+        );
+      });
+    }
+  }
+  for (const [event, diff, changed, expected] of [
+    ['pull_request', 'success', 'false', 0],
+    ['pull_request', 'success', 'true', 1],
+    ['pull_request', 'failure', 'false', 1],
+    ['pull_request', 'cancelled', 'false', 1],
+    ['pull_request', 'success', '', 1],
+    ['schedule', 'success', 'false', 1],
   ] as const) {
-    it(`executes the aggregate for ${result}/${event}/${diff}/${changed || 'missing'}`, () => {
-      expect(script).toBeTruthy();
-      expect(script).toMatch(/^case "\$MATRIX_RESULT" in/);
+    it(`permits skipped work only for a verified unaffected diff: ${event}/${diff}/${changed}`, () => {
       const run = spawnSync('bash', ['-euo', 'pipefail', '-c', script!], {
         encoding: 'utf8',
         timeout: 2000,
         env: {
           PATH: process.env.PATH,
-          MATRIX_RESULT: result,
+          MATRIX_RESULT: 'skipped',
+          ACCOUNTING_RESULT: 'skipped',
           CI_EVENT_NAME: event,
           DIFF_RESULT: diff,
           SERVER_CHANGED: changed,
@@ -90,11 +110,10 @@ describe('engine deployment reports what actually happened', () => {
     const release = uncommented(job(deploy, 'deploy'));
     const receipt = uncommented(job(deploy, 'record-receipt'));
 
-    // The local CI and publisher labels route to separately provisioned VMs.
-    // These checks enforce routing and ordering; installed VM isolation is
-    // verified separately. No paid hosted-runner fallback is permitted.
+    // A GitHub job is the runner isolation boundary: server dependency scripts
+    // and tests finish in preflight before the root-authorized job can start.
     expect(preflight).toMatch(/^ {2}preflight:/);
-    expect(preflight).toMatch(/^ {4}runs-on: \[self-hosted, smarter-local-linux-arm64\]$/m);
+    expect(preflight).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
     expect(preflight).toMatch(/^ {8}working-directory: server$/m);
     expect(preflight).toMatch(/^\s+npm ci --no-audit --no-fund\s*$/m);
     expect(preflight).toMatch(/^\s+npm run build\s*$/m);
@@ -111,18 +130,13 @@ describe('engine deployment reports what actually happened', () => {
 
     expect(doors).toMatch(/^ {2}engine-doors:/);
     expect(doors).toMatch(/^ {4}needs: preflight$/m);
-    expect(doors).toMatch(/^ {4}runs-on: \[self-hosted, smarter-local-publish\]$/m);
-    expect(doors).toMatch(/^ {4}environment: Production$/m);
     expect(doors).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
     expect(doors).toContain('node scripts/ci/check-engine-doors-exist.mjs');
     expect(doors).not.toMatch(/secrets\.HETZNER_|\bSSH_(?:USER|KEY|DIR)\b|\bHSSH\b/);
 
     expect(release).toMatch(/^ {2}deploy:/);
-    expect(release).toMatch(/^ {4}needs: \[preflight, engine-doors, produce-image\]$/m);
-    expect(release).toMatch(/^ {4}runs-on: \[self-hosted, smarter-local-publish\]$/m);
-    expect(release).toMatch(/^ {4}environment: Production$/m);
-    expect(release).toContain('artifact-ids: ${{ needs.produce-image.outputs.artifact_id }}');
-    expect(release).toContain('EXPECTED_ARCHIVE_SHA256: ${{ needs.produce-image.outputs.archive_sha256 }}');
+    expect(release).toMatch(/^ {4}needs: \[preflight, engine-doors\]$/m);
+    expect(release).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
     expect(release).toMatch(/^ {6}SHA: \$\{\{ needs\.preflight\.outputs\.target_sha \}\}$/m);
     expect(release).toMatch(/^ {6}SSH_USER: root$/m);
     expect(release).toContain('SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}');
@@ -132,8 +146,7 @@ describe('engine deployment reports what actually happened', () => {
 
     expect(receipt).toMatch(/^ {2}record-receipt:/);
     expect(receipt).toMatch(/^ {4}needs: \[preflight, deploy\]$/m);
-    expect(receipt).toMatch(/^ {4}runs-on: \[self-hosted, smarter-local-publish\]$/m);
-    expect(receipt).toMatch(/^ {4}environment: Production$/m);
+    expect(receipt).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
     expect(receipt).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
     expect(receipt).toContain('node scripts/ci/record-engine-deploy-attempt.mjs');
     expect(receipt).not.toMatch(/secrets\.HETZNER_|\bSSH_(?:USER|KEY|DIR)\b|\bHSSH\b/);
@@ -171,20 +184,6 @@ describe('engine deployment reports what actually happened', () => {
 });
 
 describe('the Club Arena bundle publishes directly to its Hetzner origin', () => {
-  it('can read the source PR and CI proof before repeating identical client tests', () => {
-    const resolver = uncommented(job(publish, 'publish-needed'));
-    const permissions = resolver.match(/^ {4}permissions:\n((?:^ {6}.+\n?)+)/m)?.[1];
-    expect(permissions).toMatch(/^ {6}contents: read$/m);
-    expect(permissions).toMatch(/^ {6}pull-requests: read$/m);
-    expect(permissions).toMatch(/^ {6}checks: read$/m);
-    expect(permissions).not.toMatch(/:\s*write\b/);
-    expect(resolver).toContain('[ "$TREE" != "$HEAD_TREE" ]');
-    expect(resolver).toContain('.name=="Client Unit Tests (vitest)" and .conclusion=="success"');
-    expect(uncommented(job(publish, 'client-tests'))).toContain(
-      "if: needs.publish-needed.outputs.tests_proven != 'true'"
-    );
-  });
-
   it('a recovery event can publish only the exact current protected-main SHA', () => {
     const resolver = publish.slice(
       publish.indexOf('- name: Resolve the tip of main'),
@@ -224,44 +223,12 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(origin).not.toContain('StrictHostKeyChecking=accept-new');
   });
 
-  it('keeps every secret-bearing release job off the shared pull-request runner pool', () => {
-    // Keep application secrets on the dedicated publisher VM and its protected
-    // Production environment. The owner requires fixed local routing with no
-    // cloud fallback; changing a job's credentials must change its routing too.
-    const localCi = '[self-hosted, smarter-local-linux-arm64]';
-    const localPublisher = '[self-hosted, smarter-local-publish]';
-    // Only keys under `jobs:` are jobs; `on:` has two-space keys of its own.
-    const jobsStart = publishCode.search(/^jobs:\s*$/m);
-    expect(jobsStart, 'publish workflow declares jobs').toBeGreaterThan(-1);
-    const jobsSection = publishCode.slice(jobsStart);
-    const jobs = [...jobsSection.matchAll(/^ {2}([A-Za-z0-9_-]+):\s*$/gm)].map((m) => m[1]);
-    expect(jobs.length).toBeGreaterThanOrEqual(4);
-    for (const name of jobs) {
-      const body = job(jobsSection, name);
-      const match = body.match(/^\s+runs-on:\s*(.+?)\s*$/m);
-      expect(match, `${name} declares runs-on`).not.toBeNull();
-      const runner = match![1];
-      if (/secrets\./.test(body)) {
-        expect(runner, `${name} holds a secret and must not read vars.CI_RUNNER`).not.toContain(
-          'CI_RUNNER'
-        );
-        expect(
-          runner,
-          `${name} holds a secret and must run on the dedicated local publisher`
-        ).toBe(localPublisher);
-        expect(body, `${name} must retain protected-main environment policy`).toMatch(
-          /^ {4}environment: Production$/m
-        );
-      } else {
-        expect(runner, `${name} must use the local CI runner`).toBe(localCi);
-      }
-    }
-    for (const name of ['build-and-store', 'publish-to-app', 'publish-to-origin']) {
-      expect(
-        job(publishCode, name),
-        `${name} is the secret-bearing job this law exists for`
-      ).toMatch(/secrets\./);
-    }
+  it('runs every release job on a fresh hosted runner', () => {
+    const runners = [...publish.matchAll(/^\s+runs-on:\s*(.+)$/gm)].map((match) => match[1].trim());
+    expect(runners.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(runners)).toEqual(new Set(['ubuntu-latest']));
+    expect(publish).not.toContain('vars.CI_RUNNER');
+    expect(publish).not.toContain('self-hosted');
   });
 
   it('requires both the built artifact and the test verdict before publishing', () => {

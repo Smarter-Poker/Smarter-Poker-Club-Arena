@@ -115,7 +115,7 @@ export default function ClubAnnouncementBanner({
                     created_at,
                     expires_at,
                     created_by,
-                    profiles(${PLAYER_NAME_COLUMNS})
+                    profiles:profiles!club_announcements_profiles_fkey(${PLAYER_NAME_COLUMNS})
                 `
         )
         .eq('club_id', resolvedId)

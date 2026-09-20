@@ -64,7 +64,11 @@ import {
   playerTotalsFromAwards,
   type MysteryBountyAward,
 } from '../../services/MysteryBountyService';
-import { isHeadlineTier, mysteryBountyTierLabel } from '../../config/mysteryBountyTiers';
+import {
+  isHeadlineTier,
+  mysteryBountyTierLabel,
+} from '../../config/mysteryBountyTiers';
+import { moneyAdjectiveAtUnit } from '../../utils/format';
 import { SpadeConsole } from '../console/SpadeConsole';
 import styles from './MysteryBountyPanel.module.css';
 
@@ -86,6 +90,19 @@ export interface MysteryBountyPanelProps {
   currentUserId?: string | null;
   /** Enables the "final position" half of the player payout view (section 41). */
   isCompleted?: boolean;
+  /**
+   * THE GRID THIS EVENT PAYS ON (2026-09-20). Every figure in this panel is
+   * cents off `fn_mystery_bounty_*`, and a Diamond chest holds whole Diamonds,
+   * so the panel cannot print any of them until it is told the unit. Required
+   * and undefaulted for the reason
+   * `a-tournament-prize-knows-its-unit.law.test.ts` records: a defaulted unit
+   * is "I could not tell" folded into a confident cent.
+   *
+   * The host reads it once from the tournament's arena embed with
+   * `tournamentRowUnitCents`; it is not derived here, because this panel is
+   * handed a view of the bounty RPCs and never sees a club row.
+   */
+  unitCents: number;
 }
 
 /** How many low tiers to show before the collapse control takes over. */
@@ -120,6 +137,7 @@ export default function MysteryBountyPanel({
   data,
   currentUserId,
   isCompleted,
+  unitCents,
 }: MysteryBountyPanelProps) {
   const { inventory, awards, leaderboard, isLoading, pendingReveals } = data;
 
@@ -238,10 +256,11 @@ export default function MysteryBountyPanel({
           <span className={`${styles.headlineLabel} sc-label sc-ink--blue`}>
             Top Mystery Bounty
           </span>
-          <span className={`${styles.headlineValue} sc-ink--gold`}>{formatCents(top)}</span>
+          <span className={`${styles.headlineValue} sc-ink--gold`}>{formatCents(top, unitCents)}</span>
           <span className={styles.headlineSub}>
             {counts.original.toLocaleString('en-US')} Mystery Bounties Drawn From A{' '}
-            {formatCents(inventory?.poolCents ?? 0)} Chip Pool
+            {formatCents(inventory?.poolCents ?? 0, unitCents)} {moneyAdjectiveAtUnit(unitCents)}{' '}
+            Pool
           </span>
         </div>
       )}
@@ -260,7 +279,7 @@ export default function MysteryBountyPanel({
       {biggest && (
         <div className={styles.status}>
           <span>
-            Largest Mystery Bounty Won: {formatCents(biggest.amountCents)} By{' '}
+            Largest Mystery Bounty Won: {formatCents(biggest.amountCents, unitCents)} By{' '}
             {winnerNames(biggest.award)}
           </span>
         </div>
@@ -271,19 +290,19 @@ export default function MysteryBountyPanel({
           <div className={styles.figure}>
             <span className="sc-label sc-ink--blue">Bounty Pool</span>
             <span className={`${styles.figureValue} sc-ink--silver`}>
-              {formatCents(inventory.poolCents)}
+              {formatCents(inventory.poolCents, unitCents)}
             </span>
           </div>
           <div className={styles.figure}>
             <span className="sc-label sc-ink--blue">Awarded</span>
             <span className={`${styles.figureValue} sc-ink--silver`}>
-              {formatCents(awardedCents(inventory))}
+              {formatCents(awardedCents(inventory), unitCents)}
             </span>
           </div>
           <div className={styles.figure}>
             <span className="sc-label sc-ink--blue">Still In Play</span>
             <span className={`${styles.figureValue} sc-ink--silver`}>
-              {formatCents(remainingCents(inventory))}
+              {formatCents(remainingCents(inventory), unitCents)}
             </span>
           </div>
           <div className={styles.figure}>
@@ -332,7 +351,7 @@ export default function MysteryBountyPanel({
                             : 'sc-ink--silver'
                       }`}
                     >
-                      {formatCents(t.amountCents)} x{t.original.toLocaleString('en-US')}
+                      {formatCents(t.amountCents, unitCents)} x{t.original.toLocaleString('en-US')}
                     </span>
                     <span className={`${styles.tierName} sc-label sc-ink--blue`}>
                       {mysteryBountyTierLabel(t.tier)}
@@ -412,7 +431,7 @@ export default function MysteryBountyPanel({
                       isHeadlineTier(a.tier) ? 'sc-ink--gold' : 'sc-ink--silver'
                     }`}
                   >
-                    {formatCents(a.amountCents)}
+                    {formatCents(a.amountCents, unitCents)}
                   </span>
                   <span className={`${styles.awardWhen} sc-ink--muted`}>
                     {shortWhen(a.revealedAt)}
@@ -467,7 +486,7 @@ export default function MysteryBountyPanel({
                   </span>
                 </span>
                 <span className={`${styles.lbEarnings} sc-ink--silver`}>
-                  {formatCents(row.earningsCents)}
+                  {formatCents(row.earningsCents, unitCents)}
                 </span>
               </button>
             ))
@@ -501,13 +520,13 @@ export default function MysteryBountyPanel({
             <div className={styles.figure}>
               <span className="sc-label sc-ink--blue">Bounty Earnings</span>
               <span className={`${styles.figureValue} sc-ink--silver`}>
-                {formatCents(selectedEarnings)}
+                {formatCents(selectedEarnings, unitCents)}
               </span>
             </div>
             <div className={styles.figure}>
               <span className="sc-label sc-ink--blue">Largest Bounty</span>
               <span className={`${styles.figureValue} sc-ink--silver`}>
-                {formatCents(selectedTotals?.largestCents ?? 0)}
+                {formatCents(selectedTotals?.largestCents ?? 0, unitCents)}
               </span>
             </div>
             {isCompleted && (
@@ -529,7 +548,10 @@ export default function MysteryBountyPanel({
             <div className={styles.figure}>
               <span className="sc-label sc-ink--blue">Total Payout</span>
               <span className={`${styles.figureValue} sc-ink--gold`}>
-                {formatCents(Math.round((playerPayout?.prize ?? 0) * 100) + selectedEarnings)}
+                {formatCents(
+                  Math.round((playerPayout?.prize ?? 0) * 100) + selectedEarnings,
+                  unitCents
+                )}
               </span>
             </div>
           </div>

@@ -44,6 +44,8 @@ import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDispla
 import { SpadeConsole } from '../console/SpadeConsole';
 import './TournamentRankingCard.css';
 import { publicOrigin } from '../../lib/appBase';
+import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../utils/format';
+import { CHIP_UNIT_CENTS, normalizeUnitCents } from '../../../server/src/tournament/tournamentUnit';
 
 export interface TournamentRankingCardProps {
   result: TournamentResult;
@@ -70,6 +72,17 @@ export interface TournamentRankingCardProps {
   onDismiss: () => void;
   /** "Play Again" — where to send them. Usually the club's tournament list. */
   onPlayAgain?: () => void;
+  /**
+   * THE GRID THIS EVENT PAID ON (2026-09-20). Every figure on this card is a
+   * payout, and at a Diamond event `formatMoney`'s two forced decimal places
+   * advertise a fraction of a Diamond that no door in this estate accepts.
+   *
+   * Required and undefaulted: `a-tournament-prize-knows-its-unit.law.test.ts`
+   * exists because a defaulted unit made five surfaces look finished while
+   * every one of them was still on the cent grid. The host reads it from the
+   * session payload's own arena asset.
+   */
+  unitCents: number;
 }
 
 /** 1 -> "1st", 22 -> "22nd", 111 -> "111th". */
@@ -178,6 +191,17 @@ function formatMoney(n: number): string {
   });
 }
 
+/**
+ * The same figure at the unit the event paid on. `formatMoney` unchanged at a
+ * chip event - the same function, so a chip card is byte-identical by
+ * construction - and whole Diamonds at a Diamond one.
+ */
+function moneyAtUnit(n: number, unitCents: number): string {
+  return normalizeUnitCents(unitCents) === CHIP_UNIT_CENTS
+    ? formatMoney(n)
+    : formatPrizeAtUnit(n, unitCents);
+}
+
 /** 185 -> "3m 05s", 3725 -> "1h 02m". Never prints a unit that is zero. */
 function formatDuration(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds));
@@ -197,6 +221,7 @@ export default function TournamentRankingCard({
   endedAt,
   onDismiss,
   onPlayAgain,
+  unitCents,
 }: TournamentRankingCardProps) {
   const navigate = useNavigate();
   /* Desktop has no share sheet, so the button reports the clipboard copy on
@@ -263,7 +288,8 @@ export default function TournamentRankingCard({
 
   if (typeof document === 'undefined') return null;
 
-  const place = result.finishPlace;
+  const qualification = result.satelliteQualification;
+  const place = qualification ? null : result.finishPlace;
   const eventName = formatGameTitle(result.name || tableName || 'Tournament');
   const totalWon = (result.prize || 0) + (result.bountyWinnings || 0);
   /* MYSTERY BOUNTY (section 43). Cents, and absent on any non-mystery event. */
@@ -303,10 +329,13 @@ export default function TournamentRankingCard({
    * the button itself — a toast provider is not guaranteed at this portal.
    */
   const handleShare = async () => {
-    const text =
-      place != null
+    const text = qualification
+      ? `I qualified in ${eventName} on Smarter.Poker.`
+      : place != null
         ? `I finished ${ordinal(place)} in ${eventName} on Smarter.Poker` +
-          (totalWon > 0 ? ` for ${formatMoney(totalWon)}.` : '.')
+          (totalWon > 0
+            ? ` for ${moneyAtUnit(totalWon, unitCents)}${moneySuffixAtUnit(unitCents)}.`
+            : '.')
         : `I just played ${eventName} on Smarter.Poker.`;
     try {
       const nav = navigator as Navigator & {
@@ -384,7 +413,7 @@ export default function TournamentRankingCard({
              always going to fit. Putting the event in the title clipped it to
              "SUNDAY DEEPSTACK BOUNTY HU" at 393px. */
           eyebrow={eventSubtitle}
-          title="Ranking"
+          title={qualification ? 'Qualified' : 'Ranking'}
           subtitle={eventName}
           pill={place != null ? `#${place}` : undefined}
           pillInk="silver"
@@ -426,7 +455,7 @@ export default function TournamentRankingCard({
 
           {/* ── Place band ── */}
           <div className={`trc2__placeband ${medalClass(place)}`}>
-            {place != null ? ordinal(place) : 'Finished'}
+            {qualification ? 'Qualified' : place != null ? ordinal(place) : 'Finished'}
           </div>
 
           {/* ── Player row ── */}
@@ -453,8 +482,22 @@ export default function TournamentRankingCard({
                   frequently most of the interest. The label names it as the
                   total, and the line underneath shows the two halves whenever
                   there are two. */}
-              <span className="trc2__reward-label">Total Payout:</span>
-              <span className="trc2__reward-value sc-ink--silver">{formatMoney(totalWon)}</span>
+              <span className="trc2__reward-label">
+                {qualification
+                  ? qualification.deliveryKind === 'seat'
+                    ? 'Target Entry:'
+                    : qualification.deliveryKind === 'ticket'
+                      ? 'Entry Ticket:'
+                      : 'Cash Award:'
+                  : 'Total Payout:'}
+              </span>
+              <span className="trc2__reward-value sc-ink--silver">
+                {moneyAtUnit(qualification?.amount ?? totalWon, unitCents)}
+                {/* The headline figure is otherwise a bare number, and a bare
+                    number in the Diamond Arena does not say what was won. Adds
+                    nothing at a chip event. */}
+                {moneySuffixAtUnit(unitCents)}
+              </span>
             </div>
           </div>
 
@@ -473,13 +516,13 @@ export default function TournamentRankingCard({
           {result.bountyWinnings > 0 && (
             <div className="trc2__payout-split">
               <span className="trc2__payout-part">
-                Prize <strong>{formatMoney(result.prize || 0)}</strong>
+                Prize <strong>{moneyAtUnit(result.prize || 0, unitCents)}</strong>
               </span>
               <span className="trc2__payout-plus" aria-hidden="true">
                 +
               </span>
               <span className="trc2__payout-part">
-                Bounties <strong>{formatMoney(result.bountyWinnings)}</strong>
+                Bounties <strong>{moneyAtUnit(result.bountyWinnings, unitCents)}</strong>
               </span>
             </div>
           )}
@@ -502,7 +545,7 @@ export default function TournamentRankingCard({
               )}
               {result.bountyWinnings > 0 && (
                 <span className="trc2__extra">
-                  <strong>{formatMoney(result.bountyWinnings)}</strong> In Bounties
+                  <strong>{moneyAtUnit(result.bountyWinnings, unitCents)}</strong> In Bounties
                 </span>
               )}
               {/* MYSTERY BOUNTY (Dan section 43). Three facts the bounty line
@@ -517,12 +560,13 @@ export default function TournamentRankingCard({
               )}
               {mysteryCents > 0 && (
                 <span className="trc2__extra">
-                  <strong>{formatMoney(mysteryCents / 100)}</strong> In Mystery Bounties
+                  <strong>{moneyAtUnit(mysteryCents / 100, unitCents)}</strong> In Mystery Bounties
                 </span>
               )}
               {largestMysteryCents > 0 && (
                 <span className="trc2__extra">
-                  <strong>{formatMoney(largestMysteryCents / 100)}</strong> Largest Mystery Bounty
+                  <strong>{moneyAtUnit(largestMysteryCents / 100, unitCents)}</strong> Largest Mystery
+                  Bounty
                 </span>
               )}
               {result.rebuys > 0 && (

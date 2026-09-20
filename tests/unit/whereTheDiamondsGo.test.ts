@@ -186,6 +186,22 @@ describe('the wiring', () => {
     const body = migration.slice(migration.indexOf('BEGIN;'));
     expect(body).toContain('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_bucket(');
     expect(body).toContain('CREATE OR REPLACE FUNCTION public.fn_diamond_flow_by_kind(');
+    /* The kind map production runs is the latest redefinition (20260914114052
+       named every writer; 20260920141527 learned the Diamond Games;
+       20260920141807 the Diamond Spins perks). The flow function is unchanged
+       and still lives here. The kind resolution below is pinned on the live
+       version. */
+    const liveMap = read(
+      'supabase/migrations/20260920141807_the_diamond_kind_map_names_the_spins_perks.sql'
+    );
+    expect(liveMap).toContain('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_bucket(');
+    expect(liveMap).toContain("NULLIF(BTRIM(p_transaction_type), '')");
+    expect(liveMap).toContain("THEN 'other_spent'");
+    expect(liveMap).toContain("ELSE 'other_earned'");
+    expect(liveMap).toMatch(/^IMMUTABLE$/m);
+    expect(liveMap).not.toMatch(/\bFROM public\./);
+    expect(liveMap.match(/^BEGIN;/gm)).toHaveLength(1);
+    expect(liveMap.match(/^COMMIT;/gm)).toHaveLength(1);
     expect(body).toContain("RAISE EXCEPTION 'diamond_flow_is_own_only'");
     expect(body).toContain('FROM public.diamond_transactions t');
     expect(body).toContain("interval '30 days'");
@@ -204,6 +220,145 @@ describe('the wiring', () => {
     // Exactly one transaction.
     expect(body.match(/^BEGIN;/gm)).toHaveLength(1);
     expect(body.match(/^COMMIT;/gm)).toHaveLength(1);
+  });
+
+  it('the live map names every kind a writer can produce, exactly (deep dive 2026-09-14)', () => {
+    // Read from production on 2026-09-14: every function that inserts into
+    // diamond_transactions (24 of them), diamond_reward_catalog.action_key
+    // (33 keys), and the kinds the Mint register classifies. A kind that can
+    // reach the ledger is named here as an exact literal, never left to a
+    // pattern: add a writer, add its kind to the map, or this test says so.
+    const writerKinds = [
+      // spent
+      'arena_deposit',
+      'tournament_fee',
+      'diamond_gift_sent',
+      'live_gift_sent',
+      'chip_purchase',
+      'chip_mint',
+      'plinko_drop',
+      'crash_bet',
+      'wheel_spin',
+      'pvp_stake',
+      'game_cost',
+      'memory_game',
+      'trivia_entry',
+      'trivia_arcade',
+      'trivia_lifeline',
+      'training_entry',
+      'tournament_entry',
+      'daily_challenge_reroll',
+      'feature_purchase',
+      'feature_unlock',
+      'video_unlock',
+      'streak_freeze',
+      'refund',
+      'debt_settlement',
+      'adjustment',
+      'reconciliation',
+      'burn',
+      // the Diamond Games (2026-09-19) and the Diamond Spins perks
+      'diamond_game',
+      'daily_bonus_spin',
+      'deduction',
+      // earned
+      'arena_withdraw',
+      'diamond_gift_received',
+      'live_gift_received',
+      'transfer',
+      'union_grant',
+      'purchase',
+      'purchased',
+      'stripe_purchase',
+      'diamond_purchase',
+      'purchase_clearing',
+      'mint',
+      'daily_login',
+      'daily_bonus',
+      'daily_bonus_boost',
+      'daily_challenge_claim',
+      'daily_mission_milestone',
+      'daily_trivia_challenge',
+      'streak_reward',
+      'challenge',
+      'achievement',
+      'hand_of_the_day',
+      'gto_chart_study',
+      'training_reward',
+      'training_level_complete',
+      'first_training_session',
+      'trivia_run',
+      'trivia_daily_bonus',
+      'trivia_prize_wheel',
+      'wheel_prize',
+      'signup_bonus',
+      'bonus',
+      'promotional',
+      'easter_egg',
+      'birthday',
+      'first_purchase',
+      'referral_bonus',
+      'referral_qualified',
+      'referral_referee',
+      'referral_vip_conversion',
+      'tournament_prize',
+      'pvp_win',
+      'vip_stipend',
+      'vip_daily',
+      'social_post',
+      'follow',
+      'reaction',
+      'strategy_comment',
+      'share_content',
+      'profile_complete',
+      'profile_pic',
+      'video_watch',
+      'video_favorite',
+      'hendonmob_link',
+      'venue_review',
+      'email_verified',
+      'phone_verified',
+      'pvp_refund',
+      'pvp_tie_refund',
+      'diamond_gift_refund',
+      'tournament_cancel_refund',
+      'tournament_entry_refund',
+      'admin',
+      'seeded',
+      'bridge',
+      'house',
+    ];
+    const migration = read(
+      'supabase/migrations/20260920141807_the_diamond_kind_map_names_the_spins_perks.sql'
+    );
+    const map = migration.slice(
+      migration.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_bucket'),
+      migration.indexOf('COMMENT ON FUNCTION public.fn_diamond_kind_bucket')
+    );
+    const missing = writerKinds.filter((k) => !map.includes(`'${k}'`));
+    expect(missing).toEqual([]);
+    // A bare `transfer` is a game payout, a host intake or an old gift: the
+    // map cannot tell which by kind alone, so it is Transfers, never a gift.
+    expect(map).toMatch(/p_amount < 0 AND k = 'transfer'\s+THEN 'transfers'/);
+    expect(map).toMatch(/WHEN k = 'transfer'\s+THEN 'transfers'/);
+    expect(map).not.toMatch(/'transfer'\)\s+THEN 'gifts_/);
+    expect(map).toMatch(/WHEN 'transfers'\s+THEN 'Transfers'/);
+    // Same signature as the first migration: nothing that calls it changes.
+    expect(map).toContain('p_type             text,');
+    expect(map).toContain('p_amount           bigint');
+    expect(map).toContain('RETURNS TABLE (kind text, bucket text, label text)');
+    // Pure: IMMUTABLE, no table reads, both sides end in Other.
+    expect(map).toMatch(/LANGUAGE sql\s+IMMUTABLE\s+PARALLEL SAFE/);
+    expect(map).not.toMatch(/FROM public\./);
+    expect(map).toContain("THEN 'other_spent'");
+    expect(map).toContain("ELSE 'other_earned'");
+    // Every bucket the map can name has a player-facing label.
+    const buckets = new Set([...map.matchAll(/THEN '([a-z_]+)'/g)].map((m) => m[1]));
+    const labelled = new Set([...map.matchAll(/WHEN '([a-z_]+)'\s+THEN '[A-Z]/g)].map((m) => m[1]));
+    for (const b of buckets) {
+      if (b === 'other_spent' || b === 'other_earned') continue;
+      expect(labelled.has(b), `bucket ${b} has no label`).toBe(true);
+    }
   });
 
   it('the schema-manifest fragment names both functions', () => {

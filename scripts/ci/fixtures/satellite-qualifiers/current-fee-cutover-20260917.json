@@ -1,0 +1,10 @@
+{
+  "rows": [
+    {
+      "singleton": true,
+      "starts_at": "2026-09-17T18:24:02.831517+00:00"
+    }
+  ],
+  "table": "public.accounting_tournament_fee_cutover",
+  "observed_at": "2026-09-17T20:04:02.521008+00:00"
+}

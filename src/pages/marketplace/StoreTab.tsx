@@ -1,39 +1,116 @@
 /**
- * MARKETPLACE — Store tab: club shop items bought with DIAMONDS from the
- * player's global wallet (never chips — product rule, Dan 2026-08-23).
- * Purchases go through /api/club-arena/marketplace-purchase (server-authoritative).
+ * MARKETPLACE : Store tab: club shop items can be bought with Diamonds from
+ * the player's global wallet or handed off in the same page for Card checkout
+ * (never chips : product rule, Dan 2026-08-23). Diamond purchases go through
+ * /api/club-arena/marketplace-purchase (server-authoritative).
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { callClubArenaApi } from '../../services/clubArenaApi';
 import { useToast } from '../../components/common/Toast';
 import { masterBus } from '../../core/MasterBus';
+import { leaveForHub } from '../../lib/openExternal';
 import { fmt } from '../../utils/format';
+import { reportError } from '../../utils/errorReporter';
+import { formatPopupText } from '../../utils/popupStyle';
+import {
+  clearSessionPurchaseRequestIfMatches,
+  readOrCreateSessionPurchaseRequest,
+  readSessionPurchaseRequest,
+} from '../../utils/sessionPurchaseRequest';
 import styles from '../MarketplacePage.module.css';
-import ItemArt from './ItemArt';
+import ItemArt, { hasCuratedItemArt } from './ItemArt';
 import {
   CATEGORIES,
   describeGrant,
   effectivePrice,
+  isUuid,
   isOnSale,
   safeImageUrl,
+  sortMarketplaceItems,
   unavailableReason,
   type MarketplaceItem,
   type ShopCategoryInfo,
   type SortMode,
 } from './marketplaceShared';
 
+interface MarketplacePurchaseReceipt {
+  success: true;
+  purchaseId: string;
+  requestId: string;
+  accountId: string;
+  clubId: string;
+  itemId: string;
+  newBalance: number;
+  currency: 'diamonds';
+  pricePaid: number;
+  duplicate: boolean;
+  item: {
+    name: string;
+    type: string;
+  };
+}
+
+/**
+ * The HTTP client establishes a successful status, but the body is still an
+ * untrusted serialization boundary. Do not retire the durable purchase key or
+ * announce delivery until the receipt identifies the exact item and price the
+ * member confirmed.
+ */
+export function verifiedMarketplacePurchaseReceipt(
+  raw: unknown,
+  expected: {
+    accountId: string;
+    requestId: string;
+    clubId: string;
+    itemId: string;
+    name: string;
+    itemType: string;
+    price: number;
+  }
+): MarketplacePurchaseReceipt | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const receipt = raw as Partial<MarketplacePurchaseReceipt>;
+  const item = receipt.item;
+  if (
+    !expected.name ||
+    !expected.itemType ||
+    !Number.isSafeInteger(expected.price) ||
+    expected.price < 0 ||
+    !expected.accountId ||
+    !isUuid(expected.requestId) ||
+    receipt.success !== true ||
+    !isUuid(receipt.purchaseId) ||
+    receipt.requestId !== expected.requestId ||
+    receipt.accountId !== expected.accountId ||
+    receipt.clubId !== expected.clubId ||
+    receipt.itemId !== expected.itemId ||
+    !Number.isSafeInteger(receipt.newBalance) ||
+    Number(receipt.newBalance) < 0 ||
+    receipt.currency !== 'diamonds' ||
+    !Number.isSafeInteger(receipt.pricePaid) ||
+    receipt.pricePaid !== expected.price ||
+    typeof receipt.duplicate !== 'boolean' ||
+    !item ||
+    item.name !== expected.name ||
+    item.type !== expected.itemType
+  ) {
+    return null;
+  }
+  return receipt as MarketplacePurchaseReceipt;
+}
+
 interface StoreTabProps {
   clubId: string;
   userId: string;
   items: MarketplaceItem[];
   ownedItemIds: Set<string>;
-  /** the buyer's DIAMOND balance (global wallet) — all prices are in diamonds */
+  /** the buyer's DIAMOND balance (global wallet) : all prices are in diamonds */
   balance: number;
   /** jump to the Diamonds tab to top up */
   onGoDiamonds: () => void;
   isAdmin: boolean;
-  /** true while the shop is still loading — do NOT claim the shop is empty */
+  /** true while the shop is still loading : do NOT claim the shop is empty */
   loading: boolean;
   /**
    * Set when the shop FETCH failed. An empty list and a failed read are
@@ -47,8 +124,29 @@ interface StoreTabProps {
   onGoManage: () => void;
   /** Refresh the authoritative catalog after a server-detected stale price. */
   onCatalogStale: () => void;
-  onPurchased: (newBalance: number | null) => void;
+  onPurchased: (
+    settlement: { accountId: string; clubId: string; newBalance: number } | null
+  ) => void;
 }
+
+const cardCheckoutUnavailableCopy = (reason?: string | null) => {
+  switch (reason) {
+    case 'card_not_required':
+      return 'Card Not Required';
+    case 'wallet_debt':
+      return 'Card Checkout Requires A Current Diamond Balance';
+    case 'unsupported_item_price':
+      return 'Card Checkout Is Not Available For This Price';
+    case 'package_catalog_unavailable':
+    case 'wallet_unavailable':
+    case 'verification_unavailable':
+      return 'Card Checkout Is Temporarily Unavailable';
+    case 'fulfillment_unavailable':
+      return 'Digital Delivery Is Not Available For This Item';
+    default:
+      return 'Card Checkout Is Unavailable';
+  }
+};
 
 export default function StoreTab({
   clubId,
@@ -87,18 +185,46 @@ export default function StoreTab({
     () => (buyTargetId ? (items.find((i) => i.id === buyTargetId) ?? null) : null),
     [items, buyTargetId]
   );
-  /**
-   * One key per purchase INTENT, minted when the modal opens and reused by
-   * every retry of that same intent. See ClubArenaApiOptions.idempotencyKey.
-   */
-  const purchaseKeyRef = useRef<string | null>(null);
   const inFlightRef = useRef(false);
+  const operationRef = useRef(0);
+  const purchaseAbortRef = useRef<AbortController | null>(null);
+  const activeOwnerRef = useRef({ userId, clubId });
   const [processing, setProcessing] = useState(false);
   const modalRef = useRef<HTMLDivElement | null>(null);
   const confirmBtnRef = useRef<HTMLButtonElement | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [sortMode, setSortMode] = useState<SortMode>('newest');
+  const [pendingPurchasePrice, setPendingPurchasePrice] = useState<number | null>(null);
+  const [resumingPurchase, setResumingPurchase] = useState(false);
+  const [recoveryBlockedItemId, setRecoveryBlockedItemId] = useState<string | null>(null);
+
+  // This component remains mounted when auth or the selected club changes.
+  // Revoke the prior confirmation immediately and abort its transport. The
+  // durable request remains available to the original account when an abort
+  // leaves the server outcome unknown.
+  useLayoutEffect(() => {
+    activeOwnerRef.current = { userId, clubId };
+    operationRef.current += 1;
+    purchaseAbortRef.current?.abort();
+    purchaseAbortRef.current = null;
+    inFlightRef.current = false;
+    setProcessing(false);
+    setPendingPurchasePrice(null);
+    setResumingPurchase(false);
+    setRecoveryBlockedItemId(null);
+    setBuyTargetId(null);
+  }, [userId, clubId]);
+
+  useEffect(
+    () => () => {
+      operationRef.current += 1;
+      purchaseAbortRef.current?.abort();
+      purchaseAbortRef.current = null;
+      inFlightRef.current = false;
+    },
+    []
+  );
 
   const filteredItems = useMemo(() => {
     let result = [...items];
@@ -116,32 +242,7 @@ export default function StoreTab({
           (item.description || '').toLowerCase().includes(q)
       );
     }
-    // Sold-out items always sink, whatever the sort.
-    const soldOutRank = (i: MarketplaceItem) => (unavailableReason(i, false, true) ? 1 : 0);
-    switch (sortMode) {
-      case 'price-low':
-        result.sort((a, b) => a.price - b.price);
-        break;
-      case 'price-high':
-        result.sort((a, b) => b.price - a.price);
-        break;
-      case 'popular':
-        result.sort((a, b) => (b.purchase_count || 0) - (a.purchase_count || 0));
-        break;
-      default:
-        /* "Featured", not "Newest" (Dan 2026-08-25). This case was
-           `default: break` - the select's DEFAULT option was inert, so a member
-           who picked "Price: Low To High" and then tried to undo it got whatever
-           arbitrary order the API returned. MarketplaceItem has no created_at,
-           so a truthful "Newest" is impossible without an API change and
-           faking it would be worse. It DOES have sort_order, which admins set
-           in ManageTab under the hint "Lower Shows First" and which the
-           storefront never honoured. */
-        result.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-        break;
-    }
-    result.sort((a, b) => soldOutRank(a) - soldOutRank(b));
-    return result;
+    return sortMarketplaceItems(result, sortMode);
   }, [items, categoryFilter, searchFilter, sortMode]);
 
   // Modal a11y: Escape to close, initial focus on Confirm, background locked.
@@ -192,21 +293,72 @@ export default function StoreTab({
     return () => document.removeEventListener('keydown', onKey);
   }, [buyTarget, processing]);
 
-  const modalImg = buyTarget ? safeImageUrl(buyTarget.image_url) : null;
+  const modalImg =
+    buyTarget &&
+    !hasCuratedItemArt(
+      buyTarget.name,
+      buyTarget.category,
+      buyTarget.item_type,
+      buyTarget.grant_spec?.type,
+      buyTarget.grant_spec?.avatar_id || buyTarget.grant_spec?.theme_id
+    )
+      ? safeImageUrl(buyTarget.image_url)
+      : null;
 
-  const mintPurchaseKey = () =>
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const purchaseScopeFor = (item: MarketplaceItem) =>
+    `club-shop:${userId}:${clubId}:${item.id}:qty=1`;
+  const purchasePayloadFor = (price: number) => `expected-price=${price}`;
+  const priceFromPurchasePayload = (payload: string) => {
+    const match = /^expected-price=(\d{1,10})$/.exec(payload);
+    if (!match) return null;
+    const price = Number(match[1]);
+    return Number.isSafeInteger(price) && price >= 0 ? price : null;
+  };
 
   const openBuy = (item: MarketplaceItem) => {
-    purchaseKeyRef.current = mintPurchaseKey();
+    if (recoveryBlockedItemId === item.id) {
+      toast.warning(
+        'This Verified Purchase Could Not Release Its Recovery Key. Start A New Browser Session Before Buying This Item Again.'
+      );
+      return;
+    }
+    const scope = purchaseScopeFor(item);
+    let pending: ReturnType<typeof readSessionPurchaseRequest>;
+    try {
+      pending = readSessionPurchaseRequest(scope);
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Protected Purchase Storage Is Unavailable. This Purchase Was Not Started.'
+      );
+      return;
+    }
+    const pendingPrice = pending ? priceFromPurchasePayload(pending.payloadKey) : null;
+    if (pending && pendingPrice === null) {
+      toast.error(
+        'An Earlier Purchase Could Not Be Safely Recovered. Start A New Browser Session.'
+      );
+      return;
+    }
+    setPendingPurchasePrice(pendingPrice ?? effectivePrice(item));
+    setResumingPurchase(pendingPrice !== null);
     setBuyTargetId(item.id);
   };
 
   const closeBuy = () => {
-    purchaseKeyRef.current = null;
+    setPendingPurchasePrice(null);
+    setResumingPurchase(false);
     setBuyTargetId(null);
+  };
+
+  const openCardCheckout = (item: MarketplaceItem) => {
+    const itemPath = encodeURIComponent(item.id);
+    const clubQuery = encodeURIComponent(clubId);
+    // The World Hub detail route owns its Stripe quote, request idempotency,
+    // checkout-status verification, and atomic item fulfillment. Keep this a
+    // same-surface handoff instead of duplicating money logic in Club Arena.
+    leaveForHub(`/hub/club-shop/${itemPath}?clubId=${clubQuery}`);
   };
 
   /**
@@ -215,85 +367,169 @@ export default function StoreTab({
    * the shop behind it), so Confirm stayed live for an item that had since
    * become owned / sold out / ended, and only the server stopped the charge.
    */
-  const modalBlocked = buyTarget
-    ? unavailableReason(buyTarget, ownedItemIds.has(buyTarget.id), !!buyTarget.stackable)
-    : null;
+  const purchasePrice = buyTarget ? (pendingPurchasePrice ?? effectivePrice(buyTarget)) : 0;
+  const modalBlocked =
+    buyTarget && !resumingPurchase
+      ? unavailableReason(buyTarget, ownedItemIds.has(buyTarget.id), !!buyTarget.stackable)
+      : null;
 
   const handlePurchase = async () => {
     if (!buyTarget) return;
+    // This must run before an intent is created. A blocked/synthetic click or
+    // a duplicate event while the first request is in flight is not a new
+    // server attempt and must not leave a pending request in session storage.
+    if (inFlightRef.current) return;
+    if (modalBlocked) return;
+    const purchaseItem = buyTarget;
+    const purchaseAccountId = userId;
+    const purchaseClubId = clubId;
+    if (!purchaseAccountId || !purchaseClubId) return;
+    const purchaseScope = purchaseScopeFor(purchaseItem);
+    let purchaseIntent: ReturnType<typeof readOrCreateSessionPurchaseRequest>;
+    try {
+      purchaseIntent = readOrCreateSessionPurchaseRequest(
+        purchaseScope,
+        purchasePayloadFor(effectivePrice(purchaseItem))
+      );
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Protected Purchase Storage Is Unavailable. This Purchase Was Not Started.'
+      );
+      return;
+    }
+    const confirmedPrice = priceFromPurchasePayload(purchaseIntent.payloadKey);
+    if (confirmedPrice === null) {
+      // An invalid durable binding may belong to a request whose response was
+      // lost. Never erase it and mint a second charge identity automatically.
+      toast.error(
+        'An Earlier Purchase Could Not Be Safely Recovered. Start A New Browser Session.'
+      );
+      return;
+    }
+    setPendingPurchasePrice(confirmedPrice);
+    setResumingPurchase(purchaseIntent.resumed);
     // A REF, not the state flag. `processing` is only visible to a later event
     // after React commits, so a synthetic double-fire in the same tick (iOS
     // touch-then-click, Enter landing with a click) passed both guards.
-    if (inFlightRef.current) return;
-    if (modalBlocked) return;
     inFlightRef.current = true;
     setProcessing(true);
+    const operationId = ++operationRef.current;
+    const controller = new AbortController();
+    purchaseAbortRef.current = controller;
+    const isCurrentOperation = () =>
+      operationRef.current === operationId &&
+      activeOwnerRef.current.userId === purchaseAccountId &&
+      activeOwnerRef.current.clubId === purchaseClubId;
+    let completedReceipt: MarketplacePurchaseReceipt | null = null;
+    let completedRecoveryRetired = true;
     try {
-      const data = await callClubArenaApi<{ newBalance: number }>(
+      const data = await callClubArenaApi<MarketplacePurchaseReceipt>(
         'marketplace-purchase',
         {
-          clubId,
-          itemId: buyTarget.id,
+          clubId: purchaseClubId,
+          itemId: purchaseItem.id,
           // The confirmation and the debit are one price contract. PostgreSQL
           // locks the item and rejects this exact value when an admin changes
           // the price after the sheet opened, so a player can never confirm
           // one amount and be charged another.
-          expectedPrice: effectivePrice(buyTarget),
+          expectedPrice: confirmedPrice,
         },
-        { idempotencyKey: purchaseKeyRef.current ?? undefined }
-      );
-      toast.success(`Purchased ${buyTarget.name}`);
-      masterBus.emit('BALANCE_UPDATED', { source: 'marketplace_purchase', clubId });
-      const grant = buyTarget.grant_spec;
-      if (grant && grant.type !== 'none') {
-        const quantity = Math.max(1, Math.floor(Number(grant.qty) || 1));
-        const assetId = grant.theme_id || grant.avatar_id;
-        masterBus.emit('ENTITLEMENTS_CHANGED', {
-          userId,
-          category: grant.type,
-          assetId,
-          quantity,
-          source: 'club-purchase',
-        });
-        if (grant.type === 'table_skin' || grant.type === 'avatar') {
-          masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
-            userId,
-            category: grant.type === 'avatar' ? 'avatar' : 'theme_id',
-            assetId,
-            source: 'club-purchase',
-          });
+        {
+          idempotencyKey: purchaseIntent.requestId,
+          expectedUserId: purchaseAccountId,
+          signal: controller.signal,
         }
+      );
+      const receipt = verifiedMarketplacePurchaseReceipt(data, {
+        accountId: purchaseAccountId,
+        requestId: purchaseIntent.requestId,
+        clubId: purchaseClubId,
+        itemId: purchaseItem.id,
+        name: purchaseItem.name,
+        itemType: purchaseItem.item_type || purchaseItem.grant_spec?.type || '',
+        price: confirmedPrice,
+      });
+      if (!receipt) {
+        throw new Error(
+          'Purchase Status Could Not Be Verified. Retry This Same Item To Check The Original Purchase.'
+        );
       }
-      closeBuy();
-      onPurchased(typeof data.newBalance === 'number' ? data.newBalance : null);
+      try {
+        if (!clearSessionPurchaseRequestIfMatches(purchaseScope, purchaseIntent.requestId)) {
+          completedRecoveryRetired = false;
+          reportError(
+            new Error('Verified Purchase Request Was Not The Current Protected Store Intent.'),
+            'StoreTab.retireVerifiedPurchaseMismatch'
+          );
+        }
+      } catch (retirementError) {
+        completedRecoveryRetired = false;
+        // The financial result is already exact and terminal. Retaining its
+        // key is safe (the server replays it); rotating or relabeling this
+        // verified success would be unsafe.
+        reportError(retirementError, 'StoreTab.retireVerifiedPurchase');
+      }
+      completedReceipt = receipt;
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Purchase failed');
       const apiError = err as {
         definitive?: boolean;
         status?: number;
         data?: {
+          code?: string;
           reason?: string;
           soldOut?: boolean;
           alreadyOwned?: boolean;
           limitReached?: boolean;
         };
       };
+      const definitiveRefusal = apiError.definitive === true;
+      const resumedPurchase = purchaseIntent.resumed;
 
       // price_changed is a special, explicitly pre-commit 409. The database
       // refused the debit because the locked server price no longer equals
       // expectedPrice. Retire this intent, dismiss its stale confirmation,
       // and reload server truth before the player can confirm again. Every
-      // other 409 remains ambiguous and keeps its key for replay safety.
+      // other 409 conflict remains ambiguous and keeps its key for replay
+      // safety unless the route explicitly proves this exact price mismatch.
       if (apiError.status === 409 && apiError.data?.reason === 'price_changed') {
-        closeBuy();
-        onCatalogStale();
+        if (resumedPurchase) {
+          if (isCurrentOperation()) {
+            setPendingPurchasePrice(confirmedPrice);
+            setResumingPurchase(true);
+            toast.error(
+              'An Earlier Purchase Is Still Protected. Retry This Same Purchase To Verify Its Final Status Before Starting Another.'
+            );
+          }
+          return;
+        }
+        try {
+          if (!clearSessionPurchaseRequestIfMatches(purchaseScope, purchaseIntent.requestId)) {
+            throw new Error('Protected Purchase Identity Changed Before Retirement.');
+          }
+        } catch (retirementError) {
+          reportError(retirementError, 'StoreTab.retireStalePricePurchase');
+          if (isCurrentOperation()) {
+            setResumingPurchase(true);
+            toast.error(
+              'The Price Changed, But Protected Purchase Recovery Could Not Be Cleared. Start A New Browser Session Before Trying Again.'
+            );
+          }
+          return;
+        }
+        if (isCurrentOperation()) {
+          toast.error(err instanceof Error ? err.message : 'The Price Changed. Please Review It.');
+          closeBuy();
+          onCatalogStale();
+        }
         return;
       }
       /*
-       * ONE KEY PER ATTEMPT, NOT ONE KEY PER MODAL. The server's durable
-       * idempotency cache (durableIdempotency.js) stores whatever status the
-       * first request produced under this key for five minutes. The modal
-       * stays open after a refusal such as "Insufficient diamonds", so a
+       * ONE KEY PER ATTEMPT, NOT ONE KEY PER MODAL. The short response cache
+       * stores a successful response briefly, while the purchase row keeps
+       * the hashed charge reference permanently. The modal stays open after
+       * a refusal such as "Insufficient diamonds", so a
        * player who topped up and pressed Confirm again sent the SAME key and
        * got the SAME cached 400 back - a purchase that could now succeed was
        * told, again, that it could not. A refused attempt is finished; the
@@ -307,19 +543,104 @@ export default function StoreTab({
        * 404/405/422 list UnionApiService uses; anything else keeps the key so
        * the server replays its own answer.
        */
-      if (apiError.definitive) {
-        purchaseKeyRef.current = mintPurchaseKey();
+      if (definitiveRefusal && resumedPurchase) {
+        if (isCurrentOperation()) {
+          setPendingPurchasePrice(confirmedPrice);
+          setResumingPurchase(true);
+          toast.error(
+            'An Earlier Purchase Is Still Protected. Retry This Same Purchase To Verify Its Final Status Before Starting Another.'
+          );
+        }
+      } else if (definitiveRefusal) {
+        try {
+          if (!clearSessionPurchaseRequestIfMatches(purchaseScope, purchaseIntent.requestId)) {
+            throw new Error('Protected Purchase Identity Changed Before Retirement.');
+          }
+        } catch (retirementError) {
+          reportError(retirementError, 'StoreTab.retireRefusedPurchase');
+          if (isCurrentOperation()) {
+            setResumingPurchase(true);
+            toast.error(
+              'The Purchase Was Refused, But Protected Recovery Could Not Be Cleared. Start A New Browser Session Before Trying Again.'
+            );
+          }
+          return;
+        }
+        if (isCurrentOperation()) {
+          setPendingPurchasePrice(effectivePrice(purchaseItem));
+          setResumingPurchase(false);
+          toast.error(err instanceof Error ? err.message : 'Purchase Failed');
+        }
+      } else if (isCurrentOperation()) {
+        setPendingPurchasePrice(confirmedPrice);
+        setResumingPurchase(true);
+        toast.error(
+          'Purchase Status Is Uncertain. Retry This Same Item To Verify The Original Purchase Before Buying Again.'
+        );
       }
-      // A stale card (sold out, or already owned in another tab) must not leave
-      // the confirm modal sitting open over data we now know is wrong.
+      // Only an authoritative refusal may dismiss stale inventory. A 409 can
+      // also be an uncertain replay, so it keeps the modal and request key.
       const flags = apiError.data;
-      if (flags?.soldOut || flags?.alreadyOwned || flags?.limitReached) {
+      if (
+        isCurrentOperation() &&
+        !resumedPurchase &&
+        definitiveRefusal &&
+        (flags?.soldOut || flags?.alreadyOwned || flags?.limitReached)
+      ) {
         closeBuy();
         onPurchased(null);
       }
     } finally {
-      inFlightRef.current = false;
-      setProcessing(false);
+      if (operationRef.current === operationId) {
+        purchaseAbortRef.current = null;
+        inFlightRef.current = false;
+        setProcessing(false);
+      }
+    }
+
+    // The financial result is already verified and its key is retired. Keep
+    // presentation callbacks outside the purchase catch so a local event or
+    // toast failure can never relabel a confirmed purchase as ambiguous and
+    // invite a second charge identity.
+    if (!completedReceipt) return;
+    if (!isCurrentOperation()) return;
+    if (!completedRecoveryRetired) setRecoveryBlockedItemId(purchaseItem.id);
+    closeBuy();
+    onPurchased({
+      accountId: completedReceipt.accountId,
+      clubId: completedReceipt.clubId,
+      newBalance: completedReceipt.newBalance,
+    });
+    if (completedRecoveryRetired) {
+      toast.success(`Purchased ${purchaseItem.name}`);
+    } else {
+      toast.warning(
+        `${purchaseItem.name} Was Purchased, But Its Secure Recovery Key Could Not Be Cleared. Do Not Submit This Item Again In This Browser Session.`
+      );
+    }
+    masterBus.emit('BALANCE_UPDATED', {
+      source: 'marketplace_purchase',
+      clubId: purchaseClubId,
+    });
+    const grant = purchaseItem.grant_spec;
+    if (grant && grant.type !== 'none') {
+      const quantity = Math.max(1, Math.floor(Number(grant.qty) || 1));
+      const assetId = grant.theme_id || grant.avatar_id;
+      masterBus.emit('ENTITLEMENTS_CHANGED', {
+        userId: purchaseAccountId,
+        category: grant.type,
+        assetId,
+        quantity,
+        source: 'club-purchase',
+      });
+      if (grant.type === 'table_skin' || grant.type === 'avatar') {
+        masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
+          userId: purchaseAccountId,
+          category: grant.type === 'avatar' ? 'avatar' : 'theme_id',
+          assetId,
+          source: 'club-purchase',
+        });
+      }
     }
   };
 
@@ -347,17 +668,14 @@ export default function StoreTab({
   if (items.length === 0) {
     return (
       <div className={styles.emptyState}>
-        <div className={styles.emptyArt}>
-          <ItemArt category="Exclusive" seed="empty-shop" />
-        </div>
         <span className={styles.emptyText}>The Club Shop Is Currently Empty.</span>
         <span className={styles.emptySubText}>
-          Club Owners Can Add In-Game Items Like Time Banks, Table Skins, Throwables, And Emotes For
-          Members To Purchase With Diamonds.
+          Club Owners Can Add Verified Time Bank Offers. The All Throwables Pack Is Managed By
+          Smarter.Poker.
         </span>
         {isAdmin && (
           <button className={styles.emptyButton} onClick={onGoManage}>
-            + Add First Item
+            Add First Item
           </button>
         )}
       </div>
@@ -386,7 +704,7 @@ export default function StoreTab({
               disabled={processing}
               aria-label="Close Purchase"
             >
-              ×
+              Close
             </button>
             <span className={styles.modalEyebrow}>Instant Account Delivery</span>
             <h2 className={styles.modalTitle} id="buy-modal-title">
@@ -394,22 +712,31 @@ export default function StoreTab({
             </h2>
             <div className={styles.purchasePreview}>
               <div className={styles.purchaseImage}>
-                {modalImg ? (
+                <ItemArt
+                  category={buyTarget.category}
+                  name={buyTarget.name}
+                  itemType={buyTarget.item_type}
+                  grantType={buyTarget.grant_spec?.type}
+                  artRef={buyTarget.grant_spec?.avatar_id || buyTarget.grant_spec?.theme_id}
+                  seed={buyTarget.id}
+                />
+                {modalImg && (
                   <img
                     src={modalImg}
-                    alt={buyTarget.name}
+                    alt=""
                     className={styles.itemImg}
                     referrerPolicy="no-referrer"
                     loading="lazy"
+                    onError={(event) => {
+                      (event.currentTarget as HTMLImageElement).style.display = 'none';
+                    }}
                   />
-                ) : (
-                  <ItemArt category={buyTarget.category} seed={buyTarget.id} />
                 )}
               </div>
               <div>
-                <div className={styles.itemName}>{buyTarget.name}</div>
+                <div className={styles.itemName}>{formatPopupText(buyTarget.name)}</div>
                 <div className={styles.itemDesc} id="buy-modal-description">
-                  {buyTarget.description}
+                  {formatPopupText(buyTarget.description || 'No Description Available.')}
                 </div>
                 {grantText(buyTarget) && (
                   <div className={styles.grantLine}>
@@ -420,12 +747,14 @@ export default function StoreTab({
             </div>
             <div className={styles.priceBox}>
               <div className={styles.priceItem}>
-                <span className={styles.priceLabel}>Item Price</span>
+                <span className={styles.priceLabel}>
+                  {resumingPurchase ? 'Pending Purchase Price' : 'Item Price'}
+                </span>
                 <span className={styles.priceValueRed}>
-                  {isOnSale(buyTarget) && (
+                  {!resumingPurchase && isOnSale(buyTarget) && (
                     <span className={styles.strikePrice}>{fmt(buyTarget.price)}</span>
                   )}
-                  {fmt(effectivePrice(buyTarget))} Diamonds
+                  {fmt(purchasePrice)} Diamonds
                 </span>
               </div>
               <div className={styles.priceItem}>
@@ -433,11 +762,15 @@ export default function StoreTab({
                 <span className={styles.priceValueBalance}>{fmt(balance)}</span>
               </div>
             </div>
-            {balance < effectivePrice(buyTarget) && (
+            {resumingPurchase && (
+              <div className={styles.insufficientFunds} role="status">
+                Purchase Status Is Uncertain. Confirm Again To Verify The Original Purchase With The
+                Same Protected Request Before Buying Again.
+              </div>
+            )}
+            {!resumingPurchase && balance < purchasePrice && (
               <div className={styles.insufficientFunds}>
-                <span>
-                  Insufficient Diamonds. You Need {fmt(effectivePrice(buyTarget) - balance)} More.
-                </span>
+                <span>Insufficient Diamonds. You Need {fmt(purchasePrice - balance)} More.</span>
                 <button
                   className={styles.inlineLink}
                   onClick={() => {
@@ -457,9 +790,16 @@ export default function StoreTab({
                 ref={confirmBtnRef}
                 onClick={handlePurchase}
                 className={styles.btnPrimary}
-                disabled={processing || !!modalBlocked || balance < effectivePrice(buyTarget)}
+                disabled={
+                  processing || !!modalBlocked || (!resumingPurchase && balance < purchasePrice)
+                }
+                aria-label={`${resumingPurchase ? 'Verify' : 'Confirm'} ${formatPopupText(buyTarget.name)} Purchase With Diamonds`}
               >
-                {processing ? 'Purchasing' : 'Confirm Purchase'}
+                {processing
+                  ? 'Verifying Purchase'
+                  : resumingPurchase
+                    ? 'Verify Purchase'
+                    : 'Confirm Purchase'}
               </button>
             </div>
           </div>
@@ -474,9 +814,7 @@ export default function StoreTab({
             Own A New Look Or Add A Gameplay Perk. Every Eligible Purchase Appears Without A Reload.
           </p>
         </div>
-        <span className={styles.deliveryStatus}>
-          <span aria-hidden="true" /> Live Delivery
-        </span>
+        <span className={styles.deliveryStatus}>Live Delivery</span>
       </div>
 
       {/* Category filters */}
@@ -493,7 +831,7 @@ export default function StoreTab({
             className={`${styles.categoryBtn} ${categoryFilter === cat ? styles.categoryBtnActive : ''}`}
             onClick={() => setCategoryFilter(cat)}
           >
-            {cat}
+            {formatPopupText(cat)}
           </button>
         ))}
       </div>
@@ -544,7 +882,6 @@ export default function StoreTab({
       {/* Item grid */}
       {filteredItems.length === 0 ? (
         <div className={styles.emptyState}>
-          <span className={styles.emptyIcon}>?</span>
           <span className={styles.emptyText}>No Items Match Your Filters.</span>
           <button
             className={styles.emptyButton}
@@ -560,7 +897,15 @@ export default function StoreTab({
         <div className={styles.itemGrid}>
           {filteredItems.map((item) => {
             const alreadyOwned = ownedItemIds.has(item.id);
-            const img = safeImageUrl(item.image_url);
+            const img = hasCuratedItemArt(
+              item.name,
+              item.category,
+              item.item_type,
+              item.grant_spec?.type,
+              item.grant_spec?.avatar_id || item.grant_spec?.theme_id
+            )
+              ? null
+              : safeImageUrl(item.image_url);
             const limited = item.stock !== null && item.stock !== undefined;
             const stackable = !!item.stackable;
             const blocked = unavailableReason(item, alreadyOwned, stackable);
@@ -572,25 +917,41 @@ export default function StoreTab({
                 : blocked === 'sold_out'
                   ? 'Sold Out'
                   : blocked === 'not_yet'
-                    ? 'Coming Soon'
+                    ? 'Not Yet Available'
                     : blocked === 'ended'
                       ? 'Ended'
                       : blocked === 'limit_reached'
                         ? 'Limit Reached'
-                        : stackable && alreadyOwned
-                          ? 'Buy Again'
-                          : 'Buy';
+                        : blocked === 'unavailable'
+                          ? 'Unavailable'
+                          : stackable && alreadyOwned
+                            ? 'Buy Again'
+                            : 'Buy';
+            // Missing is not approval. Older or partial API responses must not
+            // expose a Card action without a verified server quote.
+            const cardCheckoutUnavailable = item.card_checkout_available !== true;
+            const cardCheckoutCopy = cardCheckoutUnavailable
+              ? cardCheckoutUnavailableCopy(item.card_checkout_reason)
+              : 'Buy With Card';
             return (
               <div key={item.id} className={styles.itemCard}>
                 <div className={styles.itemImageArea}>
-                  {/* Custom dynamic HD art always renders underneath; an
-                      admin-supplied image simply layers over it, so a broken
-                      URL degrades to the 3D scene instead of a blank panel. */}
-                  <ItemArt category={item.category} seed={item.id} className={styles.itemArt} />
+                  {/* Approved catalog photography renders in this existing
+                      card slot. An approved, unmapped admin image may layer
+                      over the resilient category scene for a custom item. */}
+                  <ItemArt
+                    category={item.category}
+                    name={item.name}
+                    itemType={item.item_type}
+                    grantType={item.grant_spec?.type}
+                    artRef={item.grant_spec?.avatar_id || item.grant_spec?.theme_id}
+                    seed={item.id}
+                    className={styles.itemArt}
+                  />
                   {img && (
                     <img
                       src={img}
-                      alt={item.name}
+                      alt=""
                       className={styles.itemCover}
                       referrerPolicy="no-referrer"
                       loading="lazy"
@@ -600,7 +961,9 @@ export default function StoreTab({
                     />
                   )}
                   <div className={styles.itemBadgesLeft}>
-                    <span className={styles.categoryTag}>{item.category || 'Time Banks'}</span>
+                    <span className={styles.categoryTag}>
+                      {formatPopupText(item.category || 'Time Banks')}
+                    </span>
                     {onSale && !soldOut && <span className={styles.saleTag}>Sale</span>}
                   </div>
                   <div className={styles.itemBadgesRight}>
@@ -620,9 +983,9 @@ export default function StoreTab({
                   </div>
                 </div>
                 <div className={styles.itemBody}>
-                  <div className={styles.itemName}>{item.name}</div>
+                  <div className={styles.itemName}>{formatPopupText(item.name)}</div>
                   <div className={styles.itemDesc}>
-                    {item.description || 'No Description Available.'}
+                    {formatPopupText(item.description || 'No Description Available.')}
                   </div>
                   {grantText(item) && <div className={styles.grantBadge}>{grantText(item)}</div>}
                   <div className={styles.itemFooter}>
@@ -635,18 +998,35 @@ export default function StoreTab({
                         <div className={styles.soldCount}>{fmt(item.purchase_count)} Sold</div>
                       )}
                     </div>
-                    <button
-                      onClick={() => openBuy(item)}
-                      className={blocked === 'owned' ? styles.btnOwned : styles.btnPrimary}
-                      disabled={!!blocked || processing}
-                      title={
-                        blocked === 'not_yet' && item.available_from
-                          ? `Available From ${new Date(item.available_from).toLocaleString()}`
-                          : undefined
-                      }
-                    >
-                      {buyLabel}
-                    </button>
+                    <div className={styles.itemPurchaseActions}>
+                      <button
+                        onClick={() => openBuy(item)}
+                        className={blocked === 'owned' ? styles.btnOwned : styles.btnPrimary}
+                        disabled={!!blocked || processing || recoveryBlockedItemId === item.id}
+                        title={
+                          blocked === 'not_yet' && item.available_from
+                            ? `Available From ${new Date(item.available_from).toLocaleString()}`
+                            : undefined
+                        }
+                        aria-label={`${buyLabel} ${formatPopupText(item.name)} With Diamonds`}
+                      >
+                        {recoveryBlockedItemId === item.id
+                          ? 'Recovery Locked'
+                          : blocked
+                            ? buyLabel
+                            : 'Buy With Diamonds'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openCardCheckout(item)}
+                        className={styles.btnGhost}
+                        disabled={!!blocked || processing || cardCheckoutUnavailable}
+                        aria-label={`Buy ${formatPopupText(item.name)} With Card`}
+                        title={cardCheckoutUnavailable ? cardCheckoutCopy : undefined}
+                      >
+                        {cardCheckoutCopy}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

@@ -1,0 +1,339 @@
+{
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "query_kind": "read-only pg_catalog missing tournament waitlist table",
+  "rows": [
+    {
+      "captured_at": "2026-09-16 05:49:49.822943+00",
+      "oid": 5206820,
+      "schema_name": "public",
+      "name": "tournament_waitlists",
+      "relkind": "r",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "owner": "postgres",
+      "raw_acl": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}",
+      "columns": [
+        {
+          "acl": null,
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "position",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "tournament_waitlists_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "tournament_waitlists_position_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((\"position\" > 0))"
+        },
+        {
+          "name": "tournament_waitlists_tournament_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "tournament_waitlists_unique_user",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (tournament_id, user_id)"
+        },
+        {
+          "name": "tournament_waitlists_user_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_tournament_waitlists_user_id",
+          "ready": true,
+          "valid": true,
+          "primary": false,
+          "definition": "CREATE INDEX idx_tournament_waitlists_user_id ON public.tournament_waitlists USING btree (user_id)",
+          "constraint_backed": false
+        },
+        {
+          "name": "tournament_waitlists_pkey",
+          "ready": true,
+          "valid": true,
+          "primary": true,
+          "definition": "CREATE UNIQUE INDEX tournament_waitlists_pkey ON public.tournament_waitlists USING btree (id)",
+          "constraint_backed": true
+        },
+        {
+          "name": "tournament_waitlists_unique_user",
+          "ready": true,
+          "valid": true,
+          "primary": false,
+          "definition": "CREATE UNIQUE INDEX tournament_waitlists_unique_user ON public.tournament_waitlists USING btree (tournament_id, user_id)",
+          "constraint_backed": true
+        }
+      ],
+      "triggers": null,
+      "policies": [
+        {
+          "cmd": "d",
+          "name": "tournament_waitlists_self_delete",
+          "qual": "(user_id = ( SELECT ( SELECT auth.uid() AS uid) AS uid))",
+          "roles": ["authenticated"],
+          "permissive": true,
+          "with_check": null
+        },
+        {
+          "cmd": "a",
+          "name": "tournament_waitlists_self_insert",
+          "qual": null,
+          "roles": ["authenticated"],
+          "permissive": true,
+          "with_check": "(user_id = ( SELECT ( SELECT auth.uid() AS uid) AS uid))"
+        },
+        {
+          "cmd": "r",
+          "name": "tournament_waitlists_self_read",
+          "qual": "(user_id = ( SELECT ( SELECT auth.uid() AS uid) AS uid))",
+          "roles": ["authenticated"],
+          "permissive": true,
+          "with_check": null
+        },
+        {
+          "cmd": "*",
+          "name": "tournament_waitlists_service_role_all",
+          "qual": "true",
+          "roles": ["service_role"],
+          "permissive": true,
+          "with_check": "true"
+        }
+      ],
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "anon",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ]
+    }
+  ]
+}

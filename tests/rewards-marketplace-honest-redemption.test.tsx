@@ -17,7 +17,7 @@
  * outcome message.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 
 const success = vi.fn();
 const error = vi.fn();
@@ -86,6 +86,21 @@ beforeEach(() => {
 const clickRedeem = () => fireEvent.click(screen.getAllByRole('button', { name: /^Redeem$/ })[0]);
 
 describe('RewardsMarketplace redemption', () => {
+  it('announces the selected reward category to assistive technology', async () => {
+    render(<RewardsMarketplace currentPoints={9000} onRedeem={vi.fn()} />);
+    await screen.findByText(CATALOG_ONLY_NAME);
+
+    const filters = screen.getByRole('group', { name: 'Filter Rewards By Category' });
+    const allRewards = within(filters).getByRole('button', { name: /All Rewards/ });
+    const tableThemes = within(filters).getByRole('button', { name: /Table Themes/ });
+    expect(allRewards).toHaveAttribute('aria-pressed', 'true');
+    expect(tableThemes).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(tableThemes);
+    expect(allRewards).toHaveAttribute('aria-pressed', 'false');
+    expect(tableThemes).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('says nothing about success on its own — the handler owns the outcome', async () => {
     const onRedeem = vi.fn().mockResolvedValue(undefined);
     render(<RewardsMarketplace currentPoints={9000} onRedeem={onRedeem} />);
@@ -121,7 +136,7 @@ describe('RewardsMarketplace redemption', () => {
     clickRedeem();
     await waitFor(() => expect(onRedeem).toHaveBeenCalled());
     // While the server has not answered, the button stays busy.
-    await waitFor(() => expect(screen.getByRole('button', { name: '...' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Redeeming' })).toBeDisabled());
     release();
     await waitFor(() =>
       expect(screen.getAllByRole('button', { name: /^Redeem$/ })[0]).toBeTruthy()

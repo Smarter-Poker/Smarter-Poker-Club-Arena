@@ -18,6 +18,12 @@ const mocks = vi.hoisted(() => {
     checkVIPStatus: vi.fn(),
     purchaseFeature: vi.fn(),
     emit: vi.fn(),
+    ledgerResponse: vi.fn((_userId: string) => Promise.resolve({ data: [], error: null })),
+    activityProps: null as null | {
+      activities: Array<{ id: string; description: string; diamonds: number }>;
+      state: 'loading' | 'ready' | 'error';
+      onRetry?: () => void;
+    },
     success,
     error,
     toast: { success, error },
@@ -70,7 +76,10 @@ vi.mock('../../src/lib/supabase', () => ({
               : { current_points: 0, lifetime_points: 0 },
           error: null,
         });
-      builder.limit = () => Promise.resolve({ data: [], error: null });
+      builder.limit = () =>
+        table === 'diamond_transactions'
+          ? mocks.ledgerResponse(requestedUserId)
+          : Promise.resolve({ data: [], error: null });
       return builder;
     },
     rpc: vi.fn(),
@@ -106,7 +115,14 @@ vi.mock('../../src/components/vip/RewardsMarketplace', () => ({
   RewardsMarketplace: () => null,
 }));
 vi.mock('../../src/components/vip/VIPActivityHistory', () => ({
-  VIPActivityHistory: () => null,
+  VIPActivityHistory: (props: {
+    activities: Array<{ id: string; description: string; diamonds: number }>;
+    state: 'loading' | 'ready' | 'error';
+    onRetry?: () => void;
+  }) => {
+    mocks.activityProps = props;
+    return <div data-testid="diamond-activity-state">{props.state}</div>;
+  },
 }));
 vi.mock('../../src/components/wallet/DiamondWalletModal', () => ({ default: () => null }));
 
@@ -116,9 +132,98 @@ afterEach(() => {
   cleanup();
   mocks.currentUser = { id: 'account-a' };
   vi.clearAllMocks();
+  mocks.ledgerResponse.mockImplementation((_userId: string) =>
+    Promise.resolve({ data: [], error: null })
+  );
+  mocks.activityProps = null;
 });
 
 describe('VIP Page Account Isolation', () => {
+  it('scopes portal success colors only while the VIP Marketplace route is mounted', () => {
+    mocks.checkVIPStatus.mockResolvedValue({
+      isVIP: false,
+      status: 'none',
+      expiresAt: null,
+      monthlyLimits,
+    });
+
+    const view = render(<VIPPage />);
+    expect(document.body.classList.contains('marketplace-color-scope')).toBe(true);
+
+    view.unmount();
+    expect(document.body.classList.contains('marketplace-color-scope')).toBe(false);
+  });
+
+  it('never lets a late Diamond activity read from the old account replace the new owner', async () => {
+    let resolveAccountA!: (value: unknown) => void;
+    let resolveAccountB!: (value: unknown) => void;
+    const accountAHistory = new Promise((resolve) => {
+      resolveAccountA = resolve;
+    });
+    const accountBHistory = new Promise((resolve) => {
+      resolveAccountB = resolve;
+    });
+    mocks.checkVIPStatus.mockResolvedValue({
+      isVIP: false,
+      status: 'none',
+      expiresAt: null,
+      monthlyLimits,
+    });
+    mocks.ledgerResponse.mockImplementation((userId: string) =>
+      userId === 'account-a' ? accountAHistory : accountBHistory
+    );
+
+    const { rerender } = render(<VIPPage />);
+    await waitFor(() => expect(mocks.ledgerResponse).toHaveBeenCalledWith('account-a'));
+
+    mocks.currentUser = { id: 'account-b' };
+    rerender(<VIPPage />);
+    await waitFor(() => expect(mocks.ledgerResponse).toHaveBeenCalledWith('account-b'));
+
+    await act(async () => {
+      resolveAccountB({
+        data: [
+          {
+            id: 'transaction-b',
+            type: 'diamond_reward',
+            transaction_type: null,
+            amount: 15,
+            description: 'account b reward',
+            balance_after: 215,
+            created_at: '2026-09-16T12:00:00.000Z',
+          },
+        ],
+        error: null,
+      });
+      await accountBHistory;
+    });
+
+    await waitFor(() => {
+      expect(mocks.activityProps?.state).toBe('ready');
+      expect(mocks.activityProps?.activities.map((entry) => entry.id)).toEqual(['transaction-b']);
+    });
+
+    await act(async () => {
+      resolveAccountA({
+        data: [
+          {
+            id: 'transaction-a',
+            type: 'diamond_reward',
+            transaction_type: null,
+            amount: 10,
+            description: 'account a reward',
+            balance_after: 110,
+            created_at: '2026-09-16T11:00:00.000Z',
+          },
+        ],
+        error: null,
+      });
+      await accountAHistory;
+    });
+
+    expect(mocks.activityProps?.activities.map((entry) => entry.id)).toEqual(['transaction-b']);
+  });
+
   it('never paints lowercase database refusal copy', async () => {
     mocks.checkVIPStatus.mockResolvedValue({
       isVIP: false,
@@ -177,7 +282,7 @@ describe('VIP Page Account Isolation', () => {
 
     expect(mocks.emit).not.toHaveBeenCalled();
     expect(mocks.success).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: '...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Processing' })).toBeDisabled();
 
     await act(async () => {
       resolveAccountB({ success: true, charged: 5 });

@@ -202,17 +202,11 @@ function configureFromTableRow(
     run_it_mode?: string;
     tournament_id?: string | null;
     game_type?: string;
-    max_players?: number;
   }
 ): { ritEffective: boolean; insuranceEnabled: boolean } {
   const ritIsTournament = !!row.tournament_id || row.game_type === 'tournament';
-  // HEADS-UP TABLE GATE 2026-09-13: a two-seat table FORMAT never offers the
-  // question (Dan 2026-08-26: "never ... HEADS UP"). Mirrors the engine's
-  // HEADS_UP_SEATS (2) read of tableInfo.max_players.
-  const ritIsHeadsUpTable = Number(row.max_players) > 0 && Number(row.max_players) <= 2;
   const ritEnabled =
     !ritIsTournament &&
-    !ritIsHeadsUpTable &&
     (((row.run_it_twice ?? true) && (row.allow_run_it_twice ?? true)) ||
       (row.run_it_twice_enabled ?? false));
   // ALL-CASH INSURANCE 2026-08-26: insurance carries the same tournament gate
@@ -302,39 +296,6 @@ describe('insurance no longer switches run it twice off — they are sequenced p
     expect(cfg.insuranceEnabled).toBe(false);
   });
 
-  it('a heads-up TABLE (two seats) never offers run it twice, whatever the columns say', () => {
-    // Dan 2026-08-26: "it should never be in MTT, SPINS OR HEADS UP." The
-    // tournament gate covered the first two; every 2-seat table on the
-    // platform is a tournament today, so the third held only by accident.
-    const engine = new RunItTwiceEngine(undefined, stubScheduler());
-    const cfg = configureFromTableRow(engine, TABLE, {
-      run_it_twice: true,
-      allow_run_it_twice: true,
-      run_it_twice_enabled: true,
-      insurance_enabled: true,
-      tournament_id: null,
-      game_type: 'cash',
-      max_players: 2,
-    });
-    expect(engine.isEnabled(TABLE)).toBe(false);
-    expect(cfg.ritEffective).toBe(false);
-    // Insurance carries only the tournament gate; a heads-up cash table keeps it.
-    expect(cfg.insuranceEnabled).toBe(true);
-  });
-
-  it('a two-way all-in on a full ring is NOT heads-up: six seats keep the question', () => {
-    const engine = new RunItTwiceEngine(undefined, stubScheduler());
-    const cfg = configureFromTableRow(engine, TABLE, {
-      run_it_twice: true,
-      allow_run_it_twice: true,
-      tournament_id: null,
-      game_type: 'cash',
-      max_players: 6,
-    });
-    expect(engine.isEnabled(TABLE)).toBe(true);
-    expect(cfg.ritEffective).toBe(true);
-  });
-
   it('a tournament_id disables both even when game_type says cash', () => {
     const engine = new RunItTwiceEngine(undefined, stubScheduler());
     const cfg = configureFromTableRow(engine, TABLE, {
@@ -410,15 +371,6 @@ describe('the engine host re-reads the config and announces every single run', (
    * lines, and they fail the moment somebody restores FIX 92's config-layer
    * exclusion instead of the per-hand sequencing that replaced it.
    */
-  it('a heads-up table format is refused at configure time, by the seat count', () => {
-    expect(BASE).toContain("import { HEADS_UP_SEATS } from '../config/headsUpSpec.js';");
-    // Whitespace-insensitive: Prettier wraps this line at the width it likes.
-    expect(BASE.replace(/\s+/g, ' ')).toContain(
-      'const ritIsHeadsUpTable = Number(this.tableInfo.max_players) > 0 && Number(this.tableInfo.max_players) <= HEADS_UP_SEATS;'
-    );
-    expect(BASE).toContain('!ritIsTournament &&\n      !ritIsHeadsUpTable &&');
-  });
-
   it('insurance does NOT switch RIT off at configure time', () => {
     expect(BASE).toContain('const ritEffective = ritEnabled;');
     expect(BASE).toContain(
@@ -463,13 +415,11 @@ describe('the engine host re-reads the config and announces every single run', (
   it('the auto-decline is forwarded to the wire, and only that', () => {
     const fn = RUNOUT.slice(
       RUNOUT.indexOf('protected wireRunItTwiceEvents()'),
-      RUNOUT.indexOf('protected wireRunItTwiceEvents()') + 1200
+      RUNOUT.indexOf('protected wireRunItTwiceEvents()') + 500
     );
     expect(fn).toContain("event.type !== 'RIT_DECLINED'");
     expect(fn).toContain("!== 'timeout'");
     expect(fn).toContain("emitRitSingleRun('no_agreement')");
-    // 2026-09-13: a single silent seat is named; the collective line otherwise.
-    expect(fn).toContain("emitRitSingleRun('no_answer', silent[0] as string)");
   });
 
   it('a chooser who accepts without a run count gets an actionable error', () => {

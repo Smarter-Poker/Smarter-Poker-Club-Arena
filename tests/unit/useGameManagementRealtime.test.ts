@@ -36,9 +36,27 @@ describe('useGameManagementRealtime', () => {
       filter: 'scope_id=eq.club-1',
       event: 'INSERT',
     });
+    /* SUBSCRIBED IS NOT 'live'. This asserted 'live' here, and the page painted a
+       green Live badge on the strength of it - while game_management_events was
+       not in the supabase_realtime publication at all, so the channel joined,
+       reported SUBSCRIBED and then received nothing, for ever. Joining is a
+       transport fact. Only an arriving row proves delivery, so only an arriving
+       row promotes the status. The resync still runs on connect: it is the
+       authoritative read this page is actually built on. */
     act(() => mocks.channelOptions.onSubscriptionStatus('SUBSCRIBED'));
-    expect(result.current).toBe('live');
+    expect(result.current).toBe('connecting');
     expect(resync).toHaveBeenCalledOnce();
+
+    act(() =>
+      mocks.channelOptions.onPayload({
+        new: {
+          event_type: 'ticker_settings_changed',
+          scope_kind: 'club',
+          scope_id: 'club-1',
+        },
+      })
+    );
+    expect(result.current).toBe('live');
   });
 
   it('ignores wrong-scope rows and emits a named table invalidation for its scope', () => {
@@ -160,7 +178,44 @@ describe('useGameManagementRealtime', () => {
     act(() => mocks.channelOptions.onSubscriptionStatus('CLOSED'));
     expect(result.current).toBe('degraded');
     act(() => mocks.channelOptions.onSubscriptionStatus('SUBSCRIBED'));
-    expect(result.current).toBe('live');
+    /* Recovered transport, unproven delivery. Not 'degraded' any more, and not
+       'live' either until something actually arrives. */
+    expect(result.current).toBe('connecting');
     expect(resync).toHaveBeenCalledOnce();
+
+    act(() =>
+      mocks.channelOptions.onPayload({
+        new: { scope_kind: 'union', scope_id: 'union-1', entity_type: 'table', entity_id: 't-9' },
+      })
+    );
+    expect(result.current).toBe('live');
+
+    /* And a later re-SUBSCRIBE must not demote a feed that has proven itself:
+       a reconnect on a working channel is not a regression to unknown. */
+    act(() => mocks.channelOptions.onSubscriptionStatus('SUBSCRIBED'));
+    expect(result.current).toBe('live');
+  });
+
+  /**
+   * THE BADGE MUST NOT GO GREEN ON A DEAD FEED. game_management_events carries
+   * 1,027,487 writes over 3.1M rows and is one of the eleven tables the
+   * 2026-09-06 publication trim keeps out, so this hook's channel joins and
+   * receives nothing. GameManagementPage renders `status === 'live'` as a green
+   * "Live"; anything else reads "Recovering". Subscribing must therefore never
+   * reach 'live' on its own, whatever order the states arrive in.
+   */
+  it('never reports live from transport states alone, in any order', () => {
+    const { result } = renderHook(() =>
+      useGameManagementRealtime({
+        scope: 'club',
+        scopeId: 'club-1',
+        enabled: true,
+        onResync: vi.fn(),
+      })
+    );
+    for (const state of ['SUBSCRIBED', 'TIMED_OUT', 'SUBSCRIBED', 'CLOSED', 'SUBSCRIBED']) {
+      act(() => mocks.channelOptions.onSubscriptionStatus(state));
+      expect(result.current, `${state} must not be reported as live`).not.toBe('live');
+    }
   });
 });

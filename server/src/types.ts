@@ -638,14 +638,6 @@ export type HandEvent =
          * half - `winners` merges the halves and names only the high hand.
          */
         low?: boolean;
-        /**
-         * WHICH POT EACH CENT OF THIS SHARE CAME FROM (2026-09-13). One entry
-         * per pot index this (board, winner, half) was paid out of, main pot
-         * first; the amounts sum to `amount`. A run-it-twice hand with a side
-         * pot could say who won which board and which pot, never both at once.
-         * Absent on rows older than the field.
-         */
-        pots?: Array<{ index: number; amount: number }>;
       }>;
       /**
        * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)
@@ -952,6 +944,8 @@ export interface HorseTournamentUtilityLedger {
 }
 
 export interface HorseDecision {
+  /** Private reference lookup/route evidence; not final causal or GTO proof. */
+  tournamentPreflopAttribution?: import('./engine/HorsePhase6Attribution.js').HorsePhase6Attribution;
   /** Finite private provenance for the brain's last-resort liveness action. */
   policyFallback?: 'brain_exception';
   /** Private request-to-executor witness, attached at the live response boundary. */

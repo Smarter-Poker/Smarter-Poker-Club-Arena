@@ -1,4 +1,3 @@
-import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * THE APP DOES NOT TELL PLAYERS THINGS THAT ARE NOT TRUE (2026-08-28)
@@ -39,7 +38,9 @@ const readCode = (p: string) =>
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
 
 describe('the Help FAQ describes the app that shipped', () => {
-  const help = read('pages/HelpPage.tsx');
+  // The FAQ copy moved to pages/helpContent.ts (AEO phase 1, 2026-09-17):
+  // HelpPage and the prerender both render it from there.
+  const help = read('pages/helpContent.ts');
   const settings = read('pages/SettingsPage.tsx');
 
   it('2FA is documented as available, because it is', () => {
@@ -65,15 +66,25 @@ describe('the lobby does not invent numbers', () => {
   });
 });
 
-describe('a money button that cannot pay says so', () => {
-  it('the settlement page reports the no-op instead of failing silently', () => {
-    const src = read('pages/SettlementPage.tsx');
-    const after = sliceEnclosingBlock(src, 'SettlementService.executeMondayPayouts');
-    // A zero result must produce feedback, not silence.
-    expect(after).toMatch(/agentsPaid === 0 && result\.playersWithRakeback === 0/);
-    expect(after).toContain('toast.info(');
-    // The real success path is untouched, so a future implementation still works.
-    expect(after).toMatch(/agentsPaid > 0 \|\| result\.playersWithRakeback > 0/);
+describe('automatic accounting does not offer a browser money button', () => {
+  it('routes to recorded weekly status and has no retired payout or close control', () => {
+    const page = readCode('pages/SettlementPage.tsx');
+    const workspace = readCode('components/accounting/WeeklyAccountingWorkspace.tsx');
+    expect(page).toContain('<WeeklyAccountingWorkspace');
+    expect(page).toMatch(/scopeKind=\{kind\}\s+scopeRef=\{reference\}/);
+    expect(workspace).toContain(
+      'Weekly Accounting Runs Automatically. Select A Week To Read Its Recorded Status.'
+    );
+    expect(workspace).toContain('<AccountingRunStatus');
+    expect(page + workspace).not.toMatch(
+      /executeMondayPayouts|executeUnionRakeBack|closePeriod|runPendingRakebackSettlement/
+    );
+    expect(page + workspace).not.toMatch(/Execute Payouts|Close Period|Distribute Rakeback/);
+    // The routed mounted tests also prove only the scoped observer RPC is called.
+    // Direct compatibility calls fail explicitly rather than returning zero-paid success.
+    expect(readCode('services/SettlementService.ts')).toMatch(
+      /async\s+executeMondayPayouts\([^)]*\)\s*:\s*Promise<\{[^}]*\}>\s*\{\s*throw new AutomaticWeeklyAccountingOnlyError\(\);\s*\}/
+    );
   });
 });
 

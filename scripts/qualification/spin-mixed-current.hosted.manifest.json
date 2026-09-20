@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "kind": "synthetic-current-mixed-terminal",
+  "images": [
+    "mixed-current-completion",
+    "mixed-current-source-change"
+  ],
+  "files": {
+    "scripts/qualification/spin-mixed-current.py": {
+      "bytes": 30645,
+      "sha256": "770422e665e230771003e099fedc4dfe29414f32531b3f3ac48883c2c86e06a8"
+    },
+    "scripts/qualification/spin-mixed-current-races.py": {
+      "bytes": 17925,
+      "sha256": "a2b08e98a653912c2dbebbf9333f4cb4dcbd71eed2d157d4626b08f85acd1c3d"
+    },
+    "scripts/qualification/spin-mixed-current-assertions.py": {
+      "bytes": 8029,
+      "sha256": "a8a6082ec6c54a37beec945c68bb8a001cb69537a51de317961bae4ac835d63c"
+    },
+    "scripts/qualification/spin-expiry-business-races.py": {
+      "bytes": 26932,
+      "sha256": "619267d012bb64257d639006c133d03c95f16c7e243b334e6af661d5900b95c5"
+    },
+    "supabase/components/spin-mixed-basis-current-terminal.sql": {
+      "bytes": 53797,
+      "sha256": "e7c25ce696af8d60132587878a7d1042a22978e2e93c52f4bc73c0bb280714d4"
+    },
+    "supabase/components/spin-mixed-basis-current-terminal.rollback.sql": {
+      "bytes": 60127,
+      "sha256": "d112a8306f92ab43a4e605a3bbfcbe5b533530116ebd828a0af3a8e2e46cd66f"
+    },
+    "supabase/components/spin-mixed-basis-current-receipt-lane.sql": {
+      "bytes": 17896,
+      "sha256": "371bbc44f16db4931c204b3344eba661488a3306c60ef9889c0e71b4a0bbb98f"
+    },
+    "supabase/components/spin-mixed-basis-current-receipt-lane.rollback.sql": {
+      "bytes": 17799,
+      "sha256": "49b8989fce1d23205e6ae63eedcc1bce632ab3dcc5950f3c476b31f640a5c6f6"
+    },
+    "scripts/qualification/fixtures/spin-receipt-lane/boundary.sql": {
+      "bytes": 689,
+      "sha256": "ce344c93571ba4e6163321d33c2fb858cc8e73b68d56ef1aecc228a2497b51af"
+    },
+    "scripts/qualification/fixtures/spin-receipt-lane/state.sql": {
+      "bytes": 1983,
+      "sha256": "aa1b44359ea0279e236f99554ffb7a94ca81205fa94211d258e0666d737608a4"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/database-state.sql": {
+      "bytes": 3095,
+      "sha256": "35534bfff51d3bae651cc85e8165679c93ea14ec04de6d30c16283834e774b12"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/catalog-restore.sql": {
+      "bytes": 232918,
+      "sha256": "35cb39829a29393ffd27b326ee65e7567826cd31d1dda28c8b0b48d533eea2cf"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/catalog-readback.sql": {
+      "bytes": 36896,
+      "sha256": "fbcf7f7b888519923327dc8840337585047554257ce9ce8ae8ca151bbd9e6aff"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/recognition-restore.sql": {
+      "bytes": 28211,
+      "sha256": "78e383e6139ca0573c99e9f614881ebc8ead534d91f68c686c9a917425c2aab1"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/recognition-readback.sql": {
+      "bytes": 9383,
+      "sha256": "763f7f2fb52b038723bda699dcd2fbc1743412798ccbcb520b896feefeeee982"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/authority.json": {
+      "bytes": 151700,
+      "sha256": "193d8f25921068b2e4402d4d4b3861195917542b67a95fc854d6844842a29bd2"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/catalog.json": {
+      "bytes": 47834,
+      "sha256": "329b95dfe4489c1099502e517005904d014d1e6fe2630f66433361aaec99b418"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/net-plan.json": {
+      "bytes": 8504,
+      "sha256": "2a0f15c69396fc10dd9e5b8137ba61bb819df8f1c00bc4ebd53e9f83eb808fbd"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/recognizer.json": {
+      "bytes": 5514,
+      "sha256": "2c3ad8931db2aaef037cbb827da4ebac544e33768dd7a3754377175bfe771fdf"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/period-requests.json": {
+      "bytes": 4686,
+      "sha256": "81a582b185e763782e68fc8fe24d3c9870c32e3d1266e8d31cdb45106312860d"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/synthetic-model.json": {
+      "bytes": 9716,
+      "sha256": "8259b713348b95c85247044443e6b32b0f0db76110af44ef3a32a929ce6edd79"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/synthetic-seed.sql": {
+      "bytes": 13167,
+      "sha256": "d2dd861f03c8a0311c01b331672c9ff15f3597fd8002742b5e6aa8efa7cd3162"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/actor-identity.sql": {
+      "bytes": 1288,
+      "sha256": "5836845bff01cd9826d43d5d8c5a593793c454f41249c8ab66b27f9fa6b44957"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/store-policy.sql": {
+      "bytes": 1431,
+      "sha256": "2e4d9019aa3593d2b2e65f792d32688690414cc10339faf55e18d51f1030edaa"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/synthetic-provider.sql": {
+      "bytes": 51742,
+      "sha256": "7ffa9e9603f89d51d8a4d34ef1584b4927d8bba86b8ac87eb9be07e8b713354b"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/synthetic-entry-close.sql": {
+      "bytes": 1604,
+      "sha256": "df9a9b1f73863d300f98a802c179a4c9135c0fdeb3ae1b94af98c50c6418a32c"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/synthetic-input-check.sql": {
+      "bytes": 4266,
+      "sha256": "f8f3b27e7235f5cf7845a57d5215612689dc9238f8064164e0f6b8de27e42835"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/observer.sql": {
+      "bytes": 4170,
+      "sha256": "2261a61b6b08a8408b4c9a3b7fc2e0a5c8e6a88ceacd08edc9d985158812a56c"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/replay.sql": {
+      "bytes": 1775,
+      "sha256": "1421c7c0e7ee6089993730c2c786260defa5c2fad10eaef725601245df6ba8c2"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/wrapper-refusals.sql": {
+      "bytes": 3690,
+      "sha256": "092666c8cf033a8547d8f6a3181a5ce9d0c8d8c3575d1d14bcc65c0dde14626e"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/narrow-refusal.sql": {
+      "bytes": 1719,
+      "sha256": "16a14e3b4aa4a568e632a696ee74f292b4adde3e719cf704fa51a2e8d13d1cf0"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/rollback-refusals.sql": {
+      "bytes": 4096,
+      "sha256": "d8e636ad890bf40b37bc8091d11030c3fecb3b936a948d60f0fe9814aa2347d6"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/provenance.json": {
+      "bytes": 25776,
+      "sha256": "9e032a8ac2f189fdb811e674fc07b5ce395f9ff3fc8aeb7bad5b8b9dd7f1c661"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/current-lane-state.sql": {
+      "bytes": 1000,
+      "sha256": "44cfb64e97da121ac80077a9e6b0a0663520730e850aab31d4ed9639436c7749"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/current-lane-snapshot.sql": {
+      "bytes": 269,
+      "sha256": "98548e1ddc25fa8829ee7cfde87751a695ad2d91ab4b55a2796580c1a0f9faef"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/current-lane-refusals.sql": {
+      "bytes": 4604,
+      "sha256": "56cc137724514cf44af51cc43e9e32bdb5d227aa3eca75048f44d5646a4c0065"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/doctrine-successor.json": {
+      "bytes": 10304,
+      "sha256": "cedb20af87596b5bc7b220afb6cf5f7db8b2ca7d9853282bf155800333f6edce"
+    },
+    "scripts/qualification/fixtures/spin-mixed-current/doctrine-successor-restore.sql": {
+      "bytes": 12041,
+      "sha256": "00efe151e5026c51631c77fe5bf6509d857dd4a0d4d36ada62f1354b73bef707"
+    }
+  },
+  "relative_include_graph": {
+    "scripts/qualification/fixtures/spin-mixed-current/current-lane-state.sql": [
+      "scripts/qualification/fixtures/spin-history-retention/database-state.sql",
+      "scripts/qualification/fixtures/spin-receipt-lane/state.sql"
+    ],
+    "scripts/qualification/fixtures/spin-mixed-current/current-lane-snapshot.sql": [
+      "scripts/qualification/fixtures/spin-receipt-lane/boundary.sql",
+      "scripts/qualification/fixtures/spin-mixed-current/current-lane-state.sql"
+    ],
+    "scripts/qualification/fixtures/spin-mixed-current/current-lane-refusals.sql": [
+      "scripts/qualification/fixtures/spin-mixed-current/current-lane-state.sql"
+    ]
+  },
+  "historical_qualification": false,
+  "full_financial_qualification": false,
+  "production_qualification": false
+}

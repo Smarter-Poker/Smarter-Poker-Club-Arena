@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { drainFires, enableBrainTelemetry } from './BrainTelemetry.js';
+import { HorseMind } from './HorseMind.js';
 import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
 import {
   restoreFastRandom,
@@ -1572,6 +1573,71 @@ describe('Phase 7 live action-clock wiring', () => {
       },
     };
   }
+
+  it('keeps away all-in holdings in the real preflop equity-to-utility path', () => {
+    const { hero, state } = decisionState('complete');
+    const villain = state.players[1];
+    villain.bet += villain.stack;
+    villain.totalInvested += villain.stack;
+    villain.stack = 0;
+    villain.is_all_in = true;
+    state.currentBet = villain.bet;
+    state.toCall = villain.bet - hero.bet;
+    state.pot = hero.totalInvested + villain.totalInvested;
+    state.contestablePot = state.pot;
+    state.pots = calculatePots(state.players);
+    state.legalActions = ['fold', 'all_in'];
+    state.minRaiseTo = null;
+    state.maxRaiseTo = null;
+    const opts = { telemetry: false, mind: true, decisionTimeMs: 0, v27GtoCharts: false };
+    seedFastRandom(710921);
+    const awake = HorseLogic.decide(hero, state, 'balanced', {}, opts);
+    villain.is_sitting_out = true;
+    const bands = HorseMind.bandsForOpponents(
+      hero.seat,
+      state.players,
+      state.actionHistory,
+      state.bigBlind
+    );
+    expect(bands).toHaveLength(1);
+    seedFastRandom(710921);
+    const away = HorseLogic.decide(hero, state, 'balanced', {}, opts);
+    expect(awake.tournamentUtility?.candidates.length).toBeGreaterThan(1);
+    expect(away.tournamentUtility?.candidates.length).toBeGreaterThan(1);
+    expect(away.tournamentUtility!.equitySampleSize).toBeGreaterThan(0);
+    expect(away.tournamentUtility!.candidates.map((c) => [c.action, c.chipEv])).toEqual(
+      awake.tournamentUtility!.candidates.map((c) => [c.action, c.chipEv])
+    );
+  });
+
+  it('keeps the dealt away button in the real Phase7 action order', () => {
+    const { hero, state } = decisionState('complete');
+    hero.seat = 3;
+    state.heroSeat = 3;
+    state.currentPlayerSeat = 3;
+    state.players[0].seat = 3;
+    state.players[1].seat = 4;
+    state.actionHistory![0].seat = 4;
+    state.players.unshift(
+      seat('button', 1, 1000, 0, { is_folded: true, is_sitting_out: true }),
+      seat('small-blind', 2, 1000, 0, { is_folded: true })
+    );
+    state.dealtSeatIds = [1, 2, 3, 4];
+    state.dealerSeat = 1;
+    state.tournament!.playersAtTable = 4;
+    state.tournament!.playersLeft = 4;
+    state.tournament!.stacks = [2000, 2000, 1000, 1000];
+    seedFastRandom(710922);
+    const decision = HorseLogic.decide(
+      hero,
+      state,
+      'balanced',
+      {},
+      { telemetry: false, mind: false, decisionTimeMs: 0, v27GtoCharts: false }
+    );
+    expect(decision.tournamentUtility?.candidates.length).toBeGreaterThan(1);
+    expect(decision.tournamentUtility!.playersBehind).toEqual([]);
+  });
 
   it('attaches the accepted ledger and emits receipts only for complete context', () => {
     enableBrainTelemetry();

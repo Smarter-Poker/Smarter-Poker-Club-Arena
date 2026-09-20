@@ -13,6 +13,7 @@ const FULFILLMENT = read(
 const LIFETIME = read(
   'supabase/migrations/20260909203940_an_expiring_credit_is_spent_before_an_allowance_that_renews.sql'
 );
+const MANAGE_TAB = read('src/pages/marketplace/ManageTab.tsx');
 
 describe('All Throwables Marketplace Contract', () => {
   it('describes every purchased credit as usable across the complete table catalog', () => {
@@ -119,5 +120,19 @@ describe('All Throwables Marketplace Contract', () => {
     expect(LIFETIME.indexOf('IF v_lifetime THEN')).toBeLessThan(
       LIFETIME.indexOf("feature = 'throwable'")
     );
+  });
+
+  it('keeps the platform-owned offer out of club-admin creation and deletion paths', () => {
+    expect(MANAGE_TAB).toContain('const creatableCategoryNames = categoryNames.filter');
+    expect(MANAGE_TAB).toContain("categoryName !== 'Throwables'");
+    expect(MANAGE_TAB).toContain(
+      "if (category === 'Throwables' || grantInfo?.grantType === 'throwable')"
+    );
+    expect(MANAGE_TAB).toContain('isThrowableItem(item)');
+    expect(MANAGE_TAB).toContain('Platform Managed');
+    expect(MANAGE_TAB).toContain('Historical Receipt Row');
+    expect(MANAGE_TAB).toContain('100% Platform-Owned');
+    expect(MANAGE_TAB).toContain('readOnly={isAllThrowablesOffer(item)}');
+    expect(MANAGE_TAB).toContain('disabled={isAllThrowablesOffer(item)}');
   });
 });

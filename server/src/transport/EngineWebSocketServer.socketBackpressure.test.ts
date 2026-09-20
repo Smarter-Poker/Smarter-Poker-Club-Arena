@@ -2,24 +2,31 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { WebSocket } from 'ws';
+
+// The transport and loopback socket are real; persistence is outside this
+// fixture. Live audit requests can finish in a later test's fake clock and
+// leave their network deadlines mixed with the physical socket's reaper.
+const audit = vi.hoisted(() => ({
+  insert: vi.fn(async () => ({ error: null })),
+}));
+vi.mock('../services/supabase.js', () => ({
+  supabase: {
+    from: (table: string) => {
+      if (table !== 'action_audit_logs') throw new Error(`Unexpected persistence: ${table}`);
+      return { insert: audit.insert };
+    },
+  },
+}));
+vi.mock('../services/supabase/handFacts.js', () => ({
+  captureAllInEquity: vi.fn(),
+  captureRitEvent: vi.fn(),
+}));
+
 import {
   EngineWebSocketServer,
   type EngineWebSocketServerOptions,
 } from './EngineWebSocketServer.js';
 import { TableStateHub } from './TableStateHub.js';
-
-const audit = vi.hoisted(() => ({ insert: vi.fn(async () => ({ error: null })) }));
-// Socket ownership is real below, including the paused loopback peer. The
-// unrelated connection audit must not contact a database or carry a request
-// deadline from one fake-clock case into the next.
-vi.mock('../services/supabase.js', () => ({
-  supabase: {
-    from: (table: string) => {
-      if (table !== 'action_audit_logs') throw new Error(`Unexpected database table: ${table}`);
-      return { insert: audit.insert };
-    },
-  },
-}));
 
 const HARD = 4 * 1024 * 1024;
 const TABLE_A = '11111111-1111-4111-8111-111111111111';
@@ -100,26 +107,32 @@ function deferred<T>() {
 }
 beforeEach(() => {
   vi.useFakeTimers();
-  audit.insert.mockClear();
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(() => Promise.reject(new Error('Unexpected network request')))
-  );
   sockets = [];
+  audit.insert.mockClear();
 });
 afterEach(() => {
   for (const ws of sockets) ws.terminate();
   vi.clearAllTimers();
   vi.useRealTimers();
-  try {
-    expect(fetch).not.toHaveBeenCalled();
-  } finally {
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-  }
+  vi.restoreAllMocks();
 });
 
 describe('the physical socket owns its hard backpressure fence', () => {
+  it('records subscription audits without creating external network deadlines', async () => {
+    const f = fixture();
+    const ws = f.add();
+    subscribe(ws);
+    await flush();
+    expect(audit.insert).toHaveBeenCalledTimes(1);
+    expect(audit.insert).toHaveBeenCalledWith({
+      action_type: 'engine_ws_connect',
+      user_id: 'hero',
+      ip_address: '192.0.2.1',
+      details: { table_id: TABLE_A },
+    });
+    expect(vi.getTimerCount()).toBe(0);
+    expect(f.hub.subscriberCount(TABLE_A)).toBe(1);
+  });
   it('refuses repeated overloaded subscriptions before authorization or control frames', async () => {
     const f = fixture();
     const ws = f.add();
@@ -146,13 +159,6 @@ describe('the physical socket owns its hard backpressure fence', () => {
     await flush();
     expect(f.hub.subscriberCount(TABLE_A)).toBe(2);
     expect(f.hub.subscriberCount(TABLE_B)).toBe(1);
-    expect(audit.insert).toHaveBeenCalledTimes(3);
-    expect(audit.insert).toHaveBeenCalledWith({
-      action_type: 'engine_ws_connect',
-      user_id: 'hero',
-      ip_address: '192.0.2.1',
-      details: { table_id: TABLE_B },
-    });
     slow.bufferedAmount = HARD + 1;
     subscribe(slow);
     await flush();

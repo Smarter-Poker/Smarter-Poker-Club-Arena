@@ -1,17 +1,17 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ARENA — MARKETPLACE / CASHIER STOREFRONT (2026-08-19 full rebuild)
+ *  CLUB ARENA : MARKETPLACE / CASHIER STOREFRONT (2026-08-19 full rebuild)
  *
  *  Tabs:
- *    Store       — club shop items bought with DIAMONDS from the player's
+ *    Store       : club shop items bought with DIAMONDS from the player's
  *                  global wallet (server-authoritative). The marketplace is
  *                  fully funded by diamonds, never chips (Dan, 2026-08-23).
  *    (Get Chips was removed 2026-08-19: chips are won and transferred,
  *     never bought. The diamonds -> chips conversion no longer exists.)
- *    Diamonds    — real-money diamond packages via Stripe Checkout (/api/store)
- *    Membership  — VIP daily pass / monthly / annual (diamonds or Stripe)
- *    My Items    — delivered inventory (club_shop_inventory) + redemption + history
- *    Manage      — owner/admin CRUD via /api/club-arena/manage-shop (RLS-safe)
+ *    Diamonds    : real-money diamond packages via Stripe Checkout (/api/store)
+ *    Membership  : monthly, yearly, or Lifetime VIP (Diamonds or Card when verified)
+ *    My Items    : delivered inventory (club_shop_inventory) + redemption + history
+ *    Manage      : owner/admin CRUD via /api/club-arena/manage-shop (RLS-safe)
  *
  *  Every price is resolved server-side. The client sends only ids/plan keys.
  *  Tab components live in ./marketplace/.
@@ -25,8 +25,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -45,12 +45,18 @@ import {
   EMPTY_ENTITLEMENTS,
   EMPTY_WALLET,
   FALLBACK_CATALOG,
+  currentMarketplaceCheckoutUserMatches,
   isOwnedRow,
   isMarketplaceItemOwned,
   isUuid,
   loadEntitlements,
   loadStoreCatalog,
   loadWalletInfo,
+  readMarketplacePurchaseIntentByRequestId,
+  retireMarketplacePurchaseIntentByRequestId,
+  storeFetch,
+  verifiedMarketplaceCardCheckoutStatus,
+  verifiedMarketplaceItems,
   type Entitlements,
   type InventoryRow,
   type MarketplaceItem,
@@ -71,12 +77,33 @@ import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 type TabKey = 'store' | 'diamonds' | 'membership' | 'my_items' | 'manage';
 const VALID_TABS: TabKey[] = ['store', 'diamonds', 'membership', 'my_items', 'manage'];
+const CARD_CHECKOUT_STATUS_DELAYS_MS = [0, 1500, 3500, 7000, 12000] as const;
+const CARD_CHECKOUT_STATUS_TIMEOUT_MS = 15000;
+const STRIPE_CHECKOUT_RETURN_ID = /^cs_(?:test|live)_[A-Za-z0-9]{6,255}$/;
+
+function cardCheckoutTypeForScope(
+  scope: string,
+  userId: string
+): 'diamonds' | 'subscription' | null {
+  const diamondPrefix = `marketplace:diamond-package-card:${userId}:`;
+  const vipPrefix = `marketplace:vip-card:${userId}:`;
+  if (scope.startsWith(diamondPrefix) && scope.length > diamondPrefix.length) return 'diamonds';
+  if (scope.startsWith(vipPrefix) && scope.length > vipPrefix.length) return 'subscription';
+  return null;
+}
 
 export default function MarketplacePage() {
   const { user } = useAuthUser();
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const locationRef = useRef(location);
+  const activeUserIdRef = useRef(user?.id);
+  useLayoutEffect(() => {
+    locationRef.current = location;
+    activeUserIdRef.current = user?.id;
+  }, [location, user?.id]);
 
   const qClubParam = searchParams.get('club') || searchParams.get('clubId');
   const qTabParam = searchParams.get('tab');
@@ -94,28 +121,52 @@ export default function MarketplacePage() {
   const [purchases, setPurchases] = useState<ShopPurchase[]>([]);
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [balance, setBalance] = useState(0);
+  const [shopScope, setShopScope] = useState<string | null>(null);
+  const [inventoryScope, setInventoryScope] = useState<string | null>(null);
   const [wallet, setWallet] = useState<WalletInfo>(EMPTY_WALLET);
+  const [walletOwnerId, setWalletOwnerId] = useState<string | null>(null);
+  const activeWallet = user?.id && walletOwnerId === user.id ? wallet : EMPTY_WALLET;
   const [shopError, setShopError] = useState<string | null>(null);
+  const [shopErrorScope, setShopErrorScope] = useState<string | null>(null);
+  const [loadingScope, setLoadingScope] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [catalog, setCatalog] = useState<StoreCatalog>(FALLBACK_CATALOG);
   const [entitlements, setEntitlements] = useState<Entitlements>(EMPTY_ENTITLEMENTS);
+  const [entitlementsOwnerId, setEntitlementsOwnerId] = useState<string | null>(null);
+
+  // Toasts render through a document-level portal. Scope their success color
+  // while this route is mounted so Marketplace never inherits the shared
+  // positive success treatment, without changing any other Club Arena surface.
+  useEffect(() => {
+    document.body.classList.add('marketplace-color-scope');
+    return () => document.body.classList.remove('marketplace-color-scope');
+  }, []);
 
   const mountedRef = useIsMounted();
   // Monotonic request token: only the newest load may write state. Replaces the
   // old loadingRef guard, which every caller had to defeat and which dropped
   // (rather than queued) refreshes that arrived during an in-flight load.
   const reqRef = useRef(0);
+  const walletReqRef = useRef(0);
+  const invReqRef = useRef(0);
+  const entReqRef = useRef(0);
   // Mirrors clubId for the init effect without adding it as a dependency.
   const clubIdRef = useRef<string | null>(null);
 
   /** Drop everything scoped to a club (switch, invalid link, or no club). */
   const resetClubState = useCallback(() => {
+    reqRef.current += 1;
+    invReqRef.current += 1;
     setItems([]);
     setPurchases([]);
     setInventory([]);
     setBalance(0);
+    setShopScope(null);
+    setInventoryScope(null);
     setRole('player');
     setShopError(null);
+    setShopErrorScope(null);
+    setLoadingScope(null);
   }, []);
 
   // Server-owned package/plan catalog so displayed prices cannot drift.
@@ -129,19 +180,33 @@ export default function MarketplacePage() {
     };
   }, [mountedRef]);
 
-  /* ═══ Club shop data — via /api/club-arena/marketplace-items ═══ */
+  // A mounted storefront may outlive the catalog TTL. Every purchase asks for
+  // strict server truth again and also refreshes the displayed rail, so a
+  // repriced package can never be authorized from stale copy.
+  const refreshCatalogForPurchase = useCallback(async () => {
+    const freshCatalog = await loadStoreCatalog({ force: true });
+    if (mountedRef.current) setCatalog(freshCatalog);
+    return freshCatalog;
+  }, [mountedRef]);
+
+  /* ═══ Club shop data : via /api/club-arena/marketplace-items ═══ */
   const loadShop = useCallback(
     async (cId?: string, silent = false) => {
       const targetClub = cId || clubId;
-      if (!targetClub || !user) return;
+      const expectedAccountId = activeUserIdRef.current;
+      if (!targetClub || !expectedAccountId) return;
+      const expectedScope = `${expectedAccountId}:${targetClub}`;
       const myReq = ++reqRef.current;
       try {
+        setLoadingScope(expectedScope);
         if (!silent) setLoading(true);
         const {
           data: { session },
         } = await supabase.auth.getSession();
         const token = session?.access_token;
-        if (!token) throw new Error('Not authenticated');
+        if (!token || session?.user?.id !== expectedAccountId) {
+          throw new Error('Not authenticated');
+        }
 
         const fetchWithThrow = async () => {
           const response = await fetch(
@@ -160,86 +225,179 @@ export default function MarketplacePage() {
         const data = await retryAsync(fetchWithThrow, 2);
         // Only the newest request may write: a club switch fires a second load
         // while the first is still in flight, and the loser must not win.
-        if (!mountedRef.current || myReq !== reqRef.current) return;
+        const authenticatedAccountStillActive =
+          await currentMarketplaceCheckoutUserMatches(expectedAccountId);
+        if (
+          !authenticatedAccountStillActive ||
+          !mountedRef.current ||
+          myReq !== reqRef.current ||
+          activeUserIdRef.current !== expectedAccountId ||
+          clubIdRef.current !== targetClub
+        ) {
+          return;
+        }
 
-        setItems(
-          (data.items || [])
-            // Rolling-deploy guard: a paid row with no executable grant must
-            // never reach a Buy button, even before the DB migration lands.
-            .filter((i: MarketplaceItem) => !!i.grant_spec && i.grant_spec.type !== 'none')
-            .map((i: MarketplaceItem) => ({
-              ...i,
-              purchase_count: i.purchase_count || 0,
-            }))
-        );
-        setPurchases(data.purchases || []);
-        setBalance(data.balance || 0);
-        setRole(data.role ?? 'player');
+        const verifiedItems = verifiedMarketplaceItems(data?.items);
+        if (
+          data?.success !== true ||
+          data?.accountId !== expectedAccountId ||
+          data?.clubId !== targetClub ||
+          !verifiedItems ||
+          verifiedItems.some((item) => item.club_id !== targetClub) ||
+          !Array.isArray(data.purchases) ||
+          !Number.isSafeInteger(data.balance) ||
+          typeof data.role !== 'string'
+        ) {
+          throw new Error('The Shop Returned An Unverified Catalog Response.');
+        }
+        setItems(verifiedItems);
+        setPurchases(data.purchases);
+        setBalance(data.balance);
+        setRole(data.role);
+        setShopScope(expectedScope);
         setShopError(null);
+        setShopErrorScope(null);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Failed to load shop';
         // Always report. Silent refreshes previously failed with no toast, no
-        // Sentry event and no state change -- the shop just went quietly stale.
+        // error-reporting event and no state change -- the shop just went quietly stale.
         reportError(err, 'MarketplacePage.loadShop');
-        if (mountedRef.current && myReq === reqRef.current) {
+        if (
+          mountedRef.current &&
+          myReq === reqRef.current &&
+          activeUserIdRef.current === expectedAccountId &&
+          clubIdRef.current === targetClub
+        ) {
           setShopError(msg);
+          setShopErrorScope(expectedScope);
           // Toast only for the current request: a superseded club-A failure
           // must not pop an error over club B's freshly loaded shop.
           if (!silent) toast.error(msg);
         }
       } finally {
-        if (mountedRef.current && myReq === reqRef.current) setLoading(false);
+        if (
+          mountedRef.current &&
+          myReq === reqRef.current &&
+          activeUserIdRef.current === expectedAccountId &&
+          clubIdRef.current === targetClub
+        ) {
+          setLoading(false);
+        }
       }
     },
     [clubId, user?.id] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   /* ═══ Diamond balance + VIP status ═══ */
-  const loadWallet = useCallback(async () => {
-    if (!user) return;
-    try {
-      const info = await loadWalletInfo();
-      if (mountedRef.current) setWallet(info);
-    } catch (err) {
-      reportError(err, 'MarketplacePage.loadWallet');
-      // Never leave the UI asserting "you have 0 diamonds" when we simply
-      // could not read the balance -- that silently disables every buy button.
-      if (mountedRef.current) {
-        setWallet((prev) => ({
-          ...prev,
-          loaded: false,
-          error: err instanceof Error ? err.message : 'Could not load your balance',
-        }));
+  const loadWallet = useCallback(
+    async (expectedAccountId = activeUserIdRef.current, signal?: AbortSignal) => {
+      if (!expectedAccountId) return;
+      const myReq = ++walletReqRef.current;
+      try {
+        const info = await loadWalletInfo(expectedAccountId, signal);
+        if (!(await currentMarketplaceCheckoutUserMatches(expectedAccountId, signal))) {
+          return;
+        }
+        if (
+          mountedRef.current &&
+          myReq === walletReqRef.current &&
+          activeUserIdRef.current === expectedAccountId
+        ) {
+          setWallet(info);
+          setWalletOwnerId(expectedAccountId);
+        }
+      } catch (err) {
+        if ((err as { name?: unknown })?.name === 'AbortError') throw err;
+        reportError(err, 'MarketplacePage.loadWallet');
+        // Never leave the UI asserting "you have 0 diamonds" when we simply
+        // could not read the balance -- that silently disables every buy button.
+        if (
+          mountedRef.current &&
+          myReq === walletReqRef.current &&
+          activeUserIdRef.current === expectedAccountId
+        ) {
+          setWallet({
+            ...EMPTY_WALLET,
+            loaded: false,
+            error: err instanceof Error ? err.message : 'Could not load your balance',
+          });
+          setWalletOwnerId(expectedAccountId);
+        }
       }
-    }
-  }, [user?.id, mountedRef]); // eslint-disable-line react-hooks/exhaustive-deps
+    },
+    [mountedRef]
+  );
+
+  // A response from the previous account must never authorize a purchase for
+  // the next one. Invalidate every in-flight read and revoke loaded state as
+  // soon as the authenticated account changes or signs out.
+  useEffect(() => {
+    reqRef.current += 1;
+    walletReqRef.current += 1;
+    invReqRef.current += 1;
+    entReqRef.current += 1;
+    setClubId(null);
+    clubIdRef.current = null;
+    setItems([]);
+    setPurchases([]);
+    setInventory([]);
+    setBalance(0);
+    setShopScope(null);
+    setInventoryScope(null);
+    setRole('player');
+    setShopError(null);
+    setShopErrorScope(null);
+    setLoadingScope(null);
+    setWallet(EMPTY_WALLET);
+    setWalletOwnerId(null);
+    setEntitlements(EMPTY_ENTITLEMENTS);
+    setEntitlementsOwnerId(null);
+    setLoading(Boolean(user?.id));
+    setRefreshing(false);
+  }, [user?.id]);
 
   /* ═══ Live entitlement balances (what redemption actually granted) ═══ */
   const secondsPerUse =
     catalog.shopCategories.find((c) => c.grantType === 'time_bank')?.secondsPerUse ?? 20;
 
-  const loadEnt = useCallback(async () => {
-    if (!user?.id) return;
-    try {
-      const e = await loadEntitlements(user.id, secondsPerUse);
-      if (mountedRef.current) setEntitlements(e);
-    } catch (err) {
-      reportError(err, 'MarketplacePage.loadEntitlements');
-    }
-  }, [user?.id, secondsPerUse, mountedRef]);
+  const loadEnt = useCallback(
+    async (requestedAccountId?: string) => {
+      const expectedAccountId = requestedAccountId || activeUserIdRef.current;
+      if (!expectedAccountId) return;
+      const myReq = ++entReqRef.current;
+      try {
+        const e = await loadEntitlements(expectedAccountId, secondsPerUse);
+        const authenticatedAccountStillActive =
+          await currentMarketplaceCheckoutUserMatches(expectedAccountId);
+        if (
+          authenticatedAccountStillActive &&
+          mountedRef.current &&
+          myReq === entReqRef.current &&
+          activeUserIdRef.current === expectedAccountId
+        ) {
+          setEntitlements(e);
+          setEntitlementsOwnerId(expectedAccountId);
+        }
+      } catch (err) {
+        reportError(err, 'MarketplacePage.loadEntitlements');
+      }
+    },
+    [secondsPerUse, mountedRef]
+  );
 
   // Ownership drives Store buttons, so entitlements are eager rather than
   // waiting for the member to visit My Items.
   useEffect(() => {
     loadEnt();
-  }, [loadEnt]);
+  }, [loadEnt, user?.id]);
 
-  /* ═══ Delivered inventory (loaded eagerly — ownership state depends on it) ═══ */
-  const invReqRef = useRef(0);
+  /* ═══ Delivered inventory (loaded eagerly : ownership state depends on it) ═══ */
   const loadInventory = useCallback(
     async (cId?: string, silent = true) => {
       const target = cId || clubId;
-      if (!target || !user) return;
+      const expectedAccountId = activeUserIdRef.current;
+      if (!target || !expectedAccountId) return;
+      const expectedScope = `${expectedAccountId}:${target}`;
       const myReq = ++invReqRef.current;
       try {
         // supabase-js resolves (never rejects) on RLS/network failure, so the
@@ -251,20 +409,37 @@ export default function MarketplacePage() {
             'id, item_id, purchase_id, item_name, category, price_paid, status, acquired_at, redeemed_at'
           )
           .eq('club_id', target)
-          .eq('user_id', user.id)
+          .eq('user_id', expectedAccountId)
           .order('acquired_at', { ascending: false });
         if (error) throw error;
         // Same stale-response guard as loadShop: on a club switch the older
         // query can resolve last, and ownership state drives the Buy buttons.
-        if (mountedRef.current && myReq === invReqRef.current) setInventory(data || []);
+        const authenticatedAccountStillActive =
+          await currentMarketplaceCheckoutUserMatches(expectedAccountId);
+        if (
+          authenticatedAccountStillActive &&
+          mountedRef.current &&
+          myReq === invReqRef.current &&
+          activeUserIdRef.current === expectedAccountId &&
+          clubIdRef.current === target
+        ) {
+          setInventory(data || []);
+          setInventoryScope(expectedScope);
+        }
       } catch (err) {
         reportError(err, 'MarketplacePage.loadInventory');
-        if (!silent && mountedRef.current) {
+        if (
+          !silent &&
+          mountedRef.current &&
+          myReq === invReqRef.current &&
+          activeUserIdRef.current === expectedAccountId &&
+          clubIdRef.current === target
+        ) {
           toast.error('Could not load your items. Tap Refresh to try again.');
         }
       }
     },
-    [clubId, user?.id, mountedRef] // eslint-disable-line react-hooks/exhaustive-deps
+    [clubId, mountedRef] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   /* ═══ Init + react to ?club= changes (club quick links navigate in place) ═══ */
@@ -378,13 +553,11 @@ export default function MarketplacePage() {
     if (clubId) loadInventory(clubId);
   }, [clubId, loadInventory]);
 
-  /* ═══ Stripe Checkout return handling (?purchase=success|canceled) ═══
-   * The delayed re-check used to be scheduled in an effect keyed on
-   * searchParams and then cancelled ~immediately by its own URL cleanup, so it
-   * never fired and users came back from Stripe seeing a stale balance.
-   * The latch below survives the navigation. */
+  /* ═══ Stripe Checkout return handling (?purchase=success|canceled) ═══ */
   const purchaseResult = searchParams.get('purchase');
-  const purchaseHandledRef = useRef(false);
+  const checkoutSessionId = searchParams.get('session_id');
+  const checkoutRequestId = searchParams.get('checkout_request_id');
+  const purchaseHandledRef = useRef<string | null>(null);
   /* WHERE THE DIAMONDS ARE GOING (phase 3, 2026-09-14). The wallet sends a
      player who is short of the cheapest Diamond Arena seat here with
      `?next=/clubs/diamond-arena`; the checkout carries it through the Stripe
@@ -398,59 +571,247 @@ export default function MarketplacePage() {
     const safe = safeInAppRedirect(nextParam);
     return safe === '/' ? null : safe;
   }, [nextParam]);
-  const [continueOffered, setContinueOffered] = useState(false);
+  const [verifiedContinuation, setVerifiedContinuation] = useState<{
+    ownerId: string;
+    path: string;
+  } | null>(null);
   const continueLabel =
-    nextPath === `/clubs/${DIAMOND_ARENA_SLUG}` ? 'Continue To The Diamond Arena' : 'Continue';
+    verifiedContinuation?.path === `/clubs/${DIAMOND_ARENA_SLUG}`
+      ? 'Continue To The Diamond Arena'
+      : 'Continue';
   const goOnward = () => {
-    if (!nextPath) return;
-    const cleaned = new URLSearchParams(searchParams);
-    cleaned.delete('next');
-    setSearchParams(cleaned, { replace: true });
-    navigate(nextPath);
+    const destination = verifiedContinuation?.path;
+    if (!destination || verifiedContinuation.ownerId !== user?.id) return;
+    setVerifiedContinuation(null);
+    navigate(destination);
   };
   const pollTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   // Always call the freshest loadWallet without making it an effect dependency
   // (`user` is a new object on every auth-store write, so depending on the
   // callback identity tore the timers down repeatedly).
   const loadWalletRef = useRef(loadWallet);
-  loadWalletRef.current = loadWallet;
+  useLayoutEffect(() => {
+    loadWalletRef.current = loadWallet;
+  }, [loadWallet]);
 
   useEffect(() => {
-    if (!purchaseResult || purchaseHandledRef.current) return;
-    purchaseHandledRef.current = true;
+    if (!purchaseResult) {
+      purchaseHandledRef.current = null;
+      return;
+    }
+    const returnIdentity = [
+      purchaseResult,
+      checkoutSessionId || '',
+      checkoutRequestId || '',
+      user?.id || '',
+    ].join(':');
+    if (purchaseHandledRef.current === returnIdentity) return;
 
-    if (purchaseResult === 'success') {
-      toast.success('Payment received. Your balance will update momentarily.');
-      if (nextPath) setContinueOffered(true);
-      // Webhook fulfilment lags checkout by seconds. These timers are stored in
-      // a ref and cleared ONLY on unmount: the previous version scheduled them
-      // in an effect keyed on `purchaseResult`, and stripping the param below
-      // changed that key, so the cleanup killed every timer within ~10ms and
-      // the buyer was left staring at a stale balance.
-      pollTimersRef.current = [1500, 5000, 12000].map((ms) =>
-        setTimeout(() => {
-          void loadWalletRef.current().then(() => {
-            if (qTabParam === 'membership' && user?.id) {
-              masterBus.emit('ENTITLEMENTS_CHANGED', {
-                userId: user.id,
-                category: 'vip',
-                source: 'vip-purchase',
-              });
-            }
-          });
-        }, ms)
+    const clearReturnUrl = () => {
+      const current = locationRef.current;
+      const next = new URLSearchParams(current.search);
+      next.delete('purchase');
+      next.delete('session_id');
+      next.delete('checkout_request_id');
+      navigate(
+        {
+          pathname: current.pathname,
+          search: next.toString() ? `?${next.toString()}` : '',
+          hash: current.hash,
+        },
+        { replace: true }
       );
-    } else if (purchaseResult === 'canceled') {
-      toast.error('Checkout canceled. You have not been charged.');
+    };
+
+    if (purchaseResult === 'canceled') {
+      purchaseHandledRef.current = returnIdentity;
+      toast.error('Checkout Closed. No Completed Payment Was Verified.');
+      // A canceled Checkout session can remain payable. Keep its durable key
+      // so a deliberate retry recovers the same provider session.
+      clearReturnUrl();
+      return;
+    }
+    if (purchaseResult !== 'success') {
+      purchaseHandledRef.current = returnIdentity;
+      toast.error('Checkout Return Could Not Be Verified.');
+      clearReturnUrl();
+      return;
+    }
+    if (!user?.id) return;
+
+    purchaseHandledRef.current = returnIdentity;
+    let cancelled = false;
+    let activeStatusController: AbortController | null = null;
+    let locatedIntent: ReturnType<typeof readMarketplacePurchaseIntentByRequestId> = null;
+    let intentLookupFailed = false;
+    try {
+      if (
+        !checkoutSessionId ||
+        !STRIPE_CHECKOUT_RETURN_ID.test(checkoutSessionId) ||
+        !checkoutRequestId ||
+        !isUuid(checkoutRequestId)
+      ) {
+        throw new Error('Checkout Return Is Missing Its Protected Receipt Identity.');
+      }
+      locatedIntent = readMarketplacePurchaseIntentByRequestId(checkoutRequestId);
+    } catch (error) {
+      intentLookupFailed = true;
+      reportError(error, 'marketplace.checkout_return_identity_failed');
+    }
+    if (intentLookupFailed) {
+      toast.error(
+        'Protected Purchase Recovery Could Not Be Read. Reload This Page To Check The Same Purchase.'
+      );
+      return;
+    }
+    if (!locatedIntent) {
+      toast.error(
+        'This Checkout Return Is Not Available In This Browser. Reload Or Sign Back Into The Original Account To Verify It.'
+      );
+      return;
+    }
+    const expectedType = locatedIntent
+      ? cardCheckoutTypeForScope(locatedIntent.scope, user.id)
+      : null;
+    if (!expectedType) {
+      toast.error(
+        'Sign Back Into The Account That Started This Checkout, Then Reload To Verify The Same Purchase.'
+      );
+      return;
     }
 
-    // Strip the param WITHOUT mutating the router's memoized instance.
-    const next = new URLSearchParams(searchParams);
-    next.delete('purchase');
-    setSearchParams(next, { replace: true });
-  }, [purchaseResult]); // eslint-disable-line react-hooks/exhaustive-deps
+    const pollStatus = async (attempt: number) => {
+      const statusController = new AbortController();
+      activeStatusController = statusController;
+      const timeout = setTimeout(() => statusController.abort(), CARD_CHECKOUT_STATUS_TIMEOUT_MS);
+      pollTimersRef.current.push(timeout);
+      let deadlineActive = true;
+      const endStatusDeadline = () => {
+        if (!deadlineActive) return;
+        deadlineActive = false;
+        clearTimeout(timeout);
+        pollTimersRef.current = pollTimersRef.current.filter((pending) => pending !== timeout);
+        if (activeStatusController === statusController) activeStatusController = null;
+      };
+      try {
+        const raw = await storeFetch<unknown>(
+          `/api/store/checkout-status?session_id=${encodeURIComponent(checkoutSessionId as string)}`,
+          { method: 'GET', expectedUserId: user.id, signal: statusController.signal }
+        );
+        if (cancelled) return;
+        if (!(await currentMarketplaceCheckoutUserMatches(user.id, statusController.signal))) {
+          toast.error(
+            'Your Player Account Changed While Payment Was Being Verified. Sign Back Into The Original Account And Reload To Check The Same Purchase.'
+          );
+          return;
+        }
+        const receipt = verifiedMarketplaceCardCheckoutStatus(raw, {
+          sessionId: checkoutSessionId as string,
+          requestId: checkoutRequestId as string,
+          accountId: user.id,
+          type: expectedType,
+        });
+        if (!receipt) {
+          toast.error(
+            'Payment Status Returned An Unverified Receipt. Reload This Page To Check The Same Protected Purchase.'
+          );
+          return;
+        }
+        if (receipt.status === 'pending') {
+          const nextAttempt = attempt + 1;
+          if (nextAttempt >= CARD_CHECKOUT_STATUS_DELAYS_MS.length) {
+            toast.info(
+              'Payment Is Still Being Verified. Reload This Page To Check The Same Purchase.'
+            );
+            return;
+          }
+          const timer = setTimeout(() => {
+            pollTimersRef.current = pollTimersRef.current.filter((pending) => pending !== timer);
+            void pollStatus(nextAttempt);
+          }, CARD_CHECKOUT_STATUS_DELAYS_MS[nextAttempt]);
+          pollTimersRef.current.push(timer);
+          return;
+        }
 
-  useEffect(() => () => pollTimersRef.current.forEach(clearTimeout), []);
+        if (!(await currentMarketplaceCheckoutUserMatches(user.id, statusController.signal))) {
+          toast.error(
+            'Your Player Account Changed Before Payment Recovery Finished. Sign Back Into The Original Account And Reload To Check The Same Purchase.'
+          );
+          return;
+        }
+
+        // Status is terminal and account-bound. End its deadline before
+        // durable retirement; wallet refresh is a separate follow-up and must
+        // never rewrite this terminal outcome.
+        endStatusDeadline();
+
+        const retired = retireMarketplacePurchaseIntentByRequestId(receipt.requestId);
+        if (!retired) {
+          toast.error(
+            'Payment Status Was Verified, But Protected Purchase Recovery Could Not Be Cleared. Reload To Retry Safely.'
+          );
+          void loadWalletRef.current(receipt.accountId);
+          return;
+        }
+        if (receipt.status === 'failed') {
+          toast.error('Checkout Expired Without A Completed Payment.');
+          clearReturnUrl();
+          return;
+        }
+
+        toast.success('Payment Confirmed. Your Account Has Been Updated.');
+        if (nextPath) {
+          setVerifiedContinuation({ ownerId: receipt.accountId, path: nextPath });
+        }
+        clearReturnUrl();
+        void loadWalletRef.current(receipt.accountId);
+        if (receipt.type === 'subscription') {
+          masterBus.emit('ENTITLEMENTS_CHANGED', {
+            userId: user.id,
+            category: 'vip',
+            source: 'vip-purchase',
+          });
+        }
+      } catch (error) {
+        if (cancelled) return;
+        if ((error as { name?: unknown })?.name === 'AbortError') {
+          toast.error(
+            'Payment Status Timed Out. The Protected Request Was Retained. Reload This Page To Check The Same Purchase.'
+          );
+          return;
+        }
+        reportError(error, 'marketplace.checkout_status_failed');
+        toast.error(
+          'Payment Status Could Not Be Verified. Reload This Page To Check The Same Protected Purchase.'
+        );
+      } finally {
+        endStatusDeadline();
+      }
+    };
+
+    void pollStatus(0);
+    return () => {
+      cancelled = true;
+      activeStatusController?.abort();
+      pollTimersRef.current.forEach(clearTimeout);
+      pollTimersRef.current = [];
+    };
+  }, [purchaseResult, checkoutSessionId, checkoutRequestId, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setVerifiedContinuation((current) => {
+      if (!current) return current;
+      return current.ownerId === user?.id && current.path === nextPath ? current : null;
+    });
+  }, [nextPath, user?.id]);
+
+  useEffect(
+    () => () => {
+      pollTimersRef.current.forEach(clearTimeout);
+      pollTimersRef.current = [];
+    },
+    []
+  );
 
   /* ═══ Live refresh: bus events + tab visibility ═══ */
   useEffect(() => {
@@ -478,11 +839,13 @@ export default function MarketplacePage() {
   }, [clubId, loadShop, loadWallet, loadInventory, loadEnt, user?.id]);
 
   useVisibilityRefresh(async () => {
-    if (clubId) {
-      loadShop(clubId, true);
-      loadInventory();
-    }
-    loadWallet();
+    await Promise.all([
+      clubId ? loadShop(clubId, true) : Promise.resolve(),
+      clubId ? loadInventory() : Promise.resolve(),
+      loadWallet(),
+      loadEnt(),
+      refreshCatalogForPurchase(),
+    ]);
   });
 
   // Keep the ref in step when clubId changes by any route.
@@ -491,25 +854,49 @@ export default function MarketplacePage() {
   }, [clubId]);
 
   /* ═══ Derived ═══ */
+  const activeClubScope = user?.id && clubId ? `${user.id}:${clubId}` : null;
+  const hasActiveClubScope = activeClubScope !== null;
+  const activeItems = useMemo(
+    () => (hasActiveClubScope && shopScope === activeClubScope ? items : []),
+    [activeClubScope, hasActiveClubScope, items, shopScope]
+  );
+  const activePurchases = hasActiveClubScope && shopScope === activeClubScope ? purchases : [];
+  const activeBalance = hasActiveClubScope && shopScope === activeClubScope ? balance : null;
+  const activeRole = hasActiveClubScope && shopScope === activeClubScope ? role : 'player';
+  const activeInventory = useMemo(
+    () => (hasActiveClubScope && inventoryScope === activeClubScope ? inventory : []),
+    [activeClubScope, hasActiveClubScope, inventory, inventoryScope]
+  );
+  const activeEntitlements =
+    user?.id && entitlementsOwnerId === user.id ? entitlements : EMPTY_ENTITLEMENTS;
+  const activeShopError =
+    hasActiveClubScope && shopErrorScope === activeClubScope ? shopError : null;
+  const activeShopLoading = hasActiveClubScope
+    ? loadingScope === activeClubScope
+      ? loading
+      : shopScope !== activeClubScope && shopErrorScope !== activeClubScope
+    : false;
   // Ownership = an unredeemed inventory copy. Redeemed consumables can be re-bought.
   // Single shared predicate with My Items, so the Store can never offer Buy for
   // something the inventory list is calling "Owned".
   const ownedItemIds = useMemo(
     () =>
       new Set([
-        ...inventory.filter((r) => isOwnedRow(r) && r.item_id).map((r) => r.item_id as string),
-        ...items
-          .filter((item) => isMarketplaceItemOwned(item, entitlements))
+        ...activeInventory
+          .filter((r) => isOwnedRow(r) && r.item_id)
+          .map((r) => r.item_id as string),
+        ...activeItems
+          .filter((item) => isMarketplaceItemOwned(item, activeEntitlements))
           .map((item) => item.id),
       ]),
-    [inventory, items, entitlements]
+    [activeInventory, activeItems, activeEntitlements]
   );
-  const ownedCount = useMemo(() => inventory.filter(isOwnedRow).length, [inventory]);
-  const isAdmin = ['owner', 'co_owner', 'admin'].includes(role);
+  const ownedCount = useMemo(() => activeInventory.filter(isOwnedRow).length, [activeInventory]);
+  const isAdmin = ['owner', 'co_owner', 'admin'].includes(activeRole);
 
   const switchTab = (t: TabKey) => {
     setTab(t);
-    // Copy — never mutate the instance react-router memoizes per location.
+    // Copy : never mutate the instance react-router memoizes per location.
     const next = new URLSearchParams(searchParams);
     next.set('tab', t);
     setSearchParams(next, { replace: true });
@@ -523,6 +910,8 @@ export default function MarketplacePage() {
         loadShop(clubId || undefined, true),
         loadWallet(),
         loadInventory(clubId || undefined, false),
+        loadEnt(),
+        refreshCatalogForPurchase(),
       ]);
     } finally {
       if (mountedRef.current) setRefreshing(false);
@@ -535,8 +924,9 @@ export default function MarketplacePage() {
    * announce a negative remainder.
    */
   const vipRemaining = useMemo(() => {
-    if (!wallet.isVip || !wallet.vipExpiresAt || wallet.vipTier === 'lifetime') return '';
-    const t = new Date(wallet.vipExpiresAt).getTime();
+    if (!activeWallet.isVip || !activeWallet.vipExpiresAt || activeWallet.vipTier === 'lifetime')
+      return '';
+    const t = new Date(activeWallet.vipExpiresAt).getTime();
     if (!Number.isFinite(t)) return '';
     const ms = t - Date.now();
     if (ms <= 0) return '';
@@ -544,7 +934,7 @@ export default function MarketplacePage() {
     if (hours < 1) return '<1h';
     if (hours < 48) return `${hours}h`;
     return `${Math.floor(hours / 24)}d`;
-  }, [wallet.isVip, wallet.vipExpiresAt, wallet.vipTier]);
+  }, [activeWallet.isVip, activeWallet.vipExpiresAt, activeWallet.vipTier]);
 
   /* ═══ Render ═══ */
   // FAILSAFE: ensure skeleton does not display indefinitely.
@@ -589,7 +979,7 @@ export default function MarketplacePage() {
     {
       key: 'store',
       label: 'Store',
-      badge: loading && items.length === 0 ? undefined : items.length,
+      badge: activeShopLoading && activeItems.length === 0 ? undefined : activeItems.length,
     },
     { key: 'diamonds', label: 'Diamonds' },
     { key: 'membership', label: 'Membership' },
@@ -604,19 +994,20 @@ export default function MarketplacePage() {
         title="Club Marketplace"
         description="Acquire Table Upgrades, Player Perks, Club Exclusives, Diamond Packages, And VIP Access Through The Existing Server-Priced Storefront."
         art="market"
-        status="PLAYER EXCHANGE // LIVE"
+        status="Player Exchange / Live"
+        pillInk="blue"
         crest="club"
         metrics={[
           {
             label: 'Diamonds',
-            value: wallet.loaded ? fmt(wallet.diamonds) : 'Checking',
+            value: activeWallet.loaded ? fmt(activeWallet.diamonds) : 'Checking',
             tone: 'attention',
           },
           {
             label: 'Store Items',
-            value: loading && items.length === 0 ? 'Checking' : items.length,
+            value: activeShopLoading && activeItems.length === 0 ? 'Checking' : activeItems.length,
           },
-          { label: 'Owned', value: ownedCount, tone: 'live' },
+          { label: 'Owned', value: ownedCount },
         ]}
         plates={{
           secondary: { label: 'Back To Lobby', onClick: () => navigate('/') },
@@ -639,10 +1030,10 @@ export default function MarketplacePage() {
                 both the wallet and the shop failing - this pill confidently
                 read "0 Diamonds", which is the one thing it must never say. */}
           <span className={styles.walletPillDiamond} aria-live="polite">
-            {wallet.loaded
-              ? `${fmt(wallet.diamonds)} Diamonds`
-              : !wallet.error && clubId && !shopError
-                ? `${fmt(balance)} Diamonds`
+            {activeWallet.loaded
+              ? `${fmt(activeWallet.diamonds)} Diamonds`
+              : !activeWallet.error && activeBalance !== null && !activeShopError
+                ? `${fmt(activeBalance)} Diamonds`
                 : 'Diamonds Unavailable'}
           </span>
           {/* vipExpiresAt is fetched by loadWalletInfo and rendered ONLY inside
@@ -650,12 +1041,12 @@ export default function MarketplacePage() {
                 idea when it lapses unless they opened a tab they have no reason
                 to open. `title` alone is useless on touch, so the short form is
                 visible and the full date stays in the title. Dan 2026-08-25. */}
-          {wallet.isVip && (
+          {activeWallet.isVip && (
             <span
               className={styles.vipPill}
               title={
-                wallet.vipExpiresAt
-                  ? `Expires ${new Date(wallet.vipExpiresAt).toLocaleString()}`
+                activeWallet.vipExpiresAt
+                  ? `Expires ${new Date(activeWallet.vipExpiresAt).toLocaleString()}`
                   : undefined
               }
             >
@@ -719,18 +1110,18 @@ export default function MarketplacePage() {
         ))}
       </nav>
 
-      {/* Failure banners — these used to be silent on every refresh path */}
-      {shopError && (
+      {/* Failure banners : these used to be silent on every refresh path */}
+      {activeShopError && (
         <div className={styles.errorBanner} role="alert">
-          <span>Could Not Load The Shop: {formatPopupText(shopError)}</span>
+          <span>Could Not Load The Shop: {formatPopupText(activeShopError)}</span>
           <button className={styles.inlineLink} onClick={refreshAll} disabled={refreshing}>
             Retry
           </button>
         </div>
       )}
-      {wallet.error && (
+      {activeWallet.error && (
         <div className={styles.errorBanner} role="alert">
-          <span>{formatPopupText(wallet.error)}</span>
+          <span>{formatPopupText(activeWallet.error)}</span>
           <button className={styles.inlineLink} onClick={() => loadWallet()}>
             Retry
           </button>
@@ -750,27 +1141,43 @@ export default function MarketplacePage() {
           <StoreTab
             clubId={clubId}
             userId={user?.id || ''}
-            items={items}
+            items={activeItems}
             ownedItemIds={ownedItemIds}
-            balance={wallet.loaded ? wallet.diamonds : balance}
+            balance={activeWallet.loaded ? activeWallet.diamonds : (activeBalance ?? 0)}
             onGoDiamonds={() => switchTab('diamonds')}
             isAdmin={isAdmin}
-            loading={loading}
-            error={shopError}
+            loading={activeShopLoading}
+            error={activeShopError}
             categories={catalog.shopCategories}
             onGoManage={() => switchTab('manage')}
             onCatalogStale={() => loadShop(clubId, true)}
-            onPurchased={(newBalance) => {
+            onPurchased={(settlement) => {
+              const expectedAccountId = settlement?.accountId || user?.id;
+              const expectedClubId = settlement?.clubId || clubId;
+              if (
+                !expectedAccountId ||
+                !expectedClubId ||
+                activeUserIdRef.current !== expectedAccountId ||
+                clubIdRef.current !== expectedClubId ||
+                shopScope !== `${expectedAccountId}:${expectedClubId}`
+              ) {
+                return;
+              }
               // The BALANCE_UPDATED bus subscription reloads the shop + wallet;
               // only the optimistic diamond balance and the inventory are
               // needed here. Both balance mirrors must move together or the
               // header pill and the buy modal disagree until the reload lands.
-              if (typeof newBalance === 'number') {
-                setBalance(newBalance);
-                setWallet((prev) => (prev.loaded ? { ...prev, diamonds: newBalance } : prev));
+              if (settlement) {
+                setBalance(settlement.newBalance);
+                setShopScope(`${expectedAccountId}:${expectedClubId}`);
+                if (walletOwnerId === expectedAccountId) {
+                  setWallet((prev) =>
+                    prev.loaded ? { ...prev, diamonds: settlement.newBalance } : prev
+                  );
+                }
               }
-              loadInventory(clubId);
-              loadEnt();
+              loadInventory(expectedClubId);
+              loadEnt(expectedAccountId);
             }}
           />
         )}
@@ -782,7 +1189,7 @@ export default function MarketplacePage() {
             </span>
           </div>
         )}
-        {tab === 'diamonds' && continueOffered && nextPath && (
+        {verifiedContinuation?.ownerId === user?.id && verifiedContinuation?.path === nextPath && (
           <div className={styles.sectionIntro} role="status">
             <p className={styles.sectionSub}>
               Payment Received. Your Diamonds Land In A Few Seconds, And Your Seat Is Waiting.
@@ -797,8 +1204,11 @@ export default function MarketplacePage() {
         {tab === 'diamonds' && (
           <DiamondsTab
             clubId={clubId || ''}
-            wallet={wallet}
+            userId={user?.id || ''}
+            wallet={activeWallet}
             packages={catalog.diamondPackages}
+            catalogVerified={catalog.fromServer}
+            refreshCatalogForPurchase={refreshCatalogForPurchase}
             nextPath={nextPath}
           />
         )}
@@ -806,18 +1216,22 @@ export default function MarketplacePage() {
           <MembershipTab
             clubId={clubId || ''}
             userId={user?.id || ''}
-            wallet={wallet}
+            wallet={activeWallet}
             plans={catalog.vipPlans}
+            catalogVerified={catalog.fromServer}
+            refreshCatalogForPurchase={refreshCatalogForPurchase}
             onWalletChanged={loadWallet}
           />
         )}
         {tab === 'my_items' && (
           <MyItemsTab
+            key={`${user?.id || 'signed-out'}:${clubId || 'no-club'}`}
             clubId={clubId}
+            userId={user?.id || ''}
             isAdmin={isAdmin}
-            inventory={inventory}
-            purchases={purchases}
-            entitlements={entitlements}
+            inventory={activeInventory}
+            purchases={activePurchases}
+            entitlements={activeEntitlements}
             onGoStore={() => switchTab('store')}
             onRedeemed={() => {
               loadInventory(clubId || undefined);
@@ -829,8 +1243,9 @@ export default function MarketplacePage() {
         )}
         {tab === 'manage' && isAdmin && clubId && (
           <ManageTab
-            key={clubId}
+            key={`${user?.id || 'signed-out'}:${clubId}`}
             clubId={clubId}
+            userId={user?.id || ''}
             categories={catalog.shopCategories}
             catalogFromServer={catalog.fromServer}
             onShopChanged={() => loadShop(clubId, true)}

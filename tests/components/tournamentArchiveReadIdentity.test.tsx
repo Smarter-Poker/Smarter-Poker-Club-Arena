@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -122,6 +122,62 @@ beforeEach(() => {
   mocks.playerRefresh = null;
 });
 afterEach(cleanup);
+
+describe('recorded satellite qualifier archive', () => {
+  const target = 'a1000000-0000-4000-8000-000000000001';
+  const qualifier = (name: string) => ({ ...winner(name, 50), position: null, chips: 2000 });
+  const v3 = { format_contract: 'mtt-v2', satellite_target_id: target, satellite_target: target };
+
+  it('keeps equal survivors visible without inventing first and second place', async () => {
+    mocks.query.mockImplementation((table) =>
+      success(
+        table === 'tournaments'
+          ? [tournament('A', v3)]
+          : [
+              qualifier('Qualifier One'),
+              qualifier('Qualifier Two'),
+              { ...winner('Bubble', 5), status: 'eliminated', position: 3, chips: 0 },
+            ]
+      )
+    );
+    mount();
+    await select('A');
+    await screen.findByText('Qualifier One');
+    expect(screen.getAllByText('Qualified')).toHaveLength(2);
+    for (const name of ['Qualifier One', 'Qualifier Two']) {
+      const row = screen.getByText(name).parentElement!;
+      expect(within(row).getByText('Qualified')).toBeTruthy();
+      expect(within(row).queryByText(/1st|2nd/)).toBeNull();
+    }
+    expect(screen.getByText('3rd')).toBeTruthy();
+    const eventRead = mocks.query.mock.calls.find(([table]) => table === 'tournaments')!;
+    expect(eventRead[1].select).toContain('format_contract');
+    expect(eventRead[1].select).toContain('satellite_target_id');
+    expect(eventRead[1].select).toContain('satellite_target');
+  });
+
+  it.each([
+    { format_contract: null },
+    { format_contract: 'mtt-v1' },
+    { satellite_target: 'a2000000-0000-4000-8000-000000000002' },
+    { satellite_target_id: null, satellite_target: null },
+    { status: 'COMPLETING' },
+  ])('does not label an unproven NULL-place winner qualified: %j', async (invalid) => {
+    mocks.query.mockImplementation((table) =>
+      success(
+        table === 'tournaments'
+          ? [tournament('A', { ...v3, ...invalid })]
+          : [qualifier('Unproven Player'), winner('Recorded Champion')]
+      )
+    );
+    mount();
+    await select('A');
+    await screen.findByText('Recorded Champion');
+    expect(screen.queryByText('Unproven Player')).toBeNull();
+    expect(screen.queryByText('Qualified')).toBeNull();
+    expect(screen.getByText('1st')).toBeTruthy();
+  });
+});
 
 describe('Tournament archive read identity', () => {
   it('reports list read failure instead of inventing an empty archive, and retries', async () => {

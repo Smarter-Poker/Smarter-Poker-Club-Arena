@@ -59,6 +59,12 @@
 -- This is not a sweep, a watcher or a reconciler. It is the one built-in
 -- mechanism that maintains a visibility map, given the numbers that decide
 -- when it runs.
+--
+-- This migration creates no function, table, view, index, trigger or policy,
+-- so nothing can look it up: a storage parameter is invisible to every catalog
+-- probe that check-migrations-are-live.mjs makes. It states its own proof.
+--
+-- @live-proof: (SELECT reloptions @> ARRAY['autovacuum_vacuum_insert_threshold=20000'] FROM pg_class WHERE oid = 'public.bbj_contributions'::regclass)
 -- ═══════════════════════════════════════════════════════════════════════════
 BEGIN;
 

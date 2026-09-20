@@ -162,3 +162,31 @@ correctly refused every build - twelve consecutive Engine Releases, including
 applied and the door check passes; the release gets further and is being worked
 separately. 707 F06 permits remain `reserved` and 470 of 485 RUNNING events
 have dealt nothing for over 24 hours until the engine can be replaced.
+
+## Addendum, 19:25 UTC: the club-less prize writer
+
+The `drift_since_baseline` fix above was a backfill, and within one hour the
+drift had regrown from 75.08 to 100.50. That is the band-aid law 10.12 forbids,
+so the writer was fixed: `fn_diamond_game_pay_chips` now publishes the paying
+club on a transaction-local GUC beside its existing autoskip declarations, and
+`fn_ca_autoledger` reads it in the `ELSE` arm that previously wrote NULL.
+
+Two hazards were found in the obvious version of that fix and avoided. The GUC
+is **not** `app.ledger_club_id`: that name is already read by
+`atomic_credit_wallet_and_log`, `atomic_deduct_wallet_and_log` and
+`log_wallet_transaction` and set (with save/restore, because the calls nest) by
+`fn_close_settlement_period` and `fn_process_credit_invoice_payment` - it
+decides which club a wallet credit is paid INTO, so borrowing it could misroute
+real money in both directions. It is `app.ledger_autoledger_club_id`, which
+nothing else references. And the read is wrapped in its own exception handler
+rather than casting inline: `fn_ca_autoledger` re-raises, so a malformed GUC
+would have aborted the enclosing chip movement.
+
+Blast radius: `fn_ca_autoledger` backs 11 triggers on 8 tables, and the new
+`ELSE` is reachable from exactly two of them - `union_wallets` and `unions`,
+the only autoledgered tables with no `club_id` column. The migration asserts
+that set is still exactly those two and refuses if a ninth appears.
+
+The defect was category-agnostic, not a list: alongside wheel/plinko/crash/mines
+it had already produced a `crossing_prize` row. Every future diamond game
+shared it.

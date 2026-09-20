@@ -600,7 +600,7 @@ export default function XMTTPage() {
                 {inLine ? (
                   <div className={styles.row}>
                     <span className="sc-label sc-ink--blue">Waitlist</span>
-                    <span className={`${styles.value} sc-ink--gold`}>Position {inLine}</span>
+                    <span className={`${styles.value} sc-ink--gold`}>Position #{inLine}</span>
                   </div>
                 ) : null}
               </div>

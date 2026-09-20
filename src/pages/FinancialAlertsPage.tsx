@@ -311,7 +311,9 @@ function FinancialAlertsContent({ actorId }: { actorId?: string }) {
       : warningCount > 0
         ? `${warningCount} Warning`
         : alerts.length === 0
-          ? 'All Clear'
+          ? /* Neither the loaded list nor the separate counts prove the
+               board is clear; say what is true of what loaded. */
+            'No Loaded Alerts'
           : `${infoCount} Info`;
   const pillInk =
     criticalCount > 0 ? 'red' : warningCount > 0 ? 'gold' : alerts.length === 0 ? 'green' : 'blue';

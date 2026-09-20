@@ -381,9 +381,9 @@ describe('TournamentLobbyCard — numbers measured, not parsed back out of copy'
       </MemoryRouter>
     );
     await waitFor(() => {
-      /* On the console the window prints as a label/value row: LATE REG
-         in the master's blue, the countdown in gold beside it. */
-      expect(screen.getByText('Late Reg')).toBeTruthy();
+      /* On the console the window prints as a label/value row (LATE REG in
+         the master's blue, the countdown in gold beside it) and the pill in
+         the header well says Late Reg too; the countdown is the pin. */
       expect(screen.getByText('1 Lvl Left')).toBeTruthy();
     });
     rerender(

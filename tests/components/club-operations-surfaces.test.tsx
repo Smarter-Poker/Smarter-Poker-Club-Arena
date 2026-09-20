@@ -208,6 +208,22 @@ describe('the rail carries the queue into every tool', () => {
     expect(rpcMock).not.toHaveBeenCalled();
   });
 
+  /* A DIAMOND PLAYER CAN FIND THEIR WAY (2026-09-19). The player routes
+     under the arena now render their pages instead of the safe shell. The
+     operations rail, which badges finance, agents and the cashier, must not
+     follow them in: those are chip operator tools and the arena has none. */
+  it.each([
+    '/clubs/diamond-arena/members',
+    '/clubs/diamond-arena/members/user-1',
+    '/clubs/diamond-arena/messages',
+    '/clubs/diamond-arena/tournaments',
+    '/clubs/002c2d27-9584-4e52-835a-bb2be148fc81/members',
+  ])('never mounts the operations rail on the Diamond player route %s', async (path) => {
+    const { container } = mountRail(path);
+    await waitFor(() => expect(container.querySelector('nav')).toBeNull());
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
   it('stays out of the way on a route outside the workspace', async () => {
     const { container } = mountRail(`/clubs/${SLUG}/lobby`);
     await waitFor(() => expect(container.querySelector('nav')).toBeNull());

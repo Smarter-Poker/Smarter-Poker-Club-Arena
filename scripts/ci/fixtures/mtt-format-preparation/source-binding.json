@@ -1,0 +1,329 @@
+{
+  "version": 1,
+  "mode": "preparation",
+  "stages": [
+    {
+      "id": "foundation",
+      "migration": {
+        "path": "supabase/migrations/20260917060000_mtt_persisted_format_preparation.sql",
+        "sha256": "3b3c35d9afdef33465663eeafd13f85abc4557925d268b7509ab59c95d541349"
+      },
+      "probe": {
+        "path": "scripts/ci/probes/mtt-format-preparation-native.sql",
+        "sha256": "e1a23713cb786c78a9a915ee83db30fa2648b6f5ffe9a81b709d5cf429059dc1"
+      },
+      "marker": "MTT_FORMAT_PREPARATION_NATIVE_PASS",
+      "notice_prefix": "FORMAT PASS:",
+      "assertions": 34
+    },
+    {
+      "id": "capacity",
+      "migration": {
+        "path": "supabase/migrations/20260917061000_mtt_dual_capacity_admission_preparation.sql",
+        "sha256": "2d1f646ea39dde197b5e833422be7949c1a669ba36aba7bec96114ad536f3182"
+      },
+      "probe": {
+        "path": "scripts/ci/probes/mtt-dual-capacity-preparation-native.sql",
+        "sha256": "c0624aad5aa7de7a797a37dd4268ff010ff7dbc908d4b68d64b5804d5b919ab8"
+      },
+      "marker": "MTT_DUAL_CAPACITY_PREPARATION_NATIVE_PASS",
+      "notice_prefix": "DUAL CAP PASS:",
+      "assertions": 28
+    },
+    {
+      "id": "launch",
+      "migration": {
+        "path": "supabase/migrations/20260917062000_mtt_launch_format_preparation.sql",
+        "sha256": "5fa4441e8ebfbbc2f2e2ef210fbcdb90464ab30d5029d910e51e7b2985371340"
+      },
+      "probe": {
+        "path": "scripts/ci/probes/mtt-launch-format-preparation-native.sql",
+        "sha256": "c1ec959c5a5daef397eb18b5b17eddb3fba0007cd1f0a210d878d7c8fbfb685d"
+      },
+      "marker": "MTT_LAUNCH_FORMAT_PREPARATION_NATIVE_PASS",
+      "notice_prefix": "LAUNCH FORMAT PASS:",
+      "assertions": 22
+    },
+    {
+      "id": "projections",
+      "migration": {
+        "path": "supabase/migrations/20260917063000_mtt_format_read_projections.sql",
+        "sha256": "382a5512aa5314124cae123f41db79890360cae9fc23a45e4c1c3f0d92cc8acd"
+      },
+      "probe": {
+        "path": "scripts/ci/probes/mtt-format-read-projections-native.sql",
+        "sha256": "4696a928c1d7e07f7fe46980f4a2b83bc9db0c13e0e609084ed88f93f39bc121"
+      },
+      "marker": "MTT_FORMAT_READ_PROJECTIONS_NATIVE_PASS",
+      "notice_prefix": "FORMAT PROJECTION PASS:",
+      "assertions": 17
+    },
+    {
+      "id": "seats",
+      "migration": {
+        "path": "supabase/migrations/20260917064000_mtt_recorded_format_seat_consumers_preparation.sql",
+        "sha256": "dacb81f41b5e207fb9e50c49a6c09b26bdfb27f3374ca002b010c9b2bea44a52"
+      },
+      "probe": {
+        "path": "scripts/ci/probes/mtt-seat-consumers-preparation-native.sql",
+        "sha256": "1eb64722e07aefeeef6e5137b2feaf223a76358719b542f597ed4ffa1331d26c"
+      },
+      "marker": "MTT_SEAT_CONSUMERS_PREPARATION_NATIVE_PASS",
+      "notice_prefix": "SEAT CONSUMER PASS:",
+      "assertions": 31
+    },
+    {
+      "id": "creation",
+      "migration": {
+        "path": "supabase/migrations/20260917065000_mtt_dual_creation_preparation.sql",
+        "sha256": "f48b7949e9f3335ce4a96b2a3e494a077f0ee93d98d0d332402169d8d6294239"
+      },
+      "probe": {
+        "path": "scripts/ci/probes/mtt-dual-creation-preparation-native.sql",
+        "sha256": "7e17b80efe03bb4b420c7ccfbbadd53d0e21807e8df95ef5cede78cb43e06162"
+      },
+      "marker": "MTT_DUAL_CREATION_PREPARATION_NATIVE_PASS",
+      "notice_prefix": "DUAL CREATION PASS:",
+      "assertions": 35
+    },
+    {
+      "id": "satellite_restart",
+      "migration": {
+        "path": "supabase/migrations/20260917070000_mtt_dual_satellite_restart_preparation.sql",
+        "sha256": "2882c0c4a30a85075eab7c1aab89a369420e9705d6da3e1568b83acbff601c78"
+      },
+      "probe": {
+        "path": "scripts/ci/probes/mtt-dual-satellite-restart-preparation-native.sql",
+        "sha256": "4f15383541c86bfc0be2742cc4aa87f6a4f9eb8f1e616546e10c2afcfe176314"
+      },
+      "marker": "MTT_DUAL_SATELLITE_RESTART_PREPARATION_NATIVE_PASS",
+      "notice_prefix": "DUAL SATELLITE PASS:",
+      "assertions": 44
+    },
+    {
+      "id": "read_capacity",
+      "migration": {
+        "path": "supabase/migrations/20260917071000_mtt_read_capacity_preparation.sql",
+        "sha256": "c4c8f6f7695d0e3878a1499897acb4044d4434bb0f15eba2a3a7562a1b2a27f0"
+      },
+      "probe": {
+        "path": "scripts/ci/probes/mtt-read-capacity-preparation-native.sql",
+        "sha256": "634e15f5ddf08e4281dd3038fd0d71025f7821121d839ff6dfae36f61f7cfac1"
+      },
+      "marker": "MTT_READ_CAPACITY_PREPARATION_NATIVE_PASS",
+      "notice_prefix": "READ CAPACITY PASS:",
+      "assertions": 38
+    }
+  ],
+  "locks": [
+    {
+      "path": "scripts/ci/probes/mtt-format-admission-lock.spec",
+      "sha256": "69b7408ca5f903523a9a4fc645767ac119427621a473c314afda81eef5d017c0",
+      "case": "format_admission",
+      "permutations": 2
+    },
+    {
+      "path": "scripts/ci/probes/mtt-registration-admission-lock.spec",
+      "sha256": "e38f156d177c47caa01233fcbf5cc2c15153fce6a6518394c724ef217b13fc81",
+      "case": "registration_admission",
+      "permutations": 2
+    },
+    {
+      "path": "scripts/ci/probes/mtt-seat-capacity-admission-lock.spec",
+      "sha256": "d6205c30d510714b9a9ac798f7bfb5c2ad6de87f5706008c0657e83d6d8a0551",
+      "case": "seat_capacity_admission",
+      "permutations": 2
+    }
+  ],
+  "fixtures": [
+    {
+      "path": "scripts/ci/fixtures/mtt-format-preparation/current-satellite-successor-20260917.json",
+      "sha256": "1c39fa1f425e6ba3a3863bfbf4d5f8fb357dd10806b679e1704d04da951fdd93",
+      "kind": "function-successor",
+      "presence": "exact-predecessor"
+    },
+    {
+      "path": "scripts/ci/fixtures/mtt-format-preparation/launch-authorities-20260917.json",
+      "sha256": "237bf6a833111871a7b7eafddc037abfc6bad5916400296ada836e5bdd7f9483",
+      "kind": "functions",
+      "presence": "exact-or-absent"
+    },
+    {
+      "path": "scripts/ci/fixtures/mtt-format-preparation/overlay-registry-20260917.json",
+      "sha256": "da35c3176772a517c3e79e41ace3f4202c145f3b212a2d44e46a97dffc77d3ee",
+      "kind": "registry",
+      "presence": "absent"
+    },
+    {
+      "path": "scripts/ci/fixtures/mtt-format-preparation/projection-dependencies-20260917.json",
+      "sha256": "b45147af3482d7585c64bcbe049b64c63bb38bb5b3d5329ec8840a89fa57af18",
+      "kind": "functions",
+      "presence": "absent"
+    },
+    {
+      "path": "scripts/ci/fixtures/mtt-format-preparation/projection-tables-20260917.json",
+      "sha256": "6e192806d36962fe7aa0554566291087f21b3f5bdd0548cde697e96132433fbd",
+      "kind": "tables",
+      "presence": "absent",
+      "schema": {
+        "path": "scripts/ci/fixtures/mtt-format-preparation/projection-tables-20260917.sql",
+        "sha256": "07a04083e373e4adc075fd3803285f4fe0a675f4f3621cbccc2011695d55e57a"
+      }
+    },
+    {
+      "path": "scripts/ci/fixtures/mtt-format-preparation/seat-authorities-20260917.json",
+      "sha256": "56d1345483b5a4708c27d7990e7cd7d9bbb4c159dae32b13326382218c1e4626",
+      "kind": "functions",
+      "presence": "exact"
+    },
+    {
+      "path": "scripts/ci/fixtures/mtt-format-preparation/creation-authorities-20260917.json",
+      "sha256": "7fc8ed8f3ca15cc4c482dff43eb6e94d5c247cfcaf988173af7ce26aba11ca70",
+      "kind": "functions",
+      "presence": "exact"
+    },
+    {
+      "path": "scripts/ci/fixtures/mtt-format-preparation/read-capacity-authorities-20260917.json",
+      "sha256": "17a44884df08eaa4719a826fe2f3a83cd81a6c06463ce508426069b6550d5736",
+      "kind": "functions",
+      "presence": "exact"
+    }
+  ],
+  "pending_activation_cases": [
+    "creation_commit",
+    "creation_rollback",
+    "edit_after_creation",
+    "edit_before_creation",
+    "restart_commit",
+    "restart_rollback"
+  ],
+  "preparation_races": [
+    {
+      "mode": "synthetic_future",
+      "fixture": {
+        "path": "scripts/ci/fixtures/mtt-format-preparation/satellite-restart-future.sql",
+        "sha256": "13ea778959c69e172cce05dd2877ab1f1ec6864788ece06b0f9d841e532dc5db"
+      },
+      "cases": [
+        {
+          "path": "scripts/ci/probes/mtt-isolation/creation-commit.spec",
+          "sha256": "bf19570cefe5e90d5ec9802c1610cb6e2fab26420f8bc75483c65ef59ea6e2e6",
+          "case": "creation_commit",
+          "permutations": 1,
+          "expected_outcomes": {
+            "a": "created",
+            "b": "existing_active"
+          },
+          "committed_new_tournaments": 1,
+          "registered_blocker": "a",
+          "registered_waiter": "b",
+          "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: creation_commit"
+        },
+        {
+          "path": "scripts/ci/probes/mtt-isolation/creation-rollback.spec",
+          "sha256": "e4fea41c3d0e53e0ef119ad16afadf17f71ea22175d111290b4b028002a72836",
+          "case": "creation_rollback",
+          "permutations": 1,
+          "expected_outcomes": {
+            "b": "created"
+          },
+          "committed_new_tournaments": 1,
+          "registered_blocker": "a",
+          "registered_waiter": "b",
+          "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: creation_rollback"
+        },
+        {
+          "path": "scripts/ci/probes/mtt-isolation/edit-after-creation.spec",
+          "sha256": "311de607a8cec2462c98d0303359cfc675c0cae49932fd7a22d6421e465c539e",
+          "case": "edit_after_creation",
+          "permutations": 1,
+          "expected_outcomes": {
+            "a": "created",
+            "b": "edit_refused"
+          },
+          "committed_new_tournaments": 1,
+          "registered_blocker": "a",
+          "registered_waiter": "b",
+          "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: edit_after_creation"
+        },
+        {
+          "path": "scripts/ci/probes/mtt-isolation/edit-before-creation.spec",
+          "sha256": "b48554f058ee8e501d35f8bcb8b741d5866fca353231a84f86e6fa61ed28f310",
+          "case": "edit_before_creation",
+          "permutations": 1,
+          "expected_outcomes": {
+            "a": "target_unsupported",
+            "b": "edited"
+          },
+          "committed_new_tournaments": 0,
+          "registered_blocker": "b",
+          "registered_waiter": "a",
+          "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: edit_before_creation"
+        },
+        {
+          "path": "scripts/ci/probes/mtt-isolation/restart-commit.spec",
+          "sha256": "5317d7928bd18873c3a42a38a3cf95009fc4343dc2fb1117d7b5f6973700e4de",
+          "case": "restart_commit",
+          "permutations": 1,
+          "expected_outcomes": {
+            "a": "created",
+            "b": "duplicate_refused"
+          },
+          "committed_new_tournaments": 1,
+          "registered_blocker": "a",
+          "registered_waiter": "b",
+          "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: restart_commit"
+        },
+        {
+          "path": "scripts/ci/probes/mtt-isolation/restart-rollback.spec",
+          "sha256": "2016c17bf9232bf44b5f2b8bc607ae9868f29095d1e19602418161fd98022100",
+          "case": "restart_rollback",
+          "permutations": 1,
+          "expected_outcomes": {
+            "b": "created"
+          },
+          "committed_new_tournaments": 1,
+          "registered_blocker": "a",
+          "registered_waiter": "b",
+          "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: restart_rollback"
+        }
+      ]
+    },
+    {
+      "mode": "legacy",
+      "fixture": {
+        "path": "scripts/ci/fixtures/mtt-format-preparation/satellite-creator-legacy.sql",
+        "sha256": "5b9bd802cd42e018a191f76220597c7618743b0ec3ca60c7a96d7dd4a97c5adc"
+      },
+      "cases": [
+        {
+          "path": "scripts/ci/probes/mtt-isolation/creation-commit.spec",
+          "sha256": "bf19570cefe5e90d5ec9802c1610cb6e2fab26420f8bc75483c65ef59ea6e2e6",
+          "case": "creation_commit",
+          "permutations": 1,
+          "expected_outcomes": {
+            "a": "created",
+            "b": "existing_active"
+          },
+          "committed_new_tournaments": 1,
+          "registered_blocker": "a",
+          "registered_waiter": "b",
+          "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: creation_commit"
+        },
+        {
+          "path": "scripts/ci/probes/mtt-isolation/creation-rollback.spec",
+          "sha256": "e4fea41c3d0e53e0ef119ad16afadf17f71ea22175d111290b4b028002a72836",
+          "case": "creation_rollback",
+          "permutations": 1,
+          "expected_outcomes": {
+            "b": "created"
+          },
+          "committed_new_tournaments": 1,
+          "registered_blocker": "a",
+          "registered_waiter": "b",
+          "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: creation_rollback"
+        }
+      ]
+    }
+  ]
+}

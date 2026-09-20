@@ -8,8 +8,6 @@
   "STATE_INTEGRITY_VIOLATION": "StateVerifier — STEP 4, not ported",
   "TIME_BANK_EXTENDED": "TimeBankEngine — STEP 5, not ported",
   "TIME_BANK_EXTENSION_DENIED": "TimeBankEngine — STEP 5, not ported",
-  "PRE_ACTION_EXECUTED": "PreActionEngine — STEP 5, not ported",
-  "STRADDLE_TOGGLED": "Straddle engine — STEP 6, not ported",
   "TABLE_BALANCE_EXECUTED": "TableBalancer — STEP 7, not ported",
 
   "_unbuilt_producers": "UI shipped, producer never written. Each is a real gap worth closing.",

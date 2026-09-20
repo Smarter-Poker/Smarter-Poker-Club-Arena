@@ -4,6 +4,7 @@ import type { HorseGameStateV2 } from '../HorseLogic.js';
 import { omahaNutStatus } from '../HorseEval.js';
 import { omahaCardFacts } from './OmahaCardFacts.js';
 import { calculateContestablePot, calculateRake } from '../PokerEngine.js';
+import { horsePolicyDealtPlayers } from '../multiway/DealtSeatCensus.js';
 // Shared public seat/action geometry and legal choice kernel. No Phase 10
 // hand-quality model, entry threshold or equity calibration is imported.
 import { plo4Position, plo4Role, plo4PreflopChoice } from '../plo4/Plo4LivePolicy.js';
@@ -138,7 +139,12 @@ export function evaluateOmahaVariantPolicy(
     s.communityCards3?.length
   )
     return finish('multiboard_owned_by_phase13');
-  const seats = s.players.filter((p) => !p.is_sitting_out);
+  let seats: SeatPlayer[];
+  try {
+    seats = horsePolicyDealtPlayers(s.players, hero.seat, s.dealtSeatIds);
+  } catch {
+    return finish('canonical_state_unavailable');
+  }
   if (
     s.stateSchemaVersion !== 1 ||
     s.bettingStructure !== 'pot_limit' ||
@@ -193,7 +199,9 @@ export function evaluateOmahaVariantPolicy(
       s.maxRaiseTo! < s.minRaiseTo!)
   )
     return finish('invalid_wager_geometry');
-  const active = seats.filter((p) => p.user_id !== hero.user_id && !p.is_folded);
+  const active = seats.filter(
+    (p) => p.user_id !== hero.user_id && !p.is_folded && (!p.is_sitting_out || p.is_all_in)
+  );
   const depth =
     Math.min(hero.stack + hero.bet, Math.max(...active.map((p) => p.stack + p.bet))) / s.bigBlind;
   receipt.depthBB = depth;
@@ -235,7 +243,9 @@ export function evaluateOmahaVariantPolicy(
       (a) =>
         a.userId !== hero.user_id &&
         a.stage === s.stage &&
-        ['bet', 'raise', 'all_in'].includes(a.action)
+        (a.action === 'bet' ||
+          a.action === 'raise' ||
+          (a.action === 'all_in' && a.isFullRaise !== undefined))
     )
     .at(-1);
   receipt.aggressorPosition = aggressor ? plo4Position(aggressor.seat, s) : null;

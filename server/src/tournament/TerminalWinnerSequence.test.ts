@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => ({
   from: vi.fn(),
-  rpc: vi.fn(() => {
+  rpc: vi.fn<(name: string, args?: unknown) => Promise<{ data: any; error: any }>>(() => {
     throw new Error('Unexpected RPC in finish-stage fixture');
   }),
   reportError: vi.fn(),
@@ -223,5 +223,247 @@ describe('terminal candidate follows the durable elimination authority', () => {
     expect(manager.finishTournament).toHaveBeenCalledOnce();
     expect(manager.finishTournament).toHaveBeenCalledWith(firstUserId);
     expect(fixture.from).toHaveBeenCalledTimes(2);
+  });
+});
+
+import nativeCohorts from './__fixtures__/satellite-qualifier-native-receipts.json';
+import { TournamentManager } from './TournamentManager.js';
+import { ServerTableEngine } from '../engine/ServerTableEngine.js';
+import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { TournamentRetirementCustody } from '../services/TournamentRetirementCustody.js';
+
+function cohortManager(
+  raw: (typeof nativeCohorts)[keyof typeof nativeCohorts] = nativeCohorts.two_survivors
+) {
+  const tableId = raw.source_closeout.source_table_ids[0];
+  const engine = new ServerTableEngine(tableId);
+  const e = engine as any;
+  e.running = true;
+  e.handController = null;
+  e.handForHandResolve = vi.fn();
+  const shared = new Map([[tableId, engine]]);
+  const server: any = {
+    getTableEngine: (id: string) => shared.get(id),
+    ownsTournamentTableEngine: (id: string, expected: ServerTableEngine) =>
+      shared.get(id) === expected,
+    tournamentRetirementCustody: new TournamentRetirementCustody(),
+    unregisterTableEngine: vi.fn((id: string, expected: unknown) => {
+      if (shared.get(id) !== expected) return false;
+      shared.delete(id);
+      return true;
+    }),
+    stopClosedTournamentTableEngine: vi.fn().mockResolvedValue(false),
+  };
+  const manager = new TournamentManager(
+    raw.tournament_id,
+    server,
+    '00000000-0000-4000-8000-000000000004',
+    performance.now() + 60_000
+  ) as any;
+  manager.lifecycleEpoch.begin();
+  Object.assign(manager, {
+    running: true,
+    tournamentCache: {
+      format_contract: 'mtt-v2',
+      satellite_target_id: raw.target_id,
+      variant: 'satellite',
+      prize_pool_finalized: true,
+    },
+    requestEliminationSweep: vi.fn(),
+    requestUrgentEliminationSweepAfter: vi.fn(),
+    // Remain in the real finish stage, and avoid unrelated stages afterward.
+    eliminationWorkBudgetExpired: vi.fn().mockReturnValue(true),
+    broadcast: vi.fn().mockResolvedValue(true),
+    cleanupBroadcastChannel: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockImplementation(async () => {
+      manager.running = false;
+    }),
+  });
+  manager.tableEngines.set(tableId, engine);
+  manager.wireEliminationWake(engine);
+  vi.spyOn(engine, 'stop').mockImplementation(async () => {
+    e.running = false;
+  });
+  const response = {
+    ok: true,
+    tournament_id: raw.tournament_id,
+    state: 'qualifying',
+    full_ticket_count: 2,
+    qualifier_ids: raw.qualifier_ids,
+  };
+  fixture.rpc.mockImplementation(async (name: string) => {
+    if (name === 'fn_ca_resume_hand_submission') return { data: { found: false }, error: null };
+    if (name === 'fn_f06_hand_number_state')
+      return {
+        data: {
+          ok: true,
+          table_id: tableId,
+          lifecycle: '1',
+          can_reserve: true,
+          blocked_reason: null,
+          used_hand_number_max: '0',
+          unresolved_permit: null,
+          next_hand_number_candidate: '1',
+        },
+        error: null,
+      };
+    if (name === 'fn_get_satellite_qualifier_state') return { data: response, error: null };
+    if (name === 'fn_settle_satellite_qualifiers') return { data: raw, error: null };
+    throw new Error(`Unexpected cohort RPC ${name}`);
+  });
+  fixture.from.mockImplementation((name: string) => {
+    const q: any = {
+      select: vi.fn(() => q),
+      eq: vi.fn(() => q),
+      in: vi.fn().mockResolvedValue({ data: [{ id: tableId }], error: null }),
+      // Original-source control has no cohort stage and only sees two live players.
+      then: (resolve: any) =>
+        Promise.resolve({ count: raw.qualifier_ids.length, data: null, error: null }).then(resolve),
+    };
+    expect(['tables', 'tournament_players']).toContain(name);
+    return q;
+  });
+  manager.eliminationSweepCursor.advanceTo(2);
+  return { manager, engine, e, server, shared, tableId, response, raw };
+}
+
+describe('new-format satellite completion at the actual full-ticket boundary', () => {
+  beforeEach(() => {
+    fixture.rpc.mockReset();
+    fixture.from.mockReset();
+    fixture.reportError.mockClear();
+    setMaintenanceFrozen(false);
+  });
+  it('the actual pause-ready callback prioritizes a pending qualifier boundary and otherwise advances hand-for-hand', () => {
+    const f = cohortManager();
+    const advance = vi.spyOn(f.manager, 'advanceHandForHandBarrier').mockImplementation(() => {});
+    f.manager.satelliteQualifierBoundaryPending = true;
+    f.e.pauseReadyCallback(f.tableId);
+    expect(f.manager.requestEliminationSweep).toHaveBeenCalledOnce();
+    expect(f.manager.requestEliminationSweep).toHaveBeenCalledWith('satellite_qualifier_boundary');
+    expect(advance).not.toHaveBeenCalled();
+
+    f.manager.requestEliminationSweep.mockClear();
+    f.manager.satelliteQualifierBoundaryPending = false;
+    f.e.pauseReadyCallback(f.tableId);
+    expect(advance).toHaveBeenCalledOnce();
+    expect(f.manager.requestEliminationSweep).not.toHaveBeenCalled();
+  });
+  it.each(['two_survivors', 'same_hand_overflow'] as const)(
+    'the actual finish caller accepts %s without inventing first place',
+    async (key) => {
+      const f = cohortManager(nativeCohorts[key]);
+      await f.manager.runEliminationSweep(new AbortController().signal);
+      expect(fixture.rpc).toHaveBeenCalledWith('fn_settle_satellite_qualifiers', {
+        p_tournament_id: f.raw.tournament_id,
+        p_observed_qualifier_ids: f.raw.qualifier_ids,
+      });
+      expect(f.manager.broadcast).toHaveBeenCalledWith(
+        'satellite_qualifiers',
+        expect.objectContaining({ qualifierIds: f.raw.qualifier_ids, receiptVersion: 3 })
+      );
+      expect(
+        f.manager.broadcast.mock.calls.some(([event]: [string]) => event === 'tournament_winner')
+      ).toBe(false);
+      expect(f.server.unregisterTableEngine).toHaveBeenCalledWith(f.tableId, f.engine);
+    }
+  );
+
+  it('the real hand-complete callback holds before hand-for-hand can release, including a pending accepted writer', async () => {
+    const f = cohortManager();
+    f.manager.handForHandActive = true;
+    f.manager.handForHandTableIds.add(f.tableId);
+    f.e.terminalBoundaryPendingGenerations.add(1);
+    f.e.handCompleteCallback(f.tableId, [{ user_id: f.raw.qualifier_ids[0], stack: 0 }]);
+    expect(f.e.terminalCloseoutPaused).toBe(true);
+    f.manager.advanceHandForHandBarrier();
+    expect(f.e.handForHandResolve).not.toHaveBeenCalled();
+    await f.manager.runEliminationSweep(new AbortController().signal);
+    expect(fixture.rpc.mock.calls.some(([name]) => name === 'fn_settle_satellite_qualifiers')).toBe(
+      false
+    );
+    expect(f.manager.eliminationSweepCursor.nextStage).toBe(0);
+    // The real accepted writer's completion allows the same owning operation.
+    f.e.terminalBoundaryPendingGenerations.clear();
+    f.manager.eliminationSweepCursor.advanceTo(2);
+    await f.manager.runEliminationSweep(new AbortController().signal);
+    expect(
+      fixture.rpc.mock.calls.filter(([name]) => name === 'fn_settle_satellite_qualifiers')
+    ).toHaveLength(1);
+  });
+
+  it('adopted and replacement dealers preserve both the booked start and qualifier boundary before dealing', async () => {
+    const f = cohortManager();
+    f.e.running = false;
+    const bookedStart = Date.now() + 60_000;
+    f.manager.tournamentCache.started_at = new Date(bookedStart).toISOString();
+    const start = vi.spyOn(f.engine, 'start').mockImplementation(async () => {
+      expect(f.e.terminalCloseoutPaused).toBe(true);
+      expect(f.e.dealHoldUntilMs).toBe(bookedStart);
+    });
+    Object.defineProperty(f.engine, 'ready', { value: Promise.resolve(true) });
+    f.manager.startManagedTableEngine(f.engine, 'test');
+    await Promise.all([...f.manager.tableEngineRunJobs]);
+    expect(start).toHaveBeenCalledOnce();
+    expect(f.manager.satelliteQualifierBoundaryPending).toBe(true);
+    expect(fixture.reportError).not.toHaveBeenCalled();
+  });
+
+  it.each(['freeze', 'stop', 'abort', 'replacement', 'generation'] as const)(
+    'cannot pay through a %s change during the authoritative read',
+    async (fault) => {
+      const f = cohortManager();
+      const controller = new AbortController();
+      fixture.rpc.mockImplementationOnce(async () => {
+        if (fault === 'freeze') setMaintenanceFrozen(true);
+        if (fault === 'stop') f.manager.running = false;
+        if (fault === 'abort') controller.abort();
+        if (fault === 'replacement') f.shared.set(f.tableId, {} as ServerTableEngine);
+        if (fault === 'generation') {
+          f.manager.holdSatelliteQualifierBoundary();
+          fixture.rpc.mockImplementationOnce(async () => {
+            f.manager.holdSatelliteQualifierBoundary();
+            return { data: f.response, error: null };
+          });
+        }
+        return { data: f.response, error: null };
+      });
+      try {
+        await f.manager.runEliminationSweep(controller.signal);
+        expect(
+          fixture.rpc.mock.calls.some(([name]) => name === 'fn_settle_satellite_qualifiers')
+        ).toBe(false);
+      } finally {
+        setMaintenanceFrozen(false);
+      }
+    }
+  );
+
+  it('uses a proven continuation to release only this pause while preserving maintenance ownership', async () => {
+    const f = cohortManager();
+    f.manager.holdSatelliteQualifierBoundary();
+    f.e.maintenancePaused = true;
+    f.response.state = 'continuing';
+    f.response.qualifier_ids = [...f.raw.qualifier_ids, 'dddddddd-dddd-dddd-dddd-dddddddddddd'];
+    await f.manager.runEliminationSweep(new AbortController().signal);
+    expect(f.e.terminalCloseoutPaused).toBe(false);
+    expect(f.e.maintenancePaused).toBe(true);
+    expect(f.e.handForHandResolve).not.toHaveBeenCalled();
+    expect(fixture.rpc.mock.calls.some(([name]) => name === 'fn_settle_satellite_qualifiers')).toBe(
+      false
+    );
+  });
+
+  it('an unknown payer result stops this generation with its fence retained', async () => {
+    const f = cohortManager();
+    fixture.rpc.mockImplementation(async (name: string) =>
+      name === 'fn_get_satellite_qualifier_state'
+        ? { data: f.response, error: null }
+        : { data: null, error: { message: 'transport lost' } }
+    );
+    await f.manager.runEliminationSweep(new AbortController().signal);
+    expect(f.manager.stop).toHaveBeenCalledOnce();
+    expect(f.e.terminalCloseoutPaused).toBe(true);
+    expect(f.manager.broadcast).not.toHaveBeenCalled();
   });
 });

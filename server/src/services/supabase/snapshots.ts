@@ -212,18 +212,35 @@ export const PARKED_PRESENCE_FRESH_MS = 20 * 60_000;
  * effort: a failure here costs the next boot its strike counts and blind
  * budgets, which is what every boot cost before this existed.
  */
+export interface ParkedTimeBank {
+  occupancyId: string;
+  remainingSeconds: number;
+  usesRemaining: number;
+  initialSeconds: number;
+  baseSeconds: number;
+  dbConsumedSeconds: number;
+  unlimitedActivations?: boolean;
+}
+
 export async function savePresenceAtPark(params: {
   tableId: string;
   disconnectStates: Record<string, DisconnectStateEntry>;
   engineInstance?: string | null;
+  timeBanks?: Record<string, ParkedTimeBank>;
+  handNumber?: number;
 }): Promise<boolean> {
   try {
+    const parkedAt = new Date().toISOString();
     const { error } = await supabase.from('engine_presence_parked').upsert(
       {
         table_id: params.tableId,
         disconnect_states: params.disconnectStates,
-        parked_at: new Date().toISOString(),
+        parked_at: parkedAt,
         engine_instance: params.engineInstance ?? null,
+        time_bank_snapshot:
+          params.timeBanks && Number.isSafeInteger(params.handNumber)
+            ? { version: 1, parkedAt, handNumber: params.handNumber, players: params.timeBanks }
+            : null,
       },
       { onConflict: 'table_id' }
     );
@@ -260,4 +277,68 @@ export async function loadPresenceFromPark(
     console.warn(`[loadPresenceFromPark] Exception:`, e);
     return null;
   }
+}
+
+/**
+ * Read explicitly initialized banks at the caller's proven completed-hand
+ * boundary. Startup reads authoritative history and excludes crash recovery
+ * before reaching this function; roster adoption then requires the exact
+ * occupancy. Those identities, not elapsed wall time, establish validity.
+ * A frozen table can remain at the same boundary throughout a long outage.
+ * Expiring its bank after twenty minutes loses purchased time (or grants a
+ * second allowance), even though neither a hand nor a seat changed.
+ * Presence alone still uses its TTL because it lacks these identity guards.
+ */
+export async function loadTimeBanksFromPark(
+  tableId: string,
+  handNumber: number,
+  nowMs = Date.now()
+): Promise<Record<string, ParkedTimeBank>> {
+  const { data, error } = await supabase
+    .from('engine_presence_parked')
+    .select('time_bank_snapshot, parked_at')
+    .eq('table_id', tableId)
+    .maybeSingle();
+  if (error) throw error;
+  const snapshot = data?.time_bank_snapshot;
+  const parkedAt = Date.parse(String(data?.parked_at));
+  if (
+    !Number.isSafeInteger(handNumber) ||
+    handNumber < 0 ||
+    !Number.isFinite(nowMs) ||
+    !snapshot ||
+    snapshot.version !== 1 ||
+    snapshot.handNumber !== handNumber ||
+    !Number.isFinite(parkedAt) ||
+    nowMs < parkedAt ||
+    Date.parse(String(snapshot.parkedAt)) !== parkedAt ||
+    !snapshot.players ||
+    typeof snapshot.players !== 'object' ||
+    Array.isArray(snapshot.players)
+  )
+    return {};
+  const valid: Record<string, ParkedTimeBank> = {};
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  for (const [userId, value] of Object.entries(snapshot.players)) {
+    if (!uuid.test(userId) || !value || typeof value !== 'object') continue;
+    const bank = value as ParkedTimeBank;
+    if (
+      !uuid.test(bank.occupancyId) ||
+      ![
+        bank.remainingSeconds,
+        bank.usesRemaining,
+        bank.initialSeconds,
+        bank.baseSeconds,
+        bank.dbConsumedSeconds,
+      ].every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0) ||
+      !Number.isSafeInteger(bank.usesRemaining) ||
+      (bank.unlimitedActivations !== undefined && typeof bank.unlimitedActivations !== 'boolean') ||
+      bank.remainingSeconds > bank.initialSeconds ||
+      bank.baseSeconds > bank.initialSeconds ||
+      bank.dbConsumedSeconds > bank.initialSeconds - bank.baseSeconds
+    )
+      continue;
+    valid[userId] = bank;
+  }
+  return valid;
 }

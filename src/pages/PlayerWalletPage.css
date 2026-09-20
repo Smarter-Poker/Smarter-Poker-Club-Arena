@@ -583,6 +583,167 @@
   outline-offset: 2px;
 }
 
+/* The Diamond Arena statement (phase 4): the Earn tab's stat rows, stacked. */
+.arena-statement {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Where Your Diamonds Go (phase 5) ───────────────────────────────────
+   Every diamond spent by what it bought and earned by where it came from,
+   lifetime or the last 30 days. A bar is a share of its own side, so the
+   longest bar on each side is always the biggest sink or source. DIAMONDS
+   ONLY: the panel has no chip vocabulary. */
+.flow-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.flow-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.flow-columns {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.flow-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.flow-side__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(184, 195, 205, 0.12);
+}
+
+.flow-side__title {
+  color: var(--vault-muted);
+  font-family: var(--vault-font-label);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.flow-side__total {
+  color: var(--vault-chrome-hot);
+  font-family: var(--vault-font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.flow-side__total.positive {
+  color: var(--vault-green);
+}
+
+.flow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flow-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.flow-row__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* A money label wraps rather than clips: "Daily Rewards And Challenges"
+   beside a six-figure amount at 375px must still read in full. */
+.flow-row__label {
+  min-width: 0;
+  color: var(--vault-chrome-hot);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.flow-row__amount {
+  flex: none;
+  color: var(--vault-cyan);
+  font-family: var(--vault-font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.flow-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.flow-bar__fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--vault-blue), var(--vault-cyan));
+  transition: width 0.3s ease;
+}
+
+.flow-bar__fill.earned {
+  background: linear-gradient(90deg, #1d7a4f, var(--vault-green));
+}
+
+.flow-row__count {
+  color: var(--vault-muted);
+  font-family: var(--vault-font-label);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Two doors on the diamonds plate: Buy Diamonds and the Diamond Arena. They
+   wrap at 375px rather than shrink; a door is a tap target, not a label. */
+.wallet-plate__doors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* The arena is closed: a sentence in the plate's own muted ink, no chrome, so
+   nobody reads a dead button as a broken one. */
+.wallet-plate__door-note {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px;
+  color: var(--vault-muted);
+  font-family: var(--vault-font-label);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 /* ── Panels (send / receive / earn / ledger) ────────────────────────── */
 
 .wallet-grid {
@@ -1044,6 +1205,10 @@
 
   .earn-stats {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .flow-columns {
+    grid-template-columns: 1fr;
   }
 
   /* `.wallet-plate__value` used to be forced to 1.15rem here. It is sized in

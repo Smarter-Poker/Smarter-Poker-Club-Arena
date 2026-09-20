@@ -251,7 +251,7 @@ const circuitBreaker = {
     if (this.failures >= this.THRESHOLD && this.trippedAt === 0) {
       this.trippedAt = Date.now();
     }
-    // Throttle error reporting to max 1 per 60s to prevent Sentry spam
+    // Throttle error reporting to max 1 per 60s to prevent error reporting spam
     const now = Date.now();
     if (now - this.lastReportedAt > 60_000) {
       this.lastReportedAt = now;
@@ -355,7 +355,18 @@ export interface PlayerActions {
   error?: string;
 }
 
+export interface MaintenancePresentation {
+  active: boolean;
+  phase: 'last_hand' | 'counting_down' | 'finalizing' | 'resuming' | 'idle';
+  break_id: number | null;
+  break_ends_at: number | null;
+  scheduled_ends_at: number | null;
+  reason: string;
+  timestamp: number;
+}
+
 export interface ServerStatus {
+  maintenance?: { presentation?: MaintenancePresentation };
   running: boolean;
   uptime: number;
   activeTables: number;
@@ -601,7 +612,7 @@ export async function getAvailableActions(
  */
 export async function getServerStatus(): Promise<ServerStatus | null> {
   try {
-    const response = await engineFetch(`${GAME_SERVER_URL}/health`);
+    const response = await engineFetch(`${GAME_SERVER_URL}/health`, { cache: 'no-store' });
     if (!response.ok) return null;
     return (await response.json()) as ServerStatus;
   } catch (err) {
@@ -743,7 +754,7 @@ export async function setPreAction(
     if (!response.ok) {
       // HTTP 400 = invalid pre-action (not player's turn, not in hand) —
       // this is an expected user-state mismatch, NOT a server bug. Do not
-      // report to Sentry; just return the error for the caller to handle.
+      // report to error reporting; just return the error for the caller to handle.
       if (response.status === 400) {
         console.debug(
           `[GameServerAPI] setPreAction rejected (HTTP 400) - player not in hand or not their turn`

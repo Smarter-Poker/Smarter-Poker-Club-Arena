@@ -658,7 +658,9 @@ function kindLabel(e: LobbyEntry): string {
       ? 'Spin'
       : e.kind === 'sng'
         ? 'Heads Up'
-        : 'MTT';
+        : e.kind === 'mtt'
+          ? 'MTT'
+          : 'Tournament';
 }
 const COL_KIND: ColumnDef = {
   key: 'kind',
@@ -947,6 +949,21 @@ const COL_ACTIONS: ColumnDef = {
       );
     }
 
+    if (e.kind === 'unknown') {
+      return (
+        <span className="lt-actions">
+          <button type="button" className="lt-act lt-act--ghost" data-act="view" onClick={run}>
+            {e.status === 'completed' ? 'Results' : e.status === 'running' ? 'Watch' : 'Details'}
+          </button>
+          {e.status !== 'completed' && (
+            <button type="button" className="lt-act" disabled>
+              Entry Unavailable
+            </button>
+          )}
+        </span>
+      );
+    }
+
     if (e.kind === 'spin' || e.kind === 'sng') {
       /* Dan 2026-08-25: "once a spin is running, it must show the status as
          running, where users can click and watch." A seat-first game with no
@@ -1030,7 +1047,21 @@ const COL_ACTIONS: ColumnDef = {
             Details
           </button>
         )}
-        {ctx.onRegister && !closedToEntry && (
+        {/* The whole board's door is shut (Diamond Phase 8): say so rather
+            than offer a Register the server refuses. A registered player still
+            reads Registered. */}
+        {ctx.onRegister && !closedToEntry && ctx.registrationClosedLabel && !registered && (
+          <button
+            type="button"
+            className="lt-act"
+            data-act="closed"
+            disabled
+            aria-label={`${e.name}: ${ctx.registrationClosedLabel}`}
+          >
+            {ctx.registrationClosedLabel}
+          </button>
+        )}
+        {ctx.onRegister && !closedToEntry && !(ctx.registrationClosedLabel && !registered) && (
           <button
             type="button"
             className={`lt-act ${registered ? 'lt-act--done' : 'lt-act--primary'}`}

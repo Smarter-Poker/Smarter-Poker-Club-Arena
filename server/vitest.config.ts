@@ -6,7 +6,7 @@ export default defineConfig({
   test: {
     globals: false,
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'src/testing/horseRegression/**/*.test.mjs'],
     // ONE definition, imported. It used to be a literal 10_000 here, and two
     // tests independently chose 10_000 as their own wall-clock wait budget -
     // the same number as the ceiling, so the wait could never finish before
@@ -26,6 +26,14 @@ export default defineConfig({
     ],
     // The equity load governor reads the live event loop; a busy test runner
     // must not shrink the samples the precision tests depend on.
-    env: { EQUITY_GOVERNOR: 'off' },
+    env: {
+      EQUITY_GOVERNOR: 'off',
+      // Unmocked imports previously used the production URL with a placeholder
+      // key, sending real rejected requests during CI. Override inherited
+      // credentials too: unit tests never need the live database. Vitest sets
+      // these before setup files and application imports in each worker.
+      SUPABASE_URL: 'https://supabase.invalid',
+      SUPABASE_SERVICE_ROLE_KEY: 'unit-test-placeholder-key',
+    },
   },
 });

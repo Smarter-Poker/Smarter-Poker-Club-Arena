@@ -1,3 +1,7 @@
+**Non-engine delivery: push, publish, verify and finish without waiting for `:55`.** Apply the maintenance cutover only to an actual engine replacement or a specifically identified dependency on new engine behavior. A Club Arena client using existing engine APIs, an unrelated pending engine release, and a generic engine-health check do not create that dependency. Required checks and normal client publication/live proof still apply.
+
+> **Current owner instruction (September 17):** Use [PUBLISHING.md](PUBLISHING.md) for the active push, protected merge, publication and live-verification procedure. Each authorized agent owns its delivery independently and may work and publish in parallel. There is no restoration-owner approval or numbered release queue. This later owner instruction supersedes conflicting historical release directions below. Retired local/custom publishers, autopilot, watchdog/repair release paths and external error telemetry remain inactive. Preserve required technical checks, production safeguards and other agents’ work. The human-only approval restriction is revoked; Silent Revert Guard reports findings for review and is not a merge gate.
+
 # Club Arena -- Agent Instructions
 
 ## ↗ RESUMING THE ENGINE-RESTART PROGRAMME? READ `docs/HANDOFF_CURRENT_STATE.md`
@@ -50,41 +54,9 @@ already gone wrong: the control is painted in the art.
 
 ---
 
-## ↗ START HERE: `AGENT-PLAYBOOK.md`
+## ↗ START HERE: current operating references
 
-**Before this file, before anything: read [`AGENT-PLAYBOOK.md`](./AGENT-PLAYBOOK.md).**
-
-It is byte-identical in all seven repos and it answers, in one page, how to ship
-without losing work: claim your own worktree, commit, push, open a pull request,
-stop. It also lists every guard that is protecting you, what each one is telling
-you when it speaks, and **where every credential lives** (never the value — the
-place). `.github/scripts/estate-integrity.sh` checks hourly that all seven
-copies still agree.
-
-If you are lost, cannot find a credential, or something is red and you do not
-know why, that file is the answer. This one is the Club Arena detail underneath
-it.
-
----
-
-ALL agents (Claude, AntiGravity, Cowork, any AI) MUST read this file at session start.
-This is the single source of truth for **this repo**. Updated 2026-04-28.
-
-**↗ READ FIRST:** `.agent/architecture/CLUB-ARENA-CANONICAL-ARCHITECTURE-2026-04-28.md`
-That document is the canonical "where does my fix go?" decision tree, the
-duplicate-table reconciliation, and the four-tier topology lock. Every agent
-must read it before pushing any code. If the architecture doc contradicts
-this CLAUDE.md, the architecture doc wins (it's newer + repo-canonical).
-
-**Platform-level plan** (CA + Supabase + Hetzner + WH integration):
-`~/Documents/Smarter-Poker-World-Hub/CLUB-ARENA-OFFICIAL-UPGRADE-INTEGRATION.md`
-
-That document supersedes the old `POKERBROS_UPGRADE_PLAN.md`, `PHASE_3/4_*_PLAN.md`,
-`MASTER_BLUEPRINT.md`, and every `ANTIGRAVITY-HANDOFF-*.md` (now in
-`docs/_archive/handoffs/`). If any of those conflict with the platform plan, the
-platform plan wins.
-
----
+Read root `AGENTS.md`, `AGENT-PLAYBOOK.md` and `docs/agent-policy/REFERENCE-INDEX.md` at task start and every resumption. They link to the current owner policy, operating law and hardening standard. Read `PUBLISHING.md` for delivery. Later owner instructions govern operating authority; the product and financial laws below remain applicable within the assigned scope. Historical programmes are not automatic assignments.
 
 ## 1. DEPLOYMENT PIPELINE
 
@@ -92,47 +64,27 @@ Club Arena is a Vite + React SPA published to its own Hetzner static origin.
 The World Hub serves `/hub/club-arena/*` through a rewrite to that origin;
 Club Arena releases do not deploy through the World Hub repo. See section 1.1.
 
-### 1.1 How your work reaches production (rewritten 2026-09-03 - the World Hub is no longer in the path)
+### 1.1 How your work reaches production
 
-There is exactly one route from a commit to a player, and every mutation step
-is owned by Club Arena automation. A branch push starts that route; only
-exact-SHA production proof completes it.
+Follow [PUBLISHING.md](PUBLISHING.md): owned branch, existing or new PR,
+actual required checks, protected squash merge, existing publisher, live proof.
+The authorized agent owns the merge and verification. All tasks can proceed
+independently; disabled autopilot and numbered delivery queues are not prerequisites.
 
-1. **Work on a branch in your own worktree.** Any name is fine - `fix/<slug>`
-   is the convention. Never commit on `main`; it is a protected mirror.
-2. **Push the branch** over SSH (`git push origin HEAD:refs/heads/<branch>`),
-   then follow its checks, merge, and owning Club Arena release workflows to a
-   terminal result. Fix red checks forward; do not report a branch push as a
-   release.
-3. `agent-branch-proposal.yml` records the branch push without credentials;
-   trusted default-branch `agent-open-pr.yml` consumes that completed signal
-   and opens the pull request for any eligible branch name.
-4. `agent-autopilot.yml` enables squash auto-merge. The required checks run on
-   on their declared isolated runners, and GitHub merges when they are green.
-   Privileged PR/release control never reuses a runner that executed branch
-   code. Red checks never merge (5.8).
-5. **`publish-club-arena.yml` publishes - to Club Arena's own origin.** On
-   merge it builds the bundle, runs the four-way sharded test gate, and
-   rsyncs `dist/` to the static origin (Caddy on `estate-ci-1`,
-   `ca-static.smarter.poker`) as `/srv/club-arena/releases/<ca_sha>/`, then
-   swaps the `current` symlink atomically. The World Hub carries ONE rewrite,
-   `/hub/club-arena/*` -> that origin, so the player is still on
-   `smarter.poker` and the shared session (`smarter-poker-auth`) still works.
-   The rsync and the symlink swap take seconds. The PUBLISH does not:
-   measured 2026-09-08, merge to bundle-stamped was 3m54s, and the whole
-   pipeline is a four-job DAG with a full `npm run build` in the middle. The
-   old wording said "a publish takes seconds" and it is the first number an
-   agent reads here, so it was routinely mistaken for the end-to-end figure -
-   see `.agent/audits/2026-09-08-publish-pipeline-improvements.md` for the
-   stage-by-stage breakdown. Nothing is committed to the World Hub repo any
-   more, and Vercel does not rebuild the World Hub for a Club Arena merge.
-   Rollback is re-pointing the symlink; ten releases are kept.
-6. **Verify** by reading, never by assuming: both
-   `https://ca-static.smarter.poker/build-info.json` and
-   `https://smarter.poker/hub/club-arena/build-info.json` must report a
-   `ca_sha` equal to the squash commit on `main`. For `server/` changes,
-   the sealed `auto-deploy-hetzner.yml` run must complete and cache-busted
-   engine health must report that same SHA. Nothing else counts as deployed.
+`publish-club-arena.yml` builds through GitHub and publishes the client to
+Hetzner's static origin. World Hub rewrites `/hub/club-arena/*` to that origin;
+a Club Arena release does not rebuild World Hub. Preserve append-only assets,
+the atomic origin switch and the existing publisher's concurrency controls.
+
+Verify the selected client revision at both
+`https://ca-static.smarter.poker/build-info.json` and
+`https://smarter.poker/hub/club-arena/build-info.json`.
+For engine changes, record `stage-engine-release.yml` -> selected runtime
+component revision -> `auto-deploy-hetzner.yml`, then verify the sealed release,
+`https://engine.smarter.poker/health` and applicable post-deployment proof.
+The component revision need not equal a later documentation-only main revision.
+With concurrent merges, verify the actual selected protected revision contains
+your change instead of overwriting a newer release to force an older SHA.
 
 **Why it used to go through the World Hub, and why it stopped (2026-09-03).**
 `smarter.poker/hub/club-arena` is a path on the World Hub's Vercel deployment,
@@ -175,102 +127,9 @@ Hub repo (which copied a build into `public/hub/club-arena/` for a local
 Next.js preview) is retired with the sync; the World Hub's dev server proxies
 the rewrite to the live origin instead.
 
-### 1.1.6 HOW THE BUILD IS PUT TOGETHER (added 2026-09-04 - read before you touch a build step)
+### 1.1.6 Build and runner authority
 
-Push to live was ~10.1 minutes. It is not any more, and the way it got faster
-constrains what you may do to these files. Three facts that are easy to undo
-by accident:
-
-1. **`npm run build` is `tsc -b && npm run build:ci`.** ONE definition, so the
-   two cannot drift. `ci.yml`'s two build jobs run `build:ci`;
-   `publish-club-arena.yml` runs the full `npm run build`. THE ASYMMETRY IS
-   DELIBERATE and either half alone is a bug: the tree that reaches players is
-   typechecked on the commit that ships it, and the throwaway pull-request
-   builds are not, because the required `TypeScript Check` job has already
-   checked that same tree, ungated, on every pull request. `tsc -b` emits
-   nothing here (all three tsconfigs are `noEmit`, none is `composite`, no dts
-   or checker plugin) - if you add `composite`, `references` or a dts plugin,
-   `tsc -b` starts emitting and `build:ci` silently stops producing the same
-   bundle. `tests/the-build-typechecks-where-it-ships.law.test.ts` fails first.
-
-2. **`sharp` is a declared devDependency.** It used to be deliberately absent
-   and installed over the network into `os.tmpdir()` mid-build - 97s cold, 77s
-   warm, three times per merge. Do not remove it, and do not remove the
-   temp-prefix fallback in `scripts/lib/sharp-loader.mjs` either: that is the
-   no-regression net. The lockfile must keep the `@img/sharp-linux-x64` and
-   `@img/sharp-libvips-linux-x64` entries or `npm ci` on a runner installs
-   sharp with no binary and the fallback quietly resumes paying the 97s.
-
-3. **`scripts/optimize-dist-media.mjs` is parallel and content-addressed.**
-   Results are cached by the sha256 of the INPUT bytes plus the rule, the
-   extension, `ENCODER_SETTINGS_VERSION` and sharp's version. **If you change
-   the png/webp/jpeg encoder options, bump `ENCODER_SETTINGS_VERSION` in the
-   same edit** - it is the only thing between an encoder change and a cache
-   that keeps serving the previous encoder's bytes. The script also recognises
-   its own output, so a second pass re-encodes nothing; before 2026-09-04 a
-   second pass re-encoded 90 files and lost quality every time.
-
-**Source maps go to Sentry and never to players.** `SENTRY_AUTH_TOKEN` belongs
-to `publish-club-arena.yml` and nowhere else. It used to sit in `ci.yml`, so
-the plugin uploaded maps for the pull-request bundle that gets thrown away,
-uploaded none for the bundle that ships, and - because
-`filesToDeleteAfterUpload` only runs on a successful upload - shipped 267 `.map`
-files (27MB) to players on every deploy. The publisher now strips them
-unconditionally and refuses to publish a survivor.
-
-Full reasoning and every measurement:
-`docs/changelog/2026-09-04-push-to-live-under-six-minutes.md`.
-
-### 1.1.7 THE RUNNERS (rescaled 2026-09-04; World Hub given twelve more the same day)
-
-| Box              | Type  | Cores | Runners | Serves                          |
-| ---------------- | ----- | ----- | ------- | ------------------------------- |
-| `estate-ci-eu-1` | cpx62 | 16    | 18      | Club Arena (12) + World Hub (6) |
-| `estate-ci-eu-2` | cpx62 | 16    | 12      | Club Arena (6) + World Hub (6)  |
-| `estate-ci-eu-3` | cpx62 | 16    | 18      | Club Arena (12) + World Hub (6) |
-| `estate-ci-1`    | cpx31 | 4     | 3       | Club Arena                      |
-
-52 cores; 33 Club Arena runners, 18 World Hub runners. The World Hub had six,
-all on eu-2, all busy, while eu-1 and eu-3 sat at load 1 with twelve idle Club
-Arena runners each - measured 2026-09-04, when every World Hub job waited 8-14
-minutes for a runner. The twelve extra (`estate-wh-eu1-*`, `estate-wh-eu3-*`,
-registered with `scripts/ci/setup-selfhosted-runner.sh`) took that queue to a
-0.6-minute maximum the same hour. The three EU boxes were 8-core (cpx42) until
-2026-09-04; loads of 40.9 were the reason. `cx53` and `cax41` are NOT orderable
-on this account - both were tried and refused.
-
-**A NUMBER TUNED TO HARDWARE AND WRITTEN DOWN AS A CONSTANT OUTLIVES THE
-HARDWARE.** The old 8-core concurrency caps became the bottleneck the hour the
-boxes became 16-core. Derive from the box (`os.cpus().length`,
-`nproc`), never from a literal.
-
-**Counting busy runners: `pgrep -f 'Runner.Worker'` matches your own ssh
-command** and makes every box look permanently busy. Use
-`ps -eo comm | grep -c '^Runner.Worker$'`. The GitHub API's `busy` flag is not
-reliable either; inspect processes.
-
-### 1.1.5 SERVER-SIDE PROTECTION (APPLIED - this section is history)
-
-`.husky/pre-push` is a seatbelt on an unlocked door: `--no-verify` skips it and
-a push made through the GitHub API never runs it. The lock is a ruleset, which
-GitHub enforces for every client. Private repos need GitHub Pro for that.
-
-`scripts/ci/apply-main-ruleset.mjs` applies it in one command the moment Pro is
-on, in two stages:
-
-    GH_TOKEN=<fresh GitHub App token> node scripts/ci/apply-main-ruleset.mjs --stage=1
-    GH_TOKEN=<fresh GitHub App token> node scripts/ci/apply-main-ruleset.mjs --stage=2
-
-Stage 1 changes nothing about how you work and would have prevented the
-2026-08-21 rewind that dropped four commits already serving in production.
-Stage 2 is the one that makes a red test impossible to land - and it ends
-direct pushes to main, so read section 1.3 again after it is applied. The two
-required checks listed in section 1.2.5 already exist in CI and run on pull
-requests. The ruleset script installs the complete list; a partial subset is
-not an acceptable release gate.
-
-The token also needs `Administration: Read and write`; one that can push code
-cannot change protection rules. The script says which of the two is missing.
+Inspect the current tracked workflows for their actual runner, install, build and required-check configuration. The approved production route uses GitHub/provider compute. Historical runner counts, speed estimates and local/custom replacement guides are retired. Do not re-register retired runners or infer successful execution from source configuration alone.
 
 ### 1.2 World Hub Boundary (Not A Club Arena Publisher)
 
@@ -278,96 +137,9 @@ cannot change protection rules. The script says which of the two is missing.
 - Club Arena frontend and engine releases never invoke a World Hub or Vercel
   deployment, token, hook, or project.
 
-### 1.2.5 HOW A PUSH LANDS NOW (changed 2026-08-21)
+### 1.2.5 Submission through live verification
 
-**READ 1.1 FIRST - IT IS THE ROUTE, AND THIS SECTION IS THE SCRIPT'S HISTORY.**
-Clarified 2026-09-06, because the two read as competing instructions and an
-agent has to pick one:
-
-- **1.1 step 2 is what you do**: work on a branch in your own worktree and
-  `git push origin HEAD:refs/heads/<branch>`. `agent-open-pr.yml` opens the
-  pull request and autopilot merges it after required checks. The release is
-  complete only after the owning Hetzner workflow and exact live SHA are
-  verified.
-- **This section is about landing on `main` directly**, which the ruleset no
-  longer permits from any client.
-
-The former shared-clone `git-safe-push.sh` / `pr-push.mjs` path is not a
-release authority and must not be used to bypass isolated-worktree rules,
-normal hooks, or branch protection. No deployment credential should be read
-from a World Hub file or embedded in a Git remote.
-
-VERIFIED AGAINST THE LIVE API 2026-08-28, because two other places in this repo
-say the opposite and they are the stale ones. Ruleset `main protection`
-(id 21163380) on `refs/heads/main` is `enforcement: active`, with
-`bypass_actors: []` - nobody, including a repo admin, merges around it. Its
-rules are `deletion`, `non_fast_forward`, `pull_request` (squash only, 0
-approvals) and `required_status_checks`:
-
-    TypeScript Check
-    Client Unit Tests (vitest)
-    Server Engine (typecheck + tests)
-    Production Build
-    CSS Beat E2E (multi-table + animations)
-    Silent Revert Guard
-
-So: a direct push to main is refused, a red check cannot be merged, and
-`ci.yml`'s `if: github.event_name == 'pull_request'` gating is SAFE precisely
-because the ruleset makes the pull-request path the only path.
-
-Two documents used to disagree with the API; both were corrected on
-2026-08-28 / 2026-09-03 and now say the same thing this section says:
-
-- Section 1.1.5 is titled "APPLIED - this section is history". It is active.
-- `.husky/pre-push` check 0 was corrected 2026-08-28 and its check 5 comment on
-  2026-09-03; neither claims any more that "nothing enforces it server-side".
-  If you find text anywhere in this repo saying the ruleset is not enforced,
-  that text is the stale one - the API is the authority.
-
-THE SKIPPED-CHECK GAP: CLOSED, and this paragraph is the correction (verified
-against ci.yml and the live API 2026-08-31). `ci.yml` gates `unit`, `server`
-and `build` behind the `changes` job, and A RULESET COUNTS A SKIPPED REQUIRED
-CHECK AS SATISFIED - so the shape of the danger is real and worth knowing. But
-all three jobs now carry
-
-    always() && github.event_name == 'pull_request' &&
-    (needs.changes.result != 'success' || ...)
-
-so an undetermined diff RUNS them rather than skipping them, and `changes`
-itself fails open: three retries, then "run everything" if the file list is
-still unavailable, and any change to package.json / vite / vitest / tsconfig /
-.npmrc / .nvmrc / ci.yml is treated as touching everything. `typecheck` and
-`stub_gate` are ungated entirely.
-
-This text used to say the gap was live. It was describing the 2026-08-23
-incident, which the `always()` guards above were added to fix - the words
-outlived the bug and told every agent since that CI could not be trusted. The
-remaining skips are the correct kind: `changes` succeeded and said, truthfully,
-that server/\*\* was not touched.
-
-One latent hole in that machinery WAS still open and is now closed too: the
-changed-file call asked for `per_page=300`, and the GitHub API caps per_page at
-100 silently, so a pull request over 100 files would have been classified on a
-truncated list. It uses `--paginate` now. No pull request here has exceeded 19
-files, so nothing was ever misclassified in practice.
-
-WHY, because the old path caused three separate incidents in one day:
-
-- it pushed with `--force-with-lease` on every failure path, which REWOUND
-  main and dropped four commits already built, synced and serving in
-  production;
-- it pushed with `--no-verify`, so the pre-push hook - nine house rules, and
-  since #149 the test suite - never ran from the one command every agent is
-  told to use, and red tests reached main four times;
-- it rebased main automatically on conflict, which section 12 forbids.
-
-A pull request cannot do any of those. The branch push still runs the hook, so
-a failing test stops you at your own machine rather than stopping everyone.
-
-If it refuses to land, nothing was force-pushed and nothing was lost. Read the
-output: a hook failure is yours to fix and a `dirty` state means a real
-conflict with main. Merge current `origin/main` into the feature branch,
-resolve it there, rerun the gates, and push the branch again.
+Follow `PUBLISHING.md`. The authorized agent finds or creates its PR, handles required checks, completes protected squash merge, and verifies the selected client/engine component. Do not depend on disabled proposal/merge helpers. A newer containing revision can satisfy delivery; an open PR or push cannot.
 
 ### 1.3 Never Do
 
@@ -416,14 +188,6 @@ Never say "should be live in a few minutes" or "deploy triggered."
 - ALL game logic lives here: HandController, ServerTableEngine, all engines
 - HTTP endpoints: POST /action, POST /timebank, GET /actions, GET /health
 - Uses `SUPABASE_SERVICE_ROLE_KEY` (bypasses RLS)
-- Sentry: its OWN project `club-arena-engine` (since 2026-09-04) and an
-  SDK-side event budget (`server/src/services/sentryEventBudget.ts`, 10/min per
-  fingerprint, 60/min overall, dropped counts summarised every 10 min). An
-  engine loop burned the whole org quota in August and blinded every other
-  app for three weeks. Never point `SENTRY_DSN` back at the hub project, never
-  remove the budget from `beforeSend`, and do not raise its limits to make a
-  loop visible: the summary event already names it.
-  `docs/changelog/2026-09-04-engine-sentry-budget.md`.
 - The engine is ONE core and horse Monte Carlo was 90% of it (profiled
   2026-09-04). `server/src/engine/EquityLoadGovernor.ts` scales the sample
   when the event loop saturates; `/health.equityGovernor.scale < 1` means the
@@ -525,7 +289,9 @@ supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS`, and each
 
 ---
 
-## 3. ACTIVE MIGRATION
+## 3. Historical migration programme (task-specific reference)
+
+This programme does not assign new work or override the current owner policy. Resume only the phase already authorized for this task, preserving actual migration prerequisites.
 
 There is a server-authoritative migration in progress. Before ANY code work, read:
 
@@ -640,10 +406,10 @@ transaction requirement from the production DDL policy in section 2.
    THE RULES:
    - `.husky/pre-push` now runs the tests covering what you touched, in about
      four seconds. Do not `--no-verify` past it.
-   - WRITING THE SPEC FIRST IS ENCOURAGED. Committing it red is not. Mark it
-     `it.skip()` / `describe.skip()` with a note saying what has to be built,
-     and delete the `.skip` in the commit that implements it. A skipped spec
-     documents the work; a red one holds the platform hostage.
+   - Reproduce the defect locally, implement the repair, and commit the passing
+     regression with it. Never skip an applicable check to make a candidate
+     pass. Keep unimplemented proposals in the task plan rather than treating
+     a skipped spec as regression protection.
    - If you deliberately replace behaviour a test pins, UPDATE THAT TEST IN THE
      SAME COMMIT. "Someone else will fix the test" means "nobody ships until
      they do."
@@ -813,11 +579,11 @@ lone horse was denied a dealing engine that a lone human would have received.
 Both were put to Dan on 2026-08-27 with the costs stated. His answers are
 BINDING and are recorded here so nobody re-opens them as a "bug":
 
-**1. Hand-history retention: STAYS AT 7 DAYS.** Horse-only hands are pruned
+**1. Hand-history retention: EIGHT DAYS (owner update September 17, 2026).** Horse-only hands are pruned
 after `hand_history_retention_policy.horse_retention_days`; hands a human was
 dealt into are kept forever. Equalising would cost ~0.5 GB/day (~15 GB/month)
 on a table already at 3.6 GB — 221k hands/day, 99.95% of them horse-only. Dan
-chose to leave it at 7. **This is the one sanctioned asymmetry in the entire
+originally chose seven days and explicitly increased it to eight on September 17. **This is the one sanctioned asymmetry in the entire
 law, it is a STORAGE decision rather than a player-treatment one, and it is
 Dan's to change — it is a config row, not code. Do not "fix" it.**
 
@@ -936,8 +702,7 @@ be fixed" was read on 2026-09-01 as "show the ring". The disc was removed,
 the photo was seated in the ring's aperture, and tests were written calling
 the disc "a shape drawn over approved artwork". Every later agent obeyed those
 tests and restored only the hairline. If a request about the profile image
-seems to call for showing the ring, it does not - ask Dan before touching the
-disc. "NO BOXES OVER HEADER ICONS" is about focus rings on icons; the disc is
+seems to call for showing the ring, it does not - preserve the disc under the current product rule unless the assigned change explicitly changes that requirement. "NO BOXES OVER HEADER ICONS" is about focus rings on icons; the disc is
 its one deliberate exception. The World Hub and Club Commander headers carry
 the identical rule (`GLOBAL_HEADER_PROFILE_FRAME_LAW.md` in that repo).
 
@@ -955,8 +720,9 @@ the table. Before
 enforcing any law, confirm it exists on **current `origin/main`**, never in
 your local tree: stale worktrees carrying retired laws are how the hamburger
 revert war ran for two days. If two laws (or two CLAUDE.md copies) demand
-opposite things, STOP and ask Dan; never write a third law and never delete
-the other side on your own authority.
+opposite things, first apply the latest explicit owner instruction and recorded
+precedence. Resolve already-authorized alignment directly; ask only when a
+material conflict remains undecided. Never invent a third conflicting rule.
 
 **A LAW IS SOMETHING WRITTEN DOWN. DEPLOYED CODE IS NOT A LAW.** The
 stop-and-ask above is for two WRITTEN rules in conflict — two sections of
@@ -981,76 +747,29 @@ at all — the same shortcut, in the same shape, that 10.5 was written about.
 One binding law, one violation of it, and a stopped job waiting on a ruling
 that 10.5 had already given.
 
-**2. INTENTIONAL REVERTS NEED A HUMAN.** The Silent Revert Guard no longer
-accepts `[allow-revert]` or the word "revert" in a commit message on its own —
-on 2026-08-31 an agent amended the token into its own message to get past the
-guard. A detected revert merges only when Dan applies the `revert-approved`
-label to the PR (the check re-runs itself on labeling, and the guard files an
-issue asking for it). If main is broken, prefer a forward fix; it needs no
-label. Do not edit commit messages to route around the guard.
+**2. REVIEW RESTORED CONTENT WITHOUT AN APPROVAL HANDOFF.** The owner removed
+all human-only revert approval on September 17. Silent Revert Guard reports
+exact historical-content restorations so the owning task can repair accidental
+loss or explain an intentional restoration in its PR. No label or additional
+human approval is required. Labels and commit-message tokens do not suppress
+the report. Complete protected delivery after the required technical checks
+pass; preserve other agents' changes and verify publication separately.
 
-**3. NEVER SET A TIMER TO WATCH CI.** Playbook 7b is binding: push, open the
-PR, report the PR number, END YOUR SESSION. Native events open it, Autopilot
-arms protected merge, and read-only production audits provide evidence. "I've set another brief
-timer and will be back shortly" is the forbidden `wait_and_merge.sh` written
-in prose; it burns tokens and adds nothing. Checking ONCE at the end to say
-why something is BLOCKED is fine. Sitting in a loop is not.
+**3. CONTINUE WORK WHILE PROVIDERS RUN.** Follow [PUBLISHING.md](PUBLISHING.md).
+Keep the pending run/revision, continue other authorized work and inspect the
+result afterward. The agent still owns protected merge and live verification.
+Do not use retired autopilot, a timer, watcher or repair loop to complete a release.
 
-**4. WORKTREES ARE DISPOSABLE.** `scripts/prune-stale-worktrees.sh` removes
-any worktree that is clean, pushed, and idle for 72 hours. Do not keep state
-you care about only in a worktree: commit and push it, or it will eventually
-be pruned (pushed branches lose nothing — the commits live on origin).
+**4. PRESERVE OWNED WORKTREES.** Commit and push assigned source through the
+normal route and retain necessary evidence. A historical pruning script is not
+authority to delete, move or reset another task's checkout. Verify ownership,
+uncommitted files and retained commits before any explicitly authorized cleanup.
 
 ---
 
-## 10.82 MERGED IS NOT LANDED, AND A SECOND PUSH CAN VANISH (2026-09-06, BINDING)
+## 10.82 MERGED IS NOT LANDED, AND A SECOND PUSH CAN VANISH
 
-**`agent-autopilot.yml` squash-merges the moment the required checks pass.** On
-an asset-only or docs change that can be under two minutes. Push again after
-that and the branch moves, the pull request stays merged, `git push` exits 0,
-and your commits reach nobody.
-
-World Hub #1387 shipped **1 of its 3 commits** this way. The push said success.
-The PR said merged. The branch on GitHub genuinely held all three. A CI fix for
-a gate that had been red on `main` for two days, and the deletion of a component
-that fabricated player data, were simply not there - found hours later, by
-accident, while looking at something else.
-
-### The rules
-
-1. **A follow-up commit needs a NEW BRANCH off current `main`.** Not a second
-   push to the branch you already opened a pull request from.
-   `scripts/guard-merged-branch.sh` refuses that push from `.husky/pre-push` and
-   prints the recovery. Missing authority or an unreadable answer fails closed;
-   there is no environment-variable or hook bypass.
-
-   **Fail-closed is settled: do not add a bypass back.** The failure this guard
-   prevents is a push that EXITS 0 and reaches nobody, so "allow it through
-   when we cannot check" recreates exactly the defect. An earlier version of
-   this section documented `AGENT_MERGED_BRANCH_OK=1`; the script has had no
-   such variable since it was rewritten, and an escape hatch that does not
-   exist costs an agent more time than no documentation would.
-   `tests/the-docs-describe-this-environment.law.test.ts` now fails if any doc
-   documents an override nothing reads.
-
-   **If it blocks you with "GitHub CLI is required", that is PATH, not a
-   missing install.** `gh` is at `/opt/homebrew/bin/gh` and authenticated;
-   `/opt/homebrew/bin` is not on a non-interactive PATH, so the guard could not
-   see it and correctly refused. `.husky/pre-push` now repairs PATH for every
-   tool its guards require. Calling the guard by hand:
-   `export PATH="/opt/homebrew/bin:$PATH"`.
-
-2. **Verify the FILES, never the tick.** `git fetch origin main` then
-   `git cat-file -e origin/main:<path>`. This is section 1.4's rule - only
-   production serving the sha counts as deployed - applied to merges, and for
-   the same reason: every intermediate signal can be true while the outcome is
-   false.
-
-3. **This gets worse as CI gets faster.** #3187 took the critical path from
-   ~6.8 to ~4 minutes. Every minute cut off CI widens the window in which an
-   agent is racing its own merge.
-
----
+A push to a branch whose PR already merged does not deliver later commits. Recover PR state, create an owned follow-up branch/PR when needed, and verify the actual merged files and runtime behavior. Follow `PUBLISHING.md`; the authorized agent owns protected integration. Do not assume disabled autopilot runs or use undocumented bypasses. Preserve normal hooks and exact current-head checks.
 
 ## 10.83 A CHECK THAT NOBODY CAN SEE IS NOT A CHECK (2026-09-06, BINDING)
 
@@ -1167,37 +886,23 @@ anything.** One call is always cheaper than the detour.
 
 ---
 
-## 10.84 AGENTS NEVER SET A CREDENTIAL, AND NEVER HAND-WRITE WHAT A MONITOR READS (2026-09-06, BINDING)
+## 10.84 CREDENTIAL AUTHORITY AND TRACKED MONITORING CONFIGURATION
 
-Two rules, one lesson: **the things that watch this platform are configuration,
-and configuration an agent edits by hand is configuration nobody can see.**
-Both were written by the Realtime Connections Programme's phase 7, from the two
-halves of the 2026-09-03 outage.
+### 1. Credential changes follow current owner authority
 
-### 1. An agent never SETS a credential. It reads where one lives, or it stops.
+Necessary credential/configuration repairs within the assigned work require no
+additional human approval under the September 17 owner policy. Use the existing
+service identity, intended permissions and canonical secret store through an
+authorized supported tool. Verify the affected authentication/check result.
+Check access and secret metadata early; an unavailable key must not stop
+independent delivery work. Follow explicit tool handoff requirements and name
+their source instead of inventing a new owner approval.
 
-The twenty-two hours began with **one environment variable**. Somebody put
-Dan's own address into `PROBE_LOGIN_EMAIL` in Vercel, the login probe signed in
-as him every fifteen minutes and called a global `signOut()`, and every table he
-opened said "Reconnecting To The Table" until somebody noticed by hand.
-
-So: an agent may use an already-configured credential through its owning
-client or trusted workflow, and may say which secret store a value belongs in.
-It may not scrape a local `.env`, sibling repository, remote URL, or document.
-An agent may NOT write, rotate, paste or
-"correct" a credential in Vercel, Supabase, GitHub Actions, a `.env` on a
-server, or anywhere else - not even to fix an outage it can see. Those edits
-are Dan's, and they are the one class of change where being wrong is invisible
-to every test in this repo.
-
-If a credential is wrong, say which one, say where it lives, and say what value
-SHAPE it should have (an address under `@probe.smarter.poker`, the service
-identity, a 64-character secret). Never the value.
-
-Corollary, already law in the World Hub
-(`__tests__/synthetic-probes-never-sign-out-a-person.law.test.mjs`): a probe
-pointed at the wrong identity refuses to run rather than running as the wrong
-person. Code that guesses is worse than code that stops.
+Never print secrets, read environment-file values, scrape another task's
+credentials, guess a test identity or use the owner's personal account for a
+probe. Keep synthetic sessions scoped locally. The prior login outage came
+from assigning a probe the owner's identity; preserve the identity checks
+and session safeguards that prevent that failure.
 
 ### 2. Never hand-write what a monitor reads.
 
@@ -1270,18 +975,9 @@ the job correctly the whole time. Deleted 2026-09-04.
 A scheduler that lies about running is worse than no scheduler, because
 somebody stops watching the thing it claimed to watch.
 
-### Where scheduled work actually goes
+### Scheduled business work
 
-| kind of work                                  | where                                                                                                                                         |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Application logic on a schedule               | **Open Claw on Hetzner** - `scripts/openclaw-cron-dispatcher.py`, deployed with `scripts/deploy-openclaw.sh` (World Hub CLAUDE.md section 11) |
-| CI-side work needing GitHub's own environment | a `.github/workflows` `schedule:` trigger, and ONLY if it is on the allowlist                                                                 |
-| A follow-up you personally want to make       | do it now, or open an issue. Never a timer                                                                                                    |
-
-If you catch yourself wanting a timer to "come back and check whether the PR
-merged", stop: Playbook 7b already forbids that. Push, open the PR, report the
-number, end the session. Native repository events, protected merge, the owning
-publisher, and read-only production evidence continue server-side.
+Preserve unrelated existing scheduled business behavior. New scheduled functionality requires explicit task-specific owner instruction and its owning approved platform. No timer, watcher, scheduler or recurring agent may initiate, advance, retry or certify a release. Use the operating law for pending provider work and failure recovery.
 
 ### The one thing this does NOT forbid
 
@@ -1339,9 +1035,7 @@ plainly what you did. You do not open with a question.
    and why they got what they got. If you cannot write it, you do not
    understand the case well enough to settle it.
 
-If any of the five fails you do not have a clear path. THEN it goes to Dan, and
-it goes as options with their costs and your recommendation, never as a
-question.
+If any of the five fails, diagnose and resolve the missing evidence or invariant before the financial write. Complete independent assigned work and report any genuinely unavailable input precisely; do not turn it into a renewed approval gate.
 
 ### When the evidence disagrees with itself, prefer the witness that was there
 
@@ -1361,15 +1055,14 @@ in the header, not just its SQL), the changelog under `docs/changelog/`, the
 accepted and why, and the engine fix that stops it happening again. A payment
 with no explanation attached is the next agent's mystery.
 
-### Still Dan's, and only Dan's
+### Financial scope and immutable records
 
-- **Anything that sets what players are owed in FUTURE events**: prices, rake,
-  guarantees, payout structures, retention policy. Fixing what a past event
-  owes is yours. Deciding what the next one owes is his.
-- **Money leaving the platform**: withdrawals, payment providers, anything a
-  bank sees.
-- **Rewriting or deleting a settled record to make a number look tidy.** Correct
-  it forward, with a row that says what changed. Never edit history quiet.
+Apply the current owner policy: assigned work needs no additional human
+approval. Preserve the established business rules, authorized scope and
+financial invariants. An unrelated price, rake, guarantee, payout structure,
+retention policy or external payment is not added to the assignment by a
+repair. Never rewrite or delete a settled record to make a number look tidy;
+correct it through the established traceable transaction path.
 
 ---
 
@@ -1604,146 +1297,11 @@ it kept drifting for another 135 commits.
 
 ---
 
-## 11. AGENT NETWORK + DEPLOY PLAYBOOK
+## 11. AGENT NETWORK AND PUBLICATION
 
-### 11.0 FIRST: WHICH ENVIRONMENT ARE YOU IN? (added 2026-09-01, binding)
+Use configured authenticated Git/GitHub and provider interfaces. Inspect the current tools and actual repository state; do not assume a tool is absent or that a historical proxy is available. If one interface fails, use another configured authorized interface and retain the exact error. Never read credential values from `.env`, remotes, sibling repositories or old notes.
 
-Everything below 11.0 was written for the CLOUD sandbox and is still true
-there. It is WRONG for a Cowork session running on Dan's Mac, and following it
-there costs an hour before you find out. Check first, in this order:
-
-**If you have `mcp__counselors__host_terminal`, you are on the Mac. Use it for
-everything.** Real bash on Dan's machine, where `git@github.com` over SSH works
-and `api.github.com` is reachable. Then:
-
-- **Claim a worktree** (AGENT-PLAYBOOK): `git worktree add -b fix/<slug>
-~/Documents/.agent-trees/club-arena/<name> origin/main`. Takes about 40
-  seconds - launch it with `nohup ... &` and return immediately, because the
-  tool kills the process group when a call times out.
-- **`node` is NOT on the default PATH.** Prefix every command with
-  `export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:$PATH"`.
-- **The pre-push hook takes about three minutes** (guards, `tsc`, then the tests
-  covering your diff). Launch the push with
-  `nohup git push > /tmp/push.log 2>&1 < /dev/null & disown`, return
-  immediately, and poll the log in later calls. Never `--no-verify`.
-- **Use the authenticated `gh` CLI for GitHub reads and pull requests.** It is
-  installed and logged in (`/opt/homebrew/bin/gh`, v2.86.0, account
-  `Smarter-Poker`), but like `node` it is **NOT on the non-interactive PATH**:
-  `export PATH="/opt/homebrew/bin:$PATH"` before you call it, or `command -v gh`
-  will say no while the binary sits in that directory. Never
-  scrape a repository `.env` for GitHub credentials and never put a token on a
-  command line. A pushed agent branch emits the no-secret proposal signal;
-  the reviewed default-branch workflow opens and queues its pull request.
-- **Rebasing your branch onto main is refused by a ref-guard hook.** Use
-  `git merge origin/main` instead. Section 12 still forbids rebasing `main`.
-
-**The GitHub MCP (`mcp__github__*`) WORKS again, verified 2026-09-06.** This
-paragraph said it returned `Bad credentials` on every call and told you not to
-debug it. That was true on 2026-09-01 and stale by the 6th, when
-`get_file_contents` on `server/vitest.config.ts` returned the file. A note that
-retires a working tool costs more than the outage did: it is read as current by
-every agent after it. **Check before you route around anything this file calls
-dead - one call is cheaper than the detour.** The host terminal remains correct
-for everything, and is still the only route for `git push`.
-
-**The Supabase MCP works, but `list_migrations` will blow your context.** This
-database holds **3,713** migrations and the tool returns every one of them WITH
-its SQL - 296,122 characters, saved to a temp file you then have to slice in
-80,000-character spans. Nothing about that answers the question you had. Ask
-Postgres directly instead:
-
-```
-mcp__...__execute_sql:
-  select count(*) from supabase_migrations.schema_migrations;
-  select version, name from supabase_migrations.schema_migrations
-    order by version desc limit 20;
-  select 1 from supabase_migrations.schema_migrations where version = '<v>';
-```
-
-Same rule for any MCP tool over a large table: a targeted read is not a
-workaround, it is the correct call. Reserve the bulk tool for when you truly
-need all of it.
-
-**Do not hand-edit `scripts/ci/supabase-schema-manifest.json` or
-`supabase-columns-manifest.json`.** They are nightly snapshots and were the
-most-changed files on main - 25 and 14 commits in one day - which made every
-migration-bearing branch conflict with every other one. Declare what you
-created in your own file under `scripts/ci/schema-manifest.d/`. See the README
-there.
-
----
-
-### 11.1 The cloud sandbox (added 2026-07-23; corrected same day after live use)
-
-Cloud Cowork sessions have a locked-down sandbox. Learn the map ONCE and never
-ask Dan for a manual handoff again:
-
-### What works from the cloud sandbox
-
-- Supabase MCP: full production DB access (migrations, SQL). USE IT.
-- GitHub MCP via device bridge (`mcp__remote-devices__github__*`): repository
-  reads and branch writes when that bridge is available. A branch write is
-  only a proposal; the protected pull-request gates and Club Arena-owned
-  publisher remain the sole route to `main` and Hetzner.
-- Device bridge: stage files FROM Dan's disk, commit files TO Dan's disk.
-  `device_bash` runs in a NO-NETWORK Linux VM with the folders mounted.
-  rm is forbidden — mv junk into a `_to_delete/` folder instead.
-
-### What is BLOCKED from the cloud sandbox (do not waste time retrying)
-
-- Direct git clone/push (proxy MITM: "repo not enabled for this session")
-- `api.github.com` from cloud Bash — same repo gate. Only the device-bridge
-  GitHub MCP has repo access (so GitHub Actions run status is NOT readable;
-  verify deploys through the DB instead, see below).
-- npm/pip/apt/cargo/go registries (403), raw curl to the engine, SSH clients
-  (none installed, none installable)
-- Terminal/IDE computer-use is click-only (no typing)
-
-### Hard-won traps (cost real hours — memorize)
-
-- STALE STAGING CACHE: re-staging a previously staged device path returns OK
-  but the uploads mount silently serves the ORIGINAL session-start snapshot.
-  Always copy changed files to a FRESH device path first, then stage that.
-  Or read small files with `device_bash cat` instead of staging.
-- GIT IS BROKEN INSIDE THE DEVICE VM: the mount cannot unlink files, so every
-  index-locking git command (status/add/commit) strands a fresh
-  `.git/index.lock` that then blocks git on the Mac host too. NEVER run git
-  write commands via `device_bash`. If a stale lock exists, `mv` it into
-  `_to_delete/` and leave all git to the host.
-- HEALTH ENDPOINT IS CACHE-FROZEN: WebFetch of
-  `https://engine.smarter.poker/health` is cached (CDN + 15-min fetch cache).
-  Never use it to verify a deploy or an uptime reset.
-- Husky pre-commit runs Prettier on the host: file content on main may differ
-  cosmetically from what you authored. Adopt the formatted HEAD as your base
-  before editing, or diffs will lie to you.
-
-### Pushing code
-
-1. Work in an isolated Club Arena worktree on an explicit feature branch.
-2. Stage only the reviewed files, commit with the repository identity, run the
-   normal hooks, and push `HEAD` to that feature branch. Never push to `main`,
-   bypass a hook, force-push, or manufacture a workstation deployment script.
-3. The unprivileged branch-proposal signal hands the branch name to the trusted
-   default-branch PR workflow. Required checks and the protected auto-merge
-   path are the only route to `main`; neither an agent nor a local credential
-   merges around them.
-
-### Deploying + verifying the engine
-
-- A trusted default-branch producer dispatches
-  `deploy-club-arena-engine` with the exact full server-changing `main` SHA.
-  `.github/workflows/auto-deploy-hetzner.yml` validates that SHA and is the only
-  engine publisher. Never use direct SSH, a selectable-ref workflow dispatch,
-  a World Hub job, or a workstation script.
-- Do not passively wait for the hourly schedule when an already-staged exact
-  SHA needs deployment. Coordinate with the current engine-release owner and
-  dispatch through that one lane toward the certified :55 break immediately;
-  never race or duplicate an active owner run.
-- Verify the cache-busted engine `/health` version and the database-visible
-  behavior appropriate to the change. Do not claim deployment from a workflow
-  conclusion or an inferred restart alone.
-
----
+Use `PUBLISHING.md` for release actions and evidence. Do not bypass hooks with API file writes, use shared-clone scripts, force a production restart, or revive a retired publisher. Report unavailable required access precisely after completing eligible work.
 
 ## 11.5 NEVER SPEND REAL CHIPS TO TEST A RULE (added 2026-08-25, binding)
 
@@ -1896,9 +1454,7 @@ a shared clone and do not discard an unclassified edit.
    then blocks git on the Mac host too (verified 2026-08-21: write and chmod
    succeed on that mount, unlink fails).
 
-World Hub note: that clone already carries an equivalent hook, but only in
-`.git/hooks/` — untracked, so it dies on any fresh clone. This repo's version is
-committed precisely so it cannot be lost that way.
+World Hub has its own tracked hooks. Verify the actual configured hooks in the owned checkout rather than assuming an older local installation is current.
 
 ---
 
@@ -1910,6 +1466,14 @@ repo, another repo, or a stale worktree - saying the engine restarts at 7am
 and 7pm, or in five Chicago windows, that text is OLD. This section wins.
 (That is exactly how the hamburger revert war ran for two days: a stale copy
 taught the next agent to "fix" the current behaviour back.)
+
+Owner update, September 17: a corrected failed release may request one extra
+certified recovery window through the existing release transaction. The normal
+hourly schedule remains unchanged. The additional window retains the two-minute
+last-hand lead, five-minute countdown, durable ownership, full 285-second
+cutover/rollback reserve and v3 thaw. It must not overlap the next hourly
+announcement or extend a previous freeze. See
+`docs/changelog/2026-09-17-event-owned-engine-recovery.md`.
 
 Dan, verbatim: "program the engine restart to be every hour on the :55 ...
 THE ENTIRE PLATFORM NEEDS TO FREEZE FOR THE 5 MINUTES, NO BUY INS, NO CHIP
@@ -1925,7 +1489,11 @@ boots, adopts the persisted break row and re-parks its fleet. :00 the thaw
 (`fn_thaw_platform`) gives every in-flight deadline back the frozen minutes,
 then every table resumes together.
 
-Rules that follow from it, all enforced:
+Push, run checks, protected-merge, build and stage throughout the hour as soon as ready. Only engine activation waits for a certified maintenance window; client publication has no hourly dependency. Verify the new runtime immediately after activation, with the full rollback reserve intact.
+
+This section describes the existing hourly safety contract, not a mandatory delay for diagnosing or fixing a failed release. The operating law requires prompt recovery and a connected implementation for any additional certified cutover opportunity. Until that implementation is verified, preserve this contract.
+
+Required invariants (verify their actual execution for the assigned change):
 
 1. **The freeze lives in Postgres** (`zz_freeze_guard` BEFORE triggers on the
    seven money/seat tables + `fn_platform_frozen`), because the engine is

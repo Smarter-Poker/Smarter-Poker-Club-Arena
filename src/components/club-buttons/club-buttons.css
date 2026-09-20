@@ -1,4 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Condensed:wght@600;700&display=swap');
+/* The fonts (Cinzel, Inter, Roboto Condensed) are declared once, in index.html,
+   and self-hosted at build. A second @import from Google Fonts here re-declared
+   the same faces later in the cascade, so every page swapped every word to a
+   fallback and back when this chunk loaded (measured CLS 0.12; 2026-09-17). */
 
 :root {
   --club-black-1000: #030405;
@@ -57,6 +60,52 @@
   width: 1em;
   height: 1em;
   display: block;
+}
+
+/* A MARK IS LIT, NOT INKED (Dan 2026-09-09). The wireframe icons take their
+   colour from the plate and get the plate's text glow. A mark carries its own
+   facets and its own light, so it must NOT inherit that glow - the blur would
+   wash the facet values into one another and take the depth straight back
+   out. It gets a contact shadow instead, which is what a solid object sitting
+   in a recess actually casts. */
+.cb-mark {
+  width: 1.32em;
+  height: 1.32em;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
+}
+
+/* THE DIAMONDS-TO-CHIPS DOOR (Dan 2026-09-10). One shell, three places: the
+   club lobby, where it is the club's own door and stands on its own; the
+   cashier, where a player arrives having run out; and inside a buy-in, rebuy or
+   add-on modal, where it follows the balance row and needs only the gap.
+   Nothing is drawn here - the shell is painted - so this is placement and
+   nothing else. */
+.diamonds-to-chips,
+.lobby-diamond-games,
+.promotions-diamond-games,
+.wallet-diamond-games {
+  display: block;
+  width: 100%;
+}
+
+.diamonds-to-chips {
+  margin: 0.5rem 0 0.25rem;
+}
+
+.lobby-diamond-games {
+  margin: 0.75rem 0;
+}
+
+.wallet-diamond-games {
+  margin: 0.75rem auto;
+  max-width: 520px;
+}
+
+/* The promotions page carries the door too: the games ARE a promotion the club
+   runs, and the 2026-09-11 merge with main found the rewrite had dropped it. */
+.promotions-diamond-games {
+  margin: 0.75rem auto 0;
+  max-width: 520px;
 }
 
 .cb-action {

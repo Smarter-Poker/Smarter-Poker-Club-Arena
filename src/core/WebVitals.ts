@@ -3,8 +3,7 @@
  *  WEB VITALS — Core Web Vitals Performance Monitoring
  * ═══════════════════════════════════════════════════════════════════════════════
  * Reports Core Web Vitals (LCP, FID, CLS, FCP, TTFB, INP) to:
- *   1. Console (dev mode)
- *   2. Sentry custom metrics (production)
+ * the local console (dev mode).
  *
  * Low-risk, additive only — does NOT modify any existing behavior.
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -13,42 +12,6 @@
 import { onCLS, onFCP, onINP, onLCP, onTTFB, type Metric } from 'web-vitals';
 
 const isDev = import.meta.env.DEV;
-
-/**
- * Send metric to Sentry as a custom measurement
- */
-function sendToSentry(metric: Metric) {
-  try {
-    // Dynamic import to avoid hard dependency if Sentry isn't loaded
-    import('./sentryBundle')
-      .then((Sentry) => {
-        Sentry.setMeasurement(
-          metric.name,
-          metric.value,
-          metric.name === 'CLS' ? '' : 'millisecond'
-        );
-
-        // Also add as breadcrumb for contextual debugging
-        Sentry.addBreadcrumb({
-          category: 'web-vitals',
-          message: `${metric.name}: ${Math.round(metric.value)}${metric.name === 'CLS' ? '' : 'ms'}`,
-          level: metric.rating === 'poor' ? 'warning' : 'info',
-          data: {
-            value: metric.value,
-            rating: metric.rating,
-            delta: metric.delta,
-            id: metric.id,
-            navigationType: metric.navigationType,
-          },
-        });
-      })
-      .catch(() => {
-        // Silent fail — Sentry may be blocked by ad blockers or unavailable
-      });
-  } catch {
-    // Silent fail — metrics are non-critical
-  }
-}
 
 /**
  * Log metric to console in dev mode with color-coded rating
@@ -75,11 +38,6 @@ function logToConsole(metric: Metric) {
 function handleMetric(metric: Metric) {
   if (isDev) {
     logToConsole(metric);
-  }
-
-  // Only send to Sentry in production — skip in dev to avoid unnecessary dynamic imports
-  if (!isDev) {
-    sendToSentry(metric);
   }
 }
 

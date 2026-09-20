@@ -571,6 +571,20 @@
     0 0 20px rgba(255, 160, 0, 0.45);
 }
 
+/* A word where a clock would be ("None Scheduled", "Unavailable"): the slot
+   was sized for five tabular digits, so the word comes down a step and drops
+   the digit tracking to stay inside its half of the rail on a 165px card. */
+.club-card-stat-value--word {
+  font-size: 10px;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+@supports (font-size: 1cqw) {
+  .club-card-stat-value--word {
+    font-size: clamp(7px, 5cqw, 10px);
+  }
+}
+
 /* Inside the last ten seconds it turns red and pulses. */
 .club-card-stat--imminent .club-card-stat-value--timer {
   color: #ff5b6e;

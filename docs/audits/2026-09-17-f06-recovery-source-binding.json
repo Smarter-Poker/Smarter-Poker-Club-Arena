@@ -1,0 +1,28 @@
+{
+  "scope": "Restore retained already-installed source custody and bind the existing recovery policy to the reviewed guard. No database execution, workflow activation, credential change or new runtime behavior.",
+  "independentSourceReview": "G8-f06-recovery-policy-binding-review-20260917",
+  "independentPacketSha256": "057906562b0910bf9f78d1670c4c67e3d78248fb0a209e2f771b63b59633084a",
+  "recoveredRecords": [
+    {
+      "source": "supabase/migrations/20260914000500_hand_terminal_lane_lock_order.sql",
+      "sourceSha256": "4320128a2f8db010c0811ca60515837c68a8c6957ef89a15bbda5f334e3b6539",
+      "merge": "ad5f12bf735c3daec8ec9250ff1020a89b291321",
+      "historicalInstalledVersion": "20260914000644",
+      "historicalRequiredCi": 34792256669,
+      "historicalNativeCases": 20
+    },
+    {
+      "source": "supabase/migrations/20260914003000_f06_zero_seat_hand_lane.sql",
+      "sourceSha256": "a262432a6b9609fdfb8909d4400d0dec7d0917ee33121faebda62f0a4810a454",
+      "merge": "fe8ca226412e4454b93f8b8d40cd07d2199f4fea",
+      "historicalInstalledVersion": "20260914002740",
+      "historicalRequiredCi": 34793851586,
+      "historicalNativeCases": 78
+    }
+  ],
+  "recordBoundary": "Source filenames differ from the versions assigned at installation. These exact immutable files are historical custody, not unapplied migrations. Do not replay either SQL file; the first intentionally expects the intermediate guard that the second replaced. Existing GitHub publication workflows do not apply database migrations.",
+  "guardDefinitionSha256": "3d6d2608bc0f90ba8742d99d3931f70dc9601c961639d278c183f11840645251",
+  "retainedCatalogObservedAt": "2026-09-16T06:27:17.976145+00:00",
+  "preservedPolicy": "Original migration and declaration identities/bytes, both trigger definitions, strict freshness, complete coverage, original history and exact PR head remain required. Only review identity and each trigger function hash and exact reviewed note change.",
+  "pending": "Fresh trusted catalog proof is mandatory. Historical receipts are not current installed authority. Existing RPC does not provide current owner/ACL fields; no fresh full ACL audit is claimed. Dedicated App configuration and required exact-App check remain separate existing prerequisites."
+}

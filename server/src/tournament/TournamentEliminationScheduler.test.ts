@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import * as errorReporter from '../services/errorReporter.js';
 import { alwaysOnRegistry } from '../observability/engineInstruments.js';
 import {
   TournamentEliminationScheduler,
@@ -437,7 +439,13 @@ describe('TournamentEliminationScheduler', () => {
     scheduler.stop();
   });
 
-  it('quarantines timed-out promises so repeated timeouts cannot exceed real concurrency', async () => {
+  it('replaces a stalled slot without releasing it: real concurrency is bounded at twice the cap', async () => {
+    /* A STALLED SLOT IS REPLACED, NOT RELEASED (2026-09-16). Three of four
+       production slots were held by promises unresolved since 05:30, 07:33
+       and 15:17 UTC; the fourth served 1,609 tournaments one at a time and
+       804 decided events never reached their finish stage. A stalled promise
+       still keeps its slot and its tournament stays excluded, but the cap is
+       raised by one for each stalled promise, never by more than the cap. */
     vi.useFakeTimers();
     const scheduler = new TournamentEliminationScheduler({
       maxConcurrent: 2,
@@ -462,18 +470,65 @@ describe('TournamentEliminationScheduler', () => {
     }
     await flush();
     expect(started).toEqual(['hung-0', 'hung-1']);
+    expect(scheduler.snapshot()).toMatchObject({ running: 2, queued: 4, stalled: 0 });
 
+    // The first two stall past the warning budget: two compensating slots open.
+    await vi.advanceTimersByTimeAsync(101);
+    await flush();
+    expect(started).toEqual(['hung-0', 'hung-1', 'hung-2', 'hung-3']);
+    expect(scheduler.snapshot()).toMatchObject({ running: 4, queued: 2, stalled: 2 });
+
+    // Those stall too. Four stalled promises may open only two compensating
+    // slots (the cap), so nothing else is dispatched: real concurrency never
+    // exceeds twice the cap, whatever the number of stalls.
     await vi.advanceTimersByTimeAsync(1_000);
     await flush();
-    expect(started).toEqual(['hung-0', 'hung-1']);
-    expect(scheduler.snapshot()).toMatchObject({ running: 2, queued: 4 });
-    expect(maxActualActive).toBe(2);
+    expect(started).toEqual(['hung-0', 'hung-1', 'hung-2', 'hung-3']);
+    expect(scheduler.snapshot()).toMatchObject({ running: 4, queued: 2, stalled: 4 });
+    expect(maxActualActive).toBe(4);
 
+    // A stalled promise settling gives its slot back exactly once.
     releases.shift()!();
     await flush();
-    expect(started).toEqual(['hung-0', 'hung-1', 'hung-2']);
-    expect(actualActive).toBe(2);
-    expect(maxActualActive).toBe(2);
+    expect(started).toEqual(['hung-0', 'hung-1', 'hung-2', 'hung-3', 'hung-4']);
+    expect(scheduler.snapshot()).toMatchObject({ running: 4, queued: 1, stalled: 3 });
+    expect(actualActive).toBe(4);
+    expect(maxActualActive).toBe(4);
+    scheduler.stop();
+  });
+
+  it('never dispatches the same tournament twice while its stalled promise is live', async () => {
+    vi.useFakeTimers();
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 1,
+      sweepWarnMs: 100,
+      startTimers: false,
+    });
+    let releaseStalled!: () => void;
+    let runs = 0;
+    scheduler.register({
+      tournamentId: 'stuck',
+      run: async () => {
+        runs++;
+        await new Promise<void>((resolve) => (releaseStalled = resolve));
+      },
+    });
+    await flush();
+    expect(runs).toBe(1);
+    await vi.advanceTimersByTimeAsync(101);
+    // Its own wake cannot use the compensating slot; a peer can.
+    expect(scheduler.wake('stuck')).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    const peerRuns: string[] = [];
+    scheduler.register({ tournamentId: 'peer', run: async () => void peerRuns.push('peer') });
+    await flush();
+    expect(runs).toBe(1);
+    expect(peerRuns).toEqual(['peer']);
+    releaseStalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await flush();
+    // The coalesced rerun happens only after the stalled promise settled.
+    expect(runs).toBe(2);
     scheduler.stop();
   });
 
@@ -533,5 +588,213 @@ describe('TournamentEliminationScheduler', () => {
     ]) {
       expect(names.has(name)).toBe(true);
     }
+  });
+});
+
+describe('exact diagnostic scheduler ownership', () => {
+  const id = (n: number) => '00000000-0000-4000-8000-' + String(n).padStart(12, '0');
+  function pending() {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+  function diagnostics(tournamentId: string, owner: string, generation: string, operation: string) {
+    return {
+      managerInstanceId: owner,
+      leaseGeneration: generation,
+      operationIdFor: vi.fn((_promise: Promise<void>) => operation),
+      snapshot: vi.fn(
+        () => Object.freeze({ instanceId: owner, tournamentId, leaseGeneration: generation }) as any
+      ),
+    };
+  }
+
+  it('binds the exact returned promise and preserves old ownership across abort, warning and replacement', async () => {
+    vi.useFakeTimers();
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 1,
+      startTimers: false,
+      sweepWarnMs: 10,
+    });
+    const raw = pending(),
+      tid = id(1);
+    const original = diagnostics(tid, id(2), id(3), id(4));
+    const active = vi.fn(() => true);
+    const unregister = scheduler.register({
+      tournamentId: tid,
+      run: () => raw.promise,
+      isActive: active,
+      diagnostics: original,
+    });
+    await flush();
+    expect(original.operationIdFor).toHaveBeenCalledOnce();
+    expect(original.operationIdFor).toHaveBeenCalledWith(raw.promise);
+    const first = scheduler.diagnosticSnapshot(tid).entries[0];
+    expect(first).toMatchObject({
+      running: true,
+      registered: true,
+      operationId: id(4),
+      managerInstanceId: id(2),
+    });
+    unregister();
+    const replacementRun = vi.fn(async () => {});
+    scheduler.register({
+      tournamentId: tid,
+      run: replacementRun,
+      diagnostics: diagnostics(tid, id(5), id(6), id(7)),
+    });
+    await vi.advanceTimersByTimeAsync(20);
+    const authorityCalls = active.mock.calls.length;
+    const snapshot = scheduler.diagnosticSnapshot(tid);
+    expect(active.mock.calls.length).toBe(authorityCalls);
+    expect(snapshot.entries).toHaveLength(2);
+    expect(
+      snapshot.entries.find((row) => row.registrationId === first.registrationId)
+    ).toMatchObject({
+      managerInstanceId: id(2),
+      leaseGeneration: id(3),
+      operationId: id(4),
+      registered: false,
+      running: true,
+      warned: true,
+      abortRequested: true,
+    });
+    expect(snapshot.entries.find((row) => row.currentRegistration)).toMatchObject({
+      managerInstanceId: id(5),
+      leaseGeneration: id(6),
+      running: false,
+      operationId: null,
+    });
+    expect(replacementRun).not.toHaveBeenCalled();
+    raw.resolve();
+    await flush();
+    await flush();
+    expect(replacementRun).toHaveBeenCalledOnce();
+    scheduler.stop();
+  });
+
+  it('diagnostic lookup failure cannot replace a successful run or change its registration async context', async () => {
+    const context = new AsyncLocalStorage<string>();
+    const scheduler = new TournamentEliminationScheduler({ startTimers: false, sweepWarnMs: 0 });
+    const raw = pending(),
+      tid = id(20);
+    const supplied = diagnostics(tid, id(21), id(22), id(23));
+    supplied.operationIdFor.mockImplementation(() => {
+      throw new Error('diagnostic lookup');
+    });
+    const seen: Array<string | undefined> = [];
+    context.run('exact-owner', () =>
+      scheduler.register({
+        tournamentId: tid,
+        diagnostics: supplied,
+        run: () => {
+          seen.push(context.getStore());
+          return raw.promise;
+        },
+      })
+    );
+    await flush();
+    expect(seen).toEqual(['exact-owner']);
+    expect(scheduler.diagnosticSnapshot(tid).entries[0]).toMatchObject({
+      running: true,
+      operationCorrelation: 'unavailable',
+      operationId: null,
+    });
+    raw.resolve();
+    await flush();
+    await flush();
+    expect(scheduler.snapshot().running).toBe(0);
+    scheduler.stop();
+  });
+
+  it.each(['synchronous', 'rejected'] as const)(
+    'preserves the original %s run failure',
+    async (mode) => {
+      const scheduler = new TournamentEliminationScheduler({ startTimers: false, sweepWarnMs: 0 });
+      const failure = new Error('actual run failure');
+      const report = vi.spyOn(errorReporter, 'reportError').mockImplementation(() => {});
+      const supplied = diagnostics(id(30), id(31), id(32), id(33));
+      supplied.operationIdFor.mockImplementation(() => {
+        throw new Error('lookup failure');
+      });
+      scheduler.register({
+        tournamentId: id(30),
+        diagnostics: supplied,
+        run: () => {
+          if (mode === 'synchronous') throw failure;
+          return Promise.reject(failure);
+        },
+      });
+      await flush();
+      await flush();
+      expect(report).toHaveBeenCalledWith(failure, expect.any(String), expect.anything());
+      expect(scheduler.snapshot().running).toBe(0);
+      if (mode === 'synchronous') expect(supplied.operationIdFor).not.toHaveBeenCalled();
+      scheduler.stop();
+    }
+  );
+
+  it('refuses a snapshot from another owner and does not replace it from the current map', async () => {
+    const scheduler = new TournamentEliminationScheduler({ startTimers: false, sweepWarnMs: 0 });
+    const raw = pending();
+    const supplied = diagnostics(id(40), id(41), id(42), id(43));
+    supplied.snapshot.mockReturnValue({
+      instanceId: id(99),
+      tournamentId: id(40),
+      leaseGeneration: id(42),
+    });
+    scheduler.register({ tournamentId: id(40), diagnostics: supplied, run: () => raw.promise });
+    await flush();
+    expect(scheduler.diagnosticSnapshot(id(40)).entries[0]).toMatchObject({
+      owner: null,
+      ownerAvailability: 'unavailable',
+      managerInstanceId: id(41),
+      operationId: id(43),
+    });
+    raw.resolve();
+    await flush();
+    await flush();
+    scheduler.stop();
+  });
+
+  it('caps actual Entry enumeration and labels unseen old slots unknown', async () => {
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 40,
+      startTimers: false,
+      sweepWarnMs: 0,
+    }) as any;
+    const raw = pending();
+    const unregister: Array<() => void> = [];
+    for (let n = 0; n < 40; n++)
+      unregister.push(scheduler.register({ tournamentId: id(100 + n), run: () => raw.promise }));
+    await flush();
+    unregister[39]();
+    const values = scheduler.activeEntries.values.bind(scheduler.activeEntries);
+    let nextCalls = 0;
+    scheduler.activeEntries.values = () => {
+      const iterator = values();
+      return {
+        next: () => {
+          nextCalls++;
+          return iterator.next();
+        },
+      };
+    };
+    const snapshot = scheduler.diagnosticSnapshot(id(139));
+    expect(nextCalls).toBe(32);
+    expect(snapshot).toMatchObject({
+      activeEntriesCount: 40,
+      activeEntriesScanned: 32,
+      activeScanTruncated: true,
+      matchingEntriesCountLowerBound: 0,
+      entries: [],
+      missingMeans: 'unknown',
+    });
+    raw.resolve();
+    await flush();
+    await flush();
+    scheduler.stop();
   });
 });

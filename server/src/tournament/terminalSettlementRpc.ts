@@ -1,5 +1,6 @@
 import { supabase } from '../services/supabase.js';
 import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
+import { isDeterministicSettlementRefusal } from './settlementRefusal.js';
 import {
   verifyTournamentCompletionReceipt,
   type TournamentTerminalSettlementMode,
@@ -116,6 +117,47 @@ function storedParameters(raw: unknown): TerminalSettlementParameters | null {
   return { settlementMode: mode, winnerId: winner };
 }
 
+/** Read an existing immutable result through its serialized verifier; never pay. */
+export async function readCommittedTournamentTerminalReceipt(
+  tournamentId: string
+): Promise<VerifiedTournamentCompletionReceipt | null> {
+  const { data, error } = await supabase
+    .from('tournament_terminal_settlements')
+    .select('settlement_mode, winner_id')
+    .eq('tournament_id', tournamentId)
+    .maybeSingle();
+  if (error) throw new TerminalSettlementOutcomeUnknownError(errorMessage(error));
+  if (!data) return null;
+  const stored = storedParameters(data);
+  if (!stored) throw new TerminalSettlementOutcomeUnknownError('Invalid stored terminal identity');
+  const response = await supabase.rpc('fn_resolve_tournament_terminal_outcome', {
+    p_tournament_id: tournamentId,
+    p_observed_winner_id: stored.winnerId,
+    p_settlement_mode: stored.settlementMode,
+  });
+  if (response.error) throw new TerminalSettlementOutcomeUnknownError(errorMessage(response.error));
+  const outcome = record(response.data);
+  const receipt = verifyTournamentCompletionReceipt(
+    outcome.receipt,
+    tournamentId,
+    stored.settlementMode,
+    stored.winnerId
+  );
+  if (
+    outcome.ok !== true ||
+    outcome.terminal_committed !== true ||
+    outcome.definitively_not_committed !== false ||
+    outcome.status !== 'COMPLETED' ||
+    outcome.tournament_id !== tournamentId ||
+    outcome.mode !== stored.settlementMode ||
+    !receipt
+  )
+    throw new TerminalSettlementOutcomeUnknownError(
+      'Stored terminal outcome could not be verified'
+    );
+  return receipt;
+}
+
 /**
  * The database refused a replay because its stored receipt disagrees with what
  * this process observed. The receipt is the witness that was there (CLAUDE.md
@@ -205,10 +247,12 @@ async function adoptStoredTerminalReceipt(
  * replaying the exact same request. A transport error is never proof of a
  * rollback: PostgreSQL may already have committed the immutable receipt.
  *
- * A replay-disagreement refusal is the one failure that is NOT replayed: the
+ * A replay-disagreement refusal is not replayed with the observed parameters: the
  * database has a receipt and this request contradicts it. The receipt is
  * adopted instead (see adoptStoredTerminalReceipt), so the returned receipt's
  * winnerId and settlementMode may differ from what the caller observed.
+ * Known missing-evidence refusals go directly to the same serialized outcome
+ * resolver; they never prove rollback or release the caller by themselves.
  */
 export async function requestTournamentTerminalReceipt(
   tournamentId: string,
@@ -267,6 +311,7 @@ export async function requestTournamentTerminalReceipt(
       }
     : null;
   let lastFailure = 'terminal settlement returned no receipt';
+  let attemptedWrites = 0;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     if (legacyDeal) {
@@ -298,6 +343,7 @@ export async function requestTournamentTerminalReceipt(
       }
     }
     try {
+      attemptedWrites++;
       const { data, error } = proposalRequest
         ? await supabase.rpc('fn_complete_tournament_terminal_proposal', proposalRequest)
         : await supabase.rpc('fn_complete_tournament_terminal', request);
@@ -321,6 +367,7 @@ export async function requestTournamentTerminalReceipt(
           );
         }
         lastFailure = errorMessage(error);
+        if (isDeterministicSettlementRefusal(error, tournamentId)) break;
       }
     } catch (error) {
       if (error instanceof TerminalSettlementDisagreementError) throw error;
@@ -396,6 +443,6 @@ export async function requestTournamentTerminalReceipt(
   }
 
   throw new TerminalSettlementOutcomeUnknownError(
-    `Terminal settlement outcome is unknown after ${attempts} identical attempt(s): ${lastFailure}`
+    `Terminal settlement outcome is unknown after ${attemptedWrites} identical attempt(s): ${lastFailure}`
   );
 }

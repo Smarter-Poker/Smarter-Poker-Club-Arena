@@ -1,0 +1,8 @@
+{
+  "_owner": "agent/codex/retained-mtt-disposition-20260918",
+  "_comment": "Separate service-only zero-credit retained original-hand disposition; generic abort is unchanged. Native PostgreSQL checks run in the existing F06 accounting owner. Installation does not prove physical original-owner retirement, custody transfer, engine activation or live recovery.",
+  "functions": [
+    "fn_f06_abort_retained_mtt_hands",
+    "smarter_private.f06_retained_mtt_abort_snapshot"
+  ]
+}

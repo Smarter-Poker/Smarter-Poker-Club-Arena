@@ -175,6 +175,10 @@ set -euo pipefail
 case "\${1:-}:\${2:-}" in
   pending-owner:) printf '%s\\n' none ;;
   get:desired-sha) printf '%s\\n' '${sourceSha}' ;;
+  get:high-water-sha)
+    printf '%s\\n' '${sourceSha}'
+    printf '%s\\n' 'sealed-high-water-read' >> '${eventLog}'
+    ;;
   get:desired-image-id) printf '%s\\n' '${sourceImage}' ;;
   get:desired-legacy-unlabelled) printf '%s\\n' false ;;
   attest-commit:*) exit 1 ;;
@@ -384,6 +388,8 @@ exit 91
       expect(curlCalls).toContain('503 http://127.0.0.1:8080/health');
       expect(curlCalls).toContain('503 https://engine.example.invalid/health?nocache=');
       const events = readFileSync(eventLog, 'utf8').trim().split('\n');
+      expect(events.indexOf('sealed-high-water-read')).toBeGreaterThan(-1);
+      expect(events.indexOf('sealed-high-water-read')).toBeLessThan(events.indexOf('builder'));
       const certificates = events.filter((event) => event.startsWith('certificate-503:'));
       const sourceProofs = events
         .map((event, index) => ({ event, index }))

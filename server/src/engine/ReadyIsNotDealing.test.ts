@@ -70,6 +70,7 @@ function startable() {
   engine.restoreSitOutsFromSeats = () => {};
   engine.evictExpiredSitOuts = async () => {};
   engine.checkCrashRecovery = async () => false;
+  engine.readParkedTimeBanks = async () => {};
   engine.resolveOrphanedAddOns = async () => {};
   engine.broadcastCurrentState = async () => {};
   engine.scheduleHeartbeatCheck = () => {};

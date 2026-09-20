@@ -4,6 +4,8 @@
  * The approved artwork is the visual source of truth. The DOM above it only
  * supplies six semantic, full-cell navigation targets; it does not redraw or
  * substitute the approved icons, labels, leather, metal, or lighting.
+ * Dan 2026-09-14 replaces the first Settings cell with Diamond Spins; its
+ * new artwork is clipped to that cell so the other five masters stay exact.
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -100,7 +102,13 @@ function useResolvedClubId(explicit?: string, routeClubId?: string | null): stri
  */
 export const BOTTOM_CHROME_HEIGHT_VAR = '--ca-bottom-chrome-h';
 
-function usePublishBottomChromeHeight(ref: React.RefObject<HTMLElement | null>, hidden: boolean) {
+/* Exported for the Diamond Arena footer (DiamondBottomNav), which is a second
+   fixed bar on the same bottom edge and owes the stacked bars the same
+   published height. The chip footer's own use of it is unchanged. */
+export function usePublishBottomChromeHeight(
+  ref: React.RefObject<HTMLElement | null>,
+  hidden: boolean
+) {
   useLayoutEffect(() => {
     const root = document.documentElement;
     const el = ref.current;
@@ -143,7 +151,11 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
   const destinations = useMemo<FooterDestination[]>(() => {
     const clubRoot = resolvedClubId ? `/clubs/${resolvedClubId}` : null;
     return [
-      { key: 'profile', label: 'Settings', to: clubRoot ? `${clubRoot}/settings` : '/settings' },
+      {
+        key: 'diamond-spins',
+        label: 'Diamond Spins',
+        to: clubRoot ? `${clubRoot}/wheel` : '/clubs',
+      },
       { key: 'players', label: 'Players', to: clubRoot ? `${clubRoot}/members` : '/players' },
       { key: 'cashier', label: 'Cashier', to: clubRoot ? `${clubRoot}/cashier` : '/cashier' },
       /* Market and Stats have no club-scoped ROUTE, so they used to be
@@ -189,6 +201,15 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
             decoding="async"
             draggable={false}
           />
+          <div className={styles.diamondArtwork} aria-hidden="true">
+            <img
+              src={`${import.meta.env.BASE_URL}images/club-footer/diamond-spins-footer-art.png`}
+              alt=""
+              draggable={false}
+              decoding="async"
+            />
+          </div>
+          <span className={styles.diamondGlint} aria-hidden="true" />
           <ul className={styles.navItems}>
             {destinations.map((destination) => (
               <li key={destination.key} className={styles.navCell}>

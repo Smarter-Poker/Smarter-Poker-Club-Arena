@@ -20,6 +20,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { expectRoute } from './routes/utils';
+import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const LOBBY = `clubs/${CLUB_ID}`;
@@ -37,31 +38,20 @@ async function lobbySettled(page: Page): Promise<void> {
   await page
     .locator('.club-home__games .lt-row:not(.lt-row--skeleton), .empty-tables')
     .first()
-    .waitFor({ state: 'visible', timeout: 45000 })
-    .catch(() => {
-      /* Fall through: the assertions below report the real state. */
-    });
+    .waitFor({ state: 'visible', timeout: 45000 });
 
-  /* A club message is an intentional full-screen welcome at the door. Every
-     Playwright test gets a fresh browser context, so the same legitimate
-     message can open again before an interaction and intercept the game tabs.
-     Close it through its real X without persisting "do not show" or changing
-     any production account/club data. */
-  const clubMessageClose = page.getByRole('button', { name: 'Close Club Message' });
-  const messageOpened = await clubMessageClose
-    .waitFor({ state: 'visible', timeout: 3_000 })
-    .then(() => true)
-    .catch(() => {
-      /* Clubs without a message correctly have nothing to dismiss. */
-      return false;
-    });
-  if (messageOpened) {
-    await clubMessageClose.click();
-    await expect(clubMessageClose, 'the club message did not close').toBeHidden({ timeout: 8_000 });
-  }
+  // Every test has a fresh context. Dismiss the optional entry greeting and
+  // Diamond invitation through their real controls before lobby interactions.
+  await prepareCashLobbyActions(page);
 }
 
 test.describe('Club lobby', () => {
+  /* Every case opens a fresh context and may need the 45s cold-read budget.
+     Keep the existing 30s route/action budget in addition to that read. A
+     shorter outer deadline closes the page before settlement can report its
+     result, and must not be caught as though the lobby had loaded. */
+  test.describe.configure({ timeout: 75_000 });
+
   test('renders the lobby shell', async ({ page }) => {
     const ok = await expectRoute(page, LOBBY);
     if (!ok) return;
@@ -96,13 +86,6 @@ test.describe('Club lobby', () => {
   });
 
   test('switching game type re-filters the list and the count stays honest', async ({ page }) => {
-    /* lobbySettled deliberately allows a cold production read up to 45s. The
-       inherited 30s test ceiling used to kill the test before that contract
-       could finish, then the warm-cache retry passed and hid the mismatch as
-       "flaky". Give the complete route + four real tab interactions room to
-       exercise the UI once, without relying on a retry. */
-    test.setTimeout(75_000);
-
     const ok = await expectRoute(page, LOBBY);
     if (!ok) return;
     await lobbySettled(page);

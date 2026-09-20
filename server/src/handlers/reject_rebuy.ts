@@ -49,9 +49,11 @@ export async function handleRejectRebuy(
     }
 
     const engine = deps.gameServer.getTableEngine(tableId);
-    if (engine && typeof engine.rejectRebuy === 'function') {
-      await engine.rejectRebuy(user.userId);
+    if (!engine || typeof engine.rejectRebuy !== 'function') {
+      sendJSON(res, 503, { success: false, error: 'Rebuy decline could not be confirmed' });
+      return;
     }
+    await engine.rejectRebuy(user.userId);
 
     sendJSON(res, 200, { success: true });
   } catch (err: any) {

@@ -13,6 +13,7 @@
 
 import { PAYOUT_STRUCTURES } from '../config/blindStructures';
 import { computePlacePrize } from '../lib/payoutMath';
+import { UNIT_CENTS_ASSET_NOT_READ } from '../../server/src/tournament/tournamentUnit';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -192,8 +193,9 @@ class PayoutEngineClass {
    * produced identical payouts. They now mean what they say:
    *
    *   payout1         top-heavy, ~10% of the field paid
-   *   payout2         ~15% of the field paid
-   *   payout3         ~20% of the field paid (flattest)
+   *   payout2         legacy SNG ~12.5% of the field paid
+   *   payout3         ~15% of the field paid
+   *   payout20        ~20% of the field paid
    *   winner_take_all 100% to first
    *
    * Paid places are clamped to (field - 1) so a bubble always exists — the
@@ -206,6 +208,7 @@ class PayoutEngineClass {
       payout1: { pct: 0.1, minPlaces: 1, alpha: 1.5 },
       payout2: { pct: 0.125, minPlaces: 1, alpha: 1.25 },
       payout3: { pct: 0.15, minPlaces: 1, alpha: 1.0 },
+      payout20: { pct: 0.2, minPlaces: 1, alpha: 0.8 },
     };
     const s = spec[choice] ?? spec.payout1;
     const paidPlaces = Math.max(1, Math.min(n - 1, Math.max(s.minPlaces, Math.round(n * s.pct))));
@@ -256,10 +259,17 @@ class PayoutEngineClass {
      * There is one rule now, shared with the engine byte for byte. It already
      * guarantees the places sum to the pool and never exceed it, so the
      * shave-first-place fallback has nothing left to do and is gone with it.
+     *
+     * 2026-09-13: the unit is stated rather than defaulted, for the reason in
+     * server/src/tournament/tournamentUnit.ts. This method is handed a
+     * structure and a pool with no tournament and no club behind them, so it
+     * cannot read an asset; UNIT_CENTS_ASSET_NOT_READ is that admission
+     * spelled out, and is a cent because every tournament that can currently
+     * exist is a chip tournament.
      */
     return payouts.map((p) => ({
       ...p,
-      amount: computePlacePrize(prizePool, payouts, p.place),
+      amount: computePlacePrize(prizePool, payouts, p.place, UNIT_CENTS_ASSET_NOT_READ),
     }));
   }
 

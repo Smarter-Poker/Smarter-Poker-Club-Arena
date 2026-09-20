@@ -71,6 +71,8 @@ import { useIsMounted } from '../../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../../hooks/useMasterBusSubscription';
 import { openTableAsObserver } from '../../../utils/observeTable';
 import { reportError } from '../../../utils/errorReporter';
+import { readCommittedTournamentBlinds } from '../../../utils/committedTournamentBlinds';
+import { isRecordedSatelliteQualifier } from '../../../utils/satelliteQualification';
 import { useDownlineIds } from './useDownlineIds';
 import {
   chips,
@@ -136,7 +138,8 @@ const isOut = isPlayerOut;
 interface RankRowProps {
   entry: TournamentEntry;
   /** Live rank among the field, or the finishing position once out. */
-  rank: number;
+  rank: number | null;
+  qualified: boolean;
   isHero: boolean;
   isDownline: boolean;
   out: boolean;
@@ -162,6 +165,7 @@ interface RankRowProps {
 const RankRow = React.memo(function RankRow({
   entry,
   rank,
+  qualified,
   isHero,
   isDownline,
   out,
@@ -201,18 +205,22 @@ const RankRow = React.memo(function RankRow({
     .filter(Boolean)
     .join(' ');
 
-  const subText = out
-    ? entry.position
-      ? `Finished ${ordinal(entry.position)}`
-      : 'Eliminated'
-    : entry.table_id
-      ? tableName || 'At A Table'
-      : 'Not Seated Yet';
+  const subText = qualified
+    ? 'Qualified'
+    : out
+      ? entry.position
+        ? `Finished ${ordinal(entry.position)}`
+        : 'Eliminated'
+      : entry.table_id
+        ? tableName || 'At A Table'
+        : 'Not Seated Yet';
 
   const body = (
     <>
-      <span className={`tl-rank rk-rank${!out && rank <= 3 ? ' tl-rank--podium' : ''}`}>
-        {rank}
+      <span
+        className={`tl-rank rk-rank${!out && rank !== null && rank <= 3 ? ' tl-rank--podium' : ''}`}
+      >
+        {rank ?? '-'}
       </span>
 
       {entry.avatar_url ? (
@@ -651,6 +659,11 @@ export default function RankingTab({
   const ordered = useMemo(() => {
     const copy = [...merged];
     copy.sort((a, b) => {
+      const aQualified = isRecordedSatelliteQualifier(tournament, a);
+      const bQualified = isRecordedSatelliteQualifier(tournament, b);
+      if (aQualified !== bQualified) return aQualified ? -1 : 1;
+      // Presentation order is not a finishing rank among equal qualifiers.
+      if (aQualified && bQualified) return a.username.localeCompare(b.username);
       const aOut = isOut(a);
       const bOut = isOut(b);
       if (aOut !== bOut) return aOut ? 1 : -1;
@@ -664,7 +677,7 @@ export default function RankingTab({
       return (a.username || '').localeCompare(b.username || '');
     });
     return copy;
-  }, [merged]);
+  }, [merged, tournament]);
 
   /**
    * Rank is assigned ONCE, over the whole field, before anything is filtered.
@@ -675,10 +688,16 @@ export default function RankingTab({
   const ranked = useMemo(
     () =>
       ordered.map((entry, index) => {
-        const out = isOut(entry);
-        return { entry, out, rank: out ? entry.position || index + 1 : index + 1 };
+        const qualified = isRecordedSatelliteQualifier(tournament, entry);
+        const out = isOut(entry) || qualified;
+        return {
+          entry,
+          out,
+          qualified,
+          rank: qualified ? null : out ? entry.position || index + 1 : index + 1,
+        };
       }),
-    [ordered]
+    [ordered, tournament]
   );
 
   /* The previous stack for every player on the board, refreshed AFTER each
@@ -688,7 +707,10 @@ export default function RankingTab({
     for (const e of merged) seen.set(e.user_id, Number(e.chips) || 0);
   }, [merged]);
 
-  const living = useMemo(() => ordered.filter((e) => !isOut(e)), [ordered]);
+  const living = useMemo(
+    () => ordered.filter((e) => !isOut(e) && !isRecordedSatelliteQualifier(tournament, e)),
+    [ordered, tournament]
+  );
 
   const totalChips = useMemo(
     () => living.reduce((sum, e) => sum + (Number(e.chips) || 0), 0),
@@ -698,38 +720,24 @@ export default function RankingTab({
   const leaderChips = living.length > 0 ? Number(living[0].chips) || 0 : 0;
 
   const bigBlind = useMemo(() => {
-    const playable = blindLevels.filter((l) => !l.isBreak && l.bigBlind > 0);
-    if (playable.length === 0) {
-      const seated = tables.find((t) => (t.big_blind || 0) > 0);
-      return seated?.big_blind || 0;
+    // Preserve the existing table-backed display for legacy rows with neither
+    // a playable ladder nor a receipt. The service's default ladder is not a
+    // recorded current blind. A present receipt always goes through validation.
+    if (
+      tournament.blind_level_state == null &&
+      !blindLevels.some((level) => !level.isBreak && level.bigBlind > 0)
+    ) {
+      return tables.find((table) => (table.big_blind || 0) > 0)?.big_blind || 0;
     }
-    /**
-     * `current_level` IS A 0-BASED INDEX (fixed 2026-08-26).
-     *
-     * This matched it against the structure's own 1-based `level` field, so it
-     * returned the PREVIOUS level's big blind for every level after the first.
-     * Every BB figure on this tab divides a stack by this number, and a
-     * too-small divisor OVERSTATES the count: the hero card's "Big Blinds",
-     * each row's "{n} BB" sub-line, the "Average Stack → n BB" tile and the
-     * watch-confirmation dialog all read high — typically by 40-60% on a
-     * doubling structure. On a bubble that is "I have 12 BB" when the truth is
-     * 8, which is the difference between folding and shoving.
-     *
-     * Index first. The `level`-field search survives only as the fallback for
-     * old sparse structures, where the index may not line up.
-     */
-    const idx = Math.max(0, Number(tournament?.current_level) || 0);
-    const atIndex = blindLevels[idx];
-    if (atIndex && !atIndex.isBreak && atIndex.bigBlind > 0) return atIndex.bigBlind;
-
-    // Sparse or misnumbered structure: fall back to the nearest playable level
-    // at or below this one, then to the first.
-    const level = Number(atIndex?.level) || idx + 1;
-    const exact = playable.find((l) => l.level === level);
-    if (exact) return exact.bigBlind;
-    const below = playable.filter((l) => l.level <= level);
-    return below.length > 0 ? below[below.length - 1].bigBlind : playable[0].bigBlind;
-  }, [blindLevels, tables, tournament?.current_level]);
+    const index = Math.max(0, Number(tournament.current_level) || 0);
+    const committed = readCommittedTournamentBlinds(index, tournament.blind_level_state);
+    if (committed) return committed.bigBlind;
+    const current =
+      tournament.blind_level_state == null && Number.isInteger(index) ? blindLevels[index] : null;
+    // Zero suppresses BB figures. A stale or missing overflow receipt must
+    // never divide stacks by the final advertised level's unrelated amount.
+    return current && !current.isBreak ? current.bigBlind : 0;
+  }, [tournament, blindLevels, tables]);
 
   const tableNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -766,7 +774,7 @@ export default function RankingTab({
       if (row.out) continue;
       alive += 1;
       totalChips += Number(row.entry.chips) || 0;
-      if (bestRank === 0 || row.rank < bestRank) bestRank = row.rank;
+      if (row.rank !== null && (bestRank === 0 || row.rank < bestRank)) bestRank = row.rank;
     }
     return { total, alive, bestRank, totalChips };
   }, [ranked, downlineIds, carriesDownline]);
@@ -840,6 +848,7 @@ export default function RankingTab({
   const heroStack = hero ? Number(hero.chips) || 0 : 0;
   const heroBB = hero && bigBlind > 0 ? Math.floor(heroStack / bigBlind) : null;
   const heroOut = hero ? isOut(hero) : false;
+  const heroQualified = hero ? isRecordedSatelliteQualifier(tournament, hero) : false;
   const heroAboveAvg = heroStack >= avgStack;
   /* How far off the chip lead. Zero when the hero IS the leader, which is a
      different sentence and gets one. */
@@ -902,10 +911,14 @@ export default function RankingTab({
         <div className={`rk-hero${heroOut ? ' rk-hero--out' : ''}`}>
           <div className="rk-hero__head">
             <span className="rk-hero__label">
-              {heroOut ? 'You Finished' : 'Your Current Position'}
+              {heroQualified ? 'Your Result' : heroOut ? 'You Finished' : 'Your Current Position'}
             </span>
             <span className="rk-hero__rank">
-              {heroOut ? ordinal(hero.position || heroIndex + 1) : ordinal(heroIndex + 1)}
+              {heroQualified
+                ? 'Qualified'
+                : heroOut
+                  ? ordinal(hero.position || heroIndex + 1)
+                  : ordinal(heroIndex + 1)}
             </span>
           </div>
           <div className="rk-hero__figures">
@@ -922,9 +935,17 @@ export default function RankingTab({
                   did. "Below average" tells a player they are behind; this
                   tells them by how much, which is the number they act on. */}
               <span className="tl-stat__label">
-                {heroOut ? 'Versus Average' : heroLeaderGap === 0 ? 'Chip Lead' : 'Off The Lead'}
+                {heroQualified
+                  ? 'Outcome'
+                  : heroOut
+                    ? 'Versus Average'
+                    : heroLeaderGap === 0
+                      ? 'Chip Lead'
+                      : 'Off The Lead'}
               </span>
-              {heroOut ? (
+              {heroQualified ? (
+                <span className="tl-badge tl-badge--good">Qualified</span>
+              ) : heroOut ? (
                 <span className="tl-badge tl-badge--mute">Out</span>
               ) : heroLeaderGap === 0 ? (
                 <span className="tl-badge tl-badge--good">You Lead</span>
@@ -980,13 +1001,14 @@ export default function RankingTab({
       <ul
         className={`tl-list tl-scroll rk-list${visible.length > DENSE_FIELD ? ' rk-list--dense' : ''}`}
       >
-        {visible.map(({ entry, rank, out }) => {
+        {visible.map(({ entry, rank, out, qualified }) => {
           const pulse = pulses.get(entry.user_id);
           return (
             <RankRow
               key={entry.id || entry.user_id}
               entry={entry}
               rank={rank}
+              qualified={qualified}
               isHero={!!currentUserId && entry.user_id === currentUserId}
               isDownline={downlineIds.has(entry.user_id)}
               out={out}

@@ -66,11 +66,17 @@ import {
 } from '../config/rakeSpec.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The value production returned on 2026-09-02 18:2x UTC from
-//   select public.fn_rake_spec_checksum();
-// and the value the migration's post-apply assertion pins as c_expected.
+// THE CHECKSUM, and the migration whose post-apply assertion pins it.
+//
+// 2026-09-02: 24f571834759564ce7929c33e50bb983, the value production returned
+//   from `select public.fn_rake_spec_checksum()` when this law was written.
+// 2026-09-14: the spec changed - short_handed_cap_factor 0.67 -> 0.75 and the
+//   new short_handed_min_seats rule (Dan: the three-handed reduction is
+//   nine-max only) - so the canonical text gained a key and the hash moved.
+//   MIGRATION points at the file that rebuilt the mirror, because that is the
+//   file carrying today's c_expected and today's canonical format strings.
 // ─────────────────────────────────────────────────────────────────────────────
-const PRODUCTION_CHECKSUM_2026_09_02 = '24f571834759564ce7929c33e50bb983';
+const EXPECTED_CHECKSUM = 'f9cfc362daedd898780b84f20be3e4e4';
 const MIGRATION = join(
   __dirname,
   '..',
@@ -78,14 +84,14 @@ const MIGRATION = join(
   '..',
   'supabase',
   'migrations',
-  '20260902173200_one_rake_spec_read_by_engine_and_database.sql'
+  '20260914140733_the_three_handed_rake_discount_is_nine_max_only.sql'
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NUMERIC: exact decimal arithmetic on integers, so this mirror shares no
 // floating-point behaviour with the engine it is checking. Money is held in
 // MILLI-CENTS (1/1000 of a cent) which is exact for every value here: two-
-// decimal pots and caps, factors 0.5 / 0.67, half-BB override steps.
+// decimal pots and caps, factors 0.5 / 0.75, half-BB override steps.
 // ─────────────────────────────────────────────────────────────────────────────
 const SCALE = 100_000; // 1.00 chip = 100000
 const toN = (chips: number): number => Math.round(chips * SCALE);
@@ -105,6 +111,7 @@ interface SqlRules {
   headsUpCapFactor: number;
   shortHandedCapFactor: number;
   shortHandedMaxPlayers: number;
+  shortHandedMinSeats: number;
   noFlopNoDrop: boolean;
   bbjMinPlayersDealt: number;
   maxRakePercent: number;
@@ -142,25 +149,39 @@ function sqlStakePrice(bb: number, sb: number | null) {
   return r ? { pct: r.rakePercent, capN: toN(r.rakeCap), bbjFeeBB: r.bbjFeeBB } : null;
 }
 
-/** fn_rake_cap_for_dealt(full_cap, dealt). */
-function sqlCapForDealt(fullN: number, dealt: number): number {
+/**
+ * fn_rake_cap_for_dealt(full_cap, dealt, seats).
+ *
+ * `seats` is tables.max_players. NULL / 0 / nonsense keeps the nine-max
+ * ladder, exactly as the SQL's `p_seats IS NULL OR p_seats <= 0 OR
+ * p_seats >= r.short_handed_min_seats` does.
+ */
+function sqlCapForDealt(fullN: number, dealt: number, seats: number | null): number {
+  const shortOk = seats === null || seats <= 0 || seats >= rules.shortHandedMinSeats;
   if (dealt >= rules.shortHandedMaxPlayers + 1) return fullN;
   if (dealt >= rules.shortHandedMaxPlayers)
-    return roundCents(mulFactor(fullN, rules.shortHandedCapFactor));
+    return shortOk ? roundCents(mulFactor(fullN, rules.shortHandedCapFactor)) : fullN;
   if (dealt >= 2) return roundCents(mulFactor(fullN, rules.headsUpCapFactor));
   return fullN;
 }
 
-/** ca_rake_schedule_caps: the materialised ladder (source = 'schedule' rows). */
+/**
+ * ca_rake_schedule_caps: the materialised ladder (source = 'schedule' rows).
+ *
+ * The published table has no seat dimension - it is the NINE-MAX ladder, built
+ * by fn_rake_spec_rebuild_caps with no seats - so this lookup passes null. The
+ * seat gate is applied by the CALLER choosing rung 4 instead of rung 3, which
+ * is what fn_effective_rake does.
+ */
 function sqlScheduleCapsLookup(bb: number, key: 2 | 3 | 4): number | null {
   const row = RAKE_SCHEDULE.find((r) => Math.abs(r.bb - bb) < 0.001);
   if (!row) return null;
-  return sqlCapForDealt(toN(row.rakeCap), key);
+  return sqlCapForDealt(toN(row.rakeCap), key, null);
 }
 
 /**
  * fn_effective_rake(p_bb, p_pot, p_players_dealt, p_saw_flop, p_sb,
- *                   p_override_percent, p_override_cap_bb) -> rake
+ *                   p_override_percent, p_override_cap_bb, p_seats) -> rake
  * Transcribed statement by statement from the migration.
  */
 function sqlEffectiveRake(
@@ -170,7 +191,8 @@ function sqlEffectiveRake(
   sawFlop: boolean,
   sb: number | null,
   ovPct: number | null,
-  ovCapBB: number | null
+  ovCapBB: number | null,
+  seats: number | null
 ): { rake: number; cap: number; percent: number } {
   let pct: number;
   let fullN: number;
@@ -195,19 +217,24 @@ function sqlEffectiveRake(
   }
   if (dealt <= 2) pct = Math.min(pct, rules.headsUpPercent);
 
+  // Does the three-handed reduction exist at this table size at all?
+  const shortOk = seats === null || seats <= 0 || seats >= rules.shortHandedMinSeats;
+
   let capN: number | null = null;
   if (scheduled && !capOverridden) {
     const key: 2 | 3 | 4 =
       dealt >= rules.shortHandedMaxPlayers + 1
         ? 4
         : dealt >= rules.shortHandedMaxPlayers
-          ? 3
+          ? shortOk
+            ? 3
+            : 4
           : dealt >= 2
             ? 2
             : 4;
     capN = sqlScheduleCapsLookup(bb, key);
   }
-  if (capN === null) capN = sqlCapForDealt(fullN, dealt);
+  if (capN === null) capN = sqlCapForDealt(fullN, dealt, seats);
 
   if (rules.noFlopNoDrop && !sawFlop) return { rake: 0, cap: fromN(capN), percent: pct };
   // least(round(pot * pct, 0) / 100, cap): pot*pct is exact in milli-cents when pct has <= 2 decimals.
@@ -248,7 +275,9 @@ function engineRake(
   pot: number,
   dealt: number,
   sawFlop: boolean,
-  override?: RakeOverride
+  override?: RakeOverride,
+  /** tables.max_players, as ServerTableEngineBase.tableSeatCount() hands it in. */
+  seats: number | null = null
 ): number {
   const full = getFullRakeConfig(sb, bb, 'nlh', override);
   return calculateRake(
@@ -258,7 +287,7 @@ function engineRake(
       percent: full.rakePercent,
       cap: full.rakeCap,
       noFlopNoDrop: true,
-      playerCountCaps: getPlayerCountCaps(full.rakeCap),
+      playerCountCaps: getPlayerCountCaps(full.rakeCap, seats),
     },
     dealt
   );
@@ -299,7 +328,19 @@ interface Case {
   dealt: number;
   sawFlop: boolean;
   override: RakeOverride | undefined;
+  /** tables.max_players; null = a table row with no usable seat count. */
+  seats: number | null;
 }
+
+/**
+ * Every table size that prices differently, plus null.
+ *
+ * Taken from `i` rather than from the LCG on purpose: the draw sequence of the
+ * 2026-09-02 cases is not disturbed, so this change adds a dimension without
+ * silently re-rolling 500 pots and overrides. 7 and 22 (the stake count) are
+ * coprime, so the grid walks every (stake, seats) pair.
+ */
+const SEATS: (number | null)[] = [null, 2, 6, 7, 8, 9, 10];
 function buildCases(n: number): Case[] {
   let seed = 20260902;
   const next = (mod: number) => {
@@ -316,7 +357,8 @@ function buildCases(n: number): Case[] {
     const sawFlop = i < grid ? Math.floor(i / (STAKES.length * 8)) % 2 === 0 : next(2) === 0;
     const pot = POTS[next(POTS.length)];
     const override = i < grid ? undefined : OVERRIDES[next(OVERRIDES.length)];
-    cases.push({ i, stake, pot, dealt, sawFlop, override });
+    const seats = SEATS[(i * 3) % SEATS.length];
+    cases.push({ i, stake, pot, dealt, sawFlop, override, seats });
   }
   return cases;
 }
@@ -346,6 +388,16 @@ describe('LAW: one rake spec - calculateRake == fn_effective_rake over 500 cases
     expect(stakes.size).toBe(STAKES.length);
     expect(new Set(CASES.map((c) => c.dealt))).toEqual(new Set([2, 3, 4, 5, 6, 7, 8, 9]));
     expect(new Set(CASES.map((c) => c.sawFlop))).toEqual(new Set([true, false]));
+    expect(new Set(CASES.map((c) => c.seats))).toEqual(new Set(SEATS));
+    // The pair that the 2026-09-14 rule actually turns on has to be in here.
+    expect(
+      CASES.filter((c) => c.dealt === 3 && c.seats !== null && c.seats < 9).length,
+      'three-handed at a short table'
+    ).toBeGreaterThan(10);
+    expect(
+      CASES.filter((c) => c.dealt === 3 && (c.seats === null || c.seats >= 9)).length,
+      'three-handed at a nine-max table'
+    ).toBeGreaterThan(10);
     expect(CASES.filter((c) => c.override && ovPct(c.override) !== null).length).toBeGreaterThan(
       20
     );
@@ -356,7 +408,15 @@ describe('LAW: one rake spec - calculateRake == fn_effective_rake over 500 cases
   });
 
   it.each(CASES.map((c) => [c.i, c] as const))('case %i', (_i, c) => {
-    const engine = engineRake(c.stake.sb, c.stake.bb, c.pot, c.dealt, c.sawFlop, c.override);
+    const engine = engineRake(
+      c.stake.sb,
+      c.stake.bb,
+      c.pot,
+      c.dealt,
+      c.sawFlop,
+      c.override,
+      c.seats
+    );
     const sql = sqlEffectiveRake(
       c.stake.bb,
       c.pot,
@@ -364,7 +424,8 @@ describe('LAW: one rake spec - calculateRake == fn_effective_rake over 500 cases
       c.sawFlop,
       c.stake.sb,
       ovPct(c.override),
-      ovCap(c.override)
+      ovCap(c.override),
+      c.seats
     );
     const twin = effectiveRake({
       bb: c.stake.bb,
@@ -374,8 +435,9 @@ describe('LAW: one rake spec - calculateRake == fn_effective_rake over 500 cases
       sawFlop: c.sawFlop,
       overridePercent: c.override?.rakePercent,
       overrideCapBB: c.override?.rakeCapBB,
+      seats: c.seats,
     });
-    const label = `${c.stake.sb}/${c.stake.bb} (${c.stake.note}) pot ${c.pot} dealt ${c.dealt} flop ${c.sawFlop} override ${JSON.stringify(c.override ?? null)}`;
+    const label = `${c.stake.sb}/${c.stake.bb} (${c.stake.note}) pot ${c.pot} dealt ${c.dealt} seats ${c.seats} flop ${c.sawFlop} override ${JSON.stringify(c.override ?? null)}`;
     expect(engine, `engine vs SQL mirror: ${label}`).toBe(sql.rake);
     expect(twin.rake, `rakeSpec.effectiveRake vs SQL mirror: ${label}`).toBe(sql.rake);
     expect(twin.cap, `cap: ${label}`).toBe(sql.cap);
@@ -387,11 +449,24 @@ describe('LAW: one rake spec - calculateRake == fn_effective_rake over 500 cases
   });
 
   it('the known answers the migration asserts hold on this side too', () => {
-    expect(engineRake(1, 2, 100, 2, true)).toBe(2.5); // HU 5%, half cap
-    expect(engineRake(1, 2, 100, 3, true)).toBe(3.35); // 3-dealt, 67% cap
+    // 1/2 is 10% with a 5.00 cap; the pot is 100 and the flop came.
+    expect(engineRake(1, 2, 100, 2, true, undefined, 6)).toBe(2.5); // HU 5%, half cap, ungated
+    expect(engineRake(1, 2, 100, 3, true, undefined, 9)).toBe(3.75); // 3-dealt on 9-max, 75%
+    expect(engineRake(1, 2, 100, 3, true, undefined, 6)).toBe(5); // 3-dealt on 6-max, FULL
+    expect(engineRake(1, 2, 100, 3, true)).toBe(3.75); // no seats -> the nine-max ladder
+    expect(engineRake(1, 2, 100, 4, true, undefined, 6)).toBe(5); // 4+ is full everywhere
     expect(engineRake(1, 2, 100, 6, false)).toBe(0); // no flop, no drop
     expect(engineRake(1.5, 3, 100, 6, true)).toBe(5); // tier-priced 3.00
     expect(engineRake(1, 2, 100, 6, true, { rakePercent: 20, rakeCapBB: 50 })).toBe(5);
+  });
+
+  it('only the three-handed rung is seat-gated', () => {
+    // Heads-up is 50% of the cap at every table size, and 4+ is the full cap
+    // at every table size. If a future edit gates either of them this goes red.
+    for (const seats of [null, 2, 6, 7, 8, 9, 10]) {
+      expect(engineRake(1, 2, 100, 2, true, undefined, seats), `hu ${seats}`).toBe(2.5);
+      expect(engineRake(1, 2, 100, 5, true, undefined, seats), `5-dealt ${seats}`).toBe(5);
+    }
   });
 });
 
@@ -439,7 +514,7 @@ describe('LAW: one rake spec - the BBJ drop == fn_effective_bbj_drop', () => {
 
 describe('LAW: one rake spec - the checksum and the canonical rule', () => {
   it('rakeSpecChecksum() is what production returned and what the migration pins', () => {
-    expect(rakeSpecChecksum()).toBe(PRODUCTION_CHECKSUM_2026_09_02);
+    expect(rakeSpecChecksum()).toBe(EXPECTED_CHECKSUM);
     const migration = readFileSync(MIGRATION, 'utf8');
     const m = migration.match(/c_expected\s+constant\s+text\s*:=\s*'([0-9a-f]{32})'/);
     expect(m, 'the migration must pin c_expected').not.toBeNull();
@@ -462,6 +537,7 @@ describe('LAW: one rake spec - the checksum and the canonical rule', () => {
       'no_flop_no_drop',
       'short_handed_cap_factor',
       'short_handed_max_players',
+      'short_handed_min_seats',
       'unscheduled_cap_bb',
     ]);
     expect(Object.keys(parsed.schedule[0])).toEqual([
@@ -529,7 +605,9 @@ describe('LAW: one rake spec - the checksum and the canonical rule', () => {
     expect(migration).toContain(
       `'"max_rake_percent":"%s","no_flop_no_drop":%s,"short_handed_cap_factor":"%s",'`
     );
-    expect(migration).toContain(`'"short_handed_max_players":%s,"unscheduled_cap_bb":"%s"}'`);
+    expect(migration).toContain(
+      `'"short_handed_max_players":%s,"short_handed_min_seats":%s,"unscheduled_cap_bb":"%s"}'`
+    );
     expect(migration).toContain(`'{"caps":['`);
     expect(migration).toContain(`'],"rules":'`);
     expect(migration).toContain(`',"schedule":['`);

@@ -79,6 +79,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      pull-requests: read
+      checks: read
     outputs:
       target_sha: ${{ steps.target.outputs.sha }}
       tests_proven: ${{ steps.proven.outputs.tests_proven }}
@@ -294,6 +296,13 @@ jobs:
           ref: ${{ needs.publish-needed.outputs.target_sha }}
           # Strict provenance requires complete ancestry for this exact target.
           fetch-depth: 0
+          # blob:none keeps every one of the 7,223 commits and drops the blobs of old
+          # revisions. Measured 2026-09-13, three runs each: 33-35s / 531MB against
+          # 36-43s / 766MB, for identical ancestry. Nothing in this repo's workflows
+          # reads a historical file version - they ask merge-base, rev-list, log and
+          # cat-file -e, which are all commit-graph work - so those blobs were paid
+          # for on every run and never read.
+          filter: blob:none
 
       # STAGE MARKERS REMOVED (2026-08-21).
       #
@@ -375,18 +384,6 @@ jobs:
       # before it ships, and the throwaway PR-head builds are not, because the
       # required `TypeScript Check` job has already checked that same tree.
       #
-      # SENTRY_AUTH_TOKEN lives HERE now, and only here (moved 2026-09-04).
-      # Originally the sentry-vite-plugin activated on
-      # `NODE_ENV === 'production' && SENTRY_AUTH_TOKEN`, which was true in
-      # ci.yml's build - the bundle that is thrown away - and false in this
-      # one, the bundle that ships. So maps were uploaded for an artifact no
-      # player ever loads, no map was ever uploaded for the shipped sha, and
-      # `filesToDeleteAfterUpload` never ran on this path, which is why 267
-      # `.map` files (27MB) went out to players on every deploy. The release
-      # name is now `club-arena@<sha>` on both sides - the plugin used to tag
-      # `club-arena@1.0.1` from npm_package_version while SentryInit.ts
-      # reported `club-arena@${VITE_APP_VERSION}`, so even a successful upload
-      # could not have symbolicated anything.
       - name: Build Club Arena
         env:
           NODE_ENV: production
@@ -395,25 +392,12 @@ jobs:
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
           VITE_APP_ENV: production
-          VITE_SENTRY_DSN: 'https://842977a65e398b038728a05e8d892089@o4510810580779008.ingest.us.sentry.io/4510816835600384'
           VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
           VITE_ONESIGNAL_APP_ID: '2fde0e83-cd01-4f93-a9a0-9be6cfe36e8c'
-          # Only this verified web release may upload source maps.
-          CA_SENTRY_UPLOAD: '1'
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          # Verified 2026-04-23 via the Sentry API: the live org is
-          # `smarter-software-inc`, the CA project is `javascript-react`.
-          SENTRY_ORG: smarter-software-inc
-          SENTRY_PROJECT: javascript-react
         run: npm run build
 
-      # Belt to the plugin's braces. `filesToDeleteAfterUpload` only runs when
-      # the upload SUCCEEDS, and the plugin is configured with an errorHandler
-      # that warns rather than failing the build - correct, because a Sentry
-      # outage must not stop a deploy, but it means a failed upload would ship
-      # every source map to players. Maps are for Sentry's server side; nothing
-      # in the browser needs them. This step is unconditional and idempotent.
-      - name: Source maps go to Sentry, never to players
+      # Keep source private even if an older tool emits a map.
+      - name: Source maps never ship to players
         run: |
           BEFORE=$(find dist -name '*.map' | wc -l | tr -d ' ')
           find dist -name '*.map' -delete
@@ -588,6 +572,7 @@ jobs:
           ref: ${{ needs.publish-needed.outputs.target_sha }}
           # Strict provenance requires complete ancestry for this exact target.
           fetch-depth: 0
+          filter: blob:none
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -617,7 +602,6 @@ jobs:
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
           VITE_APP_ENV: production
-          VITE_SENTRY_DSN: 'https://842977a65e398b038728a05e8d892089@o4510810580779008.ingest.us.sentry.io/4510816835600384'
           VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
           VITE_REVENUECAT_IOS_KEY: ${{ secrets.VITE_REVENUECAT_IOS_KEY }}
           VITE_REVENUECAT_ANDROID_KEY: ${{ secrets.VITE_REVENUECAT_ANDROID_KEY }}
@@ -745,6 +729,7 @@ jobs:
             provenance &&
             !Array.isArray(provenance) &&
             provenance.schema === 1 &&
+            (!Object.prototype.hasOwnProperty.call(provenance, 'validationOnly') || provenance.validationOnly === false) &&
             provenance.commit === expectedSha &&
             provenance.builtBy === 'github-actions' &&
             provenance.dirty === false &&
@@ -939,6 +924,8 @@ jobs:
           require(type(build_info) is dict, 'release build-info is not one JSON object')
           require(type(provenance.get('schema')) is int and provenance['schema'] == 1,
                   'release provenance schema is invalid')
+          require('validationOnly' not in provenance or provenance['validationOnly'] is False,
+                  'CI validation bundles cannot be published')
           require(provenance.get('commit') == expected_sha,
                   'release provenance does not match its source SHA')
           require(provenance.get('builtBy') == 'github-actions',

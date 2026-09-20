@@ -59,7 +59,10 @@ function encode(o: QualifiedAdaptiveObservation): string {
   ]);
 }
 
-function decode(text: unknown): QualifiedAdaptiveObservation {
+function decodeWithScope(
+  text: unknown,
+  knownScope?: { raw: string; frozen: readonly unknown[] }
+): QualifiedAdaptiveObservation {
   if (typeof text !== 'string' || bytes(text) > ADAPTIVE_JOURNAL_LIMITS.observationBytes)
     throw Error('invalid_observation');
   const a = JSON.parse(text);
@@ -97,13 +100,35 @@ function decode(text: unknown): QualifiedAdaptiveObservation {
     observedAtMs: a[5],
     partition: a[6],
     scopeKey: a[7],
-    scope: freezeScope(JSON.parse(a[8])),
+    scope: knownScope?.raw === a[8] ? knownScope.frozen : freezeScope(JSON.parse(a[8])),
     action: a[9],
     facedBet: a[10],
     origin: a[11],
   });
   if (encode(o) !== text) throw Error('noncanonical_observation');
   return o;
+}
+export function decodeAdaptiveJournalObservation(text: unknown): QualifiedAdaptiveObservation {
+  return decodeWithScope(text);
+}
+const decode = decodeAdaptiveJournalObservation;
+
+/** Model sweeps contain exactly one public node. Reuse its frozen, validated
+ * scope instead of retaining thousands of identical nested arrays. Every row
+ * still passes digest, canonical encoding, partition and identity validation. */
+export function decodeScopedAdaptiveJournalObservations(
+  rows: readonly string[],
+  scopeKey: string
+): readonly QualifiedAdaptiveObservation[] {
+  if (!digest(scopeKey) || rows.length > ADAPTIVE_JOURNAL_LIMITS.observations)
+    throw Error('invalid_scope');
+  let knownScope: { raw: string; frozen: readonly unknown[] } | undefined;
+  return rows.map((text) => {
+    const observation = decodeWithScope(text, knownScope);
+    if (observation.scopeKey !== scopeKey) throw Error('invalid_scope');
+    knownScope ??= { raw: JSON.stringify(observation.scope), frozen: observation.scope };
+    return observation;
+  });
 }
 
 export interface PreparedAdaptiveJournalBatch {
@@ -126,6 +151,7 @@ export function prepareAdaptiveJournalBatch(
       !digest(snapshot.actorKey) ||
       !snapshot.source ||
       snapshot.source.coverage !== 'retained_committed_roster_rows' ||
+      snapshot.source.acceptance !== 'atomic_hand_receipts' ||
       !digest(snapshot.source.sourceDigest) ||
       !integer(snapshot.source.fromMs) ||
       !integer(snapshot.source.throughMs) ||
@@ -207,7 +233,9 @@ export type AdaptiveJournalWriteResult =
 
 /** Validate recovered canonical bytes without inventing a new source snapshot.
  * A historical receipt proves what was recorded, not current-window coverage. */
-function recoverPreparedBatch(payload: unknown): PreparedAdaptiveJournalBatch {
+export function validateAdaptiveJournalBatchPayload(
+  payload: unknown
+): PreparedAdaptiveJournalBatch {
   if (typeof payload !== 'string' || bytes(payload) > ADAPTIVE_JOURNAL_LIMITS.batchBytes)
     throw Error('invalid_batch');
   const b = JSON.parse(payload);
@@ -285,7 +313,7 @@ export async function readAdaptiveJournalBatch(
           : 'invalid_receipt'
       );
     if (data.status !== 'recorded') return refusal('invalid_receipt');
-    const batch = recoverPreparedBatch(data.payload);
+    const batch = validateAdaptiveJournalBatchPayload(data.payload);
     if (
       batch.batchKey !== batchKey ||
       data.batchKey !== batch.batchKey ||
@@ -306,7 +334,7 @@ export async function persistPreparedAdaptiveJournalBatch(
 ): Promise<AdaptiveJournalWriteResult> {
   let batch: PreparedAdaptiveJournalBatch;
   try {
-    batch = recoverPreparedBatch(input?.payload);
+    batch = validateAdaptiveJournalBatchPayload(input?.payload);
     if (
       input.status !== 'prepared' ||
       input.batchKey !== batch.batchKey ||

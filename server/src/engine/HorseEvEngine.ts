@@ -71,6 +71,9 @@ export interface EvOpponentModel {
    * to-aggression read; 1 with no read.
    */
   foldMul: number;
+  /** False for an all-in holding: it cannot fold or fund another wager.
+   * Omission preserves older pure callers' ordinary live-opponent model. */
+  canRespond?: boolean;
 }
 
 export interface EvSpot {
@@ -168,6 +171,10 @@ export function evaluateSpot(spot: EvSpot): EvVerdict {
   const eq = clamp(spot.equity, 0, 1);
   const models = spot.models ?? [];
   const opps = Math.max(1, Math.floor(spot.opponents));
+  let hasResponder = false;
+  for (let i = 0; i < opps; i++) {
+    if (models[i]?.canRespond !== false) hasResponder = true;
+  }
 
   // Realized equity, net of rake and the survival premium. The premium is
   // charged in proportion to the share of the stack a line puts at risk, so
@@ -185,7 +192,7 @@ export function evaluateSpot(spot: EvSpot): EvVerdict {
   } else {
     // A check with the lead is not a free card: the opponent gets to bet
     // the pot hero declined to, and part of the equity never gets realized.
-    const checkMul = spot.initiative ? 0.85 : 1;
+    const checkMul = spot.initiative && hasResponder ? 0.85 : 1;
     candidates.push({ kind: 'check', ev: realized(0) * checkMul * P });
   }
 
@@ -194,7 +201,7 @@ export function evaluateSpot(spot: EvSpot): EvVerdict {
   // priced as they see it: their pot odds on the increment.
   const sizes = (spot.sizes ?? DEFAULT_SIZES).slice();
   // A jam is always a candidate when it is legal and different.
-  const jam = Math.min(eff, stack) - c;
+  const jam = hasResponder ? Math.min(eff, stack) - c : 0;
   const potForSizing = P + c; // what hero bets INTO (after matching the call)
   const amounts = new Set<number>();
   for (const f of sizes) {
@@ -210,6 +217,10 @@ export function evaluateSpot(spot: EvSpot): EvVerdict {
     // whole wager (c + s). Everyone must fold for the pot to be taken.
     let foldAll = 1;
     for (let i = 0; i < opps; i++) {
+      if (models[i]?.canRespond === false) {
+        foldAll = 0;
+        break;
+      }
       const m = models[i]?.foldMul ?? 1;
       foldAll *= mdfFold(P + c, s, m);
     }

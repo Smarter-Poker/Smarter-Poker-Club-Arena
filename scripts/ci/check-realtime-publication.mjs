@@ -69,6 +69,49 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
  */
 const KNOWN_UNPUBLISHED = new Map([
   ['table_id', 'not a table - a column name caught by the scanner'],
+
+  // ── RE-SEEDED 2026-09-19, AFTER THE SWEEP NOBODY DID ────────────────────
+  //
+  // This baseline was seeded on 2026-09-06 from the live comparison - BEFORE
+  // that day's WAL trim and before the 2026-09-08 SET TABLE replaced the rest
+  // of the membership. So the subscriptions that died after it were never
+  // recorded here, 34 of them, and this detector has been red ever since:
+  // true, unreadable, and therefore unable to catch a NEW one.
+  //
+  // Twenty-three of the 34 were restored to the publication on 2026-09-19
+  // (a_subscription_that_costs_nothing_may_fire_again, plus table_waitlist):
+  // 35,618 writes between them, 0.06% of the eleven below, every one with RLS
+  // on and a SELECT policy a subscriber can satisfy.
+  //
+  // These eleven stay out, and each carries the number that decides it -
+  // writes since the stats reset, and the column count, because apply_rls runs
+  // roughly one dynamic cast plus one column-privilege check per column per
+  // change. Publishing any of them re-creates the 22.9-seconds-per-15-seconds
+  // stream the trim was built to stop. The page subscribing to each one needs
+  // a different delivery path, not a republished table.
+  ['tournament_players',
+   'NOT PUBLISHED BY MEASUREMENT: 25,280,935 writes, 27 columns - the most written table on the platform. TournamentClock should read standings rather than subscribe.'],
+  ['table_seats',
+   'NOT PUBLISHED BY MEASUREMENT: 14,582,928 writes, 26 columns. Seat state reaches the felt over the engine socket; TableOperationsPanel should refetch.'],
+  ['tournaments',
+   'NOT PUBLISHED BY MEASUREMENT: 5,477,895 writes over 117 columns, measured at 39.40ms per change on 2026-09-06. TournamentHUD should refetch.'],
+  ['tables',
+   'NOT PUBLISHED BY MEASUREMENT: 4,643,367 writes over 159 columns, 28.40ms per change on 2026-09-06 and 6,277ms of the 18,146ms apply_rls total. AdminTableHeatmap should refetch.'],
+  ['agent_commissions',
+   'NOT PUBLISHED BY MEASUREMENT: 1,802,610 writes, 10 columns, 6.7M live rows. AgentCommissionDashboard should refetch.'],
+  ['agents',
+   'NOT PUBLISHED BY MEASUREMENT: 1,066,935 writes, 31 columns, against 146 live rows - it is rewritten constantly. AgentPromoPanel should refetch.'],
+  ['clubs',
+   'NOT PUBLISHED BY MEASUREMENT: 1,047,848 writes over 94 columns, 35.96ms per change on 2026-09-06, against 5 live rows. DynamicWallet should refetch.'],
+  ['game_management_events',
+   'NOT PUBLISHED BY MEASUREMENT: 1,027,487 writes, 3.1M live rows. useGameManagementRealtime should poll or move to the engine socket.'],
+  ['profiles',
+   'NOT PUBLISHED BY MEASUREMENT: 1,000,061 writes over 120 columns, 45.29ms per change on 2026-09-06 - the worst per-change cost measured. PresenceIndicator wants presence, which is a channel feature, not a row change.'],
+  ['union_wallets',
+   'NOT PUBLISHED BY MEASUREMENT: 338,150 writes against 1 live row. DynamicWallet should refetch.'],
+  ['chip_transactions',
+   'NOT PUBLISHED BY MEASUREMENT: 258,956 writes, 822,598 live rows. AgentDashboardPage should refetch.'],
+
   [
     'table_hole_cards',
     'DELIBERATELY unpublished (PR #3032, 2026-09-06): the engine socket delivers the ' +
@@ -78,7 +121,6 @@ const KNOWN_UNPUBLISHED = new Map([
   ['commander_waitlist_group_members', 'Commander waitlist groups: subscription predates the tables being published'],
   ['commander_waitlist_groups', 'as above'],
   ['commission_rate_audit', 'audit trail; a push is not needed to read it'],
-  ['diamond_arena_scores', 'unresolved: scores page subscribes and receives nothing'],
   ['financial_alerts', 'operator console subscribes; alerts arrive by other paths'],
   ['horse_daily_audit', 'daily job output; no live consumer'],
   ['horse_league_results', 'as above'],
@@ -130,14 +172,23 @@ function walk(dir, out = []) {
   return out;
 }
 
-/** Table names this repo's client code subscribes to. */
+/**
+ * Table names this repo's client code subscribes to, mapped to EVERY file that
+ * names them. Recording only the first file understated the work: `table_seats`
+ * pointed at TableOperationsPanel while GlobalWaitlistListener's two handlers
+ * went unnamed, so a reader fixing the one file named here would have believed
+ * the table was done.
+ */
 function subscribedTables() {
   const found = new Map();
   for (const dir of SCAN_DIRS) {
     for (const file of walk(join(ROOT, dir))) {
       const src = readFileSync(file, 'utf8');
       for (const m of src.matchAll(/\btable:\s*'([a-z_][a-z0-9_]*)'/g)) {
-        if (!found.has(m[1])) found.set(m[1], file.replace(ROOT + '/', ''));
+        const rel = file.replace(ROOT + '/', '');
+        const sites = found.get(m[1]);
+        if (!sites) found.set(m[1], [rel]);
+        else if (!sites.includes(rel)) sites.push(rel);
       }
     }
   }
@@ -178,9 +229,32 @@ const subscribed = subscribedTables();
 const published = publishedTables();
 
 const cannotFire = [];
-for (const [table, where] of subscribed) {
+/**
+ * Subscribed, NOT published, and on the baseline. These are accepted - the
+ * eleven were measured and excluded on purpose - but "accepted" is not
+ * "working". Each one is a consumer in this repo whose channel joins, reports
+ * SUBSCRIBED and receives nothing, for ever. The baseline records the decision;
+ * it does not repair the page. Keeping them out of `cannotFire` is what lets
+ * this detector go green on unrecorded drift, which is its actual job - but a
+ * green run must still say out loud how many consumers are still dark, or the
+ * next reader learns the same thing the hard way a third time.
+ */
+const knownDead = [];
+/**
+ * Baseline entries that are not tables at all - the scanner's regex matches a
+ * `table:` key in an ordinary event payload. They are neither drift nor dead
+ * consumers, so they must not inflate the dead count.
+ */
+const NOT_A_TABLE = new Set(['table_id']);
+for (const [table, sites] of subscribed) {
   if (published.has(table)) continue;
-  if (KNOWN_UNPUBLISHED.has(table)) continue;
+  const where = sites.join(', ');
+  if (KNOWN_UNPUBLISHED.has(table)) {
+    if (!NOT_A_TABLE.has(table)) {
+      knownDead.push({ table, where, sites, why: KNOWN_UNPUBLISHED.get(table) });
+    }
+    continue;
+  }
   cannotFire.push({ table, where });
 }
 
@@ -217,4 +291,28 @@ if (cannotFire.length > 0) {
   process.exit(1);
 }
 
-console.log('[realtime-publication] OK - every subscription this repo makes can actually fire.');
+if (knownDead.length > 0) {
+  console.log(
+    `\n[realtime-publication] ${knownDead.length} SUBSCRIPTION(S) STILL CANNOT FIRE - accepted on the baseline:\n`
+  );
+  const deadSites = new Set();
+  for (const { table, sites, why } of knownDead) {
+    console.log(`    ${table}`);
+    for (const site of sites) {
+      deadSites.add(site);
+      console.log(`        ${site}`);
+    }
+    console.log(`        ${why}`);
+  }
+  console.log(
+    '\n  These are recorded decisions, not drift, so this run is not a failure.\n' +
+      '  They are still dead consumers: the page subscribing to each one needs a\n' +
+      '  different delivery path before its behavior is repaired.\n'
+  );
+  console.log(
+    `[realtime-publication] OK - no unrecorded drift. ${knownDead.length} recorded table(s) ` +
+      `across ${deadSites.size} file(s) still cannot fire.`
+  );
+} else {
+  console.log('[realtime-publication] OK - every subscription this repo makes can actually fire.');
+}

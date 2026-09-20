@@ -1,0 +1,15 @@
+{
+  "_owner": "agent/codex/sng-unsettled-abort-release-20260918",
+  "_comment": "Actual catalog readback 2026-09-18T06:18:50Z after provider migration 20260918061838 (interrupted_sng_hands_keep_stacks_and_fence_their_original_writers), source reservation 20260918053310; exact migration SHA256 2a5620ce1d29da0edb822a6806dda34d53d2408f9423378177cfe0b92fd0176f. All 19 function definitions, owners and ACLs matched qualified postimages. Receipt table owner postgres, postgres-only ACL, RLS enabled; abort_receipt_id is nullable uuid. This records installed schema only; original-hand actuation and certified runtime recovery are separate.",
+  "tables": ["smarter_private.f06_unsettled_hand_aborts"],
+  "functions": [
+    "fn_f06_abort_unsettled_hand",
+    "smarter_private.f06_abort_receipt_immutable",
+    "smarter_private.f06_aborted_generation_guard",
+    "smarter_private.f06_aborted_hand_guard",
+    "smarter_private.f06_generation_aborted"
+  ],
+  "columns": {
+    "smarter_private.f06_operations": ["abort_receipt_id"]
+  }
+}

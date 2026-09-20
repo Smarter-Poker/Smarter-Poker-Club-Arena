@@ -48,6 +48,49 @@ function fixture(
   return { hero, state, evidence, baseline: { action: 'check' as const, thinkTime: 0 } };
 }
 describe('joint action-specific rollout', () => {
+  it('keeps a short-stack response price unchanged when only inaccessible side pots grow', () => {
+    const { hero, state } = fixture('nlh', 'river', 1);
+    const run = (deepContribution: number) => {
+      hero.totalInvested = deepContribution;
+      state.players[0] = { ...hero, cards: [] };
+      Object.assign(state.players[1], { stack: 10, bet: 0, totalInvested: 10 });
+      Object.assign(state.players[2], {
+        stack: 0,
+        bet: 10,
+        totalInvested: deepContribution,
+        is_all_in: true,
+      });
+      Object.assign(state.players[3], { bet: 0, totalInvested: deepContribution, is_folded: true });
+      Object.assign(state, {
+        dealerSeat: 4,
+        currentBet: 10,
+        toCall: 10,
+        pot: deepContribution * 3 + 10,
+        legalActions: ['fold', 'call'],
+        minRaiseTo: null,
+        maxRaiseTo: null,
+      });
+      const evidence = sampleJointRanges(hero, state, {
+        seed: 13100401,
+        samples: 8,
+        withinBudget: () => true,
+      })!;
+      const result = evaluateJointActions(
+        hero,
+        state,
+        { action: 'call', thinkTime: 0 },
+        evidence,
+        () => true
+      )!;
+      const call = result.candidates.find((c) => c.action === 'call')!;
+      expect(call.maxConservationError).toBeLessThan(1e-6);
+      expect(call.responseCounts.p1.responded).toBe(8);
+      return call.responseCounts.p1;
+    };
+    // p1 can commit only 20 total: the other three seats each contribute
+    // at most 20 to its contest, plus p1's existing 10. The price is 10/80.
+    expect(run(1000)).toEqual(run(100));
+  });
   it('keeps an earlier seat owing a re-raise in the remaining clockwise response ring', () => {
     const { hero, state, evidence } = fixture('nlh', 'flop', 1);
     state.dealerSeat = 2;

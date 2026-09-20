@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "kind": "genuine-positive-fee-entry",
+  "image": "positive-fee-entry",
+  "files": {
+    "scripts/qualification/spin-positive-fee-entry.py": {
+      "bytes": 15299,
+      "sha256": "a9e1aee8289be8d4fffb89ad33a5b3d0ab11c4a2afb3b02d2d803439e667835d"
+    },
+    "scripts/qualification/spin-positive-fee-entry-oracle.py": {
+      "bytes": 47098,
+      "sha256": "7cce48c16acfdb7b681569d5361b7fe8dd8bbfed3a5af49fed7c473846adb2b9"
+    },
+    "scripts/qualification/spin-mixed-positive-fee-entry.sql": {
+      "bytes": 51515,
+      "sha256": "abccdd57023de5e7e4ce611bf4f05eba01a57699350df9a9e0f4faa2f2f24157"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/provider-supplement.sql": {
+      "bytes": 512502,
+      "sha256": "0da6ff0941a8917241a6a9434c97c55bf0197bc8a3f298e8e941931c1e27ebe9"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/catalog-readback.sql": {
+      "bytes": 169568,
+      "sha256": "b5ec8e0b9287fa0d78d447fdb8dcb87c79d0efde08210f0ea29ab0f9f42f3e7e"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/reference-data.sql": {
+      "bytes": 6116,
+      "sha256": "47f02c70d09838f2108c324dcef4df0ac6067d10307799946c6b79a784904fa8"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/expected-metadata.json": {
+      "bytes": 207286,
+      "sha256": "01e965e47dcf60802073f00943529295789819c4e4adb193263c89ad32d4aa44"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/preimage-metadata.json": {
+      "bytes": 132521,
+      "sha256": "753d9e9c9e521218098e97bb3e5c937bab22486182e78b60dd36501888e072ec"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/provenance.json": {
+      "bytes": 15505,
+      "sha256": "4f3ac019050746920f82dfdf6123a9f4712dcb12481ca99f094e807bb30ea791"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/hand-id-sequence.sql": {
+      "bytes": 7643,
+      "sha256": "d7694c6d742026c7e17b23a0a61e30f5e5ba9e07e1eb4926c7734b839a225dc5"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/hand-id-sequence-capture.json": {
+      "bytes": 659,
+      "sha256": "a86f2f81e2ed49bf347c9806a9279b8f8e437c10642de163ee2bd8c5d05f92f1"
+    }
+  },
+  "relative_include_graph": {
+    "scripts/qualification/spin-mixed-positive-fee-entry.sql": [
+      "inputs/captured-financial-store-policy.sql",
+      "scripts/qualification/fixtures/spin-mixed-positive-fee/reference-data.sql",
+      "scripts/qualification/fixtures/spin-history-retention/database-state.sql"
+    ]
+  },
+  "historical_qualification": false,
+  "full_financial_qualification": false,
+  "production_qualification": false
+}

@@ -1,0 +1,4 @@
+{
+  "_owner": "feat/diamond-one-setting-super-guarantee (2026-09-20). src/utils/diamondGameTitles.ts is the single source for the four Diamond game names and their Super forms (Dan, 2026-09-19: an upgraded game says 'Super' plus the title, and the word 'Upgraded' appears nowhere). App.tsx reads it for the four bonus routes' PageErrorBoundary pageName, and App.tsx IS the entry, so the module is in first paint by construction. A lazy import cannot serve it: the name is needed to LABEL the boundary that catches a route failing to load, so it has to exist before the route does. The file is 24 lines, two frozen record literals and one function, and imports nothing - the entry chunk got SMALLER on this branch, 211 modules and 151kB gz against a 218 module, 161kB gz baseline, because the per-game name tables it replaced were duplicated across five modules the entry already pulled.",
+  "modules": ["src/utils/diamondGameTitles.ts"]
+}

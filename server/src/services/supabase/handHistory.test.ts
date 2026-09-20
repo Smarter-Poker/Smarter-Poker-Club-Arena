@@ -1,6 +1,8 @@
 /** The accepted-hand transaction is the sole hand-history persistence owner. */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ServerTableEngineBase } from '../../engine/ServerTableEngineBase.js';
+import type { CompletedHandObservation } from '../../engine/horseDecision/protocol.js';
 
 // ── A minimal chainable PostgREST double ────────────────────────────────────
 interface Call {
@@ -9,6 +11,7 @@ interface Call {
 
 const calls: Call[] = [];
 const rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
+const retentionCalls: Record<string, unknown>[] = [];
 /** Ordered replies for the accepted-hand transaction. */
 let atomicRpcResults: Array<{ data: unknown; error: unknown }> = [];
 
@@ -19,14 +22,34 @@ vi.mock('./client.js', () => ({
       throw new Error(`unexpected legacy table write: ${table}`);
     },
     rpc: async (fn: string, args: Record<string, unknown>) => {
+      if (fn === 'fn_ca_retain_hand_submission') {
+        retentionCalls.push(args.p_request as Record<string, unknown>);
+        return {
+          data: {
+            retained: true,
+            submission_id: (args.p_request as any).p_hand_row.id,
+            request_hash: 'b'.repeat(64),
+          },
+          error: null,
+        };
+      }
       rpcCalls.push({ fn, args });
-      if (fn === 'fn_ca_commit_hand_settlement') {
-        return (
-          atomicRpcResults.shift() ?? {
-            data: { success: false, reason: 'missing_test_reply' },
-            error: null,
-          }
-        );
+      if (fn === 'fn_ca_commit_hand_settlement' || fn === 'fn_ca_commit_hand_submission') {
+        const result = atomicRpcResults.shift() ?? {
+          data: { success: false, reason: 'missing_test_reply' },
+          error: null,
+        };
+        return fn === 'fn_ca_commit_hand_submission' && result.data
+          ? {
+              ...result,
+              data: {
+                submission_id: args.p_submission_id,
+                submission_hash: 'b'.repeat(64),
+                snapshot_completed: true,
+                ...(result.data as object),
+              },
+            }
+          : result;
       }
       return { data: null, error: null };
     },
@@ -53,7 +76,7 @@ interface CompletedHandObservationPayload {
   fence: string;
   handKey: string;
   committedHandId?: string;
-  actions: unknown;
+  actions: CompletedHandObservation['actions'];
   bigBlind: number;
   showdown: unknown;
   scope: string | null | undefined;
@@ -77,6 +100,7 @@ import { logHandHistory, buildHandHistoryTiers } from './handHistory.js';
 import { persistedKnockoutEvidence } from '../../tournament/bountyAttributionGate.js';
 import type { HorsePublicActionNode } from '../../engine/HorsePublicActionNode.js';
 import { captureHandSeatGenerations } from '../../engine/handSeatGeneration.js';
+import { horseCompletedHandKey } from '../../engine/HorseDecisionHandBinding.js';
 
 const GLOBAL_HAND = 1_400_001;
 const historyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -185,6 +209,7 @@ const obligationsParams = (handNumber = GLOBAL_HAND + 600) => {
   const assertLeaseAuthority = vi.fn();
   return {
     ...input,
+    handId: historyId,
     atomicCommit: {
       ...input.atomicCommit,
       assertLeaseAuthority,
@@ -253,6 +278,7 @@ function deferred<T>() {
 beforeEach(() => {
   calls.length = 0;
   rpcCalls.length = 0;
+  retentionCalls.length = 0;
   atomicRpcResults = [];
   mockReportError.mockReset();
   mockWakeHandProjection.mockClear();
@@ -268,6 +294,53 @@ beforeEach(() => {
 });
 
 describe('logHandHistory - worker-owned completed-hand observation', () => {
+  it('preserves forced-post and return provenance in the accepted JSON and observation without changing money or order', async () => {
+    const input = identityParams();
+    const userId = input.actions[1].userId;
+    const actions = [
+      {
+        seat: 1,
+        userId,
+        action: 'sb',
+        amount: 1,
+        stage: 'preflop',
+        timestamp: 1000,
+        dead: false,
+        origin: 'forced' as const,
+      },
+      ...input.actions,
+      {
+        seat: 1,
+        userId,
+        action: 'return',
+        amount: 10,
+        stage: 'flop',
+        timestamp: 1002,
+        historyEvent: 'uncalled_bet_returned' as const,
+      },
+    ];
+    const before = structuredClone(actions);
+    acceptAtomicHand();
+    await logHandHistory({ ...input, actions });
+    const row = rpcCalls[0].args.p_hand_row as Record<string, unknown>;
+    const persisted = row.actions as Array<Record<string, unknown>>;
+    expect(persisted[0]).toEqual(actions[0]);
+    expect(persisted.at(-1)).toEqual(actions.at(-1));
+    expect(persisted.at(-1)).not.toHaveProperty('origin');
+    expect(persisted[3].observationIdentity).toMatchObject({
+      status: 'bound',
+      actionOrdinal: 3,
+      observationId: `${historyId}:3`,
+    });
+    expect(persisted.map(({ action, amount }) => ({ action, amount }))).toEqual(
+      actions.map(({ action, amount }) => ({ action, amount }))
+    );
+    expect(row.pot_size).toBe(input.potSize);
+    expect(row.rake_amount).toBe(input.rakeAmount);
+    expect(mockObserveCompletedHand.mock.calls[0][0].actions).toEqual(persisted);
+    expect(actions).toEqual(before);
+  });
+
   it('preserves action-node metadata in the accepted row and worker payload without adding player cards', async () => {
     acceptAtomicHand();
     const publicNode = Object.freeze({
@@ -518,6 +591,17 @@ describe('logHandHistory - accepted-hand transaction', () => {
       showdown: null,
       scope: 'holdem:hu',
     });
+    const emitted = mockObserveCompletedHand.mock.calls[0]![0];
+    expect(
+      horseCompletedHandKey({
+        generation: emitted.generation,
+        fence: emitted.fence,
+        handKey: emitted.handKey,
+        committedHandId: emitted.committedHandId,
+        bigBlind: emitted.bigBlind,
+        actions: emitted.actions,
+      })
+    ).toBe(`${input.tableId}:${input.handNumber}:${leaseGeneration}`);
     expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
   });
 
@@ -546,13 +630,22 @@ describe('logHandHistory - accepted-hand transaction', () => {
       expect(result).toMatchObject({ handId: historyId, settlementCommitted: true });
       expect(rpcCalls).toHaveLength(2);
       expect(rpcCalls[1]).toEqual(rpcCalls[0]);
-      expect(rpcCalls[0].args).toMatchObject({
+      expect(retentionCalls).toHaveLength(1);
+      expect(retentionCalls[0]).toMatchObject({
         p_post_commit_obligations: input.atomicCommit.postCommitObligations,
         p_hand_row: {
           _accepted_post_commit_facts: input.atomicCommit.acceptedPostCommitFacts,
         },
       });
-      expect(input.assertLeaseAuthority).toHaveBeenCalledTimes(2);
+      expect(rpcCalls[0]).toEqual({
+        fn: 'fn_ca_commit_hand_submission',
+        args: {
+          p_submission_id: historyId,
+          p_instance_id: 'engine-instance-1',
+          p_lease_generation: leaseGeneration,
+        },
+      });
+      expect(input.assertLeaseAuthority).toHaveBeenCalledTimes(3);
       expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
       expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
     } finally {
@@ -676,15 +769,16 @@ describe('logHandHistory - accepted-hand transaction', () => {
       ];
       const pending = logHandHistory(input);
       await vi.advanceTimersByTimeAsync(0);
-      const accepted = structuredClone(rpcCalls[0].args);
+      const accepted = structuredClone(retentionCalls[0]);
       input.atomicCommit.stacks[0].stack = 999;
       input.atomicCommit.acceptedPostCommitFacts.contributions.u1 = 999;
       input.atomicCommit.postCommitObligations.time_banks[0].uses_remaining = 999;
       await vi.advanceTimersByTimeAsync(250);
       await expect(pending).resolves.toMatchObject({ settlementCommitted: true });
       expect(rpcCalls).toHaveLength(2);
-      expect(rpcCalls[0].args).toEqual(accepted);
-      expect(rpcCalls[1].args).toEqual(accepted);
+      expect(retentionCalls).toHaveLength(1);
+      expect(retentionCalls[0]).toEqual(accepted);
+      expect(rpcCalls[1].args).toEqual(rpcCalls[0].args);
     } finally {
       vi.useRealTimers();
     }
@@ -916,5 +1010,192 @@ describe('tournament bounty history keeps each winning pot', () => {
       ready: true,
       attribution: { potIndex: 1, claimants: [{ userId: 'u1', weight: 1 }] },
     });
+  });
+});
+
+/** PREPARED / UNEXECUTED diagnostic prerequisite laws. Synthetic receipt
+ * extensions below are NOT a new producer return contract. Existing scalar
+ * reason/error/transport text remains outside this narrow redaction scope. */
+abstract class PrivateReceiptRetryProbe extends ServerTableEngineBase {
+  static rolledBackRetryable(error: unknown): boolean {
+    return this.isRolledBackSerializationRefusal(error);
+  }
+}
+async function rejectedPrivateReceipt(data: Record<string, unknown>): Promise<Error> {
+  atomicRpcResults = [{ data, error: null }];
+  return logHandHistory(atomicParams(GLOBAL_HAND + 900)).then(
+    () => {
+      throw new Error('fixture unexpectedly accepted');
+    },
+    (error) => {
+      expect(error).toBeInstanceOf(Error);
+      return error as Error;
+    }
+  );
+}
+const privateReceiptExtensions = [
+  {
+    name: 'hypothetical-roster',
+    value: {
+      acceptedActorRoster: {
+        version: 1,
+        roster: {
+          actors: [
+            {
+              userId: 'SYNTHETIC_PRIVATE_ACTOR',
+              classification: 'SYNTHETIC_PRIVATE_CLASSIFICATION',
+            },
+          ],
+        },
+      },
+    },
+  },
+  {
+    name: 'financial-request',
+    value: {
+      request: {
+        stacks: [
+          {
+            user_id: 'SYNTHETIC_PRIVATE_PLAYER',
+            stack: 123456.78,
+            seat_joined_at: 'SYNTHETIC_PRIVATE_GENERATION',
+          },
+        ],
+      },
+      written: { SYNTHETIC_PRIVATE_PLAYER: 123456.78 },
+    },
+  },
+  {
+    name: 'arbitrary-nested-extension',
+    value: {
+      future: {
+        nested: [
+          {
+            payloadText: 'SYNTHETIC_PRIVATE_PAYLOAD',
+            profile: { secret: 'SYNTHETIC_PRIVATE_PROFILE' },
+          },
+        ],
+      },
+    },
+  },
+];
+describe('prepared whole-receipt diagnostic redaction', () => {
+  for (const extension of privateReceiptExtensions) {
+    it(`invalid success never serializes nested ${extension.name}`, async () => {
+      const error = await rejectedPrivateReceipt({
+        success: true,
+        atomic_hand_commit: true,
+        history_id: 'invalid-history-id',
+        ...extension.value,
+      });
+      expect(error.message).toBe('atomic hand commit refused (invalid_receipt)');
+      expect(error.message).not.toContain('SYNTHETIC_PRIVATE');
+      expect(rpcCalls).toHaveLength(1);
+      expect(calls).toEqual([]);
+      expect(mockWakeHandProjection).not.toHaveBeenCalled();
+      expect(mockObserveCompletedHand).not.toHaveBeenCalled();
+      expect(PrivateReceiptRetryProbe.rolledBackRetryable(error)).toBe(false);
+    });
+    it(`refusal without scalar error never serializes nested ${extension.name}`, async () => {
+      const error = await rejectedPrivateReceipt({
+        success: false,
+        reason: 'payload_mismatch',
+        ...extension.value,
+      });
+      expect(error.message).toBe(
+        'atomic hand commit refused (payload_mismatch): receipt_detail_redacted'
+      );
+      expect(error.message).not.toContain('SYNTHETIC_PRIVATE');
+      expect(rpcCalls).toHaveLength(1);
+      expect(calls).toEqual([]);
+      expect(mockWakeHandProjection).not.toHaveBeenCalled();
+      expect(mockObserveCompletedHand).not.toHaveBeenCalled();
+      expect(PrivateReceiptRetryProbe.rolledBackRetryable(error)).toBe(false);
+    });
+  }
+  it('keeps the existing scalar SQL error text while omitting unrelated nested receipt details', async () => {
+    const error = await rejectedPrivateReceipt({
+      success: false,
+      reason: 'payload_mismatch',
+      error: 'the accepted payload is immutable',
+      ...privateReceiptExtensions[0]!.value,
+    });
+    expect(error.message).toBe(
+      'atomic hand commit refused (payload_mismatch): the accepted payload is immutable'
+    );
+    expect(error.message).not.toContain('SYNTHETIC_PRIVATE');
+    expect(rpcCalls).toHaveLength(1);
+  });
+  for (const reason of ['rolled_back', 'atomic_hand_rolled_back']) {
+    for (const cause of [
+      'F06_RETRY_CANONICAL_LANE',
+      'could not serialize access due to concurrent update',
+      'deadlock detected',
+    ]) {
+      it(`preserves outer rollback retry classification for ${reason}/${cause}`, async () => {
+        const error = await rejectedPrivateReceipt({
+          success: false,
+          reason,
+          error: cause,
+          ...privateReceiptExtensions[1]!.value,
+        });
+        expect(error.message).toBe(`atomic hand commit refused (${reason}): ${cause}`);
+        expect(PrivateReceiptRetryProbe.rolledBackRetryable(error)).toBe(true);
+        // The inner writer still throws the same semantic category immediately;
+        // only the existing outer settlement lane owns retrying this rollback.
+        expect(rpcCalls).toHaveLength(1);
+        expect(mockObserveCompletedHand).not.toHaveBeenCalled();
+      });
+    }
+  }
+  it('does not turn a deterministic rollback into an outer retry', async () => {
+    const error = await rejectedPrivateReceipt({
+      success: false,
+      reason: 'rolled_back',
+      error: 'conservation violation',
+    });
+    expect(PrivateReceiptRetryProbe.rolledBackRetryable(error)).toBe(false);
+    expect(rpcCalls).toHaveLength(1);
+  });
+  it('does not turn a nonrollback refusal with transient text into a rollback', async () => {
+    const error = await rejectedPrivateReceipt({
+      success: false,
+      reason: 'payload_mismatch',
+      error: 'deadlock detected',
+    });
+    expect(PrivateReceiptRetryProbe.rolledBackRetryable(error)).toBe(false);
+    expect(rpcCalls).toHaveLength(1);
+  });
+  it('keeps the unknown refusal category when reason and scalar error are absent', async () => {
+    const error = await rejectedPrivateReceipt({
+      success: false,
+      ...privateReceiptExtensions[2]!.value,
+    });
+    expect(error.message).toBe('atomic hand commit refused (unknown): receipt_detail_redacted');
+    expect(rpcCalls).toHaveLength(1);
+    expect(mockObserveCompletedHand).not.toHaveBeenCalled();
+  });
+  it('preserves accepted receipt data and the existing private observation shape', async () => {
+    const receipt = {
+      success: true,
+      atomic_hand_commit: true,
+      history_id: historyId,
+      replay: true,
+      ...privateReceiptExtensions[0]!.value,
+      ...privateReceiptExtensions[1]!.value,
+    };
+    atomicRpcResults = [{ data: receipt, error: null }];
+    const response = await logHandHistory(atomicParams(GLOBAL_HAND + 901));
+    expect(response).toEqual({
+      handId: historyId,
+      settlementCommitted: true,
+      stackResult: receipt,
+    });
+    expect(rpcCalls).toHaveLength(1);
+    expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
+    expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
+    // Adding a diagnostic repair must not accidentally activate the hypothetical
+    // private roster transport used as an extension in this synthetic fixture.
+    expect(mockObserveCompletedHand.mock.calls[0]![0]).not.toHaveProperty('acceptedActorRoster');
   });
 });

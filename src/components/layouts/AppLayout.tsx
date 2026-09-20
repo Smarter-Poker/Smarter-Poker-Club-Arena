@@ -1,3 +1,4 @@
+import { isDiamondGameRoute } from '../../utils/diamondGameRoute';
 /**
  *  CLUB ENGINE — App Layout
  * Main shell layout with navigation
@@ -66,7 +67,9 @@ function AppLayoutContent() {
   const isTablePage =
     location.pathname.startsWith('/table') ||
     (location.pathname.startsWith('/tournaments/') && location.pathname.endsWith('/play'));
-  const showGlobalHeader = !isTablePage;
+  const immersiveGame = isDiamondGameRoute(location.pathname);
+  const wheelPage = /^\/clubs\/[^/]+\/wheel\/?$/.test(location.pathname);
+  const showGlobalHeader = !isTablePage && (!immersiveGame || wheelPage);
 
   /**
    * Full-bleed routes: pages that render their own edge-to-edge chrome and
@@ -76,7 +79,7 @@ function AppLayoutContent() {
    */
   const normalizedPath = location.pathname.replace(/\/+$/, '');
   const isClubLobbyPage = /^\/clubs\/[^/]+(?:\/lobby)?$/.test(normalizedPath);
-  const isFlushPage = normalizedPath.endsWith('/notifications') || isClubLobbyPage;
+  const isFlushPage = immersiveGame || normalizedPath.endsWith('/notifications') || isClubLobbyPage;
 
   // Daily, Weekly, and Monthly Challenges are tabs within one accessible
   // page, even though each cycle has a bookmarkable URL. Their roving-tab
@@ -96,9 +99,17 @@ function AppLayoutContent() {
   }, [focusRouteKey]);
 
   return (
-    <div className={styles.layout} data-profile-gate-status={profileStatus}>
-      {/* First-time Welcome Modal */}
-      {isReady && <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />}
+    <div
+      className={`${styles.layout} ${wheelPage ? styles.wheelLayout : ''}`}
+      data-profile-gate-status={profileStatus}
+    >
+      {/* First-time Welcome Modal. Signed-in players only (2026-09-17): the
+          Help Center and the legal documents are public and indexed, and a
+          reader arriving from a search result must not meet an entry
+          acknowledgement before the page they came for. The acknowledgement
+          is about ENTERING the arena; a signed-out reader cannot. They meet
+          it the first time they are signed in, exactly as before. */}
+      {isReady && !!user && <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />}
 
       {/* Force Poker Alias Selection for Google Auth users */}
       {profileReady && (
@@ -126,16 +137,16 @@ function AppLayoutContent() {
       {showGlobalHeader && <div className={styles.pinnedActionBarClearance} aria-hidden="true" />}
 
       {/* Global Announcement Banner (shows club announcements when in a club context) */}
-      <ClubAnnouncementBanner />
+      {!immersiveGame && <ClubAnnouncementBanner />}
 
       {/* Route-family navigation keeps global sibling pages reachable without
           reopening the hamburger or duplicating the exhaustive route registry. */}
-      {showGlobalHeader && <ArenaSectionRail />}
+      {showGlobalHeader && !immersiveGame && <ArenaSectionRail />}
 
       {/* Club staff pages share one permission-aware command rail. It renders
           only inside the operations route family and leaves the live lobby,
           table, tournament, and ordinary member pages untouched. */}
-      {showGlobalHeader && <ClubOperationsRail />}
+      {showGlobalHeader && !immersiveGame && <ClubOperationsRail />}
 
       {/* Main Content */}
       <main
@@ -143,9 +154,11 @@ function AppLayoutContent() {
         id="main-content"
         tabIndex={-1}
         className={
-          isFlushPage
-            ? `${styles.main} ${styles.mainFlush} ${styles.casinoStage}`
-            : `${styles.main} ${styles.casinoStage}`
+          immersiveGame
+            ? `${styles.main} ${styles.immersiveGame}`
+            : isFlushPage
+              ? `${styles.main} ${styles.mainFlush} ${styles.casinoStage}`
+              : `${styles.main} ${styles.casinoStage}`
         }
       >
         <RouteErrorBoundary>

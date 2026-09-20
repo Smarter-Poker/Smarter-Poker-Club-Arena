@@ -27,7 +27,21 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { render, cleanup, act } from '@testing-library/react';
+import { render, cleanup, act, screen } from '@testing-library/react';
+
+const presentation = vi.hoisted(() => ({ listeners: new Set<(event: any) => void>() }));
+vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: { id: 'viewer' } }) }));
+vi.mock('../../src/services/EngineStateClient', () => ({
+  engineChannelClient: { onStatusChange: () => () => {} },
+}));
+vi.mock('../../src/services/RealtimeChannelService', () => ({
+  realtimeChannelService: {
+    subscribeToTournament: (_id: string, callbacks: any) => {
+      presentation.listeners.add(callbacks.onEvent);
+      return () => presentation.listeners.delete(callbacks.onEvent);
+    },
+  },
+}));
 
 const POLL_MS = 45_000;
 const BACKOFF_MS = 300_000;
@@ -49,16 +63,39 @@ vi.mock('../../src/services/TournamentService', () => ({
   },
 }));
 
-/** A realtime channel that records nothing and never fires — the poll is the
- *  subject here, and the point of the poll is that it works WITHOUT this. */
+/**
+ * A realtime channel that never fires ON ITS OWN - the poll is the subject of
+ * most of this file, and the point of the poll is that it works WITHOUT this.
+ *
+ * It does now RECORD its handlers, because the HUD has gained a second reason to
+ * hold a channel: the engine's `t-break-<id>` broadcast, which is how a level
+ * change reaches it instantly instead of up to 45s (or, backed off, 5 minutes)
+ * later. Recording is enough to let one test drive that path deliberately; no
+ * test gets an event it did not send.
+ */
+const bus = vi.hoisted(() => ({
+  broadcastHandlers: [] as Array<(message: unknown) => void>,
+  channelKeys: [] as string[],
+}));
 vi.mock('../../src/core/MasterBus', () => {
-  const channel = {
-    on: () => channel,
-    subscribe: () => channel,
+  const makeChannel = () => {
+    const channel: any = {
+      on: (kind: string, _opts: unknown, handler: (message: unknown) => void) => {
+        if (kind === 'broadcast' && typeof handler === 'function') {
+          bus.broadcastHandlers.push(handler);
+        }
+        return channel;
+      },
+      subscribe: () => channel,
+    };
+    return channel;
   };
   return {
     masterBus: {
-      getOrCreateChannel: () => channel,
+      getOrCreateChannel: (key: string) => {
+        bus.channelKeys.push(key);
+        return makeChannel();
+      },
       removeRegisteredChannel: () => {},
       emit: () => {},
       subscribe: () => () => {},
@@ -119,6 +156,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   getTournament.mockReset();
   reportError.mockReset();
+  bus.broadcastHandlers.length = 0;
+  bus.channelKeys.length = 0;
 });
 
 afterEach(() => {
@@ -251,5 +290,121 @@ describe('TournamentHUD polling — behaviour, not source text', () => {
     unmount();
     await tick(POLL_MS * 3);
     expect(getTournament, 'no timer may outlive the component').toHaveBeenCalledTimes(2);
+  });
+});
+
+it('shows actual manager hand-for-hand state in the mounted table HUD without replacing rebuy timing', async () => {
+  getTournament.mockResolvedValue(running({ late_reg_levels: 1, rebuy_cost: 1 }));
+  await mount();
+  expect(screen.getByText('Last Rebuy Level')).toBeTruthy();
+  act(() => {
+    for (const listener of presentation.listeners)
+      listener({
+        type: 'tournament_presentation',
+        payload: { handForHand: true },
+      });
+  });
+  expect(screen.getByText('Hand For Hand · Last Rebuy Level')).toBeTruthy();
+  act(() => {
+    for (const listener of presentation.listeners)
+      listener({
+        type: 'tournament_presentation',
+        payload: { handForHand: false },
+      });
+  });
+  expect(screen.queryByText(/Hand For Hand/)).toBeNull();
+  expect(screen.getByText('Last Rebuy Level')).toBeTruthy();
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE CARRIER THAT ALREADY EXISTED
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The poll above is a backstop, and until now it was the ENTIRE mechanism: this
+ * HUD had no bus listener of any kind, and its `tournaments` postgres_changes
+ * subscription cannot fire because that table is not in the publication
+ * (5,477,895 writes over 117 columns). A seated player could be looking at the
+ * wrong blind level for up to 45 seconds, or five minutes after a sustained
+ * fault, while betting.
+ *
+ * The engine has been broadcasting `level_up` on `t-break-<id>` the whole time,
+ * over Realtime Broadcast, which needs no publication and no row image.
+ * TournamentPage has consumed it since it was written. These tests assert this
+ * HUD now does too, and that it re-reads the AUTHORITATIVE row rather than
+ * trusting the broadcast payload - the payload's `level` is a zero-based index
+ * and carries no `level_started_at`, and that arithmetic has shipped wrong twice.
+ */
+describe('TournamentHUD - the engine broadcast', () => {
+  it('joins the tournament broadcast channel, not only its own', async () => {
+    getTournament.mockResolvedValue(running());
+    render(<TournamentHUD tournamentId="t1" />);
+    await tick(0);
+    expect(bus.channelKeys).toContain('t-break-t1');
+  });
+
+  it('re-reads the authoritative row the moment a level change is broadcast', async () => {
+    getTournament.mockResolvedValue(running());
+    render(<TournamentHUD tournamentId="t1" />);
+    await tick(0);
+    const afterMount = getTournament.mock.calls.length;
+    expect(bus.broadcastHandlers.length).toBeGreaterThan(0);
+
+    // The engine advances the level. No timer is advanced at all here: the
+    // whole point is that the refresh does not wait for the 45s poll.
+    await act(async () => {
+      for (const handler of bus.broadcastHandlers) {
+        handler({
+          payload: { type: 'level_up', payload: { level: 1, smallBlind: 50, bigBlind: 100 } },
+        });
+      }
+    });
+
+    expect(
+      getTournament.mock.calls.length,
+      'a level_up broadcast must trigger an immediate authoritative read'
+    ).toBeGreaterThan(afterMount);
+  });
+
+  it('refreshes on an elimination too, and ignores an event it does not map', async () => {
+    getTournament.mockResolvedValue(running());
+    render(<TournamentHUD tournamentId="t1" />);
+    await tick(0);
+
+    const before = getTournament.mock.calls.length;
+    await act(async () => {
+      for (const handler of bus.broadcastHandlers) {
+        handler({
+          payload: { type: 'player_eliminated', payload: { userId: 'u-1', position: 9 } },
+        });
+      }
+    });
+    const afterElimination = getTournament.mock.calls.length;
+    expect(afterElimination).toBeGreaterThan(before);
+
+    await act(async () => {
+      for (const handler of bus.broadcastHandlers) {
+        handler({ payload: { type: 'chip_race', payload: {} } });
+      }
+    });
+    expect(
+      getTournament.mock.calls.length,
+      'an unmapped broadcast must not cost a database read'
+    ).toBe(afterElimination);
+  });
+
+  it('survives a malformed broadcast without throwing or reading', async () => {
+    getTournament.mockResolvedValue(running());
+    render(<TournamentHUD tournamentId="t1" />);
+    await tick(0);
+    const before = getTournament.mock.calls.length;
+    await act(async () => {
+      for (const handler of bus.broadcastHandlers) {
+        handler({});
+        handler({ payload: null });
+        handler({ payload: { payload: { level: 3 } } }); // no type
+      }
+    });
+    expect(getTournament.mock.calls.length).toBe(before);
   });
 });

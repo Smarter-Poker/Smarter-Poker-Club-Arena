@@ -74,13 +74,15 @@ describe('a seeding cycle finishes inside its tick', () => {
 
   it('the cycle stops starting seats at its time budget', () => {
     const c = code(fleet);
-    expect(c).toMatch(/Date\.now\(\)\s*-\s*cycleStartedAt\s*>=\s*SEED_CYCLE_SEATING_BUDGET_MS/);
+    expect(c).toMatch(/Date\.now\(\)\s*-\s*seatingStartedAt\s*>=\s*SEED_CYCLE_SEATING_BUDGET_MS/);
     // Named, so a withheld table is reportable rather than invisible.
     expect(c).toContain("'cycle_time_budget'");
     expect(c).toMatch(/firstTableWithheld = 'cycle_time_budget'/);
     // Counted in the same beat field as the other withholdings, which is what
     // publishFleetState sends out as withheld_tables.
-    expect(flat(fleet)).toContain('SEED_CYCLE_SEATING_BUDGET_MS) { beat.withheldTables++');
+    expect(flat(fleet)).toMatch(
+      /SEED_CYCLE_SEATING_BUDGET_MS\s*\)\s*\{\s*beat\.withheldTables\+\+/
+    );
   });
 
   it('the seat purchase uses the seeding deadline, not the dealing one', () => {
@@ -110,23 +112,29 @@ describe('a seeding cycle finishes inside its tick', () => {
     expect(budget + seeding + STABLE_HAND_STATE_WRITE_MS).toBeLessThan(TICK_MS);
   });
 
-  it('one table is always tried, so setup alone can never starve the floor', () => {
-    // The budget is measured from the START of the cycle, which includes the
-    // load phase (5.3 s measured). Without this, a slow load phase would
-    // withhold EVERY table under a reason that reads like ordinary throttling,
-    // and the floor would stop being seeded with nothing saying so.
-    const c = code(fleet);
+  it('the seating budget starts when seating starts, so a slow load phase cannot starve the floor', () => {
+    /* THE SEATING BUDGET STARTS WHEN SEATING STARTS (2026-09-16). The budget
+       used to be measured from the start of the cycle, load phase included,
+       on the strength of a 5.3-second load phase. On 2026-09-16 the load
+       phase took 34 to 75 seconds every cycle (the database pool was full),
+       the budget was spent before the first table, the one-table fallback
+       tried the same first table every cycle and every one of its pairs was
+       excluded, and the floor seated nobody for hours: 90 of 110 cash tables
+       empty with 1,000 horses in the pool. A slow load phase is reported on
+       its own line; it does not also cancel seating. The arithmetic the
+       test above protects (budget + one abandoned call + the state write
+       inside the tick) is the seating phase's, and is unchanged. */
     const f = flat(fleet);
+    expect(f).toContain('const seatingStartedAt = Date.now()');
     expect(f).toContain(
-      'tablesConsidered > 0 && Date.now() - cycleStartedAt >= SEED_CYCLE_SEATING_BUDGET_MS'
+      'tablesConsidered > 0 && Date.now() - seatingStartedAt >= SEED_CYCLE_SEATING_BUDGET_MS'
     );
+    expect(f).not.toContain('Date.now() - cycleStartedAt >= SEED_CYCLE_SEATING_BUDGET_MS');
     expect(f).toContain('tablesConsidered++');
     expect(f).toContain('let tablesConsidered = 0');
-    // And it says so rather than passing in silence.
-    expect(f).toContain(
-      'tablesConsidered === 0 && Date.now() - cycleStartedAt >= SEED_CYCLE_SEATING_BUDGET_MS'
-    );
-    expect(f).toContain('the load phase used the whole');
+    // And a load phase past the budget says so rather than passing in silence.
+    expect(f).toContain('loadPhaseMs >= SEED_CYCLE_SEATING_BUDGET_MS');
+    expect(f).toContain('the load phase alone took');
   });
 
   it('both bounds are operator-overridable without a release', () => {

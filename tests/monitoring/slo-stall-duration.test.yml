@@ -7,7 +7,7 @@ tests:
     input_series:
       - series: sp:table_stall:max_ms
         values: '900000+0x6 960000+0x6'
-      - series: poker_maintenance_break_active
+      - series: 'poker_maintenance_break_active{app="club-arena-engine",host="engine-01",instance="host.docker.internal:8080",job="engine_game_server",role="engine"}'
         values: '0+0x13'
     alert_rule_test:
       - eval_time: 6m
@@ -26,25 +26,346 @@ tests:
             exp_annotations:
               summary: A table has made no progress for 16m 0s
               runbook: docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 6m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 7m
+        exp_samples:
+          - labels: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending",severity="critical",component="slo",objective="dealing"}'
+            value: 1
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 11m
+        exp_samples:
+          - labels: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending",severity="critical",component="slo",objective="dealing"}'
+            value: 1
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 12m
+        exp_samples: []
   - name: The existing maintenance guard still suppresses a scheduled break
     interval: 1m
     input_series:
       - series: sp:table_stall:max_ms
         values: '960000+0x12'
-      - series: poker_maintenance_break_active
+      - series: 'poker_maintenance_break_active{app="club-arena-engine",host="engine-01",instance="host.docker.internal:8080",job="engine_game_server",role="engine"}'
         values: '1+0x12'
     alert_rule_test:
       - eval_time: 12m
         alertname: SLOTableHasStalled
         exp_alerts: []
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 0m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 12m
+        exp_samples: []
   - name: Progress clears the alert without waiting for another pending period
     interval: 1m
     input_series:
       - series: sp:table_stall:max_ms
         values: '960000+0x6 0+0x2'
-      - series: poker_maintenance_break_active
+      - series: 'poker_maintenance_break_active{app="club-arena-engine",host="engine-01",instance="host.docker.internal:8080",job="engine_game_server",role="engine"}'
         values: '0+0x9'
     alert_rule_test:
+      - eval_time: 6m
+        alertname: SLOTableHasStalled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: slo
+              objective: dealing
+            exp_annotations:
+              summary: A table has made no progress for 16m 0s
+              runbook: docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md
       - eval_time: 7m
         alertname: SLOTableHasStalled
         exp_alerts: []
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 7m
+        exp_samples: []
+  - name: A labelled break clears firing and holds the six-minute lookback before fresh pending
+    # Prometheus 2.55 includes both range endpoints: the 6m sample remains at 12m.
+    # The next minute observation is pending at 13m; it is not firing at 17m.
+    interval: 1m
+    input_series:
+      - series: sp:table_stall:max_ms
+        values: '960000+0x24'
+      - series: 'poker_maintenance_break_active{app="club-arena-engine",host="engine-01",instance="host.docker.internal:8080",job="engine_game_server",role="engine"}'
+        values: '0+0x5 1 0+0x17'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SLOTableHasStalled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: slo
+              objective: dealing
+            exp_annotations:
+              summary: A table has made no progress for 16m 0s
+              runbook: docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md
+      - eval_time: 6m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 13m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 17m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: SLOTableHasStalled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: slo
+              objective: dealing
+            exp_annotations:
+              summary: A table has made no progress for 16m 0s
+              runbook: docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 5m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 6m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 11m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 12m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 13m
+        exp_samples:
+          - labels: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending",severity="critical",component="slo",objective="dealing"}'
+            value: 1
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 17m
+        exp_samples:
+          - labels: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending",severity="critical",component="slo",objective="dealing"}'
+            value: 1
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 18m
+        exp_samples: []
+  - name: An active second instance excludes the global aggregate
+    interval: 1m
+    input_series:
+      - series: sp:table_stall:max_ms
+        values: '960000+0x24'
+      - series: 'poker_maintenance_break_active{app="club-arena-engine",host="engine-01",instance="host.docker.internal:8080",job="engine_game_server",role="engine"}'
+        values: '0+0x24'
+      - series: 'poker_maintenance_break_active{app="club-arena-engine",host="engine-02",instance="second-engine:8080",job="engine_game_server",role="engine"}'
+        values: '1+0x24'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 0m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 12m
+        exp_samples: []
+  - name: An active first instance excludes the global aggregate
+    interval: 1m
+    input_series:
+      - series: sp:table_stall:max_ms
+        values: '960000+0x24'
+      - series: 'poker_maintenance_break_active{app="club-arena-engine",host="engine-01",instance="host.docker.internal:8080",job="engine_game_server",role="engine"}'
+        values: '1+0x24'
+      - series: 'poker_maintenance_break_active{app="club-arena-engine",host="engine-02",instance="second-engine:8080",job="engine_game_server",role="engine"}'
+        values: '0+0x24'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 0m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 12m
+        exp_samples: []
+  - name: Two active instances preserve set exclusion without a matching error
+    interval: 1m
+    input_series:
+      - series: sp:table_stall:max_ms
+        values: '960000+0x24'
+      - series: 'poker_maintenance_break_active{app="club-arena-engine",host="engine-01",instance="host.docker.internal:8080",job="engine_game_server",role="engine"}'
+        values: '1+0x24'
+      - series: 'poker_maintenance_break_active{app="club-arena-engine",host="engine-02",instance="second-engine:8080",job="engine_game_server",role="engine"}'
+        values: '1+0x24'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 0m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 12m
+        exp_samples: []
+  - name: Two inactive instances retain one global alert with unchanged labels
+    interval: 1m
+    input_series:
+      - series: sp:table_stall:max_ms
+        values: '960000+0x24'
+      - series: 'poker_maintenance_break_active{app="club-arena-engine",host="engine-01",instance="host.docker.internal:8080",job="engine_game_server",role="engine"}'
+        values: '0+0x24'
+      - series: 'poker_maintenance_break_active{app="club-arena-engine",host="engine-02",instance="second-engine:8080",job="engine_game_server",role="engine"}'
+        values: '0+0x24'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: SLOTableHasStalled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: slo
+              objective: dealing
+            exp_annotations:
+              summary: A table has made no progress for 16m 0s
+              runbook: docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 4m
+        exp_samples:
+          - labels: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending",severity="critical",component="slo",objective="dealing"}'
+            value: 1
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 5m
+        exp_samples: []
+  - name: Missing maintenance telemetry cannot silently suppress a real stall
+    interval: 1m
+    input_series:
+      - series: sp:table_stall:max_ms
+        values: '960000+0x24'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: SLOTableHasStalled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: slo
+              objective: dealing
+            exp_annotations:
+              summary: A table has made no progress for 16m 0s
+              runbook: docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md
+      - eval_time: 12m
+        alertname: SLOTableHasStalled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: slo
+              objective: dealing
+            exp_annotations:
+              summary: A table has made no progress for 16m 0s
+              runbook: docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 0m
+        exp_samples:
+          - labels: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending",severity="critical",component="slo",objective="dealing"}'
+            value: 1
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 4m
+        exp_samples:
+          - labels: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending",severity="critical",component="slo",objective="dealing"}'
+            value: 1
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 5m
+        exp_samples: []
+  - name: A stale maintenance series retains only its last six minutes of evidence
+    # The series becomes stale at 7m; its last 1 at 6m remains in the closed range at 12m.
+    # A missing current series is not an indefinite maintenance exclusion.
+    interval: 1m
+    input_series:
+      - series: sp:table_stall:max_ms
+        values: '960000+0x24'
+      - series: 'poker_maintenance_break_active{app="club-arena-engine",host="engine-01",instance="host.docker.internal:8080",job="engine_game_server",role="engine"}'
+        values: '0+0x5 1 stale _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SLOTableHasStalled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: slo
+              objective: dealing
+            exp_annotations:
+              summary: A table has made no progress for 16m 0s
+              runbook: docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md
+      - eval_time: 6m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 13m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 17m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: SLOTableHasStalled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: slo
+              objective: dealing
+            exp_annotations:
+              summary: A table has made no progress for 16m 0s
+              runbook: docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 6m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 11m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 12m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 13m
+        exp_samples:
+          - labels: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending",severity="critical",component="slo",objective="dealing"}'
+            value: 1
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 17m
+        exp_samples:
+          - labels: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending",severity="critical",component="slo",objective="dealing"}'
+            value: 1
+      - expr: 'ALERTS{alertname="SLOTableHasStalled",alertstate="pending"}'
+        eval_time: 18m
+        exp_samples: []

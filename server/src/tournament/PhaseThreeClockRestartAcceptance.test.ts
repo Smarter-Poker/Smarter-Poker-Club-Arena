@@ -204,6 +204,7 @@ function tournamentTransport() {
     id: T,
     status: 'RUNNING',
     tournament_type: 'mtt',
+    format_contract: 'mtt-v1',
     current_level: 0,
     blind_structure: [{ smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 10 }],
     level_started_at: '2026-09-11T12:45:30.000Z',
@@ -219,12 +220,13 @@ function tournamentTransport() {
     if (!['tournaments', 'tables'].includes(relation))
       throw new Error(`Unexpected relation ${relation}`);
     let patch: Record<string, unknown> | null = null;
+    let returnUpdatedRow = false;
     const result = () => {
       if (patch) {
         if (relation !== 'tournaments') throw new Error('Unexpected table blind rewrite');
         writes.push({ patch: { ...patch }, authority: currentTournamentDataAuthority() });
         Object.assign(row, patch);
-        return { data: null, error: null };
+        return { data: returnUpdatedRow ? structuredClone(row) : null, error: null };
       }
       return {
         data:
@@ -245,15 +247,21 @@ function tournamentTransport() {
     };
     const query: any = {
       select() {
+        if (patch) returnUpdatedRow = true;
         return query;
       },
       update(value: Record<string, unknown>) {
         patch = value;
         return query;
       },
-      eq(column: string, value: string) {
-        if (value !== T || !['id', 'tournament_id'].includes(column))
-          throw new Error('Scope escaped');
+      eq(column: string, value: string | number) {
+        const scopedId = ['id', 'tournament_id'].includes(column) && value === T;
+        const activeClock =
+          relation === 'tournaments' &&
+          patch !== null &&
+          ((column === 'status' && value === 'RUNNING' && row.status === value) ||
+            (column === 'current_level' && value === row.current_level));
+        if (!scopedId && !activeClock) throw new Error('Scope escaped');
         return query;
       },
       in() {
@@ -452,7 +460,16 @@ describe('CA-03-09 clock, hand and restart composition', () => {
     ).toBe(true);
     expect(
       writes.filter((write) => 'on_break' in write.patch && write.patch.on_break === false)
-    ).toHaveLength(1);
+    ).toEqual([
+      {
+        patch: {
+          on_break: false,
+          break_ends_at: null,
+          level_started_at: row.level_started_at,
+        },
+        authority: B2,
+      },
+    ]);
     // The retired dealer's held gate is released only for local test teardown.
     firstTable.resumeFromMaintenance();
     firstTable.resumeDealing();

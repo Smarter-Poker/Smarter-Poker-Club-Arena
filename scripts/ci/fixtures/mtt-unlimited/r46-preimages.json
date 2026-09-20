@@ -1,0 +1,178 @@
+{
+  "functions": [
+    {
+      "signature": "fn_tournament_entry_cap_reached(uuid)",
+      "source_md5": "b3fe14943dd45edcca84f9396034b28c"
+    },
+    {
+      "signature": "fn_enforce_tournament_capacity()",
+      "source_md5": "002d409f182d90f7e802ca2723d8ec18"
+    },
+    {
+      "signature": "fn_tournament_late_registration_open(uuid)",
+      "source_md5": "ba1c6218246bddd37dc68f746df9e5ef"
+    },
+    {
+      "signature": "fn_tournament_atomic_register(uuid,uuid,uuid,numeric)",
+      "source_md5": "93009ae524c12102c965f46ef4381e43"
+    },
+    {
+      "signature": "fn_award_satellite_seat(uuid,uuid,uuid,text,integer)",
+      "source_md5": "2c21c56c6a9d4a2f8ee79082bd4fef57"
+    },
+    {
+      "signature": "fn_deliver_satellite_ticket_exact(uuid,uuid,uuid,text,integer,numeric)",
+      "source_md5": "216b09a2aaf0c60559538ad7caecfbae"
+    },
+    {
+      "signature": "fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)",
+      "source_md5": "83bf8b297d07bbae671707f24afec271"
+    },
+    {
+      "signature": "fn_register_for_tournament_before_atomic_capacity_20260907(uuid,boolean)",
+      "source_md5": "fa10ae12b0b1882c497377ec1f3d36b9"
+    },
+    {
+      "signature": "fn_ca_register_for_tournament_with_ticket_for(uuid,uuid,uuid)",
+      "source_md5": "b274c4f4e192e0b404397db939476284"
+    },
+    {
+      "signature": "fn_tournaments_creation_guard()",
+      "source_md5": "c57c2c577f32e61ad10088e2b34ea3b9"
+    },
+    {
+      "signature": "fn_create_tournament_governed_legacy(uuid,jsonb)",
+      "source_md5": "d00caa094f988ca352b6f7038f660c19"
+    },
+    {
+      "signature": "fn_poker_diamond_create_tournament(jsonb)",
+      "source_md5": "9fded7b537c67fffe5e7e5090d004aeb"
+    },
+    {
+      "signature": "fn_tournament_management_readiness_for_row(jsonb)",
+      "source_md5": "5e94202dfa8e694fb012dbe25abfdf27"
+    },
+    {
+      "signature": "fn_guard_new_mtt_blind_contract()",
+      "source_md5": "9b8471c860ac00afa814a6553135c95b"
+    },
+    {
+      "signature": "fn_short_formats_never_break()",
+      "source_md5": "541f6bd03a10c456f237d1e9c6be91d4"
+    },
+    {
+      "signature": "fn_ca_tournament_seat_cap(uuid)",
+      "source_md5": "177e2e82ef01b126d16e7706f9d29e12"
+    },
+    {
+      "signature": "fn_ensure_late_registration_capacity(uuid,integer)",
+      "source_md5": "b36dd36a9348d29be1092c7d42954c03"
+    },
+    {
+      "signature": "fn_sync_seat_first_player_count(uuid)",
+      "source_md5": "609983772f8468d96b7b3d8dcfeafaea"
+    },
+    {
+      "signature": "fn_seat_change_syncs_seat_first_count()",
+      "source_md5": "d105db62a249ba49b267d8d28bb55b2f"
+    },
+    {
+      "signature": "fn_seat_first_boards_ready()",
+      "source_md5": "822966ea0bf2979145c10a1c4e010399"
+    },
+    {
+      "signature": "fn_take_seat_and_buy_in_before_maintenance_announcement_gate(uuid,integer)",
+      "source_md5": "a4b73120eb5bad86eba900abec29b60a"
+    },
+    {
+      "signature": "fn_seat_horse_in_seat_first_game_before_maintenance_gate(uuid,uuid)",
+      "source_md5": "f99ebe17189d4b1efef52336cef69715"
+    },
+    {
+      "signature": "fn_reconcile_tournament_denormals()",
+      "source_md5": "88897bba83dd2194f4d7b009b8b5b0c1"
+    },
+    {
+      "signature": "fn_create_seat_first_game_atomic(uuid,jsonb)",
+      "source_md5": "b40dd95b7a87019070a8abf0fcc4fff3"
+    },
+    {
+      "signature": "fn_tournament_progress_metrics(integer,integer)",
+      "source_md5": "2f2aa9b7f1647d3840c78475ea9616b5"
+    },
+    {
+      "signature": "fn_managed_game_contract_document(text,jsonb)",
+      "source_md5": "e691ed61c33d5b6b91045a6575245b70"
+    },
+    {
+      "signature": "fn_guard_managed_game_lifecycle()",
+      "source_md5": "7f2ba185a5714534dff4e4c01d07466e"
+    },
+    {
+      "signature": "fn_overlay_at_risk(uuid)",
+      "source_md5": "5ccfc992bb8c775dd528843a71b52fdc"
+    },
+    {
+      "signature": "fn_freeroll_fill_targets(uuid)",
+      "source_md5": "ed7ffb085c67cbe299dd754738ae279f"
+    },
+    {
+      "signature": "fn_update_managed_game(text,uuid,jsonb)",
+      "source_md5": "d85ca8d75218cdc0911c2fbdb1e73ff9"
+    },
+    {
+      "signature": "fn_list_managed_games(text,uuid,timestamp with time zone,text,uuid,integer,integer,integer,text,uuid,integer)",
+      "source_md5": "d7ef96526d76c5b26cf89653d0fe9771"
+    },
+    {
+      "signature": "fn_ca_guard_seat_creation()",
+      "source_md5": "534207f17003588a6ada8b6ea894442d"
+    },
+    {
+      "signature": "fn_release_phantom_seat_claims()",
+      "source_md5": "2153075f26134fa1092bddab64218620"
+    },
+    {
+      "signature": "fn_complete_tournament_launch_before_lease_generation(uuid,uuid)",
+      "source_md5": "3666a6fb50cc8bbea728dd7c861ad915"
+    },
+    {
+      "signature": "fn_ca_unregister_tournament_player_exact(uuid,uuid,uuid,text,uuid)",
+      "source_md5": "e37cab626ca4bdd3c84c8acec8d9dba3"
+    },
+    {
+      "signature": "fn_poker_diamond_tournament_unregister(uuid,uuid,uuid)",
+      "source_md5": "b208b04fce4a32f5273119bcf2d25450"
+    },
+    {
+      "signature": "ca_club_tournaments(uuid,integer,integer)",
+      "source_md5": "5eada3db23363039e83ebbfe361a009e"
+    },
+    {
+      "signature": "fn_community_search(text,text,integer)",
+      "source_md5": "1c28e2d0bd58880ccadc90fb1f3dda5a"
+    },
+    {
+      "signature": "get_club_home(text)",
+      "source_md5": "b40b6cc79c482925ab7a9b46c0bdf3be"
+    }
+  ],
+  "constraints": [
+    {
+      "conname": "tournament_prize_math_contract_valid",
+      "definition": "CHECK ((((payout_math_version = 1) AND (payout_unit_cents = 1)) OR ((payout_math_version = 2) AND (payout_unit_cents = ANY (ARRAY[1, 100])) AND (upper(COALESCE(tournament_type, ''::text)) = 'MTT'::text) AND (COALESCE(max_players, 0) > 2) AND (lower(COALESCE(variant, ''::text)) <> ALL (ARRAY['spin'::text, 'sng'::text, 'satellite'::text])) AND (NOT COALESCE(is_premium_spin, false)) AND (satellite_target_id IS NULL) AND (satellite_target IS NULL))))"
+    },
+    {
+      "conname": "tournaments_heads_up_rake_within_5_pct",
+      "definition": "CHECK (((max_players IS NULL) OR (max_players > 2) OR (COALESCE(buy_in_fee, (0)::numeric) <= (round(((COALESCE(buy_in_amount, (0)::numeric) + COALESCE(buy_in_fee, (0)::numeric)) * 0.05), 2) + 0.005)))) NOT VALID"
+    },
+    {
+      "conname": "tournaments_spin_has_no_fee",
+      "definition": "CHECK (((created_at < '2026-08-21 00:00:00+00'::timestamp with time zone) OR (((lower(COALESCE(variant, ''::text)) <> 'spin'::text) AND (upper(COALESCE(tournament_type, ''::text)) <> 'SPIN'::text)) OR (COALESCE(buy_in_fee, (0)::numeric) = (0)::numeric)))) NOT VALID"
+    },
+    {
+      "conname": "tournaments_spin_no_extra_rake",
+      "definition": "CHECK (((created_at < '2026-08-21 00:00:00+00'::timestamp with time zone) OR ((variant IS DISTINCT FROM 'spin'::text) AND (upper(COALESCE(tournament_type, ''::text)) <> 'SPIN'::text)) OR (COALESCE(buy_in_fee, (0)::numeric) = (0)::numeric))) NOT VALID"
+    }
+  ]
+}

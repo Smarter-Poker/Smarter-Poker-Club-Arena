@@ -18,11 +18,54 @@ import { getLiveHorseDecisionWorker } from '../../engine/horseDecision/index.js'
 import { wakeHandProjection } from './handProjection.js';
 import { bindHorseObservationIdentity } from '../../engine/HorseObservationIdentity.js';
 
+/** Continue one retained original at admission; pending/unknown cannot admit a deal. */
+export async function resumeRetainedHandSubmission(
+  tableId: string,
+  instanceId: string,
+  leaseGeneration: string
+): Promise<{ handNumber: number; submissionId: string } | null> {
+  const { data, error } = await supabase.rpc('fn_ca_resume_hand_submission', {
+    p_table_id: tableId,
+    p_instance_id: instanceId,
+    p_lease_generation: leaseGeneration,
+  });
+  if (error) throw new Error(`retained_hand_submission_readback_failed: ${error.message}`);
+  if (!data || typeof data !== 'object' || typeof data.found !== 'boolean')
+    throw new Error('retained_hand_submission_receipt_unproven');
+  if (!data.found) return null;
+  if (data.completed !== true)
+    throw new Error(`retained_hand_submission_pending: ${String(data.reason ?? 'unknown')}`);
+  const handNumber = Number(data.hand_number);
+  if (
+    data.success !== true ||
+    data.atomic_hand_commit !== true ||
+    data.snapshot_completed !== true ||
+    data.post_commit_completed !== true ||
+    data.table_id !== tableId ||
+    data.history_id !== data.submission_id ||
+    typeof data.submission_id !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.submission_id) ||
+    typeof data.submission_hash !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(data.submission_hash) ||
+    typeof data.hand_number !== 'string' ||
+    !/^[1-9][0-9]*$/.test(data.hand_number) ||
+    !Number.isSafeInteger(handNumber)
+  )
+    throw new Error('retained_hand_submission_receipt_unproven');
+  // Existing durable projection work owns notifications; a wake is not proof.
+  void wakeHandProjection().catch((cause) => reportError(cause, 'hand_submission.projection_wake'));
+  return { handNumber, submissionId: data.submission_id };
+}
+
 export interface AtomicHandCommitInput {
   stacks: Array<{
     user_id: string;
     stack: number;
     stack_before: number;
+    seat_id?: string;
+    seat_joined_at?: string;
+    occupancy_id?: string;
+    funding_manifest_id?: string;
   }>;
   rake: number;
   bbj: number;
@@ -87,8 +130,8 @@ export interface TournamentStackProof {
  * One immutable atomic-hand promise owns the complete schema-reload window.
  * The 41-second sleep budget outlives the measured 28-second PostgREST reload;
  * thirteen 15-second request deadlines plus this budget still fit inside the
- * five-minute terminal-settlement barrier. No timer or successor engine ever
- * receives the accepted hand payload.
+ * five-minute terminal-settlement barrier. Replacement startup may request the
+ * qualified database owner to continue its immutable original receipt.
  */
 export const HAND_COMMIT_RETRY_DELAYS_MS: readonly number[] = Object.freeze([
   200, 400, 800, 1_600, 3_000, 5_000, 5_000, 5_000, 5_000, 5_000, 5_000, 5_000,
@@ -326,6 +369,7 @@ export async function logHandHistory(params: {
     stage: string;
     publicNode?: import('../../engine/HorsePublicActionNode.js').HorsePublicActionNode;
     origin?: import('../../types.js').AcceptedActionOrigin;
+    historyEvent?: 'uncalled_bet_returned';
     observationIdentity?: import('../../engine/HorseObservationIdentity.js').HorseObservationIdentity;
   }[];
   showdownResults?: {
@@ -729,24 +773,71 @@ async function insertHandHistoryRow(
       : {}),
   });
   let lastError = 'no response';
+  let rollbackRetries = 0;
+  const rollbackRetryDelays = [250, 1_000] as const;
+  let submission:
+    | { p_submission_id: string; p_instance_id: string; p_lease_generation: string }
+    | undefined;
+  let submissionHash: string | undefined;
 
   // Every retry is the same idempotent transaction.  This loop exists only
-  // for the ambiguous transport case: a lost HTTP response may follow a
-  // committed hand.  There is no alternate writer and no per-seat fallback.
+  // for ambiguous transport and the narrowly qualified rollback envelope below.
+  // Lost responses remain unknown; no alternate writer or per-seat fallback.
   for (let attempt = 0; attempt <= HAND_COMMIT_RETRY_DELAYS_MS.length; attempt++) {
     try {
       atomicCommit.assertLeaseAuthority?.();
-      const { data, error } = await supabase.rpc('fn_ca_commit_hand_settlement', payload);
+      if (hasPostCommitObligations && !submission) {
+        // A process-local clone cannot survive a terminal engine refusal. First
+        // retain the exact original request under its current lease. An unknown
+        // acknowledgement re-enters this same idempotent door within the
+        // existing attempt budget; it never starts a financial write.
+        const retained = await supabase.rpc('fn_ca_retain_hand_submission', {
+          p_request: payload,
+        });
+        if (retained.error) {
+          if (retained.error.code === '22023' || retained.error.code === '55000') {
+            throw new Error('atomic hand commit refused (submission_retention_refused)');
+          }
+          throw new Error('original hand submission acknowledgement unavailable');
+        }
+        const receipt = retained.data as Record<string, unknown> | null;
+        if (
+          receipt?.retained !== true ||
+          receipt.submission_id !== payload.p_hand_row.id ||
+          typeof receipt.request_hash !== 'string' ||
+          !/^[0-9a-f]{64}$/.test(receipt.request_hash)
+        ) {
+          throw new Error('atomic hand commit refused (invalid_submission_receipt)');
+        }
+        submissionHash = receipt.request_hash;
+        submission = {
+          p_submission_id: receipt.submission_id as string,
+          p_instance_id: atomicCommit.leaseInstanceId!,
+          p_lease_generation: atomicCommit.leaseGeneration!,
+        };
+        atomicCommit.assertLeaseAuthority?.();
+      }
+      const { data, error } = submission
+        ? await supabase.rpc('fn_ca_commit_hand_submission', submission)
+        : await supabase.rpc('fn_ca_commit_hand_settlement', payload);
       const result = (data ?? {}) as AtomicCommitResult;
       if (!error && result.success === true && result.atomic_hand_commit === true) {
+        if (
+          submission &&
+          (result.submission_id !== submission.p_submission_id ||
+            result.submission_hash !== submissionHash ||
+            result.snapshot_completed !== true)
+        ) {
+          throw new Error('atomic hand commit refused (missing_submission_acceptance)');
+        }
         if (hasPostCommitObligations && result.post_commit_obligations !== true) {
           throw new Error('atomic hand commit refused (missing_post_commit_receipt)');
         }
         const historyId = typeof result.history_id === 'string' ? result.history_id : '';
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(historyId)) {
-          throw new Error(
-            `atomic hand commit refused (invalid_receipt): ${JSON.stringify(result)}`
-          );
+          // Receipt extensions are private; diagnostic text must not copy the
+          // entire accepted response into ordinary error reporting.
+          throw new Error('atomic hand commit refused (invalid_receipt)');
         }
         const requestedHistoryId = payload.p_hand_row.id;
         if (
@@ -781,8 +872,33 @@ async function insertHandHistoryRow(
         };
       }
       if (!error && result.success === false && result.reason !== 'in_flight') {
+        // Only this canonical core envelope proves a retryable rolled-back
+        // attempt. Message wording alone and transport failure prove no rollback.
+        // Keep the original captured payload and owner; never reenter the mutable
+        // post-hand callback to build another request.
+        const rollback =
+          result.atomic_hand_commit === false &&
+          result.reason === 'atomic_hand_rolled_back' &&
+          (result.sqlstate === '40001' || result.sqlstate === '40P01') &&
+          typeof result.table_id === 'string' &&
+          result.table_id.toLowerCase() === payload.p_table_id.toLowerCase() &&
+          (typeof result.hand_number === 'number' || typeof result.hand_number === 'string') &&
+          String(result.hand_number) === String(payload.p_hand_number) &&
+          typeof result.commit_hash === 'string' &&
+          /^[0-9a-f]{64}$/.test(result.commit_hash);
+        const rollbackDelay = rollbackRetryDelays[rollbackRetries];
+        if (
+          rollback &&
+          rollbackDelay !== undefined &&
+          attempt < HAND_COMMIT_RETRY_DELAYS_MS.length
+        ) {
+          rollbackRetries++;
+          lastError = `confirmed atomic hand rollback (${String(result.sqlstate)}): ${String(result.error)}`;
+          await new Promise<void>((resolve) => setTimeout(resolve, rollbackDelay));
+          continue; // The loop reasserts original lease authority before dispatch.
+        }
         throw new Error(
-          `atomic hand commit refused (${result.reason ?? 'unknown'}): ${String(result.error ?? JSON.stringify(result))}`
+          `atomic hand commit refused (${result.reason ?? 'unknown'}): ${String(result.error ?? 'receipt_detail_redacted')}`
         );
       }
       lastError = error?.message ?? String(result.reason ?? result.error ?? 'in_flight');

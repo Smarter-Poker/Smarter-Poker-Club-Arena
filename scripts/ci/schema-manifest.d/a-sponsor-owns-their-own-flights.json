@@ -1,0 +1,16 @@
+{
+  "_owner": "agent/cowork-ads6/feat/a-sponsor-owns-their-flights. Applied to production as migration a_sponsor_owns_their_own_flights_and_every_flight_has_a_post (file 20260913193627): a signed-in sponsor opens their own advertiser, uploads into their own folder, books a flight into the same review queue a club uses, reads their own numbers, and every self-serve flight (club or sponsor) carries the 3:4 poster the full-screen popup shows.",
+  "functions": [
+    "fn_sponsor_advertiser_mine",
+    "fn_sponsor_advertiser_upsert",
+    "fn_sponsor_ad_submit",
+    "fn_sponsor_campaign_list",
+    "fn_ad_campaign_report",
+    "fn_club_ad_cancel",
+    "fn_club_ad_submit",
+    "fn_sponsor_campaign_create"
+  ],
+  "columns": {
+    "ad_advertiser": ["self_serve"]
+  }
+}

@@ -104,7 +104,7 @@ describe('seat-first can turn back ON, not only off', () => {
   it('a missing cap is not a heads-up', () => {
     // `max_players ?? 0` with `<= 2` called every uncapped tournament a
     // two-seat game and offered seat-first buy-ins the RPC refuses.
-    expect(table).toContain("fmt === 'spin' || (maxP > 0 && maxP <= 2)");
+    expect(table).toContain('isSeatFirstTournamentFormat(tournData) && maxP !== null');
   });
 
   it('an unknown wallet balance does not read as an empty one', () => {

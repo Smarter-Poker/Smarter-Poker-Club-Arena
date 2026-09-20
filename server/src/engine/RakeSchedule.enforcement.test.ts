@@ -43,13 +43,20 @@ import type { RakeConfig } from '../types.js';
  * this helper is not updated, these tests stop reflecting production — so keep
  * them in lockstep.
  */
-function productionRakeConfig(sb: number, bb: number, variant = 'nlh'): RakeConfig {
+function productionRakeConfig(
+  sb: number,
+  bb: number,
+  variant = 'nlh',
+  /** tables.max_players. Omitted = the nine-max ladder, as the engine reads it
+      when a table row carries no usable seat count. */
+  seats?: number
+): RakeConfig {
   const full = getFullRakeConfig(sb, bb, variant);
   return {
     percent: full.rakePercent,
     cap: full.rakeCap,
     noFlopNoDrop: true,
-    playerCountCaps: getPlayerCountCaps(full.rakeCap),
+    playerCountCaps: getPlayerCountCaps(full.rakeCap, seats),
   };
 }
 
@@ -111,9 +118,37 @@ describe('rake schedule - player-count cap reduction (Bible V8 §2.9)', () => {
     expect(calculateRake(HUGE_POT, true, cfg, 2)).toBe(2.5);
   });
 
-  it('3-handed pays 67% of the cap', () => {
-    const cfg = productionRakeConfig(1, 2); // cap 5 -> 3.35
-    expect(calculateRake(HUGE_POT, true, cfg, 3)).toBe(3.35);
+  it('3-handed pays 75% of the cap on a nine-max table', () => {
+    // Dan 2026-09-14 moved this rung from 67% to 75%.
+    const cfg = productionRakeConfig(1, 2, 'nlh', 9); // cap 5 -> 3.75
+    expect(calculateRake(HUGE_POT, true, cfg, 3)).toBe(3.75);
+  });
+
+  it('3-handed pays the FULL cap on a 6, 7 or 8-max table', () => {
+    // Dan 2026-09-14: "ONCE ANY 6-8 HANDED GAME REACHES 3+ PLAYERS FULL RAKE
+    // + BBJ IS APPLIED." The discount is a nine-max rule; on a short table
+    // three players is most of a game, not a table that has emptied out.
+    for (const seats of [6, 7, 8]) {
+      const cfg = productionRakeConfig(1, 2, 'nlh', seats);
+      expect(calculateRake(HUGE_POT, true, cfg, 3), `${seats}-max`).toBe(5);
+    }
+  });
+
+  it('heads-up keeps half the cap at every table size', () => {
+    // Only the three-handed rung is seat-gated. Two players is two players.
+    for (const seats of [2, 6, 8, 9, undefined]) {
+      const cfg = productionRakeConfig(1, 2, 'nlh', seats);
+      expect(calculateRake(HUGE_POT, true, cfg, 2), `${seats}-max`).toBe(2.5);
+    }
+  });
+
+  it('falls back to the nine-max ladder when the seat count is unusable', () => {
+    // A table row that failed to load, or a 0/NaN max_players, must price a
+    // pot as it was priced yesterday - never higher.
+    for (const seats of [undefined, 0, Number.NaN]) {
+      const cfg = productionRakeConfig(1, 2, 'nlh', seats);
+      expect(calculateRake(HUGE_POT, true, cfg, 3), `seats=${seats}`).toBe(3.75);
+    }
   });
 
   it('4+ handed pays the full cap', () => {
@@ -122,15 +157,17 @@ describe('rake schedule - player-count cap reduction (Bible V8 §2.9)', () => {
     expect(calculateRake(HUGE_POT, true, cfg, 9)).toBe(5);
   });
 
-  it('a short-handed cap is never larger than the full cap, at any stake', () => {
+  it('a short-handed cap is never larger than the full cap, at any stake or table size', () => {
     for (const row of RAKE_SCHEDULE) {
-      const cfg = productionRakeConfig(row.sb, row.bb);
-      const hu = calculateRake(HUGE_POT, true, cfg, 2);
-      const three = calculateRake(HUGE_POT, true, cfg, 3);
-      const full = calculateRake(HUGE_POT, true, cfg, 6);
-      expect(hu, `${row.sb}/${row.bb} heads-up`).toBeLessThanOrEqual(full);
-      expect(three, `${row.sb}/${row.bb} 3-handed`).toBeLessThanOrEqual(full);
-      expect(hu, `${row.sb}/${row.bb}`).toBeLessThanOrEqual(three);
+      for (const seats of [undefined, 2, 6, 7, 8, 9, 10]) {
+        const cfg = productionRakeConfig(row.sb, row.bb, 'nlh', seats);
+        const hu = calculateRake(HUGE_POT, true, cfg, 2);
+        const three = calculateRake(HUGE_POT, true, cfg, 3);
+        const full = calculateRake(HUGE_POT, true, cfg, 6);
+        expect(hu, `${row.sb}/${row.bb} ${seats}-max heads-up`).toBeLessThanOrEqual(full);
+        expect(three, `${row.sb}/${row.bb} ${seats}-max 3-handed`).toBeLessThanOrEqual(full);
+        expect(hu, `${row.sb}/${row.bb} ${seats}-max`).toBeLessThanOrEqual(three);
+      }
     }
   });
 });

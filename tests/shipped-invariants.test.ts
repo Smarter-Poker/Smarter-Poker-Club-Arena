@@ -28,7 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceYamlBlock } from './helpers/sourceWindow';
+import { sliceYamlBlock, sliceBlockAfter } from './helpers/sourceWindow';
 
 const root = (p: string) => resolve(__dirname, '..', p);
 const read = (p: string) => readFileSync(root(p), 'utf8');
@@ -544,9 +544,26 @@ it('historical union statements and payment authority follow the invoice issuer'
 it('union financial overview uses complete recorded statements and explicit payment status', () => {
   expect(read('src/services/UnionService.ts')).toContain("supabase.rpc('ca_union_statement_board'");
   expect(read('src/services/UnionService.ts')).not.toContain('holdsByClub');
-  expect(read('src/stores/useUnionStore.ts')).toContain(
-    'getSettlementReportForPeriod(unionId, periodId)'
+  const report = sliceBlockAfter(
+    read('src/stores/useUnionStore.ts'),
+    'loadConsolidatedReport: async'
   );
+  // Ignore layout only; retain exact scope, period and sticky-read guards.
+  expect(report).toMatch(
+    /if\s*\(!id\s*\|\|\s*!periodId\s*\|\|\s*id\s*!==\s*unionId\.toLowerCase\(\)\s*\|\|\s*!captured\?\.\(\)\)/
+  );
+  expect(report).toMatch(/current\s*=\s*\(\)\s*=>\s*captured\(\)\s*&&\s*read\s*===\s*detailRead/);
+  expect(report).toMatch(
+    /SettlementService\.getPeriodRecord\(periodId,\s*\{\s*scopeKind:\s*'union',\s*scopeId:\s*id,\s*isCurrent:\s*current,?\s*\}\)/
+  );
+  expect(report).toMatch(/UnionService\.getSettlementReportForPeriod\(id,\s*periodId\)/);
+  expect(report.indexOf('getPeriodRecord')).toBeLessThan(
+    report.indexOf('getSettlementReportForPeriod')
+  );
+  expect(report).toMatch(
+    /if\s*\(!current\(\)\)\s*return;\s*const report\s*=\s*await UnionService\.getSettlementReportForPeriod/
+  );
+  expect(report).toMatch(/if\s*\(current\(\)\)\s*set\(\{\s*consolidatedReport:\s*report\s*\}\)/);
   expect(read('src/pages/UnionDetailPage.tsx')).toContain('status: cb.status');
   expect(
     read(

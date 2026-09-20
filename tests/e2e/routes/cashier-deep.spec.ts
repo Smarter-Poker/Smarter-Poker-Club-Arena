@@ -10,8 +10,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-
-import { isSentryEnvelopeRateLimitConsoleError } from '../support/productionConsoleErrorPolicy';
+import { openTradeRecord } from '../support/cashierRecords';
 
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const HAS_AUTH = Boolean(process.env.SP_EMAIL && process.env.SP_PASS);
@@ -58,7 +57,7 @@ test.describe('Cashier Trade — deep authenticated UX', () => {
     page,
   }) => {
     const tablist = await openTradeCashier(page);
-    await tablist.getByRole('tab', { name: 'Trade Record', exact: true }).click();
+    await openTradeRecord(page, tablist);
     const panel = page.getByRole('tabpanel', { name: 'Trade Record' });
     await expect(panel).toBeVisible();
 
@@ -112,8 +111,7 @@ test.describe('Cashier Trade — deep authenticated UX', () => {
       (entry) =>
         !entry.text.includes('[cashier-telemetry]') &&
         !entry.text.includes('favicon') &&
-        !entry.url.includes('favicon') &&
-        !isSentryEnvelopeRateLimitConsoleError(entry)
+        !entry.url.includes('favicon')
     );
     expect(critical, critical.map((entry) => `${entry.url}: ${entry.text}`).join('\n')).toEqual([]);
   });

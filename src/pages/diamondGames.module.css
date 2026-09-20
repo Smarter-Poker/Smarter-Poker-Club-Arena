@@ -1,0 +1,495 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   DIAMOND GAMES - the pages, on the console (#ClubArenaConsole)
+
+   Every frame, bay, plate and pill on these pages is the spade master
+   (components/console). This sheet lays the pages out on black and prints
+   rows on the glass between the rails: a label in the master's lit blue, a
+   value in engraved silver, an engraved rule between rows. The only things
+   drawn are the ones the art does not paint: a text field for the client
+   seed (an engraved line, nothing else) and the game boards themselves.
+   No :hover; motion collapses but meaning never does.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.page {
+  display: grid;
+  gap: 1rem;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 0.6rem 0.4rem var(--bottom-nav-clearance, 74px);
+  background: #000;
+  color: #e6e9ee;
+}
+
+@media (min-width: 640px) {
+  .page {
+    max-width: 640px;
+    margin: 0 auto;
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+/* ── The back link: printed, not drawn ───────────────────────────────── */
+
+.back {
+  justify-self: start;
+  appearance: none;
+  min-height: 40px;
+  padding: 0 0.4rem;
+  border: 0;
+  background: transparent;
+  color: #45adff;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow: 0 0 6px rgb(49 168 255 / 60%);
+  cursor: pointer;
+}
+
+.back:active {
+  filter: brightness(1.3);
+}
+
+.back:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
+}
+
+/* ── Rows on the glass ───────────────────────────────────────────────── */
+
+.rows {
+  display: grid;
+  width: 100%;
+  margin: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 3cqw;
+  padding: 2.2cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.row:first-child {
+  border-top: 0;
+  box-shadow: none;
+}
+
+.rowLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+}
+
+.rowValue {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 4.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.rowMeta {
+  display: block;
+  margin-top: 0.4cqw;
+  font:
+    500 3cqw/1.3 Inter,
+    system-ui,
+    sans-serif;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: normal;
+}
+
+.rowsCompact .row {
+  padding: 1.6cqw 0;
+}
+
+/* Four-column figures (the odds table) print as rows too: one line each. */
+.grid4 {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 2cqw;
+  padding: 1.8cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.grid4:first-child {
+  border-top: 0;
+  box-shadow: none;
+}
+
+.grid4Head {
+  border-top: 0;
+  box-shadow: none;
+}
+
+.cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 3.6cqw;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.cellRight {
+  text-align: right;
+}
+
+.cellDim {
+  opacity: 0.55;
+}
+
+/* ── The stage: what the game draws, on the glass ────────────────────── */
+
+.stage {
+  width: 100%;
+  display: grid;
+  justify-items: center;
+  gap: 1.6cqw;
+}
+
+.readout {
+  display: grid;
+  justify-items: center;
+  gap: 0.6cqw;
+  text-align: center;
+}
+
+.readoutValue {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 11cqw;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.readoutSub {
+  max-width: 100%;
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* ── The client seed: a printed line the player may edit ─────────────── */
+
+.seedField {
+  display: grid;
+  gap: 1cqw;
+  width: 100%;
+}
+
+.seedInput {
+  width: 100%;
+  min-height: 40px;
+  padding: 0.3rem 0;
+  border: 0;
+  border-bottom: 1px solid #45adff;
+  background: transparent;
+  color: #e4e7ec;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 3.4cqw;
+  box-shadow: 0 1px 0 rgb(0 0 0 / 80%);
+}
+
+.seedInput:focus-visible {
+  outline: none;
+  border-bottom-color: #8fd4ff;
+}
+
+.seedInput:disabled {
+  opacity: 0.55;
+}
+
+.mono {
+  display: block;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 2.9cqw;
+  line-height: 1.45;
+  color: #b8c3cd;
+}
+
+/* ── The board / chart holder inside the stage ───────────────────────── */
+
+.board {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+/* Operator fields: printed labels, an engraved line to type on. */
+.fields {
+  display: grid;
+  gap: 2.4cqw;
+  width: 100%;
+}
+
+.field {
+  display: grid;
+  gap: 0.8cqw;
+}
+
+.fieldInput {
+  width: 100%;
+  min-height: 40px;
+  padding: 0.3rem 0;
+  border: 0;
+  border-bottom: 1px solid #45adff;
+  background: transparent;
+  color: #e4e7ec;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 4.4cqw;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 0 rgb(0 0 0 / 80%);
+}
+
+.fieldInput:focus-visible {
+  outline: none;
+  border-bottom-color: #8fd4ff;
+}
+
+/* A switch is a row whose value IS its state: no box is drawn for it. */
+.rowButton {
+  appearance: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3cqw;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 2.2cqw 0;
+  border: 0;
+  border-top: 1px solid #000;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.rowButton:active .rowValue {
+  filter: brightness(1.3);
+}
+
+.rowButton:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
+}
+
+/* ── The floor: an avatar beside a name, printed rows like every other ──── */
+
+.rowAvatar {
+  display: inline-block;
+  width: 5.6cqw;
+  height: 5.6cqw;
+  margin-right: 1.6cqw;
+  vertical-align: -1.4cqw;
+  border-radius: 50%;
+  object-fit: cover;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
+}
+
+/* The week's board is an order: the position prints before the name. */
+.rowRank {
+  display: inline-block;
+  min-width: 3.6cqw;
+  margin-right: 1.4cqw;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── The last twenty crash points: a printed strip, newest first ─────────── */
+
+.strip {
+  display: flex;
+  align-items: baseline;
+  gap: 2.6cqw;
+  width: 100%;
+  overflow-x: auto;
+  padding: 0.4cqw 0 1.2cqw;
+  scrollbar-width: none;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.strip::-webkit-scrollbar {
+  display: none;
+}
+
+.stripLabel {
+  flex: none;
+}
+
+.stripItem {
+  flex: none;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .back:active,
+  .rowButton:active .rowValue {
+    filter: none;
+  }
+}
+
+.proofHash {
+  overflow-wrap: anywhere;
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.bonusToggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  color: #dbe9f2;
+  font-size: 15px;
+}
+.bonusToggle input {
+  width: 22px;
+  height: 22px;
+  accent-color: #00a5ff;
+  flex-shrink: 0;
+}
+.bonusLinks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+}
+.bonusLinks button {
+  min-height: 44px;
+}
+.spinsTabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+.spinsTabs a {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+}
+.spinsTabs a[aria-current='page'] {
+  color: #eefaff;
+  text-shadow: 0 0 12px #178ad9;
+}
+
+.spinsTabs .back {
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  padding: 8px 0;
+  min-width: 0;
+}
+
+/* The four games use the entire viewport, with secondary information below play. */
+.fullscreenPage {
+  max-width: none;
+  margin: 0;
+  padding: 0 0 env(safe-area-inset-bottom);
+  gap: 0;
+  min-height: 100dvh;
+  display: block;
+  background: #060d18;
+  container-type: inline-size;
+}
+.fullscreenPage > .back {
+  margin: 4px 12px;
+  min-height: 36px;
+  letter-spacing: 0;
+  text-transform: none;
+  text-shadow: none;
+}
+.fullscreenPage > .spinsTabs {
+  display: none;
+}
+.fullscreenPage :global(.sc-copy) {
+  font:
+    400 14px/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-transform: none;
+  letter-spacing: 0;
+  margin: 8px 0;
+}
+.fullscreenPage :global(.sc-label) {
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.fullscreenPage .seedInput {
+  font-size: 14px;
+}
+.fullscreenPage .rowValue {
+  font-size: 22px;
+}
+.fullscreenPage .row {
+  padding: 10px 0;
+  gap: 12px;
+}
+.fullscreenPage .stage {
+  gap: 8px;
+}
+.fullscreenPage .readout {
+  gap: 5px;
+}
+.fullscreenPage .readoutValue {
+  font-size: clamp(40px, 7vw, 88px);
+}
+.fullscreenPage .readoutSub {
+  max-width: 660px;
+}
+.fullscreenPage .strip {
+  gap: 12px;
+}
+.fullscreenPage .stripItem {
+  font-size: 14px;
+}
+
+.fullscreenPage .crashStage {
+  position: relative;
+}
+.fullscreenPage .crashStage .readout {
+  width: 100%;
+  padding: 12px;
+  box-sizing: border-box;
+}
+.fullscreenPage .crashStage .readoutValue {
+  text-shadow: 0 0 28px #5bbaf55c;
+  font-size: clamp(52px, 7vw, 90px);
+}
+
+/* The multiplier hero moved onto the glass over the curve (2026-09-19); the
+   console readout beneath prints the same figure at bay size, so one number
+   is the big one. */
+.fullscreenPage .crashStage .readoutCompact {
+  font-size: 26px;
+  text-shadow: 0 0 12px #5bbaf55c;
+}

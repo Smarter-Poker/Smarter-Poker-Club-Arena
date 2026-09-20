@@ -157,34 +157,97 @@ function changedMigrations(base) {
       process.exit(2);
     }
   }
-  return out
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'))
-    // BACKFILL EXEMPTION (2026-09-01). A file whose first line marks it as a
-    // recovered record of an ALREADY-APPLIED migration is history, not new
-    // work. It cannot introduce a new definer: the function is already live in
-    // whatever state later migrations left it, and THAT live grant - not this
-    // file's historical creation-time GRANT - is what a browser can actually
-    // reach. Judging a backfill on its own creation-time grants produces false
-    // positives against production truth (verified 2026-09-01). New
-    // declarations are unaffected, and live grants stay covered by
-    // audit-live-definer-exposure.mjs (which asks production directly) and by
-    // this gate on every genuinely new migration. Marker is machine-written by
-    // scripts/ci/backfill-unrecorded-migrations.mjs.
-    .filter((f) => {
-      try {
-        return !/^--\s*(BACKFILLED|UNRECOVERABLE STUB)\b/.test(readFileSync(join(REPO, f), 'utf8'));
-      } catch {
-        return true; // unreadable: check it rather than skip it
-      }
-    });
+  return (
+    out
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'))
+      // BACKFILL EXEMPTION (2026-09-01). A file whose first line marks it as a
+      // recovered record of an ALREADY-APPLIED migration is history, not new
+      // work. It cannot introduce a new definer: the function is already live in
+      // whatever state later migrations left it, and THAT live grant - not this
+      // file's historical creation-time GRANT - is what a browser can actually
+      // reach. Judging a backfill on its own creation-time grants produces false
+      // positives against production truth (verified 2026-09-01). New
+      // declarations are unaffected, and live grants stay covered by
+      // audit-live-definer-exposure.mjs (which asks production directly) and by
+      // this gate on every genuinely new migration. Marker is machine-written by
+      // scripts/ci/backfill-unrecorded-migrations.mjs.
+      .filter((f) => {
+        try {
+          return !/^--\s*(BACKFILLED|UNRECOVERABLE STUB)\b/.test(
+            readFileSync(join(REPO, f), 'utf8')
+          );
+        } catch {
+          return true; // unreadable: check it rather than skip it
+        }
+      })
+  );
 }
 
-/** Comments carry no behaviour, and a comment that merely NAMES auth.uid()
- *  must not be mistaken for a call to it. Strip both forms before reading. */
+/** Read comments only in SQL, never inside quoted data. A replacement payload
+ * can legitimately contain an unfinished comment (for example JSON containing
+ * "BEGIN\n /* ..."). The old regex erased later migrations through their next
+ * comment terminator, including real REVOKEs. SQL function/DO bodies still need
+ * inspection: a comment naming auth.uid() inside one is not authorization. */
+function scanSql(sql, grantsOnly = false) {
+  const out = [];
+  const literal = (value) =>
+    // A quoted example or dynamic command is not evidence of a completed
+    // revoke. Keep GRANTs conservatively visible, as dynamic SQL may open access.
+    grantsOnly ? value.replace(/\bREVOKE\b/gi, '______') : value;
+  for (let i = 0; i < sql.length; ) {
+    const start = i;
+    if (sql.startsWith('--', i)) {
+      const end = sql.indexOf('\n', i + 2);
+      i = end < 0 ? sql.length : end;
+      out.push(' ');
+    } else if (sql.startsWith('/*', i)) {
+      let depth = 1;
+      i += 2;
+      while (i < sql.length && depth) {
+        if (sql.startsWith('/*', i)) {
+          depth += 1;
+          i += 2;
+        } else if (sql.startsWith('*/', i)) {
+          depth -= 1;
+          i += 2;
+        } else i += 1;
+      }
+      out.push(' ');
+    } else if (sql[i] === "'" || sql[i] === '"') {
+      const quote = sql[i++];
+      const escaped = quote === "'" && /(?:^|[^\w$])[eE]$/.test(sql.slice(0, start));
+      while (i < sql.length) {
+        if (escaped && sql[i] === '\\') i += 2;
+        else if (sql[i++] === quote) {
+          if (sql[i] !== quote) break;
+          i += 1;
+        }
+      }
+      out.push(literal(sql.slice(start, i)));
+    } else if (sql[i] === '$' && !/[\w$]/.test(sql[i - 1] ?? '')) {
+      const tag = /^\$(?:[A-Za-z_]\w*)?\$/.exec(sql.slice(i))?.[0];
+      const end = tag ? sql.indexOf(tag, i + tag.length) : -1;
+      if (end < 0) {
+        out.push(sql[i++]);
+        continue;
+      }
+      const bodyStart = i + tag.length;
+      const executable = /\b(?:AS|DO(?:\s+LANGUAGE\s+\w+)?)\s*$/i.test(out.join(''));
+      out.push(
+        executable
+          ? tag + scanSql(sql.slice(bodyStart, end), grantsOnly) + tag
+          : literal(sql.slice(start, end + tag.length))
+      );
+      i = end + tag.length;
+    } else out.push(sql[i++]);
+  }
+  return out.join('');
+}
+
 function stripComments(sql) {
-  return sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+  return scanSql(sql);
 }
 
 /** Every function a migration declares, with its header and its body kept
@@ -225,6 +288,7 @@ const BROWSER_ROLES = ['public', 'anon', 'authenticated'];
  * to `authenticated` explicitly.
  */
 function effectiveGrants(sql, name) {
+  sql = scanSql(sql, true);
   const held = { public: true, anon: true, authenticated: true };
   /* THE GAP CANNOT CROSS A STATEMENT BOUNDARY (2026-09-01). This used to be
      `[\s\S]*?`, which let the word "grant" ANYWHERE - inside a RAISE EXCEPTION
@@ -241,14 +305,18 @@ function effectiveGrants(sql, name) {
      open, which is the whole failure this file exists to prevent. `[^;]*?`
      keeps a verb inside its own statement. */
   const re = new RegExp(
-    String.raw`\b(GRANT|REVOKE)\b([^;]*?)\bON\s+FUNCTION\s+(?:public\.)?(\w+)\s*\(([^)]*)\)([^;]*?);`,
+    String.raw`\b(GRANT|REVOKE)\s+(?:ALL(?:\s+PRIVILEGES)?|EXECUTE)\s+ON\s+FUNCTION\s+([^;]*?)\s+(TO|FROM)\s+([^;]+);`,
     'gi'
   );
   let m;
   while ((m = re.exec(sql))) {
-    if (m[3].toLowerCase() !== name.toLowerCase()) continue;
+    // PostgreSQL permits several function signatures in one grant. Match each
+    // complete signature; commas inside its argument list are not separators.
+    const signatures = [...m[2].matchAll(/(?:^|,)\s*(?:public\.)?(\w+)\s*\([^)]*\)/gi)];
+    if (!signatures.some((signature) => signature[1].toLowerCase() === name.toLowerCase()))
+      continue;
     const verb = m[1].toUpperCase();
-    const named = `${m[2]} ${m[5]}`.toLowerCase();
+    const named = m[4].toLowerCase();
     for (const role of BROWSER_ROLES) {
       if (new RegExp(String.raw`\b${role}\b`).test(named)) {
         held[role] = verb === 'GRANT';
@@ -474,10 +542,9 @@ export function unscopedRosterDefiners(sql, allowlist = new Set(), grantSql = sq
     // No arguments: `name(` immediately followed by `)`, allowing whitespace.
     // An argument list is the caller's chance to be scoped, so its presence
     // takes the function out of this rule entirely.
-    const takesNoArgs = new RegExp(
-      `FUNCTION\\s+(?:public\\.)?${fn.name}\\s*\\(\\s*\\)`,
-      'i'
-    ).test(fn.header);
+    const takesNoArgs = new RegExp(`FUNCTION\\s+(?:public\\.)?${fn.name}\\s*\\(\\s*\\)`, 'i').test(
+      fn.header
+    );
     if (!takesNoArgs) continue;
 
     // Returns a set: SETOF ..., or TABLE(...). A scalar return answers one
@@ -558,16 +625,12 @@ export function clonedFunctions(sql) {
 export function unrevokedClones(sql, allowlist = new Set(), grantSql = sql) {
   const clean = stripComments(sql);
   const grants = grantSql === sql ? clean : stripComments(grantSql);
-  return clonedFunctions(clean).filter((name) => anonReachable(grants, name) && !allowlist.has(name));
+  return clonedFunctions(clean).filter(
+    (name) => anonReachable(grants, name) && !allowlist.has(name)
+  );
 }
 
-export {
-  stripComments,
-  declaredFunctions,
-  browserReachable,
-  anonReachable,
-  effectiveGrants,
-};
+export { stripComments, declaredFunctions, browserReachable, anonReachable, effectiveGrants };
 
 function main() {
   const base = ALL ? null : baseRef();
@@ -639,9 +702,7 @@ function main() {
 
   if (rosterOffenders.length > 0) {
     console.error('');
-    console.error(
-      '[check-definer-authorization] BLOCKED -- a roster nobody can be scoped out of.'
-    );
+    console.error('[check-definer-authorization] BLOCKED -- a roster nobody can be scoped out of.');
     console.error('');
     for (const o of rosterOffenders) {
       console.error(`  ${o.name}`);
@@ -674,7 +735,9 @@ function main() {
     console.error('     function. That both scopes it and satisfies this rule.');
     console.error('');
     console.error('  3. IT IS GENUINELY A PUBLIC LIST (a leaderboard, a lobby). Add it to the');
-    console.error('     anonPublicSurface block of scripts/ci/definer-authorization.allowlist.json');
+    console.error(
+      '     anonPublicSurface block of scripts/ci/definer-authorization.allowlist.json'
+    );
     console.error('     with a reason saying why every row in it is safe for anyone to read.');
     console.error('');
     process.exit(1);
@@ -688,7 +751,9 @@ function main() {
       console.error(`  ${o.name}`);
       console.error(`    cloned in ${o.file}`);
       console.error('    A function copied into a new name is a NEW function, and a new function');
-      console.error('    holds EXECUTE for PUBLIC until something revokes it. This migration never');
+      console.error(
+        '    holds EXECUTE for PUBLIC until something revokes it. This migration never'
+      );
       console.error('    says who may execute this one.');
       console.error('');
     }

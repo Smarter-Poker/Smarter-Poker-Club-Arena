@@ -1,0 +1,228 @@
+import React from 'react';
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../src/context/InTabLobbyContext', () => ({ useAppNavigate: () => vi.fn() }));
+vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: null }) }));
+vi.mock('../../src/lib/supabase', () => ({ supabase: { from: vi.fn() } }));
+vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
+
+import TournamentLobbyCard from '../../src/components/tournament/TournamentLobbyCard';
+import { mapSatelliteRowToCard } from '../../src/components/tournament/details/useSatellites';
+import { describeStoredMttStructure } from '../../server/src/tournament/mttStructureDescription';
+
+afterEach(cleanup);
+const row = (blind_structure: unknown, starting_chips = 1000) => ({
+  format_contract: 'mtt-v2',
+  id: 'structure-card',
+  name: 'Structure Event',
+  status: 'ANNOUNCED',
+  tournament_type: 'satellite',
+  starting_chips,
+  blind_structure,
+  current_players: 3,
+  max_players: 100,
+});
+const value = (label: string) =>
+  screen.getByText(label).parentElement!.lastElementChild!.textContent;
+
+describe('tournament cards display the same engine structure facts as details', () => {
+  it.each(['mtt', 'satellite', 'bounty', 'pko', 'mystery'] as const)(
+    '%s still offers registration beyond every legacy entry cap',
+    (type) => {
+      const card = mapSatelliteRowToCard(row([{ durationMinutes: 10, bigBlind: 20 }]));
+      render(
+        <TournamentLobbyCard
+          tournament={{ ...card, type, maxPlayers: 2, registeredPlayers: 1000001 }}
+          knownRegistration={false}
+        />
+      );
+      expect(value('Entries')).toBe('1,000,001');
+      expect(screen.queryByText('Tournament Full')).toBeNull();
+      expect(screen.queryByRole('button', { name: /Take A Seat/ })).toBeNull();
+      expect(
+        (screen.getByRole('button', { name: /^Register \(/ }) as HTMLButtonElement).disabled
+      ).toBe(false);
+    }
+  );
+
+  it('retains the finite field denominator for a fixed SNG', () => {
+    const card = mapSatelliteRowToCard(row([{ durationMinutes: 10, bigBlind: 20 }]));
+    render(
+      <TournamentLobbyCard
+        tournament={{
+          ...card,
+          format_contract: 'sng-v1',
+          type: 'sng',
+          maxPlayers: 6,
+          registeredPlayers: 6,
+        }}
+        knownRegistration={false}
+      />
+    );
+    expect(value('Entries')).toBe('6/6');
+    expect(
+      (screen.getByRole('button', { name: 'Tournament Full' }) as HTMLButtonElement).disabled
+    ).toBe(true);
+  });
+
+  it('maps the funded satellite capacity and routes its remaining seat', () => {
+    const card = mapSatelliteRowToCard({
+      ...row([]),
+      format_contract: 'seat-first-satellite-v1',
+      max_players: 2,
+      current_players: 1,
+    });
+    expect(card.format_contract).toBe('seat-first-satellite-v1');
+    expect(card.maxPlayers).toBe(2);
+    render(<TournamentLobbyCard tournament={card} knownRegistration={false} />);
+    expect(value('Entries')).toBe('1/2');
+    expect(
+      (screen.getByRole('button', { name: /Take A Seat/ }) as HTMLButtonElement).disabled
+    ).toBe(false);
+    expect(screen.queryByRole('button', { name: /^Register/ })).toBeNull();
+  });
+
+  it('does not call an invalid fixed capacity open entry', () => {
+    const card = mapSatelliteRowToCard({
+      ...row([]),
+      format_contract: 'sng-v1',
+      max_players: null,
+    });
+    render(<TournamentLobbyCard tournament={card} knownRegistration={false} />);
+    expect(screen.queryByText(/Open Entry/)).toBeNull();
+    expect(
+      (screen.getByRole('button', { name: 'Entry Status Unavailable' }) as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
+  });
+
+  it('renders completed unmarked history without an admission control', () => {
+    const card = mapSatelliteRowToCard({ ...row([]), status: 'COMPLETED', format_contract: null });
+    render(<TournamentLobbyCard tournament={card} knownRegistration={false} />);
+    expect(screen.getByText('Structure Event')).toBeTruthy();
+    expect(screen.getByText('Completed')).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it.each([null, 'future-format'])(
+    'keeps unknown %s rows visible with no admission CTA',
+    (format_contract) => {
+      const card = mapSatelliteRowToCard({ ...row([]), format_contract });
+      render(<TournamentLobbyCard tournament={card} knownRegistration={false} />);
+      expect(value('Entries')).toBe('3');
+      expect(screen.getByText('Structure Event')).toBeTruthy();
+      expect(
+        (screen.getByRole('button', { name: 'Entry Status Unavailable' }) as HTMLButtonElement)
+          .disabled
+      ).toBe(true);
+      expect(screen.queryByText(/Open Entry/)).toBeNull();
+      expect(screen.queryByRole('button', { name: /Take A Seat/ })).toBeNull();
+    }
+  );
+
+  it.each([
+    { duration: 120, bigBlind: 20, stack: 1000, label: 'Hyper Turbo', depth: '50 BB' },
+    { duration: 180, bigBlind: 20, stack: 1000, label: 'Turbo', depth: '50 BB' },
+    { duration: 900, bigBlind: 50, stack: 1000, label: 'Slow', depth: '20 BB' },
+    { duration: 600, bigBlind: 50, stack: 30000, label: 'Regular', depth: '600 BB' },
+  ])(
+    'renders satellite $label independently of $depth',
+    ({ duration, bigBlind, stack, label, depth }) => {
+      const input = row(JSON.stringify([{ duration, bigBlind }]), stack);
+      const original = JSON.stringify(input);
+      render(
+        <TournamentLobbyCard tournament={mapSatelliteRowToCard(input)} knownRegistration={false} />
+      );
+      expect(value('Structure')).toBe(label);
+      expect(value('Starting Chips')).toContain(depth);
+      expect(value('Levels')).toBe(`${duration / 60} Min`);
+      expect(screen.queryByText('Deep Stack')).toBeNull();
+      expect(JSON.stringify(input)).toBe(original);
+    }
+  );
+
+  it('uses playing levels after a leading break and renders the taper', () => {
+    render(
+      <TournamentLobbyCard
+        tournament={mapSatelliteRowToCard(
+          row([
+            { isBreak: true, durationMinutes: 5 },
+            { durationMinutes: 10, bigBlind: 50 },
+            { durationMinutes: 5, bigBlind: 100 },
+          ])
+        )}
+        knownRegistration={false}
+      />
+    );
+    expect(value('Structure')).toBe('Regular');
+    expect(value('Starting Chips')).toContain('20 BB');
+    expect(value('Levels')).toBe('10 Min Opening · 5-10 Min Range');
+  });
+
+  it('keeps a named or malformed stored structure unconfirmed', () => {
+    render(
+      <TournamentLobbyCard
+        tournament={mapSatelliteRowToCard(row('deep stack'))}
+        knownRegistration={false}
+      />
+    );
+    expect(value('Structure')).toBe('Unconfirmed');
+    expect(value('Levels')).toBe('Unconfirmed');
+    expect(value('Starting Chips')).not.toContain('BB');
+  });
+
+  it('renders raw legacy seconds through the same card adapter', () => {
+    const card = mapSatelliteRowToCard(row([]));
+    render(
+      <TournamentLobbyCard
+        tournament={{
+          ...card,
+          structureFacts: undefined,
+          blindStructure: JSON.stringify([{ duration: 180, bigBlind: 20 }]),
+          blindDuration: undefined,
+        }}
+        knownRegistration={false}
+      />
+    );
+    expect(value('Structure')).toBe('Turbo');
+    expect(value('Levels')).toBe('3 Min');
+    expect(value('Starting Chips')).toContain('50 BB');
+  });
+
+  it('does not claim a whole fixed ladder from a legacy opening-clock prop', () => {
+    const card = mapSatelliteRowToCard(row([]));
+    render(
+      <TournamentLobbyCard
+        tournament={{
+          ...card,
+          structureFacts: undefined,
+          blindStructure: 'deep stack',
+          blindDuration: 3,
+        }}
+        knownRegistration={false}
+      />
+    );
+    expect(value('Structure')).toBe('Turbo');
+    expect(value('Levels')).toBe('3 Min Opening');
+    expect(value('Starting Chips')).not.toContain('BB');
+  });
+
+  it('updates a lobby card directly from new mapped structure facts', () => {
+    const card = mapSatelliteRowToCard(row([{ duration: 900, bigBlind: 50 }]));
+    const rendered = render(<TournamentLobbyCard tournament={card} knownRegistration={false} />);
+    expect(value('Structure')).toBe('Slow');
+    rendered.rerender(
+      <TournamentLobbyCard
+        tournament={{
+          ...card,
+          structureFacts: describeStoredMttStructure([{ duration: 120, bigBlind: 100 }], 1000),
+        }}
+        knownRegistration={false}
+      />
+    );
+    expect(value('Structure')).toBe('Hyper Turbo');
+    expect(value('Levels')).toBe('2 Min');
+    expect(value('Starting Chips')).toContain('10 BB');
+  });
+});

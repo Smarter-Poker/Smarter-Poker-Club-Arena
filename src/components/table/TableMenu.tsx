@@ -144,6 +144,15 @@ export function createDefaultMenuSections(
     soundsBadge?: string;
     vibrationsBadge?: string;
     profitTrackingBadge?: string;
+    /**
+     * Whether this seat has a funded top-up writer behind it (the shared
+     * `seatCanAddFunds` rule, reported by the owning table page). `false`
+     * drops Top Up and Auto Top Up: at a Diamond tournament seat both items
+     * reached the page and were refused there in silence, so the player saw
+     * two controls that did nothing. Absent (a table that has not reported
+     * yet) keeps both, exactly as before.
+     */
+    canAddFunds?: boolean;
   }
 ): MenuSection[] {
   return [
@@ -163,27 +172,32 @@ export function createDefaultMenuSections(
           badge: state?.standUpBBBadge,
           onClick: handlers.onStandUpBB || (() => {}),
         },
-        {
-          /* 'Add Chips' until 2026-09-12, which was two problems in one label.
-             It named a denomination at a table this menu cannot see the arena
-             of, so it said "Chips" at a Diamond seat; and it disagreed with
-             the table page's own control for the SAME action, which has said
-             "Top Up" on a cash seat all along. 'Top Up' is the product's word
-             for this and carries no denomination, so it is right at every
-             table. The tournament seat's own menu still says "Rebuy": that
-             one knows what kind of table it is on. */
-          id: 'rebuy',
-          label: 'Top Up',
-          icon: <RebuyIcon />,
-          onClick: handlers.onRebuy || (() => {}),
-        },
-        {
-          id: 'auto-top-up',
-          label: 'Auto Top Up',
-          icon: <RebuyIcon />,
-          badge: state?.autoTopUpBadge,
-          onClick: handlers.onAutoTopUp || (() => {}),
-        },
+        ...(state?.canAddFunds === false
+          ? []
+          : [
+              {
+                /* 'Add Chips' until 2026-09-12, which was two problems in one
+                   label. It named a denomination at a table this menu cannot
+                   see the arena of, so it said "Chips" at a Diamond seat; and
+                   it disagreed with the table page's own control for the SAME
+                   action, which has said "Top Up" on a cash seat all along.
+                   'Top Up' is the product's word for this and carries no
+                   denomination, so it is right at every table. The tournament
+                   seat's own menu still says "Rebuy": that one knows what kind
+                   of table it is on. */
+                id: 'rebuy',
+                label: 'Top Up',
+                icon: <RebuyIcon />,
+                onClick: handlers.onRebuy || (() => {}),
+              },
+              {
+                id: 'auto-top-up',
+                label: 'Auto Top Up',
+                icon: <RebuyIcon />,
+                badge: state?.autoTopUpBadge,
+                onClick: handlers.onAutoTopUp || (() => {}),
+              },
+            ]),
       ],
     },
     {

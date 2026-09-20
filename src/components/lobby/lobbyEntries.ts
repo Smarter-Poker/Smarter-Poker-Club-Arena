@@ -1,3 +1,10 @@
+import {
+  getTournamentEntryCapacity,
+  getTournamentFormatKind,
+  isSeatFirstTournamentFormat,
+  isKnownTournamentFormat,
+  isTournamentEntryUnavailable,
+} from '../../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * LOBBY ENTRIES — the thin view-model layer for the line-based lobby (V2)
@@ -14,6 +21,10 @@
  * platform behavior, not new inference.
  */
 
+import {
+  describeStoredMttStructure,
+  type MttStructureDescription,
+} from '../../../server/src/tournament/mttStructureDescription';
 import { FREE_BUY_HELPER, FREE_BUY_LABEL } from '../../utils/freeBuy';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { isInLateRegistration, STARTING_SOON_WINDOW_MINUTES } from '../../utils/tournamentFilters';
@@ -81,6 +92,7 @@ export interface LobbyTableRow extends CashFeatureSource {
 }
 
 export interface LobbyTournamentRow {
+  format_contract?: unknown;
   id: string;
   name: string;
   game_type: string;
@@ -90,10 +102,16 @@ export interface LobbyTournamentRow {
   start_time: string;
   status: string;
   current_players: number;
-  max_players: number;
+  max_players: number | null;
+  tournament_type?: string | null;
+  satellite_target_id?: string | null;
+  satellite_target?: string | null;
+  type?: string | null;
   starting_chips: number;
   late_reg_mins?: number | null;
   late_reg_levels?: number | null;
+  rebuy_levels?: number | null;
+  prize_pool_finalized?: boolean | null;
   started_at?: string | null;
   current_level?: number | null;
   /**
@@ -134,7 +152,7 @@ export interface LobbyTournamentRow {
 }
 
 // ─── View model ────────────────────────────────────────────────────────────
-export type LobbyEntryKind = 'cash' | 'mtt' | 'spin' | 'sng';
+export type LobbyEntryKind = 'cash' | 'mtt' | 'spin' | 'sng' | 'unknown';
 
 export type LobbyStatusKey =
   | 'open'
@@ -190,6 +208,7 @@ export interface LobbyEntry {
   startTime: string | null;
   startValue: number; // ms epoch, Infinity when none — numeric sort key
   speedLabel: string | null;
+  structureFacts?: MttStructureDescription;
   status: LobbyStatusKey;
   statusLabel: string;
   live: boolean;
@@ -428,6 +447,7 @@ export interface CashFeatureSource {
   bomb_pot_ante_multiplier?: number | null;
   bomb_pot_ante_fixed?: number | null;
   ante_enabled?: boolean | null;
+  big_blind_ante_enabled?: boolean | null;
   ante?: number | null;
   seven_deuce_enabled?: boolean | null;
   seven_deuce_amount?: number | null;
@@ -596,11 +616,25 @@ export function cashRuleMedallions(row: CashFeatureSource): RuleMedallion[] {
 
   if (col(row.ante_enabled) ?? on(s, 'ante_enabled')) {
     const amt = Number(row.ante) || num(s, 'ante_amount') || 0;
+    // The engine reads this column, not the table name or legacy settings.
+    // A narrow/cached row may omit it until the full table read arrives; an
+    // absent mode cannot promise that every player pays a Madness ante.
+    const bigBlindAnte = row.big_blind_ante_enabled;
+    const perPlayerAnte = bigBlindAnte === false || bigBlindAnte === null;
     rules.push({
       key: 'ante',
-      label: 'ANTE',
+      label: bigBlindAnte === true ? 'BIG BLIND ANTE' : 'ANTE',
       detail: amt > 0 ? amt.toLocaleString() : undefined,
-      tip: amt > 0 ? `Every player antes ${amt.toLocaleString()} a hand` : 'Antes are in play',
+      tip:
+        bigBlindAnte === true
+          ? amt > 0
+            ? `The player in the big blind antes ${amt.toLocaleString()} a hand`
+            : 'The player in the big blind pays the ante'
+          : amt > 0
+            ? perPlayerAnte
+              ? `Every player antes ${amt.toLocaleString()} a hand`
+              : `An ante of ${amt.toLocaleString()} is in play`
+            : 'Antes are in play',
     });
   }
 
@@ -778,6 +812,7 @@ function detectTourneyType(name: string): string {
   return 'freezeout';
 }
 
+/** Legacy seat-first naming convention only; MTTs use their recorded clock. */
 export function tournamentSpeed(name: string): string | null {
   const l = (name || '').toLowerCase();
   /* A FEEDER DOES NOT INHERIT ITS TARGET'S SPEED (2026-09-03). This reads the
@@ -795,7 +830,10 @@ export function tournamentSpeed(name: string): string | null {
   return null;
 }
 
-export function tournamentMedallions(t: LobbyTournamentRow): RuleMedallion[] {
+export function tournamentMedallions(
+  t: LobbyTournamentRow,
+  structureFacts?: MttStructureDescription
+): RuleMedallion[] {
   const rules: RuleMedallion[] = [];
   const type = detectTourneyType(t.name);
   const l = (t.name || '').toLowerCase();
@@ -855,10 +893,20 @@ export function tournamentMedallions(t: LobbyTournamentRow): RuleMedallion[] {
   )
     rules.push({ key: 'freezeout', label: 'FREEZEOUT', tip: 'One entry, no rebuys' });
 
-  const speed = tournamentSpeed(t.name);
+  const formatKind = classifyTournament(t);
+  const speed =
+    formatKind === 'unknown'
+      ? null
+      : formatKind === 'mtt'
+        ? (
+            structureFacts ??
+            describeStoredMttStructure(parseBlindStructure(t.blind_structure), t.starting_chips)
+          ).speedLabel
+        : tournamentSpeed(t.name);
   if (speed === 'Turbo') rules.push({ key: 'turbo', label: 'TURBO', tip: 'Fast blind levels' });
-  if (speed === 'Hyper')
+  if (speed === 'Hyper' || speed === 'Hyper Turbo')
     rules.push({ key: 'hyper', label: 'HYPER', tip: 'Very fast blind levels' });
+  if (speed === 'Slow') rules.push({ key: 'slow', label: 'SLOW', tip: 'Longer blind levels' });
   if (speed === 'Deepstack')
     rules.push({ key: 'deepstack', label: 'DEEPSTACK', tip: 'Deep starting stacks' });
 
@@ -871,7 +919,7 @@ export function tournamentMedallions(t: LobbyTournamentRow): RuleMedallion[] {
     });
 
   const lateMins = Number(t.late_reg_mins) || 0;
-  const lateLevels = Number(t.late_reg_levels) || 0;
+  const lateLevels = Number(t.late_reg_levels ?? t.rebuy_levels) || 0;
   if (lateMins > 0 || lateLevels > 0)
     rules.push({
       key: 'latereg',
@@ -922,6 +970,11 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
   const status = String(t.status || '').toUpperCase();
   if (status === 'COMPLETED') return { key: 'completed', label: 'Completed' };
   if (status === 'CANCELLED') return { key: 'closed', label: 'Cancelled' };
+  if (!isKnownTournamentFormat(t)) {
+    return ['RUNNING', 'LATE_REG', 'LATE_REGISTRATION', 'COMPLETING'].includes(status)
+      ? { key: 'running', label: status === 'COMPLETING' ? 'Finishing' : 'Running' }
+      : { key: 'closed', label: 'Entry Unavailable' };
+  }
   if (status === 'RUNNING') {
     if (
       isInLateRegistration(
@@ -932,6 +985,8 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
           max_players: t.max_players,
           late_reg_mins: t.late_reg_mins,
           late_reg_levels: t.late_reg_levels,
+          rebuy_levels: t.rebuy_levels,
+          prize_pool_finalized: t.prize_pool_finalized,
           started_at: t.started_at,
           current_level: t.current_level,
         },
@@ -953,7 +1008,11 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
    * one — it falls through to the seat logic, which is the right answer for it.
    */
   if (status === 'LATE_REG' || status === 'LATE_REGISTRATION') {
-    if (classifyTournament(t) === 'mtt') return { key: 'late_reg', label: 'Late Reg' };
+    if (classifyTournament(t) === 'mtt') {
+      return isInLateRegistration(t, Date.now())
+        ? { key: 'late_reg', label: 'Late Reg' }
+        : { key: 'running', label: 'Running' };
+    }
   }
   if (
     status === 'REGISTERING' ||
@@ -1221,11 +1280,18 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
   };
 }
 
-export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 'sng'): LobbyEntry {
+export function tournamentEntry(
+  t: LobbyTournamentRow,
+  kind: 'mtt' | 'spin' | 'sng' | 'unknown'
+): LobbyEntry {
   const v = variantDisplay(t.game_type);
   const st = tournamentStatus(t);
   const total = (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
   const startMs = t.start_time ? new Date(t.start_time).getTime() : NaN;
+  const structureFacts =
+    kind === 'mtt'
+      ? describeStoredMttStructure(parseBlindStructure(t.blind_structure), t.starting_chips)
+      : undefined;
   return {
     id: t.id,
     kind,
@@ -1250,11 +1316,16 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
         : null,
     guaranteeValue: Number(t.guaranteed_prize) || 0,
     players: t.current_players || 0,
-    capacity: t.max_players || 0,
+    capacity: getTournamentEntryCapacity(t) ?? 0,
     startTime: t.start_time || null,
     startValue: Number.isFinite(startMs) ? startMs : Infinity,
+    structureFacts,
     speedLabel:
-      tournamentSpeed(t.name) || (kind === 'spin' || kind === 'sng' ? 'When Full' : 'Standard'),
+      kind === 'unknown'
+        ? null
+        : structureFacts
+          ? structureFacts.speedLabel
+          : tournamentSpeed(t.name) || 'When Full',
     status: st.key,
     statusLabel: st.label,
     /* ITEM E audit, 2026-08-26: derived from the SAME status the surfaces
@@ -1264,7 +1335,7 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
        REGISTERING for a beat — so the card showed a Running badge with no
        live pip: one card, two claims. One derivation now. */
     live: st.key === 'running' || st.key === 'late_reg',
-    rules: tournamentMedallions(t),
+    rules: tournamentMedallions(t, structureFacts),
     ...lobbyFlags(t),
     clubLabel: null,
     raw: t,
@@ -1272,9 +1343,7 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
 }
 
 /**
- * The same spin / heads-up classification the card grid used — now asking the
- * ROW what it is, and only guessing from the name when the column is absent.
- * See tournamentVariant in src/utils/tournamentFilters.ts for why.
+ * Format classification is shared with the persisted database contract.
  */
 // ─── MTT title helpers (pure — LobbyTable renders them, tests pin them) ────
 
@@ -1388,6 +1457,7 @@ export function spinPrizeLabel(entry: LobbyEntry): string | null {
  * joinable ones at the same price, which is the row a player taps by mistake.
  */
 export function seatFirstJoinable(entry: LobbyEntry): boolean {
+  if (entry.kind !== 'cash' && isTournamentEntryUnavailable(entry.raw, entry.players)) return false;
   if (entry.kind !== 'spin' && entry.kind !== 'sng') return true;
   if (entry.status === 'running' || entry.status === 'completed' || entry.status === 'closed')
     return false;
@@ -1399,8 +1469,8 @@ export function seatFirstJoinable(entry: LobbyEntry): boolean {
 export function levelSpeedLabel(t: LobbyTournamentRow): string | null {
   const structure = parseBlindStructure(t.blind_structure);
   if (!structure) return null;
-  const mins = blindLevelMinutes(structure, 1);
-  if (mins <= 0) return null;
+  const mins = describeStoredMttStructure(structure, t.starting_chips).openingMinutes;
+  if (mins === null) return null;
   const rounded = Math.round(mins * 10) / 10;
   /* Just the number. "Levels" used to be in the value and wrapped the well
      onto three lines on a 375px card, under a heading that already said BLIND
@@ -1408,24 +1478,17 @@ export function levelSpeedLabel(t: LobbyTournamentRow): string | null {
   return `${rounded} Min`;
 }
 
-/**
- * Turbo / Standard / Deepstack, measured rather than guessed.
- *
- * A name keyword wins when the creator supplied one. Otherwise the honest
- * signal is how many big blinds the starting stack actually is at level 1 —
- * which is exactly how spinSpec describes its own ladder ("300 chips … over
- * fast", "1000 chips … deep stack"). A Spin at 300 chips into 10/20 is 15bb
- * and plays like a turbo; the same 3-minute levels at 5,000 chips do not.
- */
-/**
- * How many big blinds the starting stack is worth at level 1, or 0 when the
- * row cannot say. Exported so the Format column can SORT on the depth instead
- * of on the word — 'Deepstack' < 'Hyper' < 'Standard' < 'Turbo' is the
- * alphabet, not a speed, and an empty string floated every cash row to the top
- * of the ALL tab (the same defect COL_TSTACK uses Infinity to avoid).
- */
+/** Starting depth in big blinds, or zero when unavailable. MTTs use the
+ * engine's opening playing level. Seat-first legacy display remains separate. */
 export function stackDepthBB(entry: LobbyEntry): number {
-  if (entry.kind === 'cash') return 0;
+  if (entry.kind === 'cash' || entry.kind === 'unknown') return 0;
+  if (entry.kind === 'mtt') {
+    const t = entry.raw as LobbyTournamentRow;
+    return (
+      (entry.structureFacts ?? describeStoredMttStructure(t.blind_structure, t.starting_chips))
+        .startingDepthBB ?? 0
+    );
+  }
   const t = entry.raw as LobbyTournamentRow;
   const chips = Number(t.starting_chips) || 0;
   if (chips <= 0) return 0;
@@ -1436,7 +1499,13 @@ export function stackDepthBB(entry: LobbyEntry): number {
 }
 
 export function stackDepthLabel(entry: LobbyEntry): string | null {
-  if (entry.kind === 'cash') return null;
+  if (entry.kind === 'cash' || entry.kind === 'unknown') return null;
+  // MTT clock speed never comes from a title or starting-stack bucket.
+  if (entry.kind === 'mtt') {
+    const t = entry.raw as LobbyTournamentRow;
+    return (entry.structureFacts ?? describeStoredMttStructure(t.blind_structure, t.starting_chips))
+      .speedLabel;
+  }
   const t = entry.raw as LobbyTournamentRow;
   const named = tournamentSpeed(t.name);
   if (named) return named;
@@ -1458,26 +1527,21 @@ export function stackDepthLabel(entry: LobbyEntry): string | null {
   return 'Turbo';
 }
 
-/**
- * The Format column's SORT rank, derived from the SAME label the column
- * renders (ITEM E audit, 2026-08-26). It used to sort on measured depth while
- * rendering the name keyword, so a 60bb "Sunday Turbo" printed Turbo and
- * sorted among the Deepstacks — click the header and the visible order read
- * `Turbo, Deepstack, Standard, Turbo…`, a sort that looks broken because the
- * two derivations disagreed. One derivation now: rank follows the label,
- * fastest first. A row with no label (every cash row) sinks in both
- * directions, as before. Named rows short-circuit before any blind-structure
- * parse, so the comparator's cost is unchanged for them.
- */
+/** Sort the same speed label rendered by the Format column, fastest first.
+ * Unknown and cash rows sink in either direction. MTT clock classification
+ * is independent of the retained legacy seat-first stack labels. */
 export function stackFormatRank(entry: LobbyEntry): number {
   switch (stackDepthLabel(entry)) {
     case 'Hyper':
+    case 'Hyper Turbo':
       return 1;
     case 'Turbo':
       return 2;
     case 'Standard':
+    case 'Regular':
       return 3;
     case 'Deepstack':
+    case 'Slow':
       return 4;
     default:
       return Infinity;
@@ -1660,52 +1724,12 @@ export function mttTitleLine(entry: LobbyEntry): string {
     : `${name} (${entry.gameLabel})`;
 }
 
-/**
- * ═══════════════════════════════════════════════════════════════════════════
- *  SEAT-FIRST MEANS WHAT THE SERVER MEANS BY IT (2026-08-31, Phase 3)
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * The server has one definition, in TournamentRecurringService:
- *
- *     isSeatFirstFormat(variant, maxPlayers) =
- *       variant === 'spin' || maxPlayers <= 2
- *
- * and `fn_take_seat_and_buy_in` honours the same rule. The lobby had a
- * different one: anything `classifyTournament` called an 'sng', which is every
- * capped field up to TEN seats. A six- or nine-max SNG therefore rendered a Sit
- * Down affordance for a seat the server will not sell -- the player clicks and
- * the buy-in is refused.
- *
- * No such row is created today ("WE AREN'T DOING ANY OTHER SIT N GO'S", Dan
- * 2026-08-21), which is exactly why this is worth pinning rather than leaving:
- * the day one is, the lobby lies about it and nothing fails first.
- *
- * classifyTournament keeps its own job -- it decides the TAB and the label, and
- * a 6-max SNG genuinely belongs on the sit-n-go tab. What it must not decide,
- * alone, is whether a seat can be taken.
- */
+/** Format metadata preserves funded seat-first satellites and fixed SNG/Spin
+ * entry. Table size, old caps and labels never promote an MTT to seat-first. */
 export function isSeatFirstTournament(t: LobbyTournamentRow): boolean {
-  if (classifyTournament(t) === 'spin') return true;
-  const seats = Number((t as { max_players?: unknown }).max_players);
-  return Number.isFinite(seats) && seats > 0 && seats <= 2;
+  return isSeatFirstTournamentFormat(t);
 }
 
-export function classifyTournament(t: LobbyTournamentRow): 'mtt' | 'spin' | 'sng' {
-  const v = String((t as { variant?: unknown }).variant ?? '').toLowerCase();
-  if (v === 'spin') return 'spin';
-  if (v === 'sng') return 'sng';
-  // Present and not a spin means NOT A SPIN, whatever the name says.
-  /* A MISSING cap is not a small field. Dan 2026-08-24: "THERE ARE NO
-     LIMITATIONS ON THE AMOUNT OF PLAYERS THAT CAN REGISTER", so an unlimited
-     MTT carries max_players null — and `(null || 0) <= 10` called every one of
-     them a Heads-Up: wrong tab, seat-first status text, "12/-" for the field,
-     and Sit Down instead of Register. A cap only means something when it is a
-     real number. */
-  if (v) return t.max_players != null && t.max_players > 0 && t.max_players <= 10 ? 'sng' : 'mtt';
-
-  const n = (t.name || '').toLowerCase();
-  if (n.includes('spin')) return 'spin';
-  if (n.includes('sng') || (t.max_players != null && t.max_players > 0 && t.max_players <= 10))
-    return 'sng';
-  return 'mtt';
+export function classifyTournament(t: LobbyTournamentRow): 'mtt' | 'spin' | 'sng' | 'unknown' {
+  return getTournamentFormatKind(t);
 }

@@ -473,3 +473,50 @@ describe('atomic satellite settlement receipt', () => {
     ).toBeNull();
   });
 });
+
+// These transport objects were emitted by the real isolated PG17 payer after
+// authenticated source funding, entry close and exact target escrow funding.
+import nativeCohorts from './__fixtures__/satellite-qualifier-native-receipts.json';
+import { verifySatelliteQualifierReceipt } from './satelliteQualifierReceipt.js';
+
+describe('versioned satellite qualifier receipts keep equal winners unranked', () => {
+  it.each(Object.entries(nativeCohorts))('accepts the actual %s terminal receipt', (_name, raw) => {
+    const verified = verifySatelliteQualifierReceipt(raw, raw.tournament_id, raw.qualifier_ids);
+    expect(verified).not.toBeNull();
+    expect(verified?.qualifierIds).toEqual(raw.qualifier_ids);
+    expect(
+      verified?.awards
+        .filter((award) => raw.qualifier_ids.includes(award.userId))
+        .every((award) => award.position === null)
+    ).toBe(true);
+    expect(verified?.remainder).toMatchObject({ position: 3, amount: 5 });
+    expect(verified?.ticketAwardCount).toBe(2);
+    expect(verified).not.toHaveProperty('winnerId');
+  });
+
+  it.each([
+    'ranked-survivor',
+    'wrong-cohort',
+    'duplicate-slot',
+    'fake-champion',
+    'wrong-overflow',
+    'unpaid-remainder',
+    'unclosed-felt',
+  ])('rejects %s instead of manufacturing a terminal outcome', (fault) => {
+    const raw: any = structuredClone(nativeCohorts.same_hand_overflow);
+    if (fault === 'ranked-survivor') raw.awards[0].position = 1;
+    if (fault === 'wrong-cohort') raw.qualifier_ids = [raw.awards[1].user_id];
+    if (fault === 'duplicate-slot') raw.awards[1].award_slot = 1;
+    if (fault === 'fake-champion') raw.winner_id = raw.qualifier_ids[0];
+    if (fault === 'wrong-overflow') raw.awards[1].position = 3;
+    if (fault === 'unpaid-remainder') raw.remainder.amount = 0;
+    if (fault === 'unclosed-felt') raw.source_closeout.source_table_ids = [];
+    expect(
+      verifySatelliteQualifierReceipt(
+        raw,
+        raw.tournament_id,
+        nativeCohorts.same_hand_overflow.qualifier_ids
+      )
+    ).toBeNull();
+  });
+});

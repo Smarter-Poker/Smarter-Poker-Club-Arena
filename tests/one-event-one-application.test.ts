@@ -82,15 +82,49 @@ describe('a money key identifies the purchase, not the attempt', () => {
 
   it('the VIP purchase holds its key across an ambiguous failure', () => {
     const src = strip(read('src/pages/marketplace/MembershipTab.tsx'));
-    expect(src).toMatch(/intentPlanRef\.current !== key \|\| !intentKeyRef\.current/);
-    expect(src).toMatch(/spent = \(err as \{ definitive\?: boolean \}\)\?\.definitive === true/);
+    expect(src).toContain("marketplacePurchaseScope(userId, 'vip-diamonds', planKey)");
+    expect(src).toContain('readMarketplacePurchaseIntent(purchaseScope, payloadKey)');
+    expect(src).toContain('readOrCreateMarketplacePurchaseIntent(purchaseScope, payloadKey)');
+    expect(src).toContain('priceDiamonds: currentPlan.priceDiamonds');
+    expect(src).toContain('isVerifiedVipPurchasePrecommitRefusal(err, {');
+    expect(src).toContain('verifiedVipDiamondPurchaseReceipt(');
+    expect(src).not.toContain('intentKeyRef');
+    expect(src).not.toContain('intentPlanRef');
+  });
+
+  it('both Card checkout rails persist an exact offer identity across reloads', () => {
+    const membership = strip(read('src/pages/marketplace/MembershipTab.tsx'));
+    const diamonds = strip(read('src/pages/marketplace/DiamondsTab.tsx'));
+    for (const src of [membership, diamonds]) {
+      expect(src).toContain('readOrCreateMarketplacePurchaseIntent(');
+      expect(src).toContain('purchaseIntent.requestId');
+      expect(src).toContain('isVerifiedCheckoutPrecommitRefusal(err)');
+    }
+    expect(membership).toContain("marketplacePurchaseScope(userId, 'vip-card', currentPlan.id)");
+    expect(membership).toContain('priceUsd: currentPlan.priceUsd');
+    expect(membership).toContain('priceDiamonds: currentPlan.priceDiamonds');
+    expect(diamonds).toContain("'diamond-package-card'");
+    expect(diamonds).toContain('priceCents: currentPackage.priceCents');
+    expect(diamonds).toContain('diamonds: currentPackage.diamonds');
+    expect(diamonds).toContain('bonus: currentPackage.bonus');
+    expect(diamonds).not.toContain('checkoutKeyRef');
   });
 
   it('the store purchase rotates only a terminal refusal or an explicit pre-commit price conflict', () => {
     const src = strip(read('src/pages/marketplace/StoreTab.tsx'));
-    expect(src).toMatch(/if \(apiError\.definitive\) \{/);
+    expect(src).toContain('const definitiveRefusal = apiError.definitive === true;');
+    expect(src).toMatch(/if \(definitiveRefusal\) \{/);
+    expect(src).toContain(
+      'clearSessionPurchaseRequestIfMatches(purchaseScope, purchaseIntent.requestId)'
+    );
     expect(src).toMatch(/apiError\.status === 409 && apiError\.data\?\.reason === 'price_changed'/);
-    expect(src).toMatch(/closeBuy\(\);\s*onCatalogStale\(\);\s*return;/);
+    const priceChanged = sliceEnclosingBlock(
+      src,
+      "apiError.status === 409 && apiError.data?.reason === 'price_changed'"
+    );
+    expect(priceChanged).toContain('clearSessionPurchaseRequestIfMatches(');
+    expect(priceChanged).toMatch(/if \(isCurrentOperation\(\)\) \{/);
+    expect(priceChanged).toMatch(/closeBuy\(\);\s*onCatalogStale\(\);/);
     // A generic/ambiguous 409 does not satisfy either branch, so its key is
     // retained and the server can replay a possibly committed debit.
     expect(src).not.toMatch(/apiError\.status === 409\)\s*\{\s*purchaseKeyRef\.current/);
@@ -108,10 +142,28 @@ describe('a money key identifies the purchase, not the attempt', () => {
 
   it('the agent dashboard sends an op id, scoped to the action AND the request', () => {
     const src = strip(read('src/pages/AgentDashboardPage.tsx'));
-    expect(src).toMatch(/cashoutOpIdFor\('approve', cashoutId\)/);
-    expect(src).toMatch(/cashoutOpIdFor\('reject', cashoutId\)/);
-    // A key shared between approve and reject COLLIDES on the unique index.
-    expect(src).toMatch(/`\$\{action\}:\$\{cashoutId\}`/);
+    expect(src).toContain('key: `${row.id}:approve`');
+    expect(src).toContain('key: `${row.id}:reject`');
+    expect(src).toMatch(/targetId:\s*row\.id,\s*kind:\s*'cashout_approve'/);
+    expect(src).toMatch(/targetId:\s*row\.id,\s*kind:\s*'cashout_decline'/);
+    const decision = sliceBlockAfter(src, 'const processCashout = async');
+    expect(decision).toMatch(
+      /decisions\.get\(\s*`\$\{cashout\.id\}:\$\{action\}`,\s*action\s*===\s*'approve'\s*\?\s*'cashout_approve'\s*:\s*'cashout_decline'\s*,?\s*\)/
+    );
+    expect(decision).toContain('start = captureCashoutStart(prepared)');
+    expect(decision).toContain('await recoverCashoutOperation(start)');
+    expect(decision).toContain('await runCashoutOperation(start)');
+    expect(decision).not.toMatch(/randomUUID|newOpId|supabase\.rpc/);
+    // The shared durable identity includes both the request and the action,
+    // along with the account/club/amount/note; it is not minted per attempt.
+    const preparation = sliceBlockAfter(
+      read('src/services/AgentWalletIntent.ts'),
+      'export async function prepareAgentCashoutOperation('
+    );
+    expect(preparation).toMatch(
+      /intent\.userId,\s*intent\.clubId,\s*intent\.targetId,\s*intent\.kind/
+    );
+    expect(preparation).toContain('cashoutGenerations.prepare(hash, repeatable, isCurrent)');
   });
 
   it('spin activation takes the key from its caller', () => {

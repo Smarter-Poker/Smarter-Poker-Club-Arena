@@ -20,6 +20,7 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { isUnlimitedMtt } from '../../server/src/tournament/tournamentEntryCapacity';
 
 export interface TournamentScheduleRow {
   id: string;
@@ -61,6 +62,8 @@ const SCHEDULE_ERRORS: Record<string, string> = {
   club_id_required: 'A schedule needs a club.',
   name_required: 'Give the schedule a name.',
   config_must_be_object: 'The tournament configuration is missing.',
+  custom_level_breaks_not_supported:
+    'Custom Level Breaks Are Not Supported. Remove Break Rows And Use The Synchronized Break Setting.',
   days_of_week_required: 'Pick at least one day of the week.',
   days_of_week_out_of_range: 'Days of week must be Sunday through Saturday.',
   start_time_format_invalid: 'Start times must be HH:MM, 24-hour, UTC.',
@@ -86,7 +89,9 @@ class TournamentScheduleService {
         daysOfWeek: draft.daysOfWeek,
         startTimesUtc: draft.startTimesUtc,
         intervalMinutes: draft.intervalMinutes ?? null,
-        config: draft.config,
+        config: isUnlimitedMtt({ ...draft.config, type: draft.config.type ?? 'mtt' })
+          ? { ...draft.config, maxPlayers: null, max_players: null }
+          : draft.config,
       },
     });
     if (error) {

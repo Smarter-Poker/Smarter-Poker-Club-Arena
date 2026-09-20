@@ -1,3 +1,8 @@
+import {
+  tournamentEntryWindow,
+  tournamentEntryWindowOpen,
+  type TournamentEntryWindowRow,
+} from '../../utils/tournamentEntryWindow';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT INFO PANEL (2026-08-23)
@@ -27,7 +32,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
 import { money } from '../../utils/buyIn';
-import { effectivePlaceLadderPool, placePrize, resolvePayoutStructure } from './details/types';
+import {
+  effectivePlaceLadderPool,
+  placePrize,
+  resolvePayoutStructure,
+  tournamentRowUnitCents,
+  type TournamentArenaEmbed,
+} from './details/types';
 import './TournamentInfoPanel.css';
 
 type TabId = 'ranking' | 'prizes' | 'tables' | 'blinds';
@@ -44,7 +55,7 @@ interface Row {
   table_id: string | null;
 }
 
-interface TournamentRow {
+interface TournamentRow extends TournamentEntryWindowRow, TournamentArenaEmbed {
   id: string;
   name: string;
   status: string;
@@ -122,7 +133,10 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
         supabase
           .from('tournaments')
           .select(
-            'id, name, status, variant, tournament_type, spin_multiplier, buy_in_amount, buy_in_fee, prize_pool, guaranteed_prize, bubble_protection, satellite_target_id, satellite_target, bounty_pool, current_players, max_players, starting_chips, current_level, level_started_at, late_reg_levels, blind_structure, payout_structure, is_bounty, start_time'
+            // `arena` is the three columns fn_ca_tournament_unit_cents tests,
+            // so this panel's ladder is priced in the unit the event actually
+            // pays in rather than in the cent every tournament used to pay in.
+            'id, name, status, variant, tournament_type, spin_multiplier, buy_in_amount, buy_in_fee, prize_pool, guaranteed_prize, bubble_protection, satellite_target_id, satellite_target, bounty_pool, current_players, max_players, starting_chips, current_level, level_started_at, late_reg_levels, late_reg_mins, rebuy_levels, prize_pool_finalized, started_at, blind_structure, payout_structure, is_bounty, start_time, arena:clubs!tournaments_club_id_fkey(id, asset, is_platform, union_id)'
           )
           .eq('id', tournamentId)
           .maybeSingle(),
@@ -215,6 +229,13 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
     );
   }, [fieldSize, isSatellite, payouts, t]);
   /**
+   * The unit this event pays in, from the `arena` the select above embeds. A
+   * cent-grid share of a Diamond pool floors to a different whole number than
+   * a Diamond-grid one does, so the arithmetic, not the display, is what this
+   * fixes.
+   */
+  const unitCents = useMemo(() => tournamentRowUnitCents(t), [t]);
+  /**
    * LEVEL DISPLAY IS 1-BASED, THE COLUMN IS NOT (2026-08-23).
    *
    * tournaments.current_level is a 0-BASED index into blind_structure — the
@@ -238,8 +259,15 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
    * had no late registration at all — so it never reported the thing it exists
    * to report.
    */
-  const lateRegCap = num(t?.late_reg_levels);
-  const lateRegClosed = lateRegCap <= 0 || num(t?.current_level) >= lateRegCap;
+  const entryWindow = tournamentEntryWindow(t ?? {});
+  const lateRegText =
+    !t || !tournamentEntryWindowOpen(t, Date.now())
+      ? 'Closed'
+      : entryWindow.mode === 'levels'
+        ? `Through Level ${entryWindow.cap}`
+        : entryWindow.mode === 'minutes'
+          ? `${entryWindow.minutes} Minutes`
+          : 'Closed';
 
   const tables = useMemo(() => {
     const byTable = new Map<string, number>();
@@ -297,7 +325,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
               : money(num(t?.buy_in_amount) + num(t?.buy_in_fee))
           )}
           {stat('Level', String(level))}
-          {stat('Late Reg', lateRegClosed ? 'Closed' : `Through Level ${lateRegCap}`)}
+          {stat('Late Reg', lateRegText)}
           {stat('Avg Stack', stats.avg.toLocaleString())}
           {stat('Largest', stats.largest.toLocaleString())}
           {stat('Smallest', stats.smallest.toLocaleString())}
@@ -379,7 +407,9 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
                 {payouts.map((p, i) => {
                   const pct = p.percentage;
                   const amount =
-                    placeLadderPool === null ? null : placePrize(placeLadderPool, payouts, p.place);
+                    placeLadderPool === null
+                      ? null
+                      : placePrize(placeLadderPool, payouts, p.place, unitCents);
                   return (
                     <tr key={i}>
                       <td>{p.place}</td>

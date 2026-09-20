@@ -9,7 +9,6 @@
  * - Realtime channel bridge for live updates
  * - Service layer coordination
  * - Supabase channel deduplication registry
- * - Sentry breadcrumb logging for observability
  * - Debounced subscription helpers for performance
  *
  * NO DEMO DATA - All operations are real.
@@ -1522,7 +1521,6 @@ class MasterBusCore {
 
   /**
    * Emit an event to all subscribers — type-safe version
-   * Also logs a Sentry breadcrumb for observability (#8)
    */
   emit<K extends BusEventType>(
     type: K,
@@ -1563,7 +1561,7 @@ class MasterBusCore {
         this.broadcastChannel.postMessage({ type, payload });
       } catch (e: any) {
         console.warn('[MasterBus] Failed to broadcast event cross-tab:', e);
-        // Phase 11: Structured error telemetry for Sentry visibility
+        // Phase 11: Structured error events for operational visibility
         if (type !== 'SYSTEM_ERROR') {
           this.emit('SYSTEM_ERROR', {
             message: `BroadcastChannel postMessage failed for ${type}: ${e?.message || 'unknown'}`,
@@ -1587,29 +1585,6 @@ class MasterBusCore {
         /* */
       }
     });
-
-    // #8: Log Sentry breadcrumb for every event
-    try {
-      if (typeof window !== 'undefined' && (window as any).__SENTRY__) {
-        import('./sentryBundle')
-          .then((Sentry) => {
-            Sentry.addBreadcrumb({
-              category: 'masterBus',
-              message: type,
-              level: 'info',
-              data:
-                typeof payload === 'object'
-                  ? (payload as Record<string, unknown>)
-                  : { value: payload },
-            });
-          })
-          .catch(() => {
-            /* Sentry not available */
-          });
-      }
-    } catch {
-      /* silent */
-    }
 
     // #9b: Forward critical events to Service Worker for background notifications
     if (CRITICAL_EVENTS.includes(type)) {
@@ -1701,6 +1676,10 @@ class MasterBusCore {
     // When auth state changes, sync user data across stores
     this.subscribe('AUTH_STATE_CHANGED', (event) => {
       const { userId, isAuthenticated } = event.payload;
+      // Retire financial reads on every account event, including A→B→A before
+      // React renders. Register here, after bus initialization, not in a store
+      // that this module imports.
+      useUnionStore.getState().reset();
       realtimeChannelService.handleIdentityChange(isAuthenticated ? userId : null);
 
       if (isAuthenticated && userId) {

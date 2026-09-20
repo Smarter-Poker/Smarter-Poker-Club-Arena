@@ -13,10 +13,10 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
-BUILDER = "club-arena-engine-bounded-v2"
+BUILDER = "club-arena-engine-bounded-v3"
 CONTAINER = f"buildx_buildkit_{BUILDER}0"
 NODE = "node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
-LIMIT = 939524096
+LIMIT = 671088640
 
 
 def run(args, *, timeout=60, check=True, env=None):
@@ -37,6 +37,26 @@ def counter(name):
     if name == "memory.events":
         return {k: int(v) for k, v in (line.split() for line in text.splitlines())}
     return text.strip()
+
+
+def verified_build_resources(output):
+    """Retain the original successful invocation's kernel boundary and raw peak."""
+    boundaries = [line.split("=", 1)[1] for line in output.splitlines()
+                  if line.startswith("ENGINE_BUILD_RESOURCE_BOUNDARY=")]
+    expected = f"memory:{LIMIT},swap:0,cpu:100000 100000"
+    if len(boundaries) != 1 or boundaries[0] != expected:
+        raise RuntimeError("bounded engine build did not report its exact enforced cgroup limits")
+    peaks = [line.split("=", 1)[1] for line in output.splitlines()
+             if line.startswith("ENGINE_BUILD_MEMORY_PEAK_BYTES=")]
+    if len(peaks) != 1 or not re.fullmatch(r"[0-9]+", peaks[0]) or int(peaks[0]) <= 0:
+        raise RuntimeError("bounded engine build did not report its memory peak")
+    peak = int(peaks[0])
+    # memory.max is the enforced limit, not a guarantee that the high-water
+    # counter never exceeds it during reclaim. Preserve the observed excess.
+    # https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files
+    return {"engine_build_resource_boundary": boundaries[0],
+            "engine_build_memory_peak": peak,
+            "engine_build_memory_peak_over_limit_bytes": max(0, peak - LIMIT)}
 
 
 def runtime_hashes(directory):
@@ -147,13 +167,7 @@ def main():
             (out / "engine-build.log").write_text(built.stdout)
             if built.returncode:
                 raise RuntimeError(f"bounded engine build failed: {built.stdout[-20000:]}")
-            peaks = [line.split("=", 1)[1] for line in built.stdout.splitlines()
-                     if line.startswith("ENGINE_BUILD_MEMORY_PEAK_BYTES=")]
-            if len(peaks) != 1:
-                raise RuntimeError("bounded engine build did not report its memory peak")
-            receipt["engine_build_memory_peak"] = int(peaks[0])
-            if receipt["engine_build_memory_peak"] > LIMIT:
-                raise RuntimeError("bounded engine build exceeded its reviewed memory limit")
+            receipt.update(verified_build_resources(built.stdout))
             if inspect(CONTAINER)["State"]["Running"]:
                 raise RuntimeError("successful build left its builder running")
             if list(Path(temp, "contexts").iterdir()):

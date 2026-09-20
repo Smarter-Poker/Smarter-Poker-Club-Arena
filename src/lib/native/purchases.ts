@@ -28,8 +28,9 @@ import { diamondProductId, vipProductId } from '../iapProducts';
 let configuredFor: string | null = null;
 
 async function sdk() {
-  const { Purchases, LOG_LEVEL } = await import('@revenuecat/purchases-capacitor');
-  return { Purchases, LOG_LEVEL };
+  const { Purchases, LOG_LEVEL, PRODUCT_CATEGORY } =
+    await import('@revenuecat/purchases-capacitor');
+  return { Purchases, LOG_LEVEL, PRODUCT_CATEGORY };
 }
 
 export function storeKeyForThisPlatform(): string | undefined {
@@ -81,9 +82,13 @@ export async function purchaseNative(
   if (!configured) return { ok: false, error: 'store_not_configured' };
   const productId =
     req.kind === 'diamonds' ? diamondProductId(req.packageKey) : vipProductId(req.tier);
-  const { Purchases } = await sdk();
+  const { Purchases, PRODUCT_CATEGORY } = await sdk();
   try {
-    const { products } = await Purchases.getProducts({ productIdentifiers: [productId] });
+    const { products } = await Purchases.getProducts({
+      productIdentifiers: [productId],
+      type:
+        req.kind === 'diamonds' ? PRODUCT_CATEGORY.NON_SUBSCRIPTION : PRODUCT_CATEGORY.SUBSCRIPTION,
+    });
     const product = products.find((p) => p.identifier === productId);
     if (!product) return { ok: false, productId, error: 'product_not_in_store' };
     const result = await Purchases.purchaseStoreProduct({ product });

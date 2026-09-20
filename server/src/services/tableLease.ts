@@ -41,6 +41,10 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import {
+  mapLeaseHeartbeatBatches,
+  RetainedLeaseHeartbeatBatches,
+} from './leaseHeartbeatBatches.js';
 import { warnThrottled, _resetLeaseWarnThrottleForTests } from './leaseWarningThrottle.js';
 // Straight from the client module, never the `supabase.js` barrel: the barrel
 // re-exports every submodule, so importing it from here would pull the whole
@@ -349,7 +353,7 @@ export type TableLeaseHeartbeatOutcome =
     }
   | {
       status: 'uncertain';
-      reason: 'rpc_error' | 'rpc_threw';
+      reason: 'rpc_error' | 'rpc_threw' | 'pending';
     };
 
 /** Counters behind the /health lease block, so the split is visible remotely. */
@@ -367,17 +371,27 @@ let reclaimableHeartbeats = 0;
  * possible. That is deliberately stricter than the pre-deadline behavior,
  * which allowed an UNKNOWN heartbeat to keep a dealer alive forever.
  */
+const retainedTableHeartbeats = new RetainedLeaseHeartbeatBatches<
+  TableLeaseHeartbeatClaim,
+  TableLeaseHeartbeatOutcome
+>();
+
 export async function heartbeatTables(
-  claims: TableLeaseHeartbeatClaim[]
+  claims: TableLeaseHeartbeatClaim[],
+  onBatch?: (outcome: TableLeaseHeartbeatOutcome) => void,
+  ownerIsCurrent: () => boolean = () => true,
+  claimIsCurrent: (claim: TableLeaseHeartbeatClaim) => boolean = () => true
 ): Promise<TableLeaseHeartbeatOutcome> {
   if (claims.length === 0) {
     return { status: 'answered', proofs: [], lostTableIds: [] };
   }
   const tableIds = claims.map((claim) => claim.tableId);
-  const uniqueTableIds = new Set(tableIds);
+  const uniqueTableIds = new Set(tableIds.map((tableId) => tableId.toLowerCase()));
   if (
     uniqueTableIds.size !== claims.length ||
-    claims.some((claim) => !UUID_PATTERN.test(claim.leaseGeneration))
+    claims.some(
+      (claim) => !UUID_PATTERN.test(claim.tableId) || !UUID_PATTERN.test(claim.leaseGeneration)
+    )
   ) {
     heartbeatErrors++;
     warnThrottled(
@@ -402,7 +416,57 @@ export async function heartbeatTables(
     }
     return { status: 'answered', proofs: [], lostTableIds: tableIds };
   }
+  const capturedClaims = claims.map((claim) => ({ ...claim }));
   const proofDeadlineMonotonicMs = tableLeaseMonotonicNow() + TABLE_LEASE_PROOF_WINDOW_MS;
+  if (onBatch) {
+    retainedTableHeartbeats.dispatch(
+      capturedClaims,
+      (claim) => `${claim.tableId.toLowerCase()}/${claim.leaseGeneration.toLowerCase()}`,
+      () => ownerIsCurrent() && tableLeaseMonotonicNow() < proofDeadlineMonotonicMs,
+      (batch) => {
+        const currentClaims = batch.filter(claimIsCurrent);
+        return currentClaims.length
+          ? heartbeatTableBatch(currentClaims, proofDeadlineMonotonicMs)
+          : Promise.resolve({ status: 'answered', proofs: [], lostTableIds: [] });
+      },
+      onBatch,
+      (error) =>
+        warnThrottled(
+          'batch_delivery_failed',
+          `[lease] heartbeat batch delivery failed: ${String(error)}`
+        )
+    );
+    // Dispatch is not a renewal. Only a validated batch callback proves one.
+    return { status: 'uncertain', reason: 'pending' };
+  }
+  const outcomes = await mapLeaseHeartbeatBatches(capturedClaims, (batch) =>
+    heartbeatTableBatch(batch, proofDeadlineMonotonicMs)
+  );
+  const proofs: TableLeaseHeartbeatProof[] = [];
+  const lostTableIds: string[] = [];
+  let answered = false;
+  for (const outcome of outcomes) {
+    if (outcome.status !== 'answered') continue;
+    answered = true;
+    for (const proof of outcome.proofs) {
+      if (tableLeaseMonotonicNow() < proof.proofDeadlineMonotonicMs) proofs.push(proof);
+      else lostTableIds.push(proof.tableId);
+    }
+    lostTableIds.push(...outcome.lostTableIds);
+  }
+  // Unknown batches extend no authority; GameServer checks every captured
+  // dealer's old deadline even when a separate batch returned exact proofs.
+  return answered ? { status: 'answered', proofs, lostTableIds } : outcomes[0];
+}
+
+async function heartbeatTableBatch(
+  claims: TableLeaseHeartbeatClaim[],
+  proofDeadlineMonotonicMs: number
+): Promise<TableLeaseHeartbeatOutcome> {
+  const tableIds = claims.map((claim) => claim.tableId);
+  if (tableLeaseMonotonicNow() >= proofDeadlineMonotonicMs) {
+    return { status: 'answered', proofs: [], lostTableIds: tableIds };
+  }
   try {
     const { data, error } = await supabase.rpc('heartbeat_table_leases_v4', {
       p_instance_id: INSTANCE_ID,
@@ -454,7 +518,8 @@ export async function heartbeatTables(
       heartbeatErrors++;
       warnThrottled(
         'malformed_response',
-        '[lease] heartbeat returned an incomplete or malformed ownership proof'
+        `[lease] heartbeat returned an incomplete or malformed ownership proof ` +
+          `(requested=${claims.length}, received=${rawRows?.length ?? 'non-array'})`
       );
       /* See the note on the first whole-answer refusal above. */
       try {

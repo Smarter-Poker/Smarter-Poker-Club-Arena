@@ -1,0 +1,20 @@
+{
+  "_owner": "agent/codex/union-legacy-fee-finality-20260918",
+  "tables": [
+    "accounting_tournament_fee_custody_obligations",
+    "accounting_tournament_fee_custody_resolutions",
+    "accounting_tournament_fee_custody_capture_admissions"
+  ],
+  "functions": [
+    "fn_ca_legacy_fee_custody_cohort",
+    "fn_ca_tournament_fee_custody_receipt",
+    "fn_ca_hold_legacy_tournament_fee",
+    "fn_ca_legacy_fee_custody_is_append_only",
+    "fn_ca_legacy_fee_custody_requires_terminal",
+    "fn_ca_legacy_fee_capture_admitted",
+    "fn_ca_begin_legacy_fee_resolution",
+    "fn_ca_legacy_fee_resolution_write_is_exact",
+    "fn_ca_legacy_fee_resolution_requires_recognition",
+    "fn_ca_legacy_fee_capture_requires_resolution"
+  ]
+}

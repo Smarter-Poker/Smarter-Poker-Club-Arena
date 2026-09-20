@@ -10,8 +10,14 @@ describe('frozen joint actual-controller populations', () => {
   it('covers all enabled variants and board modes before outcomes are observed', () => {
     expect(new Set(JOINT_LEAGUE_PROFILES.map((p) => p.variant))).toEqual(new Set(KNOWN_VARIANTS));
     expect(JOINT_LEAGUE_SEEDS).toEqual([13101101, 13102203, 13103307]);
-    expect(JOINT_LEAGUE_PROFILES).toHaveLength(55);
-    expect(new Set(JOINT_LEAGUE_PROFILES.map((p) => p.id)).size).toBe(55);
+    expect(JOINT_LEAGUE_PROFILES).toHaveLength(57);
+    expect(new Set(JOINT_LEAGUE_PROFILES.map((p) => p.id)).size).toBe(57);
+    for (const variant of ['flh', 'flo8'])
+      expect(
+        JOINT_LEAGUE_PROFILES.some(
+          (p) => p.variant === variant && p.stackBB === 1000 && p.seats > 2
+        )
+      ).toBe(true);
     for (const p of JOINT_LEAGUE_PROFILES) {
       const rules = horseVariantRulesFor(p.variant);
       expect(p.seats * rules.holeCardsDealt + 5 * (p.bombBoards ?? 1)).toBeLessThanOrEqual(

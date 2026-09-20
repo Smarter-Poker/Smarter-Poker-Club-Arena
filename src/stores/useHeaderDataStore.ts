@@ -387,7 +387,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         // { data: null, error }, never as a throw, so the catch below cannot see
         // it. Reading .data straight through turned a missing column grant on
         // profiles.arena_avatar_url into "the header orb shows the placeholder",
-        // with nothing in Sentry and nothing in the console, for every account.
+        // with nothing in error reporting and nothing in the console, for every account.
         // Surface each failure on its own; a broken avatar must not look like a
         // user who simply has none.
         if (profileResult.error) {
@@ -556,10 +556,20 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
           /* The player's own row changed. This is what makes a change made on
              ANOTHER surface — the World Hub's avatar page, a second tab, the
              table's settings panel — reach this header without a reload.
-             `profiles` is in the supabase_realtime publication (verified
-             2026-08-25); `table_seats` is NOT, which is why the identical-looking
-             `table-seats-live` subscription in TablePage has never delivered a
-             row and could not be copied here.
+             THAT IS WHAT IT WAS FOR. It has not worked since 2026-09-06.
+
+             This said "`profiles` is in the supabase_realtime publication
+             (verified 2026-08-25)", and on 2026-08-25 that was true. The
+             2026-09-06 trim removed it - 1,000,061 writes over 120 columns at
+             45.29ms per change, the worst per-change cost measured - and
+             nothing re-read this comment afterwards. A verification carries the
+             date it was taken, not a guarantee about later.
+
+             So this channel joins, reports SUBSCRIBED and receives nothing: an
+             avatar changed on the World Hub or in a second tab does NOT reach
+             this header until a reload. `table_seats` is still NOT published
+             either, so the identical-looking `table-seats-live` subscription in
+             TablePage remains dead for the same reason.
 
              A partial payload must not blank the orb. setProfileHeaderData
              merges only columns actually present in the replication payload,

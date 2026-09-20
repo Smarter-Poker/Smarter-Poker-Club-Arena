@@ -123,6 +123,10 @@
   background: linear-gradient(90deg, #0c1319, rgba(12, 19, 25, 0.18) 62%, transparent);
 }
 
+.heroArt picture {
+  display: contents;
+}
+
 .heroArt img {
   width: 100%;
   height: 100%;
@@ -293,6 +297,11 @@
 .expanded {
   background: rgba(58, 168, 255, 0.035);
   box-shadow: inset 2px 0 #3aa8ff;
+}
+
+/* The hidden attribute must win over any display rule on the answer (AEO phase 1). */
+.answer[hidden] {
+  display: none;
 }
 
 .answer {

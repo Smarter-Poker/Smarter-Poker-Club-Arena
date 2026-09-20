@@ -29,7 +29,7 @@ import { join, resolve } from 'node:path';
 
 const ROOT = resolve(__dirname, '../..');
 const WORKFLOW = readFileSync(join(ROOT, '.github/workflows/post-deploy-e2e.yml'), 'utf8');
-const ENGINE_STAGE = readFileSync(join(ROOT, '.github/workflows/stage-engine-release.yml'), 'utf8');
+const TABLE_WORKFLOW = WORKFLOW.slice(WORKFLOW.indexOf('  live-table-e2e:'));
 const LIVE_TABLE = readFileSync(
   join(ROOT, 'tests/e2e/production-live-table-realtime.spec.ts'),
   'utf8'
@@ -240,26 +240,23 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
   });
 
   it('runs live-table continuity as real mobile WebKit with exact engine provenance', () => {
-    const sweep = step(WORKFLOW, 'Run the specs that need a deployed page');
-    const honesty = step(WORKFLOW, 'Did the suite actually verify production?');
-    const engine = step(WORKFLOW, 'Resolve the exact protected-main engine component');
+    const sweep = step(
+      TABLE_WORKFLOW,
+      'Certify live-table continuity against the exact serving engine'
+    );
+    const honesty = step(TABLE_WORKFLOW, 'Did the live-table certificate actually execute?');
+    const engine = step(TABLE_WORKFLOW, 'Resolve the exact protected-main engine component');
 
     expect(sweep).toContain('tests/e2e/production-live-table-realtime.spec.ts');
     expect(sweep).toContain('--project=webkit-live-table-realtime');
     expect(sweep).toContain("LIVE_TABLE_REALTIME_CERTIFICATION: '1'");
     expect(sweep).toContain('EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}');
-    expect(sweep).toContain('live table realtime exit=$live_table_realtime_rc');
     expect(honesty).toContain('e2e-report/live-table-realtime.json');
-    for (const pathspec of [
-      "'server/**'",
-      "':(exclude)server/**/*.test.ts'",
-      "':(exclude)server/sim/**'",
-    ]) {
-      expect(engine).toContain(pathspec);
-      expect(ENGINE_STAGE).toContain(pathspec);
-    }
-    expect(engine).toContain('git log "$MAIN_SHA" -1 --format=%H');
-    expect(engine).toContain('[ "$ENGINE_TRIGGER_SHA" != "$ENGINE_SHA" ]');
+    expect(engine).toContain('production-e2e-provenance.mjs engine-live');
+    expect(engine).not.toContain('git log "$MAIN_SHA"');
+    expect(engine).toContain('ENGINE_SHA="$ENGINE_TRIGGER_SHA"');
+    expect(engine).toContain('git cat-file -e "$ENGINE_SHA^{commit}"');
+    expect(engine).toContain('git merge-base --is-ancestor "$ENGINE_SHA" "$MAIN_SHA"');
     expect(LIVE_TABLE).toContain('releaseSha: string | null;');
     expect(LIVE_TABLE).toContain('observedReleaseSha');
     expect(LIVE_TABLE).toContain('toMatch(/^[0-9a-f]{40}$/)');
@@ -268,7 +265,7 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     expect(LIVE_TABLE).not.toContain('EXPECTED_ENGINE_SHA.startsWith');
   });
 
-  it('accepts an engine certification trigger only with one exact current component SHA', () => {
+  it('accepts an engine certification trigger only with one exact protected-main SHA', () => {
     const gate = step(WORKFLOW, 'Read The Origin Job Verdict');
     expect(WORKFLOW).toContain(
       'run-name: Post-Deploy E2E ${{ github.event.client_payload.engine_sha || github.sha }}'
@@ -305,8 +302,14 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     // fix on precisely the runs it was written for.
     const align = step(WORKFLOW, 'Take the specs from the commit production is actually serving');
     expect(align).toContain('tests/e2e/global-setup.ts');
-    expect(align).toContain('tests/e2e/production-live-table-realtime.spec.ts');
     expect(align).toContain('tests/e2e/support');
+    const tableAlign = step(
+      TABLE_WORKFLOW,
+      'Take the specs from the commit production is actually serving'
+    );
+    expect(tableAlign).toContain('tests/e2e/global-setup.ts');
+    expect(tableAlign).toContain('tests/e2e/production-live-table-realtime.spec.ts');
+    expect(tableAlign).toContain('tests/e2e/support');
   });
 
   it('annotates the run when a supplied credential silently did not work', () => {

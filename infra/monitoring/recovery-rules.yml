@@ -36,3 +36,56 @@ groups:
             club-arena-verify.timer runs the read-only audit daily. Either it
             stopped or the textfile collector is no longer publishing. The
             recovery contract may be intact, but it is not currently verified.
+
+      # ── THE RELEASE GATE THAT NEVER OPENS (2026-09-18) ──────────────────
+      # The engine restarts only inside the :55 break, and only when
+      # poker_maintenance_break_ready_for_restart reaches 1. On the night of
+      # 2026-09-17 it stayed 0 through five consecutive breaks: the fleet ran
+      # eight hours on a build from 16:56 while four merged fixes - including
+      # the fix for the very bug holding the gate - sat in main unable to
+      # install. Nothing alerted, because every individual break looks like a
+      # break that simply had tables still finishing.
+      #
+      # Three hours is three consecutive missed breaks: past that, releases
+      # have stopped and somebody has to look.
+      - alert: EngineReleaseGateNeverOpens
+        expr: max_over_time(poker_maintenance_break_ready_for_restart[3h]) == 0
+        for: 10m
+        labels:
+          severity: critical
+          component: club-arena-engine
+        annotations:
+          summary: 'The restart gate has not opened once in three hours'
+          description: >-
+            poker_maintenance_break_ready_for_restart has been 0 for every
+            scrape in three hours, so no release can have installed. Read
+            poker_maintenance_unparked_tables by reason: cards_in_air means
+            hands are still finishing, and the rest mean a table's park
+            checkpoint never became durable - accounting_pending and
+            accounting_unconfirmed are the time-bank accounting settle,
+            bank_park_write_incomplete is the presence row. The engine's log
+            names the first five tables at each countdown.
+          runbook: docs/runbooks/maintenance-break-fire-drill.md
+
+      # The same signal from the other side: tables the gate refuses for a
+      # reason that is not "cards are still in the air". A hand finishes in
+      # seconds; a checkpoint that never becomes durable does not resolve on
+      # its own, and one such table is enough to hold the whole platform's
+      # release.
+      - alert: RestartGateHeldByUndurableTables
+        expr: >-
+          sum(poker_maintenance_unparked_tables{reason!="cards_in_air"}) > 0
+          and poker_maintenance_break_active == 1
+        for: 4m
+        labels:
+          severity: warning
+          component: club-arena-engine
+        annotations:
+          summary: '{{ $value }} table(s) hold the restart gate on a checkpoint, not on a hand'
+          description: >-
+            These tables are parked between hands, so nothing is being dealt
+            at them, but their maintenance checkpoint never became durable and
+            the gate cannot open. The reason label says which condition is
+            false. Four minutes is past the point where a park write or a
+            time-bank accounting write should have settled.
+          runbook: docs/runbooks/maintenance-break-fire-drill.md

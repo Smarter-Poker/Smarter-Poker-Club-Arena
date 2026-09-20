@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "scope": "Explicit three original Free Buy fee proof; no fee capture bypass or money movement",
+  "original_evidence": "legacy-freebuy-proof-repair/native-0006/result.json",
+  "original_receipt_sha256": "e6850b514f0ad305ab73f2da66ceb3cb49b69366bc1232e3a3128c16c42c0e1b",
+  "files": {
+    "scripts/ci/mtt_historical_freebuy_proof.py": "c3a76e7b88b6ced56a04d40d6879c7ea67f7f01eb6dc74bb83e2caf5d9a19eea",
+    "supabase/migrations/20260917205610_mtt_three_original_freebuy_fee_proofs.sql": "f98f72069a396f547b4731f9271a16985836224ede07b7967c29d7502656e169",
+    "scripts/ci/fixtures/mtt-historical-freebuy/current-authority-supplement.sql": "e676bed99aa750bcc24aa12ea52806abb0c29853445f76e5101973fe9168277c",
+    "scripts/ci/fixtures/mtt-historical-freebuy/historical-input-fixture.sql": "f68718d24baee310ce9447ac867f0a57a536a9a0c423a4e54bd03af397e0ba84",
+    "scripts/ci/fixtures/mtt-historical-freebuy/production-probe.sql": "17bae74e14dd19ca2dc7498d5e934489902086ee4899465c87c6d390dc7e4cf8",
+    "scripts/ci/fixtures/mtt-historical-freebuy/exact-plan.json": "12f697b07b4bbd0740c2e739636d1e2f9b3580ef710e286845fad22108e6c2ae",
+    "scripts/ci/fixtures/mtt-historical-freebuy/input-provenance.json": "02ceedadee4c5ca436059b167aa126f494d10169fa56f4bf98566bca83692402"
+  }
+}

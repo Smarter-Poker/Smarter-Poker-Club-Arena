@@ -5,17 +5,64 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => ({
   user: { id: 'viewer' },
+  realOverview: false,
+  health: vi.fn(),
   getTournament: vi.fn(),
   reportError: vi.fn(),
   navigate: vi.fn(),
   channels: [] as any[],
+  tournamentEvents: new Map<string, Set<(event: any) => void>>(),
+  channelStatuses: new Set<(status: any) => void>(),
   bus: new Map<string, Set<(event: any) => void>>(),
   queries: [] as any[],
 }));
-vi.mock('../../src/services/TournamentService', () => ({
-  tournamentService: { getTournament: fixture.getTournament },
-  tournamentUnregisterSuccessText: () => 'Unregistered',
+vi.mock('../../src/services/TournamentService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/TournamentService')>();
+  return {
+    ...actual,
+    tournamentService: {
+      getTournament: fixture.getTournament,
+      getCurrentLevelState: actual.tournamentService.getCurrentLevelState.bind(
+        actual.tournamentService
+      ),
+    },
+    tournamentUnregisterSuccessText: () => 'Unregistered',
+  };
+});
+vi.mock('../../src/services/GameServerAPI', () => ({ getServerStatus: fixture.health }));
+vi.mock('../../src/services/EngineStateClient', () => ({
+  engineChannelClient: {
+    onStatusChange: (cb: any) => {
+      fixture.channelStatuses.add(cb);
+      return () => fixture.channelStatuses.delete(cb);
+    },
+  },
 }));
+vi.mock('../../src/services/RealtimeChannelService', () => ({
+  realtimeChannelService: {
+    subscribeToLobby: () => () => {},
+    subscribeToTournament: (id: string, callbacks: any) => {
+      const listeners = fixture.tournamentEvents.get(id) ?? new Set();
+      listeners.add(callbacks.onEvent);
+      fixture.tournamentEvents.set(id, listeners);
+      return () => listeners.delete(callbacks.onEvent);
+    },
+  },
+}));
+vi.mock('../../src/components/tournament/details/useSatellites', () => ({
+  useSatellites: () => ({
+    cards: [],
+    registration: {},
+    loading: false,
+    error: null,
+    retry: vi.fn(),
+  }),
+}));
+vi.mock('../../src/components/tournament/RegistrationApprovalsPanel', () => ({
+  default: () => null,
+}));
+vi.mock('../../src/components/tournament/TournamentDealReview', () => ({ default: () => null }));
+
 vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: fixture.user }) }));
 vi.mock('../../src/hooks/useTournamentRegistration', () => ({
   useTournamentRegistration: () => ({ register: vi.fn(), isRegistering: false }),
@@ -67,20 +114,30 @@ vi.mock('../../src/lib/supabase', () => ({
     },
   },
 }));
-vi.mock('../../src/components/tournament/details/DetailOverviewTab', () => ({
-  default: ({ tournament, entries, tables, isRegistered }: any) => (
-    <output data-testid="snapshot">
-      {JSON.stringify({
-        id: tournament.id,
-        name: tournament.name,
-        level: tournament.current_level,
-        entries: entries.map((e: any) => ({ id: e.id, chips: e.chips, table: e.table_id })),
-        tables: tables.map((t: any) => t.id),
-        isRegistered,
-      })}
-    </output>
-  ),
-}));
+vi.mock('../../src/components/tournament/details/DetailOverviewTab', async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import('../../src/components/tournament/details/DetailOverviewTab')
+    >();
+  return {
+    default: (props: any) => {
+      if (fixture.realOverview) return <actual.default {...props} />;
+      const { tournament, entries, tables, isRegistered } = props;
+      return (
+        <output data-testid="snapshot">
+          {JSON.stringify({
+            id: tournament.id,
+            name: tournament.name,
+            level: tournament.current_level,
+            entries: entries.map((e: any) => ({ id: e.id, chips: e.chips, table: e.table_id })),
+            tables: tables.map((t: any) => t.id),
+            isRegistered,
+          })}
+        </output>
+      );
+    },
+  };
+});
 vi.mock('../../src/components/tournament/details/BlindsTab', () => ({ default: () => null }));
 vi.mock('../../src/components/tournament/details/RankingTab', () => ({ default: () => null }));
 vi.mock('../../src/components/tournament/details/EntriesTab', () => ({ default: () => null }));
@@ -96,6 +153,7 @@ vi.mock('../../src/components/tournament/MysteryBountyCelebration', () => ({
 }));
 
 import TournamentDetails from '../../src/pages/tournament/TournamentDetails';
+import TournamentLobbyModal from '../../src/components/table/TournamentLobbyModal';
 const tournament = (id = 'a', extra: Record<string, unknown> = {}) => ({
   id,
   name: `Event ${id}`,
@@ -168,7 +226,11 @@ function Page({
 beforeEach(() => {
   vi.useFakeTimers();
   fixture.user = { id: 'viewer' };
+  fixture.realOverview = false;
+  fixture.health.mockReset().mockResolvedValue(null);
   fixture.channels.length = 0;
+  fixture.tournamentEvents.clear();
+  fixture.channelStatuses.clear();
   fixture.bus.clear();
   fixture.queries.length = 0;
   fixture.getTournament.mockReset().mockImplementation(async (id) => tournament(id));
@@ -182,6 +244,66 @@ afterEach(() => {
 });
 
 describe('Tournament details snapshot recovery', () => {
+  it.each([false, true])(
+    'renders the actual break clock through row updates in the modal=%s caller',
+    async (modal) => {
+      const now = Date.parse('2026-09-17T17:55:00Z');
+      vi.setSystemTime(now);
+      fixture.realOverview = true;
+      const paused = tournament('a', {
+        on_break: true,
+        started_at: new Date(now - 60_000).toISOString(),
+        level_started_at: new Date(now - 60_000).toISOString(),
+        break_started_at: new Date(now).toISOString(),
+        break_ends_at: new Date(now + 30_000).toISOString(),
+        blind_structure: [
+          { level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 8 },
+          { level: 2, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 8 },
+        ],
+        blind_level_state: { index: 1, small_blind: 75, big_blind: 150, ante: 20 },
+      });
+      fixture.getTournament.mockResolvedValue(paused);
+      const view = (isOpen = true) =>
+        modal ? (
+          <MemoryRouter>
+            <TournamentLobbyModal isOpen={isOpen} tournamentId="a" onClose={() => {}} />
+          </MemoryRouter>
+        ) : (
+          <Page embedded={false} />
+        );
+      const rendered = render(view());
+      await flush();
+      expect(screen.getByText('Expected Resume In')).toBeInTheDocument();
+      expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('75 / 150');
+      const channel = fixture.channels.find((entry) =>
+        entry.bindings.some((binding: any) => binding.filter.table === 'tournaments')
+      );
+      const rowUpdate = channel.bindings.find(
+        (binding: any) => binding.filter.table === 'tournaments'
+      ).callback;
+      if (modal) rendered.rerender(view(false));
+      // The initial row's deadline is advisory, including a hidden/reopened modal.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(31_000);
+      });
+      act(() =>
+        rowUpdate({ eventType: 'UPDATE', new: { id: 'a', on_break: false, break_ends_at: null } })
+      );
+      if (modal) rendered.rerender(view());
+      expect(screen.getByText('Waiting For Resume')).toBeInTheDocument();
+      expect(rendered.container.querySelector('.dov-hero__meter')).toBeNull();
+      act(() =>
+        rowUpdate({
+          eventType: 'UPDATE',
+          new: { id: 'a', level_started_at: new Date(now - 29_000).toISOString() },
+        })
+      );
+      expect(screen.getByText('Level 2 Ends In')).toBeInTheDocument();
+      expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('7:00');
+      expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('75 / 150');
+    }
+  );
+
   it.each([true, false])(
     're-reads missed state on channel subscription (embedded=%s)',
     async (embedded) => {
@@ -386,5 +508,71 @@ describe('Tournament details snapshot recovery', () => {
     await flush();
     expect(snapshot().entries[0].chips).toBe(700);
     expect(fixture.getTournament).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('authoritative hand-for-hand disclosure', () => {
+  function presentation(id: string, active: unknown) {
+    act(() => {
+      for (const listener of fixture.tournamentEvents.get(id) ?? [])
+        listener({ type: 'tournament_presentation', payload: { handForHand: active } });
+    });
+  }
+
+  it('shows the manager snapshot on the actual detail banner and clears on bubble exit/reconnect', async () => {
+    fixture.realOverview = true;
+    render(<Page />);
+    await flush();
+    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    presentation('a', true);
+    expect(screen.getByText('HAND FOR HAND')).toBeTruthy();
+    presentation('a', false);
+    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    presentation('a', true);
+    act(() => {
+      for (const listener of fixture.channelStatuses) listener('reconnecting');
+    });
+    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    act(() => {
+      for (const listener of fixture.channelStatuses) listener('connected');
+    });
+    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    presentation('a', true);
+    expect(screen.getByText('HAND FOR HAND')).toBeTruthy();
+  });
+
+  it('fences old-account and old-tournament callbacks before accepting a new snapshot', async () => {
+    fixture.realOverview = true;
+    const view = render(<Page embedded id="a" />);
+    await flush();
+    presentation('a', true);
+    const old = [...fixture.tournamentEvents.get('a')!][0];
+    fixture.user = { id: 'second-viewer' };
+    view.rerender(<Page embedded id="a" />);
+    await flush();
+    act(() => old({ type: 'tournament_presentation', payload: { handForHand: true } }));
+    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    presentation('a', true);
+    expect(screen.getByText('HAND FOR HAND')).toBeTruthy();
+    view.rerender(<Page embedded id="b" />);
+    await flush();
+    presentation('a', true);
+    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    presentation('b', true);
+    expect(screen.getByText('HAND FOR HAND')).toBeTruthy();
+  });
+
+  it('rejects unrelated/malformed state and releases the old event consumer on unmount', async () => {
+    fixture.realOverview = true;
+    const view = render(<Page />);
+    await flush();
+    presentation('other', true);
+    presentation('a', 'true');
+    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    presentation('a', true);
+    expect(screen.getByText('HAND FOR HAND')).toBeTruthy();
+    view.unmount();
+    expect(fixture.tournamentEvents.get('a')?.size ?? 0).toBe(0);
+    presentation('a', true);
   });
 });

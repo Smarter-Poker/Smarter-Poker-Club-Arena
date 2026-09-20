@@ -49,6 +49,7 @@ const node = {
   },
 };
 const action = (userId = actor, ordinal = 0, handId = id) => ({
+  seat: node.actorSeat,
   userId,
   action: 'check',
   stage: 'preflop',
@@ -67,6 +68,12 @@ const action = (userId = actor, ordinal = 0, handId = id) => ({
 const hand = (handId = id, at = '2026-09-12T18:59:59.123456Z') => ({
   id: handId,
   createdAt: at,
+  acceptance: {
+    kind: 'atomic_hand_receipt',
+    tableId: other,
+    handNumber: 1000001,
+    payloadHash: 'a'.repeat(64),
+  },
   actions: [action(actor, 0, handId)],
 });
 const snapshot = (hands: unknown[] = []) => ({
@@ -79,6 +86,7 @@ const snapshot = (hands: unknown[] = []) => ({
   readAtMs: NOW,
   snapshotId: '1:3:2',
   coverage: 'retained_committed_roster_rows',
+  acceptance: 'atomic_hand_receipts',
   handCount: hands.length,
   sourceBytes: 1000 * hands.length,
   actionCount: hands.reduce<number>(
@@ -100,6 +108,61 @@ beforeEach(() => {
 });
 afterEach(() => vi.clearAllMocks());
 describe('committed observation snapshot reader', () => {
+  it('excludes a persisted action whose seat disagrees with its bound public node', async () => {
+    const data = hand();
+    data.actions[0].seat = 2;
+    respond(snapshot([data]));
+    const result = await read(request);
+    expect(result.status).toBe('snapshot');
+    if (result.status !== 'snapshot') throw Error('missing snapshot');
+    expect(result.observations).toEqual([]);
+    expect(result.rejected).toEqual({ unavailable_public_node: 1 });
+    expect(result.source.hands).toBe(1);
+  });
+  it('refuses a legacy source envelope even when its history rows committed', async () => {
+    const s = snapshot([hand()]);
+    delete (s as Partial<typeof s>).acceptance;
+    respond(s);
+    expect(await read(request)).toEqual({ status: 'unavailable', reason: 'invalid_source' });
+  });
+  it.each([
+    undefined,
+    { kind: 'atomic_hand_receipt' },
+    {
+      kind: 'atomic_hand_receipt',
+      tableId: other,
+      handNumber: 999999,
+      payloadHash: 'a'.repeat(64),
+    },
+    { kind: 'atomic_hand_receipt', tableId: other, handNumber: 1000001, payloadHash: 'invalid' },
+  ])('refuses missing or malformed accepted-hand proof: %j', async (acceptance) => {
+    respond(snapshot([{ ...hand(), acceptance }]));
+    expect(await read(request)).toEqual({ status: 'unavailable', reason: 'invalid_source_hand' });
+  });
+  it('binds source identity to the exact atomic receipt and never exposes it as a model observation', async () => {
+    respond(snapshot([hand()]));
+    const first = await read(request);
+    const changed = {
+      ...hand(),
+      acceptance: { ...hand().acceptance, payloadHash: 'b'.repeat(64) },
+    };
+    respond(snapshot([changed]));
+    const second = await read(request);
+    expect(first.status).toBe('snapshot');
+    expect(second.status).toBe('snapshot');
+    if (first.status === 'snapshot' && second.status === 'snapshot') {
+      expect(first.source.sourceDigest).not.toBe(second.source.sourceDigest);
+      expect(first.observations).toEqual(second.observations);
+      expect(first.source.acceptance).toBe('atomic_hand_receipts');
+    }
+  });
+  it('preserves a missing-atomic-receipt refusal without treating the visible subset as complete', async () => {
+    respond({ version: 1, status: 'unavailable', reason: 'atomic_receipt_missing' });
+    expect(await read(request)).toEqual({
+      status: 'unavailable',
+      reason: 'atomic_receipt_missing',
+    });
+  });
   it('keeps the original actor and interval when the caller changes its request in flight', async () => {
     const before = snapshot([hand()]);
     respond(before);

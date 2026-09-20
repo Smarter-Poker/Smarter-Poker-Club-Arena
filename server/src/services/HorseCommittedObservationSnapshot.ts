@@ -20,7 +20,7 @@ export const COMMITTED_OBSERVATION_LIMITS = Object.freeze({
 });
 export interface CommittedObservationRequest {
   readonly actorId: string;
-  /** Commit-row time, never an observation-time completeness watermark. */
+  /** History-row time, never an observation-time completeness watermark. */
   readonly fromMs: number;
   readonly throughMs: number;
 }
@@ -32,6 +32,7 @@ export type CommittedObservationSnapshot =
       actorKey: string;
       source: Readonly<{
         coverage: 'retained_committed_roster_rows';
+        acceptance: 'atomic_hand_receipts';
         fromMs: number;
         throughMs: number;
         readAtMs: number;
@@ -52,6 +53,7 @@ const serverReasons = new Set([
   'hand_budget_exceeded',
   'byte_budget_exceeded',
   'invalid_or_oversized_hand',
+  'atomic_receipt_missing',
 ]);
 
 /**
@@ -101,6 +103,7 @@ export async function readCommittedObservationSnapshot(
       data.fromMs !== request.fromMs ||
       data.throughMs !== request.throughMs ||
       data.coverage !== 'retained_committed_roster_rows' ||
+      data.acceptance !== 'atomic_hand_receipts' ||
       !integer(data.readAtMs) ||
       data.readAtMs < request.throughMs ||
       request.fromMs < data.readAtMs - 86_400_000 ||
@@ -134,6 +137,13 @@ export async function readCommittedObservationSnapshot(
         typeof hand.id !== 'string' ||
         !UUID.test(hand.id) ||
         ids.has(hand.id) ||
+        hand.acceptance?.kind !== 'atomic_hand_receipt' ||
+        typeof hand.acceptance.tableId !== 'string' ||
+        !UUID.test(hand.acceptance.tableId) ||
+        !integer(hand.acceptance.handNumber) ||
+        hand.acceptance.handNumber < 1000000 ||
+        typeof hand.acceptance.payloadHash !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(hand.acceptance.payloadHash) ||
         typeof hand.createdAt !== 'string' ||
         !TIME.test(hand.createdAt) ||
         !Array.isArray(hand.actions) ||
@@ -168,7 +178,14 @@ export async function readCommittedObservationSnapshot(
       );
       // Bind replay to the exact returned source, including rejected entries.
       // Only hashes/counts and qualified public features leave this service.
-      manifest.push([hand.id, hand.createdAt, hash(hand.actions)]);
+      manifest.push([
+        hand.id,
+        hand.createdAt,
+        hand.acceptance.tableId,
+        hand.acceptance.handNumber,
+        hand.acceptance.payloadHash,
+        hash(hand.actions),
+      ]);
       for (const [reason, n] of Object.entries(qualified.rejected))
         rejected[reason] = (rejected[reason] ?? 0) + n;
       for (const observation of qualified.observations) {
@@ -188,6 +205,7 @@ export async function readCommittedObservationSnapshot(
       actorKey,
       source: Object.freeze({
         coverage: 'retained_committed_roster_rows',
+        acceptance: 'atomic_hand_receipts',
         fromMs: request.fromMs,
         throughMs: request.throughMs,
         readAtMs: data.readAtMs,
@@ -195,7 +213,7 @@ export async function readCommittedObservationSnapshot(
         hands: data.handCount,
         sourceBytes: data.sourceBytes,
         sourceDigest: hash([
-          'committed-observation-source-v1',
+          'atomic-committed-observation-source-v2',
           request.actorId,
           request.fromMs,
           request.throughMs,

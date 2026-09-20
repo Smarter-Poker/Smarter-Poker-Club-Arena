@@ -1,0 +1,335 @@
+{
+  "schema_version": 1,
+  "component": "class4-hand-outcome-evidence",
+  "stage": "PARTIAL_STAGE_1",
+  "status": "SOURCE_ONLY_UNRUN_UNINSTALLED",
+  "target_task_id": "01a0ab39-71ca-7821-825d-4943a0a6a0a3",
+  "owner": "restoration root; helper scratch source proposal",
+  "originals": [
+    {
+      "inbox_id": 19654,
+      "financial_alert_id": "eb5460fe-1d65-481c-971b-957d94b7a0b0",
+      "source": "ServerTableEngine.authoritative_hand_semantic_refusal"
+    },
+    {
+      "inbox_id": 19655,
+      "financial_alert_id": "dbb49c1a-ffed-46a0-b409-8a70f110d4d7",
+      "source": "postHandTasks.hand_history_failed"
+    }
+  ],
+  "historical_identity": {
+    "table_id": "34076355-b232-420e-93e8-2deab277f6bc",
+    "hand_number": 9551123,
+    "canonical_hand_id": null,
+    "historical_resolved_rows": "preserve; no reopen or money outcome inference"
+  },
+  "target_function": {
+    "signature": "public.fn_resolve_settled_financial_alerts(boolean,integer)",
+    "preimage": {
+      "domain": "UTF-8 pg_get_functiondef text",
+      "bytes": 6664,
+      "md5": "0874e7e5fa2a2b3b68bc8d3cdc7de8ab",
+      "sha256": "34eaef788bbaa4182b41b36a95e62c6acde727d9d5b045203b0a3a66eac7289a"
+    },
+    "preimage_prosrc_md5": "532dabefb3339c9d5fa244fc2cfce848",
+    "candidate": {
+      "domain": "UTF-8 pg_get_functiondef text",
+      "bytes": 12579,
+      "md5": "edd4397b2daeadade433cd01a26a1c70",
+      "sha256": "2a9e08ee16ec1bf87bd3719b0205055ff1b5455bc5ee918b61dc36563d626ead"
+    },
+    "owner": "postgres",
+    "security_definer": true,
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "proconfig": [
+      "search_path=public, pg_temp"
+    ],
+    "source_replay": "exact preimage or exact candidate only, all authority and dependency guards repeated",
+    "rollback": "exact guarded source restoration; no evidence deletion or historical status reversal"
+  },
+  "files": [
+    {
+      "path": "server/src/engine/ServerTableEngineSettlement.ts",
+      "bytes": 195179,
+      "sha256": "ca07f46bdf003e7f147f504319cdd9f3984a44f5e2e98cee22c6d475101c6bfe"
+    },
+    {
+      "path": "server/src/engine/HandSettlementAlertIdentity.test.ts",
+      "bytes": 9121,
+      "sha256": "d1ba5e38ba6082d4ed081a4f6c5e6cd005fc7daf3f10da80799d20809b85cca5"
+    },
+    {
+      "path": "supabase/components/class4-hand-outcome-evidence.sql",
+      "bytes": 35166,
+      "sha256": "16159e2f2d246a035c830302c95cdd520c91365eab6e7fe5ed925dd355235256"
+    },
+    {
+      "path": "supabase/components/class4-hand-outcome-evidence.rollback.sql",
+      "bytes": 35165,
+      "sha256": "1e3db5177c1fdb3872248150769a6576bcff6cc68f4983fde0c126ea00dae8a8"
+    },
+    {
+      "path": "scripts/qualification/fixtures/class4-hand-outcome-evidence.preimage.sql",
+      "bytes": 6664,
+      "sha256": "34eaef788bbaa4182b41b36a95e62c6acde727d9d5b045203b0a3a66eac7289a"
+    },
+    {
+      "path": "scripts/qualification/fixtures/class4-hand-outcome-evidence.candidate.sql",
+      "bytes": 12579,
+      "sha256": "2a9e08ee16ec1bf87bd3719b0205055ff1b5455bc5ee918b61dc36563d626ead"
+    },
+    {
+      "path": "scripts/qualification/fixtures/class4-hand-outcome-evidence.originals.sql",
+      "bytes": 2279,
+      "sha256": "16e940682626c3259da3c05ae7360feb09067549def40dda52a86730ec5c1d37"
+    },
+    {
+      "path": "scripts/qualification/class4-hand-outcome-evidence.sql",
+      "bytes": 14262,
+      "sha256": "7193b2cc5a30ca8c8db548228343f136fada754d9c614cd3f9518153f1c8ea46"
+    },
+    {
+      "path": "scripts/qualification/class4-hand-outcome-evidence.drift.sql",
+      "bytes": 2458,
+      "sha256": "c449f0143c47471b65241dc81e2d74d57095f003b1ce6ebefda080d84e261a84"
+    },
+    {
+      "path": "scripts/qualification/class4-hand-outcome-evidence.concurrency.spec",
+      "bytes": 4988,
+      "sha256": "685be7c2c927415440482b0028a30ca62f6bbfc0ec47e908921637137171e2e0"
+    },
+    {
+      "path": "scripts/qualification/class4-hand-outcome-evidence.md",
+      "bytes": 14737,
+      "sha256": "00b338cf0ccf45182bf6964d6eaa0a96a0ae49e604b23b02e80d0ca584179237"
+    }
+  ],
+  "evidence_inputs": [
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/helper-alert-intake-class4-authority-0352.json",
+      "bytes": 120903,
+      "sha256": "af72735f99d15f973ddeb45e75b7752afed6d606e1061571e1a8bd459b0265fc"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/helper-alert-intake-class4-guard-addendum-0352.json",
+      "bytes": 10716,
+      "sha256": "8005a2e7824cc4f8531dc0bcae57808023d65431fb5f31d8179570af6e3207df"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/helper-alert-intake-class4-fixture-catalog-0352.json",
+      "bytes": 34810,
+      "sha256": "dd17b7ab98a72ae5d747820ed8a06f522c81bef638943d9a4c70269909ac5102"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/helper-alert-intake-class4-stage1-contract-0352.md",
+      "bytes": 6923,
+      "sha256": "01e2f27cce90245114dd5b0c56e1f24cf1d6041b6d0493e86434f61cc58360c8"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/helper-alert-intake-class4-outcome-proposal-0351.md",
+      "bytes": 5689,
+      "sha256": "b4aa19a926adecd0f17addd7a9bdb1112f9a17d7b5b3593e3e506a1bb4b5898c"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/helper-alert-intake-class4-stage1-byte-review-0352.json",
+      "bytes": 1369,
+      "sha256": "86baa93bf4896bcb4b4e9865c2e89a1c206369cc58d7adf0ed5851be3e10c03b"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/linked-originals-0504.json",
+      "bytes": 11530,
+      "sha256": "d541f6a36d7b67316073362cdebf19c3fe8d90373c0f0e3569905c2ed9153281"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/storm39-canonical-0507.json",
+      "bytes": 1605263,
+      "sha256": "ae740dbcf6ee17b50a66ef5ee60ee4d385d30daeed250e8f72286456ac3ee49d"
+    }
+  ],
+  "byte_review": {
+    "kind": "source_bytes_only_not_execution",
+    "segments": [
+      {
+        "name": "declaration_and_Class1_2_3_selection",
+        "unchanged": true,
+        "bytes": 3093,
+        "sha256_pre": "4c0ebd7cd7dc2cc72dbb9f0359603d6410624fa86348833abd47f854752e4085",
+        "sha256_post": "4c0ebd7cd7dc2cc72dbb9f0359603d6410624fa86348833abd47f854752e4085"
+      },
+      {
+        "name": "Class3_update",
+        "unchanged": true,
+        "bytes": 446,
+        "sha256_pre": "a17a18dd47545ab29492004da3ac2ff2ee6feed938cb539671bbfa1b287cd844",
+        "sha256_post": "a17a18dd47545ab29492004da3ac2ff2ee6feed938cb539671bbfa1b287cd844"
+      },
+      {
+        "name": "Class1_2_update_and_return",
+        "unchanged": true,
+        "bytes": 1636,
+        "sha256_pre": "86c9e978e8d6117d28893279e4073b33b5452e2dc0c54e8a3856f3a81d116f1f",
+        "sha256_post": "86c9e978e8d6117d28893279e4073b33b5452e2dc0c54e8a3856f3a81d116f1f"
+      }
+    ],
+    "modified_segments_only": [
+      "Class4 selection",
+      "Class4 update and actual update count"
+    ],
+    "embedded_inputs": [
+      {
+        "path": "supabase/components/class4-hand-outcome-evidence.sql",
+        "preimage_equal": true,
+        "candidate_equal": true
+      },
+      {
+        "path": "supabase/components/class4-hand-outcome-evidence.rollback.sql",
+        "preimage_equal": true,
+        "candidate_equal": true
+      }
+    ],
+    "install_rollback_only_mode_diff": true
+  },
+  "scope_limits": [
+    "No typed rollback receipt or auto-resolution implemented; trustworthy rollback need not have a successful same-hand commit",
+    "Original alert JSON identity is not itself money authority",
+    "Canonical receipt table is not locked here; concurrent privileged receipt rewrites are outside the supported guarantee",
+    "Owner-injected fixture receipts qualify resolver eligibility, not atomic money writer behavior",
+    "No source parser, syntax, tests, build, SQL application, publication or live execution performed"
+  ],
+  "release_composition": {
+    "independent_activation_authorized": false,
+    "world_hub_required_candidate": "20e9325283d5de7d326d628d30e8de0fd456998b",
+    "world_hub_installation": "Historical 9d56 custody said uninstalled; current exact composed version must be verified by root.",
+    "required": "financial resolution -> existing mirror -> exact task operational inbox -> no owner failure/recovery text or push; preserve ordinary customer/OTP/accounting notifications"
+  },
+  "source_custody_review": {
+    "state": "helper source proposal only; no checks executed; donor custody retained below",
+    "incomplete_intermediate_local_commit": "8c1fed3061",
+    "note": "Sparse staging initially omitted two component files; parent custody must include exact twelve paths before acceptance. No publication of that intermediate source."
+  },
+  "historical_source_base": {
+    "implementation_started_from": "56c0e1db4a374a96ff7acdfc342b876b8de09e67",
+    "current_parent_commit": "5ad105ebcc5e2101dad39cbdf497cb4e42ff93bd",
+    "tracked_engine_base_sha256": "6db8b6ed6e32f4f9f4ba7e8248e975d40cc0b205490724321aebd3eb27e2beb9"
+  },
+  "source_base": {
+    "target_commit": "5240475a1ccad1620ddf2ca3c721eb740d3e9f12",
+    "donor_commit": "9d56f56e472bf0123d89ec97a0605284ec487539",
+    "scope": "three authored engine identity hunks only; no wholesale donor settlement file"
+  },
+  "historical_required_native": {
+    "status": "NOT_ADMITTED_NOT_EXECUTED",
+    "execution_uuid": null,
+    "postgres_major": 17,
+    "database_binding": "class4_native_<approved execution UUID without hyphens>",
+    "required_existing_test_inputs": [
+      {
+        "path": "server/src/engine/HandSettlementAlertIdentity.test.ts",
+        "bytes": 9121,
+        "sha256": "d1ba5e38ba6082d4ed081a4f6c5e6cd005fc7daf3f10da80799d20809b85cca5"
+      },
+      {
+        "path": "server/src/engine/PostHandStepRetry.test.ts",
+        "bytes": 14924,
+        "sha256": "3deb14eae3840b1c867d72b49ed3afc372199dae091aa4886b3452ad1387ff55"
+      },
+      {
+        "path": "server/src/services/supabase/HandHistoryHasOneAtomicOwner.guard.test.ts",
+        "bytes": 3958,
+        "sha256": "15b8f4958adc78a13110d330f74aa9896bba13a67a57af11f488f241d58061d6"
+      },
+      {
+        "path": "server/src/engine/TableLeaseGenerationAndHandSettlement.guard.test.ts",
+        "bytes": 13508,
+        "sha256": "19a25bbf9b832ab91d52882da1216f41f84be46b734cfce4ace3d8c319ea5ae3"
+      },
+      {
+        "path": "server/src/engine/PostCommitObligationBarrier.guard.test.ts",
+        "bytes": 11295,
+        "sha256": "6993b9c70e0934676a66b1a7e4ab16a0aec1cd4548c8c43179d0641af47a5b86"
+      },
+      {
+        "path": "server/src/services/supabase/handHistory.test.ts",
+        "bytes": 33074,
+        "sha256": "8921a34cc6c39f586b3a7e9ec3d0beb8d52005f5dfd9679302d5b075f4d641a1"
+      }
+    ],
+    "additional_checks": [
+      "Complete required server catalog and actual nested loader/runtime composition under qualified providers",
+      "Real service_role resolver through exact full guarded catalog: 20 states, 2 original rows, 3 legacy controls, 2 seeded mirrors, real authenticated producer forgery negative",
+      "Actual PostgreSQL isolation driver blocked/unblocked receipts for identity-change and concurrent resolution schedules",
+      "Source install/replay/rollback and drift guards with exact subject-row equality",
+      "Pinned mirror schema/defaults/triggers, auth.uid and producer dependency closure",
+      "Representative unresolved population and p_limit=5000 resource measurement",
+      "Independent source review, original deadline, complete logs, terminal exit and owned cleanup receipts"
+    ]
+  },
+  "required_hosted": {
+    "status": "SOURCE CLOSURE AND FINITE DRIVER PREPARED; NOT EXECUTED OR INSTALLED",
+    "execution_uuid": null,
+    "postgres_major": 17,
+    "database_binding": "class4_native_<execution UUID without hyphens> (historical fixture name only)",
+    "required_existing_test_inputs": [
+      {
+        "path": "server/src/engine/HandSettlementAlertIdentity.test.ts",
+        "bytes": 9121,
+        "sha256": "d1ba5e38ba6082d4ed081a4f6c5e6cd005fc7daf3f10da80799d20809b85cca5"
+      },
+      {
+        "path": "server/src/engine/PostHandStepRetry.test.ts",
+        "bytes": 14924,
+        "sha256": "3deb14eae3840b1c867d72b49ed3afc372199dae091aa4886b3452ad1387ff55"
+      },
+      {
+        "path": "server/src/services/supabase/HandHistoryHasOneAtomicOwner.guard.test.ts",
+        "bytes": 3958,
+        "sha256": "15b8f4958adc78a13110d330f74aa9896bba13a67a57af11f488f241d58061d6"
+      },
+      {
+        "path": "server/src/engine/TableLeaseGenerationAndHandSettlement.guard.test.ts",
+        "bytes": 13508,
+        "sha256": "19a25bbf9b832ab91d52882da1216f41f84be46b734cfce4ace3d8c319ea5ae3"
+      },
+      {
+        "path": "server/src/engine/PostCommitObligationBarrier.guard.test.ts",
+        "bytes": 11295,
+        "sha256": "6993b9c70e0934676a66b1a7e4ab16a0aec1cd4548c8c43179d0641af47a5b86"
+      },
+      {
+        "path": "server/src/services/supabase/handHistory.test.ts",
+        "bytes": 33074,
+        "sha256": "8921a34cc6c39f586b3a7e9ec3d0beb8d52005f5dfd9679302d5b075f4d641a1"
+      }
+    ],
+    "additional_checks": [
+      "Complete required server catalog and actual nested loader/runtime composition under qualified providers",
+      "Real service_role resolver through exact full guarded catalog: 20 states, 2 original rows, 3 legacy controls, 2 seeded mirrors, real authenticated producer forgery negative",
+      "Actual PostgreSQL isolation driver blocked/unblocked receipts for identity-change and concurrent resolution schedules",
+      "Source install/replay/rollback and drift guards with exact subject-row equality",
+      "Pinned mirror schema/defaults/triggers, auth.uid and producer dependency closure",
+      "Representative unresolved population and p_limit=5000 resource measurement",
+      "Independent source review, original deadline, complete logs, terminal exit and owned cleanup receipts"
+    ],
+    "route": "existing GitHub-hosted accounting_postgres plus existing Node22 server tests",
+    "pg_bin": "/usr/lib/postgresql/17/bin"
+  },
+  "composition": {
+    "requires": "production-alert-identity-and-rake-wording aggregate first; preserve aggregate complete final-state guard",
+    "bridge_full_definition_md5": "00a43ae03ab12cec9505e2bfed71d937",
+    "bridge_prosrc_md5": "0a4d20fe06d675a9150e9edc9e1acb1c",
+    "only_guard_adjustment": "bridge body pin and corresponding explanatory prosrc metadata; all other original guards retained"
+  },
+  "hosted_adapter": {
+    "driver": "scripts/ci/test-class4-hand-outcome-postgres.py",
+    "wrapper_tests": "scripts/ci/test_class4_hand_outcome_postgres.py",
+    "input_manifest": "scripts/ci/probes/class4-hand-outcome/manifest.json",
+    "isolation_builder": "scripts/ci/build_pg17_isolationtester.py",
+    "postgres_exact_version": "17.11",
+    "native_capture_gaps_closed": {
+      "lease_generation_core": "7d47c01ec2c1b38f3cf9faeeb686514b",
+      "outer_atomic_wrapper": "8c0acda3b19e958ecd5bbbc07c845afe"
+    },
+    "status": "SOURCE ONLY UNRUN",
+    "limit": "Synthetic canonical states qualify resolver eligibility, not atomic money writes, typed rollback or representative production backlog cost."
+  }
+}

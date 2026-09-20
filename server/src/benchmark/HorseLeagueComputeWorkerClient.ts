@@ -9,16 +9,24 @@
  */
 
 import { fork, type ChildProcess } from 'node:child_process';
-import { constants as osConstants } from 'node:os';
+import { constants as osConstants, getPriority } from 'node:os';
+import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  HORSE_LEAGUE_MAX_PROCESS_THREADS,
+  horseLeagueKernelStartTicksAreValid,
+} from './HorseLeagueProcessPriority.js';
+
 import { liveHorseDecisionWorkerStatus } from '../engine/horseDecision/client.js';
+import { PHASE8_POLICY } from '../engine/HorseTournamentPostflop.js';
 import { horseDecisionSolverStoresAreValid } from '../engine/horseDecision/protocol.js';
 import type { LeagueMatchup, LeagueResult } from './HorseLeague.js';
 import {
   pairedConfidence99,
   tournamentRunCanPromote,
   tournamentLeagueEntrants,
+  MAX_TOURNAMENT_COMPLETION_DIAGNOSTICS,
   type TournamentLeagueRequest,
   type TournamentLeagueResult,
 } from './HorseTournamentLeague.js';
@@ -35,6 +43,7 @@ const JOB_HEARTBEAT_TIMEOUT_MS = 30_000;
 const CANCEL_POLL_MS = 250;
 
 interface WorkerLike {
+  readonly processId?: number;
   postMessage(message: HorseLeagueComputeRequest): void;
   on(event: 'message', listener: (message: unknown) => void): this;
   on(event: 'error', listener: (error: Error) => void): this;
@@ -43,8 +52,49 @@ interface WorkerLike {
   unref?(): void;
 }
 
-class LowPriorityComputeProcess implements WorkerLike {
-  constructor(private readonly child: ChildProcess) {}
+export class LowPriorityComputeProcess implements WorkerLike {
+  private terminalObserved = false;
+  private spawnObserved = false;
+  private spawnFailed = false;
+  private readonly terminalPromise: Promise<number>;
+  private resolveTerminal!: (code: number) => void;
+  private terminationPromise: Promise<number> | null = null;
+
+  constructor(private readonly child: ChildProcess) {
+    this.spawnFailed = child.pid === undefined && child.exitCode !== null && child.exitCode < 0;
+    this.terminalPromise = new Promise((resolve) => {
+      this.resolveTerminal = resolve;
+    });
+    // Register before the client's exit listener: fail/shutdown can be reentrant
+    // while the original exit event is still being delivered.
+    child.once('spawn', () => {
+      this.spawnObserved = true;
+    });
+    child.on('error', () => {
+      if (!this.spawnObserved && child.pid === undefined) this.spawnFailed = true;
+    });
+    child.once('exit', (code) => this.recordTerminal(code ?? 0));
+    child.once('close', (code) => {
+      // An error alone is not termination. A failed spawn has no child PID and
+      // closes its stdio without necessarily emitting an exit event.
+      if (this.spawnFailed && !this.spawnObserved && child.pid === undefined) {
+        this.recordTerminal(code ?? 1);
+      }
+    });
+    if ((child.exitCode !== null && child.exitCode >= 0) || child.signalCode !== null) {
+      this.recordTerminal(child.exitCode ?? 0);
+    }
+  }
+
+  get processId(): number | undefined {
+    return this.child.pid;
+  }
+
+  private recordTerminal(code: number): void {
+    if (this.terminalObserved) return;
+    this.terminalObserved = true;
+    this.resolveTerminal(code);
+  }
 
   postMessage(message: HorseLeagueComputeRequest): void {
     if (!this.child.connected) {
@@ -71,23 +121,33 @@ class LowPriorityComputeProcess implements WorkerLike {
   }
 
   terminate(): Promise<number> {
-    if (this.child.exitCode !== null) return Promise.resolve(this.child.exitCode);
-    return new Promise<number>((resolve) => {
-      let settled = false;
-      let killTimer: ReturnType<typeof setTimeout> | null = null;
-      const finish = (code: number | null): void => {
-        if (settled) return;
-        settled = true;
-        if (killTimer) clearTimeout(killTimer);
-        resolve(code ?? 0);
-      };
-      this.child.once('exit', finish);
-      this.child.kill('SIGTERM');
-      killTimer = setTimeout(() => {
-        if (this.child.exitCode === null) this.child.kill('SIGKILL');
-      }, 5_000);
-      killTimer.unref?.();
+    if (this.terminationPromise) return this.terminationPromise;
+    if (this.terminalObserved) return this.terminalPromise;
+    let killTimer: ReturnType<typeof setTimeout> | null = null;
+    this.terminationPromise = this.terminalPromise.then((code) => {
+      if (killTimer) clearTimeout(killTimer);
+      return code;
     });
+    if (this.child.pid !== undefined) {
+      try {
+        this.child.kill('SIGTERM');
+      } catch {
+        // A failed signal does not prove the original child has exited.
+      }
+      if (!this.terminalObserved) {
+        killTimer = setTimeout(() => {
+          if (!this.terminalObserved) {
+            try {
+              this.child.kill('SIGKILL');
+            } catch {
+              /* Still await actual exit. */
+            }
+          }
+        }, 5_000);
+        killTimer.unref?.();
+      }
+    }
+    return this.terminationPromise;
   }
 
   unref(): void {
@@ -139,6 +199,13 @@ export interface HorseLeagueCompute {
 
 function defaultWorkerFactory(hydrateSolverStores: boolean): () => WorkerLike {
   return () => {
+    if (process.platform !== 'linux' || !isAbsolute(process.execPath)) {
+      throw new Error('horse league process requires the qualified Linux launcher');
+    }
+    const parentNice = getPriority(0);
+    if (!Number.isInteger(parentNice) || parentNice < -20 || parentNice > 19) {
+      throw new Error('horse league process cannot establish parent priority');
+    }
     const extension = import.meta.url.endsWith('.ts') ? '.ts' : '.js';
     const childExecArgv: string[] = [];
     for (let i = 0; i < process.execArgv.length; i++) {
@@ -158,7 +225,8 @@ function defaultWorkerFactory(hydrateSolverStores: boolean): () => WorkerLike {
       fileURLToPath(new URL(`./HorseLeagueComputeProcess${extension}`, import.meta.url)),
       [],
       {
-        execArgv: childExecArgv,
+        execPath: '/usr/bin/nice',
+        execArgv: ['-n', String(19 - parentNice), '--', process.execPath, ...childExecArgv],
         env: {
           ...process.env,
           HORSE_LEAGUE_HYDRATE_SOLVER_STORES: hydrateSolverStores ? '1' : '0',
@@ -208,6 +276,37 @@ function isNonnegativeSafeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
+function hasProcessPriorityProof(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      'version',
+      'scope',
+      'pid',
+      'leaderStartTicks',
+      'expectedNice',
+      'bootstrap',
+      'ready',
+    ]) ||
+    value.version !== 1 ||
+    value.scope !== 'linux-thread-group' ||
+    !isJobId(value.pid) ||
+    value.expectedNice !== 19 ||
+    !horseLeagueKernelStartTicksAreValid(value.leaderStartTicks)
+  )
+    return false;
+  return ['bootstrap', 'ready'].every((key) => {
+    const checkpoint = value[key];
+    return (
+      isRecord(checkpoint) &&
+      hasExactKeys(checkpoint, ['threadCount', 'observedNice']) &&
+      isJobId(checkpoint.threadCount) &&
+      checkpoint.threadCount <= HORSE_LEAGUE_MAX_PROCESS_THREADS &&
+      checkpoint.observedNice === 19
+    );
+  });
+}
+
 function isFiniteNumber(value: unknown, minimum = -Infinity, maximum = Infinity): value is number {
   return (
     typeof value === 'number' && Number.isFinite(value) && value >= minimum && value <= maximum
@@ -216,6 +315,101 @@ function isFiniteNumber(value: unknown, minimum = -Infinity, maximum = Infinity)
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string' && item.length > 0);
+}
+
+const completionRefusalReasons = new Set([
+  'budget_exhausted',
+  'continuation_numerical_error',
+  'continuation_invalid_input',
+  'continuation_no_action_candidates',
+  'continuation_field_reconciliation',
+  'continuation_sample_calibration',
+  'continuation_candidate_settlement',
+  'continuation_recovery_option',
+  'continuation_operation_budget',
+  'continuation_baseline_not_modeled',
+  'illegal_candidate',
+  'conservation_error',
+  'blocker_jam_unproven',
+]);
+const continuationWorkCounts = [
+  'attempts',
+  'candidateCount',
+  'candidatesCompleted',
+  'outcomeSamples',
+  'samplesVisited',
+  'rollouts',
+  'rolloutCacheHits',
+  'estimates',
+  'estimateCacheHits',
+  'levelBounds',
+] as const;
+
+function validTournamentCompletion(r: Record<string, unknown>): boolean {
+  if (
+    r.completionSchemaVersion !== 1 ||
+    !isNonnegativeSafeInteger(r.completed) ||
+    Number(r.completed) > Number(r.fired) ||
+    Number(r.changed) > Number(r.completed) ||
+    !isRecord(r.completionRefusals) ||
+    !Object.entries(r.completionRefusals).every(
+      ([reason, count]) =>
+        completionRefusalReasons.has(reason) && isNonnegativeSafeInteger(count) && count > 0
+    ) ||
+    Number(r.completed) +
+      Object.values(r.completionRefusals).reduce<number>((sum, count) => sum + Number(count), 0) !==
+      r.eligible ||
+    !Array.isArray(r.completionDiagnostics) ||
+    r.completionDiagnostics.length > MAX_TOURNAMENT_COMPLETION_DIAGNOSTICS ||
+    !isNonnegativeSafeInteger(r.completionDiagnosticsDropped) ||
+    r.completionDiagnostics.length + r.completionDiagnosticsDropped !== r.eligible
+  )
+    return false;
+  let observedCompleted = 0;
+  const observedRefusals: Record<string, number> = {};
+  for (const row of r.completionDiagnostics) {
+    if (
+      !isRecord(row) ||
+      !hasExactKeys(row, [
+        'street',
+        'localPlayers',
+        'fieldPlayers',
+        'completed',
+        'reason',
+        'latencyMs',
+        'work',
+      ]) ||
+      !['flop', 'turn', 'river'].includes(String(row.street)) ||
+      !isNonnegativeSafeInteger(row.localPlayers) ||
+      row.localPlayers < 1 ||
+      row.localPlayers > 10 ||
+      !isNonnegativeSafeInteger(row.fieldPlayers) ||
+      row.fieldPlayers < 1 ||
+      typeof row.completed !== 'boolean' ||
+      (row.completed
+        ? !['candidate_changed', 'baseline_retained'].includes(String(row.reason))
+        : !completionRefusalReasons.has(String(row.reason))) ||
+      !isFiniteNumber(row.latencyMs, 0) ||
+      !isRecord(row.work) ||
+      !hasExactKeys(row.work, [...continuationWorkCounts, 'icmMethod', 'budgetStop']) ||
+      !continuationWorkCounts.every((key) =>
+        isNonnegativeSafeInteger((row.work as Record<string, unknown>)[key])
+      ) ||
+      !['exact_mh', 'plackett_luce_mc', 'unavailable'].includes(String(row.work.icmMethod)) ||
+      !['none', 'sample', 'future_rollout', 'icm'].includes(String(row.work.budgetStop))
+    )
+      return false;
+    if (row.completed) observedCompleted++;
+    else observedRefusals[String(row.reason)] = (observedRefusals[String(row.reason)] ?? 0) + 1;
+  }
+  return (
+    observedCompleted <= Number(r.completed) &&
+    Object.entries(observedRefusals).every(
+      ([reason, count]) =>
+        count <= Number((r.completionRefusals as Record<string, unknown>)[reason] ?? 0)
+    ) &&
+    (r.completionDiagnosticsDropped !== 0 || observedCompleted === r.completed)
+  );
 }
 
 function isLeagueBenchmarkComponent(value: unknown): boolean {
@@ -461,6 +655,11 @@ export function horseLeagueComputeResponseIsValid(
           'reference',
           'latencyMs',
           'promotionEligible',
+          'completionSchemaVersion',
+          'completed',
+          'completionRefusals',
+          'completionDiagnostics',
+          'completionDiagnosticsDropped',
         ])
       )
         return false;
@@ -469,7 +668,7 @@ export function horseLeagueComputeResponseIsValid(
         !isNonnegativeSafeInteger(r.pairs) ||
         !isNonnegativeSafeInteger(r.requestedPairs) ||
         (r.pairs as number) > (r.requestedPairs as number) ||
-        r.version !== 'horse-tournament-postflop-round1-v2' ||
+        r.version !== PHASE8_POLICY.version ||
         !['mtt', 'sng', 'spin', 'satellite', 'pko', 'mystery'].includes(String(r.objective)) ||
         typeof r.complete !== 'boolean' ||
         typeof r.promotionEligible !== 'boolean' ||
@@ -511,6 +710,7 @@ export function horseLeagueComputeResponseIsValid(
         Number(r.referenceRegret) < 0
       )
         return false;
+      if (!validTournamentCompletion(r)) return false;
       if (
         !['candidateReturn', 'baselineReturn', 'candidateBustRate', 'baselineBustRate'].every(
           (k) => Number(r[k]) >= 0 && Number(r[k]) <= 1
@@ -558,9 +758,11 @@ export function horseLeagueComputeResponseIsValid(
     case 'READY':
       return (
         (hasExactKeys(value, ['type', 'solverStores']) ||
-          hasExactKeys(value, ['type', 'solverStores', 'executionNice'])) &&
+          hasExactKeys(value, ['type', 'solverStores', 'executionNice']) ||
+          hasExactKeys(value, ['type', 'solverStores', 'executionNice', 'executionPriority'])) &&
         isRecord(value.solverStores) &&
-        (value.executionNice === undefined || Number.isSafeInteger(value.executionNice))
+        (value.executionNice === undefined || Number.isSafeInteger(value.executionNice)) &&
+        (value.executionPriority === undefined || hasProcessPriorityProof(value.executionPriority))
       );
     case 'HEARTBEAT':
       return hasExactKeys(value, ['type', 'jobId']) && isJobId(value.jobId);
@@ -608,6 +810,7 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
   private pending: { jobId: number; job: PendingJob<unknown> } | null = null;
   private readyReceived = false;
   private closed = false;
+  private shutdownPromise: Promise<void> | null = null;
 
   constructor(options: HorseLeagueComputeWorkerClientOptions = {}) {
     const hydrateSolverStores = options.hydrateSolverStores !== false;
@@ -620,6 +823,9 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
       this.resolveReady = resolve;
       this.rejectReady = reject;
     });
+    // Shutdown may precede the owner's first ready()/dispatch call. Keep the
+    // original rejection observable to every waiter without an unhandled one.
+    void this.readyPromise.catch(() => {});
     this.worker = (options.workerFactory ?? defaultWorkerFactory(hydrateSolverStores))();
     this.worker.on('message', (message) => this.onMessage(message));
     this.worker.on('error', (error) => this.fail(error));
@@ -754,11 +960,13 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
       clearTimeout(this.readyTimer);
       if (
         this.requireLowPriorityProcess &&
-        message.executionNice !== osConstants.priority.PRIORITY_LOW
+        (message.executionNice !== osConstants.priority.PRIORITY_LOW ||
+          !message.executionPriority ||
+          message.executionPriority.pid !== this.worker.processId)
       ) {
         this.fail(
           new Error(
-            `horse league compute process started at nice ${String(message.executionNice)}; expected ${osConstants.priority.PRIORITY_LOW}`
+            `horse league compute process lacks matching whole-thread priority proof at nice ${String(message.executionNice)}; expected ${osConstants.priority.PRIORITY_LOW}`
           )
         );
         return;
@@ -868,13 +1076,16 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
       if (pending.job.cancelTimer) clearInterval(pending.job.cancelTimer);
       pending.job.reject(error);
     }
-    void this.shutdown();
+    // Preserve a rejected join for its owner without an unhandled background
+    // rejection. Failure is never converted into a terminal child receipt.
+    void this.shutdown().catch(() => {});
   }
 
-  async shutdown(): Promise<void> {
-    if (this.closed) return;
+  shutdown(): Promise<void> {
+    if (this.shutdownPromise) return this.shutdownPromise;
     this.closed = true;
     clearTimeout(this.readyTimer);
+    this.rejectReady(new Error('horse league compute worker shut down'));
     const pending = this.pending;
     this.pending = null;
     if (pending) {
@@ -882,6 +1093,19 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
       if (pending.job.cancelTimer) clearInterval(pending.job.cancelTimer);
       pending.job.reject(new Error('horse league compute worker shut down'));
     }
-    await this.worker.terminate();
+    let resolveJoin!: () => void;
+    let rejectJoin!: (error: unknown) => void;
+    this.shutdownPromise = new Promise<void>((resolve, reject) => {
+      resolveJoin = resolve;
+      rejectJoin = reject;
+    });
+    try {
+      void Promise.resolve(this.worker.terminate())
+        .then(() => resolveJoin())
+        .catch(rejectJoin);
+    } catch (error) {
+      rejectJoin(error);
+    }
+    return this.shutdownPromise;
   }
 }

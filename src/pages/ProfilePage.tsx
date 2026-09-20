@@ -12,7 +12,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, Suspense, type KeyboardEvent } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense, type KeyboardEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { LoadingState } from '../components/common/EmptyState';
@@ -42,6 +42,7 @@ import { formatPopupText } from '../utils/popupStyle';
 import { mediaUrl } from '../utils/mediaBase';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { resolveHeaderPortrait } from '../stores/useHeaderDataStore';
+import { useUserStore } from '../stores/useUserStore';
 import { resolveVipStatus, vipStatusLabel, type VipStatus } from '../utils/vipStatus';
 import { VIP_MONTHLY_ALLOWANCES } from '../services/VIPService';
 import {
@@ -61,6 +62,7 @@ import {
   profileStatsFromV2,
   type PokerStats,
 } from '../utils/profileStats';
+import { CHIP_STATS, statsScopeArgs } from '../services/statsScope';
 
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
 const LazyProfitChart = lazyWithRetry(() => import('../components/profile/ProfitChart'));
@@ -264,20 +266,31 @@ export default function ProfilePage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const isMountedRef = useIsMounted();
+  const activeProfileUserId = useUserStore((state) => state.user?.id);
+  /* Auth can replace account A with account B without unmounting this route.
+     Every async profile reader compares against this render-synchronous owner
+     before it can paint state from an earlier session. */
+  const activeProfileUserIdRef = useRef(activeProfileUserId);
+  activeProfileUserIdRef.current = activeProfileUserId;
 
   const toast = useToast();
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
   useVisibilityRefresh(async () => {
+    const requestedUserId = activeProfileUserIdRef.current;
+    if (!requestedUserId) return;
     const {
       data: { user: au },
     } = await getAuthUser();
-    if (!au) return;
+    if (!au || au.id !== requestedUserId || activeProfileUserIdRef.current !== requestedUserId) {
+      return;
+    }
     const { data: p, error } = await supabase
       .from('profiles')
       .select('diamonds, login_streak, is_vip')
-      .eq('id', au.id)
+      .eq('id', requestedUserId)
       .maybeSingle();
+    if (activeProfileUserIdRef.current !== requestedUserId) return;
     if (error) {
       reportError(error, 'ProfilePage.visibilityRefresh');
       return;
@@ -336,6 +349,7 @@ export default function ProfilePage() {
 
   // Real data from database
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [profileOwnerUserId, setProfileOwnerUserId] = useState<string | undefined>(undefined);
   const [stats, setStats] = useState<PokerStats>(DEFAULT_STATS);
   const [statsAvailable, setStatsAvailable] = useState(false);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
@@ -378,29 +392,58 @@ export default function ProfilePage() {
   // Load profile data from Supabase
   useEffect(() => {
     let isMounted = true;
+    const requestedUserId = activeProfileUserId;
+    const ownsRequest = () =>
+      isMounted &&
+      !!requestedUserId &&
+      activeProfileUserIdRef.current === requestedUserId &&
+      isMountedRef.current;
+
+    /* Clear every account-owned surface before this passive effect fetches the
+       replacement profile. The render below also masks the previous owner, so
+       none of account A survives even for the account-switch render itself. */
+    setIsLoading(true);
+    setProfileOwnerUserId(requestedUserId);
+    setUser(null);
+    setStats(DEFAULT_STATS);
+    setStatsAvailable(false);
+    setAchievements([]);
+    setDiamonds(0);
+    setIsVIP(false);
+    setDailyStreak(0);
+    setTransactions([]);
+    setVisibleStats(new Set());
+    setShowDiamondRain(false);
+    setShowProfileEdit(false);
+    setShowAvatarGallery(false);
+
+    if (!requestedUserId) {
+      setIsLoading(false);
+      return () => {
+        isMounted = false;
+      };
+    }
 
     // Safety net: force loading off after 12s to prevent infinite spinner
     const safetyTimer = setTimeout(() => {
-      if (isMounted) {
+      if (ownsRequest()) {
         console.warn('[PROFILE] Safety timeout - forcing loading off after 12s');
         setIsLoading(false);
       }
     }, 12000);
 
     async function loadProfile() {
-      setIsLoading(true);
-
       // SWR: Show cached profile instantly while loading fresh data
       try {
-        if (!isMounted) return;
+        if (!ownsRequest()) return;
 
         // Load user auth
         const {
           data: { user: authUser },
         } = await getAuthUser();
-        if (!authUser || !isMounted) return;
+        if (!authUser || authUser.id !== requestedUserId || !ownsRequest()) return;
 
-        const swrKey = `profile_cache_${authUser.id}`;
+        const swrKey = `profile_cache_${requestedUserId}`;
         try {
           const cached = sessionStorage.getItem(swrKey);
           if (cached) {
@@ -408,11 +451,14 @@ export default function ProfilePage() {
             // v2 cache shape carries arenaAvatarUrl; an older entry (a tab
             // opened before this build) is ignored rather than painted with a
             // missing field.
-            if (cp.v === 2 && cp.user) setUser(cp.user);
-            if (cp.diamonds != null) setDiamonds(cp.diamonds);
-            if (cp.isVIP != null) setIsVIP(cp.isVIP);
-            if (cp.dailyStreak != null) setDailyStreak(cp.dailyStreak);
-            if (cp.v === 2 && cp.user) setIsLoading(false); // Show cached UI instantly
+            if (cp.v === 2 && cp.user?.id === requestedUserId && ownsRequest()) {
+              setUser(cp.user);
+              setProfileOwnerUserId(requestedUserId);
+              if (cp.diamonds != null) setDiamonds(cp.diamonds);
+              if (cp.isVIP != null) setIsVIP(cp.isVIP);
+              if (cp.dailyStreak != null) setDailyStreak(cp.dailyStreak);
+              setIsLoading(false); // Show this account's cached UI instantly
+            }
           }
         } catch (e) {
           reportError(e, 'ProfilePage.loadProfile');
@@ -428,7 +474,7 @@ export default function ProfilePage() {
           // Distinctions: the SAME definitions /achievements renders. The old
           // embed read `threshold` from training_achievement_definitions,
           // which is 0 on every row, so every progress bar divided by zero.
-          retryFetch(() => achievementService.getUserAchievements(authUser.id), {
+          retryFetch(() => achievementService.getUserAchievements(requestedUserId), {
             maxRetries: 2,
             isMountedRef: isMountedRef,
           }),
@@ -438,7 +484,7 @@ export default function ProfilePage() {
               supabase
                 .from('wallet_transactions')
                 .select('id, type, amount, created_at, description')
-                .eq('user_id', authUser.id)
+                .eq('user_id', requestedUserId)
                 .order('created_at', { ascending: false })
                 .limit(200)
                 .then((r) => r),
@@ -450,7 +496,14 @@ export default function ProfilePage() {
           retryFetch(
             () =>
               supabase
-                .rpc('ca_player_stats_overview_v2', { p_user: authUser.id, p_days: null })
+                .rpc('ca_player_stats_overview_v2', {
+                  /* Scoped to chips: this figure is a chip figure and must
+                     never silently become a chip+Diamond total. See
+                     src/services/statsScope.ts. */
+                  ...statsScopeArgs(CHIP_STATS),
+                  p_user: requestedUserId,
+                  p_days: null,
+                })
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: isMountedRef }
           ),
@@ -462,7 +515,7 @@ export default function ProfilePage() {
             supabase
               .from('profiles')
               .select(PROFILE_COLUMNS)
-              .eq('id', authUser.id)
+              .eq('id', requestedUserId)
               .maybeSingle()
               .then((r) => r),
           { maxRetries: 2, isMountedRef: isMountedRef }
@@ -470,8 +523,9 @@ export default function ProfilePage() {
 
         if (profileError) throw profileError;
 
-        if (profile && isMounted) {
+        if (profile && profile.id === requestedUserId && ownsRequest()) {
           setUser(toUserProfile(profile));
+          setProfileOwnerUserId(requestedUserId);
           setDiamonds(profile.diamonds || 0);
           setIsVIP(profile.is_vip || false);
           setDailyStreak(profile.login_streak || 0);
@@ -479,7 +533,7 @@ export default function ProfilePage() {
         }
 
         // Save to SWR cache
-        if (profile && isMounted) {
+        if (profile && profile.id === requestedUserId && ownsRequest()) {
           try {
             sessionStorage.setItem(
               swrKey,
@@ -503,7 +557,7 @@ export default function ProfilePage() {
         // every profile visit was pure waste (9 round trips on a fresh day).
         const [achievementsResult, transactionsResult, statsResult] = await secondaryDataPromise;
 
-        if (!isMounted) return;
+        if (!ownsRequest()) return;
 
         // Process achievements
         if (achievementsResult.status === 'fulfilled') {
@@ -553,18 +607,18 @@ export default function ProfilePage() {
         }
 
         // Notify Master Bus that profile is loaded
-        if (profile) {
+        if (profile && profile.id === requestedUserId && ownsRequest()) {
           masterBus.emit('USER_PROFILE_LOADED', {
-            userId: authUser.id,
+            userId: requestedUserId,
             avatarUrl: profile.avatar_url || '',
             displayName: playerDisplayName(profile),
           });
         }
       } catch (err: any) {
         reportError(err, 'ProfilePage.Load_failed');
-        if (isMounted) toast.error(err.message || 'Failed to load profile data');
+        if (ownsRequest()) toast.error(err.message || 'Failed to load profile data');
       } finally {
-        if (isMounted) setIsLoading(false);
+        if (ownsRequest()) setIsLoading(false);
       }
     }
     loadProfile();
@@ -572,11 +626,13 @@ export default function ProfilePage() {
       isMounted = false;
       clearTimeout(safetyTimer);
     };
-  }, [isMountedRef, toast]);
+  }, [activeProfileUserId, isMountedRef, toast]);
 
   // ── Bus Listeners: cross-page profile reactivity ──
   useEffect(() => {
     let isMounted = true;
+    const ownsActiveAccount = (userId: string) =>
+      isMounted && activeProfileUserIdRef.current === userId;
 
     // Helper: invalidate SWR cache when bus events update state
     const invalidateProfileCache = () => {
@@ -598,15 +654,21 @@ export default function ProfilePage() {
         supabase.auth
           .getUser()
           .then(({ data: { user: authUser } }) => {
-            if (authUser && isMounted) {
+            if (authUser && ownsActiveAccount(authUser.id)) {
+              const requestedUserId = authUser.id;
               supabase
                 .from('profiles')
                 .select(PROFILE_COLUMNS)
-                .eq('id', authUser.id)
+                .eq('id', requestedUserId)
                 .maybeSingle()
                 .then(({ data: profile }) => {
-                  if (profile && isMounted) {
+                  if (
+                    profile &&
+                    profile.id === requestedUserId &&
+                    ownsActiveAccount(requestedUserId)
+                  ) {
                     setUser(toUserProfile(profile));
+                    setProfileOwnerUserId(requestedUserId);
                     setDiamonds(profile.diamonds || 0);
                     setIsVIP(profile.is_vip || false);
                     setDailyStreak(profile.login_streak || 0);
@@ -626,12 +688,20 @@ export default function ProfilePage() {
         supabase.auth
           .getUser()
           .then(({ data: { user: authUser } }) => {
-            if (authUser && isMounted) {
+            if (authUser && ownsActiveAccount(authUser.id)) {
+              const requestedUserId = authUser.id;
               supabase
-                .rpc('ca_player_stats_overview_v2', { p_user: authUser.id, p_days: null })
+                .rpc('ca_player_stats_overview_v2', {
+                  /* Scoped to chips: this figure is a chip figure and must
+                     never silently become a chip+Diamond total. See
+                     src/services/statsScope.ts. */
+                  ...statsScopeArgs(CHIP_STATS),
+                  p_user: requestedUserId,
+                  p_days: null,
+                })
                 .then(({ data, error }) => {
                   const freshStats = !error ? profileStatsFromV2(data) : null;
-                  if (isMounted && freshStats) {
+                  if (freshStats && ownsActiveAccount(requestedUserId)) {
                     setStats(freshStats);
                     setStatsAvailable(true);
                   }
@@ -647,9 +717,10 @@ export default function ProfilePage() {
       supabase.auth
         .getUser()
         .then(({ data: { user: authUser } }) => {
-          if (authUser && isMounted) {
-            DiamondService.getBalance(authUser.id).then((dw) => {
-              if (dw && isMounted) setDiamonds(dw.balance || 0);
+          if (authUser && ownsActiveAccount(authUser.id)) {
+            const requestedUserId = authUser.id;
+            DiamondService.getBalance(requestedUserId).then((dw) => {
+              if (dw && ownsActiveAccount(requestedUserId)) setDiamonds(dw.balance || 0);
             });
           }
         })
@@ -681,14 +752,15 @@ export default function ProfilePage() {
         supabase.auth
           .getUser()
           .then(({ data: { user: authUser } }) => {
-            if (authUser && isMounted) {
+            if (authUser && ownsActiveAccount(authUser.id)) {
+              const requestedUserId = authUser.id;
               supabase
                 .from('profiles')
                 .select('diamonds, login_streak')
-                .eq('id', authUser.id)
+                .eq('id', requestedUserId)
                 .maybeSingle()
                 .then(({ data }) => {
-                  if (data && isMounted) {
+                  if (data && ownsActiveAccount(requestedUserId)) {
                     setDiamonds(data.diamonds || 0);
                     setDailyStreak(data.login_streak || 0);
                   }
@@ -709,14 +781,17 @@ export default function ProfilePage() {
         supabase.auth
           .getUser()
           .then(({ data: { user: authUser } }) => {
-            if (authUser && isMounted) {
+            if (authUser && ownsActiveAccount(authUser.id)) {
+              const requestedUserId = authUser.id;
               supabase
                 .from('profiles')
                 .select('diamonds')
-                .eq('id', authUser.id)
+                .eq('id', requestedUserId)
                 .maybeSingle()
                 .then(({ data }) => {
-                  if (data && isMounted) setDiamonds(data.diamonds || 0);
+                  if (data && ownsActiveAccount(requestedUserId)) {
+                    setDiamonds(data.diamonds || 0);
+                  }
                 });
             }
           })
@@ -739,14 +814,17 @@ export default function ProfilePage() {
         supabase.auth
           .getUser()
           .then(({ data: { user: authUser } }) => {
-            if (authUser && isMounted) {
+            if (authUser && ownsActiveAccount(authUser.id)) {
+              const requestedUserId = authUser.id;
               supabase
                 .from('profiles')
                 .select('diamonds')
-                .eq('id', authUser.id)
+                .eq('id', requestedUserId)
                 .maybeSingle()
                 .then(({ data }) => {
-                  if (data && isMounted) setDiamonds(data.diamonds || 0);
+                  if (data && ownsActiveAccount(requestedUserId)) {
+                    setDiamonds(data.diamonds || 0);
+                  }
                 });
             }
           })
@@ -784,7 +862,16 @@ export default function ProfilePage() {
   // channel does (its onSubscriptionError feeds the degraded-connection
   // banner), which is why that one is deliberately left in place.
 
-  if (isLoading) {
+  /* Zustand replaces the active identity synchronously, before effects clean up
+     old requests. Mask every account-owned value during that render; a profile
+     row is displayable only when both its recorded owner and row id match the
+     current account exactly. */
+  const profileStateIsOwnedByActiveAccount =
+    !!activeProfileUserId &&
+    profileOwnerUserId === activeProfileUserId &&
+    (!user || user.id === activeProfileUserId);
+
+  if (isLoading || !profileStateIsOwnedByActiveAccount) {
     return <LoadingState message="Loading profile..." />;
   }
 
@@ -944,9 +1031,9 @@ export default function ProfilePage() {
         </dl>
       </section>
 
-      {/* VIP ledger plate. Reads the same constants the VIP page quotes
-          (VIP_MONTHLY_ALLOWANCES), so this can never promise something /vip does not.
-          Dan 2026-09-04: no tiers, nothing "unlimited". */}
+      {/* VIP ledger plate. Reads the same constants the VIP page quotes for
+          ordinary VIP and branches only on the exact resolved Lifetime status
+          for the newer unlimited digital entitlements. */}
       <section className={`${styles.contentSection} ${styles.vipSection}`} aria-label="VIP Status">
         <div className={styles.vipRow}>
           <div className={styles.vipIdentity}>
@@ -971,34 +1058,77 @@ export default function ProfilePage() {
             </span>
           </div>
           {user.vipStatus !== 'none' && (
-            <ul className={styles.vipBenefits} aria-label="Included Each Month">
+            <ul
+              className={styles.vipBenefits}
+              aria-label={
+                user.vipStatus === 'lifetime'
+                  ? 'Lifetime VIP Digital Benefits'
+                  : 'Included Each Month'
+              }
+            >
               {/* 2026-09-05: the last two tiles were "3 Premium Themes" and
                   "+6% Leaderboard Boost". Nothing reads a theme allowance, and
                   LeaderboardService applies no boost of any kind, so both were
                   removed from VIP_MONTHLY_ALLOWANCES along with the tier ladder
-                  they came in with. These four are metered: rabbit hunts by
+                  they came in with. These five are metered: rabbit hunts by
                   fn_consume_rabbit_hunt, the bank by fn_time_bank_allowance,
-                  and both packs by fn_increment_vip_usage. */}
+                  and both packs by fn_increment_vip_usage. Lifetime members
+                  bypass the finite consumable pools and receive every digital
+                  Emoji and Player Tag pack. */}
               <li>
-                <strong>{VIP_MONTHLY_ALLOWANCES.rabbitHunts}</strong>
-                <span>Rabbit Hunts / Mo</span>
+                <strong>
+                  {user.vipStatus === 'lifetime' ? 'Unlimited' : VIP_MONTHLY_ALLOWANCES.rabbitHunts}
+                </strong>
+                <span>{user.vipStatus === 'lifetime' ? 'Rabbit Hunts' : 'Rabbit Hunts / Mo'}</span>
               </li>
               <li>
-                <strong>{VIP_MONTHLY_ALLOWANCES.timeBankSeconds}s</strong>
-                <span>Time Bank / Mo</span>
+                <strong>
+                  {user.vipStatus === 'lifetime'
+                    ? 'Unlimited'
+                    : `${VIP_MONTHLY_ALLOWANCES.timeBankSeconds}s`}
+                </strong>
+                <span>
+                  {user.vipStatus === 'lifetime'
+                    ? '20-Second Time Bank Activations'
+                    : 'Time Bank / Mo'}
+                </span>
               </li>
               <li>
-                <strong>{VIP_MONTHLY_ALLOWANCES.emojis.toLocaleString()}</strong>
-                <span>Emojis / Mo</span>
+                <strong>
+                  {user.vipStatus === 'lifetime'
+                    ? 'All'
+                    : VIP_MONTHLY_ALLOWANCES.emojis.toLocaleString()}
+                </strong>
+                <span>{user.vipStatus === 'lifetime' ? 'Digital Emoji Packs' : 'Emojis / Mo'}</span>
               </li>
               <li>
-                <strong>{VIP_MONTHLY_ALLOWANCES.tags.toLocaleString()}</strong>
-                <span>Player Tags / Mo</span>
+                <strong>
+                  {user.vipStatus === 'lifetime'
+                    ? 'All'
+                    : VIP_MONTHLY_ALLOWANCES.tags.toLocaleString()}
+                </strong>
+                <span>
+                  {user.vipStatus === 'lifetime' ? 'Digital Player Tag Packs' : 'Player Tags / Mo'}
+                </span>
               </li>
               <li>
-                <strong>{VIP_MONTHLY_ALLOWANCES.throwables}</strong>
-                <span>Throwables / Mo</span>
+                <strong>
+                  {user.vipStatus === 'lifetime' ? 'Unlimited' : VIP_MONTHLY_ALLOWANCES.throwables}
+                </strong>
+                <span>{user.vipStatus === 'lifetime' ? 'Throwables' : 'Throwables / Mo'}</span>
               </li>
+              {user.vipStatus === 'lifetime' && (
+                <>
+                  <li>
+                    <strong>All</strong>
+                    <span>Table Skins, Card Backs, And Buttons</span>
+                  </li>
+                  <li>
+                    <strong>VIP</strong>
+                    <span>Avatars, Frames, And Auras</span>
+                  </li>
+                </>
+              )}
             </ul>
           )}
           <button
@@ -1472,7 +1602,8 @@ export default function ProfilePage() {
         onAvatarChanged={(newUrl) => {
           // The gallery also emits PLAYER_APPEARANCE_CHANGED, which the
           // header store consumes; this keeps the credential in step.
-          setUser((prev) => (prev ? { ...prev, arenaAvatarUrl: newUrl } : prev));
+          if (activeProfileUserIdRef.current !== user.id) return;
+          setUser((prev) => (prev?.id === user.id ? { ...prev, arenaAvatarUrl: newUrl } : prev));
         }}
       />
 
@@ -1493,6 +1624,7 @@ export default function ProfilePage() {
             tags: user.player_tags || [],
           }}
           onSave={async (data: UserProfileData) => {
+            const editingUserId = user.id;
             try {
               /* The field is labelled Poker Alias, and playerDisplayName
                  resolves alias -> username. Writing only `username` (as this
@@ -1508,7 +1640,7 @@ export default function ProfilePage() {
                   bio: data.bio,
                   player_tags: data.tags,
                 })
-                .eq('id', user.id);
+                .eq('id', editingUserId);
 
               if (error) {
                 if (error.code === '23505') {
@@ -1516,6 +1648,10 @@ export default function ProfilePage() {
                 }
                 throw error;
               }
+
+              // Account replacement can happen while the profile write is in
+              // flight. Never continue an account-A UI flow under account B.
+              if (activeProfileUserIdRef.current !== editingUserId) return;
 
               /* Legacy mirror. `users` still exists (id, username, email,
                  avatar_url) and AuthPage upserts it on sign-up; a stale copy
@@ -1525,22 +1661,29 @@ export default function ProfilePage() {
               const { error: userError } = await supabase
                 .from('users')
                 .update({ username: data.username })
-                .eq('id', user.id);
+                .eq('id', editingUserId);
               if (userError) reportError(userError, 'ProfilePage.users_mirror_update_failed');
 
-              setUser({
-                ...user,
-                username: data.username,
-                displayName: data.username,
-                bio: data.bio,
-                player_tags: data.tags,
-              });
+              if (activeProfileUserIdRef.current !== editingUserId) return;
+
+              setUser((current) =>
+                current?.id === editingUserId
+                  ? {
+                      ...current,
+                      username: data.username,
+                      displayName: data.username,
+                      bio: data.bio,
+                      player_tags: data.tags,
+                    }
+                  : current
+              );
               masterBus.emit('PROFILE_UPDATED', {
-                userId: user.id,
+                userId: editingUserId,
                 updates: { username: data.username, alias: data.username, bio: data.bio },
               });
               toast.success('Profile saved');
             } catch (err) {
+              if (activeProfileUserIdRef.current !== editingUserId) return;
               reportError(err, 'ProfilePage.Profile_update_failed');
               const message =
                 err instanceof Error && err.message.includes('Poker Alias')

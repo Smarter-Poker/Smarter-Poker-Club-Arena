@@ -4,10 +4,60 @@ import { execFileSync } from 'node:child_process';
 
 const FULL_SHA = /^[0-9a-f]{40}$/;
 
-export function requireReadyEngineSha(raw, expected) {
-  if (!FULL_SHA.test(expected)) {
-    throw new Error('The expected engine provenance must be one full lowercase SHA.');
+/** The publisher selects current main after its trigger; its artifact records that choice. */
+export function readPublisherArtifactSha(raw, runId, triggerSha, repositoryId) {
+  if (
+    !/^[1-9][0-9]*$/.test(runId) ||
+    !FULL_SHA.test(triggerSha) ||
+    !/^[1-9][0-9]*$/.test(repositoryId)
+  ) {
+    throw new Error(
+      'Publisher provenance requires an exact run id, full trigger SHA and repository id.'
+    );
   }
+  let payload;
+  try {
+    payload = JSON.parse(String(raw));
+  } catch {
+    throw new Error('Publisher artifacts response is not valid JSON.');
+  }
+  if (
+    !payload ||
+    !Array.isArray(payload.artifacts) ||
+    !Number.isSafeInteger(payload.total_count) ||
+    payload.total_count !== payload.artifacts.length
+  ) {
+    throw new Error('Publisher artifacts response is missing or incomplete.');
+  }
+  const bundles = payload.artifacts.filter(
+    (artifact) => typeof artifact?.name === 'string' && artifact.name.startsWith('club-arena-dist-')
+  );
+  if (bundles.length !== 1) {
+    throw new Error(`Expected one publisher client artifact, received ${bundles.length}.`);
+  }
+  const artifact = bundles[0];
+  const selected = artifact.name.slice('club-arena-dist-'.length);
+  const source = artifact.workflow_run;
+  const exactId = (actual, expected) =>
+    Number.isSafeInteger(actual) && actual > 0 && String(actual) === expected;
+  if (
+    !FULL_SHA.test(selected) ||
+    !Number.isSafeInteger(artifact.id) ||
+    artifact.id <= 0 ||
+    artifact.expired !== false ||
+    !source ||
+    !exactId(source.id, runId) ||
+    source.head_sha !== triggerSha ||
+    source.head_branch !== 'main' ||
+    !exactId(source.repository_id, repositoryId) ||
+    !exactId(source.head_repository_id, repositoryId)
+  ) {
+    throw new Error('The client artifact does not prove this exact main-branch publisher run.');
+  }
+  return selected;
+}
+
+export function readReadyEngineSha(raw) {
   let value;
   try {
     value = JSON.parse(String(raw));
@@ -20,15 +70,23 @@ export function requireReadyEngineSha(raw, expected) {
   if (!Object.hasOwn(value, 'releaseSha') || !FULL_SHA.test(value.releaseSha)) {
     throw new Error('Production engine health must contain one full lowercase releaseSha.');
   }
-  if (value.releaseSha !== expected) {
-    throw new Error(
-      `Production engine ${value.releaseSha} has not reached required ${expected}; this run cannot begin certification.`
-    );
-  }
   if (value.running !== true || value.liveness !== 'ok') {
     throw new Error('The exact production engine is not running with healthy liveness.');
   }
   return value.releaseSha;
+}
+
+export function requireReadyEngineSha(raw, expected) {
+  if (!FULL_SHA.test(expected)) {
+    throw new Error('The expected engine provenance must be one full lowercase SHA.');
+  }
+  const actual = readReadyEngineSha(raw);
+  if (actual !== expected) {
+    throw new Error(
+      `Production engine ${actual} has not reached required ${expected}; this run cannot begin certification.`
+    );
+  }
+  return actual;
 }
 
 export function readBuildInfoSha(raw) {
@@ -99,6 +157,14 @@ async function readStdin() {
 
 async function main() {
   const [command, ...args] = process.argv.slice(2);
+  if (command === 'publisher-artifact' && args.length === 3) {
+    process.stdout.write(`${readPublisherArtifactSha(await readStdin(), ...args)}\n`);
+    return;
+  }
+  if (command === 'engine-live' && args.length === 0) {
+    process.stdout.write(`${readReadyEngineSha(await readStdin())}\n`);
+    return;
+  }
   if (command === 'engine-ready' && args.length === 1) {
     process.stdout.write(`${requireReadyEngineSha(await readStdin(), args[0])}\n`);
     return;
@@ -116,7 +182,7 @@ async function main() {
     return;
   }
   throw new Error(
-    'Usage: production-e2e-provenance.mjs build-info | unchanged <expected-sha> | engine-ready <expected-sha> | lineage <live-sha> <checkout-sha>'
+    'Usage: production-e2e-provenance.mjs publisher-artifact <run-id> <trigger-sha> <repository-id> | build-info | unchanged <expected-sha> | engine-live | engine-ready <expected-sha> | lineage <live-sha> <checkout-sha>'
   );
 }
 

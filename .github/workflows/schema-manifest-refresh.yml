@@ -45,6 +45,17 @@ on:
     - cron: '40 * * * *'
   repository_dispatch:
     types: [audit-schema-integrity]
+  # RUN IT NOW (2026-09-19). The definer-exposure job is the only thing on this
+  # estate that can see a hole applied straight to production, and waiting for
+  # the next :40 to confirm a fix is the wrong shape for that.
+  #
+  # Nothing about the schedule moves. The `refresh` job's
+  # `if: github.event.schedule != '40 * * * *'` is TRUE on a manual run, exactly
+  # as it already is on the repository_dispatch above, so a manual run does the
+  # full daily comparison. The concurrency key
+  # `${{ github.event.schedule || github.event_name }}` becomes its own group,
+  # so a manual run never cancels or queues behind a scheduled one.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -152,6 +163,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # blob:none keeps every one of the 7,223 commits and drops the blobs of old
+          # revisions. Measured 2026-09-13, three runs each: 33-35s / 531MB against
+          # 36-43s / 766MB, for identical ancestry. Nothing in this repo's workflows
+          # reads a historical file version - they ask merge-base, rev-list, log and
+          # cat-file -e, which are all commit-graph work - so those blobs were paid
+          # for on every run and never read.
+          filter: blob:none
 
       - uses: actions/setup-node@v4
         with:
@@ -162,10 +180,42 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # A day already anchored that now hashes differently is the alarm, and
+          # the script exits 1 for exactly that. Days the file has simply not
+          # caught up with are NOT that - and `git diff --exit-code` treated
+          # them identically, so this job went red the first day nobody
+          # committed the regenerated file and stayed red, which is how the
+          # real signal became invisible. Measured 2026-09-19: every one of the
+          # 39 anchored days still hashed the same; the job was red because
+          # eight new days had been attested since 2026-09-10 and nothing had
+          # committed them.
+          UNANCHORED_BACKLOG_FAILS_AT: '14'
         run: |
           set -euo pipefail
+          # Assume the incident until the script returns: an unexplained change
+          # is the only thing it exits non-zero for, and under `set -e` nothing
+          # after it runs.
+          echo "verdict=changed" >> "$GITHUB_OUTPUT"
           node scripts/ci/anchor-ledger-days.mjs 2>&1 | tee /tmp/anchor-ledger-days.log
-          git diff --exit-code -- docs/attestation/
+
+          # The script rewrote the file in this disposable checkout. This job
+          # is contents:read on purpose and cannot commit, so it counts what
+          # the anchor is missing and says so.
+          NEW=$(git diff --numstat -- docs/attestation/ | awk '{s+=$1} END {print s+0}')
+          echo "new_days=$NEW" >> "$GITHUB_OUTPUT"
+          if [ "$NEW" -eq 0 ]; then
+            echo "verdict=clean" >> "$GITHUB_OUTPUT"
+            echo "the anchor already carries every day the database has attested."
+            exit 0
+          fi
+
+          echo "verdict=behind" >> "$GITHUB_OUTPUT"
+          echo "::warning title=Ledger anchor::${NEW} attested day(s) are not in docs/attestation/chip-ledger-days.tsv. Run scripts/ci/anchor-ledger-days.mjs and commit the result - git is where this history is supposed to live."
+          git diff -- docs/attestation/ | head -60
+          if [ "$NEW" -ge "$UNANCHORED_BACKLOG_FAILS_AT" ]; then
+            echo "::error title=Ledger anchor::${NEW} day(s) behind, at or past the ${UNANCHORED_BACKLOG_FAILS_AT}-day bound. An attestation stored only in the database it hashes proves nothing; it means something while git carries it."
+            exit 1
+          fi
 
       # A RED JOB IN A SCHEDULED WORKFLOW IS A TREE NOBODY HEARS FALL.
       #
@@ -182,7 +232,10 @@ jobs:
       # CLAUDE.md 10.86 rule 3: a guard must have a reader, and you must name
       # them. The reader is this issue.
       - name: Raise the alarm
-        if: failure() && steps.anchor.outcome == 'failure'
+        # Only for the incident, never for a backlog: filing "an anchored day
+        # now hashes differently" because the file is three days behind is the
+        # crying-wolf that gets an alarm muted.
+        if: failure() && steps.anchor.outputs.verdict == 'changed'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}

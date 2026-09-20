@@ -57,7 +57,15 @@ describe('wallets can send, receive and earn - wired to the real doors', () => {
     // Friends only: the picker is the friend list, both directions.
     expect(PAGE).toContain(".from('friendships')");
     expect(PAGE).toContain(".eq('status', 'accepted')");
-    expect(PAGE).toContain('MIN_DIAMOND_SEND = 10');
+    /* The floor is ONE diamond: send_wallet_diamond_transfer refuses only
+       p_amount <= 0 (read on production 2026-09-13). The 10 this pinned was
+       an invention that refused sends the platform allows. */
+    expect(PAGE).toContain('MIN_DIAMOND_SEND = 1;');
+    expect(PAGE).not.toContain('MIN_DIAMOND_SEND = 10');
+    /* And the route REFUSES a request with no X-Idempotency-Key, so the send
+       carries one, minted per intent and kept across a retry. */
+    expect(PAGE).toContain('idempotencyKey: sendKeyRef.current');
+    expect(PAGE).toContain('if (e?.definitive) sendKeyRef.current = null;');
   });
 
   it("moves chips between the player's own wallets through the store", () => {
@@ -71,8 +79,10 @@ describe('wallets can send, receive and earn - wired to the real doors', () => {
     // suite below); the pin moved with it rather than being dropped.
     expect(LEDGER).toContain(".from('diamond_transactions')");
     expect(LEDGER).toContain(".gt('amount', 0)");
+    // `metadata` carries the other player's id (recipient_id / sender_id),
+    // which the page resolves to a name through the friend list (2026-09-13).
     expect(LEDGER).toContain(
-      "select('id, type, transaction_type, amount, description, created_at')"
+      "select('id, type, transaction_type, amount, description, created_at, metadata')"
     );
     expect(PAGE).toContain("useDiamondLedger(user?.id, 'in', isMounted)");
   });
@@ -290,11 +300,13 @@ describe('diamond purchases: the errors a lifetime member and a retrying buyer u
     expect(MEMBERSHIP).toMatch(/if \(isLifetime\) \{\s*toast\.info\(/);
   });
 
-  it('a refused purchase does not replay under the same idempotency key', () => {
-    const catchBlock = STORE.slice(
-      STORE.indexOf("toast.error(err instanceof Error ? err.message : 'Purchase failed')")
+  it('a definitive refusal retires only its exact protected purchase key', () => {
+    expect(STORE).toContain('const definitiveRefusal = apiError.definitive === true;');
+    expect(STORE).toContain('if (definitiveRefusal) {');
+    expect(STORE).toContain(
+      'clearSessionPurchaseRequestIfMatches(purchaseScope, purchaseIntent.requestId)'
     );
-    expect(catchBlock).toContain('purchaseKeyRef.current = mintPurchaseKey()');
+    expect(STORE).not.toContain('purchaseKeyRef.current = mintPurchaseKey()');
   });
 
   it('the marketplace opens the club that actually has stock, not the first membership row', () => {

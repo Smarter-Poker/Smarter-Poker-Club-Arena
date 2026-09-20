@@ -22,6 +22,7 @@
  */
 
 import { AsyncResource } from 'node:async_hooks';
+import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorker.js';
 import { createEngineHttpServer } from './http/createEngineHttpServer.js';
 import { reportError } from './services/errorReporter.js';
 import { tableStateHub } from './transport/TableStateHub.js';
@@ -34,10 +35,7 @@ import { startHorseSelfTuner, stopHorseSelfTuner } from './services/HorseSelfTun
 import { sweepIncompleteHorses } from './services/HorseOnboarding.js';
 import { startHorseLeague, stopHorseLeague } from './benchmark/HorseLeague.js';
 import { startHorseDailyAudit, stopHorseDailyAudit } from './services/HorseDailyAudit.js';
-import {
-  startBrainTelemetryFlush,
-  stopBrainTelemetryFlush,
-} from './services/BrainTelemetryFlush.js';
+import { startBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
 import {
   startHorseDataLedgerSync,
   stopHorseDataLedgerSync,
@@ -97,6 +95,7 @@ const engineWs = new EngineWebSocketServer({
   // cards for the current hand (public state alone leaves reconnecting players
   // blind and auto-folded).
   onResync: (tableId, userId) => {
+    gameServer.replayMaintenancePresentation(tableId);
     const engine = gameServer.getTableEngine(tableId);
     void engine?.rePushHoleCards(userId);
     // 2026-09-04 (disconnect audit item 11): and the engine's copy of this
@@ -120,7 +119,9 @@ const engineWs = new EngineWebSocketServer({
 });
 
 // Phase U4: Channel WebSocket server at /ws/channel (Realtime migration).
-const channelWs = new ChannelWebSocketServer();
+const channelWs = new ChannelWebSocketServer((tournamentId) =>
+  gameServer.getTournamentHandForHand(tournamentId)
+);
 
 const httpServer = createEngineHttpServer(
   createRouter({ gameServer, tableStateHub, engineWs, channelHub })
@@ -203,6 +204,8 @@ async function startLeaderOwnedServices(): Promise<void> {
   // Proof of receipt (Dan 2026-08-26): live layer-fire counters, flushed to
   // horse_brain_telemetry every minute for the daily audit + admin panel.
   startBrainTelemetryFlush();
+  // Journal I/O and parsing have a separate background thread and durable leases.
+  horseAdaptiveJournalWorker.start();
   // Phase 1 of the real-time build plan (Dan 2026-09-04): the Horse Data
   // Ledger - every input the brain consumes, with its source, cadence,
   // consumer and receipt - carried into horse_data_ledger so the daily
@@ -257,7 +260,9 @@ function stopLeaderOwnedServices(): Promise<void> {
     ['HorseSelfTuner', stopHorseSelfTuner],
     ['HorseLeague', stopHorseLeague],
     ['HorseDailyAudit', stopHorseDailyAudit],
-    ['BrainTelemetryFlush', stopBrainTelemetryFlush],
+    // GameServer stops Horse execution telemetry after its dealers drain;
+    // stopping it at this early producer fence loses their final outcomes.
+    ['HorseAdaptiveJournalWorker', () => horseAdaptiveJournalWorker.stop()],
     ['HorseDataLedgerSync', stopHorseDataLedgerSync],
     ['HorseLaneLoader', stopHorseLaneLoader],
     ['GtoAggregationDriver', stopGtoAggregationDriver],

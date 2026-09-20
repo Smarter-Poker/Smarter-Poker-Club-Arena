@@ -41,7 +41,7 @@ groups:
           severity: critical
           component: tournament
         annotations:
-          summary: "{{ $value }} MTT(s) past their start time and never started"
+          summary: '{{ $value }} MTT(s) past their start time and never started'
           description: |
             One or more MTTs are still REGISTERING/ANNOUNCED more than 10
             minutes after their advertised start time. Players who registered
@@ -85,7 +85,7 @@ groups:
           severity: critical
           component: tournament
         annotations:
-          summary: "The leader engine owns NO tournament manager while tournaments are RUNNING"
+          summary: 'The leader engine owns NO tournament manager while tournaments are RUNNING'
           description: |
             This engine is the leader, is past its boot grace, holds a fresh
             database snapshot, and owns zero tournament managers while the
@@ -99,6 +99,53 @@ groups:
             perfectly healthy throughout - it is measuring the cash fleet.
           runbook: https://monitor.smarter.poker/runbooks/tournament-fleet-unserved
 
+      # September 13: all 84 running MTTs were silent while 509 managers
+      # renewed leases and cash games continued. Neither global hand rate nor
+      # manager count detects that. The RPC checks each event independently.
+      # Fifteen minutes exceeds the seven-day max hand (214.389s over 2.1m
+      # hands). A five-minute sustained alert and the break guard exclude an
+      # ordinary five-minute break, slow hand and immediate post-thaw recovery.
+      - alert: MttPlayStopped
+        expr: |
+          (poker_mtt_stalled_running > 0)
+          and on(instance) (poker_tournament_metrics_stale_seconds < 300)
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: tournament
+        annotations:
+          summary: '{{ $value }} MTT(s) have stopped producing hands'
+          description: |
+            Each counted MTT has been running for at least 15 minutes and has
+            no recorded hand for its own event in that window, outside its
+            break and add-on grace. Other tournaments and cash games cannot
+            clear this count. Inspect manager scheduler in-flight work,
+            unprocessed knockouts, one-player tables and table adoption.
+          runbook: docs/changelog/2026-09-13-mtt-progress-monitoring.md
+
+      # A break flag must not make a stalled tournament invisible forever.
+      # Ten extra minutes exceed the measured longest hand plus ordinary thaw;
+      # use the later break/add-on end, including pre-countdown missing ends.
+      - alert: MttBreakDidNotEnd
+        expr: |
+          (poker_mtt_overdue_breaks > 0)
+          and on(instance) (poker_tournament_metrics_stale_seconds < 300)
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 2m
+        labels:
+          severity: critical
+          component: tournament
+        annotations:
+          summary: '{{ $value }} MTT break(s) have not resumed'
+          description: |
+            An MTT remains marked on break more than ten minutes beyond its
+            break or add-on deadline. Missing countdown timestamps have a
+            bounded grace as well. Inspect break-clear acknowledgment, add-on
+            finalization and maintenance thaw; do not force-release tables
+            before the outstanding owner finishes.
+          runbook: docs/changelog/2026-09-13-mtt-progress-monitoring.md
+
       # ── Money is owed and the settle path did not finish ──────────────
       # recoverStuckCompletingTournaments should settle a COMPLETING event
       # within a sweep. Ten minutes means it did not, and the prize pool is
@@ -110,7 +157,7 @@ groups:
           severity: critical
           component: tournament
         annotations:
-          summary: "{{ $value }} tournament(s) stuck in COMPLETING"
+          summary: '{{ $value }} tournament(s) stuck in COMPLETING'
           description: |
             A tournament has been in COMPLETING for over 10 minutes. The
             recovery watchdog settles these within a sweep, so this means it
@@ -136,7 +183,7 @@ groups:
           severity: critical
           component: tournament
         annotations:
-          summary: "{{ $value }} tournament entrant(s) holding chips with no seat"
+          summary: '{{ $value }} tournament entrant(s) holding chips with no seat'
           description: |
             Entrants in a RUNNING tournament hold chips but have no open seat
             anywhere in that event. They cannot be eliminated, so the
@@ -163,7 +210,7 @@ groups:
           severity: critical
           component: tournament
         annotations:
-          summary: "{{ $value }} completed tournament(s) with a prize pool and no payout"
+          summary: '{{ $value }} completed tournament(s) with a prize pool and no payout'
           description: |
             One or more tournaments finished in the last 6 hours with a
             non-zero prize pool and NOTHING delivered against it: no cash
@@ -193,7 +240,7 @@ groups:
           severity: warning
           component: tournament
         annotations:
-          summary: "Tournament gauges are {{ $value }}s stale — every tournament alert is blind"
+          summary: 'Tournament gauges are {{ $value }}s stale — every tournament alert is blind'
           description: |
             The tournament metrics collector has not completed a refresh in
             over 10 minutes. The gauges above are frozen at their last good
@@ -215,7 +262,7 @@ groups:
           severity: warning
           component: tournament
         annotations:
-          summary: "No tournaments open for registration for 30 minutes"
+          summary: 'No tournaments open for registration for 30 minutes'
           description: |
             poker_tournaments_registering has been zero for half an hour while
             the collector is fresh, so this is a real empty board rather than a
@@ -224,3 +271,159 @@ groups:
             ahead. A player looking at the lobby right now sees nothing to
             enter.
           runbook: https://monitor.smarter.poker/runbooks/tournament-lobby-empty
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  #  THE FLEET REPORTS WHAT IT CANNOT FINISH (2026-09-17, phase 3 of the
+  #  horse programme)
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Producer: services/HorseFleetMetrics.ts, one read a minute of
+  # fn_ca_horse_fleet_metrics; the refusal counter is engineInstruments.ts.
+  # Measured 2026-09-17 20:20 UTC, the afternoon these were written: 835
+  # RUNNING tournaments, 547 decided for over ten minutes (oldest nine days),
+  # 547 horses seated in them, 560 blocked by an unreconciled entry fee, 864
+  # refused finishes in an hour, 1,393 deadlocks in fourteen minutes earlier
+  # the same day. Nothing on the scrape said any of it.
+  - name: horse-fleet-settlement
+    interval: 60s
+    rules:
+      - alert: TournamentsDecidedButUnfinished
+        # A finish takes seconds; the elimination scheduler's worst honest
+        # queue was twenty minutes. Fifty games over ten minutes is not a
+        # queue, it is a wall, and on 2026-09-17 the number was 547.
+        expr: |
+          poker_tournaments_decided_unfinished > 50
+          and poker_horse_fleet_metrics_stale_seconds < 600
+        for: 15m
+        labels:
+          severity: critical
+          component: tournament
+        annotations:
+          summary: '{{ $value }} tournaments are decided and not finished'
+          description: |
+            RUNNING tournaments with at most one player still playing for over
+            ten minutes. The cards are done; the finish was refused or never
+            asked for. Read poker_tournament_finish_refusals_total by reason
+            for why the last attempts failed, and
+            poker_tournaments_decided_unfinished_oldest_minutes for how long
+            this has been true.
+          runbook: docs/runbooks/horse-fleet-settlement.md
+
+      - alert: HorsesCommittedToDecidedGames
+        # One horse per decided game, by construction; the share of the
+        # seated fleet says how much of it is idle. 10% on a 2,400-horse
+        # fleet is 240 horses doing nothing; the day this was written it was
+        # 23%.
+        expr: |
+          poker_horses_in_decided_games / clamp_min(poker_horses_seated_in_database, 1) > 0.10
+          and poker_horse_fleet_metrics_stale_seconds < 600
+        for: 15m
+        labels:
+          severity: warning
+          component: club-arena-engine
+        annotations:
+          summary: '{{ $value | humanizePercentage }} of seated horses sit in decided games'
+          description: |
+            Horses seated at tables whose tournament is already decided,
+            as a share of every seated horse. They cannot act, cannot be
+            reseated, and hold their seat until the tournament finishes.
+            TournamentsDecidedButUnfinished says how many games; this says
+            how much of the fleet.
+          runbook: docs/runbooks/horse-fleet-settlement.md
+
+      - alert: TournamentFinishRefusalsPersisting
+        # The database saying no, twenty times in fifteen minutes, for the
+        # same reason. Baseline before the accounting cutover: 0.
+        expr: sum by (reason) (increase(poker_tournament_finish_refusals_total[15m])) > 20
+        for: 15m
+        labels:
+          severity: critical
+          component: tournament
+        annotations:
+          summary: '{{ $value | printf "%.0f" }} finishes refused in 15m for {{ $labels.reason }}'
+          description: |
+            The atomic finish refused before commit; nothing moved and the
+            manager retries. A refusal that persists is a refusal a retry
+            cannot cure: fee_reconciliation is an entry fee with no captured
+            accounting batch, prize_set is a prize the ladder could not
+            certify, deadlock and timeout are contention. Every refused
+            tournament is also counted in poker_tournaments_decided_unfinished.
+          runbook: docs/runbooks/horse-fleet-settlement.md
+
+      - alert: TournamentsBlockedByUnreconciledFees
+        # An entry fee with no captured batch cannot be attributed and the
+        # finish is refused for it. A transition gap, not a race: the count
+        # only falls when somebody reconciles the records.
+        expr: |
+          poker_tournaments_unbatched_fee_running > 0
+          and poker_horse_fleet_metrics_stale_seconds < 600
+        for: 30m
+        labels:
+          severity: critical
+          component: money
+        annotations:
+          summary: '{{ $value }} running tournaments hold an entry fee no accounting batch captured'
+          description: |
+            RUNNING tournaments with a positive tournament rake record and no
+            'captured' row in accounting_tournament_fee_batches.
+            fn_accounting_tournament_fee_net_plan refuses their finish with
+            tournament_fee_sources_require_reconciliation until the fee is
+            reconciled. On 2026-09-17 the count was 560, all registered before
+            the 18:11 accounting cutover.
+          runbook: docs/runbooks/horse-fleet-settlement.md
+
+      - alert: DatabaseDeadlocksElevated
+        # pg_stat_database.deadlocks, cumulative. Ten in ten minutes is five
+        # times the worst honest hour of 2026-09-17 (2/h); the storm that
+        # afternoon ran 1,393 in fourteen minutes and this would have fired
+        # inside the second scrape.
+        expr: increase(poker_db_deadlocks_total[10m]) > 10
+        for: 5m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: '{{ $value | printf "%.0f" }} deadlocks in 10 minutes'
+          description: |
+            The database is choosing victims. Read the Postgres log for
+            "deadlock detected" and the functions in each cycle; every cycle
+            is a lock-order difference on a shared row, and the fix is the
+            order inside the functions that take it, never a wider lane.
+          runbook: docs/runbooks/horse-fleet-settlement.md
+
+      - alert: SettlementLaneConvoy
+        # Sampled once a minute, so a convoy shorter than that is invisible
+        # here and lives in the Postgres log (log_lock_waits). A wait over
+        # five seconds caught by a one-minute sample is a long convoy.
+        expr: max_over_time(poker_settlement_lane_waiters_oldest_ms[10m]) > 5000
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: 'A settlement lane wait of {{ $value | printf "%.0f" }} ms was sampled'
+          description: |
+            Backends were queued on the G, F or B settlement advisory lane
+            for over five seconds at a one-minute sample.
+            poker_settlement_lane_waiters{lane} says which lane. G is the
+            platform-wide lane every hand settlement shares; F is the finish
+            lane; B is the hand barrier.
+          runbook: docs/runbooks/horse-fleet-settlement.md
+
+      - alert: HorseFleetMetricsStale
+        # The collector itself. A failed read keeps the last good snapshot,
+        # so every rule above reads "and stale_seconds < 600" and goes
+        # quiet; this is the rule that says why they went quiet.
+        expr: poker_horse_fleet_metrics_stale_seconds > 600
+        for: 5m
+        labels:
+          severity: warning
+          component: club-arena-engine
+        annotations:
+          summary: 'Horse fleet gauges are {{ $value | humanizeDuration }} old'
+          description: |
+            HorseFleetMetrics has not completed a refresh in over ten
+            minutes. TournamentsDecidedButUnfinished,
+            HorsesCommittedToDecidedGames, TournamentsBlockedByUnreconciledFees
+            and SettlementLaneConvoy cannot fire on anything new. Check the
+            engine log for HorseFleetMetrics.refresh_failed.
+          runbook: docs/runbooks/horse-fleet-settlement.md

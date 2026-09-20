@@ -21,8 +21,19 @@
  * provide an authenticated verdict.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync, statSync } from 'node:fs';
-import { resolve } from 'node:path';
+import {
+  readFileSync,
+  existsSync,
+  statSync,
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  realpathSync,
+} from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 
 const root = resolve(__dirname, '..');
 const read = (p: string) => readFileSync(resolve(root, p), 'utf8');
@@ -147,5 +158,275 @@ describe('LAW - the test gate can never look at an empty diff', () => {
     /* "I could not tell" is never "nothing changed" (10.86 rule 1): with no
        common base it checks the whole tree instead of an empty list. */
     expect(arm, 'no whole-tree fallback').toMatch(/git ls-files/);
+  });
+});
+
+describe('LAW - changed server tests reach the server project', () => {
+  // Execute the actual server gate and its final failure check. The earlier
+  // Git/network guards are outside this selector fixture; Vitest is a recorder
+  // here, so these cases prove invocation and refusal, not engine test success.
+  function runServerGate({
+    files,
+    present = files,
+    dependencyMode = 'local',
+    runnerAvailable = true,
+    runnerExit = 0,
+  }: {
+    files: string[];
+    present?: string[];
+    dependencyMode?: 'local' | 'ci';
+    runnerAvailable?: boolean;
+    runnerExit?: number;
+  }) {
+    const hook = read(HOOK_PATH);
+    const marker = '\nSERVER_VITEST="$CA_TREE_TOP/server/node_modules/.bin/vitest"';
+    expect(hook.split(marker)).toHaveLength(2);
+    const serverGate = hook.slice(hook.indexOf(marker));
+    const directory = realpathSync(mkdtempSync(join(tmpdir(), 'ca-server-hook-selection-')));
+    try {
+      mkdirSync(join(directory, 'server'), { recursive: true });
+      writeFileSync(join(directory, 'server/package.json'), '{}');
+      for (const file of present) {
+        mkdirSync(dirname(join(directory, file)), { recursive: true });
+        writeFileSync(join(directory, file), '// selector fixture\n');
+      }
+      const trace = join(directory, 'runner-trace');
+      if (runnerAvailable) {
+        const runner = join(directory, 'server/node_modules/.bin/vitest');
+        mkdirSync(dirname(runner), { recursive: true });
+        writeFileSync(
+          runner,
+          '#!/bin/bash\n' +
+            '{ printf "call\\n"; printf "cwd=%s\\n" "$PWD"; printf "arg=%s\\n" "$@"; } >> "$HOOK_TEST_TRACE"\n' +
+            'exit "$HOOK_TEST_EXIT"\n',
+          { mode: 0o755 }
+        );
+      }
+      const result = spawnSync('bash', ['-c', 'set -e\nFAIL=0\n' + serverGate], {
+        cwd: directory,
+        env: {
+          PATH: process.env.PATH || '/usr/bin:/bin',
+          CA_TREE_TOP: directory,
+          FILES: files.join('\n'),
+          SERVER_DEPENDENCY_MODE: dependencyMode,
+          HOOK_TEST_TRACE: trace,
+          HOOK_TEST_EXIT: String(runnerExit),
+        },
+        encoding: 'utf8',
+        timeout: 5000,
+        maxBuffer: 64 * 1024,
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.signal).toBeNull();
+      return {
+        status: result.status,
+        output: result.stdout + result.stderr,
+        calls: existsSync(trace) ? readFileSync(trace, 'utf8') : '',
+        serverDirectory: join(directory, 'server'),
+      };
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+
+  it.each(['server/src/Root.test.mjs', 'server/src/testing/horseRegression/nested/frame.test.mjs'])(
+    'runs a changed MJS test in the server project: %s',
+    (file) => {
+      const result = runServerGate({ files: [file] });
+      expect(result.status).toBe(0);
+      expect(result.calls).toBe(
+        `call\ncwd=${result.serverDirectory}\narg=run\narg=${file.slice('server/'.length)}\n`
+      );
+    }
+  );
+
+  it('blocks the push when the changed MJS test runner fails', () => {
+    const result = runServerGate({
+      files: ['server/src/testing/horseRegression/frame.test.mjs'],
+      runnerExit: 23,
+    });
+    expect(result.status).toBe(1);
+    expect(result.calls).toContain('arg=run\narg=src/testing/horseRegression/frame.test.mjs\n');
+    expect(result.output).toContain('BLOCKED: a server test you changed is failing.');
+  });
+
+  it('runs mixed TypeScript and MJS tests exactly once without treating them as sources', () => {
+    const result = runServerGate({
+      files: ['server/src/engine/decision.test.ts', 'server/src/testing/frame.test.mjs'],
+    });
+    expect(result.status).toBe(0);
+    expect(result.calls).toBe(
+      `call\ncwd=${result.serverDirectory}\narg=run\narg=src/engine/decision.test.ts\narg=src/testing/frame.test.mjs\n`
+    );
+  });
+
+  it('runs related server tests for an MJS helper and preserves their failure', () => {
+    const result = runServerGate({
+      files: ['server/src/testing/horseRegression/fixture.mjs'],
+      runnerExit: 19,
+    });
+    expect(result.status).toBe(1);
+    expect(result.calls).toBe(
+      `call\ncwd=${result.serverDirectory}\narg=related\narg=--run\narg=src/testing/horseRegression/fixture.mjs\n`
+    );
+  });
+
+  it('preserves related-test selection for a TypeScript server source', () => {
+    const result = runServerGate({ files: ['server/src/engine/decision.ts'] });
+    expect(result.status).toBe(0);
+    expect(result.calls).toBe(
+      `call\ncwd=${result.serverDirectory}\narg=related\narg=--run\narg=src/engine/decision.ts\n`
+    );
+  });
+
+  it('blocks incomplete dependencies instead of deferring a required local check', () => {
+    const result = runServerGate({
+      files: ['server/src/testing/frame.test.mjs'],
+      dependencyMode: 'ci',
+      runnerAvailable: false,
+    });
+    expect(result.status).toBe(1);
+    expect(result.calls).toBe('');
+    expect(result.output).toContain('BLOCKED: required local server dependencies are incomplete');
+  });
+
+  it('refuses a changed MJS test when local mode has no server runner', () => {
+    const result = runServerGate({
+      files: ['server/src/testing/frame.test.mjs'],
+      runnerAvailable: false,
+    });
+    expect(result.status).toBe(1);
+    expect(result.calls).toBe('');
+    expect(result.output).toContain('REFUSING: you changed server/** and there is no vitest');
+  });
+
+  it('ignores removed files, declarations, source maps and tests from another project', () => {
+    const present = [
+      'server/src/testing/frame.test.mjs.map',
+      'server/src/types.d.ts',
+      'tests/root.test.ts',
+    ];
+    const result = runServerGate({
+      files: ['server/src/testing/removed.test.mjs', ...present],
+      present,
+    });
+    expect(result.status).toBe(0);
+    expect(result.calls).toBe('');
+  });
+});
+
+describe('LAW - local preflight selects document and workflow contracts', () => {
+  // Execute the maintained gate with recording runners. This proves selection
+  // and refusal; the selected real document law is also run by this PR.
+  function runClientGate({
+    files,
+    pins = {},
+    dependencyMode = 'local',
+    runnerExit = 0,
+    runnerAvailable = true,
+  }: {
+    files: string[];
+    pins?: Record<string, string>;
+    dependencyMode?: 'local' | 'ci';
+    runnerExit?: number;
+    runnerAvailable?: boolean;
+  }) {
+    const hook = read(HOOK_PATH);
+    const start = hook.indexOf('\n# BEGIN TARGETED CLIENT PREFLIGHT');
+    const end = hook.indexOf('\n# END TARGETED CLIENT PREFLIGHT');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const directory = realpathSync(mkdtempSync(join(tmpdir(), 'ca-client-hook-selection-')));
+    try {
+      for (const [file, content] of Object.entries({
+        'package.json': '{}',
+        ...Object.fromEntries(files.map((file) => [file, '// source'])),
+        ...pins,
+      })) {
+        mkdirSync(dirname(join(directory, file)), { recursive: true });
+        writeFileSync(join(directory, file), content);
+      }
+      const trace = join(directory, 'runner-trace');
+      if (runnerAvailable) {
+        const runner = join(directory, 'node_modules/.bin/vitest');
+        mkdirSync(dirname(runner), { recursive: true });
+        writeFileSync(
+          runner,
+          '#!/bin/bash\nprintf "%s\\n" "$@" >> "$HOOK_TEST_TRACE"\nexit "$HOOK_TEST_EXIT"\n',
+          { mode: 0o755 }
+        );
+      }
+      const result = spawnSync(
+        'bash',
+        ['-c', 'set -e\nFAIL=0\n' + hook.slice(start, end) + '\nexit "$FAIL"'],
+        {
+          cwd: directory,
+          env: {
+            PATH: process.env.PATH,
+            CA_TREE_TOP: directory,
+            FILES: files.join('\n'),
+            CLIENT_DEPENDENCY_MODE: dependencyMode,
+            HOOK_TEST_TRACE: trace,
+            HOOK_TEST_EXIT: String(runnerExit),
+          },
+          encoding: 'utf8',
+          timeout: 5000,
+        }
+      );
+      expect(result.error).toBeUndefined();
+      return {
+        status: result.status,
+        output: result.stdout + result.stderr,
+        calls: existsSync(trace) ? readFileSync(trace, 'utf8') : '',
+      };
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+
+  it.each([
+    'AGENT-PLAYBOOK.md',
+    '.github/workflows/publish-club-arena.yml',
+    'scripts/stamp-build-provenance.mjs',
+    'public/styles/example.css',
+  ])('runs the existing test that reads %s and blocks on its failure', (file) => {
+    const result = runClientGate({
+      files: [file],
+      runnerExit: 19,
+      pins: { 'tests/existing.test.ts': `readFileSync('${file}')` },
+    });
+    expect(result.calls).toContain('tests/existing.test.ts');
+    expect(result.status).toBe(1);
+  });
+
+  it('blocks a selected document test when dependencies are incomplete', () => {
+    const result = runClientGate({
+      files: ['AGENT-PLAYBOOK.md'],
+      dependencyMode: 'ci',
+      runnerAvailable: false,
+      pins: { 'tests/doc.test.ts': "read('AGENT-PLAYBOOK.md')" },
+    });
+    expect(result.status).toBe(1);
+    expect(result.calls).toBe('');
+  });
+  it('blocks a selected test without a local runner', () => {
+    expect(runClientGate({ files: ['tests/doc.test.ts'], runnerAvailable: false }).status).toBe(1);
+  });
+  it('does not require dependencies for prose with no applicable executable contract', () => {
+    const result = runClientGate({
+      files: ['docs/ordinary-note.md'],
+      dependencyMode: 'ci',
+      runnerAvailable: false,
+    });
+    expect(result.status).toBe(0);
+    expect(result.calls).toBe('');
+  });
+  it('runs a changed test once when it also names the changed document', () => {
+    const result = runClientGate({
+      files: ['AGENT-PLAYBOOK.md', 'tests/doc.test.ts'],
+      pins: { 'tests/doc.test.ts': "read('AGENT-PLAYBOOK.md')" },
+    });
+    expect(result.status).toBe(0);
+    expect(result.calls).toBe('run\ntests/doc.test.ts\n');
   });
 });

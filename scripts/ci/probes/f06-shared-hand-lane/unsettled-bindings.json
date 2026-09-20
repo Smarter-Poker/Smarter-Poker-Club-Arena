@@ -1,0 +1,65 @@
+[
+  {
+    "tgname": "zzzz_f06_accepted_hand",
+    "relation": "hand_atomic_commits",
+    "tgenabled": "O",
+    "function": "smarter_private.f06_accept_hand()",
+    "definition": "CREATE TRIGGER zzzz_f06_accepted_hand AFTER INSERT OR UPDATE OF post_commit_completed_at ON public.hand_atomic_commits FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_accept_hand()"
+  },
+  {
+    "tgname": "f06_attempts_immutable",
+    "relation": "smarter_private.f06_attempts",
+    "tgenabled": "O",
+    "function": "smarter_private.f06_immutable_identity()",
+    "definition": "CREATE TRIGGER f06_attempts_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_attempts FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_immutable_identity()"
+  },
+  {
+    "tgname": "f06_hand_permits_immutable",
+    "relation": "smarter_private.f06_hand_permits",
+    "tgenabled": "O",
+    "function": "smarter_private.f06_immutable_identity()",
+    "definition": "CREATE TRIGGER f06_hand_permits_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_hand_permits FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_immutable_identity()"
+  },
+  {
+    "tgname": "f06_members_immutable",
+    "relation": "smarter_private.f06_members",
+    "tgenabled": "O",
+    "function": "smarter_private.f06_immutable_identity()",
+    "definition": "CREATE TRIGGER f06_members_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_members FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_immutable_identity()"
+  },
+  {
+    "tgname": "f06_operations_immutable",
+    "relation": "smarter_private.f06_operations",
+    "tgenabled": "O",
+    "function": "smarter_private.f06_immutable_identity()",
+    "definition": "CREATE TRIGGER f06_operations_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_operations FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_immutable_identity()"
+  },
+  {
+    "tgname": "a00_f06_source_seat",
+    "relation": "table_seats",
+    "tgenabled": "O",
+    "function": "smarter_private.f06_source_guard()",
+    "definition": "CREATE TRIGGER a00_f06_source_seat BEFORE INSERT OR DELETE OR UPDATE OF table_id, user_id, seat_number, left_at ON public.table_seats FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_source_guard()"
+  },
+  {
+    "tgname": "a00_f06_lifecycle",
+    "relation": "tables",
+    "tgenabled": "O",
+    "function": "smarter_private.f06_table_guard()",
+    "definition": "CREATE TRIGGER a00_f06_lifecycle BEFORE INSERT OR DELETE OR UPDATE OF id, tournament_id, status, lifecycle, is_deleted, f06_lifecycle ON public.tables FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_table_guard()"
+  },
+  {
+    "tgname": "a00_f06_source_roster",
+    "relation": "tournament_players",
+    "tgenabled": "O",
+    "function": "smarter_private.f06_source_guard()",
+    "definition": "CREATE TRIGGER a00_f06_source_roster BEFORE INSERT OR DELETE OR UPDATE OF table_id, user_id, seat_number, status ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_source_guard()"
+  },
+  {
+    "tgname": "f06_bind_move_receipt",
+    "relation": "tournament_seat_move_receipts",
+    "tgenabled": "O",
+    "function": "smarter_private.f06_receipt_guard()",
+    "definition": "CREATE TRIGGER f06_bind_move_receipt AFTER INSERT ON public.tournament_seat_move_receipts FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_receipt_guard()"
+  }
+]

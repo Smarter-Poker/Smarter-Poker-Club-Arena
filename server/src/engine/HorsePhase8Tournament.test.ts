@@ -173,6 +173,21 @@ function scenario(depth = 600) {
   return { gs, hero, input };
 }
 describe('Phase 8 bounded future-game facts', () => {
+  it('keeps sitting-out dealt seats in blind rotation and individual-ante orbit costs', () => {
+    const { gs, hero } = scenario();
+    gs.players[2].is_sitting_out = true;
+    gs.tournament!.anteType = 'per_player';
+    gs.tournament!.currentAnte = 3;
+    gs.tournament!.nextAnte = 6;
+    const projected = projectTournamentFutureGame(hero, gs, 0);
+    expect(projected.available).toBe(true);
+    expect(projected.currentOrbitCost).toBe(24);
+    expect(projected.nextOrbitCost).toBe(48);
+    expect(projected.handsUntilBigBlind).toBe(2);
+    // Next buttons are seats 1 and 2: hero pays only the second hand's BB.
+    expect(projected.maximumRetainedStack).toBe(hero.stack - 10 - 6);
+    expect(projected.minimumRetainedStack).toBe(hero.stack - 20 - 12);
+  });
   it('prices an approaching blind at both known levels without inventing hand duration or table breaks', () => {
     const { gs, hero } = scenario();
     const projected = projectTournamentFutureGame(hero, gs, 1000);
@@ -204,6 +219,41 @@ describe('Phase 8 bounded future-game facts', () => {
   });
 });
 describe('Phase 8 continuation policy', () => {
+  it('keeps a sitting-out dealer in the ring, checks it through for free and folds it to a wager', () => {
+    const players = [
+      seat('hero', 1, 100, 10),
+      seat('villain', 2, 100, 10),
+      seat('away', 3, 100, 10),
+    ];
+    players[2].is_sitting_out = true;
+    const acted: string[] = [];
+    const config = {
+      heroId: 'hero',
+      dealerSeat: 3,
+      bigBlind: 10,
+      currentStreet: 'turn' as const,
+      heroChecked: false,
+      opponentIds: ['villain', 'away'],
+      sampleIndex: 0,
+      streets: [{ street: 'river' as const, heroStrength: 0.2, opponentStrength: [0.2, 0.99] }],
+    };
+    const commit = (p: SeatPlayer, n: number) => {
+      acted.push(p.user_id);
+      const amount = Math.min(p.stack, n);
+      p.stack -= amount;
+      p.bet += amount;
+      p.totalInvested += amount;
+      p.is_all_in = p.stack === 0;
+    };
+    expect(simulateTournamentContinuation(players, config, commit)).toBe(true);
+    expect(acted).toEqual([]);
+    expect(players[2].is_folded).toBe(false);
+    config.streets[0].heroStrength = 0.9;
+    expect(simulateTournamentContinuation(players, config, commit)).toBe(true);
+    expect(acted).toEqual(['hero']);
+    expect(players[2].is_folded).toBe(true);
+    expect(players[2].stack).toBe(100);
+  });
   it('never prices a short-stack response using a side pot that player cannot win', () => {
     const players = [
       seat('hero', 1, 10, 10),
@@ -330,6 +380,7 @@ describe('Phase 8 counterfactual selection', () => {
         previous.continuePostflop
       );
       expect(result.ledger.fired).toBe(true);
+      expect(result.ledger.completed).toBe(true);
       for (const c of result.ledger.after) {
         expect(c.combinedUtility).toBeCloseTo(c.payoutEv + c.bountyEv + c.optionEv, 9);
         expect(c.stackConservationError).toBeLessThanOrEqual(0.005);
@@ -374,6 +425,8 @@ describe('Phase 8 counterfactual selection', () => {
       villain.is_all_in = true;
       // A 590-BB nominal overjam cannot put the returned excess at risk.
       expect(deepOnePairCommitment(hero, gs, hero.stack)).toBe(risk >= 1500);
+      villain.is_sitting_out = true;
+      expect(deepOnePairCommitment(hero, gs, hero.stack)).toBe(risk >= 1500);
     }
   );
   it('does not cap a deep overjam when every live opponent can match only a short stack', () => {
@@ -397,6 +450,28 @@ describe('Phase 8 counterfactual selection', () => {
     villain.is_sitting_out = false;
     expect(deepOnePairCommitment(hero, gs, hero.stack)).toBe(true);
   });
+  it.each([
+    ['call-off', undefined, false],
+    ['short raise', false, true],
+    ['full raise', true, true],
+  ] as const)('distinguishes an all-in %s from raise pressure', (_, isFullRaise, expected) => {
+    const { hero, gs } = scenario();
+    const villain = gs.players.find((p) => p.user_id === 'villain')!;
+    villain.stack = 0;
+    villain.is_all_in = true;
+    gs.actionHistory = [
+      {
+        seat: villain.seat,
+        userId: villain.user_id,
+        stage: 'turn',
+        action: 'all_in',
+        amount: villain.bet,
+        timestamp: 1,
+        isFullRaise,
+      },
+    ];
+    expect(deepOnePairCommitment(hero, gs, hero.stack)).toBe(expected);
+  });
   it.each(['A', 'K', 'Q', 'J'] as const)('does not cap a set of %s', (rank) => {
     const { hero, gs } = scenario();
     hero.cards = [card(rank, 'clubs'), card(rank, 'diamonds')];
@@ -408,6 +483,43 @@ describe('Phase 8 counterfactual selection', () => {
     ];
     expect(deepOnePairCommitment(hero, gs, hero.stack)).toBe(false);
   });
+  it.each(
+    [undefined, false, true].flatMap((isFullRaise) =>
+      [false, true].map((away) => ({ isFullRaise, away }))
+    )
+  )(
+    'carries all-in pressure and away-seat rights into real Phase 7/8 evaluation: %j',
+    ({ isFullRaise, away }) => {
+      const { hero, gs, input } = scenario();
+      const villain = gs.players.find((p) => p.user_id === 'villain')!;
+      villain.stack = 0;
+      villain.is_all_in = true;
+      villain.is_sitting_out = away;
+      input.context.fieldStacks[1] = villain.totalInvested;
+      input.context.fieldStackByUser.villain = villain.totalInvested;
+      gs.tournament!.stacks![1] = villain.totalInvested;
+      gs.tournament!.stackByUser!.villain = villain.totalInvested;
+      gs.actionHistory![0] = { ...gs.actionHistory![0], action: 'all_in', isFullRaise };
+      const previous = evaluateTournamentUtilityDetailed(input);
+      expect(previous.result).not.toBeNull();
+      const baseline = { ...previous.result!.decision, tournamentUtility: previous.result!.ledger };
+      expect(baseline.action).toBe('call');
+      const result = evaluateTournamentPostflop(
+        hero,
+        gs,
+        baseline,
+        input,
+        'shadow',
+        () => 0,
+        previous.continuePostflop
+      );
+      expect(result.ledger.fired).toBe(true);
+      expect(result.ledger.baselineCriticalCommitment).toBe(isFullRaise !== undefined);
+      expect(result.decision).toBe(baseline);
+      expect(result.ledger.applied).toBe(false);
+      expect(result.ledger.after.every((c) => c.stackConservationError <= 0.005)).toBe(true);
+    }
+  );
   it('requires a real nut-flush blocker on the public texture', () => {
     const { hero, gs } = scenario();
     gs.communityCards = [
@@ -443,6 +555,43 @@ describe('Phase 8 counterfactual selection', () => {
           c.continuation.shortStackCollisionProbability <= 1
       )
     ).toBe(true);
+  });
+  it('evaluates the real Phase 7/8 continuation after a sitting-out dealer has folded', () => {
+    const { hero, gs, input } = scenario();
+    const away = gs.players[2];
+    away.is_sitting_out = true;
+    away.is_folded = true;
+    input.opponents = input.opponents.slice(0, 1);
+    input.sampledOpponentIds = input.sampledOpponentIds.slice(0, 1);
+    input.showdownSamples = input.showdownSamples.map((sample) => ({
+      boards: sample.boards.map((board) => ({
+        ...board,
+        opponentHigh: board.opponentHigh.slice(0, 1),
+        opponentLow: board.opponentLow.slice(0, 1),
+        opponentDecisionStrength: board.opponentDecisionStrength.slice(0, 1),
+        continuationStreets: board.continuationStreets?.map((street) => ({
+          ...street,
+          opponentStrength: street.opponentStrength.slice(0, 1),
+        })),
+      })),
+    }));
+    const previous = evaluateTournamentUtilityDetailed(input);
+    expect(previous.result).not.toBeNull();
+    const baseline = { ...previous.result!.decision, tournamentUtility: previous.result!.ledger };
+    const result = evaluateTournamentPostflop(
+      hero,
+      gs,
+      baseline,
+      input,
+      'shadow',
+      () => 0,
+      previous.continuePostflop
+    );
+    expect(result.ledger.fired).toBe(true);
+    expect(result.ledger.futureGame?.available).toBe(true);
+    expect(result.ledger.after.length).toBeGreaterThan(1);
+    expect(result.ledger.after.every((c) => c.stackConservationError <= 0.005)).toBe(true);
+    expect(result.decision).toBe(baseline);
   });
   it.each([3, 18, 200, 1000])(
     'reuses the ICM workspace without changing %i-player candidate utilities',
@@ -588,6 +737,38 @@ describe('Phase 8 counterfactual selection', () => {
       evaluateTournamentPostflop(hero, gs, baseline, input, 'candidate', () => 0).ledger.reason
     ).toBe('private_state_rejected');
   });
+  it.each(['wall', 'policy'] as const)(
+    'does not count computed continuation as completed after a final %s budget refusal',
+    (gate) => {
+      const { gs, hero, input } = scenario();
+      const previous = evaluateTournamentUtilityDetailed(input);
+      const baseline = { ...previous.result!.decision, tournamentUtility: previous.result!.ledger };
+      let computed = false;
+      let readsAfterCompute = 0;
+      const result = evaluateTournamentPostflop(
+        hero,
+        gs,
+        baseline,
+        input,
+        'candidate',
+        () => {
+          if (!computed) return 0;
+          if (gate === 'wall') return PHASE8_POLICY.budgetMs + 1;
+          return readsAfterCompute++ === 0 ? 0 : PHASE8_POLICY.policyBudgetMs + 1;
+        },
+        (...args) => {
+          const result = previous.continuePostflop!(...args);
+          computed = true;
+          return result;
+        }
+      );
+      expect(result.ledger.fired).toBe(true);
+      expect(result.ledger.completed).toBe(false);
+      expect(result.ledger.reason).toBe('budget_exhausted');
+      expect(result.ledger.applied).toBe(false);
+      expect(result.decision).toBe(baseline);
+    }
+  );
   it.each(['multiple_boards', 'context_incomplete'] as const)(
     'retains the baseline for %s',
     (reason) => {

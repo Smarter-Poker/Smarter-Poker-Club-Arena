@@ -1,0 +1,1209 @@
+{
+  "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s';\nSELECT jsonb_build_object(\n 'captured_at',clock_timestamp(),\n 'tables',(SELECT jsonb_agg(jsonb_build_object(\n 'name',c.relname,'schema','smarter_private','owner',pg_get_userbyid(c.relowner),'rls',c.relrowsecurity,'force_rls',c.relforcerowsecurity,\n 'columns',(SELECT jsonb_agg(jsonb_build_object('name',a.attname,'type',format_type(a.atttypid,a.atttypmod),'notnull',a.attnotnull,'default',pg_get_expr(d.adbin,d.adrelid),'identity',a.attidentity,'generated',a.attgenerated) ORDER BY a.attnum) FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped),\n 'constraints',(SELECT jsonb_agg(jsonb_build_object('name',x.conname,'type',x.contype,'validated',x.convalidated,'definition',pg_get_constraintdef(x.oid)) ORDER BY x.conname) FROM pg_constraint x WHERE x.conrelid=c.oid),\n 'indexes',(SELECT jsonb_agg(jsonb_build_object('name',ic.relname,'constraint',EXISTS(SELECT 1 FROM pg_constraint x WHERE x.conindid=i.indexrelid),'definition',pg_get_indexdef(i.indexrelid)) ORDER BY ic.relname) FROM pg_index i JOIN pg_class ic ON ic.oid=i.indexrelid WHERE i.indrelid=c.oid),\n 'policies',(SELECT jsonb_agg(jsonb_build_object('name',p.polname,'permissive',p.polpermissive,'command',p.polcmd,'roles',(SELECT jsonb_agg(CASE WHEN r=0 THEN 'public' ELSE pg_get_userbyid(r) END ORDER BY r) FROM unnest(p.polroles) r),'qual',pg_get_expr(p.polqual,p.polrelid),'check',pg_get_expr(p.polwithcheck,p.polrelid)) ORDER BY p.polname) FROM pg_policy p WHERE p.polrelid=c.oid),\n 'triggers',(SELECT jsonb_agg(jsonb_build_object('name',t.tgname,'enabled',t.tgenabled,'function',t.tgfoid::regprocedure::text,'definition',pg_get_triggerdef(t.oid)) ORDER BY t.tgname) FROM pg_trigger t WHERE t.tgrelid=c.oid AND NOT t.tgisinternal),\n 'grants',(SELECT jsonb_agg(jsonb_build_object('role',CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,'grantor',pg_get_userbyid(a.grantor),'privilege',a.privilege_type,'grantable',a.is_grantable) ORDER BY CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,a.privilege_type) FROM aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a))\n ) FROM pg_class c WHERE c.oid IN ('smarter_private.f06_unsettled_hand_aborts'::regclass,'smarter_private.f06_generation_aborts'::regclass,'smarter_private.f06_generation_abort_hands'::regclass,'smarter_private.f06_mixed_aborts'::regclass,'smarter_private.f06_mixed_abort_generations'::regclass,'smarter_private.f06_mixed_abort_hands'::regclass,'smarter_private.f06_prepared_hand_cancellations'::regclass))) AS capture; COMMIT;",
+  "capture": {
+    "tables": [
+      {
+        "rls": true,
+        "name": "f06_unsettled_hand_aborts",
+        "owner": "postgres",
+        "grants": [
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "DELETE"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "INSERT"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "MAINTAIN"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "REFERENCES"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "SELECT"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "TRIGGER"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "TRUNCATE"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "UPDATE"
+          }
+        ],
+        "schema": "smarter_private",
+        "columns": [
+          {
+            "name": "receipt_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "tournament_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "table_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "generation",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "permit_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "hand_number",
+            "type": "bigint",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "break_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "expected",
+            "type": "jsonb",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "outcome",
+            "type": "text",
+            "default": "'aborted_unsettled'::text",
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "created_at",
+            "type": "timestamp with time zone",
+            "default": "clock_timestamp()",
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "retired_lease_generation",
+            "type": "uuid",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          }
+        ],
+        "indexes": [
+          {
+            "name": "f06_abort_retired_lease_generation",
+            "constraint": false,
+            "definition": "CREATE UNIQUE INDEX f06_abort_retired_lease_generation ON smarter_private.f06_unsettled_hand_aborts USING btree (tournament_id, retired_lease_generation) WHERE (retired_lease_generation IS NOT NULL)"
+          },
+          {
+            "name": "f06_unsettled_hand_aborts_break_id_key",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_unsettled_hand_aborts_break_id_key ON smarter_private.f06_unsettled_hand_aborts USING btree (break_id)"
+          },
+          {
+            "name": "f06_unsettled_hand_aborts_permit_id_key",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_unsettled_hand_aborts_permit_id_key ON smarter_private.f06_unsettled_hand_aborts USING btree (permit_id)"
+          },
+          {
+            "name": "f06_unsettled_hand_aborts_pkey",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_unsettled_hand_aborts_pkey ON smarter_private.f06_unsettled_hand_aborts USING btree (receipt_id)"
+          },
+          {
+            "name": "f06_unsettled_hand_aborts_table_id_hand_number_key",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_unsettled_hand_aborts_table_id_hand_number_key ON smarter_private.f06_unsettled_hand_aborts USING btree (table_id, hand_number)"
+          },
+          {
+            "name": "f06_unsettled_hand_aborts_tournament_id_generation_key",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_unsettled_hand_aborts_tournament_id_generation_key ON smarter_private.f06_unsettled_hand_aborts USING btree (tournament_id, generation)"
+          }
+        ],
+        "policies": null,
+        "triggers": [
+          {
+            "name": "f06_abort_receipt_immutable",
+            "enabled": "O",
+            "function": "smarter_private.f06_abort_receipt_immutable()",
+            "definition": "CREATE TRIGGER f06_abort_receipt_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_unsettled_hand_aborts FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_abort_receipt_immutable()"
+          }
+        ],
+        "force_rls": false,
+        "constraints": [
+          {
+            "name": "f06_abort_successor_distinct",
+            "type": "c",
+            "validated": true,
+            "definition": "CHECK (((retired_lease_generation IS NULL) OR (retired_lease_generation <> generation)))"
+          },
+          {
+            "name": "f06_unsettled_hand_aborts_break_id_key",
+            "type": "u",
+            "validated": true,
+            "definition": "UNIQUE (break_id)"
+          },
+          {
+            "name": "f06_unsettled_hand_aborts_outcome_check",
+            "type": "c",
+            "validated": true,
+            "definition": "CHECK ((outcome = 'aborted_unsettled'::text))"
+          },
+          {
+            "name": "f06_unsettled_hand_aborts_permit_id_key",
+            "type": "u",
+            "validated": true,
+            "definition": "UNIQUE (permit_id)"
+          },
+          {
+            "name": "f06_unsettled_hand_aborts_pkey",
+            "type": "p",
+            "validated": true,
+            "definition": "PRIMARY KEY (receipt_id)"
+          },
+          {
+            "name": "f06_unsettled_hand_aborts_table_id_hand_number_key",
+            "type": "u",
+            "validated": true,
+            "definition": "UNIQUE (table_id, hand_number)"
+          },
+          {
+            "name": "f06_unsettled_hand_aborts_tournament_id_generation_key",
+            "type": "u",
+            "validated": true,
+            "definition": "UNIQUE (tournament_id, generation)"
+          }
+        ]
+      },
+      {
+        "rls": true,
+        "name": "f06_generation_aborts",
+        "owner": "postgres",
+        "grants": [
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "DELETE"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "INSERT"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "MAINTAIN"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "REFERENCES"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "SELECT"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "TRIGGER"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "TRUNCATE"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "UPDATE"
+          }
+        ],
+        "schema": "smarter_private",
+        "columns": [
+          {
+            "name": "receipt_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "tournament_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "generation",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "expected",
+            "type": "jsonb",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "outcome",
+            "type": "text",
+            "default": "'aborted_unsettled'::text",
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "created_at",
+            "type": "timestamp with time zone",
+            "default": "clock_timestamp()",
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          }
+        ],
+        "indexes": [
+          {
+            "name": "f06_generation_aborts_pkey",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_generation_aborts_pkey ON smarter_private.f06_generation_aborts USING btree (receipt_id)"
+          },
+          {
+            "name": "f06_generation_aborts_receipt_id_tournament_id_generation_key",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_generation_aborts_receipt_id_tournament_id_generation_key ON smarter_private.f06_generation_aborts USING btree (receipt_id, tournament_id, generation)"
+          },
+          {
+            "name": "f06_generation_aborts_tournament_id_generation_key",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_generation_aborts_tournament_id_generation_key ON smarter_private.f06_generation_aborts USING btree (tournament_id, generation)"
+          }
+        ],
+        "policies": null,
+        "triggers": [
+          {
+            "name": "f06_generation_receipt_immutable",
+            "enabled": "O",
+            "function": "smarter_private.f06_abort_receipt_immutable()",
+            "definition": "CREATE TRIGGER f06_generation_receipt_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_generation_aborts FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_abort_receipt_immutable()"
+          }
+        ],
+        "force_rls": false,
+        "constraints": [
+          {
+            "name": "f06_generation_aborts_outcome_check",
+            "type": "c",
+            "validated": true,
+            "definition": "CHECK ((outcome = 'aborted_unsettled'::text))"
+          },
+          {
+            "name": "f06_generation_aborts_pkey",
+            "type": "p",
+            "validated": true,
+            "definition": "PRIMARY KEY (receipt_id)"
+          },
+          {
+            "name": "f06_generation_aborts_receipt_id_tournament_id_generation_key",
+            "type": "u",
+            "validated": true,
+            "definition": "UNIQUE (receipt_id, tournament_id, generation)"
+          },
+          {
+            "name": "f06_generation_aborts_tournament_id_generation_key",
+            "type": "u",
+            "validated": true,
+            "definition": "UNIQUE (tournament_id, generation)"
+          }
+        ]
+      },
+      {
+        "rls": true,
+        "name": "f06_generation_abort_hands",
+        "owner": "postgres",
+        "grants": [
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "DELETE"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "INSERT"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "MAINTAIN"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "REFERENCES"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "SELECT"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "TRIGGER"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "TRUNCATE"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "UPDATE"
+          }
+        ],
+        "schema": "smarter_private",
+        "columns": [
+          {
+            "name": "permit_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "receipt_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "tournament_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "generation",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "table_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "hand_number",
+            "type": "bigint",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "snapshot_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "break_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "expected",
+            "type": "jsonb",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          }
+        ],
+        "indexes": [
+          {
+            "name": "f06_generation_abort_hands_break_id_key",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_generation_abort_hands_break_id_key ON smarter_private.f06_generation_abort_hands USING btree (break_id)"
+          },
+          {
+            "name": "f06_generation_abort_hands_pkey",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_generation_abort_hands_pkey ON smarter_private.f06_generation_abort_hands USING btree (permit_id)"
+          },
+          {
+            "name": "f06_generation_abort_hands_table_id_hand_number_key",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_generation_abort_hands_table_id_hand_number_key ON smarter_private.f06_generation_abort_hands USING btree (table_id, hand_number)"
+          }
+        ],
+        "policies": null,
+        "triggers": [
+          {
+            "name": "f06_generation_child_immutable",
+            "enabled": "O",
+            "function": "smarter_private.f06_abort_receipt_immutable()",
+            "definition": "CREATE TRIGGER f06_generation_child_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_generation_abort_hands FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_abort_receipt_immutable()"
+          }
+        ],
+        "force_rls": false,
+        "constraints": [
+          {
+            "name": "f06_generation_abort_hands_break_id_key",
+            "type": "u",
+            "validated": true,
+            "definition": "UNIQUE (break_id)"
+          },
+          {
+            "name": "f06_generation_abort_hands_pkey",
+            "type": "p",
+            "validated": true,
+            "definition": "PRIMARY KEY (permit_id)"
+          },
+          {
+            "name": "f06_generation_abort_hands_receipt_id_tournament_id_genera_fkey",
+            "type": "f",
+            "validated": true,
+            "definition": "FOREIGN KEY (receipt_id, tournament_id, generation) REFERENCES smarter_private.f06_generation_aborts(receipt_id, tournament_id, generation)"
+          },
+          {
+            "name": "f06_generation_abort_hands_table_id_hand_number_key",
+            "type": "u",
+            "validated": true,
+            "definition": "UNIQUE (table_id, hand_number)"
+          }
+        ]
+      },
+      {
+        "rls": true,
+        "name": "f06_mixed_aborts",
+        "owner": "postgres",
+        "grants": [
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "DELETE"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "INSERT"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "MAINTAIN"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "REFERENCES"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "SELECT"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "TRIGGER"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "TRUNCATE"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "UPDATE"
+          }
+        ],
+        "schema": "smarter_private",
+        "columns": [
+          {
+            "name": "receipt_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "tournament_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "expected",
+            "type": "jsonb",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "outcome",
+            "type": "text",
+            "default": "'aborted_unsettled'::text",
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "created_at",
+            "type": "timestamp with time zone",
+            "default": "clock_timestamp()",
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          }
+        ],
+        "indexes": [
+          {
+            "name": "f06_mixed_aborts_pkey",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_mixed_aborts_pkey ON smarter_private.f06_mixed_aborts USING btree (receipt_id)"
+          },
+          {
+            "name": "f06_mixed_aborts_receipt_id_tournament_id_key",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_mixed_aborts_receipt_id_tournament_id_key ON smarter_private.f06_mixed_aborts USING btree (receipt_id, tournament_id)"
+          }
+        ],
+        "policies": null,
+        "triggers": [
+          {
+            "name": "f06_mixed_receipt_immutable",
+            "enabled": "O",
+            "function": "smarter_private.f06_abort_receipt_immutable()",
+            "definition": "CREATE TRIGGER f06_mixed_receipt_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_mixed_aborts FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_abort_receipt_immutable()"
+          }
+        ],
+        "force_rls": false,
+        "constraints": [
+          {
+            "name": "f06_mixed_aborts_outcome_check",
+            "type": "c",
+            "validated": true,
+            "definition": "CHECK ((outcome = 'aborted_unsettled'::text))"
+          },
+          {
+            "name": "f06_mixed_aborts_pkey",
+            "type": "p",
+            "validated": true,
+            "definition": "PRIMARY KEY (receipt_id)"
+          },
+          {
+            "name": "f06_mixed_aborts_receipt_id_tournament_id_key",
+            "type": "u",
+            "validated": true,
+            "definition": "UNIQUE (receipt_id, tournament_id)"
+          }
+        ]
+      },
+      {
+        "rls": true,
+        "name": "f06_mixed_abort_generations",
+        "owner": "postgres",
+        "grants": [
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "DELETE"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "INSERT"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "MAINTAIN"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "REFERENCES"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "SELECT"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "TRIGGER"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "TRUNCATE"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "UPDATE"
+          }
+        ],
+        "schema": "smarter_private",
+        "columns": [
+          {
+            "name": "tournament_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "generation",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "receipt_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          }
+        ],
+        "indexes": [
+          {
+            "name": "f06_mixed_abort_generations_pkey",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_mixed_abort_generations_pkey ON smarter_private.f06_mixed_abort_generations USING btree (tournament_id, generation)"
+          },
+          {
+            "name": "f06_mixed_abort_generations_receipt_id_tournament_id_genera_key",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_mixed_abort_generations_receipt_id_tournament_id_genera_key ON smarter_private.f06_mixed_abort_generations USING btree (receipt_id, tournament_id, generation)"
+          }
+        ],
+        "policies": null,
+        "triggers": [
+          {
+            "name": "f06_mixed_generations_immutable",
+            "enabled": "O",
+            "function": "smarter_private.f06_abort_receipt_immutable()",
+            "definition": "CREATE TRIGGER f06_mixed_generations_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_mixed_abort_generations FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_abort_receipt_immutable()"
+          }
+        ],
+        "force_rls": false,
+        "constraints": [
+          {
+            "name": "f06_mixed_abort_generations_pkey",
+            "type": "p",
+            "validated": true,
+            "definition": "PRIMARY KEY (tournament_id, generation)"
+          },
+          {
+            "name": "f06_mixed_abort_generations_receipt_id_tournament_id_fkey",
+            "type": "f",
+            "validated": true,
+            "definition": "FOREIGN KEY (receipt_id, tournament_id) REFERENCES smarter_private.f06_mixed_aborts(receipt_id, tournament_id)"
+          },
+          {
+            "name": "f06_mixed_abort_generations_receipt_id_tournament_id_genera_key",
+            "type": "u",
+            "validated": true,
+            "definition": "UNIQUE (receipt_id, tournament_id, generation)"
+          }
+        ]
+      },
+      {
+        "rls": true,
+        "name": "f06_mixed_abort_hands",
+        "owner": "postgres",
+        "grants": [
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "DELETE"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "INSERT"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "MAINTAIN"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "REFERENCES"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "SELECT"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "TRIGGER"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "TRUNCATE"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "UPDATE"
+          }
+        ],
+        "schema": "smarter_private",
+        "columns": [
+          {
+            "name": "permit_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "receipt_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "tournament_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "generation",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "table_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "hand_number",
+            "type": "bigint",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "snapshot_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "break_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "prior_hand_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "prior_abort_receipt_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "expected",
+            "type": "jsonb",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          }
+        ],
+        "indexes": [
+          {
+            "name": "f06_mixed_abort_hands_break_id_key",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_mixed_abort_hands_break_id_key ON smarter_private.f06_mixed_abort_hands USING btree (break_id)"
+          },
+          {
+            "name": "f06_mixed_abort_hands_pkey",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_mixed_abort_hands_pkey ON smarter_private.f06_mixed_abort_hands USING btree (permit_id)"
+          },
+          {
+            "name": "f06_mixed_abort_hands_table_id_hand_number_key",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_mixed_abort_hands_table_id_hand_number_key ON smarter_private.f06_mixed_abort_hands USING btree (table_id, hand_number)"
+          }
+        ],
+        "policies": null,
+        "triggers": [
+          {
+            "name": "f06_mixed_hands_immutable",
+            "enabled": "O",
+            "function": "smarter_private.f06_abort_receipt_immutable()",
+            "definition": "CREATE TRIGGER f06_mixed_hands_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_mixed_abort_hands FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_abort_receipt_immutable()"
+          }
+        ],
+        "force_rls": false,
+        "constraints": [
+          {
+            "name": "f06_mixed_abort_hands_break_id_key",
+            "type": "u",
+            "validated": true,
+            "definition": "UNIQUE (break_id)"
+          },
+          {
+            "name": "f06_mixed_abort_hands_check",
+            "type": "c",
+            "validated": true,
+            "definition": "CHECK ((((((snapshot_id IS NOT NULL))::integer + ((prior_hand_id IS NOT NULL))::integer) + ((prior_abort_receipt_id IS NOT NULL))::integer) = 1))"
+          },
+          {
+            "name": "f06_mixed_abort_hands_pkey",
+            "type": "p",
+            "validated": true,
+            "definition": "PRIMARY KEY (permit_id)"
+          },
+          {
+            "name": "f06_mixed_abort_hands_receipt_id_tournament_id_generation_fkey",
+            "type": "f",
+            "validated": true,
+            "definition": "FOREIGN KEY (receipt_id, tournament_id, generation) REFERENCES smarter_private.f06_mixed_abort_generations(receipt_id, tournament_id, generation)"
+          },
+          {
+            "name": "f06_mixed_abort_hands_table_id_hand_number_key",
+            "type": "u",
+            "validated": true,
+            "definition": "UNIQUE (table_id, hand_number)"
+          }
+        ]
+      },
+      {
+        "rls": true,
+        "name": "f06_prepared_hand_cancellations",
+        "owner": "postgres",
+        "grants": [
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "DELETE"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "INSERT"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "MAINTAIN"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "REFERENCES"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "SELECT"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "TRIGGER"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "TRUNCATE"
+          },
+          {
+            "role": "postgres",
+            "grantor": "postgres",
+            "grantable": false,
+            "privilege": "UPDATE"
+          }
+        ],
+        "schema": "smarter_private",
+        "columns": [
+          {
+            "name": "permit_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "tournament_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "generation",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "table_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "lifecycle",
+            "type": "bigint",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "hand_number",
+            "type": "bigint",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "custody_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "created_at",
+            "type": "timestamp with time zone",
+            "default": "clock_timestamp()",
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          }
+        ],
+        "indexes": [
+          {
+            "name": "f06_prepared_hand_cancellations_pkey",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_prepared_hand_cancellations_pkey ON smarter_private.f06_prepared_hand_cancellations USING btree (permit_id)"
+          },
+          {
+            "name": "f06_prepared_hand_cancellations_table_id_hand_number_key",
+            "constraint": true,
+            "definition": "CREATE UNIQUE INDEX f06_prepared_hand_cancellations_table_id_hand_number_key ON smarter_private.f06_prepared_hand_cancellations USING btree (table_id, hand_number)"
+          }
+        ],
+        "policies": null,
+        "triggers": [
+          {
+            "name": "f06_prepared_cancellation_immutable",
+            "enabled": "O",
+            "function": "smarter_private.f06_prepared_cancellation_immutable()",
+            "definition": "CREATE TRIGGER f06_prepared_cancellation_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_prepared_hand_cancellations FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_prepared_cancellation_immutable()"
+          }
+        ],
+        "force_rls": false,
+        "constraints": [
+          {
+            "name": "f06_prepared_hand_cancellations_pkey",
+            "type": "p",
+            "validated": true,
+            "definition": "PRIMARY KEY (permit_id)"
+          },
+          {
+            "name": "f06_prepared_hand_cancellations_table_id_hand_number_key",
+            "type": "u",
+            "validated": true,
+            "definition": "UNIQUE (table_id, hand_number)"
+          }
+        ]
+      }
+    ],
+    "captured_at": "2026-09-18T09:29:38.040794+00:00"
+  }
+}

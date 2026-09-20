@@ -208,7 +208,10 @@ describe('the last-hand window is the same window everywhere', () => {
     );
     expect(HOOK).toMatch(/MAINTENANCE_WINDOW_MS = 7 \* 60 \* 1000/);
     expect(HOOK).toContain('data.resume_expected_at');
-    expect(HOOK).toMatch(/if \(s\.breakEndsAtMs && serverNow\(\) >= s\.breakEndsAtMs\)/);
+    // Reaching the agreed instant requests authority; it cannot release a table.
+    expect(HOOK).toContain('state.breakEndsAtMs - serverNow()');
+    expect(HOOK).toContain("phase: 'finalizing' as const");
+    expect(HOOK).not.toContain('setState(IDLE)');
   });
 });
 

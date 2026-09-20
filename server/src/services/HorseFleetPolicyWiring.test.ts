@@ -164,8 +164,11 @@ describe('a disabled or paused fleet seats nobody and removes nobody', () => {
        apparently died. */
     expect(CYCLE).toMatch(/const tablesToSeed = cycleWithheld \? \[\] : orderedTables;/);
     expect(CYCLE).toMatch(/for \(const table of tablesToSeed\)/);
-    expect(AFTER_WITHHOLD).not.toMatch(/\breturn;/);
-    expect(AFTER_WITHHOLD).toContain('this.pruneHorseWaitlist(horseIdSet)');
+    // A policy-withheld cycle remains live and still prunes/reports. Process
+    // shutdown withdraws that generation entirely; only its explicit fence
+    // may leave before pruning. Its finally still owns the status write.
+    expect(AFTER_WITHHOLD.replaceAll('if (!readIsCurrent()) return;', '')).not.toMatch(/\breturn;/);
+    expect(AFTER_WITHHOLD).toContain('this.pruneHorseWaitlist(horseIdSet, readIsCurrent)');
     /* Moved 2026-09-05 for Gate 7. This used to pin `this.spawnOverflowTables(`
        and `this.retireSurplusTables(` as the passes a withheld cycle still
        runs. Both writers are deleted (OPORD 1.4 s2.11: a cash table is opened

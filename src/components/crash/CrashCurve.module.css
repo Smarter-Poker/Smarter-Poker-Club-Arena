@@ -1,0 +1,222 @@
+.wrap {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  position: relative;
+}
+.canvas {
+  display: block;
+  max-width: 100%;
+  border-radius: 10px;
+  box-shadow: inset 0 0 80px #000;
+}
+
+/* ── The glass over the flight (2026-09-19) ─────────────────────────────
+   The hero figure, the axes, the reference lines and the two markers sit on
+   the canvas in a frame the same size as it. Nothing here moves on its own:
+   the frame loop places every mark, and the one timed effect (the red wash
+   on a crash) scales with Animation Speed and is static under reduced
+   motion. No :hover; motion collapses but meaning never does. */
+
+.frame {
+  position: relative;
+  max-width: 100%;
+  border-radius: 10px;
+  background: #070b10;
+}
+
+.frame[data-phase='crashed'] .canvas {
+  box-shadow:
+    inset 0 0 0 2px rgb(255 91 110 / 45%),
+    inset 0 0 80px #000;
+}
+
+.frame[data-phase='cashed'] .canvas {
+  box-shadow:
+    inset 0 0 0 2px rgb(93 242 160 / 40%),
+    inset 0 0 80px #000;
+}
+
+.glass {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.glass text {
+  font:
+    700 11px 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  fill: rgb(200 220 240 / 62%);
+  paint-order: stroke;
+  stroke: rgb(7 11 16 / 85%);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.axis line {
+  stroke: rgb(200 220 240 / 16%);
+  stroke-width: 1;
+}
+
+.autoLine line {
+  stroke: #ffd700;
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+  opacity: 0.85;
+}
+
+.autoLine text {
+  fill: #ffd700;
+  text-anchor: end;
+}
+
+.floorLine line {
+  stroke: #45adff;
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  opacity: 0.9;
+}
+
+.floorLine text {
+  fill: #45adff;
+  text-anchor: end;
+}
+
+.headMark circle {
+  fill: rgb(159 232 255 / 22%);
+  stroke: #9fe8ff;
+  stroke-width: 1.5;
+}
+
+.cashMark circle {
+  fill: #5df2a0;
+  stroke: #0b2a19;
+  stroke-width: 1.5;
+}
+
+.cashMark text {
+  fill: #c8ffd2;
+  text-anchor: middle;
+}
+
+.crashMark circle {
+  fill: none;
+  stroke: #ff5b6e;
+  stroke-width: 2;
+}
+
+.crashMark text {
+  fill: #ff5b6e;
+  text-anchor: middle;
+}
+
+/* The hero: one figure, two decimals, digits that hold still.
+
+   The line box HOLDS THE FIGURE IT PRINTS. `line-height: 1` reserved one em
+   and the font's own content area is 1.16em, so the hero's box was 8% shorter
+   than its glyphs at every size the component sets - 66px of text declared as
+   61px on a 375px phone, 121px declared as 112px at the cap - and the digits
+   bled above and below a box that claimed not to hold them. 1.2 contains the
+   content area of this stack with room to spare and leaves the figure tight;
+   nothing about it scales with the viewport, so the fix is width-independent. */
+.ticker {
+  position: absolute;
+  top: 17%;
+  right: 0;
+  left: 0;
+  margin: 0;
+  text-align: center;
+  pointer-events: none;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  color: #f4f7fb;
+  text-shadow:
+    0 0 18px rgb(140 210 255 / 55%),
+    0 2px 0 rgb(0 0 0 / 70%),
+    0 4px 14px rgb(0 0 0 / 70%);
+}
+
+.ticker[data-heat='warm'] {
+  color: #ffd700;
+  text-shadow:
+    0 0 20px rgb(255 215 0 / 55%),
+    0 2px 0 rgb(0 0 0 / 70%),
+    0 4px 14px rgb(0 0 0 / 70%);
+}
+
+.ticker[data-heat='hot'] {
+  color: #ff8a3d;
+  text-shadow:
+    0 0 26px rgb(255 120 40 / 75%),
+    0 2px 0 rgb(0 0 0 / 70%),
+    0 4px 14px rgb(0 0 0 / 70%);
+}
+
+.ticker[data-phase='crashed'] {
+  color: #ff5b6e;
+  text-shadow:
+    0 0 24px rgb(240 40 73 / 75%),
+    0 2px 0 rgb(0 0 0 / 70%),
+    0 4px 14px rgb(0 0 0 / 70%);
+}
+
+.ticker[data-phase='cashed'] {
+  color: #c8ffd2;
+  text-shadow:
+    0 0 24px rgb(53 217 90 / 70%),
+    0 2px 0 rgb(0 0 0 / 70%),
+    0 4px 14px rgb(0 0 0 / 70%);
+}
+
+/* The crash moment: one red wash that fades, then the frozen curve stays. */
+.flash {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    rgb(255 60 80 / 70%),
+    rgb(255 30 50 / 25%) 55%,
+    transparent 80%
+  );
+  opacity: 0;
+  /* CRASH_FLASH_MS. The component sets the exact scaled duration inline, and
+     this declaration is the floor under it: §10.6 allows --animation-speed as
+     the only control over duration, so the fallback scales too. */
+  animation: crashFlash calc(420ms * var(--animation-speed, 1)) ease-out forwards;
+}
+
+.flash[data-reduced='true'] {
+  animation: none;
+  opacity: 0.18;
+}
+
+@keyframes crashFlash {
+  from {
+    opacity: 0.9;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+.notice {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  left: 12px;
+  margin: 0;
+  text-align: center;
+}

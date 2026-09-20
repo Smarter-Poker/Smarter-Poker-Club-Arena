@@ -1,215 +1,151 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  THE CASH OUT ESCROW FLOW, PINNED (2026-08-25)
- * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Dan, binding: "when a player requests a cash out, those chips should be removed
- * from the player account and held in escrow, until the agent approves the cash
- * out, or denies it. once approved the chips go into the agents wallet, if
- * canceled returns to player wallet. Owners, Co Owners and Admins can pull from
- * any player at any time. Push notifications and messages must trigger, upon a
- * player requesting cash out, and when its approved, all transactions must be in
- * the transaction ledger."
- *
- * tests/unit/CashoutService.test.ts already pins WHICH RPC each leg calls. This
- * file pins the four things that audit found actually broken, so none of them can
- * come back:
- *
- *  1. IDEMPOTENCY IS ONLY REAL IF THE KEY IS STABLE. Every leg passed a p_op_id,
- *     which reads as protected and is not: the id was minted inside the call, so
- *     the retry a dropped response provokes carried a DIFFERENT key and the
- *     server's replay branch never fired. Each leg now accepts one from the
- *     caller, and the two screens hold it in a ref across a failure.
- *
- *  2. A REPLAY MUST NOT RE-PUSH. `replayed: true` means this attempt moved
- *     nothing. Pushing again tells an agent a second cash out arrived.
- *
- *  3. A FAILED QUEUE READ IS NOT AN EMPTY QUEUE. getAgentPendingCashouts
- *     swallowed the error and returned [], which the panel renders as "No
- *     Pending Cashout Requests" - an agent shown an empty worklist while chips
- *     wait in escrow. It throws now, which is what makes the panel's Retry state
- *     reachable at all.
- *
- *  4. expireStale READ A SCALAR AS ROWS. The live function RETURNS INTEGER; this
- *     code did `for (const rec of data)`, which is a TypeError on any number
- *     other than the zero that `|| []` happened to mask. It only ever looked
- *     healthy on the runs that did nothing.
- *
- * Plus the source-level rules the compiler cannot catch: no emoji, no em dashes,
- * and no padStart on money.
- */
-
+/** Source-only v2 client escrow regression. Native fixtures own actual money proof. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-
+import {
+  CASHOUT_IDS as ID,
+  cashoutV2Receipt,
+  type FixtureCashoutKind,
+} from './helpers/cashoutV2Receipt';
+const identity = vi.hoisted(() => ({ userId: '' }));
 vi.mock('../src/lib/supabase', () => ({
   supabase: {
-    auth: {
-      getSession: vi.fn(() => Promise.resolve({ data: { session: null }, error: null })),
-    },
     from: () => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: () => Promise.resolve({ data: null, error: null }),
-          order: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }),
-        }),
-      }),
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
     }),
-    rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
+    rpc: vi.fn(),
   },
 }));
-
+vi.mock('../src/core/IdentityDNA', () => ({
+  getIdentityDNAStatus: () => ({ loaded: true, authenticated: true, userId: identity.userId }),
+}));
 vi.mock('../src/core/MasterBus', () => ({
   masterBus: { emit: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
 }));
-
-vi.mock('../src/utils/retryAsync', () => ({
-  retryAsync: <T>(fn: () => Promise<T>) => fn(),
-}));
-
-vi.mock('../src/utils/clubIdResolver', () => ({
-  resolveClubUUID: (id: string) => Promise.resolve(id),
-  isUUID: () => true,
-}));
-
+vi.mock('../src/utils/retryAsync', () => ({ retryAsync: <T>(fn: () => Promise<T>) => fn() }));
+vi.mock('../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: string) => id }));
 vi.mock('../src/services/PushNotificationService', () => ({
-  pushNotificationService: { sendToUser: vi.fn().mockResolvedValue(true) },
+  pushNotificationService: { sendToUser: vi.fn() },
 }));
-
-import { cashoutService, newOpId } from '../src/services/CashoutService';
+import {
+  cashoutService,
+  newOpId,
+  CashoutOutcomeUnknownError,
+} from '../src/services/CashoutService';
 import { supabase } from '../src/lib/supabase';
 import { pushNotificationService } from '../src/services/PushNotificationService';
-
-const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
-const push = pushNotificationService.sendToUser as unknown as ReturnType<typeof vi.fn>;
-
+const rpc = vi.mocked(supabase.rpc);
+const push = vi.mocked(pushNotificationService.sendToUser);
+const current = () => true;
+const intent = { clubId: ID.club, playerId: ID.player, amount: 250, isCurrent: current };
 const accept = (payload: Record<string, unknown>) =>
-  rpc.mockResolvedValueOnce({ data: { success: true, ...payload } });
-
+  rpc.mockResolvedValueOnce({ data: { success: true, ...payload }, error: null } as never);
+const receipt = (kind: FixtureCashoutKind, replayed = false) =>
+  rpc.mockResolvedValueOnce({ data: cashoutV2Receipt(kind, { replayed }), error: null } as never);
 const ROOT = resolve(__dirname, '..');
-const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
-
+const read = (path: string) => readFileSync(resolve(ROOT, path), 'utf8');
 const SERVICE = read('src/services/CashoutService.ts');
 const MODAL = read('src/components/wallet/CashoutRequestModal.tsx');
 const PANEL = read('src/components/agent/AgentCashoutPanel.tsx');
 const DISPUTE = read('src/components/wallet/DisputeSubmitModal.tsx');
-
+const OPERATIONS = read('src/services/CashoutOperation.ts');
 beforeEach(() => {
   vi.clearAllMocks();
-  rpc.mockResolvedValue({ data: null, error: null });
+  rpc.mockReset();
+  identity.userId = ID.player;
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-describe('the op id is the CALLERS, so a retry can replay instead of paying twice', () => {
-  it('newOpId is exported, and mints something Postgres will accept as a uuid', () => {
-    // p_op_id is a uuid column. The fallback for a webview without
-    // crypto.randomUUID has to be uuid-shaped or the one call that moves the
-    // chips dies on 22P02.
-    expect(typeof newOpId).toBe('function');
+describe('the caller retains the operation identity', () => {
+  it('exports UUID generation for caller-owned operations', () => {
     expect(newOpId()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     expect(newOpId()).not.toBe(newOpId());
   });
-
-  it('requestCashout forwards the id it was given rather than minting its own', async () => {
-    accept({ cashout_id: 'c1', agent_id: 'a1', amount: 250, player_name: 'Dana' });
-    await cashoutService.requestCashout('p1', 'club-1', 250, undefined, 'op-fixed-1');
-    expect(rpc.mock.calls[0][1].p_op_id).toBe('op-fixed-1');
-  });
-
-  it('approveCashout forwards it too', async () => {
-    accept({ cashout_id: 'c1', player_id: 'p1', club_id: 'club-1', amount: 250 });
-    await cashoutService.approveCashout('c1', 'a1', undefined, 'op-fixed-2');
-    expect(rpc.mock.calls[0][1].p_op_id).toBe('op-fixed-2');
-  });
-
-  it('rejectCashout and cancelCashout forward it as well', async () => {
-    accept({ cashout_id: 'c1', player_id: 'p1', club_id: 'club-1', amount: 250 });
-    await cashoutService.rejectCashout('c1', 'a1', 'no', 'op-fixed-3');
-    expect(rpc.mock.calls[0][1].p_op_id).toBe('op-fixed-3');
-
-    rpc.mockClear();
-    accept({ cashout_id: 'c2', player_id: 'p1', club_id: 'club-1', amount: 250 });
-    await cashoutService.cancelCashout('c2', 'p1', 'op-fixed-4');
-    expect(rpc.mock.calls[0][1].p_op_id).toBe('op-fixed-4');
-  });
-
-  it('and still mints one when nobody supplies it, so old callers stay safe', async () => {
-    accept({ cashout_id: 'c1', agent_id: 'a1', amount: 250 });
-    await cashoutService.requestCashout('p1', 'club-1', 250);
-    expect(rpc.mock.calls[0][1].p_op_id).toMatch(/^[0-9a-f-]{36}$/i);
-  });
-
-  it('the sheet HOLDS its id across a failure and clears it on success', () => {
-    // Both, or neither protection works: cleared on failure and a retry escrows
-    // twice; never cleared and a genuinely new request replays the old one.
-    expect(MODAL).toMatch(/const requestOpIdRef = useRef<string \| null>\(null\)/);
-    expect(MODAL).toMatch(/if \(!requestOpIdRef\.current\) requestOpIdRef\.current = newOpId\(\)/);
-    expect(MODAL).toMatch(/requestOpIdRef\.current = null;[\s\S]{0,80}if \(!isMounted\.current\)/);
-    expect(MODAL).toMatch(
-      /useEffect\(\(\) => \{\s*requestOpIdRef\.current = null;\s*\}, \[amount, note\]\)/
+  it.each(['hold', 'approval', 'decline', 'cancellation'] as const)(
+    'forwards the exact %s operation and account/club tuple',
+    async (kind) => {
+      if (kind === 'approval' || kind === 'decline') identity.userId = ID.agent;
+      receipt(kind);
+      if (kind === 'hold')
+        await cashoutService.requestCashout(
+          ID.player,
+          ID.club,
+          250,
+          undefined,
+          ID.operation,
+          current
+        );
+      else if (kind === 'approval')
+        await cashoutService.approveCashout(ID.cashout, ID.agent, undefined, ID.operation, intent);
+      else if (kind === 'decline')
+        await cashoutService.rejectCashout(ID.cashout, ID.agent, undefined, ID.operation, intent);
+      else await cashoutService.cancelCashout(ID.cashout, ID.player, ID.operation, intent);
+      expect(rpc.mock.calls[0][1]).toMatchObject({
+        p_op_id: ID.operation,
+        p_club_id: ID.club,
+        p_amount: '250.00',
+        p_expected_actor_id: identity.userId,
+      });
+    }
+  );
+  it('requires a retained key and view guard rather than minting another payment attempt', async () => {
+    await expect(cashoutService.requestCashout(ID.player, ID.club, 250)).rejects.toThrow(
+      /Retained Operation/
     );
+    expect(rpc).not.toHaveBeenCalled();
   });
-
-  it('the agent panel keys its ids by ACTION as well as cashout', () => {
-    // chip_transactions_agent_wallet_op_id_uidx spans cashout_approved,
-    // cashout_denied and cashout_cancelled together, so one key reused across an
-    // approve and a later decline collides on the index instead of replaying -
-    // and fn_cashout_release has no unique_violation handler to soften it.
-    expect(PANEL).toMatch(/opIdFor = \(action: 'approve' \| 'reject', cashoutId: string\)/);
-    expect(PANEL).toContain("opIdFor('approve', cashout.id)");
-    expect(PANEL).toContain("opIdFor('reject', cashout.id)");
-    expect(PANEL).toContain('opIdsRef.current.delete(`approve:${cashout.id}`)');
-    expect(PANEL).toContain('opIdsRef.current.delete(`reject:${cashout.id}`)');
+  it('holds the same key after an unknown response until an explicit caller retry', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'lost' } } as never);
+    await expect(
+      cashoutService.requestCashout(ID.player, ID.club, 250, undefined, ID.operation, current)
+    ).rejects.toBeInstanceOf(CashoutOutcomeUnknownError);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    receipt('hold', true);
+    await cashoutService.requestCashout(ID.player, ID.club, 250, undefined, ID.operation, current);
+    expect(rpc.mock.calls[1]).toEqual(rpc.mock.calls[0]);
+  });
+  it('both views use the shared durable operation store with distinct action kinds', () => {
+    expect(MODAL).toContain('await runCashoutOperation(');
+    expect(MODAL).toContain("kind: 'cashout_request'");
+    expect(MODAL).toContain("kind: 'cashout_cancel'");
+    expect(PANEL).toContain("kind: 'cashout_approve'");
+    expect(PANEL).toContain("kind: 'cashout_decline'");
+    expect(OPERATIONS).toContain('await admitAgentCashoutStart(');
+    expect(OPERATIONS).toContain('await acknowledgeAgentCashoutStart(admitted)');
+    expect(MODAL).not.toContain('requestOpIdRef.current = null');
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-describe('a replay moved nothing, so nobody is told twice', () => {
-  it('no push on a replayed request', async () => {
-    accept({ replayed: true, cashout_id: 'c1', agent_id: 'a1', amount: 250 });
-    await cashoutService.requestCashout('p1', 'club-1', 250, undefined, 'op-1');
-    expect(push).not.toHaveBeenCalled();
-  });
-
-  it('no push on a replayed approval', async () => {
-    accept({ replayed: true, cashout_id: 'c1', player_id: 'p1', amount: 250 });
-    await cashoutService.approveCashout('c1', 'a1', undefined, 'op-2');
-    expect(push).not.toHaveBeenCalled();
-  });
-
-  it('no push on a replayed decline', async () => {
-    accept({ replayed: true, cashout_id: 'c1', player_id: 'p1', amount: 250 });
-    await cashoutService.rejectCashout('c1', 'a1', 'no', 'op-3');
-    expect(push).not.toHaveBeenCalled();
-  });
-
-  it('but a real request and a real approval both reach the RPC that notifies', async () => {
-    // REWRITTEN 2026-08-30 (#1498). This asserted the CLIENT pushed to the
-    // agent on request and to the player on approval. Both were duplicates:
-    // tr_notify_agent_on_cashout raises 'cashout_request' on the INSERT and
-    // fn_cashout_approve raises 'cashout_approved' inside the money
-    // transaction, and trg_mirror_notification_to_push_outbox turns each into a
-    // push. The client's extra send went through a transport OneSignal's
-    // retirement had already killed, so the duplication never showed up.
-    //
-    // The property worth protecting is unchanged in spirit: a real request
-    // reaches the agent and a real approval reaches the player. It is just the
-    // RPC that carries it, so that is what is asserted.
-    accept({ cashout_id: 'c1', agent_id: 'agent-9', amount: 250, player_name: 'Dana' });
-    await cashoutService.requestCashout('p1', 'club-1', 250);
-    expect(rpc.mock.calls[0][0]).toBe('fn_cashout_request');
-    expect(push).not.toHaveBeenCalled();
-
-    rpc.mockClear();
-    accept({ cashout_id: 'c1', player_id: 'player-3', club_id: 'club-1', amount: 250 });
-    await cashoutService.approveCashout('c1', 'a1');
-    expect(rpc.mock.calls[0][0]).toBe('fn_cashout_approve');
+describe('the server exclusively owns notification delivery', () => {
+  it.each([false, true])(
+    'request and approval add no client push, replayed=%s',
+    async (replayed) => {
+      receipt('hold', replayed);
+      await cashoutService.requestCashout(
+        ID.player,
+        ID.club,
+        250,
+        undefined,
+        ID.operation,
+        current
+      );
+      identity.userId = ID.agent;
+      receipt('approval', replayed);
+      await cashoutService.approveCashout(ID.cashout, ID.agent, undefined, ID.operation, intent);
+      expect(rpc.mock.calls.map((call) => call[0])).toEqual([
+        'fn_cashout_request_v2',
+        'fn_cashout_approve_v2',
+      ]);
+      expect(push).not.toHaveBeenCalled();
+    }
+  );
+  it('a replayed decline adds no client push', async () => {
+    identity.userId = ID.agent;
+    receipt('decline', true);
+    await cashoutService.rejectCashout(ID.cashout, ID.agent, undefined, ID.operation, intent);
     expect(push).not.toHaveBeenCalled();
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 describe('a player cannot ask for an amount the server is bound to refuse', () => {
   it('zero, negative and NaN never reach the database', async () => {
     for (const bad of [0, -5, Number.NaN]) {
@@ -231,38 +167,31 @@ describe('a player cannot ask for an amount the server is bound to refuse', () =
   it('the sheet refuses the same three before it touches the service', () => {
     expect(MODAL).toContain('validateCashoutAmount(amount)');
     expect(MODAL).toContain('setError(validation.error)');
-    expect(MODAL).toContain("setError('That Is More Than Your Available Balance')");
+    expect(MODAL.replace(/\s+/g, ' ')).toContain(
+      "if (cashoutAmount > currentBalance) throw new Error('That Is More Than Your Available Balance')"
+    );
     // Presets select an explicitly displayed amount at the cent quantum.
-    expect(MODAL).toContain('cashoutPercentage(currentBalance, pct)');
+    expect(MODAL).toContain('cashoutPercentage(currentBalance ?? NaN, pct)');
   });
 });
 
 // ───────────────────────────────────────────────────────────────────────────
 describe('an empty queue and a broken queue are different answers', () => {
   it('getAgentPendingCashouts throws on a read failure instead of returning []', async () => {
-    rpc.mockResolvedValueOnce({ data: null, error: { message: 'permission denied' } });
-    await expect(cashoutService.getAgentPendingCashouts('a1', 'club-1')).rejects.toThrow(
+    identity.userId = ID.agent;
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'permission denied' } } as never);
+    await expect(cashoutService.getAgentPendingCashouts(ID.agent, ID.club)).rejects.toThrow(
       /permission denied/
     );
   });
 
-  it('and returns rows normally', async () => {
+  it('and returns verified scoped rows normally', async () => {
+    identity.userId = ID.agent;
     rpc.mockResolvedValueOnce({
-      data: [
-        {
-          id: 'c1',
-          club_id: 'club-1',
-          player_id: 'p1',
-          player_name: 'Dana',
-          agent_id: 'a1',
-          amount: 500,
-          status: 'pending',
-          created_at: '2026-08-25T00:00:00Z',
-        },
-      ],
+      data: [{ ...cashoutV2Receipt().request, amount: 500 }],
       error: null,
-    });
-    const rows = await cashoutService.getAgentPendingCashouts('a1', 'club-1');
+    } as never);
+    const rows = await cashoutService.getAgentPendingCashouts(ID.agent, ID.club);
     expect(rows).toHaveLength(1);
     expect(rows[0].amount).toBe(500);
   });
@@ -276,23 +205,14 @@ describe('an empty queue and a broken queue are different answers', () => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
-describe('expireStale reads what the function actually returns', () => {
-  it('an integer count, not a table of rows', async () => {
-    rpc.mockResolvedValueOnce({ data: 3, error: null });
-    await expect(cashoutService.expireStale(72)).resolves.toEqual({ expired: 3 });
+describe('browser expiry cannot report scheduler success', () => {
+  it('refuses the service-only operation without invoking an old RPC', async () => {
+    await expect(cashoutService.expireStale(72)).rejects.toThrow(
+      /Browser Cashout Expiry Is Retired/
+    );
+    expect(rpc).not.toHaveBeenCalled();
   });
-
-  it('zero is zero, not a crash and not a lie', async () => {
-    rpc.mockResolvedValueOnce({ data: 0, error: null });
-    await expect(cashoutService.expireStale()).resolves.toEqual({ expired: 0 });
-  });
-
-  it('a transport failure reports nothing expired rather than throwing in a cron', async () => {
-    rpc.mockResolvedValueOnce({ data: null, error: { message: 'down' } });
-    await expect(cashoutService.expireStale()).resolves.toEqual({ expired: 0 });
-  });
-
-  it("and 'expired' is a status the type system admits exists", () => {
+  it('retains expired as a historical request status', () => {
     expect(SERVICE).toMatch(/\|\s*'expired'/);
   });
 });
@@ -300,10 +220,10 @@ describe('expireStale reads what the function actually returns', () => {
 // ───────────────────────────────────────────────────────────────────────────
 describe('the agent may never take chips outside the two ways Dan allows', () => {
   it('the blanket removal is still a flat refusal', async () => {
-    await expect(cashoutService.canRemoveChips('a1', 'p1', 'club-1', 10)).resolves.toBe(false);
     await expect(cashoutService.removeChipsFromPlayer('a1', 'p1', 'club-1', 10)).rejects.toThrow(
       /cannot remove chips/i
     );
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('the clawback is anchored on a TRANSACTION and carries the caller op id', async () => {
@@ -326,14 +246,17 @@ describe('the agent may never take chips outside the two ways Dan allows', () =>
 describe('two taps are one cash out', () => {
   it('the sheet locks synchronously, not on a rendered disabled attribute', () => {
     expect(MODAL).toMatch(/const submitLockRef = useRef\(false\)/);
-    expect(MODAL).toMatch(/if \(submitLockRef\.current\) return;/);
+    expect(MODAL).toContain('submitLockRef.current || !isCurrent()');
+    expect(MODAL).toContain('submitLockRef.current = true;');
     expect(MODAL).toMatch(/const cancelLockRef = useRef\(false\)/);
-    expect(MODAL).toMatch(/if \(cancelLockRef\.current\) return;/);
+    expect(MODAL).toContain('cancelLockRef.current || !isCurrent()');
+    expect(MODAL).toContain('cancelLockRef.current = true;');
   });
 
   it('the panel locks per cashout, so the other card still works', () => {
     expect(PANEL).toMatch(/const inFlightRef = useRef<Set<string>>\(new Set\(\)\)/);
-    expect(PANEL).toMatch(/if \(inFlightRef\.current\.has\(cashout\.id\)\) return;/);
+    expect(PANEL).toContain('inFlightRef.current.has(cashout.id)');
+    expect(PANEL).toContain('inFlightRef.current.add(cashout.id)');
   });
 
   it('the dispute sheet locks too, and no longer swallows its failure', () => {
@@ -382,7 +305,7 @@ describe('house rules the compiler cannot enforce', () => {
   });
 
   it('every chip amount on screen goes through toLocaleString', () => {
-    expect(MODAL).toContain('currentBalance.toLocaleString()');
+    expect(MODAL).toContain('currentBalance!.toLocaleString()');
     expect(MODAL).toContain('cashout.amount.toLocaleString()');
     expect(PANEL).toContain('cashout.amount.toLocaleString()');
   });
@@ -411,8 +334,9 @@ describe('the escrow story the screens tell matches the one the server runs', ()
   });
 
   it('the panel says where the chips go, in both directions', () => {
-    expect(PANEL).toContain('Approving Moves Them Into Your Agent Wallet');
-    expect(PANEL).toContain('Returns Them To The Player');
+    const copy = PANEL.replace(/\s+/g, ' ');
+    expect(copy).toContain('Approval Transfers The Verified Hold Into Your Agent Wallet');
+    expect(copy).toContain('Rejection Returns The Verified Hold To The Player');
   });
 
   it('the panel scopes its realtime filter to a RESOLVED club uuid', () => {

@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
   field: { data: [] as unknown, error: null as { message: string } | null },
   hand: { data: { id: 'hand-1' } as unknown, error: null as { message: string } | null },
   mutations: [] as string[],
+  plain: false,
+  status: 'COMPLETING',
 }));
 
 vi.mock('../services/supabase.js', () => ({
@@ -23,10 +25,11 @@ vi.mock('../services/supabase.js', () => ({
               {
                 id: SATELLITE,
                 name: 'Daily Satellite',
-                status: 'COMPLETING',
-                variant: 'satellite',
-                tournament_type: 'SATELLITE',
-                satellite_target_id: '00000000-0000-4000-8000-000000000103',
+                status: state.status,
+                format_contract: null,
+                variant: state.plain ? 'spin' : 'satellite',
+                tournament_type: state.plain ? 'MTT' : 'SATELLITE',
+                satellite_target_id: state.plain ? null : '00000000-0000-4000-8000-000000000103',
                 started_at: new Date().toISOString(),
                 payout_structure: [{ place: 1, percentage: 100 }],
               },
@@ -36,6 +39,8 @@ vi.mock('../services/supabase.js', () => ({
         }
         if (table === 'tournament_players') return state.field;
         if (table === 'hand_history') return state.hand;
+        if (table === 'tournament_payouts' || table === 'tournament_obligations')
+          return { data: [], error: null };
         throw new Error(`unexpected recovery read: ${table}`);
       };
       for (const method of ['select', 'eq', 'in', 'limit']) chain[method] = () => chain;
@@ -65,11 +70,17 @@ vi.mock('./satelliteSettlementRpc.js', () => ({
 }));
 vi.mock('./terminalSettlementRpc.js', () => ({
   TerminalSettlementRefusedError: class TerminalSettlementRefusedError extends Error {},
-  requestTournamentTerminalReceipt: vi.fn(),
+  requestTournamentTerminalReceipt: vi.fn(async () => ({
+    settlementMode: 'places',
+    cashPayoutTotal: 1,
+    bountyPayoutTotal: 0,
+    tableClosure: { closedTableCount: 1 },
+  })),
 }));
 
 import { reportError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
+import { requestTournamentTerminalReceipt } from './terminalSettlementRpc.js';
 import { requestSatelliteSettlementReceipt } from './satelliteSettlementRpc.js';
 import { recoverStuckCompletingTournaments } from './tournamentRecovery.js';
 
@@ -90,7 +101,24 @@ describe('satellite recovery requires readable result authority', () => {
     state.field = { data: playingWinner(), error: null };
     state.hand = { data: { id: 'hand-1' }, error: null };
     state.mutations = [];
+    state.plain = false;
+    state.status = 'COMPLETING';
     vi.clearAllMocks();
+  });
+
+  it('continues a historical NULL-format COMPLETING receipt using stored places only', async () => {
+    state.plain = true;
+    await recoverStuckCompletingTournaments('format-preparation');
+    expect(requestTournamentTerminalReceipt).toHaveBeenCalledWith(SATELLITE, 'places', WINNER);
+    expect(state.mutations).toEqual([]);
+    expect(reportError).not.toHaveBeenCalled();
+  });
+  it('does not extend that historical result path to an unknown active format', async () => {
+    state.plain = true;
+    state.status = 'RUNNING';
+    await recoverStuckCompletingTournaments('format-preparation');
+    expect(requestTournamentTerminalReceipt).not.toHaveBeenCalled();
+    expect(state.mutations).toEqual([]);
   });
 
   it.each([

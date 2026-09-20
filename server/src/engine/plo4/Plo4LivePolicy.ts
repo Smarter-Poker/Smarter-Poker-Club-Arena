@@ -3,6 +3,7 @@ import type { HorseGameStateV2 } from '../HorseLogic.js';
 import { omahaNutStatus } from '../HorseEval.js';
 import { omahaCardFacts } from '../omaha/OmahaCardFacts.js';
 import { calculateContestablePot, calculateRake } from '../PokerEngine.js';
+import { horsePolicyDealtPlayers } from '../multiway/DealtSeatCensus.js';
 import {
   PLO4_POLICY_PACK,
   plo4HandShape,
@@ -49,8 +50,7 @@ export interface Plo4LiveReceipt {
   executedAmount: number | null;
 }
 export function plo4Position(seat: number, state: HorseGameStateV2): Plo4Position {
-  const seats = state.players
-    .filter((p) => !p.is_sitting_out)
+  const seats = horsePolicyDealtPlayers(state.players, seat, state.dealtSeatIds)
     .map((p) => p.seat)
     .sort((a, b) => a - b);
   const offset =
@@ -73,7 +73,9 @@ export function plo4Role(hero: SeatPlayer, state: HorseGameStateV2): Plo4NodeRol
   if (state.stage !== 'preflop')
     return !state.toCall ? 'checked_to' : raises.length > 1 ? 'facing_raise' : 'facing_bet';
   if (raises.length > 0 && hero.stack / state.bigBlind <= 12) return 'reshove';
-  if (raises.length >= 4) return 'five_bet_plus';
+  // The blind is the first bet: open, three-bet and four-bet are three
+  // recorded raises. The next decision belongs to the five-bet-plus node.
+  if (raises.length >= 3) return 'five_bet_plus';
   if (raises.length >= 2) return 'four_bet';
   if (raises.length === 1) {
     const callers = line.filter(
@@ -225,34 +227,72 @@ export function evaluatePlo4LivePolicy(
     s.communityCards3?.length
   )
     return finish('multiboard_owned_by_phase13');
-  const seats = s.players.filter((p) => !p.is_sitting_out);
+  // Seats dealt this hand determine position and rake, even after a sit-out.
+  let seats: SeatPlayer[];
+  try {
+    seats = horsePolicyDealtPlayers(s.players, hero.seat, s.dealtSeatIds);
+  } catch {
+    return finish('canonical_state_unavailable');
+  }
   if (
     s.stateSchemaVersion !== 1 ||
     s.bettingStructure !== 'pot_limit' ||
     seats.length < 2 ||
     seats.length > 8 ||
     !['cash', 'tournament'].includes(s.gameMode ?? '') ||
-    !seats.some((p) => p.user_id === hero.user_id && p.seat === hero.seat) ||
+    !seats.some(
+      (p) =>
+        p.user_id === hero.user_id &&
+        p.seat === hero.seat &&
+        p.stack === hero.stack &&
+        p.bet === hero.bet &&
+        p.totalInvested === hero.totalInvested
+    ) ||
     !seats.some((p) => p.seat === s.dealerSeat) ||
     new Set(seats.map((p) => p.seat)).size !== seats.length ||
     new Set(seats.map((p) => p.user_id)).size !== seats.length ||
     !s.legalActions?.includes(baseline.action)
   )
     return finish('canonical_state_unavailable');
-  if (s.players.some((p) => p.cards.length > 0)) return finish('private_state_rejected');
+  if (
+    s.players.some((p) => !Array.isArray(p.cards) || p.cards.length > 0 || p.knownDeadCards?.length)
+  )
+    return finish('private_state_rejected');
   const callCost = Math.min(hero.stack, Math.max(0, s.currentBet - hero.bet));
   if (
-    !(s.bigBlind > 0) ||
+    !(Number.isFinite(s.bigBlind) && s.bigBlind > 0) ||
+    hero.is_folded ||
+    hero.is_all_in ||
+    hero.is_sitting_out ||
     ![hero.stack, hero.bet, s.pot, s.currentBet, s.toCall, s.ante ?? 0].every(
       (n) => typeof n === 'number' && Number.isFinite(n) && n >= 0
     ) ||
-    seats.some((p) => ![p.stack, p.totalInvested].every((n) => Number.isFinite(n) && n >= 0)) ||
+    seats.some(
+      (p) =>
+        ![
+          p.stack,
+          p.bet,
+          p.totalInvested,
+          p.deadInvested ?? 0,
+          p.individualAnteInvested ?? 0,
+        ].every((n) => Number.isFinite(n) && n >= 0)
+    ) ||
     Math.abs(s.toCall! - Math.max(0, s.currentBet - hero.bet)) > 0.011 ||
     Math.abs(s.players.reduce((n, p) => n + p.totalInvested, 0) - s.pot) > 0.011 ||
     hero.stack <= 0
   )
     return finish('invalid_geometry');
-  const active = seats.filter((p) => p.user_id !== hero.user_id && !p.is_folded);
+  if (
+    s.legalActions?.some((a) => a === 'bet' || a === 'raise') &&
+    (!Number.isFinite(s.minRaiseTo) ||
+      !Number.isFinite(s.maxRaiseTo) ||
+      s.minRaiseTo! <= s.currentBet ||
+      s.maxRaiseTo! < s.minRaiseTo!)
+  )
+    return finish('invalid_wager_geometry');
+  const active = seats.filter(
+    (p) => p.user_id !== hero.user_id && !p.is_folded && (!p.is_sitting_out || p.is_all_in)
+  );
   const depth =
     Math.min(hero.stack + hero.bet, Math.max(...active.map((p) => p.stack + p.bet))) / s.bigBlind;
   receipt.depthBB = depth;
@@ -294,7 +334,9 @@ export function evaluatePlo4LivePolicy(
       (a) =>
         a.userId !== hero.user_id &&
         a.stage === s.stage &&
-        ['bet', 'raise', 'all_in'].includes(a.action)
+        (a.action === 'bet' ||
+          a.action === 'raise' ||
+          (a.action === 'all_in' && a.isFullRaise !== undefined))
     )
     .at(-1);
   receipt.aggressorPosition = aggressor ? plo4Position(aggressor.seat, s) : null;

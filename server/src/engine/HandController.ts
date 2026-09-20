@@ -151,6 +151,18 @@ function scaleWinnerUnitsForRake(
   return adjusted;
 }
 
+/** Private controller receipt for a Horse audit. Never attach this to HandEvent. */
+export interface HorseDiscardControllerReceipt {
+  readonly seat: number;
+  readonly actorId: string;
+  readonly chosenIndex: number;
+  readonly originalCards: readonly Readonly<Card>[];
+  readonly discardedCard: Readonly<Card>;
+  readonly retainedCards: readonly Readonly<Card>[];
+  readonly communityCards: readonly Readonly<Card>[];
+  readonly acceptedRecord: Readonly<ActionRecord>;
+}
+
 export class HandController {
   private config: HandConfig;
   private state: GameState;
@@ -159,6 +171,53 @@ export class HandController {
   private pineappleDiscardsRemaining: Set<number> = new Set();
   /** Private per-hand knowledge; deliberately absent from public GameState. */
   private pineappleKnownDeadCards = new Map<number, Card>();
+  private pineappleDiscardObservers = new Map<
+    number,
+    (receipt: HorseDiscardControllerReceipt) => void
+  >();
+
+  /** One accepted discard, observed before its public action is emitted. */
+  public observeNextPineappleDiscard(
+    seat: number,
+    observer: (receipt: HorseDiscardControllerReceipt) => void
+  ): () => void {
+    this.pineappleDiscardObservers.set(seat, observer);
+    return () => {
+      if (this.pineappleDiscardObservers.get(seat) === observer)
+        this.pineappleDiscardObservers.delete(seat);
+    };
+  }
+
+  private observeAcceptedPineappleDiscard(
+    player: SeatPlayer,
+    chosenIndex: number,
+    originalCards: readonly Card[],
+    discardedCard: Card,
+    communityCards: readonly Card[],
+    acceptedRecord: Readonly<ActionRecord>
+  ): void {
+    const observer = this.pineappleDiscardObservers.get(player.seat);
+    if (!observer) return;
+    this.pineappleDiscardObservers.delete(player.seat);
+    const detach = (cards: readonly Card[]) =>
+      Object.freeze(cards.map((card) => Object.freeze({ ...card })));
+    const receipt: HorseDiscardControllerReceipt = Object.freeze({
+      seat: player.seat,
+      actorId: player.user_id,
+      chosenIndex,
+      originalCards: detach(originalCards),
+      discardedCard: Object.freeze({ ...discardedCard }),
+      retainedCards: detach(player.cards),
+      communityCards: detach(communityCards),
+      acceptedRecord: Object.freeze({ ...acceptedRecord }),
+    });
+    try {
+      observer(receipt);
+    } catch (error) {
+      // An audit sink cannot interrupt an already accepted card mutation.
+      reportError(error, 'HandController.horse_discard_observer');
+    }
+  }
 
   public getPineappleKnownDeadCards(seat: number): Card[] {
     const card = this.pineappleKnownDeadCards.get(seat);
@@ -240,8 +299,15 @@ export class HandController {
       // rule it already applied to every other amount on the hand. The ante is
       // rounded to the table's own unit below and the boundary refuses a row
       // whose ante could not be whole, so neither half can produce a fraction.
+      /* A DIAMOND TOURNAMENT HAND IS A TOURNAMENT HAND (Phase 8, 2026-09-14).
+         `config.isTournament` was refused here from Phase 6 until the
+         tournament money doors existed. They do now - the entry is custody
+         and the database pays the places from it - and a tournament hand
+         already arrives with the deductions this guard refuses set to
+         nothing: rakeConfig is zero and the BBJ fee off for every tournament
+         table, so the same checks below hold it to the same rule. What a
+         tournament hand deals is tournament chips, whole by construction. */
       if (
-        config.isTournament ||
         /* 2026-09-12: the nine games the chip cash screen offers, not the one
            this arena opened with. Every place a pot is divided was already
            made unit-aware while it was NLH only, the hi-lo split included, so
@@ -253,7 +319,7 @@ export class HandController {
         config.rakeConfig.cap !== 0 ||
         config.bbjConfig?.enabled
       ) {
-        throw new Error('Diamond Cash Certification Requires A Supported Game With No Deductions');
+        throw new Error('Diamond Certification Requires A Supported Game With No Deductions');
       }
     }
     this.config = config;
@@ -422,7 +488,7 @@ export class HandController {
       // so the FSM REJECTED it and stayed parked on 'dealing' for the whole
       // hand. Every subsequent transition was then invalid too, so a single
       // bomb pot logged 'dealing -> flop', 'dealing -> showdown',
-      // 'dealing -> settlement' and 'dealing -> idle' to reportError/Sentry.
+      // 'dealing -> settlement' and 'dealing -> idle' to reportError/error reporting.
       // state.stage was always correct (transitionStage sets it regardless),
       // so play was never affected — but the FSM, whose entire job is to make
       // an illegal hand flow detectable, was reporting a false positive on
@@ -952,7 +1018,8 @@ export class HandController {
     seat: number,
     action: ActionType,
     amount?: number,
-    origin: AcceptedActionOrigin = 'unknown'
+    origin: AcceptedActionOrigin = 'unknown',
+    onAccepted?: (record: Readonly<ActionRecord>) => void
   ): boolean {
     if (this.config.asset === 'diamonds' && amount !== undefined && !Number.isSafeInteger(amount)) {
       return false;
@@ -1103,6 +1170,15 @@ export class HandController {
     });
     this.state.actionHistory.push(record);
 
+    // Observe the exact clamped, validated and cent-snapped action before
+    // broadcasts/advanceGame can change the current street or turn. A receipt
+    // consumer cannot undo an action or interrupt the existing game lifecycle.
+    try {
+      onAccepted?.(record);
+    } catch {
+      /* Optional accounting must not change gameplay. */
+    }
+
     // The stage travels WITH the action. This is the same value just written
     // to actionHistory above, so the persisted hand history and the
     // controller's own record agree by construction rather than by timing.
@@ -1152,9 +1228,28 @@ export class HandController {
       return false; // Invalid card index
     }
 
+    const originalCards = player.cards.map((card) => ({ ...card }));
     // Remove the selected card from the player's hand
     const discarded = player.cards.splice(cardIndex, 1);
     this.pineappleDiscardsRemaining.delete(seat);
+
+    const record: Readonly<ActionRecord> = Object.freeze({
+      seat,
+      userId: player.user_id,
+      action: 'discard',
+      amount: 0,
+      timestamp: Date.now(),
+      stage: this.state.stage,
+    });
+    this.state.actionHistory.push(record);
+    this.observeAcceptedPineappleDiscard(
+      player,
+      cardIndex,
+      originalCards,
+      discarded[0],
+      this.state.communityCards,
+      record
+    );
 
     /* PHASE 4 2026-09-01: the card itself, to the seat that threw it and to
        nobody else. This event is consumed by the engine and written to the
@@ -1194,16 +1289,6 @@ export class HandController {
        isBettingRoundComplete), so a zero-amount 'discard' on a stage none of
        them bet in is inert to all of them - and it makes the in-memory history
        agree with the persisted one, which is what HorseMind hydrates from. */
-    const record: Readonly<ActionRecord> = Object.freeze({
-      seat,
-      userId: player.user_id,
-      action: 'discard',
-      amount: 0,
-      timestamp: Date.now(),
-      stage: this.state.stage,
-    });
-    this.state.actionHistory.push(record);
-
     // Emit discard action for logging
     this.emit({
       type: 'PLAYER_ACTION',
@@ -2135,8 +2220,27 @@ export class HandController {
       this.state.communityCards.length >= 3 ? this.state.stage : ('flop' as HandStage);
     for (const player of pending) {
       const bestIdx = prepared.decisions.get(player.seat) as number;
+      const originalCards = player.cards.map((card) => ({ ...card }));
       const forced = player.cards.splice(bestIdx, 1);
       this.pineappleDiscardsRemaining.delete(player.seat);
+
+      const record: Readonly<ActionRecord> = Object.freeze({
+        seat: player.seat,
+        userId: player.user_id,
+        action: 'discard',
+        amount: 0,
+        timestamp: Date.now(),
+        stage: discardStage,
+      });
+      this.state.actionHistory.push(record);
+      this.observeAcceptedPineappleDiscard(
+        player,
+        bestIdx,
+        originalCards,
+        forced[0],
+        flop.slice(0, 3),
+        record
+      );
 
       /* PHASE 4 2026-09-01: an all-in seat never chose, but the card still
          left their hand and it is still theirs to review. Same private event,
@@ -2165,15 +2269,6 @@ export class HandController {
          CLAUDE.md 10.6 says an animation is owed every time it is owed, not
          on the paths that happen to be convenient. Announced identically here,
          BEFORE the cards go out, so ordering matches performDiscard. */
-      const record: Readonly<ActionRecord> = Object.freeze({
-        seat: player.seat,
-        userId: player.user_id,
-        action: 'discard',
-        amount: 0,
-        timestamp: Date.now(),
-        stage: discardStage,
-      });
-      this.state.actionHistory.push(record);
       this.emit({
         type: 'PLAYER_ACTION',
         seat: player.seat,
@@ -3511,6 +3606,21 @@ export class HandController {
     };
   }
 
+  /** Dealt stakes stay fixed even when the table advances to its next level. */
+  public getBlindSnapshot(): {
+    smallBlind: number;
+    bigBlind: number;
+    ante: number;
+    bigBlindAnte: boolean;
+  } {
+    return {
+      smallBlind: this.config.smallBlind,
+      bigBlind: this.config.bigBlind,
+      ante: this.config.ante ?? 0,
+      bigBlindAnte: this.config.bigBlindAnte === true,
+    };
+  }
+
   public getChipRulesSnapshot(): {
     asset: 'chips' | 'diamonds';
     chipUnit: 0.01 | 1;
@@ -3656,15 +3766,15 @@ export class HandController {
         ),
         'HandController.saw_flop_without_board'
       );
-      /* And durably, where it can be READ. Sentry is where the first version
-         of this sent the finding, and Sentry is not queryable from the place
+      /* And durably, where it can be READ. error reporting is where the first version
+         of this sent the finding, and error reporting is not queryable from the place
          the rake-law alarm lives, so the two halves of the same incident sat
          in two systems and only one of them could be joined to a hand id.
          financial_alerts is the server's durable money-alarm table and takes
          a structured context; this is a money path refusing to pay, which is
          exactly what it is for. Fire-and-forget on the settlement hot path —
          raiseFinancialAlert never throws and never rejects (and re-escalates
-         a throttled critical to Sentry by itself). */
+         a throttled critical to error reporting by itself). */
       void raiseFinancialAlert(
         'critical',
         'HandController.saw_flop_without_board',

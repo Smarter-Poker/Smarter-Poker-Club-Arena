@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise real shared purchase/cash-out doors in the prepared isolated fixture."""
+import os
 import concurrent.futures
 import json
 import pathlib
@@ -8,7 +9,8 @@ import sys
 import tempfile
 
 ROOT=pathlib.Path(__file__).resolve().parents[2]
-CMD=['/opt/homebrew/opt/postgresql@17/bin/psql','-X','-q','-At',
+PG_BIN = os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin')
+CMD=[PG_BIN + '/psql','-X','-q','-At',
  '-h','/tmp/codex-diamond-phase2-pg','-p','55472','-d','poker_diamond_phase6_test',
  '-v','ON_ERROR_STOP=1']
 T='30000000-0000-0000-0000-000000000001'
@@ -42,3 +44,5 @@ print('PASS: concurrent authenticated purchase replays the same verified receipt
 print(run(actor(B)+f"""SELECT atomic_table_buyin('{B}','{T}',2,100,false,'{C}',
  '40000000-0000-0000-0000-000000000007');"""))
 print(run('\\ir poker-diamond-cash-admission-acceptance.sql'))
+# A forged arena on the purchase door: refused by the table's arena, nothing moves.
+print(run('\\ir poker-diamond-forged-arena-acceptance.sql'))

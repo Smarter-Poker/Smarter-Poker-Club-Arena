@@ -1,0 +1,22 @@
+{
+  "scope": "bounded read-only aggregate cardinality/shape metadata; no identifiers, row payloads, business function or state change",
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='8s';\nSELECT clock_timestamp() AS captured_at,\ncount(*) AS total_alerts,\ncount(*) FILTER (WHERE resolved IS NOT TRUE) AS unresolved,\ncount(*) FILTER (WHERE resolved IS NOT TRUE AND source IN ('postHandTasks.hand_history_failed','ServerTableEngine.authoritative_hand_semantic_refusal')) AS class4_unresolved,\ncount(*) FILTER (WHERE resolved IS NOT TRUE AND source='fn_payout_guarantee_check') AS class1_source_unresolved,\ncount(*) FILTER (WHERE resolved IS NOT TRUE AND source='fn_tournament_payout_reconcile') AS class2_source_unresolved,\ncount(*) FILTER (WHERE resolved IS NOT TRUE AND source='ServerTableEngine.post_commit_obligations_pending') AS class3_source_unresolved,\ncount(*) FILTER (WHERE resolved IS NOT TRUE AND source IN ('postHandTasks.hand_history_failed','ServerTableEngine.authoritative_hand_semantic_refusal') AND jsonb_typeof(context->'hand_request_identity_v1')='object') AS class4_identity_object_count,\nmax(octet_length(coalesce(context,'null'::jsonb)::text)) FILTER (WHERE resolved IS NOT TRUE) AS unresolved_max_context_bytes,\npercentile_disc(0.95) WITHIN GROUP (ORDER BY octet_length(coalesce(context,'null'::jsonb)::text)) FILTER (WHERE resolved IS NOT TRUE) AS unresolved_p95_context_bytes,\npg_total_relation_size('public.financial_alerts') AS alert_total_relation_bytes,\n(SELECT reltuples::bigint FROM pg_class WHERE oid='public.hand_atomic_commits'::regclass) AS canonical_estimated_rows,\npg_total_relation_size('public.hand_atomic_commits') AS canonical_total_relation_bytes\nFROM public.financial_alerts;\nROLLBACK;",
+  "rows": [
+    {
+      "captured_at": "2026-09-17 02:19:15.19765+00",
+      "total_alerts": 42051,
+      "unresolved": 3363,
+      "class4_unresolved": 12,
+      "class1_source_unresolved": 4,
+      "class2_source_unresolved": 1,
+      "class3_source_unresolved": 0,
+      "class4_identity_object_count": 0,
+      "unresolved_max_context_bytes": 74129,
+      "unresolved_p95_context_bytes": 561,
+      "alert_total_relation_bytes": 56532992,
+      "canonical_estimated_rows": 2528753,
+      "canonical_total_relation_bytes": 8825200640
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { sliceMethod } from '../testHelpers/sourceWindow.js';
+import { sliceCall, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const BASE = readFileSync(
   resolve(process.cwd(), 'src/tournament/TournamentManagerBase.ts'),
@@ -19,7 +19,10 @@ describe('tournament table engines recover from their causal generation signal',
   it('wires runtime death and the between-hands edge on every generation', () => {
     const wire = sliceMethod(BASE, 'wireEliminationWake(engine: ServerTableEngine)');
     expect(wire).toContain('engine.onRestartRequired((reason) =>');
-    expect(wire).toContain('engine.onPauseReady(() => this.advanceHandForHandBarrier())');
+    const pauseReady = sliceCall(wire, 'engine.onPauseReady(');
+    expect(pauseReady).toMatch(
+      /if \(this\.satelliteQualifierBoundaryPending\)\s*\{\s*this\.requestEliminationSweep\('satellite_qualifier_boundary'\);\s*\} else this\.advanceHandForHandBarrier\(\)/
+    );
     expect(wire).toContain('this.tableIdForManagedEngine(engine)');
     expect(wire).toContain('this.trackLifecycleJob(recovery)');
 

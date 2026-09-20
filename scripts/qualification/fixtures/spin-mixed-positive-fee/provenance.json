@@ -1,0 +1,372 @@
+{
+  "status": "SOURCE_ONLY_NATIVE_UNRUN",
+  "sources": {
+    "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/mixed-positive-fee-authority-20260918.json": {
+      "sha256": "fa3c099311574b3bc64bacb2765c7c5ab0dd5bbf1217b64d875b8edd0db05da7",
+      "bytes": 299325
+    },
+    "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/mixed-positive-fee-catalog-20260918.json": {
+      "sha256": "3cb1f1ca696361894e1a9eab658372e95bd825a5a9e318b0f85d2542f694f2c2",
+      "bytes": 102549
+    },
+    "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/mixed-positive-fee-cohort-drift-20260918.json": {
+      "sha256": "4f6c503f6161d1685ab9d9efaf66ad166267352742a15638cd87c6219d0d287d",
+      "bytes": 56405
+    },
+    "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/mixed-positive-fee-remaining-closure-20260918T004729Z.json": {
+      "sha256": "164819a3d13262d66204bf8990ccc2d600e2aa1bb289bb38c25f6fca06765bfc",
+      "bytes": 36423
+    },
+    "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/mixed-positive-fee-inventory-bindings-20260918.json": {
+      "sha256": "d63bef09f70c9d9f6e11e0ae9d88432ed8dfedef23b45848b2e01da849de982a",
+      "bytes": 4638
+    },
+    "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/mixed-positive-fee-entry-authority-20260918.json": {
+      "sha256": "4be505badd7f126e358e8e324a2f6c66d48daa458c1ec9b59daa7a3f6365649e",
+      "bytes": 37022
+    },
+    "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/mixed-positive-fee-entry-inner-20260918.json": {
+      "sha256": "28df572551b08163f8708cb03f0cdee5e56b07436fba8b04a8d2e09a2f2ce8a7",
+      "bytes": 17001
+    },
+    "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/mixed-positive-fee-admission-helper-20260918.json": {
+      "sha256": "dd9548a36a4d94626987509f9e6073d64289ae1db624fa7b878686ea00a13b24",
+      "bytes": 955
+    },
+    "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/mixed-positive-fee-admission-catalog-20260918.json": {
+      "sha256": "65a63c14a690da4cba8112fae9ec66a5fec1dd8c33f8d60e4692af0227bf56dd",
+      "bytes": 120034
+    },
+    "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/mixed-positive-fee-entry-recorded-helpers-20260918.json": {
+      "sha256": "7b40d65e1dbb9d4cf519351b3bdc98ca216729c63155599c06f43cc3346f402e",
+      "bytes": 4130
+    },
+    "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/mixed-positive-fee-format-catalog-20260918.json": {
+      "sha256": "0e254f8a2e63272042c96b1945a53f676ef64f60ea16c5f4a5f5f4d4b5304120",
+      "bytes": 70034
+    },
+    "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/mixed-positive-fee-format-helpers-20260918.json": {
+      "sha256": "97969c41f502c4a0496bde10c663f9668686cfb8fe77e7506fdc1e803b87dbc4",
+      "bytes": 9650
+    },
+    "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/mixed-positive-fee-entry-trigger-updates-20260918.json": {
+      "sha256": "5e32c782cad4c526f7db51d874adcfa8556aa27e00e632556f9cd57670b69dd1",
+      "bytes": 18707
+    },
+    "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/scripts/ci/probes/spin-expiry/inputs/schema.sql": {
+      "sha256": "5a5966afca3b2c9699aba326baf5f32d6c0e1baa2ad09340feaa3b23f4d9dc0a",
+      "bytes": 2709616
+    },
+    "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/scripts/ci/probes/spin-expiry/inputs/access.sql": {
+      "sha256": "ad2cb0ddc955bd97c9ef719e9106aad9f55be5cf034e014d04c90b3a1667c541",
+      "bytes": 786489
+    },
+    "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/scripts/ci/probes/spin-expiry/inputs/policies.sql": {
+      "sha256": "075254070c905c0bac70a9bc5a0b3e938b5262f0e1a186ee2a56127da0f77698",
+      "bytes": 46690
+    },
+    "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/scripts/ci/probes/spin-expiry/provider-supplement.sql": {
+      "sha256": "ed6443c1b413523e028a1d3ec746abefc7d8595b5e7dfe125ba99458e72ad3e4",
+      "bytes": 47884
+    },
+    "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/scripts/ci/probes/spin-expiry/inputs/entry-provider-supplement.sql": {
+      "sha256": "9a177656fa182a5b2fe3568fea13fb058d2999b411e5334d110d9d095a3db588",
+      "bytes": 109699
+    },
+    "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/scripts/qualification/fixtures/spin-mixed-current/authority.json": {
+      "sha256": "193d8f25921068b2e4402d4d4b3861195917542b67a95fc854d6844842a29bd2",
+      "bytes": 151700
+    },
+    "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/scripts/qualification/fixtures/spin-mixed-current/catalog.json": {
+      "sha256": "329b95dfe4489c1099502e517005904d014d1e6fe2630f66433361aaec99b418",
+      "bytes": 47834
+    },
+    "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/scripts/qualification/fixtures/spin-mixed-current/catalog-restore.sql": {
+      "sha256": "35cb39829a29393ffd27b326ee65e7567826cd31d1dda28c8b0b48d533eea2cf",
+      "bytes": 232918
+    },
+    "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/scripts/qualification/fixtures/spin-mixed-current/catalog-readback.sql": {
+      "sha256": "fbcf7f7b888519923327dc8840337585047554257ce9ce8ae8ca151bbd9e6aff",
+      "bytes": 36896
+    },
+    "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/scripts/qualification/fixtures/spin-mixed-current/recognition-restore.sql": {
+      "sha256": "78e383e6139ca0573c99e9f614881ebc8ead534d91f68c686c9a917425c2aab1",
+      "bytes": 28211
+    },
+    "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/scripts/qualification/fixtures/spin-mixed-current/recognition-readback.sql": {
+      "sha256": "763f7f2fb52b038723bda699dcd2fbc1743412798ccbcb520b896feefeeee982",
+      "bytes": 9383
+    },
+    "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/scripts/qualification/fixtures/spin-mixed-current/store-policy.sql": {
+      "sha256": "2e4d9019aa3593d2b2e65f792d32688690414cc10339faf55e18d51f1030edaa",
+      "bytes": 1431
+    }
+  },
+  "changed_function_signatures": [
+    "fn_accounting_agent_terms_at(uuid,uuid,timestamp with time zone)",
+    "fn_accounting_cash_commission_source_guard()",
+    "fn_accounting_cash_source_immutable()",
+    "fn_accounting_earning_contract(uuid,uuid,numeric,uuid,timestamp with time zone)",
+    "fn_accounting_terms_at(text,text,timestamp with time zone)",
+    "fn_accounting_tournament_commission_source_guard()",
+    "fn_accounting_tournament_fee_commit_capture()",
+    "fn_accounting_tournament_fee_source_immutable()",
+    "fn_accounting_tournament_recognized_evidence_immutable()",
+    "fn_accounting_transfer_document_on_insert()",
+    "fn_agent_credit_control_revision_v1()",
+    "fn_award_vip_points_from_rake()",
+    "fn_ca_capture_tournament_charge_entitlement()",
+    "fn_ca_capture_tournament_credit_ledger()",
+    "fn_ca_fund_overlay_on_lock()",
+    "fn_ca_guard_mtt_admission_contract()",
+    "fn_ca_guard_new_satellite_target()",
+    "fn_ca_guard_tournament_format()",
+    "fn_ca_guard_tournament_restart_source()",
+    "fn_ca_is_new_mtt(jsonb)",
+    "fn_ca_legacy_tournament_format(jsonb)",
+    "fn_ca_lock_mtt_admission_contract()",
+    "fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid)",
+    "fn_ca_new_tournament_is_unlimited(jsonb)",
+    "fn_ca_normalize_new_mtt_capacity()",
+    "fn_ca_tournament_format_identity(jsonb)",
+    "fn_ca_tournament_recorded_format(uuid)",
+    "fn_ca_tournament_recorded_seat_first(uuid,boolean)",
+    "fn_ca_tournament_seat_cap(uuid)",
+    "fn_capture_accounting_tournament_fee(uuid,jsonb)",
+    "fn_club_members_ledger_writer()",
+    "fn_create_seat_first_game_atomic(uuid,jsonb)",
+    "fn_emit_managed_game_row_event()",
+    "fn_guard_agent_agreement()",
+    "fn_guard_managed_game_lifecycle()",
+    "fn_guard_new_mtt_blind_contract()",
+    "fn_post_accounting_commission_source(uuid,text,timestamp with time zone,jsonb)",
+    "fn_seat_change_syncs_seat_first_count()",
+    "fn_short_formats_never_break()",
+    "fn_stamp_accounting_tournament_fee(uuid)",
+    "fn_sync_seat_first_player_count(uuid)",
+    "fn_take_seat_and_buy_in_before_maintenance_announcement_gate(uuid,integer)",
+    "fn_tournaments_creation_guard()",
+    "fn_union_pnl_capture_original_flow()",
+    "fn_union_pnl_inventory_immutable()",
+    "fn_union_pnl_inventory_observe()",
+    "fn_union_pnl_inventory_project(text,jsonb)",
+    "fn_union_pnl_original_frame()"
+  ],
+  "captured_function_bodies_modified": false,
+  "created_relations": [
+    "accounting_cash_accrual_batches",
+    "accounting_cash_accrual_cutover",
+    "accounting_cash_rake_sources",
+    "accounting_tournament_fee_cutover",
+    "ca_mtt_admission_contract",
+    "union_pnl_inventory_events",
+    "union_pnl_original_flows",
+    "union_pnl_transaction_frames"
+  ],
+  "existing_relation_scope": [
+    "accounting_agreement_history",
+    "agents",
+    "ca_chip_store_coverage"
+  ],
+  "new_trigger_bindings": [
+    [
+      "accounting_cash_accrual_batches",
+      "accounting_cash_batch_immutable"
+    ],
+    [
+      "accounting_cash_accrual_batches",
+      "accounting_cash_batch_no_truncate"
+    ],
+    [
+      "accounting_cash_accrual_cutover",
+      "accounting_cash_cutover_immutable"
+    ],
+    [
+      "accounting_cash_accrual_cutover",
+      "accounting_cash_cutover_no_truncate"
+    ],
+    [
+      "accounting_cash_rake_sources",
+      "accounting_cash_source_immutable"
+    ],
+    [
+      "accounting_cash_rake_sources",
+      "accounting_cash_source_no_truncate"
+    ],
+    [
+      "accounting_tournament_fee_cutover",
+      "accounting_tournament_fee_cutover_immutable"
+    ],
+    [
+      "accounting_tournament_fee_cutover",
+      "accounting_tournament_fee_cutover_no_truncate"
+    ],
+    [
+      "agent_commissions",
+      "accounting_cash_commission_source_guard"
+    ],
+    [
+      "agent_commissions",
+      "accounting_tournament_commission_source_guard"
+    ],
+    [
+      "agents",
+      "zz_guard_agent_agreement"
+    ],
+    [
+      "agents",
+      "zzzz_credit_control_revision_v1"
+    ],
+    [
+      "ca_mtt_admission_contract",
+      "ca_mtt_admission_contract_immutable"
+    ],
+    [
+      "ca_mtt_admission_contract",
+      "ca_mtt_admission_contract_no_truncate"
+    ],
+    [
+      "chip_ledger",
+      "accounting_tournament_recognized_bank_immutable"
+    ],
+    [
+      "chip_ledger",
+      "original_union_pnl_flow"
+    ],
+    [
+      "chip_ledger",
+      "zz_tournament_accounting_credit_ledger"
+    ],
+    [
+      "rake_records",
+      "accounting_cash_source_immutable"
+    ],
+    [
+      "rake_records",
+      "accounting_tournament_fee_commit_capture"
+    ],
+    [
+      "rake_records",
+      "accounting_tournament_fee_source_immutable"
+    ],
+    [
+      "rake_records",
+      "accounting_tournament_recognized_evidence_immutable"
+    ],
+    [
+      "table_seats",
+      "union_pnl_original_inventory"
+    ],
+    [
+      "table_seats",
+      "union_pnl_original_inventory_no_truncate"
+    ],
+    [
+      "tables",
+      "union_pnl_original_inventory"
+    ],
+    [
+      "tables",
+      "union_pnl_original_inventory_no_truncate"
+    ],
+    [
+      "tournament_players",
+      "union_pnl_original_inventory"
+    ],
+    [
+      "tournament_players",
+      "union_pnl_original_inventory_no_truncate"
+    ],
+    [
+      "tournaments",
+      "a0_tournaments_dual_entry_capacity"
+    ],
+    [
+      "tournaments",
+      "a1_tournaments_restart_source"
+    ],
+    [
+      "tournaments",
+      "a2_tournaments_new_satellite_target"
+    ],
+    [
+      "tournaments",
+      "union_pnl_original_inventory"
+    ],
+    [
+      "tournaments",
+      "union_pnl_original_inventory_no_truncate"
+    ],
+    [
+      "tournaments",
+      "zzzzzzz_tournaments_record_format"
+    ],
+    [
+      "union_clubs",
+      "union_pnl_original_inventory"
+    ],
+    [
+      "union_clubs",
+      "union_pnl_original_inventory_no_truncate"
+    ],
+    [
+      "union_pnl_inventory_events",
+      "original_pnl_inventory_events_immutable"
+    ],
+    [
+      "union_pnl_original_flows",
+      "original_pnl_immutable"
+    ],
+    [
+      "union_pnl_transaction_frames",
+      "original_pnl_immutable"
+    ],
+    [
+      "union_wallet_transactions",
+      "accounting_tournament_recognized_bank_immutable"
+    ]
+  ],
+  "tournament_scope": "Exact targeted format/restart/max-player columns, related constraints/index and full 60-trigger inventory; untouched tournament catalog preserved.",
+  "representation_changes": [
+    "Captured physical attnum positions are compared by exact logical column order; no invented dropped columns.",
+    "Rounded agreement-history seqmax is replaced only by the independent decimal-text capture.",
+    "Catalog null empty aggregates are represented as empty arrays.",
+    "Executable delimiter semicolon appended after unchanged captured full definitions.",
+    "Seven preimage trigger-state expectations corrected to D from original schema DISABLE statements and independent current tournament catalog; postimage catalog, runtime flags and captured function bodies unchanged."
+  ],
+  "limits": {
+    "financial_qualification": false,
+    "historical_qualification": false,
+    "production_qualification": false,
+    "full_qualification": false
+  },
+  "known_uncovered_branches": [
+    "Correction-category transfer document invokes fn_accounting_correction_prepare, not captured or provided by this packet; ordinary fee/entry scenario must never select that branch.",
+    "Cash earning recognition, positive commission settlement, Union settlement and positive-fee mixed terminal execution remain unqualified.",
+    "fn_ca_satellite_target_accepts_new_feeder remains absent: authentic legacy ABI and NULL restart/target bypass its branches for this Spin entry.",
+    "fn_tournament_payout_terms_committed_v1 remains absent: authentic overlay handler returns before it for REGISTERING-only entry.",
+    "The authentic MTT admission activation guard is preserved, but its full activation cohort is not provided or invoked."
+  ],
+  "output_files": {
+    "provider-supplement.sql": {
+      "sha256": "0da6ff0941a8917241a6a9434c97c55bf0197bc8a3f298e8e941931c1e27ebe9",
+      "bytes": 512502
+    },
+    "catalog-readback.sql": {
+      "sha256": "b5ec8e0b9287fa0d78d447fdb8dcb87c79d0efde08210f0ea29ab0f9f42f3e7e",
+      "bytes": 169568
+    },
+    "reference-data.sql": {
+      "sha256": "47f02c70d09838f2108c324dcef4df0ac6067d10307799946c6b79a784904fa8",
+      "bytes": 6116
+    },
+    "expected-metadata.json": {
+      "sha256": "01e965e47dcf60802073f00943529295789819c4e4adb193263c89ad32d4aa44",
+      "bytes": 207286
+    },
+    "preimage-metadata.json": {
+      "sha256": "753d9e9c9e521218098e97bb3e5c937bab22486182e78b60dd36501888e072ec",
+      "bytes": 132521
+    }
+  }
+}

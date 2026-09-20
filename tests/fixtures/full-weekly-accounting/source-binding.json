@@ -1,0 +1,1506 @@
+{
+  "status": "source_changed_unrun_pending_qualification",
+  "captured_on": "2026-09-14",
+  "historical_scope": {
+    "tables": 255,
+    "functions": 741,
+    "triggers": 537,
+    "policies": 226,
+    "access_objects": 1000,
+    "roles": 8
+  },
+  "fixtures": {
+    "schema.sql": "db0f5a5ea4a884b3715620c925ae7bb19b1a53c9c6716e97b769f42712674fd9",
+    "policies.sql": "075254070c905c0bac70a9bc5a0b3e938b5262f0e1a186ee2a56127da0f77698",
+    "access.sql": "ad2cb0ddc955bd97c9ef719e9106aad9f55be5cf034e014d04c90b3a1667c541",
+    "seed-registry.sql": "5056b51adb198a3f80b614ee59583a36bab901347e0b30edc6854310e7508ddd",
+    "functions.json": "dac3a639372ca1b6e8d5793d01c4c02b17d541dddeb93cea0423cd77ca664311",
+    "tables.json": "0f986db3950d8416e5f2e968972ca03bfdb984bf8aa43267d60b2fce37cf0428",
+    "triggers-round-3.json": "383cf9b43093ba5f945a68c9f4f8d1389472e8ce6b1d16f4b18d547a86a0249e",
+    "policies.json": "177ae19d8e1d3b083af5a3f8b52f1bb9f616d84a106fec30bc8464f478f98c95",
+    "function-access.json": "6a06697a9d6e04479803d11170419ccb7ffad3323d828efcf01422525b796f5c",
+    "table-access.json": "c5601fc02c0ac1659b970910e5db6d814ecaf468dce2cf6210617fab961de047",
+    "schema-access.json": "1f3019ddd52afb87684091c50be8e8ee61289c8e4e202693dcb26e9a51449377",
+    "roles.json": "0cd8a35ca59e06b4fc02876037b3ef9dbf44c1ae57e4698cacb7a8c0e9ed4efa",
+    "types.json": "c58130a4dc145514acc1e24504a42dc6b033bdb72b1ae2a0f5f382065d405660",
+    "sequences.json": "74bf759b3debf7e0c983a1ad822c0951098b41fd2d3a1f9c67e3ea02b20d9b27",
+    "registries.json": "493fa2473a2a5377b02a42bca815cdd03a6786e57b453032e684d3525eccf121",
+    "build-schema.py": "bcfa221c74a1440af310e959297c4c0fef7223dd1c4e15c6455eed76a335b4da",
+    "captured-legacy-recompute-definition.sql": "7b085c84afee69fb3f892f5996d571308f1cb730ad2fe8094e6ffab331fb5ec9",
+    "legacy-recompute-definition.sql": "2ffbef17dabe2cd79dbc1b9d6181086a088b8a4cf5ff65ad3614b5c2e812fb57",
+    "legacy-recompute-access-assumptions.sql": "fc8c07ed0d27a4f7687e782b371c9d6a948207ba8e9d47a9d16357f1eebf2d75",
+    "legacy-recompute-source-binding.json": "f6d40a56c4f86167edbc20e664543c7e1b3599e017f1ead60b88afd1a6e64f5b",
+    "capture-rollback-state.sql": "26ad0aba3d16bc257a61934c82cba11b2c953fb5979a24806469dbff154d9e71",
+    "README.md": "bf85e5a6a9e760cab02342baecece42bdd89c5ce78542775254da4853118979c",
+    "legacy-period-writers-definitions.sql": "20472455faa4dd0683f7e948a59106c057b72a5b9ae22a28806a314cfe6e4a4d",
+    "legacy-period-writers-access.sql": "4688b010897520ed769f991b0fd04a3318edee6a936b6df1d0445fa24942ad98",
+    "legacy-period-writers-source-binding.json": "597ad49128613b31bde11f580add647fefad2be158958ce7955274d6e208a6f4",
+    "supplemental-function-access.json": "e5c2ff642ff2b5dd51e2d17c2c84a49ef583670fdc2373c32619488f8e804194",
+    "supplemental-function-access.sql": "ae96c94f26e0d9074e2dc6868473bc31b623614543225bdea91ea65861de160c",
+    "capture-rollback-roles.sql": "991d9d489d9b2416002b670abab0eebda3f3474a2574bc4f2a98b91d943d1f9c",
+    "capture-accepted-authority.sql": "6f65090e14cc6d0cf0d325acf772c053daee2e2ed43666531a1464a8044b2d64"
+  },
+  "historical_assertion_executions": 126,
+  "limits": [
+    "Captured referenced catalog, not every production object; dynamic/transitive writer inventory remains bounded",
+    "Historical 124 lifecycle assertions execute as fixture owner; new actual-role authority/privacy fixtures do not establish a universal permission matrix",
+    "Catalog captures contain no production user rows or credentials; a separately bound historical-conflict fixture preserves its exact bounded incident source evidence",
+    "Final37-component source and sixteen fresh sequential clusters are UNRUN; earlier execution is historical only",
+    "Supplemental original function definitions, owner/ACL and effective role checks are actual timestamped captures; installation requires fresh matching observations",
+    "The formerly missing player_agent_assignments catalog is restored from the 2026-09-16 read-only capture; client EXECUTE denial must still precede dormant factory body entry and no owner invocation is qualified",
+    "Qualification-only 24-component prefix may only prepare the privacy negative fixture and must never be activated in production",
+    "New no-floor union continuation unit fixture and full-catalog negative cases are source-only; binding these files does not mean the inherited activation runner executes them",
+    "Actual Messenger/preferences catalog and effective client/service rights captured on September 15; managed postgres-owner equivalence remains excluded",
+    "Full activation uses captured actual jobs271/272 rather than historical5,35 job assumptions; actual launches and two-session timing/ownership remain unqualified",
+    "New authenticated rotation and atomic credit-request source, actual-role rollback fixtures and UI/service tests are UNRUN; no source admission, migration or delivery qualification is inferred",
+    "Cashier V2 source and actual-role fixture are UNRUN; historical holds, cross-tab semantic-intent coordination, legacy HTTP caller staging, expiry scheduling and full financial coverage remain open",
+    "Correction documents, historical identity-only readers, private payee access and exact late rollback fixtures are authored but UNRUN; original correction intent equivalence, non-owner provider sessions, concurrency and live delivery remain unqualified",
+    "Club weekly statement reader, page and export consumer tests are authored but UNRUN; text numeric projections need actual PostgREST/RLS provider qualification and the export service has no identified production caller",
+    "Scoped observer, browser period/report retirement, exact actor/week DTO, and routed UI/store tests are authored but UNRUN; a recorded complete row is not new financial reconciliation, current process liveness, device delivery or full runtime qualification",
+    "Reviewed cashout-generation and bounded export/alert-reader client sources are integrated; their current test hashes are rebound here. Binding does not execute application tests or qualify native/provider/history/financial behavior.",
+    "User holds new source-admission/push/publication handoffs until explicit pipeline-ready notification; continue source and independent review only.",
+    "Component36 exact-intent repair, real predecessor seed and actual-session concurrency harness are authored but UNRUN. Original35 components,29 captured inputs and147 prior bindings remain unchanged. All14 databases are named postgres in separate clusters to preserve the captured cron and component21 guards. Failed final evidence capture or uncertain shutdown retains its fixture across cleanup reentry.",
+    "Credit operation/document authority, current-manager locking, READ COMMITTED admission, private display, real-session races and isolation fixtures are source-authored UNRUN. Guarded baseline transformation restores observed live ordinals around a removed slot; it does not reconstruct unknown removed-column history."
+  ],
+  "repository_fixtures": {
+    "supabase/migrations/20260914132918_union_pnl_requires_full_funding_and_stable_failure_receipts.sql": "68c2d7a15a5e95f58014aa36c6429b8c7f3925063ea976890d909d033b11f8d3",
+    "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-deferred.sql": "45d8cfd5dd3f8e68c11b7c88418027e793258a3bd350436843b28d8334fd8404",
+    "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-earning.sql": "8add7053211cd40ffc988cac51f2df02d0fcccd7b20f13dd32595e0ae16bb3d4",
+    "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-normal.sql": "9751b412273a897f9107ec052009201a0b17f92daacf34665ec3d00f83a791a9",
+    "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-satellite.sql": "5148799c56ef11876d00dcbecdd720bd20ec4c1e780e0aa593b1f5fdf29cd068",
+    "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-seed.sql": "94e09f38a3998784faca103bdfe4728207a9b0a8ca1ff22d430a4cc8e84a3192",
+    "tests/fixtures/pnl-evidence/PROTECTED-QUALIFICATION.md": "dd27d25a6b7eaf3bf4cc36801c62ab4957107fb06b3e2abd510df7edd618247a",
+    "tests/fixtures/pnl-evidence/captured-pnl-metadata.json": "149ebe07f1c16e8bf46c39aa9bb4befa6890b52c7acebaed54fad36b3483e20f",
+    "tests/fixtures/pnl-evidence/hooks-regression.sql": "95cda9baf678eed3b273bcd7b117393b90b48eed3b15544023d13e5030669223",
+    "tests/fixtures/pnl-evidence/hooks-seed.sql": "e455f05f581a19f0eba11eaf93fdcc08db0230ce462d63338186bf31a7c00895",
+    "tests/fixtures/pnl-evidence/legacy-pnl-core-preimage.sql": "63eedc0f466ab6a59167e610a5c90e67cf5702814ed224e1459a54a411245a46",
+    "tests/fixtures/pnl-evidence/legacy-pnl-wrapper-preimages.sql": "2cf370e0a34dc62a7f853c7c50aa9f1530793bffa92e8145a4b4912002059ad0",
+    "tests/fixtures/pnl-evidence/regression.sql": "1a616b4720ba86c84484e25635834ada1e48a2fc653c229444a3d5d05120ae3a",
+    "tests/fixtures/pnl-evidence/schema.sql": "afb463545228af3ec9b8ff31c5af3ffdea595ff26d7e1cda358c7cf132e3485c",
+    "tests/fixtures/pnl-evidence/source-binding.json": "5f109632428e1f047fe1b17225e3b7306c3576f4f407fde20f17549add019746",
+    "tests/fixtures/pnl-evidence/verify-wrapper-source-binding.py": "a5990f3c35e6cafb1b802720cc7936a291676f87ac19741052b3245a9548b76f",
+    "tests/fixtures/accounting-alert-38644/README.md": "e2a82ec53562ce1ccb691751a5fa9006df80f44de4e1cd889bb578bbf4dc4c69",
+    "tests/fixtures/accounting-alert-38644/caller-source-evidence.json": "361724903b7d95010424d92c40a09e21f216ecca21c4bab8c74407f8b3a0dc86",
+    "tests/fixtures/accounting-alert-38644/qualification.json": "ab52dee0cab7e710c5983b72aecf8fc29652a0d5d369e74b2050d7e049488e28",
+    "tests/fixtures/accounting-alert-38644/regression.sql": "83b3a5b4f50e9fc0e877991d7573a6a5d2f87ecae4b60545a2557b526ab920a5",
+    "tests/fixtures/accounting-alert-38644/source-evidence.json": "9e4370895e29b35b0ba2b635daad73e8031091813e230bb6a7a95b08d8cde0ed",
+    "tests/fixtures/weekly-scheduler-fairness/pg-cron-prerequisites.sql": "e1776b8db57090594af5428093a1a18a3aae638ca24f333a87cb0d9cd04e125f",
+    "tests/fixtures/weekly-scheduler-fairness/captured-weekly-jobs.json": "d8746b7fcc6adbf3d9c8a2579bdc6c11d97bdd156ba1b84767fcf2d748046e3a",
+    "tests/fixtures/rakeback-write-authority/README.md": "804c3d4513d993e5159bf4bd19a35e11ddca4aa3b6835ece94b057c1b76a7767",
+    "tests/fixtures/rakeback-write-authority/regression.sql": "a98c48bd99cd0c9d8ecc9e60864330d23fc54eaa75f8680cf15afc3054e5dd4e",
+    "tests/fixtures/rakeback-history-privacy/README.md": "149b1f89da381b209175e4bec7afcb42cfd6d0c8992fb04c001ed85073bc3fb0",
+    "tests/fixtures/rakeback-history-privacy/policy-preimage.json": "bbbaebf5f334eef74056b72fc1efd0dfcf9ca3f54776cc50f2497f6b6e5be22a",
+    "tests/fixtures/rakeback-history-privacy/regression.sql": "2ad445a24c16bd3625cc54c84cc11c5661ae6b71ab2cb44b60817aa4b0edb098",
+    "tests/fixtures/rakeback-history-privacy/rejected-service-membership.sql": "eb064c12bd4475d84fa98c6cca3ac966a099ab3c79ff04da88a65fecf8c70f2f",
+    "tests/fixtures/weekly-union-continuation/regression.sql": "06edf7201d4abe591b4ad0e01c7653e76c9c08030a1b5767d17f08c26d8f4ad5",
+    "tests/fixtures/weekly-union-continuation/README.md": "2db75f172ca6f30ee147147546aa3c5e298b6e5f09889f25331f779648bf9c6e",
+    "tests/fixtures/weekly-union-continuation/load.sql": "435ec4b9b114d8137b5210ebc3874c1f0bf0c943734122dfd8d0b52a35670c11",
+    "tests/fixtures/weekly-union-continuation/source-review.json": "7a5fbf1cbc96d80f0e0731f70d0e3e15f2eeaac94692b137f5b836bcdd8aed9c",
+    "tests/fixtures/messenger-private-accounting/README.md": "78def31cbc36bef2b605463a326ecb1b000407b91778e1cd6dc746ae96959067",
+    "tests/fixtures/messenger-private-accounting/access.sql": "466bfb0121be0a7962fd1feb887f2b7529bd75f6ad0874c0b6b987e3285b1975",
+    "tests/fixtures/messenger-private-accounting/captured-access.json": "8a89b95099b1c61db0a9bcffabd5bab0d8d882daea222997b316e11f62d38af3",
+    "tests/fixtures/messenger-private-accounting/captured-catalog.json": "01fb2dd293e841cd54a934c9ef686a0b33db42b1d0c2dc73ecf8039652347c7b",
+    "tests/fixtures/messenger-private-accounting/captured-preimages.sql": "8d6afb367c9cae8bb4a31bc1e8e0e007b6b037f0bca408725839dc3acb3cfa73",
+    "tests/fixtures/messenger-private-accounting/definitions.sql": "fbb50a909ab5742419e1bbff43342e1d273206254631dcc841b55c9f4f25f3ca",
+    "tests/fixtures/messenger-private-accounting/messenger-private-readers-regression.sql": "efcf9347f71891bebcd8d8b3c68807bae8df7ae9503a3160f770350de6caec5b",
+    "tests/fixtures/messenger-private-accounting/messenger-private-weekly-summary-regression.sql": "5ea050bff7e6b925ab4e9a24eaa0c7f67f521b6ce0d3f398e5646a6904815d2c",
+    "tests/fixtures/messenger-private-accounting/schema.sql": "f3bad878d3be4294050f011cdf78dfe8fce15aaa16311409ead00a9db3d475fd",
+    "tests/fixtures/push-subscription-ownership/README.md": "f512e5bf90f7772464753599cde0cf581a2e18527aa66021171efededefb33fd",
+    "tests/fixtures/push-subscription-ownership/push-subscription-ownership-concurrency.spec": "6a15ece4b2e4fbba92db7d413114fcf5e53949d73bb98799dcb26e1468defe1b",
+    "tests/fixtures/push-subscription-ownership/push-subscription-ownership-regression.sql": "96c8052a57d2882dd7d010fee3955ab0601fb01f8a3ab5dfe0cb91227cca1055",
+    "tests/fixtures/weekly-scheduler-timing/README.md": "1ef492f98060f2de39909114552824cbbce34f3e6d153b84b5c4bba27e73643a",
+    "tests/fixtures/weekly-scheduler-timing/captured-cron-prerequisites.sql": "b1cd6beebe0a6434a764ee777df2c6b200e1c77dc1edf582ad0a6a90e0d5e00a",
+    "tests/fixtures/weekly-scheduler-timing/captured-cron-transition-regression.sql": "6ec2f31f0ef892c1e3f5846a837c04d9a7c0d07ff1c33e471b0dedcd7673aee6",
+    "tests/fixtures/weekly-scheduler-timing/captured-current-cron-and-ledger-observation.json": "6fbb1a35895c8f7e98db657f19751b6eb902d16d2fa6d3762ab7a4e2cb010f09",
+    "tests/fixtures/weekly-scheduler-timing/cron-regression.sql": "f9bac42224a803b1ca4164142213b5f1f39f883b040123d1679eeab34c558481",
+    "tests/fixtures/weekly-scheduler-timing/due-regression.sql": "fa19dc71af101784fe317e4fafa8b09e36a98d423149069c944b6d096735cc1f",
+    "tests/fixtures/weekly-scheduler-timing/full-activation-cron-regression.sql": "0097cdd0da22891c16325d4ae5d0abed6fe0aa388773ba8fa8d56704d169b511",
+    "tests/fixtures/weekly-scheduler-timing/load.sql": "a12c25669366ed6437db9fd8d6fcf9230234a1027b545aa9ef79b9839a540531",
+    "tests/fixtures/weekly-scheduler-timing/post-lock-regression.py": "eddd5ad173e9c3716f7ca04d56dfad346c75f3e8f6a052046402a79fceb41d04",
+    "tests/fixtures/weekly-scheduler-timing/post-lock-setup.sql": "939e52318cbedcbd703c81f3a2f7fbf0e0ee3b01b5e5a72e4d1a71a906523a52",
+    "tests/fixtures/weekly-union-continuation/RUNNER.md": "3b7d079ea2309a2ecc52fa07c7efe95bd3e78305cc7b6c294980414df2e238c1",
+    "scripts/dev/test-weekly-union-continuation.sh": "aafe2575bbfe390902dce6776f7dd19b37a03d7f2cdb8e4d962ea679bb6db19a",
+    "tests/fixtures/accounting-alert-38644/coordinator-retry.sql": "55379b922edf42a3b3a46c98b1caa65b182bbf1654db7b922c4c22196b3531eb",
+    "tests/fixtures/push-subscription-rotation/README.md": "2ef72a694562f175f209a7b90b70e7a8458d68865c863aada137b6fbdf758cda",
+    "tests/fixtures/push-subscription-rotation/concurrency.spec": "26bbf72e436e81a658ad8ca3504f8510f1683ec079bc273e38f8b066f4462b70",
+    "tests/fixtures/push-subscription-rotation/regression.sql": "1dfaf657767eab7eef018b3ebc77d0f857a002632697be483a4c9cd38fc8e8f9",
+    "tests/fixtures/credit-request-authority/README.md": "cbc66042a21ab5e5c288b2c88a068dd622f5cf18b16d8e9cf3aa80d7a931198f",
+    "tests/fixtures/credit-request-authority/captured-catalog.json": "f34fdecc933d763b92e8d288f86a153ef1ea76836cc942d2fcb7aa8775b55874",
+    "tests/fixtures/credit-request-authority/captured-name-catalog.json": "d7e65573b95e9983da7bf3c747467ca2e4de42b757c261f02fb18169318edb3c",
+    "tests/fixtures/credit-request-authority/captured-preimages.sql": "1e2dad53a20cc0c80c0e4a6c71160e1a366bdead956d6303772dce7260aa99de",
+    "tests/fixtures/credit-request-authority/regression.sql": "cfddf809c701bdc9b43c71392ba1d130fe9275489670bffabef94ecb38e9e86a",
+    "tests/credit-admin-data.test.ts": "cf1ab08e23a220baf704a2d38e610db2de73fb446745f99c947fea58ee36b17c",
+    "tests/credit-admin-panel-scope.test.tsx": "5aff5273de15a3d0b190318332a07cf2ee5f5ca02d5c5780bf6dca5fd3aac5cd",
+    "tests/credit-request-widget-scope.test.tsx": "4e21f293256137413732dc332123c62c557cfcb74a5b0c5505a4b06102daff90",
+    "tests/super-agent-credit-routing.test.tsx": "81ec47fdf9b2d6bf4aa9a5e5e03552a557a35a9c30a58eed769447b3e0dbc996",
+    "tests/unit/CreditRequestAuthority.test.ts": "0dce14c178ef4f5bd8f8a2aa794cfc8f76fec4fe3207e0882add16e162abb821",
+    "tests/unit/CreditRequestLegacyCaller.test.ts": "ef6f8458a54ce3b5e646d831c176f279456e8f59598616e20dbb3a9dbc7f2e7b",
+    "tests/unit/CreditRequestService.test.ts": "47bc48d13b54901999a6a58b36a93edb79e4f2d057427a4a6d622ff009d7c0c3",
+    "tests/components/agent-cashout-scope.test.tsx": "58f7be7a87a7f3f4d5f585ea0c297f7fe0fc9b64fc67a02d6edc2a81d36f9446",
+    "tests/unit/CashoutService.test.ts": "26461a6485532da8ea2cef4c69a47f5b1e4f8711da2eb44834a8eab88681f469",
+    "tests/config/roleScopedCashier.test.ts": "bca1a5a8308ebae743c1749a63441a5663685bc91aa62b609c55f224035af5aa",
+    "tests/cashout-escrow-flow.test.ts": "b74114ae26cc7499d9243d67ac9b9b41d0d1c64dcfb47d8d0140aad0dc536fd5",
+    "tests/fixtures/cashier-document-authority/captured-legacy-route-catalog.json": "edef6d6318f142277069de1fead9cbfe8ea732cc5d774987d8f4894bdc06807f",
+    "tests/fixtures/cashier-document-authority/captured-preimages.sql": "1219fa1b0c4ab26bf155f3c58d3f4c7f5fd108940c1780c5047f61d88727412a",
+    "tests/unit/leaveClubReleasesEscrow.test.ts": "4faed6fab4a8eac765219b794e555edf9186064bc19b7ba02c8bc9f0572c1fca",
+    "tests/components/cashout-scope.test.tsx": "db239afb7ad44fa60b810c75cdc95dfb1a794d90747d8ff650f02dacfe1b0ecd",
+    "tests/fixtures/cashier-document-authority/regression.sql": "e2b63df49609d6b318c0cbae5d41173c1f15f1dbb8466d01a6c15ceb32f50a65",
+    "tests/fixtures/cashier-document-authority/captured-manual-writers.json": "70645c393822b197621f4f8ff7313deb99578c33b21c76850fe9422ef5d4c484",
+    "tests/helpers/cashoutV2Receipt.ts": "db760aae934fbae5c3b14c5e1bd5ca2011bf9a1dd7d0f294d90684e9ff18d20a",
+    "tests/components/agent-dashboard-durable-transfers.test.tsx": "a244a41b185c4113858cd574fd4310e6ab19b6b1d595378c75c5f0ef37857dcc",
+    "tests/unit/CashoutRequestModal.test.tsx": "78078fe979393ac7ea3252b18530e4810c3988b3d0f5fef05cc3a669ef2926c7",
+    "tests/fixtures/cashier-document-authority/README.md": "8ac8d0c76bd91cb91f7d010ff4f1db316921bb6e523954b10bc1c00819b8fe43",
+    "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
+    "tests/unit/CashoutOperation.test.ts": "9fd374a5b9cc0b5443aa863dfc56713ca93b90fcbd2ab5b9c9360c0b8f1f4fd9",
+    "tests/fixtures/correction-document-authority/README.md": "836d767a54efa8c0a1d21f940100c993ace55cc84053cf529db88ff0ec8d4054",
+    "tests/fixtures/correction-document-authority/captured-dependencies.json": "a3f2ca823f8d17df8429aed4973a8258595b6ed4e5a2da8585dddac78795e3f5",
+    "tests/fixtures/correction-document-authority/captured-preimages.sql": "cb9ace1e960450ac78fc2de96c785fe97856da1e8fcfd0a3244480d5bb08fa25",
+    "tests/fixtures/correction-document-authority/captured-references.json": "60b794f91a5d726c9302856a220b193eae52fbd95dc1e15ad4b95b312b092479",
+    "tests/fixtures/correction-document-authority/captured-union-party.json": "9bc97fef36c4e3e3ec2766cb3596764513bb20fd8bce78e5fa1ee87337bb86f7",
+    "tests/fixtures/correction-document-authority/regression.sql": "f70b287534ee6024469629a18fd38cb4074f528e906808c5bf6ebdb1464091f1",
+    "tests/cashier-weekly-statements.test.tsx": "3167bb5f18f5c91aa9b2f6c58cc877e7db2f43f600fb4c9c96967feb7d2e7947",
+    "tests/helpers/clubWeeklyStatement.ts": "7061277bbc67933e1aba5bcd76ebd3cd4fec241ffe9545c39e0b0f10806b2d21",
+    "tests/unit/ClubWeeklyAccountingReader.test.ts": "182a890cc9d33e1f27550f3ed51c92bc40f657f06155f06c87d7830025305be7",
+    "tests/unit/FinancialExportService.test.ts": "a3870a8c151e21c7917687b6953dcd3d51cf82cc03071c655674111ad9556c16",
+    "tests/fixtures/browser-period-observer/README.md": "43b9b9f94e8ddd1cc01bcd1d635995d196ea4f1cfafa6d35233761bb84a91da0",
+    "tests/fixtures/browser-period-observer/captured-dependencies.json": "c9874b776f79b4636dffeee5f1046910093e2f36ae1208a95cd2bcb98f530ae3",
+    "tests/fixtures/browser-period-observer/captured-legacy.json": "6588bb8ed6eb4904558e7b2176a8fb228d76b78cd0c87fd618bdd6b4e882df26",
+    "tests/fixtures/browser-period-observer/captured-preimages.sql": "c024e56561a56867839c5e952e735e6118625e19ee40ad14292afd46aed22502",
+    "tests/fixtures/browser-period-observer/regression.sql": "3550c76e15615707f52d4b6fc8c183b5b8cd3ad9105a6282e72c25b900152284",
+    "tests/unit/SettlementCronService.test.ts": "b436754cec532a518975b8f03ff5020dc90048d30c044ca04aa25029a1109a9f",
+    "tests/unit/ServiceBootstrap.test.ts": "74881cd7adc292cafbd325c98bee91ad53192ecdb4e07cc66aab3d11b58f4c21",
+    "tests/unit/FinancialCronService.test.ts": "d896cbd87786cb83569ee48e7d1adde3f017ceba3a3e1f4fe573ed7cfefddb4d",
+    "tests/components/ClubWeeklyAccountingSummary.test.tsx": "c3b8dd010b46ce1f14180ab05c4b36f7ac14c3f35c73f2fff7563f2b135ab634",
+    "tests/unit/AccountingObservationService.test.ts": "6e571f657f66a05bd37b9aa35b867e12b54c99c75754e017034ec3bafed17ce9",
+    "tests/unit/SettlementService.test.ts": "92390199785906650508d16eea99372e24a6451dd8cd9d108679381ed1ca936d",
+    "tests/unit/useUnionStore.test.ts": "3b3f59aca73ce2c20fad59c82e23dfa9c4aaef4b22fdff9ab3295b379e593268",
+    "tests/unit/anApprovalCanBeRetried.test.ts": "e4364e4b911ccea5161b870eae3f61c62a0a47aace36a56ced56079d2dbd3506",
+    "tests/components/UnionAccountingRunStatus.test.tsx": "182307e73a0f0f09e44c20a88b3e8a5c40b67f070126514f01e5b5b3bd5f7aa9",
+    "tests/components/WeeklyAccountingWorkspace.test.tsx": "c4f202839c25787b837e24a4f625f79769e1b08eb9e309da260612f614003289",
+    "tests/helpers/accountingObservation.ts": "9dba06d97c2f9cce2356fa8c6800ff9a07e4618ea2028370a278b4820b6199f6",
+    "tests/components/FinancialAlertsExport.test.tsx": "f2338b7d2e32c7a4a771d997743a52f9c4fc73a75bb5d399de4be0e0fba2e421",
+    "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
+    "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
+    "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "fe9542d1ba09b0d3fe9f474b4948768595cac66c2163d4b24ff77b465e82a6b2",
+    "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
+    "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
+    "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
+    "tests/fixtures/correction-writer-authority/captured-store-policy.sql": "53981484d6bde436c6d861323aed05a23d57dfec84986e7bc015596f8a991ac4",
+    "tests/fixtures/correction-writer-authority/catalog-bootstrap.sql": "384640d2b67794cd4b95d8dd5852215778bb23aaf12bbf016e9ba4c54e942edf",
+    "tests/fixtures/correction-writer-authority/concurrency-regression.py": "a121b1bef253e74ddccfd26040f5a845649c411de1c3f5d8991421c14ae7db50",
+    "tests/fixtures/correction-writer-authority/concurrency-session.sql": "4a78119ade0f7720a9e573b8007018e2d16aca2eb7bd9b7c865d6b18d179425a",
+    "tests/fixtures/correction-writer-authority/concurrency-setup.sql": "f54914994709a7f2d78e5194567f30aca1e7d4ee55bf8cb6417175116104b7d4",
+    "tests/fixtures/correction-writer-authority/deferred-overlay-regression.sql": "8df691c22b7cac7cb5b5d853cbc262824901536335169e0352944e2d48619a44",
+    "tests/fixtures/correction-writer-authority/legacy-before-candidate.sql": "7f76162008e52c31bd3f94a198dbe07fd7f28feb0f9ea80a3ae764663bca817c",
+    "tests/fixtures/correction-writer-authority/legacy-replay-and-input-assertions.sql": "f5e8280271b0e2a8ac0ca673858babd132bdbefe16b537ee85709602324e2781",
+    "tests/fixtures/correction-writer-authority/lifecycle-seed-after-activation.sql": "207ab33a49fbe2951553df90f0c298241181578c617f69714b6062d8d53dfdba",
+    "tests/fixtures/correction-writer-authority/owner-fixture.sql": "26f460362d5fba69998bedb1927d1ea69e668c5d36f6c056e484704687319fe9",
+    "tests/fixtures/correction-writer-authority/owner-seeded-regression.sql": "20849eeacb19d5bb09334ab64fc2e1c66d89a49daf2fe0f6ea3bd2800cbddd3e",
+    "tests/fixtures/correction-writer-authority/regression.sql": "ef66b164083ff08a02d9c932d20f1aced66bc154caaa22d3f0bd4c0bef7ccba2",
+    "tests/fixtures/correction-writer-authority/source-provenance.json": "e371bd283ded64a8b8c2ffcc22fbd83502b99e909354ecc2dbaea6200db697ec",
+    "supabase/accounting/correction-writer-v1/captured-ledger-catalog.json": "c10ee920625aa982d9af361094dbc93e29075bc6162e091747dd1825c116bba8",
+    "supabase/accounting/correction-writer-v1/captured-ledger-catalog.query.sql": "94eb5d4abf7e65c66e1f05ed142316e0ceb8e729dce0b75ff73013c0c6d1b42e",
+    "supabase/accounting/correction-writer-v1/guard-function-sources.json": "8621f9c38ffd353f117bfdcbbaf40444cb9a2b58210d63d0a5d5fea93e9b6ae4",
+    "supabase/accounting/correction-writer-v1/guard-relation-sources.json": "a13271897bc8aacc8875010e36f83682322c5f0ceffcbc44354ba60bcbf14d55",
+    "supabase/accounting/correction-writer-v1/owner-README.md": "9fadbeb75120b5e3ba2cc604bf02ac66b4444905ec11219a1636bd16ae75e83c",
+    "supabase/accounting/correction-writer-v1/owner-SOURCE-CUSTODY.json": "1d7e5e5ff07522ca9b67ed6238772a6a25fdfb52297e6693d52516ba2dd0d666",
+    "supabase/accounting/correction-writer-v1/owner-fixture.sql": "26f460362d5fba69998bedb1927d1ea69e668c5d36f6c056e484704687319fe9",
+    "supabase/accounting/correction-writer-v1/owner-predecessor.sql": "e4ab59d45e4cdcadd086ab123c5aa14677f635ead5bf2a0acd38e52cc53633d5",
+    "supabase/accounting/correction-writer-v1/owner-private-intent.sql": "69d5778c84a084062b46f28e31f84b22231a9fe7599c01dcfcaf278d7f42f693",
+    "supabase/accounting/correction-writer-v1/owner-successor-definition.sql": "6200b53066002ccf11640baf9c39e6e296a9577ad30106225c67290f8d88ed7b",
+    "supabase/accounting/correction-writer-v1/source-provenance.json": "28f6ff8f0c635ccbab8fbe7a137bc60459d1255dce89d6dd85c25054ccbbd688",
+    "supabase/accounting/credit-reduction-v1/admin-writer-predecessor.sql": "ccffec35f8bd04b1d739b8c6c6beb3b6f34e8bcde3801d435ca3d4a45498dfa7",
+    "supabase/accounting/credit-reduction-v1/admin-writer-successor.sql": "d9c0a9864f061f951238783d153dab0b719b67e5b5a02078b0e10a3a1093cedb",
+    "supabase/accounting/credit-reduction-v1/captured-credit-catalog.json": "e993129dcb12261ea7d5bd350f0546415814c17346fd27f51b1ba9efb14854bc",
+    "supabase/accounting/credit-reduction-v1/captured-credit-catalog.query.sql": "69722b9d79bd5ff287b37cedf2a970838f5d43df0820ce71c276cebf135a7e42",
+    "supabase/accounting/credit-reduction-v1/captured-credit-delegates.json": "5493881808c429f5188b4f4b92273f244e2c843fe4cbe2d02620455cae15fdf2",
+    "supabase/accounting/credit-reduction-v1/captured-credit-delegates.query.sql": "76c475f8a23f23081629c458f7f6eae81aef1330e5830f0706976456f33bad91",
+    "supabase/accounting/credit-reduction-v1/captured-lock-caller-definitions.sql": "c78516a910bd367fcbf1cbb507e13b09fd46db38d486bb91100afaca1dcbf414",
+    "supabase/accounting/credit-reduction-v1/captured-payment-closure.json": "81f522c14e5435021ed4a7fc71c2030543669d7d90e755bf4d37aefc7bd77e49",
+    "supabase/accounting/credit-reduction-v1/captured-payment-closure.query.sql": "252de5030cb7bf859835e85e399d05cb98bc4e5a6821cdb4dd911e6c471a9e4c",
+    "supabase/accounting/credit-reduction-v1/contract-v1.json": "b99c2088cb550db6869cf32bb471f0bd0a6d54d5c47a14c260eaa24afd01e10f",
+    "supabase/accounting/credit-reduction-v1/document-authority.sql": "7474d51fd28cd5bf4eb8aa2a985dcd7cf2ebfa30064cd99feab298456a397c47",
+    "supabase/accounting/credit-reduction-v1/document-delivery-successor.sql": "c6dbc18e48e8e721fc9de307a4120af426c091aa146c977c25376c35c5a7b21a",
+    "supabase/accounting/credit-reduction-v1/document-postconditions.sql": "c28b1246328d1c2a48824f3f1181167abf20a0039af72aa1ad8769b933d78575",
+    "supabase/accounting/credit-reduction-v1/guard-function-sources.json": "0b970ad82c64f69713d3c857519e982d71c57bd03f3a6ecd30cd111fe8138268",
+    "supabase/accounting/credit-reduction-v1/guard-incoming-fk-sources.json": "b587741d031d262c5506455345904ff86598e92d5eadab1ac218100c40adb003",
+    "supabase/accounting/credit-reduction-v1/guard-installed-function-sources.json": "50c48c9cffed8a41fc85cd2e13bcacc0030ee7a3df818ba5f536f148830a0aea",
+    "supabase/accounting/credit-reduction-v1/guard-lock-successor-sources.json": "b363feaa08d7d16731c2e650c6f7c685eda580d3d799c22036f4b0f782ffbf98",
+    "supabase/accounting/credit-reduction-v1/guard-payment-relation-sources.json": "d32bbfafd0a77bc67b120f044fef4dbf9c2df19d0b052bc8265d6c05e846cfe6",
+    "supabase/accounting/credit-reduction-v1/guard-relation-sources.json": "8d894b225c3d09d5fe127d0436c344953bc01bbdfd76aff4a4cee3243c97b8b1",
+    "supabase/accounting/credit-reduction-v1/lock-order-predecessors.sql": "f4a5f80fe4ae654599b9d3652d28a6690e77d679640850aa6ec83d452c52c8d1",
+    "supabase/accounting/credit-reduction-v1/lock-order-source-provenance.json": "66862178f2586d912055db6f82788bd1819fcd4420a4b454b48a5c42ab6a9e57",
+    "supabase/accounting/credit-reduction-v1/lock-order-successor.sql": "28b141a4011a72d796e9f12bed2e11e1ceab91a68763e45219b903af00717b3d",
+    "supabase/accounting/credit-reduction-v1/payment-closure-guards.sql": "2ef2dfb44517148d8595f40ebbcf838d1d83465e24dbb9173dc7fe0b9c953298",
+    "supabase/accounting/credit-reduction-v1/postcondition-guards.sql": "fe11e18fe27fdb0a4af76a6e1dad8a8c0d07cc3ffe30ddb1c61e6cec12de065c",
+    "supabase/accounting/credit-reduction-v1/preimage-guards.sql": "b7b2155ee10bc0be34a854aeea9aa93674f22227437aaf6d2978012108741da7",
+    "supabase/accounting/credit-reduction-v1/private-contract.sql": "8c96a69c9a96f69e10b17793f3972ae38e597b24795c63ce4811efc97d4c2607",
+    "supabase/accounting/credit-reduction-v1/reader-postimages.json": "075089e7eb9681d5bac6f94b92ae74d7020a711d5041f6471578e0f4105e7dca",
+    "supabase/accounting/credit-reduction-v1/reader-preimages.json": "1cfc873db09036c1ea706bbd3d9bdc6bbe7bcc967d491399df0639e853872397",
+    "supabase/accounting/credit-reduction-v1/reader-successor.sql": "86edde0b6b0a8feb4ba01c560330c3bb843476d907fc8dd23ca3681e2ba50958",
+    "supabase/accounting/credit-reduction-v1/server-functions.sql": "169d0223890d38c288e4db97e38993c5eb0a04bd1f1d6a3ce85da07377ff4035",
+    "supabase/accounting/credit-reduction-v1/source-assembly.json": "0e49e477a725ad14208ac7556ac3228c7e62f61b368d4fe8fc81f83e5222768e",
+    "supabase/accounting/credit-reduction-v1/source-provenance.json": "26f038f7fd4a13fb726794e4c9047f92428ee2b7024f101e7a7453a157c66117",
+    "tests/fixtures/credit-reduction-authority/accepted-authority-supplement.sql": "726877c5b14c1ac5a5eebf662c05022098e87877aa6fe4903036657e180d2e33",
+    "tests/fixtures/credit-reduction-authority/audit-failure-regression.sql": "7e1e56537d5ec6d4717d9aa183e20f5b0295b86b2ae6ad72d86b4b4bae21c0f1",
+    "tests/fixtures/credit-reduction-authority/authority-regression.sql": "bf68059c95a3dc410fd1f1e60c72f4119135ebf73a7df4b24857d0c6895b1d44",
+    "tests/fixtures/credit-reduction-authority/baseline-ordinal-transform.json": "b9353c07abbb9559f0d8c5d7a8998db072e1a7f6480bfeb1d4ac2ccd11913ef6",
+    "tests/fixtures/credit-reduction-authority/capture-final-state.sql": "37dd79b6f50e1857f6e52cb7be83c5deddfc0c89282bb1aa7b8bce0fd074385d",
+    "tests/fixtures/credit-reduction-authority/captured-dependencies.sql": "fcd0e67a6d550d30910e115a5dac22e8af462fd417c08e4e3971348ea7d7c5aa",
+    "tests/fixtures/credit-reduction-authority/captured-ledger-dependency.sql": "e7614fc8cb279e90b9131b1d60e1a9276228c0a52242cd7cfd296f924e6960cf",
+    "tests/fixtures/credit-reduction-authority/captured-payment-closure.json": "81f522c14e5435021ed4a7fc71c2030543669d7d90e755bf4d37aefc7bd77e49",
+    "tests/fixtures/credit-reduction-authority/captured-payment-closure.query.sql": "252de5030cb7bf859835e85e399d05cb98bc4e5a6821cdb4dd911e6c471a9e4c",
+    "tests/fixtures/credit-reduction-authority/catalog-bootstrap.sql": "ad42ea06ed5e5f766b77bf3463807f053130de27333d0a75f76706f4854e5b8e",
+    "tests/fixtures/credit-reduction-authority/concurrency-regression.py": "3e0c030d770a486ac90f82c16b9fe9babd4b5f514c6e10c1dfc6081422f4205c",
+    "tests/fixtures/credit-reduction-authority/concurrency-session.sql": "9f6ba47f612e29ef8b91989b9dda513239627b98fa500332d1b93d44ca98a9b1",
+    "tests/fixtures/credit-reduction-authority/concurrency-setup.sql": "0e0e922f5788e44c2336226f95b888c9c8582b8309ed86bb2d899f2b0f7e50a5",
+    "tests/fixtures/credit-reduction-authority/delivery-failure-regression.sql": "6e5a1564c89fb6ff71c57768a133bea95144d0fd057a84e7b633ffd795962b74",
+    "tests/fixtures/credit-reduction-authority/helpers.sql": "6ce12b7131a4e833c92f2834d64c500a6155a859fc21d11e5dd0e832d6791463",
+    "tests/fixtures/credit-reduction-authority/isolation-cases.sql": "42aa78411e289300cb275336fff811653f60ed154b09d97d2593e2ebbd42a651",
+    "tests/fixtures/credit-reduction-authority/isolation-regression.sql": "6f42602a95ac13594c50b4cf840e08c70f72d5a345fcf8ac92a1249d3c7b2aec",
+    "tests/fixtures/credit-reduction-authority/refusal-replay-regression.sql": "cdb9c94f1d4d9e68fb1084083425b4320b49665e72eb5597a2ebecb3fed59786",
+    "tests/fixtures/credit-reduction-authority/regression.sql": "22f3ae8f4dd8df92753d2dbca4a65c7ad9fb0a6f99b3c24874a033f8bfc8e265",
+    "tests/fixtures/credit-reduction-authority/roles-history-regression.sql": "22c5d5e1b5068f30041b401288a29a1e1cb1f74f31ee021bb6c7b59aa4948a3b",
+    "tests/fixtures/credit-reduction-authority/seed.sql": "c82e83d41b15e112a3ff89c738fb60b8544754e78007907e0b77b8d97e9e3e21",
+    "tests/unit/CreditReductionContract.test.ts": "2778256e8080939f84769e277408e2fc8d797fe9c60f976c990d32da4544a198",
+    "tests/unit/CreditReductionOperation.test.ts": "4790a4531cc9888bfdccd4c1aeda9def91efc68afa4c41839a37d64467063030",
+    "tests/components/CreditReductionControls.test.tsx": "21e6ace8f5a7901e5b6581b5acfc249b1fe79d3113b89a47c54628a45215299b",
+    "tests/helpers/creditReductionReceipt.ts": "e1ed19a32b647833dd2c6a5ab9e6670da5cf9e8b211d473556befaece53d5fd6",
+    "tests/fixtures/credit-reduction-authority/README.md": "305f95440f23f077ba1238127e4fdab399d60e6a388d47a28ee4e1c1de997d29",
+    "tests/fixtures/credit-reduction-authority/captured-incoming-relations.json": "d834a69ec303a0579b3776e93f065fd7d074f1a211237196b3fa61cbf4c270a4",
+    "tests/fixtures/credit-reduction-authority/captured-incoming-relations.query.sql": "849ac0deae7cb7e98deff8ab56dfc5a2cb09f6859694439bfc5b316ab4c91139",
+    "tests/fixtures/credit-reduction-authority/incoming-relations-bootstrap.sql": "0fff9dab9b1e35dc9163cd9ed378bb2b7da540eb78fdd2236041462dc6f027c5",
+    "supabase/migrations/20260914132929_cash_rakeback_reads_observed_earning_evidence.sql": "7211e67bdcb1671f23dee89840a936021bba921d1ad5fae02d17877f8c8e9f37",
+    "tests/fixtures/accounting-alert-38644/installed-period-basis.sql": "627c17d492550b59ebdd6ad2a9a9bb01c22aa4f2553a38d931fd69ccf8493430",
+    "tests/fixtures/tournament-fee-lifecycle/current-settlement-catalog.json": "2a16360c3268ac1e7197110845096e1bc30ef20b75a53a7d9935b7207596cfd7",
+    "tests/fixtures/tournament-fee-lifecycle/current-settlement-catalog.query.sql": "d6cbff7c7c9caecf2170b4312e057674c33a947e37f49eeaa67c429c2b20bd7f",
+    "tests/fixtures/tournament-fee-lifecycle/current-settlement-predecessor.sql": "5362494ea3001eb9c998a482a6f09d8343e8e809962c2e7c7de70ab12a1874a1",
+    "tests/fixtures/union-provider-preimages-20260917/README.md": "98df7b6b1d124a900063885470307434bb474c2920bdf002a29c738410774f72",
+    "tests/fixtures/union-provider-preimages-20260917/alerts-and-ledger.sql": "be3106d8f0451b49fc6861bb2f7733f0d5d79ccbe0653fd96181e04ac6d6c527",
+    "tests/fixtures/union-provider-preimages-20260917/captured-authority.json": "7151693f43246b4b0a6a132665239d427c049ed3844d51acd1d581c018d71696",
+    "tests/fixtures/union-provider-preimages-20260917/owner-notification-coexistence.sql": "8e8bed52245d8b10ec0c21f5f422562acc03652ea5ef144e3eec1d556c25c08e",
+    "tests/fixtures/rakeback-write-authority/captured-stats-batch.sql": "88b3e4693e2cda60204d0aec5d8ae40da08a1eb435e97d4d5f330340e6456448",
+    "tests/fixtures/rakeback-write-authority/preactivation-regression.sql": "4111a06f2a59c9f2cd7e38536048b427d7bd56e69806b3df4b18b0f6148d95f5",
+    "tests/fixtures/rakeback-write-authority/transition-regression.sql": "1691c7f82dc45c663626c0fd80fe3c0eca30f240770c989c5ab6c5e4f97ae76c",
+    "tests/fixtures/rakeback-write-authority/stats-batch-catalog.json": "f4f4f0039d4752e4f2a38ee59f8a9b5f6d8de47e6f4c740a5ef41a518afdc25c",
+    "tests/fixtures/rakeback-write-authority/stats-batch-catalog.query.sql": "ea03e1abcd85b9e2f965a636913605cc48259bac06fff16e39333f50dc9f9f88",
+    "tests/fixtures/rakeback-write-authority/stats-batch-catalog.raw.txt": "73dbaecba66cc34f69afac6411c4a249dff21496176325a002e74dc6757f5082",
+    "tests/fixtures/rakeback-write-authority/precursor-predecessor-catalog.json": "86aed90d4a6ebe1c11c963ac0fa8640bce66cbefcdd671b321ab8310067b5483",
+    "tests/fixtures/union-provider-preimages-20260917/direct-intake-prerequisites.sql": "c018943a1a03d04f163cef8935ff0952dd512d91c795a0931d029763d3fa694e",
+    "tests/fixtures/union-provider-preimages-20260917/direct-intake-installed.sql": "7f7020ee71fe1bd6475dff8de572cd96e7cac888c3923245f7fbc54e8ff161dd",
+    "tests/fixtures/union-provider-preimages-20260917/direct-intake-authority.raw.txt": "03765137a209e8ef548213cc96455a657339abca67e6b118af532722f85d6964",
+    "tests/fixtures/union-provider-preimages-20260917/direct-intake-installation-receipt.raw.txt": "8b20b76b0bb09cee7003f1bae3b8488eb0a371b8820bd5e02736d08f3ecfe8de",
+    "tests/fixtures/union-provider-preimages-20260917/direct-intake-provenance.json": "133671eab10758d77d8e65a885f19b44eea2a20db579a1b241fe92c3b0e23f5c",
+    "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
+    "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
+    "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "40197721a91930668687751146dacd9ea59f68765633b402fb6ef08498e2852b",
+    "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
+    "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
+    "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
+    "tests/fixtures/union-provider-preimages-20260917/finish-lane-prerequisites.sql": "604e9f8cbdc0e89b15dcfb548f98eca15c4b2f41a6565e6b983a62cca5803870",
+    "tests/fixtures/union-provider-preimages-20260917/finish-lane-seat-move-authority.raw.txt": "2ca4ebcb887713e661a2661833726cc80ef151c04d1a9185e616b5495c774781",
+    "tests/fixtures/union-provider-preimages-20260917/finish-lane-successor-provenance.json": "58289123ad4fee1e1f402b9dd7120ea267dab4cf792bbc608f59d6da1989b23d",
+    "tests/fixtures/union-provider-preimages-20260917/finish-lane-table-share-authority.raw.txt": "b0c00a51b18cfc5843ac955bd5c2d7236d3e07eeea00ce05ff25f9f6c88e282c",
+    "tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py": "2b82c8f4defa9a94cb59765cab31c06e3bb997731096cf8ad964faeabd4435ef",
+    "tests/fixtures/union-provider-preimages-20260917/money-registry-ddl-guard.sql": "fb4c7ab0022dcc6c404b31470aa73dc9986e32f8855a61304f2d8418e30f4c46",
+    "supabase/migrations/20260917233148_union_pnl_inventory_preserves_original_boundaries.sql": "12de87bee4c2eb432a1182db19b3d3fca7b3a58de4fd7cd3980f444ffe2dcb25",
+    "scripts/dev/test-union-pnl-inventory.sh": "2ab14cd9ab5448aaea610f32d813addfd9ab96f0d65490ef2533ba12e5068e3e",
+    "tests/fixtures/union-pnl-inventory/seed.sql": "6d4bb2e904b0c1b0c1f48247a4ab00367b65ef7210d5ba1781d5dc04702c848e",
+    "tests/fixtures/union-pnl-inventory/regression.sql": "37bfad02bbb518377b4d773a15b691690c4af00dc5390fabd2f588bc490f21d1",
+    "tests/fixtures/union-pnl-inventory/concurrency.py": "b373c839e0514d3fc9e66c40059867734c4797540853306734a3ab67c03165c8",
+    "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
+    "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
+    "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "eba99587a639f1f20754fb7024f11376b3e6f2a6396de3baf629976c10c5ae85",
+    "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
+    "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
+    "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
+    "tests/fixtures/union-weekly-basis/regression.sql": "44064e6ace5baff1fb489b4d7c513107367068a56fbd868118d8215781c1e75f",
+    "tests/fixtures/union-weekly-basis/captured-installed-preconditions.json": "02247c11bc311c79197225ca729f860d30210da896314185817b441ad39cb313",
+    "tests/fixtures/union-weekly-basis/captured-cash-dependencies.json": "f6be64837e2e5db2f0329fdda009e6d09b72a386ccf876c49ae6a083fad624f4",
+    "tests/fixtures/union-weekly-basis/cascade-regression.sql": "2ae3f0ef454a803daca30c9b383fe7f0f94877ff51e6e168eb105b3deaabc9c6",
+    "tests/fixtures/union-weekly-basis/captured-coordinator-preimages.json": "ad51e7b757d9fc9cab4a14dcfe37cedba660bacde89e0db26efe0d5292c27acb",
+    "tests/fixtures/union-weekly-basis/concurrency.py": "0c39241c365297ec24f472234428b11d36f93411bc2110fd8542cb673365a94e",
+    "tests/fixtures/union-weekly-basis/accepted-document-relations.sql": "ff1493ba0e3dd7a3480029ab83dd522d29c03502d37ff05d74bc59dda20beaf3",
+    "tests/fixtures/union-weekly-basis/captured-rake-dependencies.json": "30c0915a12676a85e720ffa2d8f56797e15d9de8217197f60bdc99a6de197ece",
+    "tests/fixtures/union-weekly-basis/raked-regression.sql": "399e235101b3d77a83432425674e89cd7cd8dbd7bd245fe1fa5d34ff83e691b3",
+    "tests/fixtures/union-weekly-basis/captured-refund-dependencies.sql": "5332204d5d5c8edf070c199652acaaa4108e349c08207a84768d2c7a901dc42b",
+    "tests/fixtures/union-weekly-basis/README.md": "b722e09f7a923872066f19efd819899045badb6b0cbae97dd09163b7486661bd",
+    "tests/fixtures/union-weekly-basis/captured-payer-preimages.json": "fca603ec5e3ffe5ba00c718a6ccde6514e39e477b8e4deb7004635b1f4c762e9",
+    "tests/fixtures/union-weekly-basis/captured-cascade-preimage.json": "af70c7a63f87d3556cd876623b878e7aaacdcb858bcb4567e8e7ba46611e77ff",
+    "tests/fixtures/union-weekly-basis/payment-regression.sql": "2270f4bd2e60c1601783173fa24a351b52bdb1ea489fed92c059fd83da90ee96",
+    "tests/fixtures/union-weekly-basis/captured-document-dependencies.json": "b5f5a9e7e0a2a7c710295bcd6b0a1b5aca7ddf9c27a6268167eba1a8e35fa23b",
+    "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
+    "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
+    "scripts/dev/test-union-weekly-basis.py": "8d97457e6495f8eeb9f3e1d7b00bbdc94813cab2157fc3fb6be4b748e6ba4dbb",
+    "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "fa2f2f378db56fa7b586c6ddecaf43d58cac0b34817e8497b13ebb5159f33798",
+    "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
+    "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf",
+    "docs/changelog/union-original-atomic-seal-2026-09-18.md": "da806e5b7322184395d324616aca7c852c257bff51568956fa6189e782f52678",
+    "scripts/dev/qualify-final-atomic-receipt.py": "d565209ba88e792aea957f8b5b997943636ff8f9e43871bed14202762bdc33c7",
+    "supabase/accounting/weekly-v3/components/20260914150848_union_pnl_evidence_is_distinct_from_posted_chip_payments.sql": "d09383d8ca6a76aa1d42d99bc4646979f4e2d1adedda16b0e66d450e38b2bcac",
+    "supabase/accounting/weekly-v3/components/20260914153000_uncertified_union_pnl_blocks_close_and_squareup.sql": "3532e95c4b22e95121d02836607ffba0d8bca9315d94e5b36883d1037ef947a9",
+    "supabase/migrations/20260917230515_union_eco_terms_are_observed_at_their_original_write.sql": "b19f682725f07217236da2a20b1bd53e2d3e804d1f8337a7660567deb25bfafd",
+    "supabase/migrations/20260917230925_cash_funding_retains_original_participant_custody.sql": "febab308160e36d6adabe8a3cf7e33afe77d06cabfe799ea25e389d957f023a3",
+    "supabase/migrations/20260917232243_union_cash_pnl_reads_original_participant_receipts.sql": "43062bb1664bd193c1e8707b84197ef3c13c4c96de242d1e3cb6c3ed65b00d9a",
+    "supabase/migrations/20260918002654_horse_tournament_entry_retains_original_funding.sql": "c72a730fbb650982a09d17d261099c6f5e86187f1e689f706ca6d5f7b1e77a90",
+    "supabase/migrations/20260918004443_cash_pnl_validates_the_finalized_original_atomic_receipt.sql": "bab5a8ec252141f258c999c06d6a67b2060b3a5a387150daed34d8491871862d",
+    "tests/fixtures/cash-participant-funding/bootstrap.sql": "81364abd399d53ecdc1e652c5b17a22e309b7cf9abc0eed3909b7eb954797c99",
+    "tests/fixtures/cash-participant-funding/build-candidate.py": "59301e6fffacf5202097af0d1932c91d62923eb10b0aa83fbc0eceb73493c97c",
+    "tests/fixtures/cash-participant-funding/captured-hand-preimages.json": "36d6a19b84bd6ab825164300a23e29afda084595496a9976dc660c2dd2e19626",
+    "tests/fixtures/cash-participant-funding/captured-integration-preimages.json": "8cdb72fd836a59c769c4fa7b8748f37934b71dcb2a129f4eecfc3de9be916d6f",
+    "tests/fixtures/cash-participant-funding/captured-preimages.json": "1de384449dcc8a8a3727c40140f5c12826d9a9bcbeeca98dfcacb36fbc85d801",
+    "tests/fixtures/cash-participant-funding/captured-reader-preimages.json": "4179fa6e6e00ca07169ea4535f0d39e7276f0eaab01ee9acc2813de93d1788ea",
+    "tests/fixtures/cash-participant-funding/captured-retention-preimages.json": "2fa08259ace5a469f2e818556835be4739aeaff0662252afb2b0b58903f3f032",
+    "tests/fixtures/cash-participant-funding/new-authority.sql": "7a469257a3090a0768eb4bd220a243387114fbb384c5b7ec4f8a27471163db44",
+    "tests/fixtures/cash-participant-funding/reader-legacy-regression.sql": "fd0833ad006b442c573c706b2b17df33335ea6a0845bcfcad314e96c90666535",
+    "tests/fixtures/cash-participant-funding/reader-regression.sql": "7e3e9b904a501dbc2faae100bccd335ef5d7749f7857523ddb58ad6fd456968a",
+    "tests/fixtures/cash-participant-funding/regression.sql": "a9c608ebac9d02c2599f0c89e3a2025c07d1f9602a67abfd47dfa3b3c52b5abd",
+    "tests/fixtures/cash-participant-funding/retention-bootstrap.sql": "35a1b03ab7664850c0749e555b382e9df671259830a87d7f3fdd64f2bebf6fb1",
+    "tests/fixtures/cash-participant-funding/retention-regression.sql": "501886cbd4eeba1353fbeea7b9119dcf8f1d70c1594d28f2079e4424a72ad222",
+    "tests/fixtures/full-weekly-accounting/schema.sql": "db0f5a5ea4a884b3715620c925ae7bb19b1a53c9c6716e97b769f42712674fd9",
+    "tests/fixtures/tournament-accounting-provenance/build-candidate.py": "04ef850dc2ac8dabdeef67f28f642a357d94027fd26d9457d6cfce8650a6adea",
+    "tests/fixtures/tournament-accounting-provenance/build-horse-candidate.py": "84a7eb086f606ae6c3d4c196eb213db8d81e033d8015ce0fc15db7e800448465",
+    "tests/fixtures/tournament-accounting-provenance/captured-dependencies.json": "3c7dd592f4d8c1bf42ff53ee3b4403ea71fbf281001d5a8ba274abe111f7b2ab",
+    "tests/fixtures/tournament-accounting-provenance/captured-horse-contracts.json": "6fbdbd11c1c6495e2b79dddf21247616d306fdc97a0ec882d1e489536a051c27",
+    "tests/fixtures/tournament-accounting-provenance/captured-horse-dependencies.json": "a3ba70fc7e5824b1ba1669c5fc86ae640b8b17212ea6d2b04a8d5909d17f544b",
+    "tests/fixtures/tournament-accounting-provenance/captured-horse-preimages.json": "dcca6db77772b5c9df030d462bc1d02462ebebc18f28e2d8fed0758d5f9fc33f",
+    "tests/fixtures/tournament-accounting-provenance/captured-preimages.json": "edcf97c8b75ed08b74121de3a63b8fe5304a341ce87655ab58a46673aa87c993",
+    "tests/fixtures/tournament-accounting-provenance/new-authority.sql": "44399c2cc4dabbcc8f921650d21a344edfbab2055e1ce6163287c461559b787a",
+    "tests/fixtures/union-weekly-basis/captured-final-atomic-preimages.json": "c4a0cdd043a3ed83a7a64945cfb53e6a023393b970ed5b17b1619be45256ac68",
+    "tests/fixtures/union-weekly-basis/final-atomic-after.sql": "f09eefabb5d4a2368127f38afb8540256973b6163b11968e50bc668481912e7d",
+    "tests/fixtures/union-weekly-basis/final-atomic-before.sql": "1701c060c8ddbc3c074326f7e3c6eda3d4f0ebeb16573f03ef28d5c57ebca7e4",
+    "scripts/dev/qualify-installed-funding-guard-declaration.py": "24e797cfd439595df4da95aa0aeeac6d3e2d1d8fc071d78f8ea7f35679a22123",
+    "supabase/migrations/20260918014359_declare_the_installed_original_club_funding_guard.sql": "a4f3438b9cfdd57052ea45a463dcced91c442041aa0746ccab442b278d9c5d71",
+    "tests/fixtures/installed-funding-guard-declaration/captured-contract.json": "f2bd3120a212a894c00815b96dc1e2e610912dec5edf30dbd2be0ad6e704fa54",
+    "tests/fixtures/spin-mixed-cutover/after.sql": "974ed60679be90e1de843e4fe1ab0ce63497aac9774081a8b48f2785d6c30f52",
+    "tests/fixtures/spin-mixed-cutover/build-candidate.py": "464fd067a55084049a1e87992fad3437a9ca585d0ebb0243e4f8414a4aa2f200",
+    "tests/fixtures/spin-mixed-cutover/captured-preimages.json": "5f45190f58aabfe2c8d873a2fb203403001a16dde111681151d564804e34cef6",
+    "tests/fixtures/spin-mixed-cutover/captured-scope-authority.json": "6b48e52bbd561ad73b974ce043a1919e33a52ff6610b9703a698643b9221818d",
+    "tests/fixtures/spin-mixed-cutover/concurrency.sql": "bf39ec7606f799b4542d5bcd45cce6f641a0b022c6b8b839d6a458cd8de4fcee",
+    "tests/fixtures/spin-mixed-cutover/proof-authority.sql": "56d0f2337776aec187ed5f4833f81652a500b0896277d636c3c3150580cea66a",
+    "tests/fixtures/spin-mixed-cutover/setup.sql": "023ca3e1c6b4614d83190bcd7c1ad8f8a1e7d5ceea8ffa419564b59aa5d2e06c",
+    "scripts/dev/qualify-spin-mixed-cutover.py": "4b50779f6ed435262e7281057d4dbf588dab131fb0a6862fb743d7b13e5d402f",
+    "supabase/migrations/20260918085836_original_mixed_cutover_spin_fee_proof.sql": "a79d6e958f06bf17470a870e20167fa2e9b0cc358cb79a22f75f5866e737f8c6",
+    "tests/fixtures/spin-mixed-cutover/source-binding.json": "c48c512538bb97ef0e7ce50fd8003477f017eba9a1b482c35e82b5a142ecd6d3",
+    "tests/fixtures/legacy-fee-finality/fn_terminal_tournament_evidence_is_immutable.sql": "dfb2ee68610de70577b3ed8a61c90a397e4b987bfdec0903654daea61e5c9906",
+    "tests/fixtures/legacy-fee-finality/build-candidate.py": "2fc2667d4b6ab644b3f97ba440922900daeb0f9edf67fc6a2874869d6bd90f37",
+    "tests/fixtures/legacy-fee-finality/negative.sql": "9a824c9f45318ed8cb665b4de7868fe80788de3f80aff84d06c3a08ee11cc14f",
+    "tests/fixtures/legacy-fee-finality/pko-binding.json": "8aefb53217efaedd7d5233cf93473c41df387f4c0143fbbbab2f82ecee9343ea",
+    "tests/fixtures/legacy-fee-finality/resolution.sql": "50a6897d52a060b2aa87b7f6493c7fb8e8c33a3fcee354d1d1a70dd2954a3695",
+    "tests/fixtures/legacy-fee-finality/fn_accounting_tournament_terminal_fee_receipt.sql": "5f64d87c72fd19b262acb31350a767aa1700f836f73b56cb8b949acd5442e4a5",
+    "tests/fixtures/legacy-fee-finality/capture-bootstrap.sql": "031c69e47876e67eff9262a476ee3915c2fc1058cf18f62a4a2e6d4e46812903",
+    "tests/fixtures/legacy-fee-finality/positive-restore-terms.sql": "25763351166caea11a2dfdeab18d2d9b4d52cad593ed019427fd0241860e7198",
+    "tests/fixtures/legacy-fee-finality/fn_tournament_finish_readiness.sql": "edd0280b88c37410ce5e159f232d837ee7fcf94f4935fd2b3f6a911a819c302f",
+    "tests/fixtures/legacy-fee-finality/fn_ca_supply_snapshot.sql": "9ae7b70e2db6a081801447edcba3e6e4ba6dfe289b7dd0ab75827b30cf735e35",
+    "tests/fixtures/legacy-fee-finality/fn_ca_tournament_terminal_receipt.sql": "d20f6fd70701a14bd3c18eda744f3ee255a27c9911977e3d6a2de442056ac438",
+    "tests/fixtures/legacy-fee-finality/fn_ca_capture_tournament_fee_from_recorded_evidence.sql": "20700318438d4327f341461dae183723d20b45383641e156d6700e38ee4cfcbf",
+    "tests/fixtures/legacy-fee-finality/setup.sql": "ee83d419415ded41cecb3f6877ebc4fe9b12cb7a3e1e63b5d5d98c28c4c60599",
+    "tests/fixtures/legacy-fee-finality/fn_complete_tournament_terminal.sql": "934e3b57a39481ab128b0756438478a5f09fcbd67b95111ea346bf85f61d2c91",
+    "tests/fixtures/legacy-fee-finality/custody-resolution.sql": "d076f12aaf5cf8a655c7faab0423553ef3db69da3c142cd00270b16d0ede5b9b",
+    "tests/fixtures/legacy-fee-finality/original-fees.json": "35b501dd4040670dd1a60768dd51b0763d8483d9e6fa80adae6a32a7b3ab2e45",
+    "tests/fixtures/legacy-fee-finality/original-cohort.json": "b3cc068fad47d9eb7ab4e46486c38ae9476f6fb5b2f69f127f9ff9f7debba9bc",
+    "tests/fixtures/legacy-fee-finality/positive-opening.sql": "70990985932d8b0a8518e4342a394e3c104d4119e75529496ddc2cd25b4e2e86",
+    "tests/fixtures/legacy-fee-finality/capture-authority-catalog.json": "8b3dcacb46c85ca4b9680269db90f1b50545a4f7d5b84b4d46f1dbb554da4467",
+    "tests/fixtures/legacy-fee-finality/fn_terminal_tournament_escrow_is_immutable.sql": "064e76f3bca86201e929bff261b0cc548228438d896667131b505fd157690691",
+    "tests/fixtures/legacy-fee-finality/captured-access.json": "80dcf01be5df2dfcca354aa26c9d61e89296d331da103b5f6e13af851e6ade37",
+    "tests/fixtures/legacy-fee-finality/pko-original-canonical.json": "484d5f7c46f82faa7ff93702f5bc205e8b0a0cfe861e451a713a4ac7ed3d274c",
+    "tests/fixtures/legacy-fee-finality/pko-opening.sql": "ff412064f1b2f2a16fce6846d699c0e19c06f76b69b68e47fc325ac7ec8ca28b",
+    "tests/fixtures/legacy-fee-finality/before.sql": "2adf8490208f2d0b86d7c9198f28473ff27a77379e17ad4ce6b9647e9e7eacb5",
+    "tests/fixtures/legacy-fee-finality/README.md": "14a2c2c5c54825bcff66334f51620f8ca0de5733c80de81e6bef4da57be37bb8",
+    "tests/fixtures/legacy-fee-finality/pko-original-cohort.json": "0ba4acb267e47216bd770abfdb7936610bbbcbf1cd173537955dcc3ba9fe8a72",
+    "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "616bab391d2893dbffc8d65237155009b7a83530a299910aee8b4dda5c700871",
+    "tests/fixtures/legacy-fee-finality/after.sql": "0ab6450fb4d8829211681f91df45025c2cc6b50d0764168fdc31c499524c4c55",
+    "tests/fixtures/legacy-fee-finality/fn_settle_tournament_rake.sql": "c24c8dedae18ea4d59f8a61ca70c11ea68c2d271ab58350b2932fdb8c1276589",
+    "tests/fixtures/legacy-fee-finality/pko-original-fees.json": "c280278971fd63583fcfb30be4bbd52489bb56ff5fd3e8768260d2b6c87eefbd",
+    "tests/fixtures/legacy-fee-finality/fn_complete_tournament_terminal_pre_seat_guard.sql": "5bb2f9a55554b4f3ea33c2ab0e27ecda49eaba84330697b1bd74513c7b79912f",
+    "tests/fixtures/legacy-fee-finality/pko-original-funding-scope.json": "3598ec96fe335a1b2af6efee66345defbd71016f698305360805d311703312ad",
+    "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
+    "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
+    "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
+    "scripts/ci/classify-ci-changes.mjs": "2ba475d3ae45a4f8a50d8be839019d1356e8644fd71bb2bcb84803398565d92e",
+    "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
+    "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "8cd800ebf3c4823f239af6c1af4242d5ec966b5d0858eda6a671645403bbd17e",
+    "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
+    "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
+    "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
+    "tests/fixtures/sep8-spin-custody/proof.sql": "b241e29bafda9e652a68844de863d95ec0f18fc99250b9cfee194861738e6204",
+    "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
+    "tests/fixtures/sep8-spin-custody/original-proof.sql": "5970124764f1abcd5acb317d544334e0dc29414dbe0dbaaf0084d2fa64f5e83a",
+    "tests/fixtures/sep8-spin-custody/predecessor-functions.json": "7936ea757f093c22a3536acba1656888812d3cbe5b085e5e27ebdb475fa5fae3",
+    "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
+    "tests/fixtures/sep8-spin-custody/authority.json": "2861324bf482c9e6c052aa33530ab37361f1408b15e5a2bde27b7ba227844722",
+    "tests/fixtures/sep8-spin-custody/originals.json": "11757d217635485c195e1c5be28a9a6d280d12f80ff2f398b56375368d95be64",
+    "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
+    "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
+    "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
+    "tests/unit/fixtureNativeCi.test.ts": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57",
+    "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
+    "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
+    "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
+    "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "76dd59f9abdc3137b7d731e917a620fb49607121138ba94cbcd0de344e851887",
+    "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
+    "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
+    "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
+    "tests/fixtures/sep8-spin-custody/breakfast-installed-catalog.json": "58a112b04b1110a2e814fc3d59a38662146a4db042107d1e2cc3fab822b0d410",
+    "tests/fixtures/sep8-spin-custody/breakfast-bootstrap.sql": "b1914310e2f807e45b6d34969c0ef252bed856a71b4c77137c765966903601b2",
+    "scripts/ci/satellite_qualifier_fixture.py": "89b593fd5afe44d6568e2751bcd209b7b5cc10ad1c48e98c13efe8ea15d26e87",
+    "scripts/ci/fixtures/satellite-qualifiers/current-entry-close-table-20260917.json": "b1cc77864ffc14627037515d8372453eb769f8ff0ed2fa3861d51a0c681298e3",
+    "scripts/ci/fixtures/satellite-qualifiers/current-entry-close-functions-20260917.json": "848ece62fd1d96eeaf95ac3b6dec3159576f5ebd68ae4b10e6f2d78bb490dd07",
+    "scripts/ci/fixtures/satellite-qualifiers/current-committed-terms-20260917.json": "e1ad04af2d8891199009874df4667c7f2ba99fc2dc5443933c85443a5774c4f5",
+    "tests/fixtures/sep8-spin-custody/standings-negative.sql": "83baaab3b2e0acf02c6ea8b5b99870c738b64923b0df742a167852d0a7402cdb",
+    "tests/fixtures/sep8-spin-custody/g8-original-standings-seed.sql": "2dadada85cfb804a2c6ac05b1ac6b6a4e0d398528dd937db3e52b98403edb653",
+    "tests/fixtures/sep8-spin-custody/build-standings-candidate.py": "3909bd3460f71df59f4a216bef16aa7d8492fa55482ebe0c4ff07aa505ee263f",
+    "tests/fixtures/sep8-spin-custody/g8-original-standings-authority.sql": "c249a60bc128c70f7a858551d62166612717594244768255ac59bbe261182822",
+    "tests/fixtures/sep8-spin-custody/standings-inputs/financial.json": "0c2c51f12b1d8ac5a9537f5b4fa5de524f96127c0ac5cc5f904d311f0059a7ea",
+    "tests/fixtures/sep8-spin-custody/standings-inputs/binding.json": "30f5f2ceb8f4cbeea71832963470973bdb102755b52d5f5029c5703b048a5d9e",
+    "tests/fixtures/sep8-spin-custody/standings-inputs/later-hand-inventory.json": "417cd176f17c3367fab48d9f6afa5759bc795c5f2512f19add753254451ec4a8",
+    "tests/fixtures/sep8-spin-custody/standings-inputs/original-cases.json": "30643fcf68dcc10ab11cab91a4d8dedc6f58ac8601ed2180cef9efebc019f260",
+    "tests/fixtures/sep8-spin-custody/standings-inputs/breakfast-cash-predecessor.sql": "cfb04f5a8218f20791f5c2592bc454b64871e2a9145038c76903f8fb6e0d44a4",
+    "tests/fixtures/sep8-spin-custody/standings-inputs/breakfast-migration.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
+    "tests/fixtures/sep8-spin-custody/standings-inputs/physical.json": "0983597dc6b536105845cab97bb2ac00e7409154c1e3192763907b893848e818",
+    "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
+    "tests/fixtures/sep8-spin-custody/physical-catalog.json": "a33096a82fc3b8d2815a1f68d1a713bbf54c40f56a9a53241ee6a6a5b4148cd4",
+    "supabase/migrations/20260917060000_mtt_persisted_format_preparation.sql": "3b3c35d9afdef33465663eeafd13f85abc4557925d268b7509ab59c95d541349",
+    "supabase/migrations/20260917070000_mtt_dual_satellite_restart_preparation.sql": "2882c0c4a30a85075eab7c1aab89a369420e9705d6da3e1568b83acbff601c78",
+    "tests/fixtures/sep8-spin-custody/tournament-catalog.json": "d8c62dddb763ce0f737d0365834fb35a1bf8132686a9eaf001f11f95c21461d7",
+    "tests/fixtures/sep8-spin-custody/original-physical-support.sql": "b0fb7edb0162a098731e5271e9109eef2709e0c11ba1a4313e2430d3ea396bfa",
+    "tests/fixtures/sep8-spin-custody/final-readback.sql": "064f0d0443ec4919d219e5f33524adcc92e8b66b02c5c7e640f28c2fe0c69760",
+    "tests/fixtures/sep8-spin-custody/union-journal-guard.sql": "9e51de2fff3be93ea99ea493d54eca2f2da2ede7c189f710ff4a401572a8912d",
+    "tests/fixtures/sep8-spin-custody/union-journal-after.sql": "fdb962f82796d0d3d2244de0bd2092467d337c7f4bb86e5bdc06a8745f11d5ae",
+    "tests/fixtures/sep8-spin-custody/qualify-clock-comparison.py": "6e72595bd5ec5f56dbd00a10621e72d5050a7d5d9da98bc48827479e0c1aaa97",
+    "supabase/migrations/20260918225150_original_spin_closure_ignores_only_elapsed_clock_metadata.sql": "f4a3660b311d3270e9d0dbec17c33a0d35488dfccc43dc97836dbcd54491a18d",
+    "tests/fixtures/earlybird-fee-custody/setup.sql": "ac34d5f9432bd6c4ede4072439e66a6f93c7ffc0f5df53ca5a42d6d72c01e573",
+    "tests/fixtures/earlybird-fee-custody/funding-scope.json": "342424a2012da6b9f987e5265d772e59f610dac74c4b5c89d1a718c8ec13e8ff",
+    "tests/fixtures/earlybird-fee-custody/originals.json": "216b0724f54e34df563dbf24741c23a596cdf1534653da20e16affb464f326d0",
+    "tests/fixtures/earlybird-fee-custody/predecessors.json": "8ca184b468374a9bede7a3965db0815fc2d1e6ff25d68657505d84c9a9b693b0",
+    "tests/fixtures/earlybird-fee-custody/before.sql": "ec9c2a263cfa12a946a24501c2ba22890f0afe13a351453dba7d6009198c52d2",
+    "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
+    "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
+    "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "fe075445bb89eef17d3d90031d20de772dc81975e53593072cf7112f7e8c0af1",
+    "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
+    "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
+    "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
+  },
+  "supplemental_captures": {
+    "period_writers": "2026-09-15 00:39:03.686932+00",
+    "period_privacy_policy": "2026-09-15 00:58:27.649778+00",
+    "legacy_recompute_and_pnl_access": "2026-09-15 01:01:08.623296+00",
+    "messenger_catalog": "2026-09-15 02:37:55.2878+00",
+    "messenger_access": "2026-09-15 02:39:31.441006+00",
+    "actual_cron_input": "2026-09-15 02:35:15.903162+00",
+    "credit_request_catalog": "2026-09-15 03:51:33.571069+00",
+    "credit_notification_name_catalog": "2026-09-15 03:54:19.998512+00",
+    "cashier_manual_writers": "2026-09-15 03:53:30.3844+00",
+    "cashier_dependencies": "2026-09-15 04:18:21.923474+00",
+    "cashier_legacy_routes": "2026-09-15 04:46:07.43764+00",
+    "correction_dependencies": "2026-09-15 05:10:43.44495+00",
+    "correction_references": "2026-09-15 05:12:10.785296+00",
+    "correction_union_party": "2026-09-15 05:13:08.285721+00",
+    "browser_period_legacy": "2026-09-15 05:19:08.554609+00",
+    "browser_period_dependencies": "2026-09-15 05:32:26.673473+00",
+    "correction_writer_ledger_catalog": "2026-09-15 13:50:02.90319+00",
+    "credit_reduction_catalog": "2026-09-15 14:12:09.241743+00",
+    "credit_reduction_delegates": "2026-09-15 14:22:10.194019+00",
+    "credit_reduction_payment_closure": "2026-09-15 14:41:34.710789+00",
+    "credit_reduction_incoming_relations": "2026-09-16T04:31:59.558616+00:00"
+  },
+  "component_count": 37,
+  "sequential_fixture_clusters": 16,
+  "client_successor_binding": {
+    "base_commit": "d6ca0b0ef92428ca537441dae40daa54da480034",
+    "cashout_integration_commit": "a0692ff91700845fe324f80b308c8c9f3faa8450",
+    "prior_binding_sha256": "aa012a11f2781d59ee65274006eed1efbdd0bdc4d2f12b1628eb507ad448aea5",
+    "changed_retained_repository_bindings": [
+      {
+        "path": "tests/components/agent-cashout-scope.test.tsx",
+        "previous_sha256": "3edc363bf2c3fb0fe84d27f1b1032fb4f35fc5d44af2a220e5ffd2a527c8fc29",
+        "sha256": "3ad6e569d62e731fc9aa5948028867a8d32da4f7e0ff88c49d5f1a7e00b988ef"
+      },
+      {
+        "path": "tests/cashout-escrow-flow.test.ts",
+        "previous_sha256": "9540905550eca623f68484f1778f643e7f0a61ec3a123d5b70f51ba81206572a",
+        "sha256": "c1a6b5757f1bfd3cdb9536d8a06f0b95304d39b12a10af02f2b8c7b054e29716"
+      },
+      {
+        "path": "tests/unit/leaveClubReleasesEscrow.test.ts",
+        "previous_sha256": "f515b53d0997ad638f9fd36a00183e9aff02d9410e062d21b070153a92394d6a",
+        "sha256": "465c52037bd06a28de7c2d5e6c84b2dd82793003e5eace6195accd656dd0f0e9"
+      },
+      {
+        "path": "tests/components/cashout-scope.test.tsx",
+        "previous_sha256": "fb887c05be25fdd612ed61816fc2f4e0b24292597d943def253fd47bafd3d0b6",
+        "sha256": "def8955c085d0e3804e4701537f668ec3362b81501305b2ac3cadb1cf2beaafa"
+      },
+      {
+        "path": "tests/helpers/cashoutV2Receipt.ts",
+        "previous_sha256": "db3293f6e56cbc2d810e78155f1a37bc9b4ada870e411cb426525c5408388311",
+        "sha256": "15977e1ea7b9047b01789a0bb05401eb150b4926f27878f2c554f0739a395320"
+      },
+      {
+        "path": "tests/components/agent-dashboard-durable-transfers.test.tsx",
+        "previous_sha256": "717ec16b14b7cb57bb9a732b6368359423d06f9b9349ca51b639fbaa527d10c6",
+        "sha256": "714631e666c920f80c4627e74794bbe2b0b8274b14f866ec15c9a37b640b9be7"
+      },
+      {
+        "path": "tests/unit/CashoutRequestModal.test.tsx",
+        "previous_sha256": "75136b46a7792e3246e0fd4f72a8523ca407789bf6399e59ab5b1fb1bdf3ec8d",
+        "sha256": "509d14a65c7d1f6eea237e088f3d97ed0dfbad8c2faf2f97525862adab9744af"
+      },
+      {
+        "path": "tests/unit/CashoutOperation.test.ts",
+        "previous_sha256": "8ae969fcfb53375cb2ada0a69fc364f544add68bbaef388eb62e1f1dad8895ae",
+        "sha256": "0e15fb5fa23de0370ab77d55fb08196fae635fdf3d0d4bcf0ffceaabe0af54cd"
+      },
+      {
+        "path": "tests/unit/ClubWeeklyAccountingReader.test.ts",
+        "previous_sha256": "691c1445b05fa42fbb4a2f7ae5dcc43f826c555583193892debadcc97c2881d1",
+        "sha256": "0db656796982b819b9b2d8cbb6bfc555c850d44de18f628dc945416e7303ee3d"
+      },
+      {
+        "path": "tests/unit/FinancialExportService.test.ts",
+        "previous_sha256": "a0b560881ba874c10aa8c142c7f1ba5b8b382209ce9ad60962e932d3a414d828",
+        "sha256": "608845083c38ae79097a7f3550f25ae8f5df698586f9277f4db6bf0d98c68721"
+      }
+    ],
+    "added_repository_bindings": [
+      "tests/components/FinancialAlertsExport.test.tsx",
+      "tests/components/cashier-cashout-generations.test.tsx",
+      "tests/components/cashout-own-event-acknowledgment.test.tsx",
+      "tests/unit/FinancialAlertServiceRead.test.ts",
+      "tests/unit/discardedErrorReadRatchet.test.ts"
+    ],
+    "captured_fixture_bytes": "29 unchanged",
+    "sql_components": "35 unchanged",
+    "runner_phases": 12,
+    "execution": "UNRUN"
+  },
+  "correction_writer_successor_binding": {
+    "base_commit": "aedb5cc9dae3120f4c08bc719c4726cf55d74db2",
+    "base_tree": "c076ba110d5953de58285e700326e415e896780a",
+    "prior_binding_sha256": "c488cd3aec2c1c8dec11d829907ac05684554c3ad79e374fb4a5686e6516d9d0",
+    "preserved_fixture_bindings": 147,
+    "preserved_captured_files": 29,
+    "preserved_components": 35,
+    "added_repository_inputs": [
+      "tests/fixtures/correction-writer-authority/README.md",
+      "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql",
+      "tests/fixtures/correction-writer-authority/authority-regression.sql",
+      "tests/fixtures/correction-writer-authority/captured-store-policy.sql",
+      "tests/fixtures/correction-writer-authority/catalog-bootstrap.sql",
+      "tests/fixtures/correction-writer-authority/concurrency-regression.py",
+      "tests/fixtures/correction-writer-authority/concurrency-session.sql",
+      "tests/fixtures/correction-writer-authority/concurrency-setup.sql",
+      "tests/fixtures/correction-writer-authority/deferred-overlay-regression.sql",
+      "tests/fixtures/correction-writer-authority/legacy-before-candidate.sql",
+      "tests/fixtures/correction-writer-authority/legacy-replay-and-input-assertions.sql",
+      "tests/fixtures/correction-writer-authority/lifecycle-seed-after-activation.sql",
+      "tests/fixtures/correction-writer-authority/owner-fixture.sql",
+      "tests/fixtures/correction-writer-authority/owner-seeded-regression.sql",
+      "tests/fixtures/correction-writer-authority/regression.sql",
+      "tests/fixtures/correction-writer-authority/source-provenance.json",
+      "supabase/accounting/correction-writer-v1/captured-ledger-catalog.json",
+      "supabase/accounting/correction-writer-v1/captured-ledger-catalog.query.sql",
+      "supabase/accounting/correction-writer-v1/guard-function-sources.json",
+      "supabase/accounting/correction-writer-v1/guard-relation-sources.json",
+      "supabase/accounting/correction-writer-v1/owner-README.md",
+      "supabase/accounting/correction-writer-v1/owner-SOURCE-CUSTODY.json",
+      "supabase/accounting/correction-writer-v1/owner-fixture.sql",
+      "supabase/accounting/correction-writer-v1/owner-predecessor.sql",
+      "supabase/accounting/correction-writer-v1/owner-private-intent.sql",
+      "supabase/accounting/correction-writer-v1/owner-successor-definition.sql",
+      "supabase/accounting/correction-writer-v1/source-provenance.json"
+    ],
+    "runner_phases": [
+      "rejection-provenance",
+      "rejection-authority",
+      "rejection-privacy-bypass",
+      "rejection-privacy",
+      "rejection-messenger-reader",
+      "rejection-push-writer",
+      "rejection-push-rotation",
+      "rejection-credit-request",
+      "rejection-cashier-document",
+      "rejection-correction-document",
+      "rejection-browser-period",
+      "rejection-correction-writer",
+      "acceptance",
+      "correction-writer-concurrency"
+    ],
+    "privacy_prefix_components": 24,
+    "execution": "UNRUN",
+    "publication_hold": "No new source handoff, push or publication until explicit user readiness notification."
+  },
+  "credit_reduction_successor_binding": {
+    "base_commit": "c4f4fb0beefa5e609cc6521300db441bfa7931bf",
+    "base_tree": "5089e2babc4d8740ef5030a0f2d41d1aca3d21ac",
+    "prior_binding_sha256": "91bd04874e8c69624b4e4dbd918d9fcac5676b19b2867fc37f83f05dc8c714fe",
+    "preserved_fixture_bindings": 174,
+    "preserved_captured_files": 29,
+    "preserved_components": 36,
+    "added_repository_inputs": [
+      "supabase/accounting/credit-reduction-v1/admin-writer-predecessor.sql",
+      "supabase/accounting/credit-reduction-v1/admin-writer-successor.sql",
+      "supabase/accounting/credit-reduction-v1/captured-credit-catalog.json",
+      "supabase/accounting/credit-reduction-v1/captured-credit-catalog.query.sql",
+      "supabase/accounting/credit-reduction-v1/captured-credit-delegates.json",
+      "supabase/accounting/credit-reduction-v1/captured-credit-delegates.query.sql",
+      "supabase/accounting/credit-reduction-v1/captured-lock-caller-definitions.sql",
+      "supabase/accounting/credit-reduction-v1/captured-payment-closure.json",
+      "supabase/accounting/credit-reduction-v1/captured-payment-closure.query.sql",
+      "supabase/accounting/credit-reduction-v1/contract-v1.json",
+      "supabase/accounting/credit-reduction-v1/document-authority.sql",
+      "supabase/accounting/credit-reduction-v1/document-delivery-successor.sql",
+      "supabase/accounting/credit-reduction-v1/document-postconditions.sql",
+      "supabase/accounting/credit-reduction-v1/guard-function-sources.json",
+      "supabase/accounting/credit-reduction-v1/guard-incoming-fk-sources.json",
+      "supabase/accounting/credit-reduction-v1/guard-installed-function-sources.json",
+      "supabase/accounting/credit-reduction-v1/guard-lock-successor-sources.json",
+      "supabase/accounting/credit-reduction-v1/guard-payment-relation-sources.json",
+      "supabase/accounting/credit-reduction-v1/guard-relation-sources.json",
+      "supabase/accounting/credit-reduction-v1/lock-order-predecessors.sql",
+      "supabase/accounting/credit-reduction-v1/lock-order-source-provenance.json",
+      "supabase/accounting/credit-reduction-v1/lock-order-successor.sql",
+      "supabase/accounting/credit-reduction-v1/payment-closure-guards.sql",
+      "supabase/accounting/credit-reduction-v1/postcondition-guards.sql",
+      "supabase/accounting/credit-reduction-v1/preimage-guards.sql",
+      "supabase/accounting/credit-reduction-v1/private-contract.sql",
+      "supabase/accounting/credit-reduction-v1/reader-postimages.json",
+      "supabase/accounting/credit-reduction-v1/reader-preimages.json",
+      "supabase/accounting/credit-reduction-v1/reader-successor.sql",
+      "supabase/accounting/credit-reduction-v1/server-functions.sql",
+      "supabase/accounting/credit-reduction-v1/source-assembly.json",
+      "supabase/accounting/credit-reduction-v1/source-provenance.json",
+      "tests/fixtures/credit-reduction-authority/README.md",
+      "tests/fixtures/credit-reduction-authority/accepted-authority-supplement.sql",
+      "tests/fixtures/credit-reduction-authority/audit-failure-regression.sql",
+      "tests/fixtures/credit-reduction-authority/authority-regression.sql",
+      "tests/fixtures/credit-reduction-authority/baseline-ordinal-transform.json",
+      "tests/fixtures/credit-reduction-authority/capture-final-state.sql",
+      "tests/fixtures/credit-reduction-authority/captured-dependencies.sql",
+      "tests/fixtures/credit-reduction-authority/captured-ledger-dependency.sql",
+      "tests/fixtures/credit-reduction-authority/captured-payment-closure.json",
+      "tests/fixtures/credit-reduction-authority/captured-payment-closure.query.sql",
+      "tests/fixtures/credit-reduction-authority/catalog-bootstrap.sql",
+      "tests/fixtures/credit-reduction-authority/concurrency-regression.py",
+      "tests/fixtures/credit-reduction-authority/concurrency-session.sql",
+      "tests/fixtures/credit-reduction-authority/concurrency-setup.sql",
+      "tests/fixtures/credit-reduction-authority/delivery-failure-regression.sql",
+      "tests/fixtures/credit-reduction-authority/helpers.sql",
+      "tests/fixtures/credit-reduction-authority/isolation-cases.sql",
+      "tests/fixtures/credit-reduction-authority/isolation-regression.sql",
+      "tests/fixtures/credit-reduction-authority/refusal-replay-regression.sql",
+      "tests/fixtures/credit-reduction-authority/regression.sql",
+      "tests/fixtures/credit-reduction-authority/roles-history-regression.sql",
+      "tests/fixtures/credit-reduction-authority/seed.sql",
+      "tests/unit/CreditReductionContract.test.ts",
+      "tests/unit/CreditReductionOperation.test.ts",
+      "tests/components/CreditReductionControls.test.tsx",
+      "tests/helpers/creditReductionReceipt.ts"
+    ],
+    "runner_phases": [
+      "rejection-provenance",
+      "rejection-authority",
+      "rejection-privacy-bypass",
+      "rejection-privacy",
+      "rejection-messenger-reader",
+      "rejection-push-writer",
+      "rejection-push-rotation",
+      "rejection-credit-request",
+      "rejection-cashier-document",
+      "rejection-correction-document",
+      "rejection-browser-period",
+      "rejection-correction-writer",
+      "acceptance",
+      "correction-writer-concurrency",
+      "rejection-credit-reduction",
+      "credit-reduction-concurrency"
+    ],
+    "component_name": "20260915150000_credit_reductions_retain_exact_intent_and_private_records.sql",
+    "component_sha256": "d618181c0043a0608dc71b1e9671215ab388556a561c1c2e62c307dd272118be",
+    "assembly_path": "supabase/accounting/credit-reduction-v1/source-assembly.json",
+    "privacy_prefix_components": 24,
+    "qualification_only_baseline": "qualification-credit-baseline.sql",
+    "execution": "UNRUN",
+    "publication_hold": "No new source handoff, push or publication until explicit user readiness notification."
+  },
+  "provider_successor_binding": {
+    "base_commit": "9ec4981b4236eda8e29e09f8de36b5e9fa891b24",
+    "prior_binding_sha256": "06afbe55085007e4e5af93b75de2d98722f8bd7cfe4abde3a101fc978a1729d5",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-deferred.sql",
+        "previous_sha256": "a7285a54785f221ff543d4d92516e5dbc2dedd04d33f550872ce6f7fa36c308e",
+        "sha256": "45d8cfd5dd3f8e68c11b7c88418027e793258a3bd350436843b28d8334fd8404"
+      },
+      {
+        "path": "tests/credit-admin-panel-scope.test.tsx",
+        "previous_sha256": "0593b653444c0587ecacb8a14d8a527759271fc330744d29c95a4b36a74461ef",
+        "sha256": "5aff5273de15a3d0b190318332a07cf2ee5f5ca02d5c5780bf6dca5fd3aac5cd"
+      },
+      {
+        "path": "tests/credit-request-widget-scope.test.tsx",
+        "previous_sha256": "8464368245fa4cfde49660f5d65986d7bcaafda70586dc3ac91ed586eabb8193",
+        "sha256": "4e21f293256137413732dc332123c62c557cfcb74a5b0c5505a4b06102daff90"
+      },
+      {
+        "path": "tests/unit/CashoutService.test.ts",
+        "previous_sha256": "518b32d70d6f1de01ab5e16955f231e57ab23500895a958f51ef9661fb298f6f",
+        "sha256": "26461a6485532da8ea2cef4c69a47f5b1e4f8711da2eb44834a8eab88681f469"
+      },
+      {
+        "path": "tests/config/roleScopedCashier.test.ts",
+        "previous_sha256": "4ba4fa9afc9de544d30c49a88efe5f35d47a3491b5f966bc0e180f30d5fa5bea",
+        "sha256": "bca1a5a8308ebae743c1749a63441a5663685bc91aa62b609c55f224035af5aa"
+      },
+      {
+        "path": "tests/cashout-escrow-flow.test.ts",
+        "previous_sha256": "c1a6b5757f1bfd3cdb9536d8a06f0b95304d39b12a10af02f2b8c7b054e29716",
+        "sha256": "aba0d973eb661f7af644a2bf221037a9c8a9d1063f0d2751ec0ee43c47a4ee19"
+      },
+      {
+        "path": "tests/unit/CashoutOperation.test.ts",
+        "previous_sha256": "0e15fb5fa23de0370ab77d55fb08196fae635fdf3d0d4bcf0ffceaabe0af54cd",
+        "sha256": "9fd374a5b9cc0b5443aa863dfc56713ca93b90fcbd2ab5b9c9360c0b8f1f4fd9"
+      },
+      {
+        "path": "tests/cashier-weekly-statements.test.tsx",
+        "previous_sha256": "653d63b32a9ab50fc414c5ece0017c8477b0ce9c32c41c132bd7bf6b89831c45",
+        "sha256": "3167bb5f18f5c91aa9b2f6c58cc877e7db2f43f600fb4c9c96967feb7d2e7947"
+      },
+      {
+        "path": "tests/unit/useUnionStore.test.ts",
+        "previous_sha256": "f71f632ccbaebdf41f5ed24b05f561c5afcab7fe72173bbea1111cabd8a623e5",
+        "sha256": "3b3f59aca73ce2c20fad59c82e23dfa9c4aaef4b22fdff9ab3295b379e593268"
+      },
+      {
+        "path": "tests/components/UnionAccountingRunStatus.test.tsx",
+        "previous_sha256": "6d1b1a8e60feccc15a2c629621c0a16a2f64ee094f526907122807d8a9556458",
+        "sha256": "182307e73a0f0f09e44c20a88b3e8a5c40b67f070126514f01e5b5b3bd5f7aa9"
+      },
+      {
+        "path": "tests/components/WeeklyAccountingWorkspace.test.tsx",
+        "previous_sha256": "62c883e279e9bddf4543bc802c58f3c59bf891e61467e04c88537333af247b19",
+        "sha256": "c4f202839c25787b837e24a4f625f79769e1b08eb9e309da260612f614003289"
+      },
+      {
+        "path": "tests/components/FinancialAlertsExport.test.tsx",
+        "previous_sha256": "e147f0b4a75ca47699d276d54807ab68335f8aaf4c2760632937af59ad64f995",
+        "sha256": "f2338b7d2e32c7a4a771d997743a52f9c4fc73a75bb5d399de4be0e0fba2e421"
+      },
+      {
+        "path": "tests/components/cashout-own-event-acknowledgment.test.tsx",
+        "previous_sha256": "7d7ede8910f02a8ddc6665d0de5922d719257275165f5d0b16f3b5a5c12a4969",
+        "sha256": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "4b0f13d666551b0b1c6e41a6d72c9a50031f44e944c943d1894f2a76f3bc4d3f",
+        "sha256": "ac707a0183b4ccd510fb28a49fe5286afdebb4503b66624308c993137c666d4e"
+      },
+      {
+        "path": "supabase/accounting/correction-writer-v1/guard-function-sources.json",
+        "previous_sha256": "a828a6f6aba778138b27e4190bf444097779759ddadac355dffb3c7981e75f54",
+        "sha256": "40090dd6761b456aaa1a20d0947f95466e32d639f51aac5800069d0e2d1a5720"
+      },
+      {
+        "path": "supabase/accounting/correction-writer-v1/guard-relation-sources.json",
+        "previous_sha256": "2cdd5bc4fbf0475860e0325f59a6a12dd071e4d1af37ebe6bf5922a0b991ac04",
+        "sha256": "a013327adac0f0eb590cfd16aa0d29c1b4276424c5c342e58d0092893e5b984d"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/guard-lock-successor-sources.json",
+        "previous_sha256": "fb30ff4d06bda9670300c388d4ac41ddbbb21d9c4716d38a7ccb53448a57ea29",
+        "sha256": "b363feaa08d7d16731c2e650c6f7c685eda580d3d799c22036f4b0f782ffbf98"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/lock-order-predecessors.sql",
+        "previous_sha256": "d6eac16606f5116aac5b4179a2950b39cd743fa953b27dec81fb8101ca1f0812",
+        "sha256": "f4a5f80fe4ae654599b9d3652d28a6690e77d679640850aa6ec83d452c52c8d1"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/lock-order-source-provenance.json",
+        "previous_sha256": "265ae14df024f3dc1a65c7e2e76496201ffc98930b7dcac056182a71d5a3b84e",
+        "sha256": "66862178f2586d912055db6f82788bd1819fcd4420a4b454b48a5c42ab6a9e57"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/lock-order-successor.sql",
+        "previous_sha256": "517dbfb8cec42899fe0be0a6929f7bc04af99b1a6c6e2c36873e6c3a452d14cd",
+        "sha256": "28b141a4011a72d796e9f12bed2e11e1ceab91a68763e45219b903af00717b3d"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/source-assembly.json",
+        "previous_sha256": "5c02dc14f37f90373b1039086122bc4f1602adde188db96f77529faf78c630c4",
+        "sha256": "03e29d28b5115ffc68da91c82fd24d1f2e9060d9b488951c9a618a8866a7c692"
+      },
+      {
+        "path": "tests/unit/CreditReductionOperation.test.ts",
+        "previous_sha256": "ec7d0542a14f0703291dbe451ea669d1fd7b41e75a42d815111fab246599ae40",
+        "sha256": "4790a4531cc9888bfdccd4c1aeda9def91efc68afa4c41839a37d64467063030"
+      },
+      {
+        "path": "tests/components/CreditReductionControls.test.tsx",
+        "previous_sha256": "22e6dee9559f95a141e6f2753482a741ff22114b7458b04bb3c92b4149395095",
+        "sha256": "21e6ace8f5a7901e5b6581b5acfc249b1fe79d3113b89a47c54628a45215299b"
+      }
+    ],
+    "added_repository_bindings": [
+      {
+        "path": "tests/fixtures/rakeback-write-authority/captured-stats-batch.sql",
+        "sha256": "88b3e4693e2cda60204d0aec5d8ae40da08a1eb435e97d4d5f330340e6456448"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/preactivation-regression.sql",
+        "sha256": "4111a06f2a59c9f2cd7e38536048b427d7bd56e69806b3df4b18b0f6148d95f5"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/precursor-predecessor-catalog.json",
+        "sha256": "86aed90d4a6ebe1c11c963ac0fa8640bce66cbefcdd671b321ab8310067b5483"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/stats-batch-catalog.json",
+        "sha256": "f4f4f0039d4752e4f2a38ee59f8a9b5f6d8de47e6f4c740a5ef41a518afdc25c"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/stats-batch-catalog.query.sql",
+        "sha256": "ea03e1abcd85b9e2f965a636913605cc48259bac06fff16e39333f50dc9f9f88"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/stats-batch-catalog.raw.txt",
+        "sha256": "73dbaecba66cc34f69afac6411c4a249dff21496176325a002e74dc6757f5082"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/transition-regression.sql",
+        "sha256": "1691c7f82dc45c663626c0fd80fe3c0eca30f240770c989c5ab6c5e4f97ae76c"
+      },
+      {
+        "path": "tests/fixtures/tournament-fee-lifecycle/current-settlement-catalog.json",
+        "sha256": "2a16360c3268ac1e7197110845096e1bc30ef20b75a53a7d9935b7207596cfd7"
+      },
+      {
+        "path": "tests/fixtures/tournament-fee-lifecycle/current-settlement-catalog.query.sql",
+        "sha256": "d6cbff7c7c9caecf2170b4312e057674c33a947e37f49eeaa67c429c2b20bd7f"
+      },
+      {
+        "path": "tests/fixtures/tournament-fee-lifecycle/current-settlement-predecessor.sql",
+        "sha256": "5362494ea3001eb9c998a482a6f09d8343e8e809962c2e7c7de70ab12a1874a1"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/README.md",
+        "sha256": "4f4c97cc41da4ceab14a188576ead0acfeaef6d2763efab4f6c7a8018c3e3ccd"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/alerts-and-ledger.sql",
+        "sha256": "be3106d8f0451b49fc6861bb2f7733f0d5d79ccbe0653fd96181e04ac6d6c527"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/captured-authority.json",
+        "sha256": "7151693f43246b4b0a6a132665239d427c049ed3844d51acd1d581c018d71696"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/owner-notification-coexistence.sql",
+        "sha256": "8e8bed52245d8b10ec0c21f5f422562acc03652ea5ef144e3eec1d556c25c08e"
+      }
+    ],
+    "preserved_captured_files": 29,
+    "component_count": 37,
+    "runner_phases": 16,
+    "qualification": "Final native execution pending; first hosted predecessor failed first cashier approval. No installation or financial certification inferred.",
+    "authorization": "Independent original-provider delivery authorized September17; older holds below are historical only.",
+    "changed_retained_repository_bindings": [
+      {
+        "path": "supabase/accounting/correction-writer-v1/guard-function-sources.json",
+        "previous_sha256": "a828a6f6aba778138b27e4190bf444097779759ddadac355dffb3c7981e75f54",
+        "sha256": "40090dd6761b456aaa1a20d0947f95466e32d639f51aac5800069d0e2d1a5720"
+      },
+      {
+        "path": "supabase/accounting/correction-writer-v1/guard-relation-sources.json",
+        "previous_sha256": "2cdd5bc4fbf0475860e0325f59a6a12dd071e4d1af37ebe6bf5922a0b991ac04",
+        "sha256": "a013327adac0f0eb590cfd16aa0d29c1b4276424c5c342e58d0092893e5b984d"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/guard-lock-successor-sources.json",
+        "previous_sha256": "fb30ff4d06bda9670300c388d4ac41ddbbb21d9c4716d38a7ccb53448a57ea29",
+        "sha256": "b363feaa08d7d16731c2e650c6f7c685eda580d3d799c22036f4b0f782ffbf98"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/lock-order-predecessors.sql",
+        "previous_sha256": "d6eac16606f5116aac5b4179a2950b39cd743fa953b27dec81fb8101ca1f0812",
+        "sha256": "f4a5f80fe4ae654599b9d3652d28a6690e77d679640850aa6ec83d452c52c8d1"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/lock-order-source-provenance.json",
+        "previous_sha256": "265ae14df024f3dc1a65c7e2e76496201ffc98930b7dcac056182a71d5a3b84e",
+        "sha256": "66862178f2586d912055db6f82788bd1819fcd4420a4b454b48a5c42ab6a9e57"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/lock-order-successor.sql",
+        "previous_sha256": "517dbfb8cec42899fe0be0a6929f7bc04af99b1a6c6e2c36873e6c3a452d14cd",
+        "sha256": "28b141a4011a72d796e9f12bed2e11e1ceab91a68763e45219b903af00717b3d"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/source-assembly.json",
+        "previous_sha256": "5c02dc14f37f90373b1039086122bc4f1602adde188db96f77529faf78c630c4",
+        "sha256": "03e29d28b5115ffc68da91c82fd24d1f2e9060d9b488951c9a618a8866a7c692"
+      },
+      {
+        "path": "tests/cashier-weekly-statements.test.tsx",
+        "previous_sha256": "653d63b32a9ab50fc414c5ece0017c8477b0ce9c32c41c132bd7bf6b89831c45",
+        "sha256": "3167bb5f18f5c91aa9b2f6c58cc877e7db2f43f600fb4c9c96967feb7d2e7947"
+      },
+      {
+        "path": "tests/cashout-escrow-flow.test.ts",
+        "previous_sha256": "c1a6b5757f1bfd3cdb9536d8a06f0b95304d39b12a10af02f2b8c7b054e29716",
+        "sha256": "aba0d973eb661f7af644a2bf221037a9c8a9d1063f0d2751ec0ee43c47a4ee19"
+      },
+      {
+        "path": "tests/components/CreditReductionControls.test.tsx",
+        "previous_sha256": "22e6dee9559f95a141e6f2753482a741ff22114b7458b04bb3c92b4149395095",
+        "sha256": "21e6ace8f5a7901e5b6581b5acfc249b1fe79d3113b89a47c54628a45215299b"
+      },
+      {
+        "path": "tests/components/FinancialAlertsExport.test.tsx",
+        "previous_sha256": "e147f0b4a75ca47699d276d54807ab68335f8aaf4c2760632937af59ad64f995",
+        "sha256": "f2338b7d2e32c7a4a771d997743a52f9c4fc73a75bb5d399de4be0e0fba2e421"
+      },
+      {
+        "path": "tests/components/UnionAccountingRunStatus.test.tsx",
+        "previous_sha256": "6d1b1a8e60feccc15a2c629621c0a16a2f64ee094f526907122807d8a9556458",
+        "sha256": "182307e73a0f0f09e44c20a88b3e8a5c40b67f070126514f01e5b5b3bd5f7aa9"
+      },
+      {
+        "path": "tests/components/WeeklyAccountingWorkspace.test.tsx",
+        "previous_sha256": "62c883e279e9bddf4543bc802c58f3c59bf891e61467e04c88537333af247b19",
+        "sha256": "c4f202839c25787b837e24a4f625f79769e1b08eb9e309da260612f614003289"
+      },
+      {
+        "path": "tests/components/cashout-own-event-acknowledgment.test.tsx",
+        "previous_sha256": "7d7ede8910f02a8ddc6665d0de5922d719257275165f5d0b16f3b5a5c12a4969",
+        "sha256": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d"
+      },
+      {
+        "path": "tests/config/roleScopedCashier.test.ts",
+        "previous_sha256": "4ba4fa9afc9de544d30c49a88efe5f35d47a3491b5f966bc0e180f30d5fa5bea",
+        "sha256": "bca1a5a8308ebae743c1749a63441a5663685bc91aa62b609c55f224035af5aa"
+      },
+      {
+        "path": "tests/credit-admin-panel-scope.test.tsx",
+        "previous_sha256": "0593b653444c0587ecacb8a14d8a527759271fc330744d29c95a4b36a74461ef",
+        "sha256": "5aff5273de15a3d0b190318332a07cf2ee5f5ca02d5c5780bf6dca5fd3aac5cd"
+      },
+      {
+        "path": "tests/credit-request-widget-scope.test.tsx",
+        "previous_sha256": "8464368245fa4cfde49660f5d65986d7bcaafda70586dc3ac91ed586eabb8193",
+        "sha256": "4e21f293256137413732dc332123c62c557cfcb74a5b0c5505a4b06102daff90"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/README.md",
+        "previous_sha256": "4e7a7ef80e2949f8bc7f42e666300f6f8ade8a93f9c5914020017c3349644469",
+        "sha256": "804c3d4513d993e5159bf4bd19a35e11ddca4aa3b6835ece94b057c1b76a7767"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/regression.sql",
+        "previous_sha256": "aa0d25318e0041d5063b9fd78665cf971258f7d02ece7e433488a6373be12556",
+        "sha256": "a98c48bd99cd0c9d8ecc9e60864330d23fc54eaa75f8680cf15afc3054e5dd4e"
+      },
+      {
+        "path": "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-deferred.sql",
+        "previous_sha256": "a7285a54785f221ff543d4d92516e5dbc2dedd04d33f550872ce6f7fa36c308e",
+        "sha256": "45d8cfd5dd3f8e68c11b7c88418027e793258a3bd350436843b28d8334fd8404"
+      },
+      {
+        "path": "tests/unit/CashoutOperation.test.ts",
+        "previous_sha256": "0e15fb5fa23de0370ab77d55fb08196fae635fdf3d0d4bcf0ffceaabe0af54cd",
+        "sha256": "9fd374a5b9cc0b5443aa863dfc56713ca93b90fcbd2ab5b9c9360c0b8f1f4fd9"
+      },
+      {
+        "path": "tests/unit/CashoutService.test.ts",
+        "previous_sha256": "518b32d70d6f1de01ab5e16955f231e57ab23500895a958f51ef9661fb298f6f",
+        "sha256": "26461a6485532da8ea2cef4c69a47f5b1e4f8711da2eb44834a8eab88681f469"
+      },
+      {
+        "path": "tests/unit/CreditReductionOperation.test.ts",
+        "previous_sha256": "ec7d0542a14f0703291dbe451ea669d1fd7b41e75a42d815111fab246599ae40",
+        "sha256": "4790a4531cc9888bfdccd4c1aeda9def91efc68afa4c41839a37d64467063030"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "4b0f13d666551b0b1c6e41a6d72c9a50031f44e944c943d1894f2a76f3bc4d3f",
+        "sha256": "ac707a0183b4ccd510fb28a49fe5286afdebb4503b66624308c993137c666d4e"
+      },
+      {
+        "path": "tests/unit/useUnionStore.test.ts",
+        "previous_sha256": "f71f632ccbaebdf41f5ed24b05f561c5afcab7fe72173bbea1111cabd8a623e5",
+        "sha256": "3b3f59aca73ce2c20fad59c82e23dfa9c4aaef4b22fdff9ab3295b379e593268"
+      }
+    ],
+    "statistics_retirement": {
+      "component": "20260914161000_pending_rakeback_writes_require_accounting_authority.sql",
+      "component_sha256": "977c153c9561566d0a1bcd5d6984536bd0fa239c3bf72b97aee124e8c24235c5",
+      "legacy_definition_md5": "ac2b4515198a0fe4bd327dfc030f506a",
+      "native_status": "UNRUN; original hosted full-catalog acceptance and rejection phases required",
+      "preactivation_session": "Actual old service batch reply retained across full candidate COMMIT; source-bound transition refuses later legacy statistics call."
+    }
+  },
+  "scoped_period_read_successor_binding": {
+    "base_commit": "0dc2ad9c2bab229d17d92b85537566fafb02ccb7",
+    "path": "tests/unit/SettlementService.test.ts",
+    "previous_sha256": "d2acf9bbf488b25610f524debe2873be3b7de976eb105d8f95aa86a513501ca3",
+    "sha256": "92390199785906650508d16eea99372e24a6451dd8cd9d108679381ed1ca936d",
+    "reason": "Existing scoped period lookup uses maybeSingle; missing, substituted and errored records still refuse."
+  },
+  "expected_lifecycle_assertion_executions": 123,
+  "lifecycle_count_reconciliation": {
+    "native_run": 35189311096,
+    "native_job": 105098706152,
+    "artifact": 10484080970,
+    "normal": 38,
+    "satellite": 26,
+    "recognized": 31,
+    "missing_history": 28,
+    "previous_missing_history": 31,
+    "reason": "The old positive deferred terminal block emitted10 assertions. Complete attribution now requires exact P0404 and every-public-row rollback for both initial and retry calls (4), unchanged180/20 custody/no completion(1), unchanged original manifests/no fabricated recognition(1), unchanged supply/treasury/no retirement(1):7. Unchanged prefix21 yields28. Financial/refusal assertions are preserved; historical126 remains distinct.",
+    "changed_bindings": [],
+    "assertions_log_sha256": "a1d1c2688c20e90fb3e5af228953be5b3268fdb38e5207d39e1764de928f8753"
+  },
+  "direct_intake_successor_binding": {
+    "base_commit": "6ee9dde69141656d0f33e8ae5e77c5ef58f92240",
+    "installed_migration": "20260917062322",
+    "installed_packet_sha256": "7f7020ee71fe1bd6475dff8de572cd96e7cac888c3923245f7fbc54e8ff161dd",
+    "reason": "Actual newly installed source hooks participate synchronously in monetary incident writes. Preserve literal installed authority and include private snapshots/deliveries in rollback evidence. Update only observed incident trigger inventories and pin exact existing13helper/recorder authorities.",
+    "changed_existing_bindings": [
+      {
+        "binding": "fixtures",
+        "path": "capture-rollback-state.sql",
+        "previous_sha256": "4dbd2ea034ef34fee6accbd18e0205b072110b71d5e554530f361c0ddbcaf349",
+        "sha256": "26ad0aba3d16bc257a61934c82cba11b2c953fb5979a24806469dbff154d9e71"
+      },
+      {
+        "binding": "fixtures",
+        "path": "capture-accepted-authority.sql",
+        "previous_sha256": "7a6128e0de75febd48815b8e816eab2d89a06fc245a3fdc5ae280f7a61136562",
+        "sha256": "6f65090e14cc6d0cf0d325acf772c053daee2e2ed43666531a1464a8044b2d64"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "tests/fixtures/correction-writer-authority/concurrency-session.sql",
+        "previous_sha256": "5431d4ffc45054b2f2f417c5c199d5aac1d0e64f56d042a7641cef69b2ce6d2b",
+        "sha256": "4a78119ade0f7720a9e573b8007018e2d16aca2eb7bd9b7c865d6b18d179425a"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "tests/fixtures/correction-writer-authority/legacy-before-candidate.sql",
+        "previous_sha256": "5ebc7aae24dd0e6e6f1c346a0dade149796453caa220b57c0d0d8c90cb0a1e6e",
+        "sha256": "7f76162008e52c31bd3f94a198dbe07fd7f28feb0f9ea80a3ae764663bca817c"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "tests/fixtures/correction-writer-authority/regression.sql",
+        "previous_sha256": "2764f44b5eff43472d87c481cdebe0bdf5babbb4d75023dfee52a0ec8aeddf11",
+        "sha256": "ef66b164083ff08a02d9c932d20f1aced66bc154caaa22d3f0bd4c0bef7ccba2"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "supabase/accounting/correction-writer-v1/guard-function-sources.json",
+        "previous_sha256": "40090dd6761b456aaa1a20d0947f95466e32d639f51aac5800069d0e2d1a5720",
+        "sha256": "d12da19b9ef25c0c5ad00f39d95e70be887ed6de49e34fd90b2211ebea784991"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "supabase/accounting/correction-writer-v1/guard-relation-sources.json",
+        "previous_sha256": "a013327adac0f0eb590cfd16aa0d29c1b4276424c5c342e58d0092893e5b984d",
+        "sha256": "a13271897bc8aacc8875010e36f83682322c5f0ceffcbc44354ba60bcbf14d55"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "tests/fixtures/credit-reduction-authority/concurrency-session.sql",
+        "previous_sha256": "cc58c015ee169b63a00250a29da7773f512242e4ea5cdddf232d423943e638bb",
+        "sha256": "9f6ba47f612e29ef8b91989b9dda513239627b98fa500332d1b93d44ca98a9b1"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "tests/fixtures/credit-reduction-authority/helpers.sql",
+        "previous_sha256": "1c16f5dcd8529346f7005a3372fd854fe3464f4d47e55f5713a5983a076c3cc4",
+        "sha256": "6ce12b7131a4e833c92f2834d64c500a6155a859fc21d11e5dd0e832d6791463"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "tests/fixtures/union-provider-preimages-20260917/README.md",
+        "previous_sha256": "4f4c97cc41da4ceab14a188576ead0acfeaef6d2763efab4f6c7a8018c3e3ccd",
+        "sha256": "3917ffd5e8ede22b217cbcf98355020c29ab77182ec3f967ce3deca62bda359f"
+      }
+    ],
+    "new_inputs": [
+      "direct-intake-prerequisites.sql",
+      "direct-intake-installed.sql",
+      "direct-intake-authority.raw.txt",
+      "direct-intake-installation-receipt.raw.txt",
+      "direct-intake-provenance.json",
+      "direct-intake-current-function-guards.json"
+    ],
+    "historical_capture_data": "Unchanged. Two maintained capture-query implementations are explicit successors; their previous source hashes remain recorded.",
+    "native_status": "UNRUN for final composition; protected PostgreSQL17 required; noUnionproductionmutation"
+  },
+  "protected_main_ratchet_binding": {
+    "base_commit": "6e3b5eac1e28a52cd981bd3a09c65b6f67e2e319",
+    "merged_main_commit": "df75936396f60d9bc9dfdd89b11a19a94337e16e",
+    "prior_binding_sha256": "ca912136d7d309374bb99357a7e07b645d93bca764d39260d1d9ef032ccf7bbc",
+    "failed_run": 35191041251,
+    "failed_job": 105103577795,
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "ac707a0183b4ccd510fb28a49fe5286afdebb4503b66624308c993137c666d4e",
+        "sha256": "c22fb1db89314be0b65e2ccab874e4299679db2bda20f131a3e9d90798f639ad"
+      }
+    ],
+    "reason": "Protected main removed the obsolete WaitlistService discarded-read allowance after its canonical join/recovery path began checking readError. Preserve that zero-new-read rule together with every existing Union ratchet tightening. Only this measured repository input changed; all 29 captured fixture entries and other 229 repository entries remain identical.",
+    "regression": "Existing tests/unit/discardedErrorReadRatchet.test.ts: audited surfaces remain zero; no source file exceeds its frozen allowance and new files start clean. No test assertion removed by this rebinding.",
+    "qualification": "Binding revalidation is source evidence only; the existing native full37 composition still requires its hosted check."
+  },
+  "coordinator_clock_hook_binding": {
+    "commit": "a0063245e969bf14c1a6635bfd89cc8f70da9f4b",
+    "path": "tests/fixtures/accounting-alert-38644/qualification.json",
+    "previous_sha256": "0b6eb3f542e57433895f7c77330085b3b1603407ee378b6381b391aeb0f90170",
+    "sha256": "ab52dee0cab7e710c5983b72aecf8fc29652a0d5d369e74b2050d7e049488e28",
+    "reason": "Ordinary required pre-commit JSON formatting of the reviewed qualification packet; parsed values unchanged. No native assertion or source authority changed."
+  },
+  "direct_intake_legacy_successor_20260917": {
+    "basis": "Alerts installed exact qualified receipt_row successor at 2026-09-17T07:29:59.347153+00:00; original captured SQL remains unchanged. Union adds exact owner SQL only to isolated prerequisite fixture and preserves installed successor through exact incoming guard.",
+    "changed_repository_bindings": [
+      {
+        "path": "supabase/accounting/correction-writer-v1/guard-function-sources.json",
+        "prior_sha256": "d12da19b9ef25c0c5ad00f39d95e70be887ed6de49e34fd90b2211ebea784991",
+        "sha256": "8621f9c38ffd353f117bfdcbbaf40444cb9a2b58210d63d0a5d5fea93e9b6ae4"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json",
+        "prior_sha256": "70995c3cb1de856fcee2bc1ed16f541eb7e39c562c06c752a3914bc1bb149f1b",
+        "sha256": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d"
+      }
+    ],
+    "added_repository_bindings": [
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql",
+        "sha256": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json",
+        "sha256": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5"
+      }
+    ],
+    "authority": "All other function definitions and all owners/grants unchanged. No production writes by Union. New composed native qualification pending."
+  },
+  "finish_lane_successor_20260917": {
+    "basis": "Installed PR4761 migration20260917113717 and three separate installed catalog captures; exact maintained migration before Union37 in each existing fresh fixture cluster.",
+    "prior_binding_sha256": "fe50f4599945dc3fd6c8b68602d885f0ea5da47071a8f2827011aedde8e9252b",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-normal.sql",
+        "prior_sha256": "51e657212902648e48fdc5e79848958205f9efd90c1697f5bb4da5336e7783da",
+        "sha256": "9751b412273a897f9107ec052009201a0b17f92daacf34665ec3d00f83a791a9"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/README.md",
+        "prior_sha256": "3917ffd5e8ede22b217cbcf98355020c29ab77182ec3f967ce3deca62bda359f",
+        "sha256": "98df7b6b1d124a900063885470307434bb474c2920bdf002a29c738410774f72"
+      }
+    ],
+    "added_repository_bindings": [
+      {
+        "path": "scripts/dev/test-full-weekly-accounting-activation.sh",
+        "sha256": "a6ada63495cfb1a22abd21f98269429d91f72b32f7d2bbd12ce0325caec5270b"
+      },
+      {
+        "path": "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql",
+        "sha256": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt",
+        "sha256": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql",
+        "sha256": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-prerequisites.sql",
+        "sha256": "604e9f8cbdc0e89b15dcfb548f98eca15c4b2f41a6565e6b983a62cca5803870"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-seat-move-authority.raw.txt",
+        "sha256": "2ca4ebcb887713e661a2661833726cc80ef151c04d1a9185e616b5495c774781"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-successor-provenance.json",
+        "sha256": "58289123ad4fee1e1f402b9dd7120ea267dab4cf792bbc608f59d6da1989b23d"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-table-share-authority.raw.txt",
+        "sha256": "b0c00a51b18cfc5843ac955bd5c2d7236d3e07eeea00ce05ff25f9f6c88e282c"
+      }
+    ],
+    "preserved_historical_captures": 29,
+    "preserved_lifecycle_assertion_executions": 123,
+    "qualification": "Source custody and shell syntax only. The existing normal lifecycle now observes composed finish locks, rollback and replay; native execution remains pending. No new phase or Union component change."
+  },
+  "managed_cron_permissions_20260917": {
+    "basis": "Production activation20260917120636 refused with42501 at cron.job tableLOCK; all scoped authority rolled back. Production postgres hasSELECT only, non-superuser and BYPASSRLS, and executes extension-owned APIs.",
+    "prior_binding_sha256": "10f5e5c4926de84880f27f3e05be46afb1a80dc541a1a7370f0384f43f0bcd21",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/dev/test-full-weekly-accounting-activation.sh",
+        "prior_sha256": "a6ada63495cfb1a22abd21f98269429d91f72b32f7d2bbd12ce0325caec5270b",
+        "sha256": "2557b57d6326f4b823f3e6cdace9627c22cbe45049f9193eb1ea851be34e2d24"
+      }
+    ],
+    "added_repository_bindings": [
+      {
+        "path": "tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py",
+        "sha256": "3b24b81b40aa445db34ee4045edcbb4961a541f268f6287e22e3891da44b8131"
+      }
+    ],
+    "candidate_sha256": "5118fe6d748a75145ac757c552321aa6a550511a0326cfe691ddf3cbd3c2ce41",
+    "preserved_historical_captures": 29,
+    "preserved_lifecycle_assertion_executions": 123,
+    "qualification": "UNRUN new candidate. Real pg_cron managed-role probe runs last in existing acceptance cluster, after accepted authority capture. Exact installed authority expected unchanged; required hosted execution remains pending."
+  },
+  "managed_cron_bootstrap_correction_20260917": {
+    "failed_run": 35246976393,
+    "failed_job": 105289718429,
+    "reason": "PostgreSQLbootstraprolecannotloseSUPERUSER. Acceptanceclusteronly initializesa separatebootstrapandcreates postgreswithoriginalattributes beforeloadingunchangedfixtures. Separatefixtureownerthenconfiguresrestrictedpostgres.",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/dev/test-full-weekly-accounting-activation.sh",
+        "prior_sha256": "2557b57d6326f4b823f3e6cdace9627c22cbe45049f9193eb1ea851be34e2d24",
+        "sha256": "a0de658b6cffc6e4e0dfd77d7f0930337242079a21814064c2b2c67259e7ad1e"
+      },
+      {
+        "path": "tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py",
+        "prior_sha256": "3b24b81b40aa445db34ee4045edcbb4961a541f268f6287e22e3891da44b8131",
+        "sha256": "cd173b15400a8d0dcc3861a80e22511df741e8732b0fb9dece85e8e0b7038f3f"
+      }
+    ],
+    "focused_validation": "Actual isolated PostgreSQL17.11 passed bootstrap/create/demote/reconnect withpostgresNOSUPERUSER,BYPASSRLS anddatabaseownerpostgres. No financial source changed; full hosted qualification pending."
+  },
+  "managed_cron_settings_correction_20260917": {
+    "failed_run": 35248124931,
+    "failed_job": 105293650908,
+    "path": "tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py",
+    "prior_sha256": "cd173b15400a8d0dcc3861a80e22511df741e8732b0fb9dece85e8e0b7038f3f",
+    "sha256": "0c43c6d516c0f72aeb0e5c5ba7c35c70ad16dd3dbe239896bcd83b2b600b21af",
+    "observed_production_permissions": {
+      "current_user": "postgres",
+      "session_user": "postgres",
+      "pg_monitor_usage": true,
+      "pg_read_all_settings_usage": true,
+      "cron_database_name": "postgres",
+      "cron_timezone": "GMT"
+    },
+    "reason": "Preserve the unchanged provider settings guards by reproducing the observed read-only monitoring role in the isolated managed caller; no production privilege changes.",
+    "focused_validation": "Exact maintained managed-cron-role-regression.py passed with actual local PostgreSQL17.11 and pg_cron1.6.8 against prior accepted schema: oldLOCK42501, exact source transition and rollback, job272 staleupdate40001, job271 retirementguardrefusal and preserved concurrent rows, final272 timing race40001. No job launched. Full final hosted job remains required."
+  },
+  "original_inventory_successor_20260917": {
+    "migration": "20260917233148",
+    "scope": "Prospective original population and boundary observations only; no monetary basis or historical backfill certification",
+    "triggered_by": "Existing full weekly accounting native runner after its existing clusters",
+    "native_qualification": "Actual PostgreSQL17 producer/reader/rollback/ACL/immutability and two-session closed-book snapshot proof; STABLE negative control fails visibility"
+  },
+  "native_schedule_adoption_successor_20260917": {
+    "migration": "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql",
+    "scope": "Separately committed same-row native alter_job for exact captured canonical job272, with no new schedule or financial execution.",
+    "qualification": "Existing full weekly runner invokes focused native launcher qualification after its stopped financial clusters; actual provider runtime adoption remains separate."
+  },
+  "prospective_weekly_original_basis": {
+    "migration": "20260917234315",
+    "invocation": "Existing full weekly activation runner invokes scripts/dev/test-union-weekly-basis.py once.",
+    "qualification": "Native real owners, full positive rake/payer/cascade, original-source negative controls, invoice rollback, replay and two-session lock red/green.",
+    "production": "Not established by this source binding. Installation requires exact original17 preconditions and live readback.",
+    "atomic_seal_successor": "20260918004443: direct original public wrapper and processor red/green, immutable monetary and seal validation, legacy manifest refusal; never rewrites historical outcomes."
+  },
+  "diamond_merge_test_successor_20260917": {
+    "baseline_commit": "66347b24660443d3d2496bccee9365a348018a9e",
+    "tested_commit": "b6c42fc365de3a2feca9ef6b04d52e2c3515171b",
+    "prior_binding_sha256": "26839887e0c9fb4d35d07b22a5fa4f23725a781129a28de05f956d21379f5283",
+    "failed_run": 35274824240,
+    "failed_job": 105383004849,
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/CreditRequestAuthority.test.ts",
+        "previous_sha256": "86a95a292ecefea07d394476a421328daaab3b19d24bf98814ea4efcfe2463b5",
+        "sha256": "0dce14c178ef4f5bd8f8a2aa794cfc8f76fec4fe3207e0882add16e162abb821"
+      },
+      {
+        "path": "tests/unit/CreditRequestLegacyCaller.test.ts",
+        "previous_sha256": "ec6e38cf2fe8e38570f2142dcc735201de8c0a54aaf2e805a142ad01bbb6d25f",
+        "sha256": "ef6f8458a54ce3b5e646d831c176f279456e8f59598616e20dbb3a9dbc7f2e7b"
+      },
+      {
+        "path": "tests/cashout-escrow-flow.test.ts",
+        "previous_sha256": "aba0d973eb661f7af644a2bf221037a9c8a9d1063f0d2751ec0ee43c47a4ee19",
+        "sha256": "b74114ae26cc7499d9243d67ac9b9b41d0d1c64dcfb47d8d0140aad0dc536fd5"
+      },
+      {
+        "path": "tests/unit/FinancialExportService.test.ts",
+        "previous_sha256": "608845083c38ae79097a7f3550f25ae8f5df698586f9277f4db6bf0d98c68721",
+        "sha256": "17b705c4af3fa783ccaa556249f6915dd3c4a83b78863e2ca1ad29f46989633e"
+      }
+    ],
+    "reason": "Ordinary integration hooks exposed existing no-loss-of-precision, unexpected-multiline and no-useless-escape lint errors in three tests; explicit Number conversion, joined chained calls and equivalent regex preserve their assertions. The cashout source pin normalizes whitespace after required source formatting. All other 267 bindings remain byte-identical to the reviewed baseline, including captured SQL, catalog and native probes.",
+    "validation": "Existing three lint-affected suites passed118 cases; four format-pin suites passed77 cases; ordinary final pre-push related/source-pin tests passed. Final native composition must run after this explicit four-file successor binding; no historic execution is reattributed."
+  },
+  "mtt_observer_error_ratchet_binding_20260918": {
+    "protected_main_commit": "6d6135de5952b9bbd17c04073a1101f4abc8217c",
+    "failed_run": 35309863822,
+    "failed_job": 105489598053,
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "c22fb1db89314be0b65e2ccab874e4299679db2bda20f131a3e9d90798f639ad",
+        "sha256": "3b40d1ae0b008db62b2ec37f0242961007d7c91cd5fbd21a2fd378f39039d4e9"
+      }
+    ],
+    "reason": "Protected main PR4820 handles both TournamentTimerService observer read errors and tightens its discarded-error allowance from two to zero. Preserve that stronger existing assertion; no financial function, native assertion or captured fixture changed. Historical bindings remain immutable.",
+    "qualification": "Exact repository binding, existing ratchet and maintained full weekly accounting native path are requalified on this composition; production installation is unchanged."
+  },
+  "mixed_cutover_spin_successor": {
+    "scope": "Original mixed-cutover Spin proof within sole existing close, immutable batches unchanged",
+    "phase": "spin-mixed-cutover",
+    "validation": "Focused current full native runner; normal protected invocation retains existing sixteen phases and adds this directly triggered phase",
+    "native_status": "33 directly triggered original assertions and actual admission/concurrent first-close qualification; exact candidate catalog and tested-source binding exported"
+  },
+  "legacy_fee_custody_successor": {
+    "phase": "legacy-fee-finality",
+    "scope": "Exact original eight MTT events,365+324 originalfee custody; players final, historical attribution explicitly incomplete",
+    "validation": "128 financial assertions, two original backend races,13 actual native decoder receipts; synthetic outcome/terms limitations retained",
+    "native_functions": 19,
+    "native_relations": 4
+  },
+  "mtt_integration_ci_binding_20260918": {
+    "base_commit": "f1e8155d3800cb170212a514df76e543dd10d001",
+    "prior_binding_sha256": "d7b79a8642834484d47e844aee38ceef3926801f5c12275f3f7fc5bbfc41c382",
+    "failed_run": 35380573338,
+    "failed_attempt": 2,
+    "failed_job": 105751547165,
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "02ad9afd28daae965fda9992c4b6a9262857793bee9ab269cc5acac96837f637",
+        "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "116eb1ea5f5de1cbf5846bce172d2345158968600170af5953fd7adba7f8dd15",
+        "sha256": "f4a9fe08deabb294fc3301c2793df59c36c79c1cd8c466fa4f1e77a4b55ffb36"
+      },
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous_sha256": "b50ab5f30f6543b6a67acf5d0d684ca0839fc67e44efc4d95f14f9158cd4e12f",
+        "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "8e7b10330c0be08fd281c99e938f7403054c9260c26fec0e7613b788877c128f",
+        "sha256": "7e7fe7436ce09ad25a384d2d1a785b0164bf44c539519318259fc5b77b9bb359"
+      }
+    ],
+    "reason": "The integrated MTT classifier adds directly triggered Breakfast, original paid custody, movement, drained-custody and retained-submission qualification; its routing tests add corresponding enforcement. The two nested financial bindings already retain those exact reviewed classifier/test bytes. Refresh only the four stale outer bindings; preserve all 29 captured catalog fixtures and the other 405 repository bindings, financial components and assertions.",
+    "validation": "The unchanged native runner binding guard reproduces the rejection before this repair and accepts these reviewed inputs afterward. The current routing suite and generated activation source are checked separately. This binding refresh does not establish native financial execution or production installation; the required hosted accounting job must still pass."
+  },
+  "mixed_spin_runner_integration_binding_20260918": {
+    "prior_binding_sha256": "5347403431d8fbcc967456fe3f32689120b1952dcfb55fed97d53953c49cf463",
+    "path": "tests/fixtures/spin-mixed-cutover/source-binding.json",
+    "previous_sha256": "e63212a2d01cc2a98c57e72ad9a6f0081ac15335b51529214039776ba4424739",
+    "sha256": "75adb19d94bc0f123a41d6d18ae1a477d14e958adf3c93be7e034ae200cd4cd5",
+    "reason": "Retain the reviewed nested binding successor for the added September8 native phase. All underlying financial source, captures, original mixed-cutover implementation and assertion count remain unchanged. Full native execution remains separately required."
+  },
+  "mixed_runner_binding_20260919": {
+    "path": "tests/fixtures/spin-mixed-cutover/source-binding.json",
+    "previous_sha256": "75adb19d94bc0f123a41d6d18ae1a477d14e958adf3c93be7e034ae200cd4cd5",
+    "sha256": "c48c512538bb97ef0e7ce50fd8003477f017eba9a1b482c35e82b5a142ecd6d3",
+    "reason": "Bind the reviewed Early Bird runner addition in the existing mixed-cutover phase; no SQL or fixture assertion changed."
+  },
+  "diamond_replay_ci_binding_20260919": {
+    "failed_run": 35453124666,
+    "reason": "The additive Diamond replay and daily-custody CI routes changed the classifier. All prior classification branches and financial fixture inputs remain unchanged. Refresh the three active classifier bindings and the two resulting nested binding hashes; retain historical receipts.",
+    "verification": "Exact active binding guards and classifier routing tests; native qualification remains the existing required hosted accounting job."
+  },
+  "retired_dispute_escalation_rebinding_20260920": {
+    "base_commit": "1e19f83b6cd6e2d7baecb97fa9d9cfefd03486aa",
+    "prior_binding_sha256": "6520d17392293e18793a1b1f23eecf492a169883552d7428d35474c027d19274",
+    "failed_run": 35490389682,
+    "also_failed_run": 35478014685,
+    "source_pull_request": 4943,
+    "source_commit": "74f5c9c076",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/FinancialCronService.test.ts",
+        "previous_sha256": "a4b4f2a06cfebe1812f1ba82e50f6200060a2f2d5ade8f4145b55cd86f052da5",
+        "sha256": "d896cbd87786cb83569ee48e7d1adde3f017ceba3a3e1f4fe573ed7cfefddb4d"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "3b40d1ae0b008db62b2ec37f0242961007d7c91cd5fbd21a2fd378f39039d4e9",
+        "sha256": "a6ae2ef64e38661fb5983a6d621b4ca9ad83fd6dc85af975f3a98e937b8579f6"
+      }
+    ],
+    "reason": "PR #4943 retired the browser dispute-escalation entry point on 2026-09-19. It was right to: the authenticated role has no UPDATE grant on public.disputes and the table's only policy is SELECT, so the method answered 42501 on every call while still incrementing its own counter and persisting a \"dispute auto-escalated\" alert through a function authenticated can execute. Two bound application tests moved with it. tests/unit/FinancialCronService.test.ts now asserts the method is absent and that booting the service never touches the disputes table; tests/unit/discardedErrorReadRatchet.test.ts drops its src/services/FinancialCronService.ts baseline entry because the discarded read is gone. Both changes widen coverage and neither touches a financial component, an assertion or a captured catalog fixture. Its own required checks were green because its paths do not route to the accounting job, so from the next main run onward the required accounting check failed on main and on every open pull request with \"Repository lifecycle fixture drift\". Refresh only these two stale repository bindings; preserve all 29 captured catalog fixtures, the other 421 repository bindings, every financial component and every assertion.",
+    "verification": "Each new sha256 is the sha256 of the file at this base commit, recomputed from the bytes on disk. All 423 repository bindings were then re-verified against the tree and agree. The captured fixtures map, component_count and every assertion count are unchanged from the previous binding."
+  },
+  "dispute_intake_ratchet_rebinding_20260920": {
+    "base_commit": "d616a7cf11e57a77bc5d80587a73c70e3e031fc7",
+    "prior_binding_sha256": "5c4630ea100f76b96cd87e392ad6e30e6b254f6b34da442a0dad25e562734f5b",
+    "supersedes": "retired_dispute_escalation_rebinding_20260920",
+    "source_pull_request": 4956,
+    "source_commit": "5d7f10b22d",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "a6ae2ef64e38661fb5983a6d621b4ca9ad83fd6dc85af975f3a98e937b8579f6",
+        "sha256": "fe9542d1ba09b0d3fe9f474b4948768595cac66c2163d4b24ff77b465e82a6b2"
+      }
+    ],
+    "reason": "PR #4956 gave public.disputes the two entry points it never had, fn_dispute_submit and fn_dispute_withdraw, so submitDispute and withdrawDispute stopped doing raw client writes whose errors were discarded. tests/unit/discardedErrorReadRatchet.test.ts lowered its src/services/DisputeService.ts baseline from 3 to 1 to match. That is the ratchet tightening, not relaxing: it now permits fewer discarded reads for that file than before. #4956 merged at 07:57Z. #4959, which re-recorded this same path for the unrelated #4943 drift, was cut from 1e19f83b6c ten minutes earlier and squash-merged at 08:14Z, so it re-recorded the sha256 of the bytes at ITS base and landed a hash for a file main had already changed. Its own verification could not have seen this: at 1e19f83b6c the file really did hash to the value it recorded. This is exactly the case .github/workflows/ci.yml documents - a squash merge builds a tree that no pull request ever tested, whenever main moves between a pull request's last run and its merge. The preamble also raises on the FIRST drift it meets, so while tests/unit/FinancialCronService.test.ts was still stale this one stayed masked; #4959 fixing that one is what surfaced it. The required Accounting transactions (PostgreSQL 17) check therefore still fails in the python preamble with 'Repository lifecycle fixture drift: tests/unit/discardedErrorReadRatchet.test.ts', before any PostgreSQL cluster starts and before any accounting component is installed, and Server Engine (typecheck + tests) and What this run verified fail only because they aggregate it. No financial behaviour is implicated. Refresh only this one stale repository binding; preserve all 29 captured catalog fixtures, the other 422 repository bindings, every financial component and every assertion.",
+    "verification": "The new sha256 is the sha256 of the bytes of tests/unit/discardedErrorReadRatchet.test.ts at this base commit, read from disk in a clean worktree whose file is identical to HEAD. All 423 repository bindings and all 29 captured fixtures were then re-verified against the tree with the runner's own computation - hashlib.sha256(path.read_bytes()).hexdigest(), repository_fixtures resolved against the repository root and fixtures against tests/fixtures/full-weekly-accounting, no normalisation of any kind - and every one agrees. component_count, both assertion counts, the captured fixtures map, limits and supplemental captures are byte-identical to the previous binding. The edit went through a JSON round-trip proved byte-identical to the original file, so the diff is exactly this one hash plus this note."
+  },
+  "diamond_sql_acceptance_ci_binding_20260920": {
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "114ca8f15279e7102b7d278509147b384ae4f04b7e6b393ea0dc7f899ae67e3b",
+        "sha256": "2ba475d3ae45a4f8a50d8be839019d1356e8644fd71bb2bcb84803398565d92e"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "f88a0ad13d6c7e6feb17abfe4e34306786432e3cec5a28fb99e31ddc5c8ac603",
+        "sha256": "8cd800ebf3c4823f239af6c1af4242d5ec966b5d0858eda6a671645403bbd17e"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "4f2cbfb2d67194498e43e911c49dd3a7fe182be33e766060b761f4eebf495086",
+        "sha256": "76dd59f9abdc3137b7d731e917a620fb49607121138ba94cbcd0de344e851887"
+      }
+    ],
+    "changed_qualification_manifest_pins": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "previous_sha256": "d568a3342774a2e19bcd88666d165141d8d6f8f83498fca954b764ebb67c0e72",
+        "sha256": "eab4a307624077af69afd7daa1016aaa0265bf5fc980215fb3cafff8879532b9",
+        "pinned_in": "scripts/qualification/cash-native-hosted.manifest.json"
+      },
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "114ca8f15279e7102b7d278509147b384ae4f04b7e6b393ea0dc7f899ae67e3b",
+        "sha256": "2ba475d3ae45a4f8a50d8be839019d1356e8644fd71bb2bcb84803398565d92e",
+        "pinned_in": "scripts/qualification/cash-native-hosted.manifest.json"
+      }
+    ],
+    "reason": "The classifier gained additive Diamond SQL acceptance routing: a change to any tests/sql/run-*diamond*.py runner, any tests/sql/poker-diamond-*.sql fixture, poker-arena-access.sql, the controlled-play driver, the session and transfer cap fixtures, any tests/sql/diamond-tournament-*.sql or tests/sql/diamond-tournament-*.manifest.json input the two tournament runners load, scripts/ci/run-diamond-sql-acceptance.py or scripts/ci/check-diamond-runners-listed.mjs now selects the PostgreSQL accounting job and its routing tests, so the fourteen Diamond money-door runners and the arena access script execute there instead of only by hand. The diamond-tournament-* inputs were added on 2026-09-20 with the tournament doors and tournament lifecycle runners that read them: they selected tests but not server, so the job that executes the runner could skip on a pull request that changed what it executes. No existing classification branch was removed or narrowed, and no accounting component, assertion, capture or fixture changed. The two nested financial bindings already retain the reviewed classifier bytes; refreshing them changes their own sha256, which this outer binding also pins, so the four hashes move together. The workflow pin moves for the same edit: the accounting job gained the list check, the acceptance step and its evidence upload, and nothing else. Every previous_sha256 here is the value on origin/main d0e04ed4fe, the revision this branch is merged up to.",
+    "verification": "All fourteen runners and poker-arena-access.sql were executed on an isolated PostgreSQL 17 through scripts/ci/run-diamond-sql-acceptance.py against freshly created empty fixture databases, and each proved its own terminal line: 15 of 15 runs passed in 18.1 seconds, the eleven shared-cluster runners on the socket the wrapper builds and the three private-cluster runners each on a cluster it created and destroyed. The three new runners were also executed with PG_BIN set to a directory that does not exist on this machine, proving PG_BIN is honoured and that the fixed fallback in source resolves PostgreSQL 17 without a second environment variable. node scripts/ci/check-diamond-runners-listed.mjs reports 14 runners all run by CI and was proved to refuse an unlisted one; npx vitest run tests/unit/diamondAcceptanceCi.test.ts passes with 80 tests; python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py accepts the refreshed cash manifest in 6 cases. python3 scripts/ci/verify-source-bindings.py re-read every pin map in every source-binding.json in the merged tree: 745 pins across 15 sections in 15 binding files, the five refreshed here included, all agree. This refresh establishes no native financial execution and no production installation; the required hosted accounting job must still pass. Neither cash_games_enabled nor tournaments_enabled was touched, and no production object was read, created or changed."
+  }
+}

@@ -1,0 +1,180 @@
+{
+  "source_sha256": "47a8da738489725480121c95afb0fe50d0c673f2299f2fb8aea1d6339f96b14e",
+  "evidence": {
+    "at": "2026-09-18T09:13:20.592507+00:00",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "hand_number",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "state_json",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "config_json",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "dealer_seat",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "players_json",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "stage",
+        "type": "text",
+        "default": "'preflop'::text",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "is_complete",
+        "type": "boolean",
+        "default": "false",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "pending_deadlines",
+        "type": "jsonb",
+        "default": "'[]'::jsonb",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "disconnect_states",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "indexes": [
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX hand_state_snapshots_pkey ON public.hand_state_snapshots USING btree (id)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX idx_hand_snapshots_one_active_per_table ON public.hand_state_snapshots USING btree (table_id) WHERE (is_complete = false)"
+      },
+      {
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE INDEX idx_hand_state_snapshots_created_at ON public.hand_state_snapshots USING btree (created_at DESC)"
+      }
+    ],
+    "triggers": [
+      {
+        "acl": null,
+        "body": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_check_ins\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_check_ins$function$\n",
+        "name": "RI_ConstraintTrigger_c_3130090",
+        "owner": "supabase_admin",
+        "state": "O",
+        "config": null,
+        "function": "\"RI_FKey_check_ins\"()",
+        "internal": true,
+        "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_3130090\" AFTER INSERT ON public.hand_state_snapshots FROM tables NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()"
+      },
+      {
+        "acl": null,
+        "body": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_check_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_check_upd$function$\n",
+        "name": "RI_ConstraintTrigger_c_3130091",
+        "owner": "supabase_admin",
+        "state": "O",
+        "config": null,
+        "function": "\"RI_FKey_check_upd\"()",
+        "internal": true,
+        "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_3130091\" AFTER UPDATE ON public.hand_state_snapshots FROM tables NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()"
+      },
+      {
+        "acl": [
+          "postgres=X/postgres"
+        ],
+        "body": "CREATE OR REPLACE FUNCTION smarter_private.f06_cancelled_preparation_writer_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE t uuid;\nBEGIN\n -- Resolve the table even before BEGIN is visible; an absent permit cannot\n -- let an already-started writer cross cancellation's exclusive lane.\n SELECT tournament_id INTO t FROM public.tables WHERE id=NEW.table_id;\n IF t IS NOT NULL THEN\n IF NOT pg_try_advisory_xact_lock_shared(hashtextextended('ca:tournament-terminal-settlement:v1',0))\n OR NOT pg_try_advisory_xact_lock_shared(hashtextextended('ca:tournament-terminal-settlement:v1:'||t::text,0)) THEN\n RAISE EXCEPTION 'F06_RETRY_CANONICAL_LANE' USING ERRCODE='40001'; END IF;\n IF EXISTS(SELECT 1 FROM smarter_private.f06_prepared_hand_cancellations\n WHERE table_id=NEW.table_id AND hand_number=NEW.hand_number) THEN\n RAISE EXCEPTION 'F06_CANCELLED_PREPARATION_FENCED' USING ERRCODE='55000'; END IF;\n END IF;\n RETURN NEW;\nEND $function$\n",
+        "name": "a00_f06_cancelled_preparation",
+        "owner": "postgres",
+        "state": "O",
+        "config": [
+          "search_path=pg_catalog, public, smarter_private"
+        ],
+        "function": "smarter_private.f06_cancelled_preparation_writer_guard()",
+        "internal": false,
+        "definition": "CREATE TRIGGER a00_f06_cancelled_preparation BEFORE INSERT OR UPDATE ON public.hand_state_snapshots FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_cancelled_preparation_writer_guard()"
+      }
+    ],
+    "constraints": [
+      {
+        "name": "hand_state_snapshots_pkey",
+        "validated": true,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "hand_state_snapshots_table_id_fkey",
+        "validated": true,
+        "definition": "FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE"
+      }
+    ]
+  }
+}

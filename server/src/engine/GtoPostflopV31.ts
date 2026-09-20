@@ -14,6 +14,7 @@
  */
 
 import type { Card } from '../types.js';
+import { deepFreezeSolverPolicy } from '../gto/SolverPolicyContract.js';
 import { depthCandidates, textureClass } from './GtoPostflop.js';
 import type {
   GtoV31FacingKind,
@@ -564,14 +565,20 @@ function validatedStore(
       facingSizeBucket: row.facing_size_bucket,
     });
     if (next.has(cellKey)) throw new Error(`v31_duplicate_cell:${cellKey}`);
-    next.set(cellKey, {
-      matrix: structuredClone(row.hand_matrix),
-      actions: structuredClone(row.action_specs),
-      policyEvs: structuredClone(row.policy_ev_matrix ?? {}),
-      actionEvs: structuredClone(row.action_ev_matrix ?? {}),
-      seal: sealOf(row),
-      role: row.node_role,
-    });
+    // Readers receive shared references on the action clock. Freeze the
+    // detached snapshot once at admission so no consumer can change a sealed
+    // mix, size, EV or provenance while retaining the original checksum.
+    next.set(
+      cellKey,
+      deepFreezeSolverPolicy({
+        matrix: structuredClone(row.hand_matrix),
+        actions: structuredClone(row.action_specs),
+        policyEvs: structuredClone(row.policy_ev_matrix ?? {}),
+        actionEvs: structuredClone(row.action_ev_matrix ?? {}),
+        seal: sealOf(row),
+        role: row.node_role,
+      })
+    );
   }
   if (datasetCells !== null && next.size !== datasetCells) {
     throw new Error(`v31_incomplete_dataset:expected=${datasetCells}:actual=${next.size}`);

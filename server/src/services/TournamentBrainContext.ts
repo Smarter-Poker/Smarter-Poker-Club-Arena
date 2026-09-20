@@ -1,3 +1,8 @@
+import { projectTournamentAdmission } from '../tournament/tournamentAdmission.js';
+import {
+  isPersistedUnlimitedMtt,
+  readPersistedTournamentFormatContract,
+} from '../tournament/tournamentEntryCapacity.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * TOURNAMENT BRAIN CONTEXT — Real ICM Inputs for the Horses (V12 — 2026-08-22)
@@ -36,7 +41,14 @@ import {
 } from '../engine/HorseTournamentPreflop.js';
 import { selectInChunks } from './supabase/chunkedIn.js';
 import { recoveryFeeCents, tournamentFeeRatio, unitFloorCents } from '../tournament/recoveryFee.js';
+import { UNIT_CENTS_ASSET_NOT_READ, normalizeUnitCents } from '../tournament/tournamentUnit.js';
 import { horseRebuyAllowance } from './FreeBuy.js';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  HORSE_TOURNAMENT_CONTEXT_STALE_MS,
+  type HorseTournamentContextProvenance,
+  type HorseTournamentContextSource,
+} from '../engine/HorseTournamentContextProvenance.js';
 
 export type TournamentFormat = 'mtt' | 'sng' | 'spin' | 'hu_sng';
 
@@ -181,6 +193,8 @@ export interface TournamentRowLite {
   game_type?: string | null;
   variant: string | null;
   spin_multiplier?: number | null;
+  format_contract?: unknown;
+  effective_max_players?: number | null;
   max_players: number | null;
   table_size: number | null;
   payout_structure: unknown;
@@ -491,10 +505,13 @@ export function deriveBlindClock(
  * Only when the row asserts nothing usable does it fall back to 9.
  */
 export function seatsAtOneTable(row: {
+  format_contract?: unknown;
   table_size?: number | null;
   max_players?: number | null;
 }): number {
-  const asserted = [row?.table_size, row?.max_players]
+  const asserted = (
+    isPersistedUnlimitedMtt(row) ? [row.table_size] : [row.table_size, row.max_players]
+  )
     .map((n) => Number(n))
     .filter((n) => Number.isFinite(n) && n > 0);
   return asserted.length > 0 ? Math.min(...asserted) : 9;
@@ -605,14 +622,15 @@ export function deriveContext(
   // worker's canonical ruleset check (for example freezeout !== nlh).
   const gameVariant = (row.game_type || '').toLowerCase();
   const tournamentVariant = (row.variant || '').toLowerCase();
+  const recordedFormat = readPersistedTournamentFormatContract(row);
   const format: TournamentFormat =
-    type === 'SPIN' || tournamentVariant === 'spin'
+    recordedFormat === 'spin-v1'
       ? 'spin'
-      : seatsAtOneTable(row) <= 2
-        ? 'hu_sng'
-        : type === 'SNG'
-          ? 'sng'
-          : 'mtt';
+      : recordedFormat === 'mtt-v1' || recordedFormat === 'mtt-v2'
+        ? 'mtt'
+        : recordedFormat === 'seat-first-satellite-v1' || seatsAtOneTable(row) <= 2
+          ? 'hu_sng'
+          : 'sng';
   const rawMysteryStage = String(row.mystery_bounty_stage ?? '').toLowerCase();
   const mysteryBountyStage: TournamentBrainContext['mysteryBountyStage'] =
     row.is_mystery_bounty !== true
@@ -758,7 +776,11 @@ export function deriveContext(
     nonNegativeIntegerOrNull(row.late_reg_levels) &&
     nonNegativeIntegerOrNull(row.rebuy_levels) &&
     nonNegativeNumberOrNull(row.late_reg_mins) &&
-    nonNegativeIntegerOrNull(row.max_players);
+    nonNegativeIntegerOrNull(row.max_players) &&
+    (row.effective_max_players === null ||
+      (typeof row.effective_max_players === 'number' &&
+        Number.isSafeInteger(row.effective_max_players) &&
+        row.effective_max_players > 0));
   // Match fn_tournament_late_registration_open literally: a non-null
   // late_reg_levels value wins (including zero), then rebuy_levels.
   const lateRegLevelCap = Number(row.late_reg_levels ?? row.rebuy_levels ?? 0);
@@ -771,8 +793,13 @@ export function deriveContext(
   // the minute deadline is only the legacy fallback when no level cap exists.
   // Both windows close at their exact boundary and once the pool is final.
   const prizePoolFinalized = row.prize_pool_finalized === true;
-  const entryCapacity = Number(row.max_players ?? 0);
-  const hasEntryCapacity = entryCapacity <= 0 || entrants < entryCapacity;
+  const entryCapacity = row.effective_max_players;
+  const hasEntryCapacity =
+    entryCapacity === null ||
+    (typeof entryCapacity === 'number' &&
+      Number.isSafeInteger(entryCapacity) &&
+      entryCapacity > 0 &&
+      entrants < entryCapacity);
   const lateRegistrationOpen =
     entryTermsValid &&
     status === 'RUNNING' &&
@@ -1041,11 +1068,13 @@ export function deriveContext(
 const REFRESH_TIMEOUT_MS = 5000;
 const STUCK_MS = 60_000;
 const TTL_MS = 20_000;
-const STALE_MS = 60_000;
+const STALE_MS = HORSE_TOURNAMENT_CONTEXT_STALE_MS;
 const MAX_CACHED = 500;
 
 interface CacheEntry {
+  cacheId: string;
   ctx: TournamentBrainContext | null;
+  source: HorseTournamentContextSource | null;
   lastSuccessAt: number;
   lastAttemptAt: number;
   lastFailureIssue: string | null;
@@ -1054,6 +1083,17 @@ interface CacheEntry {
 }
 
 const cache = new Map<string, CacheEntry>();
+
+/** Cache values contain plain records/arrays only. Detach and freeze once on
+ * publication, off the action clock, so subsequent readers cannot change the
+ * source bytes or the nested stack, payout and per-player maps they describe. */
+function freezeContextValue<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value)) freezeContextValue(child);
+    Object.freeze(value);
+  }
+  return value;
+}
 
 /**
  * Lifecycle-owned refresh entrypoint. It returns the last known context (or
@@ -1076,7 +1116,9 @@ export function refreshTournamentBrainContext(tournamentId: string): TournamentB
       for (let i = 0; i < Math.ceil(entries.length / 4); i++) cache.delete(entries[i][0]);
     }
     e = {
+      cacheId: randomUUID(),
       ctx: null,
+      source: null,
       lastSuccessAt: 0,
       lastAttemptAt: 0,
       lastFailureIssue: null,
@@ -1095,7 +1137,7 @@ export function refreshTournamentBrainContext(tournamentId: string): TournamentB
     e.inFlight = true;
     e.lastAttemptAt = now;
     e.generation += 1;
-    void refresh(tournamentId, e, e.generation);
+    void refresh(tournamentId, e, e.generation, now);
   }
   return e.ctx;
 }
@@ -1119,6 +1161,7 @@ export interface TournamentBrainContextSnapshot {
   status: TournamentContextStatus;
   issues: string[];
   ageMs: number | null;
+  contextProvenance: HorseTournamentContextProvenance;
 }
 
 /**
@@ -1134,17 +1177,30 @@ export function getTournamentBrainContextSnapshot(
   // owns every Supabase refresh and this path only observes the cache.
   const context = peekTournamentBrainContext(tournamentId);
   const entry = cache.get(tournamentId);
+  const finish = (
+    snapshot: Omit<TournamentBrainContextSnapshot, 'contextProvenance'>
+  ): TournamentBrainContextSnapshot => ({
+    ...snapshot,
+    contextProvenance: {
+      version: 1,
+      readAtMs: nowMs,
+      status: snapshot.status,
+      issues: [...snapshot.issues],
+      ageMs: snapshot.ageMs,
+      source: entry?.source ?? null,
+    },
+  });
   if (!entry) {
-    return {
+    return finish({
       context: null,
       status: 'incomplete',
       issues: [TOURNAMENT_CONTEXT_INCOMPLETE, 'tournament_context_refresh_not_started'],
       ageMs: null,
-    };
+    });
   }
   if (!context || entry.lastSuccessAt <= 0) {
     const warming = entry.inFlight && entry.lastAttemptAt > 0;
-    return {
+    return finish({
       context: null,
       status: warming ? 'warming' : 'incomplete',
       issues: [
@@ -1154,11 +1210,11 @@ export function getTournamentBrainContextSnapshot(
           : (entry.lastFailureIssue ?? 'tournament_context_refresh_not_started'),
       ],
       ageMs: null,
-    };
+    });
   }
   const ageMs = Math.max(0, nowMs - entry.lastSuccessAt);
   if (ageMs > STALE_MS) {
-    return {
+    return finish({
       context,
       status: 'stale',
       issues: [
@@ -1167,14 +1223,14 @@ export function getTournamentBrainContextSnapshot(
         ...context.contextIssues.filter((issue) => issue !== TOURNAMENT_CONTEXT_INCOMPLETE),
       ],
       ageMs,
-    };
+    });
   }
-  return {
+  return finish({
     context,
     status: context.contextStatus,
     issues: [...context.contextIssues],
     ageMs,
-  };
+  });
 }
 
 /** Test hook. */
@@ -1262,10 +1318,22 @@ function tournamentPurchaseQuote(row: TournamentRowLite): TournamentPurchaseQuot
      * The cap is floored too: a cap that is not on the grid is not a cap the
      * fee can honour. Mirrors fn_ca_recovery_fee_cents.
      */
+    /**
+     * ONE RULE FOR THE UNIT TOO (2026-09-13). This normalisation was written
+     * out here - `Number.isSafeInteger(...) && ... >= 1 ? ... : 1` - which made
+     * it a FOURTH spelling of the unit rule beside `computePlacePrize`'s,
+     * `unitFloorCents`'s and the SQL's, in exactly the shape this phase spent
+     * two migrations collapsing. It reads `tournamentUnit.ts` now.
+     *
+     * An ABSENT `unit_cents` is not the same thing as a chip tournament, so it
+     * is named rather than folded into the normaliser's fallback: no select
+     * populates the column yet, which the recovery-fee changelog records as
+     * "the one wire left" and leaves to the work that opens the Diamond
+     * tournament door, because reading it means joining clubs into the
+     * tournament read.
+     */
     const unitCents =
-      Number.isSafeInteger(Number(row.unit_cents)) && Number(row.unit_cents) >= 1
-        ? Number(row.unit_cents)
-        : 1;
+      row.unit_cents == null ? UNIT_CENTS_ASSET_NOT_READ : normalizeUnitCents(row.unit_cents);
     const floorToUnit = (cents: number) => unitFloorCents(cents, unitCents);
     const feeCents = recoveryFeeCents(recoveryCostCents, feeRatio, unitCents);
     const netCents = Math.max(0, recoveryCostCents - feeCents);
@@ -1416,9 +1484,15 @@ async function readTournamentPlayerContext(tournamentId: string): Promise<{
   return { data: rows, error: null };
 }
 
-async function refresh(tournamentId: string, e: CacheEntry, generation: number): Promise<void> {
+async function refresh(
+  tournamentId: string,
+  e: CacheEntry,
+  generation: number,
+  readStartedAtMs: number
+): Promise<void> {
+  const ownsEntry = (): boolean => cache.get(tournamentId) === e && e.generation === generation;
   const publishFailure = (issue: string): void => {
-    if (e.generation === generation) e.lastFailureIssue = issue;
+    if (ownsEntry()) e.lastFailureIssue = issue;
   };
 
   try {
@@ -1432,7 +1506,7 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
         supabase
           .from('tournaments')
           .select(
-            'tournament_type, status, game_type, variant, free_buy, max_players, table_size, payout_structure, spin_multiplier, prize_pool, prize_pool_finalized, bounty_pool, buy_in_amount, buy_in_fee, starting_chips, rebuy_cost, rebuy_chips, bounty_amount, is_pko, is_bounty, is_mystery_bounty, mystery_bounty_stage, blind_structure, current_level, level_started_at, started_at, late_reg_mins, late_reg_levels, is_reentry, max_reentries, is_rebuy, rebuy_levels, max_rebuys, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_triggered, addon_period_started_at, addon_period_ends_at, on_break, break_started_at, break_ends_at, accelerated_mtt, big_blind_ante, authorized_to_register, satellite_seats, satellite_target_id, satellite_target'
+            'format_contract, tournament_type, status, game_type, variant, free_buy, max_players, table_size, payout_structure, spin_multiplier, prize_pool, prize_pool_finalized, bounty_pool, buy_in_amount, buy_in_fee, starting_chips, rebuy_cost, rebuy_chips, bounty_amount, is_pko, is_bounty, is_mystery_bounty, mystery_bounty_stage, blind_structure, current_level, level_started_at, started_at, late_reg_mins, late_reg_levels, is_reentry, max_reentries, is_rebuy, rebuy_levels, max_rebuys, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_triggered, addon_period_started_at, addon_period_ends_at, on_break, break_started_at, break_ends_at, accelerated_mtt, big_blind_ante, authorized_to_register, satellite_seats, satellite_target_id, satellite_target'
           )
           .eq('id', tournamentId)
           .maybeSingle(),
@@ -1463,7 +1537,9 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
     }
 
     const rows = (pRes.data ?? []) as TournamentPlayerContextRow[];
-    const tournament = tRes.data as TournamentRowLite;
+    const [tournament] = (await withRefreshTimeout(
+      projectTournamentAdmission([{ ...tRes.data, id: tournamentId }])
+    )) as Array<TournamentRowLite & { id: string }>;
     const needsFunding =
       tournament.is_rebuy === true ||
       tournament.is_reentry === true ||
@@ -1587,7 +1663,7 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
     }
 
     const nextContext = deriveContext(
-      tRes.data as TournamentRowLite,
+      tournament,
       playersLeft,
       entrants,
       chipSum,
@@ -1608,9 +1684,28 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
         pendingRecoveryPlayers,
       }
     );
-    if (e.generation !== generation) return;
-    e.ctx = nextContext;
-    e.lastSuccessAt = Date.now();
+    if (!ownsEntry()) return;
+    const publishedContext = freezeContextValue(structuredClone(nextContext));
+    const contextDigest = createHash('sha256')
+      .update(JSON.stringify(publishedContext))
+      .digest('hex');
+    const readCompletedAtMs = Date.now();
+    // This interval encloses multiple independent source reads and projections;
+    // it is not a PostgreSQL snapshot timestamp or a source-authority receipt.
+    const source: HorseTournamentContextSource = freezeContextValue({
+      version: 1,
+      tournamentId,
+      cacheId: e.cacheId,
+      generation,
+      readStartedAtMs,
+      readCompletedAtMs,
+      contextDigest,
+      contextStatus: publishedContext.contextStatus,
+      contextIssues: [...publishedContext.contextIssues],
+    });
+    e.ctx = publishedContext;
+    e.source = source;
+    e.lastSuccessAt = readCompletedAtMs;
     e.lastFailureIssue = null;
   } catch (error) {
     reportError(error, 'TournamentBrainContext.refresh');
@@ -1622,7 +1717,7 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
     // Keep the last known context. The snapshot labels it stale once its
     // freshness boundary is crossed; a failed first read remains incomplete.
   } finally {
-    if (e.generation === generation) {
+    if (ownsEntry()) {
       e.inFlight = false;
     }
   }

@@ -1,0 +1,72 @@
+{
+  "packet": "internal-ledger-native-fixture-0008",
+  "sealed_at": "2026-09-14T00:11:05.937983+00:00",
+  "source_only": true,
+  "files": [
+    {
+      "path": "FIXTURE-INPUTS.json",
+      "sha256": "7115fc1ff8c7cb50d05ebd08adaba4c1d60c1399694707c20d17768d347cdb61",
+      "bytes": 3668
+    },
+    {
+      "path": "HANDOFF.json",
+      "sha256": "b65273b4e8276712b97da92342a20d6ddcedaca5d111e50881b19b9fc43cba6d",
+      "bytes": 2810
+    },
+    {
+      "path": "LOCAL-STATUS.json",
+      "sha256": "21a7b7473c18bbc13fad790ecebac869a5fdd85d83dec9d78cfd7b510a64d17e",
+      "bytes": 404
+    },
+    {
+      "path": "OID-SERIALIZATION-PROOF.json",
+      "sha256": "f3e3ba03dc2719f809bf1a09e009e7b4e9870eeca4c5af0c26e11f39052acaf7",
+      "bytes": 5512
+    },
+    {
+      "path": "PREDECESSOR-ATTEMPT.json",
+      "sha256": "37f9ae46943a82e9128ac01f7fef72bddc7c66722515d6f8bbcffd30722e1aa3",
+      "bytes": 1796
+    },
+    {
+      "path": "REVIEW.md",
+      "sha256": "e3dce93ccfe706abd3d595d2644d82d742de588fc5ea40d7662cb7a3bf51d396",
+      "bytes": 3136
+    },
+    {
+      "path": "RUN-INSTRUCTIONS.md",
+      "sha256": "87f613b11c44334f70ff79ba99fddb1cf57d56d1ef004c455b6a57c70d61f37e",
+      "bytes": 1168
+    },
+    {
+      "path": "SOURCE-CHECKS.json",
+      "sha256": "64b090e670e1b14028304a17480e3b307abac411e540430b3f75504f5b069645",
+      "bytes": 1959
+    },
+    {
+      "path": "SOURCE-DELTA.patch",
+      "sha256": "ece5107083cdd59338659a46d2b3b3bf30efa0d243c14551dbb2683b91c8207c",
+      "bytes": 7509
+    },
+    {
+      "path": "SOURCE-MANIFEST.json",
+      "sha256": "795c537d259cf627c871286be4592dfad02197c361d3aa768c1315a047a06347",
+      "bytes": 1897
+    },
+    {
+      "path": "check_oid_serialization.py",
+      "sha256": "f32f631b17c74a15a76ce09b33c5815a614552b95ccef60511ad33d5bdada691",
+      "bytes": 3979
+    },
+    {
+      "path": "oid_identity.py",
+      "sha256": "cc50bb4cd02d9eaa77cc942c3c42e55a3e69c5864902bffafa12065949fa26e6",
+      "bytes": 1390
+    },
+    {
+      "path": "run_fixture.py",
+      "sha256": "ee211daaf0a5ee929cddc25ddb839c1fbd1e2ddb13da3ce6e65ff65545b856b7",
+      "bytes": 20750
+    }
+  ]
+}

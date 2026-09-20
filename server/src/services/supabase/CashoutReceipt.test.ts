@@ -10,6 +10,7 @@ import {
   requestSeatDeparture,
   getAdminSeatCashoutReceipt,
 } from './seats.js';
+import { LeavePendingOperation } from '../../observability/LeavePendingDiagnostic.js';
 const occupancyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const receipt = {
   occupancy_id: occupancyId,
@@ -138,6 +139,75 @@ describe('cashout request identity', () => {
       expect(mock.rpc).not.toHaveBeenCalled();
     }
   );
+});
+
+describe('departure diagnostics do not change cashout or callback behavior', () => {
+  it('attributes an exact rejected enumeration, with the original query and error', async () => {
+    arrange(receipt);
+    const chain = mock.from.mock.results[0]?.value ?? mock.from();
+    const failure = Object.freeze(new Error('supabase_timeout'));
+    chain.is.mockRejectedValueOnce(failure);
+    const diagnostic = new LeavePendingOperation();
+    await expect(
+      processLeavePending('table', 'club', undefined, undefined, diagnostic)
+    ).rejects.toBe(failure);
+    expect(diagnostic.snapshot().phase).toBe('table_seats_query');
+    expect(chain.select).toHaveBeenCalledWith('user_id, seat_number, occupancy_id');
+    expect(chain.eq.mock.calls).toEqual([
+      ['table_id', 'table'],
+      ['leave_pending', true],
+    ]);
+    expect(chain.is).toHaveBeenCalledWith('left_at', null);
+    expect(mock.rpc).not.toHaveBeenCalled();
+  });
+
+  it('keeps returned enumeration errors and handled cashout failures distinct', async () => {
+    arrange(receipt);
+    const chain = mock.from();
+    chain.is.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'read refused', code: '42501' },
+    });
+    const read = new LeavePendingOperation();
+    await expect(processLeavePending('table', 'club', undefined, undefined, read)).rejects.toThrow(
+      'read refused'
+    );
+    expect(read.snapshot()).toMatchObject({
+      phase: 'table_seats_query',
+      failure_kind: 'returned_error',
+      error: { message: 'read refused', code: '42501' },
+    });
+    expect(mock.rpc).not.toHaveBeenCalled();
+
+    arrange(null, { message: 'supabase_timeout' });
+    const cashout = new LeavePendingOperation();
+    await expect(
+      processLeavePending('table', 'club', undefined, undefined, cashout)
+    ).resolves.toEqual([]);
+    expect(cashout.snapshot()).toMatchObject({ phase: 'departure_processing', error: null });
+    expect(mock.rpc).toHaveBeenCalledWith('fn_cashout_seat_occupancy', {
+      p_user_id: 'player',
+      p_table_id: 'table',
+      p_seat_number: 2,
+      p_occupancy_id: occupancyId,
+      p_leave_mode: 'voluntary',
+    });
+  });
+
+  it('does not attribute a lock callback failure to the completed query or cashout', async () => {
+    arrange(null, { message: 'LEAVE_LOCKED:1234' });
+    const diagnostic = new LeavePendingOperation();
+    const failure = Object.freeze(new Error('presentation callback failed'));
+    const onLocked = vi.fn(() => {
+      throw failure;
+    });
+    await expect(
+      processLeavePending('table', 'club', onLocked, undefined, diagnostic)
+    ).rejects.toBe(failure);
+    expect(diagnostic.snapshot().phase).toBe('departure_locked_callback');
+    expect(onLocked).toHaveBeenCalledWith('player', 1234, occupancyId);
+    expect(mock.from.mock.results[0].value.update).not.toHaveBeenCalled();
+  });
 });
 
 describe('durable departure request receipts', () => {

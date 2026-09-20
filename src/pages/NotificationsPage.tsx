@@ -80,7 +80,8 @@ const DEFAULT_AVATAR = `${import.meta.env.BASE_URL || '/hub/club-arena/'}default
  * account provenance, so it is intentionally not imported or overwritten.
  * Element 0 carries the cache timestamp; only confirmed feed reads persist.
  */
-const CACHE_KEY = 'ca-notif-cache:v1:';
+// Retire feeds captured before operational alerts had a separate destination.
+const CACHE_KEY = 'ca-notif-cache:v2:';
 const CACHE_TTL_MS = 300_000; // 5 minutes, matching the hub page.
 const CACHE_MAX = 30;
 
@@ -566,6 +567,16 @@ function NotificationFeed({ userId }: { userId: string | null }) {
           false
         );
         if (wasUnread) masterBus.emit('NOTIFICATION_READ', { notifId: id, allRead: false });
+        /* The row is gone from the database now, and no realtime DELETE will
+           say so: `notifications` carries RESTRICTIVE SELECT policies that call
+           fn_messenger_notification_visible_to(id, ...), which does EXISTS over
+           the row itself. After a delete there is no row, so the policy denies
+           and Realtime drops the event for every subscriber — the bell, the
+           header badge and this page's own '*' channel alike.
+           This client knows what it just dismissed, so it says so directly.
+           MasterBus mirrors every emit onto its BroadcastChannel, which carries
+           it to the bell in this tab AND to every other tab of this browser. */
+        masterBus.emit('NOTIFICATION_DISMISSED', { notificationId: id });
       } catch (err) {
         if (owner.active && ownerRef.current === owner) {
           console.warn('[Notifications] delete failed:', (err as Error)?.message || err);

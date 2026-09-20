@@ -20,11 +20,13 @@ function newestFunction(name: string, requiredFragment?: string): string {
       if (body < 0) throw new Error(`${file}: ${name} has no body`);
       const tagEnd = sql.indexOf('$', body + 4);
       const tag = sql.slice(body + 3, tagEnd + 1);
-      const end = sql.indexOf(`${tag};`, tagEnd + 1);
-      if (end < 0) throw new Error(`${file}: ${name} has an incomplete body`);
-      const definition = sql.slice(start, end + tag.length + 1);
+      const end = sql.indexOf(tag, tagEnd + 1);
+      const terminator = end < 0 ? null : sql.slice(end + tag.length).match(/^\s*;/);
+      if (!terminator) throw new Error(`${file}: ${name} has an incomplete body`);
+      const definitionEnd = end + tag.length + terminator[0].length;
+      const definition = sql.slice(start, definitionEnd);
       if (!requiredFragment || definition.includes(requiredFragment)) newest = definition;
-      start = sql.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`, end + tag.length + 1);
+      start = sql.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`, definitionEnd);
     }
   }
   if (!newest) throw new Error(`${name} is missing`);

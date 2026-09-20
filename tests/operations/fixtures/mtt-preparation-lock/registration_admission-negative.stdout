@@ -1,0 +1,69 @@
+Parsed test spec with 3 sessions
+
+starting permutation: reader_begin reader_lock writer_begin writer_update observed_wait reader_commit writer_rollback final_legacy
+step reader_begin: BEGIN;
+step reader_lock: SELECT public.fn_ca_lock_tournament_seat_acquisition('46464300-0000-4000-8000-000000000001',NULL,NULL);
+fn_ca_lock_tournament_seat_acquisition                                                                          
+----------------------------------------------------------------------------------------------------------------
+{"ok": true, "status": "REGISTERING", "table_id": null, "tournament_id": "46464300-0000-4000-8000-000000000001"}
+(1 row)
+
+step writer_begin: BEGIN;
+step writer_update: UPDATE public.ca_mtt_admission_contract SET abi=abi WHERE singleton;
+step observed_wait: 
+ DO $wait$ BEGIN
+  IF NOT EXISTS(SELECT 1 FROM pg_stat_activity w JOIN pg_stat_activity r
+    ON r.pid=ANY(pg_blocking_pids(w.pid))
+    WHERE w.datname=current_database() AND r.datname=current_database()
+      AND w.application_name='r46-registration-writer' AND r.application_name='r46-registration-reader'
+      AND w.wait_event_type='Lock') THEN
+   RAISE EXCEPTION 'REGISTRATION_ADMISSION_LOCK_WAIT_NOT_PROVEN';
+  END IF;
+  RAISE NOTICE 'REGISTRATION_ADMISSION_LOCK_WAIT_PROVEN';
+ END $wait$;
+
+ERROR:  REGISTRATION_ADMISSION_LOCK_WAIT_NOT_PROVEN
+step reader_commit: COMMIT;
+step writer_rollback: ROLLBACK;
+step final_legacy: SELECT abi FROM public.ca_mtt_admission_contract;
+abi               
+------------------
+legacy-capacity-v1
+(1 row)
+
+reader: WARNING:  there is no transaction in progress
+writer: WARNING:  there is no transaction in progress
+
+starting permutation: reader_begin reader_lock writer_begin writer_update observed_wait reader_rollback writer_rollback final_legacy
+step reader_begin: BEGIN;
+step reader_lock: SELECT public.fn_ca_lock_tournament_seat_acquisition('46464300-0000-4000-8000-000000000001',NULL,NULL);
+fn_ca_lock_tournament_seat_acquisition                                                                          
+----------------------------------------------------------------------------------------------------------------
+{"ok": true, "status": "REGISTERING", "table_id": null, "tournament_id": "46464300-0000-4000-8000-000000000001"}
+(1 row)
+
+step writer_begin: BEGIN;
+step writer_update: UPDATE public.ca_mtt_admission_contract SET abi=abi WHERE singleton;
+step observed_wait: 
+ DO $wait$ BEGIN
+  IF NOT EXISTS(SELECT 1 FROM pg_stat_activity w JOIN pg_stat_activity r
+    ON r.pid=ANY(pg_blocking_pids(w.pid))
+    WHERE w.datname=current_database() AND r.datname=current_database()
+      AND w.application_name='r46-registration-writer' AND r.application_name='r46-registration-reader'
+      AND w.wait_event_type='Lock') THEN
+   RAISE EXCEPTION 'REGISTRATION_ADMISSION_LOCK_WAIT_NOT_PROVEN';
+  END IF;
+  RAISE NOTICE 'REGISTRATION_ADMISSION_LOCK_WAIT_PROVEN';
+ END $wait$;
+
+ERROR:  REGISTRATION_ADMISSION_LOCK_WAIT_NOT_PROVEN
+step reader_rollback: ROLLBACK;
+step writer_rollback: ROLLBACK;
+step final_legacy: SELECT abi FROM public.ca_mtt_admission_contract;
+abi               
+------------------
+legacy-capacity-v1
+(1 row)
+
+reader: WARNING:  there is no transaction in progress
+writer: WARNING:  there is no transaction in progress

@@ -1,7 +1,11 @@
 import {randomUUID} from 'node:crypto';
 import {execFileSync,spawnSync} from 'node:child_process';
 import {pathToFileURL,fileURLToPath} from 'node:url';
-export async function coordinate(d,{deadlineMs=600000,pollMs=5000,maxAttempts=3}={}){
+// A measured ~10-minute hosted queue exhausted the former total budget after
+// successful verification. Allow that queue, the workflow's 10-minute execution
+// limit and one minute for authenticated artifact consumption. Catalog proofs
+// still expire five minutes after observation; no timestamp is renewed here.
+export async function coordinate(d,{deadlineMs=21*60*1000,pollMs=5000,maxAttempts=3}={}){
  const started=d.now(),head=await d.head();
  for(let attempt=0;attempt<maxAttempts;attempt++){
   if(d.now()-started>=deadlineMs)throw Error('proof deadline exceeded');

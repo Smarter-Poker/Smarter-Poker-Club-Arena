@@ -47,12 +47,19 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { verifyPolicy } from '../docs/agent-policy/agent-policy.mjs';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
 /** The documents an agent is told to obey before it touches anything. */
-const BINDING_DOCS = ['CLAUDE.md', 'AGENT-PLAYBOOK.md', 'AGENTS-PUSH-GUIDE.md'];
+const BINDING_DOCS = [
+  'CLAUDE.md',
+  'AGENT-PLAYBOOK.md',
+  'AGENTS-PUSH-GUIDE.md',
+  '.claude/skills/deploy-hetzner/SKILL.md',
+  '.claude/skills/club-arena-console/SKILL.md',
+];
 
 /**
  * A doc is allowed to talk ABOUT something that is gone - most of this repo's
@@ -68,13 +75,28 @@ const NOTES_ABSENCE =
 const NAMES_ANOTHER_REPO = /World Hub|Smarter-Poker-World-Hub|world-hub/i;
 
 const SCRIPT_REF =
-  /(?:\.github\/scripts|scripts|server\/scripts)\/[A-Za-z0-9._/-]+\.(?:sh|mjs|cjs|js|ts)(?![A-Za-z0-9])/g;
+  /(?:\.claude\/skills\/[A-Za-z0-9_-]+\/scripts|\.github\/scripts|scripts|server\/scripts)\/[A-Za-z0-9._/-]+\.(?:sh|mjs|cjs|js|ts)(?![A-Za-z0-9])/g;
 
 function contextAround(lines: string[], i: number): string {
   return lines.slice(Math.max(0, i - 3), i + 4).join('\n');
 }
 
 describe('the docs describe THIS environment', () => {
+  it('active skills retain assigned delivery authority without obsolete human gates', () => {
+    const forbidden = [
+      /do not push until (?:Dan|he|the owner) approves/i,
+      /an agent never sets (?:one|credentials)/i,
+    ];
+    for (const doc of BINDING_DOCS) {
+      const body = read(doc).replace(/\s+/g, ' ');
+      for (const phrase of forbidden) expect(body, doc).not.toMatch(phrase);
+    }
+    const engine = read('.claude/skills/deploy-hetzner/SKILL.md');
+    expect(engine).toContain('PUBLISHING.md');
+    expect(engine).toContain('Only engine activation');
+    expect(engine).toContain('throughout the hour');
+  });
+
   it('every script a binding doc names is a script that exists', () => {
     const broken: string[] = [];
     for (const doc of BINDING_DOCS) {
@@ -284,5 +306,41 @@ describe('the docs describe THIS environment', () => {
     expect(hook, 'the repair must name the directory the tools actually live in').toContain(
       '/opt/homebrew/bin'
     );
+  });
+});
+
+const POLICY_FILES = ['OWNER-POLICY.md', 'OPERATING-LAW.md', 'HARDENING.md', 'REFERENCE-INDEX.md'];
+const FIRST_OPEN_DOCS = [
+  'AGENT-PLAYBOOK.md',
+  'AGENTS-PUSH-GUIDE.md',
+  'CLAUDE.md',
+  '.agents/rules/00-agent-playbook.md',
+];
+const RETIRED_ACTIVE_DIRECTIONS = [
+  /your job ends at [“"`]push a branch/i,
+  /autopilot (?:squash-)?merges (?:it |only |the moment)/i,
+  /gh[^\n]{0,20}is NOT installed/i,
+  /migrations[^\n]*will be applied by CI/i,
+  /root retains sole (?:integration|release)/i,
+];
+
+describe('active agent instructions use the current policy', () => {
+  it('the actual policy content and tool version match their reviewed hashes', () => {
+    expect(verifyPolicy(join(ROOT, 'docs/agent-policy')).policyVersion).toBe('2.9');
+  });
+  it('the root loader reaches the portable policy and every policy file exists', () => {
+    const loader = read('AGENTS.md');
+    for (const file of POLICY_FILES) {
+      expect(loader).toContain(`docs/agent-policy/${file}`);
+      expect(read(`docs/agent-policy/${file}`).trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it('first-open guides do not reinstate retired release or environment directions', () => {
+    for (const file of FIRST_OPEN_DOCS) {
+      for (const retired of RETIRED_ACTIVE_DIRECTIONS) {
+        expect(read(file), `${file} reinstates ${retired}`).not.toMatch(retired);
+      }
+    }
   });
 });

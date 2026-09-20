@@ -398,6 +398,29 @@ describe('withheldReason names every cause, in the contract order', () => {
     expect(withheldReason(policy({ variants: ['plo6'] }), full)).toBe('variant_excluded');
   });
 
+  it.each([
+    ['low', 'nlh', null],
+    [' LOW ', 'NLH', null],
+    ['high', 'nlh', 'stake_band_excluded'],
+    ['low', 'plo6', 'variant_excluded'],
+    ['high', 'plo6', 'stake_band_excluded'],
+    [null, 'nlh', 'stake_band_excluded'],
+    ['low', null, 'variant_excluded'],
+  ])('checks both configured restrictions independently (%s, %s)', (stakeBand, variant, reason) => {
+    const p = policy({ stakeBands: ['low'], variants: ['nlh'] });
+    expect(withheldReason(p, { ...full, stakeBand, variant })).toBe(reason);
+  });
+
+  it('does not turn an unasked restriction into a rejection of a supplied coordinate', () => {
+    const p = policy({ stakeBands: ['low'], variants: ['nlh'] });
+    expect(withheldReason(p, { stakeBand: 'low' })).toBeNull();
+    expect(withheldReason(p, { variant: 'nlh' })).toBeNull();
+    expect(withheldReason(p, {})).toBeNull();
+    // The all-coordinate eligibility API still requires both restricted values.
+    expect(horseAllowedByPolicy(p, { stakeBand: 'low' })).toBe(false);
+    expect(horseAllowedByPolicy(p, { variant: 'nlh' })).toBe(false);
+  });
+
   it('the wrong hour', () => {
     const p = policy({ schedule: [{ startHourUTC: 0, endHourUTC: 6 }] });
     expect(withheldReason(p, full)).toBe('outside_schedule');
@@ -579,7 +602,7 @@ describe('reading the policy', () => {
 
   it('reports a repeated failure once, not once every thirty seconds', async () => {
     /* The engine can ship before the migration that creates the RPC. An
-       unthrottled report would file a Sentry event every cycle for ever,
+       unthrottled report would file a error reporting event every cycle for ever,
        which is how a real signal becomes noise. */
     h.rpc.mockResolvedValue({ data: null, error: { message: 'PGRST202' } });
     await getFleetPolicy(null);

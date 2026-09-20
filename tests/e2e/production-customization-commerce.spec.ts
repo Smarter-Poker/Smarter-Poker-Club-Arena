@@ -127,10 +127,11 @@ async function signInTemporaryAccount(
   account: TemporaryCustomizationAccount
 ): Promise<Page> {
   const page = await context.newPage();
-  await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: RESPONSE_TIMEOUT });
-  await page
-    .waitForURL((url) => url.pathname.includes('/auth'), { timeout: 20_000 })
-    .catch(() => undefined);
+  // The public landing page deliberately does not redirect signed-out visitors.
+  // These contexts are empty: enter a protected route and require real sign-in.
+  const protectedURL = new URL('notifications', baseURL).toString();
+  await page.goto(protectedURL, { waitUntil: 'domcontentloaded', timeout: RESPONSE_TIMEOUT });
+  await page.waitForURL((url) => url.pathname.includes('/auth'), { timeout: 20_000 });
 
   if (page.url().includes('/auth')) {
     const email = page.locator('input[type="email"]').first();
@@ -146,13 +147,29 @@ async function signInTemporaryAccount(
     await page.waitForURL((url) => !url.pathname.includes('/auth'), { timeout: 45_000 });
   }
 
+  // Wait for persistence, then reject any other identity before account writes.
+  const signedInUser = await page.waitForFunction(
+    () => {
+      try {
+        const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || 'null');
+        return session?.user?.id || session?.currentSession?.user?.id || null;
+      } catch {
+        return null;
+      }
+    },
+    undefined,
+    { timeout: 30_000 }
+  );
+  expect(await signedInUser.jsonValue()).toBe(account.id);
+  await signedInUser.dispose();
+
   await page.evaluate(() => localStorage.setItem('club_arena_welcome_accepted', 'true'));
   // The canonical lobby is intentionally a standalone full-bleed route. It
   // does not mount AppLayout, which owns the server-backed profile decision
   // used by ensurePlayableProfile. Probe a known protected layout route just
   // like global setup and the realtime certification do; otherwise the test
   // waits for a gate that cannot exist on `/` and can never reach checkout.
-  await page.goto(new URL('notifications', baseURL).toString(), {
+  await page.goto(protectedURL, {
     waitUntil: 'domcontentloaded',
     timeout: RESPONSE_TIMEOUT,
   });
@@ -389,9 +406,10 @@ test.describe('production Table Studio commerce certification', () => {
       // Individual assets go first; complete themes go last so every SKU sells
       // new permission and the test does not intentionally request an overlap.
       for (const sku of purchaseOrder(skus, firstFeature)) {
-        const { data, error } = await buyer.client.rpc('fn_purchase_feature', {
+        const { data, error } = await buyer.client.rpc('fn_purchase_feature_v2', {
           p_user_id: buyer.id,
           p_feature: sku.feature,
+          p_request_id: globalThis.crypto.randomUUID(),
         });
         expect(error, `RPC transport failed for ${sku.feature}`).toBeNull();
         expect(data?.success, `Purchase failed for ${sku.feature}: ${data?.error || ''}`).toBe(
@@ -479,8 +497,12 @@ test.describe('production Table Studio commerce certification', () => {
       const themeFeature = 'studio:theme_id:neon-blue';
       const linkedFeature = 'studio:table_id:ice_cavern';
       const { data: presetPurchase, error: presetError } = await entitlementProbe.client.rpc(
-        'fn_purchase_feature',
-        { p_user_id: entitlementProbe.id, p_feature: themeFeature }
+        'fn_purchase_feature_v2',
+        {
+          p_user_id: entitlementProbe.id,
+          p_feature: themeFeature,
+          p_request_id: globalThis.crypto.randomUUID(),
+        }
       );
       expect(presetError).toBeNull();
       expect(presetPurchase?.success).toBe(true);
@@ -490,8 +512,12 @@ test.describe('production Table Studio commerce certification', () => {
         exactQuery('diamonds', 'id', entitlementProbe.id)
       );
       const { data: linkedPurchase, error: linkedError } = await entitlementProbe.client.rpc(
-        'fn_purchase_feature',
-        { p_user_id: entitlementProbe.id, p_feature: linkedFeature }
+        'fn_purchase_feature_v2',
+        {
+          p_user_id: entitlementProbe.id,
+          p_feature: linkedFeature,
+          p_request_id: globalThis.crypto.randomUUID(),
+        }
       );
       expect(linkedError).toBeNull();
       expect(linkedPurchase?.already_owned).toBe(true);
@@ -517,16 +543,24 @@ test.describe('production Table Studio commerce certification', () => {
       // user id, and RLS cannot read the buyer's entitlement rows.
       const cheapest = [...skus].sort((a, b) => a.diamond_cost - b.diamond_cost)[0];
       const { data: insufficient, error: insufficientError } = await observer.client.rpc(
-        'fn_purchase_feature',
-        { p_user_id: observer.id, p_feature: cheapest.feature }
+        'fn_purchase_feature_v2',
+        {
+          p_user_id: observer.id,
+          p_feature: cheapest.feature,
+          p_request_id: globalThis.crypto.randomUUID(),
+        }
       );
       expect(insufficientError).toBeNull();
       expect(insufficient?.success).toBe(false);
       expect(String(insufficient?.error || '')).toMatch(/insufficient/i);
 
       const { data: crossAccount, error: crossAccountError } = await observer.client.rpc(
-        'fn_purchase_feature',
-        { p_user_id: buyer.id, p_feature: cheapest.feature }
+        'fn_purchase_feature_v2',
+        {
+          p_user_id: buyer.id,
+          p_feature: cheapest.feature,
+          p_request_id: globalThis.crypto.randomUUID(),
+        }
       );
       expect(crossAccountError).toBeNull();
       expect(crossAccount?.success).toBe(false);

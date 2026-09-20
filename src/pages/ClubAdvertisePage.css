@@ -460,3 +460,41 @@
     align-items: start;
   }
 }
+
+/* ── The poster (2026-09-13): 3:4, what a tap opens full screen ─────────────
+   Full width on a phone would be a 500px-tall preview; cap it and centre it,
+   the way the empty-state rotator caps its poster. */
+.club-advertise__preview--poster {
+  max-width: 240px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Day by day, one flight at a time ─────────────────────────────────────── */
+.club-advertise__days {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.club-advertise__days th,
+.club-advertise__days td {
+  padding: 5px 6px;
+  text-align: right;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.club-advertise__days th:first-child,
+.club-advertise__days td:first-child {
+  text-align: left;
+}
+
+.club-advertise__days th {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9fb3c8;
+}

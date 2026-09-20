@@ -20,6 +20,13 @@ import {
   totalPayout,
   type ResultSort,
 } from '../../utils/tournamentPayout';
+import { TOURNAMENT_ARENA_EMBED } from '../../services/TournamentService';
+import {
+  tournamentRowUnitCents,
+  type TournamentArenaEmbed,
+} from '../../components/tournament/details/types';
+import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../utils/format';
+import { CHIP_UNIT_CENTS, normalizeUnitCents } from '../../../server/src/tournament/tournamentUnit';
 import {
   MysteryBountyService,
   formatCents,
@@ -29,6 +36,7 @@ import {
 } from '../../services/MysteryBountyService';
 import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
 import TournamentPaymentStatus from '../../components/tournament/TournamentPaymentStatus';
+import { isRecordedSatelliteQualifier } from '../../utils/satelliteQualification';
 
 interface CompletedTournament {
   id: string;
@@ -49,6 +57,16 @@ interface CompletedTournament {
   is_pko: boolean;
   is_mystery_bounty: boolean;
   spin_multiplier: number | null;
+  format_contract?: string | null;
+  satellite_target_id?: string | null;
+  satellite_target?: string | null;
+  /**
+   * THE CLUB THIS EVENT BELONGED TO (2026-09-20), exactly the three columns
+   * `fn_ca_tournament_unit_cents` joins and tests. Every prize, bounty and
+   * mystery figure on this page is read at the unit that follows from it, so a
+   * Diamond event's record is denominated the way it was paid.
+   */
+  arena?: TournamentArenaEmbed['arena'];
 }
 
 /**
@@ -77,6 +95,7 @@ interface TournamentResult {
   /** Knockouts that paid. */
   bounties_collected: number;
   status: string;
+  chips: number | null;
 }
 
 interface ArchiveRead<T> {
@@ -249,8 +268,7 @@ export default function TournamentResultsPage() {
          age out of the top 100 saw their own history shrink toward empty.
          The inner join pushes both problems into one query: the newest 100
          completed events THE PLAYER WAS IN. */
-      const cols =
-        'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier';
+      const cols = `id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target, ${TOURNAMENT_ARENA_EMBED}`;
       const mine = filter === 'mine' && user?.id;
       let query = supabase
         .from('tournaments')
@@ -430,7 +448,7 @@ export default function TournamentResultsPage() {
         const { data, error: deepLinkErr } = await supabase
           .from('tournaments')
           .select(
-            'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier'
+            `id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target, ${TOURNAMENT_ARENA_EMBED}`
           )
           .eq('id', tournamentId)
           .maybeSingle();
@@ -473,7 +491,9 @@ export default function TournamentResultsPage() {
            both as it credits a chest. Reading them here means the results table
            is right for a plain KO event and a PKO as well, and the mystery
            split below is an extra breakdown rather than the only source. */
-        .select('user_id, username, position, prize, bounty_winnings, bounties_collected, status')
+        .select(
+          'user_id, username, position, prize, bounty_winnings, bounties_collected, status, chips'
+        )
         .eq('tournament_id', tournamentId)
         .order('position', { ascending: true, nullsFirst: false })
         /* A 1,001-entrant field would have lost its tail - and the tail of a
@@ -499,6 +519,7 @@ export default function TournamentResultsPage() {
             bounties_collected:
               Number((r as { bounties_collected: number | null }).bounties_collected) || 0,
             status: String((r as { status: string | null }).status ?? ''),
+            chips: (r as { chips: number | null }).chips ?? null,
           })),
         });
       }
@@ -708,6 +729,17 @@ export default function TournamentResultsPage() {
     return `${pos}th`;
   };
 
+  /**
+   * THE GRID THE SELECTED EVENT PAID ON (2026-09-20), read off the row's own
+   * arena embed. `unitAmount` is `formatAmount` at a chip event - the same
+   * function, so every chip figure in this record is byte-identical by
+   * construction - and whole Diamonds at a Diamond event, where `formatAmount`
+   * would print a fraction the payment cannot contain. `unitWord` is the noun
+   * that goes beside it.
+   */
+  const selectedUnitCents = tournamentRowUnitCents(selectedTournament);
+  const selectedUnitSuffix = moneySuffixAtUnit(selectedUnitCents);
+
   const formatAmount = (n: number) => {
     const truncated = Math.trunc(n * 100) / 100;
     // Show decimals only if there are sub-unit fractions
@@ -719,6 +751,11 @@ export default function TournamentResultsPage() {
       maximumFractionDigits: 2,
     });
   };
+
+  const unitAmount = (n: number) =>
+    normalizeUnitCents(selectedUnitCents) === CHIP_UNIT_CENTS
+      ? formatAmount(n)
+      : formatPrizeAtUnit(n, selectedUnitCents);
 
   const getVariantLabel = (t: CompletedTournament) => {
     if (t.is_xmtt) return 'XMTT';
@@ -750,8 +787,18 @@ export default function TournamentResultsPage() {
    * change loses silently: sort or highlight on the placement prize alone and
    * the table names the wrong person as the winner of the night.
    */
-  const finishers = results.filter((r) => r.position !== null && r.position !== undefined);
-  const sortedResults = sortResults(finishers, resultSort);
+  const isQualifier = (r: TournamentResult) => isRecordedSatelliteQualifier(selectedTournament, r);
+  const finishers = results.filter((r) => r.position != null || isQualifier(r));
+  const sortedResults =
+    resultSort === 'finish'
+      ? [
+          ...finishers.filter(isQualifier),
+          ...sortResults(
+            finishers.filter((r) => !isQualifier(r)),
+            resultSort
+          ),
+        ]
+      : sortResults(finishers, resultSort);
   const topEarner = biggestEarner(finishers);
   const championWasOutEarned = bountyBeatTheChampion(finishers);
 
@@ -898,7 +945,7 @@ export default function TournamentResultsPage() {
                     const { data, error: hitRowErr } = await supabase
                       .from('tournaments')
                       .select(
-                        'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier'
+                        `id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target, ${TOURNAMENT_ARENA_EMBED}`
                       )
                       .eq('id', h.tournamentId)
                       .maybeSingle();
@@ -1265,7 +1312,8 @@ export default function TournamentResultsPage() {
                     >
                       Biggest Total Payout: {topEarner.username} (
                       {getOrdinalPosition(topEarner.position)}) With{' '}
-                      {formatAmount(totalPayout(topEarner))}, More Than The Champion
+                      {unitAmount(totalPayout(topEarner))}
+                      {selectedUnitSuffix}, More Than The Champion
                     </div>
                   )}
                   {/* Column key. Kept above the rows because every row is a
@@ -1357,7 +1405,7 @@ export default function TournamentResultsPage() {
                                     minWidth: '28px',
                                   }}
                                 >
-                                  {getOrdinalPosition(r.position)}
+                                  {isQualifier(r) ? 'Qualified' : getOrdinalPosition(r.position)}
                                 </span>
                                 <span
                                   style={{
@@ -1395,8 +1443,8 @@ export default function TournamentResultsPage() {
                                   }}
                                 >
                                   {mysteryCount.toLocaleString('en-US')} Mystery (
-                                  {formatCents(mysteryCents)}), Largest{' '}
-                                  {formatCents(mysteryLargest)}
+                                  {formatCents(mysteryCents, selectedUnitCents)}), Largest{' '}
+                                  {formatCents(mysteryLargest, selectedUnitCents)}
                                 </div>
                               )}
                             </div>
@@ -1408,7 +1456,7 @@ export default function TournamentResultsPage() {
                                 textAlign: 'right',
                               }}
                             >
-                              {r.prize > 0 ? formatAmount(r.prize) : '-'}
+                              {r.prize > 0 ? unitAmount(r.prize) : '-'}
                             </span>
                             <span
                               style={{
@@ -1429,7 +1477,7 @@ export default function TournamentResultsPage() {
                                 textAlign: 'right',
                               }}
                             >
-                              {r.bounty_winnings > 0 ? formatAmount(r.bounty_winnings) : '-'}
+                              {r.bounty_winnings > 0 ? unitAmount(r.bounty_winnings) : '-'}
                             </span>
                             <span
                               style={{
@@ -1439,7 +1487,7 @@ export default function TournamentResultsPage() {
                                 textAlign: 'right',
                               }}
                             >
-                              {total > 0 ? formatAmount(total) : '-'}
+                              {total > 0 ? unitAmount(total) : '-'}
                             </span>
                           </div>
                         );

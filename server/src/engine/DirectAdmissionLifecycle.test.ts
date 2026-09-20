@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GameServer } from '../GameServer.js';
+import * as freezeState from '../maintenance/freezeState.js';
+import * as errorReporter from '../services/errorReporter.js';
+import { BoundedLeaseRenewalScope } from '../services/BoundedLeaseRenewalScope.js';
 
 type Admission = 'ready' | 'not_wakeable' | 'owned_elsewhere' | 'retryable_failure';
 
@@ -19,9 +22,15 @@ function bareServer(): any {
   server.directTableAdmissionLeaseGenerations = new Map<string, string>();
   server.directTableEngineRecoveryJobs = new Set<Promise<void>>();
   server.tournamentManagerAdmissionOperations = new Map<string, Promise<void>>();
+  server.tournamentManagerAdmissionRetryTimers = new Map();
+  server.tournamentTopUpsInFlight = new Map<string, Promise<void>>();
   server.tournamentManagerLeaseReleaseOperations = new Map<string, Promise<boolean>>();
   server.tournamentManagerPendingLeaseReleases = new Map<string, string>();
   server.ownershipLeaseRenewalOperation = null;
+  server.ownershipLeaseRenewalAbandoned = new WeakSet<Promise<void>>();
+  server.cashLeaseRenewalScope = new BoundedLeaseRenewalScope();
+  server.tournamentLeaseRenewalScope = new BoundedLeaseRenewalScope();
+  server.shutdownOwnershipLeaseRenewalActive = false;
   server.discoveryJobs = new Set<Promise<void>>();
   server.serverLifecycleJobs = new Set<Promise<void>>();
   return server;
@@ -284,6 +293,96 @@ describe('direct table admission lifecycle', () => {
     expect(server.serverLifecycleJobs.size).toBe(0);
   });
 
+  it.each(['registration', 'late-ticket'] as const)(
+    'fences a reserved %s top-up before its funding callback spends a turn',
+    async (kind) => {
+      const server = bareServer();
+      const freeze = vi.spyOn(freezeState, 'isMaintenanceFrozen').mockReturnValue(false);
+      let spent = 0;
+      const funding = vi.fn(async () => {
+        spent++;
+      });
+      server.performStop = vi.fn(() => server.drainOwnedLifecycleJobs());
+      try {
+        expect(server.launchDiscoveryTopUp('reserved', 7, funding, 'test.top-up', kind)).toBe(true);
+        expect(server.tournamentTopUpsInFlight.size).toBe(1);
+        const stopping = server.stop() as Promise<void>;
+        expect(server.running).toBe(false);
+        expect(server.lifecycleGeneration).toBe(8);
+        await stopping;
+        expect(funding).not.toHaveBeenCalled();
+        expect(spent).toBe(0);
+        expect(server.tournamentTopUpsInFlight.size).toBe(0);
+        expect(server.discoveryJobs.size).toBe(0);
+      } finally {
+        await server.teardownPromise;
+        freeze.mockRestore();
+      }
+    }
+  );
+
+  it.each([
+    ['registration', 'fulfilled'],
+    ['registration', 'rejected'],
+    ['late-ticket', 'fulfilled'],
+    ['late-ticket', 'rejected'],
+  ] as const)(
+    'retains a started %s continuation until its actual %s outcome during stop',
+    async (kind, outcome) => {
+      const server = bareServer();
+      const freeze = vi.spyOn(freezeState, 'isMaintenanceFrozen').mockReturnValue(false);
+      const report = vi.spyOn(errorReporter, 'reportError').mockImplementation(() => {});
+      const funding = deferred();
+      const continuation = deferred();
+      const failure = new Error('controlled funding continuation failure');
+      let spent = 0;
+      const work = vi.fn(async () => {
+        spent++;
+        await funding.promise;
+        await continuation.promise;
+        if (outcome === 'rejected') throw failure;
+      });
+      server.performStop = vi.fn(() => server.drainOwnedLifecycleJobs());
+      let stopping: Promise<void> | undefined;
+      try {
+        expect(server.launchDiscoveryTopUp('admitted', 7, work, 'test.top-up', kind)).toBe(true);
+        await Promise.resolve();
+        expect(work).toHaveBeenCalledOnce();
+        expect(spent).toBe(1);
+        const held = server.tournamentTopUpsInFlight.get('admitted');
+        let stopped = false;
+        stopping = (server.stop() as Promise<void>).then(() => {
+          stopped = true;
+        });
+        funding.resolve();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(stopped, 'stop discarded the post-funding continuation').toBe(false);
+        expect(server.tournamentTopUpsInFlight.get('admitted')).toBe(held);
+        expect(server.discoveryJobs.size).toBe(1);
+        expect(server.launchDiscoveryTopUp('after-stop', 8, work, 'test.top-up', kind)).toBe(false);
+        continuation.resolve();
+        await stopping;
+        expect(stopped).toBe(true);
+        expect(work).toHaveBeenCalledOnce();
+        expect(server.tournamentTopUpsInFlight.size).toBe(0);
+        expect(server.discoveryJobs.size).toBe(0);
+        if (outcome === 'rejected') {
+          expect(report).toHaveBeenCalledOnce();
+          expect(report).toHaveBeenCalledWith(failure, 'test.top-up', {
+            tournamentId: 'admitted',
+          });
+        } else expect(report).not.toHaveBeenCalled();
+      } finally {
+        funding.resolve();
+        continuation.resolve();
+        await stopping;
+        await server.drainDiscoveryJobs();
+        report.mockRestore();
+        freeze.mockRestore();
+      }
+    }
+  );
+
   it('drains cross-registry continuations to one global fixed point', async () => {
     const server = bareServer();
     const firstMutation = deferred();
@@ -333,6 +432,39 @@ describe('direct table admission lifecycle', () => {
     server.tournamentManagerAdmissionOperations.clear();
     await draining;
     expect(admissionsDrained).toBe(true);
+  });
+
+  it('settles the real shutdown pass through both scopes without a swallowed renewal error', async () => {
+    vi.useFakeTimers();
+    const server = bareServer();
+    server.running = false;
+    server.shutdownOwnershipLeaseRenewalActive = true;
+    const cash = vi.spyOn(server.cashLeaseRenewalScope, 'run');
+    const tournament = vi.spyOn(server.tournamentLeaseRenewalScope, 'run');
+    const report = vi.spyOn(errorReporter, 'reportError').mockImplementation(() => {});
+    try {
+      const loop = server.runShutdownOwnershipLeaseRenewalLoop();
+      server.shutdownOwnershipLeaseRenewalOperation = loop;
+      expect(cash).toHaveBeenCalledTimes(1);
+      expect(tournament).toHaveBeenCalledTimes(1);
+      await expect(cash.mock.results[0].value).resolves.toBeInstanceOf(Map);
+      await expect(tournament.mock.results[0].value).resolves.toBeInstanceOf(Map);
+      const stopping = server.stopShutdownOwnershipLeaseRenewal();
+      await vi.advanceTimersByTimeAsync(5_000);
+      await stopping;
+      expect(
+        report.mock.calls.some(
+          ([, label]) => label === 'GameServer.shutdown_lease_renewal_pass_threw'
+        )
+      ).toBe(false);
+      expect(server.shutdownOwnershipLeaseRenewalActive).toBe(false);
+      expect(server.ownershipLeaseRenewalOperation).toBeNull();
+    } finally {
+      cash.mockRestore();
+      tournament.mockRestore();
+      report.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it('serializes primary and shutdown heartbeat callers through one ownership pass', async () => {

@@ -17,6 +17,9 @@ case "$("$PGBIN/postgres" --version)" in
 esac
 test -x "$PGBIN/initdb"
 test -x "$PGBIN/psql"
+# Exercise the real join/cancel race in its own disposable database. This is
+# part of the existing accounting check, not a separate release workflow.
+PGBIN="$PGBIN" python3 "$repo/scripts/dev/probe-cash-game-admission-lock.py"
 # Homebrew may place support files inside the keg rather than the compiled path.
 departure_share="$("$PGBIN/pg_config" --sharedir)"
 if [[ ! -f "$departure_share/postgres.bki" && -f "$PGBIN/../share/postgresql/postgres.bki" ]]; then
@@ -42,7 +45,8 @@ import re,sys
 from pathlib import Path
 root=Path(sys.argv[1])/'supabase/migrations'
 for file,name in [
- ('20260906152756_a_seat_cashout_locks_the_game_before_the_seat.sql','atomic_seat_cashout_locked')]:
+ ('20260906152756_a_seat_cashout_locks_the_game_before_the_seat.sql','atomic_seat_cashout_locked'),
+ ('20260909203940_an_expiring_credit_is_spent_before_an_allowance_that_renews.sql','fn_consume_time_bank')]:
  text=(root/file).read_text()
  pattern=r'CREATE OR REPLACE FUNCTION public\.'+name+r'\([\s\S]*?\$function\$[\s\S]*?\$function\$;'
  matches=re.findall(pattern,text)
@@ -292,6 +296,33 @@ SQL
 for departure_apply in 1 2; do
   "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
     -d postgres -f "$repo/scripts/deploy/phase-two-retire-unbound-cashout.sql" >/dev/null
+done
+
+# The fixture above owns the original enumeration. Exercise the complete
+# additive migration, including its production baseline guard and grants.
+"$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres -f "$repo/supabase/migrations/20260914101745_cash_pending_moves_carry_original_occupancy.sql" >/dev/null
+
+# Source plan for protected execution: exercise the complete read-only arrival
+# migration with the actual retained transfer receipts, never a mocked proof.
+for departure_apply in 1 2; do
+  "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+    -d postgres -f "$repo/supabase/migrations/20260916044342_cash_move_presence_reads_confirmed_arrivals.sql" >/dev/null
+done
+
+"$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres -f "$repo/scripts/dev/fixtures/departure-waitlist-functions.sql" >/dev/null
+for departure_apply in 1 2; do
+  "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+    -d postgres -f "$repo/supabase/migrations/20260914110751_cash_game_waitlist_cancellation_releases_its_offers.sql" >/dev/null
+done
+
+# Parked state is exercised with the same actual service and engine instances.
+for departure_migration in 20260904230754_engine_presence_survives_the_restart.sql 20260917120432_parked_time_banks_retain_their_seat_occupancy.sql; do
+  for departure_apply in 1 2; do
+    "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+      -d postgres -f "$repo/supabase/migrations/$departure_migration" >/dev/null
+  done
 done
 
 "$PGBIN/postgres" --version

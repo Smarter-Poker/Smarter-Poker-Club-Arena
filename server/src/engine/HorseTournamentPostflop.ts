@@ -6,6 +6,7 @@ import {
   selectContinuationSamples,
   type TournamentUtilityInput,
   type TournamentContinuationRunner,
+  type TournamentContinuationWork,
 } from './HorseTournamentUtility.js';
 import {
   projectTournamentFutureGame,
@@ -15,7 +16,7 @@ import { CONTINUATION_POLICY } from './HorseTournamentContinuation.js';
 import { FUTURE_HAND_POLICY } from './HorseTournamentFutureHand.js';
 
 export const PHASE8_POLICY = {
-  version: 'horse-tournament-postflop-round1-v2',
+  version: 'horse-tournament-postflop-round1-v4',
   defaultMode: 'shadow',
   deepStackBB: 200,
   deepCommitFraction: 0.25,
@@ -34,6 +35,8 @@ export interface HorseTournamentPostflopLedger {
   mode: Exclude<Phase8Mode, 'off'>;
   eligible: boolean;
   fired: boolean;
+  /** A useful continuation survived final policy/wall gates; not executor acceptance. */
+  completed: boolean;
   changed: boolean;
   applied: boolean;
   reason: string;
@@ -56,6 +59,7 @@ export interface HorseTournamentPostflopLedger {
   latencyMs: number;
   simulationMs: number;
   policyMs: number;
+  work: TournamentContinuationWork;
   executionStatus: 'pending' | 'intended' | 'coerced' | 'fallback' | 'not_executed';
   executedAction: HorseDecision['action'] | null;
   executedAmount: number | null;
@@ -88,7 +92,7 @@ export function deepOnePairCommitment(
   const set = pocket && gs.communityCards.some((c) => c.rank === hero.cards[0].rank);
   const weakMade = made <= 2 || (made === 3 && boardPair && !set);
   const opponents = gs.players.filter(
-    (p) => p.user_id !== hero.user_id && !p.is_folded && !p.is_sitting_out
+    (p) => p.user_id !== hero.user_id && !p.is_folded && (!p.is_sitting_out || p.is_all_in)
   );
   const opponentIds = new Set(opponents.map((p) => p.user_id));
   // Uncalled excess is returned. Only additional chips a live opponent can
@@ -106,7 +110,9 @@ export function deepOnePairCommitment(
     (a) =>
       a.stage !== 'preflop' &&
       opponentIds.has(a.userId) &&
-      (a.action === 'raise' || a.action === 'all_in')
+      // The controller leaves isFullRaise undefined for an all-in call.
+      // Both full and short raises add pressure; a call-off does not.
+      (a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise !== undefined))
   );
   return (
     fullStack / gs.bigBlind >= PHASE8_POLICY.deepStackBB &&
@@ -139,6 +145,7 @@ export function evaluateTournamentPostflop(
     mode,
     eligible: false,
     fired: false,
+    completed: false,
     changed: false,
     applied: false,
     reason: 'unavailable',
@@ -161,15 +168,31 @@ export function evaluateTournamentPostflop(
     latencyMs: 0,
     simulationMs: 0,
     policyMs: 0,
+    work: {
+      attempts: 0,
+      candidateCount: 0,
+      candidatesCompleted: 0,
+      outcomeSamples: 0,
+      samplesVisited: 0,
+      rollouts: 0,
+      rolloutCacheHits: 0,
+      estimates: 0,
+      estimateCacheHits: 0,
+      icmMethod: 'unavailable',
+      levelBounds: 0,
+      budgetStop: 'none',
+    },
     executionStatus: 'pending',
     executedAction: null,
     executedAmount: null,
   };
   const finish = (
     reason: string,
-    decision = baseline
+    decision = baseline,
+    completed = false
   ): { decision: HorseDecision; ledger: HorseTournamentPostflopLedger } => {
     ledger.reason = reason;
+    ledger.completed = completed && ledger.eligible && ledger.fired;
     ledger.latencyMs = Math.max(0, now() - start);
     ledger.policyMs = Math.max(0, ledger.latencyMs - ledger.simulationMs);
     if (
@@ -178,6 +201,7 @@ export function evaluateTournamentPostflop(
       ledger.policyMs > PHASE8_POLICY.policyBudgetMs
     ) {
       ledger.reason = 'budget_exhausted';
+      ledger.completed = false;
       ledger.applied = false;
       ledger.continuationRetained = true;
       return { decision: baseline, ledger };
@@ -250,6 +274,7 @@ export function evaluateTournamentPostflop(
       shortStackThresholdChips:
         ledger.futureGame.nextOrbitCost ?? ledger.futureGame.currentOrbitCost ?? 0,
       withinBudget: () => now() - start <= PHASE8_POLICY.workBudgetMs,
+      work: ledger.work,
     };
     const run = (maxSamples: number) =>
       reuseUtility
@@ -336,5 +361,5 @@ export function evaluateTournamentPostflop(
   const final = ledger.applied
     ? { ...candidate, tournamentUtility: baseline.tournamentUtility }
     : baseline;
-  return finish(ledger.changed ? 'candidate_changed' : 'baseline_retained', final);
+  return finish(ledger.changed ? 'candidate_changed' : 'baseline_retained', final, true);
 }

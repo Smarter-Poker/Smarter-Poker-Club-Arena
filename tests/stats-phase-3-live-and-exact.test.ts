@@ -202,7 +202,14 @@ describe('phase 3 page: live from any tab, by asking', () => {
   it('the hook polls while visible, baselines the first sample, and owns the tab return', () => {
     expect(HOOK).toMatch(/export const STATS_PULSE_INTERVAL_MS = 8_000;/);
     expect(HOOK).toMatch(/export const STATS_PULSE_STALE_AFTER_MS = 30_000;/);
-    expect(HOOK).toMatch(/supabase\.rpc\('ca_player_stats_pulse', \{ p_user: userId \}\)/);
+    /* The call gained `...statsScopeArgs(CHIP_STATS)` on 2026-09-20: the pulse
+       is a change detector over the same facts table its page reads, so it
+       carries the same asset scope. What this pins is unchanged - the hook
+       asks for the pulse, by user. */
+    expect(HOOK).toMatch(
+      /supabase\.rpc\(\s*'ca_player_stats_pulse',[\s\S]*?p_user: userId,?\s*\}\)/
+    );
+    expect(HOOK).toContain('statsScopeArgs(CHIP_STATS)');
     expect(HOOK).toMatch(/document\.visibilityState !== 'visible'\) return;/);
     expect(HOOK).toMatch(/if \(last === null\) \{\s+last = pulse;/);
     expect(HOOK).toMatch(

@@ -81,12 +81,14 @@ export interface TournamentEvent {
        eliminatePlayer is never called with place 1 anyway — the bust sweep
        reserves it for the winner. See TournamentManagerEliminations. */
     | 'tournament_winner'
+    | 'satellite_qualifiers'
     | 'final_table_deal'
     | 'level_up'
     | 'final_table'
     | 'heads_up'
     | 'payout'
     | 'hand_for_hand'
+    | 'tournament_presentation'
     | 'prize_pool_finalized'
     | 'bubble_burst'
     | 'BREAK_START'
@@ -289,12 +291,10 @@ class RealtimeChannelService {
       onPlayerRegistered?: (player: unknown) => void;
       onPlayerEliminated?: (elimination: unknown) => void;
       onLevelUp?: (level: unknown) => void;
-    }
+    },
+    options?: { presentationSnapshot?: boolean }
   ): () => void {
     const channelName = `tournament:${tournamentId}`;
-
-    if (!this.subscriptions.has(channelName))
-      engineChannelClient.send({ type: 'JOIN_TOURNAMENT', tournamentId });
 
     const unTournament = engineChannelClient.onTournamentEvent((msg: TournamentEventMessage) => {
       if (msg.tournamentId !== tournamentId) return;
@@ -312,6 +312,11 @@ class RealtimeChannelService {
           break;
       }
     });
+
+    // A new presentation reader needs current state even when another
+    // component owns the channel. Install its listener before the JOIN reply.
+    if (!this.subscriptions.has(channelName) || options?.presentationSnapshot)
+      engineChannelClient.send({ type: 'JOIN_TOURNAMENT', tournamentId });
 
     return this.retainSubscription(
       channelName,
@@ -341,7 +346,7 @@ class RealtimeChannelService {
    * route refuses a player JWT with 401 (server/src/router.ts). A browser has
    * no such key, so the four browser call sites that used to reach this
    * (rebuy, add-on, final table, level-up) were removed in the final sweep of
-   * 2026-09-08 - each was a guaranteed 401 reported to Sentry after a
+   * 2026-09-08 - each was a guaranteed 401 reported to error reporting after a
    * successful money action. Kept for a server-side caller that holds the key.
    */
   async broadcastTournamentEvent(
@@ -441,6 +446,7 @@ class RealtimeChannelService {
     onClubActivity?: (clubId: string, playersOnline: number) => void;
     onTournamentStarting?: (tournament: unknown) => void;
     onJackpotHit?: (jackpot: unknown) => void;
+    onMaintenance?: (presentation: unknown) => void;
   }): () => void {
     const channelName = 'lobby:global';
 
@@ -455,6 +461,9 @@ class RealtimeChannelService {
         }
         case 'tournament_starting':
           callbacks.onTournamentStarting?.(msg.payload);
+          break;
+        case 'maintenance':
+          callbacks.onMaintenance?.(msg.payload);
           break;
         case 'jackpot_hit':
           callbacks.onJackpotHit?.(msg.payload);

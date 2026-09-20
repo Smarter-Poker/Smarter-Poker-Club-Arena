@@ -89,6 +89,13 @@ describe('native publishing requires the exact origin verification', () => {
   });
 
   it('preserves the proved-tree client-test fast path', () => {
+    // The proof reads the source PR and its checks with this job's token.
+    // Missing read permissions returns 403 and repeats the already-passed suite.
+    expect(workflow.jobs['publish-needed'].permissions).toEqual({
+      contents: 'read',
+      'pull-requests': 'read',
+      checks: 'read',
+    });
     expect(
       eligible(target, {
         'needs.client-tests.result': 'skipped',
@@ -124,13 +131,16 @@ describe('native publishing requires the exact origin verification', () => {
     expect(mismatched.output).toBe('');
   });
 
-  it('the non-secret local template points to the same Sentry destination as production', () => {
+  it('the local template and publisher do not accept paid error telemetry configuration', () => {
     const template = readFileSync(join(root, '.env.example'), 'utf8');
     const build = workflow.jobs['build-and-store'].steps.find(
       (item: { name: string }) => item.name === 'Build Club Arena'
     );
-    for (const key of ['SENTRY_ORG', 'SENTRY_PROJECT']) {
-      expect(template.match(new RegExp('^' + key + '=(.*)$', 'm'))?.[1]).toBe(build.env[key]);
-    }
+    expect(template).not.toMatch(
+      new RegExp(String.raw`^\s*(?:VITE_)?${['SEN', 'TRY'].join('')}_\w+\s*=`, 'm')
+    );
+    expect(Object.keys(build.env).filter((name) => name.includes(['SEN', 'TRY'].join('')))).toEqual(
+      []
+    );
   });
 });

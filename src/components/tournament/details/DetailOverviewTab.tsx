@@ -1,3 +1,8 @@
+import { useTournamentHandForHand } from '../../../hooks/useTournamentHandForHand';
+import {
+  readTournamentFormat,
+  getTournamentEntryCapacity,
+} from '../../../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  DETAIL / OVERVIEW TAB — everything about the event, on one screen
@@ -57,10 +62,14 @@ import {
   ordinal,
   placePrize,
   resolvePayoutStructure,
+  tournamentRowUnitCents,
 } from './types';
 import { tournamentService } from '../../../services/TournamentService';
+import { useMaintenanceBreak } from '../../../hooks/useMaintenanceBreak';
+import { serverNow } from '../../../utils/serverClock';
 import { reportError } from '../../../utils/errorReporter';
 import { formatBuyIn, money } from '../../../utils/buyIn';
+import { moneyWordAtUnit } from '../../../utils/format';
 import { spinMultiplierLabel } from '../../../utils/spinReveal';
 import RegistrationApprovalsPanel from '../RegistrationApprovalsPanel';
 import TournamentDealReview from '../TournamentDealReview';
@@ -72,6 +81,10 @@ import {
   topBountyCents,
 } from '../../../services/MysteryBountyService';
 import { useSatellites } from './useSatellites';
+import {
+  describeMttStructure,
+  mttClockDescription,
+} from '../../../../server/src/tournament/mttStructureDescription';
 import '../../../styles/tournament-lobby-3d.css';
 import './DetailOverviewTab.css';
 
@@ -176,7 +189,41 @@ export default function DetailOverviewTab({
   const [tick, setTick] = useState(0);
   const status = String(tournament?.status || '').toUpperCase();
   const isRunning = status === 'RUNNING';
+  const handForHand = useTournamentHandForHand(tournament.id, currentUserId, isRunning);
   const isCompleted = status === 'COMPLETED';
+  const { maintenanceBreak } = useMaintenanceBreak();
+  const eventPaused = isRunning && tournament?.on_break === true;
+  const [observedPause, setObservedPause] = useState<{
+    id: string;
+    index: number;
+    anchor: number | null;
+  } | null>(null);
+  const clockAnchor = Date.parse(tournament?.level_started_at || '');
+  const clockIndex = Number(tournament?.current_level);
+  const pauseForThisEvent = observedPause?.id === tournament?.id ? observedPause : null;
+  const creditedClock = Boolean(
+    pauseForThisEvent &&
+    ((Number.isFinite(clockAnchor) &&
+      (pauseForThisEvent.anchor === null || clockAnchor > pauseForThisEvent.anchor)) ||
+      (Number.isInteger(clockIndex) && clockIndex > pauseForThisEvent.index))
+  );
+  // The engine clears on_break before it persists the resumed level anchor.
+  // Hold an observed pause through that gap; neither deadline expiry nor a
+  // global maintenance release can credit this tournament's clock.
+  const waitingForClock = isRunning && Boolean(pauseForThisEvent) && !creditedClock;
+  const clockPaused = eventPaused || waitingForClock;
+  useEffect(() => {
+    if (eventPaused) {
+      setObservedPause({
+        id: tournament.id,
+        index: Number.isInteger(clockIndex) ? clockIndex : -1,
+        anchor: Number.isFinite(clockAnchor) ? clockAnchor : null,
+      });
+    } else if (!isRunning || observedPause?.id !== tournament?.id || creditedClock) {
+      setObservedPause(null);
+    }
+  }, [eventPaused, tournament?.id, clockIndex, clockAnchor, isRunning, creditedClock]);
+
   const isSatellite =
     String(tournament?.variant ?? '').toLowerCase() === 'satellite' ||
     String(tournament?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
@@ -264,6 +311,7 @@ export default function DetailOverviewTab({
     const fallback = {
       index: Math.max(0, Number(tournament?.current_level) || 0),
       isBreak: false,
+      amountsKnown: false,
       sb: opening?.smallBlind ?? 0,
       bb: opening?.bigBlind ?? 0,
       ante: opening?.ante ?? 0,
@@ -281,6 +329,7 @@ export default function DetailOverviewTab({
       return {
         index: ls.levelIndex,
         isBreak: Boolean(cur?.isBreak),
+        amountsKnown: cur != null,
         sb: sbOf(cur),
         bb: bbOf(cur),
         ante: anteOf(cur),
@@ -304,6 +353,12 @@ export default function DetailOverviewTab({
 
   const payoutStructure = useMemo(() => resolvePayoutStructure(tournament) ?? [], [tournament]);
 
+  /* THE GRID THIS EVENT PAYS ON (2026-09-20). The place ladder below already
+     read it per row; the advertised top mystery chest is cents off
+     `fn_mystery_bounty_inventory` and needs the same answer, plus the noun
+     that goes with it. One reading, used by both. */
+  const overviewUnitCents = useMemo(() => tournamentRowUnitCents(tournament), [tournament]);
+
   /* ── Prize pool: the stored pool is authoritative, the guarantee is a floor. ── */
   const prize = useMemo(() => {
     return {
@@ -322,22 +377,25 @@ export default function DetailOverviewTab({
   }, [tournament, field.entries, payoutStructure, isSatellite]);
 
   const lateRegText = useMemo(() => {
-    const levels = Number(tournament?.late_reg_levels) || 0;
+    const levels = Number(tournament?.late_reg_levels ?? tournament?.rebuy_levels) || 0;
     const mins = Number(tournament?.late_reg_mins) || 0;
     if (levels > 0) return `Lv ${levels}`;
     if (mins > 0) return `${mins}m`;
     return 'Closed';
-  }, [tournament?.late_reg_levels, tournament?.late_reg_mins]);
+  }, [tournament?.late_reg_levels, tournament?.rebuy_levels, tournament?.late_reg_mins]);
 
   /* ── The nine stat tiles. ── */
   const stats = useMemo<StatTile[]>(() => {
-    const maxPlayers = Number(tournament?.max_players) || 0;
+    const maxPlayers = tournament ? getTournamentEntryCapacity(tournament) : null;
     return [
       {
         key: 'remaining',
         label: 'Remaining',
         value: chips(field.alive),
-        sub: maxPlayers > 0 ? `of ${chips(maxPlayers)} max` : `of ${chips(field.entries)} entries`,
+        sub:
+          maxPlayers !== null
+            ? `of ${chips(maxPlayers)} max`
+            : `of ${chips(field.entries)} entries`,
         tone: 'accent',
       },
       {
@@ -361,8 +419,8 @@ export default function DetailOverviewTab({
       {
         key: 'blindsup',
         label: 'Blinds Up',
-        value: isRunning ? clockText(level.remaining) : '-',
-        tone: isRunning && level.remaining <= 60 ? 'warn' : undefined,
+        value: clockPaused ? 'Paused' : isRunning ? clockText(level.remaining) : '-',
+        tone: isRunning && !clockPaused && level.remaining <= 60 ? 'warn' : undefined,
       },
       { key: 'latereg', label: 'Late Reg', value: lateRegText },
       {
@@ -374,17 +432,7 @@ export default function DetailOverviewTab({
       },
       { key: 'out', label: 'Eliminated', value: chips(field.eliminated) },
     ];
-  }, [
-    field,
-    tables,
-    level,
-    isRunning,
-    isCompleted,
-    lateRegText,
-    prize,
-    tournament?.max_players,
-    tournament?.starting_chips,
-  ]);
+  }, [field, tables, level, isRunning, isCompleted, clockPaused, lateRegText, prize, tournament]);
 
   /* ── Rule tags. One wrapping row; these were six separate paragraphs. ── */
   const tags = useMemo(() => {
@@ -422,15 +470,16 @@ export default function DetailOverviewTab({
     const rebuyThrough = Number(t.late_reg_levels ?? t.rebuy_levels ?? 8) || 8;
     const addonFrom = rebuyThrough;
     const addonTo = rebuyThrough + (Number(t.addon_levels ?? 1) || 1);
-    const firstDuration = Number(blindLevels?.[0]?.duration) || 0;
-    const speed =
-      firstDuration === 0
-        ? 'Standard'
-        : firstDuration <= 5
-          ? 'Turbo'
-          : firstDuration <= 10
-            ? 'Regular'
-            : 'Deep Stack';
+    const structure = describeMttStructure(
+      (blindLevels || []).map((row) => ({
+        durationMinutes: row.duration,
+        bigBlind: row.bigBlind,
+        isBreak: row.isBreak,
+      })),
+      Number(t.starting_chips)
+    );
+    const depth = structure.startingDepthBB;
+    const clockVaries = structure.minimumMinutes !== structure.maximumMinutes;
 
     const rows: InfoItem[] = [
       {
@@ -446,12 +495,17 @@ export default function DetailOverviewTab({
         label: 'Buy-In',
         value: formatBuyIn(Number(t.buy_in_amount) || 0, Number(t.buy_in_fee) || 0),
       },
-      { key: 'stack', label: 'Starting Stack', value: chips(t.starting_chips) },
-      { key: 'speed', label: 'Structure', value: speed },
+      {
+        key: 'stack',
+        label: 'Starting Stack',
+        value: `${chips(t.starting_chips)}${depth === null ? '' : ` · ${depth.toLocaleString('en-US', { maximumFractionDigits: 2 })} BB`}`,
+      },
+      { key: 'speed', label: 'Structure', value: structure.speedLabel ?? 'Unconfirmed' },
       {
         key: 'levels',
         label: 'Levels',
-        value: firstDuration ? `${firstDuration} Min` : 'Standard',
+        value: mttClockDescription(structure),
+        wide: clockVaries,
       },
       {
         key: 'rebuy',
@@ -503,7 +557,10 @@ export default function DetailOverviewTab({
       rows.push({
         key: 'mysterytop',
         label: 'Top Mystery Bounty',
-        value: top > 0 ? `${formatCents(top)} Chips` : 'Drawn When The Mystery Phase Opens',
+        value:
+          top > 0
+            ? `${formatCents(top, overviewUnitCents)} ${moneyWordAtUnit(overviewUnitCents)}`
+            : 'Drawn When The Mystery Phase Opens',
         tone: 'accent',
       });
       rows.push({
@@ -512,7 +569,7 @@ export default function DetailOverviewTab({
         value: activationStatusLine(mysteryBounty?.inventory ?? null),
       });
     }
-    if (t.variant === 'spin' || t.tournament_type === 'SPIN') {
+    if (readTournamentFormat(t) === 'spin-v1') {
       rows.push({
         key: 'spin',
         label: 'Spin Multiplier',
@@ -528,7 +585,15 @@ export default function DetailOverviewTab({
       });
     }
     return rows;
-  }, [tournament, blindLevels, isRunning, isCompleted, field.entries, mysteryBounty?.inventory]);
+  }, [
+    tournament,
+    blindLevels,
+    isRunning,
+    isCompleted,
+    field.entries,
+    mysteryBounty?.inventory,
+    overviewUnitCents,
+  ]);
 
   /* ── Podium, for a finished event. ── */
   const podium = useMemo(() => {
@@ -550,11 +615,11 @@ export default function DetailOverviewTab({
           prizeValue: Number.isFinite(recorded)
             ? recorded
             : row && pool !== null
-              ? placePrize(pool, payoutStructure, row.place)
+              ? placePrize(pool, payoutStructure, row.place, overviewUnitCents)
               : 0,
         };
       });
-  }, [isCompleted, entries, payoutStructure, prize.ladder]);
+  }, [isCompleted, entries, payoutStructure, prize.ladder, overviewUnitCents]);
 
   /**
    * The runners-up list under the podium.
@@ -611,21 +676,60 @@ export default function DetailOverviewTab({
     level.duration > 0
       ? Math.min(100, Math.max(0, (1 - level.remaining / level.duration) * 100))
       : 0;
-  const urgent = isRunning && level.remaining > 0 && level.remaining <= 60;
+  const urgent = isRunning && !clockPaused && level.remaining > 0 && level.remaining <= 60;
+  const eventDeadline = Date.parse(tournament.break_ends_at || '');
+  const expectedResumeAt = maintenanceBreak.active
+    ? maintenanceBreak.phase === 'counting_down'
+      ? maintenanceBreak.breakEndsAtMs
+      : null
+    : Number.isFinite(eventDeadline)
+      ? eventDeadline
+      : null;
+  const resumeSeconds =
+    expectedResumeAt === null ? 0 : Math.max(0, Math.ceil((expectedResumeAt - serverNow()) / 1000));
+  const pauseLabel =
+    maintenanceBreak.active && maintenanceBreak.phase === 'last_hand'
+      ? 'Last Hand In Play'
+      : maintenanceBreak.active && maintenanceBreak.phase === 'finalizing'
+        ? 'Finalizing Maintenance'
+        : maintenanceBreak.active && maintenanceBreak.phase === 'resuming'
+          ? 'Resuming Tables'
+          : eventPaused && resumeSeconds > 0
+            ? 'Expected Resume In'
+            : 'Waiting For Resume';
+  const maintenanceNote =
+    !isRunning || !maintenanceBreak.active
+      ? null
+      : maintenanceBreak.phase === 'last_hand'
+        ? 'Maintenance Break Starting. Tables Are Finishing Their Current Hand.'
+        : maintenanceBreak.phase === 'finalizing'
+          ? 'Finalizing Maintenance. Play Resumes When Ready.'
+          : maintenanceBreak.phase === 'resuming'
+            ? 'Maintenance Complete. Tables Are Resuming.'
+            : 'Maintenance Break In Progress. Seats And Chips Are Safe.';
 
-  const heroTime = isRunning
-    ? clockText(level.remaining)
-    : isCompleted
-      ? '-'
-      : untilText(secondsToStart);
-  const heroEyebrow = isRunning
-    ? level.isBreak
-      ? 'Break Ends In'
-      : `Level ${level.index + 1} Ends In`
-    : 'Starts In';
-  const heroNote = isRunning
-    ? `Running Since ${shortDate(tournament.started_at)}`
-    : `${shortDate(tournament.start_time)} - ${chips(field.entries)} Registered`;
+  const heroTime = clockPaused
+    ? pauseLabel === 'Expected Resume In'
+      ? clockText(resumeSeconds)
+      : '-'
+    : isRunning
+      ? clockText(level.remaining)
+      : isCompleted
+        ? '-'
+        : untilText(secondsToStart);
+  const heroEyebrow = clockPaused
+    ? pauseLabel
+    : isRunning
+      ? level.isBreak
+        ? 'Break Ends In'
+        : `Level ${level.index + 1} Ends In`
+      : 'Starts In';
+  const heroNote = clockPaused
+    ? `Level ${level.index + 1} Clock Paused`
+    : maintenanceNote ||
+      (isRunning
+        ? `Running Since ${shortDate(tournament.started_at)}`
+        : `${shortDate(tournament.start_time)} - ${chips(field.entries)} Registered`);
 
   return (
     <section className="dov" aria-label="Tournament Overview">
@@ -688,12 +792,17 @@ export default function DetailOverviewTab({
               <span className="dov-hero__eyebrow">{heroEyebrow}</span>
               <span
                 className={`tl-clock dov-hero__time${urgent ? ' tl-clock--urgent' : ''}${
-                  isRunning ? '' : ' tl-clock--paused'
+                  isRunning && !clockPaused ? '' : ' tl-clock--paused'
                 }`}
               >
                 {heroTime}
               </span>
-              <span className="dov-hero__note">{heroNote}</span>
+              <span
+                className="dov-hero__note"
+                role={clockPaused || maintenanceNote ? 'status' : undefined}
+              >
+                {heroNote}
+              </span>
             </div>
             <div className="dov-hero__blinds">
               <div className="dov-blind">
@@ -701,10 +810,16 @@ export default function DetailOverviewTab({
                   {isRunning ? (level.isBreak ? 'On Break' : 'Blinds') : 'Opening Blinds'}
                 </span>
                 <span className="dov-blind__value">
-                  {chipsCompact(level.sb)} / {chipsCompact(level.bb)}
+                  {level.amountsKnown
+                    ? `${chipsCompact(level.sb)} / ${chipsCompact(level.bb)}`
+                    : '-'}
                 </span>
                 <span className="dov-blind__ante">
-                  {level.ante > 0 ? `Ante ${chipsCompact(level.ante)}` : 'No Ante'}
+                  {!level.amountsKnown
+                    ? 'Current Blinds Unavailable'
+                    : level.ante > 0
+                      ? `Ante ${chipsCompact(level.ante)}`
+                      : 'No Ante'}
                 </span>
               </div>
               <div className="dov-blind dov-blind--next">
@@ -718,19 +833,21 @@ export default function DetailOverviewTab({
             </div>
           </div>
           {/* Decoration: the hero clock above it IS the value. */}
-          <div className="tl-meter dov-hero__meter" aria-hidden="true">
-            <div
-              className={`tl-meter__fill${urgent ? ' tl-meter__fill--under' : ''}`}
-              style={{ width: `${levelProgress}%` }}
-            />
-          </div>
+          {!clockPaused && (
+            <div className="tl-meter dov-hero__meter" aria-hidden="true">
+              <div
+                className={`tl-meter__fill${urgent ? ' tl-meter__fill--under' : ''}`}
+                style={{ width: `${levelProgress}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
 
       {/* Bubble play. Renders null unless hand-for-hand is actually on. */}
-      {isRunning && Boolean(tournament.hand_for_hand) && (
+      {isRunning && handForHand === true && (
         <HandForHandBanner
-          active={Boolean(tournament.hand_for_hand)}
+          active={handForHand === true}
           playersRemaining={field.alive}
           paidPositions={paidPositions}
         />
@@ -841,7 +958,7 @@ export default function DetailOverviewTab({
               </div>
             ) : satError ? (
               /* There was no error branch at all: a failed fetch reported to
-                 Sentry and then rendered the empty state, telling the player
+                 error reporting and then rendered the empty state, telling the player
                  as a fact that this event has no satellites. */
               <div className="dov-band__note dov-band__note--error" role="alert">
                 <span>{satError}</span>

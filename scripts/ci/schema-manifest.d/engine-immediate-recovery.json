@@ -1,0 +1,4 @@
+{
+  "_owner": "codex/engine-immediate-recovery-20260917",
+  "functions": ["fn_engine_recovery_window_contract"]
+}

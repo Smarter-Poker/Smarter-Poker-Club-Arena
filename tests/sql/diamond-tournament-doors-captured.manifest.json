@@ -1,0 +1,638 @@
+{
+  "captured_at": "2026-09-20T08:03:37Z",
+  "project": "kuklfnapbkmacvwxktbh",
+  "doors": [
+    {
+      "identity": "atomic_deduct_wallet_and_log(p_user_id uuid, p_amount numeric, p_category text, p_description text, p_table_id uuid, p_hand_id uuid, p_related_entity_id uuid)",
+      "md5": "ab3d8e4c0baac59e7194319ffceba71e",
+      "len": 5486,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/credit-reduction-authority/captured-payment-closure.json#definition"
+    },
+    {
+      "identity": "fn_active_maintenance_release_boundary()",
+      "md5": "0d9548e27105b7172d83be4f7d10ea47",
+      "len": 2542,
+      "owner": "postgres",
+      "grants": "anon,authenticated,service_role",
+      "bytes_from": "tests/fixtures/accounting-delivery/diamond-games/functions.sql"
+    },
+    {
+      "identity": "fn_ca_declare_ledger(p_category text, p_counterparty text, p_counterparty_entity uuid, p_settlement_id uuid, p_idempotency_key text, p_autoskip_tables text[])",
+      "md5": "1991d9f52317f33a4b9cf560d6fc91d5",
+      "len": 2151,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/accounting-delivery/diamond-games/functions.sql"
+    },
+    {
+      "identity": "fn_ca_diamond_journal_is_transfer(p_type text, p_transaction_type text, p_source text, p_issuance_class text)",
+      "md5": "918b4dccaf2255fe90a7153cc600890d",
+      "len": 1233,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "tests/fixtures/accounting-delivery/diamond-games/functions.sql"
+    },
+    {
+      "identity": "fn_ca_diamond_journal_origin(p_type text, p_transaction_type text, p_source text, p_issuance_class text, p_amount numeric)",
+      "md5": "ba8e79dfa3ce176381524eb5fb90f3fa",
+      "len": 3432,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/accounting-delivery/diamond-games/functions.sql"
+    },
+    {
+      "identity": "fn_ca_entry_scope_ok(p_user_id uuid, p_tournament_club uuid)",
+      "md5": "22e286701d8e4ce9a256efb74ae1dbb5",
+      "len": 2053,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_ca_escrow_apply(p_tournament_id uuid, p_what text, p_gross_in numeric, p_fee_entries_in numeric, p_satellite_fee_in numeric, p_bounty_in numeric, p_overlay_in numeric, p_satellite_in numeric, p_prize_out numeric, p_bounty_out numeric, p_fee_out numeric, p_refund numeric, p_reserve_out numeric, p_reserve_in numeric)",
+      "md5": "c6c26c25ab8a8b1222d375c7d6df0d2f",
+      "len": 7016,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_ca_escrow_can_pay(p_tournament_id uuid, p_kind text, p_amount numeric)",
+      "md5": "44534508da577df94a34d2055e99b1d6",
+      "len": 1701,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_ca_find_tournament_entry_ticket_for(p_tournament_id uuid, p_beneficiary_id uuid)",
+      "md5": "bc9acd00e516e3336b339349063b380d",
+      "len": 10256,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-horse-dependencies.json#definition"
+    },
+    {
+      "identity": "fn_ca_guard_watchlist()",
+      "md5": "92ee208d0887728444bda396d0b4d442",
+      "len": 2772,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/accounting-delivery/diamond-games/wheel-guard-dependencies.sql"
+    },
+    {
+      "identity": "fn_ca_is_new_mtt(p_row jsonb)",
+      "md5": "dff4202458ea4b5b940e78050e6de91c",
+      "len": 1912,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "scripts/qualification/fixtures/spin-mixed-positive-fee/provider-supplement.sql"
+    },
+    {
+      "identity": "fn_ca_lock_mtt_admission_contract()",
+      "md5": "10644d522bb50245f76942ecce735cbc",
+      "len": 498,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-dependencies.json#definition"
+    },
+    {
+      "identity": "fn_ca_lock_settlement_lane_for_finish(p_tournament_id uuid)",
+      "md5": "76e4c6b5291bab20f0cfc65dd060022b",
+      "len": 3172,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql"
+    },
+    {
+      "identity": "fn_ca_lock_settlement_lane_for_tournament(p_tournament_id uuid, p_table_id uuid)",
+      "md5": "9877846ffabee004690e6b24a3ddcee2",
+      "len": 1676,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-horse-dependencies.json#definition"
+    },
+    {
+      "identity": "fn_ca_lock_settlement_lane_global()",
+      "md5": "7c759bb7a639c3124de2607bdbf12577",
+      "len": 1056,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql"
+    },
+    {
+      "identity": "fn_ca_lock_tournament_seat_acquisition(p_tournament_id uuid, p_table_id uuid, p_user_id uuid)",
+      "md5": "2d8c9bd676a8ee02e009dd470fbfd585",
+      "len": 2464,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "scripts/ci/fixtures/original-paid-custody/current-authorities.json#definition"
+    },
+    {
+      "identity": "fn_ca_mint_supply(p_asset text)",
+      "md5": "b735bae7649d0b0753352abf5439f8d9",
+      "len": 323,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/accounting-delivery/diamond-games/daily-custody-preimages.sql"
+    },
+    {
+      "identity": "fn_ca_new_tournament_is_unlimited(p_config jsonb)",
+      "md5": "34b80f98d9d110072ae6951bb4377ee0",
+      "len": 408,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported"
+    },
+    {
+      "identity": "fn_ca_record_tournament_participant_funding(p_registration uuid, p_operation text, p_key text, p_amount numeric, p_asset text, p_entitlement uuid, p_wallet uuid, p_custody jsonb)",
+      "md5": "6cfd4af7307ce31460fd62c5b3f38bef",
+      "len": 2770,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported"
+    },
+    {
+      "identity": "fn_ca_recovery_fee_cents(p_gross_cents bigint, p_ratio numeric, p_unit_cents integer)",
+      "md5": "3960a8bc558ead330e1e47e7a38e31c4",
+      "len": 633,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-dependencies.json#definition"
+    },
+    {
+      "identity": "fn_ca_register_diamond_journal_row(p_tx_id uuid)",
+      "md5": "0f64c74772d556971760abc3962e7a6a",
+      "len": 3314,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/accounting-delivery/diamond-games/functions.sql"
+    },
+    {
+      "identity": "fn_ca_tournament_cancellation_receipt(p_tournament_id uuid, p_observed_actor_id uuid)",
+      "md5": "cf0bf7f56e2e50376626c37b59cfaca8",
+      "len": 21292,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_ca_tournament_escrow(p_tournament_id uuid)",
+      "md5": "707b4cbeb6f4906c2216cefea6635ca8",
+      "len": 711,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_ca_tournament_escrow_chips(p_tournament_id uuid)",
+      "md5": "bf70fec2d07ab459fe1da245bfb59ee7",
+      "len": 7796,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_ca_tournament_fee_ratio(p_buy_in numeric, p_buy_in_fee numeric)",
+      "md5": "858c3f3cda609a0b427f294d1c9edf36",
+      "len": 397,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-dependencies.json#definition"
+    },
+    {
+      "identity": "fn_ca_tournament_is_unlimited(p_tournament_id uuid)",
+      "md5": "fd66c28075f1d7c63b9d763632592471",
+      "len": 436,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-dependencies.json#definition"
+    },
+    {
+      "identity": "fn_ca_tournament_recorded_format(p_tournament_id uuid)",
+      "md5": "a7357dd1366f930eba6cd7f404090bbd",
+      "len": 568,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported"
+    },
+    {
+      "identity": "fn_ca_tournament_unit_cents(p_tournament_id uuid)",
+      "md5": "426ba550ff84f4210906a0071538803b",
+      "len": 441,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-dependencies.json#definition"
+    },
+    {
+      "identity": "fn_ca_tournament_unregistration_receipt(p_tournament_id uuid, p_user_id uuid, p_source_table_id uuid, p_request_id uuid)",
+      "md5": "a1eb3a788f88279d07cd421e5fee5a69",
+      "len": 14315,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/union-weekly-basis/captured-refund-dependencies.sql"
+    },
+    {
+      "identity": "fn_ca_unit_floor_cents(p_cents bigint, p_unit_cents integer)",
+      "md5": "1aee5e7fa9aa60b575aeccd2793bd215",
+      "len": 605,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-dependencies.json#definition"
+    },
+    {
+      "identity": "fn_ca_unregister_tournament_player_exact(p_tournament_id uuid, p_user_id uuid, p_expected_table_id uuid, p_description text, p_request_id uuid)",
+      "md5": "3fc3f147808ab3ecc50982f5b6968bff",
+      "len": 30215,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported"
+    },
+    {
+      "identity": "fn_caller_is_engine()",
+      "md5": "d9a70f1d932538025e656bfe2b4d091d",
+      "len": 790,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "tests/fixtures/accounting-delivery/diamond-games/functions.sql"
+    },
+    {
+      "identity": "fn_caller_session_is_live()",
+      "md5": "23ffeea99f9d9e76102ecbf6185222c0",
+      "len": 882,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_emit_tournament_manager_wake(p_tournament_id uuid, p_reason text)",
+      "md5": "c74a777eacc98bed6cfd90ac0043829c",
+      "len": 1601,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_ensure_club_wallet(p_user_id uuid, p_club_id uuid)",
+      "md5": "dd462a9943724d4b94fbe683ed364250",
+      "len": 370,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "tests/fixtures/credit-reduction-authority/captured-payment-closure.json#definition"
+    },
+    {
+      "identity": "fn_entry_purchases_frozen()",
+      "md5": "0b05e2e7905caf71f14c8327a172cea0",
+      "len": 1092,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_is_platform_admin()",
+      "md5": "ed89787c7b832e76a886734e16a27c3d",
+      "len": 375,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "tests/fixtures/accounting-delivery/diamond-games/invoice-functions.sql"
+    },
+    {
+      "identity": "fn_lock_daily_mission_user(p_user_id uuid)",
+      "md5": "0e9d2905374930bda4529a8febc6eff6",
+      "len": 611,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_player_home_club(p_user_id uuid, p_club_hint uuid)",
+      "md5": "bdced39339da2e5ec46404177bab7dc2",
+      "len": 744,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "tests/fixtures/credit-reduction-authority/captured-payment-closure.json#definition"
+    },
+    {
+      "identity": "fn_poker_arena_context(p_club_key text)",
+      "md5": "6c85536da97db301d7beb4aae885e69c",
+      "len": 2030,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "scripts/ci/fixtures/mtt-unlimited/function-dependencies-20260916.json#definition"
+    },
+    {
+      "identity": "fn_poker_bind_diamond_seat()",
+      "md5": "c14b4bbfaa71a58210f8de5726040a8c",
+      "len": 1652,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_create_tournament(p_config jsonb)",
+      "md5": "6d82bede82370a9cc15d71b5ce1699f5",
+      "len": 12306,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported"
+    },
+    {
+      "identity": "fn_poker_diamond_entry_custody_is_the_entry()",
+      "md5": "a5d21188b37bb0566c2fb82abeeb29a2",
+      "len": 1465,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/accounting-delivery/diamond-games/daily-custody-dependencies.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_play_state_columns(p_table text)",
+      "md5": "f53dea87eb2d45bcc1c6fdcee2cf9407",
+      "len": 433,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_release(p_custody_id uuid, p_request_id uuid)",
+      "md5": "d525cb1e20d6fb05e5b5e51497b127e7",
+      "len": 5847,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_reserve(p_user_id uuid, p_purpose text, p_target_id uuid, p_entry_key text, p_amount numeric, p_request_id uuid)",
+      "md5": "a1ccc4bc9a5c6d8d17308e93943a9413",
+      "len": 6069,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_seat_keeps_custody()",
+      "md5": "d80aed613a97e567268cb2bf6fdfd094",
+      "len": 2430,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/sep8-spin-custody/breakfast-bootstrap.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament(p_tournament_id uuid)",
+      "md5": "c91028508fecc2d02e9003f2bdc2e38d",
+      "len": 442,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-horse-dependencies.json#definition"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament_cancel(p_tournament_id uuid, p_actor_id uuid)",
+      "md5": "ee91eac08d166e096ca5faa8c52ff296",
+      "len": 11569,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament_cancellation_receipt(p_tournament_id uuid, p_observed_actor_id uuid)",
+      "md5": "361d90e78dee65236635da53740c1eeb",
+      "len": 11424,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament_charge(p_user_id uuid, p_tournament_id uuid, p_kind text, p_gross numeric, p_prize numeric, p_bounty numeric, p_fee numeric, p_registration_id uuid, p_idempotency_key text)",
+      "md5": "76d337b6b86734fb44db277d442afeb9",
+      "len": 6442,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament_close_custody(p_tournament_id uuid)",
+      "md5": "2c1ca86d949cc689fe1f19c98e08b9db",
+      "len": 1430,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament_custody(p_tournament_id uuid)",
+      "md5": "b2a879b0e870447f2734b6179fe5fac3",
+      "len": 383,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament_custody_add(p_custody_id uuid, p_amount numeric, p_request_id uuid)",
+      "md5": "25af87faee3db07b6dec956278eaa6bc",
+      "len": 4916,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament_drain(p_tournament_id uuid, p_bank text, p_amount bigint, p_reason text, p_destination_account text, p_journal_for uuid)",
+      "md5": "abaf068c32e192f08a1c01c02b089523",
+      "len": 5510,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament_escrow(p_tournament_id uuid)",
+      "md5": "850410a45ed7eefe785d3f17a2403247",
+      "len": 1803,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament_open_shadow(p_tournament_id uuid)",
+      "md5": "15beba292789e7f1e665c7caa9530304",
+      "len": 2853,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament_pay(p_user_id uuid, p_amount numeric, p_idempotency_key text, p_category text, p_tournament_id uuid, p_description text)",
+      "md5": "e246c03b5a6d2aff690d227912ff7e82",
+      "len": 4799,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament_refund(p_tournament_id uuid, p_user_id uuid, p_kind text, p_source text, p_request_id uuid)",
+      "md5": "4dcc2e8556323bf831de3863e218f97a",
+      "len": 5977,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament_settle_fee(p_tournament_id uuid, p_source text)",
+      "md5": "4e947c948d953098fb63c26d14decde8",
+      "len": 4328,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament_unregister(p_tournament_id uuid, p_user_id uuid, p_request_id uuid)",
+      "md5": "39f95b499619cab7a1eb65ff583aa638",
+      "len": 7212,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported"
+    },
+    {
+      "identity": "fn_poker_guard_chip_seat()",
+      "md5": "3326766760c7b9c9bfe12daca34ebd0f",
+      "len": 2392,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_register_for_tournament_before_atomic_capacity_20260907(p_tournament_id uuid, p_seat_first_internal boolean)",
+      "md5": "591867b92e0749eb0e493c56707ae328",
+      "len": 16009,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "supabase/migrations/20260917233447_tournament_original_funding_and_obligation_receipts.sql"
+    },
+    {
+      "identity": "fn_register_horse_for_tournament(p_tournament_id uuid, p_user_id uuid)",
+      "md5": "ff905b806203482d3e95fd706210bfb5",
+      "len": 303,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-horse-preimages.json#definition"
+    },
+    {
+      "identity": "fn_register_horse_for_tournament(p_tournament_id uuid, p_user_id uuid, p_allow_wallet_charge boolean)",
+      "md5": "84c0354e68fb129b5373bc6024cba334",
+      "len": 863,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-horse-preimages.json#definition"
+    },
+    {
+      "identity": "fn_register_horse_for_tournament_before_atomic_lifecycle_gate(p_tournament_id uuid, p_user_id uuid)",
+      "md5": "3717c2b05d58d51049181530338bf1e9",
+      "len": 997,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-horse-preimages.json#definition"
+    },
+    {
+      "identity": "fn_register_horse_for_tournament_before_maintenance_gate(p_tournament_id uuid, p_user_id uuid)",
+      "md5": "33de93271803a28f46c0a259bb2c01c4",
+      "len": 10268,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "supabase/migrations/20260918002654_horse_tournament_entry_retains_original_funding.sql"
+    },
+    {
+      "identity": "fn_register_horse_for_tournament_before_terminal_gate(p_tournament_id uuid, p_user_id uuid, p_allow_wallet_charge boolean)",
+      "md5": "d9a34831bf01f85933a6c79f3662be33",
+      "len": 3122,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-horse-preimages.json#definition"
+    },
+    {
+      "identity": "fn_seat_late_registrant(p_tournament_id uuid, p_user_id uuid)",
+      "md5": "51a3254789bfdc2c1f80994d0c26ad6a",
+      "len": 564,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_seat_late_registrant_before_maintenance_gate(p_tournament_id uuid, p_user_id uuid)",
+      "md5": "4f1800b2cd9bbf61cf926130eb8f03db",
+      "len": 4434,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_seat_late_registrant_before_terminal_seat_gate(p_tournament_id uuid, p_user_id uuid)",
+      "md5": "75e932d212ff2687ad549309a3f9afcf",
+      "len": 550,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_settle_tournament_refund_exact(p_tournament_id uuid, p_user_id uuid, p_source_wallet_club_id uuid, p_total_owed numeric, p_refund_prize numeric, p_refund_bounty numeric, p_refund_fee numeric, p_source text, p_description text)",
+      "md5": "5e696c31a3f1af7a95f34fd91d6915d4",
+      "len": 16402,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_tournament_club_for_user(p_user_id uuid, p_tournament_id uuid, p_preferred_club uuid)",
+      "md5": "344609ab3cf21094b9e85167bfb6655e",
+      "len": 2811,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "tests/fixtures/credit-reduction-authority/captured-payment-closure.json#definition"
+    },
+    {
+      "identity": "fn_tournament_current_blinds(p_tournament_id uuid)",
+      "md5": "be0a708cb57fad978515b48f533d5322",
+      "len": 1362,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_tournament_entry_cap_reached(p_tournament_id uuid)",
+      "md5": "9a34a1460abf1c71f24d88bce182e488",
+      "len": 1006,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-horse-dependencies.json#definition"
+    },
+    {
+      "identity": "fn_tournament_entry_split(p_buy_in numeric, p_fee numeric, p_bounty numeric, p_is_bounty boolean)",
+      "md5": "89cc73d13fe8fbe6905233c8f9f74848",
+      "len": 1229,
+      "owner": "postgres",
+      "grants": "anon,authenticated,service_role",
+      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+    },
+    {
+      "identity": "fn_tournament_late_registration_open(p_tournament_id uuid)",
+      "md5": "0a189819d8064f393f5de5b12a2c51f4",
+      "len": 1257,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-dependencies.json#definition"
+    },
+    {
+      "identity": "fn_unregister_from_tournament(p_tournament_id uuid)",
+      "md5": "b883532da31ca40919b4f3ef5c925513",
+      "len": 674,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "scripts/dev/fixtures/heads-up-funding/captured-functions.json#definition"
+    },
+    {
+      "identity": "fn_unregister_from_tournament(p_tournament_id uuid, p_request_id uuid)",
+      "md5": "c39310bcf1158d66bd0aced7bc0f9c73",
+      "len": 1091,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "supabase/migrations/20260914024241_a_diamond_tournament_entry_is_custody.sql"
+    }
+  ]
+}

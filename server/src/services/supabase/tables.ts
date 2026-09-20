@@ -11,9 +11,37 @@
 
 import { supabase } from './client.js';
 import { parseTableArenaIdentity } from '../../domain/ArenaContext.js';
-import { assertDiamondCashTable } from '../../domain/DiamondCashBoundary.js';
+import { assertDiamondTable } from '../../domain/DiamondCashBoundary.js';
 import { reportError } from '../errorReporter.js';
 import { SEATED_PROFILE_SELECT } from './tableAvatar.js';
+import { arenaPlayerName, type ArenaNameProfile } from './arenaPlayerName.js';
+import {
+  assertDiamondCashSettingsOpen,
+  assertDiamondTournamentSettingsOpen,
+} from '../cashTablePlayEligibility.js';
+import type { WakeableCashTableRow } from '../onDemandTableWake.js';
+
+export interface CashTablePlayRow extends WakeableCashTableRow {
+  id?: unknown;
+  club_id?: unknown;
+  union_id?: unknown;
+  arena?: unknown;
+}
+
+/** Fresh preflight before cash lease acquisition; loadTable repeats the guard. */
+export async function assertCashTablePlayEnabled(tableId: string, table: CashTablePlayRow) {
+  if (table.id !== tableId) throw new Error('Cash table identity is unavailable or mismatched');
+  if (table.tournament_id != null || table.game_type === 'tournament') return;
+  const arena = parseTableArenaIdentity(table);
+  if (arena.asset !== 'diamonds') return;
+  const { data, error } = await supabase
+    .from('ca_arena_settings')
+    .select('club_id, cash_games_enabled')
+    .eq('id', 1)
+    .eq('club_id', arena.id)
+    .maybeSingle();
+  assertDiamondCashSettingsOpen(tableId, arena.id, data, error);
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DATABASE HELPERS — Common queries used by the engine
@@ -41,18 +69,43 @@ export async function loadTable(tableId: string) {
   if (!data) throw new Error(`Table ${tableId} not found`);
   const arena = parseTableArenaIdentity(data);
   if (arena.asset === 'diamonds') {
-    assertDiamondCashTable(data);
+    assertDiamondTable(data);
+    // Each kind of Diamond table has its own switch, read from the arena's
+    // one settings row, and a table is loaded only while its switch is on.
+    // The database refuses every door of a closed kind too; this is the
+    // engine saying the same thing before it deals a hand.
+    const tournamentTable = data.tournament_id != null || data.game_type === 'tournament';
     const settings = await supabase
       .from('ca_arena_settings')
-      .select('club_id, cash_games_enabled')
+      .select('club_id, cash_games_enabled, tournaments_enabled')
       .eq('id', 1)
       .eq('club_id', arena.id)
       .maybeSingle();
-    if (settings.error || settings.data?.cash_games_enabled !== true) {
-      throw new Error('Diamond Cash Games Are Not Open');
+    if (tournamentTable) {
+      assertDiamondTournamentSettingsOpen(tableId, arena.id, settings.data, settings.error);
+    } else {
+      assertDiamondCashSettingsOpen(tableId, arena.id, settings.data, settings.error);
     }
   }
   return { ...data, arena };
+}
+
+/**
+ * The pre-deal tournament refresh consumes only these three values. Loading
+ * the full table configuration and club relation on every hand needlessly
+ * repeats the admission read. Keep a fresh read, bound to the same event;
+ * this is not a cache and cannot carry a prior event's blinds into a deal.
+ */
+export async function loadTournamentBlinds(tableId: string, tournamentId: string) {
+  const { data, error } = await supabase
+    .from('tables')
+    .select('small_blind, big_blind, ante')
+    .eq('id', tableId)
+    .eq('tournament_id', tournamentId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to load tournament blinds ${tableId}: ${error.message}`);
+  if (!data) throw new Error(`Tournament table ${tableId} not found in ${tournamentId}`);
+  return data;
 }
 
 /**
@@ -143,7 +196,7 @@ interface SeatRow {
   entry_post_agreed?: boolean | null;
 }
 
-interface SeatedProfileRow {
+interface SeatedProfileRow extends ArenaNameProfile {
   id: string;
   display_name: string | null;
   username: string | null;
@@ -165,11 +218,7 @@ function seatedPlayerFrom(seat: SeatRow, profile: SeatedProfileRow) {
     seat_joined_at: seat.joined_at,
     user_id: seat.user_id,
     occupancy_id: seat.occupancy_id,
-    username: profile.is_horse
-      ? profile.display_name || profile.username || 'Player'
-      : profile.use_real_name
-        ? profile.display_name || profile.username || 'Player'
-        : profile.username || profile.display_name || 'Player',
+    username: arenaPlayerName(profile),
     stack: seat.stack,
     seat_number: seat.seat_number || 1,
     is_horse: profile.is_horse || false,

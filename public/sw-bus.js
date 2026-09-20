@@ -70,6 +70,14 @@ const SHELL_KEY = '/hub/club-arena';
 // this set is exempt from trimming for the life of the versioned cache.
 const PROTECTED_PATHS = new Set([SHELL_KEY, '/hub/club-arena/offline.html', ...PRECACHE_URLS]);
 
+// Documents under /hub/club-arena/ that are NOT the SPA shell. The standalone
+// Diamond bonus test entry (dist/diamond-test.html; its own hashed chunks sit
+// in /assets/ as diamond-test.*) is a different page: served from SHELL_KEY it would boot the
+// arena in place of the test page, and stored under SHELL_KEY it would boot the
+// test page in place of the arena for every navigation until the next
+// revalidation. These bypass shellFromCache and always go to the network.
+const STANDALONE_DOCUMENTS = new Set(['/hub/club-arena/diamond-test.html']);
+
 /**
  * Trim cache to maxEntries — prevents unbounded growth across deploys.
  * Each deploy creates new hashed filenames; old ones stay cached forever without this.
@@ -242,7 +250,8 @@ sw.addEventListener('fetch', (event) => {
   // one deploy old is the right trade here.
   const isClubArenaNav =
     (event.request.mode === 'navigate' || event.request.destination === 'document') &&
-    (url.pathname === '/hub/club-arena' || url.pathname.startsWith('/hub/club-arena/'));
+    (url.pathname === '/hub/club-arena' || url.pathname.startsWith('/hub/club-arena/')) &&
+    !STANDALONE_DOCUMENTS.has(url.pathname);
   if (isClubArenaNav) {
     event.respondWith(shellFromCache(event));
     return;

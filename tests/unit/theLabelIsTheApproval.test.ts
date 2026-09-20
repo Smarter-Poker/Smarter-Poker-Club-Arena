@@ -1,25 +1,11 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- *  THE REVERT-APPROVED LABEL IS THE APPROVAL (2026-09-02)
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * MEASURED on #2676. The Silent Revert Guard flagged a pull request that
- * deleted a redundant workflow file. The `revert-approved` label was applied
- * at 18:41; the guard re-ran on `labeled` at 18:42 with REVERT_APPROVED=true
- * in its environment and exited 1 anyway.
- *
- * The label only exempted a commit whose MESSAGE also contained the word
- * "revert". CLAUDE.md 10.8.2 and the guard's own issue text promise "apply the
- * label and the check passes" and say nothing about the message; 10.8.2 also
- * forbids editing commit messages to route around the guard. So a human's
- * approval could not be acted on. A gate whose approved path cannot be taken
- * is a lock.
- *
- * These run the real script against a throwaway repository so the pin is on
- * behaviour, not on the shape of the source.
+ * The owner removed the manual approval dependency on 2026-09-17.
+ * Exercise the actual reporter against an isolated real Git history: restored
+ * content remains visible with or without old label variables, while execution
+ * errors remain failures. No fixture commits may touch the owning worktree.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -53,21 +39,18 @@ const git = (...args: string[]) =>
     stdio: ['ignore', 'pipe', 'pipe'],
   }).toString();
 
-/** Run the guard; return the exit code (the script exits 1 on a finding). */
-function guard(env: Record<string, string>): number {
-  try {
-    execFileSync('node', [SCRIPT, '--base', 'HEAD~1', '--days', '45'], {
-      cwd: repo,
-      env: cleanEnv(env),
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    return 0;
-  } catch (e: any) {
-    return typeof e.status === 'number' ? e.status : 1;
-  }
+/** Invoke the maintained entrypoint, retaining both findings and error output. */
+function guard(env: Record<string, string> = {}, base = 'HEAD~1') {
+  const result = spawnSync('node', [SCRIPT, '--base', base, '--days', '45'], {
+    cwd: repo,
+    env: cleanEnv(env),
+    encoding: 'utf8',
+  });
+  if (result.error) throw result.error;
+  return { status: result.status, output: result.stdout + result.stderr };
 }
 
-beforeAll(() => {
+beforeEach(() => {
   repo = mkdtempSync(join(tmpdir(), 'revert-guard-'));
   git('init', '-q', '-b', 'main');
   // If GIT_DIR had leaked through, `rev-parse` would name the real repository
@@ -91,28 +74,52 @@ beforeAll(() => {
   git('commit', '-q', '-am', 'chore: keep the shared script byte-identical');
 });
 
-afterAll(() => {
+afterEach(() => {
   rmSync(repo, { recursive: true, force: true });
 });
 
-describe('the revert-approved label is the approval', () => {
-  it('without the label, a deletion is reported and the guard exits 1', () => {
-    expect(guard({ REVERT_APPROVED: 'false' })).toBe(1);
+describe('restored content is reported without a manual approval gate', () => {
+  it('reports an exact restoration successfully without an approval label', () => {
+    const result = guard();
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('REVERT DETECTED');
+    expect(result.output).toContain('guarded.yml');
+    expect(result.output).toContain('change guarded.yml');
+    expect(result.output).toContain('Advisory only:');
+    expect(result.output).toContain('No approval label or additional human approval is required.');
   });
 
-  it('WITH the label, the same pull request passes - whatever the commit said', () => {
-    // The message above contains no "revert" and no [allow-revert]. Before
-    // 2026-09-02 this returned 1 with the label on, which is the bug.
-    expect(guard({ REVERT_APPROVED: 'true' })).toBe(0);
+  it.each(['true', 'false'])('old label value %s cannot skip the actual scan', (value) => {
+    const result = guard({ REVERT_APPROVED: value });
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('REVERT DETECTED');
+    expect(result.output).toContain('guarded.yml');
+    expect(result.output).not.toContain('are not scanned');
   });
 
-  it('a commit message saying "revert" is NOT an approval on its own', () => {
-    // 2026-08-31: an agent wrote [allow-revert] into its own message to get
-    // past the guard. Announcing must never substitute for the label.
+  it('announced restorations are still reported', () => {
     writeFileSync(join(repo, 'guarded.yml'), 'name: three\n');
     git('commit', '-q', '-am', 'change again');
     writeFileSync(join(repo, 'guarded.yml'), 'name: one\n');
     git('commit', '-q', '-am', 'revert: back to one [allow-revert]');
-    expect(guard({ REVERT_APPROVED: 'false' })).toBe(1);
+    const result = guard();
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('REVERT DETECTED');
+    expect(result.output).toContain('(announced in the message)');
+  });
+
+  it('a forward change does not produce a restoration finding', () => {
+    writeFileSync(join(repo, 'guarded.yml'), 'name: forward\n');
+    git('commit', '-q', '-am', 'move forward');
+    const result = guard();
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('no restored-file findings');
+    expect(result.output).not.toContain('REVERT DETECTED');
+  });
+
+  it('an invalid history range fails instead of claiming a successful empty scan', () => {
+    const result = guard({}, 'missing-history-reference');
+    expect(result.status).not.toBe(0);
+    expect(result.output).not.toContain('no restored-file findings');
   });
 });

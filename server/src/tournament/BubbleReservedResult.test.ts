@@ -3,6 +3,7 @@ import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { computePlacePrize, prizePoolAvailableToPlaces } from './payoutMath.js';
 import { resolvePayoutStructure } from './payoutStructure.js';
+import { UNIT_CENTS_ASSET_NOT_READ } from './tournamentUnit.js';
 
 const source = readFileSync('src/tournament/TournamentManagerEliminations.ts', 'utf8');
 const ast = ts.createSourceFile('manager.ts', source, ts.ScriptTarget.Latest, true);
@@ -10,13 +11,20 @@ const manager = ast.statements.find(
   (n): n is ts.ClassDeclaration =>
     ts.isClassDeclaration(n) && n.name?.text === 'TournamentManagerEliminations'
 );
-const methods = ['eliminatePlayer', 'recalculateEliminatedPrizes'].map((name) => {
-  const method = manager?.members.find(
-    (n) => ts.isMethodDeclaration(n) && n.name.getText(ast) === name
-  );
-  if (!method) throw new Error(`Actual method ${name} is missing`);
-  return method.getText(ast);
-});
+// 2026-09-13: `placeLadderUnitCents` is extracted alongside the two payout
+// methods rather than stubbed on the fixture. Both of them now ask it for the
+// unit they price in, and the real method is the thing worth running here - a
+// stub would make this harness agree with itself about a number the engine
+// actually gets from somewhere else.
+const methods = ['eliminatePlayer', 'recalculateEliminatedPrizes', 'placeLadderUnitCents'].map(
+  (name) => {
+    const method = manager?.members.find(
+      (n) => ts.isMethodDeclaration(n) && n.name.getText(ast) === name
+    );
+    if (!method) throw new Error(`Actual method ${name} is missing`);
+    return method.getText(ast);
+  }
+);
 const deepestPlace = ast.statements.find(
   (n) => ts.isFunctionDeclaration(n) && n.name?.text === 'deepestCanonicalPaidPlace'
 );
@@ -35,9 +43,12 @@ function harness(
     field?: number;
     buyIn?: number;
     satellite?: boolean;
+    /** What the base class answers for the tournament's unit; null is "the club was not read". */
+    unit?: number | null;
   } = {}
 ) {
   const tournament = {
+    format_contract: 'mtt-v1',
     payout_structure: [
       { place: 1, percentage: 50 },
       { place: 2, percentage: 30 },
@@ -96,6 +107,9 @@ function harness(
     'prizePoolAvailableToPlaces',
     'resolvePayoutStructure',
     'TournamentManagerBase',
+    // The free identifier `placeLadderUnitCents` returns, injected by name for
+    // the same reason every other one above is.
+    'UNIT_CENTS_ASSET_NOT_READ',
     compiled
   )(
     db,
@@ -104,7 +118,8 @@ function harness(
     computePlacePrize,
     prizePoolAvailableToPlaces,
     resolvePayoutStructure,
-    { SWEEP_MUTATION_BATCH_SIZE: 100, UNRESOLVED_BUST_RETRY_MS: 100 }
+    { SWEEP_MUTATION_BATCH_SIZE: 100, UNRESOLVED_BUST_RETRY_MS: 100 },
+    UNIT_CENTS_ASSET_NOT_READ
   );
   const subject = Object.assign(new Subject(), {
     tournamentId: 'event',
@@ -114,6 +129,10 @@ function harness(
     eliminationWorkBudgetExpired: () => false,
     requestUrgentEliminationSweepAfter: vi.fn(),
     broadcast: vi.fn(async () => {}),
+    // 2026-09-14: `placeLadderUnitCents` asks the base class, which read the
+    // club beside the tournament row. Null is the not-read answer, and the
+    // method must then pass the named admission rather than a bare cent.
+    tournamentUnit: () => options.unit ?? null,
   });
   return { subject, rpc, report, selections };
 }
@@ -177,6 +196,25 @@ describe('result amounts reserve the same bubble buy-in as terminal SQL', () => 
     ];
     expect(await h.subject.eliminatePlayer('third', 3)).toBe(true);
     expect(h.rpc.mock.calls[0][1].p_prize).toBe(360);
+  });
+  it('prices a Diamond event in whole Diamonds when the club was read', async () => {
+    // 1001 Diamonds, a 100-Diamond bubble reserved: the 901 ladder would pay
+    // 270.30 and 180.20 to the cent; a Diamond does not divide, so the shares
+    // floor and the remainder lands on the last paid place, as the database
+    // ladder does it.
+    const h = harness({ pool: 1001, unit: 100 });
+    expect(await h.subject.eliminatePlayer('second', 2)).toBe(true);
+    expect(h.rpc.mock.calls[0][1].p_prize).toBe(270);
+    h.rpc.mockClear();
+    expect(await h.subject.recalculateEliminatedPrizes(1001)).toBe(true);
+    const prizes = h.rpc.mock.calls.map(([, r]) => r.p_new_prize);
+    expect(prizes.every((p: number) => Number.isInteger(p))).toBe(true);
+    expect(prizes).toEqual([270, 180]);
+  });
+  it('prices to the cent, by name, when the club was not read', async () => {
+    const h = harness({ pool: 1001, unit: null });
+    expect(await h.subject.eliminatePlayer('second', 2)).toBe(true);
+    expect(h.rpc.mock.calls[0][1].p_prize).toBe(270.3);
   });
   it('keeps satellite elimination outside the cash ladder', async () => {
     const h = harness({ satellite: true });

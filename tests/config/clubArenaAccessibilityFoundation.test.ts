@@ -119,7 +119,7 @@ describe('Club Arena accessibility foundation', () => {
     expect(workspaceSource).toMatch(/retryFetch\([\s\S]*?from\('profiles'\)/);
     expect(workspaceSource).toContain('CLUB_WORKSPACE_READ_TIMEOUT_MS');
     expect(workspaceSource).toContain('.abortSignal(signal)');
-    expect(source).toContain("label: 'Settings'");
+    expect(source).toContain("label: 'Diamond Spins'");
     expect(source).toContain("label: 'Stats'");
     expect(source).toContain("clubRoot ? `${clubRoot}/data` : '/data'");
     expect(source).toContain('aria-label="Poker Arena"');
@@ -144,7 +144,7 @@ describe('Club Arena accessibility foundation', () => {
     expect(source).toContain('aria-label={`${section.label} Sections`}');
     expect(source).toContain("aria-current={isActive ? 'page' : undefined}");
     expect(source).toContain('<ul className={styles.items}>');
-    expect(layoutSource).toContain('{showGlobalHeader && <ArenaSectionRail />}');
+    expect(layoutSource).toContain('{showGlobalHeader && !immersiveGame && <ArenaSectionRail />}');
   });
 
   it('gives the club operations workspace semantic groups and a current-page rail', () => {
@@ -163,7 +163,9 @@ describe('Club Arena accessibility foundation', () => {
     expect(railBodySource).toContain('aria-label="Club Operations Sections"');
     expect(railBodySource).toContain("aria-current={isActive ? 'page' : undefined}");
     expect(railSource).toContain("lazy(() => import('./ClubOperationsRailBody'))");
-    expect(layoutSource).toContain('{showGlobalHeader && <ClubOperationsRail />}');
+    expect(layoutSource).toContain(
+      '{showGlobalHeader && !immersiveGame && <ClubOperationsRail />}'
+    );
   });
 
   it('makes the integrity case workflow labelled, permission-aware, and keyboard operable', () => {

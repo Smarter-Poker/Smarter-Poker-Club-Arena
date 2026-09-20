@@ -158,7 +158,7 @@ describe('the baseline is a record of work done, not a list of excuses', () => {
     }
   });
 
-  it('still names the six the detector was proven wrong about', () => {
+  it('retains the original six and measured matte wheel artwork', () => {
     // If one of these leaves the baseline it means somebody cleaned it. That
     // is a decision about Dan's art, not a refactor, and it should be read as
     // one - the reasons above say what cleaning each of them destroys.
@@ -169,6 +169,8 @@ describe('the baseline is a record of work done, not a list of excuses', () => {
       'public/assets/club-buttons/game-cards/plo/shark-four-bay-v1/live-dot.png',
       'public/assets/club-buttons/wallets/mobile/wallet-union-bank-v1.webp',
       'public/assets/club-buttons/wallets/square/wallet-promo-wallet-square-v1.png',
+      'public/assets/diamond-spins/wheel-matte-controls-v1.png',
+      'public/assets/diamond-spins/wheel-selector-matte-v1.png',
     ]);
   });
 });
@@ -180,7 +182,9 @@ describe('the port agrees with the Python the artists run', () => {
   // numbers below are the ones both produced; a change to either that moves
   // them shows up here and in the baseline at once.
   const PINNED: ReadonlyArray<readonly [string, number]> = [
-    ['public/assets/club-buttons/club-nav-shell.png', 0.0],
+    // Preserve the original matte-clean source at a content-versioned URL.
+    ['public/assets/club-buttons/club-nav-shell-d45f56465bad.png', 0.0],
+    ['public/assets/club-buttons/wallet-row-shell-e7964bb1791f.webp', 0.3],
     ['public/assets/club-buttons/club/club-identity-icon-club-v1.png', 7.8],
     ['public/assets/club-buttons/console/spade-console-v1/mid.png', 4.2],
   ];

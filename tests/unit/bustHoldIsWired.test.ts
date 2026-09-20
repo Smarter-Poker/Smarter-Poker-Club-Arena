@@ -40,7 +40,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceStatement } from '../helpers/sourceWindow';
+import { sliceCall, sliceStatement } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 /** Comments quote the very things these tests ban. Never match against them. */
@@ -137,6 +137,9 @@ describe('the bust hold reaches a real exit', () => {
        appeared somewhere in a 15,000-line file, which the rebuy re-arm satisfied
        just as happily as the backstop. */
     expect(src).toMatch(/const BUST_HOLD_MODAL_MS = /);
-    expect(src).toMatch(/hold\.deadline = setTimeout\([\s\S]{0,600}BUST_HOLD_MODAL_MS/);
+    const backstop = sliceCall(src, 'hold.deadline = setTimeout(async');
+    expect(backstop).toMatch(/,\s*BUST_HOLD_MODAL_MS\s*\)$/);
+    expect(backstop).toMatch(/await GameServerAPI\.notifyServerRejectRebuy\(tableId\)/);
+    expect(backstop).toMatch(/releaseBustHoldRef\.current\?\.\(\)/);
   });
 });

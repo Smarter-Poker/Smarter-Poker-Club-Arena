@@ -221,6 +221,10 @@
   stroke-width: 1.8;
 }
 
+.toast__close-label {
+  display: none;
+}
+
 /* Mobile responsive */
 @media (max-width: 480px) {
   .toast-container {
@@ -408,5 +412,94 @@ body[data-toast-theme='daily-missions-casino'] .toast__close {
   body[data-toast-theme='daily-missions-casino'] .toast__instrument-status,
   body[data-toast-theme='daily-missions-casino'] .toast__instrument-scan {
     animation: none;
+  }
+}
+
+/* Marketplace toasts are independent painted notices. The route class is
+   added only while Marketplace or VIP is mounted, so other product areas keep
+   their existing notification treatment. */
+body.marketplace-color-scope .toast {
+  min-height: 86px;
+  overflow: hidden;
+  gap: 10px;
+  padding: 18px 30px;
+  border: 0;
+  border-radius: 0;
+  color: #eaf6fb;
+  background-color: #020508;
+  background-image:
+    url('/assets/club-buttons/lobby/shark-panel-v1/top.png'),
+    url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png'),
+    url('/assets/club-buttons/lobby/shark-panel-v1/mid.png');
+  background-position:
+    center top,
+    center bottom,
+    center;
+  background-repeat: no-repeat, no-repeat, repeat-y;
+  background-size: 100% auto;
+  box-shadow: none;
+  font-family: 'Roboto Condensed', 'Arial Narrow', Arial, sans-serif;
+}
+
+body.marketplace-color-scope .toast__icon {
+  display: none;
+}
+
+body.marketplace-color-scope .toast__message {
+  min-width: 0;
+  color: #d9e8ef;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-transform: capitalize;
+}
+
+body.marketplace-color-scope .toast--success .toast__message,
+body.marketplace-color-scope .toast--info .toast__message,
+body.marketplace-color-scope .toast--clock .toast__message {
+  color: #8cddff;
+}
+
+body.marketplace-color-scope .toast--warning .toast__message {
+  color: #e2c679;
+}
+
+body.marketplace-color-scope .toast--error .toast__message {
+  color: #ffc6cb;
+}
+
+body.marketplace-color-scope .toast__close {
+  width: 112px;
+  height: auto;
+  aspect-ratio: 348 / 114;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0;
+  color: #dce8ee;
+  background: transparent url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png')
+    center / 100% 100% no-repeat;
+  text-shadow: 0 2px 3px #000;
+}
+
+body.marketplace-color-scope .toast__close-label {
+  display: inline;
+  font-family: 'Roboto Condensed', 'Arial Narrow', Arial, sans-serif;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: capitalize;
+}
+
+body.marketplace-color-scope .toast__close svg {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  body.marketplace-color-scope .toast {
+    padding-inline: 24px;
+  }
+
+  body.marketplace-color-scope .toast__close {
+    width: 94px;
   }
 }

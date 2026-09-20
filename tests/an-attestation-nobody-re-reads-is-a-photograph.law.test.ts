@@ -222,7 +222,15 @@ describe('the attestation covers the journal, not the last eight days', () => {
     // The alarm keys off the read-only comparison step itself.
     expect(wf).toMatch(/id: anchor/);
     expect(wf).toMatch(/Ledger attestation: an anchored day now hashes differently/);
-    expect(wf).toMatch(/if: failure\(\) && steps\.anchor\.outcome == 'failure'/);
+    // NARROWED 2026-09-19, and the law is unchanged: the alarm still keys off
+    // this step and still has an issue of its own. It now fires for the
+    // INCIDENT verdict rather than for any failure of the step, because the
+    // step also fails when the anchor file is simply behind - which it was,
+    // every day from 2026-09-10, while all 39 anchored days still hashed the
+    // same. Filing "an anchored day now hashes differently" for a backlog is
+    // precisely the stale alarm the next assertion exists to prevent. See
+    // tests/the-anchor-backlog-is-not-the-incident.law.test.ts.
+    expect(wf).toMatch(/if: failure\(\) && steps\.anchor\.outputs\.verdict == 'changed'/);
     expect(wf).toMatch(/gh issue create --repo "\$REPO" --title "\$TITLE"/);
     // and it closes itself, or the next person learns to ignore a stale alarm
     expect(wf).toMatch(/Close the alarm when the anchor agrees again/);
@@ -373,7 +381,11 @@ describe('the attestation restates itself, and never outgrows its budget', () =>
 
   it('the anchor audit cannot write source or open a pull request', () => {
     const job = wf.slice(wf.indexOf('anchor-ledger-days:'), wf.indexOf('second-writer:'));
-    expect(job).toMatch(/git diff --exit-code -- docs\/attestation\//);
+    // The comparison itself, in either shape: --exit-code was the original
+    // marker and --numstat replaced it on 2026-09-19 so the step could tell
+    // a backlog from an incident. Both read; neither writes. What this test
+    // is actually about is the three lines below.
+    expect(job).toMatch(/git diff (?:--exit-code|--numstat) -- docs\/attestation\//);
     expect(job).not.toMatch(/actions\/create-github-app-token/);
     expect(job).not.toMatch(/\bgit\s+(?:add|commit|push)\b/);
     expect(job).not.toMatch(/\bgh\s+pr\s+(?:create|merge)\b/);

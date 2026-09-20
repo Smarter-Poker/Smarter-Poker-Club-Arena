@@ -1,3 +1,4 @@
+import { getTournamentEntryCapacity } from '../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — Union Games Page
@@ -54,11 +55,14 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 interface UnionTournament {
+  format_contract?: unknown;
   id: string;
   name: string;
   status: string;
   buy_in: number;
-  max_players: number;
+  max_players: number | null;
+  tournament_type?: string | null;
+  variant?: string | null;
   registered_count?: number;
   start_time?: string;
   prize_pool?: number;
@@ -510,7 +514,8 @@ export default function UnionGamesPage() {
                   <div className={styles.tournMeta}>
                     <span> {fmtChips(t.buy_in)}</span>
                     <span>
-                      {t.registered_count || 0}/{t.max_players || '∞'}
+                      {t.registered_count || 0}
+                      {getTournamentEntryCapacity(t) !== null ? `/${t.max_players}` : ''}
                     </span>
                     <span> {formatDate(t.start_time || null)}</span>
                     {t.prize_pool ? <span> {fmtChips(t.prize_pool)}</span> : null}

@@ -206,6 +206,78 @@ export function assertDiamondCashTable(table: Record<string, unknown>): void {
   }
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A DIAMOND TOURNAMENT TABLE IS A TOURNAMENT TABLE (PHASE 8, 2026-09-14)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * It deals TOURNAMENT CHIPS, exactly as a chip tournament table does: the
+ * entry is custody (poker_diamond_custody, purpose tournament_entry), the
+ * stack is not, the prize is settled from the entry custody by the database
+ * at the terminal, and no seat is ever bound to a custody row (P0810-P0815).
+ * So the cash boundary above is the wrong shape for it on purpose: it sells
+ * no seat (min and max buy-in are zero), the manager writes the chip
+ * schedule's column defaults for rake and the jackpot (which every tournament
+ * hand ignores - `rakeConfig` is zero and the BBJ fee is off for every
+ * tournament table, cash or Diamond), and the money it must keep whole is the
+ * blinds and the ante, not a buy-in range.
+ *
+ * What it keeps from the cash boundary: the games this arena deals, the
+ * chip-schedule columns that are refused outright, and the refusal of a
+ * template or a union scope. What it adds: it must SAY it is a tournament
+ * table (`game_type` and `tournament_id` both), so a row that carries a
+ * tournament id by accident is not admitted as one.
+ */
+export function assertDiamondTournamentTable(table: Record<string, unknown>): void {
+  const disabled = [
+    'is_template',
+    'insurance_enabled',
+    'seven_deuce_enabled',
+    'nit_game',
+    'pineapple_holdem',
+    'cap_enabled',
+    'bomb_pot_enabled',
+  ];
+  if (
+    !isDiamondCashVariant(table.game_variant) ||
+    table.tournament_id == null ||
+    table.game_type !== 'tournament' ||
+    table.union_id != null ||
+    !['waiting', 'running', 'playing', 'active'].includes(String(table.status)) ||
+    disabled.some((key) => table[key] === true)
+  )
+    throw new Error('Diamond Tournament Table Required');
+  for (const key of ['small_blind', 'big_blind']) {
+    const amount = table[key];
+    if (
+      typeof amount !== 'number' ||
+      !Number.isSafeInteger(amount) ||
+      amount <= 0 ||
+      amount > 2147483647
+    )
+      throw new Error('Diamond Tournaments Require Whole Positive Blinds');
+  }
+  const ante = table.ante ?? 0;
+  if (typeof ante !== 'number' || !Number.isSafeInteger(ante) || ante < 0)
+    throw new Error('Diamond Tournaments Require A Whole Ante');
+  for (const key of ['min_buy_in', 'max_buy_in']) {
+    if (Number(table[key] ?? 0) !== 0) throw new Error('A Diamond Tournament Table Sells No Seat');
+  }
+}
+
+/**
+ * The one door for a Diamond table of either kind. A table that says it is a
+ * tournament table is held to the tournament boundary, everything else to the
+ * cash boundary; neither admits the other's shape.
+ */
+export function assertDiamondTable(table: Record<string, unknown>): void {
+  if (table.tournament_id != null || table.game_type === 'tournament') {
+    assertDiamondTournamentTable(table);
+  } else {
+    assertDiamondCashTable(table);
+  }
+}
+
 /** Refuse unsupported facts rather than suppressing a deduction after it was paid. */
 export function assertDiamondAcceptedHand(input: {
   arena?: ArenaIdentity;

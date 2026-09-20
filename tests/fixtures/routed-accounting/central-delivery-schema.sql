@@ -1,0 +1,23 @@
+-- Minimal schema dependencies; payment stages and document functions are their actual migration bodies.
+CREATE TABLE profiles(id uuid PRIMARY KEY,username text);
+INSERT INTO profiles SELECT u(n),'Account '||n FROM unnest(ARRAY[201,202,203,301,302,303,901,902])n;
+ALTER TABLE clubs ADD COLUMN name text,ADD COLUMN owner_id uuid;
+UPDATE clubs SET name='Fixture Club',owner_id=u(901);
+ALTER TABLE club_members ADD COLUMN role text DEFAULT 'player',ADD COLUMN status text DEFAULT 'active';
+ALTER TABLE unions ADD COLUMN name text,ADD COLUMN owner_id uuid;
+UPDATE unions SET name='Fixture Union',owner_id=u(902);
+CREATE TABLE union_admins(union_id uuid,user_id uuid);
+CREATE FUNCTION fn_is_union_overseer(uuid,uuid) RETURNS boolean LANGUAGE sql AS $$SELECT EXISTS(SELECT 1 FROM unions WHERE id=$1 AND owner_id=$2)$$;
+CREATE TABLE union_wallets(id uuid,union_id uuid);
+CREATE TABLE social_pages(id uuid PRIMARY KEY,linked_entity_id text,linked_entity_type text);
+CREATE TABLE social_conversations(id uuid DEFAULT gen_random_uuid() PRIMARY KEY,is_group boolean,group_name text,context_entity_id uuid,context_entity_type text,last_message_at timestamptz,last_message_preview text,updated_at timestamptz);
+CREATE TABLE social_conversation_participants(conversation_id uuid REFERENCES social_conversations(id),user_id uuid REFERENCES profiles(id),context_entity_id uuid,context_entity_type text,PRIMARY KEY(conversation_id,user_id));
+CREATE TABLE social_messages(id uuid DEFAULT gen_random_uuid() PRIMARY KEY,conversation_id uuid REFERENCES social_conversations(id),sender_id uuid REFERENCES profiles(id),content text NOT NULL,message_type text,media_metadata jsonb,created_at timestamptz DEFAULT now(),updated_at timestamptz,read_at timestamptz,is_deleted boolean DEFAULT false);
+CREATE TABLE notifications(id uuid DEFAULT gen_random_uuid() PRIMARY KEY,user_id uuid REFERENCES profiles(id),type text,title text,message text,data jsonb,read boolean,action_url text,metadata jsonb);
+ALTER TABLE settlement_invoices ADD PRIMARY KEY(id),ADD COLUMN club_id uuid,ADD COLUMN period_id uuid,ADD COLUMN invoice_type text,ADD COLUMN from_entity_type text,ADD COLUMN from_entity_id text,ADD COLUMN to_entity_type text,ADD COLUMN to_entity_id text,ADD COLUMN breakdown jsonb,ADD COLUMN transferred_at timestamptz,ADD COLUMN message_sent_at timestamptz,ADD COLUMN notes text,ADD COLUMN created_at timestamptz DEFAULT now(),ADD COLUMN updated_at timestamptz,ADD COLUMN due_at timestamptz,ADD COLUMN invoice_number text UNIQUE,ADD COLUMN source_credit_invoice_id uuid,ADD COLUMN source_credit_payment_id uuid;
+ALTER TABLE settlement_invoices ADD CONSTRAINT accounting_invoice_has_one_source CHECK(num_nonnulls(source_ledger_id,source_credit_invoice_id,source_credit_payment_id)<=1 AND (period_id IS NOT NULL OR num_nonnulls(source_ledger_id,source_credit_invoice_id,source_credit_payment_id)=1));
+ALTER TABLE chip_ledger ADD COLUMN status text DEFAULT 'posted',ADD COLUMN created_at timestamptz DEFAULT now();
+CREATE TABLE accounting_invoice_counters(year int PRIMARY KEY,next_number bigint NOT NULL CHECK(next_number>0));
+CREATE TABLE accounting_conversations(scope_id uuid,issuer_type text,issuer_id uuid,sender_id uuid REFERENCES profiles(id),recipient_id uuid REFERENCES profiles(id),conversation_id uuid REFERENCES social_conversations(id),PRIMARY KEY(scope_id,issuer_type,issuer_id,sender_id,recipient_id));
+CREATE TABLE accounting_invoice_deliveries(invoice_id uuid REFERENCES settlement_invoices(id),recipient_id uuid REFERENCES profiles(id),message_id uuid UNIQUE REFERENCES social_messages(id),notification_id uuid UNIQUE REFERENCES notifications(id),delivered_at timestamptz DEFAULT now(),delivery_mode text DEFAULT 'immediate',PRIMARY KEY(invoice_id,recipient_id));
+DROP TRIGGER test_accounting_invoice ON chip_ledger;

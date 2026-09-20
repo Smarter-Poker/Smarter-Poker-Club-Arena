@@ -1,5 +1,12 @@
+import {
+  isUnlimitedTournamentFormat,
+  isKnownTournamentFormat,
+  readTournamentFormat,
+  getTournamentFormatKind,
+  getTournamentEntryCapacity,
+} from '../utils/tournamentPresentation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useUnionRouteId } from '../hooks/useUnionRouteId';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import GameCreationActions, {
@@ -33,6 +40,12 @@ import { mergeById } from '../utils/mergeById';
 import { reportError } from '../utils/errorReporter';
 import CreateTablePage, { isCreateTableGameType } from './CreateTablePage';
 import TableConfigPage from './TableConfigPage';
+import { SpadeConsole } from '../components/console/SpadeConsole';
+import ArenaGameCard from '../components/lobby/game-cards/ArenaGameCard';
+import type {
+  ArenaGameFamily,
+  ArenaGameStatus,
+} from '../components/lobby/game-cards/arenaGameCardTypes';
 import {
   claimManagedGameWork,
   managedGameKey,
@@ -50,6 +63,7 @@ interface HostClub {
 }
 
 interface ManagedGame {
+  format_contract?: unknown;
   id: string;
   kind: ManagedGameKind;
   name: string;
@@ -58,7 +72,9 @@ interface ManagedGame {
   hostName: string;
   variant: string;
   players: number;
-  maxPlayers: number;
+  maxPlayers: number | null;
+  tournament_type?: string | null;
+  satellite_target_id?: string | null;
   startTime: string | null;
   smallBlind: number;
   bigBlind: number;
@@ -114,7 +130,10 @@ function toManagedGame(
     hostName: hostNames[row.club_id] || fallbackName,
     variant: row.variant || (row.kind === 'table' ? 'NLH' : 'MTT'),
     players: row.players || 0,
-    maxPlayers: row.max_players || 0,
+    maxPlayers: row.kind === 'tournament' ? getTournamentEntryCapacity(row) : row.max_players || 0,
+    format_contract: readTournamentFormat(row),
+    tournament_type: row.tournament_type,
+    satellite_target_id: row.satellite_target_id,
     startTime: row.start_time ?? null,
     smallBlind: Number(row.small_blind || 0),
     bigBlind: Number(row.big_blind || 0),
@@ -170,6 +189,44 @@ function formatTime(value: string | null): string {
   });
 }
 
+function managedGameFamily(game: ManagedGame): ArenaGameFamily {
+  if (game.kind === 'tournament') {
+    const kind = getTournamentFormatKind(game);
+    if (kind === 'spin') return 'spins';
+    if (kind === 'sng') return 'heads-up';
+    return 'mtt'; // shared tournament artwork; no admission classification
+  }
+  const variant = game.variant.toLowerCase();
+  if (variant.includes('spin')) return 'spins';
+  if (variant.includes('heads') || variant.includes('hu')) return 'heads-up';
+  if (variant.includes('plo') || variant.includes('omaha') || variant.includes('flo')) return 'plo';
+  return 'nlh';
+}
+
+function managedGameStatus(game: ManagedGame): ArenaGameStatus {
+  if (game.bucket === BUCKET_CLOSED) return 'closed';
+  const status = game.status.toLowerCase().replace(/_/g, '-');
+  if (status === 'active') return 'running';
+  if (status === 'registration-open') return 'registering';
+  const supported: ArenaGameStatus[] = [
+    'open',
+    'running',
+    'filling',
+    'registering',
+    'late-reg',
+    'full',
+    'waitlist',
+    'closed',
+    'starting',
+    'paused',
+  ];
+  return supported.includes(status as ArenaGameStatus)
+    ? (status as ArenaGameStatus)
+    : game.bucket === BUCKET_SCHEDULED
+      ? 'starting'
+      : 'open';
+}
+
 /**
  * The tooltip on the events-per-hour tile. `lastEventAt` is read from the
  * health RPC and, until now, was fetched on every load and never shown - so an
@@ -215,30 +272,39 @@ export function ScheduleCloseDialog({
           onSchedule(new Date(executeAt).toISOString());
         }}
       >
-        <span className={styles.eyebrow}>Governed Lifecycle</span>
-        <h2 id="schedule-close-title">Schedule Close</h2>
-        <p>
-          {game.name} Will Close Only If Its Contract Is Unchanged And No Players Are Seated Or
-          Registered When The Command Runs.
-        </p>
-        <label>
-          Execute At
-          <input
-            type="datetime-local"
-            min={minimum}
-            value={executeAt}
-            onChange={(event) => setExecuteAt(event.target.value)}
-            required
-          />
-        </label>
-        <div className={styles.dialogActions}>
-          <button type="button" onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
-          <button type="submit" className={styles.primary} disabled={busy || !executeAt}>
-            {busy ? 'Scheduling…' : 'Schedule Close'}
-          </button>
-        </div>
+        <SpadeConsole
+          eyebrow="Governed Lifecycle"
+          title="Schedule Close"
+          titleId="schedule-close-title"
+          subtitle="Occupied Or Registered Games Stay Locked"
+          pill="Guarded"
+          pillInk="gold"
+          crest="club"
+          plates={{
+            secondary: { label: 'Cancel', type: 'button', onClick: onClose, disabled: busy },
+            primary: {
+              label: busy ? 'Scheduling…' : 'Schedule Close',
+              type: 'submit',
+              disabled: busy || !executeAt,
+              ink: 'blue',
+            },
+          }}
+        >
+          <p className="sc-copy sc-copy--center">
+            {game.name} Will Close Only If Its Contract Is Unchanged And No Players Are Seated Or
+            Registered When The Command Runs.
+          </p>
+          <label className={styles.dialogField}>
+            Execute At
+            <input
+              type="datetime-local"
+              min={minimum}
+              value={executeAt}
+              onChange={(event) => setExecuteAt(event.target.value)}
+              required
+            />
+          </label>
+        </SpadeConsole>
       </form>
     </div>
   );
@@ -266,6 +332,9 @@ export function EditGameDialog({
   const [startTime, setStartTime] = useState(
     game.startTime ? new Date(game.startTime).toISOString().slice(0, 16) : ''
   );
+  const unlimitedMtt = game.kind === 'tournament' && isUnlimitedTournamentFormat(game);
+  const entryCapacityLocked =
+    game.kind === 'tournament' && (!isKnownTournamentFormat(game) || unlimitedMtt);
   const tableStructureLocked =
     game.kind === 'table' &&
     (Boolean(game.contract?.contractLocked) ||
@@ -273,7 +342,9 @@ export function EditGameDialog({
 
   const dirty =
     name !== game.name ||
-    (!tableStructureLocked && maxPlayers !== String(game.maxPlayers || 9)) ||
+    (!entryCapacityLocked &&
+      !tableStructureLocked &&
+      maxPlayers !== String(game.maxPlayers || 9)) ||
     (game.kind === 'table' &&
       !tableStructureLocked &&
       (smallBlind !== String(game.smallBlind || 1) ||
@@ -314,12 +385,12 @@ export function EditGameDialog({
       setValidationError('Enter a game name.');
       return null;
     }
-    if (!tableStructureLocked && (!Number.isInteger(seats) || seats < 2)) {
+    if (!entryCapacityLocked && !tableStructureLocked && (!Number.isInteger(seats) || seats < 2)) {
       setValidationError('Maximum players must be a whole number of at least two.');
       return null;
     }
     const patch: ManagedGamePatch = { name: trimmedName };
-    if (!tableStructureLocked) patch.maxPlayers = seats;
+    if (!entryCapacityLocked && !tableStructureLocked) patch.maxPlayers = seats;
     if (game.kind === 'table' && !tableStructureLocked) {
       const small = Number(smallBlind);
       const big = Number(bigBlind);
@@ -378,103 +449,113 @@ export function EditGameDialog({
           if (patch) onSave(patch);
         }}
       >
-        <span className={styles.eyebrow}>Safe Pre-Game Changes</span>
-        <h2 id="edit-game-title">Edit {game.kind === 'table' ? 'Table' : 'Tournament'}</h2>
-        <label>
-          Game Name
-          <input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <label>
-          Maximum Players
-          <input
-            type="number"
-            min="2"
-            max={game.kind === 'table' ? '10' : '1000000'}
-            value={maxPlayers}
-            onChange={(e) => setMaxPlayers(e.target.value)}
-            disabled={tableStructureLocked}
-            required
-          />
-        </label>
-        {game.kind === 'table' ? (
-          <div className={styles.fieldGrid}>
-            <label>
-              Small Blind
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={smallBlind}
-                onChange={(e) => setSmallBlind(e.target.value)}
-                disabled={tableStructureLocked}
-                required
-              />
-            </label>
-            <label>
-              Big Blind
-              <input
-                type="number"
-                min="0.02"
-                step="0.01"
-                value={bigBlind}
-                onChange={(e) => setBigBlind(e.target.value)}
-                disabled={tableStructureLocked}
-                required
-              />
-            </label>
-            <label>
-              Minimum Buy-In
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={minBuyIn}
-                onChange={(e) => setMinBuyIn(e.target.value)}
-                disabled={tableStructureLocked}
-                required
-              />
-            </label>
-            <label>
-              Maximum Buy-In
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={maxBuyIn}
-                onChange={(e) => setMaxBuyIn(e.target.value)}
-                disabled={tableStructureLocked}
-                required
-              />
-            </label>
-          </div>
-        ) : (
+        <SpadeConsole
+          eyebrow="Safe Pre-Game Changes"
+          title={`Edit ${game.kind === 'table' ? 'Table' : 'Tournament'}`}
+          titleId="edit-game-title"
+          subtitle="Structural Changes Lock When Play Begins"
+          pill={game.kind === 'table' ? 'Table' : 'Event'}
+          crest="club"
+          plates={{
+            secondary: { label: 'Cancel', type: 'button', onClick: requestClose, disabled: busy },
+            primary: {
+              label: busy ? 'Saving…' : 'Save Changes',
+              type: 'submit',
+              disabled: busy,
+              ink: 'blue',
+            },
+          }}
+        >
           <label>
-            Start Time
-            <input
-              type="datetime-local"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-            />
+            Game Name
+            <input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} required />
           </label>
-        )}
-        <p id="edit-game-description">
-          {tableStructureLocked
-            ? 'This Live Table Can Be Renamed. Its Blinds, Buy-In, And Seats Are Locked.'
-            : 'Structural Changes Lock As Soon As Players Become Active.'}
-        </p>
-        {validationError && (
-          <p className={styles.dialogError} role="alert">
-            {validationError}
+          {!entryCapacityLocked && (
+            <label>
+              Maximum Players
+              <input
+                type="number"
+                min="2"
+                max={game.kind === 'table' ? '10' : undefined}
+                value={maxPlayers}
+                onChange={(e) => setMaxPlayers(e.target.value)}
+                disabled={tableStructureLocked}
+                required
+              />
+            </label>
+          )}
+          {game.kind === 'table' ? (
+            <div className={styles.fieldGrid}>
+              <label>
+                Small Blind
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={smallBlind}
+                  onChange={(e) => setSmallBlind(e.target.value)}
+                  disabled={tableStructureLocked}
+                  required
+                />
+              </label>
+              <label>
+                Big Blind
+                <input
+                  type="number"
+                  min="0.02"
+                  step="0.01"
+                  value={bigBlind}
+                  onChange={(e) => setBigBlind(e.target.value)}
+                  disabled={tableStructureLocked}
+                  required
+                />
+              </label>
+              <label>
+                Minimum Buy-In
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={minBuyIn}
+                  onChange={(e) => setMinBuyIn(e.target.value)}
+                  disabled={tableStructureLocked}
+                  required
+                />
+              </label>
+              <label>
+                Maximum Buy-In
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={maxBuyIn}
+                  onChange={(e) => setMaxBuyIn(e.target.value)}
+                  disabled={tableStructureLocked}
+                  required
+                />
+              </label>
+            </div>
+          ) : (
+            <label>
+              Start Time
+              <input
+                type="datetime-local"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+              />
+            </label>
+          )}
+          <p id="edit-game-description">
+            {tableStructureLocked
+              ? 'This Live Table Can Be Renamed. Its Blinds, Buy-In, And Seats Are Locked.'
+              : 'Structural Changes Lock As Soon As Players Become Active.'}
           </p>
-        )}
-        <div className={styles.dialogActions}>
-          <button type="button" onClick={requestClose} disabled={busy}>
-            Cancel
-          </button>
-          <button type="submit" className={styles.primary} disabled={busy}>
-            {busy ? 'Saving…' : 'Save Changes'}
-          </button>
-        </div>
+          {validationError && (
+            <p className={styles.dialogError} role="alert">
+              {validationError}
+            </p>
+          )}
+        </SpadeConsole>
       </form>
     </div>
   );
@@ -517,77 +598,80 @@ export function ContractHistoryDialog({
         aria-modal="true"
         aria-labelledby="contract-title"
       >
-        <span className={styles.eyebrow}>Published Contract History</span>
-        <h2 id="contract-title">{game.name}</h2>
-        <p>
-          Every Revision Is Hashed And Append-Only. Registered Tournament Contracts Cannot Be
-          Rewritten.
-        </p>
-        {game.kind === 'tournament' && game.contract && (
-          <div className={styles.readinessGrid} aria-label="Tournament Guarantee Readiness">
-            <span>
-              <small>Readiness</small>
-              <strong>{game.contract.readiness.state.replace(/_/g, ' ')}</strong>
-            </span>
-            <span>
-              <small>Effective Guarantee</small>
-              <strong>{game.contract.readiness.effectiveGuarantee.toLocaleString()}</strong>
-            </span>
-            {game.contract.readiness.satelliteSeatGuarantee > 0 && (
+        <SpadeConsole
+          eyebrow="Published Contract History"
+          title={game.name}
+          titleId="contract-title"
+          subtitle="Hashed, Versioned, Append-Only"
+          pill={`V${game.contract?.version || versions[0]?.version || 0}`}
+          crest="diamond"
+          plates={{ primary: { label: 'Close', type: 'button', onClick: onClose } }}
+        >
+          <p className="sc-copy sc-copy--center">
+            Every Revision Is Hashed And Append-Only. Registered Tournament Contracts Cannot Be
+            Rewritten.
+          </p>
+          {game.kind === 'tournament' && game.contract && (
+            <div className={styles.readinessGrid} aria-label="Tournament Guarantee Readiness">
               <span>
-                <small>Satellite Seat Value</small>
-                <strong>{game.contract.readiness.satelliteSeatGuarantee.toLocaleString()}</strong>
+                <small>Readiness</small>
+                <strong>{game.contract.readiness.state.replace(/_/g, ' ')}</strong>
               </span>
-            )}
-            <span>
-              <small>Overlay Required</small>
-              <strong>{game.contract.readiness.overlayRequired.toLocaleString()}</strong>
-            </span>
-            <span>
-              <small>{game.contract.readiness.bankType || 'Funding'} Bank</small>
-              <strong>{game.contract.readiness.bankBalance.toLocaleString()}</strong>
-            </span>
-            <span>
-              <small>Other Live Promises</small>
-              <strong>{game.contract.readiness.otherLiveExposure.toLocaleString()}</strong>
-            </span>
-            <span>
-              <small>Short By</small>
-              <strong>{game.contract.readiness.shortBy.toLocaleString()}</strong>
-            </span>
-          </div>
-        )}
-        {loading ? (
-          <div className={styles.contractLoading} role="status" aria-live="polite">
-            Loading Contract History…
-          </div>
-        ) : versions.length === 0 ? (
-          <div className={styles.contractLoading} role="status">
-            No Published Contract Revisions Were Returned.
-          </div>
-        ) : (
-          <div className={styles.contractVersions}>
-            {versions.map((version) => (
-              <details key={version.version} open={version.version === versions[0]?.version}>
-                <summary>
-                  <strong>Version {version.version}</strong>
-                  <span>{new Date(version.publishedAt).toLocaleString()}</span>
-                  <code>{version.contractHash.slice(0, 12)}</code>
-                </summary>
-                <div className={styles.contractMeta}>
-                  <span>{version.changeReason.replace(/_/g, ' ')}</span>
-                  <span>SHA-256 {version.contractHash}</span>
-                </div>
-                <pre>{JSON.stringify(version.contract, null, 2)}</pre>
-              </details>
-            ))}
-          </div>
-        )}
-        <div className={styles.dialogActions}>
-          <button type="button" className={styles.primary} onClick={onClose}>
-            Close
-          </button>
-        </div>
+              <span>
+                <small>Effective Guarantee</small>
+                <strong>{game.contract.readiness.effectiveGuarantee.toLocaleString()}</strong>
+              </span>
+              {game.contract.readiness.satelliteSeatGuarantee > 0 && (
+                <span>
+                  <small>Satellite Seat Value</small>
+                  <strong>{game.contract.readiness.satelliteSeatGuarantee.toLocaleString()}</strong>
+                </span>
+              )}
+              <span>
+                <small>Overlay Required</small>
+                <strong>{game.contract.readiness.overlayRequired.toLocaleString()}</strong>
+              </span>
+              <span>
+                <small>{game.contract.readiness.bankType || 'Funding'} Bank</small>
+                <strong>{game.contract.readiness.bankBalance.toLocaleString()}</strong>
+              </span>
+              <span>
+                <small>Other Live Promises</small>
+                <strong>{game.contract.readiness.otherLiveExposure.toLocaleString()}</strong>
+              </span>
+              <span>
+                <small>Short By</small>
+                <strong>{game.contract.readiness.shortBy.toLocaleString()}</strong>
+              </span>
+            </div>
+          )}
+          {loading ? (
+            <div className={styles.contractLoading} role="status" aria-live="polite">
+              Loading Contract History…
+            </div>
+          ) : versions.length === 0 ? (
+            <div className={styles.contractLoading} role="status">
+              No Published Contract Revisions Were Returned.
+            </div>
+          ) : (
+            <div className={styles.contractVersions}>
+              {versions.map((version) => (
+                <details key={version.version} open={version.version === versions[0]?.version}>
+                  <summary>
+                    <strong>Version {version.version}</strong>
+                    <span>{new Date(version.publishedAt).toLocaleString()}</span>
+                    <code>{version.contractHash.slice(0, 12)}</code>
+                  </summary>
+                  <div className={styles.contractMeta}>
+                    <span>{version.changeReason.replace(/_/g, ' ')}</span>
+                    <span>SHA-256 {version.contractHash}</span>
+                  </div>
+                  <pre>{JSON.stringify(version.contract, null, 2)}</pre>
+                </details>
+              ))}
+            </div>
+          )}
+        </SpadeConsole>
       </section>
     </div>
   );
@@ -1278,7 +1362,15 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   if (allowed === null) {
     return (
       <main className={styles.page}>
-        <section className={styles.empty}>Verifying Game-Management Access…</section>
+        <SpadeConsole
+          eyebrow="Security Check"
+          title="Table Management"
+          subtitle="Verifying Game-Management Access"
+          pill="Checking"
+          crest="club"
+        >
+          <section className={styles.empty}>Verifying Game-Management Access…</section>
+        </SpadeConsole>
       </main>
     );
   }
@@ -1286,465 +1378,512 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   if (allowed === false) {
     return (
       <main className={styles.page}>
-        <section className={styles.denied}>
-          <span>Management Locked</span>
-          <h1>
-            {scope === 'club'
-              ? 'This Club Is Managed By Its Union'
-              : 'Union Owner Or Admin Required'}
-          </h1>
-          <p>
-            {scope === 'club'
-              ? 'When A Club Joins A Union, Its Staff Can No Longer Create, Change, Close, Or View Management Controls For Games. Use The Union Console Instead.'
-              : 'Only The Union Owner And Union Admins Can Manage Union Games.'}
-          </p>
-          <button onClick={() => navigate(scope === 'club' ? `/clubs/${clubId}` : '/unions')}>
-            Return
-          </button>
-        </section>
+        <SpadeConsole
+          eyebrow="Management Locked"
+          title={scope === 'club' ? 'This Club Is Managed By Its Union' : 'Union Admin Required'}
+          subtitle="Game Creation And Management Are Restricted"
+          pill="Locked"
+          pillInk="red"
+          crest="club"
+          plates={{
+            primary: {
+              label: 'Return',
+              type: 'button',
+              onClick: () => navigate(scope === 'club' ? `/clubs/${clubId}` : '/unions'),
+            },
+          }}
+        >
+          <section className={styles.denied}>
+            <p className="sc-copy sc-copy--center">
+              {scope === 'club'
+                ? 'When A Club Joins A Union, Its Staff Can No Longer Create, Change, Close, Or View Management Controls For Games. Use The Union Console Instead.'
+                : 'Only The Union Owner And Union Admins Can Manage Union Games.'}
+            </p>
+          </section>
+        </SpadeConsole>
       </main>
     );
   }
 
   return (
     <main className={styles.page}>
-      <header className={styles.commandHeader}>
-        <div className={styles.heroCopy}>
-          <span className={styles.eyebrow}>
-            {scope === 'union' ? 'Union Command' : 'Standalone Club Command'}
-          </span>
-          <h1>Table Management</h1>
-          <p>{scopeName} · One Governed Command Surface For Games, Ticker, And Club Messages.</p>
-          <span className={styles.safetyLine}>Live Contract · Occupied Games Stay Locked</span>
-        </div>
-        <div className={styles.headerRight}>
-          <div className={styles.countRail}>
-            <span
-              className={realtimeStatus === 'live' ? styles.healthGood : styles.healthWarn}
-              role="status"
-              aria-live="polite"
-            >
-              <strong>{realtimeStatus === 'live' ? 'Live' : 'Recovering'}</strong> Realtime
-            </span>
-            <span>
-              <strong>{liveCount}</strong> Live
-            </span>
-            <span>
-              <strong>{scheduledCount}</strong> Scheduled
-            </span>
-            <span
-              title={
-                archivedBeyondHorizon
-                  ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
-                  : countsAreKnown
-                    ? 'Every Game In This Scope Is On The Board'
-                    : undefined
-              }
-            >
-              <strong>{reachableTotal}</strong> Total
-            </span>
+      <SpadeConsole
+        eyebrow={scope === 'union' ? 'Union Command' : 'Standalone Club Command'}
+        title={
+          surface === 'games'
+            ? 'Table Management'
+            : surface === 'ticker'
+              ? 'Ticker Management'
+              : 'Club Messages'
+        }
+        titleId="table-management-title"
+        subtitle={`${scopeName} · Governed Live Operations`}
+        pill={`${reachableTotal} Games`}
+        crest="club"
+        className={styles.managementConsole}
+        aria-labelledby="table-management-title"
+      >
+        <header className={styles.commandHeader}>
+          <div className={styles.heroCopy}>
+            <span className={styles.safetyLine}>Live Contract · Occupied Games Stay Locked</span>
           </div>
-          <div className={styles.healthRail} aria-label="Management Health">
-            {/*
+          <div className={styles.headerRight}>
+            <div className={styles.countRail}>
+              <span
+                className={realtimeStatus === 'live' ? styles.healthGood : styles.healthWarn}
+                role="status"
+                aria-live="polite"
+              >
+                <strong>{realtimeStatus === 'live' ? 'Live' : 'Recovering'}</strong> Realtime
+              </span>
+              <span>
+                <strong>{liveCount}</strong> Live
+              </span>
+              <span>
+                <strong>{scheduledCount}</strong> Scheduled
+              </span>
+              <span
+                title={
+                  archivedBeyondHorizon
+                    ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
+                    : countsAreKnown
+                      ? 'Every Game In This Scope Is On The Board'
+                      : undefined
+                }
+              >
+                <strong>{reachableTotal}</strong> Total
+              </span>
+            </div>
+            <div className={styles.healthRail} aria-label="Management Health">
+              {/*
               A health read that FAILED must not render as zeros. `?? 0` used to
               paint "0 Integrity Alerts" whether the answer was zero or whether
               nobody could be asked - and the operator has no way to tell those
               apart. Health is telemetry, so a failed read still never blocks the
               board; it just says so instead of impersonating an all-clear.
             */}
-            {healthFailed ? (
-              <span className={styles.healthAlert}>Management Health Unavailable</span>
-            ) : health === null ? (
-              /* Still in flight. Not an alarm, and not a row of zeros either. */
-              <span>Reading Management Health</span>
-            ) : (
-              <>
-                <span>{health.commandsLast24h} Commands / 24h</span>
-                <span>{health.rejectedLast24h} Rejected</span>
-                <span className={health.integrityAlerts ? styles.healthAlert : undefined}>
-                  {health.integrityAlerts} Integrity Alerts
-                </span>
-                <span>{health.scheduledPending} Pending Schedules</span>
-                <span className={health.scheduledRejected24h ? styles.healthAlert : undefined}>
-                  {health.scheduledRejected24h} Schedule Rejects
-                </span>
-                <span title={formatEventClock(health.lastEventAt)}>
-                  {health.eventsLastHour} Events / Hour
-                </span>
-                <span title={`${health.retentionDays}-Day Realtime Retention`}>
-                  {health.eventRows} Realtime Events
-                </span>
-              </>
-            )}
+              {healthFailed ? (
+                <span className={styles.healthAlert}>Management Health Unavailable</span>
+              ) : health === null ? (
+                /* Still in flight. Not an alarm, and not a row of zeros either. */
+                <span>Reading Management Health</span>
+              ) : (
+                <>
+                  <span>{health.commandsLast24h} Commands / 24h</span>
+                  <span>{health.rejectedLast24h} Rejected</span>
+                  <span className={health.integrityAlerts ? styles.healthAlert : undefined}>
+                    {health.integrityAlerts} Integrity Alerts
+                  </span>
+                  <span>{health.scheduledPending} Pending Schedules</span>
+                  <span className={health.scheduledRejected24h ? styles.healthAlert : undefined}>
+                    {health.scheduledRejected24h} Schedule Rejects
+                  </span>
+                  <span title={formatEventClock(health.lastEventAt)}>
+                    {health.eventsLastHour} Events / Hour
+                  </span>
+                  <span title={`${health.retentionDays}-Day Realtime Retention`}>
+                    {health.eventRows} Realtime Events
+                  </span>
+                </>
+              )}
+            </div>
+            <GameCreationActions
+              managementPath={managementPath}
+              onNavigate={(path) => void openCreationFromHeader(path)}
+            />
           </div>
-          <GameCreationActions
-            managementPath={managementPath}
-            onNavigate={(path) => void openCreationFromHeader(path)}
-          />
-        </div>
-      </header>
+        </header>
 
-      <nav className={styles.surfaceNav} aria-label="Management Sections">
-        {(
-          [
-            ['games', 'Game Board', 'Running & Scheduled'],
-            ['ticker', 'Ticker Management', 'Live Message Rail'],
-            ['messages', 'Club Messages', 'Identity & Announcements'],
-          ] as Array<[ManagementSurface, string, string]>
-        ).map(([key, label, detail], index) => (
-          <button
-            key={key}
-            type="button"
-            className={surface === key ? styles.surfaceActive : ''}
-            aria-current={surface === key ? 'page' : undefined}
-            onClick={() => void changeSurface(key)}
-            title={
-              surfaceDirty && surface !== key ? 'Unsaved Changes Will Need Confirmation' : undefined
-            }
-          >
-            <span>0{index + 1}</span>
-            <strong>{label}</strong>
-            <small>{detail}</small>
-          </button>
-        ))}
-      </nav>
-
-      {scope === 'union' && hostClubId && (
-        /* NO HOST SWITCHING (Dan 2026-09-04): "when you are on this page, it
-           must be only for the page you opened it in, you can't jump from club
-           to club." The host is the union itself, stated, not selectable. */
-        <p className={styles.hostPicker} aria-label="Host">
-          Host
-          <strong>{hosts.find((host) => host.id === hostClubId)?.name || scopeName}</strong>
-        </p>
-      )}
-
-      {surface === 'games' && requestedCreate === 'table' && hostClubId && !requestedGameType && (
-        <section className={styles.creatorDeck} aria-label="Create Table">
-          <CreateTablePage
-            clubIdOverride={hostClubId}
-            onBack={clearCreate}
-            onSelectGameType={openTableConfig}
-          />
-        </section>
-      )}
-      {surface === 'games' && requestedGameType && hostClubId && (
-        <section className={styles.creatorDeck} aria-label="Table Config">
-          <button
-            type="button"
-            className={styles.creatorBack}
-            onClick={openTableSelector}
-            aria-label="Back To Game Types"
-          >
-            ‹‹
-          </button>
-          <TableConfigPage
-            key={`${hostClubId}:${requestedGameType}`}
-            clubIdOverride={hostClubId}
-            gameTypeOverride={requestedGameType}
-            onExit={(exit) => {
-              clearCreate();
-              if (exit !== 'denied') void load();
-            }}
-          />
-        </section>
-      )}
-      {scope === 'union' && hosts.length === 0 && !loading && allowed && (
-        <section className={styles.empty}>
-          This Union Has No House Club Row Yet, So It Cannot Host Games Of Its Own.
-        </section>
-      )}
-
-      {surface === 'games' && (
-        <nav className={styles.filters} aria-label="Game Status">
-          {(['all', 'running', 'scheduled', 'closed'] as View[]).map((item) => (
+        <nav className={styles.surfaceNav} aria-label="Management Sections">
+          {(
+            [
+              ['games', 'Game Board', 'Running & Scheduled'],
+              ['ticker', 'Ticker Management', 'Live Message Rail'],
+              ['messages', 'Club Messages', 'Identity & Announcements'],
+            ] as Array<[ManagementSurface, string, string]>
+          ).map(([key, label, detail], index) => (
             <button
-              key={item}
+              key={key}
               type="button"
-              className={view === item ? styles.active : ''}
-              onClick={() => setView(item)}
+              className={surface === key ? styles.surfaceActive : ''}
+              aria-current={surface === key ? 'page' : undefined}
+              onClick={() => void changeSurface(key)}
+              title={
+                surfaceDirty && surface !== key
+                  ? 'Unsaved Changes Will Need Confirmation'
+                  : undefined
+              }
             >
-              {item}
+              <span>0{index + 1}</span>
+              <strong>{label}</strong>
+              <small>{detail}</small>
             </button>
           ))}
-          {requestedCreate && (
-            <button className={styles.dismissCreator} onClick={clearCreate}>
-              Close Creator
-            </button>
-          )}
         </nav>
-      )}
 
-      {surface === 'games' &&
-        (loadError ? (
-          <section className={styles.empty}>
-            <p>{loadError}</p>
-            <button onClick={() => void load()}>Try Again</button>
+        {scope === 'union' && hostClubId && (
+          /* NO HOST SWITCHING (Dan 2026-09-04): "when you are on this page, it
+           must be only for the page you opened it in, you can't jump from club
+           to club." The host is the union itself, stated, not selectable. */
+          <p className={styles.hostPicker} aria-label="Host">
+            Host
+            <strong>{hosts.find((host) => host.id === hostClubId)?.name || scopeName}</strong>
+          </p>
+        )}
+
+        {surface === 'games' && requestedCreate === 'table' && hostClubId && !requestedGameType && (
+          <section className={styles.creatorDeck} aria-label="Create Table">
+            <CreateTablePage
+              clubIdOverride={hostClubId}
+              onBack={clearCreate}
+              onSelectGameType={openTableConfig}
+            />
           </section>
-        ) : loading ? (
-          <section className={styles.empty}>Loading Live Game Controls…</section>
-        ) : filteredGames.length === 0 ? (
-          <section className={styles.empty}>
-            <h2>No Games In This View</h2>
-            <p>Use The Controls Above To Add The First One.</p>
+        )}
+        {surface === 'games' && requestedGameType && hostClubId && (
+          <section className={styles.creatorDeck} aria-label="Table Config">
+            <button
+              type="button"
+              className={styles.creatorBack}
+              onClick={openTableSelector}
+              aria-label="Back To Game Types"
+            >
+              ‹‹
+            </button>
+            <TableConfigPage
+              key={`${hostClubId}:${requestedGameType}`}
+              clubIdOverride={hostClubId}
+              gameTypeOverride={requestedGameType}
+              embedded
+              onExit={(exit) => {
+                clearCreate();
+                if (exit !== 'denied') void load();
+              }}
+            />
           </section>
-        ) : (
-          <section className={styles.gameList} aria-label="Managed Games">
-            {filteredGames.map((game) => {
-              const closed = game.bucket === BUCKET_CLOSED;
-              return (
-                <article key={`${game.kind}-${game.id}`} className={styles.gameRow}>
-                  <span
-                    className={`${styles.statusRail} ${game.bucket === BUCKET_LIVE ? styles.live : closed ? styles.closed : styles.scheduled}`}
-                    aria-hidden="true"
-                  />
-                  <div className={styles.gameIdentity}>
-                    <span>
-                      {game.kind === 'table' ? 'Cash Table' : 'Tournament'} · {game.hostName}
-                    </span>
-                    <h2>{game.name}</h2>
-                    <p>
-                      {game.variant.toUpperCase()} ·{' '}
-                      {game.kind === 'table'
-                        ? `${game.smallBlind}/${game.bigBlind} · Buy-In ${game.minBuyIn}-${game.maxBuyIn}`
-                        : `${game.buyIn} Buy-In · ${formatTime(game.startTime)}`}
-                    </p>
-                    {game.contract && (
-                      <div className={styles.contractRail}>
-                        <span>Contract V{game.contract.version}</span>
-                        <span>{game.contract.contractHash.slice(0, 8)}</span>
-                        {game.contract.contractLocked && (
-                          <span className={styles.locked}>Locked</span>
-                        )}
-                        {game.kind === 'tournament' && (
-                          <span
-                            className={
-                              game.contract.readiness.canStart ? styles.ready : styles.blocked
-                            }
-                            title={
-                              game.contract.readiness.state === 'funding_blocked'
-                                ? `Guarantee Short By ${game.contract.readiness.shortBy.toLocaleString()} Chips`
-                                : 'Published Contract Readiness'
-                            }
-                          >
-                            {game.contract.readiness.state === 'funding_blocked'
-                              ? `Funding Short ${game.contract.readiness.shortBy.toLocaleString()}`
-                              : game.contract.readiness.state.replace(/_/g, ' ')}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {game.lastCommand && (
-                      <div
-                        className={`${styles.commandReceipt} ${
-                          game.lastCommand.status === 'rejected' ||
-                          game.lastCommand.reconciliationState === 'version_drift'
-                            ? styles.commandRejected
-                            : ''
-                        }`}
-                        title={`Command ${game.lastCommand.commandId}`}
-                      >
-                        <span>
-                          {game.lastCommand.status === 'succeeded'
-                            ? 'Confirmed'
-                            : game.lastCommand.status}{' '}
-                          {game.lastCommand.action}
-                        </span>
-                        <code>{game.lastCommand.commandId.slice(0, 8)}</code>
-                        <span>
-                          V{game.lastCommand.versionBefore} → V{game.lastCommand.versionAfter}
-                        </span>
-                        {game.lastCommand.reconciliationState === 'version_drift' && (
-                          <span>Revision Check Failed</span>
-                        )}
-                      </div>
-                    )}
-                    {game.pendingSchedule && (
-                      <div className={styles.scheduleRail}>
-                        <span>Close Scheduled</span>
-                        <strong>{formatTime(game.pendingSchedule.executeAt)}</strong>
-                        <button
-                          type="button"
-                          disabled={busyKeys.has(managedGameKey(game))}
-                          onClick={async () => {
-                            if (!beginGameWork(game)) return;
-                            try {
-                              await gameManagementService.cancelSchedule(
-                                game.pendingSchedule!.scheduleId
-                              );
-                              toast.success('Scheduled close cancelled.');
-                              await load(true);
-                            } catch (error) {
-                              toast.error(
-                                error instanceof Error
-                                  ? error.message
-                                  : 'Could not cancel this schedule.'
-                              );
-                            } finally {
-                              endGameWork(game);
-                            }
-                          }}
+        )}
+        {scope === 'union' && hosts.length === 0 && !loading && allowed && (
+          <section className={styles.empty}>
+            This Union Has No House Club Row Yet, So It Cannot Host Games Of Its Own.
+          </section>
+        )}
+
+        {surface === 'games' && (
+          <nav className={styles.filters} aria-label="Game Status">
+            {(['all', 'running', 'scheduled', 'closed'] as View[]).map((item) => (
+              <button
+                key={item}
+                type="button"
+                className={view === item ? styles.active : ''}
+                onClick={() => setView(item)}
+              >
+                {item}
+              </button>
+            ))}
+            {requestedCreate && (
+              <button className={styles.dismissCreator} onClick={clearCreate}>
+                Close Creator
+              </button>
+            )}
+          </nav>
+        )}
+
+        {surface === 'games' &&
+          (loadError ? (
+            <section className={styles.empty}>
+              <p>{loadError}</p>
+              <button onClick={() => void load()}>Try Again</button>
+            </section>
+          ) : loading ? (
+            <section className={styles.empty}>Loading Live Game Controls…</section>
+          ) : filteredGames.length === 0 ? (
+            <section className={styles.empty}>
+              <h2>No Games In This View</h2>
+              <p>Use The Controls Above To Add The First One.</p>
+            </section>
+          ) : (
+            <section className={styles.gameList} aria-label="Managed Games">
+              {filteredGames.map((game) => {
+                const closed = game.bucket === BUCKET_CLOSED;
+                const tournamentLocked =
+                  game.kind === 'tournament' && Boolean(game.contract?.contractLocked);
+                const cardPrimaryLabel =
+                  game.kind === 'table' && !closed
+                    ? 'Open Table'
+                    : !closed && !tournamentLocked
+                      ? 'Edit Game'
+                      : 'Contract';
+                return (
+                  <article key={`${game.kind}-${game.id}`} className={styles.gameRow}>
+                    <ArenaGameCard
+                      className={styles.managedCard}
+                      data={{
+                        id: game.id,
+                        family: managedGameFamily(game),
+                        title: game.name,
+                        subtitle: game.hostName,
+                        gameType: game.variant.toUpperCase(),
+                        stakes:
+                          game.kind === 'table' ? `${game.smallBlind}/${game.bigBlind}` : undefined,
+                        players: `${game.players}${game.maxPlayers !== null ? `/${game.maxPlayers}` : ''}`,
+                        registered:
+                          game.kind === 'tournament'
+                            ? `${game.players}${game.maxPlayers !== null ? `/${game.maxPlayers}` : ''}`
+                            : undefined,
+                        buyIn:
+                          game.kind === 'table'
+                            ? `${game.minBuyIn}-${game.maxBuyIn}`
+                            : String(game.buyIn),
+                        startTime:
+                          game.kind === 'tournament' ? formatTime(game.startTime) : undefined,
+                        status: managedGameStatus(game),
+                        statusLabel: game.status.replace(/_/g, ' '),
+                        rules: [],
+                      }}
+                      actions={{
+                        primaryLabel: cardPrimaryLabel,
+                        secondaryLabel: cardPrimaryLabel === 'Contract' ? undefined : 'Contract',
+                        showIcons: false,
+                        busy: busyKeys.has(managedGameKey(game)),
+                        onSecondary: () => void openContractHistory(game),
+                        onPrimary: () => {
+                          if (cardPrimaryLabel === 'Open Table') {
+                            navigate(`/table/${game.id}`);
+                          } else if (cardPrimaryLabel === 'Edit Game') {
+                            setEditing(game);
+                          } else {
+                            void openContractHistory(game);
+                          }
+                        },
+                      }}
+                    />
+                    <span
+                      className={`${styles.statusRail} ${game.bucket === BUCKET_LIVE ? styles.live : closed ? styles.closed : styles.scheduled}`}
+                      aria-hidden="true"
+                    />
+                    <div className={styles.gameIdentity}>
+                      {game.contract && (
+                        <div className={styles.contractRail}>
+                          <span>Contract V{game.contract.version}</span>
+                          <span>{game.contract.contractHash.slice(0, 8)}</span>
+                          {game.contract.contractLocked && (
+                            <span className={styles.locked}>Locked</span>
+                          )}
+                          {game.kind === 'tournament' && (
+                            <span
+                              className={
+                                game.contract.readiness.canStart ? styles.ready : styles.blocked
+                              }
+                              title={
+                                game.contract.readiness.state === 'funding_blocked'
+                                  ? `Guarantee Short By ${game.contract.readiness.shortBy.toLocaleString()} Chips`
+                                  : 'Published Contract Readiness'
+                              }
+                            >
+                              {game.contract.readiness.state === 'funding_blocked'
+                                ? `Funding Short ${game.contract.readiness.shortBy.toLocaleString()}`
+                                : game.contract.readiness.state.replace(/_/g, ' ')}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {game.lastCommand && (
+                        <div
+                          className={`${styles.commandReceipt} ${
+                            game.lastCommand.status === 'rejected' ||
+                            game.lastCommand.reconciliationState === 'version_drift'
+                              ? styles.commandRejected
+                              : ''
+                          }`}
+                          title={`Command ${game.lastCommand.commandId}`}
                         >
-                          Cancel Schedule
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <div className={styles.gameNumbers}>
-                    <strong>
-                      {game.players}/{game.maxPlayers || '∞'}
-                    </strong>
-                    <span>Players</span>
-                  </div>
-                  <span className={styles.status}>{game.status.replace(/_/g, ' ')}</span>
-                  <div className={styles.rowActions}>
-                    <button
-                      onClick={() => void openContractHistory(game)}
-                      disabled={busyKeys.has(managedGameKey(game))}
-                      title="View Published Contract History"
-                    >
-                      Contract
-                    </button>
-                    {/*
+                          <span>
+                            {game.lastCommand.status === 'succeeded'
+                              ? 'Confirmed'
+                              : game.lastCommand.status}{' '}
+                            {game.lastCommand.action}
+                          </span>
+                          <code>{game.lastCommand.commandId.slice(0, 8)}</code>
+                          <span>
+                            V{game.lastCommand.versionBefore} → V{game.lastCommand.versionAfter}
+                          </span>
+                          {game.lastCommand.reconciliationState === 'version_drift' && (
+                            <span>Revision Check Failed</span>
+                          )}
+                        </div>
+                      )}
+                      {game.pendingSchedule && (
+                        <div className={styles.scheduleRail}>
+                          <span>Close Scheduled</span>
+                          <strong>{formatTime(game.pendingSchedule.executeAt)}</strong>
+                          <button
+                            type="button"
+                            disabled={busyKeys.has(managedGameKey(game))}
+                            onClick={async () => {
+                              if (!beginGameWork(game)) return;
+                              try {
+                                await gameManagementService.cancelSchedule(
+                                  game.pendingSchedule!.scheduleId
+                                );
+                                toast.success('Scheduled close cancelled.');
+                                await load(true);
+                              } catch (error) {
+                                toast.error(
+                                  error instanceof Error
+                                    ? error.message
+                                    : 'Could not cancel this schedule.'
+                                );
+                              } finally {
+                                endGameWork(game);
+                              }
+                            }}
+                          >
+                            Cancel Schedule
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div className={styles.rowActions}>
+                      {/*
                       Open, Pause, Schedule and Close are all gated on !closed
                       and Edit was not, so a finished game could be renamed and
                       re-limited from the board. Nothing downstream refuses it:
                       fn_update_managed_game never looks at the status for a
                       table. A closed game is history, so it is read-only here.
                     */}
-                    {!closed && (
-                      <button
-                        onClick={() => {
-                          if (game.kind === 'tournament' && game.contract?.contractLocked) {
-                            toast.error(
-                              'This tournament cannot be modified after a player has registered.'
-                            );
-                            return;
+                      {!closed && (
+                        <button
+                          onClick={() => {
+                            if (game.kind === 'tournament' && game.contract?.contractLocked) {
+                              toast.error(
+                                'This tournament cannot be modified after a player has registered.'
+                              );
+                              return;
+                            }
+                            setEditing(game);
+                          }}
+                          disabled={busyKeys.has(managedGameKey(game))}
+                          title={
+                            game.kind === 'tournament' && game.contract?.contractLocked
+                              ? 'Locked After The First Registration'
+                              : 'Edit Game'
                           }
-                          setEditing(game);
-                        }}
-                        disabled={busyKeys.has(managedGameKey(game))}
-                        title={
-                          game.kind === 'tournament' && game.contract?.contractLocked
-                            ? 'Locked After The First Registration'
-                            : 'Edit Game'
-                        }
-                        aria-disabled={
-                          game.kind === 'tournament' && game.contract?.contractLocked
-                            ? true
-                            : undefined
-                        }
-                      >
-                        Edit
-                      </button>
-                    )}
-                    {game.kind === 'table' && !closed && <Link to={`/table/${game.id}`}>Open</Link>}
-                    {game.kind === 'table' && !closed && (
-                      <button
-                        type="button"
-                        disabled={busyKeys.has(managedGameKey(game))}
-                        onClick={async () => {
-                          const paused = game.status.toLowerCase() === 'paused';
-                          if (!beginGameWork(game)) return;
-                          try {
-                            if (paused) await gameManagementService.resume(game.id);
-                            else await gameManagementService.pause(game.id);
-                            toast.success(
-                              paused ? 'Table resumed.' : 'Table will pause after this hand.'
-                            );
-                            await load(true);
-                          } catch (error) {
-                            toast.error(
-                              error instanceof Error
-                                ? error.message
-                                : `Could not ${paused ? 'resume' : 'pause'} this table.`
-                            );
-                          } finally {
-                            endGameWork(game);
+                          aria-disabled={
+                            game.kind === 'tournament' && game.contract?.contractLocked
+                              ? true
+                              : undefined
                           }
-                        }}
-                        title={
-                          game.status.toLowerCase() === 'paused'
-                            ? 'Resume Dealing'
-                            : 'Pause Safely After The Current Hand'
-                        }
-                      >
-                        {game.status.toLowerCase() === 'paused' ? 'Resume' : 'Pause'}
-                      </button>
-                    )}
-                    {!closed && !game.pendingSchedule && (
-                      <button
-                        onClick={() => {
-                          if (game.players > 0 || game.contract?.contractLocked) {
-                            toast.error(
-                              game.kind === 'table'
-                                ? 'Players must leave before a close can be scheduled.'
-                                : 'A registered tournament cannot be scheduled for cancellation.'
-                            );
-                            return;
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {game.kind === 'table' && !closed && (
+                        <button
+                          type="button"
+                          disabled={busyKeys.has(managedGameKey(game))}
+                          onClick={async () => {
+                            const paused = game.status.toLowerCase() === 'paused';
+                            if (!beginGameWork(game)) return;
+                            try {
+                              if (paused) await gameManagementService.resume(game.id);
+                              else await gameManagementService.pause(game.id);
+                              toast.success(
+                                paused ? 'Table resumed.' : 'Table will pause after this hand.'
+                              );
+                              await load(true);
+                            } catch (error) {
+                              toast.error(
+                                error instanceof Error
+                                  ? error.message
+                                  : `Could not ${paused ? 'resume' : 'pause'} this table.`
+                              );
+                            } finally {
+                              endGameWork(game);
+                            }
+                          }}
+                          title={
+                            game.status.toLowerCase() === 'paused'
+                              ? 'Resume Dealing'
+                              : 'Pause Safely After The Current Hand'
                           }
-                          setScheduling(game);
-                        }}
-                        disabled={busyKeys.has(managedGameKey(game)) || !game.contract}
-                        aria-disabled={
-                          game.players > 0 || game.contract?.contractLocked ? true : undefined
-                        }
-                        title={
-                          game.players > 0 || game.contract?.contractLocked
-                            ? 'Occupied Or Registered Games Stay Locked'
-                            : 'Schedule A Guarded Future Close'
-                        }
-                      >
-                        Schedule
-                      </button>
-                    )}
-                    {!closed && (
-                      <button
-                        className={styles.danger}
-                        onClick={() => void closeGame(game)}
-                        disabled={busyKeys.has(managedGameKey(game))}
-                        title={
-                          game.players > 0 || game.contract?.contractLocked
-                            ? game.kind === 'table'
-                              ? 'Players Must Leave Before This Table Can Close'
-                              : 'A Registered Tournament Cannot Be Cancelled'
-                            : 'Close Game'
-                        }
-                        aria-disabled={
-                          game.players > 0 || game.contract?.contractLocked ? true : undefined
-                        }
-                      >
-                        {busyKeys.has(managedGameKey(game)) ? 'Closing…' : 'Close'}
-                      </button>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-            {nextCursor && (
-              <button
-                type="button"
-                className={styles.loadMore}
-                onClick={() => void loadMore()}
-                disabled={loadingMore}
-              >
-                {loadingMore ? 'Loading More…' : `Load More · ${games.length} Of ${viewTotal}`}
-              </button>
-            )}
-          </section>
-        ))}
+                        >
+                          {game.status.toLowerCase() === 'paused' ? 'Resume' : 'Pause'}
+                        </button>
+                      )}
+                      {!closed && !game.pendingSchedule && (
+                        <button
+                          onClick={() => {
+                            if (game.players > 0 || game.contract?.contractLocked) {
+                              toast.error(
+                                game.kind === 'table'
+                                  ? 'Players must leave before a close can be scheduled.'
+                                  : 'A registered tournament cannot be scheduled for cancellation.'
+                              );
+                              return;
+                            }
+                            setScheduling(game);
+                          }}
+                          disabled={busyKeys.has(managedGameKey(game)) || !game.contract}
+                          aria-disabled={
+                            game.players > 0 || game.contract?.contractLocked ? true : undefined
+                          }
+                          title={
+                            game.players > 0 || game.contract?.contractLocked
+                              ? 'Occupied Or Registered Games Stay Locked'
+                              : 'Schedule A Guarded Future Close'
+                          }
+                        >
+                          Schedule
+                        </button>
+                      )}
+                      {!closed && (
+                        <button
+                          className={styles.danger}
+                          onClick={() => void closeGame(game)}
+                          disabled={busyKeys.has(managedGameKey(game))}
+                          title={
+                            game.players > 0 || game.contract?.contractLocked
+                              ? game.kind === 'table'
+                                ? 'Players Must Leave Before This Table Can Close'
+                                : 'A Registered Tournament Cannot Be Cancelled'
+                              : 'Close Game'
+                          }
+                          aria-disabled={
+                            game.players > 0 || game.contract?.contractLocked ? true : undefined
+                          }
+                        >
+                          {busyKeys.has(managedGameKey(game)) ? 'Closing…' : 'Close'}
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+              {nextCursor && (
+                <button
+                  type="button"
+                  className={styles.loadMore}
+                  onClick={() => void loadMore()}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? 'Loading More…' : `Load More · ${games.length} Of ${viewTotal}`}
+                </button>
+              )}
+            </section>
+          ))}
 
-      {surface === 'ticker' && allowed && scopeId && (
-        <TickerManagementPanel scope={scope} scopeId={scopeId} onDirtyChange={setSurfaceDirty} />
-      )}
+        {surface === 'ticker' && allowed && scopeId && (
+          <TickerManagementPanel scope={scope} scopeId={scopeId} onDirtyChange={setSurfaceDirty} />
+        )}
 
-      {surface === 'messages' && allowed && hostClubId && (
-        <ClubMessageManagementPanel
-          clubId={hostClubId}
-          clubName={hosts.find((host) => host.id === hostClubId)?.name || scopeName}
-          onDirtyChange={setSurfaceDirty}
-        />
-      )}
+        {surface === 'messages' && allowed && hostClubId && (
+          <ClubMessageManagementPanel
+            clubId={hostClubId}
+            clubName={hosts.find((host) => host.id === hostClubId)?.name || scopeName}
+            onDirtyChange={setSurfaceDirty}
+          />
+        )}
+      </SpadeConsole>
 
       {tournamentModalOpen && hostClubId && (
         <CreateTournamentModal

@@ -132,17 +132,8 @@ function currentBranchSlug() {
 }
 
 /**
- * WHERE THE MODULE LIST COMES FROM, AND WHY NOT THE SOURCEMAP.
- *
- * The first version of this gate read the entry chunk's sourcemap. That worked
- * on a developer machine and could never have worked in CI: the Sentry plugin
- * uploads sourcemaps and then DELETES them from dist/, and it only runs when
- * SENTRY_AUTH_TOKEN is set, which is exactly CI and never local. The gate
- * passed locally and failed its own pull request with "has no sourcemap".
- *
- * Rollup knows the chunk's modules without any of that, so vite.config.ts
- * writes them to .entry-modules.json on writeBundle - before Sentry can
- * delete anything, and outside dist/ so the list never ships to players.
+ * Rollup records the entry modules directly. Source maps are disabled for
+ * application output; this private manifest remains outside the publish tree.
  */
 const MANIFEST = '.entry-modules.json';
 

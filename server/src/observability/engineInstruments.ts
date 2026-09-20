@@ -22,6 +22,7 @@
 import { createDefaultRegistry, type Counter, type Histogram } from './Metrics.js';
 import { Tracer, InMemorySpanExporter } from './Tracing.js';
 import { MetricsRegistry as AlwaysOnRegistryCtor } from './Metrics.js';
+import { sampleProcessMemory } from './processMemory.js';
 
 /**
  * ALWAYS-ON registry: exposed by /metrics unconditionally, and therefore the
@@ -595,7 +596,7 @@ leaseRenewalLoopRunning.set(0);
  * This counter is that fault. Zero is the normal reading for the life of a
  * process; ANY movement means the loop left while its admission generation was
  * still current, and `GameServer.ownership_lease_renewal_loop_left_early` in
- * Sentry carries the reason.
+ * error reporting carries the reason.
  *
  * No alert rule reads it yet, deliberately: section 10.84 says derive a
  * threshold and write the measurement beside it, and there is no measured
@@ -610,6 +611,35 @@ export const leaseRenewalLoopRelaunchesTotal: Counter = alwaysOnRegistry.counter
 /* Zero-seeded: a counter with no series is an empty vector, which reads
    exactly like health. See anAlertCannotWaitForAFailureToExist.law.test.ts. */
 leaseRenewalLoopRelaunchesTotal.inc(0);
+
+/**
+ * WHICH HALF OF AN ABANDONED PASS NEVER CAME BACK (2026-09-12).
+ *
+ * `performOwnedEngineLeaseProofRenewal` awaits two halves, and each half awaits
+ * exactly one RPC - the cash heartbeat and the tournament heartbeat. So this
+ * label names the call that hung, not merely the branch it was in, and a wedge
+ * that recurs answers its own question in one query:
+ *
+ *   sum by (half) (increase(poker_lease_renewal_outstanding_total[1h]))
+ *
+ * On 2026-09-12 that question cost hours. The loop stopped for four and a half
+ * hours and telling a hung pass from a departed loop took a hand-diff of
+ * pg_stat_statements against the container log, because the process itself said
+ * nothing either way.
+ *
+ * Both halves go through a client bounded at 15s with at most three attempts,
+ * so ANY increment here is already surprising and points at the bounded fetch
+ * rather than at the lease protocol.
+ */
+export const leaseRenewalOutstandingTotal: Counter = alwaysOnRegistry.counter(
+  'poker_lease_renewal_outstanding_total',
+  'Halves of an abandoned ownership lease renewal pass that had not settled (labels: half=cash|tournament)'
+);
+/* Zero-seeded: a rule on a name with no series is an empty vector, which reads
+   exactly like health. See anAlertCannotWaitForAFailureToExist. */
+for (const half of ['cash', 'tournament']) {
+  leaseRenewalOutstandingTotal.inc(0, { half });
+}
 
 /** Actions processed, bounded by audience x tournament format. */
 export const actionsFleetTotal: Counter = alwaysOnRegistry.counter(
@@ -710,7 +740,8 @@ export const horseForcedSitOutsTotal: Counter = alwaysOnRegistry.counter(
  *   hand_replaced     the hand controller or hand number moved on;
  *   lifecycle_locked  the table may not mutate right now;
  *   seat_moved        the table is no longer on this seat;
- *   lease_lost        the engine lease generation changed or stopped verifying.
+ *   lease_lost        the engine lease generation changed or stopped verifying;
+ *   clock_expired     the retained reconnect deadline already elapsed.
  * stage: how far the turn got - schedule | fallback | fast_result |
  *   deep_start | deep_result | commit.
  * A `commit` abandonment is the expensive one: the decision was computed and
@@ -737,6 +768,7 @@ for (const reason of [
   'lifecycle_locked',
   'seat_moved',
   'lease_lost',
+  'clock_expired',
 ]) {
   for (const stage of [
     'schedule',
@@ -748,6 +780,130 @@ for (const reason of [
   ]) {
     horseTurnsAbandonedTotal.inc(0, { reason, stage });
   }
+}
+
+/**
+ * A tournament finish the database DEFINITIVELY REFUSED, by why (2026-09-17,
+ * phase 3 of the horse programme).
+ *
+ * `TerminalSettlementRefusedError` is the atomic finish saying no before
+ * commit: nothing moved, the manager may retry with corrected inputs. It was
+ * reported to the error reporter and the financial alerts table and nowhere
+ * a rule could read. Measured 2026-09-17 19:04-19:53 UTC: 864 refusals for 529
+ * distinct tournaments, every one `tournament_fee_sources_require_
+ * reconciliation`, every one of the 529 still RUNNING at 20:20 with its horse
+ * seated and unpaid. `poker_tournaments_decided_unfinished` says how many are
+ * stuck; this says why the last attempt failed.
+ *
+ * reason is a BOUNDED CLASSIFICATION of the message, never the message: the
+ * database phrases a refusal with ids and amounts, and a label with an id in
+ * it is a cardinality leak.
+ *   fee_reconciliation   tournament_fee_sources_require_reconciliation and its
+ *                        siblings: the accounting batch behind the entry fee is
+ *                        missing or does not match;
+ *   rake_attribution     rake attribution incomplete for another reason;
+ *   prize_set            the prize set could not be certified;
+ *   deadlock             the database chose this transaction as the victim;
+ *   timeout              statement or lock timeout;
+ *   other                anything else, which is the label to read first when
+ *                        it moves.
+ */
+export type FinishRefusalReason =
+  | 'fee_reconciliation'
+  | 'rake_attribution'
+  | 'prize_set'
+  | 'deadlock'
+  | 'timeout'
+  | 'other';
+
+export const FINISH_REFUSAL_REASONS: readonly FinishRefusalReason[] = [
+  'fee_reconciliation',
+  'rake_attribution',
+  'prize_set',
+  'deadlock',
+  'timeout',
+  'other',
+];
+
+export function classifyFinishRefusal(message: string | null | undefined): FinishRefusalReason {
+  const m = (message ?? '').toLowerCase();
+  if (
+    m.includes('tournament_fee_sources_require_reconciliation') ||
+    m.includes('tournament_fee_not_captured') ||
+    m.includes('tournament_fee_source') ||
+    m.includes('accounting_terms_not')
+  )
+    return 'fee_reconciliation';
+  if (m.includes('rake attribution') || m.includes('attribution incomplete'))
+    return 'rake_attribution';
+  if (m.includes('prize')) return 'prize_set';
+  if (m.includes('deadlock')) return 'deadlock';
+  if (m.includes('timeout') || m.includes('canceling statement')) return 'timeout';
+  return 'other';
+}
+
+export const tournamentFinishRefusalsTotal: Counter = alwaysOnRegistry.counter(
+  'poker_tournament_finish_refusals_total',
+  'Tournament finishes the database definitively refused before commit (label: reason=fee_reconciliation|rake_attribution|prize_set|deadlock|timeout|other)'
+);
+for (const reason of FINISH_REFUSAL_REASONS) {
+  tournamentFinishRefusalsTotal.inc(0, { reason });
+}
+
+/**
+ * Which of those reasons a retry can clear on its own.
+ *
+ * A deadlock victim and a statement timeout are the database saying "not
+ * now": the same call can succeed on the next pass, so it should be tried on
+ * the next pass. Every other reason is the database saying "not like this". A
+ * missing accounting batch, an uncertifiable prize set and an incomplete
+ * attribution do not become true because the engine asked again five seconds
+ * later. They stay eligible for a corrected retry; the correction simply does
+ * not arrive on a five-second clock.
+ */
+export const TRANSIENT_FINISH_REFUSALS: readonly FinishRefusalReason[] = ['deadlock', 'timeout'];
+
+export function finishRefusalIsTransient(reason: FinishRefusalReason): boolean {
+  return TRANSIENT_FINISH_REFUSALS.includes(reason);
+}
+
+/**
+ * Fifteen minutes. A rule refusal that has stood for fifteen minutes will not
+ * fall over in five seconds, and a corrected one waits at most this long to be
+ * noticed - which is well inside the hour between maintenance breaks.
+ */
+export const FINISH_REFUSAL_BACKOFF_CAP_MS = 900_000;
+
+/**
+ * The delay a refused finish waits before it asks again: the unchanged base
+ * for a transient reason, and a doubling from that base to the cap for a rule.
+ * `streak` is how many times in a row THIS tournament has been refused for
+ * THIS reason, so the first refusal of any kind still retries immediately at
+ * the base delay.
+ */
+export function finishRefusalRetryDelayMs(
+  reason: FinishRefusalReason,
+  streak: number,
+  baseMs: number
+): number {
+  if (!Number.isFinite(baseMs) || baseMs <= 0) return 0;
+  if (finishRefusalIsTransient(reason)) return baseMs;
+  const steps = Math.max(0, Math.min(20, Math.floor(streak) - 1));
+  return Math.min(FINISH_REFUSAL_BACKOFF_CAP_MS, baseMs * 2 ** steps);
+}
+
+/**
+ * Repeat critical alerts that were counted instead of raised, because the
+ * same tournament had already reported the same refusal reason. The refusal
+ * RATE belongs to poker_tournament_finish_refusals_total; this series exists
+ * so the suppression is auditable and never silent.
+ */
+export const tournamentFinishRefusalAlertsSuppressedTotal: Counter = alwaysOnRegistry.counter(
+  'poker_tournament_finish_refusal_alerts_suppressed_total',
+  'Repeat critical finish-refusal alerts counted instead of raised because this tournament had already reported this reason (label: reason=fee_reconciliation|rake_attribution|prize_set|deadlock|timeout|other)'
+);
+for (const reason of FINISH_REFUSAL_REASONS) {
+  tournamentFinishRefusalAlertsSuppressedTotal.inc(0, { reason });
 }
 
 /**
@@ -798,6 +954,63 @@ muckedHandsTotal.inc(0);
 rpcErrorsTotalAlwaysOn.inc(0, { method: 'action' });
 
 /** Prometheus lines for the always-on fleet registry. */
+/* ── THE PROCESS'S OWN MEMORY (2026-09-14) ────────────────────────────────
+   See observability/processMemory.ts for why these exist. Always-on, bounded
+   cardinality (no labels), refreshed at scrape time from one cached sample.
+   `poker_engine_native_main_arena_bytes` retains its public name but measures
+   only the current [heap] virtual extent, not RSS or allocation ownership.
+   -1 where /proc is unreadable, never absent. */
+export const processRssBytes = alwaysOnRegistry.gauge(
+  'poker_engine_process_rss_bytes',
+  'Resident set size of the engine process (every isolate, every arena)'
+);
+export const processHeapUsedBytes = alwaysOnRegistry.gauge(
+  'poker_engine_heap_used_bytes',
+  'V8 main-isolate heap in use'
+);
+export const processHeapTotalBytes = alwaysOnRegistry.gauge(
+  'poker_engine_heap_total_bytes',
+  'V8 main-isolate heap committed'
+);
+export const processExternalBytes = alwaysOnRegistry.gauge(
+  'poker_engine_external_bytes',
+  'Memory V8 accounts for outside its heap (Buffers, bound C++ objects)'
+);
+export const processArrayBuffersBytes = alwaysOnRegistry.gauge(
+  'poker_engine_array_buffers_bytes',
+  'ArrayBuffer backing stores alive in the main isolate'
+);
+export const processNativeMainArenaBytes = alwaysOnRegistry.gauge(
+  'poker_engine_native_main_arena_bytes',
+  'Current [heap] virtual mapping extent, not RSS or allocation ownership; -1 when /proc is unreadable'
+);
+export const processRssAnonBytes = alwaysOnRegistry.gauge(
+  'poker_engine_rss_anon_bytes',
+  'Anonymous (non file-backed) resident memory of the process; -1 when /proc is unreadable'
+);
+export const processThreads = alwaysOnRegistry.gauge(
+  'poker_engine_threads',
+  'OS threads in the engine process (worker isolates, libuv, V8 helpers); -1 when /proc is unreadable'
+);
+
+export function refreshProcessMemoryGauges(): void {
+  const s = sampleProcessMemory();
+  processRssBytes.set(s.rssBytes);
+  processHeapUsedBytes.set(s.heapUsedBytes);
+  processHeapTotalBytes.set(s.heapTotalBytes);
+  processExternalBytes.set(s.externalBytes);
+  processArrayBuffersBytes.set(s.arrayBuffersBytes);
+  processNativeMainArenaBytes.set(s.nativeMainArenaBytes);
+  processRssAnonBytes.set(s.rssAnonBytes);
+  processThreads.set(s.threads);
+}
+// Published from the first scrape, like every always-on series (see the law
+// anAlertCannotWaitForAFailureToExist): a memory gauge that first appears
+// once something reads it is a gauge with no baseline.
+refreshProcessMemoryGauges();
+
+/** Prometheus lines for the always-on fleet registry. */
 export function alwaysOnPrometheusLines(): string[] {
+  refreshProcessMemoryGauges();
   return alwaysOnRegistry.renderPrometheus().split('\n').filter(Boolean);
 }

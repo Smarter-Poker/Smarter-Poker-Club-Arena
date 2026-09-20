@@ -26,6 +26,14 @@ export interface LobbyRowContext {
    * watch. Undefined everywhere else, which leaves every chip club as it was.
    */
   seatsClosedLabel?: string;
+  /**
+   * Why no tournament can be entered here, when that is true of the whole
+   * board. Diamond Phase 8: the arena's events are listed while its
+   * tournament switch is off and every registration door refuses
+   * (`diamond_tournaments_not_open`), so the card says so instead of offering
+   * a Register that fails. Undefined for every chip club.
+   */
+  registrationClosedLabel?: string;
 }
 export type LobbyPlayerState = 'seated' | 'waitlisted' | 'registered' | null;
 

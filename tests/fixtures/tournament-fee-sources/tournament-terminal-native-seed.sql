@@ -1,0 +1,10 @@
+BEGIN;
+SET CONSTRAINTS accounting_tournament_fee_commit_capture DEFERRED;
+SELECT fixture_fee(5000);
+SELECT fixture_fee(5200);
+SELECT fixture_fee(5100,true,1);
+UPDATE tournament_players SET registered_at=transaction_timestamp()-interval '2 hours' WHERE tournament_id=u(5100);
+UPDATE tournament_refund_entitlements SET created_at=transaction_timestamp()-interval '2 hours' WHERE tournament_id=u(5100);
+UPDATE chip_ledger SET created_at=transaction_timestamp()-interval '2 hours' WHERE to_entity_id=u(5100);
+SET CONSTRAINTS accounting_tournament_fee_commit_capture IMMEDIATE;
+COMMIT;

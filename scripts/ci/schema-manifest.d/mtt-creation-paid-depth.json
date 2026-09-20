@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/mtt-create-payout-depth-sep13. Applied creator receipt correction 20260913194154, database history 20260913194226; authorization and all existing funded contracts unchanged.",
+  "functions": ["fn_create_tournament"]
+}

@@ -288,6 +288,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
               amount: p.amount,
               timestamp: Date.now(),
               stage: 'preflop',
+              origin: 'forced',
               // DEAD money is in the pot but not in the live bet level. A
               // reader that differences a raise-TO level against everything a
               // seat has committed will understate every raise made by anyone
@@ -320,6 +321,9 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             seat: e.seat ?? 0,
             userId: e.userId ?? '',
             action: 'return',
+            // The controller has already refunded this amount. This is a
+            // history event, not another accepted poker choice or chip move.
+            historyEvent: 'uncalled_bet_returned',
             amount: e.amount,
             timestamp: Date.now(),
             stage: this.handController?.getState()?.stage || 'river',
@@ -1380,10 +1384,10 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         /**
          * A conservation or pot-accounting violation means chips were created or
          * destroyed inside a live hand. That is the most serious thing this
-         * engine can detect about itself, and Sentry alone is the wrong home for
+         * engine can detect about itself, and error reporting alone is the wrong home for
          * it — financial_alerts is the durable, queryable channel operators
          * actually read, and raiseFinancialAlert re-escalates a CRITICAL to
-         * Sentry anyway, so this loses nothing and gains a record that survives.
+         * error reporting anyway, so this loses nothing and gains a record that survives.
          *
          * Fire-and-forget: this runs on the hot path between streets and must
          * never delay a hand. raiseFinancialAlert never throws or rejects.

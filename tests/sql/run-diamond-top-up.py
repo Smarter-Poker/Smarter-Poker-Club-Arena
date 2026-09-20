@@ -6,13 +6,15 @@ that was applied to kuklfnapbkmacvwxktbh, and that file's own preflight pins the
 md5 of the four Phase 6 functions it depends on, so a fixture that has drifted
 from production fails the load rather than certifying something else.
 """
+import os
 import pathlib
 import subprocess
 import sys
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-CMD = ['/opt/homebrew/opt/postgresql@17/bin/psql', '-X', '-q', '-At',
+PG_BIN = os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin')
+CMD = [PG_BIN + '/psql', '-X', '-q', '-At',
        '-h', '/tmp/codex-diamond-phase2-pg', '-p', '55472',
        '-d', 'poker_diamond_phase6_test', '-v', 'ON_ERROR_STOP=1']
 T = '30000000-0000-0000-0000-000000000001'

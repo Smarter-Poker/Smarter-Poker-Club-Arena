@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/a-refused-money-op-releases-its-claim",
+  "_comment": "public.fn_ca_release_claim: the release a money door calls when it refuses after taking its idempotency claim. Applied 2026-09-19 as schema_migrations version 20260919064605.",
+  "functions": ["fn_ca_release_claim"]
+}

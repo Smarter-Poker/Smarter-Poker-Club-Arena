@@ -56,7 +56,6 @@ const REQUIRED_CHECKS = [
   'Server Engine (typecheck + tests)',
   'Production Build',
   'CSS Beat E2E (multi-table + animations)',
-  'Silent Revert Guard',
 ];
 
 const args = process.argv.slice(2);

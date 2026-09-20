@@ -5,7 +5,7 @@
  *
  * auditBBJDrift runs hourly and raised a NEW financial_alerts warning every
  * hour for the same 3.5 chips of unlinkable rake rows - 24 identical rows a
- * day, each also a Sentry event. That is the exact pattern that buried the
+ * day, each also a error reporting event. That is the exact pattern that buried the
  * nine real alerts of 2026-08-22 under 988 duplicates. These pins say: raise
  * once, refresh the open row while the condition holds, resolve it with a
  * note the first cycle it clears, and never throw.

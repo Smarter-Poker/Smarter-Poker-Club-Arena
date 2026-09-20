@@ -30,6 +30,7 @@ import {
   spinStoredStructureIsStale,
 } from './payoutStructure.js';
 import { computePlacePrize } from './payoutMath.js';
+import { CHIP_UNIT_CENTS } from './tournamentUnit.js';
 import { SPIN_TIERS } from '../config/spinSpec.js';
 import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow.js';
 
@@ -94,10 +95,16 @@ describe('resolvePayoutStructure', () => {
       { place: 1, percentage: 65 },
       { place: 2, percentage: 35 },
     ];
-    expect(resolvePayoutStructure({ payout_structure: stored, variant: 'mtt' })).toEqual(stored);
+    expect(
+      resolvePayoutStructure({
+        payout_structure: stored,
+        format_contract: 'mtt-v1',
+        variant: 'mtt',
+      })
+    ).toEqual(stored);
   });
 
-  /* WAS: the same assertion with `variant: 'spin', spin_multiplier: 25`, i.e.
+  /* WAS: the same assertion with `format_contract: 'spin-v1', variant: 'spin', spin_multiplier: 25`, i.e.
      a stored winner-take-all beating the 80/12/8 the 25x tier owes. That is
      the bug, re-encoded as law. A Spin's structure is a pure function of its
      multiplier and nobody may author a different one, so a stored structure on
@@ -107,14 +114,24 @@ describe('resolvePayoutStructure', () => {
   it('lets the TIER outrank a stale stored column on a Spin', () => {
     const stale = [{ place: 1, percentage: 100 }];
     expect(
-      resolvePayoutStructure({ payout_structure: stale, variant: 'spin', spin_multiplier: 25 })
+      resolvePayoutStructure({
+        payout_structure: stale,
+        format_contract: 'spin-v1',
+        variant: 'spin',
+        spin_multiplier: 25,
+      })
     ).toEqual([
       { place: 1, percentage: 80 },
       { place: 2, percentage: 12 },
       { place: 3, percentage: 8 },
     ]);
     expect(
-      resolvePayoutStructure({ payout_structure: stale, variant: 'spin', spin_multiplier: 10 })
+      resolvePayoutStructure({
+        payout_structure: stale,
+        format_contract: 'spin-v1',
+        variant: 'spin',
+        spin_multiplier: 10,
+      })
     ).toEqual([
       { place: 1, percentage: 80 },
       { place: 2, percentage: 20 },
@@ -122,7 +139,12 @@ describe('resolvePayoutStructure', () => {
     // And the stale-column detector agrees, so a caller with a reporter can
     // say the start-time rewrite never landed.
     expect(
-      spinStoredStructureIsStale({ payout_structure: stale, variant: 'spin', spin_multiplier: 25 })
+      spinStoredStructureIsStale({
+        payout_structure: stale,
+        format_contract: 'spin-v1',
+        variant: 'spin',
+        spin_multiplier: 25,
+      })
     ).toBe(true);
   });
 
@@ -130,12 +152,18 @@ describe('resolvePayoutStructure', () => {
     const wta = [{ place: 1, percentage: 100 }];
     for (const mult of [2, 3, 4, 5]) {
       expect(
-        resolvePayoutStructure({ payout_structure: wta, variant: 'spin', spin_multiplier: mult }),
+        resolvePayoutStructure({
+          payout_structure: wta,
+          format_contract: 'spin-v1',
+          variant: 'spin',
+          spin_multiplier: mult,
+        }),
         `${mult}x`
       ).toEqual(wta);
       expect(
         spinStoredStructureIsStale({
           payout_structure: wta,
+          format_contract: 'spin-v1',
           variant: 'spin',
           spin_multiplier: mult,
         })
@@ -149,18 +177,39 @@ describe('resolvePayoutStructure', () => {
     // missing high-tier draw into winner-take-all.
     const stored = [{ place: 1, percentage: 100 }];
     expect(
-      resolvePayoutStructure({ payout_structure: stored, variant: 'spin', spin_multiplier: null })
+      resolvePayoutStructure({
+        payout_structure: stored,
+        format_contract: 'spin-v1',
+        variant: 'spin',
+        spin_multiplier: null,
+      })
     ).toBeNull();
     expect(
-      resolvePayoutStructure({ payout_structure: stored, variant: 'spin', spin_multiplier: 500 })
+      resolvePayoutStructure({
+        payout_structure: stored,
+        format_contract: 'spin-v1',
+        variant: 'spin',
+        spin_multiplier: 500,
+      })
     ).toBeNull();
-    expect(spinStoredStructureIsStale({ variant: 'spin', spin_multiplier: 500 })).toBe(false);
+    expect(
+      spinStoredStructureIsStale({
+        format_contract: 'spin-v1',
+        variant: 'spin',
+        spin_multiplier: 500,
+      })
+    ).toBe(false);
   });
 
   it('rebuilds a Spin whose column is missing or corrupt', () => {
     for (const bad of [null, undefined, '', '[]', 'garbage', [{ place: 2, percentage: 100 }]]) {
       expect(
-        resolvePayoutStructure({ payout_structure: bad, variant: 'spin', spin_multiplier: 25 }),
+        resolvePayoutStructure({
+          payout_structure: bad,
+          format_contract: 'spin-v1',
+          variant: 'spin',
+          spin_multiplier: 25,
+        }),
         String(bad)
       ).toEqual([
         { place: 1, percentage: 80 },
@@ -170,13 +219,21 @@ describe('resolvePayoutStructure', () => {
     }
   });
 
-  it('recognises a Spin by tournament_type as well as variant', () => {
-    expect(isSpinTournament({ tournament_type: 'SPIN' })).toBe(true);
-    expect(resolvePayoutStructure({ tournament_type: 'SPIN', spin_multiplier: 10 })).not.toBeNull();
+  it('recognises the persisted Spin contract regardless of legacy spelling', () => {
+    expect(isSpinTournament({ format_contract: 'spin-v1', tournament_type: 'SPIN' })).toBe(true);
+    expect(
+      resolvePayoutStructure({
+        format_contract: 'spin-v1',
+        tournament_type: 'SPIN',
+        spin_multiplier: 10,
+      })
+    ).not.toBeNull();
   });
 
   it('gives a non-Spin nothing to guess with', () => {
-    expect(resolvePayoutStructure({ variant: 'mtt', payout_structure: null })).toBeNull();
+    expect(
+      resolvePayoutStructure({ format_contract: 'mtt-v1', variant: 'mtt', payout_structure: null })
+    ).toBeNull();
     expect(resolvePayoutStructure(null)).toBeNull();
   });
 });
@@ -194,10 +251,14 @@ describe('a rebuilt Spin structure pays out exactly the pool', () => {
       // repo. Reading the spec means a tier can never again be retired out
       // from under this test.
       for (const mult of SPIN_TIERS.map((t) => t.multiplier)) {
-        const structure = resolvePayoutStructure({ variant: 'spin', spin_multiplier: mult })!;
+        const structure = resolvePayoutStructure({
+          format_contract: 'spin-v1',
+          variant: 'spin',
+          spin_multiplier: mult,
+        })!;
         expect(structure, `${mult}x must resolve to a structure`).not.toBeNull();
         const total = structure
-          .map((p) => computePlacePrize(pool, structure, p.place))
+          .map((p) => computePlacePrize(pool, structure, p.place, CHIP_UNIT_CENTS))
           .reduce((s, n) => s + n, 0);
         expect(Math.round(total * 100) / 100, `${mult}x on ${pool}`).toBe(pool);
       }
@@ -253,7 +314,7 @@ describe('every payout path actually uses the rule', () => {
   });
 
   it('both sites select what a rebuild needs', () => {
-    const selects = ELIM.match(/'payout_structure[^']*'/g) ?? [];
+    const selects = ELIM.match(/'format_contract, payout_structure[^']*'/g) ?? [];
     expect(selects.length).toBeGreaterThanOrEqual(1);
     for (const s of selects) {
       expect(s, `select missing spin_multiplier: ${s}`).toMatch(/spin_multiplier/);
@@ -302,13 +363,17 @@ describe('the structure is trimmed to the field that can fill it', () => {
   it('moves the residual onto the last place a player actually held', () => {
     // The whole point, in money. 10,000 pool, 9-place structure, 8 entrants.
     const stranded =
-      10000 - NINE.reduce((sum, p) => sum + computePlacePrize(10000, NINE, p.place), 0);
+      10000 -
+      NINE.reduce((sum, p) => sum + computePlacePrize(10000, NINE, p.place, CHIP_UNIT_CENTS), 0);
     // Untrimmed, place 9 holds the residual and nobody is there to take it.
-    expect(computePlacePrize(10000, NINE, 9)).toBeCloseTo(250, 2);
+    expect(computePlacePrize(10000, NINE, 9, CHIP_UNIT_CENTS)).toBeCloseTo(250, 2);
     expect(stranded).toBeCloseTo(0, 2); // the pool balances only if place 9 pays
 
     const trimmed = trimStructureToField(NINE, 8)!;
-    const paid = trimmed.reduce((sum, p) => sum + computePlacePrize(10000, trimmed, p.place), 0);
+    const paid = trimmed.reduce(
+      (sum, p) => sum + computePlacePrize(10000, trimmed, p.place, CHIP_UNIT_CENTS),
+      0
+    );
     expect(paid).toBeCloseTo(10000, 2);
 
     /**
@@ -320,12 +385,12 @@ describe('the structure is trimmed to the field that can fill it', () => {
      * factor. The last place still takes the rounding residual on top, so the
      * eight places sum to the pool to the cent.
      */
-    expect(computePlacePrize(10000, trimmed, 1)).toBeCloseTo(3076.92, 2);
-    expect(computePlacePrize(10000, trimmed, 8)).toBeCloseTo(461.55, 2);
+    expect(computePlacePrize(10000, trimmed, 1, CHIP_UNIT_CENTS)).toBeCloseTo(3076.92, 2);
+    expect(computePlacePrize(10000, trimmed, 8, CHIP_UNIT_CENTS)).toBeCloseTo(461.55, 2);
     // Nobody is paid less than they would have been in a full field.
     for (const p of trimmed) {
-      expect(computePlacePrize(10000, trimmed, p.place)).toBeGreaterThanOrEqual(
-        computePlacePrize(10000, NINE, p.place)
+      expect(computePlacePrize(10000, trimmed, p.place, CHIP_UNIT_CENTS)).toBeGreaterThanOrEqual(
+        computePlacePrize(10000, NINE, p.place, CHIP_UNIT_CENTS)
       );
     }
   });
@@ -358,16 +423,50 @@ describe('the structure is trimmed to the field that can fill it', () => {
   });
 
   it('trims the structure resolvePayoutStructure hands back, stored or rebuilt', () => {
-    const stored = resolvePayoutStructure({ payout_structure: NINE } as any, 8)!;
+    const stored = resolvePayoutStructure(
+      { format_contract: 'mtt-v1', payout_structure: NINE } as any,
+      8
+    )!;
     expect(stored.map((p) => p.place)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
 
     // A Spin rebuilt from its multiplier goes through the same trim, so the
     // two ways of getting a structure cannot disagree about the field.
     const spin = resolvePayoutStructure(
-      { variant: 'spin', spin_multiplier: 10, payout_structure: null } as any,
+      {
+        format_contract: 'spin-v1',
+        variant: 'spin',
+        spin_multiplier: 10,
+        payout_structure: null,
+      } as any,
       1
     );
     expect(Array.isArray(spin)).toBe(true);
     expect(spin!.every((p) => p.place <= 1)).toBe(true);
   });
+});
+
+describe('recorded payout format is authoritative', () => {
+  it('does not substitute a Spin ladder for a recorded MTT with obsolete labels', () => {
+    const payout_structure = [{ place: 1, percentage: 100 }];
+    expect(
+      resolvePayoutStructure({
+        format_contract: 'mtt-v2',
+        variant: 'spin',
+        spin_multiplier: 10,
+        payout_structure,
+      })
+    ).toEqual(payout_structure);
+  });
+  it.each([undefined, null, 'unknown'])(
+    'refuses an unqualified financial format %s',
+    (format_contract) => {
+      expect(() =>
+        resolvePayoutStructure({
+          format_contract,
+          tournament_type: 'MTT',
+          payout_structure: [{ place: 1, percentage: 100 }],
+        })
+      ).toThrow('TOURNAMENT_FORMAT_CONTRACT_INVALID');
+    }
+  );
 });

@@ -178,7 +178,8 @@ describe('the MTT add-on is one persisted deadline', () => {
     expect(manager).not.toMatch(
       /finalizeAfterAddOn[\s\S]*?update\(\{ prize_pool_finalized: true \}\)[\s\S]*?applyPrizeGuarantee/
     );
-    expect(finalize).toContain('const finalPool = Number(result.prize_pool)');
+    expect(finalize).toContain('const finalPool = readTournamentPrizePool(result.prize_pool)');
+    expect(finalize).toContain('if (finalPool === null)');
     expect(finalize).toContain('this.tournamentCache.prize_pool_finalized = true');
     expect(drive).toContain('if (state.prize_pool_finalized === true)');
     expect(drive).toContain('await this.finishAddOnTail(durablePool)');

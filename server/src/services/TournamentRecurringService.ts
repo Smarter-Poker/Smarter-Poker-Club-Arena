@@ -1,3 +1,10 @@
+import { projectTournamentAdmission } from '../tournament/tournamentAdmission.js';
+import {
+  isPersistedUnlimitedMtt,
+  isPersistedSeatFirst,
+  readPersistedTournamentFormatContract,
+} from '../tournament/tournamentEntryCapacity.js';
+import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * TOURNAMENT RECURRING SERVICE — 24/7 Automated Tournament Schedule
@@ -37,7 +44,17 @@ import { BOOKING_COUNTS_WITHIN_MS } from './HorseGameLoad.js';
 import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { buildLadder } from '../tournament/blindLadder.js';
-import { MTT_BLIND_PRESETS, mttSpeedColumns } from '../tournament/mttStructurePolicy.js';
+import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
+import {
+  mysteryBountyCreationColumns,
+  type MysteryBountyCreationInput,
+} from '../domain/mysteryBountyCreation.js';
+import {
+  MTT_BLIND_PRESETS,
+  mttSpeedColumns,
+  mttPayoutPercent,
+  mttLateRegistrationMinutes,
+} from '../tournament/mttStructurePolicy.js';
 import { clampSeatsForVariant } from '../config/tableSeating.js';
 import {
   FREE_BUY_HOSTS,
@@ -95,7 +112,7 @@ function buyInColumns(
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-interface TournamentConfig {
+interface TournamentConfig extends MysteryBountyCreationInput {
   name: string;
   type: 'mtt' | 'bounty' | 'progressive_bounty' | 'mystery_bounty';
   gameVariant: string;
@@ -108,7 +125,9 @@ interface TournamentConfig {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
+  payoutPercent?: 10 | 15 | 20;
   bountyPercent?: number;
+  bountyAmount?: number;
   /**
    * ROLLOUT 2026-08-15 (Dan: "enable on a few recurring formats first").
    * Rebuys / re-entries / add-ons had NEVER been offered: 0 of 8,210
@@ -133,6 +152,7 @@ interface SNGConfig {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
+  payoutPercent?: 10 | 15 | 20;
 }
 
 interface SpinConfig {
@@ -163,7 +183,7 @@ interface AtomicSeatFirstCreation {
   tableId: string;
 }
 
-interface XMTTConfig {
+interface XMTTConfig extends MysteryBountyCreationInput {
   name: string;
   type: 'mtt' | 'bounty' | 'progressive_bounty' | 'mystery_bounty';
   gameVariant: string;
@@ -176,7 +196,9 @@ interface XMTTConfig {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
+  payoutPercent?: 10 | 15 | 20;
   bountyPercent?: number;
+  bountyAmount?: number;
   /**
    * ROLLOUT 2026-08-15 (Dan: "enable on a few recurring formats first").
    * Rebuys / re-entries / add-ons had NEVER been offered: 0 of 8,210
@@ -1873,7 +1895,8 @@ export function seatFirstStartStalled(opts: {
 export function mttPrestartHorseTarget(opts: {
   /** Milliseconds until the scheduled start. Negative means already past. */
   msUntilStart: number;
-  maxPlayers: number;
+  maxPlayers: number | null;
+  format_contract: unknown;
   variant: string;
   /** Entrants already registered. Bounds how far one tick may jump. */
   currentPlayers?: number;
@@ -1891,7 +1914,7 @@ export function mttPrestartHorseTarget(opts: {
    */
   buyInPrizeShare?: number;
 }): number {
-  const { msUntilStart, maxPlayers, variant } = opts;
+  const { msUntilStart, maxPlayers } = opts;
   const current = Math.max(0, Number(opts.currentPlayers) || 0);
 
   // Past start, or not started ramping yet. Past start belongs to the existing
@@ -1900,9 +1923,10 @@ export function mttPrestartHorseTarget(opts: {
   if (msUntilStart <= 0 || msUntilStart > MTT_PRESTART_RAMP_MS) return 0;
 
   // Spins, heads-up and any-size SNGs start on bought seats. Not our business.
-  if (startsOnBoughtSeats(variant, maxPlayers)) return 0;
+  if (!isPersistedUnlimitedMtt(opts)) return 0;
 
-  const seats = Number(maxPlayers) || 0;
+  const seats = maxPlayers === null ? null : Number(maxPlayers);
+  if (seats !== null && (!Number.isSafeInteger(seats) || seats <= 1)) return 0;
 
   /* ── THE GUARANTEE DECIDES THE FIELD (Dan 2026-08-26) ──────────────────────
      "the horses should fill any and all seats to insure that the guarantee is
@@ -1942,7 +1966,8 @@ export function mttPrestartHorseTarget(opts: {
   const guaranteeGoal = entriesToCover > 0 ? current + entriesToCover : 0;
 
   // Always leave a seat: see safety property 1.
-  const fieldGoal = Math.min(seats - 1, Math.max(MTT_PRESTART_MAX_HORSES, guaranteeGoal));
+  const fundedGoal = Math.max(MTT_PRESTART_MAX_HORSES, guaranteeGoal);
+  const fieldGoal = seats === null ? fundedGoal : Math.min(seats - 1, fundedGoal);
   if (fieldGoal < 1) return 0;
 
   const elapsed = 1 - msUntilStart / MTT_PRESTART_RAMP_MS; // 0 at T-60, 1 at T-0
@@ -2206,6 +2231,8 @@ const SPIN_BOARD_BUYINS = [1, 2, 3, 5, 10, 20, 50, 100];
 export const SATELLITE_HU_MIN_TICKET = 20;
 export const SATELLITE_HU_TARGETS_PER_OWNER = 3;
 export const SATELLITE_HU_TARGET_LEAD_MS = 30 * 60 * 1000;
+/** The scheduled branch of fn_ensure_scheduled_mtt_satellite requires this lead. */
+export const SATELLITE_MTT_TARGET_LEAD_MS = 3 * 60 * 60 * 1000;
 export const SATELLITE_HU_TARGET_HORIZON_MS = 7 * 24 * 60 * 60 * 1000;
 export const SATELLITE_HU_NAME_SUFFIX = 'Satellite Heads-Up';
 
@@ -2230,6 +2257,9 @@ export function satelliteHeadsUpBuyIn(ticketCost: number): number {
 }
 
 export interface SatelliteTargetRow {
+  format_contract?: unknown;
+  satellite_target_id?: string | null;
+  satellite_target?: string | null;
   id: string;
   name: string;
   start_time: string | null;
@@ -2295,10 +2325,15 @@ export function pickSatelliteTargets(
   const eligible = rows
     .filter((r) => {
       const v = String(r.variant ?? '').toLowerCase();
-      if (v === 'spin' || v === 'sng' || v === 'satellite') return false;
+      if (
+        !isPersistedUnlimitedMtt(r) ||
+        r.satellite_target_id ||
+        r.satellite_target ||
+        v === 'satellite' ||
+        String(r.tournament_type).toUpperCase() === 'SATELLITE'
+      )
+        return false;
       if (!satelliteTargetIsDeliverable(r)) return false;
-      const seats = Number(r.max_players);
-      if (Number.isFinite(seats) && seats > 0 && seats <= 2) return false;
       const start = r.start_time ? Date.parse(r.start_time) : NaN;
       if (!Number.isFinite(start)) return false;
       const until = start - nowMs;
@@ -3283,7 +3318,7 @@ export class TournamentRecurringService {
       let q = supabase
         .from('tournaments')
         .select(
-          'id, name, start_time, buy_in_amount, buy_in_fee, variant, max_players, game_type, tournament_type, is_bounty, is_pko, is_mystery_bounty, is_premium_spin'
+          'format_contract, satellite_target_id, satellite_target, id, name, start_time, buy_in_amount, buy_in_fee, variant, max_players, game_type, tournament_type, is_bounty, is_pko, is_mystery_bounty, is_premium_spin'
         )
         .eq('status', 'REGISTERING')
         .gt('start_time', new Date(Date.now() + SATELLITE_HU_TARGET_LEAD_MS).toISOString())
@@ -3304,21 +3339,32 @@ export class TournamentRecurringService {
         );
         return;
       }
-      const targets = pickSatelliteTargets((data ?? []) as SatelliteTargetRow[], Date.now());
+      // Read the admission contract for this pass before spending the finite
+      // board slots. Near-term legacy targets cannot crowd out the three-hour
+      // targets required by the scheduled branch after activation. This read
+      // is eligibility only: the paired creator locks and chooses its own ABI.
+      const admitted = await projectTournamentAdmission((data ?? []) as SatelliteTargetRow[]);
+      const now = Date.now();
+      const targets = pickSatelliteTargets(
+        admitted.filter(
+          (target) =>
+            target.admission_abi === 'legacy-capacity-v1' ||
+            Date.parse(String(target.start_time)) - now >= SATELLITE_MTT_TARGET_LEAD_MS
+        ),
+        now
+      );
       const configs = targets
         .map(satelliteHeadsUpConfigFor)
         .filter((c): c is SatelliteHeadsUpConfig => c !== null)
         .filter((c) => c.buyIn <= owner.maxStake);
       if (configs.length === 0) return;
-      // The 'sng' board: a satellite heads-up IS a heads-up (variant 'sng'),
-      // matched to its own config names, so the board read is the same one.
-      await this.ensureBoardOpen(
-        'sng',
-        configs,
-        (c, o) => this.createSatelliteHeadsUp(c, o),
-        owner,
-        { left: budgetLeft }
-      );
+      // Both purchased formats share the database owner/target identity. The
+      // RPC returns the existing row regardless of active ABI or display name.
+      for (const config of configs.slice(0, SATELLITE_HU_TARGETS_PER_OWNER)) {
+        if (budgetLeft <= 0 || isMaintenanceFrozen() || this.stopOperation) break;
+        const result = await this.createSatelliteHeadsUp(config, owner);
+        if (result.created !== false) budgetLeft--;
+      }
     } catch (err: any) {
       reportError(
         new Error(`[TournamentRecurring] satellite heads-up board error: ${err?.message}`),
@@ -3335,7 +3381,7 @@ export class TournamentRecurringService {
   private async createSatelliteHeadsUp(
     config: SatelliteHeadsUpConfig,
     owner: BoardOwner = this.houseOwner
-  ): Promise<{ tournamentId: string | null; registered: number }> {
+  ): Promise<{ tournamentId: string | null; registered: number; created?: boolean }> {
     try {
       const startTime = new Date(Date.now() + seatFirstHumanWindowMs());
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createSatelliteHeadsUp');
@@ -3368,6 +3414,8 @@ export class TournamentRecurringService {
         status: 'REGISTERING',
         blind_structure: config.blindStructure,
         payout_structure: config.payoutStructure,
+        // Satellite qualification uses its seat contract, not MTT paid depth.
+        // The atomic seat-first creator deliberately rejects unknown fields.
         start_time: startTime.toISOString(),
         late_reg_levels: 0,
         late_reg_mins: 0,
@@ -3375,16 +3423,81 @@ export class TournamentRecurringService {
         satellite_seats: 1,
         short_description: `Win A Seat In ${config.targetName}. 1 Seat Guaranteed.`,
       };
-      const created = await this.createSeatFirstGameAtomic(satelliteRow, 'satellite');
-      if (!created) {
-        return { tournamentId: null, registered: 0 };
-      }
-      const sat = created.tournament;
-      await this.seedOpenSeatTable(sat, config.maxPlayers, created.tableId);
-      console.log(
-        `[TournamentRecurring] satellite heads-up "${config.name}" opened for ${owner.kind} ${owner.clubId.slice(0, 8)}: ${config.buyIn} chips a seat, ticket ${config.ticketCost}`
+      const mttBuyIn = BUY_IN_LADDER.find(
+        (step) =>
+          buyInFor(step, rakeRateFor({ tournamentType: 'SATELLITE' })).prize * 3 >=
+          config.ticketCost
       );
-      return { tournamentId: sat.id, registered: 0 };
+      if (mttBuyIn === undefined || mttBuyIn > owner.maxStake)
+        throw new Error('Satellite target has no supported scheduled buy-in');
+      validateMttBlindStructure(MTT_BLIND_PRESETS.TURBO, 10000);
+      const scheduledRow = {
+        ...satelliteRow,
+        name: `${config.targetName.trim()} Satellite`,
+        variant: 'satellite',
+        ...buyInColumns(mttBuyIn, rakeRateFor({ tournamentType: 'SATELLITE' })),
+        starting_chips: 10000,
+        max_players: null,
+        min_players: 3,
+        table_size: clampSeatsForVariant(config.gameVariant, 9),
+        blind_structure: MTT_BLIND_PRESETS.TURBO,
+        ...mttSpeedColumns(MTT_BLIND_PRESETS.TURBO),
+        start_time: new Date(Date.now() + 5 * 60_000).toISOString(),
+        synchronized_breaks: true,
+      };
+      const { data, error } = await supabase.rpc('fn_ensure_scheduled_mtt_satellite', {
+        p_config: { legacy_config: satelliteRow, scheduled_config: scheduledRow },
+      });
+      const result = data as {
+        ok?: boolean;
+        outcome?: string;
+        tournament_id?: string;
+        target_id?: string;
+        club_id?: string;
+        union_id?: string | null;
+        reason?: string;
+        format_contract?: unknown;
+        table_id?: string | null;
+        tournament?: AtomicSeatFirstCreation['tournament'];
+      } | null;
+      const uuid = (value: unknown): value is string =>
+        typeof value === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+      if (
+        error ||
+        result?.ok !== true ||
+        !['created', 'existing_active'].includes(String(result.outcome)) ||
+        !uuid(result.tournament_id) ||
+        result.target_id !== config.targetId ||
+        result.club_id !== owner.clubId ||
+        result.union_id !== owner.unionId ||
+        !result.tournament ||
+        result.tournament.id !== result.tournament_id ||
+        result.tournament.club_id !== owner.clubId ||
+        result.tournament.union_id !== owner.unionId ||
+        (result.tournament.satellite_target_id ?? result.tournament.satellite_target) !==
+          config.targetId ||
+        (result.tournament.satellite_target_id != null &&
+          result.tournament.satellite_target != null &&
+          result.tournament.satellite_target_id !== result.tournament.satellite_target)
+      ) {
+        throw new Error(error?.message ?? result?.reason ?? 'Invalid satellite creation receipt');
+      }
+      const format = readPersistedTournamentFormatContract(result);
+      if (readPersistedTournamentFormatContract(result.tournament) !== format)
+        throw new Error('Satellite receipt parent format mismatch');
+      if (format === 'seat-first-satellite-v1') {
+        if (!uuid(result.table_id) || Number(result.tournament.max_players) !== HEADS_UP_SEATS)
+          throw new Error('Legacy satellite table receipt missing');
+        await this.seedOpenSeatTable(result.tournament, HEADS_UP_SEATS, result.table_id);
+      } else if ((format !== 'mtt-v1' && format !== 'mtt-v2') || result.table_id !== null) {
+        throw new Error('Scheduled satellite format/table receipt mismatch');
+      }
+      return {
+        tournamentId: result.tournament_id,
+        registered: 0,
+        created: result.outcome === 'created',
+      };
     } catch (err: any) {
       reportError(
         new Error(`[TournamentRecurring] createSatelliteHeadsUp error: ${err.message}`),
@@ -3576,7 +3689,7 @@ export class TournamentRecurringService {
         // id and max_players as well as the name: a seat-first game only
         // COVERS its price point if it can actually be joined, and that means
         // owning a table. See the joinability filter below.
-        .select('id, name, max_players')
+        .select('id, name, max_players, format_contract')
         .eq('variant', variant)
         // REGISTERING only. ANNOUNCED is not joinable and RUNNING is too late;
         // counting either is what let a board of live games starve the lobby.
@@ -3621,10 +3734,13 @@ export class TournamentRecurringService {
        * the same evening) - but the board must not be able to absorb husks
        * whatever creates them, so the test is now joinability, not existence.
        */
-      const rows = (openRows ?? []) as { id: string; name: string; max_players: number }[];
-      const seatFirstIds = rows
-        .filter((r) => isSeatFirstFormat(variant, Number(r.max_players) || 0))
-        .map((r) => r.id);
+      const rows = (openRows ?? []) as {
+        id: string;
+        name: string;
+        max_players: number;
+        format_contract: unknown;
+      }[];
+      const seatFirstIds = rows.filter((r) => isPersistedSeatFirst(r)).map((r) => r.id);
 
       let withJoinableTable = new Set<string>();
       if (seatFirstIds.length > 0) {
@@ -3654,10 +3770,7 @@ export class TournamentRecurringService {
 
       const open = new Set(
         rows
-          .filter(
-            (r) =>
-              !isSeatFirstFormat(variant, Number(r.max_players) || 0) || withJoinableTable.has(r.id)
-          )
+          .filter((r) => !isPersistedSeatFirst(r) || withJoinableTable.has(r.id))
           .map((r) => String(r.name))
       );
       const missing = configs.filter((c) => !open.has(c.name));
@@ -3772,22 +3885,16 @@ export class TournamentRecurringService {
       // entrants) and this event needs 56 to cover its guarantee.
       const startTime = new Date(Date.now() + MTT_PUBLISH_LEAD_MS);
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createXMTT');
+      validateMttBlindStructure(config.blindStructure, config.startingStack);
 
       const isBountyType =
         config.type === 'bounty' ||
         config.type === 'progressive_bounty' ||
         config.type === 'mystery_bounty';
-      const bountyPercent = config.bountyPercent || 30;
-      // WHOLE CHIPS (Dan 2026-08-20): "Sit and Go and any tournament buy-ins
-      // must never be decimal buy-ins, whole numbers only." `split` is the
-      // authoritative whole-dollar price this row is created at - a rebuy or an
-      // add-on costs the SAME snapped total, not the raw (possibly off-ladder)
-      // config value. The bounty is a whole cut of that total; it used to be
-      // round(buyIn * pct) / 100, which produced 4.5 on a 15 buy-in.
+      // Whole-chip entry prices can fund fractional bounties. Use the same
+      // cent allocation as scheduled MTTs without changing a booked head.
       const split = buyInFor(config.buyIn);
-      const bountyAmount = isBountyType
-        ? Math.min(split.prize, Math.max(0, Math.round((split.total * bountyPercent) / 100)))
-        : 0;
+      const bountyAmount = isBountyType ? mttBountyAmount(split, config) : 0;
       // MYSTERY RANGE 2026-08-21 (Dan: "make sure that this is fully added to
       // the mystery bounty tournaments"). These columns were advertising a
       // range the draw could not produce.
@@ -3860,12 +3967,14 @@ export class TournamentRecurringService {
             blind_structure: config.blindStructure,
             ...mttSpeedColumns(config.blindStructure),
             payout_structure: config.payoutStructure || [],
+            payout_percent: mttPayoutPercent(config.payoutPercent),
             start_time: startTime.toISOString(),
             late_reg_levels: 10, // Level-based late reg for XMTT
-            late_reg_mins: 10, // Legacy fallback
+            late_reg_mins: mttLateRegistrationMinutes(config.blindStructure, 10),
             is_bounty: isBountyType,
             is_pko: config.type === 'progressive_bounty',
             is_mystery_bounty: config.type === 'mystery_bounty',
+            ...(config.type === 'mystery_bounty' ? mysteryBountyCreationColumns(config) : {}),
             bounty_amount: bountyAmount,
             mystery_bounty_min: mysteryMin,
             mystery_bounty_max: mysteryMax,
@@ -3922,14 +4031,14 @@ export class TournamentRecurringService {
         return { tournamentId: null, registered: 0 };
       }
 
-      // Dan 2026-08-19: MTTs seed a FULL field too, not just horsesToRegister.
-      // registerHorses only ever returns horses that are genuinely free (not in
-      // another tournament and not sitting at an open table), so asking for
-      // maxPlayers fills the event as far as the pool allows and no further —
-      // it cannot starve cash games or other tournaments.
-      const horseTarget = HOLD_SEAT_FOR_HUMAN
-        ? config.horsesToRegister
-        : Math.max(config.horsesToRegister, config.maxPlayers);
+      // Retain the legacy authored field target until database activation.
+      // An unlimited event requests its configured funding batch; it has no
+      // entry ceiling to fill. The registration transaction rechecks authority.
+      const [admission] = await projectTournamentAdmission([tournament]);
+      const horseTarget =
+        HOLD_SEAT_FOR_HUMAN || admission.effective_max_players === null
+          ? config.horsesToRegister
+          : Math.max(config.horsesToRegister, admission.effective_max_players);
       const registered = await this.registerHorses(tournament.id, horseTarget);
       // POOL TRUTH 2026-08-27: prize_pool is ACCUMULATED by the register RPCs
       // (each entry adds its exact prize share - fee and bounty excluded), so
@@ -4014,24 +4123,16 @@ export class TournamentRecurringService {
       // registration under-funded and paying overlay. See MTT_PUBLISH_LEAD_MS.
       const startTime = new Date(Date.now() + MTT_PUBLISH_LEAD_MS);
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createMTT');
+      validateMttBlindStructure(config.blindStructure, config.startingStack);
 
       const isBountyType =
         config.type === 'bounty' ||
         config.type === 'progressive_bounty' ||
         config.type === 'mystery_bounty';
 
-      // Calculate bounty amount using configurable bountyPercent
-      // Round 40 RE-RUN: Math.round (not Math.trunc) for IEEE 754 drift safety —
-      // mirrors the same fix applied to the other bounty-config branch in this file.
-      const bountyPercent = config.bountyPercent || 30;
-      // WHOLE CHIPS (Dan 2026-08-20) - mirrors the XMTT branch above. `split`
-      // is the snapped whole-dollar price the row is actually created at, so
-      // the bounty, the rebuy and the add-on all key off it rather than off the
-      // raw config value.
+      // Share scheduled/XMTT bounty arithmetic; entry pricing remains unchanged.
       const split = buyInFor(config.buyIn);
-      const bountyAmount = isBountyType
-        ? Math.min(split.prize, Math.max(0, Math.round((split.total * bountyPercent) / 100)))
-        : 0;
+      const bountyAmount = isBountyType ? mttBountyAmount(split, config) : 0;
       // Mystery bounty range: min = base bounty, max = 10x base
       // MYSTERY RANGE 2026-08-21 (Dan: "make sure that this is fully added to
       // the mystery bounty tournaments"). These columns were advertising a
@@ -4104,12 +4205,14 @@ export class TournamentRecurringService {
             blind_structure: config.blindStructure,
             ...mttSpeedColumns(config.blindStructure),
             payout_structure: config.payoutStructure || [],
+            payout_percent: mttPayoutPercent(config.payoutPercent),
             start_time: startTime.toISOString(),
             late_reg_levels: 8, // Level-based late reg
-            late_reg_mins: 8, // Legacy fallback
+            late_reg_mins: mttLateRegistrationMinutes(config.blindStructure, 8),
             is_bounty: isBountyType,
             is_pko: config.type === 'progressive_bounty',
             is_mystery_bounty: config.type === 'mystery_bounty',
+            ...(config.type === 'mystery_bounty' ? mysteryBountyCreationColumns(config) : {}),
             bounty_amount: bountyAmount,
             mystery_bounty_min: mysteryMin,
             mystery_bounty_max: mysteryMax,
@@ -4168,14 +4271,14 @@ export class TournamentRecurringService {
         return { tournamentId: null, registered: 0 };
       }
 
-      // Dan 2026-08-19: MTTs seed a FULL field too, not just horsesToRegister.
-      // registerHorses only ever returns horses that are genuinely free (not in
-      // another tournament and not sitting at an open table), so asking for
-      // maxPlayers fills the event as far as the pool allows and no further —
-      // it cannot starve cash games or other tournaments.
-      const horseTarget = HOLD_SEAT_FOR_HUMAN
-        ? config.horsesToRegister
-        : Math.max(config.horsesToRegister, config.maxPlayers);
+      // Retain the legacy authored field target until database activation.
+      // An unlimited event requests its configured funding batch; it has no
+      // entry ceiling to fill. The registration transaction rechecks authority.
+      const [admission] = await projectTournamentAdmission([tournament]);
+      const horseTarget =
+        HOLD_SEAT_FOR_HUMAN || admission.effective_max_players === null
+          ? config.horsesToRegister
+          : Math.max(config.horsesToRegister, admission.effective_max_players);
       const registered = await this.registerHorses(tournament.id, horseTarget);
       // POOL TRUTH 2026-08-27: prize_pool is ACCUMULATED by the register RPCs
       // (each entry adds its exact prize share - fee and bounty excluded), so
@@ -4264,6 +4367,8 @@ export class TournamentRecurringService {
         status: 'REGISTERING',
         blind_structure: config.blindStructure,
         payout_structure: config.payoutStructure || [],
+        // Heads-up has a fixed payout contract; paid depth belongs to fields.
+        ...(!seatFirstSng ? { payout_percent: mttPayoutPercent(config.payoutPercent) } : {}),
         start_time: startTime.toISOString(),
         late_reg_levels: 0,
         late_reg_mins: 0,
@@ -5376,9 +5481,10 @@ export class TournamentRecurringService {
   async topUpWithHorses(
     tournamentId: string,
     targetPlayers: number,
-    opts: { allLanes?: boolean; pass?: HorseTopUpPass } = {}
+    opts: { allLanes?: boolean; pass?: HorseTopUpPass; redeemTickets?: boolean } = {}
   ): Promise<number> {
     const pass = opts.pass;
+    const generation = this.lifecycleGeneration;
     // This entry point is also used by GameServer discovery and by the
     // scheduled/overlay services. Register its whole continuation so stop()
     // cannot release leadership while a paid registration is still in flight.
@@ -5386,6 +5492,7 @@ export class TournamentRecurringService {
     try {
       // THE FREEZE IS TOTAL (Dan 2026-09-03): every horse this seats is a buy-in.
       if (isMaintenanceFrozen()) return 0;
+      if (this.stopOperation) return 0;
       try {
         /**
          * A seat-first game needs BODIES IN SEATS, not names on a list.
@@ -5409,7 +5516,9 @@ export class TournamentRecurringService {
          */
         const { data: tRow, error: tErr } = await supabase
           .from('tournaments')
-          .select('variant, max_players, club_id, start_time, prize_pool_finalized')
+          .select(
+            'variant, max_players, format_contract, club_id, start_time, prize_pool_finalized'
+          )
           .eq('id', tournamentId)
           .maybeSingle();
         if (tErr || !tRow) {
@@ -5421,10 +5530,7 @@ export class TournamentRecurringService {
           );
           return 0;
         }
-        const seatFirst = isSeatFirstFormat(
-          String((tRow as { variant?: string } | null)?.variant ?? ''),
-          Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
-        );
+        const seatFirst = isPersistedSeatFirst(tRow);
 
         /* A FINALIZED POOL TAKES NO ENTRANT (2026-09-11). Both doors refuse it -
            the human core reads prize_pool_finalized and answers
@@ -5617,8 +5723,10 @@ export class TournamentRecurringService {
           return 0;
         }
 
-        const shortfall = targetPlayers - liveCount;
-        if (shortfall <= 0) {
+        if (this.lifecycleGeneration !== generation || this.stopOperation || isMaintenanceFrozen())
+          return 0;
+        const shortfall = Math.max(0, targetPlayers - liveCount);
+        if (shortfall === 0 && (seatFirst || opts.redeemTickets !== true)) {
           // No seat changed. Canonical seat transactions already commit the
           // exact count, so an idle sweep has no write authority here.
           return 0;
@@ -5811,7 +5919,13 @@ export class TournamentRecurringService {
             );
           }
         } else {
-          added = await this.registerHorses(tournamentId, shortfall, opts.allLanes === true, pass);
+          added = await this.registerHorses(
+            tournamentId,
+            shortfall,
+            opts.allLanes === true,
+            pass,
+            opts.redeemTickets === true
+          );
         }
 
         // Somebody was seated or registered: what this pass read is stale now.
@@ -5884,9 +5998,13 @@ export class TournamentRecurringService {
     tournamentId: string,
     count: number,
     allLanes = false,
-    pass?: HorseTopUpPass
+    pass?: HorseTopUpPass,
+    redeemTickets = false
   ): Promise<number> {
+    const generation = this.lifecycleGeneration;
     try {
+      if (isMaintenanceFrozen()) return 0;
+      if (this.stopOperation) return 0;
       // TOURNEY-AUDIT 2026-07-24: exclude horses already registered/playing in
       // another active tournament. The old query only checked horse_status
       // (never flipped by tournament play), so the overlapping MTT/SNG/Spin
@@ -6053,13 +6171,19 @@ export class TournamentRecurringService {
         );
         return 0;
       }
-      const ticketHintIds = new Set(
-        Array.isArray(ticketHintPayload.holder_ids)
-          ? ticketHintPayload.holder_ids.filter(
-              (id): id is string => typeof id === 'string' && id.length > 0
-            )
-          : []
-      );
+      if (
+        !Array.isArray(ticketHintPayload.holder_ids) ||
+        ticketHintPayload.holder_ids.some((id) => typeof id !== 'string' || !id.trim())
+      ) {
+        reportError(
+          new Error('Malformed tournament ticket holder hints'),
+          'TournamentRecurring.horse_ticket_hint_failed'
+        );
+        return 0;
+      }
+      const ticketHintIds = new Set<string>(ticketHintPayload.holder_ids);
+      if (this.lifecycleGeneration !== generation || this.stopOperation || isMaintenanceFrozen())
+        return 0;
 
       /**
        * A CLUB'S TOURNAMENTS DRAW FROM THAT CLUB'S MEMBERS (Dan 2026-09-01:
@@ -6266,7 +6390,14 @@ export class TournamentRecurringService {
       const walletRot = rampQueueRotation(tournamentId, hour, walletPool.length);
       const orderedTickets = ticketPool.slice(ticketRot).concat(ticketPool.slice(0, ticketRot));
       const orderedWallets = walletPool.slice(walletRot).concat(walletPool.slice(0, walletRot));
-      const horses = orderedTickets.concat(orderedWallets).slice(0, count);
+      // Already-paid awards are not constrained by the ordinary funding quota.
+      // Bound extra ticket offers, and never increase the ordinary wallet count.
+      const recoveryTickets = orderedTickets.slice(0, Math.max(count, 25));
+      const horses = redeemTickets
+        ? recoveryTickets.concat(
+            orderedWallets.slice(0, Math.max(0, count - recoveryTickets.length))
+          )
+        : orderedTickets.concat(orderedWallets).slice(0, count);
 
       if (!horses || horses.length === 0) {
         // Say WHY the pool came up empty — "added NONE" with no numbers is
@@ -6307,6 +6438,7 @@ export class TournamentRecurringService {
         // THE FREEZE IS TOTAL (Dan 2026-09-03): a registration is a buy-in. A ramp
         // that crosses :53 stops here and the next tick finishes it.
         if (isMaintenanceFrozen()) break;
+        if (this.lifecycleGeneration !== generation || this.stopOperation) break;
         const { data: res, error: regError } = await supabase.rpc(
           'fn_register_horse_for_tournament',
           {

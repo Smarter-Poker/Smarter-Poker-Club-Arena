@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { captureHandSeatGenerations, requireHandSeatGeneration } from './handSeatGeneration.js';
+import {
+  captureHandSeatGenerations,
+  handStackBefore,
+  requireHandSeatGeneration,
+} from './handSeatGeneration.js';
 
 const player = () => ({
   user_id: 'player-one',
@@ -8,6 +12,19 @@ const player = () => ({
 });
 
 describe('dealt hand seat generation', () => {
+  it('never certifies an ending-stack fallback as an original starting observation', () => {
+    const generations = captureHandSeatGenerations([player()]);
+    expect(handStackBefore(generations, new Map(), player().user_id, 50)).toBe(50);
+    generations.set(player().user_id, {
+      ...generations.get(player().user_id)!,
+      funding_manifest_id: player().seat_id,
+      funding_stack_before: 0,
+    });
+    expect(handStackBefore(generations, new Map(), player().user_id, 50)).toBe(0);
+    expect(
+      handStackBefore(generations, new Map([[player().user_id, 99]]), player().user_id, 50)
+    ).toBe(0);
+  });
   it('retains microsecond identity when the roster row changes after dealing', () => {
     const row = player();
     const dealt = captureHandSeatGenerations([row]);

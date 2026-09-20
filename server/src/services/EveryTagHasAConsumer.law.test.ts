@@ -14,10 +14,8 @@
  *   1. every tag literal HorseHandReview.detectLeaks can emit is a `tag` row
  *      in HorseDataLedger.TAG_CONSUMERS (the `_won` twin of a `flag()` tag
  *      is the same row);
- *   2. every row whose consumer is not 'measurement' names a function that
- *      exists AND a tag-list constant in HorseLogic or a gate in
- *      HorseSelfTuner that mentions the tag by name - a consumer that does
- *      not read the tag is the exact lie this law exists to catch;
+ *   2. no tag claims a retired HorseLogic helper as a live reader; the five
+ *      actual tuner gates name their diagnostic-only proposal consumer;
  *   3. a 'measurement' row carries a reason of at least 40 characters;
  *   4. every ledger tag row is emitted by the detector (no ghosts).
  *
@@ -101,7 +99,7 @@ describe('LAW: every tag has a consumer', () => {
     expect(ghosts, 'ledger tag rows the detector no longer emits').toEqual([]);
   });
 
-  it('every registered SQL tag is emitted by a migration that shipped', () => {
+  it('every registered SQL tag has a source migration (installation is a separate gate)', () => {
     expect(sqlTags.length, 'the V49 frequency tags are registered').toBeGreaterThanOrEqual(9);
     const migDir = join(process.cwd(), '..', 'supabase', 'migrations');
     const sql = readdirSync(migDir)
@@ -120,37 +118,27 @@ describe('LAW: every tag has a consumer', () => {
     }
   });
 
-  it('a consumer that is not measurement names code that reads the tag by name', () => {
-    const logic = read('engine/HorseLogic.ts');
+  it('diagnostic readers are called by the actual nightly study', () => {
     const tuner = read('services/HorseSelfTuner.ts');
+    const body = tuner.slice(tuner.indexOf('export async function runSelfTune'));
+    expect(body).toContain('diagnoseAndNudge(');
+    expect(body).toContain('leaksByHorse.get(horseId)');
+    // This is a wiring check only. HorseSelfTunerAtomicIntegration runs the
+    // real study for every registered hand tag and checks its persisted use.
+  });
+
+  it('does not claim that historical diagnostic helpers are live tag consumers', () => {
     for (const t of handTags) {
-      if (t.consumer === 'measurement') continue;
-      const fns = t.consumer.match(/\b[A-Za-z]+\.[a-zA-Z]+\b|\bHorseSelfTuner\b/g) ?? [];
-      expect(fns.length, `${t.key}: consumer '${t.consumer}' names no function`).toBeGreaterThan(0);
-      const inLogic = new RegExp(`'${t.key}'`).test(logic);
-      const inTuner = new RegExp(`'${t.key}'`).test(tuner);
-      expect(
-        inLogic || inTuner,
-        `${t.key}: registered as consumed by '${t.consumer}' but neither HorseLogic.ts nor HorseSelfTuner.ts mentions the tag by name`
-      ).toBe(true);
-      for (const fn of fns) {
-        const [mod, name] = fn.includes('.') ? fn.split('.') : [fn, ''];
-        const src = mod === 'HorseLogic' ? logic : mod === 'HorseSelfTuner' ? tuner : '';
-        expect(
-          src.length,
-          `${t.key}: consumer module ${mod} is not a known reader`
-        ).toBeGreaterThan(0);
-        if (name) {
-          expect(
-            src.includes(`function ${name}(`) || src.includes(`${name}(`),
-            `${t.key}: consumer ${fn} does not exist`
-          ).toBe(true);
-        }
+      expect(t.consumer, t.key).not.toContain('HorseLogic.');
+      if (t.consumer !== 'measurement') {
+        expect(t.consumer, t.key).toBe('HorseSelfTuner.diagnoseAndNudge');
+        expect(t.note, t.key).toContain('diagnostic proposal');
       }
+      expect(t.note, t.key).toContain('no policy authority');
     }
   });
 
-  it('a measurement tag says why nothing reads it', () => {
+  it('a measurement tag explains its diagnostic-only boundary', () => {
     for (const t of TAG_CONSUMERS) {
       if (t.consumer !== 'measurement') continue;
       expect(t.note.length, `${t.key}: a measurement row needs a reason`).toBeGreaterThanOrEqual(

@@ -35,7 +35,7 @@ describe('process shutdown has one ownership certificate', () => {
       'HorseSelfTuner',
       'HorseLeague',
       'HorseDailyAudit',
-      'BrainTelemetryFlush',
+      'HorseAdaptiveJournalWorker',
       'HorseDataLedgerSync',
       'HorseLaneLoader',
       'GtoAggregationDriver',
@@ -44,6 +44,9 @@ describe('process shutdown has one ownership certificate', () => {
     ]) {
       expect(stop).toContain(`['${writer}',`);
     }
+    // Execution receipts still arrive while tables drain. Their existing
+    // writer is owned by the later GameServer Horse shutdown boundary.
+    expect(stop).not.toContain("['BrainTelemetryFlush',");
   });
 
   it('fences through GameServer even when startup has already rejected', () => {

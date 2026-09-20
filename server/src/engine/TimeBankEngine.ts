@@ -62,6 +62,11 @@ export interface PlayerTimeBank {
    * work on tables where autoActivate is off.
    */
   armed: boolean;
+  /**
+   * Lifetime VIP may request another standard activation after the finite
+   * pool reaches zero. This never relaxes the per-street activation limit.
+   */
+  unlimitedActivations: boolean;
 }
 
 /**
@@ -143,7 +148,11 @@ export class TimeBankEngine {
   initializePlayer(
     tableId: string,
     playerId: string,
-    initialState?: { remainingSeconds?: number; usesRemaining?: number }
+    initialState?: {
+      remainingSeconds?: number;
+      usesRemaining?: number;
+      unlimitedActivations?: boolean;
+    }
   ): void {
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
     const key = `${tableId}:${playerId}`;
@@ -157,6 +166,7 @@ export class TimeBankEngine {
       currentUseSeconds: 0,
       streetActivations: 0,
       armed: false,
+      unlimitedActivations: initialState?.unlimitedActivations === true,
     });
   }
 
@@ -201,7 +211,9 @@ export class TimeBankEngine {
   arm(tableId: string, playerId: string): boolean {
     const bank = this.playerBanks.get(`${tableId}:${playerId}`);
     if (!bank || bank.isActive) return false;
-    if (bank.usesRemaining <= 0 || bank.remainingSeconds <= 0) return false;
+    if (!bank.unlimitedActivations && (bank.usesRemaining <= 0 || bank.remainingSeconds <= 0)) {
+      return false;
+    }
     if (bank.streetActivations >= 2) return false;
     bank.armed = true;
     return true;
@@ -269,7 +281,9 @@ export class TimeBankEngine {
 
     if (!bank) return 'not_initialized';
     if (bank.isActive) return 'already_active';
-    if (bank.usesRemaining <= 0 || bank.remainingSeconds <= 0) return 'depleted';
+    if (!bank.unlimitedActivations && (bank.usesRemaining <= 0 || bank.remainingSeconds <= 0)) {
+      return 'depleted';
+    }
     // Bible V8 §6.2: max 2 activations PER STREET, never more. Preflop, flop,
     // turn and river each get their own allowance of 2; the counter is reset by
     // resetStreetActivations() at the start of the hand and on every new street.
@@ -279,6 +293,16 @@ export class TimeBankEngine {
     // The 15 seconds have to be genuinely gone first.
     if (extraCountdownSeconds > TimeBankEngine.CLOCK_EXHAUSTED_EPSILON_SECONDS) {
       return 'clock_not_exhausted';
+    }
+
+    /*
+     * Lifetime VIP is explicit state, not a giant synthetic balance. Refill
+     * only the activation that is about to start, and only after the active,
+     * street-limit, and clock-exhaustion guards above have all passed.
+     */
+    if (bank.unlimitedActivations && (bank.usesRemaining <= 0 || bank.remainingSeconds <= 0)) {
+      bank.remainingSeconds = config.secondsPerUse;
+      bank.usesRemaining = 1;
     }
 
     const useSeconds = Math.min(config.secondsPerUse, bank.remainingSeconds);
@@ -298,6 +322,7 @@ export class TimeBankEngine {
       secondsGranted: useSeconds,
       usesRemaining: bank.usesRemaining,
       totalRemaining: bank.remainingSeconds,
+      unlimitedActivations: bank.unlimitedActivations,
     });
 
     // The countdown IS the new clock: exactly the bank allocation, from zero.
@@ -341,6 +366,7 @@ export class TimeBankEngine {
       secondsUsed,
       remainingSeconds: bank.remainingSeconds,
       usesRemaining: bank.usesRemaining,
+      unlimitedActivations: bank.unlimitedActivations,
     });
   }
 
@@ -377,6 +403,9 @@ export class TimeBankEngine {
 
     for (const [key, bank] of this.playerBanks) {
       if (!key.startsWith(`${tableId}:`)) continue;
+      // Lifetime receives one standard activation on demand. Orbit refills
+      // must not mutate that explicit unlimited entitlement into a partial use.
+      if (bank.unlimitedActivations) continue;
 
       if (bank.usesRemaining < config.maxUses) {
         bank.usesRemaining++;
@@ -406,7 +435,25 @@ export class TimeBankEngine {
 
   hasTimeBank(tableId: string, playerId: string): boolean {
     const bank = this.getPlayerBank(tableId, playerId);
-    return !!bank && bank.usesRemaining > 0 && bank.remainingSeconds > 0;
+    return (
+      !!bank && (bank.unlimitedActivations || (bank.usesRemaining > 0 && bank.remainingSeconds > 0))
+    );
+  }
+
+  isUnlimited(tableId: string, playerId: string): boolean {
+    return this.getPlayerBank(tableId, playerId)?.unlimitedActivations === true;
+  }
+
+  /**
+   * Replace the cached Lifetime flag without changing a player's real finite
+   * balance. The table engine uses this to fail closed when a bounded
+   * revalidation cannot prove that an unlimited membership is still active.
+   */
+  setUnlimitedActivations(tableId: string, playerId: string, unlimited: boolean): boolean {
+    const bank = this.getPlayerBank(tableId, playerId);
+    if (!bank || bank.isActive) return false;
+    bank.unlimitedActivations = unlimited;
+    return true;
   }
 
   getRemainingSeconds(tableId: string, playerId: string): number {
@@ -422,18 +469,31 @@ export class TimeBankEngine {
    * total mid-session (e.g. after a diamond top-up purchase). No-op while
    * a time bank is actively counting down.
    */
-  rebase(tableId: string, playerId: string, remainingSeconds: number): boolean {
+  rebase(
+    tableId: string,
+    playerId: string,
+    remainingSeconds: number,
+    unlimitedActivations?: boolean
+  ): boolean {
     const bank = this.playerBanks.get(`${tableId}:${playerId}`);
     if (!bank || bank.isActive) return false;
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
     bank.remainingSeconds = Math.max(0, remainingSeconds);
     bank.usesRemaining = Math.ceil(bank.remainingSeconds / config.secondsPerUse);
+    if (unlimitedActivations !== undefined) {
+      bank.unlimitedActivations = unlimitedActivations;
+    }
     return true;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CLEANUP
   // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Positive stop custody check includes banks outside the last roster. */
+  hasPlayerBanksForTable(tableId: string): boolean {
+    return [...this.playerBanks.values()].some((bank) => bank.tableId === tableId);
+  }
 
   dispose(tableId: string): void {
     for (const [key, bank] of this.playerBanks) {
@@ -483,14 +543,17 @@ export class TimeBankEngine {
     bank.activatedAt = undefined;
     bank.armed = false;
 
-    const isDepleted = bank.usesRemaining <= 0 || bank.remainingSeconds <= 0;
+    const isDepleted =
+      !bank.unlimitedActivations && (bank.usesRemaining <= 0 || bank.remainingSeconds <= 0);
 
     this.emitEvent({
       type: isDepleted ? 'TIME_BANK_DEPLETED' : 'TIME_BANK_EXPIRED',
       tableId,
       playerId,
+      secondsUsed: bank.currentUseSeconds,
       remainingSeconds: bank.remainingSeconds,
       usesRemaining: bank.usesRemaining,
+      unlimitedActivations: bank.unlimitedActivations,
     });
 
     if (bank.onExpire) {

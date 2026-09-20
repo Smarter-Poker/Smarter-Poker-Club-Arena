@@ -1,0 +1,5 @@
+{
+  "_owner": "Horse Brain Phase 14 bounded journal retention",
+  "_comment": "Service-only bounded pass; no timer, live activation or completeness claim.",
+  "functions": ["fn_prune_horse_adaptive_journal"]
+}

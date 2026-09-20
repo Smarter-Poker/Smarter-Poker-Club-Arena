@@ -1,0 +1,345 @@
+{
+  "rule_files": [
+    "../../infra/monitoring/engine-freeze-rules.yml",
+    "../../infra/monitoring/alert-rules.yml"
+  ],
+  "evaluation_interval": "1m",
+  "tests": [
+    {
+      "name": "Historical tables cannot turn healthy live throughput into a fault",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+100x60"
+        },
+        {
+          "series": "poker_active_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "574+0x60"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x60"
+        },
+        {
+          "series": "poker_dealable_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "50+0x60"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\"}",
+          "eval_time": "45m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "A slow live fleet must remain under threshold for forty minutes",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+20x60"
+        },
+        {
+          "series": "poker_active_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "574+0x60"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x60"
+        },
+        {
+          "series": "poker_dealable_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "50+0x60"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\"}",
+          "eval_time": "40m",
+          "exp_samples": []
+        },
+        {
+          "expr": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\"}",
+          "eval_time": "41m",
+          "exp_samples": [
+            {
+              "labels": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\",component=\"engine\",severity=\"critical\"}",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "No hands with live capacity still fires",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x60"
+        },
+        {
+          "series": "poker_active_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "574+0x60"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x60"
+        },
+        {
+          "series": "poker_dealable_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "50+0x60"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\"}",
+          "eval_time": "45m",
+          "exp_samples": [
+            {
+              "labels": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\",component=\"engine\",severity=\"critical\"}",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Fewer than twenty live tables retains the separate fleet-collapse alert",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+40x60"
+        },
+        {
+          "series": "poker_active_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "574+0x60"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x60"
+        },
+        {
+          "series": "poker_dealable_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "15+0x60"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\"}",
+          "eval_time": "45m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count(ALERTS{alertname=\"HorseFleetCollapsed\",alertstate=\"firing\"})",
+          "eval_time": "45m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Zero live tables cannot generate a throughput ratio fault",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x60"
+        },
+        {
+          "series": "poker_active_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "574+0x60"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x60"
+        },
+        {
+          "series": "poker_dealable_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x60"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\"}",
+          "eval_time": "45m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "Missing live capacity does not fall back to historical tables",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+20x60"
+        },
+        {
+          "series": "poker_active_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "574+0x60"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x60"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\"}",
+          "eval_time": "45m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "Labeled scheduled maintenance suppresses aggregated throughput",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+20x60"
+        },
+        {
+          "series": "poker_active_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "574+0x60"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "1+0x60"
+        },
+        {
+          "series": "poker_dealable_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "50+0x60"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\"}",
+          "eval_time": "45m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "The six-minute maintenance lookback resets pending state",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+20x60"
+        },
+        {
+          "series": "poker_active_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "574+0x60"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x44 1 0+0x14"
+        },
+        {
+          "series": "poker_dealable_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "50+0x60"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\"}",
+          "eval_time": "44m",
+          "exp_samples": [
+            {
+              "labels": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\",component=\"engine\",severity=\"critical\"}",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "expr": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\"}",
+          "eval_time": "46m",
+          "exp_samples": []
+        },
+        {
+          "expr": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\"}",
+          "eval_time": "51m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "Real renewed throughput resolves the alert",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+20x45 1000+100x15"
+        },
+        {
+          "series": "poker_active_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "574+0x60"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x60"
+        },
+        {
+          "series": "poker_dealable_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "50+0x60"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\"}",
+          "eval_time": "44m",
+          "exp_samples": [
+            {
+              "labels": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\",component=\"engine\",severity=\"critical\"}",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "expr": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\"}",
+          "eval_time": "51m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "Counter reset does not create a negative throughput fault",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+100x30 0+100x29"
+        },
+        {
+          "series": "poker_active_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "574+0x60"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x60"
+        },
+        {
+          "series": "poker_dealable_tables{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "50+0x60"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"EngineFleetThroughputCollapsed\",alertstate=\"firing\"}",
+          "eval_time": "45m",
+          "exp_samples": []
+        }
+      ]
+    }
+  ]
+}

@@ -204,7 +204,7 @@ describe('horse load - unreadable is UNKNOWN, never idle', () => {
     expect(body).toContain('TournamentRecurring.topup_tournament_read_failed');
     // The CALL, not the mention of it in the comment above the guard.
     expect(body.indexOf('if (tErr || !tRow)')).toBeLessThan(
-      body.indexOf('const seatFirst = isSeatFirstFormat(')
+      body.indexOf('const seatFirst = isPersistedSeatFirst(tRow)')
     );
   });
 

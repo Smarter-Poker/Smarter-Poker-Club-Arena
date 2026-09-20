@@ -21,6 +21,7 @@ import { preloadClubLobby } from '../../utils/ChunkPreloader';
 import type { ToastContextValue } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
+import type { CountFigure } from '../../lib/countFigure';
 
 // Lazy-load heavy component
 
@@ -48,8 +49,10 @@ export interface UserClub {
 export interface ClubStats {
   totalMembers: number | null;
   clubLevel: number | null;
-  /** Distinct players holding a live seat anywhere on the club's floor. */
-  activePlayers: number | null;
+  /** Distinct players holding a live seat anywhere on the club's floor.
+   *  `COUNT_UNKNOWN` when a read answered and could not tell; see
+   *  src/lib/countFigure.ts. */
+  activePlayers: CountFigure;
   /** Of those, distinct players at cash tables. */
   activeCash?: number | null;
   /** Of those, distinct players in tournaments, Spins and SNGs. */
@@ -267,7 +270,12 @@ export default function CarouselSection({
                   clubName={club.name?.toUpperCase() || 'MY CLUB'}
                   totalMembers={stats?.totalMembers ?? null}
                   clubLevel={stats?.clubLevel ?? null}
-                  activePlayers={stats?.activePlayers ?? null}
+                  /* A chip club's count is always a number or a pending null -
+                     only the entitlement arena can answer COUNT_UNKNOWN, and
+                     it is drawn by DiamondArenaCard above. */
+                  activePlayers={
+                    typeof stats?.activePlayers === 'number' ? stats.activePlayers : null
+                  }
                   activeCash={stats?.activeCash ?? null}
                   activeEvents={stats?.activeEvents ?? null}
                   clubId={club.club_id}

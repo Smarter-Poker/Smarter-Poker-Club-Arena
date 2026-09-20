@@ -113,6 +113,7 @@ for r in "${REPOS[@]}"; do
   fi
 
   FORBIDDEN_RULESETS=""
+  PERM_BLIND=""
   D=""
   while IFS= read -r RULESET_ID; do
     [ -n "$RULESET_ID" ] || continue
@@ -121,17 +122,49 @@ for r in "${REPOS[@]}"; do
       add "**$r** — branch ruleset \`$RULESET_ID\` is listed but unreadable, so its required contexts are unverified."
       continue
     fi
-    if [ -z "$RULESET_DETAIL" ] || ! printf '%s' "$RULESET_DETAIL" | jq -e --arg ruleset_id "$RULESET_ID" \
-      'type == "object"
-       and ((.id | tostring) == $ruleset_id)
-       and (.target == "branch")
-       and ((.enforcement | type) == "string")
-       and ((.bypass_actors | type) == "array")
-       and ((.rules | type) == "array")' \
-      >/dev/null 2>&1; then
-      add "**$r** — branch ruleset \`$RULESET_ID\` returned an empty or malformed detail, so its required contexts are unverified."
+    if [ -z "$RULESET_DETAIL" ]; then
+      add "**$r**: branch ruleset \`$RULESET_ID\` returned an empty body, so its required contexts are unverified."
       continue
     fi
+    # WHICH field is wrong, not merely that one is.
+    #
+    # 2026-09-19. This check reported "returned an empty or malformed detail"
+    # for all eight branch rulesets in the estate, every run, from 2026-09-09
+    # to 2026-09-19, and nobody could act on it, because one message stood for
+    # an unreadable body, a wrong id, a changed API shape and a permission the
+    # token no longer holds. Those are four different repairs.
+    #
+    # The one it actually was is the last. GitHub returns a WELL FORMED ruleset
+    # to a caller without Administration: Read, with `rules` and `bypass_actors`
+    # simply absent. That is a COULD NOT ASK, and calling it drift is how an
+    # audit teaches people to stop reading it. Meanwhile the thing it could not
+    # see was real: World Hub's main ruleset read bypass=0 on 2026-09-08 and
+    # carries an Integration bypass actor with mode `always` today.
+    if ! MISSING=$(printf '%s' "$RULESET_DETAIL" | jq -r --arg ruleset_id "$RULESET_ID" '
+          if type != "object" then "not-an-object"
+          else [ (if (.id | tostring) != $ruleset_id then "id" else empty end),
+                 (if .target != "branch"                then "target" else empty end),
+                 (if (.enforcement | type) != "string"  then "enforcement" else empty end),
+                 (if (.bypass_actors | type) != "array" then "bypass_actors" else empty end),
+                 (if (.rules | type) != "array"         then "rules" else empty end)
+               ] | join(" ")
+          end' 2>/dev/null); then
+      add "**$r**: branch ruleset \`$RULESET_ID\` did not come back as JSON, so its required contexts are unverified."
+      continue
+    fi
+    case "$MISSING" in
+      "") ;;
+      "bypass_actors"|"rules"|"bypass_actors rules")
+        # Exactly the shape a non-admin caller gets. Reported once per repo,
+        # below, rather than once per ruleset.
+        PERM_BLIND="$PERM_BLIND $RULESET_ID"
+        continue
+        ;;
+      *)
+        add "**$r**: branch ruleset \`$RULESET_ID\` came back with \`$MISSING\` wrong or absent, so its required contexts are unverified. That is a malformed answer rather than a permission: read it with \`gh api repos/Smarter-Poker/$r/rulesets/$RULESET_ID\`."
+        continue
+        ;;
+    esac
     [ "$RULESET_ID" = "$ID" ] && D="$RULESET_DETAIL"
     if printf '%s' "$RULESET_DETAIL" | jq -e --arg context "$FORBIDDEN_REQUIRED_CONTEXT" \
       '[.rules[]? | select(.type=="required_status_checks") | .parameters.required_status_checks[]?.context] | index($context) != null' \
@@ -139,6 +172,10 @@ for r in "${REPOS[@]}"; do
       FORBIDDEN_RULESETS="$FORBIDDEN_RULESETS $RULESET_ID"
     fi
   done < <(printf '%s' "$RS" | jq -r '.[] | select(.target=="branch") | .id')
+  if [ -n "$PERM_BLIND" ]; then
+    add "**$r**: the audit token cannot see \`rules\` or \`bypass_actors\` on branch ruleset(s):\`$PERM_BLIND\`. GitHub hands a caller WITHOUT \`Administration: Read\` a well formed ruleset with exactly those two fields absent, so enforcement, required checks and bypass actors are all unverified for this repo. This read worked on 2026-09-08 and has not since. Grant the audit App named by \`app-id\` in .github/workflows/estate-integrity.yml \`Administration: Read\`; do not widen this audit to guess."
+    continue
+  fi
   if [ -n "$FORBIDDEN_RULESETS" ]; then
     add "**$r** — unauthorized required context \`$FORBIDDEN_REQUIRED_CONTEXT\` exists in ruleset(s):\`$FORBIDDEN_RULESETS\`. Remove it; synthetic release freezes are forbidden."
   fi

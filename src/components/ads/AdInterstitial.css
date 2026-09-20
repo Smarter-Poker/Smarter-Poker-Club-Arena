@@ -1,0 +1,160 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   AD INTERSTITIAL - full screen, the picture whole, one way forward
+   Mobile first at 375px; the sheet is the viewport on a phone and a centred
+   column on desktop. The picture box owns its shape and the image is
+   contained, never cropped, never stretched.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ad-interstitial {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+  background: rgba(3, 5, 8, 0.92);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: ad-interstitial-in calc(220ms * var(--animation-speed, 1)) ease-out both;
+}
+
+@keyframes ad-interstitial-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.ad-interstitial__sheet {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  width: 100%;
+  max-width: min(100%, 560px);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 44px 8px 8px;
+  animation: ad-interstitial-sheet calc(260ms * var(--animation-speed, 1))
+    cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes ad-interstitial-sheet {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ad-interstitial,
+  .ad-interstitial__sheet {
+    animation: none;
+  }
+}
+
+.ad-interstitial__close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 50%;
+  background: rgba(6, 8, 11, 0.8);
+  color: #e6edf3;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ad-interstitial__close:focus-visible,
+.ad-interstitial__cta:focus-visible {
+  outline: 2px solid #65c4ff;
+  outline-offset: 2px;
+}
+
+.ad-interstitial__kind {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.92);
+  background: rgba(6, 8, 11, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.ad-interstitial__picture {
+  width: 100%;
+  max-height: min(70vh, 70dvh);
+  overflow: hidden;
+  border-radius: 12px;
+  background: #06080b;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+.ad-interstitial__picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.ad-interstitial__headline-only {
+  padding: 24px;
+  font-size: 20px;
+  font-weight: 800;
+  color: #e6edf3;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.ad-interstitial__headline {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 16px;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.92);
+  text-align: center;
+  text-wrap: balance;
+}
+
+.ad-interstitial__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 28px;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+  color: #04121a;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 0 18px rgba(0, 212, 255, 0.4);
+}
+
+.ad-interstitial__cta:active {
+  filter: brightness(0.92);
+}
+
+.ad-interstitial__ext {
+  font-size: 14px;
+}

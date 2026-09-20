@@ -222,10 +222,11 @@ async function signIn(
   account: TemporaryCustomizationAccount
 ) {
   const page = await context.newPage();
-  await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-  await page
-    .waitForURL((url) => url.pathname.includes('/auth'), { timeout: 20_000 })
-    .catch(() => undefined);
+  // The public landing page deliberately does not redirect signed-out visitors.
+  // These contexts are empty: enter a protected route and require real sign-in.
+  const protectedURL = new URL('notifications', baseURL).toString();
+  await page.goto(protectedURL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  await page.waitForURL((url) => url.pathname.includes('/auth'), { timeout: 20_000 });
   if (page.url().includes('/auth')) {
     const emailInput = page.locator('input[type="email"]').first();
     const passwordInput = page.locator('input[type="password"]').first();
@@ -239,8 +240,24 @@ async function signIn(
     await submit.click();
     await page.waitForURL((url) => !url.pathname.includes('/auth'), { timeout: 45_000 });
   }
+  // Wait for persistence, then reject any other identity before account writes.
+  const signedInUser = await page.waitForFunction(
+    () => {
+      try {
+        const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || 'null');
+        return session?.user?.id || session?.currentSession?.user?.id || null;
+      } catch {
+        return null;
+      }
+    },
+    undefined,
+    { timeout: 30_000 }
+  );
+  expect(await signedInUser.jsonValue()).toBe(account.id);
+  await signedInUser.dispose();
+
   await page.evaluate(() => localStorage.setItem('club_arena_welcome_accepted', 'true'));
-  await page.goto(new URL('notifications', baseURL).toString(), {
+  await page.goto(protectedURL, {
     waitUntil: 'domcontentloaded',
     timeout: 60_000,
   });

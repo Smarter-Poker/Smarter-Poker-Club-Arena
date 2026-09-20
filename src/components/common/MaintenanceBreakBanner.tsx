@@ -61,7 +61,7 @@ export function MaintenanceBreakBanner() {
         <div className="maintenance-banner maintenance-banner--upcoming" role="status">
           <span className="maintenance-banner__dot" aria-hidden="true" />
           <span className="maintenance-banner__text">
-            Hourly Break At :55. All Tables Pause For Five Minutes And Resume On The Hour.
+            Hourly Break At :55. Play Is Expected To Resume On The Hour.
           </span>
         </div>
       );
@@ -74,8 +74,12 @@ export function MaintenanceBreakBanner() {
       <span className="maintenance-banner__dot" aria-hidden="true" />
       <span className="maintenance-banner__text">
         {countingDown
-          ? `Maintenance Break In Progress. All Tables Resume In ${formatTime(remaining)}. Seats And Chips Are Safe.`
-          : 'Maintenance Break Starting. Tables Are Finishing Their Current Hand.'}
+          ? `Maintenance Break In Progress. Expected Resume In ${formatTime(remaining)}. Seats And Chips Are Safe.`
+          : maintenanceBreak.phase === 'finalizing'
+            ? 'Finalizing Maintenance. Seats And Chips Remain Held. Play Resumes When Ready.'
+            : maintenanceBreak.phase === 'resuming'
+              ? 'Maintenance Complete. Tables Are Resuming.'
+              : 'Maintenance Break Starting. Tables Are Finishing Their Current Hand.'}
       </span>
     </div>
   );

@@ -31,7 +31,7 @@
  *  3. PERSIST BEFORE DELIVERY. Missing configuration or an unavailable receiver
  *     leaves events pending on the host-mounted journal. Startup and timer
  *     retries preserve the original event IDs and firing/recovery order.
- *     Sentry reporting is an additional signal, not the durability mechanism.
+ *     error reporting reporting is an additional signal, not the durability mechanism.
  */
 
 import { reportError } from './errorReporter.js';

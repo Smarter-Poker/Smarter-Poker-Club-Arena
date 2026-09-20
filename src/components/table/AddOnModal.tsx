@@ -11,9 +11,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { haptic, soundService } from '../../services/SoundService';
 
-import { safeErrorMessage } from '../../utils/safeErrorMessage';
 // Whole-number tournament money (Dan 2026-08-20).
 import { money, moneyExact } from '../../utils/buyIn';
+import DiamondsToChipsButton from '../games/DiamondsToChipsButton';
+import { TournamentPurchaseNotSubmittedError } from '../../services/TournamentPurchaseIntent';
 
 interface AddOnModalProps {
   isVisible: boolean;
@@ -31,14 +32,21 @@ interface AddOnModalProps {
   endsAtMs?: number | null;
   timeRemaining: number; // seconds
   /**
-   * Resolve TRUE when the chips were actually added, FALSE when the purchase
-   * was refused. Before 2026-08-20 this was `Promise<void>` and the parent
+   * Resolve TRUE only for a confirmed receipt. FALSE is unconfirmed, not
+   * proof that the wallet was not charged. Before 2026-08-20 this was `Promise<void>` and the parent
    * swallowed its own errors, so the modal announced "Add-On Accepted — +N
    * chips added" on every failed add-on. Required boolean, not `boolean | void`,
    * so reverting the parent to a void handler fails the build.
    */
   onAccept: () => Promise<boolean>;
   onDecline: () => void;
+  /**
+   * The club whose host runs the Diamond Games (Dan 2026-09-10: a player who
+   * cannot cover the add-on is offered the diamonds-to-chips door). Omitted,
+   * the door is not offered.
+   */
+  diamondGamesClubId?: string | null;
+  onPlayDiamonds?: (path: string) => void;
 }
 
 function secondsUntilAddOnDeadline(endsAtMs: number | null, fallbackSeconds: number): number {
@@ -57,17 +65,18 @@ export default function AddOnModal({
   timeRemaining: initialTime,
   onAccept,
   onDecline,
+  diamondGamesClubId,
+  onPlayDiamonds,
 }: AddOnModalProps) {
   const [countdown, setCountdown] = useState(() =>
     secondsUntilAddOnDeadline(endsAtMs, initialTime)
   );
   const [processing, setProcessing] = useState(false);
   const [decided, setDecided] = useState(false);
-  const [result, setResult] = useState<'accepted' | 'declined' | 'insufficient' | 'failed' | null>(
-    null
-  );
+  const [result, setResult] = useState<'accepted' | 'declined' | 'unknown' | null>(null);
   const [failureMessage, setFailureMessage] = useState<string | null>(null);
   const processingRef = useRef(false);
+  const confirmationNeededRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const onDeclineRef = useRef(onDecline);
   onDeclineRef.current = onDecline;
@@ -92,15 +101,21 @@ export default function AddOnModal({
       setResult(null);
       setFailureMessage(null);
       processingRef.current = false;
+      confirmationNeededRef.current = false;
       setProcessing(false);
       return;
     }
 
-    decidedRef.current = false;
     const tick = () => {
       const remaining = secondsUntilAddOnDeadline(endsAtMs, initialTime);
       setCountdown(remaining);
-      if (remaining > 0 || decidedRef.current) return;
+      if (
+        remaining > 0 ||
+        decidedRef.current ||
+        processingRef.current ||
+        confirmationNeededRef.current
+      )
+        return;
 
       // The persisted deadline expired - auto-decline exactly once. Deriving
       // from Date.now() avoids extending the offer when browser timers were
@@ -120,39 +135,46 @@ export default function AddOnModal({
   }, [isVisible, initialTime, endsAtMs]);
 
   const handleAccept = async () => {
+    const retrying = confirmationNeededRef.current;
     // The confirm sound used to fire BEFORE this guard, so a locked-out or
     // double tap still played "purchase confirmed" at the player.
     if (
       processingRef.current ||
       processing ||
-      decided ||
-      !canAfford ||
-      secondsUntilAddOnDeadline(endsAtMs, initialTime) <= 0
+      (!retrying &&
+        (decided || !canAfford || secondsUntilAddOnDeadline(endsAtMs, initialTime) <= 0))
     )
       return;
     processingRef.current = true;
+    confirmationNeededRef.current = true;
+    setFailureMessage(null);
     soundService.playBuyInConfirm();
     haptic.medium();
     setProcessing(true);
     try {
-      const ok = await onAccept();
+      const ok = (await onAccept()) === true;
       if (timerRef.current) clearInterval(timerRef.current);
+      decidedRef.current = true;
       setDecided(true);
-      setResult(ok ? 'accepted' : 'failed');
+      confirmationNeededRef.current = !ok;
+      setResult(ok ? 'accepted' : 'unknown');
       if (!ok) {
-        setFailureMessage('The add-on was not completed. Your wallet was not charged.');
+        setFailureMessage('The Purchase May Have Completed. Retry To Confirm The Same Purchase.');
       }
-    } catch (err: any) {
+    } catch (error) {
+      if (error instanceof TournamentPurchaseNotSubmittedError) {
+        confirmationNeededRef.current = false;
+        decidedRef.current = false;
+        setDecided(false);
+        setResult(null);
+        setFailureMessage('The Purchase Was Not Submitted. Please Try Again.');
+        return;
+      }
       if (timerRef.current) clearInterval(timerRef.current);
+      decidedRef.current = true;
       setDecided(true);
-      if (err?.message?.includes('Insufficient')) {
-        setResult('insufficient');
-      } else {
-        setResult('failed');
-        setFailureMessage(
-          safeErrorMessage(err, 'The add-on was not completed. Your wallet was not charged.')
-        );
-      }
+      setResult('unknown');
+      setFailureMessage('The Purchase May Have Completed. Retry To Confirm The Same Purchase.');
     } finally {
       processingRef.current = false;
       setProcessing(false);
@@ -160,8 +182,14 @@ export default function AddOnModal({
   };
 
   const handleDecline = () => {
-    if (processingRef.current || processing || decided) return;
+    if (processingRef.current || processing || (decided && !confirmationNeededRef.current)) return;
     haptic.light();
+    if (confirmationNeededRef.current) {
+      // Closing an unknown result is only presentation dismissal, not a
+      // refusal or proof that the original purchase did not complete.
+      onDecline();
+      return;
+    }
     setDecided(true);
     setResult('declined');
     if (timerRef.current) clearInterval(timerRef.current);
@@ -204,7 +232,7 @@ export default function AddOnModal({
           Add-On Available
         </div>
         <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 16 }}>
-          Re-Entry Period Has Ended
+          One Add-On Per Player
         </div>
 
         {/* Countdown */}
@@ -315,12 +343,28 @@ export default function AddOnModal({
                 Insufficient Balance - You Need {totalCost.toLocaleString()} Chips
               </div>
             )}
+            {priceKnown && !canAfford && onPlayDiamonds && (
+              <div style={{ marginBottom: 12 }}>
+                <DiamondsToChipsButton
+                  clubId={diamondGamesClubId}
+                  enabled={isVisible}
+                  size="compact"
+                  onGo={onPlayDiamonds}
+                />
+              </div>
+            )}
 
             {/* Buttons */}
+            {failureMessage && (
+              <div role="alert" style={{ color: '#ef4444', fontSize: 12, marginBottom: 12 }}>
+                {failureMessage}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 12 }}>
               <button
                 type="button"
                 onClick={handleDecline}
+                disabled={processing}
                 style={{
                   flex: 1,
                   padding: '12px 0',
@@ -377,14 +421,9 @@ export default function AddOnModal({
                 Add-On Declined
               </div>
             )}
-            {result === 'insufficient' && (
-              <div style={{ color: '#ef4444', fontSize: 16, fontWeight: 600 }}>
-                Insufficient Balance - Add-On Denied
-              </div>
-            )}
-            {result === 'failed' && (
+            {result === 'unknown' && (
               <div style={{ color: '#ef4444', fontSize: 15, fontWeight: 600 }} role="alert">
-                Add-On Failed
+                Add-On Not Confirmed
                 <div
                   style={{
                     color: 'rgba(255,255,255,0.65)',
@@ -394,6 +433,47 @@ export default function AddOnModal({
                   }}
                 >
                   {failureMessage}
+                </div>
+                <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+                  <button
+                    type="button"
+                    onClick={handleDecline}
+                    disabled={processing}
+                    style={{
+                      flex: 1,
+                      padding: '12px 0',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      background: 'transparent',
+                      color: '#fff',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: processing ? 'not-allowed' : 'pointer',
+                      minHeight: 48,
+                    }}
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAccept}
+                    disabled={processing}
+                    style={{
+                      flex: 1,
+                      padding: '12px 0',
+                      borderRadius: 10,
+                      border: 'none',
+                      background: 'linear-gradient(135deg, #3fb950 0%, #2ea043 100%)',
+                      color: '#fff',
+                      fontSize: 14,
+                      fontWeight: 700,
+                      cursor: processing ? 'not-allowed' : 'pointer',
+                      opacity: processing ? 0.6 : 1,
+                      minHeight: 48,
+                    }}
+                  >
+                    {processing ? 'Processing...' : 'Retry Confirmation'}
+                  </button>
                 </div>
               </div>
             )}

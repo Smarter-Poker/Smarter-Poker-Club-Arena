@@ -1,274 +1,385 @@
-/**
- *  CREDIT REQUEST WIDGET — Agent Credit Request UI
- */
-
+/** Credit requests are scoped to an authenticated account and one club. */
 import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useAuthUser } from '../../hooks/useAuthUser';
 import { creditRequestService, type CreditRequest } from '../../services/CreditRequestService';
 import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';
-import './CreditRequestWidget.css';
+import { readCreditMoney, creditAdminMoney } from '../../utils/creditAdminData';
 import { reportError } from '../../utils/errorReporter';
+import { supabase } from '../../lib/supabase';
+import { QUERY_LIMITS } from '../../lib/constants';
+import './CreditRequestWidget.css';
 
 interface CreditRequestWidgetProps {
-  agentId: string;
-  agentName: string;
-  parentAgentId?: string;
-  currentCreditLimit: number;
-  currentCreditUsed: number;
+  userId: string;
+  clubId: string;
+  approverUserId?: string;
+  canRequest: boolean;
+  /** Presentation only: the server rechecks current club-manager authority. */
+  canReview: boolean;
+  currentCreditLimit?: number;
+  currentCreditUsed?: number;
+  showCreditStatus?: boolean;
 }
 
-export default function CreditRequestWidget({
-  agentId,
-  agentName,
-  parentAgentId,
+/** The same request reader and decision writer, available to managers without an agents row. */
+export function CreditRequestManagerInbox({ clubId }: { clubId: string }) {
+  const { user, isHydrating } = useAuthUser();
+  if (isHydrating || !user?.id || !clubId) return null;
+  return (
+    <CreditManagerInboxForScope
+      key={JSON.stringify([user.id, clubId])}
+      userId={user.id}
+      clubId={clubId}
+    />
+  );
+}
+
+function CreditManagerInboxForScope({ userId, clubId }: { userId: string; clubId: string }) {
+  const [authority, setAuthority] = useState<'loading' | 'allowed' | 'denied' | 'error'>('loading');
+  useEffect(() => {
+    let cancelled = false;
+    async function loadAuthority() {
+      try {
+        const [club, membership] = await Promise.all([
+          supabase.from('clubs').select('owner_id').eq('id', clubId).maybeSingle(),
+          supabase
+            .from('club_members')
+            .select('role, status')
+            .eq('club_id', clubId)
+            .eq('user_id', userId)
+            .maybeSingle(),
+        ]);
+        if (cancelled) return;
+        if (club.error) throw club.error;
+        if (membership.error) throw membership.error;
+        if (!club.data) throw new Error('Club owner could not be read.');
+        setAuthority(
+          club.data.owner_id === userId ||
+            (['owner', 'co_owner', 'admin'].includes(membership.data?.role || '') &&
+              ['active', 'approved'].includes(membership.data?.status || ''))
+            ? 'allowed'
+            : 'denied'
+        );
+      } catch (error) {
+        if (!cancelled) setAuthority('error');
+      }
+    }
+    void loadAuthority();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, clubId]);
+  if (authority === 'loading') return <p>Checking Credit Request Access...</p>;
+  if (authority === 'error') return <p>Credit Request Access Could Not Be Verified.</p>;
+  if (authority !== 'allowed') return null;
+  return (
+    <section aria-label="Credit Requests">
+      <h2>Credit Requests</h2>
+      <CreditRequestWidget
+        userId={userId}
+        clubId={clubId}
+        canRequest={false}
+        canReview
+        showCreditStatus={false}
+      />
+    </section>
+  );
+}
+
+export default function CreditRequestWidget(props: CreditRequestWidgetProps) {
+  const { user, isHydrating } = useAuthUser();
+  if (isHydrating || !user?.id || user.id !== props.userId || !props.clubId) {
+    return <p>Credit Requests Are Unavailable While Your Account Is Being Verified.</p>;
+  }
+  const owner = JSON.stringify([
+    user.id,
+    props.clubId,
+    props.approverUserId,
+    props.canRequest,
+    props.canReview,
+  ]);
+  return <CreditRequestsForScope key={owner} {...props} />;
+}
+
+function CreditRequestsForScope({
+  userId,
+  clubId,
+  approverUserId,
+  canRequest,
+  canReview,
   currentCreditLimit,
   currentCreditUsed,
+  showCreditStatus = true,
 }: CreditRequestWidgetProps) {
   const isMounted = useIsMounted();
   const toast = useToast();
-
-  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const loadGeneration = useRef(0);
+  const actionInFlight = useRef(false);
   const [requests, setRequests] = useState<CreditRequest[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<CreditRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [visibleApprovals, setVisibleApprovals] = useState<Set<number>>(new Set());
-  const [visibleHistory, setVisibleHistory] = useState<Set<number>>(new Set());
+  const [loadFailed, setLoadFailed] = useState(false);
   const [showRequestForm, setShowRequestForm] = useState(false);
   const [requestAmount, setRequestAmount] = useState('');
   const [requestReason, setRequestReason] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    loadRequests();
-  }, [agentId]);
-
-  // Cleanup stagger timers on unmount
-  useEffect(() => {
+    void loadRequests();
     return () => {
-      staggerTimersRef.current.forEach(clearTimeout);
+      loadGeneration.current += 1;
     };
   }, []);
+  useEffect(
+    () =>
+      masterBus.subscribeDebounced(
+        'CREDIT_UPDATED',
+        (event) => {
+          if (event.payload.clubId === clubId && isMounted.current) void loadRequests();
+        },
+        500
+      ),
+    [clubId]
+  );
 
-  // Bus listener: refresh when credit status changes elsewhere
-  useEffect(() => {
-    const unsub = masterBus.subscribeDebounced(
-      'CREDIT_UPDATED',
-      () => {
-        if (isMounted.current) loadRequests();
-      },
-      500
-    );
-    return unsub;
-  }, [agentId]);
-
-  const loadRequests = async () => {
+  async function loadRequests() {
+    if (!isMounted.current) return;
+    const generation = ++loadGeneration.current;
+    const current = () => isMounted.current && generation === loadGeneration.current;
     setLoading(true);
+    setLoadFailed(false);
     try {
-      // Load my requests
-      const myReqs = await creditRequestService.getMyRequests(agentId);
-      if (!isMounted.current) return;
-      setRequests(myReqs);
-
-      // Load requests I need to approve (if I'm a super agent)
-      const toApprove = await creditRequestService.getRequestsForApprover(agentId);
-      if (!isMounted.current) return;
-      const pending = toApprove.filter((r) => r.status === 'pending');
-      setPendingApprovals(pending);
-      setVisibleApprovals(new Set());
-      staggerTimersRef.current.forEach(clearTimeout);
-      staggerTimersRef.current = pending.map((_, i) =>
-        setTimeout(() => setVisibleApprovals((prev) => new Set(prev).add(i)), i * 60)
-      );
-      setVisibleHistory(new Set());
-      const histTimers = myReqs
-        .slice(0, 5)
-        .map((_, i) => setTimeout(() => setVisibleHistory((prev) => new Set(prev).add(i)), i * 60));
-      staggerTimersRef.current.push(...histTimers);
+      const [mine, routed] = await Promise.all([
+        creditRequestService.getMyRequests(userId, clubId),
+        canReview
+          ? creditRequestService.getPendingForClub(clubId, userId)
+          : creditRequestService.getRequestsForApprover(userId, clubId),
+      ]);
+      if (!current()) return;
+      // A scoped reader must not silently turn another club's record into ours.
+      if (
+        mine.some((r) => r.clubId !== clubId || r.requesterId !== userId) ||
+        routed.some(
+          (r) =>
+            r.clubId !== clubId || (canReview ? r.status !== 'pending' : r.approverId !== userId)
+        )
+      ) {
+        throw new Error('Credit request account or club did not match this view.');
+      }
+      setRequests(mine);
+      setPendingApprovals(routed.filter((r) => r.status === 'pending'));
     } catch (error) {
-      reportError(error, 'CreditRequestWidget.Failed_to_load_credit_requests');
-      if (isMounted.current) toast.error('Failed to load credit requests');
+      if (!current()) return;
+      reportError(error, 'CreditRequestWidget.load');
+      setRequests([]);
+      setPendingApprovals([]);
+      setShowRequestForm(false);
+      setLoadFailed(true);
+    } finally {
+      if (current()) setLoading(false);
     }
-    if (isMounted.current) setLoading(false);
-  };
+  }
 
-  const handleSubmitRequest = async () => {
-    if (!parentAgentId) {
-      toast.error('No parent agent to request credit from');
+  async function handleSubmitRequest() {
+    if (actionInFlight.current || !isMounted.current || !canRequest || !approverUserId) return;
+    const amount = readCreditMoney(requestAmount);
+    if (amount === null || amount <= 0) {
+      toast.error('Enter a positive credit limit with at most two decimal places.');
       return;
     }
-
-    const amount = parseFloat(requestAmount);
-    if (isNaN(amount) || amount <= 0) {
-      toast.error('Please enter a valid amount');
-      return;
-    }
-
-    setSubmitting(true);
+    actionInFlight.current = true;
+    setBusy(true);
     try {
-      await creditRequestService.submitRequest(agentId, {
-        approverId: parentAgentId,
+      const receipt = await creditRequestService.submitRequest(userId, {
+        approverId: approverUserId,
+        clubId,
         requestedAmount: amount,
-        reason: requestReason || 'Credit limit increase',
+        reason: requestReason.trim() || 'Credit limit request',
       });
-      if (isMounted.current) toast.success('Credit request submitted');
+      if (!isMounted.current) return;
+      if (
+        receipt.clubId !== clubId ||
+        receipt.requesterId !== userId ||
+        receipt.approverId !== approverUserId ||
+        receipt.status !== 'pending' ||
+        receipt.requestedAmount !== amount
+      )
+        throw new Error('Credit request was not confirmed.');
+      toast.success('Credit request submitted');
       setShowRequestForm(false);
       setRequestAmount('');
       setRequestReason('');
-      loadRequests();
+      await loadRequests();
     } catch (error) {
-      if (isMounted.current) toast.error('Failed to submit request');
-    } finally {
-      if (isMounted.current) setSubmitting(false);
-    }
-  };
-
-  const handleApprove = async (request: CreditRequest) => {
-    try {
-      await creditRequestService.approveRequest(request.id, agentId);
       if (isMounted.current)
-        toast.success(
-          `Approved ${request.requestedAmount.toLocaleString()} for ${request.requesterName}`
-        );
-      masterBus.emit('CREDIT_UPDATED', { clubId: '', userId: request.requesterId });
-      loadRequests();
-    } catch (error) {
-      if (isMounted.current) toast.error('Failed to approve request');
+        toast.error('Unable to confirm the request. Refresh its status before trying again.');
+    } finally {
+      actionInFlight.current = false;
+      if (isMounted.current) setBusy(false);
     }
-  };
-
-  const handleDeny = async (request: CreditRequest) => {
-    try {
-      await creditRequestService.denyRequest(request.id, agentId);
-      if (isMounted.current) toast.success('Request denied');
-      masterBus.emit('CREDIT_UPDATED', { clubId: '', userId: request.requesterId });
-      loadRequests();
-    } catch (error) {
-      if (isMounted.current) toast.error('Failed to deny request');
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    const colors: Record<string, string> = {
-      pending: '#f59e0b',
-      approved: '#10b981',
-      denied: '#ef4444',
-      cancelled: '#6b7280',
-    };
-    return (
-      <span className="status-badge" style={{ backgroundColor: colors[status] || '#6b7280' }}>
-        {status}
-      </span>
-    );
-  };
-
-  if (loading) {
-    return <div className="credit-request-widget loading">Loading...</div>;
   }
 
+  async function handleReview(request: CreditRequest, decision: 'approved' | 'denied') {
+    if (
+      actionInFlight.current ||
+      !isMounted.current ||
+      !canReview ||
+      request.clubId !== clubId ||
+      request.status !== 'pending'
+    )
+      return;
+    actionInFlight.current = true;
+    setBusy(true);
+    try {
+      const receipt =
+        decision === 'approved'
+          ? await creditRequestService.approveRequest(request.id, userId)
+          : await creditRequestService.denyRequest(request.id, userId);
+      if (!isMounted.current) return;
+      if (
+        receipt.id !== request.id ||
+        receipt.clubId !== clubId ||
+        receipt.requesterId !== request.requesterId ||
+        receipt.status !== decision
+      ) {
+        throw new Error('Credit request decision was not confirmed.');
+      }
+      toast.success(
+        decision === 'approved'
+          ? `Credit limit updated to ${creditAdminMoney(readCreditMoney(receipt.approvedAmount))}`
+          : 'Request denied'
+      );
+      // The service emits the single club-scoped event after the durable receipt.
+      await loadRequests();
+    } catch (error) {
+      if (isMounted.current)
+        toast.error('Unable to confirm the decision. Refresh its status before trying again.');
+    } finally {
+      actionInFlight.current = false;
+      if (isMounted.current) setBusy(false);
+    }
+  }
+
+  if (loading)
+    return <div className="credit-request-widget loading">Loading Credit Requests...</div>;
+  if (loadFailed)
+    return (
+      <div className="credit-request-widget" role="alert">
+        <p>Credit Requests Could Not Be Loaded.</p>
+        <button onClick={() => void loadRequests()}>Retry</button>
+      </div>
+    );
+
+  const limit = readCreditMoney(currentCreditLimit);
+  const used = readCreditMoney(currentCreditUsed);
   return (
     <div className="credit-request-widget">
-      {/* Current Credit Status */}
-      <div className="credit-status">
-        <div className="credit-bar">
-          <div
-            className="credit-used"
-            style={{
-              width: `${Math.min(100, (currentCreditUsed / (currentCreditLimit || 1)) * 100)}%`,
-            }}
-          />
+      {showCreditStatus && (
+        <div className="credit-status">
+          {limit !== null && used !== null && (
+            <div className="credit-bar">
+              <div
+                className="credit-used"
+                style={{ width: `${Math.min(100, (used / (limit || 1)) * 100)}%` }}
+              />
+            </div>
+          )}
+          <div className="credit-info">
+            <span>{creditAdminMoney(used)} Used</span>
+            <span>Of {creditAdminMoney(limit)}</span>
+          </div>
         </div>
-        <div className="credit-info">
-          <span>{currentCreditUsed.toLocaleString()} Used</span>
-          <span>Of {currentCreditLimit.toLocaleString()}</span>
-        </div>
-      </div>
-
-      {/* Request Credit Button */}
-      {parentAgentId && (
-        <button className="request-btn" onClick={() => setShowRequestForm(!showRequestForm)}>
+      )}
+      {canRequest && approverUserId && (
+        <button
+          className="request-btn"
+          disabled={busy}
+          onClick={() => setShowRequestForm(!showRequestForm)}
+        >
           {showRequestForm ? 'Cancel' : '+ Request Credit'}
         </button>
       )}
-
-      {/* Request Form */}
+      {canRequest && !approverUserId && (
+        <p>A Credit Request Recipient Could Not Be Verified For This Club.</p>
+      )}
       {showRequestForm && (
         <div className="request-form">
-          <input
-            type="number"
-            placeholder="Amount"
-            value={requestAmount}
-            onChange={(e) => setRequestAmount(e.target.value)}
-          />
+          <label>
+            New Credit Limit
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              placeholder="New Credit Limit"
+              value={requestAmount}
+              disabled={busy}
+              onChange={(e) => setRequestAmount(e.target.value)}
+            />
+          </label>
           <textarea
+            aria-label="Reason (Optional)"
             placeholder="Reason (Optional)"
             value={requestReason}
+            disabled={busy}
             onChange={(e) => setRequestReason(e.target.value)}
           />
-          <button onClick={handleSubmitRequest} disabled={submitting}>
-            {submitting ? 'Submitting...' : 'Submit Request'}
+          <button onClick={() => void handleSubmitRequest()} disabled={busy}>
+            {busy ? 'Submitting...' : 'Submit Request'}
           </button>
         </div>
       )}
-
-      {/* Pending Approvals (for super agents) */}
       {pendingApprovals.length > 0 && (
         <div className="pending-approvals">
-          <h4> Pending Approvals ({pendingApprovals.length})</h4>
-          {pendingApprovals.map((req, i) => (
-            <div
-              key={req.id}
-              className="approval-card"
-              style={{
-                opacity: visibleApprovals.has(i) ? 1 : 0,
-                transform: visibleApprovals.has(i) ? 'translateY(0)' : 'translateY(8px)',
-                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              }}
-            >
+          <h4>Pending Credit Requests Shown ({pendingApprovals.length})</h4>
+          <p>Showing Up To {QUERY_LIMITS.LIST} Requests.</p>
+          {!canReview && <p>Credit Decisions Require A Club Owner Or Administrator.</p>}
+          {pendingApprovals.map((req) => (
+            <div key={req.id} className="approval-card">
               <div className="approval-info">
                 <span className="requester">{req.requesterName}</span>
                 <span className="amount">
-                  {req.requestedAmount.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
+                  {creditAdminMoney(readCreditMoney(req.requestedAmount))}
                 </span>
                 <span className="reason">{req.reason}</span>
               </div>
-              <div className="approval-actions">
-                <button className="approve-btn" onClick={() => handleApprove(req)}>
-                  ✓
-                </button>
-                <button className="deny-btn" onClick={() => handleDeny(req)}>
-                  ✕
-                </button>
-              </div>
+              {canReview && (
+                <div className="approval-actions">
+                  <button
+                    className="approve-btn"
+                    disabled={busy}
+                    aria-label={`Approve ${req.requesterName}`}
+                    onClick={() => void handleReview(req, 'approved')}
+                  >
+                    ✓
+                  </button>
+                  <button
+                    className="deny-btn"
+                    disabled={busy}
+                    aria-label={`Deny ${req.requesterName}`}
+                    onClick={() => void handleReview(req, 'denied')}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
-
-      {/* My Request History */}
+      {canReview && pendingApprovals.length === 0 && (
+        <p>No Pending Credit Requests Are Visible For This Club.</p>
+      )}
       {requests.length > 0 && (
         <div className="request-history">
-          <h4>My Requests</h4>
-          {requests.slice(0, 5).map((req, i) => (
-            <div
-              key={req.id}
-              className="request-row"
-              style={{
-                opacity: visibleHistory.has(i) ? 1 : 0,
-                transform: visibleHistory.has(i) ? 'translateY(0)' : 'translateY(8px)',
-                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              }}
-            >
+          <h4>My Recent Requests</h4>
+          {requests.slice(0, 5).map((req) => (
+            <div key={req.id} className="request-row">
               <span className="request-amount">
-                {req.requestedAmount.toLocaleString('en-US', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
+                {creditAdminMoney(readCreditMoney(req.requestedAmount))}
               </span>
-              {getStatusBadge(req.status)}
+              <span className="status-badge">{req.status}</span>
               <span className="request-date">{new Date(req.createdAt).toLocaleDateString()}</span>
             </div>
           ))}

@@ -1,0 +1,88 @@
+[
+  {
+    "acl": "{postgres=X/postgres}",
+    "md5": "6e446f6d6d19ec8b28b31d124a8c6ac3",
+    "owner": "postgres",
+    "config": [
+      "search_path=public"
+    ],
+    "identity": "fn_accounting_tournament_terminal_fee_receipt(uuid)"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "md5": "787eb9a718a648ac29753dfc9234f4c3",
+    "owner": "postgres",
+    "config": [
+      "search_path=public",
+      "statement_timeout=30s"
+    ],
+    "identity": "fn_ca_tournament_terminal_receipt(uuid,uuid)"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "md5": "6a45fe9bf30c94f9366ec88f0863087e",
+    "owner": "postgres",
+    "config": [
+      "search_path=public",
+      "statement_timeout=45s"
+    ],
+    "identity": "fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)"
+  },
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "md5": "70f5b72172818526db98ebf59c393355",
+    "owner": "postgres",
+    "config": [
+      "search_path=public, pg_temp",
+      "statement_timeout=30s"
+    ],
+    "identity": "fn_settle_tournament_rake(uuid,text)"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "md5": "a16d9de27073e03f2605ecc36cfc08c6",
+    "owner": "postgres",
+    "config": [
+      "search_path=public"
+    ],
+    "identity": "fn_terminal_tournament_escrow_is_immutable()"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "md5": "a129e4214f59e7f95ffe397e2245bbd0",
+    "owner": "postgres",
+    "config": [
+      "search_path=public"
+    ],
+    "identity": "fn_terminal_tournament_evidence_is_immutable()"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "md5": "b3067dd214bcc1979b6d80a4d7144bfe",
+    "owner": "postgres",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "identity": "fn_tournament_finish_readiness(uuid,uuid)"
+  },
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "owner": "postgres",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "identity": "fn_ca_capture_tournament_fee_from_recorded_evidence(uuid)",
+    "source_md5": "dcc3bc8cad78ec0d934a386a20804023",
+    "definition_md5": "47c613c5ecc3d383db4b4941dc1ff830"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "md5": "b2affe52c4e95101c985c30c483d5127",
+    "owner": "postgres",
+    "config": [
+      "search_path=public"
+    ],
+    "identity": "fn_satellite_transfer_ledger_is_immutable()",
+    "observed_at": "2026-09-18T09:35:57.890413+00:00"
+  }
+]

@@ -12,7 +12,7 @@
  * THE ZERO-RIG CASE IS THE IMPORTANT ONE
  * Right now `/avatars/rive/manifest.json` does not exist. That is not an error
  * state, it is the normal state, and it must be completely silent: one 404, no
- * console noise, no Sentry report, no retry, and every seat falls straight
+ * console noise, no error reporting report, no retry, and every seat falls straight
  * through to the CSS choreography that is already live. If this file ever makes
  * a player's table slower or noisier while there are no rigs, it is wrong.
  *
@@ -75,7 +75,9 @@ export function rigSlugForAvatarUrl(avatarUrl: string | null | undefined): strin
 }
 
 /** Absolute URL of the .riv for this avatar, or null when it has no rig. */
-export async function riveUrlForAvatar(avatarUrl: string | null | undefined): Promise<string | null> {
+export async function riveUrlForAvatar(
+  avatarUrl: string | null | undefined
+): Promise<string | null> {
   const slug = rigSlugForAvatarUrl(avatarUrl);
   if (!slug) return null;
   const manifest = await loadRiveManifest();

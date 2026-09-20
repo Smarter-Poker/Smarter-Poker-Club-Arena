@@ -1,3 +1,5 @@
+import { isDiamondGameRoute } from './utils/diamondGameRoute';
+import { DIAMOND_GAME_TITLES } from './utils/diamondGameTitles';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — App Component
@@ -20,7 +22,6 @@ import UnionSkinGuard from './components/common/UnionSkinGuard';
 import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
 import LastClubTracker from './components/common/LastClubTracker';
 import WaitlistBanner from './components/common/WaitlistBanner';
-import { addBreadcrumb } from './core/SentryInit';
 
 // Intro Video — lazy-loaded (only shown once per session, not needed for initial paint)
 const IntroVideo = lazyWithRetry(() => import('./components/IntroVideo'));
@@ -46,7 +47,11 @@ import { SignUpHost } from './components/tournament/signUpDialog';
 import MilestoneToast from './components/common/MilestoneToast';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
 import ClubBottomNav from './components/club/ClubBottomNav';
-import { shouldShowClubFooterFor } from './components/club/clubFooterVisibility';
+import {
+  shouldShowClubFooterForVisitor,
+  shouldShowDiamondFooterFor,
+} from './components/club/clubFooterVisibility';
+import { useUserStore } from './stores/useUserStore';
 import { applyArenaScheme, arenaSchemeFor } from './lib/arenaScheme';
 import { useInTabLobbyActive, useInTabLobbyClubId } from './components/club/inTabLobbySurface';
 
@@ -86,6 +91,8 @@ const TournamentStartingTicker = lazyWithRetry(
 // Pages (lazy loaded for performance)
 const AuthPage = lazyWithRetry(() => import('./pages/AuthPage'));
 const HomePage = lazyWithRetry(() => import('./pages/HomePage'));
+// Public landing for signed-out visitors and crawlers at the arena root.
+const PokerArenaLandingPage = lazyWithRetry(() => import('./pages/PokerArenaLandingPage'));
 
 const ClubsPage = lazyWithRetry(() => import('./pages/ClubsPage'));
 const ClubHomePage = lazyWithRetry(() => import('./pages/ClubHomePage'));
@@ -142,6 +149,16 @@ const ClubMembersPage = lazyWithRetry(() => import('./pages/ClubMembersPage'));
 const MemberManagementPage = lazyWithRetry(() => import('./pages/MemberManagementPage'));
 const PlayerStatisticsPage = lazyWithRetry(() => import('./pages/PlayerStatisticsPage'));
 const PromoVaultPage = lazyWithRetry(() => import('./pages/PromoVaultPage'));
+const DiamondWheelPage = lazyWithRetry(() => import('./pages/DiamondWheelPage'));
+const ClubWheelOperationsPage = lazyWithRetry(() => import('./pages/club/ClubWheelOperationsPage'));
+const DiamondGamesPage = lazyWithRetry(() => import('./pages/DiamondGamesPage'));
+const DiamondPlinkoPage = lazyWithRetry(() => import('./pages/DiamondPlinkoPage'));
+const DiamondCrashPage = lazyWithRetry(() => import('./pages/DiamondCrashPage'));
+const DiamondChoicePage = lazyWithRetry(() => import('./pages/DiamondChoicePage'));
+const DiamondEarnPage = lazyWithRetry(() => import('./pages/DiamondEarnPage'));
+const ClubDiamondGamesOperationsPage = lazyWithRetry(
+  () => import('./pages/club/ClubDiamondGamesOperationsPage')
+);
 const FriendsPage = lazyWithRetry(() => import('./pages/FriendsPage'));
 const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
 const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
@@ -172,6 +189,7 @@ const ArenaGameCardsShowcasePage = lazyWithRetry(
   () => import('./pages/dev/ArenaGameCardsShowcasePage')
 );
 const ClubFooterShowcasePage = lazyWithRetry(() => import('./pages/dev/ClubFooterShowcasePage'));
+const DiamondBottomNav = lazyWithRetry(() => import('./components/arena/DiamondBottomNav'));
 const CustomizationStudioShowcasePage = lazyWithRetry(
   () => import('./pages/dev/CustomizationStudioShowcasePage')
 );
@@ -243,6 +261,7 @@ const PublicProfilePage = lazyWithRetry(() => import('./pages/PublicProfilePage'
 const HandReplayerPage = lazyWithRetry(() => import('./pages/share/HandReplayerPage'));
 // VISIBLE FIX 2026-08-15: ShareHand emits /replay?h=<payload> for every share
 // channel, and no such route existed — every shared link 404'd.
+const SharedBonusReplayPage = lazyWithRetry(() => import('./pages/share/SharedBonusReplayPage'));
 const SharedHandReplayPage = lazyWithRetry(() => import('./pages/share/SharedHandReplayPage'));
 const SimPage = lazyWithRetry(() => import('./pages/SimPage'));
 
@@ -283,9 +302,12 @@ import { STORAGE_KEYS } from './lib/storage';
 import { reportError } from './utils/errorReporter';
 import SlugEnforcer from './components/common/SlugEnforcer';
 import RouterBridge from './components/common/RouterBridge';
+import RouteSeo from './components/seo/RouteSeo';
 import { IS_NATIVE_BUILD } from './lib/appBase';
 
 function ClubFooterMount({ clubId }: { clubId?: string }) {
+  const location = useLocation();
+  if (isDiamondGameRoute(location.pathname)) return null;
   return <ClubBottomNav clubId={clubId} />;
 }
 
@@ -307,6 +329,21 @@ function FullApp() {
   const location = useLocation();
   const inTabLobbyActive = useInTabLobbyActive();
   const inTabLobbyClubId = useInTabLobbyClubId();
+  /* A signed-out visitor on a public page (landing, Help Center, legal) is
+     not shown the authenticated footer; see shouldShowClubFooterForVisitor. */
+  const footerVisitorSignedIn = useUserStore((state) => state.isAuthenticated);
+  /* A DIAMOND PLAYER CAN FIND THEIR WAY (2026-09-19). Which bar owns the
+     bottom edge, read once: the Diamond bar stands on the arena's player
+     routes, on the arena lobby opened as a tab, and on /hand-history and
+     /stats while they carry the arena's scope. It is read here rather than
+     twice below because it also SUPPRESSES the chip bar, which is what keeps
+     one bottom edge carrying one bar on those last two. */
+  const diamondFooterVisible = shouldShowDiamondFooterFor(
+    location.pathname,
+    location.search,
+    inTabLobbyActive,
+    inTabLobbyClubId
+  );
   /* The listener the service worker has always been posting SHELL_UPDATED to
      and never had. Without it a cache-first shell — and the exact hashed
      chunks it names — is served for the life of the session, so a player can
@@ -638,6 +675,9 @@ function FullApp() {
             {/* Hands navigate() to src/lib/routerBridge for deep links and
                 plugin listeners (native). Renders nothing. */}
             <RouterBridge />
+            {/* Per-route title, description, canonical, robots and JSON-LD.
+                Public routes are listed in src/lib/seo.ts; all else is noindex. */}
+            <RouteSeo />
             <Routes>
               {/* ═══════════════════════════════════════════════════════════════
                         PUBLIC ROUTES (No Auth Required)
@@ -656,6 +696,7 @@ function FullApp() {
               {/* Public Hand Replay — shareable link, no auth required */}
               <Route path="/share/hand/:handId" element={<HandReplayerPage />} />
               <Route path="/replay" element={<SharedHandReplayPage />} />
+              <Route path="/bonus-replay/:shareId" element={<SharedBonusReplayPage />} />
 
               {/* Scenario Sim — deterministic UI regression playback, no auth */}
               <Route path="/sim" element={<SimPage />} />
@@ -695,11 +736,24 @@ function FullApp() {
                     PROTECTED ROUTES (Auth Required)
                 ═══════════════════════════════════════════════════════════════ */}
 
-              {/* HomePage - Standalone without Shell, requires auth */}
+              {/* HomePage - Standalone without Shell, requires auth.
+                  WEB: signed-out visitors (and Googlebot) get the public
+                  landing page instead of a redirect to login (src/lib/seo.ts).
+                  NATIVE: there is nothing to index inside the app shell and
+                  the in-app AuthPage is the front door, so the guard keeps
+                  routing to it. */}
               <Route
                 path="/"
                 element={
-                  <AuthGuard>
+                  <AuthGuard
+                    publicFallback={
+                      IS_NATIVE_BUILD ? undefined : (
+                        <RouteErrorBoundary>
+                          <PokerArenaLandingPage />
+                        </RouteErrorBoundary>
+                      )
+                    }
+                  >
                     <RouteErrorBoundary>
                       <HomePage />
                     </RouteErrorBoundary>
@@ -1267,14 +1321,14 @@ function FullApp() {
                     </AuthGuard>
                   }
                 />
+                {/* Help Center is public (no AuthGuard), like the legal
+                    pages: the FAQ is the page search engines should find. */}
                 <Route
                   path="help"
                   element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Help">
-                        <HelpPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
+                    <PageErrorBoundary pageName="Help">
+                      <HelpPage />
+                    </PageErrorBoundary>
                   }
                 />
                 <Route
@@ -1417,6 +1471,123 @@ function FullApp() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Club Members">
                           <ClubMembersPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                {/* THE DIAMOND WHEEL (Dan 2026-09-07). A member spins diamonds for
+                    chips, diamonds or nothing at 80 percent return; the wheel never
+                    pays more than it takes in. Player route here, operator console
+                    at wheel-operations (finance access in the operations registry).
+                    docs/changelog/2026-09-07-diamond-wheel.md */}
+                <Route
+                  path="clubs/:clubId/wheel"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Wheel">
+                          <DiamondWheelPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/wheel-operations"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Wheel Operations">
+                          <ClubWheelOperationsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                {/* THE DIAMOND GAMES (Dan 2026-09-08): the lobby for the three
+                    diamond-to-chip games, Plinko and Crash beside the wheel, and one
+                    operator console for the two new games (finance access).
+                    docs/changelog/2026-09-08-diamond-plinko-and-crash.md */}
+                <Route
+                  path="clubs/:clubId/diamond-games"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Games">
+                          <DiamondGamesPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/plinko"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName={DIAMOND_GAME_TITLES.plinko}>
+                          <DiamondPlinkoPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/crash"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName={DIAMOND_GAME_TITLES.crash}>
+                          <DiamondCrashPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/crossing"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName={DIAMOND_GAME_TITLES.crossing}>
+                          <DiamondChoicePage key="crossing" game="crossing" />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/mines"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName={DIAMOND_GAME_TITLES.mines}>
+                          <DiamondChoicePage key="mines" game="mines" />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/earn-diamonds"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Earn Diamonds">
+                          <DiamondEarnPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/diamond-games-operations"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Games Operations">
+                          <ClubDiamondGamesOperationsPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>
@@ -1667,6 +1838,19 @@ function FullApp() {
                           <ClubAdvertisePage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                {/* An outside sponsor, signed in, books a picture that sends
+                    players to their own site and is invoiced off platform
+                    (2026-09-13). Any account; the house reviews every flight. */}
+                <Route
+                  path="advertise"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Advertise">
+                        <ClubAdvertisePage mode="sponsor" />
+                      </PageErrorBoundary>
                     </AuthGuard>
                   }
                 />
@@ -2113,11 +2297,32 @@ function FullApp() {
             </Routes>
           </Suspense>
           {/* Route OR in-tab lobby: the "+" lobby lives on /table/<id>, and the
-              footer is owed to the lobby, not to the URL (inTabLobbySurface). */}
-          {shouldShowClubFooterFor(location.pathname, inTabLobbyActive, inTabLobbyClubId) && (
-            <ClubFooterMount
-              clubId={inTabLobbyActive ? (inTabLobbyClubId ?? undefined) : undefined}
-            />
+              footer is owed to the lobby, not to the URL (inTabLobbySurface).
+              ONE BOTTOM EDGE, ONE BAR: under the arena the chip rules already
+              answer false, but /hand-history and /stats are ESTATE pages the
+              chip footer has always been owed, and the Diamond bar follows the
+              player onto them while they are scoped to the arena. There the
+              two rules are both true and this guard is what decides it, so the
+              exclusivity is stated here rather than assumed. */}
+          {!diamondFooterVisible &&
+            shouldShowClubFooterForVisitor(
+              location.pathname,
+              inTabLobbyActive,
+              inTabLobbyClubId,
+              footerVisitorSignedIn
+            ) && (
+              <ClubFooterMount
+                clubId={inTabLobbyActive ? (inTabLobbyClubId ?? undefined) : undefined}
+              />
+            )}
+          {/* A DIAMOND PLAYER CAN FIND THEIR WAY (2026-09-19). The chip footer
+              stays off the Diamond Arena by the rules above; this is the bar
+              that stands in its place there, and on the two estate pages its
+              own doors open while they carry the arena's scope. */}
+          {diamondFooterVisible && (
+            <Suspense fallback={null}>
+              <DiamondBottomNav />
+            </Suspense>
           )}
           {/* Persistent multi-table layer — mounted BESIDE <Routes>, it never
               unmounts on navigation: engine sockets for seated tables survive

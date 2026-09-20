@@ -38,22 +38,37 @@ import { useWalletStore } from '../stores/useWalletStore';
 import { useUserStore } from '../stores/useUserStore';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { useDiamondWalletSummary } from '../hooks/useDiamondWalletSummary';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useToast } from '../components/common/Toast';
+import DiamondsToChipsButton from '../components/games/DiamondsToChipsButton';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { TransactionHistory } from '../components/wallet/TransactionHistory';
 import DepositWithdrawModal from '../components/wallet/DepositWithdrawModal';
 import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import ChipStatement from '../components/wallet/ChipStatement';
-import { DiamondService } from '../services/DiamondService';
+import DiamondArenaStatement from '../components/wallet/DiamondArenaStatement';
+import DiamondFlowPanel from '../components/wallet/DiamondFlowPanel';
+import {
+  DiamondService,
+  type DiamondLifetimeStats,
+  type DiamondWalletSummary,
+} from '../services/DiamondService';
+import { DIAMOND_ARENA_SLUG } from '../lib/constants';
+import { useDiamondFreerollCountdown } from '../hooks/useNextDiamondFreeroll';
 import { storeFetch } from './marketplace/marketplaceShared';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { formatPopupText } from '../utils/popupStyle';
 import { mediaUrl } from '../utils/mediaBase';
 import { reportError } from '../utils/errorReporter';
 import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
-import { useDiamondLedger, DIAMOND_LEDGER_PAGE } from '../hooks/useDiamondLedger';
+import {
+  useDiamondLedger,
+  DIAMOND_LEDGER_PAGE,
+  type DiamondLedgerRow,
+} from '../hooks/useDiamondLedger';
+import { uuid } from '../utils/uuid';
 import './PlayerWalletPage.css';
 import { publicOrigin } from '../lib/appBase';
 
@@ -79,8 +94,14 @@ const PLATE = {
   BUSINESS: `${PLATE_ROOT}/wallet-agent-wallet-square-v1.webp`,
 } as const;
 
-/** The World Hub transfer route refuses anything under this. Mirror it here. */
-const MIN_DIAMOND_SEND = 10;
+/**
+ * The floor is ONE diamond. This was 10, with a comment claiming the World Hub
+ * route refused less; read on 2026-09-13, `send_wallet_diamond_transfer`
+ * (the RPC behind /api/store/diamond-transfer since #1696) refuses only
+ * `p_amount <= 0`, and the anti-farming cap governs the rest. Ten was an
+ * invention that refused sends the platform allows.
+ */
+const MIN_DIAMOND_SEND = 1;
 
 /**
  * In-page messages are not toasts, so `formatPopupText` (which the Toast layer
@@ -294,10 +315,83 @@ function WalletPlate({
   );
 }
 
-function DiamondPlate({ diamonds, onBuy }: { diamonds: number; onBuy: () => void }) {
+/**
+ * THE DIAMONDS PLATE PRINTS THREE FIGURES AND OPENS THE ARENA (phase 2).
+ *
+ * THE DIAMOND ARENA IS DIAMONDS ONLY. NO CHIPS, EVER. (Dan, 2026-09-13.) The
+ * arena's figures are diamonds, so they belong on the diamonds plate - and
+ * "NOTHING CAN BE COPY PASTED OR OVERLAPPED" forbids a second copy of this
+ * plate for them. The bay keeps the one figure the artwork was drawn around,
+ * On Hand; the footer carries Sendable and In The Arena as the same
+ * label/value rows the chip plates use; the two doors sit beside each other.
+ *
+ * The summary has three outcomes and the plate shows all three: reading
+ * ("..."), failed ("Unavailable" - never a zero that means unknown), known.
+ * The arena door tells the truth about the arena: open (sit down), a seat
+ * already held (return to it), or closed (no live control, a plain sentence).
+ *
+ * SIT DOWN FROM THE WALLET (phase 3). The door is a funnel, decided by three
+ * facts the summary carries: is the arena open, does the player hold a seat,
+ * and can they afford the cheapest eligible seat (fn_poker_diamond_buyin's
+ * own predicate, so the number is never a seat that function would refuse).
+ *
+ *   seated              -> Return To The Diamond Arena      (the lobby)
+ *   open, can afford    -> Sit Down In The Diamond Arena    (the lobby)
+ *   open, short by N    -> Buy Diamonds To Sit Down, N More (the store,
+ *                          with next=/clubs/diamond-arena so the store offers
+ *                          the way back once the diamonds land)
+ *   closed              -> a sentence, and the next freeroll countdown when
+ *                          one is scheduled (a freeroll costs nothing)
+ */
+export function DiamondPlate({
+  diamonds,
+  summary,
+  nextFreerollAt,
+  onBuy,
+  onBuyToSitDown,
+  onArena,
+}: {
+  diamonds: number;
+  summary: DiamondWalletSummary | null | undefined;
+  /**
+   * Test seam for the freeroll clock: a number or null fixes the start and
+   * issues no read; omitted, the plate reads the next freeroll itself while
+   * it is mounted (the Overview tab), and only when the arena exists.
+   */
+  nextFreerollAt?: number | null;
+  onBuy: () => void;
+  onBuyToSitDown: () => void;
+  onArena: () => void;
+}) {
   const animated = useAnimatedNumber(diamonds);
+  const animatedSendable = useAnimatedNumber(summary ? summary.sendable : diamonds);
+  const animatedInArena = useAnimatedNumber(summary ? summary.inArena : 0);
+  const figure = (value: number) =>
+    summary === undefined ? '...' : summary === null ? 'Unavailable' : fmtNum(value);
+  const arena = summary?.arena ?? null;
+  const arenaOpen = Boolean(arena && (arena.cashGamesEnabled || arena.tournamentsEnabled));
+  const seated = Boolean(summary && summary.inArena > 0);
+  const minSeat = arena?.minCashBuyIn ?? null;
+  const short =
+    arenaOpen && !seated && minSeat !== null && diamonds < minSeat ? minSeat - diamonds : 0;
+  const arenaLabel = seated
+    ? 'Return To The Diamond Arena'
+    : short > 0
+      ? `Buy Diamonds To Sit Down, ${fmtNum(short)} More`
+      : arenaOpen
+        ? 'Sit Down In The Diamond Arena'
+        : 'Diamond Arena Opens Soon';
+  /* One database read a minute, one tick a second, a re-read when the clock
+     runs out - the same countdown the Home card runs. */
+  const freeroll = useDiamondFreerollCountdown(
+    nextFreerollAt !== undefined ? nextFreerollAt : arena ? undefined : null
+  );
+  const freerollIn = freeroll.startsAt == null ? null : freeroll.text;
   return (
-    <article className="wallet-plate diamonds" aria-label={`Diamonds: ${fmtNum(diamonds)}`}>
+    <article
+      className="wallet-plate diamonds"
+      aria-label={`Diamonds: ${fmtNum(diamonds)} On Hand, ${figure(summary?.sendable ?? diamonds)} Sendable, ${figure(summary?.inArena ?? 0)} In The Arena`}
+    >
       <div className="wallet-plate__frame">
         <img
           className="wallet-plate__art"
@@ -320,12 +414,54 @@ function DiamondPlate({ diamonds, onBuy }: { diamonds: number; onBuy: () => void
         </div>
       </div>
       <div className="wallet-plate__footer">
-        <button type="button" className="wallet-plate__cta" onClick={onBuy}>
-          Buy Diamonds
-        </button>
+        <div className="wallet-plate__row">
+          <div className="wallet-plate__stat">
+            <span className="wallet-plate__value available">{figure(animatedSendable)}</span>
+            <span className="wallet-plate__label">Sendable</span>
+          </div>
+          <div className="wallet-plate__stat">
+            <span className="wallet-plate__value locked">{figure(animatedInArena)}</span>
+            <span className="wallet-plate__label">In The Arena</span>
+          </div>
+        </div>
+        <div className="wallet-plate__doors">
+          <button type="button" className="wallet-plate__cta" onClick={onBuy}>
+            Buy Diamonds
+          </button>
+          {arena &&
+            (arenaOpen || seated ? (
+              <button
+                type="button"
+                className="wallet-plate__cta"
+                onClick={short > 0 ? onBuyToSitDown : onArena}
+              >
+                {arenaLabel}
+              </button>
+            ) : (
+              /* Closed: a sentence, not a dead button. A control that never
+                 works teaches a player the page is broken. */
+              <span className="wallet-plate__door-note" role="status">
+                {arenaLabel}
+              </span>
+            ))}
+        </div>
+        {arena && !arenaOpen && !seated && freerollIn !== null && (
+          <div className="wallet-plate__desc" role="status">
+            Next Diamond Freeroll In {freerollIn}. A Freeroll Costs Nothing To Enter.
+          </div>
+        )}
+        {arena && arenaOpen && minSeat !== null && short === 0 && !seated && (
+          <div className="wallet-plate__desc">
+            The Cheapest Seat Is {fmtNum(minSeat)} Diamonds
+            {arena.cheapestTable ? ` (${arena.cheapestTable.name})` : ''}. You Can Sit Down Now.
+          </div>
+        )}
         <div className="wallet-plate__desc">
-          Spend On VIP, Table Perks, Throwables And Club Shop Items. Send To Friends From The Send
-          Tab.
+          {summary?.collateral
+            ? `${fmtNum(summary.collateral)} Bought Recently Are Held Until The Refund Window Closes And Cannot Be Sent. `
+            : ''}
+          Diamonds Buy Your Seat In The Diamond Arena And Spend On VIP, Table Perks, Throwables And
+          Club Shop Items. Send To Friends From The Send Tab.
         </div>
       </div>
     </article>
@@ -349,8 +485,14 @@ interface RewardsProgress {
   dailyCap: number;
   dailyRemaining: number;
   loginStreak: number;
+  /** `null` when the route could not read the ledger: unknown, not "no". */
+  loginClaimedToday: boolean | null;
+  /** What the next claim pays, from the catalog's streak rule. */
+  nextLoginReward: number;
   multiplier: number;
   isVip: boolean;
+  /** The route degraded somewhere; some figures above are floors, not facts. */
+  partial: boolean;
 }
 
 interface DailyClaimResponse {
@@ -422,8 +564,23 @@ export default function PlayerWalletPage() {
     if (user?.id) {
       loadBalances(user.id, { force: true });
       loadDiamonds(user.id, { force: true });
+      void loadWalletSummary();
     }
   });
+
+  /* THE DIAMOND WALLET IN ONE READ (phase 1): on hand, sendable, collateral,
+     diamonds in Diamond Arena custody, the arena's open flags. `undefined`
+     while reading, `null` when the read failed, never a fabricated zero. */
+  const isMounted = useIsMounted();
+  const { summary: walletSummary, load: loadWalletSummary } = useDiamondWalletSummary(
+    user?.id,
+    isMounted
+  );
+  /* What a send will actually be allowed: the RPC refuses purchased diamonds
+     still inside the refund window. When the summary is unknown the on-hand
+     figure stands, and the server remains the final word. */
+  const sendable = walletSummary ? walletSummary.sendable : diamonds;
+  const heldCollateral = walletSummary ? walletSummary.collateral : 0;
 
   const [activeTab, setActiveTab] = useState<WalletTab>('overview');
   const [transferFrom, setTransferFrom] = useState<WalletType>('PLAYER');
@@ -434,7 +591,6 @@ export default function PlayerWalletPage() {
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [showDisputeModal, setShowDisputeModal] = useState(false);
-  const isMounted = useIsMounted();
 
   // ── Send diamonds ──
   const [friends, setFriends] = useState<FriendOption[] | null>(null);
@@ -443,6 +599,16 @@ export default function PlayerWalletPage() {
   const [sendAmount, setSendAmount] = useState('');
   const [isSending, setIsSending] = useState(false);
   const sendInFlightRef = useRef(false);
+  /**
+   * ONE KEY PER SEND INTENT. /api/store/diamond-transfer REFUSES a request
+   * without `X-Idempotency-Key` (400 "Invalid Transfer Request"), which is
+   * what every send from this page got between #1696 (2026-09-09) and today:
+   * storeFetch never sent one. The key is minted on the press, reused by a
+   * retry of the same intent (the route answers 503 "Retry With The Same
+   * Request ID" when a receipt is unconfirmed), cleared on success, and
+   * rotated only after a `definitive` refusal - the StoreTab pattern.
+   */
+  const sendKeyRef = useRef<string | null>(null);
 
   // ── Receive ──
   const {
@@ -472,10 +638,9 @@ export default function PlayerWalletPage() {
   const [progressError, setProgressError] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [claimedToday, setClaimedToday] = useState(false);
-  const [lifetime, setLifetime] = useState<{
-    lifetimeEarned: number;
-    lifetimeSpent: number;
-  } | null>(null);
+  /* Three outcomes, three shapes: `undefined` still reading, `null` the read
+     failed (10.86: never a zero that means "unknown"), an object the truth. */
+  const [lifetime, setLifetime] = useState<DiamondLifetimeStats | null | undefined>(undefined);
 
   // Auto-dismiss messages after 8s
   useEffect(() => {
@@ -604,10 +769,13 @@ export default function PlayerWalletPage() {
       });
       return;
     }
+    /* Before `setIsTransferring(true)`, not inside the try: a `return` there
+       skipped the reset at the bottom and left the button on "Transferring..."
+       for the life of the page. */
+    if (!user?.id) return;
     setIsTransferring(true);
     setMessage(null);
     try {
-      if (!user?.id) return;
       // 2026-08-27: internalTransfer NEVER throws - it returns false on the
       // store mutex skip, on insufficient balance, and on every RPC failure
       // (the store swallows those into reportError). This success message used
@@ -709,8 +877,27 @@ export default function PlayerWalletPage() {
   }, [user?.id, isMounted]);
 
   useEffect(() => {
-    if (activeTab === 'send' && friends === null) void loadFriends();
+    // The Receive pane needs the list too: it names who each gift came from.
+    if ((activeTab === 'send' || activeTab === 'receive') && friends === null) void loadFriends();
   }, [activeTab, friends, loadFriends]);
+
+  /* WHO THE GIFT WAS WITH. `send_wallet_diamond_transfer` writes a generic
+     description ("Diamonds Sent To A Friend") and puts the other player's id
+     in metadata; the hook surfaces that id and this page, which already holds
+     the friend list, turns it into a name. A friend since unfriended, or a
+     row with no counterparty, keeps the ledger's own line. */
+  const friendNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const f of friends || []) m.set(f.id, f.name);
+    return m;
+  }, [friends]);
+  const describeRow = useCallback(
+    (row: DiamondLedgerRow, verb: 'Sent To' | 'Received From') => {
+      const name = row.counterpartyId ? friendNameById.get(row.counterpartyId) : undefined;
+      return name ? `${verb} ${name}` : formatPopupText(row.description || row.label);
+    },
+    [friendNameById]
+  );
 
   const handleSendDiamonds = async () => {
     if (!user?.id) return;
@@ -721,11 +908,15 @@ export default function PlayerWalletPage() {
       return;
     }
     if (!Number.isFinite(amount) || amount < MIN_DIAMOND_SEND) {
-      toast.error(`Minimum Send Is ${MIN_DIAMOND_SEND} Diamonds`);
+      toast.error('Enter A Whole Number Of Diamonds');
       return;
     }
-    if (amount > diamonds) {
-      toast.error(`You Only Have ${fmtNum(diamonds)} Diamonds`);
+    if (amount > sendable) {
+      toast.error(
+        heldCollateral > 0 && amount <= diamonds
+          ? `Only ${fmtNum(sendable)} Diamonds Can Be Sent Right Now. ${fmtNum(heldCollateral)} Bought Recently Are Held Until The Refund Window Closes`
+          : `You Only Have ${fmtNum(diamonds)} Diamonds`
+      );
       return;
     }
     const friend = friends?.find((f) => f.id === recipientId);
@@ -738,15 +929,21 @@ export default function PlayerWalletPage() {
     if (!ok) return;
     sendInFlightRef.current = true;
     setIsSending(true);
+    if (!sendKeyRef.current) sendKeyRef.current = uuid();
     try {
+      /* The route returns the transfer row itself (`send_wallet_diamond_transfer`):
+         { success, amount, recipient_id, request_id, ... }. */
       const data = await storeFetch<{
         success: true;
-        transferred: number;
-        newBalance?: number;
-        recipientName?: string;
-      }>('/api/store/diamond-transfer', { body: { recipientId, amount } });
+        amount?: number;
+        recipient_id?: string;
+      }>('/api/store/diamond-transfer', {
+        body: { recipientId, amount },
+        idempotencyKey: sendKeyRef.current,
+      });
+      sendKeyRef.current = null;
       toast.success(
-        `Sent ${fmtNum(data.transferred || amount)} Diamonds To ${data.recipientName || friend?.name || 'Your Friend'}`
+        `Sent ${fmtNum(Number(data.amount) || amount)} Diamonds To ${friend?.name || 'Your Friend'}`
       );
       if (isMounted.current) setSendAmount('');
       /* THE SEND CONFIRMS ITSELF. The toast is gone in seconds and the credit
@@ -757,18 +954,17 @@ export default function PlayerWalletPage() {
       void loadSent('refresh');
       loadDiamonds(user.id, { force: true });
       masterBus.emit('BALANCE_UPDATED', { source: 'diamond_gift_sent', userId: user.id });
-      if (typeof data.newBalance === 'number') {
-        masterBus.emit('DIAMOND_BALANCE_CHANGED', {
-          newBalance: data.newBalance,
-          delta: -amount,
-          source: 'diamond_gift_sent',
-        });
-      }
     } catch (err) {
-      // storeFetch throws with the server's own sentence (friend-only, account
-      // age, cooldown, 30-day cap). That sentence IS the explanation; show it.
-      const text =
-        err instanceof Error && err.message ? err.message : 'Send Failed. Please Try Again';
+      /* storeFetch throws with the server's own sentence (friend-only, the
+         anti-farming cap, refund collateral). That sentence IS the
+         explanation; show it. A DEFINITIVE refusal (400/401/403/404/422)
+         finishes this attempt, so the next press is a new intent with a new
+         key. Anything else - a 5xx, a 503 "Transfer Not Yet Confirmed", a
+         dropped connection - may be a transfer that COMMITTED and lost its
+         receipt, so the key is kept and the same press replays it. */
+      const e = err as Error & { definitive?: boolean };
+      if (e?.definitive) sendKeyRef.current = null;
+      const text = e instanceof Error && e.message ? e.message : 'Send Failed. Please Try Again';
       toast.error(formatPopupText(text));
     } finally {
       sendInFlightRef.current = false;
@@ -833,23 +1029,50 @@ export default function PlayerWalletPage() {
           dailyCap: Number(data.dailyCap) || 0,
           dailyRemaining: Number(data.dailyRemaining) || 0,
           loginStreak: Number(data.loginStreak) || 0,
+          loginClaimedToday:
+            typeof data.loginClaimedToday === 'boolean' ? data.loginClaimedToday : null,
+          nextLoginReward: Number(data.nextLoginReward) || 0,
           multiplier: Number(data.multiplier) || 1,
           isVip: Boolean(data.isVip),
+          partial: Boolean(data.partial),
         });
+        /* The route knows whether today is claimed; the button should not
+           wait for a click to find out. `true` only - `null` (could not tell)
+           leaves the button live, because refusing a claim on a read failure
+           would cost a real player a real payout. */
+        if (data.loginClaimedToday === true) setClaimedToday(true);
         setProgressError(false);
       }
     } catch (err) {
       reportError(err, 'PlayerWalletPage.loadProgress');
       if (isMounted.current) setProgressError(true);
     }
-    DiamondService.getLifetimeStats(user.id).then((stats) => {
-      if (isMounted.current) setLifetime(stats);
-    });
+  }, [user?.id, isMounted]);
+
+  const loadLifetime = useCallback(async () => {
+    if (!user?.id) return;
+    setLifetime(undefined);
+    const stats = await DiamondService.getLifetimeStats(user.id);
+    if (isMounted.current) setLifetime(stats);
   }, [user?.id, isMounted]);
 
   useEffect(() => {
     if (activeTab === 'earn' && progress === null && !progressError) void loadProgress();
   }, [activeTab, progress, progressError, loadProgress]);
+
+  useEffect(() => {
+    if (activeTab === 'earn' && lifetime === undefined) void loadLifetime();
+    // `lifetime` is deliberately not a dependency: it is reset to undefined by
+    // loadLifetime itself, and re-running on every settle would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, loadLifetime]);
+
+  /* A claim, a gift or a purchase changes the lifetime figures; re-sum them
+     while the pane is open rather than serving the number from before. */
+  useEffect(() => {
+    if (activeTab !== 'earn' || !user?.id) return;
+    return masterBus.subscribeDebounced('BALANCE_UPDATED', () => void loadLifetime(), 1500);
+  }, [activeTab, user?.id, loadLifetime]);
 
   const handleClaimDaily = async () => {
     if (!user?.id || claiming) return;
@@ -901,6 +1124,15 @@ export default function PlayerWalletPage() {
     else setShowWithdrawModal(true);
   };
   const goBuyDiamonds = () => navigate('/marketplace?tab=diamonds');
+  /* The arena is entered as the club it is (CarouselSection does the same). */
+  const goDiamondArena = () => navigate(`/clubs/${DIAMOND_ARENA_SLUG}`);
+  /* Short of the cheapest seat: the store, carrying the way back. The
+     marketplace validates `next` with safeInAppRedirect and offers
+     "Continue To The Diamond Arena" once the diamonds land. */
+  const goBuyDiamondsToSitDown = () =>
+    navigate(
+      `/marketplace?tab=diamonds&next=${encodeURIComponent(`/clubs/${DIAMOND_ARENA_SLUG}`)}`
+    );
 
   const escrow = balances.PLAYER.locked;
 
@@ -974,6 +1206,12 @@ export default function PlayerWalletPage() {
                 <dd>{escrow.toLocaleString()} Chips Secured At The Table</dd>
               </div>
             )}
+            {walletSummary && walletSummary.inArena > 0 && (
+              <div className="vault-hero__meta-item escrow">
+                <dt>In The Arena</dt>
+                <dd>{fmtNum(walletSummary.inArena)} Diamonds At Your Diamond Arena Seat</dd>
+              </div>
+            )}
           </dl>
 
           <div className="vault-hero__actions" role="group" aria-label="Wallet Actions">
@@ -1014,6 +1252,19 @@ export default function PlayerWalletPage() {
         </div>
       </section>
 
+      {/* THE OTHER WAY TO GET CHIPS (Dan 2026-09-10). The cashier is where a
+          player comes when they have none, so the door belongs here too: it
+          shows only when this club's host has a game open and the player holds
+          enough diamonds to get in. */}
+      {currentClubId ? (
+        <DiamondsToChipsButton
+          clubId={currentClubId}
+          size="large"
+          className="wallet-diamond-games"
+          onGo={(to) => navigate(to)}
+        />
+      ) : null}
+
       {/* ═══════════ TABS ═══════════ */}
       <div
         className="wallet-tabs"
@@ -1052,7 +1303,13 @@ export default function PlayerWalletPage() {
         {/* WALLETS */}
         {activeTab === 'overview' && (
           <div className="wallet-plates">
-            <DiamondPlate diamonds={diamonds} onBuy={goBuyDiamonds} />
+            <DiamondPlate
+              diamonds={diamonds}
+              summary={walletSummary}
+              onBuy={goBuyDiamonds}
+              onBuyToSitDown={goBuyDiamondsToSitDown}
+              onArena={goDiamondArena}
+            />
             {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (
               <WalletPlate
                 key={type}
@@ -1074,8 +1331,7 @@ export default function PlayerWalletPage() {
                 Send Diamonds To A Friend
               </h3>
               <p className="vault-panel__sub">
-                Diamonds Move Instantly To Any Accepted Friend. Minimum {MIN_DIAMOND_SEND}. Gifts
-                Cannot Be Reversed.
+                Diamonds Move Instantly To Any Accepted Friend. Gifts Cannot Be Reversed.
               </p>
               <div className="vault-form">
                 <label className="vault-field">
@@ -1109,6 +1365,7 @@ export default function PlayerWalletPage() {
                     type="number"
                     inputMode="numeric"
                     min={MIN_DIAMOND_SEND}
+                    max={Math.max(MIN_DIAMOND_SEND, sendable)}
                     step={1}
                     placeholder={`${MIN_DIAMOND_SEND}`}
                     value={sendAmount}
@@ -1116,7 +1373,14 @@ export default function PlayerWalletPage() {
                   />
                 </label>
                 <div className="vault-form__row">
-                  <span className="vault-form__hint">Available: {fmtNum(diamonds)} Diamonds</span>
+                  <span className="vault-form__hint">
+                    {walletSummary === null
+                      ? `On Hand: ${fmtNum(diamonds)} Diamonds (Sendable Amount Could Not Be Read)`
+                      : `Sendable: ${fmtNum(sendable)} Diamonds`}
+                    {heldCollateral > 0
+                      ? `. ${fmtNum(heldCollateral)} Bought Recently Are Held Until The Refund Window Closes`
+                      : ''}
+                  </span>
                   <button
                     type="button"
                     className="vault-btn primary"
@@ -1264,9 +1528,7 @@ export default function PlayerWalletPage() {
                     <li key={row.id} className="incoming-row">
                       <div className="incoming-row__body">
                         <span className="incoming-row__label">{formatPopupText(row.label)}</span>
-                        <span className="incoming-row__desc">
-                          {formatPopupText(row.description || row.label)}
-                        </span>
+                        <span className="incoming-row__desc">{describeRow(row, 'Sent To')}</span>
                       </div>
                       <div className="incoming-row__side">
                         {/* The sign comes from the ROW, not from the pane. A
@@ -1311,6 +1573,11 @@ export default function PlayerWalletPage() {
                 >
                   {sentLoadingMore ? 'Loading...' : 'Load Older Sends'}
                 </button>
+              )}
+              {sent !== null && sent.length > DIAMOND_LEDGER_PAGE && !sentHasMore && !sentError && (
+                <p className="vault-panel__sub">
+                  That Is Every Diamond You Have Sent. {fmtNum(sent.length)} Entries.
+                </p>
               )}
             </section>
           </div>
@@ -1408,7 +1675,7 @@ export default function PlayerWalletPage() {
                       <div className="incoming-row__body">
                         <span className="incoming-row__label">{formatPopupText(row.label)}</span>
                         <span className="incoming-row__desc">
-                          {formatPopupText(row.description || row.label)}
+                          {describeRow(row, 'Received From')}
                         </span>
                       </div>
                       <div className="incoming-row__side">
@@ -1471,7 +1738,19 @@ export default function PlayerWalletPage() {
               </h3>
               <p className="vault-panel__sub">
                 Claim Once A Day. The Payout Climbs With Your Streak, Up To 25 Diamonds.
+                {progress && progress.nextLoginReward > 0 && !claimedToday
+                  ? ` Your Next Claim Pays ${fmtNum(progress.nextLoginReward)}.`
+                  : ''}
+                {progress && claimedToday && progress.nextLoginReward > 0
+                  ? ` Tomorrow Pays ${fmtNum(progress.nextLoginReward)}.`
+                  : ''}
               </p>
+              {progress?.partial && (
+                <p className="vault-panel__sub" role="status">
+                  Some Of These Figures Could Not Be Read Just Now And May Be Low. The Claim Itself
+                  Is Unaffected.
+                </p>
+              )}
               <dl className="earn-stats">
                 <div className="earn-stat">
                   <dt>Streak</dt>
@@ -1567,18 +1846,50 @@ export default function PlayerWalletPage() {
                 <div className="earn-stat">
                   <dt>Earned</dt>
                   <dd className="positive">
-                    {lifetime ? fmtNum(lifetime.lifetimeEarned) : 'Checking'}
+                    {lifetime
+                      ? fmtNum(lifetime.lifetimeEarned)
+                      : lifetime === null
+                        ? 'Unavailable'
+                        : 'Checking'}
                   </dd>
                 </div>
                 <div className="earn-stat">
                   <dt>Spent</dt>
-                  <dd>{lifetime ? fmtNum(lifetime.lifetimeSpent) : 'Checking'}</dd>
+                  <dd>
+                    {lifetime
+                      ? fmtNum(lifetime.lifetimeSpent)
+                      : lifetime === null
+                        ? 'Unavailable'
+                        : 'Checking'}
+                  </dd>
                 </div>
                 <div className="earn-stat">
                   <dt>On Hand</dt>
                   <dd className="diamond">{fmtNum(diamonds)}</dd>
                 </div>
               </dl>
+              {lifetime === null && (
+                <p className="vault-form__hint" role="alert">
+                  Your Lifetime Totals Could Not Be Read.{' '}
+                  <button type="button" className="vault-link" onClick={() => void loadLifetime()}>
+                    Retry
+                  </button>
+                </p>
+              )}
+            </section>
+
+            {/* Phase 5: the split behind Earned and Spent - every diamond by
+                what it bought and by where it came from, summed in SQL over
+                the whole ledger. DIAMONDS ONLY. */}
+            <section className="vault-panel span2" aria-labelledby="flow-title">
+              <h3 id="flow-title" className="vault-panel__title">
+                Where Your Diamonds Go
+              </h3>
+              <p className="vault-panel__sub">
+                Every Diamond You Spent, By What It Bought. Every Diamond You Earned, By Where It
+                Came From. Summed From Your Whole Ledger.
+              </p>
+              <DiamondFlowPanel userId={user?.id} />
             </section>
 
             <section className="vault-panel span2" aria-labelledby="earn-more-title">
@@ -1642,6 +1953,19 @@ export default function PlayerWalletPage() {
                 Chip Statement
               </h3>
               <ChipStatement scope="player" />
+            </section>
+            {/* Phase 4: the Diamond Arena's own statement - every session,
+                every buy-in and cash-out, and that each one reconciles. Read
+                only; the live paths are atomic. DIAMONDS ONLY. */}
+            <section className="vault-panel" aria-labelledby="arena-statement-title">
+              <h3 id="arena-statement-title" className="vault-panel__title">
+                Diamond Arena Statement
+              </h3>
+              <p className="vault-panel__sub">
+                Every Buy-In And Cash-Out At Your Diamond Arena Seats, And Whether Each One
+                Reconciles With Your Wallet.
+              </p>
+              <DiamondArenaStatement userId={user.id} />
             </section>
           </div>
         )}

@@ -45,6 +45,7 @@ const CSS = read('src/components/lobby/LobbyTable.css');
 
 const tRow = (o: Partial<LobbyTournamentRow> = {}): LobbyTournamentRow =>
   ({
+    format_contract: 'mtt-v1',
     id: 't',
     name: 'Game',
     game_type: 'NLH',
@@ -142,19 +143,35 @@ describe('a missing field cap is not a heads-up', () => {
     );
   });
   it('a real small cap is still a heads-up', () => {
-    expect(classifyTournament(tRow({ variant: 'sng', max_players: 2 }))).toBe('sng');
+    expect(
+      classifyTournament(tRow({ format_contract: 'sng-v1', variant: 'sng', max_players: 2 }))
+    ).toBe('sng');
   });
 });
 
 describe('the statuses the query fetches all have a branch', () => {
   it('LATE_REG is late reg, not "Registering"', () => {
     expect(
-      tournamentStatus(tRow({ status: 'LATE_REG', variant: 'mtt', max_players: 500 })).key
+      tournamentStatus(
+        tRow({
+          status: 'LATE_REG',
+          variant: 'mtt',
+          max_players: 500,
+          late_reg_levels: 3,
+          current_level: 1,
+        })
+      ).key
     ).toBe('late_reg');
   });
   it('a seat-first game in STARTING_SOON still reads its seats', () => {
     const st = tournamentStatus(
-      tRow({ status: 'STARTING_SOON', variant: 'spin', max_players: 3, current_players: 2 })
+      tRow({
+        format_contract: 'spin-v1',
+        status: 'STARTING_SOON',
+        variant: 'spin',
+        max_players: 3,
+        current_players: 2,
+      })
     );
     expect(st.label).toBe('Filling');
   });
@@ -186,17 +203,19 @@ describe('Format sorts on the RENDERED bucket, not the alphabet and not raw dept
     const col = TABLE.slice(TABLE.indexOf('const COL_FORMAT'), TABLE.indexOf('const COL_ACTIONS'));
     expect(col).toContain('stackFormatRank');
   });
-  it('a name keyword and a measured depth land on the SAME rank as their label', () => {
+  it('the real MTT clock determines both its label and sort rank despite its name', () => {
     const named = tournamentEntry(
       tRow({
         name: 'Sunday Turbo Special',
         starting_chips: 6000,
-        blind_structure: JSON.stringify([{ level: 1, smallBlind: 50, bigBlind: 100, ante: 0 }]),
+        blind_structure: JSON.stringify([
+          { level: 1, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 10 },
+        ]),
       }),
       'mtt'
-    ); // 60bb — Deepstack by measured depth, Turbo by name
-    expect(stackDepthLabel(named)).toBe('Turbo');
-    expect(stackFormatRank(named)).toBe(2); // Turbo's rank, not Deepstack's
+    ); // 60 BB and a Turbo name cannot relabel the actual ten-minute clock.
+    expect(stackDepthLabel(named)).toBe('Regular');
+    expect(stackFormatRank(named)).toBe(3);
   });
 });
 

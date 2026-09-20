@@ -1,0 +1,9 @@
+{
+  "_owner": "agent/codex/union-eco-terms-20260917",
+  "functions": [
+    "fn_accounting_union_eco_terms",
+    "fn_accounting_union_eco_capture",
+    "fn_union_eco_terms_evidence"
+  ],
+  "columns": { "accounting_agreement_history": ["union_id"] }
+}

@@ -1,3 +1,4 @@
+import { getTournamentEntryCapacity } from '../../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB DASHBOARD — Comprehensive Club Analytics
@@ -200,6 +201,7 @@ interface RevenueData {
 
 interface TournamentData {
   live: Array<{
+    format_contract?: unknown;
     id: string;
     name: string;
     status: string;
@@ -207,7 +209,9 @@ interface TournamentData {
     buy_in: number;
     prize_pool: number;
     players: number;
-    max_players: number;
+    max_players: number | null;
+    tournament_type?: string | null;
+    satellite_target_id?: string | null;
     start_time: string;
   }>;
   recent: Array<{
@@ -479,7 +483,6 @@ export default function ClubDashboard() {
       // CHIPS_WITHDRAWN removed 2026-09-04: no partial cash-out at a cash table.
       'ANNOUNCEMENT_CHANGED',
       'HAND_COMPLETED',
-      'SETTLEMENT_CYCLE_COMPLETED',
       // COLLUSION_DETECTED removed 2026-08-28: nothing emits it client-side.
       'AGENT_UPDATED',
       'MEMBER_ROLE_CHANGED',
@@ -1985,7 +1988,10 @@ export default function ClubDashboard() {
                           <span className={styles.playerStats}>
                             {(t.variant || 'NLH').toUpperCase()} {'•'} Buy-In{' '}
                             {formatChips(t.buy_in)} {'•'} {formatInt(t.players)}
-                            {t.max_players ? `/${formatInt(t.max_players)}` : ''} Entered
+                            {getTournamentEntryCapacity(t) !== null
+                              ? `/${formatInt(t.max_players ?? 0)}`
+                              : ''}{' '}
+                            Entered
                           </span>
                         </div>
                         <span

@@ -1616,7 +1616,7 @@ export interface TournamentEventMessage {
 }
 export interface LobbyUpdateMessage {
   type: 'LOBBY_UPDATE';
-  kind: 'club_activity' | 'tournament_starting' | 'jackpot_hit';
+  kind: 'club_activity' | 'tournament_starting' | 'jackpot_hit' | 'maintenance';
   payload: unknown;
 }
 export interface HandReplayEventMessage {

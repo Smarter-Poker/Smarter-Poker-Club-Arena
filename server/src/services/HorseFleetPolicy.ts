@@ -291,7 +291,7 @@ function parsePolicy(raw: unknown): FleetPolicy {
 const POLICY_TTL_MS = 60_000;
 
 /** One report per scope per five minutes. The engine can deploy before the */
-/** World Hub migration lands, and a missing RPC would otherwise file a Sentry */
+/** World Hub migration lands, and a missing RPC would otherwise file a error reporting */
 /** event every cycle for ever - which is how a real signal becomes noise. */
 const REPORT_EVERY_MS = 5 * 60_000;
 
@@ -450,19 +450,19 @@ export function capBySeatedCount(
  * seated horse is treated, and it never overrides `stakeBandAllows`, which is
  * the horse's OWN earned band and still gates every candidate.
  */
+function allowedByList(allowed: readonly string[] | null, value: unknown): boolean {
+  if (!allowed) return true;
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return normalized.length > 0 && allowed.includes(normalized);
+}
+
 export function horseAllowedByPolicy(
   policy: FleetPolicy,
   ctx: { stakeBand?: string | null; variant?: string | null }
 ): boolean {
-  if (policy.stakeBands) {
-    const band = typeof ctx.stakeBand === 'string' ? ctx.stakeBand.trim().toLowerCase() : '';
-    if (!band || !policy.stakeBands.includes(band)) return false;
-  }
-  if (policy.variants) {
-    const variant = typeof ctx.variant === 'string' ? ctx.variant.trim().toLowerCase() : '';
-    if (!variant || !policy.variants.includes(variant)) return false;
-  }
-  return true;
+  return (
+    allowedByList(policy.stakeBands, ctx.stakeBand) && allowedByList(policy.variants, ctx.variant)
+  );
 }
 
 /**
@@ -496,10 +496,10 @@ export function withheldReason(policy: FleetPolicy, ctx: FleetPolicyContext = {}
     if (ctx.humansAtTable < policy.minHumansToSeat) return 'below_min_humans';
   }
   if (policy.stakeBands && ctx.stakeBand !== undefined) {
-    if (!horseAllowedByPolicy(policy, { stakeBand: ctx.stakeBand })) return 'stake_band_excluded';
+    if (!allowedByList(policy.stakeBands, ctx.stakeBand)) return 'stake_band_excluded';
   }
   if (policy.variants && ctx.variant !== undefined) {
-    if (!horseAllowedByPolicy(policy, { variant: ctx.variant })) return 'variant_excluded';
+    if (!allowedByList(policy.variants, ctx.variant)) return 'variant_excluded';
   }
   if (ctx.nowUTCHour !== undefined && !seatingAllowedNow(policy, ctx.nowUTCHour)) {
     return 'outside_schedule';

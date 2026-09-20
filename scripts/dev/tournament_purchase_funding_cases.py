@@ -10,7 +10,7 @@ USER='c1000000-0000-4000-8000-000000000001'
 TABLE='d2000000-0000-4000-8000-000000000001'
 SEAT='d3000000-0000-4000-8000-000000000001'
 
-def verify(q,fresh,overlap,register,check):
+def verify(q,fresh,overlap,register,check,prepare=None,after_funded=None):
     source=HERE/'fixtures/tournament-purchase-funding'
     def setup(kind,name,live=True,before_register=None):
         fresh('purchase_'+name)
@@ -22,6 +22,7 @@ def verify(q,fresh,overlap,register,check):
         signatures=','.join("to_regprocedure('"+k+"')" for k in expected)
         observed=json.loads(q("SELECT jsonb_object_agg(oid::regprocedure::text,md5(prosrc)) FROM pg_proc WHERE oid IN ("+signatures+");"))
         assert observed==expected,'fixture function bodies differ from the installed capture'
+        if prepare is not None: prepare(q)
         q(f"""
           UPDATE tournaments SET status='RUNNING',started_at=clock_timestamp()-interval '1 minute',
             starting_chips=1000,is_rebuy=true,is_reentry=true,rebuy_cost=15,rebuy_chips=100,
@@ -118,6 +119,7 @@ def verify(q,fresh,overlap,register,check):
             'roster':600 if kind=='addon' else 100,'rebuys':0 if kind=='addon' else 1,
             'addon':kind=='addon','candidate_states':None if kind=='addon' else ['rebought'],'wakes':1}
         assert {k:s[k] for k in expected}==expected,(s,expected)
+        if after_funded is not None: after_funded(q,kind)
         return s
 
     if '--bounty-addon-only' in sys.argv:

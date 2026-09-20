@@ -19,7 +19,7 @@
  * stays in step with it.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, readdirSync } from 'fs';
 import { resolve } from 'path';
 import { pathToFileURL } from 'url';
 
@@ -41,6 +41,9 @@ let offenders: (
   allowed?: Set<string>,
   droppedElsewhere?: Set<string>
 ) => Array<{ kind: string; name: string }>;
+let unjustifiedPeriodicWork: (file: string, sql: string) => { kind: string; name: string } | null;
+let schedulesPeriodicWork: (sql: string) => boolean;
+let carriesPeriodicWorkJustification: (sql: string) => boolean;
 
 beforeAll(async () => {
   const href = pathToFileURL(resolve(ROOT, 'scripts/ci/check-no-new-band-aids.mjs')).href;
@@ -49,6 +52,107 @@ beforeAll(async () => {
   declaredFunctions = mod.declaredFunctions;
   scheduledJobs = mod.scheduledJobs;
   offenders = mod.offenders;
+  unjustifiedPeriodicWork = mod.unjustifiedPeriodicWork;
+  schedulesPeriodicWork = mod.schedulesPeriodicWork;
+  carriesPeriodicWorkJustification = mod.carriesPeriodicWorkJustification;
+});
+
+/**
+ * A NEW SCHEDULE MUST SAY WHY IT EXISTS (2026-09-19).
+ *
+ * 20260919152626_schedule_daily_diamond_spin_settlement created the cron job
+ * `diamond-spin-daily-settlement` and this gate said nothing, because every
+ * rule above it is keyed on the job's NAME and that name carries none of the
+ * banned words. The name was never what 10.12 is about; the schedule is.
+ *
+ * Binds from 20260920. Measured: 101 migrations on disk call cron.schedule in
+ * code and none carries the marker, the newest that schedules anything is
+ * 20260919152626, and nothing at or after 20260920 exists - so the cutoff is
+ * clean today and `--all` stays usable.
+ */
+describe('a new migration may not schedule periodic work in silence', () => {
+  const SCHED =
+    "SELECT cron.schedule('diamond-spin-daily-settlement','5 5,6 * * *',$job$SELECT public.fn_x()$job$);";
+  const NEW = 'supabase/migrations/20260920090000_x.sql';
+
+  it('refuses a new schedule with no stated reason', () => {
+    expect(unjustifiedPeriodicWork(NEW, SCHED)).not.toBeNull();
+  });
+
+  it('lets it through when the migration says why, on a line of its own', () => {
+    const ok = `-- periodic-work: the owner asked for one settlement at local midnight\n${SCHED}`;
+    expect(unjustifiedPeriodicWork(NEW, ok)).toBeNull();
+  });
+
+  it('a marker with nothing after the colon is not a reason', () => {
+    expect(unjustifiedPeriodicWork(NEW, `-- periodic-work:\n${SCHED}`)).not.toBeNull();
+  });
+
+  it('never fires on a migration that only WRITES about cron.schedule', () => {
+    // Asserted against comment-stripped source. Migrations in this class quote
+    // what they are about, and refusing them for explaining themselves is the
+    // 7.3 trap.
+    const prose = "-- This explains why cron.schedule('x','* * * * *',$$1$$) was wrong.\nSELECT 1;";
+    expect(unjustifiedPeriodicWork(NEW, prose)).toBeNull();
+  });
+
+  it('does not reach back over migrations written before it bound', () => {
+    expect(
+      unjustifiedPeriodicWork(
+        'supabase/migrations/20260919152626_schedule_daily_diamond_spin_settlement.sql',
+        SCHED
+      )
+    ).toBeNull();
+  });
+
+  it('the case that made this necessary is still on disk and still detected', () => {
+    const sql = readFileSync(
+      resolve(
+        ROOT,
+        'supabase/migrations/20260919152626_schedule_daily_diamond_spin_settlement.sql'
+      ),
+      'utf8'
+    );
+    expect(schedulesPeriodicWork(sql)).toBe(true);
+    expect(carriesPeriodicWorkJustification(sql)).toBe(false);
+  });
+
+  it('THE ONE THAT MATTERS LATER: nothing from the cutoff on schedules work in silence', () => {
+    const dir = resolve(ROOT, 'supabase/migrations');
+    const bad = readdirSync(dir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+      .filter((f) => unjustifiedPeriodicWork(f, readFileSync(resolve(dir, f), 'utf8')));
+    expect(
+      bad,
+      'a migration schedules periodic work and does not say why. Add a line ' +
+        '"-- periodic-work: <why this is not compensation>" if the schedule IS ' +
+        'the product; if it exists because something upstream can fail, it is ' +
+        'the thing CLAUDE.md 10.12 refuses and the comment does not make it legal.'
+    ).toEqual([]);
+  });
+
+  it('a commented-out schedule IS still flagged, and that is deliberate', () => {
+    // Pinning a known, accepted false positive rather than pretending it away.
+    //
+    // scheduledJobs() reads the job NAME from the raw text, not from
+    // stripNoise'd source, because the name lives inside a string literal and
+    // stripNoise blanks string literals - strip first and every schedule
+    // becomes anonymous. The cost is that a cron.schedule sitting in a comment
+    // is read as a real one.
+    //
+    // That trade is the right way round for a gate: a false positive is a
+    // sentence in a header, and a false negative is a cron job nobody reviewed.
+    // If this ever needs to change, the fix is to parse the literal out of the
+    // ORIGINAL text at the offset stripNoise blanked, not to strip first.
+    const commented = "-- SELECT cron.schedule('widget-repair-5m','*/5 * * * *',$$1$$);\nSELECT 1;";
+    expect(offenders(commented)).toHaveLength(1);
+
+    // The periodic-work rule above does NOT share that quirk: it asks
+    // stripNoise'd source whether cron.schedule is actually called, so prose
+    // about scheduling never trips it.
+    expect(schedulesPeriodicWork(commented)).toBe(false);
+  });
 });
 
 describe('the guard knows a band-aid when it sees one', () => {

@@ -37,6 +37,8 @@ on:
     paths:
       - 'infra/monitoring/**'
       - 'server/scripts/install-caddy-websocket-log-redaction.sh'
+      - 'scripts/ci/check-alert-rules-match.mjs'
+      - 'scripts/ci/rule-metric-producers.mjs'
       - '.github/workflows/deploy-monitoring.yml'
   repository_dispatch:
     types: [deploy-club-arena-monitoring]
@@ -79,6 +81,13 @@ jobs:
         with:
           ref: ${{ steps.target.outputs.sha }}
           fetch-depth: 0
+          # blob:none keeps every one of the 7,223 commits and drops the blobs of old
+          # revisions. Measured 2026-09-13, three runs each: 33-35s / 531MB against
+          # 36-43s / 766MB, for identical ancestry. Nothing in this repo's workflows
+          # reads a historical file version - they ask merge-base, rev-list, log and
+          # cat-file -e, which are all commit-graph work - so those blobs were paid
+          # for on every run and never read.
+          filter: blob:none
 
       - name: Authorize the current Club Arena monitoring payload
         run: |
@@ -327,9 +336,21 @@ jobs:
           ENGINE_MONITORING_SSH: ${{ env.SSH_USER }}@${{ env.HETZNER_HOST }}
         run: |
           set -euo pipefail
-          # Prometheus reloads asynchronously after the symlinks swap.
-          sleep 20
+          # The verifier permits one declared evaluation interval only for an
+          # exact replacement rule that has not evaluated yet. Reload success
+          # alone and a fixed short sleep cannot prove rule health.
           node scripts/ci/check-alert-rules-match.mjs
+
+      # A RUNBOOK LINK THAT ANSWERS NOTHING (2026-09-18). check-monitoring-drift
+      # deliberately does not fetch http(s) runbooks during a build, so nothing
+      # ever did, and 19 alerts pointed at a host answering 404 for as long as
+      # anyone could measure. This asks, from here, where the network is.
+      - name: Every runbook link leads somewhere
+        env:
+          ENGINE_MONITORING_SSH: ${{ env.SSH_USER }}@${{ env.HETZNER_HOST }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/check-runbook-links.mjs
 
       - name: Remove Hetzner SSH credentials
         if: always()

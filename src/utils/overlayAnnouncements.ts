@@ -43,6 +43,7 @@
  * quickJoinRanking and satelliteAwardPlan.
  */
 
+import { isUnlimitedTournamentFormat } from './tournamentPresentation';
 import { isInLateRegistration, isRunning } from './tournamentFilters';
 
 /**
@@ -94,6 +95,7 @@ export type OverlayTier = 'potential' | 'live';
 
 /** The `tournaments` columns this needs. Anything wider is accepted. */
 export interface OverlayCandidate {
+  format_contract?: unknown;
   id: string;
   name?: string | null;
   status?: string | null;
@@ -105,6 +107,8 @@ export interface OverlayCandidate {
   buy_in_fee?: number | string | null;
   /** 0-BASED cap: the door is open while `current_level < late_reg_levels`. */
   late_reg_levels?: number | null;
+  rebuy_levels?: number | null;
+  prize_pool_finalized?: boolean | null;
   late_reg_mins?: number | null;
   started_at?: string | null;
   /** 0-BASED index into the blind structure, as the engine keeps it. */
@@ -145,7 +149,8 @@ const num = (v: unknown): number => {
  * `late_reg_levels`, so nothing real is silenced by that strictness.
  */
 export function isInLastLateRegLevel(t: OverlayCandidate): boolean {
-  const cap = Number(t.late_reg_levels);
+  if (t.prize_pool_finalized === true) return false;
+  const cap = Number(t.late_reg_levels ?? t.rebuy_levels);
   if (!Number.isFinite(cap) || cap <= 0) return false;
   const level = Number(t.current_level ?? 0);
   if (!Number.isFinite(level)) return false;
@@ -162,6 +167,7 @@ export function overlayFor(
   t: OverlayCandidate,
   now: number = Date.now()
 ): OverlayAnnouncement | null {
+  if (!isUnlimitedTournamentFormat(t)) return null;
   const guarantee = num(t.guaranteed_prize);
   if (guarantee <= 0) return null; // no guarantee, no overlay, ever
 
@@ -187,7 +193,9 @@ export function overlayFor(
   if (!running) return null;
 
   // The registration door must still be open, or there is nothing to sell.
-  if (!isInLateRegistration({ ...t, name: t.name || '', max_players: t.max_players ?? 0 }, now)) {
+  if (
+    !isInLateRegistration({ ...t, name: t.name || '', max_players: t.max_players ?? null }, now)
+  ) {
     return null;
   }
 

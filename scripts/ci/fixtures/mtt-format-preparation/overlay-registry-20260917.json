@@ -1,0 +1,16 @@
+{
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "query": "SELECT current_timestamp AS captured_at,to_jsonb(c) AS row FROM public.ca_chip_store_coverage c WHERE c.store='club_treasury' ORDER BY c.store;",
+  "rows": [
+    {
+      "captured_at": "2026-09-17 06:19:14.671299+00",
+      "row": {
+        "notes": "clubs chip_treasury",
+        "store": "club_treasury",
+        "added_at": "2026-09-11T16:10:27.128168+00:00",
+        "treatment": "counted",
+        "counted_by": "treasuries"
+      }
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "_owner": "cw-fee-cutover-drained",
+  "_comment": "Migration 20260918064540 applied through the Supabase MCP and recorded. Both functions read back from production pg_proc on 2026-09-18: fn_ca_fee_cutover_stranded_by md5 aa8ef4fe6a1d23888ae955bdce26ab01, STABLE; fn_ca_guard_fee_cutover_is_drained md5 00d1c66499077ca5947eb57bf62d1060, VOLATILE. Both SECURITY DEFINER, owner postgres. The BEFORE INSERT trigger ca_fee_cutover_is_drained is installed and enabled on accounting_tournament_fee_cutover.",
+  "functions": ["fn_ca_fee_cutover_stranded_by", "fn_ca_guard_fee_cutover_is_drained"]
+}

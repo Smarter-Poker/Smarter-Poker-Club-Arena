@@ -4,6 +4,10 @@ import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
+import { exerciseJournalWork } from './horse-adaptive-work-native.mjs';
+import { exerciseRetention, oldEmptyBatch } from './horse-adaptive-retention-native.mjs';
+import { exerciseIsolatedWorker } from './horse-adaptive-worker-native.mjs';
+import { exerciseQueueHealth } from './horse-adaptive-queue-health-native.mjs';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const { Client } = createRequire(root + '/server/package.json')('pg');
 const pg = process.env.HORSE_PROOF_PG_BIN,
@@ -59,17 +63,42 @@ try {
   await c.connect();
   await otherConnection.connect();
   await c.query(
-    'CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE TABLE hand_history(id uuid PRIMARY KEY,created_at timestamptz NOT NULL,players jsonb,actions jsonb); CREATE INDEX roster ON hand_history USING gin(players jsonb_path_ops); GRANT SELECT ON hand_history TO service_role;'
+    "CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE TABLE hand_history(table_id uuid NOT NULL DEFAULT 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',hand_number bigint GENERATED ALWAYS AS IDENTITY (START WITH 1000000),id uuid PRIMARY KEY,created_at timestamptz NOT NULL,players jsonb,actions jsonb); CREATE INDEX roster ON hand_history USING gin(players jsonb_path_ops); GRANT SELECT ON hand_history TO service_role; CREATE TABLE hand_atomic_commits(hand_id uuid UNIQUE NOT NULL,table_id uuid NOT NULL,hand_number bigint UNIQUE NOT NULL,payload_hash text NOT NULL); GRANT SELECT ON hand_atomic_commits TO service_role;"
   );
   for (const migration of [
     '20260912193321_horse_committed_observation_snapshot.sql',
     '20260913170729_horse_adaptive_observation_journal.sql',
     '20260913175935_recoverable_horse_adaptive_journal_batches.sql',
+    '20260913181841_durable_horse_adaptive_journal_work.sql',
+    '20260913202005_expose_bounded_horse_journal_queue_health.sql',
   ])
     await c.query(readFileSync(root + '/supabase/migrations/' + migration, 'utf8'));
   const now = Number(
     (await c.query('SELECT floor(extract(epoch FROM clock_timestamp())*1000)::bigint n')).rows[0].n
   );
+  const expiredAdmission = oldEmptyBatch(now, 'pre-retention-regression');
+  await c.query('BEGIN');
+  assert.equal(
+    (await c.query('SELECT fn_queue_horse_adaptive_batch($1) value', [expiredAdmission.payload]))
+      .rows[0].value.status,
+    'durable'
+  );
+  await c.query('ROLLBACK');
+  await c.query(
+    readFileSync(
+      root + '/supabase/migrations/20260913193221_bounded_horse_adaptive_retention.sql',
+      'utf8'
+    )
+  );
+  assert.equal(
+    (await c.query('SELECT fn_queue_horse_adaptive_batch($1) value', [expiredAdmission.payload]))
+      .rows[0].value.reason,
+    'source_expired'
+  );
+  results.push({
+    case: 'pre-change source-expired admission reproduced; forward migration refuses it without affecting accepted durable work',
+    passed: true,
+  });
   const from = now - 3_600_000,
     through = now - 1000;
   const { HandController } = await runtime('engine/HandController');
@@ -151,7 +180,7 @@ try {
     }
     assert.equal(complete, true);
     await c.query(
-      'INSERT INTO hand_history VALUES($1,to_timestamp($2::double precision/1000),$3::jsonb,$4::jsonb)',
+      'INSERT INTO hand_history(id,created_at,players,actions) VALUES($1,to_timestamp($2::double precision/1000),$3::jsonb,$4::jsonb)',
       [
         id(n),
         now - 1500,
@@ -160,6 +189,39 @@ try {
       ]
     );
   }
+  // The fixture models the authoritative receipt separately from history.
+  // First prove that history alone was accepted by the old reader.
+  const beforeReceipt = (
+    await c.query('SELECT fn_horse_committed_observation_snapshot($1,$2,$3) value', [
+      actor,
+      from,
+      through,
+    ])
+  ).rows[0].value;
+  assert.equal(beforeReceipt.status, 'snapshot');
+  assert.equal(beforeReceipt.handCount, 3);
+  await c.query(
+    readFileSync(
+      root + '/supabase/migrations/20260913195856_require_atomic_horse_observation_sources.sql',
+      'utf8'
+    )
+  );
+  const noReceipt = (
+    await c.query('SELECT fn_horse_committed_observation_snapshot($1,$2,$3) value', [
+      actor,
+      from,
+      through,
+    ])
+  ).rows[0].value;
+  assert.equal(noReceipt.reason, 'atomic_receipt_missing');
+  assert.deepEqual(noReceipt.hands, []);
+  await c.query(
+    "INSERT INTO hand_atomic_commits SELECT id,table_id,hand_number,repeat('a',64) FROM hand_history"
+  );
+  results.push({
+    case: 'history-only source accepted before fix; missing atomic receipts refuse complete window after forward migration',
+    passed: true,
+  });
   Date.now = oldNow;
   const calls = [];
   let loseReply = false;
@@ -181,6 +243,21 @@ try {
               } else if (name === 'fn_horse_adaptive_journal_batch') {
                 query = 'SELECT public.fn_horse_adaptive_journal_batch($1) value';
                 params = [p.p_batch_key];
+              } else if (name === 'fn_queue_horse_adaptive_batch') {
+                query = 'SELECT fn_queue_horse_adaptive_batch($1) value';
+                params = [p.p_payload];
+              } else if (name === 'fn_claim_horse_adaptive_batch') {
+                query = 'SELECT fn_claim_horse_adaptive_batch($1) value';
+                params = [p.p_lease_token];
+              } else if (name === 'fn_finish_horse_adaptive_batch') {
+                query = 'SELECT fn_finish_horse_adaptive_batch($1,$2,$3) value';
+                params = [p.p_batch_key, p.p_lease_token, p.p_outcome];
+              } else if (name === 'fn_horse_adaptive_journal_work_health') {
+                query = 'SELECT fn_horse_adaptive_journal_work_health() value';
+                params = [];
+              } else if (name === 'fn_prune_horse_adaptive_journal') {
+                query = 'SELECT fn_prune_horse_adaptive_journal() value';
+                params = [];
               } else if (name === 'fn_horse_adaptive_journal_snapshot') {
                 query = 'SELECT public.fn_horse_adaptive_journal_snapshot($1,$2,$3,$4,$5,$6) value';
                 params = [
@@ -193,6 +270,20 @@ try {
                 ];
               } else throw Error('Unexpected RPC');
               const result = await c.query(query, params);
+              if (
+                globalThis.horseJournalNative.losePruneReply &&
+                name === 'fn_prune_horse_adaptive_journal'
+              ) {
+                globalThis.horseJournalNative.losePruneReply = false;
+                throw Error('simulated lost committed prune reply');
+              }
+              if (
+                globalThis.horseJournalNative.loseFinishReply &&
+                name === 'fn_finish_horse_adaptive_batch'
+              ) {
+                globalThis.horseJournalNative.loseFinishReply = false;
+                throw Error('simulated lost committed acknowledgment');
+              }
               if (loseReply && name === 'fn_append_horse_adaptive_observations') {
                 loseReply = false;
                 throw Error('simulated lost committed reply');
@@ -213,6 +304,10 @@ try {
         /import \{ supabase \} from '\.\/supabase\.js';/,
         'const {supabase}=globalThis.horseJournalNative;'
       )
+      .replace(
+        /import\s*\{([^}]+)\}\s*from\s*'\.\/HorseAdaptiveObservationJournal\.js';/,
+        'const {$1}=globalThis.horseJournalNative.journal;'
+      )
       .replace(/from '([^']+)'/g, (whole, path) =>
         path.startsWith('.')
           ? "from '" +
@@ -225,13 +320,15 @@ try {
   const { readCommittedObservationSnapshot: readSource } = await bridge(
     'HorseCommittedObservationSnapshot'
   );
+  const journal = await bridge('HorseAdaptiveObservationJournal');
+  globalThis.horseJournalNative.journal = journal;
   const {
     prepareAdaptiveJournalBatch: prepare,
     persistAdaptiveJournalSnapshot: persist,
     readAdaptiveJournalSnapshot: read,
     readAdaptiveJournalBatch: recover,
     persistPreparedAdaptiveJournalBatch: retry,
-  } = await bridge('HorseAdaptiveObservationJournal');
+  } = journal;
   await c.query('SET ROLE service_role');
   const source = await readSource({ actorId: actor, fromMs: from, throughMs: through });
   assert.equal(source.status, 'snapshot');
@@ -389,6 +486,25 @@ try {
   );
   assert.equal(reconnectEvidence.n, 13);
   results.push({ case: 'fresh Node process sees all immutable identities', observations: 13 });
+  results.push(
+    ...(await exerciseJournalWork({
+      root,
+      options,
+      c,
+      otherConnection,
+      source,
+      readSource,
+      actor,
+      journal,
+      work: await bridge('HorseAdaptiveJournalWork'),
+      loseAppendReply: () => {
+        loseReply = true;
+      },
+      loseFinishReply: () => {
+        globalThis.horseJournalNative.loseFinishReply = true;
+      },
+    }))
+  );
   // The next process receives only a durable batch key. Even the synthetic
   // source history has gone; re-querying it cannot reproduce the submitted batch.
   await c.query('DELETE FROM hand_history WHERE id=ANY($1::uuid[])', [[id(1), id(2), id(3)]]);
@@ -605,6 +721,35 @@ try {
     recoveryMs,
     limitation: 'One isolated sample; not a production latency certification.',
   });
+  results.push(
+    await exerciseIsolatedWorker({
+      root,
+      Client,
+      options,
+      c,
+      work: await bridge('HorseAdaptiveJournalWork'),
+      snapshot: {
+        ...source,
+        source: { ...source.source, sourceDigest: hash('real isolated worker') },
+      },
+    })
+  );
+  results.push(
+    ...(await exerciseRetention({
+      c,
+      otherConnection,
+      retention: await bridge('HorseAdaptiveJournalRetention'),
+      losePruneReply: () => {
+        globalThis.horseJournalNative.losePruneReply = true;
+      },
+    }))
+  );
+  results.push(
+    ...(await exerciseQueueHealth({
+      c,
+      readHealth: (await bridge('HorseAdaptiveJournalQueueHealth')).readJournalQueueHealth,
+    }))
+  );
   proof = { results, sourceCalls: calls, productionPostgrestVerified: false };
 } finally {
   Date.now = oldNow;

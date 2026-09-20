@@ -93,12 +93,12 @@ describe('every live dealer carries and re-checks distributed authority', () => 
     const coordinator = sliceMethod(gameServer, 'private renewOwnedEngineLeaseProofs()');
     expect(coordinator).toContain('const existing = this.ownershipLeaseRenewalOperation;');
     expect(coordinator).toContain('if (existing) return existing;');
-    expect(coordinator).toContain('this.performOwnedEngineLeaseProofRenewal()');
+    expect(coordinator).toContain('this.performOwnedEngineLeaseProofRenewal(abandoned)');
     expect(coordinator).toContain('this.ownershipLeaseRenewalOperation = tracked;');
 
     const renewalPass = sliceMethod(
       gameServer,
-      'private async performOwnedEngineLeaseProofRenewal()'
+      'private async performOwnedEngineLeaseProofRenewal('
     );
     expect(renewalPass).toContain('await Promise.allSettled([');
     const firstFence = renewalPass.indexOf('engine.fenceForEngineLeaseLoss(');

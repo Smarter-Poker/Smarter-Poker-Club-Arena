@@ -1,0 +1,33 @@
+{
+  "status": "SOURCE_ONLY_UNRUN",
+  "capture_sha256": "70645c393822b197621f4f8ff7313deb99578c33b21c76850fe9422ef5d4c484",
+  "predecessor_full_definition_md5": "3fc1c871313940f2e93a82a022f2faff",
+  "signature": "fn_ca_post_correction(text,uuid,text,uuid,numeric,text,uuid,bigint,uuid,uuid,jsonb)",
+  "captured_owner": "postgres",
+  "captured_acl": [
+    "postgres=X/postgres",
+    "service_role=X/postgres"
+  ],
+  "captured_config": [
+    "search_path=public"
+  ],
+  "files": {
+    "README.md": "9fadbeb75120b5e3ba2cc604bf02ac66b4444905ec11219a1636bd16ae75e83c",
+    "fixture.sql": "26f460362d5fba69998bedb1927d1ea69e668c5d36f6c056e484704687319fe9",
+    "history-incident-revision/README.md": "337d1e9580472e5d9a07e1633c233d2e903191c1e992035a21190fb3c55562a4",
+    "history-incident-revision/SOURCE-CUSTODY.json": "c5091182dfe7d0603bb2817cbf3e0b231c0bdcdb3b724bfe8c5b08af151ebf14",
+    "history-incident-revision/fixture.sql": "7ac7b4190cb86632115bf9cf1eb45608c1be0dc84143be8f6f548d08bbae3962",
+    "history-incident-revision/successor-definition.sql": "48ddfbfb9f79599ac467dafcc0e4301b0e346ce38f93039f0c3cf268dbfa1be6",
+    "history-journal-revision/README.md": "ce9c5dd779086830a5d16c2f495d4dcf142ee6992cd3b4fb70325721e068bf32",
+    "history-journal-revision/SOURCE-CUSTODY.json": "bb4defd9e7b10f99076daab8f8107d9ff1230893c2d15fa4db1532be549a67e2",
+    "history-journal-revision/fixture.sql": "dd4da27872893a4c32d23b3a43af88b7b6c98fe01163c8d127ab74d9d2b60f50",
+    "history-journal-revision/successor-definition.sql": "ce28c5c0511f2ffb00cea9b7bf4b5e20d2e6ec8669f214e517c574445afcc88a",
+    "history-posted-replay-revision/README.md": "94437c7ebdeac2d3fa53ddd2651637cdd4bb09826898a4110950e32dc10baba2",
+    "history-posted-replay-revision/SOURCE-CUSTODY.json": "22c410cd6d8728eb8002c795b13f2b1ef7efde8d7a8635924524124a3db90b76",
+    "history-posted-replay-revision/fixture.sql": "ee258b00106f5bb5b77a7b97d9743df4e158c1f86864ac9916e79c864bf40bec",
+    "predecessor.sql": "e4ab59d45e4cdcadd086ab123c5aa14677f635ead5bf2a0acd38e52cc53633d5",
+    "private-intent.sql": "69d5778c84a084062b46f28e31f84b22231a9fe7599c01dcfcaf278d7f42f693",
+    "successor-definition.sql": "6200b53066002ccf11640baf9c39e6e296a9577ad30106225c67290f8d88ed7b"
+  },
+  "revision_parent": "00891daf2c7d1984831aaa1d5bfebb1d5242aacb"
+}

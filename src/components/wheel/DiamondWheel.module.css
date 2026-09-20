@@ -1,0 +1,182 @@
+.frame {
+  position: relative;
+  margin: 0 auto;
+  aspect-ratio: 1;
+  isolation: isolate;
+}
+.svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  position: relative;
+}
+.frame[data-presentation='cabinet'] {
+  aspect-ratio: 720 / 485;
+  overflow: hidden;
+}
+.frame[data-presentation='cabinet'][data-prize-scale='2'] {
+  aspect-ratio: 360 / 345;
+}
+.frame[data-presentation='cabinet'] .svg {
+  overflow: hidden;
+  filter: drop-shadow(0 15px 6px #000);
+}
+.aura {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 55%, rgb(24 119 242 / 14%) 65%, transparent 74%);
+  filter: blur(16px);
+  animation: wheel-breathe calc(4s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+.frame[data-phase='spinning'] .aura {
+  background: radial-gradient(circle, transparent 50%, rgb(69 173 255 / 45%) 66%, transparent 75%);
+}
+.frame[data-upgraded] .aura {
+  background: radial-gradient(circle, transparent 50%, rgb(255 215 0 / 30%) 66%, transparent 75%);
+}
+.bonus,
+.chips,
+.reward,
+.upgrade {
+  isolation: isolate;
+}
+.locked {
+  opacity: 0.4;
+}
+.segText {
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+  fill: #f4f7fb;
+  text-shadow:
+    0 2px 0 #000,
+    0 -1px 0 rgb(255 255 255 / 30%);
+}
+.upgrade .segText {
+  fill: #ffd700;
+}
+.hubLabel {
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  fill: #e4e7ec;
+  text-shadow: 0 2px 0 #000;
+}
+.hubStone {
+  transform-origin: 500px 490px;
+  animation: wheel-gem calc(4s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+.selectorCrystal {
+  filter: drop-shadow(0 3px 2px rgb(0 0 0 / 80%));
+  animation: selector-reflection calc(3s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+@keyframes selector-reflection {
+  0%,
+  100% {
+    filter: drop-shadow(0 3px 2px rgb(0 0 0 / 80%)) brightness(1);
+  }
+  50% {
+    filter: drop-shadow(0 3px 3px rgb(31 142 255 / 45%)) brightness(1.14);
+  }
+}
+.prizeFloat {
+  animation: wheel-prize calc(4s * var(--animation-speed, 1)) ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+  filter: drop-shadow(0 7px 4px rgb(0 0 0 / 70%));
+}
+.sectorLight {
+  opacity: 0.55;
+}
+[data-winner] .sectorLight {
+  opacity: 1;
+  filter: drop-shadow(0 0 8px #45adff);
+  animation: wheel-breathe calc(1.4s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+[data-winner] .prizeFloat {
+  animation: wheel-winning-prize calc(1.8s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+.lamp {
+  opacity: 0.45;
+  animation: wheel-lamp calc(2.16s * var(--animation-speed, 1)) linear infinite;
+}
+.frame[data-phase='spinning'] .lamp {
+  r: 8;
+}
+@keyframes wheel-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes wheel-gem {
+  0%,
+  100% {
+    transform: translateY(2px) scale(0.96);
+  }
+  50% {
+    transform: translateY(-3px) scale(1.02);
+  }
+}
+@keyframes wheel-prize {
+  0%,
+  100% {
+    transform: translateY(1px) rotate(-1.5deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(1.5deg);
+  }
+}
+@keyframes wheel-winning-prize {
+  0%,
+  100% {
+    transform: scale(1.04);
+  }
+  50% {
+    transform: scale(1.13) translateY(-3px);
+  }
+}
+@keyframes wheel-lamp {
+  0%,
+  20%,
+  100% {
+    opacity: 0.15;
+  }
+  8%,
+  12% {
+    opacity: 1;
+  }
+}
+
+.frame[data-presentation='assembly'] {
+  aspect-ratio: 360 / 415;
+  overflow: hidden;
+}
+.frame[data-presentation='assembly'] .svg {
+  overflow: hidden;
+}
+.frame[data-presentation='assembly'] .aura {
+  display: none;
+}
+
+.frame[data-fit-viewport] {
+  width: 100% !important;
+  height: 100%;
+  aspect-ratio: auto;
+}
+.frame[data-fit-viewport] .svg {
+  height: 100%;
+}
+
+/* The front wheel covers the upgrade card bodies until UPGRADE lands. It
+   recedes around the shared axle, revealing the complete illustrated cards. */
+.face {
+  transform-origin: 500px 500px;
+  transition: transform calc(650ms * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.25, 1);
+}

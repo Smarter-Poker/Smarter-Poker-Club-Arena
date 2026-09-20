@@ -117,7 +117,15 @@
   text-anchor: middle;
 }
 
-/* The hero: one figure, two decimals, digits that hold still. */
+/* The hero: one figure, two decimals, digits that hold still.
+
+   The line box HOLDS THE FIGURE IT PRINTS. `line-height: 1` reserved one em
+   and the font's own content area is 1.16em, so the hero's box was 8% shorter
+   than its glyphs at every size the component sets - 66px of text declared as
+   61px on a 375px phone, 121px declared as 112px at the cap - and the digits
+   bled above and below a box that claimed not to hold them. 1.2 contains the
+   content area of this stack with room to spare and leaves the figure tight;
+   nothing about it scales with the viewport, so the fix is width-independent. */
 .ticker {
   position: absolute;
   top: 17%;
@@ -128,7 +136,7 @@
   pointer-events: none;
   font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-weight: 800;
-  line-height: 1;
+  line-height: 1.2;
   letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
   color: #f4f7fb;

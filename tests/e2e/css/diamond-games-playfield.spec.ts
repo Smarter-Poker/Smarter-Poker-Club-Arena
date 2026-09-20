@@ -210,14 +210,34 @@ for (const width of [320, 390, 1280])
     await expect(page.getByRole('button', { name: 'Tile 7, Gem' })).toBeDisabled();
     await page.getByRole('button', { name: 'Tile 8', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Tile 8, Gem' })).toBeDisabled();
-    expect(
-      await tiles.evaluateAll((elements) =>
-        elements.every((e) => {
-          const r = e.getBoundingClientRect();
-          return r.left >= 0 && r.right <= innerWidth && r.width >= 44;
-        })
+    // Every tile sits inside the glass and stays a thumb wide. POLLED, for the
+    // same reason sits() is: a tile the player has just turned over is mid
+    // tile-flip, and a rotateY in progress squashes its AXIS-ALIGNED box while
+    // the layout square underneath it never moves - tiles 7 and 8 read 34px and
+    // 28px of a settled 54px diamond at 320px, for the 0.48s the flip lasts.
+    // Reading that frame measures the animation, not the board; at 1280px the
+    // same squash happens to stay above 44 and the same read passes, which is
+    // the tell. The rule is about the tile a thumb lands on, so it is read with
+    // the board at rest. The 44px floor and the viewport bounds are unchanged,
+    // and the message names the tile that breaks them.
+    await expect
+      .poll(
+        () =>
+          tiles.evaluateAll((elements) =>
+            elements
+              .map((element, index) => ({ tile: index + 1, box: element.getBoundingClientRect() }))
+              .filter(({ box }) => box.left < 0 || box.right > innerWidth || box.width < 44)
+              .map(
+                ({ tile, box }) =>
+                  `Tile ${tile} is ${Math.round(box.width)}px wide from ${Math.round(box.left)} to ${Math.round(box.right)}`
+              )
+          ),
+        {
+          message: `every tile sits inside the ${width}px viewport at 44px or wider`,
+          timeout: 20_000,
+        }
       )
-    ).toBe(true);
+      .toEqual([]);
     await page.getByRole('button', { name: 'plinko', exact: true }).click();
     // Ten drops of a tenth of the entry is the one setting, so there is no drop
     // chooser to press: the total line is stated, never selected.
@@ -328,6 +348,23 @@ for (const superGame of [false, true])
       if (game === 'mines') {
         // Before the first tile the board is worth exactly the stake, so the
         // profit starts at nothing and the next tile's figure is what it adds.
+        //
+        // THE FIRST RUNG IS NOT ALWAYS A GAIN, AND ON A SUPER AWARD IT CANNOT
+        // BE. The edge is charged once, so every rung of the nineteen-pick
+        // ladder returns four fifths of the stake in expectation, and the
+        // guarantee is funded inside that: prize(p) = minimum + (4·bet -
+        // 5·minimum)/5 · C(25,p)/C(19,p). An ordinary award guarantees a tenth
+        // of its 1.00 stake, and 19 of 25 tiles are safe, so the first tile
+        // pays 1.021053 - two cents up. A Super award guarantees HALF of its
+        // doubled 2.00 stake, which is the whole original spin back on any
+        // loss, and paying for that cover leaves the first rung at 1.789474 -
+        // twenty one cents SHORT of the stake, and not level with it again
+        // until the second tile (2.052632). A readout that printed a plus
+        // there would be lying to the player about a tile that loses ground,
+        // which is exactly why signedChips carries a minus and the stylesheet
+        // inks data-sign="loss". Both figures are transcribed from the rule
+        // above rather than recomputed with minePrize, so the two disagreeing
+        // is something this spec can still see.
         const readouts = page
           .locator('[data-game-console] dl')
           .filter({ has: page.locator('dt', { hasText: 'Profit On Next Tile' }) });
@@ -337,7 +374,9 @@ for (const superGame of [false, true])
         ]);
         await expect(readouts.locator('dd').first()).toHaveText('0.00 Chips');
         await expect(readouts.locator('dd').first()).toHaveAttribute('data-sign', 'gain');
-        await expect(readouts.locator('dd').last()).toHaveText(/^\+\d+\.\d{2} Chips$/);
+        await expect(readouts.locator('dd').last()).toHaveText(
+          superGame ? '-0.21 Chips' : '+0.02 Chips'
+        );
         await sits(readouts, 'the Mines profit readouts');
         await expect(page.getByRole('button', { name: /^Tile / })).toHaveCount(25);
         await expect(page.getByText('25 Tiles. Your Next Discovery Awaits.')).toBeVisible();
@@ -415,6 +454,19 @@ for (const game of ['plinko', 'crash', 'crossing', 'mines'])
         await expect(
           page.getByRole('list', { name: 'Plinko Payout Slots' }).locator('strong')
         ).toHaveText(superGame ? SUPER_SLOTS : DIAMOND_SLOTS);
+        // TEN DROPS ARE OVER IN ABOUT FIVE SECONDS, AND THE HOLD BELOW IS OWED
+        // ONLY WHILE THEY ARE IN THE AIR. Plinko is the one game that ends
+        // itself: the batch runs on the scene clock with nothing left to press,
+        // and once the last diamond lands the round is settled and the player is
+        // free to leave - so a navigation attempt that arrives after it is
+        // refused by nothing, correctly. Opening the console alone costs several
+        // seconds of WebGL on this board, which is most of that window, so the
+        // round is played at the SLOWEST Animation Speed a player may choose
+        // (ANIMATION_SPEED_MAX, the one sanctioned control over duration under
+        // §10.6) and the refusal is asserted on a round that is genuinely live.
+        // Nothing else about the hold is relaxed: the notice, the unchanged URL
+        // and the reveal are all still owed.
+        await page.addStyleTag({ content: ':root{--animation-speed:3}' });
       }
       await page.getByRole('button', { name: 'Start Test', exact: true }).click();
       await page.getByRole('link', { name: 'Super Diamond Mines', exact: true }).click();

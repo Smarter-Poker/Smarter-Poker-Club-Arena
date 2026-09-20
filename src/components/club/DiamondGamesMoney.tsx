@@ -39,6 +39,7 @@ import DiamondGamesService, {
 import { compactChips } from '../../utils/format';
 import { reportError } from '../../utils/errorReporter';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { DIAMOND_GAME_TITLES } from '../../utils/diamondGameTitles';
 import styles from '../../pages/diamondGames.module.css';
 
 /**
@@ -62,12 +63,10 @@ function money(v: number | null | undefined, rate: number): string {
   const perChip = rate > 0 ? rate : 100;
   return `${Math.round(n * perChip)} \u25C6`;
 }
+/** One name per game, from the single source; the wheel is not a bonus game. */
 const GAME_WORD: Record<string, string> = {
-  wheel: 'Wheel',
-  plinko: 'Plinko',
-  crash: 'Crash',
-  crossing: 'Donkey Crossing',
-  mines: 'Mines',
+  wheel: 'Diamond Wheel',
+  ...DIAMOND_GAME_TITLES,
 };
 const gameWord = (g: string) => GAME_WORD[g] ?? g;
 

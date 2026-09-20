@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase';
 import type { BonusGame, PlinkoBall } from './DiamondBonusService';
-import { PLINKO_DIAMONDS_PER_DROP } from '../utils/bonusGameBudget';
 import { MINE_COUNTS, ROAD_LADDERS } from '../utils/diamondChoiceMath';
+import { diamondGameTitle } from '../utils/diamondGameTitles';
 
 export interface BonusReplaySummary {
   id: string;
@@ -89,8 +89,10 @@ export function parseBonusReplay(value: unknown): BonusReplay {
       !Array.isArray(d.multipliers_cents) ||
       d.multipliers_cents.length !== 17 ||
       !d.multipliers_cents.every(integer) ||
+      // Ten drops of a tenth of the entry since the one setting; older replays
+      // keep the drop value they were dealt, and every replay accounts for its entry.
       !integer(d.diamonds_per_drop) ||
-      !PLINKO_DIAMONDS_PER_DROP.some((n) => n === d.diamonds_per_drop) ||
+      d.diamonds_per_drop < 1 ||
       typeof d.table_name !== 'string' ||
       !Array.isArray(d.drops) ||
       d.drops.length !== r.diamonds / d.diamonds_per_drop ||
@@ -171,14 +173,7 @@ export function parseBonusReplay(value: unknown): BonusReplay {
   return r;
 }
 export function bonusReplayTitle(r: Pick<BonusReplay, 'game' | 'boost'>) {
-  const names = {
-    plinko: 'Plinko',
-    crash: 'Crash',
-    crossing: 'Donkey Cross',
-    mines: 'Diamond Mines',
-  };
-  if (r.boost === 2) return `Super ${names[r.game]}`;
-  return r.game === 'plinko' || r.game === 'crash' ? `Diamond ${names[r.game]}` : names[r.game];
+  return diamondGameTitle(r.game, r.boost);
 }
 async function call(name: string, args: Record<string, unknown>) {
   const { data, error } = await supabase.rpc(name, args);

@@ -40,8 +40,209 @@
   color: #fff;
   font-size: 14px;
 }
+
+/* The cash-out value: the one number a player weighs before the next street. */
+.readout {
+  position: absolute;
+  z-index: 1;
+  top: 56px;
+  left: 12px;
+  display: grid;
+  gap: 2px;
+  max-width: calc(100% - 24px);
+  padding: 8px 12px;
+  border: 1px solid #7da1b844;
+  border-radius: 12px;
+  background: #0b1b2de0;
+  color: #e3f3ff;
+  pointer-events: none;
+}
+.readoutLabel,
+.readoutNote {
+  font:
+    500 11px/1.3 Inter,
+    sans-serif;
+  color: #a9cbe3;
+}
+.readoutValue {
+  font:
+    800 22px/1.1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  color: #ffe9a8;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 14px #ffc85766;
+}
+.readout[data-tone='bust'] {
+  background: #4a1f1ce6;
+  border-color: #eaa081;
+}
+.readout[data-tone='bust'] .readoutValue {
+  color: #ffd9cc;
+  text-shadow: none;
+}
+
+/* The bust moment: one flash and a stamp, brief and unmistakable. */
+.bust {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #ff5a3c00;
+  pointer-events: none;
+  animation: bust-flash 0.7s ease-out both;
+}
+.bust span {
+  padding: 6px 22px;
+  border: 3px solid #ffb09a;
+  border-radius: 8px;
+  background: #4a1f1cf0;
+  color: #fff1ea;
+  font:
+    900 34px/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transform: rotate(-8deg);
+  animation: bust-stamp 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  animation-delay: 0.35s;
+}
+@keyframes bust-flash {
+  0% {
+    background: #ff5a3c00;
+  }
+  45% {
+    background: #ff5a3c00;
+  }
+  55% {
+    background: #ff5a3c66;
+  }
+  100% {
+    background: #ff5a3c00;
+  }
+}
+@keyframes bust-stamp {
+  from {
+    opacity: 0;
+    transform: rotate(-8deg) scale(2.4);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-8deg) scale(1);
+  }
+}
+
+/* Every street and what it pays, in one strip; the tint rises with the danger. */
+.streets {
+  position: absolute;
+  z-index: 1;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 2px;
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+.streets::-webkit-scrollbar {
+  display: none;
+}
+.street {
+  flex: 0 0 auto;
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  min-width: 54px;
+  padding: 5px 6px;
+  border: 1px solid #7da1b844;
+  border-radius: 8px;
+  background: #0b1b2de0;
+  color: #dcefff;
+  scroll-snap-align: center;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background 0.25s,
+    border-color 0.25s;
+}
+.street[data-hazard='1'] {
+  background: #221c2ae0;
+  border-color: #9b7a8a55;
+}
+.street[data-hazard='2'] {
+  background: #34202ae0;
+  border-color: #c4837b66;
+}
+.street[data-hazard='3'] {
+  background: #4a1f1ce0;
+  border-color: #eaa08188;
+}
+.streetNumber {
+  font:
+    600 10px/1.2 Inter,
+    sans-serif;
+  color: #a9cbe3;
+}
+.streetMultiplier {
+  font:
+    800 14px/1.1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  color: #ffe9a8;
+}
+.streetPrize {
+  font:
+    500 10px/1.2 Inter,
+    sans-serif;
+  color: #cfe6f5;
+}
+.street[data-state='crossed'] {
+  opacity: 0.55;
+}
+.street[data-state='current'] {
+  border-color: #64cbb0;
+  background: #143b39e8;
+  box-shadow: 0 0 0 1px #64cbb0;
+}
+.street[data-state='next'] {
+  border-color: #65cfff;
+  box-shadow: 0 0 0 1px #65cfff;
+}
+.street[data-state='crash'] {
+  border-color: #ff745b;
+  background: #552c29f0;
+  box-shadow: 0 0 0 1px #ff745b;
+}
 @media (max-width: 760px) {
   .scene {
     height: clamp(280px, 48dvh, 500px);
+  }
+  .readoutValue {
+    font-size: 19px;
+  }
+  .street {
+    min-width: 48px;
+    padding: 4px 5px;
+  }
+}
+/* Motion collapses; the bust, the value and every street's multiplier still read. */
+@media (prefers-reduced-motion: reduce) {
+  .bust,
+  .bust span {
+    animation: none;
+  }
+  .bust {
+    background: #ff5a3c33;
+  }
+  .street {
+    transition: none;
+  }
+  .streets {
+    scroll-behavior: auto;
   }
 }

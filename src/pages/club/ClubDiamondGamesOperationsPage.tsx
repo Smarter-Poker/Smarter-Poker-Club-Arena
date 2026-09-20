@@ -47,6 +47,7 @@ import { reportError } from '../../utils/errorReporter';
 import DiamondGamesMoney from '../../components/club/DiamondGamesMoney';
 import DiamondSpinStatements from '../../components/club/DiamondSpinStatements';
 import DiamondSpinsOwnerTerms from '../../components/games/DiamondSpinsOwnerTerms';
+import { DIAMOND_GAME_TITLES } from '../../utils/diamondGameTitles';
 import { uuid } from '../../utils/uuid';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import styles from '../diamondGames.module.css';
@@ -86,12 +87,8 @@ function draftFrom(m: GameMetrics | null, game: DiamondGame = 'plinko'): Draft {
   };
 }
 
-const GAME_WORD: Record<DiamondGame, string> = {
-  plinko: 'Plinko',
-  crash: 'Crash',
-  crossing: 'Donkey Crossing',
-  mines: 'Mines',
-};
+/** One name per game, from the single source, so no console can drift from it. */
+const GAME_WORD: Record<DiamondGame, string> = DIAMOND_GAME_TITLES;
 
 function Row({
   label,
@@ -370,7 +367,7 @@ export default function ClubDiamondGamesOperationsPage() {
 
       <SpadeConsole
         eyebrow="Operations"
-        title={`Diamond ${word}`}
+        title={word}
         titleId="diamond-games-ops-title"
         pill={enabled ? 'Open' : 'Closed'}
         pillInk={enabled ? 'green' : 'red'}
@@ -647,7 +644,10 @@ export default function ClubDiamondGamesOperationsPage() {
             onClick: () => navigate(`/clubs/${routeClubId}/wheel-operations`),
           },
           primary: {
-            label: `Players ${word}`,
+            /* The plate carries the game's full title now that GAME_WORD is the
+               single source, so "Players Plinko" would read as "Players Diamond
+               Plinko". The verb makes it a sentence again. */
+            label: `Play ${word}`,
             ink: 'white',
             /* Both targets spelled out. `/clubs/${id}/${game}` resolves at
                runtime, but check-route-targets reads the source, not the

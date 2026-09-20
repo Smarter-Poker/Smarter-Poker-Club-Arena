@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { reportError } from '../../utils/errorReporter';
 import type { WheelSegment } from '../../services/DiamondWheelService';
+import { SUPER_GAME_TITLES } from '../../utils/diamondGameTitles';
 import styles from './WheelPrizeCard.module.css';
 
 type Region = readonly [number, number, number, number];
@@ -49,13 +50,13 @@ export function wheelCardLabel(segment: WheelSegment, upgraded = false): string 
     return `${tier ? `${tier} ` : ''}${amount} Chips`;
   }
   if (segment.kind === 'bonus') {
-    const name = {
-      plinko: 'Plinko',
-      crash: 'Crash',
-      crossing: 'Donkey Cross',
-      mines: 'Diamond Mines',
-    }[segment.game ?? 'plinko'];
-    return `${upgraded ? 'Super ' : ''}${name}`;
+    const game = segment.game ?? 'plinko';
+    // An upgraded card reads the Super title from the single source. The
+    // ordinary card keeps the short name the painted band has room for.
+    if (upgraded) return SUPER_GAME_TITLES[game];
+    return { plinko: 'Plinko', crash: 'Crash', crossing: 'Donkey Cross', mines: 'Diamond Mines' }[
+      game
+    ];
   }
   if (segment.kind === 'upgrade') return 'UPGRADE';
   return {

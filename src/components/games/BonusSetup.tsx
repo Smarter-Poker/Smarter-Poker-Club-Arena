@@ -1,14 +1,35 @@
 import {
-  plinkoAllocations,
+  PLINKO_DROPS,
   validBonusBudget,
   bonusWalletDebit,
   bonusTotal,
+  gameChips,
   type BonusBudget,
 } from '../../utils/bonusGameBudget';
+import { diamondGameTitle, type DiamondBonusGame } from '../../utils/diamondGameTitles';
+import type { BonusGuarantee } from '../../services/WheelBonusEntryService';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import DoubleDownOffer from './DoubleDownOffer';
 import styles from './BonusSetup.module.css';
+
+/** The sentence a player reads before Start: what the game pays whatever happens. */
+export function guaranteeCopy(
+  game: DiamondBonusGame,
+  guarantee: Pick<BonusGuarantee, 'guarantee' | 'minimumPayoutChips'>
+): string | null {
+  const chips = `${gameChips(guarantee.minimumPayoutChips)} Chips`;
+  if (guarantee.guarantee === 'super') {
+    const ending = {
+      plinko: 'Even If Every Drop Lands Low',
+      crash: 'Even If It Crashes Before You Cash Out',
+      crossing: 'Even If You Do Not Make It Across',
+      mines: 'Even If You Hit A Mine',
+    }[game];
+    return `${diamondGameTitle(game, 2)} Pays At Least ${chips}, ${ending}.`;
+  }
+  return guarantee.minimumPayoutChips > 0 ? `Pays At Least ${chips} On Any Loss.` : null;
+}
 
 /** These controls quote one atomic entry; changing a selection never debits a wallet. */
 export default function BonusSetup({
@@ -16,7 +37,8 @@ export default function BonusSetup({
   onChange,
   diamonds,
   disabled,
-  plinko = false,
+  game,
+  guarantee = null,
   clubId,
   entryReady = true,
   awardLoading = false,
@@ -27,7 +49,9 @@ export default function BonusSetup({
   onChange: (value: BonusBudget) => void;
   diamonds: number | null;
   disabled: boolean;
-  plinko?: boolean;
+  game: DiamondBonusGame;
+  /** The server's own quote for a pending award, shown before Start. */
+  guarantee?: BonusGuarantee | null;
   clubId: string;
   entryReady?: boolean;
   awardLoading?: boolean;
@@ -38,12 +62,10 @@ export default function BonusSetup({
   const [answeredAward, setAnsweredAward] = useState<string | null>(null);
   const valid = validBonusBudget(budget),
     total = bonusTotal(budget);
-  const choices = valid ? plinkoAllocations(total) : [];
-  const change = (next: BonusBudget) => {
-    if (validBonusBudget(next) && bonusTotal(next) % next.denomination !== 0) next.denomination = 1;
-    onChange(next);
-  };
+  const plinko = game === 'plinko';
+  const change = (next: BonusBudget) => onChange(next);
   const debit = bonusWalletDebit(budget);
+  const promise = guarantee ? guaranteeCopy(game, guarantee) : null;
   if (!entryReady)
     return (
       <section className={styles.setup} aria-label="Your Bonus Setup">
@@ -79,10 +101,15 @@ export default function BonusSetup({
   return (
     <section className={styles.setup} aria-label="Your Bonus Setup">
       {budget.award ? (
-        <div className={styles.entry}>
-          <span>{budget.award.boostMultiplier === 2 ? 'Upgraded Wheel Award' : 'Wheel Award'}</span>
+        <div className={styles.entry} data-guarantee={guarantee?.guarantee}>
+          <span>{diamondGameTitle(game, budget.award.boostMultiplier)} Award</span>
           <strong>{budget.base.toLocaleString()} Diamonds Funded</strong>
           <small>Your Original Spin: {budget.award.entryDiamonds.toLocaleString()} Diamonds</small>
+          {promise && (
+            <small className={styles.promise} role="status">
+              {promise}
+            </small>
+          )}
         </div>
       ) : (
         <label className={styles.entry}>
@@ -122,34 +149,10 @@ export default function BonusSetup({
           </span>
         </label>
       )}
-      {plinko && valid && (
-        <fieldset className={styles.drops} disabled={disabled}>
-          <legend>Diamonds Per Drop</legend>
-          <div className={styles.choices}>
-            {choices.map((choice) => (
-              <button
-                type="button"
-                key={choice.diamondsPerDrop}
-                disabled={disabled}
-                aria-pressed={budget.denomination === choice.diamondsPerDrop}
-                onClick={() => change({ ...budget, denomination: choice.diamondsPerDrop })}
-                aria-label={`${choice.diamondsPerDrop} ${choice.diamondsPerDrop === 1 ? 'Diamond' : 'Diamonds'} Per Drop, ${choice.drops} ${choice.drops === 1 ? 'Drop' : 'Drops'}`}
-              >
-                <strong>
-                  {choice.diamondsPerDrop} <span>◆</span>
-                </strong>
-                <small>
-                  {choice.drops} {choice.drops === 1 ? 'Drop' : 'Drops'}
-                </small>
-              </button>
-            ))}
-          </div>
-        </fieldset>
-      )}
       <p className={styles.total} aria-live="polite">
         {valid
           ? plinko
-            ? `${total / budget.denomination} ${total / budget.denomination === 1 ? 'Drop' : 'Drops'} × ${budget.denomination} ${budget.denomination === 1 ? 'Diamond' : 'Diamonds'} = ${total.toLocaleString()} Diamonds`
+            ? `${PLINKO_DROPS} Drops × ${budget.denomination.toLocaleString()} ${budget.denomination === 1 ? 'Diamond' : 'Diamonds'} = ${total.toLocaleString()} Diamonds`
             : `${total.toLocaleString()} Diamonds In This Round`
           : 'Enter 25-2,500 Whole Diamonds.'}
       </p>

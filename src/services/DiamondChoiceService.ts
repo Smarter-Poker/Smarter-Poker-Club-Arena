@@ -1,7 +1,12 @@
 import { supabase } from '../lib/supabase';
 import { earnedReceiptBudget } from '../utils/bonusGameBudget';
 import { validBonusMinimum } from '../utils/diamondBonusPayout';
-import type { ChoiceGame, ChoiceProof } from '../utils/diamondChoiceMath';
+import {
+  MINE_COUNTS,
+  ROAD_LADDERS,
+  type ChoiceGame,
+  type ChoiceProof,
+} from '../utils/diamondChoiceMath';
 
 export interface ChoiceRound {
   ok: true;
@@ -19,7 +24,8 @@ export interface ChoiceRound {
   prizes: number[];
   payout_chips: number;
   minimum_payout_chips?: number;
-  payout_version?: 1 | 2;
+  /** 1: no floor (historical). 2: a tenth of the stake. 3: the Super half. */
+  payout_version?: 1 | 2 | 3;
   server_seed_hash: string;
   client_seed: string;
   nonce: number;
@@ -96,9 +102,10 @@ export function parseChoiceRound(value: unknown): ChoiceRound {
     Number(v.diamonds_per_chip) <= 0 ||
     Math.abs(Number(v.bet_diamonds) / Number(v.diamonds_per_chip) - v.bet_chips) > 1e-8 ||
     Math.abs(v.payout_chips * 100 - Math.round(v.payout_chips * 100)) > 1e-8 ||
-    !(v.game === 'mines' ? ['5', '10', '15'] : ['steady', 'bold', 'extreme']).includes(
-      String(v.mode)
-    )
+    !(v.game === 'mines'
+      ? MINE_COUNTS.map(String)
+      : (Object.keys(ROAD_LADDERS) as string[])
+    ).includes(String(v.mode))
   ) {
     throw new Error('The Game Response Could Not Be Verified');
   }

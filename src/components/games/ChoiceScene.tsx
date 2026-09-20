@@ -12,7 +12,8 @@ import {
   crossingTrafficVisible,
   collisionFrame,
 } from '../../utils/crossingScene';
-import type { ChoiceGame } from '../../utils/diamondChoiceMath';
+import { CHOICE_MODE, ROAD_LADDERS, type ChoiceGame } from '../../utils/diamondChoiceMath';
+import { gameChips } from '../../utils/bonusGameBudget';
 import { prefersReducedMotion, getAnimationSpeed } from '../../utils/animationSpeed';
 import { reportError } from '../../utils/errorReporter';
 import styles from './ChoiceScene.module.css';
@@ -27,7 +28,23 @@ interface Props {
   onPick: (cell: number) => void;
   roundId?: string;
   onSettled?: () => void;
+  /** Multiplier cents per street: the prize for reaching it. Defaults to the one road. */
+  ladder?: readonly number[];
+  /** Chip prizes per step for this round or its quote, in step order. */
+  prizes?: readonly number[];
+  /** The stake in chips. */
+  betChips?: number;
+  /** The settled chips of a finished round. */
+  payoutChips?: number;
 }
+
+/** "1.10x" and "20.00x": a street's multiplier always reads with two decimals. */
+export const streetMultiplier = (cents: number) => `${(cents / 100).toFixed(2)}x`;
+/** How dangerous a street reads, 0 at the first street to 1 at the last. */
+export const streetHazard = (index: number, count: number) =>
+  count <= 1 ? 0 : Math.max(0, Math.min(1, index / (count - 1)));
+/** Four hazard bands: the tint, the traffic and the strip all read from the same one. */
+export const hazardBand = (hazard: number) => Math.min(3, Math.floor(hazard * 4));
 
 function material(color: number, metalness = 0.7, roughness = 0.24) {
   return new THREE.MeshPhysicalMaterial({
@@ -119,11 +136,19 @@ export default function ChoiceScene(props: Props) {
   if (props.game === 'mines') return <MinesGrid {...props} />;
   return <CrossingScene {...props} />;
 }
+
+/** The four street tints, safe to dangerous, on the asphalt itself. */
+const STREET_TINTS = [0x172536, 0x23283a, 0x322838, 0x442532];
+const SIGN_SLOTS = 16;
+
 function CrossingScene(props: Props) {
   const host = useRef<HTMLDivElement>(null),
     latest = useRef(props);
   latest.current = props;
   const [failed, setFailed] = useState(false);
+  const ladder = props.ladder ?? ROAD_LADDERS[CHOICE_MODE.crossing];
+  const step = props.picked.length;
+  const lost = props.phase === 'lost';
   useEffect(() => {
     if (failed) latest.current.onSettled?.();
   }, [failed, props.phase, props.picked.length]);
@@ -174,7 +199,8 @@ function CrossingScene(props: Props) {
       steel = material(0x6a8097, 0.8, 0.3),
       paint = material(0xc7d9db, 0.1, 0.75);
     box(scene, asphalt, 18, -0.28, 0, 62, 0.5, 20, 0.1);
-    const traffic: THREE.Group[] = [];
+    // Two cars per street: the second one joins the traffic on the more dangerous streets.
+    const traffic: THREE.Group[][] = [];
     const buildCar = (color: number) => {
       const car = new THREE.Group(),
         body = material(color, 0.65, 0.18),
@@ -205,23 +231,37 @@ function CrossingScene(props: Props) {
       return car;
     };
     const laneSigns: THREE.Mesh[] = [];
-    const textures: THREE.Texture[] = [];
-    const streetSign = (street: number) => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 256;
-      canvas.height = 128;
-      const ctx = canvas.getContext('2d')!;
+    const laneSlabs: THREE.Mesh[] = [];
+    const signCanvases: HTMLCanvasElement[] = [];
+    const textures: THREE.CanvasTexture[] = [];
+    /** A street sign prints the multiplier the street pays; the start prints START. */
+    const paintSign = (canvas: HTMLCanvasElement, street: number, multiplier: string | null) => {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
       ctx.fillStyle = '#091722';
       ctx.fillRect(0, 0, 256, 128);
-      ctx.strokeStyle = '#85cfff';
+      ctx.strokeStyle = multiplier === null && street > 0 ? '#2c4658' : '#85cfff';
       ctx.lineWidth = 3;
       ctx.strokeRect(6, 6, 244, 116);
       ctx.textAlign = 'center';
       ctx.fillStyle = '#def5ff';
+      if (street === 0) {
+        ctx.font = '700 48px sans-serif';
+        ctx.fillText('START', 128, 82);
+        return;
+      }
+      if (multiplier === null) return;
       ctx.font = '600 24px sans-serif';
-      ctx.fillText(street === 0 ? 'START' : 'STREET', 128, 42);
-      ctx.font = '700 55px sans-serif';
-      if (street > 0) ctx.fillText(String(street), 128, 98);
+      ctx.fillText(`STREET ${street}`, 128, 38);
+      ctx.font = '700 58px sans-serif';
+      ctx.fillStyle = '#ffe9a8';
+      ctx.fillText(multiplier, 128, 100);
+    };
+    const streetSign = (street: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 128;
+      signCanvases[street] = canvas;
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       textures.push(texture);
@@ -234,9 +274,10 @@ function CrossingScene(props: Props) {
         emissiveIntensity: 0.25,
       });
     };
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < SIGN_SLOTS; i++) {
       const x = streetCenter(i);
-      box(scene, asphalt, x, -0.03, 0, STREET_WIDTH - 0.12, 0.12, 19, 0.025);
+      const slab = box(scene, asphalt.clone(), x, -0.03, 0, STREET_WIDTH - 0.12, 0.12, 19, 0.025);
+      laneSlabs.push(slab);
       for (let z = -8; z <= 8; z += 2)
         box(scene, paint, x - STREET_WIDTH / 2, 0.04, z, 0.035, 0.01, 0.9, 0.002);
       const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), streetSign(i));
@@ -245,10 +286,15 @@ function CrossingScene(props: Props) {
       scene.add(sign);
       laneSigns.push(sign);
       if (i > 0) {
-        const car = buildCar([0x246bad, 0xc3d4df, 0x8b3441, 0x49655f][i % 4]);
-        car.position.x = x;
-        scene.add(car);
-        traffic[i] = car;
+        const lane = [
+          buildCar([0x246bad, 0xc3d4df, 0x8b3441, 0x49655f][i % 4]),
+          buildCar([0x9a4a1f, 0x5b6f86, 0xb7a23a, 0x7a2e2e][i % 4]),
+        ];
+        lane.forEach((car) => {
+          car.position.x = x;
+          scene.add(car);
+        });
+        traffic[i] = lane;
       }
     }
     // One continuous highway. The starting shoulder is outside every traffic lane.
@@ -291,6 +337,8 @@ function CrossingScene(props: Props) {
     let raf = 0,
       last = 0,
       signature = '',
+      roadSignature = '',
+      hazards: number[] = [],
       sceneElapsed = 0,
       actual = 0,
       from = 0,
@@ -301,6 +349,24 @@ function CrossingScene(props: Props) {
       lastVisibleFrame = null;
     };
     document.addEventListener('visibilitychange', visibilityChanged);
+    /** The road is repainted only when its ladder changes: signs, tints and traffic density. */
+    const paintRoad = (road: readonly number[]) => {
+      hazards = Array.from({ length: SIGN_SLOTS }, (_, i) =>
+        i === 0 || i > road.length ? 0 : streetHazard(i - 1, road.length)
+      );
+      for (let i = 0; i < SIGN_SLOTS; i++) {
+        const cents = road[i - 1];
+        paintSign(
+          signCanvases[i],
+          i,
+          i > 0 && cents !== undefined ? streetMultiplier(cents) : null
+        );
+        textures[i].needsUpdate = true;
+        (laneSlabs[i].material as THREE.MeshPhysicalMaterial).color.setHex(
+          i === 0 || i > road.length ? STREET_TINTS[0] : STREET_TINTS[hazardBand(hazards[i])]
+        );
+      }
+    };
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
       if (document.hidden || now - last < (reduced ? 100 : 16)) return;
@@ -308,8 +374,14 @@ function CrossingScene(props: Props) {
       const visibleDelta = lastVisibleFrame === null ? 0 : now - lastVisibleFrame;
       lastVisibleFrame = now;
       const p = latest.current,
+        road = p.ladder ?? ROAD_LADDERS[CHOICE_MODE.crossing],
         step = p.picked.length,
         newSignature = `${p.roundId}:${step}:${p.phase}`;
+      const newRoad = road.join(',');
+      if (newRoad !== roadSignature) {
+        roadSignature = newRoad;
+        paintRoad(road);
+      }
       if (newSignature !== signature) {
         signature = newSignature;
         from = p.phase === 'idle' ? 0 : actual;
@@ -330,14 +402,20 @@ function CrossingScene(props: Props) {
       animal.legs.forEach((leg, i) => {
         leg.rotation.z = walk < 1 ? Math.sin(walk * Math.PI * 4 + (i % 2) * Math.PI) * 0.5 : 0;
       });
-      traffic.forEach((car, i) => {
-        if (!car) return;
-        car.visible =
+      traffic.forEach((lane, i) => {
+        if (!lane) return;
+        const hazard = hazards[i] ?? 0;
+        const open =
           crossingTrafficVisible(i, step, p.phase === 'lost') && !(walk < 1 && i === step - 1);
-        car.position.z = reduced
-          ? 7
-          : (((((now / 530) * (i % 2 ? 1 : -1) + i * 3.13) % 22) + 22) % 22) - 11;
-        car.rotation.y = i % 2 ? 0 : Math.PI;
+        // Traffic runs faster and thicker the further down the road it is.
+        const period = 530 - 210 * hazard;
+        lane.forEach((car, n) => {
+          car.visible = open && (n === 0 || hazardBand(hazard) >= 2);
+          car.position.z = reduced
+            ? 7 - n * 6
+            : (((((now / period) * (i % 2 ? 1 : -1) + i * 3.13 + n * 11) % 22) + 22) % 22) - 11;
+          car.rotation.y = i % 2 ? 0 : Math.PI;
+        });
       });
       impactCar.visible = p.phase === 'lost';
       flash.visible = false;
@@ -420,17 +498,112 @@ function CrossingScene(props: Props) {
       canvas.remove();
     };
   }, []);
+  // The strip keeps the street the donkey stands on in view without stealing the page scroll.
+  const currentStreet = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    const item = currentStreet.current;
+    if (item && typeof item.scrollIntoView === 'function')
+      item.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'auto' });
+  }, [step, props.phase, props.roundId]);
+  const reached = step > 0 ? (props.prizes?.[step - 1] ?? null) : null;
+  const ahead = props.prizes?.[step] ?? null;
+  const lastStreet = ladder.length;
+  /** A street beyond the ladder (a saved round on another road) reads as its last street. */
+  const mult = (index: number) =>
+    streetMultiplier(ladder[Math.min(Math.max(0, index), lastStreet - 1)]);
+  const booked = props.payoutChips ?? reached;
+  const readout =
+    props.phase === 'lost'
+      ? {
+          label: `Bust On Street ${step}`,
+          value:
+            props.payoutChips === undefined
+              ? 'Round Over'
+              : `${gameChips(props.payoutChips)} Chips Kept`,
+          note:
+            props.payoutChips === undefined
+              ? 'The Donkey Did Not Make It Across'
+              : 'The Guaranteed Minimum Is Yours',
+        }
+      : props.phase === 'cashed'
+        ? {
+            label: `Booked At Street ${step}`,
+            value: booked === null ? 'Win Booked' : `${gameChips(booked)} Chips`,
+            note:
+              props.roadEnd === null
+                ? `${mult(step - 1)} Reached`
+                : props.roadEnd === 0
+                  ? 'The Donkey Would Have Stopped Before Street 1'
+                  : `The Donkey Would Have Reached Street ${props.roadEnd}`,
+          }
+        : step > 0
+          ? {
+              label: 'Cash Out Value',
+              value: reached === null ? mult(step - 1) : `${gameChips(reached)} Chips`,
+              note:
+                step < lastStreet
+                  ? `Next Street Pays ${mult(step)}${ahead === null ? '' : ` For ${gameChips(ahead)} Chips`}`
+                  : 'The Final Street. Book The Win.',
+            }
+          : {
+              label: 'First Street Pays',
+              value: ahead === null ? mult(0) : `${gameChips(ahead)} Chips At ${mult(0)}`,
+              note: `${lastStreet} Streets Up To ${mult(lastStreet - 1)}`,
+            };
   return (
     <div className={styles.scene} ref={host} data-motion="keep" data-phase={props.phase}>
       <div className={styles.caption}>
-        {props.phase === 'lost'
+        {lost
           ? 'Collision · Round Over'
           : props.phase === 'cashed'
             ? 'Win Booked · Showing The Remaining Route'
             : props.phase === 'idle'
               ? 'Start · Highway Ahead'
-              : `Street ${props.picked.length} · Next Street Clear`}
+              : `Street ${step} · Next Street Clear`}
       </div>
+      <div className={styles.readout} aria-live="polite" data-tone={lost ? 'bust' : undefined}>
+        <span className={styles.readoutLabel}>{readout.label}</span>
+        <strong className={styles.readoutValue}>{readout.value}</strong>
+        <span className={styles.readoutNote}>{readout.note}</span>
+      </div>
+      {lost && (
+        <div className={styles.bust} role="status" aria-label={`Bust On Street ${step}`}>
+          <span>Bust</span>
+        </div>
+      )}
+      <ol className={styles.streets} aria-label="Streets And Their Multipliers">
+        {ladder.map((cents, index) => {
+          const street = index + 1;
+          const state =
+            lost && street === step
+              ? 'crash'
+              : street < step || (street === step && props.phase === 'cashed')
+                ? 'crossed'
+                : street === step
+                  ? 'current'
+                  : street === step + 1 && !lost
+                    ? 'next'
+                    : 'ahead';
+          const prize = props.prizes?.[index];
+          return (
+            <li
+              key={street}
+              ref={street === step ? currentStreet : undefined}
+              className={styles.street}
+              data-state={state}
+              data-hazard={hazardBand(streetHazard(index, ladder.length))}
+              aria-current={street === step ? 'step' : undefined}
+              aria-label={`Street ${street} Pays ${streetMultiplier(cents)}${prize === undefined ? '' : `, ${gameChips(prize)} Chips`}`}
+            >
+              <span className={styles.streetNumber}>{street}</span>
+              <strong className={styles.streetMultiplier}>{streetMultiplier(cents)}</strong>
+              {prize !== undefined && (
+                <small className={styles.streetPrize}>{gameChips(prize)}</small>
+              )}
+            </li>
+          );
+        })}
+      </ol>
       {failed && (
         <p className={styles.fallback}>
           The Street Animation Is Unavailable. Your Confirmed Result And Controls Remain Available.

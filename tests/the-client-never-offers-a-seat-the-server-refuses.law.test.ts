@@ -30,25 +30,24 @@
  * number exist.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { migrationCorpus, migrationsMentioning } from './helpers/migrationCorpus';
 
 const ROOT = resolve(__dirname, '..');
 const at = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
 
-/** Every migration, joined, so a cap can be read wherever it was last set. */
-const migrations = () => {
-  const dir = resolve(ROOT, 'supabase/migrations');
-  return readdirSync(dir)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-    .map((f) => [f, readFileSync(resolve(dir, f), 'utf8')] as const);
-};
+/*
+ * The migration directory is read through the memoised corpus helper, once per
+ * file, so a cap can be read wherever it was last set without this law
+ * re-reading 3,200 files for every question it asks. This file used to carry
+ * its own reader and was one of the scanners that crossed vitest's 5-second
+ * budget on a busy machine (see tests/helpers/migrationCorpus.ts).
+ */
 
 describe('LAW - the client cap is the server cap', () => {
   it('the server says four, in the migration that says so in its name', () => {
-    const [, sql] =
-      migrations().find(([name]) => name.includes('four_games_is_the_max')) ?? ([] as never);
+    const sql = migrationCorpus().find(({ name }) => name.includes('four_games_is_the_max'))?.sql;
     expect(sql, 'the migration that lowered the cap is gone').toBeTruthy();
     expect(sql).toMatch(/v_max_tables[^\n]*4/);
   });
@@ -57,9 +56,7 @@ describe('LAW - the client cap is the server cap', () => {
     /* The arena needed its own door, so the number exists twice on the server
        too. Both are asserted, because a cap enforced in one denomination and
        not the other is a cap in name only. */
-    const diamond = migrations().filter(([, sql]) =>
-      sql.includes('TABLE_CAP_REACHED: already seated at four cash tables')
-    );
+    const diamond = migrationsMentioning('TABLE_CAP_REACHED: already seated at four cash tables');
     expect(diamond.length, 'the Diamond door no longer states the cap').toBeGreaterThan(0);
   });
 

@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { cashBuyInRefusalText } from '../../src/lib/cashBuyIn';
+import { migrationsMentioning } from '../helpers/migrationCorpus';
 
 /**
  * These strings are the ACTUAL raise texts in `atomic_table_buyin` and the two
@@ -147,12 +148,8 @@ describe('booted for low VPIP is barred for two hours (Dan 2026-09-05)', () => {
   it('and none of those names is one the database stopped raising', () => {
     /* A translation keyed on a name the database no longer uses is worse than
        no translation: it looks handled and is dead. The names are read back
-       out of the migrations that raise them. */
-    const dir = resolve(__dirname, '../../supabase/migrations');
-    const sql = readdirSync(dir)
-      .filter((f) => f.endsWith('.sql'))
-      .map((f) => readFileSync(resolve(dir, f), 'utf8'))
-      .join('\n');
+       out of the migrations that raise them, through the memoised corpus so
+       the directory is read once per file rather than once per question. */
     for (const refusal of [
       'insufficient_settled_diamonds',
       'diamond_cash_not_open',
@@ -166,7 +163,10 @@ describe('booted for low VPIP is barred for two hours (Dan 2026-09-05)', () => {
       'diamond_top_up_requires_a_live_seat',
       'diamond_top_up_stale_seat',
     ]) {
-      expect(sql, `${refusal} is translated but never raised`).toContain(refusal);
+      expect(
+        migrationsMentioning(refusal).length,
+        `${refusal} is translated but never raised`
+      ).toBeGreaterThan(0);
     }
   });
 

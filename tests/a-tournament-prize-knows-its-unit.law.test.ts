@@ -78,6 +78,24 @@ const SOURCE_ROOTS = ['src', 'server/src'];
 const ALL_SOURCE = SOURCE_ROOTS.flatMap(sourceFiles);
 
 /**
+ * Each source file, read and blanked ONCE for the life of this module. The
+ * census below asks the same 1,700-odd files about five rules from two tests,
+ * and reading and tokenising them ten times over is what put this law past
+ * vitest's 5-second budget on a busy machine while passing alone - the
+ * coin-flip shape tests/helpers/migrationCorpus.ts was written against.
+ */
+const blankedSource = new Map<string, { src: string; code: string }>();
+function sourceOf(file: string): { src: string; code: string } {
+  let hit = blankedSource.get(file);
+  if (!hit) {
+    const src = read(file);
+    hit = { src, code: blankNonCode(src) };
+    blankedSource.set(file, hit);
+  }
+  return hit;
+}
+
+/**
  * Every call to `name` in `src`, each sliced from the name to its own closing
  * paren. `sliceCall` returns the FIRST code occurrence in whatever it is
  * handed, so the remainder is advanced past each hit and asked again.
@@ -128,8 +146,7 @@ interface Site {
 function callSites(name: string): Site[] {
   const sites: Site[] = [];
   for (const file of ALL_SOURCE) {
-    const src = read(file);
-    const code = blankNonCode(src);
+    const { src, code } = sourceOf(file);
     if (!code.includes(`${name}(`)) continue;
     if (new RegExp(`function\\s+${name}\\s*\\(`).test(code)) continue;
     for (const call of eachCall(src, name)) sites.push({ file, call, args: argumentCount(call) });

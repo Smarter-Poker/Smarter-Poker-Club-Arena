@@ -145,6 +145,20 @@ export function classifyChangedPaths(paths) {
     /^(tests\/sql\/diamond-[a-z0-9-]+\.sql|tests\/fixtures\/(diamond-wheel-v2-(receipts|state)|diamond-spins\/wheel-(?:earned|v3)-postgres-receipts)\.json|tests\/unit\/wheel(ServerReceipts|EarnedPostgresContract|UpgradeReceipts|UpgradePostgresContract)\.test\.ts|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|DiamondWheelService|DiamondReplayService|DiamondStatementService|WheelBonusEntryService|diamondBonusRecovery)\.ts|src\/hooks\/use(BonusBudget|EarnedBonus)\.ts|src\/components\/games\/BonusSetup\.tsx|src\/utils\/(crashReceipt|bonusGameBudget|wheelAward|wheelPendingSpin|wheelFairness)\.ts|src\/pages\/Diamond(Choice|Crash|Plinko|Wheel)Page\.tsx)$/
   );
 
+  // The Diamond Arena SQL acceptance (2026-09-19): every runner, every fixture
+  // file the runners read and the wrapper that runs them in the accounting job.
+  // The diamond-tournament-* captures, deltas, manifests, seed and cases were
+  // added on 2026-09-20 with the two tournament runners that load them: the
+  // runner is what the job executes, so a change to what it loads has to reach
+  // the same job or the acceptance certifies the old bytes. The `diamondGames`
+  // prefix above happens to claim the `.sql` half of those today; they are
+  // named here as well because THIS is the lane that executes them, so a future
+  // narrowing of that prefix cannot quietly take them out of the job that runs
+  // them. The manifests are claimed only here. Nothing is derived from the
+  // other lane, so the two cannot disagree - a path matched by either is in.
+  const diamondSqlAcceptance = matches(
+    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
+  );
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);
   // Script/fixture-only edits must admit accounting and its routing tests.
@@ -174,6 +188,7 @@ export function classifyChangedPaths(paths) {
       broad ||
       bbjFixture ||
       diamondGames ||
+      diamondSqlAcceptance ||
       phase4Changed ||
       matches(mttPreparation) ||
       matches(satelliteQualifiers) ||
@@ -205,6 +220,7 @@ export function classifyChangedPaths(paths) {
       matches(breakfastWitness) ||
       buildProvenance ||
       diamondGames ||
+      diamondSqlAcceptance ||
       commitmentAudit ||
       tournamentAccountingInput ||
       matches(mttPreparation) ||

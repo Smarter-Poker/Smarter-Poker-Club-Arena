@@ -232,7 +232,9 @@ describe('every diamond SQL probe the accounting job executes admits that job', 
     .sort();
 
   it('found the probes the runner actually executes', () => {
-    expect(executed.length, `${runner} named no tests/sql probe - read it again`).toBeGreaterThan(5);
+    expect(executed.length, `${runner} named no tests/sql probe - read it again`).toBeGreaterThan(
+      5
+    );
   });
 
   it.each(executed)('%s admits the accounting job that runs it', (path) => {
@@ -252,11 +254,24 @@ describe('every diamond SQL probe the accounting job executes admits that job', 
     }
   );
 
-  it('keeps neighbouring SQL lanes out of the diamond prefix', () => {
-    expect(classifyChangedPaths(['tests/sql/poker-diamond-custody.sql']).server).toBe(false);
+  it('keeps unrelated SQL out, and lets the Diamond Arena lane claim its own', () => {
+    /* `poker-diamond-*` is still NOT admitted by this lane's `diamond-` prefix,
+       and it must not be: those probes belong to the Diamond ARENA acceptance,
+       a different lane in the same file. This read `false` until 2026-09-20,
+       when that acceptance started running in the same accounting job:
+       scripts/ci/run-diamond-sql-acceptance.py executes
+       tests/sql/run-poker-diamond-custody.py, which loads
+       tests/sql/poker-diamond-custody.sql. Leaving the absence asserted would
+       have meant the one job that executes the probe could skip on a pull
+       request that changed the probe, which is the defect this whole file is
+       about, one lane over. It is admitted, by the lane that executes it. */
+    expect(classifyChangedPaths(['tests/sql/poker-diamond-custody.sql']).server).toBe(true);
+    /* An SQL probe no lane owns still admits nothing, and the `.sql` anchor
+       still holds: a Markdown companion of a probe is documentation. */
     expect(
       classifyChangedPaths(['tests/sql/union-statement-issuer-rollback-probe.sql']).server
     ).toBe(false);
+    expect(classifyChangedPaths(['tests/sql/diamond-daily-custody.sql.md']).server).toBe(false);
   });
 
   it('keeps the migration and runner classes that already routed correctly', () => {

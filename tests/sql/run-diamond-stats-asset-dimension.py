@@ -22,10 +22,15 @@ import sys
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-PG_BIN = os.environ.get(
-    'PG_BIN',
-    '/opt/homebrew/opt/postgresql@17/bin' if sys.platform == 'darwin' else '/usr/lib/postgresql/17/bin',
-)
+# PG_BIN is the ONLY thing this runner reads from the environment, and it names
+# the PostgreSQL 17 binaries - never a server. The socket, the port and the
+# database all live in the private cluster built below, so no environment
+# variable can point this runner at a real database. Its default is the owner's
+# Homebrew path; bin_path falls back to the packaged Linux locations and then to
+# PATH, so a CI box with no Homebrew resolves the tools without a second
+# variable that has to be kept in step with this one.
+PG_BIN = os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin')
+PACKAGED_BINDIRS = ('/usr/lib/postgresql/17/bin', '/usr/pgsql-17/bin')
 
 
 # macOS: the postmaster refuses to start under a locale it has to resolve
@@ -36,9 +41,10 @@ ENV = {**os.environ, 'LC_ALL': 'C', 'LANG': 'C'}
 
 
 def bin_path(name: str) -> str:
-    candidate = pathlib.Path(PG_BIN) / name
-    if candidate.exists():
-        return str(candidate)
+    for bindir in (PG_BIN,) + PACKAGED_BINDIRS:
+        candidate = pathlib.Path(bindir) / name
+        if candidate.exists():
+            return str(candidate)
     found = shutil.which(name)
     if not found:
         raise SystemExit(f'PostgreSQL 17 tool not found: {name} (set PG_BIN)')

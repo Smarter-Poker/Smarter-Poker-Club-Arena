@@ -18,7 +18,15 @@ Run it:
 python3 tests/sql/run-diamond-tournament-doors.py
 ```
 
-It needs PostgreSQL 17 binaries (`--bindir DIR`, or `PG17_BINDIR`, or one of
+Both runners also run in CI, through
+`scripts/ci/run-diamond-sql-acceptance.py` in the
+`Accounting transactions (PostgreSQL 17)` job. If you add another runner under
+`tests/sql/`, it moves three places in the same commit: see
+[`README.md`](./README.md) in this directory. `PG_BIN` is the only thing either
+runner reads from the environment; it names the PostgreSQL 17 binaries and never
+a server.
+
+It needs PostgreSQL 17 binaries (`--bindir DIR`, or `PG_BIN`, or one of
 the usual Homebrew and Debian locations). It initdbs its own cluster on a
 private unix socket with `listen_addresses` empty, loads four files in order,
 requires every pin to match, and drops the cluster. It never connects to

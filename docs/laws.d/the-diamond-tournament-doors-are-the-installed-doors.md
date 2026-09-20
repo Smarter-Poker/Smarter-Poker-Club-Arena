@@ -14,3 +14,9 @@ building this fixture tried exactly that across ten financial migrations to
 make a replay succeed; an md5 pin is the only thing between an in-place edit
 and a silently different money function, and it is never weakened to make a
 fixture build.
+
+`tests/sql/run-diamond-tournament-doors.py` runs in CI through
+`scripts/ci/run-diamond-sql-acceptance.py`, so this capture is now certified on
+every pull request that touches it rather than when somebody remembers. A new
+runner under `tests/sql/` moves three places in the same commit: see
+`tests/sql/README.md`.

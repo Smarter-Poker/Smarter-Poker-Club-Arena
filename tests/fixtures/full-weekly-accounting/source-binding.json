@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "114ca8f15279e7102b7d278509147b384ae4f04b7e6b393ea0dc7f899ae67e3b",
+    "scripts/ci/classify-ci-changes.mjs": "2ba475d3ae45a4f8a50d8be839019d1356e8644fd71bb2bcb84803398565d92e",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "f88a0ad13d6c7e6feb17abfe4e34306786432e3cec5a28fb99e31ddc5c8ac603",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "8cd800ebf3c4823f239af6c1af4242d5ec966b5d0858eda6a671645403bbd17e",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "4f2cbfb2d67194498e43e911c49dd3a7fe182be33e766060b761f4eebf495086",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "76dd59f9abdc3137b7d731e917a620fb49607121138ba94cbcd0de344e851887",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -1467,5 +1467,40 @@
     ],
     "reason": "PR #4956 gave public.disputes the two entry points it never had, fn_dispute_submit and fn_dispute_withdraw, so submitDispute and withdrawDispute stopped doing raw client writes whose errors were discarded. tests/unit/discardedErrorReadRatchet.test.ts lowered its src/services/DisputeService.ts baseline from 3 to 1 to match. That is the ratchet tightening, not relaxing: it now permits fewer discarded reads for that file than before. #4956 merged at 07:57Z. #4959, which re-recorded this same path for the unrelated #4943 drift, was cut from 1e19f83b6c ten minutes earlier and squash-merged at 08:14Z, so it re-recorded the sha256 of the bytes at ITS base and landed a hash for a file main had already changed. Its own verification could not have seen this: at 1e19f83b6c the file really did hash to the value it recorded. This is exactly the case .github/workflows/ci.yml documents - a squash merge builds a tree that no pull request ever tested, whenever main moves between a pull request's last run and its merge. The preamble also raises on the FIRST drift it meets, so while tests/unit/FinancialCronService.test.ts was still stale this one stayed masked; #4959 fixing that one is what surfaced it. The required Accounting transactions (PostgreSQL 17) check therefore still fails in the python preamble with 'Repository lifecycle fixture drift: tests/unit/discardedErrorReadRatchet.test.ts', before any PostgreSQL cluster starts and before any accounting component is installed, and Server Engine (typecheck + tests) and What this run verified fail only because they aggregate it. No financial behaviour is implicated. Refresh only this one stale repository binding; preserve all 29 captured catalog fixtures, the other 422 repository bindings, every financial component and every assertion.",
     "verification": "The new sha256 is the sha256 of the bytes of tests/unit/discardedErrorReadRatchet.test.ts at this base commit, read from disk in a clean worktree whose file is identical to HEAD. All 423 repository bindings and all 29 captured fixtures were then re-verified against the tree with the runner's own computation - hashlib.sha256(path.read_bytes()).hexdigest(), repository_fixtures resolved against the repository root and fixtures against tests/fixtures/full-weekly-accounting, no normalisation of any kind - and every one agrees. component_count, both assertion counts, the captured fixtures map, limits and supplemental captures are byte-identical to the previous binding. The edit went through a JSON round-trip proved byte-identical to the original file, so the diff is exactly this one hash plus this note."
+  },
+  "diamond_sql_acceptance_ci_binding_20260920": {
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "114ca8f15279e7102b7d278509147b384ae4f04b7e6b393ea0dc7f899ae67e3b",
+        "sha256": "2ba475d3ae45a4f8a50d8be839019d1356e8644fd71bb2bcb84803398565d92e"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "f88a0ad13d6c7e6feb17abfe4e34306786432e3cec5a28fb99e31ddc5c8ac603",
+        "sha256": "8cd800ebf3c4823f239af6c1af4242d5ec966b5d0858eda6a671645403bbd17e"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "4f2cbfb2d67194498e43e911c49dd3a7fe182be33e766060b761f4eebf495086",
+        "sha256": "76dd59f9abdc3137b7d731e917a620fb49607121138ba94cbcd0de344e851887"
+      }
+    ],
+    "changed_qualification_manifest_pins": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "previous_sha256": "d568a3342774a2e19bcd88666d165141d8d6f8f83498fca954b764ebb67c0e72",
+        "sha256": "eab4a307624077af69afd7daa1016aaa0265bf5fc980215fb3cafff8879532b9",
+        "pinned_in": "scripts/qualification/cash-native-hosted.manifest.json"
+      },
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "114ca8f15279e7102b7d278509147b384ae4f04b7e6b393ea0dc7f899ae67e3b",
+        "sha256": "2ba475d3ae45a4f8a50d8be839019d1356e8644fd71bb2bcb84803398565d92e",
+        "pinned_in": "scripts/qualification/cash-native-hosted.manifest.json"
+      }
+    ],
+    "reason": "The classifier gained additive Diamond SQL acceptance routing: a change to any tests/sql/run-*diamond*.py runner, any tests/sql/poker-diamond-*.sql fixture, poker-arena-access.sql, the controlled-play driver, the session and transfer cap fixtures, any tests/sql/diamond-tournament-*.sql or tests/sql/diamond-tournament-*.manifest.json input the two tournament runners load, scripts/ci/run-diamond-sql-acceptance.py or scripts/ci/check-diamond-runners-listed.mjs now selects the PostgreSQL accounting job and its routing tests, so the fourteen Diamond money-door runners and the arena access script execute there instead of only by hand. The diamond-tournament-* inputs were added on 2026-09-20 with the tournament doors and tournament lifecycle runners that read them: they selected tests but not server, so the job that executes the runner could skip on a pull request that changed what it executes. No existing classification branch was removed or narrowed, and no accounting component, assertion, capture or fixture changed. The two nested financial bindings already retain the reviewed classifier bytes; refreshing them changes their own sha256, which this outer binding also pins, so the four hashes move together. The workflow pin moves for the same edit: the accounting job gained the list check, the acceptance step and its evidence upload, and nothing else. Every previous_sha256 here is the value on origin/main d0e04ed4fe, the revision this branch is merged up to.",
+    "verification": "All fourteen runners and poker-arena-access.sql were executed on an isolated PostgreSQL 17 through scripts/ci/run-diamond-sql-acceptance.py against freshly created empty fixture databases, and each proved its own terminal line: 15 of 15 runs passed in 18.1 seconds, the eleven shared-cluster runners on the socket the wrapper builds and the three private-cluster runners each on a cluster it created and destroyed. The three new runners were also executed with PG_BIN set to a directory that does not exist on this machine, proving PG_BIN is honoured and that the fixed fallback in source resolves PostgreSQL 17 without a second environment variable. node scripts/ci/check-diamond-runners-listed.mjs reports 14 runners all run by CI and was proved to refuse an unlisted one; npx vitest run tests/unit/diamondAcceptanceCi.test.ts passes with 80 tests; python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py accepts the refreshed cash manifest in 6 cases. python3 scripts/ci/verify-source-bindings.py re-read every pin map in every source-binding.json in the merged tree: 745 pins across 15 sections in 15 binding files, the five refreshed here included, all agree. This refresh establishes no native financial execution and no production installation; the required hosted accounting job must still pass. Neither cash_games_enabled nor tournaments_enabled was touched, and no production object was read, created or changed."
   }
 }

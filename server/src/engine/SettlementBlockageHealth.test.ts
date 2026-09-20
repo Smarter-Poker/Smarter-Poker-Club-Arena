@@ -127,12 +127,15 @@ describe('blocked settlement telemetry', () => {
       tableId: `table-${n}`,
       handCount: n,
       settlementAgeMs: 30_000 + n,
+      loopPhase: `await_post_hand_tasks+${n}s`,
     }));
     const before = structuredClone(tables);
     const result = settlementHealthSnapshot(tables);
     expect(result.blockedSettlementCount).toBe(30);
     expect(result.blockedSettlements).toHaveLength(20);
     expect(result.blockedSettlements[0].tableId).toBe('table-29');
+    expect(result.blockedSettlements[0].loopPhase).toBe('await_post_hand_tasks+29s');
+    expect(result.blockedSettlements[19].loopPhase).toBe('await_post_hand_tasks+10s');
     expect(tables).toEqual(before);
   });
 

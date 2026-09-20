@@ -178,11 +178,11 @@
     "tests/components/UnionAccountingRunStatus.test.tsx": "182307e73a0f0f09e44c20a88b3e8a5c40b67f070126514f01e5b5b3bd5f7aa9",
     "tests/components/WeeklyAccountingWorkspace.test.tsx": "c4f202839c25787b837e24a4f625f79769e1b08eb9e309da260612f614003289",
     "tests/helpers/accountingObservation.ts": "9dba06d97c2f9cce2356fa8c6800ff9a07e4618ea2028370a278b4820b6199f6",
-    "tests/components/FinancialAlertsExport.test.tsx": "f2338b7d2e32c7a4a771d997743a52f9c4fc73a75bb5d399de4be0e0fba2e421",
+    "tests/components/FinancialAlertsExport.test.tsx": "b90cb1f4f102279d48b5b757b27cdee1c8eafa43756d96d6144c41e9380fb780",
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "fe9542d1ba09b0d3fe9f474b4948768595cac66c2163d4b24ff77b465e82a6b2",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "0b132d5221458c0977be321c7547c4520206ff21f01e7089390575b24f3c64cf",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -1502,5 +1502,26 @@
     ],
     "reason": "The classifier gained additive Diamond SQL acceptance routing: a change to any tests/sql/run-*diamond*.py runner, any tests/sql/poker-diamond-*.sql fixture, poker-arena-access.sql, the controlled-play driver, the session and transfer cap fixtures, any tests/sql/diamond-tournament-*.sql or tests/sql/diamond-tournament-*.manifest.json input the two tournament runners load, scripts/ci/run-diamond-sql-acceptance.py or scripts/ci/check-diamond-runners-listed.mjs now selects the PostgreSQL accounting job and its routing tests, so the fourteen Diamond money-door runners and the arena access script execute there instead of only by hand. The diamond-tournament-* inputs were added on 2026-09-20 with the tournament doors and tournament lifecycle runners that read them: they selected tests but not server, so the job that executes the runner could skip on a pull request that changed what it executes. No existing classification branch was removed or narrowed, and no accounting component, assertion, capture or fixture changed. The two nested financial bindings already retain the reviewed classifier bytes; refreshing them changes their own sha256, which this outer binding also pins, so the four hashes move together. The workflow pin moves for the same edit: the accounting job gained the list check, the acceptance step and its evidence upload, and nothing else. Every previous_sha256 here is the value on origin/main d0e04ed4fe, the revision this branch is merged up to.",
     "verification": "All fourteen runners and poker-arena-access.sql were executed on an isolated PostgreSQL 17 through scripts/ci/run-diamond-sql-acceptance.py against freshly created empty fixture databases, and each proved its own terminal line: 15 of 15 runs passed in 18.1 seconds, the eleven shared-cluster runners on the socket the wrapper builds and the three private-cluster runners each on a cluster it created and destroyed. The three new runners were also executed with PG_BIN set to a directory that does not exist on this machine, proving PG_BIN is honoured and that the fixed fallback in source resolves PostgreSQL 17 without a second environment variable. node scripts/ci/check-diamond-runners-listed.mjs reports 14 runners all run by CI and was proved to refuse an unlisted one; npx vitest run tests/unit/diamondAcceptanceCi.test.ts passes with 80 tests; python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py accepts the refreshed cash manifest in 6 cases. python3 scripts/ci/verify-source-bindings.py re-read every pin map in every source-binding.json in the merged tree: 745 pins across 15 sections in 15 binding files, the five refreshed here included, all agree. This refresh establishes no native financial execution and no production installation; the required hosted accounting job must still pass. Neither cash_games_enabled nor tournaments_enabled was touched, and no production object was read, created or changed."
+  },
+  "console_reland_rebinding_20260920": {
+    "base_commit": "29ccff3f45702e0ff2dd12231e3906982264d1e4",
+    "prior_binding_sha256": "ef39943ca84e059c80d6677613313b5f6ee3b9b3d3f4623248f6a5ce393acf72",
+    "supersedes": "dispute_intake_ratchet_rebinding_20260920",
+    "source_pull_request": 4696,
+    "source_commit": "29ccff3f45",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/components/FinancialAlertsExport.test.tsx",
+        "previous_sha256": "f2338b7d2e32c7a4a771d997743a52f9c4fc73a75bb5d399de4be0e0fba2e421",
+        "sha256": "b90cb1f4f102279d48b5b757b27cdee1c8eafa43756d96d6144c41e9380fb780"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "fe9542d1ba09b0d3fe9f474b4948768595cac66c2163d4b24ff77b465e82a6b2",
+        "sha256": "0b132d5221458c0977be321c7547c4520206ff21f01e7089390575b24f3c64cf"
+      }
+    ],
+    "reason": "#4711 (Restore September 13 GitHub/Hetzner delivery and application baseline) took every surface the #ClubArenaConsole sweep had rebuilt off main; PR #4696 re-lands them as a three-way merge with the restore commit as the base, so every post-restore change on main stays on the console render. Two pinned test files move with it, both by label only. tests/unit/discardedErrorReadRatchet.test.ts drops three baseline rows (src/pages/HomePage.tsx 1, src/components/agent/AgentScoreCard.tsx 4, src/components/table/RealTimeResultPanel.tsx 1) because the console versions of those files read every error they used to discard; the ratchet tightens, it does not relax, and every other row is byte-identical to main. tests/components/FinancialAlertsExport.test.tsx keeps every assertion about export scope, identity refusal, account ABA fencing and Blob URL cleanup; only its selectors move to the console's print: alert messages print through titleCase() (Dan 2026-09-14, the first letter of every word is capitalised, data included) so the fixture messages are Title Case, the empty pill reads No Loaded Alerts, the Warning filter is a lit word whose accessible name is Warning followed by its count, and the per-alert control is named Mark Resolved because the foot's Resolve All plate is always painted (two actions or none). No financial behaviour, component, captured fixture or accounting assertion changes.",
+    "verification": "Each new sha256 is the sha256 of the bytes of the named file at this base commit, read from disk in the worktree that produced the commit. All other repository bindings and every captured fixture are untouched and re-verified with python3 scripts/ci/verify-source-bindings.py, which reports every pinned source file hashing to its recorded bytes."
   }
 }

@@ -1535,6 +1535,11 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-rake-attribution-atomic.py --output artifacts/production-alerts-sql/rake-attribution
 
+      - name: Diamond health requires complete known comparisons
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-diamond-health-comparisons.py
+
       - name: Check composed alert fixture admission and cleanup guards
         run: python3 scripts/ci/test_production_alert_core_postgres.py
 

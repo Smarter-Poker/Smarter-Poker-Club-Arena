@@ -1,17 +1,29 @@
 #!/usr/bin/env bash
 # Lightning Phase 1: the cash session knows its cluster.
 #
-# Applies 20260920172736 to a throwaway PostgreSQL 17 cluster that is carrying
-# the PRE-migration schema and two sessions that are ALREADY OPEN, one at a
-# clustered table and one at a table outside any cluster. The migration claims
-# it "cannot silently open a second economic identity" and that nothing but
-# cluster_id changes on a row that is already open; this proves both against a
-# real backend rather than against a reading of the file.
+# Applies 20260920172736 to a throwaway PostgreSQL 17 cluster carrying the
+# PRE-migration schema and three sessions that already exist: two OPEN (one at
+# a clustered table, one at a table outside any cluster) and one CLOSED at the
+# clustered table. The migration claims it "cannot silently open a second
+# economic identity" and that nothing but cluster_id changes on a row that is
+# already open; the eleven checks below prove both against a real backend
+# rather than against a reading of the file.
 #
-# Every comparison below is IS DISTINCT FROM, never = or <>. A NULL where a
-# value was expected makes `IF NOT (x = y)` evaluate to NULL, which plpgsql
-# takes as false, so an absent backfill would PASS a check written that way.
-# (It did, until a negative control with the backfill deleted caught it.)
+# Two rules are built into the shape of this file. Both were learned from
+# mutation testing -- deleting something from a copy of the migration and
+# watching what the harness does -- and neither was visible to review:
+#
+#   1. Every comparison is IS DISTINCT FROM, never = or <>. A NULL where a
+#      value was expected makes `IF NOT (x = y)` evaluate to NULL, which
+#      plpgsql takes as false, so an absent backfill PASSED a check written
+#      that way.
+#   2. A guard that is never EXERCISED is not covered, however prominently the
+#      fixture declares it. cash_player_session_one_open, the stale_on_reopen
+#      retire and ON CONFLICT DO NOTHING were each separately deletable from
+#      the migration with this harness still green, until SECOND IDENTITY
+#      below opened the same player at the same table twice. The same is true
+#      of data: the CLOSED session exists so that the reader's
+#      `closed_at IS NULL` filter has something to filter.
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 pgbin=${PG_BIN:-/opt/homebrew/opt/postgresql@17/bin}
@@ -19,7 +31,10 @@ migration="$root/supabase/migrations/20260920172736_lightning_phase_1_the_cash_s
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/lightning-phase1-test.XXXXXX")
 started=0
 cleanup() {
-  if [ "$started" = 1 ]; then "$pgbin/pg_ctl" -D "$fixture/data" -m immediate stop >/dev/null; fi
+  # || true: the trap runs under set -e, so a non-zero stop would abort the
+  # function before rm -rf and leak the fixture directory -- and make a fully
+  # passing run exit 1.
+  if [ "$started" = 1 ]; then "$pgbin/pg_ctl" -D "$fixture/data" -m immediate stop >/dev/null || true; fi
   rm -rf "$fixture"
 }
 trap cleanup EXIT
@@ -53,27 +68,41 @@ VALUES
   ('ab000000-0000-0000-0000-000000000002', 'cb000000-0000-0000-0000-000000000001',
    'nlh', 1.00, 2.00, NULL, NULL, NULL, NULL, 'live');
 
-INSERT INTO public.table_seats (table_id, user_id, seat_number, stack)
+INSERT INTO public.table_seats (table_id, user_id, seat_number, stack, left_at)
 VALUES
-  ('ab000000-0000-0000-0000-000000000001', '0a000000-0000-0000-0000-000000000001', 3, 214.75),
-  ('ab000000-0000-0000-0000-000000000002', '0b000000-0000-0000-0000-000000000002', 5,  96.00);
+  ('ab000000-0000-0000-0000-000000000001', '0a000000-0000-0000-0000-000000000001', 3, 214.75, NULL),
+  ('ab000000-0000-0000-0000-000000000002', '0b000000-0000-0000-0000-000000000002', 5,  96.00, NULL),
+  -- The chair the closed session below left behind.
+  ('ab000000-0000-0000-0000-000000000001', '0f000000-0000-0000-0000-000000000003', 6,   0.00, '2026-09-20T10:40:00Z');
 
 INSERT INTO public.cash_player_session
   (id, player_id, club_id, scope_type, scope_id, table_id, variant, sb, bb, baseline,
-   stay_clock_ms, rejoin_window_ms, stay_remaining_ms, stay_running, stay_last_tick_at, opened_at)
+   stay_clock_ms, rejoin_window_ms, stay_remaining_ms, stay_running, stay_last_tick_at, opened_at,
+   closed_at, closed_reason)
 VALUES
   -- Open, at the clustered table: the row the backfill must bind.
   ('5e550000-0000-0000-0000-000000000001', '0a000000-0000-0000-0000-000000000001',
    'cb000000-0000-0000-0000-000000000001', 'table',
    'ab000000-0000-0000-0000-000000000001', 'ab000000-0000-0000-0000-000000000001',
    'nlh', 1.00, 2.00, 137.50, 900000, 10800000, 412345, true,
-   '2026-09-20T12:00:00Z', '2026-09-20T11:30:00Z'),
+   '2026-09-20T12:00:00Z', '2026-09-20T11:30:00Z', NULL, NULL),
   -- Open, at the unclustered table: the row the backfill must NOT bind.
   ('5e550000-0000-0000-0000-000000000002', '0b000000-0000-0000-0000-000000000002',
    'cb000000-0000-0000-0000-000000000001', 'table',
    'ab000000-0000-0000-0000-000000000002', 'ab000000-0000-0000-0000-000000000002',
    'nlh', 1.00, 2.00, 60.00, 600000, 7200000, 600000, false,
-   '2026-09-20T12:05:00Z', '2026-09-20T11:55:00Z');
+   '2026-09-20T12:05:00Z', '2026-09-20T11:55:00Z', NULL, NULL),
+  -- CLOSED, at the clustered table. The migration backfills "every session,
+  -- open or closed", so this row must be bound too -- and it is what keeps
+  -- the reader honest: fn_cash_cluster_lightning_state counts only the OPEN
+  -- identities, so a reader that dropped its closed_at filter would report a
+  -- cluster population that includes people who have already left.
+  ('5e550000-0000-0000-0000-000000000003', '0f000000-0000-0000-0000-000000000003',
+   'cb000000-0000-0000-0000-000000000001', 'table',
+   'ab000000-0000-0000-0000-000000000001', 'ab000000-0000-0000-0000-000000000001',
+   'nlh', 1.00, 2.00, 220.00, 900000, 10800000, 0, false,
+   '2026-09-20T10:40:00Z', '2026-09-20T09:15:00Z',
+   '2026-09-20T10:40:00Z', 'seat_vacated');
 
 -- The preimage. Every column of every session as it stands one statement
 -- before the migration runs.
@@ -84,11 +113,12 @@ SEED
 cat > "$fixture/assertions.sql" <<'ASSERT'
 -- BACKFILL -------------------------------------------------------------------
 DO $$
-DECLARE v_bound uuid; v_lone uuid; v_found integer;
+DECLARE v_bound uuid; v_lone uuid; v_closed uuid; v_found integer;
 BEGIN
   SELECT count(*) INTO v_found FROM public.cash_player_session
-   WHERE id IN ('5e550000-0000-0000-0000-000000000001', '5e550000-0000-0000-0000-000000000002');
-  IF v_found <> 2 THEN RAISE EXCEPTION 'FAIL backfill: the two pre-existing sessions are not both present (% found)', v_found; END IF;
+   WHERE id IN ('5e550000-0000-0000-0000-000000000001', '5e550000-0000-0000-0000-000000000002',
+                '5e550000-0000-0000-0000-000000000003');
+  IF v_found <> 3 THEN RAISE EXCEPTION 'FAIL backfill: the three pre-existing sessions are not all present (% found)', v_found; END IF;
 
   SELECT cluster_id INTO v_bound FROM public.cash_player_session WHERE id = '5e550000-0000-0000-0000-000000000001';
   SELECT cluster_id INTO v_lone  FROM public.cash_player_session WHERE id = '5e550000-0000-0000-0000-000000000002';
@@ -98,8 +128,19 @@ BEGIN
   IF v_lone IS NOT NULL THEN
     RAISE EXCEPTION 'FAIL backfill: the open session at the UNCLUSTERED table was invented a cluster (cluster_id = %)', v_lone;
   END IF;
+
+  -- "Every session, open or closed, learns the cluster of the table it is
+  -- sitting at": a backfill that skipped closed rows would leave the estate
+  -- unable to attribute a finished session to the Cluster it happened in.
+  SELECT cluster_id INTO v_closed FROM public.cash_player_session WHERE id = '5e550000-0000-0000-0000-000000000003';
+  IF v_closed IS DISTINCT FROM 'ca000000-0000-0000-0000-000000000001'::uuid THEN
+    RAISE EXCEPTION 'FAIL backfill: the CLOSED session at the clustered table was not bound (cluster_id = %)', v_closed;
+  END IF;
+  IF (SELECT closed_at FROM public.cash_player_session WHERE id = '5e550000-0000-0000-0000-000000000003') IS NULL THEN
+    RAISE EXCEPTION 'FAIL backfill: the backfill re-opened a closed session';
+  END IF;
 END $$;
-\echo '  ok  BACKFILL           open session at the clustered table bound; the unclustered one left NULL'
+\echo '  ok  BACKFILL           open and closed sessions at the clustered table bound; the unclustered one left NULL'
 
 -- CONTINUITY -----------------------------------------------------------------
 -- The one that matters. P2 is "one CONTINUOUS cash identity": if the migration
@@ -141,6 +182,25 @@ BEGIN
   END IF;
 END $$;
 \echo '  ok  CONTINUITY         id, baseline, opened_at, both clocks, rejoin window and closed_at unchanged'
+
+-- INDEX ----------------------------------------------------------------------
+-- The only thing in the migration with no behavioural signature: deleting the
+-- CREATE INDEX changes no answer this harness can observe, only how expensive
+-- the answer is. Asserted directly, so it cannot be dropped in a later edit
+-- and be caught months later by a nightly production audit.
+DO $$
+DECLARE v_def text;
+BEGIN
+  IF to_regclass('public.cash_player_session_open_by_cluster') IS NULL THEN
+    RAISE EXCEPTION 'FAIL index: cash_player_session_open_by_cluster does not exist, so every open-by-cluster read is a sequential scan of a hot table';
+  END IF;
+  SELECT indexdef INTO v_def FROM pg_indexes
+   WHERE schemaname = 'public' AND indexname = 'cash_player_session_open_by_cluster';
+  IF v_def IS NULL OR position('closed_at IS NULL' in v_def) = 0 THEN
+    RAISE EXCEPTION 'FAIL index: cash_player_session_open_by_cluster is not the partial index the migration declares (%)', coalesce(v_def, '<no definition>');
+  END IF;
+END $$;
+\echo '  ok  INDEX              cash_player_session_open_by_cluster exists and is partial on closed_at IS NULL'
 
 -- NEW OPEN PATH --------------------------------------------------------------
 DO $$
@@ -194,6 +254,68 @@ BEGIN
   END IF;
 END $$;
 \echo '  ok  UNCLUSTERED        a table outside every cluster still opens a normal session with cluster_id NULL'
+
+-- SECOND IDENTITY ------------------------------------------------------------
+-- The migration's headline promise: it "cannot silently open a second economic
+-- identity". Three mechanisms keep that true across a re-open, each separately
+-- deletable, so each is separately provoked here by opening the SAME player at
+-- the SAME clustered table more than once:
+--
+--   * with NO buy-in (the evaluate path) the stale-retire is skipped, the
+--     INSERT collides with cash_player_session_one_open, and ON CONFLICT DO
+--     NOTHING must hand back the row that is already open;
+--   * with a NEW buy-in the stale-retire must close the old row FIRST, or the
+--     collision swallows the re-open and the money is silently dropped onto a
+--     session that was opened for a different amount;
+--   * either way exactly one open row may exist for that player at that scope,
+--     and it must still be bound to the Cluster.
+DO $$
+DECLARE
+  v_player uuid := '0e000000-0000-0000-0000-000000000005';
+  v_table  uuid := 'ab000000-0000-0000-0000-000000000001';
+  v_first uuid; v_second uuid; v_third uuid; v_open integer; s public.cash_player_session%ROWTYPE;
+BEGIN
+  v_first := public.fn_cash_session_open(v_player, v_table, 100);
+  IF v_first IS NULL THEN RAISE EXCEPTION 'FAIL second identity: the first open returned NULL'; END IF;
+
+  BEGIN
+    v_second := public.fn_cash_session_open(v_player, v_table, NULL::numeric);
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'FAIL second identity: a re-open with no buy-in reached the INSERT and collided with cash_player_session_one_open, so ON CONFLICT DO NOTHING was not there to hand back the session that is already open';
+  END;
+  IF v_second IS DISTINCT FROM v_first THEN
+    RAISE EXCEPTION 'FAIL second identity: the no-buy-in re-open returned %, not the session % that is already open', v_second, v_first;
+  END IF;
+
+  BEGIN
+    v_third := public.fn_cash_session_open(v_player, v_table, 250);
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'FAIL second identity: a re-open carrying a buy-in collided with cash_player_session_one_open; neither the stale_on_reopen retire nor ON CONFLICT DO NOTHING stood in the way';
+  END;
+  IF v_third IS NULL THEN RAISE EXCEPTION 'FAIL second identity: the re-open carrying a buy-in returned NULL'; END IF;
+  IF v_third IS NOT DISTINCT FROM v_first THEN
+    RAISE EXCEPTION 'FAIL second identity: a re-open carrying a NEW buy-in returned the session % that was already open, so the stale_on_reopen retire never ran and the buy-in was dropped', v_first;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.cash_player_session
+                  WHERE id = v_first AND closed_at IS NOT NULL AND closed_reason = 'stale_on_reopen') THEN
+    RAISE EXCEPTION 'FAIL second identity: the superseded session % was not retired as stale_on_reopen', v_first;
+  END IF;
+
+  SELECT count(*) INTO v_open FROM public.cash_player_session
+   WHERE player_id = v_player AND scope_type = 'table' AND scope_id = v_table AND closed_at IS NULL;
+  IF v_open IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FAIL second identity: % open sessions for one player at one table, not one continuous identity', v_open;
+  END IF;
+
+  SELECT * INTO s FROM public.cash_player_session WHERE id = v_third;
+  IF s.cluster_id IS DISTINCT FROM 'ca000000-0000-0000-0000-000000000001'::uuid THEN
+    RAISE EXCEPTION 'FAIL second identity: the surviving session lost its cluster (cluster_id = %)', s.cluster_id;
+  END IF;
+  IF s.baseline IS DISTINCT FROM 250::numeric THEN
+    RAISE EXCEPTION 'FAIL second identity: the surviving session carries baseline %, not the 250 that was just bought in', s.baseline;
+  END IF;
+END $$;
+\echo '  ok  SECOND IDENTITY    re-opening the same player at the same table yields ONE open session, not a second identity'
 
 -- DEFAULTS -------------------------------------------------------------------
 DO $$
@@ -261,10 +383,19 @@ DECLARE j jsonb; v_open bigint;
 BEGIN
   SELECT count(*) INTO v_open FROM public.cash_player_session
    WHERE cluster_id = 'ca000000-0000-0000-0000-000000000001' AND closed_at IS NULL;
-  -- The backfilled session plus the one the new open path created. If this is
-  -- not 2 the reader could pass on a vacuous 0 = 0.
-  IF v_open IS DISTINCT FROM 2::bigint THEN
-    RAISE EXCEPTION 'FAIL reader: the fixture holds % open cluster sessions, expected 2', v_open;
+  -- The backfilled session, the one the new open path created, and the
+  -- survivor of the re-open above: three OPEN of five cluster-bound rows, the
+  -- other two being the seeded closed session and the one the re-open retired.
+  -- If this is not 3 the comparison below could pass on a vacuous 0 = 0, and
+  -- without closed rows in the fixture it would pass with no closed_at filter
+  -- in the reader at all.
+  IF v_open IS DISTINCT FROM 3::bigint THEN
+    RAISE EXCEPTION 'FAIL reader: the fixture holds % open cluster sessions, expected 3', v_open;
+  END IF;
+  IF (SELECT count(*) FROM public.cash_player_session
+       WHERE cluster_id = 'ca000000-0000-0000-0000-000000000001' AND closed_at IS NOT NULL)
+     IS DISTINCT FROM 2::bigint THEN
+    RAISE EXCEPTION 'FAIL reader: the fixture must hold closed cluster-bound sessions for the reader filter to mean anything';
   END IF;
 
   j := public.fn_cash_cluster_lightning_state('ca000000-0000-0000-0000-000000000001');
@@ -276,7 +407,7 @@ BEGIN
     RAISE EXCEPTION 'FAIL reader: open_cluster_sessions = %, the cluster actually holds %', j->>'open_cluster_sessions', v_open;
   END IF;
 END $$;
-\echo '  ok  READER             fn_cash_cluster_lightning_state reports must_move / epoch 0 / disabled / 2 open sessions'
+\echo '  ok  READER             fn_cash_cluster_lightning_state reports must_move / epoch 0 / disabled / 3 OPEN of 5 cluster-bound sessions'
 
 -- The preimage of the re-apply: every row of everything the migration writes.
 CREATE TEMP TABLE pre_reapply_session AS SELECT * FROM public.cash_player_session;
@@ -337,4 +468,4 @@ REAPPLY
   -f "$migration" \
   -f "$fixture/reapply-assertions.sql"
 
-echo 'PASS: Lightning Phase 1  -  backfill, continuity (id/baseline/opened_at/clocks/rejoin/closed_at), new open path carries cluster_id, unclustered table unaffected, defaults must_move/false/0, named cluster_mode and epoch checks enforced, all ten modes accepted, lightning-state reader exact, migration idempotent on re-apply'
+echo 'PASS: Lightning Phase 1, 11 checks: backfill binds open AND closed sessions, continuity (id/baseline/opened_at/clocks/rejoin/closed_at unchanged), partial open-by-cluster index present, new open path carries cluster_id, unclustered table unaffected, one open identity per player per scope across a re-open with and without a buy-in, defaults must_move/false/0, named cluster_mode and epoch checks enforced, all ten modes accepted, lightning-state reader exact (3 open of 5 cluster-bound), migration idempotent on re-apply'

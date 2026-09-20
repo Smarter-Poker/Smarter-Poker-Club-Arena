@@ -250,6 +250,15 @@ describe('Lightning Phase 1: the phase boundary holds', () => {
     expect(frag.tables).toBeUndefined();
   });
 
+  it('actually runs that harness in CI, because a test file is not enforcement', () => {
+    // Hardening standard 9: "Required checks must actually execute; test-file
+    // existence is not enforcement." The accounting job names every
+    // scripts/dev/test-*.sh explicitly - there is no glob - so a harness that
+    // is not listed there never runs, and nothing would say so.
+    const ci = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
+    expect(ci).toContain('bash scripts/dev/test-lightning-phase1-cluster-session.sh');
+  });
+
   it('is qualified by a real PostgreSQL harness, not by mocks', () => {
     expect(fs.existsSync(HARNESS)).toBe(true);
     const sh = fs.readFileSync(HARNESS, 'utf8');

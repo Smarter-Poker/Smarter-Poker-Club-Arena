@@ -3,7 +3,7 @@
  *  LAW: THE SCHEDULED-WORK ROSTER IS PINNED, AND MOVING IT IS A DECISION
  * ===========================================================================
  *
- * MEASURED 2026-09-19: 135 ACTIVE pg_cron jobs, 137 rows in cron.job. The two
+ * MEASURED 2026-09-20: 132 ACTIVE pg_cron jobs, 134 rows in cron.job. The two
  * that are not active are the bust sweeps that
  * 20260910073355_the_retired_sweeps_keep_their_disabled_schedule_rows restored
  * and disabled, so the staged retirement chain 20260910000850 - whose CHECK
@@ -38,8 +38,19 @@ import { blankNonCode } from './helpers/sourceWindow';
 const ROOT = join(__dirname, '..');
 const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
 
-/** Measured 2026-09-19. Moving these is the deliberate edit this law is for. */
-const ACTIVE_JOBS = 135;
+/**
+ * Measured 2026-09-20. Moving these is the deliberate edit this law is for.
+ *
+ * 135 -> 132 on 2026-09-20. Migration
+ * three_watchers_whose_defects_were_fixed_stop_running retired
+ * union-seat-provenance-heal, ca-bbj-repair-unbanked-15m and
+ * reconcile-club-table-counts-nightly. Each one repaired a column whose writer
+ * had since been made universal, so each repaired nothing and was read as
+ * coverage. The argument for every one of the three is in that migration's
+ * header, and the roster header records the same change. The two retained
+ * inactive rows are untouched.
+ */
+const ACTIVE_JOBS = 132;
 const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
@@ -65,8 +76,8 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('137 total is 135 active plus the two rows 20260910073355 kept disabled', () => {
-    expect(TOTAL_JOBS).toBe(137);
+  it('134 total is 132 active plus the two rows 20260910073355 kept disabled', () => {
+    expect(TOTAL_JOBS).toBe(134);
     expect(raw).toContain('20260910073355');
   });
 

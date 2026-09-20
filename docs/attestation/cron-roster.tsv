@@ -3,14 +3,17 @@
 # A change here is a change to what this platform runs on a timer. Never edit a
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
-# observed_at: 2026-09-19T22:32:35Z
-# active: 135
+# observed_at: 2026-09-20T14:01:28Z
+# active: 132
 # retained-inactive: 2	the two bust sweeps, restored disabled by 20260910073355
+# 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
+# and reconcile-club-table-counts-nightly were retired by migration
+# three_watchers_whose_defects_were_fixed_stop_running, because the writer that
+# replaced each one is universal. The argument is in that migration's header.
 # jobname	schedule
 bbj-rollup-catchup	45 * * * *
 ca-alarm-drill-weekly	7 11 * * 1
 ca-auto-reconcile-tick	* * * * *
-ca-bbj-repair-unbanked-15m	*/15 * * * *
 ca-bbj-threshold-notify-5m	*/5 * * * *
 ca-bounty-backpay-hourly	12 * * * *
 ca-break-scorecard	12 * * * *
@@ -112,7 +115,6 @@ rake-law-wide-daily	50 7 * * *
 rake-repair-unbanked-hourly	2,17,32,47 * * * *
 rate-limit-prune	17 3 * * *
 reconcile-club-member-daily-profit	35 0 * * *
-reconcile-club-table-counts-nightly	40 3 * * *
 reconcile-ledger-integrity-6h	55 */6 * * *
 reconcile-tournament-denormals	* * * * *
 refresh-player-stats-hourly	17 * * * *
@@ -140,5 +142,4 @@ ungated-money-rpc-check	15 4 * * *
 union-integrity-sweep	35 * * * *
 union-law-selftest	20 0 * * *
 union-rake-rollup-catchup	55 * * * *
-union-seat-provenance-heal	*/5 * * * *
 union-weekly-rakeback-close	0,30 * * * *

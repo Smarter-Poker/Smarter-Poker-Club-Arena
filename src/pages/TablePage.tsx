@@ -10961,6 +10961,12 @@ function LiveTablePage({
         ritPanelOpenTimerRef.current = setTimeout(() => {
           ritPanelOpenTimerRef.current = null;
           setShowRIT(true);
+          // A timed decision with money on it, opened for the all-in seats
+          // only (the guard above): the same attention cue "your turn" and
+          // the insurance offer use, so a multi-tabling player who is looking
+          // at another table hears the question before the clock is half
+          // gone (2026-09-14). Nothing new to mute: it is the turn cue.
+          playTurnAlert();
         }, 1500 * getAnimationSpeed());
         return;
       }

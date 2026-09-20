@@ -1682,6 +1682,33 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     return (h + this.handCount * 7) % 10 < 3 ? 'once' : 'multi';
   }
 
+  /**
+   * ── ONE TIMER, NOT TWO (2026-09-14) ──────────────────────────────────────
+   *
+   * This used to poll `getState().status` every 250 ms AND arm a safety
+   * timeout. The poll was the delivery mechanism and the timeout the net.
+   * Two clocks per offer, up to 100 empty reads per hand, and a settlement
+   * that started anywhere inside a quarter-second window after the last
+   * consent landed - which the multiway and exclusivity tests then had to
+   * wait through.
+   *
+   * The RunItTwiceEngine emits an event for every way an offer ends:
+   * RIT_ACCEPTED (unanimous), RIT_DECLINED (a player, the chooser picking 1
+   * - added the same day - or the DeadlineScheduler's expiry). So the wait
+   * LISTENS, keyed to this hand's offer id, and finishes on the event. The
+   * safety timeout stays as the single net for the one thing no event
+   * covers: an offer that vanished (endHand cleared it, a voided hand) - and
+   * that case is a stale wait, which `finish` drops by controller identity.
+   *
+   * The finish is deferred one macrotask. The event fires INSIDE the engine
+   * call that ended the offer - `accept()` or `decline()` on the request
+   * thread of respondToRIT - and respondToRIT still has broadcasts to make
+   * after that call returns (`rit_all_accepted`, `rit_single_run`,
+   * `rit_response_update`). Settling synchronously would put `rit_result`
+   * on the wire BEFORE the acceptance that led to it. `setImmediate` runs
+   * after the request handler's synchronous tail, so the order on the wire
+   * is what it was under the poll, minus the up-to-250 ms gap.
+   */
   protected waitForRITResponse(onComplete: () => void): void {
     let completed = false;
     // Identity anchors. Without them a wait that outlives its hand (watchdog
@@ -1689,10 +1716,19 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // out its board at preflop.
     const controllerAtOffer = this.handController;
     const handAtOffer = this.handCount;
+    const offerHandId = `${this.tableId}:${handAtOffer}`;
+    const onOfferEnded = (event: import('./RunItTwiceEngine.js').RITEvent) => {
+      if (event.tableId !== this.tableId) return;
+      if (event.type !== 'RIT_ACCEPTED' && event.type !== 'RIT_DECLINED') return;
+      // The engine stamps handId on every terminal event; a stale event
+      // from a previous hand's offer must not finish this hand's wait.
+      if (event.handId !== undefined && event.handId !== offerHandId) return;
+      setImmediate(finish);
+    };
     const finish = () => {
       if (completed) return;
       completed = true;
-      clearInterval(checkInterval);
+      this.runItTwiceEngine.removeEventListener(onOfferEnded);
       clearTimeout(safetyTimeout);
       if (!this.handController || this.handController !== controllerAtOffer) {
         reportError(
@@ -1713,24 +1749,24 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       }
     };
 
-    const checkInterval = setInterval(() => {
-      const state = this.runItTwiceEngine.getState(this.tableId);
-      // Complete when status is no longer 'offered' (accepted, declined, or resolved)
-      if (!state || state.status !== 'offered') {
-        finish();
-      }
-    }, 250);
-
     // FIX 98 → POKERBROS PARITY 2026-08-26: the offer window is one shared
     // 25-second countdown (engine autoDeclineTimeout). Safety = window + 5s
-    // buffer; the DeadlineScheduler's auto-decline resolves the poll well
-    // before this fires in any healthy process.
+    // buffer; the DeadlineScheduler's auto-decline ends the offer (and this
+    // wait, through the listener) well before this fires in any healthy
+    // process. It is the net for an offer that vanished without an event.
     const safetyTimeout = setTimeout(
       () => {
         finish();
       },
       this.runItTwiceEngine.offerTimeoutSeconds(this.tableId) * 1000 + 5_000
     );
+
+    this.runItTwiceEngine.addEventListener(onOfferEnded);
+    // The offer can already be over when the wait is armed: a horse chooser
+    // that answered inside offer(), or a decline that raced the broadcast.
+    // The listener would never hear an event that has already fired.
+    const state = this.runItTwiceEngine.getState(this.tableId);
+    if (!state || state.status !== 'offered') setImmediate(finish);
   }
 
   /** The hand this seat has already been told ran once, so a decline
@@ -2600,15 +2636,41 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         this.currentHandWinnerIds.push(playerId);
       }
     }
+    /* THE HAND THAT WON THE MONEY, NOT THE HAND ON BOARD ONE (2026-09-14).
+       `sd` above is the showdown row, evaluated on the FIRST board only. A
+       player who lost board one with a pair and took board two with a flush
+       was recorded in winners[] - and so in pot_win's hand_name and the hand
+       history's winners jsonb - as having won with "Pair". The per-pot awards
+       carry every (run, pot, half) share with the hand that earned it; the
+       share worth the most is the one the record names. The showdown row is
+       the fallback for a paid player with no award row (it should not exist;
+       the awards are what paid them). */
+    const bestAwardByPlayer = new Map<string, (typeof this.currentHandPerPotAwards)[number]>();
+    for (const a of this.currentHandPerPotAwards) {
+      if (!a.hand) continue;
+      const best = bestAwardByPlayer.get(a.userId);
+      if (!best || a.amount > best.amount) bestAwardByPlayer.set(a.userId, a);
+    }
     this.currentHandWinners = [...totalDistribution.entries()]
       .filter(([, amount]) => amount > 0)
       .map(([playerId, amount]) => {
+        const won = bestAwardByPlayer.get(playerId);
+        const wonName = won?.hand?.name;
+        const wonRanking = won?.hand?.ranking;
         const sd = this.currentHandShowdownResults.find((r) => r.userId === playerId);
         return {
           userId: playerId,
           amount,
           potIndex: 0,
-          hand: sd ? { name: sd.handName, ranking: sd.handRanking } : undefined,
+          // Name and rank only: pot_win lights `card_indices` against the
+          // FIRST board, and a best five from run two would light the wrong
+          // felt. The per-run highlight is rit_result's per_board_awards.
+          hand:
+            typeof wonName === 'string' && typeof wonRanking === 'number'
+              ? { name: wonName, ranking: wonRanking }
+              : sd
+                ? { name: sd.handName, ranking: sd.handRanking }
+                : undefined,
         };
       });
     this.currentHandPotSize = totalPot;

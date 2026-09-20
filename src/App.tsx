@@ -111,7 +111,12 @@ const TournamentResultsPage = lazyWithRetry(
 );
 const TablePage = lazyWithRetry(() => import('./pages/TablePage'));
 const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'));
-const DailyChallengesPage = lazyWithRetry(() => import('./pages/DailyChallengesPage'));
+// Keep the complete Daily Challenges presentation graph behind its route.
+// Auth/loading/crash paint is deliberately owned by the lazy route module so
+// players who never open Challenges do not pay for its artwork or instruments.
+const DailyChallengesRoute = lazyWithRetry(
+  () => import('./components/challenges/DailyChallengesRoute')
+);
 const SettingsPage = lazyWithRetry(() => import('./pages/SettingsPage'));
 const UnionsPage = lazyWithRetry(() => import('./pages/UnionsPage'));
 const UnionDetailPage = lazyWithRetry(() => import('./pages/UnionDetailPage'));
@@ -1158,16 +1163,7 @@ function FullApp() {
                 />
 
                 {/* User */}
-                <Route
-                  path="challenges/:cycle?"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Daily Challenges">
-                        <DailyChallengesPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
+                <Route path="challenges/:cycle?" element={<DailyChallengesRoute />} />
                 <Route
                   path="profile"
                   element={

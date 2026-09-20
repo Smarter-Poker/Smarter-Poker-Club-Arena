@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise the real twelve-argument Diamond accepted-hand and projection doors."""
+import os
 import concurrent.futures
 import json
 import pathlib
@@ -8,7 +9,8 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DB = 'poker_diamond_phase6_accepted_test'
-CMD = ['/opt/homebrew/opt/postgresql@17/bin/psql', '-X', '-q', '-At',
+PG_BIN = os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin')
+CMD = [PG_BIN + '/psql', '-X', '-q', '-At',
        '-h', '/tmp/codex-diamond-phase2-pg', '-p', '55472', '-d', DB,
        '-v', 'ON_ERROR_STOP=1', '-P', 'pager=off']
 def run(sql):

@@ -66,7 +66,7 @@
  * one that says the pool has not been funded yet.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
 import type { TournamentTabProps, PayoutPlace } from './types';
@@ -81,6 +81,11 @@ import {
   resolvePayoutStructure,
   tournamentRowUnitCents,
 } from './types';
+import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../../utils/format';
+import {
+  CHIP_UNIT_CENTS,
+  normalizeUnitCents,
+} from '../../../../server/src/tournament/tournamentUnit';
 import MysteryBountyPanel from '../MysteryBountyPanel';
 import '../../../styles/tournament-lobby-3d.css';
 import './RewardsTab.css';
@@ -252,6 +257,26 @@ export default function RewardsTab({
   const isPko = !!t.is_pko;
   const isMystery = !!t.is_mystery_bounty;
   const isBountyEvent = !!t.is_bounty || isPko || isMystery;
+
+  /**
+   * THE GRID THIS EVENT PAYS ON (2026-09-20). Read once, from the tournament's
+   * own arena embed, by the same rule the place ladder below already uses.
+   *
+   * `unitMoney` is `chips` at a chip event - the same function, so every chip
+   * figure on this tab is byte-identical by construction rather than by
+   * inspection - and whole Diamonds at a Diamond event. `unitWord` is the noun
+   * beside it: a Diamond bounty pool that reads "Chips" is the same defect as
+   * one that reads in cents, one level up.
+   */
+  const unitCents = useMemo(() => tournamentRowUnitCents(tournament), [tournament]);
+  const unitSuffix = moneySuffixAtUnit(unitCents);
+  const unitMoney = useCallback(
+    (n: number | null | undefined) =>
+      normalizeUnitCents(unitCents) === CHIP_UNIT_CENTS
+        ? chips(n)
+        : formatPrizeAtUnit(n, unitCents),
+    [unitCents]
+  );
 
   const [ledger, setLedger] = useState<BountyLedger>(EMPTY_LEDGER);
 
@@ -587,12 +612,7 @@ export default function RewardsTab({
               // first place is representative of the band.
               const prize =
                 placeLadderPool !== null && placeLadderPool > 0 && parsedPlaces
-                  ? placePrize(
-                      placeLadderPool,
-                      parsedPlaces,
-                      band.fromPlace,
-                      tournamentRowUnitCents(tournament)
-                    )
+                  ? placePrize(placeLadderPool, parsedPlaces, band.fromPlace, unitCents)
                   : 0;
 
               return (
@@ -668,11 +688,11 @@ export default function RewardsTab({
               <div className="tl-stat-grid rw-bounty__stats">
                 <div className="tl-stat">
                   <span className="tl-stat__label">Total Pool</span>
-                  <span className="tl-stat__value">{chips(bounty.total)}</span>
+                  <span className="tl-stat__value">{unitMoney(bounty.total)}</span>
                 </div>
                 <div className="tl-stat">
                   <span className="tl-stat__label">Claimed</span>
-                  <span className="tl-stat__value">{chips(bounty.claimed)}</span>
+                  <span className="tl-stat__value">{unitMoney(bounty.claimed)}</span>
                   <span className="tl-stat__sub">
                     {chips(bounty.knockoutsPaid)}{' '}
                     {bounty.knockoutsPaid === 1 ? 'Knockout' : 'Knockouts'}
@@ -681,13 +701,13 @@ export default function RewardsTab({
                 <div className="tl-stat">
                   <span className="tl-stat__label">Still Available</span>
                   <span className="tl-stat__value tl-stat__value--accent">
-                    {chips(bounty.available)}
+                    {unitMoney(bounty.available)}
                   </span>
                 </div>
                 {bounty.perKnockout > 0 && !isMystery && (
                   <div className="tl-stat">
                     <span className="tl-stat__label">Per Knockout</span>
-                    <span className="tl-stat__value">{chips(bounty.perKnockout)}</span>
+                    <span className="tl-stat__value">{unitMoney(bounty.perKnockout)}</span>
                   </div>
                 )}
               </div>
@@ -699,7 +719,7 @@ export default function RewardsTab({
                     {isMystery ? 'Still Available In The Mystery Pool' : 'Still In The Pool'}
                   </span>
                   <span className="rw-drain__figure">
-                    {chips(bounty.available)} Of {chips(bounty.total)}
+                    {unitMoney(bounty.available)} Of {unitMoney(bounty.total)}
                   </span>
                 </div>
                 <div className="tl-meter" aria-hidden="true">
@@ -716,8 +736,8 @@ export default function RewardsTab({
 
               {!isPko && !isMystery && bounty.perKnockout > 0 && (
                 <p className="rw-rule">
-                  Every Player Carries A Head Worth {chips(bounty.perKnockout)}. Knock Them Out And
-                  It Is Paid To You Immediately.
+                  Every Player Carries A Head Worth {unitMoney(bounty.perKnockout)}
+                  {unitSuffix}. Knock Them Out And It Is Paid To You Immediately.
                 </p>
               )}
 
@@ -749,6 +769,7 @@ export default function RewardsTab({
           data={mysteryBounty}
           currentUserId={currentUserId ?? null}
           isCompleted={String(t.status || '').toUpperCase() === 'COMPLETED'}
+          unitCents={unitCents}
         />
       )}
     </div>

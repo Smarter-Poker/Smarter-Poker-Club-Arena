@@ -1,4 +1,11 @@
 import type { ReactNode } from 'react';
+import {
+  COUNT_UNKNOWN,
+  COUNT_UNKNOWN_TEXT,
+  countText,
+  isCountUnknown,
+  type CountFigure,
+} from '../../lib/countFigure';
 import { useFitText } from '../lobby/game-cards/useFitText';
 import './ClubIdentityCard.css';
 
@@ -28,6 +35,11 @@ import './ClubIdentityCard.css';
  * are retired with this: the alias and the count are fitted by measurement
  * (`useFitText`), like every card title.
  */
+
+/* Both rails on this card print a count, and a count has three answers, not
+   two - see src/lib/countFigure.ts for the defect and the rule. Re-exported
+   so a caller that passes one of these props has it to hand. */
+export { COUNT_UNKNOWN, COUNT_UNKNOWN_TEXT, type CountFigure };
 
 const assetRoot = `${import.meta.env.BASE_URL}assets/club-buttons/club/kingfish-v1`;
 export const CLUB_IDENTITY_SHELL = `${assetRoot}/chassis.png`;
@@ -80,7 +92,7 @@ export interface ClubIdentityCardProps {
   playerId?: string | number | null;
   /** A new club shows Level 1 from day one; the level sits in the blue plate. */
   level?: number | null;
-  playersPlaying?: number | null;
+  playersPlaying?: CountFigure;
   /**
    * Diamond Arena, Dan 2026-09-11: "HAVE IT SAY JUST 'ACTIVE' AND THE NUMBER
    * UNDER IT. AND THE FREE ROLL STARTS CLOCK."
@@ -91,7 +103,7 @@ export interface ClubIdentityCardProps {
    * two figures that do: who is playing now, and when the next free seat is.
    */
   arenaStats?: {
-    activeCount: number | null;
+    activeCount: CountFigure;
     freerollText: string;
     freerollTitle: string;
     freerollImminent?: boolean;
@@ -169,8 +181,11 @@ export function ClubIdentityCard({
   className = '',
 }: ClubIdentityCardProps) {
   const aliasRef = useFitText<HTMLElement>(pokerAlias, 1, 0.3);
-  const playingRef = useFitText<HTMLElement>(String(playersPlaying ?? ''), 1, 0.5);
-  const count = playersPlaying == null ? '0' : playersPlaying.toLocaleString();
+  const countIsUnknown = isCountUnknown(playersPlaying);
+  const count = countText(playersPlaying);
+  const playingRef = useFitText<HTMLElement>(count, 1, 0.5);
+  const arenaCountIsUnknown = isCountUnknown(arenaStats?.activeCount);
+  const arenaCount = countText(arenaStats?.activeCount);
 
   return (
     <section
@@ -221,7 +236,7 @@ export function ClubIdentityCard({
             className="club-identity__playing"
             style={zoneStyle(CLUB_IDENTITY_ZONES.playing)}
             aria-live="polite"
-            aria-label={`${count} Playing Now`}
+            aria-label={countIsUnknown ? `Playing Now ${count}` : `${count} Playing Now`}
           >
             <strong ref={playingRef}>{count}</strong>
           </span>
@@ -231,8 +246,12 @@ export function ClubIdentityCard({
           <span className="club-identity__arena" style={zoneStyle(CLUB_IDENTITY_ZONES.arenaStats)}>
             <span className="club-identity__arena-stat">
               <span className="club-identity__arena-label">ACTIVE</span>
-              <strong className="club-identity__arena-value" aria-live="polite">
-                {arenaStats.activeCount == null ? '0' : arenaStats.activeCount.toLocaleString()}
+              <strong
+                className={`club-identity__arena-value${arenaCountIsUnknown ? ' club-identity__arena-value--word' : ''}`}
+                aria-live="polite"
+                aria-label={arenaCountIsUnknown ? `Active ${arenaCount}` : undefined}
+              >
+                {arenaCount}
               </strong>
             </span>
             <span

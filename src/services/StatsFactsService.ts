@@ -20,6 +20,13 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import {
+  CHIP_STATS,
+  STATS_SCOPE_UNREADABLE,
+  statsScopeArgs,
+  statsScopeIsReadable,
+  type StatsScope,
+} from './statsScope';
 
 // ── EV vs actual ───────────────────────────────────────────────────────────
 
@@ -166,12 +173,15 @@ const EMPTY_RAKE_STATS: PlayerRakeStats = {
 };
 
 export function normaliseRakeStats(
-  raw: Partial<WithReadStatus<PlayerRakeStats>> | null | undefined
-): WithReadStatus<PlayerRakeStats> {
-  const src = (raw ?? {}) as Partial<WithReadStatus<PlayerRakeStats>>;
+  raw: Partial<ScopedRead<PlayerRakeStats>> | null | undefined
+): ScopedRead<PlayerRakeStats> {
+  const src = (raw ?? {}) as Partial<ScopedRead<PlayerRakeStats>>;
   const num = (v: unknown): number => (Number.isFinite(Number(v)) && v !== null ? Number(v) : 0);
-  const out: WithReadStatus<PlayerRakeStats> = {
+  const out: ScopedRead<PlayerRakeStats> = {
     ...EMPTY_RAKE_STATS,
+    /* The scope survives normalisation. A figure that arrives knowing which
+       asset it describes must not lose that on the way to the tab. */
+    scope: src.scope ?? CHIP_STATS,
     hands: num(src.hands),
     raked_hands: num(src.raked_hands),
     rake_paid: num(src.rake_paid),
@@ -222,23 +232,40 @@ const EMPTY_EV: EVCurvePayload = {
  */
 export type WithReadStatus<T> = T & { error?: string };
 
+/**
+ * A payload that knows which asset it describes.
+ *
+ * EVERY read here carries one. A figure whose scope has been lost is a figure
+ * that can be printed under the wrong heading, which is the whole of the
+ * defect this guards (see `./statsScope`).
+ */
+export type ScopedRead<T> = WithReadStatus<T> & { scope: StatsScope };
+
 async function callRpc<T>(
   fn: string,
   args: Record<string, unknown>,
-  fallback: T
-): Promise<WithReadStatus<T>> {
+  fallback: T,
+  scope: StatsScope
+): Promise<ScopedRead<T>> {
+  /* A SCOPE THE DATABASE CANNOT SEPARATE IS NOT ANSWERED (2026-09-20).
+     Falling through to the unscoped RPC here would return a chips total
+     wearing a Diamond label, which is worse than returning nothing: the panel
+     would render it, and it would look right. */
+  if (!statsScopeIsReadable(scope)) {
+    return { ...fallback, scope, error: STATS_SCOPE_UNREADABLE };
+  }
   try {
-    const { data, error } = await supabase.rpc(fn, args);
+    const { data, error } = await supabase.rpc(fn, { ...args, ...statsScopeArgs(scope) });
     if (error) {
       // 42501 is the identity gate refusing a cross-user read. That is the
       // system working, not a fault, so it is not reported as an error.
       if (error.code !== '42501') reportError(error, `StatsFactsService.${fn}`, args);
-      return { ...fallback, error: error.message || error.code || 'read_failed' };
+      return { ...fallback, scope, error: error.message || error.code || 'read_failed' };
     }
-    return ((data as T) ?? fallback) as WithReadStatus<T>;
+    return { ...((data as T) ?? fallback), scope } as ScopedRead<T>;
   } catch (err) {
     reportError(err, `StatsFactsService.${fn}.threw`, args);
-    return { ...fallback, error: err instanceof Error ? err.message : 'read_threw' };
+    return { ...fallback, scope, error: err instanceof Error ? err.message : 'read_threw' };
   }
 }
 
@@ -246,20 +273,23 @@ export const StatsFactsService = {
   /** Cumulative actual vs all-in-adjusted EV. Cash hands only. */
   async getEVCurve(
     userId: string,
+    scope: StatsScope,
     days: number | null = null
-  ): Promise<WithReadStatus<EVCurvePayload>> {
+  ): Promise<ScopedRead<EVCurvePayload>> {
     return callRpc<EVCurvePayload>(
       'ca_player_ev_curve',
       { p_user: userId, p_days: days, p_limit: 5000 },
-      EMPTY_EV
+      EMPTY_EV,
+      scope
     );
   },
 
   /** Per-hand-class aggregates for the 169-cell grid. NLH / short-deck only. */
   async getHandGrid(
     userId: string,
+    scope: StatsScope,
     opts: { position?: string | null; variant?: string | null; days?: number | null } = {}
-  ): Promise<WithReadStatus<HandGridPayload>> {
+  ): Promise<ScopedRead<HandGridPayload>> {
     return callRpc<HandGridPayload>(
       'ca_player_hand_grid',
       {
@@ -273,7 +303,8 @@ export const StatsFactsService = {
         totals: { hands: 0, classes_seen: 0 },
         filters: { position: null, variant: null, days: null },
         generated_at: '',
-      }
+      },
+      scope
     );
   },
 
@@ -285,9 +316,10 @@ export const StatsFactsService = {
    */
   async getClassHands(
     userId: string,
+    scope: StatsScope,
     handClass: string,
     opts: { position?: string | null; variant?: string | null; days?: number | null } = {}
-  ): Promise<WithReadStatus<ClassHandsPayload>> {
+  ): Promise<ScopedRead<ClassHandsPayload>> {
     return callRpc<ClassHandsPayload>(
       'ca_player_class_hands',
       {
@@ -298,15 +330,17 @@ export const StatsFactsService = {
         p_days: opts.days ?? null,
         p_limit: 20,
       },
-      { hand_class: handClass, hands: [] }
+      { hand_class: handClass, hands: [] },
+      scope
     );
   },
 
-  /** Head-to-head chip flow. minHands guards against crowning a nemesis off one cooler. */
+  /** Head-to-head flow in one asset. minHands guards against crowning a nemesis off one cooler. */
   async getNemesis(
     userId: string,
+    scope: StatsScope,
     opts: { days?: number | null; minHands?: number } = {}
-  ): Promise<WithReadStatus<NemesisPayload>> {
+  ): Promise<ScopedRead<NemesisPayload>> {
     return callRpc<NemesisPayload>(
       'ca_player_nemesis',
       {
@@ -323,7 +357,8 @@ export const StatsFactsService = {
         min_hands: opts.minHands ?? 25,
         opponents_qualified: 0,
         generated_at: '',
-      }
+      },
+      scope
     );
   },
 
@@ -357,11 +392,15 @@ export const StatsFactsService = {
    * from auth.uid() — the p_user argument is honoured for the engine only.
    * `days: null` means lifetime.
    */
-  async getRakeStats(days: number | null = null): Promise<WithReadStatus<PlayerRakeStats>> {
+  async getRakeStats(
+    scope: StatsScope,
+    days: number | null = null
+  ): Promise<ScopedRead<PlayerRakeStats>> {
     const raw = await callRpc<PlayerRakeStats>(
       'ca_player_rake_stats',
       { p_user: null, p_days: days },
-      EMPTY_RAKE_STATS
+      EMPTY_RAKE_STATS,
+      scope
     );
     /* THE SHAPE IS PROMISED HERE, NOT ASSUMED IN THE TAB (2026-09-10). The
        Rake tab calls toFixed / toLocaleString on six of these fields, and a
@@ -378,12 +417,16 @@ export const StatsFactsService = {
    * fallback for hands that predate it. Never exposes another player's
    * contribution.
    */
-  async getHandRakeShare(handId: string): Promise<WithReadStatus<HandRakeShare>> {
-    if (!handId) return { found: false };
+  async getHandRakeShare(
+    handId: string,
+    scope: StatsScope = CHIP_STATS
+  ): Promise<ScopedRead<HandRakeShare>> {
+    if (!handId) return { found: false, scope };
     return callRpc<HandRakeShare>(
       'ca_player_hand_rake_share',
       { p_hand_id: handId },
-      { found: false }
+      { found: false },
+      scope
     );
   },
 };

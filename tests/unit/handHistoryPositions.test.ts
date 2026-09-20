@@ -48,7 +48,28 @@ describe('hand history reads the real button', () => {
       m[1].trim()
     );
     expect(reads.length).toBeGreaterThan(0);
-    for (const r of reads) expect(r).toBe('HAND_HISTORY_COLUMNS');
+    /**
+     * ONE COLUMN LIST, AND AN EMBED MAY BE ADDED TO IT (2026-09-20).
+     *
+     * This used to require the argument to BE `HAND_HISTORY_COLUMNS`, which
+     * said two things at once: the column list is shared, and a read may not
+     * embed anything. The first is the invariant - `button_seat` reaches every
+     * surface because there is one list - and it still holds exactly.
+     *
+     * The second was never the point and now blocks the arena scope:
+     * `getPlayerHands` embeds `ca_hand_facts` under its named constraint to
+     * filter a Diamond player's record to the arena server-side, and that embed
+     * is APPENDED to the shared constant rather than replacing it. So the pin
+     * is now: every read names the constant, and no read spells a column list
+     * of its own. A literal `'some_column',` inside a select argument is the
+     * drift this test exists to refuse, and it still fails here.
+     */
+    for (const r of reads) {
+      expect(r, `${r} does not read the one select list`).toContain('HAND_HISTORY_COLUMNS');
+      expect(r, `${r} spells a column list of its own instead of the shared one`).not.toMatch(
+        /'[a-z_]+'\s*,/
+      );
+    }
   });
 
   it('never derives the button from isButton alone', () => {

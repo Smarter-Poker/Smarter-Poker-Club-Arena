@@ -24,6 +24,9 @@ function Entry({ diamonds, change }: { diamonds: number; change: (budget: BonusB
       </output>
       <BonusSetup
         budget={budget}
+        // The invitation is the same for every game. Crash keeps this fixture off
+        // the Plinko drop-value copy, which the entry hook derives, not this dialog.
+        game="crash"
         diamonds={diamonds}
         disabled={false}
         clubId="shark-club"

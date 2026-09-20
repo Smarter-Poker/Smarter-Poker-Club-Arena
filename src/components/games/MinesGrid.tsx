@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
+import { gameChips } from '../../utils/bonusGameBudget';
 import styles from './MinesGrid.module.css';
 export function GemArt({ mine = false }: { mine?: boolean }) {
   const id = useId().replace(/:/g, '');
@@ -47,6 +48,48 @@ export function GemArt({ mine = false }: { mine?: boolean }) {
     </svg>
   );
 }
+/** A signed chip amount: "+4.33 Chips", "-0.90 Chips", "0.00 Chips". */
+export const signedChips = (amount: number) => {
+  const cents = Math.round(amount * 100);
+  return `${cents < 0 ? '-' : cents > 0 ? '+' : ''}${gameChips(Math.abs(cents) / 100)} Chips`;
+};
+/** The two readouts every Mines player weighs: what the board is worth now, above the
+ * stake, and what the next safe tile adds. Before the first pick the board is worth
+ * the stake itself (1.00x), so the profit starts at zero and the next tile's gain is
+ * its prize above the stake. A finished round reads its booked chips against the stake. */
+export function minesReadouts(input: {
+  phase: 'idle' | 'open' | 'cashed' | 'lost';
+  picks: number;
+  prizes: readonly number[];
+  betChips: number;
+  payoutChips?: number;
+}) {
+  const { phase, picks, prizes, betChips, payoutChips } = input;
+  const reached = picks > 0 ? (prizes[picks - 1] ?? betChips) : betChips;
+  const value =
+    phase === 'lost' ? (payoutChips ?? 0) : phase === 'cashed' ? (payoutChips ?? reached) : reached;
+  const multiplier = betChips > 0 ? value / betChips : 0;
+  const next = prizes[picks];
+  return {
+    totalLabel: `Total Profit (${multiplier.toFixed(2)}x)`,
+    totalProfit: signedChips(value - betChips),
+    nextLabel: 'Profit On Next Tile',
+    nextProfit:
+      phase === 'lost'
+        ? 'Round Over'
+        : phase === 'cashed'
+          ? 'Win Booked'
+          : next === undefined
+            ? 'Limit Reached'
+            : signedChips(next - value),
+  };
+}
+/** The cascade ripples out from the tile that ended the round, one ring at a time. */
+export const cascadeDelay = (cell: number, origin: number, stepMs: number) => {
+  const distance =
+    Math.abs(Math.floor(cell / 5) - Math.floor(origin / 5)) + Math.abs((cell % 5) - (origin % 5));
+  return distance * stepMs;
+};
 export default function MinesGrid({
   picked,
   mines,
@@ -55,6 +98,9 @@ export default function MinesGrid({
   onPick,
   onSettled,
   roundId,
+  prizes,
+  betChips,
+  payoutChips,
 }: {
   picked: number[];
   mines: number[] | null;
@@ -63,6 +109,12 @@ export default function MinesGrid({
   onPick: (cell: number) => void;
   onSettled?: () => void;
   roundId?: string;
+  /** Chip prizes per safe pick for this round or its quote. */
+  prizes?: readonly number[];
+  /** The stake in chips. */
+  betChips?: number;
+  /** The settled chips of a finished round. */
+  payoutChips?: number;
 }) {
   const terminal = phase === 'cashed' || phase === 'lost';
   const [visible, setVisible] = useState(() => document.visibilityState !== 'hidden');
@@ -71,6 +123,12 @@ export default function MinesGrid({
     document.addEventListener('visibilitychange', update);
     return () => document.removeEventListener('visibilitychange', update);
   }, []);
+  const speed = getAnimationSpeed();
+  const readouts =
+    prizes && betChips !== undefined && betChips > 0
+      ? minesReadouts({ phase, picks: picked.length, prizes, betChips, payoutChips })
+      : null;
+  const origin = picked[picked.length - 1] ?? 12;
   return (
     <div
       key={`${roundId}:${phase}`}
@@ -81,7 +139,7 @@ export default function MinesGrid({
       style={
         terminal
           ? {
-              animationDuration: `${1800 * getAnimationSpeed()}ms`,
+              animationDuration: `${1800 * speed}ms`,
               animationPlayState: visible ? 'running' : 'paused',
             }
           : undefined
@@ -90,12 +148,31 @@ export default function MinesGrid({
         if (terminal && event.target === event.currentTarget) onSettled?.();
       }}
     >
+      {readouts && (
+        <dl className={styles.readouts} aria-live="polite">
+          <div>
+            <dt>{readouts.totalLabel}</dt>
+            <dd data-sign={readouts.totalProfit.startsWith('-') ? 'loss' : 'gain'}>
+              {readouts.totalProfit}
+            </dd>
+          </div>
+          <div>
+            <dt>{readouts.nextLabel}</dt>
+            <dd>{readouts.nextProfit}</dd>
+          </div>
+        </dl>
+      )}
       <div className={styles.stage}>
         <div className={styles.grid}>
           {Array.from({ length: 25 }, (_, cell) => {
             const mine = mines?.includes(cell) ?? false,
               selected = picked.includes(cell),
-              revealed = selected || mines !== null;
+              revealed = selected || mines !== null,
+              // A tile the player turned over flips as it is picked; on the final
+              // reveal the rest of the board turns over in a ripple from the last pick,
+              // while the picks already showing stay put (the hit mine blasts instead).
+              cascade = terminal && !selected,
+              flip = revealed && (!terminal || cascade);
             return (
               <button
                 key={cell}
@@ -104,6 +181,17 @@ export default function MinesGrid({
                 data-revealed={revealed}
                 data-mine={revealed && mine}
                 data-picked={selected}
+                data-hit={selected && mine}
+                data-flip={flip}
+                data-cascade={cascade}
+                style={
+                  cascade
+                    ? {
+                        animationDelay: `${cascadeDelay(cell, origin, 70 * speed)}ms`,
+                        animationDuration: `${420 * speed}ms`,
+                      }
+                    : undefined
+                }
                 aria-label={`Tile ${cell + 1}${revealed ? (mine ? ', Mine' : ', Gem') : ''}`}
                 disabled={busy || phase !== 'open' || selected}
                 onClick={() => onPick(cell)}
@@ -125,7 +213,9 @@ export default function MinesGrid({
       </div>
       <p className={styles.caption}>
         {mines
-          ? 'Every Mine Is Revealed'
+          ? phase === 'lost'
+            ? 'A Mine Ended The Round. Every Mine And Gem Is Revealed.'
+            : 'Win Booked. Every Mine And Gem Is Revealed.'
           : phase === 'open'
             ? 'Choose A Tile. Find A Diamond.'
             : '25 Tiles. Your Next Discovery Awaits.'}

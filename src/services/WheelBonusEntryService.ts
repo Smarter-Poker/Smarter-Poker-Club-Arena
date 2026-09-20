@@ -3,8 +3,27 @@ import { normaliseState, type GameState } from './DiamondGamesService';
 import { parseChoiceState, type ChoiceState } from './DiamondChoiceService';
 import type { BonusGame } from './DiamondBonusService';
 import type { WheelBonusAward } from './DiamondWheelService';
-import { bonusTotal, validBonusBudget, type BonusBudget } from '../utils/bonusGameBudget';
+import {
+  bonusTotal,
+  plinkoBudget,
+  validBonusBudget,
+  type BonusBudget,
+} from '../utils/bonusGameBudget';
+import { diamondBonusMinimum, plinkoTableVersion } from '../utils/diamondBonusPayout';
+import { CHOICE_MODE } from '../utils/diamondChoiceMath';
 
+/** What the server says this award will start with, read before Start. The
+ * server is the authority; the client mirror only refuses a quote that
+ * disagrees with the rule it knows, so the guarantee shown is the one paid. */
+export interface BonusGuarantee {
+  guarantee: 'super' | 'standard';
+  /** Chips paid on any loss or un-cashed round, from the full funded entry. */
+  minimumPayoutChips: number;
+  /** The one setting for Donkey Cross and Diamond Mines; null for the others. */
+  mode: string | null;
+  /** The Plinko table this award plays: Diamond (5) or Super (4). */
+  plinkoTable: number;
+}
 export interface EarnedGameAward extends WheelBonusAward {
   club_id: string;
   status: 'pending' | 'redeemed';
@@ -18,9 +37,37 @@ export interface WheelBonusState {
   enabled: boolean;
   award: EarnedGameAward | null;
   gameState: GameState | ChoiceState | null;
+  /** Present exactly when a pending award was quoted. */
+  quote: BonusGuarantee | null;
 }
+export function parseBonusGuarantee(
+  g: Record<string, unknown>,
+  award: EarnedGameAward,
+  game: BonusGame
+): BonusGuarantee {
+  const boost = award.boost_multiplier === 2 ? 2 : 1;
+  const rate = Number(g.diamonds_per_chip ?? (g.config as Record<string, unknown>)?.diamonds_per_chip);
+  const expectedMode = game === 'crossing' || game === 'mines' ? CHOICE_MODE[game] : null;
+  if (
+    !Number.isSafeInteger(rate) ||
+    rate < 1 ||
+    g.guarantee !== (boost === 2 ? 'super' : 'standard') ||
+    typeof g.minimum_payout_chips !== 'number' ||
+    g.minimum_payout_chips !== diamondBonusMinimum(award.bet_diamonds / rate, boost) ||
+    (g.mode ?? null) !== expectedMode ||
+    g.plinko_table !== plinkoTableVersion(boost)
+  )
+    throw new Error('The Award Guarantee Could Not Be Quoted');
+  return {
+    guarantee: boost === 2 ? 'super' : 'standard',
+    minimumPayoutChips: g.minimum_payout_chips,
+    mode: expectedMode,
+    plinkoTable: g.plinko_table,
+  };
+}
+/** The award's funded entry with the player's Double Down answer. The Plinko drop value is derived, never chosen. */
 export function awardBudget(award: WheelBonusAward, preference: BonusBudget): BonusBudget {
-  const next: BonusBudget = {
+  return plinkoBudget({
     base: award.base_diamonds,
     doubled: preference.doubled,
     denomination: preference.denomination,
@@ -29,9 +76,7 @@ export function awardBudget(award: WheelBonusAward, preference: BonusBudget): Bo
       entryDiamonds: award.entry_diamonds,
       boostMultiplier: award.boost_multiplier as 1 | 2,
     },
-  };
-  if (bonusTotal(next) % next.denomination !== 0) next.denomination = 1;
-  return next;
+  });
 }
 export const WheelBonusEntryService = {
   async state(
@@ -89,6 +134,7 @@ export const WheelBonusEntryService = {
     )
       throw new Error('The Saved Award Does Not Match This Game');
     let gameState: GameState | ChoiceState | null = null;
+    let quote: BonusGuarantee | null = null;
     if (award?.status === 'pending') {
       const budget = awardBudget(award, { base: 100, doubled, denomination: 1 });
       const g = v.game_state as Record<string, unknown> | null;
@@ -107,7 +153,8 @@ export const WheelBonusEntryService = {
         game === 'mines' || game === 'crossing'
           ? parseChoiceState(g, club, game)
           : normaliseState(g);
+      quote = parseBonusGuarantee(g, award, game);
     }
-    return { enabled: v.enabled, award, gameState };
+    return { enabled: v.enabled, award, gameState, quote };
   },
 };

@@ -96,6 +96,14 @@ import { supabase } from '../../lib/supabase';
 import { formatPopupText } from '../../utils/popupStyle';
 import { reportError } from '../../utils/errorReporter';
 import { masterBus } from '../../core/MasterBus';
+import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../utils/format';
+import { TOURNAMENT_ARENA_EMBED } from '../../services/TournamentService';
+import { tournamentRowUnitCents, type TournamentArenaEmbed } from './details/types';
+import {
+  CHIP_UNIT_CENTS,
+  normalizeUnitCents,
+  UNIT_CENTS_ASSET_NOT_READ,
+} from '../../../server/src/tournament/tournamentUnit';
 import './MysteryBountyCelebration.css';
 
 /** How long the celebration holds the corner before it clears itself. */
@@ -197,6 +205,14 @@ export default function MysteryBountyCelebration({ tournamentId }: { tournamentI
   const ladderRef = useRef<number[]>([]);
   /** Whether this event is a mystery bounty at all, from the tournament row. */
   const isMysteryEventRef = useRef(false);
+  /**
+   * THE GRID THIS EVENT PAYS ON (2026-09-20), off the SAME tournament row the
+   * mystery flag comes from - one read, one answer. Until it resolves it holds
+   * `UNIT_CENTS_ASSET_NOT_READ`, which is the greppable name for "nobody has
+   * looked", and the announcement below cannot fire before the ladder loads
+   * anyway (an empty ladder celebrates nothing).
+   */
+  const unitCentsRef = useRef<number>(UNIT_CENTS_ASSET_NOT_READ);
   /** Message text to the time it was last shown, for the repeat cooldown. */
   const shownRef = useRef<Map<string, number>>(new Map());
   /** Set false on unmount: the shared channel keeps the listener, we stop acting. */
@@ -221,12 +237,13 @@ export default function MysteryBountyCelebration({ tournamentId }: { tournamentI
       try {
         const { data: row } = await supabase
           .from('tournaments')
-          .select('is_mystery_bounty')
+          .select(`is_mystery_bounty, ${TOURNAMENT_ARENA_EMBED}`)
           .eq('id', tournamentId)
           .maybeSingle();
         if (!liveRef.current) return;
 
         isMysteryEventRef.current = !!row?.is_mystery_bounty;
+        unitCentsRef.current = tournamentRowUnitCents(row as TournamentArenaEmbed | null);
         if (!isMysteryEventRef.current) return;
 
         /* Every prize this event ever held: the heads still sealed on live
@@ -350,8 +367,17 @@ export default function MysteryBountyCelebration({ tournamentId }: { tournamentI
          below it say "A Top", because there is only one top prize and calling
          three of them "the top" is how a celebration stops meaning anything. */
       const article = rank === 1 ? 'The Top' : 'A Top';
+      /* AT THE UNIT THIS EVENT PAYS ON (2026-09-20), and named. `money` is the
+         chip contract and stays it for a chip event; a Diamond chest holds
+         whole Diamonds, and a bare figure in the Diamond Arena does not say
+         what was pulled. */
+      const unitCents = unitCentsRef.current;
+      const figure =
+        normalizeUnitCents(unitCents) === CHIP_UNIT_CENTS
+          ? money(amount)
+          : formatPrizeAtUnit(amount, unitCents);
       const text = formatPopupText(
-        `${puller} Just Pulled ${article} Mystery Bounty Worth ${money(amount)}`
+        `${puller} Just Pulled ${article} Mystery Bounty Worth ${figure}${moneySuffixAtUnit(unitCents)}`
       );
 
       raise(text, rank);

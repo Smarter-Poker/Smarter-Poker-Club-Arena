@@ -2491,12 +2491,64 @@ export abstract class ServerTableEngineBase {
       );
     });
 
+    /* THE HUB LEG OF THE SWEEP BELOW, HOISTED (2026-09-20).
+       `bridgeToHub` in Step 6 is the helper the 2026-09-08 sweep wrote for
+       engines whose ONLY consumer was a console line. Two engines built in
+       Step 5 below were not in that sweep because they were not silent: the
+       time bank feeds DB accounting and the pre-action engine feeds the
+       player's own private frame. Each already had a consumer, so neither
+       read as lost - and neither was reaching THE TABLE. Same transport, so
+       the same helper, split here into the emit half that Step 5 needs
+       without Step 6's console line (those two callbacks log the player id,
+       which `bridgeToHub` does not). One hub broadcast shape, one place. */
+    const emitToHub = (event: { type: string } & Record<string, unknown>) => {
+      try {
+        this.hub?.emitEvent(this.tableId, {
+          ...event,
+          type: event.type.toLowerCase(),
+          table_id: this.tableId,
+          timestamp: Date.now(),
+        });
+      } catch {
+        /* broadcast failure is non-fatal */
+      }
+    };
+
     // Step 5: Initialize supporting modules
     this.timeBankEngine = new TimeBankEngine(this.preciseTimer, (event) => {
       console.log(
         `[ServerTableEngine:${tableId}] TimeBank: ${event.type} player=${event.playerId}`
       );
       this.onTimeBankAccounting(event);
+      /* AND THE TABLE (Dan 2026-09-20: "the time bank badge never goes away").
+         TIME_BANK_ACTIVATED reaches the browser through its OWN hand-written
+         hub broadcast (ServerTableEngineTurns.activateTimeBank). The three
+         events that END a bank had no such path: this callback was the only
+         consumer and it does database accounting, so `setTimeBankActive(true)`
+         had no counterpart and the client's badge cleared only if a later
+         snapshot happened to disagree with it. The accounting call above is
+         untouched - this is a SECOND consumer of an event the engine already
+         produced, not a replacement.
+
+         Forwarded as a NARROWED object rather than the raw event: TimeBankEvent
+         carries an open index signature, and this frame goes to every seat at
+         the table, so only the four fields TablePage's persistTimeBankState
+         reads are named here. Values are passed through exactly as the engine
+         computed them; the client supplies its own defaults. */
+      if (
+        event.type === 'TIME_BANK_STOPPED' ||
+        event.type === 'TIME_BANK_EXPIRED' ||
+        event.type === 'TIME_BANK_DEPLETED'
+      ) {
+        emitToHub({
+          type: event.type,
+          tableId: event.tableId,
+          playerId: event.playerId,
+          secondsUsed: event.secondsUsed,
+          remainingSeconds: event.remainingSeconds,
+          usesRemaining: event.usesRemaining,
+        });
+      }
     });
     this.disconnectEngine = new DisconnectEngine(this.preciseTimer, (event) => {
       console.log(
@@ -2597,7 +2649,31 @@ export abstract class ServerTableEngineBase {
          handleTurnChange's fallthrough, with a reason, so the bar clears and
          the player is prompted at once. RESYNC still re-sends the engine's
          copy, so a reconnect converges either way. */
-      if (event.type === 'PRE_ACTION_EXECUTED') return;
+      if (event.type === 'PRE_ACTION_EXECUTED') {
+        /* THE EXECUTION IS A PUBLIC FACT (2026-09-20). The paragraph above is
+           about the player's OWN bar and stands unchanged: nothing is pushed
+           to the hero here. What was missing is the other audience. The table
+           chat has built "Player 1a2b auto-folded" from this event since
+           useTableChat was written (src/hooks/useTableChat.ts), and the event
+           never left the process, so a pre-action was the one way to act at
+           this table without the table being told.
+
+           ONLY THIS TYPE. PRE_ACTION_SET / _INVALIDATED / _CLEARED say what a
+           player has ARMED but not yet played - live information about a
+           future decision, which is why they go to that player's sockets
+           alone via pushPreActionToPlayer. Broadcasting them would hand every
+           opponent a read on an unmade decision. Narrowed to the four fields
+           the chat line reads; `action` and `amount` describe the move the
+           engine is about to apply in the open anyway. */
+        emitToHub({
+          type: event.type,
+          tableId: event.tableId,
+          playerId: event.playerId,
+          action: event.action,
+          amount: event.amount,
+        });
+        return;
+      }
       this.pushPreActionToPlayer(
         event.playerId,
         event.type === 'PRE_ACTION_INVALIDATED'
@@ -2623,16 +2699,7 @@ export abstract class ServerTableEngineBase {
        exists; what changes is that the fact is no longer lost. */
     const bridgeToHub = (label: string, event: { type: string }) => {
       console.log(`[ServerTableEngine:${tableId}] ${label}: ${event.type}`);
-      try {
-        this.hub?.emitEvent(this.tableId, {
-          ...(event as unknown as Record<string, unknown>),
-          type: event.type.toLowerCase(),
-          table_id: this.tableId,
-          timestamp: Date.now(),
-        });
-      } catch {
-        /* broadcast failure is non-fatal */
-      }
+      emitToHub(event as { type: string } & Record<string, unknown>);
     };
     this.straddleEngine = new StraddleEngine((event) => bridgeToHub('Straddle', event));
     this.runItTwiceEngine = new RunItTwiceEngine((event) => {

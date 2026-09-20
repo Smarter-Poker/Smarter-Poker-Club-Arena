@@ -1,26 +1,32 @@
-/** Spin pricing and Plinko denominations are amounts of diamonds, not prize multipliers. */
+/** Spin pricing and Plinko drops are amounts of diamonds, not prize multipliers. */
 export const MIN_DIAMOND_SPIN = 25;
 export const MAX_DIAMOND_SPIN = 2500;
-export const PLINKO_DIAMONDS_PER_DROP = [1, 2, 4, 5, 10, 20, 25, 50, 100] as const;
+/**
+ * Every Plinko game is ten drops of a tenth of the entry. Nobody chooses a drop
+ * value: at one to five diamonds a drop a 2,500-diamond award was hundreds of
+ * drops whose average could only ever be the table's 0.80, so the game could
+ * never return more than its entry. Ten drops is one setting, built into the
+ * payout maths, and the server refuses any other split.
+ */
+export const PLINKO_DROPS = 10;
 
 export function validSpinAmount(amount: number): boolean {
   return Number.isSafeInteger(amount) && amount >= MIN_DIAMOND_SPIN && amount <= MAX_DIAMOND_SPIN;
 }
 
-export function plinkoAllocations(balance: number) {
-  if (!Number.isSafeInteger(balance) || balance < MIN_DIAMOND_SPIN) {
-    throw new Error('Choose A Valid Diamond Balance');
-  }
-  return PLINKO_DIAMONDS_PER_DROP.filter((value) => balance % value === 0).map((value) => ({
-    diamondsPerDrop: value,
-    drops: balance / value,
-    totalDiamonds: balance,
-  }));
+/** The diamonds each of the ten drops plays, or null when the entry does not split into whole diamonds. */
+export function plinkoDenomination(totalDiamonds: number): number | null {
+  return Number.isSafeInteger(totalDiamonds) &&
+    totalDiamonds > 0 &&
+    totalDiamonds % PLINKO_DROPS === 0
+    ? totalDiamonds / PLINKO_DROPS
+    : null;
 }
 
 export interface BonusBudget {
   base: number;
   doubled: boolean;
+  /** Plinko only: the diamonds each drop plays. Always the tenth of the entry. */
   denomination: number;
   /** The server-funded wheel entitlement. The original stake alone may be added. */
   award?: { id: string; entryDiamonds: number; boostMultiplier: 1 | 2 };
@@ -28,7 +34,7 @@ export interface BonusBudget {
 export const defaultBonusBudget = (): BonusBudget => ({
   base: 100,
   doubled: false,
-  denomination: 1,
+  denomination: 10,
 });
 export const bonusAdded = (budget: BonusBudget) =>
   budget.doubled ? (budget.award?.entryDiamonds ?? budget.base) : 0;
@@ -47,6 +53,16 @@ export function validBonusBudget(budget: BonusBudget): boolean {
       : validSpinAmount(budget.base))
   );
 }
+/** The same budget with its Plinko drop value derived from the entry, never chosen. */
+export function plinkoBudget(budget: BonusBudget): BonusBudget {
+  const denomination = validBonusBudget(budget) ? plinkoDenomination(bonusTotal(budget)) : null;
+  return denomination === null || denomination === budget.denomination
+    ? budget
+    : { ...budget, denomination };
+}
+/** True when the budget's drop value is the tenth of its entry, as the server requires. */
+export const validPlinkoBudget = (budget: BonusBudget) =>
+  validBonusBudget(budget) && plinkoDenomination(bonusTotal(budget)) === budget.denomination;
 
 /** A larger game receipt is valid only with the complete wheel funding identity. */
 export function earnedReceiptBudget(value: Record<string, unknown>): BonusBudget | null {
@@ -77,7 +93,7 @@ export function earnedReceiptBudget(value: Record<string, unknown>): BonusBudget
     bonusAdded(budget) === bonus.added_diamonds &&
     bonusTotal(budget) === bonus.total_diamonds &&
     bonus.total_diamonds === value.bet_diamonds
-    ? budget
+    ? plinkoBudget(budget)
     : null;
 }
 /** Monetary prizes keep their cents even below the compact-number threshold. */

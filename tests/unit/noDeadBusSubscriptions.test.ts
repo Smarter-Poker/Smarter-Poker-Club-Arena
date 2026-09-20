@@ -79,16 +79,12 @@ function scan() {
 /**
  * Checked 2026-08-23. Each of these is REDUNDANT, not broken:
  *
- *   TIME_BANK_STOPPED / _DEPLETED / _EXPIRED / _EXTENDED / _EXTENSION_DENIED
+ *   TIME_BANK_EXTENDED / TIME_BANK_EXTENSION_DENIED
  *     The engine publishes time_bank_remaining and time_bank_uses_remaining on
  *     every snapshot, and handleBuyTimeBanks reports its own purchase from the
  *     RPC result. Nothing depends on these handlers running.
- *   STRADDLE_TOGGLED
- *     handleToggleStraddle is optimistic and reverts from the RPC's return
- *     value, so the echo confirms nothing the client does not already know.
  *   ACTION_REJECTED / ACTION_TIMER_STARTED / ACTION_TIMER_EXPIRED /
- *   STATE_INTEGRITY_VIOLATION / PRE_ACTION_EXECUTED / WS_RECONNECTING /
- *   TRANSACTION_LOGGED
+ *   STATE_INTEGRITY_VIOLATION / WS_RECONNECTING / TRANSACTION_LOGGED
  *     Superseded by the server-authoritative snapshot during the migration.
  *
  * REVIVED 2026-08-28, and removed from this list: HAND_WON and SHOWDOWN_START.
@@ -111,19 +107,39 @@ function scan() {
  * `t-break-<id>` broadcast through tournamentEventBridge; the last two are
  * emitted on the hub by ServerTableEngineBase, whose callbacks used to be a
  * bare console.log. The list shrank, which is what it is for.
+ *
+ * REVIVED 2026-09-20, and removed from this list: TIME_BANK_STOPPED,
+ * TIME_BANK_DEPLETED, TIME_BANK_EXPIRED, STRADDLE_TOGGLED and
+ * PRE_ACTION_EXECUTED. All five were entered as REDUNDANT and all five
+ * entries were wrong, in the same way the HAND_WON entry above was wrong:
+ *
+ *   The time bank three. `persistTimeBankState` is the ONLY caller of
+ *   setTimeBankActive(false) in the app. TIME_BANK_ACTIVATED sets the badge
+ *   to true through its own case in the dispatcher; these three are the only
+ *   thing that sets it back. The snapshot mirrors the seconds and the uses,
+ *   not the active flag, so "nothing depends on these handlers running" was
+ *   the opposite of true: the hero's time-bank UI latched on.
+ *
+ *   STRADDLE_TOGGLED. The optimistic local update the entry describes is real
+ *   and it is why this looked like it worked - for ONE seat. useTableChat
+ *   raises a table-wide SYSTEM line from the same event, and every other seat
+ *   at the table heard nothing.
+ *
+ *   PRE_ACTION_EXECUTED. Filed under "superseded by the snapshot", and a
+ *   snapshot cannot produce a chat line - the same sentence this file already
+ *   had to write for HAND_WON. "Player 1a2b auto-folded" has no other source.
+ *
+ * All five now have a publisher: the engine forwards them from the private
+ * sub-engine callback onto the table hub (ServerTableEngineBase) and
+ * TablePage's dispatcher carries them onto the bus.
  */
 const KNOWN_DEAD = new Set([
   'ACTION_REJECTED',
   'ACTION_TIMER_EXPIRED',
   'ACTION_TIMER_STARTED',
-  'PRE_ACTION_EXECUTED',
   'STATE_INTEGRITY_VIOLATION',
-  'STRADDLE_TOGGLED',
-  'TIME_BANK_DEPLETED',
-  'TIME_BANK_EXPIRED',
   'TIME_BANK_EXTENDED',
   'TIME_BANK_EXTENSION_DENIED',
-  'TIME_BANK_STOPPED',
   'TRANSACTION_LOGGED',
   'WS_RECONNECTING',
 ]);

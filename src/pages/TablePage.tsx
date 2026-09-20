@@ -235,6 +235,7 @@ import TimebankCounter from '../components/table/TimebankCounter';
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
 import { parseTableArenaIdentity, seatCanAddFunds } from '../../server/src/domain/ArenaContext';
+import { arenaAssetUnitCents } from '../lib/arenaUnitCents';
 import { bootExplanation, seatCopy } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
 import { soundService, haptic } from '../services/SoundService';
@@ -472,7 +473,7 @@ const RANK_WORD = (r: string): string =>
   })[String(r).toUpperCase()] ?? String(r).toUpperCase();
 import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { getAnimationSpeed } from '../utils/animationSpeed';
-import { formatChipAward } from '../utils/format';
+import { formatAwardAtUnit, formatChipAward } from '../utils/format';
 import { bountyWinnersOf } from '../utils/bountyBroadcast';
 import { formatPopupText } from '../utils/popupStyle';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
@@ -3206,13 +3207,36 @@ function LiveTablePage({
   >([]);
   const potWinFloatIdRef = useRef(0);
   const potWinFloatTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  /**
+   * THE GRID THIS TABLE PAYS ON (2026-09-20).
+   *
+   * `tableState.arenaAsset` has already been through `parseArenaIdentity`,
+   * which returns `'diamonds'` ONLY for a club row satisfying all three of the
+   * conditions `fn_ca_tournament_unit_cents` tests, and
+   * `parseTableArenaIdentity` additionally refuses a Diamond table under a
+   * union. So the asset on the table state IS the unit, and
+   * `arenaAssetUnitCents` reads it rather than deriving it a second time. An
+   * unread arena answers `UNIT_CENTS_ASSET_NOT_READ`, which is greppable.
+   *
+   * Two readers: the seat's bounty badge (a prop) and the knockout float (a
+   * ref, because `spawnPotWinFloat` is a stable callback with no deps and must
+   * not be rebuilt on every arena read).
+   */
+  const feltUnitCents = arenaAssetUnitCents(tableState.arenaAsset);
+  const feltUnitCentsRef = useRef(feltUnitCents);
+  feltUnitCentsRef.current = feltUnitCents;
+
   const spawnPotWinFloat = useCallback(
     (fromX: number, fromY: number, toX: number, toY: number, amount: number) => {
       if (!(amount > 0)) return;
       // EXACT TO THE CENT (knockout audit 2026-09-04). This used to be
       // Math.round() for anything >= 1, so a 7.50 bounty floated up as "+8"
       // beside a seat delta that said "+7.50". One formatter for both now.
-      const label = formatChipAward(amount);
+      /* AT THE UNIT THE TABLE PAYS ON (2026-09-20). `formatChipAward` is the
+         chip contract and is unchanged for a chip table; a Diamond award is a
+         whole Diamond and must not float up with a decimal point the payment
+         cannot contain. */
+      const label = formatAwardAtUnit(amount, feltUnitCentsRef.current);
       const id = ++potWinFloatIdRef.current;
       setPotWinFloats((prev) => [...prev, { id, fromX, fromY, toX, toY, label }]);
       // Self-clean after the CSS animation (2.2s) has fully played out.
@@ -18647,6 +18671,85 @@ function LiveTablePage({
         } as any);
         break;
       }
+      /* THE END OF A TIME BANK, THE STRADDLE, AND THE PRE-ACTION THAT PLAYED
+         ITSELF (2026-09-20).
+
+         Three events with live subscribers in this file and in useTableChat,
+         and no `case` to put them on the bus. The engines raise all three; the
+         server now broadcasts them (ServerTableEngineBase: the time bank's
+         terminal events and PRE_ACTION_EXECUTED were added there the same day,
+         STRADDLE_TOGGLED has been on the hub since 2026-09-08). Arriving here
+         with no case, each one fell off the end of this switch.
+
+         What that cost, in order:
+           - `setTimeBankActive(false)` has exactly one caller,
+             persistTimeBankState below, subscribed to TIME_BANK_STOPPED /
+             _DEPLETED / _EXPIRED. TIME_BANK_ACTIVATED (its own case above) set
+             the badge to true; nothing ever set it back.
+           - The straddle notice in table chat is raised from STRADDLE_TOGGLED.
+             The player who pressed the button sees their own switch move
+             because handleToggleStraddle POSTs and updates locally; every
+             other seat learned nothing.
+           - "Player 1a2b auto-folded" is built from PRE_ACTION_EXECUTED. The
+             pre-action worked; the table was never told it had happened.
+
+         Normalised on the way to the bus for the same reason every case in
+         this block is: the hub speaks snake_case and the subscribers read
+         camelCase - the exact drop that made TIME_BANK_ACTIVATED look
+         intermittent for months. Nothing is defaulted here that the
+         subscriber already defaults for itself. */
+      case 'TIME_BANK_STOPPED':
+      case 'TIME_BANK_DEPLETED':
+      case 'TIME_BANK_EXPIRED': {
+        const d = (evt.data ?? {}) as Record<string, unknown>;
+        const bankEnded = {
+          ...d,
+          tableId: (d.tableId as string) || (d.table_id as string) || tableId || '',
+          playerId: (d.playerId as string) || (d.player_id as string) || '',
+          secondsUsed: (d.secondsUsed as number) ?? (d.seconds_used as number),
+          remainingSeconds: (d.remainingSeconds as number) ?? (d.remaining_seconds as number),
+          usesRemaining: (d.usesRemaining as number) ?? (d.uses_remaining as number),
+        } as any;
+        /* Named one at a time rather than `masterBus.emit(evt.type, …)`.
+           tests/unit/noDeadBusSubscriptions.test.ts is the mechanical guard
+           against a subscriber nobody publishes to - the defect being repaired
+           here - and it finds publishers by scanning for a LITERAL event name
+           at the emit. A computed name is invisible to it, so these three
+           would still read as dead while working perfectly: the next person to
+           audit the list would be told, correctly, that nothing emits them.
+           The case above this one has that problem today and is only covered
+           because TableWebSocket.ts emits TIME_BANK_ACTIVATED by name. */
+        if (evt.type === 'TIME_BANK_STOPPED') masterBus.emit('TIME_BANK_STOPPED', bankEnded);
+        else if (evt.type === 'TIME_BANK_DEPLETED') masterBus.emit('TIME_BANK_DEPLETED', bankEnded);
+        else masterBus.emit('TIME_BANK_EXPIRED', bankEnded);
+        break;
+      }
+      case 'STRADDLE_TOGGLED': {
+        const d = (evt.data ?? {}) as Record<string, unknown>;
+        masterBus.emit('STRADDLE_TOGGLED', {
+          ...d,
+          tableId: (d.tableId as string) || (d.table_id as string) || tableId || '',
+          playerId: (d.playerId as string) || (d.player_id as string) || '',
+          enabled: d.enabled === true,
+        } as any);
+        break;
+      }
+      case 'PRE_ACTION_EXECUTED': {
+        const d = (evt.data ?? {}) as Record<string, unknown>;
+        masterBus.emit('PRE_ACTION_EXECUTED', {
+          ...d,
+          tableId: (d.tableId as string) || (d.table_id as string) || tableId || '',
+          /* The chat line calls .substring(0, 4) on this, so it is a string
+             here or the notice throws inside the subscriber. */
+          playerId: (d.playerId as string) || (d.player_id as string) || '',
+          action: String(d.action ?? ''),
+          /* A fold or a check commits nothing and the engine leaves `amount`
+             unset for both; 0 is that fact, not a guess. No subscriber reads
+             it today - it is carried because the bus payload declares it. */
+          amount: Number(d.amount ?? 0),
+        } as any);
+        break;
+      }
       case 'LEVEL_UP': {
         masterBus.emit('TOURNAMENT_LEVEL_UP', evt.data as any);
         break;
@@ -24511,6 +24614,11 @@ function LiveTablePage({
                       ? tableState.bountyMap[player.id]
                       : undefined
                   }
+                  /* THE GRID THIS TABLE PAYS ON (2026-09-20). `arenaAsset` has
+                     been through `parseArenaIdentity`, which writes 'diamonds'
+                     only for a row satisfying all three conditions
+                     `fn_ca_tournament_unit_cents` tests, so it IS the unit. */
+                  bountyUnitCents={feltUnitCents}
                   isWinner={
                     winnerBandActive && player ? winnerInfo.playerIds.includes(player.id) : false
                   }

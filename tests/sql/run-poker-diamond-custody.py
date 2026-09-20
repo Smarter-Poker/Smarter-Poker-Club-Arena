@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Real PostgreSQL races on the isolated, guarded Phase 3 fixture only."""
+import os
 import concurrent.futures
 import json
 import subprocess
 import uuid
 from pathlib import Path
 
-PSQL = ['/opt/homebrew/opt/postgresql@17/bin/psql', '-h', '/tmp/codex-diamond-phase2-pg',
+PG_BIN = os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin')
+PSQL = [PG_BIN + '/psql', '-h', '/tmp/codex-diamond-phase2-pg',
         '-p', '55472', '-d', 'poker_diamond_phase3_test', '-v', 'ON_ERROR_STOP=1', '-At']
 USER = '10000000-0000-0000-0000-000000000001'
 TABLE = '30000000-0000-0000-0000-000000000001'

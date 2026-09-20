@@ -7,30 +7,33 @@ import DoubleDownOffer from '../components/games/DoubleDownOffer';
 import { WheelWinReveal } from '../components/wheel/WheelWinReveal';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
-import { minePrize, ROAD_LADDERS, roadSurvives } from '../utils/diamondChoiceMath';
+import { CHOICE_MODE, minePrize, ROAD_LADDERS, roadSurvives } from '../utils/diamondChoiceMath';
 import {
   crashMultiplierCents,
   crashPointCentsFromRoll,
   plinkoBitsFromPathBits,
 } from '../utils/diamondGamesFairness';
-import { plinkoAllocations } from '../utils/bonusGameBudget';
+import { PLINKO_DROPS, plinkoDenomination } from '../utils/bonusGameBudget';
+import {
+  PLINKO_TABLES,
+  diamondBonusMinimum,
+  plinkoTableVersion,
+} from '../utils/diamondBonusPayout';
+import { diamondGameTitle, type DiamondBonusGame } from '../utils/diamondGameTitles';
 import styles from './diamondGames.module.css';
 import setup from '../components/games/BonusSetup.module.css';
 
-const games = {
+const games: Record<DiamondBonusGame, string> = {
   plinko: 'Plinko',
   crash: 'Crash',
   crossing: 'Donkey Cross',
   mines: 'Diamond Mines',
 };
-type Game = keyof typeof games;
-const tables = {
-  steady: [2000, 1000, 500, 250, 160, 130, 100, 65, 0, 65, 100, 130, 160, 250, 500, 1000, 2000],
-  bold: [13000, 4000, 995, 410, 200, 105, 100, 50, 0, 50, 100, 105, 200, 410, 995, 4000, 13000],
-  extreme: [
-    100000, 10050, 2025, 525, 250, 130, 100, 0, 0, 0, 100, 130, 250, 525, 2025, 10050, 100000,
-  ],
-};
+type Game = DiamondBonusGame;
+/** The one setting per game, exactly as the server installs it. */
+const ROAD = ROAD_LADDERS[CHOICE_MODE.crossing];
+const MINES = Number(CHOICE_MODE.mines);
+const MINE_PICKS = 25 - MINES;
 function roll48() {
   const a = crypto.getRandomValues(new Uint32Array(2));
   return BigInt(a[0]) * 65536n + BigInt(a[1] & 65535);
@@ -44,11 +47,10 @@ export default function DiamondTestPage() {
   const candidate = params.get('game') ?? 'plinko';
   const game: Game = candidate in games ? (candidate as Game) : 'plinko';
   const upgraded = params.get('super') === '1';
+  const boost = upgraded ? 2 : 1;
   const [entry, setEntry] = useState(100),
     [doubled, setDoubled] = useState(false),
     [offer, setOffer] = useState(false);
-  const [denomination, setDenomination] = useState(5),
-    [risk, setRisk] = useState<keyof typeof tables>('steady');
   const [phase, setPhase] = useState<'idle' | 'open' | 'cashed' | 'lost'>('idle');
   const [sceneBusy, setSceneBusy] = useState(false);
   const [picked, setPicked] = useState<number[]>([]),
@@ -67,16 +69,16 @@ export default function DiamondTestPage() {
     mines = useRef<number[]>([]),
     busy = useRef(false),
     payout = useRef(0);
-  const total = entry * (upgraded ? 2 : 1) + (doubled ? entry : 0),
+  const total = entry * boost + (doubled ? entry : 0),
     chips = total / 100,
-    minimum = chips / 10;
-  // Double Down and Super change the entry without touching the chosen
-  // denomination; a drop size that no longer divides the entry falls back to
-  // the default (or the first that does) so every drop is a whole diamond.
-  const allocations = plinkoAllocations(total);
-  const drop = allocations.some((c) => c.diamondsPerDrop === denomination)
-    ? denomination
-    : (allocations.find((c) => c.diamondsPerDrop === 5) ?? allocations[0]).diamondsPerDrop;
+    // The guaranteed minimum, by the server's rule: a Super award keeps half its
+    // doubled stake, which is the original spin; ordinary play keeps a tenth.
+    minimum = diamondBonusMinimum(chips, boost);
+  // One table per stake kind and ten drops of a tenth of the entry. Nobody
+  // chooses either, exactly as the live game works.
+  const tableVersion = plinkoTableVersion(boost);
+  const table = PLINKO_TABLES[tableVersion];
+  const drop = plinkoDenomination(total) ?? total / PLINKO_DROPS;
   const open = phase === 'open';
   const active = open || (phase !== 'idle' && !settled);
   useLiveBonusGuard(active, () => setNotice('Finish This Test Round Before Leaving.'));
@@ -107,10 +109,16 @@ export default function DiamondTestPage() {
     return () => cancelAnimationFrame(frame);
   }, [open, game, minimum, chips]);
   const nextPrize = (count: number) => {
-    if (game === 'crossing') return (chips * (ROAD_LADDERS[risk][count - 1] ?? 0)) / 100;
-    const p = minePrize(chips, 5, count, minimum);
+    if (game === 'crossing') return (chips * (ROAD[count - 1] ?? 0)) / 100;
+    const p = minePrize(chips, MINES, count, minimum);
     return Number(p.numerator) / Number(p.denominator) / 100;
   };
+  const ladderPrizes =
+    game === 'crossing'
+      ? ROAD.map((mult) => (chips * mult) / 100)
+      : game === 'mines'
+        ? Array.from({ length: MINE_PICKS }, (_, i) => nextPrize(i + 1))
+        : [];
   const start = () => {
     if (busy.current) return;
     busy.current = true;
@@ -125,14 +133,18 @@ export default function DiamondTestPage() {
     setLiveCents(100);
     started.current = performance.now();
     if (game === 'plinko') {
-      const next = Array.from(crypto.getRandomValues(new Uint16Array(total / drop)));
+      const next = Array.from(crypto.getRandomValues(new Uint16Array(PLINKO_DROPS)));
       setPaths(next);
-      payout.current = next.reduce(
+      const dropped = next.reduce(
         (sum, path) =>
           sum +
-          (drop * tables[risk][plinkoBitsFromPathBits(path).reduce((a, b) => a + b, 0)]) / 10000,
+          (drop *
+            table.multipliersCents[plinkoBitsFromPathBits(path).reduce((a, b) => a + b, 0)]) /
+            10000,
         0
       );
+      // A Super batch returns at least the original spin whatever the drops did.
+      payout.current = upgraded ? Math.max(dropped, minimum) : dropped;
     } else if (game === 'crash')
       crash.current = Math.min(10000, crashPointCentsFromRoll(roll48(), chips, minimum));
     else if (game === 'crossing') sealedRoad.current = roll48();
@@ -142,7 +154,7 @@ export default function DiamondTestPage() {
         const j = Number(roll48() % BigInt(i + 1));
         [cells[i], cells[j]] = [cells[j], cells[i]];
       }
-      mines.current = cells.slice(0, 5);
+      mines.current = cells.slice(0, MINES);
     }
   };
   const pick = (cell: number) => {
@@ -153,9 +165,9 @@ export default function DiamondTestPage() {
     const safe =
       game === 'mines'
         ? !mines.current.includes(cell)
-        : roadSurvives(sealedRoad.current, ROAD_LADDERS[risk][picked.length], chips, minimum);
+        : roadSurvives(sealedRoad.current, ROAD[picked.length], chips, minimum);
     if (!safe) finish(minimum, 'lost');
-    else if (next.length === (game === 'mines' ? 20 : ROAD_LADDERS[risk].length))
+    else if (next.length === (game === 'mines' ? MINE_PICKS : ROAD.length))
       finish(nextPrize(next.length), 'cashed');
   };
   const cash = () => {
@@ -185,42 +197,37 @@ export default function DiamondTestPage() {
         ? nextPrize(picked.length)
         : 0
     : prize;
+  const guaranteeSentence = upgraded
+    ? `${diamondGameTitle(game, 2)} Pays At Least ${money(minimum)} Chips, Your Original Spin, Whatever Happens.`
+    : `Pays At Least ${money(minimum)} Chips On Any Loss.`;
   return (
     <main className={`${styles.page} ${styles.fullscreenPage}`}>
       <p role="status">
         Test Mode. Simulated Diamonds And Chips Only. No Account Or Wallet Connection.
       </p>
       <nav className={styles.spinsTabs} style={{ display: 'grid' }} aria-label="Test Games">
-        {Object.entries(games).flatMap(([id, title]) =>
+        {(Object.keys(games) as Game[]).flatMap((id) =>
           [false, true].map((superGame) => (
             <a
               key={`${id}-${superGame}`}
               className={styles.back}
               href={`?game=${id}${superGame ? '&super=1' : ''}`}
             >
-              {superGame ? 'Super ' : ''}
-              {title}
+              {diamondGameTitle(id, superGame ? 2 : 1)}
             </a>
           ))
         )}
       </nav>
       {notice && <p role="alert">{notice}</p>}
       <GameConsole
-        title={`${upgraded ? 'Super ' : ''}${games[game]}`}
+        title={diamondGameTitle(game, boost)}
         pill={open ? 'Test In Play' : 'Test Mode'}
         setup={
           <section className={setup.setup} aria-label="Test Setup">
             <label className={setup.entry}>
               Simulated Spin Diamonds
-              <select
-                value={entry}
-                disabled={active}
-                onChange={(e) => {
-                  setEntry(Number(e.target.value));
-                  setDenomination(5);
-                }}
-              >
-                {[25, 100, 500, 1000, 2500].map((n) => (
+              <select value={entry} disabled={active} onChange={(e) => setEntry(Number(e.target.value))}>
+                {[100, 500, 1000, 2500].map((n) => (
                   <option key={n} value={n}>
                     {n.toLocaleString()}
                   </option>
@@ -230,39 +237,19 @@ export default function DiamondTestPage() {
             <button className={setup.offer} disabled={active} onClick={() => setOffer(true)}>
               {doubled ? 'Double Down Selected' : 'Double Down'}
             </button>
-            {game === 'plinko' && (
-              <label className={setup.entry}>
-                Diamonds Per Drop
-                <select
-                  value={drop}
-                  disabled={active}
-                  onChange={(e) => setDenomination(Number(e.target.value))}
-                >
-                  {allocations.map((c) => (
-                    <option key={c.diamondsPerDrop} value={c.diamondsPerDrop}>
-                      {c.diamondsPerDrop} Diamonds, {c.drops} Drops
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {(game === 'plinko' || game === 'crossing') && (
-              <label className={setup.entry}>
-                Payout Range
-                <select
-                  value={risk}
-                  disabled={active}
-                  onChange={(e) => setRisk(e.target.value as keyof typeof tables)}
-                >
-                  <option value="steady">Lower Risk, Smaller Top Prizes</option>
-                  <option value="bold">Medium Risk, Larger Top Prizes</option>
-                  <option value="extreme">Higher Risk, Largest Top Prizes</option>
-                </select>
-              </label>
-            )}
             <p>
               {total.toLocaleString()} Simulated Diamonds
               {upgraded ? ' Including The Super Bonus' : ''}
+              {game === 'plinko'
+                ? `, ${PLINKO_DROPS} Drops Of ${drop.toLocaleString()} On The ${table.name} Table`
+                : game === 'crossing'
+                  ? `, ${ROAD.length} Streets`
+                  : game === 'mines'
+                    ? `, ${MINES} Mines In 25 Tiles`
+                    : ''}
+            </p>
+            <p className={setup.promise} role="status">
+              {guaranteeSentence}
             </p>
           </section>
         }
@@ -270,7 +257,12 @@ export default function DiamondTestPage() {
           { label: 'Bonus Entry', value: total.toLocaleString() },
           {
             label: game === 'plinko' ? 'Drops' : 'Choices',
-            value: game === 'plinko' ? `${landed}/${total / drop}` : String(picked.length),
+            value: game === 'plinko' ? `${landed}/${PLINKO_DROPS}` : String(picked.length),
+          },
+          {
+            label: 'Guaranteed',
+            value: `${money(minimum)} Chips`,
+            ink: upgraded ? 'gold' : undefined,
           },
           {
             label: game === 'crash' ? 'Multiplier' : 'Current Prize',
@@ -283,7 +275,7 @@ export default function DiamondTestPage() {
               game === 'mines' || game === 'crossing'
                 ? money(
                     nextPrize(
-                      Math.min(picked.length + 1, game === 'mines' ? 20 : ROAD_LADDERS[risk].length)
+                      Math.min(picked.length + 1, game === 'mines' ? MINE_PICKS : ROAD.length)
                     )
                   )
                 : money(prize),
@@ -323,7 +315,7 @@ export default function DiamondTestPage() {
             <PlinkoBoard
               key={epoch}
               width={Math.min(720, width)}
-              multipliersCents={tables[risk]}
+              multipliersCents={table.multipliersCents}
               path={null}
               dropKey={epoch}
               batchPathBits={paths}
@@ -361,6 +353,10 @@ export default function DiamondTestPage() {
               busy={sceneBusy || !open}
               onPick={pick}
               onSettled={animationComplete}
+              ladder={game === 'crossing' ? ROAD : undefined}
+              prizes={ladderPrizes}
+              betChips={chips}
+              payoutChips={phase === 'cashed' || phase === 'lost' ? prize : undefined}
             />
           )}
         </div>
@@ -368,13 +364,13 @@ export default function DiamondTestPage() {
       {offer && (
         <DoubleDownOffer
           budget={{
-            base: entry * (upgraded ? 2 : 1),
+            base: entry * boost,
             doubled,
-            denomination,
+            denomination: drop,
             award: {
               id: '00000000-0000-4000-8000-000000000001',
               entryDiamonds: entry,
-              boostMultiplier: upgraded ? 2 : 1,
+              boostMultiplier: boost,
             },
           }}
           diamonds={2500}

@@ -16,6 +16,7 @@ import { render, renderHook, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { COUNT_UNKNOWN, COUNT_UNKNOWN_TEXT } from '../../src/lib/countFigure';
 import {
   ClubIdentityCard,
   CLUB_IDENTITY_ZONES,
@@ -149,6 +150,85 @@ describe('The arena identity rail', () => {
     expect(rule, 'the rail has no rule at all').not.toBeNull();
     expect(rule![1]).toMatch(/background:\s*#[0-9a-f]{6}\s*;/i);
     expect(rule![1]).not.toMatch(/transparent|rgba\([^)]*,\s*0?\.\d+\s*\)/i);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   A COUNT NOBODY COULD READ IS NOT ZERO (2026-09-20)
+
+   Both rails on this card printed the string "0" for a null. For the arena
+   that was not a transient null waiting to resolve: get_club_home
+   short-circuits for a diamonds arena with `access_only` and carries no
+   `players_playing` key at all, so the rail printed a confident 0 on every
+   single load, for ever, while the arena held 17 live tables.
+
+   The three answers a count can give are now distinct (src/lib/countFigure.ts)
+   and these pin each one to its own rendering.
+   ═══════════════════════════════════════════════════════════════════════════ */
+describe('The arena rail says what it could not read', () => {
+  it('prints the word, not a zero, when the active count could not be read', () => {
+    render(
+      <ClubIdentityCard
+        {...base}
+        arenaStats={{
+          activeCount: COUNT_UNKNOWN,
+          freerollText: '4:31',
+          freerollTitle: 'Midnight Freeroll Starts 12:00 AM',
+        }}
+      />
+    );
+    const value = screen.getByText(COUNT_UNKNOWN_TEXT);
+    expect(value).toBeTruthy();
+    expect(screen.queryByText('0'), 'an unreadable count must never render as 0').toBeNull();
+    /* Sized like the other word on this rail, and read aloud as one. */
+    expect(value.className).toContain('club-identity__arena-value--word');
+    expect(value.getAttribute('aria-label')).toBe(`Active ${COUNT_UNKNOWN_TEXT}`);
+  });
+
+  it('keeps a known zero a zero', () => {
+    render(
+      <ClubIdentityCard
+        {...base}
+        arenaStats={{
+          activeCount: 0,
+          freerollText: '4:31',
+          freerollTitle: 'Midnight Freeroll Starts 12:00 AM',
+        }}
+      />
+    );
+    /* Nobody seated is a real, readable answer and it prints as one. The
+       defect was never "0 is wrong", it was "0 when we had not looked". */
+    expect(screen.getByText('0')).toBeTruthy();
+    expect(screen.queryByText(COUNT_UNKNOWN_TEXT)).toBeNull();
+  });
+
+  it("still prints Dan's loading zero before anything has asked", () => {
+    render(
+      <ClubIdentityCard
+        {...base}
+        arenaStats={{
+          activeCount: null,
+          freerollText: '0:00',
+          freerollTitle: 'Reading The Freeroll Schedule',
+        }}
+      />
+    );
+    /* "THEY SHOULD HAVE 0'S UNTIL THE CARD LOADS." A first paint has not
+       failed at anything, so it is not an unknown. */
+    expect(screen.getByText('0')).toBeTruthy();
+    expect(screen.queryByText(COUNT_UNKNOWN_TEXT)).toBeNull();
+  });
+
+  it('applies the same three answers to a chip club playing rail', () => {
+    const { rerender } = render(<ClubIdentityCard {...base} playersPlaying={12} />);
+    expect(screen.getByText('12')).toBeTruthy();
+
+    rerender(<ClubIdentityCard {...base} playersPlaying={COUNT_UNKNOWN} />);
+    expect(screen.getByText(COUNT_UNKNOWN_TEXT)).toBeTruthy();
+    expect(screen.queryByText('0')).toBeNull();
+
+    rerender(<ClubIdentityCard {...base} playersPlaying={null} />);
+    expect(screen.getByText('0'), 'a pending chip club rail is unchanged').toBeTruthy();
   });
 });
 

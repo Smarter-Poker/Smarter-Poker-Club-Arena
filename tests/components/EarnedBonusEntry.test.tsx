@@ -6,6 +6,7 @@ import { useEarnedBonus } from '../../src/hooks/useEarnedBonus';
 import BonusSetup from '../../src/components/games/BonusSetup';
 import { WheelBonusEntryService } from '../../src/services/WheelBonusEntryService';
 import { bonusTotal, type BonusBudget } from '../../src/utils/bonusGameBudget';
+import { diamondBonusMinimum, plinkoTableVersion } from '../../src/utils/diamondBonusPayout';
 const backend = vi.hoisted(() => ({ rpc: vi.fn(), user: 'alice' }));
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: backend.rpc } }));
 vi.mock('../../src/hooks/useAuthUser', () => ({
@@ -28,6 +29,14 @@ const award = {
   commit_id: null,
   result: null,
 };
+const RATE = 100;
+/**
+ * The award is boost 2, so the server quotes the Super guarantee and the Super
+ * board (table version 4). Both are derived from the same rule the client
+ * mirrors rather than typed as numbers, so the quote cannot drift from it: the
+ * minimum is half the FULL funded entry, Double Down included, and the board is
+ * the one the stake kind owns. Nobody chooses either.
+ */
 const quote = (doubled = false) => ({
   ok: true,
   contract_version: 2,
@@ -42,6 +51,11 @@ const quote = (doubled = false) => ({
     frozen: false,
     tables: [],
     bets: [{ bet_diamonds: doubled ? 300 : 200, cap_cents: 2000, playable: true }],
+    diamonds_per_chip: RATE,
+    guarantee: 'super',
+    minimum_payout_chips: diamondBonusMinimum((doubled ? 300 : 200) / RATE, 2),
+    mode: null,
+    plinko_table: plinkoTableVersion(2),
   },
 });
 const preference: BonusBudget = { base: 100, doubled: false, denomination: 20 };
@@ -174,7 +188,7 @@ describe('server-owned earned game entry', () => {
           onChange={onChange}
           diamonds={100}
           disabled={false}
-          plinko
+          game="plinko"
           clubId={club}
         />
       </MemoryRouter>

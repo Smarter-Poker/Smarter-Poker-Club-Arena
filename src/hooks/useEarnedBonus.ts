@@ -78,6 +78,8 @@ export function useEarnedBonus(
     refresh,
     consume,
     gameState: award ? (state?.gameState ?? null) : null,
+    /** The server's own guarantee for this award, shown before Start. */
+    quote: award ? (state?.quote ?? null) : null,
     recoveredResult: state?.award?.status === 'redeemed' ? state.award.result : null,
     error: failure?.quote === quote ? failure.message : null,
     loading: !state && failure?.quote !== quote,

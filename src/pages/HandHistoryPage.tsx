@@ -50,6 +50,10 @@ import { handFlagService, type HandFlag } from '../services/HandFlagService';
 import { toPokerStarsFile } from '../utils/pokerStarsExport';
 import { openInBrowser } from '../lib/openExternal';
 import { downloadBlob } from '../utils/downloadCsv';
+import {
+  DIAMOND_HAND_HISTORY_PARAM,
+  DIAMOND_HAND_HISTORY_VALUE,
+} from '../components/club/clubFooterVisibility';
 
 /**
  * PHASE 5 (2026-09-06): the chips are a QUERY now, not four hard-coded
@@ -128,6 +132,16 @@ export default function HandHistoryPage() {
     () => readStatsDrilldown(new URLSearchParams(drilldownKey)),
     [drilldownKey]
   );
+  /* THE ARENA SCOPE (2026-09-19). `?arena=diamond` is the Diamond footer's
+     Hand History door. It is a SERVER filter, not a chip over the loaded
+     page: the service embeds the viewer's own hand facts and filters on
+     their club id, so the page, the order and Load More are all the
+     arena's. Cleared by navigating to the bare route, which is also what
+     the drilldown's Show All Hands already does. */
+  const arenaScoped = searchParams.get(DIAMOND_HAND_HISTORY_PARAM) === DIAMOND_HAND_HISTORY_VALUE;
+  /* The page knows which ROOM it is in, not which club row, so it asks by
+     asset and the service names the one open club behind it. */
+  const arenaAssetScope = arenaScoped ? ('diamonds' as const) : null;
   const hasStatsDrilldown = Object.keys(statsDrilldown).length > 0;
   /* DEEP LINK (Phase 1, 2026-09-05): `/hand-history?hand=<id>` opens ON that
      hand - expanded and scrolled to - fetching it by id when it is not on the
@@ -178,10 +192,13 @@ export default function HandHistoryPage() {
     setLoading(true);
     setLoadFailed(false);
     try {
-      const data = await retryFetch(() => handHistoryService.getPlayerHands(userId, PAGE_SIZE), {
-        maxRetries: 2,
-        isMountedRef: isMounted,
-      });
+      const data = await retryFetch(
+        () => handHistoryService.getPlayerHands(userId, PAGE_SIZE, { asset: arenaAssetScope }),
+        {
+          maxRetries: 2,
+          isMountedRef: isMounted,
+        }
+      );
       if (!isMounted.current) return;
       setRows(data);
       setHasMore(data.length === PAGE_SIZE);
@@ -194,14 +211,18 @@ export default function HandHistoryPage() {
       loadingRef.current = false;
       if (isMounted.current) setLoading(false);
     }
-  }, [userId, isMounted, toast]);
+  }, [userId, arenaAssetScope, isMounted, toast]);
 
   const loadMore = useCallback(async () => {
     if (!userId || loadingMore) return;
     setLoadingMore(true);
     try {
       const data = await retryFetch(
-        () => handHistoryService.getPlayerHands(userId, PAGE_SIZE, { offset: rows.length }),
+        () =>
+          handHistoryService.getPlayerHands(userId, PAGE_SIZE, {
+            offset: rows.length,
+            asset: arenaAssetScope,
+          }),
         { maxRetries: 2, isMountedRef: isMounted }
       );
       if (!isMounted.current) return;
@@ -216,7 +237,7 @@ export default function HandHistoryPage() {
     } finally {
       if (isMounted.current) setLoadingMore(false);
     }
-  }, [userId, rows.length, loadingMore, isMounted, toast]);
+  }, [userId, arenaAssetScope, rows.length, loadingMore, isMounted, toast]);
 
   const loadFirstPageRef = useRef(loadFirstPage);
   loadFirstPageRef.current = loadFirstPage;
@@ -673,6 +694,25 @@ export default function HandHistoryPage() {
             {f.label}
           </button>
         ))}
+        {/* The arena scope chip. Unlike its neighbours it is a SERVER scope,
+            so pressing it moves the route rather than a filter state: the
+            record is refetched for the arena, and releasing it returns the
+            cross-club record. Title Case, as every chip here is. */}
+        <button
+          type="button"
+          className={`hh-filter-chip${arenaScoped ? ' active' : ''}`}
+          aria-pressed={arenaScoped}
+          onClick={() =>
+            navigate(
+              arenaScoped
+                ? '/hand-history'
+                : `/hand-history?${DIAMOND_HAND_HISTORY_PARAM}=${DIAMOND_HAND_HISTORY_VALUE}`,
+              { replace: true }
+            )
+          }
+        >
+          Diamond Arena
+        </button>
       </div>
 
       {linkedHandId && linkedState === 'missing' && (

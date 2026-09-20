@@ -82,7 +82,11 @@ import {
  * silently resolve to null for an ordinary member and hand the ladder a
  * confident "chips".
  */
-const TOURNAMENT_ARENA_EMBED =
+/* Exported so every surface that reads a tournament row asks for the same
+   three columns by the same named constraint. A second spelling of this
+   string is a second chance to omit it, and an omitted embed answers
+   "chips" with no error anywhere. */
+export const TOURNAMENT_ARENA_EMBED =
   'arena:clubs!tournaments_club_id_fkey(id, asset, is_platform, union_id)';
 
 /**

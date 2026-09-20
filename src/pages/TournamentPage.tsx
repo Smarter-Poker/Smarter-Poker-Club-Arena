@@ -61,6 +61,7 @@ import { blindLevelMinutes } from '../components/lobby/tournamentFigures';
 import { reportError } from '../utils/errorReporter';
 import { openTableAsObserver } from '../utils/observeTable';
 import { spinMultiplierLabel } from '../utils/spinReveal';
+import { moneySuffixAtUnit } from '../utils/format';
 import { useMysteryBounty } from '../hooks/useMysteryBounty';
 import MysteryBountyPanel from '../components/tournament/MysteryBountyPanel';
 import {
@@ -1434,7 +1435,7 @@ export default function TournamentPage() {
                       <span className="stat-label">Top Mystery Bounty</span>
                       <span className="stat-value">
                         {topBountyCents(mysteryBounty.inventory) > 0
-                          ? formatCents(topBountyCents(mysteryBounty.inventory))
+                          ? `${formatCents(topBountyCents(mysteryBounty.inventory), selectedUnitCents)}${moneySuffixAtUnit(selectedUnitCents)}`
                           : 'Drawn When The Mystery Phase Opens'}
                       </span>
                     </div>
@@ -1588,6 +1589,7 @@ export default function TournamentPage() {
                   data={mysteryBounty}
                   currentUserId={currentUser.id === 'guest' ? null : currentUser.id}
                   isCompleted={selectedTournament.status === 'COMPLETED'}
+                  unitCents={selectedUnitCents}
                 />
               )}
 

@@ -100,7 +100,10 @@ const BASELINE = new Map<string, number>([
   ['src/components/agent/ChipTransferModal.tsx', 2],
   ['src/components/agent/AgentScoreCard.tsx', 4],
   ['src/services/VoiceSignalService.ts', 3],
-  ['src/services/DisputeService.ts', 3],
+  // 3 -> 1 on 2026-09-20: submitDispute and withdrawDispute stopped doing raw
+  // table writes and now call fn_dispute_submit / fn_dispute_withdraw, which
+  // report a reason instead of an ignored error.
+  ['src/services/DisputeService.ts', 1],
   ['src/services/DiamondService.ts', 1],
   // 3 -> 2 on 2026-09-01: executePayout is gone, and with it the discarded
   // read it did on agent_commissions after calling execute_commission_payout.

@@ -17,6 +17,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import TournamentRankingCard from '../../src/components/tournament/TournamentRankingCard';
 import type { TournamentResult } from '../../src/services/pendingSessionSummary';
+import { CHIP_UNIT_CENTS, DIAMOND_UNIT_CENTS } from '../../server/src/tournament/tournamentUnit';
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
@@ -69,8 +70,17 @@ const CHAMPION: TournamentResult = {
   isSpin: false,
 };
 
-function renderCard(result: TournamentResult) {
-  return render(<TournamentRankingCard result={result} onDismiss={vi.fn()} />);
+/**
+ * THE UNIT IS EXPLICIT HERE (2026-09-20), because the card no longer guesses.
+ * Every assertion below is a CHIP event and every expected string is unchanged:
+ * `moneyAtUnit` returns the card's own `formatMoney` at the chip unit, so the
+ * two-place contract these tests were written about is identical. The Diamond
+ * half of the same card is pinned at the bottom of this file.
+ */
+function renderCard(result: TournamentResult, unitCents: number = CHIP_UNIT_CENTS) {
+  return render(
+    <TournamentRankingCard result={result} onDismiss={vi.fn()} unitCents={unitCents} />
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -180,5 +190,57 @@ describe('45 to 47. mystery bounty count, winnings and largest', () => {
     /* The ordinary bounty line is untouched: an old PKO result still reads the
        way it always did. */
     expect(screen.getAllByText('5,350.00').length).toBeGreaterThan(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// A DIAMOND EVENT'S RESULT CARD (2026-09-20)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Every figure above is a payout, and until this commit every one of them went
+// through `formatMoney` - two forced decimal places, the chip contract. At a
+// Diamond event that advertises a fraction of a Diamond that no door in this
+// estate accepts: the custody reserve floors it, the hand settler refuses it,
+// and the wallet stores diamonds as an integer column.
+//
+// `TournamentRankingHost` reads the unit off the session payload's own arena
+// asset, which has already been through `parseArenaIdentity` and therefore
+// satisfies all three conditions `fn_ca_tournament_unit_cents` tests.
+
+describe('a Diamond event is denominated in Diamonds on the result card', () => {
+  /* The card renders through a portal, so its text is on document.body rather
+     than on the render container. */
+  const cardText = () => document.body.textContent ?? '';
+
+  it('prints whole Diamonds, with no decimal point anywhere on the card', () => {
+    const view = renderCard(LOWER_FINISHER, DIAMOND_UNIT_CENTS);
+    const text = cardText();
+    view.unmount();
+    // 120 prize + 5,350 bounties = 5,470, every figure whole.
+    expect(text).toContain('5,470');
+    expect(text).toContain('120');
+    expect(text).toContain('5,350');
+    // 530,000 cents is 5,300 Diamonds; never 530,000 and never 5,300.00.
+    expect(text).toContain('5,300');
+    expect(text).not.toContain('530,000');
+    expect(text).not.toMatch(/\d\.\d\d/);
+  });
+
+  it('names the unit on the headline figure, which is otherwise a bare number', () => {
+    const view = renderCard(LOWER_FINISHER, DIAMOND_UNIT_CENTS);
+    const text = cardText();
+    view.unmount();
+    expect(text).toContain('5,470 Diamonds');
+  });
+
+  it('leaves the chip card exactly as it reads today, which is the whole constraint', () => {
+    const view = renderCard(LOWER_FINISHER, CHIP_UNIT_CENTS);
+    const text = cardText();
+    view.unmount();
+    expect(text).toContain('5,470.00');
+    expect(text).toContain('120.00');
+    expect(text).toContain('5,350.00');
+    // And no noun is ADDED to a chip surface that never carried one.
+    expect(text).not.toContain('Diamonds');
   });
 });

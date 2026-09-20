@@ -35,6 +35,7 @@
 import { useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { CHIP_STATS, statsScopeArgs } from '../services/statsScope';
 
 export const STATS_PULSE_INTERVAL_MS = 8_000;
 /** A return after this long away refetches even if the pulse did not move. */
@@ -79,7 +80,13 @@ export function useStatsPulse({
       if (cancelled || inFlight || document.visibilityState !== 'visible') return;
       inFlight = true;
       try {
-        const { data, error } = await supabase.rpc('ca_player_stats_pulse', { p_user: userId });
+        const { data, error } = await supabase.rpc('ca_player_stats_pulse', {
+          /* The pulse is a change detector over the same unscoped facts
+             table, so it carries the same scope its page reads with.
+             See src/services/statsScope.ts. */
+          ...statsScopeArgs(CHIP_STATS),
+          p_user: userId,
+        });
         if (cancelled) return;
         if (error) throw new Error(error.message);
         const pulse = pulseOf(data);

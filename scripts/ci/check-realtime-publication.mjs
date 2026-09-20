@@ -121,7 +121,6 @@ const KNOWN_UNPUBLISHED = new Map([
   ['commander_waitlist_group_members', 'Commander waitlist groups: subscription predates the tables being published'],
   ['commander_waitlist_groups', 'as above'],
   ['commission_rate_audit', 'audit trail; a push is not needed to read it'],
-  ['diamond_arena_scores', 'unresolved: scores page subscribes and receives nothing'],
   ['financial_alerts', 'operator console subscribes; alerts arrive by other paths'],
   ['horse_daily_audit', 'daily job output; no live consumer'],
   ['horse_league_results', 'as above'],

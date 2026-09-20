@@ -33,6 +33,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import StatsFactsService, { type EVCurvePayload } from '../../services/StatsFactsService';
+import { CHIP_STATS } from '../../services/statsScope';
 import { chartReveal } from './statsMotion';
 import './EVLuckChart.css';
 
@@ -106,7 +107,7 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
     }
     let cancelled = false;
     setLoading(true);
-    StatsFactsService.getEVCurve(userId, days)
+    StatsFactsService.getEVCurve(userId, CHIP_STATS, days)
       .then((payload) => {
         if (cancelled) return;
         setData(payload);

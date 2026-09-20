@@ -17,7 +17,8 @@
  * does for ClubCardPanel.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { figureOr, readFigures, rememberFigures } from '../../lib/lobbyFigureCache';
+import { countText, isCountUnknown, type CountFigure } from '../../lib/countFigure';
+import { isUnknownFigure, readFigures, rememberFigures } from '../../lib/lobbyFigureCache';
 import { formatDuration } from '../../lib/date';
 import {
   freerollClockTitle,
@@ -32,7 +33,9 @@ const ARENA_FIGURE_SCOPE = 'arena:diamond';
 const IMMINENT_SECONDS = 10;
 
 interface DiamondArenaCardProps {
-  activePlayers: number | null;
+  /** Seats filled in the arena right now. `COUNT_UNKNOWN` when the read
+   *  answered and could not tell; null while nothing has asked yet. */
+  activePlayers: CountFigure;
   /** Test seam: a fixed start for the countdown instead of the live read. */
   nextFreerollAt?: number | null;
 }
@@ -61,15 +64,31 @@ export const DiamondArenaCard: React.FC<DiamondArenaCardProps> = ({
     nextFreerollAt === undefined ? live.state : nextFreerollAt === null ? 'none' : 'scheduled';
 
   /* Same count cache the club cards use (Dan 2026-09-02: zeros until the
-     card loads, then the last known figure, then the live one). */
+     card loads, then the last known figure, then the live one). A cached zero
+     is not a last known figure, so it cannot hand this rail a stale one. */
   const cached = useMemo(() => readFigures(ARENA_FIGURE_SCOPE), []);
   useEffect(() => {
-    rememberFigures(ARENA_FIGURE_SCOPE, { active: activePlayers });
+    rememberFigures(ARENA_FIGURE_SCOPE, {
+      active: typeof activePlayers === 'number' ? activePlayers : null,
+    });
   }, [activePlayers]);
-  const activeText = figureOr(
-    activePlayers == null ? null : activePlayers.toLocaleString(),
-    cached.active
-  );
+
+  /* A COUNT NOBODY COULD READ IS NOT ZERO (2026-09-20). This rail printed `0`
+     whenever the figure was null, and the figure was null for a STRUCTURAL
+     reason rather than a transient one: the count came from a club_members
+     join that cannot see a Diamond entitlement, so the answer was always going
+     to be zero however many players were seated. The cache then filed that
+     zero as the last known figure and served it back on the next visit.
+
+     The count now comes from live seats (get_club_players_playing). The three
+     answers a count can give are in src/lib/countFigure.ts; a read that could
+     not tell prints the word, and the cache is consulted only for a figure
+     somebody genuinely read - a stored zero is not one. */
+  const activeIsUnknown = isCountUnknown(activePlayers);
+  const lastKnown =
+    cached.active !== undefined && !isUnknownFigure(cached.active) ? cached.active : undefined;
+  const activeText =
+    activePlayers == null && lastKnown !== undefined ? lastKnown : countText(activePlayers);
 
   /* The countdown ticks locally once a second; the hook only re-reads the
      database once a minute and when this clock runs out. */
@@ -137,14 +156,19 @@ export const DiamondArenaCard: React.FC<DiamondArenaCardProps> = ({
       <div className="club-card-stats-bar">
         <div className="club-card-stats-row club-card-stats-row--two">
           <div
-            className={`club-card-stat ${(activePlayers ?? 0) > 0 ? 'club-card-stat--active' : ''}`}
+            className={`club-card-stat ${!activeIsUnknown && Number(activeText.replace(/,/g, '')) > 0 ? 'club-card-stat--active' : ''}`}
           >
             {/* Dan 2026-09-11, of this card: "HAVE IT SAY JUST 'ACTIVE' AND
                 THE NUMBER UNDER IT." It said ACTIVE PLAYERS, which was also
                 the one label on the carousel that did not match its
                 neighbours: every chip club card says ACTIVE. */}
             <span className="club-card-stat-label">ACTIVE</span>
-            <span className="club-card-stat-value">{activeText}</span>
+            <span
+              className={`club-card-stat-value${activeIsUnknown ? ' club-card-stat-value--word' : ''}`}
+              aria-label={activeIsUnknown ? `Active ${activeText}` : undefined}
+            >
+              {activeText}
+            </span>
           </div>
           <div
             className={`club-card-stat club-card-stat--timer ${imminent ? 'club-card-stat--imminent' : ''}`}

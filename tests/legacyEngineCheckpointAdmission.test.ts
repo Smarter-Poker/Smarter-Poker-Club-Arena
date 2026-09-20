@@ -358,7 +358,7 @@ fi
     expect(shellChecks).toContain('bash -n "$GENERATION_STAGE/$script"');
     const stage = read('.github/workflows/stage-engine-release.yml');
     expect(stage).toContain(
-      "'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**'"
+      "'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**' ':(exclude)server/qualification/**'"
     );
   });
 });

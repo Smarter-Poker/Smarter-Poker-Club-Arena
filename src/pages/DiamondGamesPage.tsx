@@ -1,15 +1,21 @@
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  DIAMOND GAMES - the lobby: Wheel, Plinko, Crash, on the console
+ *  DIAMOND GAMES - the lobby: Wheel, Plinko, Crash, Donkey Cross, Mines
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * The player's one door to the three diamond-to-chip games (Dan 2026-09-07 and
+ * The player's one door to the diamond-to-chip games (Dan 2026-09-07 and
  * 2026-09-08). Each console reads its own state from the server so a game a
  * host has not opened says so in its pill instead of leading into a dead page.
- * All three return exactly 80 percent, take purchased diamonds by default, and
- * never pay out more than they have taken in; the page says that plainly
- * because a player who is not told the edge assumes the worst.
+ * Every one of them takes purchased diamonds by default and never pays out more
+ * than it has taken in.
+ *
+ * THE RULES COPY IS DERIVED, NOT TYPED (2026-09-19). Every figure in a "How It
+ * Pays" panel comes from the constant the game actually plays: PLINKO_DROPS,
+ * PLINKO_TABLES, ROAD_LADDERS and CHOICE_MODE. The page used to claim the
+ * Plinko centre and a crash "pay nothing", and both were false the day the
+ * guaranteed minimum shipped. A number written twice drifts; a number imported
+ * cannot.
  *
  * THE PICTURE (#ClubArenaConsole). A balances console that only closes, the
  * week's biggest wins, then one plated console per game: the figures on the
@@ -36,9 +42,41 @@ import { useGameFloor } from '../hooks/useGameFloor';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { DiamondChoiceService, type ChoiceState } from '../services/DiamondChoiceService';
+import { PLINKO_DROPS } from '../utils/bonusGameBudget';
+import { CHOICE_MODE, ROAD_LADDERS } from '../utils/diamondChoiceMath';
+import { PLINKO_TABLES, plinkoTableVersion } from '../utils/diamondBonusPayout';
+import { DIAMOND_GAME_TITLES } from '../utils/diamondGameTitles';
 import styles from './diamondGames.module.css';
 
 type GameKey = 'wheel' | 'plinko' | 'crash' | 'crossing' | 'mines';
+
+/** "1.10x" and "20.00x": every multiplier in the rules copy reads with two decimals. */
+const multiplierCopy = (cents: number) => `${(cents / 100).toFixed(2)}x`;
+/** The one ladder the road deals: twelve streets, its first rung to its last. */
+const ROAD = ROAD_LADDERS[CHOICE_MODE.crossing];
+/** The two live boards. Nobody chooses one: the stake kind owns it. */
+const ORDINARY_TABLE = PLINKO_TABLES[plinkoTableVersion(1)];
+const SUPER_TABLE = PLINKO_TABLES[plinkoTableVersion(2)];
+const TABLE_SLOTS = ORDINARY_TABLE.multipliersCents;
+/** Seventeen slots need sixteen rows of pegs above them, so the board says both. */
+const TABLE_ROWS = TABLE_SLOTS.length - 1;
+/** The mines board is fixed at twenty-five tiles; mirrors minePrize and mineBoard. */
+const MINE_TILES = 25;
+/**
+ * THE PROMISE EVERY BONUS GAME MAKES (2026-09-19). A losing round, and a round
+ * a player never cashes out, still pays the server's guaranteed minimum, so no
+ * game on this page pays nothing any more. A Super award's minimum is half its
+ * doubled stake, which is the original spin back whole.
+ */
+const GUARANTEE_COPY =
+  'A Loss, Or A Round You Do Not Cash Out, Still Pays The Guaranteed Minimum. On A Super Game That Minimum Is Worth Your Whole Original Spin.';
+/**
+ * SAID ONCE, ON THE GLASS (2026-09-19). There is no difficulty picker anywhere
+ * in the bonus games: one road, one mine count, one board per stake kind, and
+ * the payout carries the risk. The lobby says so where every player reads it,
+ * rather than once inside each game's rules.
+ */
+const NO_DIFFICULTY_COPY = 'No Game Asks You To Pick A Difficulty. It Is Built Into The Payout.';
 
 function pillFor(
   available: boolean | undefined,
@@ -120,11 +158,12 @@ export default function DiamondGamesPage() {
             reportError(err, 'DiamondGamesPage.crash');
             return null;
           }),
-          DiamondChoiceService.state(uuid, 'crossing', 'steady', 100).catch((err) => {
+          // The one setting per game, never a difficulty the lobby picks.
+          DiamondChoiceService.state(uuid, 'crossing', CHOICE_MODE.crossing, 100).catch((err) => {
             reportError(err, 'DiamondGamesPage.crossing');
             return null;
           }),
-          DiamondChoiceService.state(uuid, 'mines', '5', 100).catch((err) => {
+          DiamondChoiceService.state(uuid, 'mines', CHOICE_MODE.mines, 100).catch((err) => {
             reportError(err, 'DiamondGamesPage.mines');
             return null;
           }),
@@ -228,7 +267,8 @@ export default function DiamondGamesPage() {
           />
         </div>
         <p className="sc-copy">
-          Turn Diamonds Into Club Chips. Choose Your Game, Set Your Bet, And Check Every Result.
+          Turn Diamonds Into Club Chips. Choose Your Game, Set Your Bet, And Check Every Result.{' '}
+          {NO_DIFFICULTY_COPY}
         </p>
       </SpadeConsole>
 
@@ -279,7 +319,7 @@ export default function DiamondGamesPage() {
 
       <SpadeConsole
         eyebrow="Drop"
-        title="Diamond Plinko"
+        title={DIAMOND_GAME_TITLES.plinko}
         pill={plinkoPill.pill}
         pillInk={plinkoPill.ink}
         plates={{
@@ -303,21 +343,31 @@ export default function DiamondGamesPage() {
             label="Up To"
             value={multiplierLabel(plinkoTop)}
             ink="gold"
-            meta="On The Moonshot Board"
+            meta={`On The ${ORDINARY_TABLE.name} Board`}
           />
-          <Row label="Boards" value={String(plinko?.tables?.length ?? 3)} ink="silver" />
+          <Row
+            label="Drops"
+            value={String(PLINKO_DROPS)}
+            ink="silver"
+            meta="Your Entry Split Equally"
+          />
         </div>
         {explained === 'plinko' ? (
           <p className="sc-copy">
-            Three Boards, Sixteen Rows, Seventeen Slots. The Ball Goes Left Or Right At Every Peg
-            With Equal Odds, So The Edges Pay Big And The Centre Pays Nothing.
+            Your Entry Plays As {PLINKO_DROPS} Drops, Each An Equal Share Of It, On One Board. That
+            Board Is The {ORDINARY_TABLE.name} Board, {TABLE_ROWS} Rows Of Pegs Above{' '}
+            {TABLE_SLOTS.length} Slots, And The Ball Goes Left Or Right At Every Peg With Equal
+            Odds. Every Slot Pays Something, From {multiplierCopy(Math.min(...TABLE_SLOTS))} In The
+            Middle Up To {multiplierCopy(Math.max(...TABLE_SLOTS))} Per Drop On The Outer Slots. A
+            Super Award Plays The {SUPER_TABLE.name} Board, Where The Middle Slot Pays{' '}
+            {multiplierCopy(Math.min(...SUPER_TABLE.multipliersCents))}. {GUARANTEE_COPY}
           </p>
         ) : null}
       </SpadeConsole>
 
       <SpadeConsole
         eyebrow="Climb"
-        title="Diamond Crash"
+        title={DIAMOND_GAME_TITLES.crash}
         pill={crashPill.pill}
         pillInk={crashPill.ink}
         plates={{
@@ -342,8 +392,8 @@ export default function DiamondGamesPage() {
         </div>
         {explained === 'crash' ? (
           <p className="sc-copy">
-            The Multiplier Climbs Until It Crashes. Cash Out First, By Hand Or On Auto. A Crash Ends
-            The Round And Pays Nothing.
+            The Multiplier Climbs Until It Crashes. Cash Out First, By Hand Or On Auto, And The
+            Round Pays Exactly Where You Cashed Out. {GUARANTEE_COPY}
           </p>
         ) : null}
       </SpadeConsole>
@@ -352,19 +402,17 @@ export default function DiamondGamesPage() {
         [
           {
             key: 'crossing',
-            title: 'Donkey Crossing',
+            title: DIAMOND_GAME_TITLES.crossing,
             state: crossing,
             verb: 'Cross',
-            description:
-              'Guide The Donkey Across The Road. Each Safe Street Raises Your Prize. Book The Win And Reveal How Far It Would Have Gone.',
+            description: `Guide The Donkey Across ${ROAD.length} Streets, Paying ${multiplierCopy(ROAD[0])} Up To ${multiplierCopy(ROAD[ROAD.length - 1])}. Each Safe Street Raises Your Prize, And You Book Your Win After Any Street. The Reveal Then Shows How Far It Would Have Gone. ${GUARANTEE_COPY}`,
           },
           {
             key: 'mines',
-            title: 'Diamond Mines',
+            title: DIAMOND_GAME_TITLES.mines,
             state: mines,
             verb: 'Reveal',
-            description:
-              'Find Gems On A Raised Board. Avoid The Mines And Book The Win. Every Remaining Mine Is Revealed When Your Round Ends.',
+            description: `${CHOICE_MODE.mines} Mines Hide Among ${MINE_TILES} Tiles. Every Gem You Find Raises Your Prize, And You Book Your Win After Any Tile. Every Remaining Mine Is Revealed When Your Round Ends. ${GUARANTEE_COPY}`,
           },
         ] as const
       ).map((item) => (

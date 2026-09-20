@@ -17,8 +17,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 18449,
-      "sha256": "0e4e4f82b720b8dca928a0c520d7a5f3596ef99c920c589454fe17bb0f56d368"
+      "bytes": 21765,
+      "sha256": "009ffbcdba1e744400bb55bd7342b9ec796a2b98bed8dc4c17d9bd77f6412827"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,

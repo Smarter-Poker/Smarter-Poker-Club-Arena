@@ -485,3 +485,11 @@
   text-shadow: 0 0 28px #5bbaf55c;
   font-size: clamp(52px, 7vw, 90px);
 }
+
+/* The multiplier hero moved onto the glass over the curve (2026-09-19); the
+   console readout beneath prints the same figure at bay size, so one number
+   is the big one. */
+.fullscreenPage .crashStage .readoutCompact {
+  font-size: 26px;
+  text-shadow: 0 0 12px #5bbaf55c;
+}

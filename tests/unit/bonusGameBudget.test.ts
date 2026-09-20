@@ -1,31 +1,40 @@
 import { describe, expect, it } from 'vitest';
 import {
-  plinkoAllocations,
+  PLINKO_DROPS,
+  plinkoBudget,
+  plinkoDenomination,
+  validPlinkoBudget,
   validSpinAmount,
   bonusTotal,
   bonusWalletDebit,
   validBonusBudget,
+  defaultBonusBudget,
+  earnedReceiptBudget,
 } from '../../src/utils/bonusGameBudget';
-describe('the spin balance is conserved across Plinko denominations', () => {
-  it('offers each supported whole-diamond choice for a 100 diamond spin', () => {
-    expect(plinkoAllocations(100).map((x) => [x.drops, x.diamondsPerDrop])).toEqual([
-      [100, 1],
-      [50, 2],
-      [25, 4],
-      [20, 5],
-      [10, 10],
-      [5, 20],
-      [4, 25],
-      [2, 50],
-      [1, 100],
-    ]);
+describe('every Plinko game is ten drops of a tenth of the entry', () => {
+  it('derives the drop value from the entry and never offers a choice', () => {
+    expect(PLINKO_DROPS).toBe(10);
+    expect(plinkoDenomination(100)).toBe(10);
+    expect(plinkoDenomination(2500)).toBe(250);
+    expect(plinkoDenomination(7500)).toBe(750);
+    for (const n of [25, 37, 0, -10, 2.5, NaN, Infinity]) expect(plinkoDenomination(n)).toBeNull();
+    for (let entry = 100; entry <= 7500; entry += 100)
+      expect(plinkoDenomination(entry)! * PLINKO_DROPS).toBe(entry);
   });
-  it('never silently drops a remainder', () => {
-    for (let balance = 25; balance <= 2500; balance++) {
-      for (const option of plinkoAllocations(balance))
-        expect(option.drops * option.diamondsPerDrop).toBe(balance);
-    }
-    expect(plinkoAllocations(25).map((x) => x.diamondsPerDrop)).toEqual([1, 5, 25]);
+  it('re-derives a saved drop value from before ten drops became the one setting', () => {
+    const saved = { base: 2500, doubled: false, denomination: 5 };
+    expect(plinkoBudget(saved)).toEqual({ base: 2500, doubled: false, denomination: 250 });
+    expect(validPlinkoBudget(saved)).toBe(false);
+    expect(validPlinkoBudget(plinkoBudget(saved))).toBe(true);
+    const doubled = { base: 2500, doubled: true, denomination: 250 };
+    expect(plinkoBudget(doubled).denomination).toBe(500);
+    expect(plinkoBudget(defaultBonusBudget())).toEqual(defaultBonusBudget());
+    expect(defaultBonusBudget().denomination).toBe(10);
+  });
+  it('leaves an invalid budget alone so the entry check reports it', () => {
+    const invalid = { base: 24, doubled: false, denomination: 1 };
+    expect(plinkoBudget(invalid)).toBe(invalid);
+    expect(validPlinkoBudget(invalid)).toBe(false);
   });
   it('enforces the starting spin range and whole diamonds', () => {
     for (const n of [0, 24, 25.5, 2501, NaN, Infinity]) expect(validSpinAmount(n)).toBe(false);
@@ -40,7 +49,7 @@ describe('wheel funding is distinct from the original stake', () => {
     boostMultiplier: 2 as const,
   };
   it('adds the original 100 stake to the upgraded 200 funded award', () => {
-    const budget = { base: 200, doubled: true, denomination: 20, award };
+    const budget = { base: 200, doubled: true, denomination: 30, award };
     expect(validBonusBudget(budget)).toBe(true);
     expect(bonusTotal(budget)).toBe(300);
     expect(bonusWalletDebit(budget)).toBe(100);
@@ -50,7 +59,7 @@ describe('wheel funding is distinct from the original stake', () => {
     const budget = {
       base: 5000,
       doubled: true,
-      denomination: 100,
+      denomination: 750,
       award: { ...award, entryDiamonds: 2500 },
     };
     expect(validBonusBudget(budget)).toBe(true);
@@ -58,5 +67,19 @@ describe('wheel funding is distinct from the original stake', () => {
     expect(validBonusBudget({ ...budget, award: undefined })).toBe(false);
     expect(validBonusBudget({ ...budget, base: 4999 })).toBe(false);
     expect(validBonusBudget({ ...budget, award: { ...award, entryDiamonds: 2501 } })).toBe(false);
+  });
+  it('reads a funded receipt into a budget whose drop value is the tenth of the entry', () => {
+    const budget = earnedReceiptBudget({
+      award_id: award.id,
+      bet_diamonds: 300,
+      bonus: {
+        base_diamonds: 200,
+        entry_diamonds: 100,
+        boost_multiplier: 2,
+        added_diamonds: 100,
+        total_diamonds: 300,
+      },
+    });
+    expect(budget).toEqual({ base: 200, doubled: true, denomination: 30, award });
   });
 });

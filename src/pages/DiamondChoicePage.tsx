@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { GameConsole, GamePanel } from '../components/games/GameConsole';
-import BonusSetup from '../components/games/BonusSetup';
+import BonusSetup, { guaranteeCopy } from '../components/games/BonusSetup';
 import TodayLine from '../components/games/TodayLine';
 import SealedPrize from '../components/games/SealedPrize';
 import { useGameCooldown } from '../hooks/useGameCooldown';
@@ -29,13 +29,15 @@ import {
 } from '../services/DiamondChoiceService';
 import { supabase } from '../lib/supabase';
 import {
-  MINE_COUNTS,
+  CHOICE_MODE,
   ROAD_LADDERS,
   roadSurvives,
   verifyChoiceRound,
   type ChoiceGame,
   type RoadRisk,
 } from '../utils/diamondChoiceMath';
+import { diamondBonusMinimum } from '../utils/diamondBonusPayout';
+import { diamondGameTitle } from '../utils/diamondGameTitles';
 import { randomClientSeed } from '../utils/wheelFairness';
 import { compactChips } from '../utils/format';
 import { multiplierLabel } from '../utils/diamondGamesFairness';
@@ -49,6 +51,14 @@ interface Ticket {
   id: string;
   hash: string;
 }
+/** "1.10x" and "20.00x": the road's multipliers always read with two decimals. */
+const multiplierCopy = (cents: number) => `${(cents / 100).toFixed(2)}x`;
+const ROAD = ROAD_LADDERS[CHOICE_MODE.crossing];
+/** What the rules say about the one setting, from the same constants the server mirrors. */
+const ONE_SETTING = {
+  crossing: `${ROAD.length} Streets Pay ${multiplierCopy(ROAD[0])} Up To ${multiplierCopy(ROAD[ROAD.length - 1])}.`,
+  mines: `${CHOICE_MODE.mines} Mines Hide Among 25 Tiles.`,
+} as const;
 export default function DiamondChoicePage({ game }: { game: ChoiceGame }) {
   const { user } = useAuthUser();
   const { clubId } = useParams();
@@ -64,7 +74,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const [round, setRound] = useState<ChoiceRound | null>(null);
   const [completionId, setCompletionId] = useState<string | null>(null);
   const [revealedId, setRevealedId] = useState<string | null>(null);
-  const [mode, setMode] = useState(game === 'mines' ? '5' : 'steady');
+  // The one setting. Nobody picks a difficulty; the payout carries it, and the
+  // server refuses any other mode for a new round. A saved open round keeps its own.
+  const mode = CHOICE_MODE[game];
   const [selectedBudget, setBudget] = useBonusBudget(clubId, game);
   const earned = useEarnedBonus(uuid, game, selectedBudget, mode);
   const budget = earned.budget;
@@ -88,14 +100,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const upgraded = round
     ? earnedReceiptBudget(round as unknown as Record<string, unknown>)?.award?.boostMultiplier === 2
     : budget.award?.boostMultiplier === 2;
-  const title =
-    game === 'mines'
-      ? upgraded
-        ? 'Super Diamond Mines'
-        : 'Diamond Mines'
-      : upgraded
-        ? 'Super Donkey Cross'
-        : 'Donkey Crossing';
+  const title = diamondGameTitle(game, upgraded ? 2 : 1);
 
   const load = useCallback(
     async (id: string) => {
@@ -109,7 +114,6 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       if (next.open_round) {
         setRound(next.open_round);
         setCompletionId(next.open_round.id);
-        setMode(next.open_round.mode);
         setBudget((current) =>
           bonusTotal(current) === next.open_round!.bet_diamonds
             ? current
@@ -403,16 +407,33 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   useLiveBonusGuard(Boolean(earned.award) || busy || uncertain || open || sceneBusy, () =>
     setError('Finish Your Bonus Game Before Leaving.')
   );
-  const modeLabel =
-    game === 'mines' ? `${mode} Mines` : mode.charAt(0).toUpperCase() + mode.slice(1);
-  const cycleMode = () => {
-    const modes = game === 'mines' ? MINE_COUNTS.map(String) : Object.keys(ROAD_LADDERS);
-    setMode(modes[(modes.indexOf(mode) + 1) % modes.length]);
-  };
   const cashLabel = open && picks > 0 ? 'Book The Win' : 'Refresh';
   // History is available for proof, but must not replay an old collision on entry.
   const sceneRound = round?.id === completionId ? round : null;
   const phase = sceneRound?.status ?? 'idle';
+  // The chips the next round would stake, and the chips the round on the scene did.
+  const entryChips = state && validBonusBudget(budget) ? bet / state.diamonds_per_chip : undefined;
+  const stakeChips = sceneRound?.bet_chips ?? entryChips;
+  // What any loss or un-cashed round pays, shown before Start. The server's own
+  // quote speaks for an award; an open round carries its sealed floor; ordinary
+  // play keeps the tenth the server enforces and every receipt verifies.
+  const standardFloor = (() => {
+    if (entryChips === undefined) return null;
+    try {
+      return diamondBonusMinimum(entryChips, 1);
+    } catch {
+      return null;
+    }
+  })();
+  const guaranteedChips = open
+    ? (round.minimum_payout_chips ?? 0)
+    : earned.quote
+      ? earned.quote.minimumPayoutChips
+      : earned.ready && !earned.award
+        ? standardFloor
+        : null;
+  const guaranteedSuper = open ? upgraded : earned.quote?.guarantee === 'super';
+  const promise = earned.quote ? guaranteeCopy(game, earned.quote) : null;
   return (
     <div className={`${styles.page} ${styles.fullscreenPage}`}>
       <button
@@ -427,6 +448,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         setup={
           !open && (
             <BonusSetup
+              game={game}
+              guarantee={earned.quote}
               budget={budget}
               entryReady={earned.ready}
               awardLoading={earned.loading}
@@ -445,10 +468,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         pillInk={round?.status === 'cashed' ? 'green' : 'blue'}
         bays={[
           {
-            label: game === 'mines' ? 'Mines' : 'Difficulty',
-            value: modeLabel,
-            onPress: cycleMode,
-            disabled: busy || open || uncertain,
+            label: 'Guaranteed',
+            value: guaranteedChips === null ? 'Pending' : `${gameChips(guaranteedChips)} Chips`,
+            ink: guaranteedSuper ? 'gold' : undefined,
           },
           {
             label: game === 'mines' ? 'Revealed' : 'Street',
@@ -500,6 +522,14 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           roadEnd={sceneRound ? roadEnd : null}
           busy={busy || uncertain}
           onPick={(cell) => void act('pick', cell)}
+          ladder={
+            game === 'crossing' ? ROAD_LADDERS[(sceneRound?.mode ?? mode) as RoadRisk] : undefined
+          }
+          prizes={sceneRound ? sceneRound.prizes : prizes}
+          betChips={stakeChips}
+          payoutChips={
+            sceneRound && sceneRound.status !== 'open' ? sceneRound.payout_chips : undefined
+          }
         />
         <div className={styles.readout} aria-live="polite">
           {error ? <p className="sc-copy sc-ink--red">{error}</p> : null}
@@ -532,7 +562,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               {gameChips(round.payout_chips)} Chips Booked.
             </p>
           ) : (
-            <p className="sc-copy">
+            <p className="sc-copy" role="status">
               {open
                 ? game === 'mines'
                   ? 'Reveal A Tile Or Book The Win.'
@@ -554,7 +584,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                             : !state.available
                               ? 'This Game Is Not Open Here Yet'
                               : 'This Bet Is Not Available Right Now'
-                        : `${compactChips(bet)} Diamonds To Play. ${state.max_steps} ${game === 'mines' ? 'Safe Picks' : 'Streets'} In This Round.`}
+                        : `${promise ?? `${compactChips(bet)} Diamonds To Play.`} ${state.max_steps} ${game === 'mines' ? 'Safe Picks' : 'Streets'} In This Round.`}
             </p>
           )}
         </div>
@@ -567,8 +597,13 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       >
         <p className="sc-copy">
           {game === 'mines'
-            ? 'Pick Hidden Gems On The Board. A Mine Ends The Round. Book The Win After Any Safe Pick; The Remaining Mines Will Then Be Revealed.'
-            : 'Guide The Donkey Across The Road. Each Safe Crossing Raises Your Prize. Book The Win Before A Collision Ends The Round. Traffic Animation Does Not Change The Outcome.'}
+            ? `${ONE_SETTING.mines} Pick Hidden Gems On The Board; Every Safe Pick Raises Your Prize. Book The Win After Any Safe Pick, And The Remaining Mines Are Then Revealed. A Mine Ends The Round And Pays The Guaranteed Minimum.`
+            : `Guide The Donkey Across The Road. ${ONE_SETTING.crossing} Each Safe Crossing Raises Your Prize. Book The Win After Any Street. A Collision Ends The Round And Pays The Guaranteed Minimum. Traffic Animation Does Not Change The Outcome.`}
+        </p>
+        <p className="sc-copy">
+          One Setting For Every Round. Nobody Picks A Difficulty; It Is Built Into The Payout. Any
+          Loss, And Any Round You Do Not Cash Out, Pays At Least The Guaranteed Minimum Shown Before
+          You Start.
         </p>
         <p className="sc-copy">
           Your Round Is Saved If You Leave. Reaching The Round Limit Books Your Win Automatically.

@@ -32,10 +32,19 @@ import BonusCompletion from '../components/games/BonusCompletion';
  * limit is reached, or the player leaves the page.
  *
  * THE PICTURE (#ClubArenaConsole). The deck console: the curve on the glass,
- * four bays (Bet and Auto are controls - tap to change, the bay's ink is its
+ * five bays (Bet and Auto are controls - tap to change, the bay's ink is its
  * state), two plates. While a round is open the primary plate IS the cash-out,
  * printed in green with the live multiplier. Odds, fairness and history each
  * on their own console. Nothing is drawn but the curve and the seed line.
+ *
+ * THE GUARANTEE IS SHOWN BEFORE THE ROUND (Dan 2026-09-19, verbatim: "THEY
+ * MUST ALL PAY A MINIMUM OF 1:1 VALUE EVEN IF THEY LOSE AND DON'T CASH OUT.
+ * THAT SHOULD BE DISPLAYED BEFORE THEY EVEN START THE GAME"). The Guaranteed
+ * bay and the status line print the floor a round pays on a crash before Start:
+ * the server's own quote for a wheel award (a Super award, in gold, pays at
+ * least the original spin value; an ordinary award a tenth), an open round's
+ * sealed floor, or the tenth an ordinary entry keeps. The title is the game's
+ * name from diamondGameTitle: Super Crash for a Super award, never "Upgraded".
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -48,8 +57,15 @@ import { ErrorState } from '../components/common/EmptyState';
 import CrashCurve, { type CrashPhase } from '../components/crash/CrashCurve';
 import { GameConsole, GamePanel } from '../components/games/GameConsole';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
-import BonusSetup from '../components/games/BonusSetup';
-import { bonusTotal, bonusWalletDebit, validBonusBudget } from '../utils/bonusGameBudget';
+import BonusSetup, { guaranteeCopy } from '../components/games/BonusSetup';
+import {
+  bonusTotal,
+  bonusWalletDebit,
+  gameChips,
+  validBonusBudget,
+} from '../utils/bonusGameBudget';
+import { diamondBonusMinimum } from '../utils/diamondBonusPayout';
+import { diamondGameTitle } from '../utils/diamondGameTitles';
 import { DiamondBonusService, BonusRefusal } from '../services/DiamondBonusService';
 import DiamondGamesService, {
   normaliseCrash,
@@ -775,16 +791,68 @@ function DiamondCrashGame() {
   const readoutValue =
     phase === 'idle' ? '1x' : multiplierLabel(open ? liveCents : (finalCents ?? 100));
   const liveWorth = open && round ? (round.bet_chips * liveCents) / 100 : 0;
+  /* A run cannot start on a wheel award (startRun refuses it), so a size left
+     over from ordinary play must not dress the plate or the readout as one. */
+  const runSize = budget.award ? 0 : autoSize;
   const startLabel = starting
     ? 'Starting'
     : autoRun
       ? `Round ${Math.min(autoRun.done + 1, autoRun.total)} Of ${autoRun.total}`
       : waitSeconds > 0
         ? `Ready In ${waitSeconds}s`
-        : autoSize
-          ? `Auto Play ${autoSize}`
+        : runSize
+          ? `Auto Play ${runSize}`
           : `Start ${bet.toLocaleString()}`;
-  const runLabel = running ? 'Stop' : autoSize ? `Run ${autoSize}` : 'Run Off';
+  const runLabel = running ? 'Stop' : runSize ? `Run ${runSize}` : 'Run Off';
+  const boost =
+    (round ? round.bonus?.boost_multiplier === 2 : budget.award?.boostMultiplier === 2) ? 2 : 1;
+  const title = diamondGameTitle('crash', boost);
+  /** The tenth an ordinary entry keeps, from the client mirror of the server's rule. */
+  const standardFloor = (() => {
+    if (budget.award || !validBonusBudget(budget)) return null;
+    try {
+      return diamondBonusMinimum(bet / rate, 1);
+    } catch {
+      return null;
+    }
+  })();
+  /**
+   * The floor the Guaranteed bay prints and the glass draws: the sealed floor
+   * of the round on the table, else the server's quote for the award about to
+   * start, else the sealed floor of the round just played at this same entry,
+   * else the tenth an ordinary entry keeps. Null while the award is checked.
+   */
+  const guaranteed =
+    open && round
+      ? {
+          chips: round.minimum_payout_chips ?? 0,
+          betChips: round.bet_chips,
+          super: round.bonus?.boost_multiplier === 2,
+        }
+      : earned.quote
+        ? {
+            chips: earned.quote.minimumPayoutChips,
+            betChips: bet / rate,
+            super: earned.quote.guarantee === 'super',
+          }
+        : settledRound &&
+            !settledRound.award_id &&
+            !budget.award &&
+            settledRound.bet_diamonds === bet
+          ? {
+              chips: settledRound.minimum_payout_chips ?? 0,
+              betChips: settledRound.bet_chips,
+              super: false,
+            }
+          : earned.ready && !earned.award && standardFloor !== null
+            ? { chips: standardFloor, betChips: bet / rate, super: false }
+            : null;
+  /** The sentence read before Start: what this round pays whatever happens. */
+  const promise = earned.quote
+    ? guaranteeCopy('crash', earned.quote)
+    : earned.ready && !earned.award && standardFloor !== null
+      ? guaranteeCopy('crash', { guarantee: 'standard', minimumPayoutChips: standardFloor })
+      : null;
   const pill = open
     ? 'Live'
     : state.frozen
@@ -812,6 +880,8 @@ function DiamondCrashGame() {
         setup={
           !open && (
             <BonusSetup
+              game="crash"
+              guarantee={earned.quote}
               budget={budget}
               entryReady={earned.ready}
               awardLoading={earned.loading}
@@ -825,11 +895,7 @@ function DiamondCrashGame() {
           )
         }
         eyebrow="Diamond Spins"
-        title={
-          (round ? round.bonus?.boost_multiplier === 2 : budget.award?.boostMultiplier === 2)
-            ? 'Super Crash'
-            : 'Diamond Crash'
-        }
+        title={title}
         titleId="diamond-crash-title"
         pill={pill}
         pillInk={pillInk}
@@ -840,6 +906,11 @@ function DiamondCrashGame() {
             value: open && round ? compactChips(round.bet_diamonds) : compactChips(bet),
             ink: betOption && !betOption.playable ? 'red' : 'white',
             disabled: true,
+          },
+          {
+            label: 'Guaranteed',
+            value: guaranteed ? `${gameChips(guaranteed.chips)} Chips` : 'Pending',
+            ink: guaranteed?.super ? 'gold' : undefined,
           },
           {
             label: 'Auto',
@@ -869,7 +940,7 @@ function DiamondCrashGame() {
               ? { label: runLabel, ink: 'red', onClick: stopRun }
               : {
                   label: runLabel,
-                  ink: autoSize ? 'gold' : 'silver',
+                  ink: runSize ? 'gold' : 'silver',
                   onClick: cycleRun,
                   disabled: open || starting,
                 }
@@ -900,7 +971,7 @@ function DiamondCrashGame() {
                     }
                   : running
                     ? { label: startLabel, ink: 'gold', disabled: true }
-                    : autoSize
+                    : runSize
                       ? { label: startLabel, ink: 'gold', onClick: startRun, disabled: !canStart }
                       : {
                           label: startLabel,
@@ -928,6 +999,9 @@ function DiamondCrashGame() {
               crashCents={settledRound?.outcome?.crash_cents ?? null}
               cashoutCents={settledRound?.outcome?.cashout_cents ?? null}
               autoCashoutCents={open ? roundAuto : autoTarget}
+              tickerCents={open ? liveCents : null}
+              minimumPayoutChips={guaranteed?.chips ?? null}
+              betChips={guaranteed?.betChips ?? null}
               onSettled={() => {
                 if (settledRound) setRevealedRoundId(settledRound.round_id);
               }}
@@ -937,7 +1011,9 @@ function DiamondCrashGame() {
           </div>
           <div className={styles.readout} role="status">
             <span className="sc-label sc-ink--blue">{readoutLabel}</span>
-            <span className={`${styles.readoutValue} ${readoutInk}`}>{readoutValue}</span>
+            <span className={`${styles.readoutValue} ${styles.readoutCompact} ${readoutInk}`}>
+              {readoutValue}
+            </span>
             <span className={`sc-copy ${styles.readoutSub}`}>
               {open
                 ? `Worth ${chipsLabel(liveWorth)} Chips Right Now`
@@ -953,11 +1029,11 @@ function DiamondCrashGame() {
                         ? 'Preparing Your Game'
                         : quotedAmount !== bet
                           ? 'Checking Your Entry'
-                          : autoSize
+                          : runSize
                             ? autoTarget
-                              ? `Auto Play Runs ${autoSize} Rounds At ${compactChips(bet)} Diamonds Each, Cashing Out At ${multiplierLabel(autoTarget)} Every Time, And Stops On Its Own If A Round Is Refused. Tap Run To Change It.`
+                              ? `${promise ? `${promise} ` : ''}Auto Play Runs ${runSize} Rounds At ${compactChips(bet)} Diamonds Each, Cashing Out At ${multiplierLabel(autoTarget)} Every Time, And Stops On Its Own If A Round Is Refused. Tap Run To Change It.`
                               : 'Auto Play Needs An Auto Cash Out: Tap Auto To Set One, Or It Cannot Cash Out For You.'
-                            : `Up To ${multiplierLabel(capCents)} On This Bet. ${budget.award ? 'Your Wheel Award Is Ready.' : 'Choose Your Entry And Start.'} Auto Cash Out Is Optional.`}
+                            : `${promise ? `${promise} ` : ''}Up To ${multiplierLabel(capCents)} On This Bet. ${budget.award ? 'Your Wheel Award Is Ready.' : 'Choose Your Entry And Start.'} Auto Cash Out Is Optional.`}
               {autoRun && !open ? ` Auto Play ${autoRun.done} Of ${autoRun.total}.` : ''}
             </span>
             {settledRound?.status === 'cashed' ? (

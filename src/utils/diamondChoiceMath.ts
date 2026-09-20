@@ -2,13 +2,22 @@
 import { hmacSha256Hex, sha256Hex } from './wheelFairness';
 
 export type ChoiceGame = 'crossing' | 'mines';
+/** One road is dealt today (2026-09-19): twelve streets, 1.10x to 20.00x, so
+ * every street sits inside every award's cover. The three risk ladders remain
+ * so a sealed round and its replay keep verifying; no new round may name them.
+ * Mirrors public.fn_choice_ladder. */
 export const ROAD_LADDERS = {
+  road: [110, 145, 185, 245, 315, 410, 535, 700, 910, 1180, 1540, 2000],
   steady: [110, 135, 170, 215, 275, 355, 460, 600, 800, 1100, 1600, 2400],
   bold: [150, 220, 330, 500, 800, 1300, 2200, 4000, 7500, 15000],
   extreme: [200, 400, 800, 1600, 3200, 6400, 12800, 25600],
 } as const;
 export type RoadRisk = keyof typeof ROAD_LADDERS;
-export const MINE_COUNTS = [5, 10, 15] as const;
+/** Six mines are dealt today; five, ten and fifteen remain readable for sealed boards. */
+export const MINE_COUNTS = [5, 6, 10, 15] as const;
+/** The one setting per game. Nobody chooses a difficulty: the payout carries it.
+ * Mirrors public.fn_choice_mode. */
+export const CHOICE_MODE = { crossing: 'road', mines: '6' } as const;
 export const RANDOM_SPACE = 281474976710656n;
 
 export function choose(n: number, k: number): bigint {
@@ -24,7 +33,7 @@ export function minePrize(betChips: number, mines: number, picks: number, minimu
     !Number.isFinite(betChips) ||
     betChips < 0.01 ||
     Math.abs(betChips * 100 - Math.round(betChips * 100)) > 1e-8 ||
-    !MINE_COUNTS.includes(mines as 5 | 10 | 15) ||
+    !MINE_COUNTS.includes(mines as (typeof MINE_COUNTS)[number]) ||
     !Number.isInteger(picks) ||
     picks < 1 ||
     picks > 25 - mines
@@ -50,7 +59,8 @@ export async function mineBoard(
   nonce: number,
   mines: number
 ) {
-  if (!MINE_COUNTS.includes(mines as 5 | 10 | 15)) throw new Error('Invalid Mine Count');
+  if (!MINE_COUNTS.includes(mines as (typeof MINE_COUNTS)[number]))
+    throw new Error('Invalid Mine Count');
   const cells = Array.from({ length: 25 }, (_, i) => i);
   let cursor = 0;
   for (let i = 24; i > 0; i--) {

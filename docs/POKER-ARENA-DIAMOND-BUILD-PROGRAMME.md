@@ -448,7 +448,7 @@ Exit: reproducible evidence, measured operating envelope and no unresolved criti
 ### Phase 12 Of 12: Release, Retirement And Live Proof
 
 - [ ] Verify existing clean-accounting release prerequisites with actual time-series evidence.
-- [ ] Complete an exact migration/engine/frontend compatibility and rollback manifest.
+- [x] Complete an exact migration/engine/frontend compatibility and rollback manifest. Delivered as [the Diamond release manifest](dr/diamond-release-manifest.md): the live Diamond migrations read from production, the SHA that introduced each caller, the engine floors `86aab0e6` and `ab9e626376`, the client floors `86aab0e6` and `f97c368d10`, the forward-only database rule, the custody-outstanding rollback precondition, the ten-release client budget and the 285-second engine cutover reserve.
 - [ ] Use established Hetzner static/engine publishing; World Hub routing through its pipeline.
 - [ ] Verify published SHAs and real public route behavior.
 - [ ] Verify certified buy-in/play/leave/transfer end to end after deployment.
@@ -486,4 +486,8 @@ The existing seven-clean-day release condition is documented in DIAMOND-ACCOUNTI
 
 ## Immediate Next Batch
 
-Phase 7: cash game parity and table features, on Dan's standing authorization after the Phase 6 deployment and acceptance passed. It opens on the one-to-one lobby parity Dan restated on September 11, then enables each feature only behind its own Diamond tests, starting from a supported-feature matrix built from the current shared code and the Phase 6 admission guard. Public funded Diamond games remain subject to the gameplay and accounting release gates; no Phase 7 work is claimed by the Phase 6 release.
+Phases 1 through 8 are delivered and Phase 9's bounty line is done. The next batch is not a phase, it is the release gate and the six Phase 9 lines that no branch exists for.
+
+The accounting release gate has one unmet condition: 45 open critical `DR0:health_critical` rows that nothing in the estate can resolve. Seven clean trial-balance days and zero suspense are both met. The migration that resolves those rows is written and awaiting owner installation, and until it applies the programme's own "no open critical incidents" condition is literally unmet however clean the books read.
+
+The engineering that remains, in blocking order, with the owner actions it depends on and the evidence for every phase verdict, is [the remaining-work audit of September 20](DIAMOND-LAUNCH-REMAINING-WORK-2026-09-20.md). The production actions only Dan can perform are [the owner steps](runbooks/diamond-launch-owner-steps-2026-09-20.md). Public funded Diamond games remain subject to the accounting release gate, and `cash_games_enabled` and `tournaments_enabled` are both false.

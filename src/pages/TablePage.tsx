@@ -18671,6 +18671,85 @@ function LiveTablePage({
         } as any);
         break;
       }
+      /* THE END OF A TIME BANK, THE STRADDLE, AND THE PRE-ACTION THAT PLAYED
+         ITSELF (2026-09-20).
+
+         Three events with live subscribers in this file and in useTableChat,
+         and no `case` to put them on the bus. The engines raise all three; the
+         server now broadcasts them (ServerTableEngineBase: the time bank's
+         terminal events and PRE_ACTION_EXECUTED were added there the same day,
+         STRADDLE_TOGGLED has been on the hub since 2026-09-08). Arriving here
+         with no case, each one fell off the end of this switch.
+
+         What that cost, in order:
+           - `setTimeBankActive(false)` has exactly one caller,
+             persistTimeBankState below, subscribed to TIME_BANK_STOPPED /
+             _DEPLETED / _EXPIRED. TIME_BANK_ACTIVATED (its own case above) set
+             the badge to true; nothing ever set it back.
+           - The straddle notice in table chat is raised from STRADDLE_TOGGLED.
+             The player who pressed the button sees their own switch move
+             because handleToggleStraddle POSTs and updates locally; every
+             other seat learned nothing.
+           - "Player 1a2b auto-folded" is built from PRE_ACTION_EXECUTED. The
+             pre-action worked; the table was never told it had happened.
+
+         Normalised on the way to the bus for the same reason every case in
+         this block is: the hub speaks snake_case and the subscribers read
+         camelCase - the exact drop that made TIME_BANK_ACTIVATED look
+         intermittent for months. Nothing is defaulted here that the
+         subscriber already defaults for itself. */
+      case 'TIME_BANK_STOPPED':
+      case 'TIME_BANK_DEPLETED':
+      case 'TIME_BANK_EXPIRED': {
+        const d = (evt.data ?? {}) as Record<string, unknown>;
+        const bankEnded = {
+          ...d,
+          tableId: (d.tableId as string) || (d.table_id as string) || tableId || '',
+          playerId: (d.playerId as string) || (d.player_id as string) || '',
+          secondsUsed: (d.secondsUsed as number) ?? (d.seconds_used as number),
+          remainingSeconds: (d.remainingSeconds as number) ?? (d.remaining_seconds as number),
+          usesRemaining: (d.usesRemaining as number) ?? (d.uses_remaining as number),
+        } as any;
+        /* Named one at a time rather than `masterBus.emit(evt.type, …)`.
+           tests/unit/noDeadBusSubscriptions.test.ts is the mechanical guard
+           against a subscriber nobody publishes to - the defect being repaired
+           here - and it finds publishers by scanning for a LITERAL event name
+           at the emit. A computed name is invisible to it, so these three
+           would still read as dead while working perfectly: the next person to
+           audit the list would be told, correctly, that nothing emits them.
+           The case above this one has that problem today and is only covered
+           because TableWebSocket.ts emits TIME_BANK_ACTIVATED by name. */
+        if (evt.type === 'TIME_BANK_STOPPED') masterBus.emit('TIME_BANK_STOPPED', bankEnded);
+        else if (evt.type === 'TIME_BANK_DEPLETED') masterBus.emit('TIME_BANK_DEPLETED', bankEnded);
+        else masterBus.emit('TIME_BANK_EXPIRED', bankEnded);
+        break;
+      }
+      case 'STRADDLE_TOGGLED': {
+        const d = (evt.data ?? {}) as Record<string, unknown>;
+        masterBus.emit('STRADDLE_TOGGLED', {
+          ...d,
+          tableId: (d.tableId as string) || (d.table_id as string) || tableId || '',
+          playerId: (d.playerId as string) || (d.player_id as string) || '',
+          enabled: d.enabled === true,
+        } as any);
+        break;
+      }
+      case 'PRE_ACTION_EXECUTED': {
+        const d = (evt.data ?? {}) as Record<string, unknown>;
+        masterBus.emit('PRE_ACTION_EXECUTED', {
+          ...d,
+          tableId: (d.tableId as string) || (d.table_id as string) || tableId || '',
+          /* The chat line calls .substring(0, 4) on this, so it is a string
+             here or the notice throws inside the subscriber. */
+          playerId: (d.playerId as string) || (d.player_id as string) || '',
+          action: String(d.action ?? ''),
+          /* A fold or a check commits nothing and the engine leaves `amount`
+             unset for both; 0 is that fact, not a guess. No subscriber reads
+             it today - it is carried because the bus payload declares it. */
+          amount: Number(d.amount ?? 0),
+        } as any);
+        break;
+      }
       case 'LEVEL_UP': {
         masterBus.emit('TOURNAMENT_LEVEL_UP', evt.data as any);
         break;

@@ -175,9 +175,23 @@ describe("the player's own facts ride the engine socket (audit items 11 + 12, 20
     // execution, which outran the snapshot and disarmed the client's bar a
     // frame before the turn arrived (2026-09-08; see
     // server/src/engine/PreActionPushDoesNotOutrunTheTurn.test.ts).
-    expect(base).toMatch(
-      /if \(event\.type === 'PRE_ACTION_EXECUTED'\) return;\s*this\.pushPreActionToPlayer\(\s*event\.playerId,/
-    );
+    //
+    // 2026-09-20: the executed event now ALSO goes out on the table's hub, so
+    // the chat can say "Player 1a2b auto-folded" (this file's regex used to
+    // require a bare `return;` on that line and would have failed on the
+    // added broadcast). The guarantee is unchanged and is now pinned on what
+    // the branch DOES rather than on its punctuation, which is strictly
+    // harder to satisfy by accident: the executed branch returns, and nothing
+    // inside it reaches the player's own sockets.
+    const executedBranchStart = base.indexOf("if (event.type === 'PRE_ACTION_EXECUTED')");
+    expect(executedBranchStart).toBeGreaterThan(-1);
+    const privatePushAt = base.indexOf('this.pushPreActionToPlayer(', executedBranchStart);
+    expect(privatePushAt).toBeGreaterThan(executedBranchStart);
+    const executedBranch = base.slice(executedBranchStart, privatePushAt);
+    // `}?` so the pin holds whether the branch is a block or a bare return.
+    expect(executedBranch).toMatch(/\breturn;\s*\}?\s*$/);
+    expect(executedBranch).not.toMatch(/sendToUser|pushPreActionToPlayer/);
+    expect(base).toMatch(/this\.pushPreActionToPlayer\(\s*event\.playerId,/);
     const index = strip(read('server/src/index.ts'));
     expect(index).toMatch(/engine\?\.rePushPreAction\(userId\);/);
     expect(index).toMatch(/void engine\?\.rePushHoleCards\(userId\);/);

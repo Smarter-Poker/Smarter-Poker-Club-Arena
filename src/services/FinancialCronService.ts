@@ -63,7 +63,6 @@ export interface SuspensionCheckResult {
 export const FinancialCronService = {
   _reconciliationTimer: null as ReturnType<typeof setInterval> | null,
   _suspensionTimer: null as ReturnType<typeof setInterval> | null,
-  _disputeEscalationTimer: null as ReturnType<typeof setInterval> | null,
   _rakebackSettlementTimer: null as ReturnType<typeof setInterval> | null,
   _startupTimer: null as ReturnType<typeof setTimeout> | null,
   _isRunning: false,
@@ -121,18 +120,11 @@ export const FinancialCronService = {
     // genesis figure that does not exist.
     this._startupTimer = setTimeout(() => {
       this.runSuspensionCheck();
-      this.escalateStaleDisputes();
     }, 30_000);
     this._suspensionTimer = setInterval(
       () => this.runSuspensionCheck(),
       this._config.suspensionCheckIntervalMs
     );
-    // Run dispute escalation every 6 hours (same cadence as suspension checks)
-    this._disputeEscalationTimer = setInterval(
-      () => this.escalateStaleDisputes(),
-      this._config.suspensionCheckIntervalMs
-    );
-
     // Weekly accounting has no browser timer or callable browser payer.
     // Suspension and dispute diagnostics above retain their existing behavior.
 
@@ -147,12 +139,10 @@ export const FinancialCronService = {
     if (this._startupTimer) clearTimeout(this._startupTimer);
     if (this._reconciliationTimer) clearInterval(this._reconciliationTimer);
     if (this._suspensionTimer) clearInterval(this._suspensionTimer);
-    if (this._disputeEscalationTimer) clearInterval(this._disputeEscalationTimer);
     if (this._rakebackSettlementTimer) clearInterval(this._rakebackSettlementTimer);
     this._startupTimer = null;
     this._reconciliationTimer = null;
     this._suspensionTimer = null;
-    this._disputeEscalationTimer = null;
     this._rakebackSettlementTimer = null;
     this._isRunning = false;
     console.debug('[FinancialCron] Stopped');
@@ -371,67 +361,41 @@ export const FinancialCronService = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // P7-8: DISPUTE AUTO-ESCALATION (72-hour SLA)
+  // P7-8: DISPUTE AUTO-ESCALATION - RETIRED 2026-09-19
   // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Auto-escalate disputes that have been open for more than 72 hours.
-   * Runs on the same interval as suspension checks (every 6 hours).
-   */
-  async escalateStaleDisputes(): Promise<number> {
-    let escalated = 0;
-    try {
-      const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
-
-      const { data: staleDisputes } = await supabase
-        .from('disputes')
-        .select('id, submitted_by, club_id, reason')
-        .eq('status', 'open')
-        .lt('created_at', cutoff)
-        .limit(50);
-
-      if (!staleDisputes || staleDisputes.length === 0) return 0;
-
-      for (const dispute of staleDisputes) {
-        try {
-          await supabase
-            .from('disputes')
-            .update({
-              status: 'escalated',
-              resolution: 'Auto-escalated: unresolved for 72+ hours',
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', dispute.id)
-            .eq('status', 'open'); // CAS guard
-
-          escalated++;
-
-          await FinancialAlertService.logWarning(
-            'FinancialCronService',
-            `Dispute ${dispute.id.substring(0, 8)} auto-escalated (72h SLA breach)`,
-            { disputeId: dispute.id, clubId: dispute.club_id }
-          );
-        } catch (e: unknown) {
-          reportError(e, 'FinancialCronService.escalateStaleDisputes', {
-            disputeId: dispute.id,
-          });
-        }
-      }
-
-      if (escalated > 0) {
-        masterBus.emit('FINANCIAL_ALERT', {
-          severity: 'warning',
-          source: 'FinancialCronService',
-          message: `${escalated} dispute(s) auto-escalated (72h SLA breach)`,
-          context: { escalatedCount: escalated },
-          timestamp: new Date().toISOString(),
-        });
-      }
-    } catch (err: unknown) {
-      reportError(err, 'FinancialCronService.escalateStaleDisputes');
-    }
-    return escalated;
-  },
+  //
+  // escalateStaleDisputes() ran 30 seconds after every page load and then every
+  // six hours, in every tab, and it never wrote anything. Not once.
+  //
+  // MEASURED 2026-09-19 against production. public.disputes grants UPDATE to
+  // postgres and service_role only: has_table_privilege('authenticated',
+  // 'public.disputes','UPDATE') is FALSE, and so is anon's. RLS is enabled and
+  // the table carries exactly ONE policy, disputes_party_or_admin_select, which
+  // is SELECT only - there is no UPDATE policy to satisfy even if the grant
+  // existed, and authenticated does not bypass RLS. So the UPDATE was 42501
+  // permission denied on every call it ever made.
+  //
+  // The damage was not the failed write. It was that the result was never
+  // checked: `escalated++` ran regardless, FinancialAlertService.logWarning
+  // fired after it, and fn_raise_financial_alert IS granted to authenticated -
+  // measured true - so the alert PERSISTED. Every club admin with a tab open
+  // raised a durable "dispute auto-escalated" warning every six hours about a
+  // state change that had not happened. That is the same failure as the M4
+  // reconciliation and the M7 alert insert above: a counter that reports work
+  // it did not do.
+  //
+  // The 72-hour SLA itself needs no writer and never did. It is a pure function
+  // of created_at and the clock, and DisputeManagementPage already derives it
+  // at read time in getSlaRemaining() and renders it. The cron was writing down
+  // a number the UI was independently computing.
+  //
+  // Escalation by human judgement is unchanged and still written, by the path
+  // that already owns it: fn_dispute_escalate, SECURITY DEFINER, authorised
+  // through fn_ca_can_review_integrity, reached via
+  // DisputeService.escalateDispute. That one records who escalated and why.
+  //
+  // A stored generated column was considered and is impossible: Postgres
+  // requires an IMMUTABLE generation expression and now() is STABLE.
 };
 
 export default FinancialCronService;

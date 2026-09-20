@@ -110,8 +110,14 @@ export default function AgentPortalPage() {
       .on(
         'postgres_changes',
         {
-          // SWEEP #3 (2026-07-23): commission_ledger never existed — the live
-          // per-hand commission ledger is agent_commissions, keyed by auth user_id.
+          // SWEEP #3 (2026-07-23): commission_ledger never existed - the
+          // per-hand commission ledger is agent_commissions, keyed by auth
+          // user_id. That fixed the table NAME. It does not make this live:
+          // agent_commissions left the publication in the 2026-09-06 trim
+          // (1,802,610 writes, 6.7M live rows), as did `agents` above, so
+          // neither of these two subscriptions delivers anything. The page is
+          // covered by useVisibilityRefresh(loadData) instead, which re-runs
+          // both loadWallet() and loadCommissionHistory().
           event: 'INSERT',
           schema: 'public',
           table: 'agent_commissions',

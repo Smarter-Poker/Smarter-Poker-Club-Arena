@@ -144,8 +144,12 @@ describe('the notice is not lost by its own one-shot flag', () => {
   });
 
   it('names the real reason when one is known', () => {
-    expect(TABLE_PAGE).toMatch(/BOOT_EXPLANATIONS/);
-    expect(TABLE_PAGE).toMatch(/sit_out_timeout:/);
+    /* The sentences moved to components/table/seatExitCopy on 2026-09-19 so a
+       Diamond seat is told about its Diamonds; the page still asks the one
+       table, keyed by the seat's asset, on both boot paths. */
+    expect(TABLE_PAGE).toMatch(/bootExplanation\(reason, seatAsset\)/);
+    const SEAT_EXIT_COPY = strip(readRaw('src/components/table/seatExitCopy.ts'));
+    expect(SEAT_EXIT_COPY).toMatch(/sit_out_timeout:/);
     // …and the poll can still be specific when the socket told us why.
     expect(TABLE_PAGE).toMatch(/evictionReasonRef/);
   });

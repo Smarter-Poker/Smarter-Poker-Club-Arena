@@ -1,127 +1,250 @@
-.page {
+.page.page {
   background: #000;
+  min-height: 0;
+  height: 100dvh;
+  padding: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
 }
 .cabinet {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 20px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   width: 100%;
+  height: 100%;
+  min-height: 0;
   box-sizing: border-box;
-  margin: auto;
   background: #000;
   color: #e4e7ec;
-  padding: 20px 12px;
 }
 .heading {
-  grid-column: 1/-1;
   text-align: center;
   font-family: 'Roboto Condensed', sans-serif;
+}
+.heading h1 {
+  margin: 0;
+  font-size: clamp(20px, 3cqw, 30px);
+  line-height: 1.15;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   text-shadow:
     0 2px #000,
     0 -1px #9aa5b3;
 }
-.heading span {
-  color: #45adff;
-  font-size: 13px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-}
-.heading h1 {
-  margin: 8px 0 0;
-  font-size: clamp(30px, 4cqw, 50px);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
 .wheel {
+  position: relative;
   min-width: 0;
-  align-self: center;
+  min-height: 0;
+}
+.stage {
+  position: absolute;
+  inset: 0;
 }
 .controls {
+  width: 100%;
   min-width: 0;
-  width: min(100%, 600px);
-  margin: 0 auto;
+  padding: 6px 12px max(8px, env(safe-area-inset-bottom));
+  border: 12px solid transparent;
+  border-image: url('/assets/diamond-spins/wheel-matte-controls-v1.png') 160 / 12px / 0 stretch;
+  background: #000;
+  font-family: 'Roboto Condensed', sans-serif;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+}
+.controlHeading {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: stretch;
+  width: 100%;
+  max-width: 390px;
+  margin-left: auto;
+}
+.entryModes {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: stretch;
+  max-width: 420px;
+}
+.entry,
+.dashboard,
+.notice {
+  grid-column: 1 / -1;
+}
+.controlHeading,
+.entryModes {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: nowrap;
+  min-width: 0;
+  gap: 0 8px;
+}
+.controlHeading > span {
+  margin-right: auto;
+  font-size: 13px;
+}
+.controls button {
+  letter-spacing: 0;
+  text-transform: none;
+}
+.controls .controlHeading button,
+.controls .entryModes button {
+  min-height: 36px;
+  min-width: 0;
+  flex: 1;
+  font-family: 'Roboto Condensed', sans-serif;
+  font-size: 13px;
+  white-space: nowrap;
+  padding: 0 6px;
+  border: 7px solid transparent;
+  border-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') 26 fill /
+    7px / 0 stretch;
+  background: transparent;
+}
+.entryModes button[aria-pressed='true'] {
+  color: #f4f7fb;
+}
+.dashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  align-items: center;
+  gap: 8px;
 }
 .metrics {
-  margin: 16px 0 0;
+  margin: 0;
   display: grid;
-  gap: 10px;
-  font-family: 'Roboto Condensed', sans-serif;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  text-align: center;
 }
 .metrics > div {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px #ffffff14;
-  padding-top: 8px;
+  min-width: 0;
 }
 .metrics dt {
   color: #45adff;
-  font-size: clamp(13px, 3.6cqw, 17px);
+  font-size: 12px;
 }
 .metrics dd {
   margin: 0;
-  color: #e4e7ec;
-  font-size: clamp(20px, 5.5cqw, 28px);
+  font-size: clamp(17px, 3cqw, 24px);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 .metrics [data-ink='gold'] {
   color: #ffd700;
 }
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+.actions button {
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 0;
+  color: #f4f7fb;
+  font:
+    800 clamp(14px, 2cqw, 18px) 'Roboto Condensed',
+    sans-serif;
+  text-shadow: 0 2px 2px #000;
+  background-color: transparent;
+  background-position: center;
+  background-size: 100% auto;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+.secondary {
+  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
+}
+.primary {
+  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
+}
+.primary:not(:disabled) {
+  animation: control-light calc(3s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+.controls button:active {
+  filter: brightness(1.25);
+}
+.controls button:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 1px;
+}
+.controls button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+@keyframes control-light {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.2);
+  }
+}
 .entry {
   display: grid;
-  gap: 8px;
-  min-width: 0;
-  font-family: 'Roboto Condensed', sans-serif;
+  grid-template-columns: auto 100px 1fr;
+  align-items: center;
+  gap: 0 10px;
+  max-width: 900px;
+  margin: 0 auto;
 }
 .entry label {
   color: #45adff;
-  letter-spacing: 0.05em;
-  font-size: clamp(14px, 3.8cqw, 19px);
+  font-size: 14px;
 }
 .entry input {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  padding: 10px 0;
+  height: 40px;
+  padding: 0;
   background: transparent;
-  border: 0;
-  border-bottom: 1px solid #9aa5b3;
+  border: 7px solid transparent;
+  border-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') 26 fill /
+    7px / 0 stretch;
   color: #f4f7fb;
   font:
-    800 clamp(30px, 9cqw, 40px) 'Roboto Condensed',
+    800 26px 'Roboto Condensed',
     sans-serif;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
 .entry > span {
-  text-align: center;
+  grid-column: 1;
+  font-size: 11px;
   color: #9aa5b3;
-  font-size: 12px;
+  margin-top: -12px;
 }
 .presets {
+  grid-column: 3;
+  grid-row: 1 / 3;
   display: flex;
   justify-content: space-between;
   gap: 2px;
-  flex-wrap: wrap;
 }
 .presets button {
   flex: 1 1 44px;
   min-width: 44px;
-  color: #9aa5b3;
-  border: 0;
-  background: transparent;
   min-height: 44px;
-  padding: 8px 4px;
+  color: #9aa5b3;
+  border: 7px solid transparent;
+  border-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') 26 fill /
+    7px / 0 stretch;
+  background: transparent;
+  padding: 0;
   font:
-    700 14px 'Roboto Condensed',
+    700 16px 'Roboto Condensed',
     sans-serif;
   cursor: pointer;
 }
 .presets button[aria-pressed='true'] {
-  color: #45adff;
+  color: #f4f7fb;
+  border-image-source: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
   text-shadow: 0 0 10px #1877f2;
 }
 .entry :disabled {
@@ -131,6 +254,58 @@
 .entry :focus-visible {
   outline: 2px solid #45adff;
   outline-offset: 2px;
+}
+.notice {
+  color: #ffd700;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.25;
+}
+.notice p {
+  margin: 0;
+}
+@container (max-width: 600px) {
+  .controls {
+    padding-left: 4px;
+    padding-right: 4px;
+    border-width: 8px;
+    grid-template-columns: 1fr;
+  }
+  .controlHeading,
+  .entryModes {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: stretch;
+  }
+  .controls .entryModes {
+    gap: 2px;
+    flex-wrap: nowrap;
+  }
+  .controls .entryModes button {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    font-size: 11px;
+  }
+  .dashboard {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .actions {
+    max-width: 350px;
+    margin: 4px auto 0;
+  }
+  .entry {
+    grid-template-columns: 1fr 100px;
+    gap: 0 8px;
+  }
+  .entry > span {
+    grid-column: 1;
+  }
+  .presets {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
 }
 .prizes {
   max-width: 1260px;
@@ -210,10 +385,6 @@
   }
 }
 @container (max-width: 900px) {
-  .cabinet {
-    padding: 12px 0;
-    gap: 10px;
-  }
   .prizes ul {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -237,6 +408,37 @@
   }
 }
 
-.refresh {
-  min-height: 44px;
+.details {
+  container-type: inline-size;
+}
+.details :global(.sc-copy) {
+  font-size: 14px;
+}
+
+@container (max-width: 400px) {
+  .presets button {
+    font-size: 13px;
+    padding-inline: 0;
+  }
+  .entry label {
+    font-size: 13px;
+  }
+  .controls .controlHeading button {
+    min-width: 0;
+    flex: 1;
+    padding-inline: 0;
+    font-size: 12px;
+  }
+  .metrics dt {
+    font-size: 11px;
+  }
+}
+@media (max-height: 450px) and (min-width: 601px) {
+  .heading h1 {
+    font-size: 20px;
+  }
+  .controls {
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
 }

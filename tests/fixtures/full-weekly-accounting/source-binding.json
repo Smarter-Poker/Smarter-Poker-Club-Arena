@@ -31,7 +31,7 @@
     "legacy-recompute-access-assumptions.sql": "fc8c07ed0d27a4f7687e782b371c9d6a948207ba8e9d47a9d16357f1eebf2d75",
     "legacy-recompute-source-binding.json": "f6d40a56c4f86167edbc20e664543c7e1b3599e017f1ead60b88afd1a6e64f5b",
     "capture-rollback-state.sql": "26ad0aba3d16bc257a61934c82cba11b2c953fb5979a24806469dbff154d9e71",
-    "README.md": "aa75b2abd5e0a58be26d9a89e3500553549af487f6849c5df3f8d8098bc0c1f9",
+    "README.md": "bf85e5a6a9e760cab02342baecece42bdd89c5ce78542775254da4853118979c",
     "legacy-period-writers-definitions.sql": "20472455faa4dd0683f7e948a59106c057b72a5b9ae22a28806a314cfe6e4a4d",
     "legacy-period-writers-access.sql": "4688b010897520ed769f991b0fd04a3318edee6a936b6df1d0445fa24942ad98",
     "legacy-period-writers-source-binding.json": "597ad49128613b31bde11f580add647fefad2be158958ce7955274d6e208a6f4",
@@ -169,7 +169,7 @@
     "tests/fixtures/browser-period-observer/regression.sql": "3550c76e15615707f52d4b6fc8c183b5b8cd3ad9105a6282e72c25b900152284",
     "tests/unit/SettlementCronService.test.ts": "b436754cec532a518975b8f03ff5020dc90048d30c044ca04aa25029a1109a9f",
     "tests/unit/ServiceBootstrap.test.ts": "74881cd7adc292cafbd325c98bee91ad53192ecdb4e07cc66aab3d11b58f4c21",
-    "tests/unit/FinancialCronService.test.ts": "a4b4f2a06cfebe1812f1ba82e50f6200060a2f2d5ade8f4145b55cd86f052da5",
+    "tests/unit/FinancialCronService.test.ts": "d896cbd87786cb83569ee48e7d1adde3f017ceba3a3e1f4fe573ed7cfefddb4d",
     "tests/components/ClubWeeklyAccountingSummary.test.tsx": "c3b8dd010b46ce1f14180ab05c4b36f7ac14c3f35c73f2fff7563f2b135ab634",
     "tests/unit/AccountingObservationService.test.ts": "6e571f657f66a05bd37b9aa35b867e12b54c99c75754e017034ec3bafed17ce9",
     "tests/unit/SettlementService.test.ts": "92390199785906650508d16eea99372e24a6451dd8cd9d108679381ed1ca936d",
@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "3b40d1ae0b008db62b2ec37f0242961007d7c91cd5fbd21a2fd378f39039d4e9",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "fe9542d1ba09b0d3fe9f474b4948768595cac66c2163d4b24ff77b465e82a6b2",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "5c312f7cd0ee2d451d3121df6366eb30189771c886e32b00280ef6ae39c2303a",
+    "scripts/ci/classify-ci-changes.mjs": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "511d5d2c69c77f889d73dd5c5a2ac197913914279c0dcd21116e1b2252956659",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "83af00a9d3883edcfc7a7561eab21c53df8072bd62750aabb198e53a7b2af3fc",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "81e7863f69c4b37971c30db49a867888c2a0c7f4808305fadf9e5ced1f935da1",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "7619209291038a1f9b39244f1a6b1da2212a05370676e259ee5ded2a914c2279",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -482,7 +482,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "6a7e882df5fae21b7eb7982826b63094531c470c7e5a078b9bfd95a3e2060565",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "040fb897792bf51e466a79f3b2d86b3d79e1a126731f725ea30cde1f096c438d",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
@@ -1391,7 +1391,7 @@
       {
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous_sha256": "02ad9afd28daae965fda9992c4b6a9262857793bee9ab269cc5acac96837f637",
-        "sha256": "f037363cf1da6ddfca7cfa73ff4129b9b9b5457a846cf2d783fde2b3a06a1fdf"
+        "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
       },
       {
         "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
@@ -1401,7 +1401,7 @@
       {
         "path": "tests/unit/fixtureNativeCi.test.ts",
         "previous_sha256": "b50ab5f30f6543b6a67acf5d0d684ca0839fc67e44efc4d95f14f9158cd4e12f",
-        "sha256": "bb58f37feb9bac28ea2994be33f24bbf96a8f70db998f2126df865d22f180d64"
+        "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
       },
       {
         "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
@@ -1424,5 +1424,144 @@
     "previous_sha256": "75adb19d94bc0f123a41d6d18ae1a477d14e958adf3c93be7e034ae200cd4cd5",
     "sha256": "c48c512538bb97ef0e7ce50fd8003477f017eba9a1b482c35e82b5a142ecd6d3",
     "reason": "Bind the reviewed Early Bird runner addition in the existing mixed-cutover phase; no SQL or fixture assertion changed."
+  },
+  "diamond_replay_ci_binding_20260919": {
+    "failed_run": 35453124666,
+    "reason": "The additive Diamond replay and daily-custody CI routes changed the classifier. All prior classification branches and financial fixture inputs remain unchanged. Refresh the three active classifier bindings and the two resulting nested binding hashes; retain historical receipts.",
+    "verification": "Exact active binding guards and classifier routing tests; native qualification remains the existing required hosted accounting job."
+  },
+  "retired_dispute_escalation_rebinding_20260920": {
+    "base_commit": "1e19f83b6cd6e2d7baecb97fa9d9cfefd03486aa",
+    "prior_binding_sha256": "6520d17392293e18793a1b1f23eecf492a169883552d7428d35474c027d19274",
+    "failed_run": 35490389682,
+    "also_failed_run": 35478014685,
+    "source_pull_request": 4943,
+    "source_commit": "74f5c9c076",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/FinancialCronService.test.ts",
+        "previous_sha256": "a4b4f2a06cfebe1812f1ba82e50f6200060a2f2d5ade8f4145b55cd86f052da5",
+        "sha256": "d896cbd87786cb83569ee48e7d1adde3f017ceba3a3e1f4fe573ed7cfefddb4d"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "3b40d1ae0b008db62b2ec37f0242961007d7c91cd5fbd21a2fd378f39039d4e9",
+        "sha256": "a6ae2ef64e38661fb5983a6d621b4ca9ad83fd6dc85af975f3a98e937b8579f6"
+      }
+    ],
+    "reason": "PR #4943 retired the browser dispute-escalation entry point on 2026-09-19. It was right to: the authenticated role has no UPDATE grant on public.disputes and the table's only policy is SELECT, so the method answered 42501 on every call while still incrementing its own counter and persisting a \"dispute auto-escalated\" alert through a function authenticated can execute. Two bound application tests moved with it. tests/unit/FinancialCronService.test.ts now asserts the method is absent and that booting the service never touches the disputes table; tests/unit/discardedErrorReadRatchet.test.ts drops its src/services/FinancialCronService.ts baseline entry because the discarded read is gone. Both changes widen coverage and neither touches a financial component, an assertion or a captured catalog fixture. Its own required checks were green because its paths do not route to the accounting job, so from the next main run onward the required accounting check failed on main and on every open pull request with \"Repository lifecycle fixture drift\". Refresh only these two stale repository bindings; preserve all 29 captured catalog fixtures, the other 421 repository bindings, every financial component and every assertion.",
+    "verification": "Each new sha256 is the sha256 of the file at this base commit, recomputed from the bytes on disk. All 423 repository bindings were then re-verified against the tree and agree. The captured fixtures map, component_count and every assertion count are unchanged from the previous binding."
+  },
+  "dispute_intake_ratchet_rebinding_20260920": {
+    "base_commit": "d616a7cf11e57a77bc5d80587a73c70e3e031fc7",
+    "prior_binding_sha256": "5c4630ea100f76b96cd87e392ad6e30e6b254f6b34da442a0dad25e562734f5b",
+    "supersedes": "retired_dispute_escalation_rebinding_20260920",
+    "source_pull_request": 4956,
+    "source_commit": "5d7f10b22d",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "a6ae2ef64e38661fb5983a6d621b4ca9ad83fd6dc85af975f3a98e937b8579f6",
+        "sha256": "fe9542d1ba09b0d3fe9f474b4948768595cac66c2163d4b24ff77b465e82a6b2"
+      }
+    ],
+    "reason": "PR #4956 gave public.disputes the two entry points it never had, fn_dispute_submit and fn_dispute_withdraw, so submitDispute and withdrawDispute stopped doing raw client writes whose errors were discarded. tests/unit/discardedErrorReadRatchet.test.ts lowered its src/services/DisputeService.ts baseline from 3 to 1 to match. That is the ratchet tightening, not relaxing: it now permits fewer discarded reads for that file than before. #4956 merged at 07:57Z. #4959, which re-recorded this same path for the unrelated #4943 drift, was cut from 1e19f83b6c ten minutes earlier and squash-merged at 08:14Z, so it re-recorded the sha256 of the bytes at ITS base and landed a hash for a file main had already changed. Its own verification could not have seen this: at 1e19f83b6c the file really did hash to the value it recorded. This is exactly the case .github/workflows/ci.yml documents - a squash merge builds a tree that no pull request ever tested, whenever main moves between a pull request's last run and its merge. The preamble also raises on the FIRST drift it meets, so while tests/unit/FinancialCronService.test.ts was still stale this one stayed masked; #4959 fixing that one is what surfaced it. The required Accounting transactions (PostgreSQL 17) check therefore still fails in the python preamble with 'Repository lifecycle fixture drift: tests/unit/discardedErrorReadRatchet.test.ts', before any PostgreSQL cluster starts and before any accounting component is installed, and Server Engine (typecheck + tests) and What this run verified fail only because they aggregate it. No financial behaviour is implicated. Refresh only this one stale repository binding; preserve all 29 captured catalog fixtures, the other 422 repository bindings, every financial component and every assertion.",
+    "verification": "The new sha256 is the sha256 of the bytes of tests/unit/discardedErrorReadRatchet.test.ts at this base commit, read from disk in a clean worktree whose file is identical to HEAD. All 423 repository bindings and all 29 captured fixtures were then re-verified against the tree with the runner's own computation - hashlib.sha256(path.read_bytes()).hexdigest(), repository_fixtures resolved against the repository root and fixtures against tests/fixtures/full-weekly-accounting, no normalisation of any kind - and every one agrees. component_count, both assertion counts, the captured fixtures map, limits and supplemental captures are byte-identical to the previous binding. The edit went through a JSON round-trip proved byte-identical to the original file, so the diff is exactly this one hash plus this note."
+  },
+  "diamond_sql_acceptance_ci_binding_20260920": {
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "114ca8f15279e7102b7d278509147b384ae4f04b7e6b393ea0dc7f899ae67e3b",
+        "sha256": "2ba475d3ae45a4f8a50d8be839019d1356e8644fd71bb2bcb84803398565d92e"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "f88a0ad13d6c7e6feb17abfe4e34306786432e3cec5a28fb99e31ddc5c8ac603",
+        "sha256": "8cd800ebf3c4823f239af6c1af4242d5ec966b5d0858eda6a671645403bbd17e"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "4f2cbfb2d67194498e43e911c49dd3a7fe182be33e766060b761f4eebf495086",
+        "sha256": "76dd59f9abdc3137b7d731e917a620fb49607121138ba94cbcd0de344e851887"
+      }
+    ],
+    "changed_qualification_manifest_pins": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "previous_sha256": "d568a3342774a2e19bcd88666d165141d8d6f8f83498fca954b764ebb67c0e72",
+        "sha256": "eab4a307624077af69afd7daa1016aaa0265bf5fc980215fb3cafff8879532b9",
+        "pinned_in": "scripts/qualification/cash-native-hosted.manifest.json"
+      },
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "114ca8f15279e7102b7d278509147b384ae4f04b7e6b393ea0dc7f899ae67e3b",
+        "sha256": "2ba475d3ae45a4f8a50d8be839019d1356e8644fd71bb2bcb84803398565d92e",
+        "pinned_in": "scripts/qualification/cash-native-hosted.manifest.json"
+      }
+    ],
+    "reason": "The classifier gained additive Diamond SQL acceptance routing: a change to any tests/sql/run-*diamond*.py runner, any tests/sql/poker-diamond-*.sql fixture, poker-arena-access.sql, the controlled-play driver, the session and transfer cap fixtures, any tests/sql/diamond-tournament-*.sql or tests/sql/diamond-tournament-*.manifest.json input the two tournament runners load, scripts/ci/run-diamond-sql-acceptance.py or scripts/ci/check-diamond-runners-listed.mjs now selects the PostgreSQL accounting job and its routing tests, so the fourteen Diamond money-door runners and the arena access script execute there instead of only by hand. The diamond-tournament-* inputs were added on 2026-09-20 with the tournament doors and tournament lifecycle runners that read them: they selected tests but not server, so the job that executes the runner could skip on a pull request that changed what it executes. No existing classification branch was removed or narrowed, and no accounting component, assertion, capture or fixture changed. The two nested financial bindings already retain the reviewed classifier bytes; refreshing them changes their own sha256, which this outer binding also pins, so the four hashes move together. The workflow pin moves for the same edit: the accounting job gained the list check, the acceptance step and its evidence upload, and nothing else. Every previous_sha256 here is the value on origin/main d0e04ed4fe, the revision this branch is merged up to.",
+    "verification": "All fourteen runners and poker-arena-access.sql were executed on an isolated PostgreSQL 17 through scripts/ci/run-diamond-sql-acceptance.py against freshly created empty fixture databases, and each proved its own terminal line: 15 of 15 runs passed in 18.1 seconds, the eleven shared-cluster runners on the socket the wrapper builds and the three private-cluster runners each on a cluster it created and destroyed. The three new runners were also executed with PG_BIN set to a directory that does not exist on this machine, proving PG_BIN is honoured and that the fixed fallback in source resolves PostgreSQL 17 without a second environment variable. node scripts/ci/check-diamond-runners-listed.mjs reports 14 runners all run by CI and was proved to refuse an unlisted one; npx vitest run tests/unit/diamondAcceptanceCi.test.ts passes with 80 tests; python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py accepts the refreshed cash manifest in 6 cases. python3 scripts/ci/verify-source-bindings.py re-read every pin map in every source-binding.json in the merged tree: 745 pins across 15 sections in 15 binding files, the five refreshed here included, all agree. This refresh establishes no native financial execution and no production installation; the required hosted accounting job must still pass. Neither cash_games_enabled nor tournaments_enabled was touched, and no production object was read, created or changed."
+  },
+  "mtt_historical_bank_loss_main_integration_20260920": {
+    "base_commit": "15477de6f1b155de78121a05b0441914596e2269",
+    "branch_commit": "680604c8e0",
+    "prior_binding_sha256": "0e90cf83c318fb95a866b5f34ef8a64c65ecad91da4a4e1ee4ec1283d065c3bf",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "2ba475d3ae45a4f8a50d8be839019d1356e8644fd71bb2bcb84803398565d92e",
+        "sha256": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
+        "pinned_in": "tests/fixtures/full-weekly-accounting/source-binding.json, tests/fixtures/legacy-fee-finality/source-binding.json, tests/fixtures/sep8-spin-custody/source-binding.json"
+      },
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous_sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57",
+        "sha256": "6c3ddda68247adb48a1dda8dda729787fdd86f2cc9101aadcec0035f2c555583",
+        "pinned_in": "tests/fixtures/full-weekly-accounting/source-binding.json, tests/fixtures/sep8-spin-custody/source-binding.json, tests/fixtures/earlybird-fee-custody/source-binding.json"
+      },
+      {
+        "path": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+        "previous_sha256": "fe075445bb89eef17d3d90031d20de772dc81975e53593072cf7112f7e8c0af1",
+        "sha256": "040fb897792bf51e466a79f3b2d86b3d79e1a126731f725ea30cde1f096c438d"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "8cd800ebf3c4823f239af6c1af4242d5ec966b5d0858eda6a671645403bbd17e",
+        "sha256": "83af00a9d3883edcfc7a7561eab21c53df8072bd62750aabb198e53a7b2af3fc"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "76dd59f9abdc3137b7d731e917a620fb49607121138ba94cbcd0de344e851887",
+        "sha256": "7619209291038a1f9b39244f1a6b1da2212a05370676e259ee5ded2a914c2279"
+      }
+    ],
+    "changed_qualification_manifest_pins": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_bytes": 22175,
+        "bytes": 22326,
+        "previous_sha256": "2ba475d3ae45a4f8a50d8be839019d1356e8644fd71bb2bcb84803398565d92e",
+        "sha256": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
+        "pinned_in": "scripts/qualification/cash-native-hosted.manifest.json"
+      },
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous_bytes": 88814,
+        "bytes": 89660,
+        "previous_sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57",
+        "sha256": "6c3ddda68247adb48a1dda8dda729787fdd86f2cc9101aadcec0035f2c555583",
+        "pinned_in": "scripts/qualification/cash-native-hosted.manifest.json"
+      }
+    ],
+    "corrected_captured_fixture": {
+      "path": "README.md",
+      "section": "fixtures",
+      "previous_sha256": "aa75b2abd5e0a58be26d9a89e3500553549af487f6849c5df3f8d8098bc0c1f9",
+      "sha256": "bf85e5a6a9e760cab02342baecece42bdd89c5ce78542775254da4853118979c",
+      "note": "Not a refresh. The fixtures section resolves against tests/fixtures/full-weekly-accounting, so \"README.md\" is that directory's README, which has never changed from the merge base. This branch carried the sha256 of the REPOSITORY ROOT README.md, a wrong value produced by an earlier repo-root pin recompute; protected main already held the correct fixture-relative value and the merge restores it. The file itself is byte-identical on the merge base, on this branch and on protected main."
+    },
+    "reason": "Integration of protected main 15477de6 into the MTT historical-bank-loss branch. scripts/ci/classify-ci-changes.mjs is the union of main's additive Diamond replay/SQL-acceptance and e2e helpers/css directory routing and this branch's additive f06 retired-origin and stopped-bank-custody routing: both sides only added alternatives to the f06HandAuthority selector and to separate selectors, no branch was removed or narrowed, so the merged bytes are new and every pin of that file moves. tests/unit/fixtureNativeCi.test.ts merged to this branch's exact bytes because main's only change to it (the six mixed-custody classification paths from #4907) is already contained here, so its pins return to the value this branch was qualified at. The three nested fixture-binding hashes move only because the bindings that contain those two pins changed. No accounting component, SQL, assertion, captured catalog fixture or limit changed.",
+    "verification": "python3 scripts/ci/verify-source-bindings.py re-read every pin map in every source-binding.json in the merged tree and reports 745 pins across 15 sections in 15 binding files all agreeing. python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py accepts the refreshed cash manifest in 6 cases. Every *.manifest.json files{} map in scripts/qualification was re-hashed against the tree: 151 pins, none stale. This refresh establishes no native financial execution and no production installation; the required hosted accounting job must still pass."
   }
 }

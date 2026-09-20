@@ -235,6 +235,8 @@ import TimebankCounter from '../components/table/TimebankCounter';
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
 import { parseTableArenaIdentity, seatCanAddFunds } from '../../server/src/domain/ArenaContext';
+import { arenaAssetUnitCents } from '../lib/arenaUnitCents';
+import { bootExplanation, seatCopy } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
 import { soundService, haptic } from '../services/SoundService';
 import {
@@ -334,6 +336,8 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useDialogEscape } from '../hooks/useDialogEscape';
 // RealtimeChannelService imported if needed for future use
 import {
+  seatFirstBuyInReasonIsKnown,
+  seatFirstBuyInRefusalText,
   tournamentService,
   tournamentUnregisterSuccessText,
   tournamentUnregisterWasAlreadyStarted,
@@ -469,7 +473,7 @@ const RANK_WORD = (r: string): string =>
   })[String(r).toUpperCase()] ?? String(r).toUpperCase();
 import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { getAnimationSpeed } from '../utils/animationSpeed';
-import { formatChipAward } from '../utils/format';
+import { formatAwardAtUnit, formatChipAward } from '../utils/format';
 import { bountyWinnersOf } from '../utils/bountyBroadcast';
 import { formatPopupText } from '../utils/popupStyle';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
@@ -1083,6 +1087,9 @@ interface TablePageProps {
     decision?: string;
     /** Time bank is burning at this table, as "1:absoluteDeadlineMs" or ''. */
     timeBank?: string;
+    /** `seatCanAddFunds` for this seat, so the tab bar's hamburger can drop
+     *  its Top Up items at a seat where they would do nothing (B12). */
+    canAddFunds?: boolean;
   }) => void;
   /** Whether this table is part of a multi-table session (hides own header if tab bar is shown) */
   isMultiTable?: boolean;
@@ -1431,26 +1438,9 @@ function buildSpinDrawFromRow(row: SpinDrawRow | null | undefined): SpinWheelDat
  */
 let enhancedViewHolders = 0;
 
-/**
- * Why a player was removed, in words they can act on.
- *
- * Module scope so BOTH boot paths quote the same sentence — they used to each
- * carry their own copy and the poll's had no per-reason text at all, so a
- * five-minute sit-out eviction that arrived by poll said only the generic line.
- * Title Case, no em dashes (Dan 2026-08-20): these are rendered through the
- * Toast layer, but a string that is already correct cannot be mangled by a
- * future change to it.
- */
-const BOOT_EXPLANATIONS: Record<string, string> = {
-  away_blind_cap:
-    'You Were Away, So We Cashed You Out After One Small Blind And One Big Blind. Your Chips Are Back In Your Wallet.',
-  sit_out_timeout: 'You Sat Out Too Long And Were Cashed Out. Your Chips Are Back In Your Wallet.',
-  abandoned_seat:
-    'You Were Disconnected For Five Minutes, So Your Seat Was Cashed Out. Your Chips Are Back In Your Wallet.',
-  busted_no_rebuy: 'You Ran Out Of Chips And Did Not Rebuy, So Your Seat Was Released.',
-  nit_game_vpip:
-    'This Table Has A Minimum VPIP And You Were Below It, So You Were Cashed Out. Your Chips Are Back In Your Wallet.',
-};
+/* Why a player was removed, in words they can act on: `bootExplanation` in
+   components/table/seatExitCopy, keyed by the seat's asset so a Diamond seat
+   is told about its Diamonds. Both boot paths quote the same sentence. */
 
 /**
  * A warmed seat row (services/tableWarmup) -> a felt player. The felt mounts
@@ -3217,13 +3207,36 @@ function LiveTablePage({
   >([]);
   const potWinFloatIdRef = useRef(0);
   const potWinFloatTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  /**
+   * THE GRID THIS TABLE PAYS ON (2026-09-20).
+   *
+   * `tableState.arenaAsset` has already been through `parseArenaIdentity`,
+   * which returns `'diamonds'` ONLY for a club row satisfying all three of the
+   * conditions `fn_ca_tournament_unit_cents` tests, and
+   * `parseTableArenaIdentity` additionally refuses a Diamond table under a
+   * union. So the asset on the table state IS the unit, and
+   * `arenaAssetUnitCents` reads it rather than deriving it a second time. An
+   * unread arena answers `UNIT_CENTS_ASSET_NOT_READ`, which is greppable.
+   *
+   * Two readers: the seat's bounty badge (a prop) and the knockout float (a
+   * ref, because `spawnPotWinFloat` is a stable callback with no deps and must
+   * not be rebuilt on every arena read).
+   */
+  const feltUnitCents = arenaAssetUnitCents(tableState.arenaAsset);
+  const feltUnitCentsRef = useRef(feltUnitCents);
+  feltUnitCentsRef.current = feltUnitCents;
+
   const spawnPotWinFloat = useCallback(
     (fromX: number, fromY: number, toX: number, toY: number, amount: number) => {
       if (!(amount > 0)) return;
       // EXACT TO THE CENT (knockout audit 2026-09-04). This used to be
       // Math.round() for anything >= 1, so a 7.50 bounty floated up as "+8"
       // beside a seat delta that said "+7.50". One formatter for both now.
-      const label = formatChipAward(amount);
+      /* AT THE UNIT THE TABLE PAYS ON (2026-09-20). `formatChipAward` is the
+         chip contract and is unchanged for a chip table; a Diamond award is a
+         whole Diamond and must not float up with a decimal point the payment
+         cannot contain. */
+      const label = formatAwardAtUnit(amount, feltUnitCentsRef.current);
       const id = ++potWinFloatIdRef.current;
       setPotWinFloats((prev) => [...prev, { id, fromX, fromY, toX, toY, label }]);
       // Self-clean after the CSS animation (2.2s) has fully played out.
@@ -4626,7 +4639,8 @@ function LiveTablePage({
       if (announce && !bootNoticeShownRef.current) {
         const say = heartbeatToastRef.current?.info;
         if (typeof say === 'function') {
-          const mapped = reason ? BOOT_EXPLANATIONS[reason] : undefined;
+          const seatAsset = tableStateRef.current.arenaAsset;
+          const mapped = bootExplanation(reason, seatAsset);
           /* Dan 2026-08-30: "THATS A CASH GAME PROMPT, NOT A TOURNAMENT
              PROMPT." A tournament seat closing with no mapped reason is
              almost always the balancer moving the player - the wallet line is
@@ -4640,7 +4654,7 @@ function LiveTablePage({
             say(mapped);
           } else if (!tableStateRef.current.isTournament) {
             bootNoticeShownRef.current = true;
-            say('You Were Removed From The Table. Your Chips Are Back In Your Wallet.');
+            say(seatCopy(seatAsset).removedFromTable);
           }
         }
       }
@@ -6325,6 +6339,10 @@ function LiveTablePage({
       sittingOut: heroTabSittingOut,
       sitOutDeadlineMs: heroTabSitOutDeadlineMs,
       isTournament: tableState.isTournament,
+      /* The tab bar cannot see the arena, so it is told the one rule's answer.
+         A Diamond tournament seat reports false and loses the two items that
+         this page would only have refused. */
+      canAddFunds: seatCanAddFunds(tableState.arenaAsset, tableState.isTournament),
       gameCode: heroTabGameCode,
       decision: heroTabDecision,
       timeBank: heroTabTimeBank,
@@ -6361,6 +6379,7 @@ function LiveTablePage({
        learn the deadline at all, and a stale one could persist. */
     heroTabSitOutDeadlineMs,
     tableState.isTournament,
+    tableState.arenaAsset,
     tableState.clusterId,
     onTableInfoUpdate,
   ]);
@@ -9641,7 +9660,7 @@ function LiveTablePage({
        still goes to the lobby, seat and chips staying on the table, tab open. */
     if (heroLeaveLocked) {
       goToLobbyKeepingSeat(
-        `${leaveAvailableLabel(heroLeaveMs)}. Your Seat And Chips Stay On The Table, Tap Its Tab To Return.`
+        `${leaveAvailableLabel(heroLeaveMs)}. ${seatCopy(tableState.arenaAsset).seatStaysTapToReturn}`
       );
       return;
     }
@@ -9854,7 +9873,7 @@ function LiveTablePage({
           // or "Leave Available In 2:30" is still said, followed by what it
           // means for the chips.
           goToLobbyKeepingSeat(
-            `${result.error}. Your Seat And Chips Stay On The Table, Tap Its Tab To Return And Cash Out.`
+            `${result.error}. ${seatCopy(tableState.arenaAsset).seatStaysTapToReturnAndCashOut}`
           );
         } else {
           // Dan 2026-08-20 (leave-stuck fix): no error means the player
@@ -9880,9 +9899,7 @@ function LiveTablePage({
       }
     } catch (error) {
       reportError(error, 'TablePage.Exception');
-      goToLobbyKeepingSeat(
-        'Could Not Cash Out Yet. Your Seat And Chips Stay On The Table, Tap Its Tab To Return.'
-      );
+      goToLobbyKeepingSeat(seatCopy(tableState.arenaAsset).couldNotCashOutYet);
     }
   };
 
@@ -9969,7 +9986,7 @@ function LiveTablePage({
            it), but the player is not held on the felt: same rule as the menu
            door, the view is always allowed to leave. */
         goToLobbyKeepingSeat(
-          `${forced.error}. Your Seat And Chips Stay On The Table, Tap Its Tab To Return And Cash Out.`
+          `${forced.error}. ${seatCopy(tableState.arenaAsset).seatStaysTapToReturnAndCashOut}`
         );
         return;
       }
@@ -14975,7 +14992,7 @@ function LiveTablePage({
       st.lossToastShown = true;
       heartbeatToastRef.current?.warning?.(
         heroIsSeated
-          ? 'Still reconnecting. Your seat and chips are safe on the server.'
+          ? seatCopy(tableStateRef.current.arenaAsset).reconnectingSeated
           : 'Still reconnecting. The table will resume when the connection returns.'
       );
       // Seated only: the disconnect tone is a warning that the server may
@@ -18654,6 +18671,85 @@ function LiveTablePage({
         } as any);
         break;
       }
+      /* THE END OF A TIME BANK, THE STRADDLE, AND THE PRE-ACTION THAT PLAYED
+         ITSELF (2026-09-20).
+
+         Three events with live subscribers in this file and in useTableChat,
+         and no `case` to put them on the bus. The engines raise all three; the
+         server now broadcasts them (ServerTableEngineBase: the time bank's
+         terminal events and PRE_ACTION_EXECUTED were added there the same day,
+         STRADDLE_TOGGLED has been on the hub since 2026-09-08). Arriving here
+         with no case, each one fell off the end of this switch.
+
+         What that cost, in order:
+           - `setTimeBankActive(false)` has exactly one caller,
+             persistTimeBankState below, subscribed to TIME_BANK_STOPPED /
+             _DEPLETED / _EXPIRED. TIME_BANK_ACTIVATED (its own case above) set
+             the badge to true; nothing ever set it back.
+           - The straddle notice in table chat is raised from STRADDLE_TOGGLED.
+             The player who pressed the button sees their own switch move
+             because handleToggleStraddle POSTs and updates locally; every
+             other seat learned nothing.
+           - "Player 1a2b auto-folded" is built from PRE_ACTION_EXECUTED. The
+             pre-action worked; the table was never told it had happened.
+
+         Normalised on the way to the bus for the same reason every case in
+         this block is: the hub speaks snake_case and the subscribers read
+         camelCase - the exact drop that made TIME_BANK_ACTIVATED look
+         intermittent for months. Nothing is defaulted here that the
+         subscriber already defaults for itself. */
+      case 'TIME_BANK_STOPPED':
+      case 'TIME_BANK_DEPLETED':
+      case 'TIME_BANK_EXPIRED': {
+        const d = (evt.data ?? {}) as Record<string, unknown>;
+        const bankEnded = {
+          ...d,
+          tableId: (d.tableId as string) || (d.table_id as string) || tableId || '',
+          playerId: (d.playerId as string) || (d.player_id as string) || '',
+          secondsUsed: (d.secondsUsed as number) ?? (d.seconds_used as number),
+          remainingSeconds: (d.remainingSeconds as number) ?? (d.remaining_seconds as number),
+          usesRemaining: (d.usesRemaining as number) ?? (d.uses_remaining as number),
+        } as any;
+        /* Named one at a time rather than `masterBus.emit(evt.type, …)`.
+           tests/unit/noDeadBusSubscriptions.test.ts is the mechanical guard
+           against a subscriber nobody publishes to - the defect being repaired
+           here - and it finds publishers by scanning for a LITERAL event name
+           at the emit. A computed name is invisible to it, so these three
+           would still read as dead while working perfectly: the next person to
+           audit the list would be told, correctly, that nothing emits them.
+           The case above this one has that problem today and is only covered
+           because TableWebSocket.ts emits TIME_BANK_ACTIVATED by name. */
+        if (evt.type === 'TIME_BANK_STOPPED') masterBus.emit('TIME_BANK_STOPPED', bankEnded);
+        else if (evt.type === 'TIME_BANK_DEPLETED') masterBus.emit('TIME_BANK_DEPLETED', bankEnded);
+        else masterBus.emit('TIME_BANK_EXPIRED', bankEnded);
+        break;
+      }
+      case 'STRADDLE_TOGGLED': {
+        const d = (evt.data ?? {}) as Record<string, unknown>;
+        masterBus.emit('STRADDLE_TOGGLED', {
+          ...d,
+          tableId: (d.tableId as string) || (d.table_id as string) || tableId || '',
+          playerId: (d.playerId as string) || (d.player_id as string) || '',
+          enabled: d.enabled === true,
+        } as any);
+        break;
+      }
+      case 'PRE_ACTION_EXECUTED': {
+        const d = (evt.data ?? {}) as Record<string, unknown>;
+        masterBus.emit('PRE_ACTION_EXECUTED', {
+          ...d,
+          tableId: (d.tableId as string) || (d.table_id as string) || tableId || '',
+          /* The chat line calls .substring(0, 4) on this, so it is a string
+             here or the notice throws inside the subscriber. */
+          playerId: (d.playerId as string) || (d.player_id as string) || '',
+          action: String(d.action ?? ''),
+          /* A fold or a check commits nothing and the engine leaves `amount`
+             unset for both; 0 is that fact, not a guess. No subscriber reads
+             it today - it is carried because the bus payload declares it. */
+          amount: Number(d.amount ?? 0),
+        } as any);
+        break;
+      }
       case 'LEVEL_UP': {
         masterBus.emit('TOURNAMENT_LEVEL_UP', evt.data as any);
         break;
@@ -19638,6 +19734,9 @@ function LiveTablePage({
           seats_taken?: number;
           seats_needed?: number;
           starts_now?: boolean;
+          cost?: number;
+          asset?: string;
+          diamonds_after?: number | null;
         };
 
         if (error || !res.ok) {
@@ -19716,10 +19815,7 @@ function LiveTablePage({
              anywhere. The toast stays generic for the player, but the RAW
              reason now reaches error reporting, so the next unknown refusal
              is a searchable event instead of a dead end. */
-          const mappedReason =
-            /seat_taken|insufficient|already_started|game_already_started|tournament_full|not_a_seat_first_game|table_limit_reached|FOUR TABLE LIMIT/.test(
-              reason
-            );
+          const mappedReason = seatFirstBuyInReasonIsKnown(reason);
           if (!mappedReason) {
             reportError(
               new Error(`seat_first_buy_in refused: ${reason || 'no_reason_given'}`),
@@ -19727,25 +19823,25 @@ function LiveTablePage({
               { tableId, seatNumber, reason }
             );
           }
-          toast?.error?.(
-            /seat_taken/.test(reason)
-              ? 'That Seat Was Just Taken'
-              : /insufficient/.test(reason)
-                ? 'Not Enough Chips For This Buy In'
-                : /already_started|game_already_started/.test(reason)
-                  ? 'This Game Has Already Started'
-                  : /tournament_full/.test(reason)
-                    ? 'This Game Is Full'
-                    : /not_a_seat_first_game/.test(reason)
-                      ? 'Seats Are Not For Sale At This Table'
-                      : /table_limit_reached|FOUR TABLE LIMIT/.test(reason)
-                        ? 'You Are Already In Four Games, Leave One To Join Another'
-                        : 'Could Not Take That Seat, Please Try Again'
-          );
+          /* Diamond Phase 8: a Diamond seat purchase answers with the Diamond
+             reasons; the text lives beside the lobby door's so both say the
+             same thing. */
+          toast?.error?.(seatFirstBuyInRefusalText(reason));
           return;
         }
 
         // Paid. The seat is ours — paint it and close the sheet.
+        /* Diamond Phase 8: a Diamond seat left the Diamond wallet, not a club
+           chip wallet, and no engine pushes that balance; the receipt carries
+           it (asset + diamonds_after), exactly as the lobby register receipt
+           does. Absent on the idempotent already_seated answer. */
+        if (res.asset === 'diamonds' && typeof res.diamonds_after === 'number') {
+          masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+            newBalance: res.diamonds_after,
+            delta: -Number(res.cost ?? 0),
+            source: 'tournament_seat_first_buy_in',
+          });
+        }
         const mySeat = res.seat_number ?? seatNumber;
         heroSeatRef.current = mySeat;
         // Taking a seat is the one thing that clears the left-seat latch.
@@ -22794,7 +22890,7 @@ function LiveTablePage({
                 soundService.playButtonClick();
                 if (tableState.heroSeat > 0) setShowCashier(true);
               }}
-              title="Add Chips"
+              title={seatCopy(tableState.arenaAsset).addFunds}
             >
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
                 <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5" />
@@ -24518,6 +24614,11 @@ function LiveTablePage({
                       ? tableState.bountyMap[player.id]
                       : undefined
                   }
+                  /* THE GRID THIS TABLE PAYS ON (2026-09-20). `arenaAsset` has
+                     been through `parseArenaIdentity`, which writes 'diamonds'
+                     only for a row satisfying all three conditions
+                     `fn_ca_tournament_unit_cents` tests, so it IS the unit. */
+                  bountyUnitCents={feltUnitCents}
                   isWinner={
                     winnerBandActive && player ? winnerInfo.playerIds.includes(player.id) : false
                   }
@@ -24973,9 +25074,9 @@ function LiveTablePage({
                 onClick={() => void commitSeatFirstBuyIn(seatFirstConfirm)}
               >
                 {seatFirstPending
-                  ? 'Taking Your Chips'
+                  ? seatCopy(tableState.arenaAsset).takingYourFunds
                   : accountBalance !== null && Number(accountBalance) < seatFirstBuyIn.cost
-                    ? 'Not Enough Chips'
+                    ? seatCopy(tableState.arenaAsset).notEnoughFunds
                     : `Buy In ${seatFirstBuyIn.cost.toLocaleString()}`}
               </button>
             </div>
@@ -25154,7 +25255,7 @@ function LiveTablePage({
                    one, or leaving looks like the rational move (it did, at
                    18:06Z today). */
                 if (left > 0 && seatFirstWaitLong) {
-                  return 'Still Filling Your Game, Your Seat And Chips Are Safe';
+                  return seatCopy(tableState.arenaAsset).stillFillingSeatIsSafe;
                 }
                 return left === 1
                   ? 'Seat Reserved, Waiting For 1 More Player'

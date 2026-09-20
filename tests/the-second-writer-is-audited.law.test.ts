@@ -117,3 +117,90 @@ describe('the second writer is audited against the register', () => {
     expect(crons, 'no new scheduled trigger (CLAUDE.md 10.85)').toBeLessThanOrEqual(2);
   });
 });
+
+/**
+ * THE ROLE THE CALL RUNS AS (2026-09-19).
+ *
+ * Every EXECUTE verdict was asked of `service_role`, because almost every
+ * World Hub route holds the service key. Five do not: they build a client from
+ * the anon key and forward the caller's Authorization header, so the RPC runs
+ * as `authenticated` and the door reads auth.uid().
+ *
+ * Measured over 1,159 files and 332 calls: 41 service-role, 5 user-scoped, 286
+ * whose client is not resolvable from the call site. The wrong role was wrong
+ * both ways.
+ *
+ *   FALSE POSITIVE  send_wallet_diamond_transfer is granted to authenticated
+ *                   and deliberately not to service_role. The audit called a
+ *                   working route "permission denied on every call". It was
+ *                   the only error in the run and it kept Schema Integrity
+ *                   Audit red.
+ *   FALSE NEGATIVE  fn_mint_chips_from_diamonds and send_stream_gift are
+ *                   approved money doors on user-scoped routes. The grant they
+ *                   actually need is to authenticated, and nothing asked.
+ *                   Revoking it would have broken the mint, green.
+ *
+ * The part that keeps this safe is the fallback. Unknown is service_role,
+ * which is what all 332 calls were before, so this narrows nothing.
+ */
+describe('a user-scoped route is checked as the role it uses', () => {
+  const roleFile = readdirSync(MIGRATIONS)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .find((f) => f.includes('a_user_scoped_route_is_checked_as_the_role_it_uses'));
+  const roleSql = roleFile ? readFileSync(join(MIGRATIONS, roleFile), 'utf8') : '';
+
+  it('the migration exists and edits the live body with an asserted match count', () => {
+    expect(roleFile, 'the role-aware migration must not be deleted').toBeTruthy();
+    // ca_patch refuses rather than half-patching a body that has moved on.
+    expect(roleSql).toContain('CREATE FUNCTION pg_temp.ca_patch(');
+    expect([...roleSql.matchAll(/pg_temp\.ca_patch\('fn_ca_second_writer_check'/g)]).toHaveLength(
+      4
+    );
+  });
+
+  it('the privilege question names the role instead of one hard-coded role', () => {
+    expect(roleSql).toContain("bool_or(has_function_privilege('service_role', p.oid, 'EXECUTE')),");
+    expect(roleSql).toContain("bool_or(has_function_privilege(v_role, p.oid, 'EXECUTE')),");
+    // And the finding says which role it asked about, because a permission
+    // error pointing at the wrong role is what cost the last ten days.
+    expect(roleSql).toContain("'kind', 'not_executable_by_' || v_role");
+  });
+
+  it('it fails closed: an unknown role is service_role, exactly as before', () => {
+    expect(roleSql).toMatch(
+      /v_role := c->>'role';[\s\S]{0,400}NOT IN \('service_role', 'authenticated'\)[\s\S]{0,200}v_role := 'service_role';/
+    );
+  });
+
+  it('the migration proves both directions against the real call before it commits', () => {
+    // One direction alone proves nothing: passing the user-scoped call is also
+    // what a blanket "always true" would do.
+    expect(roleSql).toContain('send_wallet_diamond_transfer');
+    expect(roleSql).toMatch(/jsonb_set\(v_payload, '\{0,role\}', '"authenticated"'::jsonb\)/);
+    expect(roleSql).toMatch(/failed: the user-scoped diamond transfer call still reports/);
+    expect(roleSql).toMatch(/a call with no declared role must still be checked as service_role/);
+  });
+
+  it('the scanner reads which client the call was made on, structurally', () => {
+    expect(script).toContain('export function clientRoleOf(source, receiver)');
+    // Balanced brackets, not a fixed window: a client written over several
+    // lines would otherwise lose its Authorization header and be downgraded.
+    expect(script).toMatch(/objectBody\(source, m\.index \+ m\[0\]\.length - 1\)/);
+    expect(script).toMatch(/SERVICE_ROLE\|serviceRole/);
+    expect(script).toMatch(/ANON_KEY\|anonKey/);
+    // And it travels with the call, all the way to the database.
+    expect(script).toMatch(/role: clientRoleOf\(source, recv \? recv\[1\] : null\)/);
+    expect(script).toMatch(
+      /\.map\(\(\{ file, line, fn, keys, role \}\) => \(\{ file, line, fn, keys, role \}\)\)/
+    );
+  });
+
+  it('the rpc pattern itself was not widened, because that is how a call stops being seen', () => {
+    // The receiver is read backwards from the match. Folding it into the rpc
+    // regex would silently drop every call whose receiver is an expression.
+    expect(script).toContain(
+      'const rpcRe = /\\.rpc\\(\\s*[\'"]([A-Za-z0-9_]+)[\'"]\\s*(,\\s*)?/g;'
+    );
+  });
+});

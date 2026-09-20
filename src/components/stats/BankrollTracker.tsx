@@ -124,11 +124,9 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
           <h3>Bankroll Tracker</h3>
           <p className="bankroll-subtitle">No Cash Sessions To Chart ({windowLabel})</p>
         </div>
-        <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'rgba(255,255,255,0.5)' }}>
-          <span style={{ fontSize: '2rem' }}>--</span>
-          <p style={{ marginTop: '0.5rem' }}>
-            Play Some Cash Sessions And Your Bankroll Progression Will Appear Here.
-          </p>
+        <div className="bankroll-empty">
+          <span className="bankroll-empty-label">Awaiting Session Ledger</span>
+          <p>Play Some Cash Sessions And Your Bankroll Progression Will Appear Here.</p>
         </div>
       </div>
     );
@@ -186,8 +184,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
               contentStyle={{
                 background: 'rgba(14, 14, 28, 0.95)',
                 border: '1px solid rgba(0, 212, 255, 0.2)',
-                borderRadius: '8px',
-                backdropFilter: 'blur(16px)',
+                borderRadius: '2px',
               }}
               labelStyle={{ color: '#fff' }}
               formatter={(value, name) => {
@@ -229,24 +226,19 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
 
       <div className="bankroll-stats">
         <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-icon peak">▲</div>
+          <div className="stat-card stat-card--peak">
             <div className="stat-content">
               <span className="stat-label">Window High</span>
               <span className="stat-value">{peak.toLocaleString()}</span>
             </div>
           </div>
-          <div className="stat-card">
-            <div className="stat-icon trough">▼</div>
+          <div className="stat-card stat-card--trough">
             <div className="stat-content">
               <span className="stat-label">Window Low</span>
               <span className="stat-value">{trough.toLocaleString()}</span>
             </div>
           </div>
-          <div className="stat-card">
-            <div className="stat-icon" style={{ color: '#ef4444' }}>
-              --
-            </div>
+          <div className="stat-card stat-card--drawdown">
             <div className="stat-content">
               <span className="stat-label">Max Drawdown</span>
               <span
@@ -257,8 +249,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
               </span>
             </div>
           </div>
-          <div className="stat-card">
-            <div className="stat-icon total">▪</div>
+          <div className="stat-card stat-card--total">
             <div className="stat-content">
               <span className="stat-label">Window P/L</span>
               <span className="stat-value" style={{ color: trendColor }}>
@@ -267,10 +258,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
               </span>
             </div>
           </div>
-          <div className="stat-card">
-            <div className="stat-icon" style={{ color: '#10b981' }}>
-              ✓
-            </div>
+          <div className="stat-card stat-card--winning">
             <div className="stat-content">
               <span className="stat-label">Winning Sessions</span>
               <span className="stat-value" style={{ color: '#10b981' }}>
@@ -278,10 +266,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
               </span>
             </div>
           </div>
-          <div className="stat-card">
-            <div className="stat-icon" style={{ color: '#ef4444' }}>
-              ✗
-            </div>
+          <div className="stat-card stat-card--losing">
             <div className="stat-content">
               <span className="stat-label">Losing Sessions</span>
               <span className="stat-value" style={{ color: '#ef4444' }}>

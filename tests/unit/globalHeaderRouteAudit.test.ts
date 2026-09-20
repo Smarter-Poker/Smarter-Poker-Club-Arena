@@ -27,6 +27,7 @@ const allPaths = routePaths(APP);
 const INTENTIONAL_EXCEPTIONS = [
   '/auth',
   '/share/hand/:handId',
+  '/bonus-replay/:shareId',
   '/replay',
   '/sim',
   '/dev/footer',
@@ -51,7 +52,7 @@ describe('the complete route manifest inherits one global header', () => {
     // +1 for advertise (2026-09-13): the outside sponsor's door, no club in
     // the path, same page in sponsor mode. Same header, same way back.
     // +6 for the Diamond Games player pages and operator consoles.
-    expect(allPaths).toHaveLength(144); // +2 management consoles, +1 financial decision harness, +1 sponsor advertise
+    expect(allPaths).toHaveLength(145); // Includes the public, explicitly shared bonus replay.
     expect(allPaths).toContain('clubs/:clubId/create-table/:gameType');
     expect(allPaths).toContain('messages/clubs/:conversationId');
     expect(allPaths).toContain('*');

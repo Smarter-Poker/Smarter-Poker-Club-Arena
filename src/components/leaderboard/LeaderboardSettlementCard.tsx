@@ -1,4 +1,5 @@
 import type { LeaderboardSettlementStatus } from '../../services/LeaderboardService';
+import { compactChips } from '../../utils/format';
 import './LeaderboardSettlementCard.css';
 
 interface LeaderboardSettlementCardProps {
@@ -65,8 +66,7 @@ export function LeaderboardSettlementCard({
   if (loading && !status) {
     return (
       <section className="lb-settlement-card is-loading" aria-label="Leaderboard Settlement">
-        <span className="lb-settlement-skeleton wide" />
-        <span className="lb-settlement-skeleton" />
+        <p role="status">Verifying Settlement Status...</p>
       </section>
     );
   }
@@ -116,14 +116,18 @@ export function LeaderboardSettlementCard({
             Retry Active
           </span>
         )}
+        {status.state !== 'open' && status.program && status.program.rewards_enabled && (
+          /* The tie rule is the same in every settled state, so a player
+             reading a pending, delayed or paid round sees the policy their
+             rank was resolved under, not only the live round's copy. */
+          <span className="lb-settlement-rule">Tied Places Share Their Occupied Prizes.</span>
+        )}
       </div>
 
       <dl className="lb-settlement-ledger">
         <div>
           <dt>{status.state === 'paid' ? 'Paid' : 'Prize Pool'}</dt>
-          <dd>
-            {(status.batch?.total_paid ?? status.planned_total).toLocaleString('en-US')} Chips
-          </dd>
+          <dd>{compactChips(status.batch?.total_paid ?? status.planned_total)} Chips</dd>
         </div>
         <div>
           <dt>{status.state === 'paid' ? 'Winners' : 'Program'}</dt>
@@ -138,7 +142,14 @@ export function LeaderboardSettlementCard({
         {status.batch && (
           <div>
             <dt>Funding</dt>
-            <dd>Promo Only</dd>
+            {/* The batch row records exactly which pool paid: a club's one-time
+                leaderboard seed is drawn down first, the Promo Wallet covers the
+                rest. Print what the ledger says rather than a fixed label. */}
+            <dd>
+              {status.batch.seed_funded > 0
+                ? `Seed ${compactChips(status.batch.seed_funded)} And Promo ${compactChips(status.batch.promo_funded)} Chips`
+                : 'Promo Wallet'}
+            </dd>
           </div>
         )}
       </dl>
@@ -146,7 +157,7 @@ export function LeaderboardSettlementCard({
       {ownReceipt && (
         <div className="lb-settlement-receipt">
           <span>Your Verified Receipt</span>
-          <strong>{ownReceipt.payout_amount.toLocaleString('en-US')} Chips</strong>
+          <strong>{compactChips(ownReceipt.payout_amount)} Chips</strong>
           <small>
             Rank {ownReceipt.rank} · Receipt {ownReceipt.id.slice(0, 8).toUpperCase()}
           </small>

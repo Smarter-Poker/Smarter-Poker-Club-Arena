@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { WheelSegment, WheelSpinResult } from '../../services/DiamondWheelService';
 import DiamondWheel from './DiamondWheel';
 import { WheelWinReveal } from './WheelWinReveal';
+import { diamondGameTitle } from '../../utils/diamondGameTitles';
 import styles from './WheelExperience.module.css';
 
 const inventoryNames: Record<string, string> = {
@@ -10,15 +11,8 @@ const inventoryNames: Record<string, string> = {
   rabbit_hunt: 'Rabbit Hunt',
 };
 
-const gameNames = {
-  plinko: 'Diamond Plinko',
-  crash: 'Diamond Crash',
-  crossing: 'Donkey Cross',
-  mines: 'Diamond Mines',
-};
-
 export function wheelPrizeTitle(prize: WheelSpinResult['outcome']): string {
-  if (prize.kind === 'bonus' && prize.game) return gameNames[prize.game];
+  if (prize.kind === 'bonus' && prize.game) return diamondGameTitle(prize.game, prize.multiplier);
   if (prize.kind === 'upgrade') return 'Bonus Upgrade';
   const amount = prize.amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
   if (prize.kind === 'chips') return `${amount} ${prize.amount === 1 ? 'Chip' : 'Chips'}`;
@@ -45,6 +39,7 @@ export function WheelExperience({
   onFinished,
   size,
   autoContinue = false,
+  fitViewport = false,
 }: {
   segments: WheelSegment[];
   upgradeSegments?: WheelSegment[];
@@ -54,19 +49,21 @@ export function WheelExperience({
   onFinished: () => void;
   size: number;
   autoContinue?: boolean;
+  fitViewport?: boolean;
 }) {
   const [phase, setPhase] = useState<'primary' | 'prize' | 'secondary' | 'bonus' | 'finished'>(
     'primary'
   );
   const secondary = phase === 'secondary' || phase === 'bonus';
+  const expanded = phase !== 'primary' && receipt?.outcome.kind === 'upgrade';
   const upperSegments = receipt?.secondary?.segments ?? upgradeSegments;
   const mainStage = useRef<HTMLDivElement>(null);
   const upgradeStage = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!spinning || (phase !== 'primary' && phase !== 'secondary')) return;
+    if (fitViewport || !spinning || (phase !== 'primary' && phase !== 'secondary')) return;
     const stage = phase === 'secondary' ? upgradeStage.current : mainStage.current;
     stage?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-  }, [spinning, phase]);
+  }, [spinning, phase, fitViewport]);
   const prize = secondary ? receipt?.secondary?.outcome : receipt?.outcome;
   const showPrize = (phase === 'prize' || phase === 'bonus') && prize && receipt;
   const finish = () => {
@@ -79,6 +76,8 @@ export function WheelExperience({
         className={styles.stack}
         role="group"
         data-wheel-assembly="concentric"
+        data-upgrade-reveal={expanded ? 'open' : 'peek'}
+        data-fit-viewport={fitViewport || undefined}
         aria-label="Diamond Spins Prize Wheel"
       >
         {upperSegments.length > 0 && (
@@ -93,8 +92,10 @@ export function WheelExperience({
               spinKey={spinKey}
               spinning={spinning && phase === 'secondary'}
               upgraded
-              showSelector={phase !== 'primary' && receipt?.outcome.kind === 'upgrade'}
+              upgradeExpanded={expanded}
+              showSelector={expanded}
               idleDirection={-1}
+              fitViewport={fitViewport}
               size={size}
               presentation="assembly"
               onLanded={() => setPhase('bonus')}
@@ -104,10 +105,12 @@ export function WheelExperience({
         <div className={styles.mainStage} ref={mainStage}>
           <DiamondWheel
             segments={segments}
+            faceScale={upperSegments.length > 0 ? (expanded ? 0.56 : 0.91) : 1}
             presentation="assembly"
             landingOrd={receipt?.outcome.ord ?? null}
             spinKey={spinKey}
             spinning={spinning && phase === 'primary'}
+            fitViewport={fitViewport}
             size={size}
             onLanded={() => {
               if (receipt?.outcome.kind === 'nothing') finish();

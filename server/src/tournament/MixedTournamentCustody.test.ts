@@ -393,6 +393,12 @@ it('process replacement retains source recovery gate after terminal hand adoptio
   expect(owner.isF06RecoveryOwner()).toBe(true);
   expect(resume).not.toHaveBeenCalled();
   expect(await replacement.drainHands(0)).toEqual({ drained: 0, total: 1, timedOut: true });
+  // The real constructor runs, so every field unparkedTables() reads holds its
+  // own initial value. This replaced an Object.create(MaintenanceBreak.prototype)
+  // stub that had to list them by hand: #4909 added the F06 unresolved clock
+  // after that stub was written and the list went stale silently - the method
+  // reached .keys() on undefined. Only the two values this proof asserts about
+  // are assigned below.
   const maintenance = new MaintenanceBreak({
     engines: () => [],
     retainedPreparationBlockers: () => replacement.mixedF06PreparationBlockers(),

@@ -6,9 +6,10 @@ import {
   DEFAULT_TOP_BOUNTY_PERCENT,
   resolveMysteryBountyProfile,
 } from '../config/mysteryBountySpec.js';
-import { buildInventory, poolCentsFromNumeric } from './mysteryBountyPool.js';
+import { buildInventoryAtUnit, poolCentsFromNumeric } from './mysteryBountyPool.js';
 import { shuffleChests } from './mysteryBountyDraw.js';
 import { mysteryPoolCents, shouldActivateMysteryBounty } from './mysteryBountyActivation.js';
+import { CHIP_UNIT_CENTS, DIAMOND_UNIT_CENTS } from './tournamentUnit.js';
 
 // Execute the production method and production inventory/predicate helpers.
 // The database transport is controlled; this is not a PostgreSQL funding proof.
@@ -41,6 +42,9 @@ function fixture(
     response?: { data: unknown; error: unknown };
     /** fn_mystery_bounty_unrecorded_head_cents' answer (20260911094503). */
     unrecorded?: { data: unknown; error: unknown };
+    /** The unit the manager read from the club: a cent, a Diamond, or null
+     *  when the club could not be read (Diamond Phase 9). */
+    unit?: number | null;
   } = {}
 ) {
   const fresh = {
@@ -82,7 +86,7 @@ function fixture(
     'shouldActivateMysteryBounty',
     'resolveMysteryBountyProfile',
     'DEFAULT_TOP_BOUNTY_PERCENT',
-    'buildInventory',
+    'buildInventoryAtUnit',
     'shuffleChests',
     compiled
   )(
@@ -94,7 +98,7 @@ function fixture(
     shouldActivateMysteryBounty,
     resolveMysteryBountyProfile,
     DEFAULT_TOP_BOUNTY_PERCENT,
-    buildInventory,
+    buildInventoryAtUnit,
     shuffleChests
   );
   const subject = Object.assign(new Subject(), {
@@ -104,6 +108,9 @@ function fixture(
     mysteryBountySeeding: false,
     prizePoolFinalized: options.memoryFinalized ?? false,
     allTablesBetweenHands: vi.fn(() => options.betweenHands ?? true),
+    // Diamond Phase 9: the unit the manager read beside the tournament row;
+    // a chip event unless the case says otherwise, null when not read.
+    tournamentUnit: vi.fn(() => (options.unit === undefined ? CHIP_UNIT_CENTS : options.unit)),
     broadcast: vi.fn(async () => undefined),
   });
   return { subject, rpc, query, reportError, seedCalls };
@@ -220,6 +227,35 @@ describe('mystery activation uses the closed entry pool', () => {
     expect(f.subject.mysteryBountySeeding).toBe(false);
     expect(f.subject.broadcast).not.toHaveBeenCalled();
     expect(f.reportError).toHaveBeenCalledOnce();
+  });
+
+  it('seeds a Diamond event with chests in whole Diamonds (Diamond Phase 9)', async () => {
+    const f = fixture({ finalized: true, unit: DIAMOND_UNIT_CENTS });
+    await f.subject.maybeActivateMysteryBounty(27);
+    const [name, args] = f.seedCalls()[0] as unknown as [
+      string,
+      { p_chests: { amount_cents: number }[] },
+    ];
+    expect(name).toBe('fn_mystery_bounty_seed');
+    expect(args.p_chests).toHaveLength(26);
+    expect(args.p_chests.reduce((sum, c) => sum + c.amount_cents, 0)).toBe(50_000);
+    for (const c of args.p_chests) {
+      expect(c.amount_cents % DIAMOND_UNIT_CENTS).toBe(0);
+      expect(c.amount_cents).toBeGreaterThanOrEqual(DIAMOND_UNIT_CENTS);
+    }
+    expect(f.subject.mysteryBountyStage).toBe('active');
+  });
+
+  it('does not seed an event whose unit it has not read (Diamond Phase 9)', async () => {
+    const f = fixture({ finalized: true, unit: null });
+    await f.subject.maybeActivateMysteryBounty(27);
+    expect(f.seedCalls()).toHaveLength(0);
+    expect(f.subject.mysteryBountyStage).toBe('pending');
+    expect(f.subject.broadcast).not.toHaveBeenCalled();
+    expect(f.reportError).toHaveBeenCalledWith(
+      expect.any(Error),
+      'Tournament.mystery_bounty_unit_unknown'
+    );
   });
 
   it('adopts an already stored active stage without another seed or announcement', async () => {

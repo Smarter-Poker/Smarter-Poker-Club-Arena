@@ -39,12 +39,14 @@ describe('cinematic retained route families', () => {
     expect(source).toContain('data-arena-surface="play"');
   });
 
-  it('preserves the championship-native leaderboard visual authority', () => {
+  it('uses the user-approved painted console for championship leaderboards', () => {
+    // Dan explicitly approved replacing the protected Championship Deck design.
     const source = readFileSync('src/pages/LeaderboardPage.tsx', 'utf8');
-    expect(source).toContain('data-arena-surface="championship"');
-    expect(source).toContain('className="lb-hero"');
-    expect(source).toContain('Club Arena / Championship Deck');
-    expect(existsSync('public/images/leaderboard/championship-machine.jpg')).toBe(true);
+    expect(source).toContain('data-arena-surface="leaderboard-console"');
+    expect(source).toContain('<SpadeConsole');
+    expect(source).toContain('eyebrow="Club Arena"');
+    expect(source).not.toContain('className="lb-hero"');
+    expect(existsSync('public/assets/club-buttons/console/spade-console-v1/top.png')).toBe(true);
   });
 
   it('preserves the mission-native Daily Challenges visual authority', () => {
@@ -78,6 +80,22 @@ describe('cinematic retained route families', () => {
 
     expect(diamond).toMatchObject({ width: 96, height: 96, hasAlpha: true });
     expect(freeze).toMatchObject({ width: 720, height: 720, hasAlpha: true });
+  });
+
+  it('uses a native-ratio text-free Challenge Vault render at the primary lobby door', async () => {
+    const config = readFileSync('src/config/lobbyTiles.config.ts', 'utf8');
+    const home = readFileSync('src/pages/HomePage.tsx', 'utf8');
+    const homeCss = readFileSync('src/pages/HomePage.module.css', 'utf8');
+    const tile = await sharp('public/images/tiles/daily-challenges-v9.webp').metadata();
+
+    expect(tile).toMatchObject({ width: 1024, height: 1536, hasAlpha: false });
+    expect(config).toContain('images/tiles/daily-challenges-v9.webp');
+    expect(config).not.toContain('images/tiles/daily-challenges-v8.jpg');
+    expect(config).toContain("portalStatus: 'Open Challenge Vault'");
+    expect(home).toContain('width={tile.width || 640}');
+    expect(home).toContain('height={tile.height || 1024}');
+    expect(home).toContain('tile.preserveNativeRatio ? styles.tileImageNative');
+    expect(homeCss).toMatch(/\.tileImageNative\s*\{[^}]*object-fit:\s*contain/s);
   });
 
   it.each(UNION_PAGES)('%s uses the Union Network visual anchor', (path) => {

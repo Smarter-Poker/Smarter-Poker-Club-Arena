@@ -62,12 +62,14 @@ import {
   ordinal,
   placePrize,
   resolvePayoutStructure,
+  tournamentRowUnitCents,
 } from './types';
 import { tournamentService } from '../../../services/TournamentService';
 import { useMaintenanceBreak } from '../../../hooks/useMaintenanceBreak';
 import { serverNow } from '../../../utils/serverClock';
 import { reportError } from '../../../utils/errorReporter';
 import { formatBuyIn, money } from '../../../utils/buyIn';
+import { moneyWordAtUnit } from '../../../utils/format';
 import { spinMultiplierLabel } from '../../../utils/spinReveal';
 import RegistrationApprovalsPanel from '../RegistrationApprovalsPanel';
 import TournamentDealReview from '../TournamentDealReview';
@@ -351,6 +353,12 @@ export default function DetailOverviewTab({
 
   const payoutStructure = useMemo(() => resolvePayoutStructure(tournament) ?? [], [tournament]);
 
+  /* THE GRID THIS EVENT PAYS ON (2026-09-20). The place ladder below already
+     read it per row; the advertised top mystery chest is cents off
+     `fn_mystery_bounty_inventory` and needs the same answer, plus the noun
+     that goes with it. One reading, used by both. */
+  const overviewUnitCents = useMemo(() => tournamentRowUnitCents(tournament), [tournament]);
+
   /* ── Prize pool: the stored pool is authoritative, the guarantee is a floor. ── */
   const prize = useMemo(() => {
     return {
@@ -549,7 +557,10 @@ export default function DetailOverviewTab({
       rows.push({
         key: 'mysterytop',
         label: 'Top Mystery Bounty',
-        value: top > 0 ? `${formatCents(top)} Chips` : 'Drawn When The Mystery Phase Opens',
+        value:
+          top > 0
+            ? `${formatCents(top, overviewUnitCents)} ${moneyWordAtUnit(overviewUnitCents)}`
+            : 'Drawn When The Mystery Phase Opens',
         tone: 'accent',
       });
       rows.push({
@@ -574,7 +585,15 @@ export default function DetailOverviewTab({
       });
     }
     return rows;
-  }, [tournament, blindLevels, isRunning, isCompleted, field.entries, mysteryBounty?.inventory]);
+  }, [
+    tournament,
+    blindLevels,
+    isRunning,
+    isCompleted,
+    field.entries,
+    mysteryBounty?.inventory,
+    overviewUnitCents,
+  ]);
 
   /* ── Podium, for a finished event. ── */
   const podium = useMemo(() => {
@@ -596,11 +615,11 @@ export default function DetailOverviewTab({
           prizeValue: Number.isFinite(recorded)
             ? recorded
             : row && pool !== null
-              ? placePrize(pool, payoutStructure, row.place)
+              ? placePrize(pool, payoutStructure, row.place, overviewUnitCents)
               : 0,
         };
       });
-  }, [isCompleted, entries, payoutStructure, prize.ladder]);
+  }, [isCompleted, entries, payoutStructure, prize.ladder, overviewUnitCents]);
 
   /**
    * The runners-up list under the podium.

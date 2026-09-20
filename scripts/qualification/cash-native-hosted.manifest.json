@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 149836,
-      "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
+      "bytes": 151754,
+      "sha256": "eab4a307624077af69afd7daa1016aaa0265bf5fc980215fb3cafff8879532b9"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 17922,
-      "sha256": "5c312f7cd0ee2d451d3121df6366eb30189771c886e32b00280ef6ae39c2303a"
+      "bytes": 22326,
+      "sha256": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -137,12 +137,12 @@
         "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 17922,
-        "sha256": "5c312f7cd0ee2d451d3121df6366eb30189771c886e32b00280ef6ae39c2303a"
+        "bytes": 17771,
+        "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
-        "bytes": 89660,
-        "sha256": "6c3ddda68247adb48a1dda8dda729787fdd86f2cc9101aadcec0035f2c555583"
+        "bytes": 88814,
+        "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
       }
     },
     "mainIntegration": {
@@ -153,12 +153,12 @@
           "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 17922,
-          "sha256": "5c312f7cd0ee2d451d3121df6366eb30189771c886e32b00280ef6ae39c2303a"
+          "bytes": 17771,
+          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
-          "bytes": 89660,
-          "sha256": "6c3ddda68247adb48a1dda8dda729787fdd86f2cc9101aadcec0035f2c555583"
+          "bytes": 88814,
+          "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
         }
       },
       "reason": "Preserves accepted elimination, Spin fee, PKO and cash-week routes while adding the same retained-submission route; exact merged workflow and selector bytes."
@@ -172,12 +172,12 @@
           "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 17922,
-          "sha256": "5c312f7cd0ee2d451d3121df6366eb30189771c886e32b00280ef6ae39c2303a"
+          "bytes": 17771,
+          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
-          "bytes": 89660,
-          "sha256": "6c3ddda68247adb48a1dda8dda729787fdd86f2cc9101aadcec0035f2c555583"
+          "bytes": 88814,
+          "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
         }
       },
       "reason": "Compose both existing Accounting native routes and all routing assertions. Cash SQL and capture inputs unchanged."
@@ -189,12 +189,12 @@
           "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 17922,
-          "sha256": "5c312f7cd0ee2d451d3121df6366eb30189771c886e32b00280ef6ae39c2303a"
+          "bytes": 17771,
+          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
-          "bytes": 89660,
-          "sha256": "6c3ddda68247adb48a1dda8dda729787fdd86f2cc9101aadcec0035f2c555583"
+          "bytes": 88814,
+          "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
         }
       },
       "reason": "Pass the already-built PG_ISOLATION_TESTER artifact explicitly to the journal native runner; routing assertion reproduced missing environment before repair."
@@ -207,12 +207,12 @@
           "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 17922,
-          "sha256": "5c312f7cd0ee2d451d3121df6366eb30189771c886e32b00280ef6ae39c2303a"
+          "bytes": 17771,
+          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
-          "bytes": 89660,
-          "sha256": "6c3ddda68247adb48a1dda8dda729787fdd86f2cc9101aadcec0035f2c555583"
+          "bytes": 88814,
+          "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
         }
       },
       "reason": "Preserves final movement native metadata and result-validator correction, both qualification routes and exact merged source bytes; Cash SQL untouched."
@@ -222,12 +222,12 @@
     "reason": "Mixed custody qualification is routed through the existing accounting lane; both existing and retained-MTT selectors are preserved. Cash SQL and immutable fixture inputs are unchanged.",
     "previousPins": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 17922,
-        "sha256": "5c312f7cd0ee2d451d3121df6366eb30189771c886e32b00280ef6ae39c2303a"
+        "bytes": 17771,
+        "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
-        "bytes": 89660,
-        "sha256": "6c3ddda68247adb48a1dda8dda729787fdd86f2cc9101aadcec0035f2c555583"
+        "bytes": 88814,
+        "sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57"
       }
     }
   }

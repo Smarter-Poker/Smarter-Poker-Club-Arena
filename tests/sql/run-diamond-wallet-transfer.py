@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Phase 4 transfer behavior against an isolated PostgreSQL database."""
+import os
 import concurrent.futures,json,subprocess,uuid
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
-PG='/opt/homebrew/opt/postgresql@17/bin/'
+PG_BIN = os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin')
+PG=PG_BIN + '/'
 BASE=[PG+'psql','-h','/tmp/codex-diamond-phase2-pg','-p','55472','-v','ON_ERROR_STOP=1','-At']
 DB='poker_diamond_phase4_test'
 def sql(q,ok=True):

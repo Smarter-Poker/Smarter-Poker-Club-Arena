@@ -9,7 +9,7 @@ description: >
   Club Arena, or asks for before/after screenshots of a Club Arena surface.
   Every agent or subagent doing the work must read this file in full and pass it
   to any subagent it spawns.
-version: 1.3.0
+version: 1.4.0
 ---
 
 # #ClubArenaConsole — The Painted-Chassis Standard
@@ -236,6 +236,50 @@ painted zones line up with the DOM printed into them at any width.
 **(b) Everything sizes in `cqw`.** The outermost card sets
 `container-type: inline-size`; every font size, gap and pad is `cqw`. A 320 px
 phone and a 430 px phone then get the same picture, not the same pixels.
+
+**Percentage padding is not a percentage of the element.** It resolves against
+the containing block's inline size, so on a painted plate whose own width is
+capped (`width: min(Npx, 100%)`) every percentage inset is inflated by
+`containerWidth / plateWidth`, and the plate is right only at the one width
+where those two agree. Three World Hub Marketplace surfaces were each mostly
+destroyed by it, all live until 2026-09-19:
+
+- `RewardTelemetryConsole.module.css` `.statePanel`, the sign-in panel on all
+  100 reward detail pages: `padding: 18%` against a 1180px console on a
+  `min(440px, 100%)` plate is 212.4px a side, so the 440x789 plate held a
+  **15.2 x 364px content box**, its heading on four lines and its call to
+  action 96px wide.
+- `pages/hub/merch-store/fulfillment.module.css` `.status`:
+  `padding: 4.3% 7% 4.3% 26%` against a 1396px page on a `min(720px, 100%)`
+  plate is inflated 1396/720 = 1.938x, so padding-left was 362.95px and
+  **92.0% of the plate was dead area**. Past roughly a 2226px viewport its
+  content box reaches zero width.
+- `src/components/diamond-store/DiamondStoreShell.module.css`
+  `.premiumDataCard`: `padding: 10% 9%` gave 57.9px and 52.1px on a VIP benefit
+  row with a 220px floor and `overflow: hidden`, and the longest benefit filled
+  115px of a 115.2px content box, one line from being cut off.
+
+**`container-type: inline-size` on the plate itself does not fix it.** Container
+units resolve against the nearest **ancestor** container, never the element that
+declares the containment, so a plate with nothing above it falls back to the
+small viewport: `26cqw` measured **374.4px** at a 1440 viewport, worse than the
+362.95px it would have replaced. Hold the plate's own width in a custom property
+and derive the insets from it. Verified at page widths 366, 900, 1396 and 2200:
+
+```css
+.status {
+  --status-plate-width: min(720px, 100%);
+
+  width: var(--status-plate-width);
+  padding: calc(var(--status-plate-width) * 0.043) calc(var(--status-plate-width) * 0.07)
+    calc(var(--status-plate-width) * 0.043) calc(var(--status-plate-width) * 0.26);
+}
+```
+
+That keeps the same fraction of the same painted artwork, is identical at the
+width where the old rule happened to be right, and stays right above it.
+`container-type` on an **ancestor** is still correct and is what (b) describes;
+this is about the element carrying the percentages itself.
 
 **(c) Every printed string is fitted.** `useFitText(text, 1, minRatio)` measures
 the span against its box and writes a `--fit` scale:

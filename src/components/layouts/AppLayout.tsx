@@ -68,7 +68,8 @@ function AppLayoutContent() {
     location.pathname.startsWith('/table') ||
     (location.pathname.startsWith('/tournaments/') && location.pathname.endsWith('/play'));
   const immersiveGame = isDiamondGameRoute(location.pathname);
-  const showGlobalHeader = !isTablePage && !immersiveGame;
+  const wheelPage = /^\/clubs\/[^/]+\/wheel\/?$/.test(location.pathname);
+  const showGlobalHeader = !isTablePage && (!immersiveGame || wheelPage);
 
   /**
    * Full-bleed routes: pages that render their own edge-to-edge chrome and
@@ -98,7 +99,10 @@ function AppLayoutContent() {
   }, [focusRouteKey]);
 
   return (
-    <div className={styles.layout} data-profile-gate-status={profileStatus}>
+    <div
+      className={`${styles.layout} ${wheelPage ? styles.wheelLayout : ''}`}
+      data-profile-gate-status={profileStatus}
+    >
       {/* First-time Welcome Modal. Signed-in players only (2026-09-17): the
           Help Center and the legal documents are public and indexed, and a
           reader arriving from a search result must not meet an entry
@@ -137,12 +141,12 @@ function AppLayoutContent() {
 
       {/* Route-family navigation keeps global sibling pages reachable without
           reopening the hamburger or duplicating the exhaustive route registry. */}
-      {showGlobalHeader && <ArenaSectionRail />}
+      {showGlobalHeader && !immersiveGame && <ArenaSectionRail />}
 
       {/* Club staff pages share one permission-aware command rail. It renders
           only inside the operations route family and leaves the live lobby,
           table, tournament, and ordinary member pages untouched. */}
-      {showGlobalHeader && <ClubOperationsRail />}
+      {showGlobalHeader && !immersiveGame && <ClubOperationsRail />}
 
       {/* Main Content */}
       <main

@@ -7,6 +7,9 @@ import type {
 } from '../../services/LeaderboardService';
 import { LeaderboardService } from '../../services/LeaderboardService';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { SpadeConsole } from '../console/SpadeConsole';
+import { compactChips } from '../../utils/format';
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import {
   MAX_PRIZE_PLAN_BUDGET,
   clampPrizeBudget,
@@ -24,6 +27,11 @@ interface LeaderboardPrizeWizardProps {
   setup: LeaderboardSettings;
   onClose: () => void;
   onSaved: (setup: LeaderboardSettings) => void;
+  /* A refused publish (a version conflict, a funding refusal, a lost
+     response) means the snapshot the wizard was opened with may no longer be
+     the club's current program. The page uses this to refetch the owner
+     record when the dialog closes, so the next attempt starts from truth. */
+  onSaveError?: (error: Error) => void;
 }
 
 const METRICS: Array<{ value: LeaderboardSettings['payout_metric']; label: string }> = [
@@ -51,6 +59,7 @@ export function LeaderboardPrizeWizard({
   setup,
   onClose,
   onSaved,
+  onSaveError,
 }: LeaderboardPrizeWizardProps) {
   const dialogRef = useFocusTrap(isOpen);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -187,9 +196,10 @@ export function LeaderboardPrizeWizard({
       });
       onSaved(saved);
     } catch (saveError) {
-      const message =
-        saveError instanceof Error ? saveError.message : 'Prize Setup Could Not Be Saved';
-      setError(message);
+      const failure =
+        saveError instanceof Error ? saveError : new Error('Prize Setup Could Not Be Saved');
+      setError(safeErrorMessage(failure, 'Prize Setup Could Not Be Saved'));
+      onSaveError?.(failure);
     } finally {
       setSaving(false);
     }
@@ -213,329 +223,325 @@ export function LeaderboardPrizeWizard({
         aria-modal="true"
         aria-labelledby="lb-prize-wizard-title"
       >
-        <header className="lb-prize-wizard-header">
-          <div>
-            <span className="lb-prize-kicker">Owner Prize Circuit</span>
-            <h2 id="lb-prize-wizard-title">Leaderboard Prize Setup</h2>
-            <p>{setup.club_name}</p>
-          </div>
-          <button type="button" onClick={onClose} disabled={saving} aria-label="Close Prize Setup">
-            Close
-          </button>
-        </header>
-
-        <ol className="lb-prize-progress" aria-label="Setup Progress">
-          {steps.map((label, index) => (
-            <li
-              key={label}
-              className={index === step ? 'active' : index < step ? 'complete' : ''}
-              aria-current={index === step ? 'step' : undefined}
+        <SpadeConsole
+          crest="flat"
+          eyebrow="Prize Program"
+          title="Leaderboard Prize Setup"
+          titleId="lb-prize-wizard-title"
+          subtitle={setup.club_name}
+          pill={`${step + 1} Of 4`}
+          plates={{
+            secondary: {
+              label: step === 0 ? 'Cancel' : 'Back',
+              onClick: step === 0 ? onClose : () => setStep(step === 3 && !enabled ? 0 : step - 1),
+              disabled: saving,
+            },
+            primary:
+              step < 3
+                ? {
+                    label: step === 0 && !enabled ? 'Review Plan' : 'Continue',
+                    'aria-label': step === 0 && !enabled ? 'Review Disabled Plan' : 'Continue',
+                    onClick: () => setStep(step === 0 && !enabled ? 3 : step + 1),
+                    disabled: step === 2 && enabled && (!hasPrizes || exceedsAvailable),
+                  }
+                : {
+                    label: saving ? 'Publishing...' : 'Publish Plan',
+                    'aria-label': saving ? 'Publishing Prize Program' : 'Publish Prize Program',
+                    onClick: save,
+                    disabled: saving || (enabled && (!hasPrizes || exceedsAvailable)),
+                  },
+          }}
+        >
+          <div className="lb-prize-close">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              aria-label="Close Prize Setup"
             >
-              <span>{index + 1}</span>
-              <strong>{label}</strong>
-            </li>
-          ))}
-        </ol>
+              Close
+            </button>
+          </div>
 
-        <div className="lb-prize-wizard-body">
-          {step === 0 && (
-            <div className="lb-prize-step">
-              <span className="lb-prize-step-number">Step One</span>
-              <h3 ref={stepHeadingRef} tabIndex={-1}>
-                Do You Want To Reward Leaderboard Prizes?
-              </h3>
-              <p>
-                The Plan Appears On The Live Board. Saving This Setup Never Moves Chips Or Pays A
-                Player.
-              </p>
-              <div className="lb-prize-choice-grid">
-                <button
-                  type="button"
-                  className={enabled ? 'selected' : ''}
-                  onClick={() => setEnabled(true)}
-                  aria-pressed={enabled}
-                >
-                  <strong>Yes, Show Prizes</strong>
-                  <span>Publish Weekly Or Monthly Prize Rows.</span>
-                </button>
-                <button
-                  type="button"
-                  className={!enabled ? 'selected' : ''}
-                  onClick={disableRewards}
-                  aria-pressed={!enabled}
-                >
-                  <strong>No Prizes Right Now</strong>
-                  <span>Keep The Rankings Competitive Without A Reward Plan.</span>
-                </button>
-              </div>
-            </div>
-          )}
+          <ol className="lb-prize-progress" aria-label="Setup Progress">
+            {steps.map((label, index) => (
+              <li
+                key={label}
+                className={index === step ? 'active' : index < step ? 'complete' : ''}
+                aria-current={index === step ? 'step' : undefined}
+              >
+                <span>{index + 1}</span>
+                <strong>{label}</strong>
+              </li>
+            ))}
+          </ol>
 
-          {step === 1 && (
-            <div className="lb-prize-step">
-              <span className="lb-prize-step-number">Step Two</span>
-              <h3 ref={stepHeadingRef} tabIndex={-1}>
-                Funding Source Confirmed
-              </h3>
-              <div className="lb-prize-source-card">
-                <span className="lb-prize-source-mark" aria-hidden="true">
-                  ◆
-                </span>
-                <div>
-                  <span>Prize Source</span>
-                  <strong>{setup.funding_label}</strong>
-                  <p>{sourceDescription}</p>
-                </div>
-                <div className="lb-prize-balance">
-                  <span>Publication Capacity</span>
-                  <strong>
-                    {publicationCapacity == null
-                      ? 'Protected'
-                      : publicationCapacity.toLocaleString('en-US', {
-                          maximumFractionDigits: 2,
-                        })}
-                  </strong>
-                  <small>Promo Chips</small>
+          <div className="lb-prize-wizard-body">
+            {step === 0 && (
+              <div className="lb-prize-step">
+                <span className="lb-prize-step-number">Step One</span>
+                <h3 ref={stepHeadingRef} tabIndex={-1}>
+                  Do You Want To Reward Leaderboard Prizes?
+                </h3>
+                <p>
+                  The Plan Appears On The Live Board. Saving This Setup Never Moves Chips Or Pays A
+                  Player.
+                </p>
+                <div className="lb-prize-choice-grid">
+                  <button
+                    type="button"
+                    className={enabled ? 'selected' : ''}
+                    onClick={() => setEnabled(true)}
+                    aria-pressed={enabled}
+                  >
+                    <strong>Yes, Show Prizes</strong>
+                    <span>Publish Weekly Or Monthly Prize Rows.</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={!enabled ? 'selected' : ''}
+                    onClick={disableRewards}
+                    aria-pressed={!enabled}
+                  >
+                    <strong>No Prizes Right Now</strong>
+                    <span>Keep The Rankings Competitive Without A Reward Plan.</span>
+                  </button>
                 </div>
               </div>
-              {setup.can_manage && (
-                <dl className="lb-prize-funding-grid" aria-label="Funding Commitment Summary">
+            )}
+
+            {step === 1 && (
+              <div className="lb-prize-step">
+                <span className="lb-prize-step-number">Step Two</span>
+                <h3 ref={stepHeadingRef} tabIndex={-1}>
+                  Funding Source Confirmed
+                </h3>
+                <div className="lb-prize-source-card">
                   <div>
-                    <dt>Promo Wallet</dt>
-                    <dd>{(setup.wallet_balance ?? 0).toLocaleString('en-US')} Chips</dd>
+                    <span>Prize Source</span>
+                    <strong>{setup.funding_label}</strong>
+                    <p>{sourceDescription}</p>
+                  </div>
+                  <div className="lb-prize-balance">
+                    <span>Publication Capacity</span>
+                    <strong>
+                      {publicationCapacity == null
+                        ? 'Protected'
+                        : compactChips(publicationCapacity)}
+                    </strong>
+                    <small>Promo Chips</small>
+                  </div>
+                </div>
+                {setup.can_manage && (
+                  <dl className="lb-prize-funding-grid" aria-label="Funding Commitment Summary">
+                    <div>
+                      <dt>Promo Wallet</dt>
+                      <dd>{compactChips(setup.wallet_balance)} Chips</dd>
+                    </div>
+                    <div>
+                      <dt>Published Commitments</dt>
+                      <dd>{compactChips(setup.committed_balance)} Chips</dd>
+                    </div>
+                    <div>
+                      <dt>Other Club Commitments</dt>
+                      <dd>{compactChips(setup.other_program_commitments)} Chips</dd>
+                    </div>
+                    <div>
+                      <dt>Committed Clubs</dt>
+                      <dd>{(setup.committed_club_count ?? 0).toLocaleString('en-US')}</dd>
+                    </div>
+                  </dl>
+                )}
+                <div className="lb-prize-safety-note" role="note">
+                  <strong>Source Is Automatic.</strong>
+                  <span>
+                    An Affiliated Club Cannot Select Its Own Wallet. A Standalone Club Cannot Select
+                    A Union Wallet.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {step === 2 && (
+              <div className="lb-prize-step">
+                <span className="lb-prize-step-number">Step Three</span>
+                <h3 ref={stepHeadingRef} tabIndex={-1}>
+                  Build The Prize Board
+                </h3>
+                <label className="lb-prize-field">
+                  <span>Ranking Signal</span>
+                  <select
+                    value={metric}
+                    onChange={(event) => setMetric(event.target.value as typeof metric)}
+                  >
+                    {METRICS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="lb-prize-plan-buttons" aria-label="Suggested Prize Splits">
+                  {PLAN_KEYS.map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={planKey === key ? 'selected' : ''}
+                      onClick={() => applyPlan(key)}
+                      aria-pressed={planKey === key}
+                    >
+                      <strong>{prizePlanLabel(key)}</strong>
+                      <span>
+                        {key === 'balanced'
+                          ? '50 / 30 / 20'
+                          : key === 'top_heavy'
+                            ? '65 / 25 / 10'
+                            : 'Equal Top Three'}
+                      </span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className={planKey === 'custom' ? 'selected' : ''}
+                    onClick={() => setPlanKey('custom')}
+                    aria-pressed={planKey === 'custom'}
+                  >
+                    <strong>Custom</strong>
+                    <span>Edit Up To Five Places.</span>
+                  </button>
+                </div>
+
+                <div className="lb-prize-period-grid">
+                  {(['weekly', 'monthly'] as const).map((rewardPeriod) => {
+                    const prizes = rewardPeriod === 'weekly' ? weeklyPrizes : monthlyPrizes;
+                    const budget = rewardPeriod === 'weekly' ? weeklyBudget : monthlyBudget;
+                    return (
+                      <fieldset key={rewardPeriod}>
+                        <legend>
+                          {rewardPeriod === 'weekly' ? 'Weekly Prizes' : 'Monthly Prizes'}
+                        </legend>
+                        <label className="lb-prize-field">
+                          <span>Prize Budget</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max={MAX_PRIZE_PLAN_BUDGET}
+                            step="0.01"
+                            inputMode="decimal"
+                            value={budget || ''}
+                            onChange={(event) => updateBudget(rewardPeriod, event.target.value)}
+                          />
+                        </label>
+                        <div className="lb-prize-rank-list">
+                          {editableRows(prizes).map((row) => (
+                            <label key={row.rank}>
+                              <span>Rank {row.rank}</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max={MAX_PRIZE_PLAN_BUDGET}
+                                step="0.01"
+                                inputMode="decimal"
+                                value={row.amount || ''}
+                                onChange={(event) =>
+                                  updateCustomPrize(rewardPeriod, row.rank, event.target.value)
+                                }
+                                aria-label={`${rewardPeriod === 'weekly' ? 'Weekly' : 'Monthly'} Prize For Rank ${row.rank}`}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                        <div className="lb-prize-total">
+                          <span>Total Planned</span>
+                          <strong>{compactChips(totalPrizePlan(prizes))}</strong>
+                        </div>
+                      </fieldset>
+                    );
+                  })}
+                </div>
+                {enabled && !hasPrizes && (
+                  <div className="lb-prize-inline-error" role="alert">
+                    Add A Weekly Or Monthly Prize Before Continuing.
+                  </div>
+                )}
+                {exceedsAvailable && (
+                  <div className="lb-prize-inline-error" role="alert">
+                    This Plan Cannot Be Published. Reduce The Combined Weekly And Monthly Commitment
+                    To {compactChips(publicationCapacity)} Promo Chips Or Less.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {step === 3 && (
+              <div className="lb-prize-step">
+                <span className="lb-prize-step-number">Step Four</span>
+                <h3 ref={stepHeadingRef} tabIndex={-1}>
+                  Review The Published Plan
+                </h3>
+                <dl className="lb-prize-review">
+                  <div>
+                    <dt>Status</dt>
+                    <dd>{enabled ? 'Prizes Enabled' : 'Prizes Disabled'}</dd>
                   </div>
                   <div>
-                    <dt>Published Commitments</dt>
-                    <dd>{(setup.committed_balance ?? 0).toLocaleString('en-US')} Chips</dd>
+                    <dt>Funding Source</dt>
+                    <dd>{setup.funding_label}</dd>
                   </div>
                   <div>
-                    <dt>Other Club Commitments</dt>
-                    <dd>{(setup.other_program_commitments ?? 0).toLocaleString('en-US')} Chips</dd>
+                    <dt>Ranking Signal</dt>
+                    <dd>{METRICS.find((option) => option.value === metric)?.label}</dd>
                   </div>
                   <div>
-                    <dt>Committed Clubs</dt>
-                    <dd>{(setup.committed_club_count ?? 0).toLocaleString('en-US')}</dd>
+                    <dt>Prize Split</dt>
+                    <dd>{prizePlanLabel(planKey)}</dd>
+                  </div>
+                  <div>
+                    <dt>Weekly Total</dt>
+                    <dd>{compactChips(weeklyTotal)} Chips</dd>
+                  </div>
+                  <div>
+                    <dt>Monthly Total</dt>
+                    <dd>{compactChips(monthlyTotal)} Chips</dd>
+                  </div>
+                  <div>
+                    <dt>Combined Commitment</dt>
+                    <dd>{compactChips(proposedCommitment)} Chips</dd>
+                  </div>
+                  <div>
+                    <dt>Uncommitted After Publication</dt>
+                    <dd>
+                      {projectedUncommitted == null
+                        ? 'Protected'
+                        : `${compactChips(projectedUncommitted)} Chips`}
+                    </dd>
                   </div>
                 </dl>
-              )}
-              <div className="lb-prize-safety-note" role="note">
-                <strong>Source Is Automatic.</strong>
-                <span>
-                  An Affiliated Club Cannot Select Its Own Wallet. A Standalone Club Cannot Select A
-                  Union Wallet.
-                </span>
+                <div className="lb-prize-safety-note" role="note">
+                  <strong>Starts Next Period</strong>
+                  <span>
+                    Current Standings Keep Their Published Rules. This Becomes Program Version{' '}
+                    {setup.program_version + 1} At The Next Weekly And Monthly UTC Boundaries.
+                  </span>
+                </div>
+                <div className="lb-prize-safety-note" role="note">
+                  <strong>Publication Claims Funding Capacity.</strong>
+                  <span>
+                    Publishing Does Not Move Chips. The Service-Only Settlement Process Debits The
+                    Recorded Promo Wallet And Writes Immutable Payout Evidence After The Period
+                    Closes.
+                  </span>
+                </div>
+                {error && (
+                  <div className="lb-prize-inline-error" role="alert">
+                    {error}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="lb-prize-step">
-              <span className="lb-prize-step-number">Step Three</span>
-              <h3 ref={stepHeadingRef} tabIndex={-1}>
-                Build The Prize Board
-              </h3>
-              <label className="lb-prize-field">
-                <span>Ranking Signal</span>
-                <select
-                  value={metric}
-                  onChange={(event) => setMetric(event.target.value as typeof metric)}
-                >
-                  {METRICS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="lb-prize-plan-buttons" aria-label="Suggested Prize Splits">
-                {PLAN_KEYS.map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={planKey === key ? 'selected' : ''}
-                    onClick={() => applyPlan(key)}
-                    aria-pressed={planKey === key}
-                  >
-                    <strong>{prizePlanLabel(key)}</strong>
-                    <span>
-                      {key === 'balanced'
-                        ? '50 / 30 / 20'
-                        : key === 'top_heavy'
-                          ? '65 / 25 / 10'
-                          : 'Equal Top Three'}
-                    </span>
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className={planKey === 'custom' ? 'selected' : ''}
-                  onClick={() => setPlanKey('custom')}
-                  aria-pressed={planKey === 'custom'}
-                >
-                  <strong>Custom</strong>
-                  <span>Edit Up To Five Places.</span>
-                </button>
-              </div>
-
-              <div className="lb-prize-period-grid">
-                {(['weekly', 'monthly'] as const).map((rewardPeriod) => {
-                  const prizes = rewardPeriod === 'weekly' ? weeklyPrizes : monthlyPrizes;
-                  const budget = rewardPeriod === 'weekly' ? weeklyBudget : monthlyBudget;
-                  return (
-                    <fieldset key={rewardPeriod}>
-                      <legend>
-                        {rewardPeriod === 'weekly' ? 'Weekly Prizes' : 'Monthly Prizes'}
-                      </legend>
-                      <label className="lb-prize-field">
-                        <span>Prize Budget</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max={MAX_PRIZE_PLAN_BUDGET}
-                          step="0.01"
-                          inputMode="decimal"
-                          value={budget || ''}
-                          onChange={(event) => updateBudget(rewardPeriod, event.target.value)}
-                        />
-                      </label>
-                      <div className="lb-prize-rank-list">
-                        {editableRows(prizes).map((row) => (
-                          <label key={row.rank}>
-                            <span>Rank {row.rank}</span>
-                            <input
-                              type="number"
-                              min="0"
-                              max={MAX_PRIZE_PLAN_BUDGET}
-                              step="0.01"
-                              inputMode="decimal"
-                              value={row.amount || ''}
-                              onChange={(event) =>
-                                updateCustomPrize(rewardPeriod, row.rank, event.target.value)
-                              }
-                              aria-label={`${rewardPeriod} Prize For Rank ${row.rank}`}
-                            />
-                          </label>
-                        ))}
-                      </div>
-                      <div className="lb-prize-total">
-                        <span>Total Planned</span>
-                        <strong>{totalPrizePlan(prizes).toLocaleString('en-US')}</strong>
-                      </div>
-                    </fieldset>
-                  );
-                })}
-              </div>
-              {enabled && !hasPrizes && (
-                <div className="lb-prize-inline-error" role="alert">
-                  Add A Weekly Or Monthly Prize Before Continuing.
-                </div>
-              )}
-              {exceedsAvailable && (
-                <div className="lb-prize-inline-error" role="alert">
-                  This Plan Cannot Be Published. Reduce The Combined Weekly And Monthly Commitment
-                  To {publicationCapacity?.toLocaleString('en-US')} Promo Chips Or Less.
-                </div>
-              )}
-            </div>
-          )}
-
-          {step === 3 && (
-            <div className="lb-prize-step">
-              <span className="lb-prize-step-number">Step Four</span>
-              <h3 ref={stepHeadingRef} tabIndex={-1}>
-                Review The Published Plan
-              </h3>
-              <dl className="lb-prize-review">
-                <div>
-                  <dt>Status</dt>
-                  <dd>{enabled ? 'Prizes Enabled' : 'Prizes Disabled'}</dd>
-                </div>
-                <div>
-                  <dt>Funding Source</dt>
-                  <dd>{setup.funding_label}</dd>
-                </div>
-                <div>
-                  <dt>Ranking Signal</dt>
-                  <dd>{METRICS.find((option) => option.value === metric)?.label}</dd>
-                </div>
-                <div>
-                  <dt>Prize Split</dt>
-                  <dd>{prizePlanLabel(planKey)}</dd>
-                </div>
-                <div>
-                  <dt>Weekly Total</dt>
-                  <dd>{weeklyTotal.toLocaleString('en-US')} Chips</dd>
-                </div>
-                <div>
-                  <dt>Monthly Total</dt>
-                  <dd>{monthlyTotal.toLocaleString('en-US')} Chips</dd>
-                </div>
-                <div>
-                  <dt>Combined Commitment</dt>
-                  <dd>{proposedCommitment.toLocaleString('en-US')} Chips</dd>
-                </div>
-                <div>
-                  <dt>Uncommitted After Publication</dt>
-                  <dd>
-                    {projectedUncommitted == null
-                      ? 'Protected'
-                      : `${projectedUncommitted.toLocaleString('en-US')} Chips`}
-                  </dd>
-                </div>
-              </dl>
-              <div className="lb-prize-safety-note" role="note">
-                <strong>Starts Next Period</strong>
-                <span>
-                  Current Standings Keep Their Published Rules. This Becomes Program Version{' '}
-                  {setup.program_version + 1} At The Next Weekly And Monthly UTC Boundaries.
-                </span>
-              </div>
-              <div className="lb-prize-safety-note" role="note">
-                <strong>Publication Claims Funding Capacity.</strong>
-                <span>
-                  Publishing Does Not Move Chips. The Service-Only Settlement Process Debits The
-                  Recorded Promo Wallet And Writes Immutable Payout Evidence After The Period
-                  Closes.
-                </span>
-              </div>
-              {error && (
-                <div className="lb-prize-inline-error" role="alert">
-                  {error}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <footer className="lb-prize-wizard-footer">
-          <button
-            type="button"
-            onClick={step === 0 ? onClose : () => setStep(step === 3 && !enabled ? 0 : step - 1)}
-            disabled={saving}
-          >
-            {step === 0 ? 'Cancel' : 'Back'}
-          </button>
-          {step < 3 ? (
-            <button
-              type="button"
-              className="primary"
-              onClick={() => setStep(step === 0 && !enabled ? 3 : step + 1)}
-              disabled={step === 2 && enabled && (!hasPrizes || exceedsAvailable)}
-            >
-              {step === 0 && !enabled ? 'Review Disabled Plan' : 'Continue'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="primary"
-              onClick={save}
-              disabled={saving || (enabled && (!hasPrizes || exceedsAvailable))}
-            >
-              {saving ? 'Publishing Prize Program' : 'Publish Prize Program'}
-            </button>
-          )}
-        </footer>
+            )}
+          </div>
+        </SpadeConsole>
       </section>
     </div>,
     document.body

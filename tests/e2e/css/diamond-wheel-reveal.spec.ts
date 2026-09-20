@@ -1,10 +1,23 @@
 import { test, expect, type Page } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import { mountDiamondWheel } from '../helpers/diamond-wheel-fixture.mjs';
+import { WHEEL_SPIN_MS } from '../../../src/utils/diamondWheelMotion';
 
 type WheelProof = {
   finished: number;
   events: { event: string; title?: string; time: number }[];
+  upgradeStates: {
+    phase: string;
+    expanded: string;
+    selectors: number;
+    titles: number;
+    cards: number;
+    slots: number;
+    visible: boolean;
+    scale: string;
+    finished: number;
+    destination: string;
+  }[];
 };
 declare global {
   interface Window {
@@ -31,9 +44,21 @@ for (const width of [320, 390, 1280]) {
       const receipt = await mountDiamondWheel(page, kind, width);
       const wheel = page.getByRole('img', { name: 'Diamond Wheel', exact: true });
       const secondary = page.getByRole('img', { name: 'Upgrade Wheel', exact: true });
+      await expect(page.locator('[data-painted-band="loading"]')).toHaveCount(0);
+      await expect(page.locator('[data-painted-band="cached"]')).toHaveCount(64);
       await expect(secondary.locator('[data-slot]')).toHaveCount(8);
       await expect(secondary).toBeVisible();
       await expect(secondary.locator('[data-wheel-selector]')).toHaveCount(0);
+      await expect(secondary.locator('[data-card-design="title"]')).toHaveCount(8);
+      await expect(secondary.locator('[data-card-design="full"]')).toHaveCount(0);
+      await expect(page.locator('[data-wheel-assembly]')).toHaveAttribute(
+        'data-upgrade-reveal',
+        'peek'
+      );
+      await expect(wheel.locator('[data-wheel-face]')).toHaveCSS(
+        'transform',
+        'matrix(0.91, 0, 0, 0.91, 0, 0)'
+      );
       await expect(wheel.locator('[data-wheel-selector]')).toHaveCount(1);
       await expect
         .poll(async () => (await wheel.boundingBox())?.width ?? 0)
@@ -80,8 +105,26 @@ for (const width of [320, 390, 1280]) {
       await expect(page.getByTestId('destination')).toHaveText('/clubs/fixture/wheel');
 
       if (kind.startsWith('upgrade')) {
-        await expect(secondary.locator('..')).toHaveAttribute('data-phase', 'spinning');
-        await expect(secondary.locator('[data-wheel-selector]')).toHaveCount(1);
+        // The fixture runs at the player's 0.25 animation-speed setting. On a
+        // software-rendered runner, sequential round trips can span the entire
+        // secondary spin. Require all the same properties in ONE observed
+        // rendered state, retained before the real game navigation removes it.
+        await expect
+          .poll(() => page.evaluate(() => window.wheelProof.upgradeStates), {
+            timeout: WHEEL_SPIN_MS + 1400 + 650,
+          })
+          .toContainEqual({
+            phase: 'spinning',
+            expanded: 'open',
+            selectors: 1,
+            titles: 0,
+            cards: 8,
+            slots: 8,
+            visible: true,
+            scale: 'matrix(0.56, 0, 0, 0.56, 0, 0)',
+            finished: 0,
+            destination: '/clubs/fixture/wheel',
+          });
       }
       if (kind === 'prize' || kind === 'upgradechips') {
         const dialog = page.getByRole('dialog');
@@ -105,13 +148,6 @@ for (const width of [320, 390, 1280]) {
         await expect(dialog).toHaveCount(0);
         await expect(page.getByTestId('destination')).toHaveText('/clubs/fixture/wheel');
       } else {
-        if (kind === 'upgrade') {
-          await expect(secondary).toBeVisible();
-          await expect(secondary.locator('[data-slot]')).toHaveCount(8);
-          expect(await page.evaluate(() => window.wheelProof.finished)).toBe(0);
-          await expect(page.getByTestId('destination')).toHaveText('/clubs/fixture/wheel');
-          await page.screenshot({ path: testInfo.outputPath(`wheel-upgrade-${width}.png`) });
-        }
         await expect(page.getByRole('heading', { name: 'Earned Game Entry' })).toBeVisible();
         await expect(page.getByTestId('destination')).toHaveText(
           `/clubs/fixture/${receipt.bonus.game}?wheelAward=${receipt.bonus.id}`
@@ -141,4 +177,143 @@ for (const width of [320, 390, 1280]) {
       });
     });
   }
+}
+
+// Pin the actual page, including free entry choices, real global styles and
+// the control panel. The old width-only wheel put Spin below the first screen.
+for (const viewport of [
+  { width: 320, height: 568 },
+  { width: 390, height: 844 },
+  { width: 1280, height: 720 },
+  { width: 844, height: 390 },
+  { width: 844, height: 390, fallbackFonts: true },
+]) {
+  test(`Diamond Spins controls share one screen at ${viewport.width}x${viewport.height}${'fallbackFonts' in viewport ? ' with fallback fonts' : ''}`, async ({
+    page,
+  }, testInfo) => {
+    const { diamondWheelPageFixture } = await import('../helpers/diamond-wheel-page-fixture.mjs');
+    const bundle = await diamondWheelPageFixture();
+    await page.setViewportSize(viewport);
+    await page.route('**/*', async (route) => {
+      const url = new URL(route.request().url());
+      if (url.hostname !== 'diamond-wheel.test') return route.abort();
+      if (
+        url.pathname.startsWith('/assets/') ||
+        url.pathname.startsWith('/fonts/') ||
+        url.pathname.startsWith('/images/') ||
+        url.pathname === '/default-avatar.png'
+      ) {
+        const { resolve, sep } = await import('node:path');
+        const root = resolve('public');
+        const path = resolve(root, '.' + decodeURIComponent(url.pathname));
+        return path.startsWith(root + sep) ? route.fulfill({ path }) : route.abort();
+      }
+      return route.fulfill({
+        contentType: 'text/html',
+        body: '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0}</style><div id="root"></div>',
+      });
+    });
+    await page.goto('https://diamond-wheel.test/');
+    await page.addStyleTag({ content: bundle.css });
+    if ('fallbackFonts' in viewport) {
+      await page.addStyleTag({
+        content:
+          '[aria-label="Diamond Spins Controls"] button {font-family: Arial, sans-serif !important}',
+      });
+    }
+    await page.addScriptTag({ content: bundle.javascript });
+    const controls = page.getByRole('complementary', { name: 'Diamond Spins Controls' });
+    await expect(controls).toBeVisible();
+    await controls.getByRole('button', { name: 'Use Diamonds', exact: true }).click();
+    await controls.getByRole('button', { name: 'Hold Automatic Spin', exact: true }).click();
+    await expect(page.locator('#global-header')).toBeVisible();
+    await expect(controls.getByText('Club Chips', { exact: true })).toBeVisible();
+    await expect(controls.getByText('12.3K', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Spin 100', exact: true })).toBeEnabled();
+    const assertFits = async () => {
+      const measured = await controls.evaluate((el) => {
+        const wheel = document.querySelector('[data-wheel-assembly]')!.getBoundingClientRect();
+        const controls = el.getBoundingClientRect();
+        return {
+          wheelHeight: wheel.height,
+          wheelBottom: wheel.bottom,
+          controlsTop: controls.top,
+          bottom: controls.bottom,
+          scrollHeight: document.documentElement.scrollHeight,
+          scrollWidth: document.documentElement.scrollWidth,
+          targets: [...el.querySelectorAll('button,input')]
+            .filter((e) => !(e as HTMLElement).hidden)
+            .map((e) => {
+              const b = e.getBoundingClientRect();
+              return (
+                b.top >= 0 &&
+                b.bottom <= innerHeight + 1 &&
+                b.left >= 0 &&
+                b.right <= innerWidth + 1 &&
+                b.height >= 32
+              );
+            }),
+        };
+      });
+      expect(measured.wheelHeight).toBeGreaterThan(100);
+      expect(measured.controlsTop).toBeGreaterThanOrEqual(measured.wheelBottom - 1);
+      expect(measured.bottom).toBeLessThanOrEqual(viewport.height + 1);
+      expect(measured.scrollHeight).toBeLessThanOrEqual(viewport.height + 1);
+      expect(measured.scrollWidth).toBeLessThanOrEqual(viewport.width);
+      expect(measured.targets.every(Boolean)).toBe(true);
+      expect(
+        await controls.locator('button').evaluateAll((elements) =>
+          elements.flatMap((el) => {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const text = range.getBoundingClientRect(),
+              button = el.getBoundingClientRect();
+            return text.left >= button.left &&
+              text.right <= button.right &&
+              text.top >= button.top &&
+              text.bottom <= button.bottom
+              ? []
+              : [{ label: el.textContent, text: text.toJSON(), button: button.toJSON() }];
+          })
+        )
+      ).toEqual([]);
+    };
+    await assertFits();
+    await controls.getByRole('button', { name: '2,500', exact: true }).click();
+    await expect(page.getByLabel('Diamonds To Spin')).toHaveValue('2500');
+    await expect(page.getByRole('button', { name: 'Spin 2,500', exact: true })).toBeEnabled();
+    await controls.getByRole('button', { name: 'Run Off', exact: true }).click();
+    await expect(controls.getByRole('button', { name: /^Auto Spin / })).toBeEnabled();
+    await assertFits();
+    await controls.getByRole('button', { name: 'Bonus Spins (2)', exact: true }).click();
+    await expect(page.getByLabel('Diamonds To Spin')).toBeDisabled();
+    await expect(controls.getByRole('button', { name: 'Bonus Spin', exact: true })).toBeEnabled();
+    await assertFits();
+    await controls.getByRole('button', { name: 'Prizes & More', exact: true }).click();
+    const details = page.getByRole('dialog', { name: 'Diamond Spins Details' });
+    await expect(details).toBeVisible();
+    await expect(
+      details.getByRole('region', { name: 'Wheel Prizes' }).getByRole('listitem')
+    ).toHaveCount(12);
+    await expect(details.getByRole('heading', { name: 'Check Any Spin' })).toBeAttached();
+    await expect(details.getByRole('heading', { name: 'History', exact: true })).toBeAttached();
+    await details.getByRole('button', { name: 'Close Dialog' }).click();
+    await expect(details).toHaveCount(0);
+    await assertFits();
+    await page.screenshot({ path: testInfo.outputPath('one-screen.png') });
+    if (viewport.width === 320) {
+      await page.goto('https://diamond-wheel.test/?paused');
+      await page.addStyleTag({ content: bundle.css });
+      await page.addScriptTag({ content: bundle.javascript });
+      await expect(controls.getByText('Local Connection Is Paused', { exact: true })).toBeVisible();
+      await expect(
+        controls.getByRole('button', { name: 'Refresh Wheel', exact: true })
+      ).toBeEnabled();
+      await expect(
+        controls.getByRole('button', { name: 'Bonus Spin', exact: true })
+      ).toBeDisabled();
+      await assertFits();
+      await page.screenshot({ path: testInfo.outputPath('one-screen-paused.png') });
+    }
+  });
 }

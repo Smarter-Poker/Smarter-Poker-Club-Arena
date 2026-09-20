@@ -1,9 +1,8 @@
 import { useCallback, useState } from 'react';
 import { useAuthUser } from './useAuthUser';
 import {
-  bonusTotal,
   defaultBonusBudget,
-  PLINKO_DIAMONDS_PER_DROP,
+  plinkoBudget,
   validBonusBudget,
   type BonusBudget,
 } from '../utils/bonusGameBudget';
@@ -15,14 +14,8 @@ export function useBonusBudget(clubId: string | undefined, game: string) {
   const read = useCallback((): BonusBudget => {
     try {
       const v = JSON.parse(sessionStorage.getItem(scope) ?? 'null') as BonusBudget | null;
-      if (
-        v &&
-        validBonusBudget(v) &&
-        typeof v.doubled === 'boolean' &&
-        PLINKO_DIAMONDS_PER_DROP.includes(v.denomination as 1) &&
-        bonusTotal(v) % v.denomination === 0
-      )
-        return v;
+      // A saved drop value from before ten drops became the one setting is re-derived.
+      if (v && validBonusBudget(v) && typeof v.doubled === 'boolean') return plinkoBudget(v);
     } catch {
       /* A missing or corrupt optional preference uses the default. */
     }
@@ -33,10 +26,11 @@ export function useBonusBudget(clubId: string | undefined, game: string) {
   const set = useCallback(
     (next: BonusBudget | ((current: BonusBudget) => BonusBudget)) => {
       setSnapshot((current) => {
-        const budget =
+        const budget = plinkoBudget(
           typeof next === 'function'
             ? next(current.scope === scope ? current.value : read())
-            : next;
+            : next
+        );
         try {
           sessionStorage.setItem(scope, JSON.stringify(budget));
         } catch {

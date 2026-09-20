@@ -61,4 +61,39 @@ describe('leaderboard prize setup safety contract', () => {
     expect(wizard).toContain('This Plan Cannot Be Published.');
     expect(wizard).toContain('proposedCommitment > publicationCapacity');
   });
+
+  it('puts the first-use decision in front of an owner who has never published', () => {
+    /* Phase 4 owner operations: the eligible first use is an owner-only
+       section on the club board, gated on the derived manager flag and the
+       absence of a completed setup. Members never see it. */
+    expect(page).toContain('No Prize Program Yet');
+    expect(page).toMatch(/canManagePrizes &&\s*settings &&\s*!settings\.setup_complete/);
+    expect(page).toContain('Nothing Is Paid Until A Plan Is Published And Its Period Closes.');
+  });
+
+  it('tells players the rules the round is actually settled under', () => {
+    expect(page).toContain(
+      'Weeks Start Sunday At 00:00 UTC. Months Start On The First At 00:00 UTC.'
+    );
+    expect(page).toContain('Rule Changes Start At The Next Weekly Or Monthly UTC Boundary.');
+    expect(page).toContain('Tied Places Share Their Occupied Prizes.');
+    expect(page).toContain(
+      'Prize Marks A Planned Amount While A Round Is Live. Paid Marks A Verified Receipt.'
+    );
+    /* The old copy promised hidden badges the page never hid. */
+    expect(page).not.toContain('Planned Prizes Are Hidden Until');
+    expect(page).not.toContain('Owner Prize Circuit');
+  });
+
+  it('recovers from a refused publish by refetching the owner record', () => {
+    expect(wizard).toContain('onSaveError?.(failure)');
+    expect(wizard).toContain("safeErrorMessage(failure, 'Prize Setup Could Not Be Saved')");
+    expect(page).toContain('settingsStaleRef.current = true');
+    expect(page).toContain('setSettingsReloadKey((value) => value + 1)');
+  });
+
+  it('finds the owner tools from any word an owner would type', () => {
+    expect(menu).toContain('REWARD_TOOL_SEARCH_VOCABULARY');
+    expect(menu).toMatch(/split\(\/\\s\+\/\)\s*\.every\(/);
+  });
 });

@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { decideFieldEcho, acceptNonEmptyString, type EchoFields } from './realtimeFieldEcho';
 
 const USER_TABLE_SETTING_COLUMNS = [
   'highlight_active_players',
@@ -48,6 +49,10 @@ const USER_TABLE_SETTING_COLUMNS = [
   'card_back',
 ] as const;
 
+/* The five columns the table-artwork mirror carries. The changed-field
+   decision itself lives in ./realtimeFieldEcho: `payload.old` on this table is
+   the primary key alone, and the comparison that used to need it has to be
+   provable on its own. */
 const THEME_SETTING_COLUMNS = [
   'theme_id',
   'table_id',
@@ -77,6 +82,14 @@ class PostgresSyncHooksService {
   private _userId: string | null = null; // FIX: Track current user for re-init detection
 
   // Phase 11: Internal debounce timers to batch rapid-fire events
+  /* What this client last saw for each mirrored row, keyed by primary key.
+     `payload.old` carries the primary key and nothing else on both of these
+     tables, so the previous values have to be remembered here or not known at
+     all. Cleared on teardown with everything else — a fresh subscription is a
+     fresh first sighting, which correctly re-sends a row it has not seen. */
+  private lastSeenThemeFields = new Map<string, EchoFields>();
+  private lastSeenTableSettings = new Map<string, EchoFields>();
+
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private static readonly DEBOUNCE_MS = 300;
 
@@ -215,24 +228,34 @@ class PostgresSyncHooksService {
           console.debug('[PostgresSync] External Settings mutation detected:', payload);
           if (payload.eventType === 'DELETE') return;
           const next = payload.new as Record<string, unknown>;
-          const previous = (payload.old || {}) as Record<string, unknown>;
-          for (const setting of USER_TABLE_SETTING_COLUMNS) {
-            const value = next[setting];
-            if (
-              (typeof value === 'string' ||
-                typeof value === 'number' ||
-                typeof value === 'boolean') &&
-              (payload.eventType === 'INSERT' || value !== previous[setting])
-            ) {
-              masterBus.emit('SETTINGS_CHANGED', {
-                setting,
-                value,
-                userId,
-                origin: 'postgres-sync:user-table-settings',
-              });
-            }
+          /* `payload.old` used to be the comparison here, and it is the primary
+             key alone — REPLICA IDENTITY FULL does not change that while RLS is
+             on. So every one of the FORTY-EIGHT mirrored columns read as
+             changed on every update, and one toggle became forty-eight
+             SETTINGS_CHANGED events. useDeckStyle invalidates its cache on any
+             of them. Compare against what this client last saw instead. */
+          const rowKey = typeof next.user_id === 'string' && next.user_id ? next.user_id : userId;
+          const { changed, seed } = decideFieldEcho({
+            row: next,
+            columns: USER_TABLE_SETTING_COLUMNS,
+            remembered:
+              payload.eventType === 'INSERT' ? undefined : this.lastSeenTableSettings.get(rowKey),
+          });
+          this.lastSeenTableSettings.set(rowKey, seed);
+          for (const [setting, value] of Object.entries(changed)) {
+            masterBus.emit('SETTINGS_CHANGED', {
+              setting,
+              value,
+              userId,
+              origin: 'postgres-sync:user-table-settings',
+            });
           }
-          this.debouncedEmit('settings', 'SETTINGS_UPDATED', { settings: payload.new });
+          /* Only when something actually moved. This used to run on every
+             update, so a bare updated_at touch rebuilt the whole settings
+             object for every listener. */
+          if (Object.keys(changed).length) {
+            this.debouncedEmit('settings', 'SETTINGS_UPDATED', { settings: payload.new });
+          }
         }
       )
       // 8. Table artwork — account-scoped, cross-device, no polling. The
@@ -248,10 +271,16 @@ class PostgresSyncHooksService {
         },
         (payload) => {
           const row = payload.new as Record<string, unknown>;
-          const value: Record<string, string> = {};
-          for (const field of THEME_SETTING_COLUMNS) {
-            if (typeof row[field] === 'string' && row[field]) value[field] = row[field] as string;
-          }
+          /* An INSERT is always a first sighting, so `remembered` is undefined
+             and every field comes back as news — which is what this handler
+             did before, and is right: a row appearing is a change. */
+          const { changed: value, seed } = decideFieldEcho({
+            row,
+            columns: THEME_SETTING_COLUMNS,
+            accept: acceptNonEmptyString,
+            remembered: undefined,
+          });
+          if (typeof row.id === 'string' && row.id) this.lastSeenThemeFields.set(row.id, seed);
           if (Object.keys(value).length) {
             masterBus.emit('UI_THEME_CHANGED', {
               key: typeof row.game_type === 'string' ? row.game_type : 'ALL',
@@ -280,13 +309,19 @@ class PostgresSyncHooksService {
         },
         (payload) => {
           const row = payload.new as Record<string, unknown>;
-          const previous = (payload.old || {}) as Record<string, unknown>;
-          const value: Record<string, string> = {};
-          for (const field of THEME_SETTING_COLUMNS) {
-            if (typeof row[field] === 'string' && row[field] && row[field] !== previous[field]) {
-              value[field] = row[field] as string;
-            }
-          }
+          /* `payload.old` used to be the comparison here. It is the primary key
+             and nothing else on this table (REPLICA IDENTITY DEFAULT), so every
+             field read as changed on every update: a felt change dropped the
+             deck cache and re-rendered every card on the table. Compare against
+             what this client last saw instead — it knows that for certain. */
+          const rowId = typeof row.id === 'string' && row.id ? row.id : null;
+          const { changed: value, seed } = decideFieldEcho({
+            row,
+            columns: THEME_SETTING_COLUMNS,
+            accept: acceptNonEmptyString,
+            remembered: rowId ? this.lastSeenThemeFields.get(rowId) : undefined,
+          });
+          if (rowId) this.lastSeenThemeFields.set(rowId, seed);
           if (Object.keys(value).length) {
             masterBus.emit('UI_THEME_CHANGED', {
               key: typeof row.game_type === 'string' ? row.game_type : 'ALL',
@@ -438,6 +473,11 @@ class PostgresSyncHooksService {
     // Clear any pending debounce timers to prevent orphaned emissions
     this.debounceTimers.forEach((timer) => clearTimeout(timer));
     this.debounceTimers.clear();
+    /* Forget the theme baseline too. The next subscription is a first sighting
+       and SHOULD re-send the row: this client may have been away while it
+       changed, and a stale baseline would suppress the catch-up. */
+    this.lastSeenThemeFields.clear();
+    this.lastSeenTableSettings.clear();
     this.initialized = false;
     this._userId = null;
     this.retryCount = 0;

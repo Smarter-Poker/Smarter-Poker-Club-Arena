@@ -44,6 +44,9 @@ import {
 import { supabase } from '../../lib/supabase';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { titleCase } from '../../utils/titleCase';
+import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../utils/format';
+import { arenaAssetUnitCents } from '../../lib/arenaUnitCents';
+import { CHIP_UNIT_CENTS, normalizeUnitCents } from '../../../server/src/tournament/tournamentUnit';
 import './SessionSummaryHost.css';
 
 /** Ease-out-back: overshoots slightly then settles. Reads as "landing". */
@@ -98,6 +101,22 @@ function formatDuration(seconds: number): string {
 function formatChips(n: number): string {
   const v = Math.round(n);
   return Math.abs(v) >= 1000 ? v.toLocaleString() : String(v);
+}
+
+/**
+ * THE SAME FIGURE AT THE UNIT THE SESSION WAS PLAYED IN (2026-09-20).
+ *
+ * The tournament tiles below are payouts - Prize, Bounties, Mystery Winnings,
+ * Largest Mystery, Total Payout - and every one of them went through
+ * `formatChips`, which is the chip contract. At a Diamond event that prints a
+ * figure on the wrong grid and, worse, prints it with no noun at all, so "500"
+ * beside a Diamond prize says nothing about what was won. `formatChips`
+ * unchanged at a chip session, by construction.
+ */
+function chipsAtUnit(n: number, unitCents: number): string {
+  return normalizeUnitCents(unitCents) === CHIP_UNIT_CENTS
+    ? formatChips(n)
+    : formatPrizeAtUnit(n, unitCents);
 }
 
 /**
@@ -235,6 +254,15 @@ export function SessionSummaryHost() {
   const tourney = payload?.tournament;
   const isTournament = !!tourney;
 
+  /* THE GRID THIS SESSION WAS PLAYED ON (2026-09-20). The payload already
+     carries the table's arena asset - the cash hero line below has appended
+     " Diamonds" from it since the wallet learned the arena - and
+     `parseArenaIdentity` only writes 'diamonds' for a row satisfying all three
+     conditions `fn_ca_tournament_unit_cents` tests, so it IS the unit. The
+     tournament tiles now read it too. */
+  const unitCents = arenaAssetUnitCents(payload?.arenaAsset);
+  const unitSuffix = moneySuffixAtUnit(unitCents);
+
   /* A tournament "wins" by cashing, not by ending with more chips than you sat
      down with — tournament chips are not money. */
   const totalWon = (tourney?.prize ?? 0) + (tourney?.bountyWinnings ?? 0);
@@ -262,14 +290,17 @@ export function SessionSummaryHost() {
           value: t.finishPlace != null ? ordinal(t.finishPlace) : '-',
         },
         { label: 'Entrants', value: t.entrants != null ? String(t.entrants) : '-' },
-        { label: 'Prize', value: formatChips(t.prize) },
+        { label: 'Prize', value: `${chipsAtUnit(t.prize, unitCents)}${unitSuffix}` },
         { label: 'Duration', value: formatDuration(payload.duration) },
         { label: 'Hands Played', value: String(payload.handsPlayed) },
         { label: 'Hands Per Hour', value: String(handsPerHour) },
       ];
       if (t.knockouts > 0) out.push({ label: 'Knockouts', value: String(t.knockouts) });
       if (t.bountyWinnings > 0) {
-        out.push({ label: 'Bounties', value: formatChips(t.bountyWinnings) });
+        out.push({
+          label: 'Bounties',
+          value: `${chipsAtUnit(t.bountyWinnings, unitCents)}${unitSuffix}`,
+        });
       }
       /* MYSTERY BOUNTY (Dan section 43). The chest half, broken out from the
          Bounties tile above, which also holds the flat bounties paid before the
@@ -281,15 +312,24 @@ export function SessionSummaryHost() {
         out.push({ label: 'Mystery Bounties', value: String(mysteryCount) });
       }
       if (mysteryCents > 0) {
-        out.push({ label: 'Mystery Winnings', value: formatChips(mysteryCents / 100) });
+        out.push({
+          label: 'Mystery Winnings',
+          value: `${chipsAtUnit(mysteryCents / 100, unitCents)}${unitSuffix}`,
+        });
       }
       if (mysteryLargestCents > 0) {
-        out.push({ label: 'Largest Mystery', value: formatChips(mysteryLargestCents / 100) });
+        out.push({
+          label: 'Largest Mystery',
+          value: `${chipsAtUnit(mysteryLargestCents / 100, unitCents)}${unitSuffix}`,
+        });
       }
       /* Section 44: the total is prize + bounty, and it is only worth a tile of
          its own when the two differ. */
       if (t.bountyWinnings > 0) {
-        out.push({ label: 'Total Payout', value: formatChips(t.prize + t.bountyWinnings) });
+        out.push({
+          label: 'Total Payout',
+          value: `${chipsAtUnit(t.prize + t.bountyWinnings, unitCents)}${unitSuffix}`,
+        });
       }
       if (t.rebuys > 0) out.push({ label: 'Rebuys', value: String(t.rebuys) });
       if (t.addOns > 0) out.push({ label: 'Add Ons', value: String(t.addOns) });
@@ -319,7 +359,7 @@ export function SessionSummaryHost() {
       out.push({ label: 'Rebuys', value: String(payload.totalRebuys) });
     }
     return out;
-  }, [payload]);
+  }, [payload, unitCents, unitSuffix]);
 
   /* Dan 2026-08-20 gave a reference for the tournament card, and it is a
      different card entirely — RANKING, a medal, a place band, Stay Observing /
@@ -419,7 +459,7 @@ export function SessionSummaryHost() {
               <span className="ssh-hero__sub">Of {tourney.entrants.toLocaleString()} Entrants</span>
             )}
             <span className="ssh-hero__sub ssh-hero__sub--money">
-              {totalWon > 0 ? `Won ${formatChips(displayPL)}` : 'No Prize'}
+              {totalWon > 0 ? `Won ${chipsAtUnit(displayPL, unitCents)}${unitSuffix}` : 'No Prize'}
             </span>
             <span className="ssh-hero__sweep" aria-hidden="true" />
           </div>

@@ -10,6 +10,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import styles from './NotificationDropdown.module.css';
@@ -40,6 +41,10 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
   const [isOpen, setIsOpen] = useState(false);
   const isMounted = useIsMounted();
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  /* The bus handlers below read the current list to recount unread rows.
+     Reading it from a ref keeps them out of the state updater, which React
+     may run twice and which must stay free of side effects. */
+  const notificationsRef = useRef<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
@@ -52,6 +57,10 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
     };
   }, []);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    notificationsRef.current = notifications;
+  }, [notifications]);
 
   useEffect(() => {
     if (user?.id) {
@@ -173,6 +182,53 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
       setUnreadCount((prev) => prev + 1);
     },
     enabled: !!user?.id,
+  });
+
+  /* ── Why this bell needs the bus, not only the socket ──────────────────
+   * The subscription above is INSERT-only, and the list is fetched once per
+   * user id — opening the dropdown does not refetch. A notification dismissed
+   * or read on /notifications therefore stayed in this bell for the rest of
+   * the session, in the SAME tab, and clicking it navigated to a row that no
+   * longer existed.
+   *
+   * The obvious repair — subscribe to DELETE — cannot work. `notifications`
+   * carries RESTRICTIVE SELECT policies calling
+   * fn_messenger_notification_visible_to(id, ...) and
+   * fn_notification_has_personal_destination(id, user_id); both do EXISTS over
+   * the row. Once the row is deleted the policies deny, and Realtime drops the
+   * DELETE for every subscriber. No client-side change to the subscription can
+   * recover an event the server never sends.
+   *
+   * The dismissing surface knows the id at the moment it acts, so it says so
+   * on the bus. MasterBus mirrors every emit onto its BroadcastChannel, which
+   * covers this tab and every other tab of this browser. */
+  useMasterBusSubscription('NOTIFICATION_DISMISSED', (payload) => {
+    const id = payload?.notificationId;
+    if (!id) return;
+    const next = notificationsRef.current.filter((n) => n.id !== id);
+    if (next.length === notificationsRef.current.length) return;
+    notificationsRef.current = next;
+    setNotifications(next);
+    // Recount rather than decrement: dismissing an ALREADY-read row must not
+    // move the badge, and the filtered list is the only honest source.
+    setUnreadCount(next.filter((n) => !n.isRead).length);
+  });
+
+  /* Read state has the same split brain: /notifications and this bell each
+   * mark rows read, and only an UPDATE echo would tell the other. That echo
+   * does arrive — the row still exists — but this component subscribes to
+   * INSERT alone and ignores it. NOTIFICATION_READ is already emitted by both
+   * surfaces, so honour it here and the bell agrees with the page it was
+   * opened from. */
+  useMasterBusSubscription('NOTIFICATION_READ', (payload) => {
+    const current = notificationsRef.current;
+    const next = payload?.allRead
+      ? current.map((n) => (n.isRead ? n : { ...n, isRead: true }))
+      : current.map((n) => (n.id === payload?.notifId && !n.isRead ? { ...n, isRead: true } : n));
+    if (next.every((n, i) => n === current[i])) return;
+    notificationsRef.current = next;
+    setNotifications(next);
+    setUnreadCount(next.filter((n) => !n.isRead).length);
   });
 
   const markAsRead = async (id: string) => {

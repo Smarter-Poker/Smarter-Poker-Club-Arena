@@ -80,8 +80,32 @@ export function classifyChangedPaths(paths) {
   const broad = matches(wide);
   // These maintained verification inputs execute in the existing CSS browser
   // job. A test-only correction must run its connected browser regressions.
+  //
+  // `helpers/` AND `css/` ARE WHOLE DIRECTORIES, NOT LISTS OF BASENAMES
+  // (2026-09-20). Both used to be alternations of hand-typed names, and both
+  // had already rotted past them - measured, not supposed:
+  //
+  //   tests/e2e/helpers/diamond-test-fixture.mjs        -> src: false
+  //   tests/e2e/helpers/diamond-wheel-page-fixture.mjs  -> src: false
+  //   tests/e2e/css/club-lobby-sticky-selector.spec.ts  -> src: false
+  //
+  // The first drives 12 of the 13 tests in css/diamond-games-playfield.spec.ts
+  // and the second drives the recovery half of css/diamond-wheel-reveal.spec.ts,
+  // so a change to either answered "no browser job needed" about the very job
+  // that runs it (CLAUDE.md 10.86 rule 1: that is not an answer, it is a guess
+  // wearing one). Both are reached by `await import(...)` INSIDE a test body,
+  // so no static import scan would have caught the omission either.
+  //
+  // A basename list cannot hold this rule, because nothing fails when the next
+  // fixture is left out of it. The directory can: every file in `helpers/` is a
+  // fixture module a spec bundles, and all three specs in `css/` are named in
+  // the css-beats-e2e Playwright invocation. `cashLobbyBrowser` feeds `src` and
+  // nothing else, and `src` only ADMITS jobs (build, css-beats-e2e), so a wider
+  // match here can never withhold a check - it can only pay for one.
+  // The `$` anchor stays load-bearing: a `.md` companion of a fixture is
+  // documentation and admits nothing (tests/unit/fixtureNativeCi.test.ts).
   const cashLobbyBrowser = matches(
-    /^tests\/e2e\/(?:global-setup\.ts|live-animations\.spec\.ts|css\/(?:diamond-games-playfield|diamond-wheel-reveal)\.spec\.ts|helpers\/(?:diamond-games|diamond-wheel)-fixture\.mjs|mobile-lobby-chrome\.spec\.ts|production-live-table-realtime\.spec\.ts|support\/(?:cashLobbyOverlays|observationDeadline|initialTableOwnership)\.ts)$/
+    /^tests\/e2e\/(?:global-setup\.ts|live-animations\.spec\.ts|css\/[^/]+\.spec\.ts|helpers\/[^/]+\.mjs|mobile-lobby-chrome\.spec\.ts|production-live-table-realtime\.spec\.ts|support\/(?:cashLobbyOverlays|observationDeadline|initialTableOwnership)\.ts)$/
   );
   // Both PR builds invoke this stamper; its own changes must reach them.
   const buildProvenance = paths.includes('scripts/stamp-build-provenance.mjs');
@@ -103,16 +127,56 @@ export function classifyChangedPaths(paths) {
   );
   // Diamond request/receipt changes and retained real SQL probes must reach
   // the existing required PostgreSQL accounting job.
+  //
+  // THE DIAMOND PROBE LANE IS A PREFIX, NOT A LIST (2026-09-20). The same rot
+  // as the browser alternation above, one directory over and already past the
+  // list: `scripts/dev/test-accounting-delivery.sh` (step "Diamond games" of
+  // accounting_postgres) executes ELEVEN tests/sql/diamond-*.sql probes, and
+  // ten were named here. Measured:
+  //
+  //   tests/sql/diamond-one-setting-super-guarantee.sql -> server: false
+  //
+  // while line 166 of that script runs it and asserts its exact success
+  // witness. The probe could be edited, or broken, and the only job that
+  // executes it would be skipped. `diamond-` after `tests/sql/` is the lane's
+  // own naming rule, so a new probe is admitted by being named like one; the
+  // `poker-diamond-*` probes and the `.ts`/`.py` drivers are untouched.
   const diamondGames = matches(
-    /^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-plinko-denominations|diamond-crash-clicked-multiplier|diamond-spins-claimed-daily-bonus|diamond-wheel-funded-awards|diamond-wheel-upgrade-eight)\.sql|tests\/fixtures\/(diamond-wheel-v2-(receipts|state)|diamond-spins\/wheel-(?:earned|v3)-postgres-receipts)\.json|tests\/unit\/wheel(ServerReceipts|EarnedPostgresContract|UpgradeReceipts|UpgradePostgresContract)\.test\.ts|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|DiamondWheelService|WheelBonusEntryService|diamondBonusRecovery)\.ts|src\/hooks\/use(BonusBudget|EarnedBonus)\.ts|src\/components\/games\/BonusSetup\.tsx|src\/utils\/(crashReceipt|bonusGameBudget|wheelAward|wheelPendingSpin|wheelFairness)\.ts|src\/pages\/Diamond(Choice|Crash|Plinko|Wheel)Page\.tsx)$/
+    /^(tests\/sql\/diamond-[a-z0-9-]+\.sql|tests\/fixtures\/(diamond-wheel-v2-(receipts|state)|diamond-spins\/wheel-(?:earned|v3)-postgres-receipts)\.json|tests\/unit\/wheel(ServerReceipts|EarnedPostgresContract|UpgradeReceipts|UpgradePostgresContract)\.test\.ts|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|DiamondWheelService|DiamondReplayService|DiamondStatementService|WheelBonusEntryService|diamondBonusRecovery)\.ts|src\/hooks\/use(BonusBudget|EarnedBonus)\.ts|src\/components\/games\/BonusSetup\.tsx|src\/utils\/(crashReceipt|bonusGameBudget|wheelAward|wheelPendingSpin|wheelFairness)\.ts|src\/pages\/Diamond(Choice|Crash|Plinko|Wheel)Page\.tsx)$/
   );
 
+  // The Diamond Arena SQL acceptance (2026-09-19): every runner, every fixture
+  // file the runners read and the wrapper that runs them in the accounting job.
+  // The diamond-tournament-* captures, deltas, manifests, seed and cases were
+  // added on 2026-09-20 with the two tournament runners that load them: the
+  // runner is what the job executes, so a change to what it loads has to reach
+  // the same job or the acceptance certifies the old bytes. The `diamondGames`
+  // prefix above happens to claim the `.sql` half of those today; they are
+  // named here as well because THIS is the lane that executes them, so a future
+  // narrowing of that prefix cannot quietly take them out of the job that runs
+  // them. The manifests are claimed only here. Nothing is derived from the
+  // other lane, so the two cannot disagree - a path matched by either is in.
+  const diamondSqlAcceptance = matches(
+    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
+  );
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);
   // Script/fixture-only edits must admit accounting and its routing tests.
   const commitmentAudit = matches(
     /^(scripts\/ci\/test-horse-commitment-audit\.py$|scripts\/ci\/probes\/horse-commitment-audit\/|tests\/unit\/horseCi\.test\.ts$)/
   );
+  // THE LAW REGISTRY IS READ FROM DISK, SO IT HAS TO SEE ITS OWN DIRECTORY
+  // (2026-09-20). `tests/law-registry.law.test.ts` readdirSync's docs/laws.d/
+  // and enforces the registry BOTH ways - an unregistered law fails, a registry
+  // file naming a law that no longer exists fails, and a malformed first line
+  // fails. It runs in exactly one place, `npx vitest run tests/` under
+  // unit_shards, gated on `src || tests`. A pull request that touched only
+  // docs/laws.d/ therefore classified as {tests: false} and skipped the single
+  // reader of the directory it had just edited: retiring a law, or breaking the
+  // registry, went green with nothing looking (CLAUDE.md 10.83). docs/ is
+  // deliberately outside the application suites otherwise - this one directory
+  // is test input, so it is named, exactly as docs/agent-policy/ already is.
+  const lawRegistry = matches(/^docs\/laws\.d\//);
   // The ranking inverse and reminder pg dependencies are executable accounting
   // inputs outside scripts/dev. Their changes also need the routing laws.
   const tournamentAccountingInput = matches(
@@ -124,6 +188,7 @@ export function classifyChangedPaths(paths) {
       broad ||
       bbjFixture ||
       diamondGames ||
+      diamondSqlAcceptance ||
       phase4Changed ||
       matches(mttPreparation) ||
       matches(satelliteQualifiers) ||
@@ -149,11 +214,13 @@ export function classifyChangedPaths(paths) {
     tests:
       instructionOnlyPaths(paths) ||
       paths.some((p) => p.startsWith('docs/agent-policy/')) ||
+      lawRegistry ||
       broad ||
       matches(satelliteQualifiers) ||
       matches(breakfastWitness) ||
       buildProvenance ||
       diamondGames ||
+      diamondSqlAcceptance ||
       commitmentAudit ||
       tournamentAccountingInput ||
       matches(mttPreparation) ||

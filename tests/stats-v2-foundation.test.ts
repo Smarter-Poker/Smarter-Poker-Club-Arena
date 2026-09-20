@@ -126,7 +126,9 @@ describe('Stats truth and reproducibility boundary', () => {
     expect(PAGE).not.toContain('legacy_fallback');
     expect(PAGE).toContain('loadedRangeKeyRef.current === rangeKey');
     expect(PAGE).toContain('onClick={() => changeRange(r.key)}');
-    expect(PAGE).toContain('.call(StatsFactsService, windowDays)');
+    /* The scope argument joined this call on 2026-09-20; the window is still
+       the page's own selected range, which is what this pins. */
+    expect(PAGE).toContain('.call(StatsFactsService, CHIP_STATS, windowDays)');
   });
 });
 

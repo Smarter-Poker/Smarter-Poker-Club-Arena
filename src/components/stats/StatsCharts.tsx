@@ -127,8 +127,7 @@ export default function StatsCharts({
                 contentStyle={{
                   background: 'rgba(14, 14, 28, 0.95)',
                   border: '1px solid rgba(0, 212, 255, 0.2)',
-                  borderRadius: '10px',
-                  backdropFilter: 'blur(16px)',
+                  borderRadius: '2px',
                 }}
                 labelStyle={{ color: '#fff' }}
               />
@@ -163,12 +162,11 @@ export default function StatsCharts({
                 contentStyle={{
                   background: 'rgba(14, 14, 28, 0.95)',
                   border: '1px solid rgba(0, 212, 255, 0.2)',
-                  borderRadius: '10px',
-                  backdropFilter: 'blur(16px)',
+                  borderRadius: '2px',
                 }}
                 labelStyle={{ color: '#fff' }}
               />
-              <Bar dataKey="profit" name="Profit" radius={[4, 4, 0, 0]} isAnimationActive={!still}>
+              <Bar dataKey="profit" name="Profit" radius={[1, 1, 0, 0]} isAnimationActive={!still}>
                 {dailySeries.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.profit >= 0 ? '#22c55e' : '#ef4444'} />
                 ))}
@@ -209,8 +207,7 @@ export default function StatsCharts({
                   contentStyle={{
                     background: 'rgba(14, 14, 28, 0.95)',
                     border: '1px solid rgba(0, 212, 255, 0.2)',
-                    borderRadius: '10px',
-                    backdropFilter: 'blur(16px)',
+                    borderRadius: '2px',
                   }}
                 />
               </PieChart>

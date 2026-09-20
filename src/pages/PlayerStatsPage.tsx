@@ -78,6 +78,7 @@ import './PlayerStatsPage.css';
 import { reportError } from '../utils/errorReporter';
 import { AgentRakeService, type AgentRoleRow } from '../services/AgentRakeService';
 import { StatsFactsService, type PlayerRakeStats } from '../services/StatsFactsService';
+import { CHIP_STATS, statsScopeArgs } from '../services/statsScope';
 import { normalizeStatsContractMetadata } from '../services/statsContract';
 import { buildStatsIntelligenceBrief } from '../components/stats/statsIntelligenceBrief';
 import { capture } from '../lib/analytics';
@@ -686,7 +687,7 @@ export default function PlayerStatsPage() {
     setRakeLoading(true);
     setRakeStats(null);
     void load
-      .call(StatsFactsService, windowDays)
+      .call(StatsFactsService, CHIP_STATS, windowDays)
       .then((r) => {
         if (!cancelled) setRakeStats(r);
       })
@@ -828,6 +829,15 @@ export default function PlayerStatsPage() {
           () =>
             supabase
               .rpc('ca_player_stats_overview_v2', {
+                /* SCOPED (2026-09-20). ca_hand_player_stat carries no asset
+                   column and this RPC takes only p_user, so the day Diamond
+                   cash opens an ungated projection 4 would sum Diamond and
+                   chip profit into this one figure. statsScopeArgs names the
+                   asset the page is asking about; it is empty until the
+                   scoped RPCs land, and the law test is what keeps the
+                   unscoped answer chip-only until then. See
+                   src/services/statsScope.ts. */
+                ...statsScopeArgs(CHIP_STATS),
                 p_user: targetUserId,
                 p_days: windowDays,
                 // Day buckets are cut in the player's zone, server-side
@@ -1191,6 +1201,8 @@ export default function PlayerStatsPage() {
     setAllTimeError(false);
     supabase
       .rpc('ca_player_stats_overview_v2', {
+        /* Scoped: see the note on the windowed read above. */
+        ...statsScopeArgs(CHIP_STATS),
         p_user: targetUserId,
         p_days: null,
         p_tz: resolvedTimeZone(),
@@ -1439,9 +1451,7 @@ export default function PlayerStatsPage() {
     return (
       <div className="stats-page">
         <div className="stats-empty-state" role="status">
-          <span className="empty-icon" aria-hidden="true">
-            {'!'}
-          </span>
+          <span className="empty-status">Private Data Boundary</span>
           <span className="empty-title">Player Stats Are Private</span>
           <span className="empty-description">
             Cross-Player Statistics Require An Authorized Shared-Club View. No All-Club Financial
@@ -1492,7 +1502,7 @@ export default function PlayerStatsPage() {
     return (
       <div className="stats-page">
         <div className="stats-empty-state">
-          <span className="empty-icon">{'!'}</span>
+          <span className="empty-status">Readout Unavailable</span>
           <span className="empty-title">Couldn't Load Your Stats</span>
           <span className="empty-description">
             Your Statistics Are Still There - We Just Could Not Reach Them Right Now.
@@ -1516,7 +1526,7 @@ export default function PlayerStatsPage() {
 
   const emptyState = (
     <div className="stats-empty-state">
-      <span className="empty-icon">{'♠'}</span>
+      <span className="empty-status">Awaiting Hand Ledger</span>
       <span className="empty-title">No Stats Yet</span>
       <span className="empty-description">
         Play Some Hands At The Tables And Your Statistics Will Appear Here Automatically.

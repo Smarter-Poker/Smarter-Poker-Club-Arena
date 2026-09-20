@@ -26,6 +26,7 @@
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 import { tierRank } from '../config/mysteryBountyTiers';
+import { formatPrizeCentsAtUnit } from '../utils/format';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES — the exact shapes the three functions return
@@ -201,21 +202,29 @@ export function parseLeaderboard(raw: unknown): MysteryBountyLeaderboardRow[] {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Cents to a chip figure a player can read.
+ * Cents to a figure a player can read, ON THE GRID THE EVENT PAYS ON.
  *
  * `.toLocaleString()`, never `.padStart()` (CLAUDE.md 5.5, and the Bad Beat
- * Jackpot bug that rule came from). Whole amounts print whole; a chest that
- * genuinely carries cents keeps them rather than being rounded into a lie.
+ * Jackpot bug that rule came from). At a chip event, whole amounts print whole
+ * and a chest that genuinely carries cents keeps them rather than being
+ * rounded into a lie. At a Diamond event there are no cents to keep: a chest
+ * holds whole Diamonds, `a_diamond_mystery_chest_holds_whole_diamonds` is the
+ * migration that makes that true in the database, and a decimal point here
+ * would advertise a chest that cannot be paid.
+ *
+ * THE UNIT IS REQUIRED AND HAS NO DEFAULT, which is the whole design.
+ * `a-tournament-prize-knows-its-unit.law.test.ts` was written because four
+ * money rules defaulted theirs to a cent and every caller omitted it, so the
+ * unit work looked finished from every call site and was wired to nothing. A
+ * caller here passes `tournamentRowUnitCents(tournament)` when it holds the
+ * arena embed, or `UNIT_CENTS_ASSET_NOT_READ` where it genuinely has not read
+ * a club - and the second one is greppable, which an omitted argument is not.
+ *
+ * One rule, in one place: the body is `formatPrizeCentsAtUnit`, which is
+ * `formatPrizeAtUnit` over cents.
  */
-export function formatCents(cents: number | null | undefined): string {
-  const c = Math.round(num(cents));
-  const whole = Math.trunc(c / 100);
-  const rem = Math.abs(c % 100);
-  if (rem === 0) return whole.toLocaleString('en-US');
-  return (c / 100).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+export function formatCents(cents: number | null | undefined, unitCents: number): string {
+  return formatPrizeCentsAtUnit(cents, unitCents);
 }
 
 /**

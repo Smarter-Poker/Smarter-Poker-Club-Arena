@@ -1,8 +1,11 @@
+vi.mock('../../src/hooks/useLiveBonusGuard', () => ({ useLiveBonusGuard: vi.fn() }));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import DiamondChoicePage from '../../src/pages/DiamondChoicePage';
+import { CHOICE_MODE } from '../../src/utils/diamondChoiceMath';
 import fixtures from '../fixtures/diamond-spins/local-postgres-receipts.json';
+import upgrades from '../fixtures/diamond-spins/wheel-v3-postgres-receipts.json';
 
 const backend = vi.hoisted(() => ({
   state: vi.fn(),
@@ -263,37 +266,86 @@ describe('choice-game entry quotes belong to the selected settings', () => {
       screen.queryByText('The Revealed Outcome And Chip Prize Match The Sealed Round.')
     ).not.toBeInTheDocument();
   });
-  it.each([
-    { game: 'mines' as const, label: 'Mines', older: '10', newer: '15' },
-    { game: 'crossing' as const, label: 'Difficulty', older: 'bold', newer: 'extreme' },
-  ])(
-    'keeps a late $game difficulty quote from replacing the newest round limit',
-    async ({ game, label, older, newer }) => {
-      const previous = deferred<typeof state>(),
-        latest = deferred<typeof state>();
-      backend.state.mockImplementation((_club, _game, mode) =>
-        mode === older ? previous.promise : mode === newer ? latest.promise : Promise.resolve(state)
-      );
+  it.each(['mines', 'crossing'] as const)(
+    'offers no difficulty for %s: the one setting is quoted and sent, never chosen',
+    async (game) => {
       render(<DiamondChoicePage game={game} />);
       await act(async () => {});
+      expect(screen.queryByRole('button', { name: /^Change / })).toBeNull();
+      expect(screen.queryByText('Difficulty')).toBeNull();
+      expect(screen.queryByText('Mines')).toBeNull();
+      expect(backend.state).toHaveBeenCalledWith(
+        '00000000-0000-0000-0000-000000000003',
+        game,
+        CHOICE_MODE[game],
+        100
+      );
+      expect(backend.state.mock.calls.every((call) => call[2] === CHOICE_MODE[game])).toBe(true);
       expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
-      fireEvent.click(screen.getByRole('button', { name: `Change ${label}` }));
-      await act(async () => {});
-      expect(screen.getByRole('button', { name: 'Start Round' })).toBeDisabled();
-      fireEvent.click(screen.getByRole('button', { name: `Change ${label}` }));
-      await act(async () => {});
-      await act(async () => {
-        latest.resolve({ ...state, max_steps: 8, prizes: Array(8).fill(2) });
-      });
-      expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
-      await act(async () => {
-        previous.resolve({ ...state, max_steps: 10, prizes: Array(10).fill(1.5) });
-      });
       fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
       expect(backend.start).toHaveBeenCalledTimes(1);
-      expect(backend.start.mock.calls[0][0]).toMatchObject({ game, mode: newer, maxSteps: 8 });
+      expect(backend.start.mock.calls[0][0]).toMatchObject({
+        game,
+        mode: CHOICE_MODE[game],
+        maxSteps: 12,
+      });
     }
   );
+  it.each(['mines', 'crossing'] as const)(
+    'describes the one %s setting in the rules instead of a choice',
+    async (game) => {
+      render(<DiamondChoicePage game={game} />);
+      await act(async () => {});
+      expect(
+        screen.getByText(
+          game === 'mines'
+            ? /6 Mines Hide Among 25 Tiles\. .*A Mine Ends The Round And Pays The Guaranteed Minimum\./
+            : /12 Streets Pay 1\.10x Up To 20\.00x\. .*Book The Win After Any Street\. A Collision Ends The Round And Pays The Guaranteed Minimum\./
+        )
+      ).toBeInTheDocument();
+      expect(screen.getByText(/Nobody Picks A Difficulty/)).toBeInTheDocument();
+      expect(document.body.textContent).not.toContain('Donkey Crossing');
+      expect(document.body.textContent).not.toContain('Upgraded');
+    }
+  );
+  it.each(['mines', 'crossing'] as const)(
+    'shows the standard tenth floor as the %s guarantee for ordinary play before Start',
+    async (game) => {
+      render(<DiamondChoicePage game={game} />);
+      await act(async () => {});
+      // 100 diamonds at 100 per chip is a 1.00 chip stake; the server keeps a tenth.
+      expect(screen.getByText('Guaranteed').nextElementSibling).toHaveTextContent('0.10 Chips');
+      expect(screen.getByText('Guaranteed').nextElementSibling).not.toHaveAttribute(
+        'data-ink',
+        'gold'
+      );
+    }
+  );
+  it('reads Pending for the guarantee while the award is still being checked', async () => {
+    backend.awardState.mockReturnValue(new Promise(() => {}));
+    render(<DiamondChoicePage game="mines" />);
+    await act(async () => {});
+    expect(screen.getByText('Guaranteed').nextElementSibling).toHaveTextContent('Pending');
+    expect(screen.getByRole('button', { name: 'Start Round' })).toBeDisabled();
+  });
+  it('shows an open round its own sealed floor as the guarantee', async () => {
+    backend.state.mockResolvedValue({
+      ...state,
+      open_round: {
+        ...fixtures.receipts.mines,
+        status: 'open',
+        picked: [],
+        payout_chips: 0,
+        proof: null,
+        payout_version: 2,
+        minimum_payout_chips: 0.1,
+      },
+    });
+    render(<DiamondChoicePage game="mines" />);
+    await act(async () => {});
+    expect(screen.getByText('Guaranteed').nextElementSibling).toHaveTextContent('0.10 Chips');
+    expect(backend.start).not.toHaveBeenCalled();
+  });
   it('does not start a new amount using an earlier entry quote', async () => {
     const next = deferred<typeof state>();
     backend.state.mockImplementation((_club, _game, _mode, amount) =>
@@ -315,6 +367,27 @@ describe('choice-game entry quotes belong to the selected settings', () => {
 
 describe('choice games consume wheel-funded entry', () => {
   it.each(['mines', 'crossing'] as const)(
+    'keeps the Super %s title when resuming its spent award',
+    async (game) => {
+      const saved = upgrades.records.find(
+        (r) =>
+          r.kind === 'start' &&
+          r.game === game &&
+          (r.value as Record<string, any>).bonus?.boost_multiplier === 2
+      )!.value;
+      backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });
+      backend.state.mockResolvedValue({ ...state, open_round: saved });
+      render(<DiamondChoicePage game={game} />);
+      await act(async () => {});
+      expect(
+        screen.getByRole('heading', {
+          name: game === 'mines' ? 'Super Diamond Mines' : 'Super Donkey Cross',
+        })
+      ).toBeInTheDocument();
+      expect(backend.start).not.toHaveBeenCalled();
+    }
+  );
+  it.each(['mines', 'crossing'] as const)(
     'starts an awarded %s round with its reserved limits and no fresh base charge',
     async (game) => {
       const award = {
@@ -326,29 +399,98 @@ describe('choice games consume wheel-funded entry', () => {
         status: 'pending',
       };
       backend.state.mockResolvedValue({ ...state, diamonds: 0, max_steps: 0, prizes: [] });
+      // The server's own statement: a Super award on a 2.00 chip stake keeps 1.00, the spin.
+      const quote = {
+        guarantee: 'super',
+        minimumPayoutChips: 1,
+        mode: CHOICE_MODE[game],
+        plinkoTable: 4,
+      };
       backend.awardState.mockResolvedValue({
         enabled: true,
         award,
         gameState: { ...state, diamonds: 0, max_steps: 3, prizes: [2.2, 2.7, 3.4] },
+        quote,
       });
       render(<DiamondChoicePage game={game} />);
       await act(async () => {});
+      expect(
+        screen.getByRole('heading', {
+          name: game === 'mines' ? 'Super Diamond Mines' : 'Super Donkey Cross',
+        })
+      ).toBeInTheDocument();
+      expect(document.body.textContent).not.toContain('Donkey Crossing');
+      expect(document.body.textContent).not.toContain('Upgraded');
+      // The guarantee is on the console before Start: the bay, in gold, and the sentence.
+      const guaranteed = screen.getByText('Guaranteed').nextElementSibling!;
+      expect(guaranteed).toHaveTextContent('1.00 Chips');
+      expect(guaranteed).toHaveAttribute('data-ink', 'gold');
+      const sentence =
+        game === 'mines'
+          ? 'Super Diamond Mines Pays At Least 1.00 Chips, Even If You Hit A Mine.'
+          : 'Super Donkey Cross Pays At Least 1.00 Chips, Even If You Do Not Make It Across.';
+      const statusLines = screen
+        .getAllByRole('status')
+        .filter((line) => line.textContent?.includes(sentence));
+      expect(statusLines.some((line) => line.tagName === 'P')).toBe(true);
       expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
       expect(screen.queryByLabelText('Entry Diamonds')).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
       expect(backend.start).toHaveBeenCalledWith(
         expect.objectContaining({
           game,
+          mode: CHOICE_MODE[game],
           maxSteps: 3,
-          budget: {
+          budget: expect.objectContaining({
             base: 200,
             doubled: false,
-            denomination: 1,
             award: { id: award.id, entryDiamonds: 100, boostMultiplier: 2 },
-          },
+          }),
         }),
         'player-a'
       );
+    }
+  );
+  it.each(['mines', 'crossing'] as const)(
+    'quotes a standard %s award without the Super title and with its tenth',
+    async (game) => {
+      const award = {
+        id: '00000000-0000-0000-0000-000000000078',
+        game,
+        base_diamonds: 100,
+        entry_diamonds: 100,
+        boost_multiplier: 1,
+        status: 'pending',
+      };
+      backend.state.mockResolvedValue({ ...state, diamonds: 0, max_steps: 0, prizes: [] });
+      backend.awardState.mockResolvedValue({
+        enabled: true,
+        award,
+        gameState: { ...state, diamonds: 0, max_steps: 3, prizes: [1.1, 1.45, 1.85] },
+        quote: {
+          guarantee: 'standard',
+          minimumPayoutChips: 0.1,
+          mode: CHOICE_MODE[game],
+          plinkoTable: 5,
+        },
+      });
+      render(<DiamondChoicePage game={game} />);
+      await act(async () => {});
+      expect(
+        screen.getByRole('heading', { name: game === 'mines' ? 'Diamond Mines' : 'Donkey Cross' })
+      ).toBeInTheDocument();
+      const guaranteed = screen.getByText('Guaranteed').nextElementSibling!;
+      expect(guaranteed).toHaveTextContent('0.10 Chips');
+      expect(guaranteed).not.toHaveAttribute('data-ink', 'gold');
+      expect(
+        screen
+          .getAllByRole('status')
+          .some(
+            (line) =>
+              line.tagName === 'P' &&
+              line.textContent?.includes('Pays At Least 0.10 Chips On Any Loss.')
+          )
+      ).toBe(true);
     }
   );
   it.each(['mines', 'crossing'] as const)(
@@ -380,5 +522,8 @@ describe('choice games consume wheel-funded entry', () => {
     await act(async () => {});
     expect(screen.getByRole('button', { name: 'Cross Street' })).toBeEnabled();
     expect(backend.start).not.toHaveBeenCalled();
+    // The saved round keeps its own road ('steady'); the lobby is still quoted the one setting.
+    expect(backend.state.mock.calls.every((call) => call[2] === CHOICE_MODE.crossing)).toBe(true);
+    expect(screen.getByRole('heading', { name: 'Donkey Cross' })).toBeInTheDocument();
   });
 });

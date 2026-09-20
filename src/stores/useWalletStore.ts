@@ -53,12 +53,76 @@ export interface WalletBalance {
   total: number;
 }
 
+/**
+ * THE WORDS `wallet_transactions.category` ACTUALLY ACCEPTS (2026-09-12).
+ *
+ * This list is the `wallet_transactions_category_check` vocabulary, and it is
+ * the one the database enforces - not a convenient shorthand for it. A word
+ * that is not on this list is not a category the wallet can record; the insert
+ * raises 23514 and takes its whole transaction with it.
+ *
+ * It is spelled out here because the wrong spelling has now cost us twice:
+ *
+ *   - `HydraService.seatHorse` logged a horse buy-in as `'buy_in'` while the
+ *     constraint has only ever known `'buyin'`. 8,535 rejected writes between
+ *     2026-04-01 and 2026-04-14, every one of them filed unresolved in
+ *     `horse_bug_reports`. That call was a duplicate of the `'buyin'` receipt
+ *     written correctly two lines above it, so no money was lost - the
+ *     constraint is the only reason 2,016,133.30 chips of second debit
+ *     receipts did not land. The call site was deleted on 2026-04-13 and
+ *     `seatHorse` itself on 2026-09-02.
+ *   - `fn_payout_leaderboard` credited winners as `'leaderboard_payout'`,
+ *     which the constraint did not know. That one DID roll back money:
+ *     migration 20260903225331 records that zero leaderboard batches had ever
+ *     been paid.
+ *
+ * Same defect, five months apart, because nothing tied a category word in the
+ * source to the constraint that has to accept it. The law test
+ * `tests/a-wallet-category-is-a-word-the-constraint-knows.law.test.ts` ties
+ * them now: it reads the constraint out of the migration and fails if this
+ * list drifts from it, or if any source file hands the wallet a word that is
+ * not on it.
+ */
+export const WALLET_TRANSACTION_CATEGORIES = [
+  'buyin',
+  'cashout',
+  'promo',
+  'rake',
+  'transfer',
+  'tournament_buyin',
+  'tournament_winnings',
+  'tournament_cashout',
+  'horse_refill',
+  'deposit',
+  'withdrawal',
+  'refund',
+  'bbj',
+  'bonus',
+  'mint',
+  'settlement',
+  'commission',
+  'INSURANCE',
+  'prize',
+  'rebuy',
+  'addon',
+  'funding',
+  'promotion',
+  'rakeback',
+  'bounty',
+  'addon_refund',
+  'bounty_own',
+  'prize_reversal',
+  'leaderboard_payout',
+] as const;
+
+export type WalletTransactionCategory = (typeof WALLET_TRANSACTION_CATEGORIES)[number];
+
 export interface WalletTransaction {
   id: string;
   walletType: WalletType;
   amount: number;
   direction: 'credit' | 'debit';
-  category: 'buy_in' | 'cash_out' | 'transfer' | 'mint' | 'commission' | 'rakeback' | 'promo';
+  category: WalletTransactionCategory;
   description: string;
   timestamp: string;
   reference?: string;

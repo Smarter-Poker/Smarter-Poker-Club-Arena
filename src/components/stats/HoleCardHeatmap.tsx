@@ -34,6 +34,7 @@ import StatsFactsService, {
   type HandGridCell,
   type ClassHand,
 } from '../../services/StatsFactsService';
+import { CHIP_STATS } from '../../services/statsScope';
 import './HoleCardHeatmap.css';
 
 interface Props {
@@ -111,7 +112,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     setLoading(true);
     setHovered(null); // a key from the previous filter would read "never dealt"
     setSelected(null);
-    StatsFactsService.getHandGrid(userId, { position, variant, days })
+    StatsFactsService.getHandGrid(userId, CHIP_STATS, { position, variant, days })
       .then((payload) => {
         if (cancelled) return;
         // Cells with no hands are noise for "classes seen" and for the scale.
@@ -138,7 +139,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     let cancelled = false;
     setHandsLoading(true);
     setDrillError(null);
-    StatsFactsService.getClassHands(userId, selected, { position, variant, days })
+    StatsFactsService.getClassHands(userId, CHIP_STATS, selected, { position, variant, days })
       .then((p) => {
         if (cancelled) return;
         setClassHands(p.hands ?? []);

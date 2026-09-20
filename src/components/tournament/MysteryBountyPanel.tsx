@@ -50,6 +50,7 @@ import {
   mysteryBountyTierColor,
   mysteryBountyTierLabel,
 } from '../../config/mysteryBountyTiers';
+import { moneyAdjectiveAtUnit } from '../../utils/format';
 import styles from './MysteryBountyPanel.module.css';
 
 export interface MysteryBountyPanelProps {
@@ -70,6 +71,19 @@ export interface MysteryBountyPanelProps {
   currentUserId?: string | null;
   /** Enables the "final position" half of the player payout view (section 41). */
   isCompleted?: boolean;
+  /**
+   * THE GRID THIS EVENT PAYS ON (2026-09-20). Every figure in this panel is
+   * cents off `fn_mystery_bounty_*`, and a Diamond chest holds whole Diamonds,
+   * so the panel cannot print any of them until it is told the unit. Required
+   * and undefaulted for the reason
+   * `a-tournament-prize-knows-its-unit.law.test.ts` records: a defaulted unit
+   * is "I could not tell" folded into a confident cent.
+   *
+   * The host reads it once from the tournament's arena embed with
+   * `tournamentRowUnitCents`; it is not derived here, because this panel is
+   * handed a view of the bounty RPCs and never sees a club row.
+   */
+  unitCents: number;
 }
 
 /** How many low tiers to show before the collapse control takes over. */
@@ -104,6 +118,7 @@ export default function MysteryBountyPanel({
   data,
   currentUserId,
   isCompleted,
+  unitCents,
 }: MysteryBountyPanelProps) {
   const { inventory, awards, leaderboard, isLoading, pendingReveals } = data;
 
@@ -213,10 +228,11 @@ export default function MysteryBountyPanel({
       {top > 0 && (
         <div className={styles.headline}>
           <span className={styles.headlineLabel}>Top Mystery Bounty</span>
-          <span className={styles.headlineValue}>{formatCents(top)}</span>
+          <span className={styles.headlineValue}>{formatCents(top, unitCents)}</span>
           <span className={styles.headlineSub}>
             {counts.original.toLocaleString('en-US')} Mystery Bounties Drawn From A{' '}
-            {formatCents(inventory?.poolCents ?? 0)} Chip Pool
+            {formatCents(inventory?.poolCents ?? 0, unitCents)} {moneyAdjectiveAtUnit(unitCents)}{' '}
+            Pool
           </span>
         </div>
       )}
@@ -235,7 +251,7 @@ export default function MysteryBountyPanel({
       {biggest && (
         <div className={`${styles.status} ${styles.statusComplete}`}>
           <span>
-            Largest Mystery Bounty Won: {formatCents(biggest.amountCents)} By{' '}
+            Largest Mystery Bounty Won: {formatCents(biggest.amountCents, unitCents)} By{' '}
             {winnerNames(biggest.award)}
           </span>
         </div>
@@ -245,15 +261,21 @@ export default function MysteryBountyPanel({
         <div className={styles.poolGrid}>
           <div className={styles.poolCell}>
             <span className={styles.poolCellLabel}>Bounty Pool</span>
-            <span className={styles.poolCellValue}>{formatCents(inventory.poolCents)}</span>
+            <span className={styles.poolCellValue}>
+              {formatCents(inventory.poolCents, unitCents)}
+            </span>
           </div>
           <div className={styles.poolCell}>
             <span className={styles.poolCellLabel}>Awarded</span>
-            <span className={styles.poolCellValue}>{formatCents(awardedCents(inventory))}</span>
+            <span className={styles.poolCellValue}>
+              {formatCents(awardedCents(inventory), unitCents)}
+            </span>
           </div>
           <div className={styles.poolCell}>
             <span className={styles.poolCellLabel}>Still In Play</span>
-            <span className={styles.poolCellValue}>{formatCents(remainingCents(inventory))}</span>
+            <span className={styles.poolCellValue}>
+              {formatCents(remainingCents(inventory), unitCents)}
+            </span>
           </div>
           <div className={styles.poolCell}>
             <span className={styles.poolCellLabel}>Chests Left</span>
@@ -298,7 +320,7 @@ export default function MysteryBountyPanel({
                     <span
                       className={`${styles.tierAmount} ${exhausted ? styles.tierAmountExhausted : ''}`}
                     >
-                      {formatCents(t.amountCents)} x{t.original.toLocaleString('en-US')}
+                      {formatCents(t.amountCents, unitCents)} x{t.original.toLocaleString('en-US')}
                     </span>
                     <span className={styles.tierName}>{mysteryBountyTierLabel(t.tier)}</span>
                     {winners.length > 0 && (
@@ -369,7 +391,9 @@ export default function MysteryBountyPanel({
                   </span>
                 </span>
                 <span>
-                  <span className={styles.awardAmount}>{formatCents(a.amountCents)}</span>
+                  <span className={styles.awardAmount}>
+                    {formatCents(a.amountCents, unitCents)}
+                  </span>
                   <span className={styles.awardWhen}>{shortWhen(a.revealedAt)}</span>
                 </span>
               </div>
@@ -416,7 +440,9 @@ export default function MysteryBountyPanel({
                     {row.bountiesWon === 1 ? 'y' : 'ies'} Won
                   </span>
                 </span>
-                <span className={styles.lbEarnings}>{formatCents(row.earningsCents)}</span>
+                <span className={styles.lbEarnings}>
+                  {formatCents(row.earningsCents, unitCents)}
+                </span>
               </button>
             ))
           )}
@@ -448,12 +474,14 @@ export default function MysteryBountyPanel({
             </div>
             <div className={styles.playerStat}>
               <span className={styles.playerStatLabel}>Bounty Earnings</span>
-              <span className={styles.playerStatValue}>{formatCents(selectedEarnings)}</span>
+              <span className={styles.playerStatValue}>
+                {formatCents(selectedEarnings, unitCents)}
+              </span>
             </div>
             <div className={styles.playerStat}>
               <span className={styles.playerStatLabel}>Largest Bounty</span>
               <span className={styles.playerStatValue}>
-                {formatCents(selectedTotals?.largestCents ?? 0)}
+                {formatCents(selectedTotals?.largestCents ?? 0, unitCents)}
               </span>
             </div>
             {isCompleted && (
@@ -475,7 +503,10 @@ export default function MysteryBountyPanel({
             <div className={`${styles.playerStat} ${styles.playerTotal}`}>
               <span className={styles.playerStatLabel}>Total Payout</span>
               <span className={`${styles.playerStatValue} ${styles.playerTotalValue}`}>
-                {formatCents(Math.round((playerPayout?.prize ?? 0) * 100) + selectedEarnings)}
+                {formatCents(
+                  Math.round((playerPayout?.prize ?? 0) * 100) + selectedEarnings,
+                  unitCents
+                )}
               </span>
             </div>
           </div>

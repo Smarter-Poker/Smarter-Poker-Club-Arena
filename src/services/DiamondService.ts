@@ -25,6 +25,102 @@ export interface DiamondPackage {
   bestValue?: boolean;
 }
 
+/**
+ * THE DIAMOND ARENA IS DIAMONDS ONLY. NO CHIPS, EVER. (Dan, 2026-09-13.)
+ * Nothing in this shape is a chip, and nothing in the wallet may draw one for
+ * the arena. tests/the-diamond-arena-is-diamonds-only.law.test.ts pins it.
+ */
+export interface DiamondArenaInfo {
+  clubId: string;
+  name: string;
+  slug: string | null;
+  cashGamesEnabled: boolean;
+  tournamentsEnabled: boolean;
+  /** Eligible cash tables right now (fn_poker_diamond_buyin's own predicate). */
+  openCashTables: number;
+  /** The smallest seat a player could take, in diamonds; null when none. */
+  minCashBuyIn: number | null;
+  cheapestTable: { id: string; name: string; smallBlind: number; bigBlind: number } | null;
+}
+
+/** One read of the diamond wallet: `fn_diamond_wallet_summary`. */
+export interface DiamondWalletSummary {
+  /** profiles.diamonds - custody is already outside it. */
+  onHand: number;
+  /** Purchased diamonds inside the refund window; cannot be sent. */
+  collateral: number;
+  /** on_hand - collateral: what send_wallet_diamond_transfer will allow. */
+  sendable: number;
+  /** Open poker_diamond_custody balance: at a seat or in a tournament entry. */
+  inArena: number;
+  arenaSeats: number;
+  arenaEntries: number;
+  /** null if the platform diamonds club is not configured. */
+  arena: DiamondArenaInfo | null;
+  lifetimeEarned: number;
+  lifetimeSpent: number;
+  readAt: string;
+}
+
+/**
+ * A player's Diamond Arena statement (`fn_diamond_arena_reconciliation`,
+ * phase 4). READ ONLY: it reports; the live paths are atomic. DIAMONDS ONLY.
+ */
+export interface DiamondArenaUnmatched {
+  custodyId: string;
+  requestId: string | null;
+  reason:
+    | 'journal_missing'
+    | 'reserve_amount_mismatch'
+    | 'release_amount_mismatch'
+    | 'release_movement_missing'
+    | 'seat_stack_drift'
+    | string;
+}
+
+export interface DiamondArenaStatement {
+  sessions: number;
+  openSessions: number;
+  buyIns: number;
+  cashOuts: number;
+  inPlay: number;
+  /** Cash-outs minus buy-ins over RELEASED sessions only. */
+  netResultSettled: number;
+  unmatched: DiamondArenaUnmatched[];
+  balanced: boolean;
+  readAt: string;
+}
+
+export interface DiamondLifetimeStats {
+  lifetimeEarned: number;
+  lifetimeSpent: number;
+}
+
+/**
+ * One line of "Where Your Diamonds Go" (`fn_diamond_flow_by_kind`, phase 5):
+ * a spend sink or an earn source, summed in SQL over the whole ledger. The
+ * bucket and label come from `fn_diamond_kind_bucket`, the ONE place a ledger
+ * kind is named, so both wallets bucket identically. DIAMONDS ONLY.
+ */
+export interface DiamondFlowLine {
+  bucket: string;
+  label: string;
+  lifetime: number;
+  lifetimeCount: number;
+  last30: number;
+  last30Count: number;
+}
+
+export interface DiamondFlow {
+  spent: DiamondFlowLine[];
+  earned: DiamondFlowLine[];
+  spentTotal: number;
+  earnedTotal: number;
+  spentLast30: number;
+  earnedLast30: number;
+  readAt: string;
+}
+
 export interface DiamondWallet {
   balance: number;
   lifetimeEarned: number;
@@ -124,32 +220,207 @@ export const DiamondService = {
   },
 
   /**
-   * Lifetime earned / spent from `diamond_transactions`, the one ledger that
-   * records diamonds. Sign decides the bucket: a positive row is money in, a
-   * negative row is money out. Best-effort: a failed read reports zeros.
+   * Lifetime earned / spent, summed IN SQL over the whole `diamond_transactions`
+   * ledger by `fn_diamond_lifetime_totals` (migration 20260913171905,
+   * SECURITY INVOKER so RLS still scopes it to the caller).
+   *
+   * Until 2026-09-13 this read up to 5,000 rows into the browser and added them
+   * up here, and a failed read returned `{ 0, 0 }` - a figure indistinguishable
+   * from a brand-new account, presented as a lifetime. CLAUDE.md 10.86: "I could
+   * not tell" is its own outcome. So a failed read now returns `null`, and the
+   * surface says Unavailable and offers a retry instead of printing a zero.
    */
-  async getLifetimeStats(
-    userId: string
-  ): Promise<{ lifetimeEarned: number; lifetimeSpent: number }> {
+  async getLifetimeStats(userId: string): Promise<DiamondLifetimeStats | null> {
     try {
-      const { data, error } = await supabase
-        .from('diamond_transactions')
-        .select('amount')
-        .eq('user_id', userId)
-        .limit(5000);
+      const { data, error } = await supabase.rpc('fn_diamond_lifetime_totals', {
+        p_user_id: userId,
+      });
       if (error) throw error;
-      let lifetimeEarned = 0;
-      let lifetimeSpent = 0;
-      for (const row of data || []) {
-        const n = Number(row.amount || 0);
-        if (!Number.isFinite(n)) continue;
-        if (n > 0) lifetimeEarned += n;
-        else lifetimeSpent += -n;
+      // RETURNS TABLE: one row, or none if the function somehow yields nothing.
+      const row = (Array.isArray(data) ? data[0] : data) as
+        | { lifetime_earned: number | string; lifetime_spent: number | string }
+        | undefined;
+      if (!row) throw new Error('fn_diamond_lifetime_totals returned no row');
+      const lifetimeEarned = Number(row.lifetime_earned);
+      const lifetimeSpent = Number(row.lifetime_spent);
+      if (!Number.isFinite(lifetimeEarned) || !Number.isFinite(lifetimeSpent)) {
+        throw new Error('fn_diamond_lifetime_totals returned a non-numeric total');
       }
       return { lifetimeEarned, lifetimeSpent };
     } catch (err) {
       reportError(err, 'DiamondService.getLifetimeStats', { userId });
-      return { lifetimeEarned: 0, lifetimeSpent: 0 };
+      return null;
+    }
+  },
+
+  /**
+   * The whole diamond picture in one RPC, own-user only (the function pins
+   * the caller to auth.uid()). `null` means the read failed: the surface says
+   * Unavailable and offers a retry rather than printing zeros (10.86).
+   */
+  async getWalletSummary(): Promise<DiamondWalletSummary | null> {
+    try {
+      const { data, error } = await supabase.rpc('fn_diamond_wallet_summary');
+      if (error) throw error;
+      const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+      if (!row || typeof row !== 'object') {
+        throw new Error('fn_diamond_wallet_summary returned nothing');
+      }
+      const num = (v: unknown) => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) {
+          throw new Error('fn_diamond_wallet_summary returned a non-numeric figure');
+        }
+        return n;
+      };
+      const arenaRaw = row.arena as Record<string, unknown> | null | undefined;
+      const arena: DiamondArenaInfo | null =
+        arenaRaw && typeof arenaRaw === 'object' && typeof arenaRaw.club_id === 'string'
+          ? {
+              clubId: arenaRaw.club_id,
+              name: String(arenaRaw.name || 'Diamond Arena'),
+              slug: typeof arenaRaw.slug === 'string' ? arenaRaw.slug : null,
+              cashGamesEnabled: arenaRaw.cash_games_enabled === true,
+              tournamentsEnabled: arenaRaw.tournaments_enabled === true,
+              openCashTables: Number.isFinite(Number(arenaRaw.open_cash_tables))
+                ? Number(arenaRaw.open_cash_tables)
+                : 0,
+              minCashBuyIn:
+                arenaRaw.min_cash_buy_in == null ||
+                !Number.isFinite(Number(arenaRaw.min_cash_buy_in))
+                  ? null
+                  : Number(arenaRaw.min_cash_buy_in),
+              cheapestTable: (() => {
+                const t = arenaRaw.cheapest_table as Record<string, unknown> | null | undefined;
+                if (!t || typeof t !== 'object' || typeof t.id !== 'string') return null;
+                return {
+                  id: t.id,
+                  name: String(t.name || ''),
+                  smallBlind: Number(t.small_blind) || 0,
+                  bigBlind: Number(t.big_blind) || 0,
+                };
+              })(),
+            }
+          : null;
+      return {
+        onHand: num(row.on_hand),
+        collateral: num(row.collateral),
+        sendable: num(row.sendable),
+        inArena: num(row.in_arena),
+        arenaSeats: num(row.arena_seats),
+        arenaEntries: num(row.arena_entries),
+        arena,
+        lifetimeEarned: num(row.lifetime_earned),
+        lifetimeSpent: num(row.lifetime_spent),
+        readAt: String(row.read_at || ''),
+      };
+    } catch (err) {
+      reportError(err, 'DiamondService.getWalletSummary');
+      return null;
+    }
+  },
+
+  /**
+   * The Diamond Arena statement: every session, every movement, and whether
+   * each one reconciles. `null` means the read failed (10.86), never a
+   * statement that claims balance it did not read.
+   */
+  async getArenaStatement(): Promise<DiamondArenaStatement | null> {
+    try {
+      const { data, error } = await supabase.rpc('fn_diamond_arena_reconciliation');
+      if (error) throw error;
+      const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+      if (!row || typeof row !== 'object') {
+        throw new Error('fn_diamond_arena_reconciliation returned nothing');
+      }
+      const num = (v: unknown) => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) {
+          throw new Error('fn_diamond_arena_reconciliation returned a non-numeric figure');
+        }
+        return n;
+      };
+      const rawUnmatched = Array.isArray(row.unmatched) ? row.unmatched : [];
+      const unmatched: DiamondArenaUnmatched[] = rawUnmatched.map((u) => {
+        const r = (u && typeof u === 'object' ? u : {}) as Record<string, unknown>;
+        return {
+          custodyId: String(r.custody_id || ''),
+          requestId: typeof r.request_id === 'string' ? r.request_id : null,
+          reason: String(r.reason || 'unknown'),
+        };
+      });
+      if (row.balanced !== true && row.balanced !== false) {
+        throw new Error('fn_diamond_arena_reconciliation did not say whether it balanced');
+      }
+      return {
+        sessions: num(row.sessions),
+        openSessions: num(row.open_sessions),
+        buyIns: num(row.buy_ins),
+        cashOuts: num(row.cash_outs),
+        inPlay: num(row.in_play),
+        netResultSettled: num(row.net_result_settled),
+        unmatched,
+        balanced: row.balanced,
+        readAt: String(row.read_at || ''),
+      };
+    } catch (err) {
+      reportError(err, 'DiamondService.getArenaStatement');
+      return null;
+    }
+  },
+
+  /**
+   * Where the diamonds go and where they come from: the ledger by bucket,
+   * spent and earned, lifetime and the last 30 days, own-user only. `null`
+   * means the read failed (10.86): the panel says Unavailable and offers a
+   * retry rather than drawing empty bars.
+   */
+  async getDiamondFlow(): Promise<DiamondFlow | null> {
+    try {
+      const { data, error } = await supabase.rpc('fn_diamond_flow_by_kind');
+      if (error) throw error;
+      const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+      if (!row || typeof row !== 'object') {
+        throw new Error('fn_diamond_flow_by_kind returned nothing');
+      }
+      const num = (v: unknown) => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) {
+          throw new Error('fn_diamond_flow_by_kind returned a non-numeric figure');
+        }
+        return n;
+      };
+      const lines = (raw: unknown): DiamondFlowLine[] => {
+        if (!Array.isArray(raw)) {
+          throw new Error('fn_diamond_flow_by_kind returned no bucket list');
+        }
+        return raw.map((l) => {
+          const r = (l && typeof l === 'object' ? l : {}) as Record<string, unknown>;
+          if (typeof r.bucket !== 'string' || typeof r.label !== 'string') {
+            throw new Error('fn_diamond_flow_by_kind returned an unnamed bucket');
+          }
+          return {
+            bucket: r.bucket,
+            label: r.label,
+            lifetime: num(r.lifetime),
+            lifetimeCount: num(r.lifetime_count),
+            last30: num(r.last30),
+            last30Count: num(r.last30_count),
+          };
+        });
+      };
+      return {
+        spent: lines(row.spent),
+        earned: lines(row.earned),
+        spentTotal: num(row.spent_total),
+        earnedTotal: num(row.earned_total),
+        spentLast30: num(row.spent_last30),
+        earnedLast30: num(row.earned_last30),
+        readAt: String(row.read_at || ''),
+      };
+    } catch (err) {
+      reportError(err, 'DiamondService.getDiamondFlow');
+      return null;
     }
   },
 

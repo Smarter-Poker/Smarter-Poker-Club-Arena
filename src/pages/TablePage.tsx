@@ -235,6 +235,7 @@ import TimebankCounter from '../components/table/TimebankCounter';
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
 import { parseTableArenaIdentity, seatCanAddFunds } from '../../server/src/domain/ArenaContext';
+import { arenaAssetUnitCents } from '../lib/arenaUnitCents';
 import { bootExplanation, seatCopy } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
 import { soundService, haptic } from '../services/SoundService';
@@ -472,7 +473,7 @@ const RANK_WORD = (r: string): string =>
   })[String(r).toUpperCase()] ?? String(r).toUpperCase();
 import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { getAnimationSpeed } from '../utils/animationSpeed';
-import { formatChipAward } from '../utils/format';
+import { formatAwardAtUnit, formatChipAward } from '../utils/format';
 import { bountyWinnersOf } from '../utils/bountyBroadcast';
 import { formatPopupText } from '../utils/popupStyle';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
@@ -3206,13 +3207,36 @@ function LiveTablePage({
   >([]);
   const potWinFloatIdRef = useRef(0);
   const potWinFloatTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  /**
+   * THE GRID THIS TABLE PAYS ON (2026-09-20).
+   *
+   * `tableState.arenaAsset` has already been through `parseArenaIdentity`,
+   * which returns `'diamonds'` ONLY for a club row satisfying all three of the
+   * conditions `fn_ca_tournament_unit_cents` tests, and
+   * `parseTableArenaIdentity` additionally refuses a Diamond table under a
+   * union. So the asset on the table state IS the unit, and
+   * `arenaAssetUnitCents` reads it rather than deriving it a second time. An
+   * unread arena answers `UNIT_CENTS_ASSET_NOT_READ`, which is greppable.
+   *
+   * Two readers: the seat's bounty badge (a prop) and the knockout float (a
+   * ref, because `spawnPotWinFloat` is a stable callback with no deps and must
+   * not be rebuilt on every arena read).
+   */
+  const feltUnitCents = arenaAssetUnitCents(tableState.arenaAsset);
+  const feltUnitCentsRef = useRef(feltUnitCents);
+  feltUnitCentsRef.current = feltUnitCents;
+
   const spawnPotWinFloat = useCallback(
     (fromX: number, fromY: number, toX: number, toY: number, amount: number) => {
       if (!(amount > 0)) return;
       // EXACT TO THE CENT (knockout audit 2026-09-04). This used to be
       // Math.round() for anything >= 1, so a 7.50 bounty floated up as "+8"
       // beside a seat delta that said "+7.50". One formatter for both now.
-      const label = formatChipAward(amount);
+      /* AT THE UNIT THE TABLE PAYS ON (2026-09-20). `formatChipAward` is the
+         chip contract and is unchanged for a chip table; a Diamond award is a
+         whole Diamond and must not float up with a decimal point the payment
+         cannot contain. */
+      const label = formatAwardAtUnit(amount, feltUnitCentsRef.current);
       const id = ++potWinFloatIdRef.current;
       setPotWinFloats((prev) => [...prev, { id, fromX, fromY, toX, toY, label }]);
       // Self-clean after the CSS animation (2.2s) has fully played out.
@@ -24511,6 +24535,11 @@ function LiveTablePage({
                       ? tableState.bountyMap[player.id]
                       : undefined
                   }
+                  /* THE GRID THIS TABLE PAYS ON (2026-09-20). `arenaAsset` has
+                     been through `parseArenaIdentity`, which writes 'diamonds'
+                     only for a row satisfying all three conditions
+                     `fn_ca_tournament_unit_cents` tests, so it IS the unit. */
+                  bountyUnitCents={feltUnitCents}
                   isWinner={
                     winnerBandActive && player ? winnerInfo.playerIds.includes(player.id) : false
                   }

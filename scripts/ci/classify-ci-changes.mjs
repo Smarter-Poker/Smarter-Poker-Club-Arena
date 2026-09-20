@@ -150,7 +150,12 @@ export function classifyChangedPaths(paths) {
   // The diamond-tournament-* captures, deltas, manifests, seed and cases were
   // added on 2026-09-20 with the two tournament runners that load them: the
   // runner is what the job executes, so a change to what it loads has to reach
-  // the same job or the acceptance certifies the old bytes.
+  // the same job or the acceptance certifies the old bytes. The `diamondGames`
+  // prefix above happens to claim the `.sql` half of those today; they are
+  // named here as well because THIS is the lane that executes them, so a future
+  // narrowing of that prefix cannot quietly take them out of the job that runs
+  // them. The manifests are claimed only here. Nothing is derived from the
+  // other lane, so the two cannot disagree - a path matched by either is in.
   const diamondSqlAcceptance = matches(
     /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
   );

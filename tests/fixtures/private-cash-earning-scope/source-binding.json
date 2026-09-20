@@ -14,9 +14,24 @@
   "reviewed_dependencies": {
     "supabase/accounting/weekly-v3/components/20260914131539_cash_commissions_account_for_every_contributor_once.sql": "cfad133fe5581148709f26ae22dd9430f205fb459b9bc0f9f86eafd3ef86f768",
     "supabase/accounting/weekly-v3/components/20260914144442_cash_accounting_refusals_are_durable_and_retryable.sql": "dd50f34cbf18e3a5fb52b6b3873ef74fceb360a2c815212c52de08d183521cfb",
-    "server/src/services/RakebackSettlerService.ts": "31a9394a6e86ba9f693f3f5f1e03d17d7013f258b9e4458c9a97e49e45b32507",
+    "server/src/services/RakebackSettlerService.ts": "29c9ee64d7c831a8829c488ede8cf5329529c185208ea71809935d8f507ec848",
     "tests/fixtures/full-weekly-accounting/tables.json": "0f986db3950d8416e5f2e968972ca03bfdb984bf8aa43267d60b2fce37cf0428",
     "tests/fixtures/full-weekly-accounting/triggers-round-3.json": "383cf9b43093ba5f945a68c9f4f8d1389472e8ce6b1d16f4b18d547a86a0249e"
   },
-  "execution_performed": false
+  "execution_performed": false,
+  "tournament_sentinel_unchecked_reads_rebinding_20260920": {
+    "base_commit": "eb94d08ae8a80f80b7881f3d4d6930da9e6e91c1",
+    "prior_binding_sha256": "109da50db68118b39b2a862d0087803c423f813e0c8b6f25cdc7e89e3645bd45",
+    "failed_run": 35544697528,
+    "source_pull_request": 4979,
+    "source_commit": "1084f49de0",
+    "changed_repository_bindings": [
+      {
+        "path": "server/src/services/RakebackSettlerService.ts",
+        "previous_sha256": "31a9394a6e86ba9f693f3f5f1e03d17d7013f258b9e4458c9a97e49e45b32507",
+        "sha256": "29c9ee64d7c831a8829c488ede8cf5329529c185208ea71809935d8f507ec848"
+      }
+    ],
+    "reason": "PR #4979 repaired runTournamentSentinel in this pinned file. The sentinel assigned newWatermark = t.ended_at at the TOP of each loop iteration, and its three integrity reads were each written `if (!err) { ... }` with no else branch, no reportError and no violation counted. A transient PostgREST failure therefore skipped that tournament's payout-conservation, stranded-player or raked-hand check in silence while the watermark still advanced past it, and the next cycle's `.gt('ended_at', mark)` never read the event again. Each failed sub-read now reports through this service's existing reportError path, and the watermark is advanced at the end of an iteration only for a tournament whose checks all actually ran; a tie on ended_at falls back to the batch's starting mark. The commit also deletes keysetFilter, which has had zero callers since the settler's cursor became a parameterised .eq()/.gt() pair. Neither change touches this qualification's subject. fn_cash_earning_club, the seat-scope attribution it reviews, and the cash-source submission path this service drives into fn_credit_agent_commissions_batch are all untouched: the diff is confined to the tournament sentinel and to a function nothing called. No rate, bank destination, refusal reason, commission, statistic or payout behaviour changes. Regression protection landed with it in server/src/services/tournamentSentinelUncheckedReads.test.ts, which fails 5 of 7 against the previous bytes and passes 7 of 7 against these."
+  }
 }

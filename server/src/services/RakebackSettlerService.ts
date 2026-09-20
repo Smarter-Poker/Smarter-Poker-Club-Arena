@@ -73,7 +73,11 @@ const CATCH_UP_DELAY_MS = 60 * 1000; // 1 minute
  * The size is now DERIVED from the budget that binds (CLAUDE.md 1.1.7); the
  * arithmetic and its measurement live in cashAccountingBatchBudget.ts.
  */
-const CREDIT_BATCH_SIZE = cashAccountingBatchSize(DB_TIMEOUT_MS);
+/* Exported for the same reason as FETCH_LIMIT: a regression suite must build
+   a dataset that genuinely straddles this boundary, not hard-code a number
+   that drifts away from the real one. A test asserting 150 was exactly how
+   this constant stopped matching its own cost. */
+export const CREDIT_BATCH_SIZE = cashAccountingBatchSize(DB_TIMEOUT_MS);
 
 /**
  * The durable-refusal retry opens every cycle, BEFORE any new work is read, so

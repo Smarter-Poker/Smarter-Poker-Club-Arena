@@ -1429,5 +1429,27 @@
     "failed_run": 35453124666,
     "reason": "The additive Diamond replay and daily-custody CI routes changed the classifier. All prior classification branches and financial fixture inputs remain unchanged. Refresh the three active classifier bindings and the two resulting nested binding hashes; retain historical receipts.",
     "verification": "Exact active binding guards and classifier routing tests; native qualification remains the existing required hosted accounting job."
+  },
+  "retired_dispute_escalation_rebinding_20260920": {
+    "base_commit": "1e19f83b6cd6e2d7baecb97fa9d9cfefd03486aa",
+    "prior_binding_sha256": "6520d17392293e18793a1b1f23eecf492a169883552d7428d35474c027d19274",
+    "failed_run": 35490389682,
+    "also_failed_run": 35478014685,
+    "source_pull_request": 4943,
+    "source_commit": "74f5c9c076",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/FinancialCronService.test.ts",
+        "previous_sha256": "a4b4f2a06cfebe1812f1ba82e50f6200060a2f2d5ade8f4145b55cd86f052da5",
+        "sha256": "d896cbd87786cb83569ee48e7d1adde3f017ceba3a3e1f4fe573ed7cfefddb4d"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "3b40d1ae0b008db62b2ec37f0242961007d7c91cd5fbd21a2fd378f39039d4e9",
+        "sha256": "a6ae2ef64e38661fb5983a6d621b4ca9ad83fd6dc85af975f3a98e937b8579f6"
+      }
+    ],
+    "reason": "PR #4943 retired the browser dispute-escalation entry point on 2026-09-19. It was right to: the authenticated role has no UPDATE grant on public.disputes and the table's only policy is SELECT, so the method answered 42501 on every call while still incrementing its own counter and persisting a \"dispute auto-escalated\" alert through a function authenticated can execute. Two bound application tests moved with it. tests/unit/FinancialCronService.test.ts now asserts the method is absent and that booting the service never touches the disputes table; tests/unit/discardedErrorReadRatchet.test.ts drops its src/services/FinancialCronService.ts baseline entry because the discarded read is gone. Both changes widen coverage and neither touches a financial component, an assertion or a captured catalog fixture. Its own required checks were green because its paths do not route to the accounting job, so from the next main run onward the required accounting check failed on main and on every open pull request with \"Repository lifecycle fixture drift\". Refresh only these two stale repository bindings; preserve all 29 captured catalog fixtures, the other 421 repository bindings, every financial component and every assertion.",
+    "verification": "Each new sha256 is the sha256 of the file at this base commit, recomputed from the bytes on disk. All 423 repository bindings were then re-verified against the tree and agree. The captured fixtures map, component_count and every assertion count are unchanged from the previous binding."
   }
 }

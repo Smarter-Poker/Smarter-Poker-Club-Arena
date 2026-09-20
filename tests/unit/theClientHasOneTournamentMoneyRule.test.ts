@@ -55,7 +55,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { blankNonCode } from '../helpers/sourceWindow';
+import { blankNonCode, sliceCall } from '../helpers/sourceWindow';
 
 const ROOT = path.join(__dirname, '..', '..');
 const ENGINE = 'src/services/PayoutEngine.ts';
@@ -155,5 +155,253 @@ describe('the client has one tournament money rule', () => {
         `through payoutMath with a stated unit, this boundary has done its job - delete this ` +
         `test and let the census in a-tournament-prize-knows-its-unit.law.test.ts cover it.`
     ).toMatch(/bountyPool\s*\/\s*playerCount/);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  AND THE RULE REACHES THE BOUNTY AND MYSTERY SURFACES (2026-09-20)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * #4938 and #4685 gave the tournament PRIZE surfaces a unit: the lobby's
+ * projected ladder, the sign-up dialog, the detail overview, the info panel and
+ * the rewards ladder all price a place through `placePrize` with
+ * `tournamentRowUnitCents`. The BOUNTY and MYSTERY surfaces were not in that
+ * pass and every one of them still printed the chip contract:
+ *
+ *   - a seat's bounty badge printed two decimal places for any head carrying
+ *     cents, which at a Diamond table is a fraction of a Diamond the bounty
+ *     bank cannot pay (`a_diamond_bounty_is_paid_from_its_own_bank`);
+ *   - the knockout float beside it used `formatChipAward`, the same contract;
+ *   - every mystery chest figure went through `formatCents`, which had no unit
+ *     at all, so a Diamond chest advertised cents it cannot hold
+ *     (`a_diamond_mystery_chest_holds_whole_diamonds`);
+ *   - the ranking card, the session summary, the results table and the
+ *     celebration each printed a prize or a bounty with their own local chip
+ *     formatter and, in several places, with NO NOUN, so a Diamond figure did
+ *     not even say what it was.
+ *
+ * NOTHING WAS EVER SHOWN WRONG TO A PLAYER, and this says so rather than
+ * implying otherwise: zero Diamond tournaments have ever existed and
+ * `ca_arena_settings.tournaments_enabled` is false. Like
+ * `aDiamondEventIsPricedInDiamonds`, this is the gap closing BEFORE the switch.
+ *
+ * ─── WHY A SOURCE PIN AND NOT ONLY A UNIT TEST ──────────────────────────────
+ *
+ * The arithmetic is covered by `aDiamondEventIsPricedInDiamonds`. What a unit
+ * test cannot see is a SURFACE that never asks. Every defect above was a
+ * correct formatter called by a component that had not read a club row, which
+ * is the exact shape `a-tournament-prize-knows-its-unit.law.test.ts` was
+ * written about one level down. So each file below is pinned two ways: it must
+ * name a unit source, and the unitless expression it used to print money with
+ * must be gone. The failure message names the replacement, so a red pin tells
+ * the next agent what to do instead of only that something moved.
+ *
+ * `SeatKnockout.tsx` is on the list and carries NO assertion about a unit,
+ * because it prints no money: it announces `<name> Knocked Out` and stamps the
+ * seat, and the award that ships with it is TablePage's float. That is asserted
+ * rather than assumed, so "it needed no change" stays a measured fact.
+ */
+/**
+ * How many top-level arguments a sliced call carries. Brackets nest; commas
+ * inside them do not count, so `Math.round(x * 100)` and `{ a, b }` are one
+ * argument each.
+ *
+ * The same counter `a-tournament-prize-knows-its-unit.law.test.ts` uses, and
+ * deliberately a second copy rather than a shared export: it is twenty lines of
+ * test scaffolding, not a money rule, and moving it would edit a helper that
+ * thirty other source pins in this repo read. If you change one, the other is
+ * independent and stays correct on its own terms.
+ */
+function argumentCount(call: string): number {
+  const code = blankNonCode(call);
+  const open = code.indexOf('(');
+  let depth = 0;
+  let args = 1;
+  let sawContent = false;
+  for (let i = open; i < code.length; i++) {
+    const ch = code[i];
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') {
+      depth--;
+      if (depth === 0) break;
+    } else if (ch === ',' && depth === 1) args++;
+    else if (depth >= 1 && ch.trim() !== '') sawContent = true;
+  }
+  return sawContent ? args : 0;
+}
+
+describe('the bounty and mystery surfaces state their unit', () => {
+  /** A source that names a unit at all. Any of these is a read, not a guess. */
+  const UNIT_SOURCES = [
+    'unitCents',
+    'tournamentRowUnitCents',
+    'arenaAssetUnitCents',
+    'UNIT_CENTS_ASSET_NOT_READ',
+    'DIAMOND_UNIT_CENTS',
+  ];
+
+  /**
+   * The surfaces, each with the unitless expression that must not come back.
+   * `gone` is matched against code with comments and strings blanked, so the
+   * explanatory notes beside each change cannot satisfy or break a pin.
+   */
+  const SURFACES: Array<{ file: string; gone: string[]; instead: string }> = [
+    {
+      file: 'src/components/table/SeatSlot.tsx',
+      gone: ['maximumFractionDigits: 2,\n            })} Chips`'],
+      instead:
+        'the badge branches on bountyUnitCents and prints formatPrizeAtUnit at a Diamond table',
+    },
+    {
+      file: 'src/pages/TablePage.tsx',
+      gone: ['formatChipAward(amount)'],
+      instead: 'formatAwardAtUnit(amount, feltUnitCentsRef.current)',
+    },
+    {
+      file: 'src/components/tournament/TournamentRankingCard.tsx',
+      gone: [
+        'formatMoney(result.prize || 0)',
+        'formatMoney(result.bountyWinnings)',
+        'formatMoney(mysteryCents / 100)',
+        'formatMoney(largestMysteryCents / 100)',
+      ],
+      instead: 'moneyAtUnit(<amount>, unitCents), with unitCents supplied by TournamentRankingHost',
+    },
+    {
+      file: 'src/components/session/SessionSummaryHost.tsx',
+      gone: [
+        'formatChips(t.prize)',
+        'formatChips(t.bountyWinnings)',
+        'formatChips(mysteryCents / 100)',
+        'formatChips(mysteryLargestCents / 100)',
+      ],
+      instead: 'chipsAtUnit(<amount>, unitCents) with moneySuffixAtUnit beside it',
+    },
+    {
+      file: 'src/pages/tournament/TournamentResultsPage.tsx',
+      gone: ['formatAmount(r.prize)', 'formatAmount(r.bounty_winnings)'],
+      instead: "unitAmount(<amount>), built on the row's own arena embed",
+    },
+    {
+      file: 'src/components/tournament/MysteryBountyPanel.tsx',
+      gone: ['Chip Pool'],
+      instead: 'moneyAdjectiveAtUnit(unitCents) before the word Pool',
+    },
+    {
+      file: 'src/components/tournament/MysteryBountyCelebration.tsx',
+      gone: ['Worth ${money(amount)}'],
+      instead: 'a figure at unitCentsRef.current, with moneySuffixAtUnit naming it',
+    },
+    {
+      file: 'src/services/MysteryBountyService.ts',
+      gone: ['export function formatCents(cents: number | null | undefined): string'],
+      instead: 'formatCents(cents, unitCents), whose unit is required and undefaulted',
+    },
+    {
+      file: 'src/components/tournament/details/RewardsTab.tsx',
+      gone: ['chips(bounty.total)', 'chips(bounty.claimed)', 'chips(bounty.perKnockout)'],
+      instead: 'unitMoney(<amount>), which is chips() at a chip event and whole Diamonds otherwise',
+    },
+  ];
+
+  it.each(SURFACES.map((s) => [s.file, s] as const))(
+    '%s reads a unit before it prints tournament money',
+    (_name, surface) => {
+      const code = blankNonCode(read(surface.file));
+      expect(
+        UNIT_SOURCES.some((needle) => code.includes(needle)),
+        `${surface.file} prints a tournament money figure and names no unit. It must read one - ` +
+          `${surface.instead} - or a Diamond bounty, chest or prize is printed on the cent grid ` +
+          `with no error anywhere, because "chips" is a well-formed answer.`
+      ).toBe(true);
+    }
+  );
+
+  it.each(SURFACES.map((s) => [s.file, s] as const))(
+    '%s no longer carries its unitless money expression',
+    (_name, surface) => {
+      const code = blankNonCode(read(surface.file));
+      for (const gone of surface.gone) {
+        expect(
+          code.includes(gone),
+          `${surface.file} prints money through \`${gone}\` again. That expression has no unit, ` +
+            `so it prints the chip contract at a Diamond event. Use ${surface.instead}.`
+        ).toBe(false);
+      }
+    }
+  );
+
+  it('SeatKnockout prints no money, which is why it needed no unit', () => {
+    // The floor assertion for this one: if the KO overlay ever starts printing
+    // the bounty it is stamping, it joins the list above.
+    const code = blankNonCode(read('src/components/table/SeatKnockout.tsx'));
+    for (const formatter of [
+      'formatChipAward',
+      'formatTableChips',
+      'formatPrizeAtUnit',
+      'formatCents',
+      'toLocaleString',
+    ]) {
+      expect(
+        code,
+        `SeatKnockout now prints a figure through ${formatter}. It is the seat's KO stamp and has ` +
+          `never carried money - the award beside it is TablePage's float. If it is going to show ` +
+          `an amount, it needs the table's unit and a row in the SURFACES list above.`
+      ).not.toContain(formatter);
+    }
+  });
+
+  /**
+   * THE UNIT IS NEVER OMITTED AT A CALL SITE, which `tsc` enforces only while
+   * nobody writes a default back into a signature. This is the census that
+   * notices if they do, in the same shape and for the same reason as
+   * `a-tournament-prize-knows-its-unit.law.test.ts`.
+   */
+  it('every unit-bearing money formatter is called with its unit', () => {
+    const TWO_ARG_RULES = [
+      'formatPrizeAtUnit',
+      'formatPrizeCentsAtUnit',
+      'formatAwardAtUnit',
+      'formatCents',
+    ];
+    const ONE_ARG_RULES = ['moneyWordAtUnit', 'moneyAdjectiveAtUnit', 'moneySuffixAtUnit'];
+    const offenders: string[] = [];
+    let scanned = 0;
+
+    for (const file of productionFiles('src')) {
+      const code = blankNonCode(read(file));
+      for (const [fn, want] of [
+        ...TWO_ARG_RULES.map((f) => [f, 2] as const),
+        ...ONE_ARG_RULES.map((f) => [f, 1] as const),
+      ]) {
+        // The declaring module's own signature is not a call site.
+        if (new RegExp(`(export const|export function)\\s+${fn}\\b`).test(code)) continue;
+        let rest = code;
+        for (;;) {
+          const at = rest.indexOf(`${fn}(`);
+          if (at < 0) break;
+          const call = sliceCall(rest, `${fn}(`);
+          scanned++;
+          const args = argumentCount(call);
+          if (args !== want) offenders.push(`${file}: ${fn} called with ${args} argument(s)`);
+          rest = rest.slice(at + fn.length + 1);
+        }
+      }
+    }
+
+    // A scanner that matched nothing must not read as a clean bill of health.
+    expect(
+      scanned,
+      'the unit-bearing money formatters have no call sites at all, so this census is watching ' +
+        'names that moved. Rename them here in the same commit.'
+    ).toBeGreaterThan(0);
+    expect(
+      offenders,
+      `These call sites do not state a unit:\n\n  ${offenders.join('\n  ')}\n\n` +
+        `Pass the tournament's unit - tournamentRowUnitCents(tournament) where the arena embed is ` +
+        `in hand, arenaAssetUnitCents(arenaAsset) at a table, UNIT_CENTS_ASSET_NOT_READ where ` +
+        `nothing has been read - never a bare literal.`
+    ).toEqual([]);
   });
 });

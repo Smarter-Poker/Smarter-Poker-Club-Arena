@@ -6,7 +6,7 @@ import { isTournamentEntryUnavailable } from '../utils/tournamentPresentation';
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -314,22 +314,68 @@ export default function XMTTPage() {
   const [waitlistPositions, setWaitlistPositions] = useState<Record<string, number | null>>({});
   const [waitlistProcessing, setWaitlistProcessing] = useState<string | null>(null);
 
+  /* The SET of tournaments on screen, as one comparable value.
+     Sorted, so a poll that hands back the same events in a different order is
+     not a change; memoized, so it is a new string only when the ids differ and
+     the effect below cannot chase its own identity. */
+  const tournamentIdKey = useMemo(
+    () =>
+      tournaments
+        .map((t) => t.id)
+        .sort()
+        .join(','),
+    [tournaments]
+  );
+  const userId = user?.id;
+
   // Load legacy waitlist positions so their owners can leave.
+  //
+  // A COUNT IS NOT AN IDENTITY. This was keyed on `tournaments.length`, and the
+  // lobby is a live list: one tournament closing registration as another opens
+  // leaves the length at 6 and the ids completely different. The effect
+  // therefore did not re-run, the new tournament's position was never fetched,
+  // and the player queued for it had no "Leave Waitlist" button to press -
+  // on a queue they cannot otherwise get out of. Keyed on the ids themselves,
+  // which change exactly when the set changes.
+  //
+  // A MERGE NEVER FORGETS. `setWaitlistPositions(prev => ({ ...prev, ... }))`
+  // only ever ADDED keys, so a tournament that left the list kept its entry in
+  // the map for as long as the page stayed open. Combined with the above, the
+  // page could print "Position #4" for a tournament that had already finished.
+  // The map is rebuilt from this run's answers instead of merged into, so an
+  // event that is no longer listed has no position - and a player who is no
+  // longer on a waitlist loses the stale number rather than keeping it.
   useEffect(() => {
-    if (!user || tournaments.length === 0) return;
+    const ids = tournamentIdKey ? tournamentIdKey.split(',') : [];
+    if (!userId || ids.length === 0) {
+      // Preserve identity when it is already empty; a fresh {} here would be a
+      // new state value on every poll and re-render the whole lobby for it.
+      setWaitlistPositions((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+      return;
+    }
+    // A superseded run must not land its answers on top of a newer one.
+    let cancelled = false;
     // Keep legacy queue exits available while registration stays unlimited.
-    tournaments.forEach(async (t) => {
-      try {
-        const result = await tournamentService.getTournamentWaitlistPosition(t.id, user.id);
-        if (result) {
-          setWaitlistPositions((prev) => ({ ...prev, [t.id]: result.position }));
-        }
-      } catch (e) {
-        reportError(e, 'XMTTPage.setWaitlistPositions');
-        // Non-critical - position just won't show
-      }
-    });
-  }, [user?.id, tournaments.length]);
+    void (async () => {
+      const entries = await Promise.all(
+        ids.map(async (id): Promise<[string, number | null]> => {
+          try {
+            const result = await tournamentService.getTournamentWaitlistPosition(id, userId);
+            return [id, result ? result.position : null];
+          } catch (e) {
+            reportError(e, 'XMTTPage.setWaitlistPositions');
+            // Non-critical - position just won't show
+            return [id, null];
+          }
+        })
+      );
+      if (cancelled || !mountedRef.current) return;
+      setWaitlistPositions(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, tournamentIdKey, mountedRef]);
 
   const handleLeaveWaitlist = async (tournamentId: string) => {
     if (!user) return;

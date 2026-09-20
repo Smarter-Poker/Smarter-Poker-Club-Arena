@@ -2747,6 +2747,8 @@
     "fn_dismiss_club_message",
     "fn_dispute_escalate",
     "fn_dispute_start_review",
+    "fn_dispute_submit",
+    "fn_dispute_withdraw",
     "fn_drain_daily_challenge_event_outbox",
     "fn_drain_daily_challenge_event_outbox_user",
     "fn_drain_daily_mission_reset_notifications",

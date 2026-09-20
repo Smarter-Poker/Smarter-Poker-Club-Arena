@@ -1,0 +1,9 @@
+{
+  "_owner": "agent/cw-diamond-nav/feat/a-diamond-player-can-find-their-way. Four leaves, all reached from modules that mount at the app ROOT, outside <Routes>, and all of which have to answer before the first paint rather than a tick after it. src/components/arena/diamondArenaRoutes.ts: App.tsx decides which bottom bar a page gets on every render and that decision reads this allowlist; behind a dynamic import a Diamond route paints with no footer and grows one a moment later, which is the flash the eager decision exists to avoid. It is two pure predicates over a pathname plus one frozen array, importing only isDiamondArenaClubKey from src/lib/constants, already in the entry. src/utils/format.ts, src/lib/arenaUnitCents.ts and src/tournament/tournamentUnit.ts: SessionSummaryHost and TournamentRankingHost mount at the root and print a tournament payout the moment a session ends. They now print it at the unit the session was played in, so they need the unit (arenaAssetUnitCents over the already-parsed arena asset, and the two constants it returns) and the formatter in the same tick they need the figure. Lazily importing the money formatter a summary is about to use buys nothing and can only show the wrong number first. All three are import-free leaves: constants and pure functions. MEASURED on this build: the entry chunk holds 215 src modules at 154kB gz, against the recorded baseline of 218 modules at 161kB gz - it is SMALLER with these four in it than the baseline it is compared to.",
+  "modules": [
+    "src/components/arena/diamondArenaRoutes.ts",
+    "src/lib/arenaUnitCents.ts",
+    "src/tournament/tournamentUnit.ts",
+    "src/utils/format.ts"
+  ]
+}

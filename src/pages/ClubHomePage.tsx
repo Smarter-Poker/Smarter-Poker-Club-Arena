@@ -105,7 +105,7 @@ import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { readLocalSession } from '../lib/authUtils';
 import { reportError } from '../utils/errorReporter';
-import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
+import { DIAMOND_ARENA_CLUB_ID, SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
 import { matchesVariant } from '../utils/tournamentFilters';
 import { isWithinLobbyWindow, lobbyQueryHorizonIso } from '../utils/tournamentScheduleWindow';
 import {
@@ -123,6 +123,7 @@ import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner'
 import HouseAdRotator from '../components/ads/HouseAdRotator';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
+import { COUNT_UNKNOWN, type CountFigure } from '../lib/countFigure';
 import DiamondBustPrompt from '../components/games/DiamondBustPrompt';
 import { playerDisplayName } from '../utils/playerDisplayName';
 import ClubEntryMessage from '../components/club/ClubEntryMessage';
@@ -687,6 +688,43 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      The countdown reads nothing at all on a chip club: `null` is the "already
      know the time" seam, so the hook issues no query there. */
   const arenaFreeroll = useDiamondFreerollCountdown(isAutomaticArena ? undefined : null);
+
+  /* THE ARENA HAS TO BE ASKED SEPARATELY (2026-09-20).
+     get_club_home returns early for a diamonds arena with
+     {found, access_only, arena_context} and carries no `players_playing` at
+     all, so the lobby's only writer of that figure never ran here and the rail
+     printed a confident 0 for ever. get_club_players_playing counts DISTINCT
+     live seats at the tables this lobby can see - no club_members join, so an
+     entitlement arena is not invisible to it - and it is the same RPC the
+     realtime refresh below already uses, so this is the missing FIRST read
+     rather than a new mechanism. A read that fails says COUNT_UNKNOWN; it
+     never falls back to zero. */
+  useEffect(() => {
+    if (!isAutomaticArena) return;
+    let alive = true;
+    void (async () => {
+      try {
+        const { data, error } = await supabase.rpc('get_club_players_playing', {
+          p_club_key: DIAMOND_ARENA_CLUB_ID,
+        });
+        if (!alive) return;
+        if (error) {
+          reportError(error, 'ClubHomePage.arena_players_playing_failed');
+          setPlayersPlaying(COUNT_UNKNOWN);
+          return;
+        }
+        const next = Number(data);
+        setPlayersPlaying(Number.isFinite(next) ? next : COUNT_UNKNOWN);
+      } catch (err) {
+        if (!alive) return;
+        reportError(err, 'ClubHomePage.arena_players_playing_threw');
+        setPlayersPlaying(COUNT_UNKNOWN);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [isAutomaticArena]);
   /* Undefined for every chip club, so their cards are untouched. */
   const arenaSeatsClosedLabel =
     isAutomaticArena && arenaAccess?.cashGamesEnabled !== true ? 'Not Open Yet' : undefined;
@@ -860,8 +898,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [, setIsInUnion] = useState(false);
   const [, setUnionName] = useState<string | null>(null);
   /** Live seat count from get_club_home. Null until it answers; see the note
-      where it is set - the stale clubs.online_count is never used. */
-  const [playersPlaying, setPlayersPlaying] = useState<number | null>(null);
+      where it is set - the stale clubs.online_count is never used.
+      `COUNT_UNKNOWN` when a read came back and could not tell, which the rail
+      prints as a word instead of inventing a zero (2026-09-20). */
+  const [playersPlaying, setPlayersPlaying] = useState<CountFigure>(null);
   /* undefined = unresolved; null = positively verified standalone; string =
      union-managed. Keeping all three states prevents a union_clubs-only club
      from flashing standalone-only onboarding while its scope is loading. */

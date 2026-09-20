@@ -29,8 +29,14 @@ describe('a cash batch is derived, not written down', () => {
   });
 
   it('derives both from the client timeout that actually binds them', () => {
-    expect(settler).toMatch(/import\s*\{\s*DB_TIMEOUT_MS\s*\}\s*from\s*'\.\/supabase\/client\.js'/);
-    expect(settler).toMatch(/cashAccountingBatchSize\(DB_TIMEOUT_MS\)/);
+    // Resolved through the import-free budget module, NOT by importing the
+    // database client: four suites mock that module, and a constant imported
+    // through a mock is a constant that disappears.
+    expect(settler).toMatch(
+      /import\s*\{[^}]*resolveClientTimeoutMs[^}]*\}\s*from\s*'\.\/cashAccountingBatchBudget\.js'/
+    );
+    expect(settler).toMatch(/cashAccountingBatchSize\(resolveClientTimeoutMs\(\)\)/);
+    expect(settler).not.toMatch(/from\s*'\.\/supabase\/client\.js'/);
   });
 
   it('checks the retry response against the same derived bound it asked for', () => {

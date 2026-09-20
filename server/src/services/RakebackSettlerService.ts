@@ -26,8 +26,7 @@
  */
 
 import { supabase } from './supabase.js';
-import { DB_TIMEOUT_MS } from './supabase/client.js';
-import { cashAccountingBatchSize } from './cashAccountingBatchBudget.js';
+import { cashAccountingBatchSize, resolveClientTimeoutMs } from './cashAccountingBatchBudget.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import {
@@ -77,7 +76,7 @@ const CATCH_UP_DELAY_MS = 60 * 1000; // 1 minute
    a dataset that genuinely straddles this boundary, not hard-code a number
    that drifts away from the real one. A test asserting 150 was exactly how
    this constant stopped matching its own cost. */
-export const CREDIT_BATCH_SIZE = cashAccountingBatchSize(DB_TIMEOUT_MS);
+export const CREDIT_BATCH_SIZE = cashAccountingBatchSize(resolveClientTimeoutMs());
 
 /**
  * The durable-refusal retry opens every cycle, BEFORE any new work is read, so
@@ -86,7 +85,7 @@ export const CREDIT_BATCH_SIZE = cashAccountingBatchSize(DB_TIMEOUT_MS);
  * a queue of 150 permanently-refused sources held 264,835 records hostage.
  * Same budget, same arithmetic, same reason.
  */
-const CASH_RETRY_LIMIT = cashAccountingBatchSize(DB_TIMEOUT_MS);
+const CASH_RETRY_LIMIT = cashAccountingBatchSize(resolveClientTimeoutMs());
 const PERIOD_USER_BATCH_SIZE = 2000;
 const DAEMON_KEY = 'rakeback_settler';
 

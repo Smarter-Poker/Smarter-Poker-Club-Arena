@@ -49,6 +49,24 @@
  * They are separate defects and both were live.
  */
 
+/**
+ * The engine's Supabase client budget, in one place.
+ *
+ * It lives HERE rather than in supabase/client.ts because callers that need to
+ * size work against it must not have to import the database client to do
+ * arithmetic - four test suites mock that module, and a constant imported
+ * through a mock is a constant that disappears. client.ts reads this same
+ * function, so there is still exactly one definition and one env var.
+ */
+export const DEFAULT_CLIENT_TIMEOUT_MS = 15_000;
+
+export function resolveClientTimeoutMs(
+  env: { SUPABASE_TIMEOUT_MS?: string } = process.env
+): number {
+  const raw = Number(env.SUPABASE_TIMEOUT_MS ?? DEFAULT_CLIENT_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_CLIENT_TIMEOUT_MS;
+}
+
 /** How much of the client's budget one server call may spend. */
 export const BATCH_BUDGET_FRACTION = 0.6;
 

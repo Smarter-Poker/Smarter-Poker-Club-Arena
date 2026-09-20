@@ -24,6 +24,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
+import { sharedPopupFixture } from './helpers/shared-popup-fixture.mjs';
 import { dismissClubEntryMessage } from './global-setup';
 
 const css = (p: string) => readFileSync(p, 'utf8');
@@ -108,6 +109,94 @@ test('cash navigation finishes a late invitation before its short visibility ass
   await expect(page.getByRole('button', { name: 'View Table', exact: true })).toBeVisible();
   await expect(page.locator('#declines')).toHaveText('1');
   await expect(page.getByRole('dialog', { name: 'Diamond Spins', exact: true })).toBeHidden();
+});
+
+/**
+ * A POPUP LANDS ON ITS OWN CLOCK, NOT ON THE FRAME RATE (2026-09-20).
+ *
+ * `.ca-modal` carried two animators for one entrance: the `caModalSlideUp`
+ * keyframes in Modal.css, and a framer-motion spring writing the same
+ * transform into the element's inline style. A CSS animation outranks an
+ * inline style while it runs, so the keyframes are what a player saw, and when
+ * they ended the card snapped to wherever the spring had got to.
+ *
+ * The two keep different clocks, and that is what made it a defect rather than
+ * an untidiness. The keyframes are time-based and land 350ms after they start.
+ * framer-motion integrates on requestAnimationFrame and clamps each step to
+ * 40ms, so on a thread that is not giving out frames it barely advances.
+ * Measured on the real Diamond Spins invitation at an iPhone 13 viewport, with
+ * the main thread held: the card sat at the spring's inline
+ * `translateY(30px) scale(0.92)` start pose and only came to rest at 466ms
+ * with ~16ms frames, 1280ms with 250ms frames and 3030ms with 1000ms frames.
+ *
+ * So a player was being asked to hit a dismiss control that was still
+ * travelling, and the live lobby certificate could not hit it at all:
+ * production run 35505980028 failed with `element is not stable` on that
+ * invitation's Not Now plate while measuring the footer behind it.
+ *
+ * This pins the cause. The entrance is the stylesheet's, it plays, and nothing
+ * writes a competing transform into the card's inline style frame by frame.
+ * The exit is still framer-motion's and still closes the popup, so the pin
+ * cannot be satisfied by deleting an animation (CLAUDE.md 10.6).
+ */
+test("the popup entrance is the stylesheet's alone, and it plays", async ({ page }) => {
+  const { javascript, css } = await sharedPopupFixture();
+  await page.setContent(
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
+      `<style>${css}</style></head><body><div id="root"></div></body></html>`
+  );
+  await page.addScriptTag({ content: javascript });
+
+  const entrance = await page.evaluate(async () => {
+    (window as unknown as { mountPopup: () => void }).mountPopup();
+    const samples: { animationName: string; computed: string; inline: string; opacity: string }[] =
+      [];
+    await new Promise<void>((done) => {
+      const started = performance.now();
+      const step = () => {
+        const card = document.querySelector('.ca-modal') as HTMLElement | null;
+        if (card)
+          samples.push({
+            animationName: getComputedStyle(card).animationName,
+            computed: getComputedStyle(card).transform,
+            inline: card.style.transform,
+            opacity: card.style.opacity,
+          });
+        if (performance.now() - started < 300) requestAnimationFrame(step);
+        else done();
+      };
+      requestAnimationFrame(step);
+    });
+    return samples;
+  });
+
+  expect(entrance.length, 'the popup never rendered').toBeGreaterThan(0);
+
+  /* The entrance is owed, it comes from the stylesheet, and it plays. */
+  expect(
+    entrance[0].animationName,
+    'the card no longer carries its own entrance animation'
+  ).toContain('caModalSlideUp');
+  expect(
+    entrance.some((s) => s.computed !== 'none' && s.computed !== ''),
+    'the entrance did not play: the card was never transformed on its way in'
+  ).toBe(true);
+
+  /* ...and it is the only thing moving the card. An inline transform written
+     per frame is a second animator on a different clock, and on a busy thread
+     it is what leaves the dismiss control travelling for seconds. */
+  const competing = entrance.filter((s) => s.inline !== '' || s.opacity !== '');
+  expect(
+    competing.slice(0, 3),
+    'something is writing the card transform inline while its keyframes run'
+  ).toEqual([]);
+
+  /* The exit still plays and still closes: a dismissed popup does not sit on
+     the page (see DiamondBustPrompt, which stopped relying on it for that). */
+  await page.getByRole('button', { name: 'Not Now', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Fixture Popup', exact: true })).toBeHidden({
+    timeout: 8_000,
+  });
 });
 
 test('cash navigation retires its handler and still refuses a missing View action', async ({

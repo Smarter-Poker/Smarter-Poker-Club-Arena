@@ -51,6 +51,7 @@ import { readLocalSession } from '../../lib/authUtils';
 import { tableService } from '../../services/TableService';
 import { reportError } from '../../utils/errorReporter';
 import TournamentRankingCard from './TournamentRankingCard';
+import { arenaAssetUnitCents } from '../../lib/arenaUnitCents';
 
 export function TournamentRankingHost() {
   const [payload, setPayload] = useState<SessionSummaryPayload | null>(() => peekSessionSummary());
@@ -310,6 +311,12 @@ export function TournamentRankingHost() {
          them. See the props on TournamentRankingCard. */
       durationSeconds={payload.duration}
       handsPlayed={payload.handsPlayed}
+      /* THE GRID THIS EVENT PAID ON (2026-09-20). The payload has carried the
+         table's arena asset since the wallet learned the Diamond Arena, and
+         `parseArenaIdentity` only ever writes 'diamonds' for a row that
+         satisfies all three of the conditions `fn_ca_tournament_unit_cents`
+         tests, so the asset on it IS the unit. */
+      unitCents={arenaAssetUnitCents(payload.arenaAsset)}
       endedAt={payload.sessionEnd}
       onDismiss={close}
       onPlayAgain={playAgain}

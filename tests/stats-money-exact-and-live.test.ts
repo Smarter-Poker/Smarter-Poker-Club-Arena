@@ -168,8 +168,12 @@ describe('the backlog is repaired and the index keeps up', () => {
 describe('a failed read is not an empty history', () => {
   it('marks every facts payload that failed', () => {
     expect(FACTS).toMatch(/export type WithReadStatus<T> = T & \{ error\?: string \}/);
+    /* `scope` joined the payload on 2026-09-20 so a figure cannot be printed
+       under the wrong asset heading (src/services/statsScope.ts). What this
+       pins is unchanged: a failed read is MARKED, never returned as an
+       innocent empty payload. */
     expect(FACTS).toMatch(
-      /return \{ \.\.\.fallback, error: error\.message \|\| error\.code \|\| 'read_failed' \}/
+      /return \{ \.\.\.fallback, scope, error: error\.message \|\| error\.code \|\| 'read_failed' \}/
     );
   });
 

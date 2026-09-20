@@ -112,7 +112,11 @@ describe('Club Arena Tournament Board lobby design', () => {
 
     /* The count is a live number beside the painted PLAYING NOW, lit blue
        like the master's "321", and announced with its words. */
-    expect(identityCard).toContain('aria-label={`${count} Playing Now`}');
+    /* The label became conditional on 2026-09-20: a count that could not be
+       read is spoken as "Playing Now Unavailable" rather than "0 Playing Now"
+       (CLAUDE.md 10.86 rule 1). The known-count form is unchanged and is what
+       this pins. */
+    expect(identityCard).toContain('`${count} Playing Now`');
     expect(identityCardCss).toMatch(/\.club-identity__playing strong\s*\{[^}]*color:\s*#5b83e8/s);
 
     /* The copy button IS the painted frame (Dan 2026-09-03: "THE COPY LINK

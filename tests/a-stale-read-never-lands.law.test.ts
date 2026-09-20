@@ -125,7 +125,14 @@ describe('LAW: a stale read never lands', () => {
 
   it('normaliseRakeStats promises every field the Rake tab formats', () => {
     const empty = normaliseRakeStats(undefined);
+    /* `scope` joined this payload on 2026-09-20: every stats read now carries
+       the asset it is denominated in, so a figure cannot be printed under the
+       wrong heading. See src/services/statsScope.ts and
+       tests/chip-and-diamond-figures-never-sum.law.test.ts. The promise this
+       law makes - every field the Rake tab formats is present and numeric -
+       is unchanged. */
     expect(empty).toEqual({
+      scope: 'chips',
       hands: 0,
       raked_hands: 0,
       rake_paid: 0,

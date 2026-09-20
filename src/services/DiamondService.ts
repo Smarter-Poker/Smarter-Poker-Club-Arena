@@ -25,6 +25,38 @@ export interface DiamondPackage {
   bestValue?: boolean;
 }
 
+/**
+ * THE DIAMOND ARENA IS DIAMONDS ONLY. NO CHIPS, EVER. (Dan, 2026-09-13.)
+ * Nothing in this shape is a chip, and nothing in the wallet may draw one for
+ * the arena. tests/the-diamond-arena-is-diamonds-only.law.test.ts pins it.
+ */
+export interface DiamondArenaInfo {
+  clubId: string;
+  name: string;
+  slug: string | null;
+  cashGamesEnabled: boolean;
+  tournamentsEnabled: boolean;
+}
+
+/** One read of the diamond wallet: `fn_diamond_wallet_summary`. */
+export interface DiamondWalletSummary {
+  /** profiles.diamonds - custody is already outside it. */
+  onHand: number;
+  /** Purchased diamonds inside the refund window; cannot be sent. */
+  collateral: number;
+  /** on_hand - collateral: what send_wallet_diamond_transfer will allow. */
+  sendable: number;
+  /** Open poker_diamond_custody balance: at a seat or in a tournament entry. */
+  inArena: number;
+  arenaSeats: number;
+  arenaEntries: number;
+  /** null if the platform diamonds club is not configured. */
+  arena: DiamondArenaInfo | null;
+  lifetimeEarned: number;
+  lifetimeSpent: number;
+  readAt: string;
+}
+
 export interface DiamondLifetimeStats {
   lifetimeEarned: number;
   lifetimeSpent: number;
@@ -158,6 +190,55 @@ export const DiamondService = {
       return { lifetimeEarned, lifetimeSpent };
     } catch (err) {
       reportError(err, 'DiamondService.getLifetimeStats', { userId });
+      return null;
+    }
+  },
+
+  /**
+   * The whole diamond picture in one RPC, own-user only (the function pins
+   * the caller to auth.uid()). `null` means the read failed: the surface says
+   * Unavailable and offers a retry rather than printing zeros (10.86).
+   */
+  async getWalletSummary(): Promise<DiamondWalletSummary | null> {
+    try {
+      const { data, error } = await supabase.rpc('fn_diamond_wallet_summary');
+      if (error) throw error;
+      const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+      if (!row || typeof row !== 'object') {
+        throw new Error('fn_diamond_wallet_summary returned nothing');
+      }
+      const num = (v: unknown) => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) {
+          throw new Error('fn_diamond_wallet_summary returned a non-numeric figure');
+        }
+        return n;
+      };
+      const arenaRaw = row.arena as Record<string, unknown> | null | undefined;
+      const arena: DiamondArenaInfo | null =
+        arenaRaw && typeof arenaRaw === 'object' && typeof arenaRaw.club_id === 'string'
+          ? {
+              clubId: arenaRaw.club_id,
+              name: String(arenaRaw.name || 'Diamond Arena'),
+              slug: typeof arenaRaw.slug === 'string' ? arenaRaw.slug : null,
+              cashGamesEnabled: arenaRaw.cash_games_enabled === true,
+              tournamentsEnabled: arenaRaw.tournaments_enabled === true,
+            }
+          : null;
+      return {
+        onHand: num(row.on_hand),
+        collateral: num(row.collateral),
+        sendable: num(row.sendable),
+        inArena: num(row.in_arena),
+        arenaSeats: num(row.arena_seats),
+        arenaEntries: num(row.arena_entries),
+        arena,
+        lifetimeEarned: num(row.lifetime_earned),
+        lifetimeSpent: num(row.lifetime_spent),
+        readAt: String(row.read_at || ''),
+      };
+    } catch (err) {
+      reportError(err, 'DiamondService.getWalletSummary');
       return null;
     }
   },

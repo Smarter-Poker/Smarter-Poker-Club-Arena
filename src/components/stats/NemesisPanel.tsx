@@ -31,6 +31,7 @@ import StatsFactsService, {
   type NemesisPayload,
   type OpponentFlow,
 } from '../../services/StatsFactsService';
+import { CHIP_STATS } from '../../services/statsScope';
 import './NemesisPanel.css';
 import { sizedStorageUrl } from '../../utils/avatarGenerator';
 
@@ -118,7 +119,7 @@ export default function NemesisPanel({ userId, days = null }: Props) {
     }
     let cancelled = false;
     setLoading(true);
-    StatsFactsService.getNemesis(userId, { days })
+    StatsFactsService.getNemesis(userId, CHIP_STATS, { days })
       .then((payload) => {
         if (cancelled) return;
         setData(payload);

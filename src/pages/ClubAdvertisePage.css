@@ -1,449 +1,500 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════
- *  ADVERTISE - six consoles, one per section (#ClubArenaConsole, 2026-09-14)
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * This page used to draw itself: thirteen corner radii, four gradients, a
- * round back chevron, bordered surface tiles, dashed preview boxes,
- * pill-shaped ghost buttons and an amber AWAITING REVIEW badge, all inside
- * `club-advertise__card` panels with their own borders.
- *
- * Every frame is PAINTED now. Each section is its own SpadeConsole cut from an
- * approved master, wearing a different crest - diamond for the page head, club
- * for the business and the flights, spade for the rate card and the flight
- * details, flat for the two pictures. Dan 2026-09-13: "I DO NOT WANT EVERY
- * SINGLE CARD TO LOOK EXACTLY THE SAME ... NOT ALL THE SAME BORING COOKIE
- * CUTTER STYLE." Structure is identical; the dress is not.
- *
- * What is left in this file: the page stack, and the size and rhythm of what
- * prints on the black glass. Rows are LINES divided by an engraved rule, never
- * cards. The only DRAWN things are the form fields and the two picture
- * previews, because no master paints a form or a frame around a picture the
- * advertiser supplies.
- *
- * Sizes are cqw against each console (`.sc` sets container-type). Colours are
- * the master's own ink (`sc-ink--*`); the hexes here are the engraved rule,
- * the fields and the muted meta the kit already uses. No radius, no gradient,
- * no :hover.
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLUB ADVERTISE PAGE - metal UI, mobile first (375px), one column that earns
+   a second on desktop. Every picture box carries the surface's own
+   aspect-ratio and `object-fit: contain`, so the buyer sees exactly the
+   shape players will.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .club-advertise {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 12px 8px 96px;
-  color: #e6e9ee;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-}
-
-.club-advertise__console {
-  --sc-max: 640px;
-  filter: drop-shadow(0 14px 26px rgb(0 0 0 / 70%));
-}
-
-/* ── Copy and rows on the glass ────────────────────────────────────────── */
-
-.club-advertise__copy {
-  margin: 0;
-  color: #d7dee7;
-  font:
-    500 3.4cqw/1.5 Inter,
-    system-ui,
-    sans-serif;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
-}
-
-.club-advertise__hint {
-  margin: 0;
-  color: #9aa5b3;
-  font:
-    600 2.9cqw/1.45 Inter,
-    system-ui,
-    sans-serif;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
-}
-
-.club-advertise__row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 3cqw;
-  padding-top: 2.4cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-}
-
-.club-advertise__label {
-  font-size: 2.7cqw;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.club-advertise__value {
-  font-size: 4.4cqw;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── The one thing the art does not paint: a form ──────────────────────── */
-
-.club-advertise__field {
-  display: flex;
-  flex-direction: column;
-  gap: 1.4cqw;
-  padding-top: 2.4cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-}
-
-/* A line on the glass, engraved above and below - not a well and not a card.
-   16px floor on the font: anything smaller makes iOS zoom the page on focus. */
-.club-advertise__input {
-  display: block;
-  box-sizing: border-box;
+  min-height: 100dvh;
   width: 100%;
-  min-width: 0;
-  margin: 0;
-  padding: 2.4cqw 1cqw;
-  border: 0;
-  border-top: 1px solid #000;
-  border-bottom: 1px solid #000;
-  border-radius: 0;
-  background: transparent;
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 9%),
-    0 1px 0 rgb(255 255 255 / 9%);
-  color: #e4e7ec;
-  font:
-    500 max(16px, 3.5cqw) / 1.45 Inter,
-    system-ui,
-    sans-serif;
-  caret-color: #5bb8ff;
-  outline: none;
-  appearance: none;
+  max-width: 100vw;
+  overflow-x: clip;
+  padding: 12px 12px var(--bottom-nav-clearance, 74px);
+  box-sizing: border-box;
+  background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
+  color: #e6edf3;
+  font-family: var(--font-sans, inherit);
 }
 
-.club-advertise__input::placeholder {
-  color: #6b7784;
+.club-advertise__head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: start;
+  margin: 0 0 12px;
 }
 
-.club-advertise__input:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -0.6cqw;
-}
-
-.club-advertise__input:disabled {
-  opacity: 0.55;
-}
-
-/* ── Lit words: every action that is not on a painted plate ────────────── */
-
-.club-advertise__words {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5cqw;
-  justify-content: flex-end;
-  padding-top: 2.4cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-}
-
-.club-advertise__word {
-  appearance: none;
-  min-height: 44px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-size: 3.1cqw;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  white-space: nowrap;
+.club-advertise__back {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #2a3a4a;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #e6edf3;
+  font-size: 22px;
+  line-height: 1;
   cursor: pointer;
-  touch-action: manipulation;
 }
 
-.club-advertise__word:active {
-  filter: brightness(1.25);
+.club-advertise__title {
+  margin: 4px 0 4px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-wrap: balance;
 }
 
-.club-advertise__word:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
+.club-advertise__sub {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: rgba(226, 232, 240, 0.72);
+  max-width: 60ch;
 }
 
-.club-advertise__word:focus-visible {
-  outline: 2px solid #8fd4ff;
-  outline-offset: 2px;
+.club-advertise__balance {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid #2a3a4a;
+  border-radius: 999px;
+  background: rgba(0, 212, 255, 0.06);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-/* ── The rate card: one surface per line ───────────────────────────────── */
+.club-advertise .diamond-icon::before {
+  content: '◆';
+  color: #65c4ff;
+  margin-right: 3px;
+  font-size: 0.9em;
+}
 
+.club-advertise__card {
+  padding: 14px;
+  margin: 0 0 12px;
+  border: 1px solid #2a3a4a;
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(100, 100, 100, 0.03) 100%);
+}
+
+.club-advertise__h2 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9fb3c8;
+}
+
+.club-advertise__hint,
+.club-advertise__blurb {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: rgba(226, 232, 240, 0.72);
+}
+
+.club-advertise__error {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  padding: 16px;
+  border: 1px solid #5a2a2a;
+  border-radius: 12px;
+  background: rgba(176, 58, 50, 0.12);
+}
+
+.club-advertise__field-error {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(176, 58, 50, 0.16);
+  border: 1px solid rgba(224, 122, 112, 0.4);
+  color: #ffb4ab;
+  font-size: 12.5px;
+}
+
+/* ── Surfaces ── */
 .club-advertise__surfaces {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
 }
 
 .club-advertise__surface {
-  appearance: none;
-  display: flex;
-  align-items: center;
-  gap: 3cqw;
-  width: 100%;
-  min-height: 44px;
-  margin: 0;
-  padding: 2.4cqw 0;
-  border: 0;
-  border-top: 1px solid #000;
-  background: transparent;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-  color: #9aa5b3;
+  display: grid;
+  gap: 6px;
+  padding: 10px;
   text-align: left;
+  border: 1px solid #2a3a4a;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  font: inherit;
   cursor: pointer;
-  touch-action: manipulation;
 }
 
-/* The chosen surface is NAMED, not boxed. */
-.club-advertise__surface.is-on .club-advertise__surface-label {
-  color: #f4f7fb;
-  text-shadow:
-    0 0 1cqw rgb(140 210 255 / 90%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
-}
-
-.club-advertise__surface:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -0.6cqw;
-}
-
-/* The shape of the advert, at its true ratio: the one honest preview of what
-   the advertiser is buying. Flat black inside an engraved lip. */
-.club-advertise__surface-shape {
-  flex: 0 0 auto;
-  width: 16cqw;
-  max-height: 14cqw;
-  background: #05080d;
+.club-advertise__surface--on {
+  border-color: #00d4ff;
   box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 10%),
-    inset 0 1px 0 rgb(255 255 255 / 6%);
+    0 0 0 1px rgba(0, 212, 255, 0.35),
+    0 0 16px rgba(0, 212, 255, 0.18);
 }
 
-.club-advertise__surface-main {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 0.4cqw;
-  min-width: 0;
+.club-advertise__surface-shape {
+  display: block;
+  width: 100%;
+  border-radius: 6px;
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(101, 196, 255, 0.18) 0 6px,
+    rgba(101, 196, 255, 0.06) 6px 12px
+  );
+  border: 1px dashed rgba(101, 196, 255, 0.45);
 }
 
 .club-advertise__surface-label {
-  overflow: hidden;
-  color: #e4e7ec;
-  font-size: 3.4cqw;
   font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.club-advertise__surface-size {
-  font-size: 2.6cqw;
-  font-weight: 600;
-  letter-spacing: 0.06em;
 }
 
 .club-advertise__surface-price {
-  flex-shrink: 0;
-  color: #45adff;
-  font-size: 2.8cqw;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-  text-shadow: 0 0 0.9cqw rgb(49 168 255 / 60%);
+  font-size: 13px;
+  font-weight: 700;
+  color: #cfe8ff;
 }
 
-/* ── The two previews ──────────────────────────────────────────────────── */
+.club-advertise__surface-size {
+  font-size: 11.5px;
+  color: rgba(226, 232, 240, 0.6);
+  font-variant-numeric: tabular-nums;
+}
 
+/* ── Creative ── */
 .club-advertise__preview {
-  display: grid;
-  place-items: center;
   width: 100%;
   overflow: hidden;
-  background: #05080d;
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 10%),
-    inset 0 1px 0 rgb(255 255 255 / 6%);
+  border-radius: 8px;
+  background: #06080b;
+  border: 1px solid #2a3a4a;
+  display: grid;
+  place-items: center;
 }
 
 .club-advertise__preview img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
 
-/* The poster is 3 by 4 and would otherwise fill the sheet; it is capped so the
-   section stays one screen. */
-.club-advertise__preview--poster {
-  max-width: 52cqw;
-  margin: 0 auto;
-}
-
 .club-advertise__preview-empty {
-  padding: 3cqw;
-  color: #6b7784;
-  font-size: 2.8cqw;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-align: center;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.45);
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .club-advertise__file {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 3cqw;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
 }
 
-/* The native file button is the thing no master paints and no design can
-   restyle; the lit word beside it is the control, so the input itself is
-   removed from the flow and only its click matters. */
 .club-advertise__file input[type='file'] {
   position: absolute;
   width: 1px;
   height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .club-advertise__file-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: #9aa5b3;
-  font-size: 2.8cqw;
-  font-weight: 600;
-  text-overflow: ellipsis;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.7);
+  overflow-wrap: anywhere;
+}
+
+/* ── Form ── */
+.club-advertise__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.club-advertise__field {
+  display: grid;
+  gap: 5px;
+}
+
+.club-advertise__field > span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #9fb3c8;
+}
+
+.club-advertise__field small {
+  font-size: 11px;
+  color: rgba(226, 232, 240, 0.55);
+}
+
+.club-advertise__field input,
+.club-advertise__field select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  border: 1px solid #2a3a4a;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #e6edf3;
+  font: inherit;
+  font-size: 15px;
+}
+
+.club-advertise__field input:focus-visible,
+.club-advertise__field select:focus-visible,
+.club-advertise__btn:focus-visible,
+.club-advertise__surface:focus-visible {
+  outline: 2px solid #65c4ff;
+  outline-offset: 2px;
+}
+
+.club-advertise__total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #2a3a4a;
+}
+
+.club-advertise__total-label {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9fb3c8;
+}
+
+.club-advertise__total-value {
+  display: block;
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.club-advertise__total-math {
+  display: block;
+  font-size: 11.5px;
+  color: rgba(226, 232, 240, 0.6);
+}
+
+/* ── Buttons ── */
+.club-advertise__btn {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid #2a3a4a;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e6edf3;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
   white-space: nowrap;
 }
 
-/* ── The flights this advertiser has bought ────────────────────────────── */
+.club-advertise__btn--primary {
+  border: 0;
+  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+  color: #04121a;
+  box-shadow: 0 0 15px rgba(0, 212, 255, 0.35);
+}
 
+.club-advertise__btn--ghost {
+  display: inline-flex;
+  align-items: center;
+}
+
+.club-advertise__btn--sm {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  margin-top: 8px;
+}
+
+.club-advertise__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ── Campaign list ── */
 .club-advertise__list {
   list-style: none;
   margin: 0;
   padding: 0;
+  display: grid;
+  gap: 12px;
 }
 
 .club-advertise__item {
-  display: flex;
-  flex-direction: column;
-  gap: 2cqw;
-  padding: 2.6cqw 0;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-}
-
-.club-advertise__item-top {
-  display: flex;
-  align-items: baseline;
-  gap: 3cqw;
-  justify-content: space-between;
-}
-
-.club-advertise__item-headline {
-  min-width: 0;
-  font-size: 3.4cqw;
-  font-weight: 800;
-  line-height: 1.3;
-}
-
-/* Was an amber pill. It is a lit word in the master's own ink now, and the
-   state chooses the ink: green live, red refused, blue everything else. */
-.club-advertise__status {
-  flex-shrink: 0;
-  font-size: 2.5cqw;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  white-space: nowrap;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #2a3a4a;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .club-advertise__item-picture {
   width: 100%;
   overflow: hidden;
-  background: #05080d;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 10%);
+  border-radius: 6px;
+  background: #06080b;
 }
 
 .club-advertise__item-picture img {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+}
+
+/* The text half of a campaign row. `min-width: 0` is the load-bearing
+   declaration, not the gap: on desktop this is the second track of a grid
+   whose first track is the picture, and a grid item defaults to
+   `min-width: auto`, so one long headline or a long destination path would
+   push the track wider than its share and take the picture with it. */
+.club-advertise__item-body {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+}
+
+.club-advertise__item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .club-advertise__item-meta,
 .club-advertise__item-note {
-  color: #9aa5b3;
-  font:
-    600 2.8cqw/1.45 Inter,
-    system-ui,
-    sans-serif;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.7);
+  line-height: 1.4;
 }
 
 .club-advertise__item-note {
-  color: #45adff;
+  color: #ffd79a;
 }
 
 .club-advertise__item-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.4cqw 5cqw;
-  color: #9aa5b3;
-  font-size: 2.8cqw;
-  font-weight: 600;
+  gap: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
-.club-advertise__item-stats strong {
-  color: #e4e7ec;
+.club-advertise__status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
+}
+
+.club-advertise__status--submitted {
+  background: rgba(184, 137, 43, 0.2);
+  color: #ffd79a;
+}
+
+.club-advertise__status--live {
+  background: rgba(43, 122, 75, 0.25);
+  color: #8ee0b0;
+}
+
+.club-advertise__status--scheduled,
+.club-advertise__status--approved {
+  background: rgba(0, 212, 255, 0.14);
+  color: #9fe3ff;
+}
+
+.club-advertise__status--rejected,
+.club-advertise__status--cancelled {
+  background: rgba(176, 58, 50, 0.2);
+  color: #ffb4ab;
+}
+
+@media (min-width: 768px) {
+  .club-advertise {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 20px 20px var(--bottom-nav-clearance, 74px);
+  }
+
+  .club-advertise__surfaces {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+
+  .club-advertise__grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .club-advertise__item {
+    grid-template-columns: minmax(200px, 40%) 1fr;
+    align-items: start;
+  }
+}
+
+/* ── The poster (2026-09-13): 3:4, what a tap opens full screen ─────────────
+   Full width on a phone would be a 500px-tall preview; cap it and centre it,
+   the way the empty-state rotator caps its poster. */
+.club-advertise__preview--poster {
+  max-width: 240px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Day by day, one flight at a time ─────────────────────────────────────── */
+.club-advertise__days {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
 
-/* The day-by-day report. club-engine.css turns every table into a nowrap
-   scroll box on a phone; on the glass the rows wrap and fit the frame. */
-.club-advertise__days {
-  display: table;
-  width: 100%;
-  overflow: visible;
-  border-collapse: collapse;
-  white-space: normal;
-  font-variant-numeric: tabular-nums;
+.club-advertise__days th,
+.club-advertise__days td {
+  padding: 5px 6px;
+  text-align: right;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.club-advertise__days th:first-child,
+.club-advertise__days td:first-child {
+  text-align: left;
 }
 
 .club-advertise__days th {
-  padding: 1.4cqw 1.4cqw 1.4cqw 0;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-  color: #45adff;
-  font-size: 2.5cqw;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.12em;
-  text-align: left;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.club-advertise__days td {
-  padding: 1.6cqw 1.4cqw 1.6cqw 0;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-  color: #e4e7ec;
-  font-size: 2.9cqw;
+  color: #9fb3c8;
 }

@@ -466,6 +466,39 @@ function TournamentLobbyCardInner({
    * them run a late-reg window.
    */
   const isFreezout = (tournament: Tournament): boolean => {
+    return (
+      !tournament.isRebuy &&
+      !tournament.rebuyAllowed &&
+      !tournament.addonAllowed &&
+      !tournament.is_reentry
+    );
+  };
+
+  const formatKnown = isKnownTournamentFormat(tournament);
+  const entryCapacity = getTournamentEntryCapacity(tournament);
+  const hasMaxPlayers = entryCapacity !== null;
+  const unlimited = isUnlimitedTournamentFormat(tournament);
+  const entryDetailsKnown = formatKnown && (unlimited || hasMaxPlayers);
+  const formatKind = getTournamentFormatKind(tournament);
+  const displayType =
+    formatKind === 'spin'
+      ? 'spin'
+      : formatKind === 'sng'
+        ? tournament.type === 'satellite'
+          ? 'satellite'
+          : 'sng'
+        : ['spin', 'sng'].includes(tournament.type)
+          ? 'mtt'
+          : tournament.type;
+  // current_players drifts UP (see the Entries note below), so the subtraction
+  // can go negative. "-3 spots remaining" is not a thing.
+  const spotsRemaining = hasMaxPlayers
+    ? Math.max(0, (entryCapacity ?? 0) - tournament.registeredPlayers)
+    : Infinity;
+  const isFull = isTournamentEntryUnavailable(tournament, tournament.registeredPlayers);
+  /* Only a recorded fixed format can offer a physical seat-first purchase. */
+  const isSeatFirstCard = isSeatFirstTournamentFormat(tournament);
+
     /* The speed as ONE word on the glass, from the recorded structure - the
      same facts the details page prints, never re-derived from a parsed
      blind array. */

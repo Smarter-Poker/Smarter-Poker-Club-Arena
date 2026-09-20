@@ -1513,19 +1513,11 @@ function HomePageInner() {
                   <img
                     src={tile.img}
                     alt={tile.alt}
-                    className={`${styles.tileImage} ${
-                      tile.preserveNativeRatio ? styles.tileImageNative : ''
-                    }`}
+                    className={styles.tileImage}
                     loading="eager"
-                    width={tile.width || 640}
-                    height={tile.height || 1024}
+                    width={640}
+                    height={1024}
                   />
-                  {tile.portalStatus ? (
-                    <span className={styles.tileLabel} aria-hidden="true">
-                      <strong>{tile.alt}</strong>
-                      <small>{tile.portalStatus}</small>
-                    </span>
-                  ) : null}
                 </div>
               </button>
             )

@@ -223,6 +223,10 @@ export const maintenanceSupabase: SupabaseClient =
 
 /* The horse fleet's seat-purchase client. See SEEDING_DB_TIMEOUT_MS. */
 export const seedingSupabase: SupabaseClient = createBoundedServiceClient(SEEDING_DB_TIMEOUT_MS);
+/* Exported so callers can DERIVE their batch sizes from the budget that
+   actually binds them, instead of writing a literal that cannot notice
+   when its own per-item cost changes. See cashAccountingBatchBudget.ts. */
+export { DB_TIMEOUT_MS };
 export { SEEDING_DB_TIMEOUT_MS };
 
 // ═══════════════════════════════════════════════════════════════════════════════

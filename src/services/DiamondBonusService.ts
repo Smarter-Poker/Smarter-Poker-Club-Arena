@@ -7,9 +7,10 @@ import {
   earnedReceiptBudget,
   type BonusBudget,
 } from '../utils/bonusGameBudget';
-import { validSpinAmount, PLINKO_DIAMONDS_PER_DROP } from '../utils/bonusGameBudget';
+import { validSpinAmount, PLINKO_DROPS, plinkoDenomination } from '../utils/bonusGameBudget';
 import { parseChoiceRound } from './DiamondChoiceService';
 import { validateCrashSettlement } from '../utils/crashReceipt';
+import { diamondBonusMinimum, plinkoTableVersion } from '../utils/diamondBonusPayout';
 
 export type BonusGame = 'plinko' | 'crash' | 'crossing' | 'mines';
 export class BonusRefusal extends Error {}
@@ -46,6 +47,9 @@ export interface PlinkoBonus {
   multipliers_cents: number[];
   drops: PlinkoBall[];
   payout_chips: number;
+  /** A Super batch returns at least half its doubled stake, the spin entry. */
+  minimum_payout_chips?: number;
+  payout_version?: 1 | 3;
   server_seed_hash: string;
   server_seed: string;
   client_seed: string;
@@ -100,14 +104,21 @@ export function parsePlinkoBonus(value: unknown): PlinkoBonus {
     !Number.isSafeInteger(v.bet_diamonds) ||
     v.bet_diamonds < 25 ||
     v.bet_diamonds > (v.award_id ? 7500 : 5000) ||
-    !PLINKO_DIAMONDS_PER_DROP.includes(v.diamonds_per_drop as 1) ||
+    !Number.isSafeInteger(v.diamonds_per_drop) ||
+    v.diamonds_per_drop < 1 ||
     v.bet_diamonds % v.diamonds_per_drop !== 0 ||
     !Array.isArray(v.drops) ||
     v.drops.length !== v.bet_diamonds / v.diamonds_per_drop ||
+    // A batch sealed since ten drops became the one setting (it carries
+    // payout_version) is ten drops of a tenth of the entry. Older receipts keep
+    // the drop value they were dealt.
+    (v.payout_version !== undefined &&
+      (v.drops.length !== PLINKO_DROPS || v.diamonds_per_drop !== plinkoDenomination(v.bet_diamonds))) ||
     !Array.isArray(v.multipliers_cents) ||
     v.multipliers_cents.length !== 17 ||
     !v.multipliers_cents.every((m) => Number.isSafeInteger(m) && m >= 0) ||
     !cents(v.payout_chips) ||
+    !validPlinkoMinimum(v) ||
     !Number.isSafeInteger(v.nonce) ||
     v.nonce < 1 ||
     !/^[a-f0-9]{64}$/.test(v.server_seed_hash) ||
@@ -127,14 +138,33 @@ export function parsePlinkoBonus(value: unknown): PlinkoBonus {
         ball.multiplier_cents !== v.multipliers_cents[ball.slot] ||
         !cents(ball.payout_chips)
     ) ||
-    Math.abs(
-      v.drops.reduce((sum, ball) => sum + Math.round(ball.payout_chips * 100), 0) -
-        Math.round(v.payout_chips * 100)
-    ) > 0
+    // The batch pays its drops, or the Super guarantee when the drops fall short.
+    Math.max(
+      v.drops.reduce((sum, ball) => sum + Math.round(ball.payout_chips * 100), 0),
+      Math.round((v.minimum_payout_chips ?? 0) * 100)
+    ) !== Math.round(v.payout_chips * 100)
   ) {
     throw new Error('The Plinko Bonus Could Not Be Verified');
   }
   return v;
+}
+
+/** A batch settled before the Super guarantee carries no floor; a Super batch
+ * (payout_version 3) carries half its stake, computed from the funded diamonds
+ * and the bridge rate exactly as the server did. */
+function validPlinkoMinimum(v: PlinkoBonus) {
+  const floor = v.minimum_payout_chips;
+  const version = v.payout_version;
+  if (floor === undefined && version === undefined) return true;
+  if (version === 1) return floor === 0;
+  if (version !== 3 || typeof floor !== 'number') return false;
+  if (!Number.isSafeInteger(v.bet_diamonds) || !Number.isSafeInteger(v.diamonds_per_chip))
+    return false;
+  try {
+    return floor === diamondBonusMinimum(v.bet_diamonds / v.diamonds_per_chip, 2);
+  } catch {
+    return false;
+  }
 }
 
 export const DiamondBonusService = {
@@ -153,8 +183,12 @@ export const DiamondBonusService = {
       !uuid.test(input.clubId) ||
       !uuid.test(input.commitId) ||
       !['plinko', 'crash', 'crossing', 'mines'].includes(input.game) ||
-      !PLINKO_DIAMONDS_PER_DROP.includes(input.budget.denomination as 1) ||
-      bonusTotal(input.budget) % input.budget.denomination !== 0 ||
+      // The server owns the ten-drop rule; a saved request from before it is sent as
+      // it was, so a completed game replays its receipt instead of being refused here.
+      (input.game === 'plinko' &&
+        (!Number.isSafeInteger(input.budget.denomination) ||
+          input.budget.denomination < 1 ||
+          bonusTotal(input.budget) % input.budget.denomination !== 0)) ||
       (input.serverSeedHash !== undefined && !/^[a-f0-9]{64}$/.test(input.serverSeedHash))
     )
       throw new BonusRefusal('The Bonus Settings Could Not Be Verified');
@@ -260,8 +294,20 @@ export function validateBonusReceipt(input: BonusStart, raw: Record<string, unkn
     fail();
   if (input.game === 'plinko') {
     const result = parsePlinkoBonus(raw);
+    const boost = input.budget.award?.boostMultiplier ?? 1;
+    // A receipt sealed since the one-table rule (it carries payout_version) must
+    // name the table the stake kind owns, and a Super batch its guarantee. A
+    // receipt sealed before it keeps the table it was dealt.
+    const sealedWithRule = result.payout_version !== undefined;
     if (
       result.table_version !== input.tableVersion ||
+      (sealedWithRule && result.table_version !== plinkoTableVersion(boost)) ||
+      (sealedWithRule &&
+        (boost === 2
+          ? result.payout_version !== 3 ||
+            result.minimum_payout_chips !==
+              diamondBonusMinimum(bonusTotal(input.budget) / result.diamonds_per_chip, 2)
+          : result.payout_version !== 1)) ||
       result.diamonds_per_drop !== input.budget.denomination ||
       result.commit_id !== input.commitId ||
       result.client_seed !== input.seed

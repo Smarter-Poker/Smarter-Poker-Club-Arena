@@ -54,51 +54,12 @@
     sans-serif;
   cursor: pointer;
 }
-.drops {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  min-width: 0;
+.promise {
+  color: #ffd98a;
+  font-weight: 700;
 }
-.drops legend {
-  color: #b9cce1;
-  padding: 0 0 8px;
-}
-.choices {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-}
-.choices button {
-  display: grid;
-  gap: 2px;
-  min-height: 54px;
-  min-width: 0;
-  padding: 7px 3px;
-  border-radius: 6px;
-  border: 1px solid #3c526d;
-  background: linear-gradient(#24374d, #152437);
-  color: #d5e3f3;
-  cursor: pointer;
-  box-shadow: inset 0 1px #ffffff17;
-}
-.choices button[aria-pressed='true'] {
-  background: linear-gradient(#124e76, #0c314e);
-  border-color: #52c8ff;
-  box-shadow:
-    inset 0 0 0 1px #52c8ff,
-    0 0 14px #168ec12b;
-  color: #fff;
-}
-.choices strong {
-  font-size: 17px;
-}
-.choices strong span {
-  color: #68ceff;
-  font-size: 10px;
-}
-.choices small {
-  font-size: 11px;
+.entry[data-guarantee='super'] > span {
+  color: #ffd98a;
 }
 .total {
   margin: 0;
@@ -129,11 +90,6 @@
 .setup :disabled {
   opacity: 0.45;
   cursor: default;
-}
-@media (max-width: 760px) {
-  .choices {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 }
 
 .entry select {

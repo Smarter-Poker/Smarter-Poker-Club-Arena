@@ -22,10 +22,20 @@ describe('full-entry bonus minimum and calibrated sealed outcomes', () => {
         const floor = diamondBonusMinimum(cents / 100);
         expect(Math.round(floor * 100)).toBe(Math.ceil(cents / 10));
         expect(floor + 1e-10).toBeGreaterThanOrEqual(cents / 1000);
+        // A Super award keeps HALF its doubled stake, which is the spin entry, so
+        // the game returns at least 1:1 of what the spin cost. Half of a doubled
+        // stake at multiplier 2 is exactly one entry, and never a part of a cent.
+        const superFloor = diamondBonusMinimum(cents / 100, 2);
+        expect(Math.round(superFloor * 100)).toBe(Math.ceil(cents / 2));
+        if (multiplier === 2) expect(superFloor).toBe(entry / 100);
       }
     }
     expect(diamondBonusMinimum(50)).toBe(5);
     expect(diamondBonusMinimum(0.25)).toBe(0.03);
+    // The three values the migration itself reads back after installing the rule.
+    expect(diamondBonusMinimum(3, 2)).toBe(1.5);
+    expect(diamondBonusMinimum(3)).toBe(0.3);
+    expect(diamondBonusMinimum(0.25, 2)).toBe(0.13);
   });
 
   it('preserves the exact Mines expectation at every stop, including the guaranteed loss prize', () => {
@@ -73,9 +83,21 @@ describe('full-entry bonus minimum and calibrated sealed outcomes', () => {
     expect(validBonusMinimum({ bet_chips: 50, payout_version: 2, minimum_payout_chips: 5 })).toBe(
       true
     );
+    // Version 3 is a round sealed with the Super floor: half the stake, not a tenth.
+    expect(validBonusMinimum({ bet_chips: 50, payout_version: 3, minimum_payout_chips: 25 })).toBe(
+      true
+    );
     for (const minimum of [undefined, 0, 4.99, 5.01]) {
       expect(
         validBonusMinimum({ bet_chips: 50, payout_version: 2, minimum_payout_chips: minimum })
+      ).toBe(false);
+      expect(
+        validBonusMinimum({ bet_chips: 50, payout_version: 3, minimum_payout_chips: minimum })
+      ).toBe(false);
+    }
+    for (const version of [2, 3]) {
+      expect(
+        validBonusMinimum({ bet_chips: 50, payout_version: version, minimum_payout_chips: 24.99 })
       ).toBe(false);
     }
   });

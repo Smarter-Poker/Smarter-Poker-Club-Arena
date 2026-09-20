@@ -159,6 +159,18 @@ run_game_probe diamond-daily-custody 'NOTICE:  PASS Daily Diamond custody: real 
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
 run_game_probe diamond-bonus-replays 'NOTICE:  PASS Bonus replays: eight actual normal/Super settlements, private open and foreign refusal, exact payloads and 257cashout, slow100x, scoped cursor, random public snapshot, stable token, one canonical post/story/reward and unchanged game wallets'
 
+# One setting per game and the Super guarantee are qualified last, on the exact
+# production preimages of every starter, quote and receipt they patch.
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20260919220610_diamond_bonus_games_have_one_setting_and_super_guarantees_the_entry.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-one-setting-super-guarantee 'NOTICE:  PASS One setting and Super guarantee: Diamond and Super tables, ten drops a game, twelve-street road, six mines, exact quotes before Start, old settings and other drop counts refused without a debit, Super Plinko batch and Crash, road and Mines losses pay the entry, ordinary floor kept, sealed history readable'
+
+# Fairness: the sealed draws themselves reach the designed outcomes at the
+# designed rate. Read only, fixed seeds, no money path: this is the check that
+# the twenty Plinko games Dan played could not have found, because a table's
+# 0.80 arithmetic being exact says nothing about how often 20x actually lands.
+run_game_probe diamond-bonus-fairness-audit 'NOTICE:  PASS Diamond fairness audit:'
+
 # Observe a genuine two-connection duplicate race in a SECOND disposable local
 # database. Its commits never touch production or the rollback-probe baseline.
 "${diamond_psql[@]}" -c 'CREATE DATABASE diamond_custody_race TEMPLATE diamond_games_probe OWNER postgres'

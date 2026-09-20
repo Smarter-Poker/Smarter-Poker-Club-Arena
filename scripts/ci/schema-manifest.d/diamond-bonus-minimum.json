@@ -1,7 +1,7 @@
 {
-  "_comment": "Installed migration20260919034436; exact source and live columns verified after compatible client035d7597 publication.",
+  "_comment": "Installed migration20260919034436; exact source and live columns verified after compatible client035d7597 publication. 20260919220610 gave fn_diamond_bonus_minimum its boost argument (the Super guarantee) and added the one-setting helpers.",
   "_owner": "Diamond Games",
-  "functions": ["fn_diamond_bonus_minimum", "fn_crash_point_cents"],
+  "functions": ["fn_diamond_bonus_minimum", "fn_crash_point_cents", "fn_choice_mode", "fn_plinko_table_version"],
   "columns": {
     "diamond_choice_rounds": ["minimum_payout_chips"],
     "crash_rounds": ["minimum_payout_chips"]

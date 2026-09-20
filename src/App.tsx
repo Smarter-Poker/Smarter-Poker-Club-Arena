@@ -1,4 +1,5 @@
 import { isDiamondGameRoute } from './utils/diamondGameRoute';
+import { DIAMOND_GAME_TITLES } from './utils/diamondGameTitles';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — App Component
@@ -1509,7 +1510,7 @@ function FullApp() {
                   element={
                     <AuthGuard>
                       <ClubMemberGuard>
-                        <PageErrorBoundary pageName="Diamond Plinko">
+                        <PageErrorBoundary pageName={DIAMOND_GAME_TITLES.plinko}>
                           <DiamondPlinkoPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
@@ -1521,7 +1522,7 @@ function FullApp() {
                   element={
                     <AuthGuard>
                       <ClubMemberGuard>
-                        <PageErrorBoundary pageName="Diamond Crash">
+                        <PageErrorBoundary pageName={DIAMOND_GAME_TITLES.crash}>
                           <DiamondCrashPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
@@ -1533,7 +1534,7 @@ function FullApp() {
                   element={
                     <AuthGuard>
                       <ClubMemberGuard>
-                        <PageErrorBoundary pageName="Donkey Crossing">
+                        <PageErrorBoundary pageName={DIAMOND_GAME_TITLES.crossing}>
                           <DiamondChoicePage key="crossing" game="crossing" />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
@@ -1545,7 +1546,7 @@ function FullApp() {
                   element={
                     <AuthGuard>
                       <ClubMemberGuard>
-                        <PageErrorBoundary pageName="Diamond Mines">
+                        <PageErrorBoundary pageName={DIAMOND_GAME_TITLES.mines}>
                           <DiamondChoicePage key="mines" game="mines" />
                         </PageErrorBoundary>
                       </ClubMemberGuard>

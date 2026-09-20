@@ -62,6 +62,7 @@ import {
   profileStatsFromV2,
   type PokerStats,
 } from '../utils/profileStats';
+import { CHIP_STATS, statsScopeArgs } from '../services/statsScope';
 
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
 const LazyProfitChart = lazyWithRetry(() => import('../components/profile/ProfitChart'));
@@ -495,7 +496,14 @@ export default function ProfilePage() {
           retryFetch(
             () =>
               supabase
-                .rpc('ca_player_stats_overview_v2', { p_user: requestedUserId, p_days: null })
+                .rpc('ca_player_stats_overview_v2', {
+                  /* Scoped to chips: this figure is a chip figure and must
+                     never silently become a chip+Diamond total. See
+                     src/services/statsScope.ts. */
+                  ...statsScopeArgs(CHIP_STATS),
+                  p_user: requestedUserId,
+                  p_days: null,
+                })
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: isMountedRef }
           ),
@@ -683,7 +691,14 @@ export default function ProfilePage() {
             if (authUser && ownsActiveAccount(authUser.id)) {
               const requestedUserId = authUser.id;
               supabase
-                .rpc('ca_player_stats_overview_v2', { p_user: requestedUserId, p_days: null })
+                .rpc('ca_player_stats_overview_v2', {
+                  /* Scoped to chips: this figure is a chip figure and must
+                     never silently become a chip+Diamond total. See
+                     src/services/statsScope.ts. */
+                  ...statsScopeArgs(CHIP_STATS),
+                  p_user: requestedUserId,
+                  p_days: null,
+                })
                 .then(({ data, error }) => {
                   const freshStats = !error ? profileStatsFromV2(data) : null;
                   if (freshStats && ownsActiveAccount(requestedUserId)) {

@@ -25,6 +25,7 @@ import { unionRouteRef } from '../utils/unionIdResolver';
 /* Dan 2026-08-28: HomePage is the in-tab lobby's fallback branch when no home
    club is resolved, so it inherits the same rule. See InTabLobbyContext.tsx. */
 import { useAppNavigate, useInTabLobby } from '../context/InTabLobbyContext';
+import { COUNT_UNKNOWN } from '../lib/countFigure';
 import { DIAMOND_ARENA_CLUB_ID, DIAMOND_ARENA_ENTRY, SHARK_CLUB_ID } from '../lib/constants';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { ClubsService } from '../services/ClubsService';
@@ -879,6 +880,29 @@ function HomePageInner() {
             (error) => ({ data: null, error })
           );
 
+        /* THE ARENA'S COUNT CANNOT COME FROM A MEMBERSHIP JOIN (2026-09-20).
+           fn_batch_club_realtime_active_counts reaches its seats through
+           `club_members ... status IN ('active','approved')`. Diamond
+           membership is an ENTITLEMENT: the arena holds a single row whose
+           status is `automatic`, so that join matches nobody and the count it
+           returns is structurally 0 - not a measurement, an artifact of the
+           shape of the question. Verified on production 2026-09-20: one
+           club_members row (status `automatic`), clubs.member_count 0, and the
+           batch RPC answering active=0 while the arena carried 17 live tables.
+
+           get_club_players_playing counts DISTINCT live seats at the tables a
+           lobby can see and never joins club_members at all, so it answers the
+           same question honestly for an entitlement arena. It returns NULL for
+           a club it cannot resolve, which stays NULL here: unknown is its own
+           outcome and never becomes a zero (CLAUDE.md 10.86 rule 1). */
+        const arenaOnCarousel = clubIds.includes(DIAMOND_ARENA_CLUB_ID);
+        const arenaSeatsPromise = arenaOnCarousel
+          ? supabase.rpc('get_club_players_playing', { p_club_key: DIAMOND_ARENA_CLUB_ID }).then(
+              (r) => r,
+              (error) => ({ data: null, error })
+            )
+          : null;
+
         const { data: clubRows } = await supabase
           .from('clubs')
           .select(
@@ -928,9 +952,43 @@ function HomePageInner() {
           reportError(e, 'HomePage.batchRealtimeMemberCounts');
         }
 
+        /* Live seats in the Diamond Arena. `undefined` means the read never
+           answered, which the card prints as an unknown rather than a zero. */
+        let arenaSeated: number | undefined;
+        if (arenaSeatsPromise) {
+          try {
+            const { data, error } = await arenaSeatsPromise;
+            if (error) reportError(error, 'HomePage.arenaPlayersPlaying');
+            else if (typeof data === 'number') arenaSeated = data;
+          } catch (e) {
+            reportError(e, 'HomePage.arenaPlayersPlaying.threw');
+          }
+        }
+
         // Process each club in parallel
         await Promise.allSettled(
           clubRows.map(async (club: any) => {
+            const isEntitlementArena = club.id === DIAMOND_ARENA_CLUB_ID;
+
+            /* The arena has no membership to count, so it is not gated on a
+               member count and never clamped against one. A clamp needs a
+               ceiling that MEANS something; clubs.member_count is 0 here and
+               always will be, because nobody is a row in this club. */
+            if (isEntitlementArena) {
+              if (isMounted) {
+                statsMap[club.id] = {
+                  totalMembers: null,
+                  clubLevel: null,
+                  /* The read has already resolved by here, so an absent
+                     figure means it FAILED, not that it is pending. */
+                  activePlayers: arenaSeated ?? COUNT_UNKNOWN,
+                  activeCash: null,
+                  activeEvents: null,
+                };
+              }
+              return;
+            }
+
             const memberCount = memberCountMap.get(club.id);
             if (memberCount == null) return;
 

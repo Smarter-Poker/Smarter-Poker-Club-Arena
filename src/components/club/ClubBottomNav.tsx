@@ -102,7 +102,13 @@ function useResolvedClubId(explicit?: string, routeClubId?: string | null): stri
  */
 export const BOTTOM_CHROME_HEIGHT_VAR = '--ca-bottom-chrome-h';
 
-function usePublishBottomChromeHeight(ref: React.RefObject<HTMLElement | null>, hidden: boolean) {
+/* Exported for the Diamond Arena footer (DiamondBottomNav), which is a second
+   fixed bar on the same bottom edge and owes the stacked bars the same
+   published height. The chip footer's own use of it is unchanged. */
+export function usePublishBottomChromeHeight(
+  ref: React.RefObject<HTMLElement | null>,
+  hidden: boolean
+) {
   useLayoutEffect(() => {
     const root = document.documentElement;
     const el = ref.current;

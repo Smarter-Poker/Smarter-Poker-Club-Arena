@@ -258,6 +258,108 @@ describe('a published table is a measured decision', () => {
   });
 
   /**
+   * THE SAME DEFECT, THE OPPOSITE SYMPTOM. `user_theme_settings` is published
+   * with REPLICA IDENTITY DEFAULT, so `payload.old` is the primary key alone —
+   * `{ id }` — and none of the five theme columns is `id`.
+   *
+   * The UPDATE handler used the old row as its changed-field test:
+   *   row[field] !== previous[field]
+   * Every comparison was against `undefined`, so every non-empty field read as
+   * changed on every update, including a bare `updated_at` touch. The values
+   * were never wrong (`payload.new` is a complete post image); the repaint was.
+   * `SETTINGS_CHANGED` fires whenever `cards_id` is in the emitted set, and
+   * `useDeckStyle` invalidates its cache on ANY `SETTINGS_CHANGED` — so
+   * changing the FELT dropped the deck cache and re-rendered every card on the
+   * table.
+   */
+  it('neither settings mirror uses the old row as its changed-field test', () => {
+    const hooks = codeOnly(read('src/services/PostgresSyncHooks.ts'));
+
+    expect(
+      hooks,
+      'PostgresSyncHooks must not diff mirrored fields against payload.old. ' +
+        'user_theme_settings is REPLICA IDENTITY DEFAULT and user_table_settings is FULL with ' +
+        'RLS on; both deliver the primary key alone, so every comparison against it is true. ' +
+        'That republished the whole row on every update - 48 SETTINGS_CHANGED events for one ' +
+        'toggle - and useDeckStyle drops its cache on any of them.'
+    ).not.toMatch(/payload\.old\s*\|\|\s*\{\}/);
+
+    // The two mirrors, both routed through the one decision.
+    expect(hooks, 'the changed-field decision must come from the pure module').toMatch(
+      /decideFieldEcho\(/
+    );
+    expect(
+      (hooks.match(/decideFieldEcho\(/g) || []).length,
+      'all three mirror handlers (theme INSERT, theme UPDATE, table settings) must use it'
+    ).toBeGreaterThanOrEqual(3);
+
+    const decider = codeOnly(read('src/services/realtimeFieldEcho.ts'));
+    expect(decider, 'the decision module must not consult an old row either').not.toMatch(
+      /payload\.old|\bpreviousRow\b|\boldRow\b/
+    );
+    // A row never seen before is not the same as a row seen with no fields, or
+    // a first sighting silently suppresses the catch-up it exists to deliver.
+    expect(decider).toMatch(/remembered === undefined/);
+    // `false` and `0` are real settings values; an accept predicate that drops
+    // them would silently stop mirroring every toggle that is switched off.
+    expect(decider).toMatch(/typeof v === 'boolean'/);
+  });
+
+  /**
+   * A DELETE THAT RLS CANNOT EVALUATE IS NOT A DELETE THE CLIENT WILL EVER SEE.
+   *
+   * `notifications` is published and REPLICA IDENTITY FULL, which is normally
+   * enough for Realtime to evaluate RLS against the old tuple and scope the
+   * event. It is not enough here: the table carries two RESTRICTIVE SELECT
+   * policies whose expressions look the row up by id —
+   *   messenger_private_notification_content
+   *       → fn_messenger_notification_visible_to(id, auth.uid())
+   *         which does EXISTS(SELECT 1 FROM notifications WHERE n.id = ...)
+   *   personal_notification_destination
+   *       → fn_notification_has_personal_destination(id, user_id)
+   * After the row is deleted the EXISTS is false, the restrictive policy
+   * denies, and Realtime drops the DELETE for EVERY subscriber. No client-side
+   * subscription change can recover an event the server never sends.
+   *
+   * Dismissal is a hard delete (/api/notifications/delete, service role), and
+   * three surfaces were relying on that dropped event. The dismissing surface
+   * knows the id at the moment it acts, so it announces it on the bus — which
+   * MasterBus mirrors onto its BroadcastChannel, covering this tab and every
+   * other tab of this browser.
+   */
+  it('a dismissal is announced on the bus, because no DELETE event can carry it', () => {
+    const page = codeOnly(read('src/pages/NotificationsPage.tsx'));
+    const bell = codeOnly(read('src/components/navigation/NotificationDropdown.tsx'));
+
+    expect(
+      page,
+      'NotificationsPage must emit NOTIFICATION_DISMISSED after a confirmed delete: the ' +
+        'realtime DELETE for notifications is dropped by its own RESTRICTIVE RLS policies, ' +
+        'so nothing else can tell the other surfaces the row is gone.'
+    ).toMatch(/NOTIFICATION_DISMISSED/);
+
+    expect(
+      bell,
+      'the notification bell must honour NOTIFICATION_DISMISSED. Its realtime subscription ' +
+        'is INSERT-only and its load effect is keyed on the user id, so it never refetches ' +
+        'within a session: without this it shows a dismissed row until reload, in the SAME tab.'
+    ).toMatch(/useMasterBusSubscription\(\s*'NOTIFICATION_DISMISSED'/);
+
+    expect(
+      bell,
+      'the bell must also follow NOTIFICATION_READ, or its unread badge disagrees with the ' +
+        'page it was opened from.'
+    ).toMatch(/useMasterBusSubscription\(\s*'NOTIFICATION_READ'/);
+
+    // The bell must not go back to depending on a DELETE it cannot receive.
+    expect(
+      bell,
+      'the bell must not subscribe to a notifications DELETE: that event is dropped ' +
+        'server-side and a subscription to it reads as working while doing nothing.'
+    ).not.toMatch(/event:\s*'DELETE'/);
+  });
+
+  /**
    * THE ONE THAT MATTERS LATER. `SET TABLE` replaces the whole membership, so
    * one migration that means to add a single table removes every other. That
    * is not hypothetical: it is what happened on 2026-09-08, and `notifications`

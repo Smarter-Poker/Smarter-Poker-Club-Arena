@@ -169,7 +169,7 @@
     "tests/fixtures/browser-period-observer/regression.sql": "3550c76e15615707f52d4b6fc8c183b5b8cd3ad9105a6282e72c25b900152284",
     "tests/unit/SettlementCronService.test.ts": "b436754cec532a518975b8f03ff5020dc90048d30c044ca04aa25029a1109a9f",
     "tests/unit/ServiceBootstrap.test.ts": "74881cd7adc292cafbd325c98bee91ad53192ecdb4e07cc66aab3d11b58f4c21",
-    "tests/unit/FinancialCronService.test.ts": "a4b4f2a06cfebe1812f1ba82e50f6200060a2f2d5ade8f4145b55cd86f052da5",
+    "tests/unit/FinancialCronService.test.ts": "d896cbd87786cb83569ee48e7d1adde3f017ceba3a3e1f4fe573ed7cfefddb4d",
     "tests/components/ClubWeeklyAccountingSummary.test.tsx": "c3b8dd010b46ce1f14180ab05c4b36f7ac14c3f35c73f2fff7563f2b135ab634",
     "tests/unit/AccountingObservationService.test.ts": "6e571f657f66a05bd37b9aa35b867e12b54c99c75754e017034ec3bafed17ce9",
     "tests/unit/SettlementService.test.ts": "92390199785906650508d16eea99372e24a6451dd8cd9d108679381ed1ca936d",
@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "3b40d1ae0b008db62b2ec37f0242961007d7c91cd5fbd21a2fd378f39039d4e9",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "fe9542d1ba09b0d3fe9f474b4948768595cac66c2163d4b24ff77b465e82a6b2",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -1429,6 +1429,44 @@
     "failed_run": 35453124666,
     "reason": "The additive Diamond replay and daily-custody CI routes changed the classifier. All prior classification branches and financial fixture inputs remain unchanged. Refresh the three active classifier bindings and the two resulting nested binding hashes; retain historical receipts.",
     "verification": "Exact active binding guards and classifier routing tests; native qualification remains the existing required hosted accounting job."
+  },
+  "retired_dispute_escalation_rebinding_20260920": {
+    "base_commit": "1e19f83b6cd6e2d7baecb97fa9d9cfefd03486aa",
+    "prior_binding_sha256": "6520d17392293e18793a1b1f23eecf492a169883552d7428d35474c027d19274",
+    "failed_run": 35490389682,
+    "also_failed_run": 35478014685,
+    "source_pull_request": 4943,
+    "source_commit": "74f5c9c076",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/FinancialCronService.test.ts",
+        "previous_sha256": "a4b4f2a06cfebe1812f1ba82e50f6200060a2f2d5ade8f4145b55cd86f052da5",
+        "sha256": "d896cbd87786cb83569ee48e7d1adde3f017ceba3a3e1f4fe573ed7cfefddb4d"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "3b40d1ae0b008db62b2ec37f0242961007d7c91cd5fbd21a2fd378f39039d4e9",
+        "sha256": "a6ae2ef64e38661fb5983a6d621b4ca9ad83fd6dc85af975f3a98e937b8579f6"
+      }
+    ],
+    "reason": "PR #4943 retired the browser dispute-escalation entry point on 2026-09-19. It was right to: the authenticated role has no UPDATE grant on public.disputes and the table's only policy is SELECT, so the method answered 42501 on every call while still incrementing its own counter and persisting a \"dispute auto-escalated\" alert through a function authenticated can execute. Two bound application tests moved with it. tests/unit/FinancialCronService.test.ts now asserts the method is absent and that booting the service never touches the disputes table; tests/unit/discardedErrorReadRatchet.test.ts drops its src/services/FinancialCronService.ts baseline entry because the discarded read is gone. Both changes widen coverage and neither touches a financial component, an assertion or a captured catalog fixture. Its own required checks were green because its paths do not route to the accounting job, so from the next main run onward the required accounting check failed on main and on every open pull request with \"Repository lifecycle fixture drift\". Refresh only these two stale repository bindings; preserve all 29 captured catalog fixtures, the other 421 repository bindings, every financial component and every assertion.",
+    "verification": "Each new sha256 is the sha256 of the file at this base commit, recomputed from the bytes on disk. All 423 repository bindings were then re-verified against the tree and agree. The captured fixtures map, component_count and every assertion count are unchanged from the previous binding."
+  },
+  "dispute_intake_ratchet_rebinding_20260920": {
+    "base_commit": "d616a7cf11e57a77bc5d80587a73c70e3e031fc7",
+    "prior_binding_sha256": "5c4630ea100f76b96cd87e392ad6e30e6b254f6b34da442a0dad25e562734f5b",
+    "supersedes": "retired_dispute_escalation_rebinding_20260920",
+    "source_pull_request": 4956,
+    "source_commit": "5d7f10b22d",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "a6ae2ef64e38661fb5983a6d621b4ca9ad83fd6dc85af975f3a98e937b8579f6",
+        "sha256": "fe9542d1ba09b0d3fe9f474b4948768595cac66c2163d4b24ff77b465e82a6b2"
+      }
+    ],
+    "reason": "PR #4956 gave public.disputes the two entry points it never had, fn_dispute_submit and fn_dispute_withdraw, so submitDispute and withdrawDispute stopped doing raw client writes whose errors were discarded. tests/unit/discardedErrorReadRatchet.test.ts lowered its src/services/DisputeService.ts baseline from 3 to 1 to match. That is the ratchet tightening, not relaxing: it now permits fewer discarded reads for that file than before. #4956 merged at 07:57Z. #4959, which re-recorded this same path for the unrelated #4943 drift, was cut from 1e19f83b6c ten minutes earlier and squash-merged at 08:14Z, so it re-recorded the sha256 of the bytes at ITS base and landed a hash for a file main had already changed. Its own verification could not have seen this: at 1e19f83b6c the file really did hash to the value it recorded. This is exactly the case .github/workflows/ci.yml documents - a squash merge builds a tree that no pull request ever tested, whenever main moves between a pull request's last run and its merge. The preamble also raises on the FIRST drift it meets, so while tests/unit/FinancialCronService.test.ts was still stale this one stayed masked; #4959 fixing that one is what surfaced it. The required Accounting transactions (PostgreSQL 17) check therefore still fails in the python preamble with 'Repository lifecycle fixture drift: tests/unit/discardedErrorReadRatchet.test.ts', before any PostgreSQL cluster starts and before any accounting component is installed, and Server Engine (typecheck + tests) and What this run verified fail only because they aggregate it. No financial behaviour is implicated. Refresh only this one stale repository binding; preserve all 29 captured catalog fixtures, the other 422 repository bindings, every financial component and every assertion.",
+    "verification": "The new sha256 is the sha256 of the bytes of tests/unit/discardedErrorReadRatchet.test.ts at this base commit, read from disk in a clean worktree whose file is identical to HEAD. All 423 repository bindings and all 29 captured fixtures were then re-verified against the tree with the runner's own computation - hashlib.sha256(path.read_bytes()).hexdigest(), repository_fixtures resolved against the repository root and fixtures against tests/fixtures/full-weekly-accounting, no normalisation of any kind - and every one agrees. component_count, both assertion counts, the captured fixtures map, limits and supplemental captures are byte-identical to the previous binding. The edit went through a JSON round-trip proved byte-identical to the original file, so the diff is exactly this one hash plus this note."
   },
   "diamond_sql_acceptance_ci_binding_20260920": {
     "changed_repository_bindings": [

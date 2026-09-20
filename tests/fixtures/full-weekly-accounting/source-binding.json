@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "511e11371e0b85a71d409bfeb79fe3794b81f1fa4afec99e5d762d6c36824640",
+    "scripts/ci/classify-ci-changes.mjs": "0e4e4f82b720b8dca928a0c520d7a5f3596ef99c920c589454fe17bb0f56d368",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "5563f84b39535b384ca87bc16d12901b47ebb1e9be39a72322302edf6cf6c82d",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "ad08e3d4c4b7187348c2a1801d988251cf27adb05360268f62e63078e6b29fea",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "20d36f9b3ce9f2de8bb02001af2f89bdeb8e67326fe1de76f89a3dbfa1ec7989",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "f0577d91156f1a744fa8a6dccee902676757b2052c3bb129b14d6a379a680554",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -1429,5 +1429,40 @@
     "failed_run": 35453124666,
     "reason": "The additive Diamond replay and daily-custody CI routes changed the classifier. All prior classification branches and financial fixture inputs remain unchanged. Refresh the three active classifier bindings and the two resulting nested binding hashes; retain historical receipts.",
     "verification": "Exact active binding guards and classifier routing tests; native qualification remains the existing required hosted accounting job."
+  },
+  "diamond_sql_acceptance_ci_binding_20260920": {
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "511e11371e0b85a71d409bfeb79fe3794b81f1fa4afec99e5d762d6c36824640",
+        "sha256": "0e4e4f82b720b8dca928a0c520d7a5f3596ef99c920c589454fe17bb0f56d368"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "5563f84b39535b384ca87bc16d12901b47ebb1e9be39a72322302edf6cf6c82d",
+        "sha256": "ad08e3d4c4b7187348c2a1801d988251cf27adb05360268f62e63078e6b29fea"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "20d36f9b3ce9f2de8bb02001af2f89bdeb8e67326fe1de76f89a3dbfa1ec7989",
+        "sha256": "f0577d91156f1a744fa8a6dccee902676757b2052c3bb129b14d6a379a680554"
+      }
+    ],
+    "changed_qualification_manifest_pins": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "previous_sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63",
+        "sha256": "8312ca6298f8baf8da46ccbc10d9f4acb1730833b078cb41dde33025ae0c41d8",
+        "pinned_in": "scripts/qualification/cash-native-hosted.manifest.json"
+      },
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "511e11371e0b85a71d409bfeb79fe3794b81f1fa4afec99e5d762d6c36824640",
+        "sha256": "0e4e4f82b720b8dca928a0c520d7a5f3596ef99c920c589454fe17bb0f56d368",
+        "pinned_in": "scripts/qualification/cash-native-hosted.manifest.json"
+      }
+    ],
+    "reason": "The classifier gained additive Diamond SQL acceptance routing: a change to any tests/sql/run-*diamond*.py runner, any tests/sql/poker-diamond-*.sql fixture, poker-arena-access.sql, the controlled-play driver, the session and transfer cap fixtures, scripts/ci/run-diamond-sql-acceptance.py or scripts/ci/check-diamond-runners-listed.mjs now selects the PostgreSQL accounting job and its routing tests, so the eleven Diamond money-door runners and the arena access script execute there instead of only by hand. No existing classification branch was removed or narrowed, and no accounting component, assertion, capture or fixture changed. The two nested financial bindings already retain the reviewed classifier bytes; refreshing them changes their own sha256, which this outer binding also pins, so the four hashes move together. The workflow pin moves for the same edit: the accounting job gained the list check, the acceptance step and its evidence upload, and nothing else.",
+    "verification": "All eleven runners and poker-arena-access.sql were executed on an isolated PostgreSQL 17 through scripts/ci/run-diamond-sql-acceptance.py against freshly created empty fixture databases, and each proved its own terminal line; node scripts/ci/check-diamond-runners-listed.mjs passes, and python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py accepts the refreshed cash manifest in 6 cases. Every repository_fixtures and repository_files map in every source-binding.json in the tree was re-verified against the bytes on disk: 1,238 pinned paths, the four refreshed here included, all agree. The only two paths that do not are tests/unit/FinancialCronService.test.ts and tests/unit/discardedErrorReadRatchet.test.ts, which arrived on main with #4943 and which this branch does not touch or re-record. This refresh establishes no native financial execution and no production installation; the required hosted accounting job must still pass."
   }
 }

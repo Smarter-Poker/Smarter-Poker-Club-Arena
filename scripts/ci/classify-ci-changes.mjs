@@ -107,6 +107,11 @@ export function classifyChangedPaths(paths) {
     /^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-plinko-denominations|diamond-crash-clicked-multiplier|diamond-spins-claimed-daily-bonus|diamond-wheel-funded-awards|diamond-wheel-upgrade-eight|diamond-bonus-minimum-wins|diamond-bonus-replays|diamond-daily-custody)\.sql|tests\/fixtures\/(diamond-wheel-v2-(receipts|state)|diamond-spins\/wheel-(?:earned|v3)-postgres-receipts)\.json|tests\/unit\/wheel(ServerReceipts|EarnedPostgresContract|UpgradeReceipts|UpgradePostgresContract)\.test\.ts|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|DiamondWheelService|DiamondReplayService|DiamondStatementService|WheelBonusEntryService|diamondBonusRecovery)\.ts|src\/hooks\/use(BonusBudget|EarnedBonus)\.ts|src\/components\/games\/BonusSetup\.tsx|src\/utils\/(crashReceipt|bonusGameBudget|wheelAward|wheelPendingSpin|wheelFairness)\.ts|src\/pages\/Diamond(Choice|Crash|Plinko|Wheel)Page\.tsx)$/
   );
 
+  // The Diamond Arena SQL acceptance (2026-09-19): every runner, every fixture
+  // file the runners read and the wrapper that runs them in the accounting job.
+  const diamondSqlAcceptance = matches(
+    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
+  );
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);
   // Script/fixture-only edits must admit accounting and its routing tests.
@@ -124,6 +129,7 @@ export function classifyChangedPaths(paths) {
       broad ||
       bbjFixture ||
       diamondGames ||
+      diamondSqlAcceptance ||
       phase4Changed ||
       matches(mttPreparation) ||
       matches(satelliteQualifiers) ||
@@ -154,6 +160,7 @@ export function classifyChangedPaths(paths) {
       matches(breakfastWitness) ||
       buildProvenance ||
       diamondGames ||
+      diamondSqlAcceptance ||
       commitmentAudit ||
       tournamentAccountingInput ||
       matches(mttPreparation) ||

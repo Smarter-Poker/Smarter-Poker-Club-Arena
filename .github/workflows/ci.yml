@@ -1535,6 +1535,34 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-rake-attribution-atomic.py --output artifacts/production-alerts-sql/rake-attribution
 
+      # ── THE DIAMOND ARENA ACCEPTANCE RUNS HERE (2026-09-19) ──────────────
+      # tests/sql/run-*diamond*.py certify the Diamond money doors (custody,
+      # wallet transfer, buy-in, top-up, straddle, run-it-twice, bomb pot, the
+      # plain-cash rule, the accepted hand and a full controlled hand) on an
+      # isolated PostgreSQL 17, and poker-arena-access.sql certifies the
+      # arena's access rules. Until today they ran only by hand on the owner's
+      # Mac. The wrapper builds an empty cluster behind the exact Unix socket
+      # every runner is hard-wired to (no TCP, so no runner can ever reach a
+      # real database), runs the runners one after another and tears it down.
+      # The wrapper names every runner EXPLICITLY, and the check before it fails
+      # the job when tests/sql/ holds a runner the wrapper does not name.
+      - name: Every Diamond SQL acceptance runner is listed
+        run: node scripts/ci/check-diamond-runners-listed.mjs
+      - name: Diamond Arena SQL acceptance on the isolated fixture
+        id: diamond_sql_acceptance
+        timeout-minutes: 15
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/run-diamond-sql-acceptance.py --evidence artifacts/diamond-sql-acceptance
+      - name: Retain Diamond SQL acceptance evidence
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.diamond_sql_acceptance.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: diamond-sql-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/diamond-sql-acceptance/
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Check composed alert fixture admission and cleanup guards
         run: python3 scripts/ci/test_production_alert_core_postgres.py
 

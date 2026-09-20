@@ -1,23 +1,32 @@
 #!/usr/bin/env python3
-"""Run every Diamond SQL acceptance runner against one isolated PostgreSQL 17.
+"""Run every Diamond SQL acceptance runner against an isolated PostgreSQL 17.
 
-The runners under tests/sql/ were written for the owner's Mac: each one
-connects to the Unix socket directory /tmp/codex-diamond-phase2-pg on port
-55472, and each fixture refuses any database that is reachable over TCP or
-that carries a different name, so a runner can never be pointed at production
-by an environment variable. That property is kept here. This script does not
-redirect the runners; it brings the socket they expect into existence on the
-hosted runner, builds an empty cluster behind it, runs the runners one after
+The runners under tests/sql/ were written for the owner's Mac and come in two
+shapes. Most of them connect to the Unix socket directory
+/tmp/codex-diamond-phase2-pg on port 55472, and each fixture refuses any
+database that is reachable over TCP or that carries a different name, so a
+runner can never be pointed at production by an environment variable. This
+script does not redirect them: it brings the socket they expect into existence
+on the hosted runner, builds an empty cluster behind it, runs them one after
 another (they share database names and rebuild them), and tears the cluster
 down again.
+
+The rest - PRIVATE_CLUSTER_RUNNERS below - initdb a cluster of their own inside
+a temporary directory they create, own and destroy, because they load the
+estate's historical schema base and must have a cluster nothing else has
+written to. Two postmasters cannot share one socket and port, so those runners
+cannot be moved onto the shared cluster; they hold the same property by the
+same means, a socket-only server named in their own source. Which shape a
+runner has is DECLARED here rather than guessed, and the check script refuses a
+declaration for a runner that is not in the list at all.
 
 The runner list is EXPLICIT rather than a glob so that a new runner cannot be
 added to tests/sql/ without being named here: the script refuses to certify
 when the directory holds a runner this list does not, and
 scripts/ci/check-diamond-runners-listed.mjs applies the same rule statically.
 
-Only PG_BIN reaches the runners. It selects which local psql binary runs; the
-socket, port and database names stay fixed inside each runner.
+Only PG_BIN reaches the runners. It selects which local PostgreSQL 17 binaries
+run; the socket, port and database names stay fixed inside each runner.
 """
 import argparse
 import json
@@ -64,10 +73,30 @@ RUNNERS = [
     ('run-diamond-accepted-hand.py',
      'Diamond accepted-hand integration passed; public gameplay remains gated.'),
     ('run-diamond-controlled-play.py', 'CONTROLLED PLAY PASSED:'),
+    ('run-diamond-tournament-doors.py', 'Diamond tournament door capture verified.'),
+    ('run-diamond-tournament-lifecycle.py',
+     'Diamond tournament lifecycle cases verified against the installed doors,'),
+    ('run-diamond-stats-asset-dimension.py',
+     'Diamond stats asset dimension certified on isolated PostgreSQL 17.'),
 ]
 # Plain psql acceptance scripts: (file, database, the line that proves it ran).
 SQL_SCRIPTS = [
     ('poker-arena-access.sql', 'poker_arena_phase2_test', 'PHASE2_LOCAL_SQL_PASS_39_ASSERTIONS'),
+]
+# The runners that build a cluster of their own instead of using the one this
+# script starts. They load the estate's historical schema base and pin the
+# installed doors against it, so they need a cluster nothing else has written
+# to, on a socket inside a temporary directory they create and destroy. Being
+# on this list is a DECLARATION: check-diamond-runners-listed.mjs and
+# tests/unit/diamondAcceptanceCi.test.ts hold a named runner to the private
+# contract (its own temporary socket, listen_addresses empty, and the shared
+# socket and port never mentioned) and every other runner to the shared one
+# (hard-wired to SOCKET_DIR and PORT). A runner therefore cannot be mislabelled
+# into a weaker check - the two contracts exclude each other by assertion.
+PRIVATE_CLUSTER_RUNNERS = [
+    'run-diamond-stats-asset-dimension.py',
+    'run-diamond-tournament-doors.py',
+    'run-diamond-tournament-lifecycle.py',
 ]
 RUNNER_NAMES = [name for name, _ in RUNNERS]
 RUNNER_PATTERN = re.compile(r'^run-.*diamond.*\.py$')
@@ -78,6 +107,26 @@ def runners_on_disk():
     return sorted(p.name for p in SQL_DIR.iterdir() if RUNNER_PATTERN.match(p.name))
 
 
+# What a red list check is actually asking for. The list rotted the day after it
+# was written, because three runners landed on main from three other pull
+# requests and each of them moved one place instead of three. Say the three.
+ADDING_A_RUNNER = """
+A NEW tests/sql/run-*diamond*.py RUNNER MOVES THREE PLACES IN THE SAME COMMIT:
+
+  1. RUNNERS in scripts/ci/run-diamond-sql-acceptance.py - the file name and
+     the exact line the runner's own body prints when it reaches its end. Add
+     it to PRIVATE_CLUSTER_RUNNERS too if it builds its own cluster rather
+     than using this script's.
+  2. The EXPLICIT name list in tests/unit/diamondAcceptanceCi.test.ts.
+  3. The COUNTS in that same test file, which are deliberately literal so
+     that a list and a number cannot quietly disagree.
+
+Moving one of the three and not the others is exactly what left this list
+stale. Do not delete the explicit list, and do not make the count derived so
+that it can never disagree - CLAUDE.md sections 8 and 10.11. Add the runner.
+"""
+
+
 def check_runner_list():
     on_disk = runners_on_disk()
     missing = sorted(set(on_disk) - set(RUNNER_NAMES))
@@ -85,11 +134,18 @@ def check_runner_list():
     if missing or gone:
         raise SystemExit(
             'Diamond runner list is stale. Not listed: %s. Listed but absent: %s. '
-            'Edit RUNNERS in %s.' % (missing or 'none', gone or 'none', pathlib.Path(__file__).name)
+            'Edit RUNNERS in %s.%s'
+            % (missing or 'none', gone or 'none', pathlib.Path(__file__).name, ADDING_A_RUNNER)
         )
     unproved = sorted(name for name, proof in RUNNERS if not proof.strip())
     if unproved:
-        raise SystemExit('these runners have no proof line: %s' % unproved)
+        raise SystemExit('these runners have no proof line: %s%s' % (unproved, ADDING_A_RUNNER))
+    unknown_private = sorted(set(PRIVATE_CLUSTER_RUNNERS) - set(RUNNER_NAMES))
+    if unknown_private:
+        raise SystemExit(
+            'PRIVATE_CLUSTER_RUNNERS names %s, which RUNNERS does not run.%s'
+            % (unknown_private, ADDING_A_RUNNER)
+        )
 
 
 def fixture_database_names():
@@ -201,11 +257,21 @@ def main():
 
     env = dict(os.environ, PG_BIN=str(pathlib.Path(args.pg_bin)), PYTHONUNBUFFERED='1')
     cluster = Cluster(args.pg_bin, args.work_parent, log)
+    selected_scripts = [s for s in SQL_SCRIPTS if not args.only or s[0] in args.only]
+    # A run made only of private-cluster runners needs no shared cluster at all.
+    # Deciding that from the declaration is what keeps PRIVATE_CLUSTER_RUNNERS
+    # load bearing rather than a comment that can drift from the truth.
+    needs_shared = bool(selected_scripts) or any(
+        name not in PRIVATE_CLUSTER_RUNNERS for name, _ in selected)
     failures = []
     try:
-        cluster.start()
-        cluster.ensure_databases(fixture_database_names())
+        if needs_shared:
+            cluster.start()
+            cluster.ensure_databases(fixture_database_names())
+        else:
+            log('every selected run builds its own cluster; no shared cluster is started')
         for name, proof in selected:
+            own = name in PRIVATE_CLUSTER_RUNNERS
             started = time.monotonic()
             result = subprocess.run([sys.executable, str(SQL_DIR / name)], cwd=ROOT, env=env,
                                     text=True, capture_output=True, timeout=900)
@@ -217,7 +283,8 @@ def main():
             # reached the end that prints its own proof.
             proved = proof in result.stdout or proof in result.stderr
             entry = {'runner': name, 'returncode': result.returncode, 'seconds': seconds,
-                     'passLines': passes, 'proof': proof, 'proved': proved}
+                     'passLines': passes, 'proof': proof, 'proved': proved,
+                     'cluster': 'own' if own else 'shared'}
             receipt['runners'].append(entry)
             persist()
             if result.returncode or not proved:
@@ -227,10 +294,9 @@ def main():
                 sys.stdout.write(result.stdout[-4000:])
                 sys.stderr.write(result.stderr[-4000:])
             else:
-                log('%s: PASS in %ss, %d PASS lines, proof: %s' % (name, seconds, passes, proof))
-        for file_name, database, proof in SQL_SCRIPTS:
-            if args.only and file_name not in args.only:
-                continue
+                log('%s: PASS in %ss on its %s cluster, %d PASS lines, proof: %s'
+                    % (name, seconds, 'own' if own else 'shared', passes, proof))
+        for file_name, database, proof in selected_scripts:
             started = time.monotonic()
             result = cluster.psql(database, ['-f', file_name], cwd=SQL_DIR)
             seconds = round(time.monotonic() - started, 1)

@@ -14,3 +14,9 @@ to pass if either is open when the cases finish: the arena's release gate is
 Dan's to open, never a fixture's, and the closed switch is itself what the
 fixture's sixth case asserts. Finally, as in the first Diamond tournament law,
 no md5 comparison in the capture may be turned into a comparison against NULL.
+
+`tests/sql/run-diamond-tournament-lifecycle.py` runs in CI through
+`scripts/ci/run-diamond-sql-acceptance.py`, so these cases are now certified on
+every pull request that touches them rather than when somebody remembers. A new
+runner under `tests/sql/` moves three places in the same commit: see
+`tests/sql/README.md`.

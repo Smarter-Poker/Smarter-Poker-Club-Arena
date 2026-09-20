@@ -11,7 +11,7 @@
  * new runner is a decision, and this check is what makes forgetting that
  * decision a red build rather than a runner nobody executes.
  *
- * Four things are checked, and each one has failed for real elsewhere in this
+ * Five things are checked, and each one has failed for real elsewhere in this
  * estate (see hero-card-row.spec.ts in tests/shipped-invariants.test.ts):
  *   1. every runner on disk is named in the wrapper's RUNNERS list, and every
  *      name in the list is on disk;
@@ -19,7 +19,15 @@
  *      without asserting anything cannot stand as a green step;
  *   3. ci.yml's accounting job actually invokes the wrapper, once, unguarded
  *      by `if:` and without `continue-on-error`;
- *   4. the wrapper's SQL_SCRIPTS still name tests/sql/poker-arena-access.sql.
+ *   4. the wrapper's SQL_SCRIPTS still name tests/sql/poker-arena-access.sql;
+ *   5. every name in PRIVATE_CLUSTER_RUNNERS is a runner the wrapper runs, so
+ *      the declaration of which cluster a runner uses cannot name a ghost.
+ *
+ * THE LIST ROTTED WITHIN A DAY of it being written, which is why the failure
+ * text below names all three places a new runner has to be added rather than
+ * only the one this check happens to read. Three runners landed on main from
+ * three other pull requests - the tournament doors, the tournament lifecycle
+ * and the stats asset dimension - and each moved one place instead of three.
  *
  * Exit 0 when all hold, 1 with the exact drift otherwise. Read-only.
  */
@@ -52,6 +60,18 @@ export function runnerProofsInWrapper(wrapperSource) {
   const block = /^RUNNERS = \[([\s\S]*?)^\]/m.exec(wrapperSource);
   if (!block) return null;
   return [...block[1].matchAll(/\(\s*'([^']+\.py)',\s*\n?\s*'([^']*)'/g)].map((m) => [m[1], m[2]]);
+}
+
+/**
+ * The runners the wrapper declares build a cluster of their own rather than
+ * using the shared one. It is a declaration, not a guess, so that each runner
+ * can be held to exactly one fully specified contract: see
+ * tests/unit/diamondAcceptanceCi.test.ts.
+ */
+export function privateClusterRunnersInWrapper(wrapperSource) {
+  const block = /^PRIVATE_CLUSTER_RUNNERS = \[([\s\S]*?)^\]/m.exec(wrapperSource);
+  if (!block) return null;
+  return [...block[1].matchAll(/'([^']+\.py)'/g)].map((m) => m[1]).sort();
 }
 
 export function sqlScriptsListedInWrapper(wrapperSource) {
@@ -96,6 +116,16 @@ export function findDiamondRunnerProblems(root) {
       problems.push(`${WRAPPER} gives ${name} no proof line, so exit 0 alone would pass it`);
   if (!sqlScriptsListedInWrapper(wrapperSource).includes('poker-arena-access.sql'))
     problems.push(`${WRAPPER} no longer runs tests/sql/poker-arena-access.sql`);
+  const privateCluster = privateClusterRunnersInWrapper(wrapperSource);
+  if (!privateCluster) {
+    problems.push(`${WRAPPER} has no PRIVATE_CLUSTER_RUNNERS list`);
+  } else {
+    for (const name of privateCluster)
+      if (!listed.includes(name))
+        problems.push(
+          `${WRAPPER} declares ${name} a private-cluster runner but RUNNERS does not run it`
+        );
+  }
 
   const ci = readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8');
   const job = accountingJobText(ci);
@@ -119,6 +149,29 @@ export function findDiamondRunnerProblems(root) {
   return problems;
 }
 
+/**
+ * What a red check is actually asking for. Kept here as well as in the wrapper
+ * because this is the step whose log a red build shows first.
+ */
+export const ADDING_A_RUNNER = [
+  '',
+  'A NEW tests/sql/run-*diamond*.py RUNNER MOVES THREE PLACES IN THE SAME COMMIT:',
+  '',
+  `  1. RUNNERS in ${WRAPPER} - the file name and the exact line the runner's`,
+  '     own body prints when it reaches its end. Add it to',
+  '     PRIVATE_CLUSTER_RUNNERS too if it builds its own cluster rather than',
+  "     using that script's.",
+  '  2. The EXPLICIT name list in tests/unit/diamondAcceptanceCi.test.ts.',
+  '  3. The COUNTS in that same test file, which are deliberately literal so',
+  '     that a list and a number cannot quietly disagree.',
+  '',
+  'Moving one of the three and not the others is exactly what left this list',
+  'stale a day after it was written. Do not delete the explicit list, and do',
+  'not make the count derived so that it can never disagree - CLAUDE.md',
+  'sections 8 and 10.11. Add the runner.',
+  '',
+].join('\n');
+
 function main() {
   const root = process.cwd();
   const problems = findDiamondRunnerProblems(root);
@@ -129,6 +182,7 @@ function main() {
     return 0;
   }
   for (const problem of problems) console.error(`check-diamond-runners-listed: ${problem}`);
+  console.error(ADDING_A_RUNNER);
   return 1;
 }
 

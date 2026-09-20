@@ -6,7 +6,16 @@
  * when somebody remembered them. This pins the wiring that makes them a gate:
  * the wrapper names every runner on disk, the accounting job runs the wrapper
  * unguarded, a change to any runner or fixture routes to that job, and the
- * runners still refuse to be pointed anywhere but their fixed local socket.
+ * runners still refuse to be pointed anywhere but their fixed local socket -
+ * whether that is the wrapper's shared one or a private cluster the runner
+ * creates, owns and destroys.
+ *
+ * THE LIST ROTTED THE DAY AFTER IT WAS WRITTEN. Three runners landed on main
+ * from three other pull requests and each moved one place instead of three, so
+ * the counts and the explicit names below are deliberately literal. Adding a
+ * runner moves the wrapper's RUNNERS, the names here and the counts here, in
+ * one commit. Deleting the list or deriving the counts so they can never
+ * disagree is the failure mode CLAUDE.md sections 8 and 10.11 forbid.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -17,6 +26,7 @@ import {
   accountingJobText,
   findDiamondRunnerProblems,
   jobSteps,
+  privateClusterRunnersInWrapper,
   runnerProofsInWrapper,
   runnersListedInWrapper,
   runnersOnDisk,
@@ -29,19 +39,87 @@ const read = (p: string) => readFileSync(join(root, p), 'utf8');
 const ci = parse(read('.github/workflows/ci.yml'));
 const wrapper = read(WRAPPER);
 
+/* THE FOURTEEN RUNNERS, NAMED, AND COUNTED IN WORDS.
+
+   Every other assertion here derives the population from the directory, which
+   is right and is not enough on its own: a directory read agrees with itself
+   whatever is in it, so a runner deleted together with its wrapper entry would
+   leave every derived check green. These literals are what such a deletion has
+   to argue with, and they are why a stale list is a red build rather than a
+   money door nobody executes. */
+const EVERY_DIAMOND_RUNNER = [
+  'run-diamond-accepted-hand.py',
+  'run-diamond-bomb-pot.py',
+  'run-diamond-cash-admission.py',
+  'run-diamond-cash-custody.py',
+  'run-diamond-controlled-play.py',
+  'run-diamond-plain-cash-rule.py',
+  'run-diamond-run-it-twice.py',
+  'run-diamond-stats-asset-dimension.py',
+  'run-diamond-straddle.py',
+  'run-diamond-top-up.py',
+  'run-diamond-tournament-doors.py',
+  'run-diamond-tournament-lifecycle.py',
+  'run-diamond-wallet-transfer.py',
+  'run-poker-diamond-custody.py',
+];
+/* The three that stand up a cluster of their own. Declared in the wrapper and
+   repeated here, so the split cannot move in one file alone. */
+const A_PRIVATE_CLUSTER = [
+  'run-diamond-stats-asset-dimension.py',
+  'run-diamond-tournament-doors.py',
+  'run-diamond-tournament-lifecycle.py',
+];
+const HOW_MANY_RUNNERS = 14;
+const HOW_MANY_ON_A_PRIVATE_CLUSTER = 3;
+const HOW_MANY_ON_THE_WRAPPER_CLUSTER = 11;
+/* No environment variable but PG_BIN may choose a runner's server. PG17_BINDIR
+   is the estate's other name for a bin directory, and two variables naming one
+   thing is how the two drift apart: a runner that reads it is refused here. */
+const NOT_FROM_THE_ENVIRONMENT = [
+  'PGHOST',
+  'PGPORT',
+  'PGDATABASE',
+  'DATABASE_URL',
+  'SUPABASE',
+  'PG17_BINDIR',
+];
+
 describe('every Diamond SQL runner is run by the accounting job', () => {
   it('finds no drift between tests/sql, the wrapper and ci.yml', () => {
     expect(findDiamondRunnerProblems(root)).toEqual([]);
   });
 
-  it('names the eleven runners and the arena access script explicitly', () => {
+  it('is the fourteen runners this file names, counted the same two ways', () => {
+    expect(runnersOnDisk(root)).toEqual(EVERY_DIAMOND_RUNNER);
+    expect(EVERY_DIAMOND_RUNNER).toHaveLength(HOW_MANY_RUNNERS);
+    expect(runnersOnDisk(root)).toHaveLength(HOW_MANY_RUNNERS);
+    expect(HOW_MANY_ON_A_PRIVATE_CLUSTER + HOW_MANY_ON_THE_WRAPPER_CLUSTER).toBe(HOW_MANY_RUNNERS);
+  });
+
+  it('names the fourteen runners and the arena access script explicitly', () => {
     const listed = runnersListedInWrapper(wrapper);
     expect(listed).toEqual(expect.arrayContaining(runnersOnDisk(root)));
     expect(listed).toHaveLength(runnersOnDisk(root).length);
+    expect(listed).toHaveLength(HOW_MANY_RUNNERS);
+    expect(listed!.slice().sort()).toEqual(EVERY_DIAMOND_RUNNER);
     expect(listed).toContain('run-diamond-controlled-play.py');
     expect(listed).toContain('run-diamond-wallet-transfer.py');
     expect(listed).toContain('run-poker-diamond-custody.py');
+    expect(listed).toContain('run-diamond-tournament-doors.py');
+    expect(listed).toContain('run-diamond-tournament-lifecycle.py');
+    expect(listed).toContain('run-diamond-stats-asset-dimension.py');
     expect(sqlScriptsListedInWrapper(wrapper)).toEqual(['poker-arena-access.sql']);
+  });
+
+  it('declares, in the wrapper, which runners build a cluster of their own', () => {
+    /* A declaration rather than a guess: it decides which of the two full
+       contracts below a runner is held to, and the wrapper uses it to skip
+       starting a shared cluster no selected run needs. */
+    expect(privateClusterRunnersInWrapper(wrapper)).toEqual(A_PRIVATE_CLUSTER);
+    expect(A_PRIVATE_CLUSTER).toHaveLength(HOW_MANY_ON_A_PRIVATE_CLUSTER);
+    for (const name of A_PRIVATE_CLUSTER) expect(runnersListedInWrapper(wrapper)).toContain(name);
+    expect(wrapper).toContain('name not in PRIVATE_CLUSTER_RUNNERS for name, _ in selected');
   });
 
   it('reports a runner the wrapper does not name', () => {
@@ -133,6 +211,17 @@ describe('a Diamond acceptance input routes to the accounting job', () => {
     'tests/sql/diamond-controlled-play-driver.ts',
     'tests/sql/diamond-session-fixture.sql',
     'tests/sql/diamond-transfer-cap-fixture.sql',
+    /* Every file the two tournament runners load out of tests/sql. The runner is
+       what the accounting job executes, so a change to what it loads has to
+       reach the same job or the acceptance certifies bytes nobody reviewed. */
+    'tests/sql/diamond-tournament-fixture-schema.sql',
+    'tests/sql/diamond-tournament-doors-captured.sql',
+    'tests/sql/diamond-tournament-doors-captured.manifest.json',
+    'tests/sql/diamond-tournament-lifecycle-schema.sql',
+    'tests/sql/diamond-tournament-lifecycle-doors.sql',
+    'tests/sql/diamond-tournament-lifecycle-doors.manifest.json',
+    'tests/sql/diamond-tournament-lifecycle-seed.sql',
+    'tests/sql/diamond-tournament-lifecycle-cases.sql',
     'scripts/ci/run-diamond-sql-acceptance.py',
     'scripts/ci/check-diamond-runners-listed.mjs',
   ])('%s selects the PostgreSQL accounting job', (path) => {
@@ -145,12 +234,29 @@ describe('a Diamond acceptance input routes to the accounting job', () => {
   });
 });
 
-/* The socket and port every runner is wired to, read OUT of the wrapper rather
-   than repeated here. One source of truth, and it keeps a machine-local
-   absolute path out of a test file, which tests/tests-are-portable.test.ts
-   refuses on sight and is right to. */
+/* The socket and port the wrapper's own cluster answers on, read OUT of the
+   wrapper rather than repeated here. One source of truth, and it keeps a
+   machine-local absolute path out of a test file, which
+   tests/tests-are-portable.test.ts refuses on sight and is right to. */
 const socketDir = /^SOCKET_DIR = '([^']+)'$/m.exec(wrapper)?.[1];
 const socketPort = /^PORT = '([0-9]+)'$/m.exec(wrapper)?.[1];
+
+/* TWO SHAPES OF RUNNER, AND EVERY RUNNER IS EXACTLY ONE OF THEM.
+ *
+ * Eleven are hard-wired to the wrapper's socket and port. Three stand up a
+ * private cluster of their own, because they load the estate's historical
+ * schema base and pin the installed doors against it: they need a cluster
+ * nothing else has written to, and two postmasters cannot own one socket and
+ * one port, so they cannot be moved onto the shared one.
+ *
+ * NEITHER CONTRACT BELOW IS A RELAXATION OF THE OTHER. Each is stated in full;
+ * a private-cluster runner is FORBIDDEN from naming the shared socket or port,
+ * and the two lists are required to partition the directory. So a runner can
+ * neither escape a check nor be relabelled into a weaker one, and the property
+ * both contracts exist for - that no environment variable can point a runner at
+ * a real database - is held either way. */
+const onAPrivateCluster = privateClusterRunnersInWrapper(wrapper) ?? [];
+const onTheWrapperCluster = runnersOnDisk(root).filter((n) => !onAPrivateCluster.includes(n));
 
 describe('the runners stay on their fixed local socket', () => {
   it('the wrapper states one socket and one port, and both are readable here', () => {
@@ -162,7 +268,15 @@ describe('the runners stay on their fixed local socket', () => {
     expect(socketDir).toContain('codex-diamond-phase2-pg');
   });
 
-  it.each(runnersOnDisk(root))(
+  it('the two contracts partition the runners on disk, with nothing left over', () => {
+    expect(onAPrivateCluster).toEqual(A_PRIVATE_CLUSTER);
+    expect(onAPrivateCluster).toHaveLength(HOW_MANY_ON_A_PRIVATE_CLUSTER);
+    expect(onTheWrapperCluster).toHaveLength(HOW_MANY_ON_THE_WRAPPER_CLUSTER);
+    expect([...onTheWrapperCluster, ...onAPrivateCluster].sort()).toEqual(runnersOnDisk(root));
+    for (const name of onAPrivateCluster) expect(onTheWrapperCluster).not.toContain(name);
+  });
+
+  it.each(onTheWrapperCluster)(
     '%s honours PG_BIN and nothing else from the environment',
     (name) => {
       const source = read(`tests/sql/${name}`);
@@ -171,9 +285,34 @@ describe('the runners stay on their fixed local socket', () => {
       expect(source, `${name} is not on the wrapper's port`).toContain(socketPort!);
       /* No other environment read may choose the server: the socket path and
        port are the property that keeps a runner off production. */
-      for (const key of ['PGHOST', 'PGPORT', 'PGDATABASE', 'DATABASE_URL', 'SUPABASE'])
+      for (const key of NOT_FROM_THE_ENVIRONMENT)
         expect(source, `${name} reads ${key}`).not.toContain(key);
       expect(source).not.toContain('/opt/homebrew/opt/postgresql@17/bin/psql');
+    }
+  );
+
+  it.each(onAPrivateCluster)(
+    '%s honours PG_BIN and nothing else from the environment, on a cluster it owns',
+    (name) => {
+      const source = read(`tests/sql/${name}`);
+      expect(source).toContain("os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin')");
+      /* Same forbidden list as the shared contract: PG_BIN names the binaries,
+         and nothing in the environment names a server. */
+      for (const key of NOT_FROM_THE_ENVIRONMENT)
+        expect(source, `${name} reads ${key}`).not.toContain(key);
+      expect(source).not.toContain('/opt/homebrew/opt/postgresql@17/bin/psql');
+      /* The cluster is one this runner creates and destroys, in a directory it
+         makes for itself. Naming the wrapper's socket or port would put it on a
+         cluster eleven other runners have written to, and would also be the way
+         a runner slipped from this contract into the other one. */
+      expect(source, `${name} must not name the wrapper's socket`).not.toContain(socketDir!);
+      expect(source, `${name} must not name the wrapper's port`).not.toContain(socketPort!);
+      expect(source, `${name} does not create its own socket directory`).toContain(
+        'tempfile.mkdtemp'
+      );
+      /* Socket only. Nothing may reach this cluster over the network either. */
+      expect(source).toContain('listen_addresses=');
+      expect(source).not.toMatch(/listen_addresses=['"]?[a-z0-9*]/);
     }
   );
 

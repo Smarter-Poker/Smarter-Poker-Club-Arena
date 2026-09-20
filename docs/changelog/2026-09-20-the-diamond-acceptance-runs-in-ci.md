@@ -236,3 +236,124 @@ repository records them, not the live installation. The six session gated
 cases in the route spec are skipped rather than passing, and the arena's
 rendered light scheme and closed-arena copy remain unproved by an executed
 browser run until that suite is given a session.
+
+---
+
+# 2026-09-20 (later the same day) The list rotted, and the gap it found is closed
+
+## What happened
+
+The test above is titled "the list cannot rot". It went red on its own branch
+within a day, and it was right to. Three more Diamond runners landed on `main`
+from three other pull requests while this one waited for a check:
+
+- `tests/sql/run-diamond-tournament-doors.py` (#4962), which stands the 79
+  installed Diamond tournament doors up on the estate's historical schema base
+  and requires every captured pin to match;
+- `tests/sql/run-diamond-tournament-lifecycle.py` (#4966), which runs the
+  lifecycle cases against those doors plus 22 more, and refuses to pass if
+  either arena switch is open when they finish;
+- `tests/sql/run-diamond-stats-asset-dimension.py`, which proves a chip hand and
+  a Diamond hand never sum into one profit figure.
+
+Each of the three moved ONE of the three places a new runner has to move. So the
+wrapper certified eleven runners while `tests/sql/` held fourteen, and three
+runners guarding Diamond tournament custody and Diamond statistics ran nowhere
+at all. That is the same defect this changelog was written about, one day later
+and with the detector working.
+
+## What changed
+
+**All three runners are in the wrapper's `RUNNERS`, with their own proof
+lines.** `Diamond tournament door capture verified.`,
+`Diamond tournament lifecycle cases verified against the installed doors,` and
+`Diamond stats asset dimension certified on isolated PostgreSQL 17.` Each string
+is text the runner's own source really prints, which
+`tests/unit/diamondAcceptanceCi.test.ts` checks against the file rather than
+taking on trust, so an invented proof cannot sit in the list looking like
+evidence.
+
+**All three honour `PG_BIN` and nothing else from the environment.** The stats
+runner chose its default bin directory from `sys.platform`; the two tournament
+runners read `PG17_BINDIR`. Both are now `PG_BIN` with the owner's Homebrew path
+as the default and a fixed fallback list in source, so a CI box with no Homebrew
+resolves PostgreSQL 17 without a second variable that has to be kept in step
+with the first. `PG17_BINDIR` is now in the forbidden list the test applies to
+every runner: two names for one thing is how the two drift apart.
+
+**Three of the fourteen runners build a cluster of their own, and that is now
+declared rather than discovered.** The eleven original runners are hard-wired to
+the wrapper's socket directory and port. The three new ones cannot be: they load
+the historical schema base and pin the installed doors against it, so they need a
+cluster nothing else has written to, and two postmasters cannot own one socket
+and one port. `PRIVATE_CLUSTER_RUNNERS` in the wrapper names them, and the
+wrapper uses that declaration to skip starting a shared cluster when no selected
+run needs one, so the list is load bearing rather than a comment.
+
+The unit test now holds each shape to its own COMPLETE contract, and neither is
+a relaxation of the other:
+
+- a wrapper-cluster runner must name the wrapper's socket directory and port,
+  read `PG_BIN` and nothing else, and never name `PGHOST`, `PGPORT`,
+  `PGDATABASE`, `DATABASE_URL`, `SUPABASE` or `PG17_BINDIR`;
+- a private-cluster runner must read `PG_BIN` and nothing else, never name any
+  of those six, create its socket directory with `tempfile.mkdtemp`, keep
+  `listen_addresses` empty, and **never name the wrapper's socket or port** so
+  it cannot sit on a cluster eleven other runners have written to;
+- the two lists must partition `tests/sql/` exactly, with literal counts on both
+  sides, so a runner can neither escape a check nor be relabelled into a weaker
+  one.
+
+Nothing was weakened to make this green. The socket and port assertions the
+eleven carry are unchanged, and the three new ones gained an equally specific
+contract rather than an exemption.
+
+**The explicit list and the counts moved together.** `EVERY_DIAMOND_RUNNER`
+names all fourteen runners by hand, `A_PRIVATE_CLUSTER` names the three, and
+`HOW_MANY_RUNNERS`, `HOW_MANY_ON_A_PRIVATE_CLUSTER` and
+`HOW_MANY_ON_THE_WRAPPER_CLUSTER` are literal 14, 3 and 11. Deriving both halves
+from one directory read would have meant a runner deleted together with its
+wrapper entry left every check green, which is what CLAUDE.md sections 8 and
+10.11 forbid.
+
+**The fixtures the tournament runners load now route to the job that executes
+them.** `scripts/ci/classify-ci-changes.mjs` added
+`tests/sql/diamond-tournament-*.sql` and
+`tests/sql/diamond-tournament-*.manifest.json` to the Diamond SQL acceptance
+routing: eight files (both deltas, both captures, both manifests, the seed and
+the cases) selected `tests` but not `server`, so the accounting job could skip
+on a pull request that changed what the acceptance executes. Each of the eight is
+named in the routing table in `tests/unit/diamondAcceptanceCi.test.ts`.
+
+**Against the next rot, three readers.** The list check's own failure text now
+names all three places a new runner has to move, because that log is the first
+thing a red build shows. The same instruction is in the wrapper, in
+`ADDING_A_RUNNER`. And `tests/sql/README.md` is new: what the runners are, how
+they run in CI, the three-place rule, why there are two cluster shapes and why
+neither can become the other. The two Diamond tournament entries in
+`docs/laws.d/` now say their runner is a CI gate and point at it.
+
+## How it was verified
+
+Every one of the three new runners was executed on the owner's Mac, on its own
+cluster, before and after the `PG_BIN` change, and again with
+`PG_BIN=/usr/lib/postgresql/17/bin` (a directory that does not exist on this
+machine) to prove the fallback resolves PostgreSQL 17 without it:
+
+| Runner                                 | Time | Proof line                                                                             |
+| -------------------------------------- | ---- | -------------------------------------------------------------------------------------- |
+| `run-diamond-tournament-doors.py`      | 3.9s | `Diamond tournament door capture verified.` (79 doors installed and pinned)            |
+| `run-diamond-tournament-lifecycle.py`  | 4.3s | `Diamond tournament lifecycle cases verified against the installed doors,` (101 doors) |
+| `run-diamond-stats-asset-dimension.py` | 0.8s | `Diamond stats asset dimension certified on isolated PostgreSQL 17.`                   |
+
+The whole wrapper then ran all fourteen runners and the access script on this
+machine: **all 15 Diamond acceptance runs passed in 18.1 seconds**, the three new
+ones reported `on its own cluster` and the eleven `on its shared cluster`.
+`node scripts/ci/check-diamond-runners-listed.mjs` reports 14 Diamond runners all
+run by CI, and its refusal was proved to fire: with one extra
+`run-diamond-*.py` file present it exited 1 and printed the three-place
+instruction. `npx vitest run tests/unit/diamondAcceptanceCi.test.ts` passes with
+80 tests, up from 63.
+
+Both arena switches stay closed. No production object was read, created or
+changed by any of this.

@@ -12,7 +12,7 @@ Usage:
   python3 tests/sql/run-diamond-tournament-lifecycle.py [--bindir DIR] [--keep]
 
 DIR must hold PostgreSQL 17 initdb/pg_ctl/psql. Without --bindir the runner
-looks at PG17_BINDIR, then the usual Homebrew and Debian locations. An absent
+looks at PG_BIN, then the usual Homebrew and Debian locations. An absent
 PostgreSQL 17 is a failure, not a skip: a fixture that quietly does nothing is
 the thing CLAUDE.md 10.86 is about.
 
@@ -37,6 +37,13 @@ BASE = (ROOT / 'scripts/ci/probes/bbj-bank-replay/funded/source'
              / 'internal-ledger-native-fixture-0006/build')
 PORT = '55733'
 DB = 'diamond_tournament_lifecycle'
+# PG_BIN is the ONLY thing this runner reads from the environment, and it names
+# the PostgreSQL 17 binaries - never a server. The cluster below is one this run
+# creates, owns and destroys, on a socket inside its own temporary directory
+# with listen_addresses empty, so no environment variable can point this runner
+# at a real database. CANDIDATES is a fixed fallback in source, not a second
+# variable that has to be kept in step with the first.
+PG_BIN = os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin')
 CANDIDATES = ['/opt/homebrew/opt/postgresql@17/bin', '/usr/lib/postgresql/17/bin',
               '/usr/pgsql-17/bin', '/opt/postgresql@17/bin']
 
@@ -60,7 +67,7 @@ LOAD = [
 
 
 def find_bindir(explicit):
-    for d in ([explicit] if explicit else []) + [os.environ.get('PG17_BINDIR')] + CANDIDATES:
+    for d in ([explicit] if explicit else []) + [PG_BIN] + CANDIDATES:
         if not d:
             continue
         p = pathlib.Path(d)
@@ -69,7 +76,7 @@ def find_bindir(explicit):
                                  capture_output=True, text=True).stdout
             if re.search(r'\(PostgreSQL\) 17\.', out):
                 return p, out.strip()
-    raise SystemExit('PostgreSQL 17 binaries not found; pass --bindir or set PG17_BINDIR')
+    raise SystemExit('PostgreSQL 17 binaries not found; pass --bindir or set PG_BIN')
 
 
 def check_capture(capture, manifest):

@@ -7,6 +7,7 @@ import {
 } from '../../services/ClubOpeningSetupService';
 import { reportError } from '../../utils/errorReporter';
 import { useToast } from '../common/Toast';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './ClubOpeningWizard.css';
 
 interface Props {
@@ -183,12 +184,43 @@ export default function ClubOpeningWizard({
       aria-modal="true"
       aria-labelledby="club-setup-title"
     >
-      <div className="club-setup-wizard__shell">
-        <header className="club-setup-wizard__header">
-          <div>
-            <span>Club Arena / Opening Pit Boss</span>
-            <h1 id="club-setup-title">Open {clubName}</h1>
-          </div>
+      <SpadeConsole
+        as="div"
+        className="club-setup-wizard__shell"
+        eyebrow="Club Arena / Opening Pit Boss"
+        title={`Open ${clubName}`}
+        titleId="club-setup-title"
+        subtitle="Set Every System Before Opening"
+        pill={`Step ${step + 1} Of ${STEPS.length}`}
+        pillInk="blue"
+        crest="club"
+        plates={{
+          secondary: {
+            label: step === 0 ? 'Close' : 'Back',
+            ink: 'silver',
+            onClick: step === 0 ? onClose : () => setStep((value) => Math.max(0, value - 1)),
+            disabled: saving,
+            'aria-label': step === 0 ? 'Close Opening Wizard' : 'Previous Opening Step',
+          },
+          primary: {
+            label:
+              step < STEPS.length - 1
+                ? 'Continue'
+                : saving
+                  ? 'Opening Club...'
+                  : 'Complete Opening Setup',
+            ink: 'white',
+            onClick:
+              step < STEPS.length - 1
+                ? () => setStep((value) => Math.min(STEPS.length - 1, value + 1))
+                : finish,
+            disabled: Boolean(stepError) || saving,
+            'aria-label':
+              step < STEPS.length - 1 ? 'Continue Opening Setup' : 'Complete Opening Setup',
+          },
+        }}
+      >
+        <div className="club-setup-wizard__command-row">
           <div
             className="club-setup-wizard__bank"
             aria-label={`${chips(clubBank)} Chips In Club Bank`}
@@ -203,9 +235,9 @@ export default function ClubOpeningWizard({
             onClick={onClose}
             aria-label="Close Opening Wizard"
           >
-            Close
+            Close Opening Wizard
           </button>
-        </header>
+        </div>
 
         <nav className="club-setup-wizard__steps" aria-label="Club Opening Steps">
           {STEPS.map((label, index) => (
@@ -217,7 +249,7 @@ export default function ClubOpeningWizard({
               onClick={() => index < step && setStep(index)}
               disabled={index > step}
             >
-              <span>{index < step ? '✓' : String(index + 1).padStart(2, '0')}</span>
+              <span>{index < step ? 'Done' : String(index + 1).padStart(2, '0')}</span>
               {label}
             </button>
           ))}
@@ -685,39 +717,7 @@ export default function ClubOpeningWizard({
             </div>
           )}
         </main>
-
-        <footer className="club-setup-wizard__footer">
-          <button
-            type="button"
-            onClick={() => setStep((value) => Math.max(0, value - 1))}
-            disabled={step === 0 || saving}
-          >
-            Back
-          </button>
-          <span>
-            Step {step + 1} Of {STEPS.length}
-          </span>
-          {step < STEPS.length - 1 ? (
-            <button
-              type="button"
-              className="primary"
-              onClick={() => setStep((value) => Math.min(STEPS.length - 1, value + 1))}
-              disabled={Boolean(stepError)}
-            >
-              Continue
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="primary"
-              onClick={finish}
-              disabled={Boolean(stepError) || saving}
-            >
-              {saving ? 'Opening Club...' : 'Complete Opening Setup'}
-            </button>
-          )}
-        </footer>
-      </div>
+      </SpadeConsole>
     </div>
   );
 

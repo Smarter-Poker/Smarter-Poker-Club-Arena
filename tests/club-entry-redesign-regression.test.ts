@@ -73,8 +73,17 @@ describe('Club entry dialogs', () => {
     expect(joinClub).toContain('ClubJoinService.join');
   });
 
+  it('keeps Create Club full-page with an independently scrolling console body and painted foot', () => {
+    expect(createClub).toContain('className={styles.scrollBody}');
+    expect(createClub).toContain('<SpadeConsole');
+    expect(createClub).toContain('plates={{');
+    expect(createCss).toMatch(/height:\s*100dvh/);
+    expect(createCss).toMatch(
+      /\.consoleShell\s*>\s*:global\(\.sc__body\)[\s\S]*overflow-y:\s*auto/
+    );
+  });
+
   it.each([
-    ['Create Club', createClub, createCss],
     ['Find Player', findPlayer, findCss],
     ['Join Club', joinClub, joinCss],
   ])(

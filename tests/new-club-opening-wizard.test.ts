@@ -21,9 +21,9 @@ describe('new club opening wizard', () => {
       /\.club-setup-wizard\s*\{[\s\S]*position:\s*fixed;[\s\S]*inset:\s*0;/
     );
     expect(wizardCss).toContain('min-height: 100dvh');
-    expect(wizardCss).toMatch(/grid-template-rows:\s*auto auto minmax\(0, 1fr\) auto/);
+    expect(wizardCss).toMatch(/grid-template-rows:\s*auto minmax\(0, 1fr\) auto/);
     expect(wizardCss).not.toContain('clip-path');
-    expect(wizard).toContain('Step {step + 1} Of {STEPS.length}');
+    expect(wizard).toContain('pill={`Step ${step + 1} Of ${STEPS.length}`}');
   });
 
   it('asks every required financial question and uses safe launch defaults', () => {

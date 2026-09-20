@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { compactChips } from '../../utils/format';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './ClubLaunchProgress.css';
 
 export interface ClubLaunchTask {
@@ -60,26 +62,26 @@ export default function ClubLaunchProgress({
   if (allTasksResolved) return null;
 
   return (
-    <section className="club-launch" aria-labelledby="club-launch-title">
-      <div className="club-launch__rail" aria-hidden="true" />
-      <div className="club-launch__header">
-        <div className="club-launch__seal" aria-hidden="true">
-          <span>{percent}</span>
-          <small>%</small>
-        </div>
-        <div className="club-launch__heading">
-          <span className="club-launch__eyebrow">New Club Opening Checklist</span>
-          <h2 id="club-launch-title">Open {clubName} For Play</h2>
-          <p>
-            {completed} Of {tasks.length} Launch Steps Complete
-          </p>
-        </div>
+    <SpadeConsole
+      as="section"
+      className="club-launch"
+      aria-labelledby="club-launch-title"
+      eyebrow="New Club Opening Checklist"
+      title={`Open ${clubName}`}
+      titleId="club-launch-title"
+      subtitle={`Prepare For Play · ${completed} Of ${tasks.length} Steps Complete`}
+      pill={`${percent}%`}
+      pillInk={percent >= 75 ? 'green' : percent >= 40 ? 'gold' : 'blue'}
+      crest="diamond"
+      foot="foot"
+    >
+      <div className="club-launch__command-row">
         <div
           className="club-launch__bank"
-          aria-label={`${openingBank.toLocaleString()} Club Bank Chips`}
+          aria-label={`${compactChips(openingBank)} Club Bank Chips`}
         >
           <span>Opening Club Bank</span>
-          <strong>{openingBank.toLocaleString()}</strong>
+          <strong>{compactChips(openingBank)}</strong>
           <small>Chips Ready</small>
         </div>
         <button
@@ -112,7 +114,7 @@ export default function ClubLaunchProgress({
               className={`club-launch__step ${task.complete ? 'is-complete' : task.skipped ? 'is-skipped' : ''}`}
             >
               <span className="club-launch__step-number" aria-hidden="true">
-                {task.complete ? '✓' : task.skipped ? 'S' : String(index + 1).padStart(2, '0')}
+                {task.complete ? 'Done' : task.skipped ? 'Skip' : String(index + 1)}
               </span>
               <div className="club-launch__step-copy">
                 <strong>{task.label}</strong>
@@ -158,6 +160,6 @@ export default function ClubLaunchProgress({
           ))}
         </div>
       )}
-    </section>
+    </SpadeConsole>
   );
 }

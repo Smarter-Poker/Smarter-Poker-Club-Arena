@@ -1,654 +1,433 @@
 .overlay {
   position: fixed;
+  z-index: 10020;
   inset: 0;
-  z-index: 9999;
-  display: flex;
   overflow: hidden;
-  background: rgba(0, 2, 5, 0.94);
-  backdrop-filter: blur(14px) saturate(0.8);
   overscroll-behavior: contain;
+  padding: max(8px, env(safe-area-inset-top)) 0 max(8px, env(safe-area-inset-bottom));
+  background: #000;
 }
 
-.modalContainer {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.28fr);
-  width: 100%;
-  max-width: none;
-  height: 100vh;
-  height: 100dvh;
+.consoleShell {
+  --sc-max: 1000px;
+  height: calc(100dvh - max(16px, env(safe-area-inset-top)));
+  min-height: calc(100dvh - max(16px, env(safe-area-inset-top)));
+}
+
+.consoleShell > :global(.sc__body) {
+  flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  background: #05080c;
-  box-shadow:
-    inset 0 0 0 1px #020304,
-    inset 0 0 0 2px rgba(255, 255, 255, 0.055);
-  animation: createClubEnter 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.modalContainer::before {
-  content: '';
-  position: absolute;
-  z-index: 4;
-  inset: 0 18% auto;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #00a9ff, transparent);
-  box-shadow: 0 0 11px #008fda;
-}
-
-.artPanel {
-  position: relative;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border-right: 1px solid rgba(174, 200, 217, 0.22);
-  background:
-    linear-gradient(rgba(2, 4, 6, 0.25), rgba(2, 4, 6, 0.9)),
-    radial-gradient(circle at 50% 42%, rgba(0, 153, 234, 0.18), transparent 48%), #020406;
-}
-
-.artPanel::after {
-  content: '';
-  position: absolute;
-  inset: 8%;
-  border: 1px solid rgba(127, 154, 171, 0.16);
-  pointer-events: none;
-}
-
-.artPanel img {
-  width: min(96%, 580px);
-  height: auto;
-  filter: drop-shadow(0 18px 24px #000) drop-shadow(0 0 20px rgba(0, 157, 236, 0.18));
-}
-
-.artPanel span {
-  position: absolute;
-  bottom: 14%;
-  z-index: 2;
-  color: #78909f;
-  font: 600 9px/1 var(--font-mono, monospace);
-  letter-spacing: 0.26em;
-  text-transform: uppercase;
-}
-
-.contentPanel {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex-direction: column;
-  overflow: hidden;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.025), transparent 40%), #0b121d;
+  overflow-y: auto;
 }
 
 .scrollBody {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: clamp(46px, 7vh, 78px) clamp(32px, 6vw, 88px) 32px;
-  scrollbar-color: #1b3b4d #05080c;
-}
-
-.pageFooter {
-  flex: 0 0 auto;
-  padding: 14px clamp(32px, 6vw, 88px) max(14px, env(safe-area-inset-bottom));
-  border-top: 1px solid rgba(174, 200, 217, 0.22);
-  background: linear-gradient(180deg, rgba(5, 8, 12, 0.97), #020406);
-  box-shadow: 0 -14px 28px rgba(0, 0, 0, 0.32);
-}
-
-.closeButton {
-  position: absolute;
-  top: 15px;
-  right: 15px;
-  z-index: 10;
-  width: 38px;
-  height: 38px;
-  border: 1px solid rgba(164, 190, 207, 0.38);
-  border-radius: 4px;
-  background: #070b0f;
-  cursor: pointer;
-}
-
-.closeButton::before,
-.closeButton::after {
-  content: '';
-  position: absolute;
-  top: 18px;
-  left: 10px;
-  width: 17px;
-  height: 1px;
-  background: #a9bdc9;
-}
-
-.closeButton::before {
-  transform: rotate(45deg);
-}
-.closeButton::after {
-  transform: rotate(-45deg);
-}
-.closeButton:focus-visible,
-.metaRetryButton:focus-visible,
-.uploadLogoBtn:focus-visible,
-.crestOption:focus-visible,
-.createButton:focus-visible {
-  outline: 2px solid #55c8ff;
-  outline-offset: 3px;
-}
-
-.eyebrow,
-.fieldLabel {
-  color: #6cbfe8;
-  font: 600 10px/1 var(--font-mono, monospace);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.title {
-  margin: 12px 0 8px;
-  color: #eef7fc;
-  font:
-    400 clamp(36px, 5vw, 54px)/0.95 'Rajdhani',
-    'Arial Narrow',
-    sans-serif;
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
-}
-
-.subtitle {
-  margin: 0 0 12px;
-  color: #8a9aa6;
-  font-size: 13px;
-  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 2.4cqw;
+  min-width: 0;
+  padding-block: 1.5cqw 3cqw;
+  outline: 0;
 }
 
 .creationMeta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 14px;
-  margin-bottom: 18px;
-  color: #718692;
-  font: 600 9px/1.2 var(--font-mono, monospace);
-  letter-spacing: 0.08em;
+  justify-content: space-between;
+  gap: 1.6cqw;
+  padding-block: 1.7cqw;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  color: #45adff;
+  font-size: 2.5cqw;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 62%),
+    0 0.2cqw 0.3cqw #000;
 }
 
-.creationMeta span:last-child:not(:first-child) {
-  color: #d5a84c;
+.fieldLabel,
+.crestVault > legend,
+.accessSettings > legend {
+  color: #45adff;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 2.6cqw;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow: 0 0 0.8cqw rgb(69 173 255 / 55%);
 }
-.metaRetryButton {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #e5b651;
-  cursor: pointer;
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-}
-.fieldLabel {
-  display: block;
-  margin: 0 0 8px;
-  color: #798c99;
-}
+
 .fieldLabel span {
-  color: #50616c;
-  font-size: 8px;
+  color: #9aa5b3;
+  font-size: 0.78em;
 }
 
 .clubNameInput,
 .descriptionInput {
+  appearance: none;
   width: 100%;
-  border: 1px solid rgba(160, 190, 207, 0.32);
-  border-radius: 4px;
-  outline: 0;
-  background: #020406;
-  color: #dce8ee;
-  box-shadow: inset 0 2px 12px #000;
-  font-family: var(--font-sans, sans-serif);
+  min-width: 0;
+  margin: 0;
+  padding: 1.6cqw 0 1.8cqw;
+  border: 0 !important;
+  border-bottom: 1px solid #020304 !important;
+  color: #e4e7ec;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  font:
+    600 4cqw/1.25 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow:
+    0 -0.1cqw 0 rgb(255 255 255 / 28%),
+    0 0.3cqw 0 #050607;
 }
 
-.clubNameInput {
-  height: 50px;
-  padding: 0 15px;
-  font-size: 16px;
-  font-weight: 500;
-}
 .descriptionInput {
-  min-height: 72px;
-  margin-bottom: 18px;
-  padding: 11px 13px;
+  min-height: 14cqw;
   resize: vertical;
-  font-size: 12px;
-  line-height: 1.45;
-}
-.clubNameInput:focus,
-.descriptionInput:focus {
-  border-color: #1ba9ee;
-  box-shadow:
-    inset 0 2px 12px #000,
-    0 0 0 2px rgba(0, 169, 255, 0.13);
-}
-.nameStatus {
-  min-height: 24px;
-  padding-top: 5px;
-  color: #71818b;
-  font-size: 10px;
-}
-.nameStatus.available {
-  color: #48d8a0;
-}
-.nameStatus.taken,
-.nameStatus.error {
-  color: #ff7777;
+  font-size: 3.4cqw;
 }
 
-.crestVault {
-  margin: 0 0 18px;
-  padding: 14px;
-  border: 1px solid rgba(160, 190, 207, 0.26);
-  border-radius: 5px;
-  background: linear-gradient(145deg, rgba(22, 42, 57, 0.35), transparent 55%), #05090e;
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.035),
-    0 12px 32px rgba(0, 0, 0, 0.18);
+.clubNameInput::placeholder,
+.descriptionInput::placeholder {
+  color: #697581;
+  opacity: 1;
+}
+
+.clubNameInput:focus-visible,
+.descriptionInput:focus-visible,
+.accessSettings input:focus-visible,
+.termsCheckbox:focus-visible,
+.crestOption:focus-visible,
+.uploadLogoBtn:focus-visible,
+.metaRetryButton:focus-visible {
+  outline: 0.4cqw solid #8fd4ff;
+  outline-offset: 0.7cqw;
+}
+
+.nameStatus {
+  min-height: 3.2cqw;
+  color: #9aa5b3;
+  font-size: 2.5cqw;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+}
+
+.idle {
+  color: #9aa5b3;
+}
+
+.checking {
+  color: #ffd700;
+}
+
+.available {
+  color: #c8ffd2;
+  text-shadow: 0 0 0.9cqw rgb(53 217 90 / 55%);
+}
+
+.taken,
+.error {
+  color: #ff5b6e;
+  text-shadow: 0 0 0.9cqw rgb(240 40 73 / 55%);
+}
+
+.crestVault,
+.accessSettings {
+  min-width: 0;
+  margin: 1.5cqw 0 0;
+  padding: 3cqw 0 0;
+  border: 0;
+  border-top: 1px solid #000;
 }
 
 .crestVault > legend,
 .accessSettings > legend {
-  padding: 0 8px;
-  color: #6cbfe8;
-  font: 600 9px/1 var(--font-mono, monospace);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  padding: 0 2cqw 0 0;
 }
+
 .crestVaultHeader {
   display: grid;
-  grid-template-columns: 132px minmax(0, 1fr);
-  gap: 18px;
-  align-items: stretch;
-  margin-bottom: 14px;
+  grid-template-columns: 20cqw minmax(0, 1fr);
+  align-items: center;
+  gap: 3.5cqw;
+  padding-block: 2.4cqw 3cqw;
+  border-bottom: 1px solid #000;
 }
 
 .logoPreview {
-  position: relative;
-  min-height: 132px;
-  overflow: hidden;
-  border: 1px solid rgba(196, 218, 230, 0.3);
-  border-radius: 4px;
-  background: #010305;
-  box-shadow: inset 0 0 24px #000;
+  display: grid;
+  justify-items: center;
+  gap: 1.3cqw;
+  min-width: 0;
 }
 
 .logoThumb {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  display: block;
+  width: 18cqw;
+  height: 18cqw;
+  object-fit: contain;
 }
+
 .previewStatus {
-  position: absolute;
-  inset: auto 0 0;
-  padding: 7px 5px;
-  background: rgba(0, 6, 10, 0.86);
-  color: #8fd9fc;
-  font: 600 7px/1.2 var(--font-mono, monospace);
-  letter-spacing: 0.08em;
+  color: #45adff;
+  font-size: 2.1cqw;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-align: center;
   text-transform: uppercase;
 }
+
 .identityCopy {
-  display: flex;
   min-width: 0;
-  flex-direction: column;
-  justify-content: center;
 }
+
 .identityCopy strong {
-  color: #e9f3f8;
+  display: block;
+  color: #e4e7ec;
   font:
-    600 16px/1.1 'Rajdhani',
+    800 4cqw/1.1 'Roboto Condensed',
+    Inter,
     sans-serif;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  text-shadow:
+    0 -0.14cqw 0 rgb(255 255 255 / 40%),
+    0 0.25cqw 0 #5b626a,
+    0 0.5cqw 0 #030405;
 }
+
 .identityCopy p {
-  max-width: 540px;
-  margin: 7px 0 12px;
-  color: #778a96;
-  font-size: 10px;
-  line-height: 1.55;
+  margin: 1.4cqw 0 2.2cqw;
+  color: #d7dee7;
+  font:
+    500 3.1cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+}
+
+.uploadLogoBtn,
+.metaRetryButton,
+.crestOption {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: inherit !important;
+  font: inherit;
+  cursor: pointer;
 }
 
 .uploadLogoBtn {
   display: flex;
-  width: min(100%, 330px);
-  min-height: 48px;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: center;
-  gap: 4px;
-  padding: 9px 12px;
-  border: 1px solid rgba(94, 189, 237, 0.42);
-  border-radius: 3px;
-  background: linear-gradient(180deg, #0b202b, #07141c);
-  color: #dff4ff;
-  cursor: pointer;
+  gap: 0.5cqw;
+  color: #45adff !important;
   text-align: left;
 }
 
-.uploadLogoBtn:disabled {
-  cursor: wait;
-  opacity: 0.6;
+.uploadLogoBtn span,
+.metaRetryButton {
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 2.9cqw;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 0 0.9cqw rgb(69 173 255 / 65%);
 }
-.uploadLogoBtn span {
-  font:
-    600 11px/1.2 'Rajdhani',
-    sans-serif;
-  letter-spacing: 0.09em;
+
+.uploadLogoBtn small {
+  color: #9aa5b3;
+  font-size: 2.1cqw;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.uploadLogoBtn small {
-  color: #6f8490;
-  font-size: 8px;
+
+.uploadLogoBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .crestGrid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
+  gap: 2.3cqw 1.6cqw;
+  padding-block: 3cqw 1cqw;
 }
+
 .crestOption {
-  position: relative;
   display: grid;
-  grid-template-rows: minmax(72px, 1fr) auto;
-  gap: 6px;
+  grid-template-rows: auto auto auto;
+  justify-items: center;
+  gap: 0.7cqw;
   min-width: 0;
-  min-height: 106px;
-  padding: 5px 5px 8px;
-  overflow: hidden;
-  border: 1px solid rgba(139, 161, 174, 0.24);
-  border-radius: 3px;
-  background: #080c10;
-  color: #84949e;
-  cursor: pointer;
-  transition:
-    border-color 150ms ease,
-    background 150ms ease,
-    transform 150ms ease;
+  opacity: 0.64;
 }
+
 .crestOption img {
+  display: block;
   width: 100%;
-  height: 100%;
-  min-height: 72px;
-  object-fit: cover;
+  max-width: 13cqw;
+  aspect-ratio: 1;
+  object-fit: contain;
+  filter: saturate(0.72) brightness(0.78);
 }
-.crestOption span {
+
+.crestOption span,
+.crestOption small {
+  max-width: 100%;
   overflow: hidden;
-  font: 600 8px/1.2 var(--font-mono, monospace);
-  letter-spacing: 0.04em;
+  color: #9aa5b3;
+  font-size: 1.9cqw;
+  font-weight: 700;
+  letter-spacing: 0.05em;
   text-overflow: ellipsis;
   text-transform: uppercase;
   white-space: nowrap;
 }
-.crestOption small {
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  padding: 4px 5px;
-  border: 1px solid #5bd1ff;
-  border-radius: 2px;
-  background: rgba(0, 18, 29, 0.9);
-  color: #bceaff;
-  font: 700 6px/1 var(--font-mono, monospace);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
+
 .crestOptionSelected {
-  border-color: #65d2ff;
-  background: #0a1b25;
-  box-shadow:
-    0 0 0 1px rgba(101, 210, 255, 0.18),
-    0 0 18px rgba(0, 164, 235, 0.14);
-  color: #d7f3ff;
+  opacity: 1;
 }
-.hiddenInput {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  white-space: nowrap;
+
+.crestOptionSelected img {
+  filter: saturate(1) brightness(1.12) drop-shadow(0 0 1.2cqw rgb(69 173 255 / 72%));
+}
+
+.crestOptionSelected span,
+.crestOptionSelected small {
+  color: #c8ffd2;
+  text-shadow: 0 0 0.8cqw rgb(53 217 90 / 55%);
 }
 
 .accessSettings {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 9px;
-  margin: 0 0 16px;
-  padding: 12px 14px 14px;
-  border: 1px solid rgba(160, 190, 207, 0.2);
-  border-radius: 4px;
-  color: #81939e;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2.4cqw;
 }
-.accessSettings label {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  font-size: 10px;
-}
-.accessSettings input {
-  accent-color: #0786c5;
-}
+
+.accessSettings label,
 .termsLabel {
-  display: grid;
-  grid-template-columns: 20px 1fr;
-  gap: 10px;
-  align-items: start;
-  margin: 0 0 20px;
-  color: #7f909b;
-  cursor: pointer;
-  font-size: 11px;
-  line-height: 1.45;
+  display: flex;
+  align-items: center;
+  gap: 1.5cqw;
+  min-height: 7cqw;
+  color: #d7dee7;
+  font:
+    600 2.8cqw/1.35 Inter,
+    system-ui,
+    sans-serif;
 }
+
+.accessSettings input,
 .termsCheckbox {
-  position: absolute;
-  width: 20px;
-  height: 20px;
+  width: 4.2cqw;
+  height: 4.2cqw;
   margin: 0;
-  opacity: 0;
+  flex: 0 0 auto;
+  accent-color: #1877f2;
 }
+
+.termsLabel {
+  margin-top: 1.4cqw;
+  padding-block: 2.4cqw;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+}
+
 .checkboxVisual {
-  display: grid;
-  width: 18px;
-  height: 18px;
-  place-items: center;
-  border: 1px solid #43535e;
-  border-radius: 2px;
-  background: #020406;
+  display: none;
 }
-.checkboxVisual::after {
-  content: '';
-  width: 4px;
-  height: 9px;
-  border: solid #55c8ff;
-  border-width: 0 2px 2px 0;
-  opacity: 0;
-  transform: rotate(45deg) translateY(-1px);
+
+.hiddenInput {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
 }
-.termsCheckbox:checked + .checkboxVisual {
-  border-color: #55c8ff;
-  box-shadow: 0 0 10px rgba(0, 181, 255, 0.25);
-}
-.termsCheckbox:checked + .checkboxVisual::after {
+
+.closeButton,
+.createButton {
   opacity: 1;
 }
-.termsCheckbox:focus-visible + .checkboxVisual {
-  outline: 2px solid #55c8ff;
-  outline-offset: 2px;
-}
 
-.createButton {
-  display: flex;
-  width: 100%;
-  min-height: 50px;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  border: 1px solid #6dcfff;
-  border-radius: 3px;
-  background: linear-gradient(180deg, #087fb8, #04557f);
-  color: #f5fbff;
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.22),
-    0 0 18px rgba(0, 151, 226, 0.16);
-  cursor: pointer;
-  font:
-    600 14px/1 'Rajdhani',
-    sans-serif;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-.createButton:disabled {
-  border-color: #27323a;
-  background: #10161b;
-  color: #46545d;
-  box-shadow: none;
-  cursor: not-allowed;
-}
-.spinner {
-  width: 18px;
-  height: 18px;
-  border: 2px solid rgba(0, 212, 255, 0.3);
-  border-top-color: #00d4ff;
-  border-radius: 50%;
-  animation: createClubSpin 1s linear infinite;
-}
+@media (max-width: 560px) {
+  .overlay {
+    padding: 0;
+  }
 
-@keyframes createClubSpin {
-  to {
-    transform: rotate(360deg);
+  .consoleShell {
+    height: 100dvh;
+    min-height: 100dvh;
   }
-}
-@keyframes createClubEnter {
-  from {
-    opacity: 0;
-    transform: translateY(14px) scale(0.985);
-  }
-}
 
-@media (max-width: 880px) {
-  .modalContainer {
-    grid-template-columns: 1fr;
-    grid-template-rows: 112px minmax(0, 1fr);
-  }
-  .artPanel {
-    height: 112px;
-    border-right: 0;
-    border-bottom: 1px solid rgba(174, 200, 217, 0.22);
-  }
-  .artPanel img {
-    width: 130px;
-    transform: translateY(13px);
-  }
-  .artPanel span {
-    display: none;
-  }
   .scrollBody {
-    padding: 34px 24px 24px;
+    padding-inline: 0;
   }
-  .pageFooter {
-    padding-inline: 24px;
-  }
-}
 
-@media (max-width: 700px) {
+  .crestVaultHeader {
+    grid-template-columns: 24cqw minmax(0, 1fr);
+  }
+
+  .logoThumb {
+    width: 22cqw;
+    height: 22cqw;
+  }
+
   .crestGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4cqw 3cqw;
   }
-  .crestOption {
-    grid-template-columns: 64px minmax(0, 1fr);
-    grid-template-rows: 64px;
-    align-items: center;
-    min-height: 76px;
-    text-align: left;
-  }
-  .crestOption img {
-    min-height: 64px;
-  }
-  .crestVaultHeader {
-    grid-template-columns: 104px minmax(0, 1fr);
-    gap: 12px;
-  }
-  .logoPreview {
-    min-height: 104px;
-  }
-}
 
-@media (max-width: 430px) {
-  .scrollBody,
-  .pageFooter {
-    padding-inline: 18px;
+  .crestOption img {
+    max-width: 28cqw;
   }
-  .crestVault {
-    padding: 10px;
+
+  .crestOption span,
+  .crestOption small {
+    font-size: 2.8cqw;
   }
-  .crestVaultHeader {
-    grid-template-columns: 88px minmax(0, 1fr);
-  }
-  .logoPreview {
-    min-height: 88px;
-  }
-  .identityCopy p {
-    margin-bottom: 8px;
-    font-size: 9px;
-  }
-  .uploadLogoBtn {
-    min-height: 44px;
-  }
+
   .accessSettings {
     grid-template-columns: 1fr;
   }
 }
 
-@media (max-height: 560px) {
-  .modalContainer {
-    height: 100dvh;
-    min-height: 0;
-  }
-  .scrollBody {
-    padding-top: 38px;
-    padding-bottom: 22px;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .modalContainer,
-  .spinner {
-    animation: none;
-  }
-  .crestOption {
-    transition: none;
+  .overlay *,
+  .overlay *::before,
+  .overlay *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
   }
 }
 
 @media (prefers-contrast: more) {
-  .modalContainer,
-  .clubNameInput,
-  .descriptionInput,
+  .creationMeta,
   .crestVault,
-  .logoPreview,
   .accessSettings,
-  .uploadLogoBtn,
-  .crestOption {
-    border-color: #fff;
+  .clubNameInput,
+  .descriptionInput {
+    border-color: #8fd4ff !important;
   }
-  .subtitle,
+
   .fieldLabel,
-  .identityCopy p,
-  .uploadLogoBtn small {
-    color: #fff;
+  .crestVault > legend,
+  .accessSettings > legend,
+  .uploadLogoBtn {
+    color: #8fd4ff !important;
+    text-shadow: none;
   }
 }

@@ -1,104 +1,154 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   LEAK PANEL - on the spade console (#ClubArenaConsole)
-
-   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
-   spade master (components/console/SpadeConsole.css); this file lays the
-   findings on the black glass between the rails, one per row under an
-   engraved rule: the severity as a lit word (red for costly, blue for
-   worth fixing, muted for minor - carried by the word as well as the ink,
-   so it survives print and colour blindness), the finding in silver, the
-   evidence and the action as copy. Nothing is drawn. Sizes are cqw against
-   the console. No :hover.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/**
+ * LeakPanel — ranked, actionable findings. Severity is carried by a text
+ * label as well as a colour, so it survives both printing and colour blindness.
+ */
 
 .leak-card {
-  --leak-rule: 1px solid #000;
-  --leak-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
-  --sc-max: 720px;
-  margin: 0 0 1rem;
+  position: relative;
+  margin: 0 0.75rem 1rem;
+  padding: 1rem;
+  border-radius: 2px;
+  background:
+    linear-gradient(112deg, rgba(135, 55, 55, 0.08), transparent 34%),
+    linear-gradient(155deg, rgba(18, 26, 34, 0.96), rgba(3, 7, 11, 0.99));
+  border: 1px solid rgba(199, 210, 220, 0.15);
+  box-shadow:
+    inset 3px 0 0 rgba(196, 92, 64, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 12px 28px rgba(0, 0, 0, 0.28);
 }
 
-.leak-sub,
-.leak-empty-text {
+.leak-card::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 88px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(196, 92, 64, 0.8));
+  content: '';
+}
+
+.leak-head {
+  margin-bottom: 0.5rem;
+}
+
+.leak-title {
   margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e8f4ff;
+}
+
+.leak-sub {
+  margin: 0.3rem 0 0;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: rgba(200, 224, 245, 0.6);
 }
 
 .leak-list {
-  display: grid;
-  margin: 0;
+  list-style: none;
+  margin: 0.85rem 0 0;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  counter-reset: leak;
 }
 
 .leak-item {
-  display: grid;
-  gap: 1.2cqw;
-  padding: 2.4cqw 0;
-  border-top: var(--leak-rule);
-  box-shadow: var(--leak-rule-lit);
+  padding: 0.75rem;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left-width: 3px;
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0.035), rgba(3, 7, 11, 0.48));
   /* Never split a finding across a printed page. */
   break-inside: avoid;
   page-break-inside: avoid;
 }
 
+.leak-item.sev-high {
+  border-left-color: #ef4444;
+}
+
+.leak-item.sev-medium {
+  border-left-color: #f59e0b;
+}
+
+.leak-item.sev-low {
+  border-left-color: #64748b;
+}
+
 .leak-item-head {
   display: flex;
-  flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.6cqw 2.4cqw;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .leak-sev {
-  font-size: 2.7cqw;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-size: 0.6rem;
   font-weight: 800;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   white-space: nowrap;
 }
 
-/* The master's own inks (SpadeConsole.css), restated here because a
-   severity is one class, not two. */
 .leak-sev.sev-high {
-  color: #ff5b6e;
-  -webkit-text-fill-color: #ff5b6e;
-  text-shadow:
-    0 0 1cqw rgb(240 40 73 / 80%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
 }
 
 .leak-sev.sev-medium {
-  color: #45adff;
-  -webkit-text-fill-color: #45adff;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 70%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
 }
 
 .leak-sev.sev-low {
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
 }
 
 .leak-item-title {
   margin: 0;
-  font-size: 4cqw;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  line-height: 1.25;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #e8f4ff;
+  line-height: 1.35;
 }
 
 .leak-evidence {
-  margin: 0;
+  margin: 0.4rem 0 0;
+  font-size: 0.73rem;
+  line-height: 1.5;
+  color: rgba(200, 224, 245, 0.7);
   font-variant-numeric: tabular-nums;
 }
 
 .leak-action {
-  margin: 0;
+  margin: 0.4rem 0 0;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.76rem;
+  line-height: 1.55;
+  color: #e8f4ff;
 }
 
 .leak-note {
-  margin: 0;
-  padding-top: 2.4cqw;
-  border-top: var(--leak-rule);
-  box-shadow: var(--leak-rule-lit);
+  margin: 0.8rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.66rem;
+  line-height: 1.5;
+  color: rgba(200, 224, 245, 0.45);
+}
+
+.leak-empty-text {
+  margin: 0.6rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: rgba(200, 224, 245, 0.6);
 }

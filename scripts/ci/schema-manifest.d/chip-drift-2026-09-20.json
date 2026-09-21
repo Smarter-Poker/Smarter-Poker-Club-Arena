@@ -1,0 +1,13 @@
+{
+  "_owner": "fix/chip-drift-2026-09-20",
+  "functions": [
+    "fn_ca_guard_cash_cutover_not_ahead_of_settler",
+    "fn_f06_prepare_mixed_manager_custody",
+    "fn_f06_admit_mixed_manager_custody",
+    "fn_f06_find_mixed_manager_custody",
+    "fn_f06_mixed_custody_intent",
+    "fn_f06_complete_mixed_manager_custody"
+  ],
+  "removedFunctions": ["fn_ca_close_incidents_the_check_no_longer_finds"],
+  "columns": { "ca_drift_incidents": ["closure_basis"] }
+}

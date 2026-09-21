@@ -430,7 +430,9 @@ function DashboardTab({ clubId }: { clubId: string }) {
       masterBus.subscribeDebounced('BALANCE_UPDATED', load, 2000),
       masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', load, 2000),
       masterBus.subscribeDebounced('CREDIT_UPDATED', load, 2000),
-      masterBus.subscribeDebounced('RAKEBACK_CLAIMED', load, 2000),
+      // RAKEBACK_CLAIMED removed 2026-09-20: rakeback is settled by the
+      // automatic Monday run, so nothing emits it on the client bus. The
+      // wallet movement still arrives here as BALANCE_UPDATED above.
     ];
     return () => unsubs.forEach((u) => u());
   }, [load]);

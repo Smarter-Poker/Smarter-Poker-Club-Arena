@@ -1,379 +1,189 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   LEADERBOARD - on the spade console (#ClubArenaConsole)
-
-   The chassis, its inks and its flat closing cap come from SpadeConsole.css.
-   This sheet places the console on the backdrop, switches off the global popup
-   chassis (metallic-popups.css paints a rounded shell on `.leaderboard-panel`
-   with !important), and prints the five periods and every player on the black
-   glass between the rails.
-
-   WHAT WAS DELETED. A 20px rounded sheet with a gradient fill and a drop
-   shadow; a grey header bar with a 32px square close button; a pill tab strip;
-   three "podium" tiles, each a rounded card with an avatar disc, a circular
-   medal badge and its own border; and a rounded card per row. Every one of
-   those drew something the master paints, or drew a tile where a row belongs.
-
-   Rows are separated by an engraved rule - a black line with a light lip, the
-   same cut the master's own chrome rules are made of. There is no
-   border-radius on a card, tile, pill or button, no gradient, no box-shadow
-   and no :hover anywhere in this file. The one remaining circle is the loading
-   spinner, which is a status indicator the art does not paint (the same
-   exception the standard makes for a slider) - its `spin` keyframe is kept at
-   its full duration.
-
-   EVERY ANIMATION STILL PLAYS (CLAUDE.md 10.6): `fadeIn` on the backdrop,
-   `lbpSlideUp` on the sheet, `spin` on the loader, and the per-row stagger the
-   component drives inline.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
+/* Table rankings printed on the approved flat-top console. */
 .leaderboard-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: 600;
+  animation: fadeIn 0.2s ease-out;
   display: flex;
-  align-items: center;
   justify-content: center;
-  padding: 12px;
-  /* Black, not grey: the console floats on the same black as the felt. */
+  align-items: flex-start;
+  padding: 12px 0;
   background: rgb(0 0 0 / 90%);
-  animation: fadeIn 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-.leaderboard-panel {
-  width: min(100%, 420px);
-  max-height: 100%;
-  overflow: visible auto;
+.leaderboard-panel.leaderboard-panel[role='dialog'] {
+  width: min(100%, 640px);
+  margin: auto 0;
+  max-height: none;
   padding: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
-  outline: 0 !important;
-  background: transparent !important;
+  background-color: transparent !important;
   background-image: none !important;
   box-shadow: none !important;
-  animation: lbpSlideUp 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-@keyframes lbpSlideUp {
-  from {
-    opacity: 0;
-    transform: translateY(24px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.leaderboard-panel.leaderboard-panel[role='dialog']::before,
+.leaderboard-panel.leaderboard-panel[role='dialog']::after {
+  display: none !important;
 }
-
-/* ── The five periods: engraved words on the glass, not a pill bar ────── */
-
-.leaderboard-panel__tabs {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  align-items: stretch;
+.leaderboard-panel .sc {
+  --sc-max: 640px;
 }
-
-.leaderboard-panel__tab {
-  appearance: none;
-  /* A tab on a phone still has to be hittable. */
+.leaderboard-panel .sc__body {
+  font:
+    400 clamp(13px, 3.5cqw, 17px)/1.5 Inter,
+    sans-serif;
+}
+.leaderboard-panel .sc button {
   min-height: 44px;
-  margin: 0;
-  padding: 2cqw 0.4cqw;
+  min-width: 44px;
+  padding: 8px 0;
   border: 0 !important;
   border-radius: 0 !important;
-  background: transparent !important;
+  background-color: transparent !important;
   background-image: none !important;
   box-shadow: none !important;
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font-family: inherit;
-  font-size: 2.4cqw;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  line-height: 1.25;
-  text-transform: uppercase;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  color: #45adff;
+  font: inherit;
   cursor: pointer;
-  touch-action: manipulation;
 }
-
-.leaderboard-panel__tab--active {
-  color: #45adff;
-  -webkit-text-fill-color: #45adff;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 70%),
-    0 0 2cqw rgb(49 168 255 / 30%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+.leaderboard-panel button:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 3px;
 }
-
-.leaderboard-panel__tab:active {
-  filter: brightness(1.25);
-  transform: none;
+.leaderboard-panel .sc button::before,
+.leaderboard-panel .sc button::after {
+  display: none !important;
 }
-
-.leaderboard-panel__tab:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -1cqw;
-}
-
-/* ── One player, one engraved row ─────────────────────────────────────── */
-
-.leaderboard-panel__rows {
-  display: flex;
-  flex-direction: column;
-  /* The list scrolls INSIDE the frame, so the painted foot stays where the
-     master put it however long the board is. */
-  max-height: 52dvh;
-  margin: 0;
-  padding: 0 1cqw 0 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  list-style: none;
-}
-
-.leaderboard-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 3cqw;
-  align-items: center;
-  padding: 2.4cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-}
-
-.leaderboard-row__rank {
-  min-width: 9cqw;
-  color: #45adff;
-  -webkit-text-fill-color: #45adff;
-  font-size: 3.2cqw;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums lining-nums;
-  letter-spacing: 0.04em;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 70%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
-}
-
-/* The first three are lit in the master's gold rather than raised onto a
-   podium of their own. */
-.leaderboard-row__rank--top {
-  color: #ffd700;
-  -webkit-text-fill-color: #ffd700;
-  text-shadow:
-    0 0 1cqw rgb(255 215 0 / 70%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
-}
-
-.leaderboard-row__info {
-  display: grid;
-  gap: 0.6cqw;
-  min-width: 0;
-}
-
-.leaderboard-row__name {
-  display: flex;
-  gap: 1.6cqw;
-  align-items: baseline;
-  min-width: 0;
-  overflow: hidden;
-  color: #e4e7ec;
-  -webkit-text-fill-color: #e4e7ec;
-  font-size: 3.4cqw;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  text-overflow: ellipsis;
-  text-shadow:
-    0 -0.12cqw 0 rgb(255 255 255 / 45%),
-    0 0.2cqw 0 #6d747c,
-    0 0.35cqw 0 #050607,
-    0 0.6cqw 0.8cqw rgb(0 0 0 / 90%);
-  white-space: nowrap;
-}
-
-.leaderboard-row--current .leaderboard-row__name {
+.leaderboard-panel button:active {
   color: #f4f7fb;
-  -webkit-text-fill-color: #f4f7fb;
-  text-shadow:
-    0 0 1cqw rgb(140 210 255 / 90%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
-
-.leaderboard-row__you {
-  color: #ffd700;
-  -webkit-text-fill-color: #ffd700;
-  font-size: 2.5cqw;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  text-shadow:
-    0 0 1cqw rgb(255 215 0 / 70%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
-  white-space: nowrap;
+.leaderboard-panel__dismiss {
+  align-self: flex-end;
 }
-
-.leaderboard-row__hands {
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font:
-    500 2.7cqw/1.3 Inter,
-    system-ui,
-    sans-serif;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
-}
-
-.leaderboard-row__stats {
-  display: grid;
-  gap: 0.6cqw;
-  justify-items: end;
-  text-align: right;
-}
-
-/* The tone comes from the console's own inks (sc-ink--green / sc-ink--red) on
-   the element itself. A table stylesheet never restates a house colour as a
-   hex - the palette law reads these files and it is right to. */
-.leaderboard-row__amount {
-  font-size: 3.4cqw;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums lining-nums;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-}
-
-.leaderboard-row__winrate {
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font:
-    500 2.6cqw/1.3 Inter,
-    system-ui,
-    sans-serif;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
-  white-space: nowrap;
-}
-
-/* ── Loading and empty ────────────────────────────────────────────────── */
-
-.leaderboard-panel__loading {
+.leaderboard-panel__tabs {
   display: flex;
-  gap: 2.4cqw;
-  align-items: center;
-  justify-content: center;
-  padding: 6cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  flex-wrap: wrap;
+  gap: 0 4cqw;
+}
+.leaderboard-panel .sc .leaderboard-panel__tab {
   color: #9aa5b3;
-  font-size: 2.9cqw;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
-
-/* The only circle left in this file, and the only thing drawn: a status
-   indicator the master paints nowhere. One hairline arc in the master's lit
-   blue, no fill and no shadow. */
-.leaderboard-panel__spinner {
-  width: 4cqw;
-  height: 4cqw;
-  border: 1px solid rgb(69 173 255 / 25%);
-  border-top-color: #45adff;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+.leaderboard-panel .sc .leaderboard-panel__tab--active {
+  color: #45adff;
+  text-decoration: underline;
+  text-underline-offset: 7px;
+  text-shadow: 0 0 9px #45adff;
 }
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+.leaderboard-panel__body {
+  min-width: 0;
 }
-
+.leaderboard-panel__loading,
 .leaderboard-panel__empty {
   display: grid;
-  gap: 1.6cqw;
-  justify-items: center;
-  padding: 6cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-  text-align: center;
-}
-
-.leaderboard-panel__empty-text {
-  color: #e4e7ec;
-  -webkit-text-fill-color: #e4e7ec;
-  font-size: 3.4cqw;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  text-shadow:
-    0 -0.12cqw 0 rgb(255 255 255 / 45%),
-    0 0.2cqw 0 #6d747c,
-    0 0.35cqw 0 #050607;
-}
-
-.leaderboard-panel__empty-hint {
+  align-content: center;
+  min-height: 150px;
+  gap: 1em;
   color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font:
-    500 3cqw/1.45 Inter,
-    system-ui,
-    sans-serif;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
-
-/* ── The one action, above the flat closing cap ───────────────────────── */
-
-.leaderboard-panel__close {
-  appearance: none;
+.leaderboard-panel__empty-text {
+  font:
+    700 1.3em 'Roboto Condensed',
+    sans-serif;
+  color: #e4e7ec;
+}
+.leaderboard-panel__empty-hint {
+  font-size: 0.9em;
+}
+.leaderboard-panel__list,
+.leaderboard-panel__rows {
+  display: grid;
+}
+.leaderboard-panel .leaderboard-row {
+  display: grid;
+  grid-template-columns: 2.5em minmax(0, 1fr) auto;
+  gap: 2cqw;
+  align-items: center;
+  padding-block: 3cqw;
+}
+.leaderboard-row__rank {
+  color: #9aa5b3;
+  font:
+    600 1em 'Roboto Condensed',
+    sans-serif;
+}
+.leaderboard-row__rank--top {
+  color: #e4e7ec;
+}
+.leaderboard-row__player {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 2cqw;
+  min-width: 0;
+}
+.leaderboard-row__avatar {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  color: #9aa5b3;
+}
+.leaderboard-row__avatar img {
   width: 100%;
-  min-height: 44px;
-  margin: 1cqw 0 0;
-  padding: 2cqw;
-  border: 0 !important;
-  border-top: 1px solid #000 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
-  color: #f4f7fb;
-  -webkit-text-fill-color: #f4f7fb;
-  font-family: inherit;
-  font-size: 3.4cqw;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  text-shadow:
-    0 0 1cqw rgb(140 210 255 / 90%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
-  cursor: pointer;
-  touch-action: manipulation;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
 }
-
-.leaderboard-panel__close:active {
-  filter: brightness(1.25);
-  transform: none;
+.leaderboard-row__info {
+  min-width: 0;
+  display: grid;
+  gap: 0.3em;
 }
-
-.leaderboard-panel__close:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -1cqw;
+.leaderboard-row__name {
+  color: #e4e7ec;
+  overflow-wrap: anywhere;
 }
-
+.leaderboard-row__you {
+  color: #45adff;
+  margin-left: 0.3em;
+}
+.leaderboard-row__hands,
+.leaderboard-row__winrate {
+  color: #9aa5b3;
+  font-size: 0.75em;
+}
+.leaderboard-row__stats {
+  display: grid;
+  gap: 0.3em;
+  font-variant-numeric: tabular-nums;
+}
+.leaderboard-row__amount {
+  color: #e4e7ec;
+  font-weight: 600;
+}
+.leaderboard-row__amount--positive {
+  color: #c8ffd2;
+}
+.leaderboard-row__amount--negative {
+  color: #ff5b6e;
+}
+.leaderboard-row--current .leaderboard-row__name {
+  color: #45adff;
+}
+@container (max-width: 480px) {
+  .leaderboard-panel .leaderboard-row {
+    grid-template-columns: 2.5em minmax(0, 1fr);
+  }
+  .leaderboard-row__stats {
+    grid-column: 2;
+    margin-left: calc(30px + 2cqw);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .leaderboard-overlay,
-  .leaderboard-panel {
-    animation: none;
+  .leaderboard-panel .leaderboard-row {
+    transform: none !important;
+    transition: opacity 0.2s ease-out !important;
   }
 }

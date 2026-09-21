@@ -18,7 +18,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { SpadeConsole } from '../console/SpadeConsole';
 import './StatsShareCard.css';
 import { isNativePlatform } from '../../lib/appBase';
 
@@ -46,20 +45,23 @@ const H = 630;
 
 const FONT = `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
 
-function roundRect(
+function chamferRect(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   w: number,
   h: number,
-  r: number
+  cut: number
 ) {
   ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
+  ctx.moveTo(x + cut, y);
+  ctx.lineTo(x + w - cut, y);
+  ctx.lineTo(x + w, y + cut);
+  ctx.lineTo(x + w, y + h - cut);
+  ctx.lineTo(x + w - cut, y + h);
+  ctx.lineTo(x + cut, y + h);
+  ctx.lineTo(x, y + h - cut);
+  ctx.lineTo(x, y + cut);
   ctx.closePath();
 }
 
@@ -91,18 +93,44 @@ export default function StatsShareCard({
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
 
-    // Accent glow
+    // Restrained light across a black-first bookmaker dossier.
     const glow = ctx.createRadialGradient(W * 0.22, H * 0.3, 0, W * 0.22, H * 0.3, W * 0.6);
     glow.addColorStop(0, 'rgba(0,212,255,0.14)');
     glow.addColorStop(1, 'rgba(0,212,255,0)');
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, W, H);
 
-    // Border
-    ctx.strokeStyle = 'rgba(0,212,255,0.28)';
+    // Etched drafting grid. It gives the exported graphic its own instrument
+    // language rather than repeating the photographic page hero.
+    ctx.strokeStyle = 'rgba(126,158,184,0.055)';
+    ctx.lineWidth = 1;
+    for (let x = 48; x < W; x += 48) {
+      ctx.beginPath();
+      ctx.moveTo(x, 26);
+      ctx.lineTo(x, H - 26);
+      ctx.stroke();
+    }
+    for (let y = 48; y < H; y += 48) {
+      ctx.beginPath();
+      ctx.moveTo(26, y);
+      ctx.lineTo(W - 26, y);
+      ctx.stroke();
+    }
+
+    // Machined outer rail with clipped corners and a second inset seam.
+    ctx.strokeStyle = 'rgba(196,207,216,0.34)';
     ctx.lineWidth = 3;
-    roundRect(ctx, 14, 14, W - 28, H - 28, 26);
+    chamferRect(ctx, 14, 14, W - 28, H - 28, 24);
     ctx.stroke();
+    ctx.strokeStyle = 'rgba(0,148,255,0.34)';
+    ctx.lineWidth = 1;
+    chamferRect(ctx, 25, 25, W - 50, H - 50, 17);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(0,148,255,0.72)';
+    ctx.fillRect(25, 25, 210, 3);
+    ctx.fillStyle = 'rgba(166,119,59,0.7)';
+    ctx.fillRect(W - 225, H - 28, 200, 3);
 
     // Name
     ctx.fillStyle = '#e8f4ff';
@@ -126,11 +154,11 @@ export default function StatsShareCard({
       const bx = 64;
       const by = 132;
       ctx.fillStyle = `${styleColor ?? '#00d4ff'}22`;
-      roundRect(ctx, bx, by, tw + 34, 42, 21);
+      chamferRect(ctx, bx, by, tw + 34, 42, 7);
       ctx.fill();
       ctx.strokeStyle = styleColor ?? '#00d4ff';
       ctx.lineWidth = 1.5;
-      roundRect(ctx, bx, by, tw + 34, 42, 21);
+      chamferRect(ctx, bx, by, tw + 34, 42, 7);
       ctx.stroke();
       ctx.fillStyle = styleColor ?? '#00d4ff';
       ctx.fillText(label, bx + 17, by + 10);
@@ -177,13 +205,18 @@ export default function StatsShareCard({
     const startY = 412;
     tiles.forEach(([label, value], i) => {
       const x = startX + i * (tileW + 16);
-      ctx.fillStyle = 'rgba(255,255,255,0.04)';
-      roundRect(ctx, x, startY, tileW, tileH, 16);
+      const tileFill = ctx.createLinearGradient(x, startY, x, startY + tileH);
+      tileFill.addColorStop(0, 'rgba(26,38,49,0.94)');
+      tileFill.addColorStop(1, 'rgba(4,9,14,0.98)');
+      ctx.fillStyle = tileFill;
+      chamferRect(ctx, x, startY, tileW, tileH, 9);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.09)';
+      ctx.strokeStyle = 'rgba(196,207,216,0.2)';
       ctx.lineWidth = 1;
-      roundRect(ctx, x, startY, tileW, tileH, 16);
+      chamferRect(ctx, x, startY, tileW, tileH, 9);
       ctx.stroke();
+      ctx.fillStyle = i === 0 ? 'rgba(166,119,59,0.78)' : 'rgba(0,148,255,0.62)';
+      ctx.fillRect(x, startY + 13, 3, tileH - 26);
 
       ctx.fillStyle = 'rgba(200,224,245,0.5)';
       ctx.font = `600 18px ${FONT}`;
@@ -218,7 +251,7 @@ export default function StatsShareCard({
     try {
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
       if (!blob) {
-        setNote('Could Not Build The Image. Try Again.');
+        setNote('Could not build the image. Try again.');
         return;
       }
       const file = new File([blob], 'smarter-poker-stats.png', { type: 'image/png' });
@@ -246,11 +279,11 @@ export default function StatsShareCard({
       // Revoke on the next frame: revoking synchronously can cancel the
       // download in some browsers before it has read the blob.
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      setNote('Saved To Your Downloads.');
+      setNote('Saved to your downloads.');
     } catch (err) {
       // AbortError just means the user dismissed the share sheet.
       if ((err as Error)?.name !== 'AbortError') {
-        setNote('Could Not Share The Image On This Device.');
+        setNote('Could not share the image on this device.');
       }
     } finally {
       setBusy(false);
@@ -258,14 +291,8 @@ export default function StatsShareCard({
   };
 
   return (
-    <SpadeConsole
-      className="sharecard"
-      eyebrow="Share"
-      title="Share Your Stats"
-      pill={busy ? 'Preparing' : 'Image'}
-      pillInk={busy ? 'muted' : 'blue'}
-      foot="foot"
-    >
+    <div className="sharecard">
+      <h3 className="sharecard-title">Share Your Stats</h3>
       <div className="sharecard-preview">
         <canvas
           ref={canvasRef}
@@ -274,23 +301,12 @@ export default function StatsShareCard({
           aria-label="A Shareable Image Of Your Headline Poker Stats"
         />
       </div>
-      <div className="sharecard-actions">
-        <button
-          type="button"
-          className="sharecard-btn sc-ink--white"
-          onClick={handleShare}
-          disabled={busy}
-        >
-          {busy ? 'Preparing...' : 'Share Or Save Image'}
-        </button>
-      </div>
-      <p
-        className="sc-copy sc-copy--center sharecard-note sc-ink--muted"
-        role="status"
-        aria-live="polite"
-      >
+      <button type="button" className="sharecard-btn" onClick={handleShare} disabled={busy}>
+        {busy ? 'Preparing...' : 'Share Or Save Image'}
+      </button>
+      <p className="sharecard-note" role="status" aria-live="polite">
         {note}
       </p>
-    </SpadeConsole>
+    </div>
   );
 }

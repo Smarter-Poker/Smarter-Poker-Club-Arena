@@ -31,11 +31,9 @@ import StatsFactsService, {
   type NemesisPayload,
   type OpponentFlow,
 } from '../../services/StatsFactsService';
-import { SpadeConsole } from '../console/SpadeConsole';
 import { CHIP_STATS } from '../../services/statsScope';
 import './NemesisPanel.css';
 import { sizedStorageUrl } from '../../utils/avatarGenerator';
-import { compactChips } from '../../utils/format';
 
 interface Props {
   userId?: string;
@@ -50,11 +48,8 @@ function initials(name: string | null): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-/* NEVER A DECIMAL POINT ON A FORWARD-FACING PAGE (#ClubArenaConsole): net
-   chips against a rival print compact, 8.4K not 8,420. The sign is printed
-   by the caller from the VALUE. */
 function chips(n: number): string {
-  return compactChips(Math.abs(n));
+  return Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
 function Avatar({ flow }: { flow: OpponentFlow }) {
@@ -91,12 +86,10 @@ function FlowCard({
       className={`nemesis-card ${isNemesis ? 'is-nemesis' : 'is-target'}`}
       onClick={() => onOpen(flow.opponent_id)}
     >
-      <span className={`nemesis-kind ${isNemesis ? 'sc-ink--red' : 'sc-ink--green'}`}>
-        {isNemesis ? 'Your Nemesis' : 'Your Target'}
-      </span>
+      <span className="nemesis-kind">{isNemesis ? 'Your Nemesis' : 'Your Target'}</span>
       <span className="nemesis-identity">
         <Avatar flow={flow} />
-        <span className="nemesis-name sc-ink--silver">{flow.username ?? 'Unknown Player'}</span>
+        <span className="nemesis-name">{flow.username ?? 'Unknown Player'}</span>
       </span>
       {/* Sign and colour come from the VALUE, never from which card this is:
           the two must agree with the expanded table below, which derives both
@@ -107,9 +100,7 @@ function FlowCard({
         {flow.net_chips > 0 ? '+' : flow.net_chips < 0 ? '-' : ''}
         {chips(flow.net_chips)}
       </span>
-      <span className="nemesis-meta sc-ink--muted">
-        {flow.hands_together.toLocaleString()} Hands Together
-      </span>
+      <span className="nemesis-meta">{flow.hands_together.toLocaleString()} Hands Together</span>
     </button>
   );
 }
@@ -164,16 +155,9 @@ export default function NemesisPanel({ userId, days = null }: Props) {
 
   if (loading) {
     return (
-      <SpadeConsole
-        className="nemesis-panel"
-        eyebrow="Head To Head"
-        title="Rivals"
-        pill="Reading"
-        pillInk="muted"
-        foot="foot"
-      >
+      <div className="nemesis-panel">
         <div className="nemesis-skeleton" />
-      </SpadeConsole>
+      </div>
     );
   }
 
@@ -181,61 +165,40 @@ export default function NemesisPanel({ userId, days = null }: Props) {
 
   if (readError) {
     return (
-      <SpadeConsole
-        className="nemesis-panel"
-        eyebrow="Head To Head"
-        title="Rivals"
-        pill="Unread"
-        pillInk="red"
-        foot="foot"
-        role="alert"
-      >
-        <p className="sc-copy nemesis-empty-text">Your Rivals Could Not Be Loaded Right Now.</p>
-        <div className="nemesis-actions">
-          <button
-            type="button"
-            className="nemesis-word sc-ink--white"
-            onClick={() => setAttempt((n) => n + 1)}
-          >
+      <div className="nemesis-panel nemesis-empty" role="alert">
+        <h3 className="nemesis-title">Rivals</h3>
+        <p className="nemesis-empty-text">
+          Your Rivals Could Not Be Loaded Right Now.{' '}
+          <button type="button" className="hand-retry" onClick={() => setAttempt((n) => n + 1)}>
             Try Again
           </button>
-        </div>
-      </SpadeConsole>
+        </p>
+      </div>
     );
   }
 
   if (!hasAny) {
     return (
-      <SpadeConsole
-        className="nemesis-panel"
-        eyebrow="Head To Head"
-        title="Rivals"
-        pill="None Yet"
-        pillInk="muted"
-        foot="foot"
-      >
-        <p className="sc-copy nemesis-empty-text">
+      <div className="nemesis-panel nemesis-empty">
+        <h3 className="nemesis-title">Rivals</h3>
+        <p className="nemesis-empty-text">
           No Rivalries Yet. An Opponent Appears Here Once You Have Played At Least{' '}
           {data?.min_hands ?? 25} Hands Against Them, So That A Single Big Pot Cannot Crown Someone
           Who Simply Got Lucky Once.
         </p>
-      </SpadeConsole>
+      </div>
     );
   }
 
   return (
-    <SpadeConsole
-      className="nemesis-panel"
-      eyebrow="Head To Head"
-      title="Rivals"
-      pill={`${(data?.opponents_qualified ?? 0).toLocaleString()} Players`}
-      pillInk="blue"
-      foot="foot"
-    >
-      <p className="sc-copy nemesis-sub">
-        Net Chips Won And Lost Against Each Opponent, Across {data?.opponents_qualified ?? 0}{' '}
-        Players You Have Met At Least {data?.min_hands ?? 25} Times.
-      </p>
+    <div className="nemesis-panel">
+      <div className="nemesis-head">
+        <h3 className="nemesis-title">Rivals</h3>
+        <p className="nemesis-sub">
+          Net Chips Won And Lost Against Each Opponent, Across {data?.opponents_qualified ?? 0}{' '}
+          Players You Have Met At Least {data?.min_hands ?? 25} Times.
+        </p>
+      </div>
 
       <div className="nemesis-cards">
         {data?.nemesis && <FlowCard flow={data.nemesis} kind="nemesis" onOpen={openProfile} />}
@@ -244,30 +207,22 @@ export default function NemesisPanel({ userId, days = null }: Props) {
 
       {rows.length > 2 && (
         <>
-          <div className="nemesis-actions">
-            <button
-              type="button"
-              className="nemesis-word nemesis-expand sc-ink--white"
-              aria-expanded={expanded}
-              onClick={() => setExpanded((e) => !e)}
-            >
-              {expanded ? 'Hide Full List' : `Show All ${rows.length} Rivals`}
-            </button>
-          </div>
+          <button
+            type="button"
+            className="nemesis-expand"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((e) => !e)}
+          >
+            {expanded ? 'Hide Full List' : `Show All ${rows.length} Rivals`}
+          </button>
 
           {expanded && (
             <table className="nemesis-table">
               <thead>
                 <tr>
-                  <th scope="col" className="nemesis-col sc-ink--blue">
-                    Player
-                  </th>
-                  <th scope="col" className="nemesis-col sc-ink--blue">
-                    Hands
-                  </th>
-                  <th scope="col" className="nemesis-col sc-ink--blue">
-                    Net
-                  </th>
+                  <th scope="col">Player</th>
+                  <th scope="col">Hands</th>
+                  <th scope="col">Net</th>
                 </tr>
               </thead>
               <tbody>
@@ -287,13 +242,9 @@ export default function NemesisPanel({ userId, days = null }: Props) {
                   >
                     <th scope="row">
                       <Avatar flow={r} />
-                      <span className="nemesis-row-name sc-ink--silver">
-                        {r.username ?? 'Unknown Player'}
-                      </span>
+                      <span className="nemesis-row-name">{r.username ?? 'Unknown Player'}</span>
                     </th>
-                    <td className="nemesis-hands sc-ink--silver">
-                      {r.hands_together.toLocaleString()}
-                    </td>
+                    <td>{r.hands_together.toLocaleString()}</td>
                     <td className={r.net_chips > 0 ? 'is-up' : r.net_chips < 0 ? 'is-down' : ''}>
                       {r.net_chips > 0 ? '+' : r.net_chips < 0 ? '-' : ''}
                       {chips(r.net_chips)}
@@ -306,10 +257,10 @@ export default function NemesisPanel({ userId, days = null }: Props) {
         </>
       )}
 
-      <p className="sc-copy nemesis-note sc-ink--muted">
+      <p className="nemesis-note">
         Chip Flow Is Attributed Per Hand In Proportion To What Each Player Lost. Rake Is Not Counted
         Against Any Opponent.
       </p>
-    </SpadeConsole>
+    </div>
   );
 }

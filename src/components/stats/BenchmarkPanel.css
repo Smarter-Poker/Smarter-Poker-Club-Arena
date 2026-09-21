@@ -1,115 +1,127 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   BENCHMARK PANEL - on the spade console (#ClubArenaConsole)
-
-   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
-   spade master (components/console/SpadeConsole.css); this file lays one
-   metric per row on the black glass under an engraved rule: the label in
-   lit blue, the value in silver, the standing as a lit word (green, red or
-   muted), then the one thing the art does not paint - the p10..p90 track
-   with the median tick and the player's marker - drawn as plain lines in
-   the house inks, no rounded ends. Sizes are cqw against the console. No
-   :hover.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/**
+ * BenchmarkPanel — one row per metric: value, distribution bar, plain reading.
+ */
 
 .bench-panel {
-  --bench-rule: 1px solid #000;
-  --bench-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
-  --sc-max: 720px;
-  margin: 0 0 1rem;
+  position: relative;
+  margin: 0 0.75rem 1rem;
+  padding: 1rem;
+  border-radius: 2px;
+  background:
+    linear-gradient(90deg, rgba(166, 119, 59, 0.08), transparent 28%),
+    linear-gradient(155deg, rgba(18, 26, 34, 0.96), rgba(3, 7, 11, 0.99));
+  border: 1px solid rgba(207, 191, 159, 0.18);
+  box-shadow:
+    inset 3px 0 0 rgba(166, 119, 59, 0.58),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 12px 28px rgba(0, 0, 0, 0.28);
 }
 
-.bench-sub,
-.bench-warn {
+.bench-panel::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 88px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(166, 119, 59, 0.82));
+  content: '';
+}
+
+.bench-title {
   margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e8f4ff;
+}
+
+.bench-sub {
+  margin: 0.3rem 0 0;
+  font-size: 0.74rem;
+  color: rgba(200, 224, 245, 0.6);
+}
+
+.bench-warn {
+  margin: 0.7rem 0 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.1), rgba(10, 12, 14, 0.5));
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: rgba(253, 224, 171, 0.9);
 }
 
 .bench-list {
-  display: grid;
-  margin: 0;
-  padding: 0;
   list-style: none;
-}
-
-/* Keeps a metric's label, bar and sentence together when the dossier prints. */
-.bench-item {
-  display: grid;
-  gap: 1.2cqw;
-  padding: 2.4cqw 0;
-  border-top: var(--bench-rule);
-  box-shadow: var(--bench-rule-lit);
-  break-inside: avoid;
-  page-break-inside: avoid;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
 }
 
 .bench-item-head {
   display: flex;
-  flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.6cqw 2.4cqw;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .bench-label {
-  font-size: 2.9cqw;
+  font-size: 0.8rem;
   font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  color: #e8f4ff;
 }
 
 .bench-value {
-  margin-left: auto;
-  font-size: 4cqw;
-  font-weight: 800;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #00d4ff;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  margin-left: auto;
 }
 
 .bench-pill {
-  font-size: 2.7cqw;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  padding: 0.12rem 0.45rem;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
 
 .bench-pill.tone-good {
-  color: #c8ffd2;
-  -webkit-text-fill-color: #c8ffd2;
-  text-shadow:
-    0 0 1cqw rgb(53 217 90 / 80%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  background: rgba(34, 197, 94, 0.16);
+  color: #4ade80;
 }
 
 .bench-pill.tone-bad {
-  color: #ff5b6e;
-  -webkit-text-fill-color: #ff5b6e;
-  text-shadow:
-    0 0 1cqw rgb(240 40 73 / 80%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
 }
 
 .bench-pill.tone-neutral {
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
 }
 
-/* ── Distribution track: the one thing drawn ────────────────────────────── */
+/* ── Distribution bar ──────────────────────────────────────────────────── */
 
 .bench-bar {
-  margin-top: 0.6cqw;
+  margin-top: 0.4rem;
 }
 
-.bench-bar-anchored {
-  position: relative;
-}
-
-/* The track is an engraved groove, the same cut as the rules between rows. */
 .bench-bar-track {
   position: relative;
-  height: 1.2cqw;
-  min-height: 4px;
-  background: #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  height: 6px;
+  border-radius: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(239, 68, 68, 0.22) 0%,
+    rgba(148, 163, 184, 0.22) 50%,
+    rgba(34, 197, 94, 0.22) 100%
+  );
 }
 
 /* `left` is set inline from the real median position; there is no default,
@@ -117,125 +129,79 @@
    rendering of it. */
 .bench-bar-mid {
   position: absolute;
-  top: -1cqw;
-  bottom: -1cqw;
+  top: -2px;
+  bottom: -2px;
   width: 1px;
-  background: #9aa5b3;
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .bench-bar-marker {
   position: absolute;
   top: 50%;
-  width: 2.4cqw;
-  height: 2.4cqw;
-  min-width: 8px;
-  min-height: 8px;
-  margin-left: -1.2cqw;
-  transform: translateY(-50%);
-  outline: 1px solid #000;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 1px;
+  transform: translateY(-50%) rotate(45deg);
+  border: 2px solid rgba(10, 14, 24, 0.9);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
 }
 
 .bench-bar-marker.tone-good {
-  background: #31a24c;
-  box-shadow: 0 0 2cqw rgb(53 217 90 / 60%);
+  background: #22c55e;
 }
 
 .bench-bar-marker.tone-bad {
-  background: #f02849;
-  box-shadow: 0 0 2cqw rgb(240 40 73 / 60%);
+  background: #ef4444;
 }
 
 .bench-bar-marker.tone-neutral {
-  background: #9aa5b3;
+  background: #94a3b8;
 }
 
 .bench-bar-scale {
   display: flex;
   justify-content: space-between;
-  margin-top: 1cqw;
-  color: #9aa5b3;
-  font-size: 2.4cqw;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-/* The median label is anchored to the tick rather than centred by flexbox.
-   The two used to disagree by up to 12 points, so the word "Median" pointed
-   at a place that was not the median. */
-.bench-bar-median-label {
-  position: absolute;
-  bottom: -0.2cqw;
-  transform: translateX(-50%);
-  color: #9aa5b3;
-  font-size: 2.4cqw;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  pointer-events: none;
+  margin-top: 0.25rem;
+  font-size: 0.58rem;
+  color: rgba(200, 224, 245, 0.38);
 }
 
 .bench-readout {
-  margin: 0;
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: rgba(200, 224, 245, 0.72);
 }
 
 .bench-note {
-  margin: 0;
-  padding-top: 2.4cqw;
-  border-top: var(--bench-rule);
-  box-shadow: var(--bench-rule-lit);
+  margin: 0.85rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.66rem;
+  line-height: 1.5;
+  color: rgba(200, 224, 245, 0.45);
 }
-
-/* ── The lit word at the foot ───────────────────────────────────────────── */
-
-.bench-actions {
-  display: flex;
-  justify-content: center;
-  padding-top: 2.4cqw;
-  border-top: var(--bench-rule);
-  box-shadow: var(--bench-rule-lit);
-}
-
-.bench-word {
-  appearance: none;
-  min-height: 44px;
-  margin: 0;
-  padding: 1.6cqw 3cqw;
-  border: 0;
-  background: transparent;
-  font:
-    800 3.4cqw/1 'Roboto Condensed',
-    Inter,
-    system-ui,
-    sans-serif;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.bench-word:active {
-  filter: brightness(1.25);
-}
-
-.bench-word:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.6cqw;
-}
-
-/* ── While the field is being read ──────────────────────────────────────── */
 
 .bench-skeleton {
-  height: 30cqw;
-  background: rgb(255 255 255 / 8%);
+  height: 180px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 25%,
+    rgba(255, 255, 255, 0.07) 50%,
+    rgba(255, 255, 255, 0.03) 75%
+  );
+  background-size: 200% 100%;
   animation: benchShimmer 1.4s ease-in-out infinite;
 }
 
 @keyframes benchShimmer {
-  50% {
-    opacity: 0.45;
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
   }
 }
 
@@ -243,4 +209,44 @@
   .bench-skeleton {
     animation: none;
   }
+}
+
+/* --- orphan-modifier rules (added 2026-08-21 audit) --- */
+/* These were applied in TSX with no rule defined anywhere, so the empty
+   states rendered inconsistently - only .pos-radar-empty was centred. */
+
+.bench-head {
+  text-align: left;
+}
+/* Keeps a metric's label, bar and sentence together when the dossier prints. */
+.bench-item {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* The median label is anchored to the tick rather than centred by flexbox.
+   The two used to disagree by up to 12 points, so the word "Median" pointed
+   at a place that was not the median. */
+.bench-bar-anchored {
+  position: relative;
+}
+
+.bench-bar-median-label {
+  position: absolute;
+  bottom: -0.15rem;
+  transform: translateX(-50%);
+  font-size: 0.58rem;
+  color: rgba(200, 224, 245, 0.5);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* The marker is offset by half its width, so at a clamped 0% or 100% half of
+   it used to hang outside the track. */
+.bench-bar-track {
+  overflow: visible;
+}
+
+.bench-bar-marker {
+  max-width: 12px;
 }

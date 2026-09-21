@@ -1,0 +1,234 @@
+.hero {
+  position: relative;
+  min-height: 470px;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid #5b6570;
+  background: #030506;
+  clip-path: polygon(
+    12px 0,
+    calc(100% - 12px) 0,
+    100% 12px,
+    100% calc(100% - 12px),
+    calc(100% - 12px) 100%,
+    12px 100%,
+    0 calc(100% - 12px),
+    0 12px
+  );
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58);
+}
+
+.hero::before,
+.hero::after {
+  position: absolute;
+  z-index: 3;
+  content: '';
+  pointer-events: none;
+}
+
+.hero::before {
+  inset: 5px;
+  border: 1px solid rgba(203, 216, 225, 0.12);
+}
+
+.hero::after {
+  right: 22px;
+  bottom: 0;
+  width: 34%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--mission-blue), transparent);
+  box-shadow: 0 0 16px rgba(85, 232, 255, 0.65);
+}
+
+.heroArtwork {
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.heroShade {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(2, 4, 5, 0.98) 0%,
+      rgba(2, 4, 5, 0.9) 35%,
+      rgba(2, 4, 5, 0.24) 68%,
+      rgba(2, 4, 5, 0.08) 100%
+    ),
+    linear-gradient(0deg, rgba(2, 4, 5, 0.7), transparent 38%);
+}
+
+.heroCopy {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  width: 54%;
+  min-height: 470px;
+  padding: 58px clamp(28px, 5vw, 68px);
+}
+
+.eyebrow,
+.panelLabel,
+.cardTopline,
+.rewardLabel,
+.summaryLabel,
+.resetReadout span,
+.heroMeters span {
+  color: #8997a2;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--mission-blue);
+}
+
+.eyebrow::before {
+  width: 18px;
+  height: 1px;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+  content: '';
+}
+
+.heroCopy h1 {
+  width: 100%;
+  max-width: 600px;
+  margin: 14px 0 12px;
+  color: var(--mission-white);
+  font-size: clamp(3.2rem, 6vw, 5.25rem);
+  font-weight: 500;
+  line-height: 0.86;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-shadow: 0 5px 30px #000;
+  overflow-wrap: anywhere;
+}
+
+.heroCopy > p {
+  max-width: 520px;
+  margin: 0;
+  color: #a7b1b9;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: clamp(0.88rem, 1.4vw, 1rem);
+  line-height: 1.65;
+}
+
+.heroMeters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  width: min(100%, 440px);
+  margin-top: 28px;
+  border-block: 1px solid rgba(180, 194, 204, 0.23);
+}
+
+.heroMeters > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px 18px 14px 0;
+}
+
+.heroMeters > div + div {
+  padding-left: 20px;
+  border-left: 1px solid rgba(180, 194, 204, 0.18);
+}
+
+.heroMeters strong {
+  color: var(--mission-white);
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.heroMeters small {
+  color: #82909a;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.65rem;
+}
+
+.backButton,
+.playButton,
+.claimButton,
+.claimAllButton,
+.buyFreezeBtn,
+.confirmButton {
+  position: relative;
+  min-height: 44px;
+  border: 1px solid #a9bac5;
+  background: linear-gradient(180deg, #151c22, #070a0d);
+  color: #f7fbfd;
+  font:
+    700 0.74rem/1 'Rajdhani',
+    'Arial Narrow',
+    sans-serif;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.11),
+    inset 0 -1px rgba(0, 0, 0, 0.9),
+    0 0 0 1px rgba(0, 0, 0, 0.75);
+}
+
+.backButton {
+  min-width: 152px;
+  margin-top: 24px;
+  padding: 0 24px;
+  border-color: rgba(85, 232, 255, 0.7);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.1),
+    0 0 17px rgba(50, 210, 241, 0.11);
+}
+
+.heroSeal {
+  position: absolute;
+  z-index: 4;
+  right: 28px;
+  bottom: 24px;
+  display: grid;
+  min-width: 128px;
+  padding: 12px 18px;
+  border: 1px solid rgba(189, 204, 214, 0.38);
+  background: rgba(4, 7, 9, 0.86);
+  text-align: right;
+  backdrop-filter: blur(7px);
+}
+
+.heroSeal span {
+  color: var(--mission-blue);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.heroSeal strong {
+  color: #fff;
+  font-size: 1.8rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.heroSeal small {
+  color: #8997a1;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

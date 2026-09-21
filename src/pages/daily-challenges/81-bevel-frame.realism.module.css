@@ -1,0 +1,118 @@
+/* --------------------------------------------------------------------------
+   Precision Frame Closure
+
+   A rectangular CSS border is clipped before it can paint a chamfer. The old
+   cards and controls therefore stopped at every diagonal and looked broken.
+   These rails draw the full polygon explicitly, including each diagonal, so
+   every machined frame is one continuous circuit at every size.
+   -------------------------------------------------------------------------- */
+
+.bevelFrame {
+  --bevel-size: 9px;
+  --bevel-frame-color: rgba(184, 196, 201, 0.46);
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  display: block;
+  background:
+    linear-gradient(
+        to bottom right,
+        transparent 42%,
+        var(--bevel-frame-color) 45%,
+        var(--bevel-frame-color) 55%,
+        transparent 58%
+      )
+      0 0 / var(--bevel-size) var(--bevel-size) no-repeat,
+    linear-gradient(
+        to bottom right,
+        transparent 42%,
+        var(--bevel-frame-color) 45%,
+        var(--bevel-frame-color) 55%,
+        transparent 58%
+      )
+      100% 100% / var(--bevel-size) var(--bevel-size) no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) var(--bevel-size) 0 /
+      calc(100% - var(--bevel-size)) 1px no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) 100% 0 / 1px
+      calc(100% - var(--bevel-size)) no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) 0 100% /
+      calc(100% - var(--bevel-size)) 1px no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) 0 var(--bevel-size) / 1px
+      calc(100% - var(--bevel-size)) no-repeat;
+  pointer-events: none;
+}
+
+.hero > .bevelFrame {
+  --bevel-size: 12px;
+  --bevel-frame-color: rgba(211, 221, 225, 0.64);
+  background:
+    linear-gradient(
+        to bottom right,
+        transparent 42%,
+        var(--bevel-frame-color) 45%,
+        var(--bevel-frame-color) 55%,
+        transparent 58%
+      )
+      0 0 / var(--bevel-size) var(--bevel-size) no-repeat,
+    linear-gradient(
+        to bottom left,
+        transparent 42%,
+        var(--bevel-frame-color) 45%,
+        var(--bevel-frame-color) 55%,
+        transparent 58%
+      )
+      100% 0 / var(--bevel-size) var(--bevel-size) no-repeat,
+    linear-gradient(
+        to bottom right,
+        transparent 42%,
+        var(--bevel-frame-color) 45%,
+        var(--bevel-frame-color) 55%,
+        transparent 58%
+      )
+      100% 100% / var(--bevel-size) var(--bevel-size) no-repeat,
+    linear-gradient(
+        to bottom left,
+        transparent 42%,
+        var(--bevel-frame-color) 45%,
+        var(--bevel-frame-color) 55%,
+        transparent 58%
+      )
+      0 100% / var(--bevel-size) var(--bevel-size) no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) var(--bevel-size) 0 /
+      calc(100% - var(--bevel-size) - var(--bevel-size)) 1px no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) 100% var(--bevel-size) / 1px
+      calc(100% - var(--bevel-size) - var(--bevel-size)) no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) var(--bevel-size) 100% /
+      calc(100% - var(--bevel-size) - var(--bevel-size)) 1px no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) 0 var(--bevel-size) / 1px
+      calc(100% - var(--bevel-size) - var(--bevel-size)) no-repeat;
+  box-shadow: inset 0 0 0 5px rgba(184, 196, 201, 0.035);
+}
+
+.challengeCard > .bevelFrame {
+  --bevel-frame-color: color-mix(in srgb, var(--card-tier-color) 48%, var(--mission-chrome));
+}
+
+.challengeCard[data-mission-state='complete'] > .bevelFrame {
+  --bevel-frame-color: color-mix(in srgb, var(--card-tier-color) 76%, var(--mission-chrome));
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--card-tier-color) 24%, transparent));
+}
+
+.challengeCard[data-mission-state='claimed'] > .bevelFrame {
+  --bevel-frame-color: rgba(184, 196, 201, 0.35);
+}
+
+.emptyState,
+.celebrateCard {
+  position: relative;
+}
+
+.emptyState > .bevelFrame {
+  --bevel-size: 10px;
+}
+
+.celebrateCard > .bevelFrame {
+  --bevel-size: 12px;
+  --bevel-frame-color: rgba(214, 173, 82, 0.78);
+  filter: drop-shadow(0 0 6px rgba(214, 173, 82, 0.16));
+}

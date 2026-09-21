@@ -17,6 +17,10 @@ import {
 // ── ADDITIVE (#5): shared engine metrics registry — appended to /metrics ONLY when
 // ENGINE_METRICS === 'on'. With the flag unset the response is byte-identical to before.
 import { metricsRegistry, ENGINE_METRICS_ENABLED } from '../observability/engineInstruments.js';
+import {
+  horseDecisionJournalHealth,
+  type HorseJournalHealth,
+} from '../services/HorseDecisionJournal.js';
 
 // Minimal structural typing so handlers don't need to import the GameServer
 // class (which lives in `index.ts`) nor the transport classes. Anything that
@@ -27,6 +31,17 @@ export interface HealthDeps {
     getStatus(query?: PublicTableLivenessQuery): unknown;
     getPrometheusMetrics(): string;
   };
+  /**
+   * 2026-09-21: the Horse decision journal's own view — mode, the last named
+   * failure reason and the writer's catalog figures. Until now the journal
+   * could stop capturing (a full catalog surfaced only as a counter) with
+   * nothing on /health to say so. Synchronous and cached: the publisher
+   * answers its last STATS reply and asks the writer for a fresh one, so this
+   * handler never waits on the journal worker. Optional here so tests inject
+   * it; the router's default reads the process-wide publisher. Null (no
+   * journal configured) leaves the body exactly as it was.
+   */
+  horseJournal?: () => HorseJournalHealth | null;
 }
 
 export interface WsMetricsDeps {
@@ -82,7 +97,7 @@ export function handleHealth(
     sendJSON(res, 400, { error: 'invalid_liveness_scope' });
     return;
   }
-  const status = (
+  const snapshot = (
     parsed.query ? deps.gameServer.getStatus(parsed.query) : deps.gameServer.getStatus()
   ) as {
     liveness?: string;
@@ -108,10 +123,17 @@ export function handleHealth(
    * deploy verifier, /metrics scrapers, an operator) sees the same fields.
    */
   const dealerReady =
-    status?.liveness === 'ok' &&
-    status?.status === 'ok' &&
-    status?.dealerPrerequisitesReady === true &&
-    status?.liveHorseDecision?.phase === 'ready';
+    snapshot?.liveness === 'ok' &&
+    snapshot?.status === 'ok' &&
+    snapshot?.dealerPrerequisitesReady === true &&
+    snapshot?.liveHorseDecision?.phase === 'ready';
+  // A journal that stopped capturing is a diagnostics gap, never a routing
+  // verdict: it is added to a copy of the body and does not move the HTTP
+  // code; the game server's snapshot object is never mutated, and the
+  // certificate line below stays byte-identical to the 2026-09-08 form the
+  // release transaction's law test pins.
+  const horseJournal = (deps.horseJournal ?? horseDecisionJournalHealth)();
+  const status = horseJournal ? { ...snapshot, horseJournal } : snapshot;
   sendJSON(res, dealerReady ? 200 : 503, status);
 }
 

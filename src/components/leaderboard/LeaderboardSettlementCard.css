@@ -1,179 +1,125 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   LEADERBOARD SETTLEMENT - on the spade console (#ClubArenaConsole)
-
-   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
-   spade master (components/console/SpadeConsole.css): the state word sits
-   in the painted pill slot, the round's copy and its UTC window print on the
-   black glass, every figure is a row - label in lit blue on the left, value
-   in silver on the right - under an engraved rule, and the one or two
-   actions are lit words at the foot. Nothing is drawn: no card, no tile, no
-   button face, no gold ramp. Sizes are cqw against the console. No :hover
-   (tests/no-hover-effects.law.test.ts).
-   ═══════════════════════════════════════════════════════════════════════════ */
-
+/* Settlement is live ink inside the board's console, never a nested frame. */
 .lb-settlement-card {
-  --lbs-rule: 1px solid #000;
-  --lbs-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
-  --sc-max: 640px;
-  margin-block: 18px;
-  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
+  display: grid;
+  gap: 3cqw;
+  padding-block: 4cqw;
+  color: #e4e7ec;
+  font:
+    400 clamp(13px, 3.5cqw, 17px)/1.5 Inter,
+    sans-serif;
 }
-
+.lb-settlement-card :is(h2, p, dl) {
+  margin: 0;
+}
+.lb-settlement-card h2 {
+  font:
+    700 clamp(19px, 4.8cqw, 26px)/1.18 'Roboto Condensed',
+    sans-serif;
+  color: #e4e7ec;
+  text-shadow: 0 1px 1px #050607;
+}
 .lb-settlement-main {
   display: grid;
-  gap: 1.2cqw;
+  gap: 2cqw;
 }
-
-.lb-settlement-body {
-  margin: 0;
+.lb-settlement-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2cqw;
+  justify-content: space-between;
 }
-
+.lb-settlement-heading > div {
+  display: grid;
+  gap: 2cqw;
+}
+.lb-settlement-kicker {
+  color: #9aa5b3;
+  font:
+    600 0.85em 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.06em;
+}
+.lb-settlement-state {
+  color: #45adff;
+  font:
+    600 0.85em 'Roboto Condensed',
+    sans-serif;
+}
+.state-paid .lb-settlement-state {
+  color: #c8ffd2;
+}
+.state-failed .lb-settlement-state {
+  color: #ff5b6e;
+}
+.lb-settlement-card p,
 .lb-settlement-window,
-.lb-settlement-retry {
-  display: block;
-  font-size: 2.8cqw;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  font-variant-numeric: tabular-nums;
+.lb-settlement-retry,
+.lb-settlement-rule {
+  color: #9aa5b3;
 }
-
-/* ── The figures: rows on the glass ─────────────────────────────────────── */
-
+.lb-settlement-window,
+.lb-settlement-retry,
+.lb-settlement-rule {
+  font-size: 0.8em;
+}
 .lb-settlement-ledger {
   display: grid;
-  margin: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3cqw;
 }
-
-.lb-settlement-row {
-  display: flex;
-  gap: 2.4cqw;
-  align-items: baseline;
-  justify-content: space-between;
-  min-width: 0;
-  padding: 1.8cqw 0;
-  border-top: var(--lbs-rule);
-  box-shadow: var(--lbs-rule-lit);
+.lb-settlement-ledger dt {
+  color: #9aa5b3;
+  font-size: 0.8em;
 }
-
-.lb-settlement-dt {
-  margin: 0;
-  font-size: 2.9cqw;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.lb-settlement-ledger dd {
+  margin: 0.4em 0 0;
+  color: #e4e7ec;
+  font-weight: 600;
 }
-
-.lb-settlement-dd {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  font-size: 4cqw;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+.lb-settlement-ledger > div:first-child dd {
+  color: #ffd700;
 }
-
-/* ── The reader's own receipt ───────────────────────────────────────────── */
-
 .lb-settlement-receipt {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.6cqw 2.4cqw;
-  align-items: baseline;
-  padding: 2cqw 0;
-  border-top: var(--lbs-rule);
-  box-shadow: var(--lbs-rule-lit);
+  gap: 0.4em;
+  color: #9aa5b3;
 }
-
-.lb-settlement-receipt-label {
-  font-size: 2.9cqw;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.lb-settlement-receipt strong {
+  color: #ffd700;
+  font:
+    700 1.5em 'Roboto Condensed',
+    sans-serif;
 }
-
-.lb-settlement-amount {
-  font-size: 4.4cqw;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+.lb-settlement-receipt small {
+  font-size: 0.8em;
 }
-
-.lb-settlement-ref {
-  grid-column: 1 / -1;
-  font-size: 2.8cqw;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── The lit words at the foot ──────────────────────────────────────────── */
-
 .lb-settlement-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 2cqw;
-  justify-content: center;
-  padding-top: 2.4cqw;
-  border-top: var(--lbs-rule);
-  box-shadow: var(--lbs-rule-lit);
+  gap: 3cqw;
 }
-
-.lb-settlement-word {
-  appearance: none;
+.lb-settlement-card button {
   min-height: 44px;
-  margin: 0;
-  padding: 1.6cqw 3cqw;
+  min-width: 44px;
+  padding: 8px 0;
   border: 0;
+  border-radius: 0;
   background: transparent;
-  font:
-    800 3.4cqw/1 'Roboto Condensed',
-    Inter,
-    system-ui,
-    sans-serif;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  white-space: nowrap;
+  box-shadow: none;
+  color: #45adff;
+  font: inherit;
+  font-weight: 600;
   cursor: pointer;
-  touch-action: manipulation;
+  text-align: left;
 }
-
-.lb-settlement-word:active {
-  filter: brightness(1.25);
+.lb-settlement-card button:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 3px;
 }
-
-.lb-settlement-word:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.6cqw;
+.lb-settlement-card button:active {
+  color: #f4f7fb;
 }
-
-/* ── While the desk is being read ───────────────────────────────────────── */
-
-.lb-settlement-skeleton {
-  display: block;
-  width: 48%;
-  height: 3.6cqw;
-  background: rgb(255 255 255 / 8%);
-  animation: lb-settlement-pulse 1.5s ease-in-out infinite;
-}
-
-.lb-settlement-skeleton.wide {
-  width: 78%;
-  height: 5cqw;
-}
-
-@keyframes lb-settlement-pulse {
-  50% {
-    opacity: 0.45;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lb-settlement-skeleton {
-    animation: none;
-  }
+.lb-settlement-card.is-error h2 {
+  color: #ff5b6e;
 }

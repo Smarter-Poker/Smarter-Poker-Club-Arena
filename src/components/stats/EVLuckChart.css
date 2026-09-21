@@ -1,20 +1,30 @@
 /**
- * EVLuckChart — matches the stats page glassmorphism (dark, cyan/purple).
+ * EVLuckChart — a sharp ledger frame for actual-versus-EV analysis.
  * Mobile-first: full-bleed card at 375px, chart fixed at 240px tall so the
  * page does not reflow while recharts measures.
  */
 
 .evluck-card {
+  position: relative;
   margin: 0 0.75rem 1rem;
   padding: 1rem;
-  border-radius: 16px;
-  background: linear-gradient(145deg, rgba(0, 212, 255, 0.05) 0%, rgba(139, 92, 246, 0.035) 100%);
-  border: 1px solid rgba(0, 212, 255, 0.14);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border-radius: 2px;
+  background: linear-gradient(155deg, rgba(17, 26, 35, 0.96), rgba(3, 7, 11, 0.99));
+  border: 1px solid rgba(199, 210, 220, 0.15);
   box-shadow:
-    0 0 30px rgba(0, 212, 255, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    inset 3px 0 0 rgba(113, 91, 184, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.evluck-card::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 96px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(133, 108, 214, 0.82));
+  content: '';
 }
 
 .evluck-head {
@@ -92,7 +102,7 @@
 
 .evluck-skeleton {
   height: 240px;
-  border-radius: 12px;
+  border-radius: 2px;
   background: linear-gradient(
     90deg,
     rgba(255, 255, 255, 0.03) 25%,
@@ -130,5 +140,9 @@
    states rendered inconsistently - only .pos-radar-empty was centred. */
 
 .evluck-loading,
-.evluck-empty { text-align: center; }
-.evluck-head { text-align: left; }
+.evluck-empty {
+  text-align: center;
+}
+.evluck-head {
+  text-align: left;
+}

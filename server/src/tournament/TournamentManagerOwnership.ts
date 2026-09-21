@@ -39,11 +39,13 @@ export async function replaceOwnedTableEngine<T extends AsyncTableEngine>(
   tableId: string,
   expected: T,
   replacement: T,
-  replacementAllowed: () => boolean = () => true
+  replacementAllowed: () => boolean = () => true,
+  adoptCustody: () => boolean = () => true
 ): Promise<boolean> {
   if (engines.get(tableId) !== expected || !replacementAllowed()) return false;
   await expected.stop();
   if (engines.get(tableId) !== expected || !replacementAllowed()) return false;
+  if (!adoptCustody()) return false;
   engines.set(tableId, replacement);
   tournamentOwnedTableIds.add(tableId);
   return true;
@@ -65,6 +67,12 @@ export function unregisterOwnedTournamentTableEngine<T>(
   onReleased?: () => void
 ): boolean {
   if (engines.get(tableId) !== expected) return false;
+  if (
+    (
+      expected as { hasUnretiredStoppedTimeBankCustody?: () => boolean }
+    ).hasUnretiredStoppedTimeBankCustody?.()
+  )
+    return false;
   engines.delete(tableId);
   tournamentOwnedTableIds.delete(tableId);
   onReleased?.();

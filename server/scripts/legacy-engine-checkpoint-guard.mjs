@@ -1165,8 +1165,14 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
                 failedField: name,
                 // Observability only. The allowance on this one field turns on the
                 // permit phase, so a refusal here is unreadable without it.
+                // It travels in `observedDetail`, the carried key, not in one of
+                // its own: an unlisted key is dropped before anyone reads it.
                 ...(name === 'terminalBoundaryPendingGenerations'
-                  ? { failedPermitPhase: capture.phase === null ? 'none' : capture.phase }
+                  ? {
+                      observedDetail: `permitPhase=${
+                        capture.phase === null ? 'none' : capture.phase
+                      }`,
+                    }
                   : {}),
               }));
             }
@@ -1305,6 +1311,58 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             );
             return found === undefined ? 'none' : found[0];
           };
+          // `captureDrainedF06Originals()` is all-or-nothing: it returns the
+          // stable `drainedF06Originals` array, or `null` the moment any one of
+          // its thirteen drain conditions stops holding. The identity compare
+          // above therefore reports only THAT it flipped, never which condition
+          // did it - and that method runs inside the deployed engine, which is
+          // the build this release is trying to replace, so it cannot be
+          // instrumented from here. Read the same fields it reads, off the same
+          // manager, and name the ones that are not in the drained shape.
+          // Observability only: every read is a plain property or `.size`.
+          const drainWitness = () => {
+            const size = (value) => (value && typeof value.size === 'number' ? value.size : -1);
+            const flipped = [
+              ['drainedF06Originals', () => !manager.drainedF06Originals],
+              ['stopFenceApplied', () => !manager.stopFenceApplied],
+              ['tournamentLeaseAuthorityExpired', () => !manager.tournamentLeaseAuthorityExpired],
+              ['running', () => Boolean(manager.running)],
+              ['teardownPromise', () => Boolean(manager.teardownPromise)],
+              ['lifecycleOperation', () => Boolean(manager.lifecycleOperation)],
+              ['lifecycleJobs', () => size(manager.lifecycleJobs) > 0],
+              ['tableEngineStartJobs', () => size(manager.tableEngineStartJobs) > 0],
+              ['tableEngineRunJobs', () => size(manager.tableEngineRunJobs) > 0],
+              ['eliminationSchedulerJobs', () => size(manager.eliminationSchedulerJobs) > 0],
+              ['lifecycleTimeouts', () => size(manager.lifecycleTimeouts) > 0],
+              ['lifecycleIntervals', () => size(manager.lifecycleIntervals) > 0],
+              [
+                'tableEngines.length',
+                () =>
+                  size(manager.tableEngines) !==
+                  (manager.drainedF06Originals ? manager.drainedF06Originals.length : -1),
+              ],
+              [
+                'engineNotDrained',
+                () =>
+                  (manager.drainedF06Originals ?? []).some(
+                    ([id, engine]) =>
+                      manager.tableEngines.get(id) !== engine ||
+                      engine.isRunning() ||
+                      !engine.hasReleasedProcessOwnership() ||
+                      engine.hasSettlementInFlight()
+                  ),
+              ],
+            ]
+              .filter(([, test]) => {
+                try {
+                  return test();
+                } catch {
+                  return true;
+                }
+              })
+              .map(([name]) => name);
+            return flipped.length === 0 ? 'none' : flipped.join(',');
+          };
           const failedEngine = () => {
             const found = exactEngines.find(
               ({ tableId, engine }) =>
@@ -1388,13 +1446,24 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
                   ),
               ],
             ],
+            // `legacy-engine-checkpoint.mjs` carries a fixed set of
+            // observability keys and DROPS every other, so anything that needs
+            // to be read travels in `observedDetail` - the same carrier the
+            // move-boundary clause above already uses - inside its
+            // 512-character and character-class limits.
             () => ({
-              failedTournament: manager.tournamentId,
-              failedMap: failedMap(),
-              failedSet: failedSet(),
               failedTable: failedEngine(),
-              seatMoveRevision: describe(manager.tournamentSeatMoveAuthorityRevision),
-              capturedSeatMoveRevision: describe(revision),
+              observed: describe(manager.captureDrainedF06Originals()),
+              expected: describe(originals),
+              observedDetail: [
+                `tournament=${manager.tournamentId}`,
+                `drain=${drainWitness()}`,
+                `map=${failedMap()}`,
+                `set=${failedSet()}`,
+                `rev=${describe(manager.tournamentSeatMoveAuthorityRevision)}/${describe(revision)}`,
+              ]
+                .join(',')
+                .slice(0, 512),
             })
           );
           return vector();

@@ -78,6 +78,15 @@
  * Authored, in-structure levels return from the persisted branch long before
  * any of this and are untouched by construction.
  */
+--
+-- HOW A READER SEES THIS IS LIVE. This migration creates no persistent object:
+-- it reads public.fn_resolve_tournament_blinds's own definition, patches two
+-- unique text anchors in it and EXECUTEs the result, so nothing new appears in
+-- any catalogue and scripts/ci/check-migrations-are-live.mjs has nothing to
+-- look up. Both halves of the edit are therefore stated as their own proof -
+-- the declaration the ante ceiling needs, and the line that computes it.
+-- @live-proof: (SELECT position('v_ante_ceiling numeric;' in p.prosrc) > 0 FROM pg_proc p WHERE p.oid = to_regprocedure('public.fn_resolve_tournament_blinds(text,integer,text,text,numeric)'))
+-- @live-proof: (SELECT position('v_ante_ceiling := v_bb * v_anchor_ante / v_anchor_bb;' in p.prosrc) > 0 FROM pg_proc p WHERE p.oid = to_regprocedure('public.fn_resolve_tournament_blinds(text,integer,text,text,numeric)'))
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';

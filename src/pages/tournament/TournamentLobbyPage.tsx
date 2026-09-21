@@ -41,6 +41,7 @@ import { totalBuyIn } from '../../utils/buyIn';
 import { relayTournamentEvent } from '../../services/tournamentEventBridge';
 import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
 import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
+import { SpadeConsole } from '../../components/console/SpadeConsole';
 
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
@@ -736,41 +737,44 @@ export default function TournamentLobbyPage() {
           { label: 'Loaded', value: tournaments.length },
         ]}
       />
-      {/* Quick Stats */}
-      <div className={styles.quickStats}>
-        <div className={styles.stat}>
-          <span className={styles.statValue}>{upcomingCount}</span>
-          <span className={styles.statLabel}>Upcoming</span>
-        </div>
-        <div className={styles.stat}>
-          <span className={styles.statValue}>{runningCount}</span>
-          <span className={styles.statLabel}>Live Now</span>
-        </div>
-        <div className={styles.stat}>
-          <span className={styles.statValue}>{tournaments.length}</span>
-          <span className={styles.statLabel}>Total</span>
-        </div>
-      </div>
+      {/* ── THE BOARD (#ClubArenaConsole, 2026-09-20). The casino header above
+          is the route family's pinned anchor and already carries the three
+          counts, so the quick-stats strip that repeated them is gone. What a
+          player does here - search, and narrow by state and by format - sits
+          on the spade master: the search field is the one drawn control (the
+          art paints no field), and every filter is a lit word on the glass,
+          the chosen one white, the rest muted. Nothing is a pill. */}
+      <SpadeConsole
+        as="section"
+        className={styles.board}
+        eyebrow="Tournament Lobby"
+        title="Find Your Game"
+        pill={`${filteredTournaments.length}`}
+        pillInk="blue"
+        foot="foot"
+      >
+        <label className={styles.searchField} htmlFor="tournament-lobby-search">
+          <span className="sc-label sc-ink--blue">Search</span>
+          <input
+            id="tournament-lobby-search"
+            type="search"
+            placeholder="Search Tournaments..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className={styles.searchInput}
+          />
+        </label>
 
-      {/* Search */}
-      <div className={styles.searchBar}>
-        <input
-          type="text"
-          placeholder="Search Tournaments..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className={styles.searchInput}
-        />
-      </div>
-
-      {/* Status Filters */}
-      <div className={styles.filters}>
-        <div className={styles.filterGroup}>
+        <nav className={styles.filters} aria-label="Filter By State">
           {(['all', 'upcoming', 'REGISTERING', 'RUNNING', 'COMPLETED'] as TournamentStatus[]).map(
             (status) => (
               <button
                 key={status}
-                className={`${styles.filterBtn} ${statusFilter === status ? styles.active : ''}`}
+                type="button"
+                aria-pressed={statusFilter === status}
+                className={`${styles.filter} ${
+                  statusFilter === status ? 'sc-ink--white' : 'sc-ink--muted'
+                }`}
                 onClick={() => setStatusFilter(status as TournamentStatus)}
               >
                 {status === 'all'
@@ -785,18 +789,17 @@ export default function TournamentLobbyPage() {
               </button>
             )
           )}
-        </div>
-      </div>
+        </nav>
 
-      {/* Type Filters */}
-      <div className={styles.filters}>
-        <div className={styles.filterGroup}>
+        <nav className={styles.filters} aria-label="Filter By Format">
           {(
             ['all', 'mtt', 'sng', 'spin', 'bounty', 'pko', 'mystery'] as TournamentTypeFilter[]
           ).map((tf) => (
             <button
               key={tf}
-              className={`${styles.filterBtn} ${styles.typeBtn} ${typeFilter === tf ? styles.active : ''}`}
+              type="button"
+              aria-pressed={typeFilter === tf}
+              className={`${styles.filter} ${typeFilter === tf ? 'sc-ink--white' : 'sc-ink--muted'}`}
               onClick={() => setTypeFilter(tf as TournamentTypeFilter)}
             >
               {tf === 'all'
@@ -814,8 +817,8 @@ export default function TournamentLobbyPage() {
                           : 'Mystery'}
             </button>
           ))}
-        </div>
-      </div>
+        </nav>
+      </SpadeConsole>
 
       {/* Tournament List */}
       <div className={styles.tournamentList}>
@@ -826,26 +829,39 @@ export default function TournamentLobbyPage() {
             ))}
           </div>
         ) : filteredTournaments.length === 0 ? (
-          <div className={styles.empty}>
-            <span className={styles.emptyIcon}></span>
-            <p>No Tournaments Found</p>
+          <SpadeConsole
+            as="section"
+            className={styles.board}
+            eyebrow="Tournament Lobby"
+            title="Nothing Scheduled"
+            pill="0"
+            pillInk="muted"
+            foot="foot"
+          >
+            <p className={`sc-copy sc-copy--center ${styles.emptyCopy}`}>No Tournaments Found</p>
             {clubId && !isInUnion && (
               /* 2026-08-27: this linked to /clubs/:id/create-tournament, a
                  route that has never existed — the button 404'd into the
                  catch-all. The create-table picker is the real entry: its
-                 SNG/MTT tabs build tournaments. */
-              <Link to={`/clubs/${clubId}/create-table`} className={styles.createBtn}>
-                + Create Tournament
-              </Link>
+                 SNG/MTT tabs build tournaments. One action, so it is a lit
+                 word on the glass, never a lone plate. */
+              <p className={styles.emptyWay}>
+                <Link to={`/clubs/${clubId}/create-table`} className={`${styles.link} sc-ink--blue`}>
+                  Create Tournament
+                </Link>
+              </p>
             )}
-          </div>
+          </SpadeConsole>
         ) : (
           groupedTournaments.map((group) => (
             <div key={group.label}>
               {/* Time Group Header */}
+              {/* An engraved rule with the window printed on it, not a bar. */}
               <div className={styles.groupHeader}>
-                <span className={styles.groupLabel}>{group.label}</span>
-                <span className={styles.groupCount}>{group.tournaments.length}</span>
+                <span className={`${styles.groupLabel} sc-label sc-ink--blue`}>{group.label}</span>
+                <span className={`${styles.groupCount} sc-label sc-ink--muted`}>
+                  {group.tournaments.length}
+                </span>
               </div>
 
               {/* Tournaments in Group */}

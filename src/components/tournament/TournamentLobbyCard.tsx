@@ -575,7 +575,7 @@ function TournamentLobbyCardInner({
     };
   } else if (tournament.status === 'registering' && isRegistered) {
     primary = {
-      label: 'Registered - Unregister?',
+      label: 'Unregister',
       ink: 'red',
       onClick: (e) => {
         e.stopPropagation();
@@ -691,7 +691,10 @@ function TournamentLobbyCardInner({
                 gtd > 0 ? Math.max(tournament.prizePool, gtd) : tournament.prizePool;
               return compactChips(displayPool);
             })()}
-            {tournament.guaranteedPrize && tournament.guaranteedPrize > 0 && (
+            {/* `guaranteedPrize && ...` printed a literal 0 after the pool
+                ("400" for a 40-chip pool with no guarantee): React renders the
+                number 0. Compare, never coerce. */}
+            {(tournament.guaranteedPrize ?? 0) > 0 && (
               <span className={`${styles.gtd} sc-ink--gold`}>GTD</span>
             )}
           </span>
@@ -757,7 +760,9 @@ function TournamentLobbyCardInner({
           </span>
         </div>
 
-        {hasLateReg && (tournament.status !== 'running' || lateRegActive) && (
+        {hasLateReg &&
+          (tournament.status === 'registering' ||
+            (tournament.status === 'running' && lateRegActive)) && (
           <div className={styles.row}>
             <span className="sc-label sc-ink--blue">Late Reg</span>
             <span className={`${styles.value} sc-ink--gold`}>
@@ -787,7 +792,7 @@ function TournamentLobbyCardInner({
             {hasMaxPlayers
               ? isFull
                 ? 'Tournament Full'
-                : `${spotsRemaining.toLocaleString()} Spots Remaining`
+                : `${spotsRemaining.toLocaleString()} ${spotsRemaining === 1 ? 'Spot' : 'Spots'} Remaining`
               : unlimited
                 ? 'Open Entry'
                 : 'Entry Details Unavailable'}

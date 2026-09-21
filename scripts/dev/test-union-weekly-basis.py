@@ -13,8 +13,14 @@ base=Path(tempfile.mkdtemp(prefix='uw.',dir=os.environ.get('ACCOUNTING_FIXTURE_P
 socket=base/'s';socket.mkdir();port='55531'
 started=False
 try:
- subprocess.run([str(pg/'initdb'),'-D',str(base/'data'),'-U','postgres','-A','trust','--no-locale','-E','UTF8'],check=True,capture_output=True)
- subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-l',str(base/'server.log'),'-o',f"-k {socket} -p {port} -h ''",'-w','start'],check=True,capture_output=True);started=True
+ # A UTF-8 locale inherited from the shell makes Apple's libc resolve it on a
+ # helper thread, and the postmaster refuses to start ('postmaster became
+ # multithreaded during startup'). The cluster is already --no-locale/UTF8, so
+ # declare the C locale for its own lifecycle commands rather than depending on
+ # whatever the caller exported.
+ native=dict(os.environ,LC_ALL='C',LANG='C')
+ subprocess.run([str(pg/'initdb'),'-D',str(base/'data'),'-U','postgres','-A','trust','--no-locale','-E','UTF8'],check=True,capture_output=True,env=native)
+ subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-l',str(base/'server.log'),'-o',f"-k {socket} -p {port} -h ''",'-w','start'],check=True,capture_output=True,env=native);started=True
  def run(sql,label):
   path=base/(label+'.sql');path.write_text(sql)
   result=subprocess.run([str(pg/'psql'),'-X','-q','-v','ON_ERROR_STOP=1','-U','postgres','-h',str(socket),'-p',port,'-d','postgres','-f',str(path)],capture_output=True,text=True)
@@ -148,5 +154,5 @@ try:
  run((root/'tests/fixtures/club-settlement-floor-behaviour/seed.sql').read_text(),'club-floor-behaviour-seed')
  run((root/'tests/fixtures/club-settlement-floor-behaviour/regression.sql').read_text(),'club-floor-behaviour-regression')
 finally:
- if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True)
+ if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True,env=dict(os.environ,LC_ALL='C',LANG='C'))
  print('Evidence retained: '+str(base),flush=True)

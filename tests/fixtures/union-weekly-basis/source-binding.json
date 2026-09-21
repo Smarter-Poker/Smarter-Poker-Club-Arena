@@ -4,7 +4,7 @@
   "historical_catalog": "Original37 accepted provider schema from CI35267921827/native105361807361; no production user rows.",
   "scope": "Prospective complete original weeks. Native tests are separate from protected publication and production behavior.",
   "repository_files": {
-    "scripts/dev/test-union-weekly-basis.py": "2c7627d9e12934c97386eb4c5004786336f2e2b94f9a46fffab76fad6280d3af",
+    "scripts/dev/test-union-weekly-basis.py": "e16cec72506734cae671e381695eec42fe440f10ad263cf3e25c2fb412e2ce36",
     "supabase/accounting/weekly-v3/components/20260914150848_union_pnl_evidence_is_distinct_from_posted_chip_payments.sql": "d09383d8ca6a76aa1d42d99bc4646979f4e2d1adedda16b0e66d450e38b2bcac",
     "supabase/accounting/weekly-v3/components/20260914153000_uncertified_union_pnl_blocks_close_and_squareup.sql": "3532e95c4b22e95121d02836607ffba0d8bca9315d94e5b36883d1037ef947a9",
     "supabase/migrations/20260917230515_union_eco_terms_are_observed_at_their_original_write.sql": "b19f682725f07217236da2a20b1bd53e2d3e804d1f8337a7660567deb25bfafd",

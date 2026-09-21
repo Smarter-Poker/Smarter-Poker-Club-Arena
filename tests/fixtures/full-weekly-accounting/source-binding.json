@@ -295,7 +295,7 @@
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "2e7ed191fbf0b460be4b88109ca960ecf4bb523d23fd91980573a6c0caa2c694",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "a74e9202e3ca78a4d665d24bd68f674339bf235390360ab4dbc877d80caab4fb",
     "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
@@ -313,7 +313,7 @@
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
     "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
-    "tests/fixtures/union-weekly-basis/source-binding.json": "042ab6583213323c275c6111b6301b40e6f85901a6a89a6e5852eac2b2c39cb4",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "3105b0e85a226b854f771e1367ff2834df71a3428d5e23fa169af142fcab4044",
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
@@ -334,7 +334,7 @@
     "tests/fixtures/union-weekly-basis/captured-document-dependencies.json": "b5f5a9e7e0a2a7c710295bcd6b0a1b5aca7ddf9c27a6268167eba1a8e35fa23b",
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
-    "scripts/dev/test-union-weekly-basis.py": "2c7627d9e12934c97386eb4c5004786336f2e2b94f9a46fffab76fad6280d3af",
+    "scripts/dev/test-union-weekly-basis.py": "e16cec72506734cae671e381695eec42fe440f10ad263cf3e25c2fb412e2ce36",
     "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "fa2f2f378db56fa7b586c6ddecaf43d58cac0b34817e8497b13ebb5159f33798",
     "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
     "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf",
@@ -384,7 +384,7 @@
     "tests/fixtures/spin-mixed-cutover/setup.sql": "023ca3e1c6b4614d83190bcd7c1ad8f8a1e7d5ceea8ffa419564b59aa5d2e06c",
     "scripts/dev/qualify-spin-mixed-cutover.py": "4b50779f6ed435262e7281057d4dbf588dab131fb0a6862fb743d7b13e5d402f",
     "supabase/migrations/20260918085836_original_mixed_cutover_spin_fee_proof.sql": "a79d6e958f06bf17470a870e20167fa2e9b0cc358cb79a22f75f5866e737f8c6",
-    "tests/fixtures/spin-mixed-cutover/source-binding.json": "3c1a5a9ca988f932f685c3552957136a0be9ab2d85aedde9482d4f5571e3c118",
+    "tests/fixtures/spin-mixed-cutover/source-binding.json": "d38bc93fbeeca09e334fc5b44e165c7ffd386a90a10b23539489b36c2f49313f",
     "tests/fixtures/legacy-fee-finality/fn_terminal_tournament_evidence_is_immutable.sql": "dfb2ee68610de70577b3ed8a61c90a397e4b987bfdec0903654daea61e5c9906",
     "tests/fixtures/legacy-fee-finality/build-candidate.py": "2fc2667d4b6ab644b3f97ba440922900daeb0f9edf67fc6a2874869d6bd90f37",
     "tests/fixtures/legacy-fee-finality/negative.sql": "9a824c9f45318ed8cb665b4de7868fe80788de3f80aff84d06c3a08ee11cc14f",
@@ -423,7 +423,7 @@
     "scripts/ci/classify-ci-changes.mjs": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "dd5b3e8357a67b2a73a27d82a78cded3944e3df84dbf5ed313607bdbf25b3628",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "0a13c64f23d929f0d977a10d00c1ae12c84489fb238c02d3122cf57cd07832df",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "18c86c9ef4c2287570be2a16c5af69320313b114efa7f5dcbea4037b2a6139da",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "d9d71c415e82619749914bce811c5e98cbd488e2ca4450c911f4c1c18bbc6d78",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -482,7 +482,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "82f8a5c6d3b982590e6af78d42df916ca3cec03b9787c1e448dbee8f14c58f40",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "50298ddc1eb469d6fccc1bf75a7d77c11add9e3a174f5e35a627e48737587d8d",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -1638,9 +1638,7 @@
         "sha256": "06b6e8223bc0fd1759acdda3e2f1cc344d68567f4412f13cce656fd11ad7a6ed"
       }
     ],
-    "added_repository_inputs": [
-      "tests/fixtures/rakeback-payout-document/regression.sql"
-    ],
+    "added_repository_inputs": ["tests/fixtures/rakeback-payout-document/regression.sql"],
     "reason": "On 2026-09-14, 420 posted rakeback legs moved 84,041.00 from settlement_suspense into 420 player wallets with settlement_id NULL, no invoice, no receipt and no settlement run; accounting_routed_settlement_runs has never held a row. The writer was fn_club_members_ledger_writer, the AFTER UPDATE OF chip_balance journal trigger on club_members, which takes the leg category from app.ledger_category and defaults the counterparty to settlement_suspense, and which knows no period, certificate, payout row, run or document. It now refuses a rakeback movement by name (rakeback_requires_accounting_authority), and a deferrable constraint trigger states the invariant for every writer (rakeback_payout_leg_undocumented). The 420 historical rows are untouched. No cron, watcher, reconciler or repair loop; no second payer and no second document authority.",
     "qualification": "scripts/dev/test-union-weekly-basis.py installs the migration with the predecessors pristine, so every regression on that cluster - including the real raked weekly close through fn_union_settlement_cascade - runs with the constraint armed. tests/fixtures/rakeback-payout-document/regression.sql then proves both refusals by exact SQLSTATE and name, that the accepted weekly payout satisfies every clause, and that each refusal leaves the journal, documents, deliveries and every balance byte-identical.",
     "first_settleable_week": "The constraint requires a strict subset of what fn_settle_accounting_rakeback_stage already writes and already asserts with routed_rakeback_invoice_delivery_incomplete. It does NOT require chip_ledger.settlement_id, which that authority does not populate on the payout leg, so it cannot refuse 2026-09-21 07:00Z -> 2026-09-28 07:00Z."
@@ -1701,12 +1699,12 @@
       {
         "path": "scripts/dev/test-union-weekly-basis.py",
         "previous_sha256": "e312350cec2816c5490c7522b1b850cd751571b70c848201fd1d7f8f6aa2a220",
-        "sha256": "2c7627d9e12934c97386eb4c5004786336f2e2b94f9a46fffab76fad6280d3af"
+        "sha256": "e16cec72506734cae671e381695eec42fe440f10ad263cf3e25c2fb412e2ce36"
       },
       {
         "path": "tests/fixtures/union-weekly-basis/source-binding.json",
         "previous_sha256": "06b6e8223bc0fd1759acdda3e2f1cc344d68567f4412f13cce656fd11ad7a6ed",
-        "sha256": "042ab6583213323c275c6111b6301b40e6f85901a6a89a6e5852eac2b2c39cb4"
+        "sha256": "3105b0e85a226b854f771e1367ff2834df71a3428d5e23fa169af142fcab4044"
       }
     ],
     "added_repository_inputs": [
@@ -1762,7 +1760,7 @@
       {
         "path": "scripts/dev/test-full-weekly-accounting-activation.sh",
         "previous_sha256": "05c4f0889695b0153150bf0855f4c24280ac940006805bff6891e44d3118e65b",
-        "sha256": "2e7ed191fbf0b460be4b88109ca960ecf4bb523d23fd91980573a6c0caa2c694"
+        "sha256": "a74e9202e3ca78a4d665d24bd68f674339bf235390360ab4dbc877d80caab4fb"
       }
     ],
     "reason": "20260921040847 taught atomic_distribute_rake, the CASH rake payer, to declare the earning club on app.ledger_autoledger_club_id, and union cash rake legs have named their club since it committed at ~04:08Z on 2026-09-21. A second producer was left club-less: union rake also arrives from a tournament fee. fn_settle_tournament_rake declares app.ledger_category 'rake', app.ledger_counterparty 'prize_liability' and the counterparty entity for exactly those legs, then credits union_wallets.rake_wallet through increment_union_wallet, and never declared the club - so fn_ca_autoledger took the ELSE branch of its club CASE (union_wallets has no club_id column) and wrote the leg club-less. Measured on production 2026-09-21 06:50Z: 436 union rake legs after the cash fix, of which 435 were from_type='table_stack' and all named their club, and the single club-less leg (chip_ledger 7c1236b3-5b71-4859-9c30-d0c5dd8bce15, 80.00) was from_type='prize_liability'. from_type on a credit IS the payer's declared counterparty, which is what identified the producer from the rows. It is a defect and not a union-scoped leg: fn_settle_tournament_rake refuses a club-less fee bank two statements earlier (tournament_fee_bank_club_required) and hands the same club to increment_union_wallet, which recorded it on union_wallet_transactions.club_id for that very leg. 20260921065613 makes the tournament payer declare that club beside its other ledger-context declarations and clear it at the close of the fee block, which brackets the union credit and keeps fn_recognize_accounting_tournament_fees outside the declared window. Historical rows are not backfilled. hooks-regression.sql gains four assertions: the tournament payer declares and clears once, the declaration and clear bracket the credit, the club-less-fee refusal still stands, and - derived from the catalog rather than from a list - every union rake CREDIT producer declares its club, so a third door is caught the day it appears. No existing assertion was weakened or removed and the diff is append-only before that file's final ROLLBACK.",

@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude/union-club-settlement-floor-discovery-20260920",
+  "tables": ["club_settlement_floor", "accounting_deferred_obligations"],
+  "functions": ["fn_club_settlement_floor_week"]
+}

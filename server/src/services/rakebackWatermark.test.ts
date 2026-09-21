@@ -134,6 +134,7 @@ vi.mock('./errorReporter.js', () => ({
 import {
   RakebackSettlerService,
   FETCH_LIMIT,
+  CREDIT_BATCH_SIZE,
   MAX_DRAIN_BATCHES,
 } from './RakebackSettlerService.js';
 
@@ -811,7 +812,7 @@ describe('cash source receipts protect the durable cursor', () => {
     expect(mockRpc).toHaveBeenCalledTimes(drainedCalls);
   });
   it('holds the page if a later chunk returns a legacy response across cutover', async () => {
-    const dataset = Array.from({ length: 151 }, (_, n) => ({
+    const dataset = Array.from({ length: CREDIT_BATCH_SIZE + 1 }, (_, n) => ({
       ...creditedRow(),
       id: uid(n + 1),
       created_at: ts(200 + n),
@@ -845,7 +846,7 @@ describe('cash source receipts protect the durable cursor', () => {
     const batches = mockRpc.mock.calls.filter(
       ([name]) => name === 'fn_credit_agent_commissions_batch'
     );
-    expect(batches.map(([, args]) => args.p_items.length)).toEqual([150, 1]);
+    expect(batches.map(([, args]) => args.p_items.length)).toEqual([CREDIT_BATCH_SIZE, 1]);
     expect(
       batches.flatMap(([, args]) =>
         args.p_items.map((item: { source_id: string }) => item.source_id)

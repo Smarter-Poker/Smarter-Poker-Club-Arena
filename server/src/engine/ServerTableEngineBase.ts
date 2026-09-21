@@ -2184,6 +2184,15 @@ export abstract class ServerTableEngineBase {
   protected boundaryPauseWaiters: Set<() => void> = new Set();
   protected terminalBoundaryPersistenceGeneration = 0;
   protected terminalBoundaryPendingGenerations: Set<number> = new Set();
+  /**
+   * The THIRD outcome. A generation this engine's own fence orphaned: not
+   * pending, not failed, ABANDONED - with the reason it was abandoned and the
+   * instant it happened. See abandonTerminalBoundaryPersistence.
+   */
+  protected terminalBoundaryAbandonedGenerations: Map<
+    number,
+    { reason: string; atMs: number; handNumber: number }
+  > = new Map();
   protected terminalBoundaryPersistenceFailed = false;
   protected terminalCloseoutDiscardedPreparedHand = false;
 
@@ -5036,6 +5045,11 @@ export abstract class ServerTableEngineBase {
       // is still pending.
     }
     this.handController = null;
+    // The line above is what makes an open terminal boundary unreachable: no
+    // HAND_COMPLETE can dispatch without a controller, and every resolver is
+    // downstream of it. Name that outcome here, immediately, rather than
+    // leaving a count that reads "pending" for the rest of the process's life.
+    this.abandonTerminalBoundaryPersistence(`engine_fenced:${reason}`);
     if (notifyOwner) this.signalRestartRequired(reason);
   }
 
@@ -5497,9 +5511,62 @@ export abstract class ServerTableEngineBase {
 
   /** Resolve exactly the generation opened immediately before HandController.start. */
   protected finishTerminalBoundaryPersistence(generation: number, succeeded: boolean): void {
-    if (!this.terminalBoundaryPendingGenerations.delete(generation)) return;
+    const pending = this.terminalBoundaryPendingGenerations.delete(generation);
+    // A fence can land while postHandTasks is still writing, so a generation
+    // this engine already abandoned may still be resolved afterwards by work
+    // that was in flight at the fence. A LATE FAILURE IS STILL A FAILURE:
+    // abandoning a generation drops the deadlock, never the signal. A late
+    // SUCCESS retires the abandonment record, because it did resolve.
+    const abandoned = !pending && this.terminalBoundaryAbandonedGenerations.delete(generation);
+    if (!pending && !abandoned) return;
     if (!succeeded) this.terminalBoundaryPersistenceFailed = true;
     this.notifyBoundaryPauseWaiters();
+  }
+
+  /**
+   * A THIRD named outcome: abandoned. Neither success nor failure.
+   *
+   * `beginTerminalBoundaryPersistence` opens a generation immediately before
+   * `HandController.start()`, and all three call sites that resolve one -
+   * ServerTableEngineDealing (the hand never started),
+   * ServerTableEngineSettlement (post-hand tasks rejected, and the
+   * authoritative commit succeeded) - are DOWNSTREAM OF `HAND_COMPLETE`.
+   * `fenceTerminalEngine` sets `this.handController = null` synchronously, so
+   * after a fence no `HAND_COMPLETE` can ever dispatch on this engine and no
+   * resolver can ever run. The generation is then unreachable: the count says
+   * "pending" for ever while the truth is "abandoned, and nothing will ever
+   * resolve me". That is the CLAUDE.md 10.86 shape - a signal that answers
+   * confidently when it cannot tell - and it is what held the 2026-09-18
+   * cutover shut through 70 consecutive breaks.
+   *
+   * DELIBERATELY NOT `finishTerminalBoundaryPersistence(generation, false)`.
+   * `false` sets `terminalBoundaryPersistenceFailed`, which asserts the
+   * boundary did NOT succeed - a fact not in evidence here, and one every
+   * reader checks one step earlier, so the deadlock would move up a line
+   * rather than end. Whether that hand settled is answered from the database
+   * (`hand_state_snapshots`, `f06_hand_permits`), never from the memory of a
+   * process that is already dead.
+   */
+  private abandonTerminalBoundaryPersistence(reason: string): void {
+    if (this.terminalBoundaryPendingGenerations.size === 0) return;
+    const atMs = Date.now();
+    for (const generation of [...this.terminalBoundaryPendingGenerations]) {
+      this.terminalBoundaryPendingGenerations.delete(generation);
+      if (this.terminalBoundaryAbandonedGenerations.has(generation)) continue;
+      this.terminalBoundaryAbandonedGenerations.set(generation, {
+        reason,
+        atMs,
+        handNumber: this.handCount,
+      });
+    }
+    this.notifyBoundaryPauseWaiters();
+  }
+
+  /** Read-only: what this engine's fence orphaned, and why. */
+  abandonedTerminalBoundaries(): { generation: number; reason: string; atMs: number }[] {
+    return [...this.terminalBoundaryAbandonedGenerations]
+      .map(([generation, detail]) => ({ generation, reason: detail.reason, atMs: detail.atMs }))
+      .sort((a, b) => a.generation - b.generation);
   }
 
   /** Wake every closeout waiter after a relevant lifecycle edge. */

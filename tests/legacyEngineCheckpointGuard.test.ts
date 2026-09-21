@@ -66,6 +66,8 @@ function fixture(count = 1, predecessor = release) {
   let remaining = 300000;
   let onWrite: ((engine: Table) => Promise<void> | void) | undefined;
   let onRead: ((data: any[]) => any[]) | undefined;
+  const snapshotReads: { ids: string[]; since: string }[] = [];
+  let onSnapshots: ((ids: string[], since: string) => { data: any; error: any }) | undefined;
   class Maintenance {
     phase = 'counting_down';
     announcedAt = Date.now() - 120000;
@@ -265,6 +267,35 @@ function fixture(count = 1, predecessor = release) {
     client: {
       supabase: {
         from: (name: string) => {
+          if (name === 'hand_state_snapshots') {
+            // The in-flight read: incomplete rows written inside the window.
+            const filter: any = {
+              ids: [] as string[],
+              since: '',
+              in: (key: string, ids: string[]) => {
+                expect(key).toBe('table_id');
+                filter.ids = ids;
+                return filter;
+              },
+              eq: (key: string, value: unknown) => {
+                expect([key, value]).toEqual(['is_complete', false]);
+                return filter;
+              },
+              gte: (key: string, value: string) => {
+                expect(key).toBe('updated_at');
+                filter.since = value;
+                return filter;
+              },
+              limit: async (bound: number) => {
+                expect(bound).toBe(filter.ids.length + 1);
+                snapshotReads.push({ ids: [...filter.ids], since: filter.since });
+                return onSnapshots
+                  ? onSnapshots(filter.ids, filter.since)
+                  : { data: [], error: null };
+              },
+            };
+            return { select: () => filter };
+          }
           expect(name).toBe('engine_presence_parked');
           return {
             select: () => ({
@@ -294,6 +325,7 @@ function fixture(count = 1, predecessor = release) {
     options,
     calls,
     rows,
+    snapshotReads,
     first: [...server.tableEngines.values()][0],
     run: (discovered = [server]) =>
       legacyEngineCheckpointGuard.call(server, options, discovered, modules),
@@ -302,6 +334,9 @@ function fixture(count = 1, predecessor = release) {
     },
     onRead: (hook: typeof onRead) => {
       onRead = hook;
+    },
+    onSnapshots: (hook: typeof onSnapshots) => {
+      onSnapshots = hook;
     },
     remaining: (value: number) => {
       remaining = value;
@@ -928,10 +963,66 @@ function mixedFixture() {
       return { error: null, data: changeResponse ? changeResponse(name, data) : data };
     },
   });
+  /* A SECOND original on one manager holding NO permit at all - the shape the
+     rows actually show for the derelict table. Its hand resolved and cleared
+     `f06CurrentPermit`, while `terminalBoundaryPendingGenerations` kept the
+     integer that nothing downstream of HAND_COMPLETE can ever resolve. The
+     manager keeps its interrupted sibling, so `originalDispositions === 1` -
+     which this profile has required since long before #5011 - still holds.
+     With no permit to carry it, the lifecycle witness is the retained break. */
+  const abandonedOriginal = (managerIndex = 0) => {
+    const { manager } = originals[managerIndex];
+    const e: any = new f.Table(300 + managerIndex);
+    e.running = false;
+    e.terminal = true;
+    e.terminalTeardownComplete = true;
+    e.teardownPromise = Promise.resolve();
+    e.dealingLoopPromise = null;
+    e.seatBoundaryTail = Promise.resolve();
+    e.snapshotFlushPromise = null;
+    e.readContinuationTasks = new Set();
+    e.tournamentMoveOperationByOwner = new Map();
+    e.entryHoldWriteChains = new Map();
+    e.f06HandPreparation = null;
+    e.f06AllocationEpoch = null;
+    e.f06CurrentPermit = null;
+    e.lifecycleDiagnostics = { instanceId: uuid(85500 + managerIndex) };
+    e.engineLeaseScope = 'tournament';
+    e.engineLeaseVerified = true;
+    e.engineLeaseTournamentId = manager.tournamentId;
+    e.engineLeaseGeneration = manager.tournamentLeaseGeneration;
+    e.hasOnlyDrainedTournamentMoveOwner = () => true;
+    e.timeBankEngine.playerBanks.clear();
+    e.timeBankMeta.clear();
+    const breakId = uuid(83500 + managerIndex);
+    manager.retainedTournamentBreakSources.set(e.tableId, { breakId, engine: e });
+    manager.durableTournamentBreaks.set(breakId, { lifecycle: '1' });
+    manager.tableEngines.set(e.tableId, e);
+    manager.drainedF06Originals.push([e.tableId, e]);
+    dataActorContext.bindTournamentDataAuthorityMethods(
+      { tournamentId: manager.tournamentId, leaseGeneration: manager.tournamentLeaseGeneration },
+      e
+    );
+    f.server.tableEngines.set(e.tableId, e);
+    f.server.tournamentOwnedTables.add(e.tableId);
+    return e;
+  };
+  /* Take the interrupted permit off a manager's FIRST original, leaving it the
+     lifecycle witness a permit used to carry - so the run reaches the custody
+     proof rather than stopping at `mixed_original_lifecycle_unproven` and
+     telling us nothing about the disposition. */
+  const clearInterruptedPermit = (managerIndex = 0) => {
+    const { engine, manager } = originals[managerIndex];
+    engine.f06CurrentPermit = null;
+    manager.durableTournamentBreaks.set(uuid(83000 + managerIndex), { lifecycle: '1' });
+    return engine;
+  };
   return {
     ...f,
     intent,
     originals,
+    abandonedOriginal,
+    clearInterruptedPermit,
     receipts,
     rpcCalls,
     onRpc: (cb: typeof onRpc) => {
@@ -1212,5 +1303,117 @@ describe('exact 8825 retained original custody retirement', () => {
     });
     expect(f.rpcCalls).toEqual([]);
     expect(f.server.tableEngines.size).toBe(3);
+  });
+});
+
+describe('an abandoned boundary generation is proved from rows, never assumed', () => {
+  it('reads no row at all when no generation is open', async () => {
+    const f = mixedFixture();
+    expect((await f.run()).ok).toBe(true);
+    expect(f.snapshotReads).toEqual([]);
+  });
+
+  it('defers the unreachable generation and retires only after the felt is proved quiet', async () => {
+    const f = mixedFixture();
+    const stuck = f.abandonedOriginal();
+    stuck.terminalBoundaryPendingGenerations.add(7);
+    const before = Date.now();
+    const result: any = await f.run();
+    expect(result.ok).toBe(true);
+    // The proof ran, named the exact table, and ran BEFORE any custody RPC.
+    expect(f.snapshotReads).toHaveLength(1);
+    expect(f.snapshotReads[0].ids).toEqual([stuck.tableId]);
+    const since = Date.parse(f.snapshotReads[0].since);
+    expect(since).toBeGreaterThanOrEqual(before - 120000);
+    expect(since).toBeLessThanOrEqual(Date.now() - 119000);
+    expect(f.rpcCalls.length).toBeGreaterThan(0);
+    expect(result.abandonedBoundaries).toContain(`${stuck.tableId}:1`);
+    expect(f.server.tableEngines.has(stuck.tableId)).toBe(false);
+    // The engine's own fields are untouched: the guard proves, it never edits.
+    expect([...stuck.terminalBoundaryPendingGenerations]).toEqual([7]);
+    expect(stuck.terminalBoundaryPersistenceFailed).toBe(false);
+  });
+
+  it.each([
+    ['a hand in the air', () => ({ data: [{ table_id: 'x', hand_number: 1 }], error: null })],
+    ['an unreadable answer', () => ({ data: null, error: { message: 'PGRST002' } })],
+    ['a body that is not a list', () => ({ data: { table_id: 'x' }, error: null })],
+  ])('refuses on %s, and retires nothing', async (_label, answer) => {
+    const f = mixedFixture();
+    f.abandonedOriginal().terminalBoundaryPendingGenerations.add(7);
+    f.onSnapshots(answer as any);
+    const result: any = await f.run();
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('mixed_abandoned_generation_unproven');
+    expect(result.abandonedBoundaries).toBeUndefined();
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(4);
+  });
+
+  it.each([
+    ['a generation that is not a positive integer', (e: any) => e.add('7')],
+    [
+      'more generations than a table can hold',
+      (e: any) => {
+        for (let n = 1; n <= 65; n += 1) e.add(n);
+      },
+    ],
+  ])('refuses %s without consulting the database', async (_label, alter) => {
+    const f = mixedFixture();
+    alter(f.abandonedOriginal().terminalBoundaryPendingGenerations);
+    const result: any = await f.run();
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('mixed_original_work_not_drained');
+    expect(result.failedCheck).toBe('engineCollection.abandonedShape');
+    expect(f.snapshotReads).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(4);
+  });
+
+  it('refuses a boundary that moves between observations', async () => {
+    const f = mixedFixture();
+    const stuck = f.abandonedOriginal();
+    stuck.terminalBoundaryPendingGenerations.add(7);
+    // The live fleet write happens after capture; a boundary that grows there
+    // is a moving one, not the abandoned one that was observed.
+    f.onWrite(() => {
+      stuck.terminalBoundaryPendingGenerations.add(8);
+    });
+    const result: any = await f.run();
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('mixed_original_work_not_drained');
+    expect(result.failedCheck).toBe('engineCollection.abandonedChanged');
+    expect(f.server.tableEngines.size).toBe(4);
+  });
+
+  it('still refuses a fenced engine whose boundary is recorded as failed', async () => {
+    const f = mixedFixture();
+    const stuck = f.abandonedOriginal();
+    stuck.terminalBoundaryPendingGenerations.add(7);
+    stuck.terminalBoundaryPersistenceFailed = true;
+    const result: any = await f.run();
+    expect(result.ok).toBe(false);
+    expect(result.failedCheck).toBe('engine.terminalBoundaryPersistenceFailed');
+    expect(f.snapshotReads).toEqual([]);
+  });
+
+  /* THE DEFERRAL IS NOT A ROUTE PAST THE DISPOSITION PROOF. Proving the felt
+     quiet says a hand is not in the air; it says nothing about who holds
+     custody of the interruption this checkpoint exists to hand over. That is
+     still `sealAndRetireOriginals`' job, and this profile has required exactly
+     one interrupted original per manager since long before #5011. A manager
+     whose only originals have no permit at all is refused after the row proof
+     and before the committing RPC - nothing retired, no custody transferred. */
+  it('refuses a deferred manager that holds no interrupted original at all', async () => {
+    const f = mixedFixture();
+    const stuck = f.abandonedOriginal();
+    stuck.terminalBoundaryPendingGenerations.add(7);
+    f.clearInterruptedPermit();
+    const result: any = await f.run();
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('mixed_original_disposition_set_changed');
+    // The row proof still ran first, and still refused nothing on its own.
+    expect(f.snapshotReads).toHaveLength(1);
+    expect(f.receipts.size).toBe(0);
+    expect(f.server.tableEngines.has(stuck.tableId)).toBe(true);
   });
 });

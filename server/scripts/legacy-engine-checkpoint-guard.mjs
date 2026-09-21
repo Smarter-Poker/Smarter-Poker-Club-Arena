@@ -37,6 +37,13 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   const maxEntriesPerTable = 64;
   const concurrency = 32;
   const readPageSize = 100;
+  // ONE definition of "a hand is in the air", shared with the release gate:
+  // an INCOMPLETE `hand_state_snapshots` row WRITTEN TO in the last 120s.
+  // Measured and derived in server/scripts/engine-release-inflight-hands.py
+  // (PR #5003) - live hands cluster under 60s, corpses are hours to weeks old,
+  // and the band between is empty. Do not invent a second predicate here: two
+  // definitions of the same fact is how a gate ends up disagreeing with itself.
+  const inflightWindowMs = 120000;
   const filePins = retained8825
     ? [
         [
@@ -139,6 +146,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   let verifiedTables = 0;
   let bankCount = 0;
   let uninitializedSeats = 0;
+  // Observability only: which tables were PROVED abandoned from rows, and how
+  // many generations each carried. Never read by a decision.
+  let abandonedBoundaries = null;
   const refuse = (code) => {
     if (reason === null) reason = code;
     throw new Error('legacy_checkpoint_refused');
@@ -236,6 +246,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     restartAuthorized: false,
     // Appended last so every pre-existing key keeps its exact name, value
     // and position. `reason` above is untouched for existing parsers.
+    ...(abandonedBoundaries === null ? {} : { abandonedBoundaries }),
     ...(refusalDetail === null ? {} : refusalDetail),
   });
 
@@ -303,6 +314,12 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     const beganMonotonicMs = performance.now();
     const entries = [...tableMap.entries()];
     const retiredOriginals = new Set();
+    // Tables whose ONLY unfinished item is a terminal-boundary generation that
+    // can never resolve in this process. They are NOT waved through here:
+    // `physical()` is synchronous and may not read a row, so it DEFERS them,
+    // and `proveAbandonedBoundaries` refuses unless the database says the felt
+    // is quiet for each one, before any original is retired.
+    const deferredAbandonedBoundaries = new Map();
     const retainedManagers = [];
     let checkRetained = () => {};
     const engines = new Set();
@@ -1004,21 +1021,109 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               () => ({ failedField: name })
             );
             const size = collection.size;
-            // Exactly one hand can be outstanding on a terminal engine, so the
-            // allowance is one entry on one field. For every other field, and for
-            // this field on an engine with no undischarged permit, `allowed` is 0
-            // and `size <= 0` is `size === 0` - including a malformed collection
-            // whose `size` is undefined - so the refusal, its order and its
-            // reported `expected` are unchanged.
-            const allowed = name === 'terminalBoundaryPendingGenerations' && interrupted ? 1 : 0;
-            drained(size <= allowed, 'engineCollection.size', size, String(allowed), () => ({
-              failedField: name,
-              // Observability only. The allowance on this one field turns on the
-              // permit phase, so a refusal here is unreadable without it.
-              ...(name === 'terminalBoundaryPendingGenerations'
-                ? { failedPermitPhase: capture.phase === null ? 'none' : capture.phase }
-                : {}),
-            }));
+            // THREE OUTCOMES ON THIS ONE FIELD, NOT TWO (merged 2026-09-21).
+            // #5020 and #5021 answer different questions about the same set and
+            // THE PERMIT IS WHAT SEPARATES THEM, so neither can mask the other:
+            //
+            //   permit !== null && phase === 'attempted'  -> #5020 ADMITS ONE.
+            //     `beginTerminalBoundaryPersistence` has one call site and on an
+            //     engine holding a permit it runs inside `F06HandPermit.start`,
+            //     one line after the phase becomes `attempted`. So the integer IS
+            //     that started, cut-off hand, and `sealAndRetireOriginals` demands
+            //     an `aborted_unsettled` receipt naming this engine, manager and
+            //     container before anything irreversible.
+            //   permit !== null && phase !== 'attempted'  -> REFUSE, `expected` 0,
+            //     before any row read and before any RPC. By the same argument the
+            //     integer cannot exist in those phases at all, so this combination
+            //     is an engine we do not understand - exactly the case to fail
+            //     closed on, never to defer.
+            //   permit === null                           -> #5021 DEFERS. #5020's
+            //     argument is about an engine HOLDING a permit; with none there is
+            //     no phase to reason from and no outstanding hand, so nothing
+            //     downstream of HAND_COMPLETE can ever resolve the generation. It
+            //     is abandoned, and `proveAbandonedBoundaries` proves the felt
+            //     quiet from rows before anything is retired.
+            //
+            // Gating the deferral on `permit === null` leaves #5020 byte-for-byte
+            // wherever a permit exists, including its refusal and its reported
+            // `expected`, and covers only the gap its phase argument cannot reach.
+            // Measured on engine 8825af51: under #5011's older triple, table
+            // 2c621856 refused four times with `expected:"0"`; on #5020's SHA
+            // (`db885b29`) the refusal moved off this field entirely, which is
+            // what an admitted `attempted` generation looks like. The deferral
+            // below is therefore dormant for that table and is the net under it.
+            if (size !== 0 && name === 'terminalBoundaryPendingGenerations' && permit === null) {
+              // A generation is opened immediately before HandController.start
+              // and removed only downstream of HAND_COMPLETE. `handController`
+              // is null on this engine - proved above - so no HAND_COMPLETE can
+              // dispatch here and no resolver can ever run. This count cannot
+              // reach zero however long anyone waits: it says "pending" while
+              // the truth is "abandoned, and nothing will ever resolve me"
+              // (CLAUDE.md 10.86). Refusing on it forever is how one derelict
+              // table held 70 consecutive cutovers shut.
+              //
+              // It is NOT waved through here. This function is synchronous and
+              // cannot ask the database, and a drain check satisfied with no
+              // row read is exactly the hazard this gate exists to prevent. So
+              // the table is DEFERRED, and `proveAbandonedBoundaries` refuses
+              // the whole checkpoint unless rows prove the felt is quiet for it
+              // - before `sealAndRetireOriginals` retires anything.
+              const generations = collection instanceof Set ? [...collection] : [];
+              drained(
+                collection instanceof Set &&
+                  size <= maxEntriesPerTable &&
+                  generations.every((value) => Number.isSafeInteger(value) && value > 0) &&
+                  // Every conjunct below was read above and already refused on;
+                  // they are restated so the deferral is legible in one place
+                  // and cannot outlive the drain proof it depends on.
+                  running === false &&
+                  terminal === true &&
+                  terminalTeardownComplete === true &&
+                  releasedProcessOwnership === true &&
+                  handController === null &&
+                  dealingLoopPromise === null &&
+                  postHandTasksPromise === null &&
+                  snapshotFlushPromise === null &&
+                  f06HandPreparation === null &&
+                  f06RecoveryInFlight === false &&
+                  // "Did not succeed" is a different claim, checked one step
+                  // earlier. An abandoned boundary never asserts it.
+                  terminalBoundaryPersistenceFailed === false,
+                'engineCollection.abandonedShape',
+                size,
+                'an unreachable generation on a fenced, fully drained engine',
+                () => ({ failedField: name })
+              );
+              const signature = canonical([...generations].sort((a, b) => a - b));
+              const previous = deferredAbandonedBoundaries.get(tableId);
+              // physical() runs again on every re-verification. A set that
+              // MOVED is a live boundary, not the abandoned one that was
+              // proved, and it refuses with the original code.
+              drained(
+                previous === undefined || previous.signature === signature,
+                'engineCollection.abandonedChanged',
+                size,
+                'the exact generations first observed',
+                () => ({ failedField: name })
+              );
+              deferredAbandonedBoundaries.set(tableId, { signature, count: generations.length });
+            } else {
+              // Exactly one hand can be outstanding on a terminal engine, so the
+              // allowance is one entry on one field. For every other field, and for
+              // this field on an engine with no undischarged permit, `allowed` is 0
+              // and `size <= 0` is `size === 0` - including a malformed collection
+              // whose `size` is undefined - so the refusal, its order and its
+              // reported `expected` are unchanged.
+              const allowed = name === 'terminalBoundaryPendingGenerations' && interrupted ? 1 : 0;
+              drained(size <= allowed, 'engineCollection.size', size, String(allowed), () => ({
+                failedField: name,
+                // Observability only. The allowance on this one field turns on the
+                // permit phase, so a refusal here is unreadable without it.
+                ...(name === 'terminalBoundaryPendingGenerations'
+                  ? { failedPermitPhase: capture.phase === null ? 'none' : capture.phase }
+                  : {}),
+              }));
+            }
             const expectSet = engineSets.includes(name);
             drained(
               expectSet ? collection instanceof Set : collection instanceof Map,
@@ -1241,6 +1346,49 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       }
       checkMaintenance();
       return retained;
+    }
+
+    // Prove, PER TABLE and from rows, that every deferred boundary generation
+    // is abandoned rather than in flight. Nothing is retired and no custody RPC
+    // is sent until this has answered for all of them.
+    //
+    // The predicate is the one the release gate already uses (see
+    // `inflightWindowMs`): an INCOMPLETE `hand_state_snapshots` row WRITTEN TO
+    // inside the window. Freshness is the discriminator - thousands of stale
+    // incomplete rows exist fleet-wide, and gating on their mere existence
+    // would refuse every cutover for ever, which is the same forever-block one
+    // level up (CLAUDE.md 10.86 rule 4).
+    //
+    // THREE OUTCOMES. Zero fresh rows is QUIET. Any fresh row is A HAND IN THE
+    // AIR. An error, a non-array body or a page that filled is COULD NOT TELL,
+    // and it refuses - never folded into "no rows" (10.86 rules 1-2). There is
+    // no flag, option or argument that turns this refusal into permission.
+    async function proveAbandonedBoundaries(checkAll) {
+      if (deferredAbandonedBoundaries.size === 0) return;
+      stage = 'mixed_custody';
+      const ids = [...deferredAbandonedBoundaries.keys()].sort();
+      require(ids.length <= maxTables, 'mixed_abandoned_generation_unproven');
+      const since = new Date(Date.now() - inflightWindowMs).toISOString();
+      for (let offset = 0; offset < ids.length; offset += readPageSize) {
+        const page = ids.slice(offset, offset + readPageSize);
+        checkAll();
+        const { data, error } = await modules.client.supabase
+          .from('hand_state_snapshots')
+          .select('table_id,hand_number,stage,updated_at')
+          .in('table_id', page)
+          .eq('is_complete', false)
+          .gte('updated_at', since)
+          .limit(page.length + 1);
+        checkAll();
+        // `error` first, every time: `(await res).data` on a failed read is not
+        // an empty result, and `undefined || []` reads as good news.
+        require(!error && Array.isArray(data) && data.length === 0,
+          'mixed_abandoned_generation_unproven');
+      }
+      checkAll();
+      abandonedBoundaries = `tables=${ids.length} ${ids
+        .map((id) => `${id}:${deferredAbandonedBoundaries.get(id).count}`)
+        .join(' ')}`.slice(0, 512);
     }
 
     async function sealAndRetireOriginals(checkAll) {
@@ -1768,7 +1916,12 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       }
       checkAll();
     }
-    if (retained8825) await sealAndRetireOriginals(checkAll);
+    if (retained8825) {
+      // Order is load-bearing: the row proof comes first, and a refusal there
+      // means nothing was retired and no custody was transferred.
+      await proveAbandonedBoundaries(checkAll);
+      await sealAndRetireOriginals(checkAll);
+    }
     verifyFiles();
     checkAll();
     require(captures.every(({ engine }) => engine.isMaintenanceStateDurable() === true) &&

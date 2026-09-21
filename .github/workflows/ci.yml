@@ -1298,6 +1298,22 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-union-weekly-accounting.sh
+      - name: Lightning Phase 2 domain schema carries its invariants as constraints
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase2-domain.sh
+      - name: Lightning Phase 1 binds a cash session to its cluster without moving it
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase1-cluster-session.sh
+      - name: Lightning Phase 2 remediation joins the hand to its cluster, its instance and its epoch
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase2-remediation.sh
+      - name: Lightning Phase 3 opens a Lightning-capable game as a feeder and keeps it one
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase3-feeder-first.sh
       - name: Credit invoices bill only uninvoiced drawn debt
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

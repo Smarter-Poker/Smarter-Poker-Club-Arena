@@ -14,9 +14,39 @@
   "reviewed_dependencies": {
     "supabase/accounting/weekly-v3/components/20260914131539_cash_commissions_account_for_every_contributor_once.sql": "cfad133fe5581148709f26ae22dd9430f205fb459b9bc0f9f86eafd3ef86f768",
     "supabase/accounting/weekly-v3/components/20260914144442_cash_accounting_refusals_are_durable_and_retryable.sql": "dd50f34cbf18e3a5fb52b6b3873ef74fceb360a2c815212c52de08d183521cfb",
-    "server/src/services/RakebackSettlerService.ts": "31a9394a6e86ba9f693f3f5f1e03d17d7013f258b9e4458c9a97e49e45b32507",
+    "server/src/services/RakebackSettlerService.ts": "db27d7c0209d71cf33cb6c830eab61f02b0cd903cfd6de72bfb17c29a70a2760",
     "tests/fixtures/full-weekly-accounting/tables.json": "0f986db3950d8416e5f2e968972ca03bfdb984bf8aa43267d60b2fce37cf0428",
     "tests/fixtures/full-weekly-accounting/triggers-round-3.json": "383cf9b43093ba5f945a68c9f4f8d1389472e8ce6b1d16f4b18d547a86a0249e"
   },
-  "execution_performed": false
+  "execution_performed": false,
+  "tournament_sentinel_unchecked_reads_rebinding_20260920": {
+    "base_commit": "eb94d08ae8a80f80b7881f3d4d6930da9e6e91c1",
+    "prior_binding_sha256": "109da50db68118b39b2a862d0087803c423f813e0c8b6f25cdc7e89e3645bd45",
+    "failed_run": 35544697528,
+    "source_pull_request": 4979,
+    "source_commit": "1084f49de0",
+    "changed_repository_bindings": [
+      {
+        "path": "server/src/services/RakebackSettlerService.ts",
+        "previous_sha256": "31a9394a6e86ba9f693f3f5f1e03d17d7013f258b9e4458c9a97e49e45b32507",
+        "sha256": "29c9ee64d7c831a8829c488ede8cf5329529c185208ea71809935d8f507ec848"
+      }
+    ],
+    "reason": "PR #4979 repaired runTournamentSentinel in this pinned file. The sentinel assigned newWatermark = t.ended_at at the TOP of each loop iteration, and its three integrity reads were each written `if (!err) { ... }` with no else branch, no reportError and no violation counted. A transient PostgREST failure therefore skipped that tournament's payout-conservation, stranded-player or raked-hand check in silence while the watermark still advanced past it, and the next cycle's `.gt('ended_at', mark)` never read the event again. Each failed sub-read now reports through this service's existing reportError path, and the watermark is advanced at the end of an iteration only for a tournament whose checks all actually ran; a tie on ended_at falls back to the batch's starting mark. The commit also deletes keysetFilter, which has had zero callers since the settler's cursor became a parameterised .eq()/.gt() pair. Neither change touches this qualification's subject. fn_cash_earning_club, the seat-scope attribution it reviews, and the cash-source submission path this service drives into fn_credit_agent_commissions_batch are all untouched: the diff is confined to the tournament sentinel and to a function nothing called. No rate, bank destination, refusal reason, commission, statistic or payout behaviour changes. Regression protection landed with it in server/src/services/tournamentSentinelUncheckedReads.test.ts, which fails 5 of 7 against the previous bytes and passes 7 of 7 against these."
+  },
+  "cash_accounting_batch_budget_rebinding_20260920": {
+    "base_commit": "decdf543d304655602dd0ef8f3538520449772a5",
+    "prior_binding_sha256": "b0fd3903bc74c3f408137aa9244b4065e4792ccf9eac03616d7657a72a49ad19",
+    "failed_run": 35532982289,
+    "source_pull_request": 4978,
+    "source_commit": "cea306f3df",
+    "changed_repository_bindings": [
+      {
+        "path": "server/src/services/RakebackSettlerService.ts",
+        "previous_sha256": "29c9ee64d7c831a8829c488ede8cf5329529c185208ea71809935d8f507ec848",
+        "sha256": "db27d7c0209d71cf33cb6c830eab61f02b0cd903cfd6de72bfb17c29a70a2760"
+      }
+    ],
+    "reason": "PR #4978 re-derived two batch sizes in this pinned file; nothing else in it changed. The diff is four things: an import of cashAccountingBatchSize/resolveClientTimeoutMs from the new import-free server/src/services/cashAccountingBatchBudget.ts; the comment block above the constants, which now records why 150 stopped being a safe number; CREDIT_BATCH_SIZE changed from the literal 150 to cashAccountingBatchSize(resolveClientTimeoutMs()) and exported so a regression suite derives the boundary instead of hard-coding it; and a new CASH_RETRY_LIMIT, derived the same way, replacing the literal 50 passed as p_limit to fn_retry_cash_accounting_sources and the literal 50 in the bound check on the rows it returns. Both resolve to 31 at the shipped 15,000 ms client budget (15000 * 0.6 / 290). WHY. RakebackSettlerService stopped at 2026-09-17 07:28:31 and did not move for three days: 264,835 cash rake_records carrying 485,712.99 of rake queued behind a cursor that never advanced, and no cash agent commission was written anywhere on the platform in that window. Nothing threw. Every cycle opened with fn_retry_cash_accounting_sources(p_limit => 50), which cost about 20.6 s; the engine Supabase client abandons at DB_TIMEOUT_MS (15 s), so the client gave up and wrote 'source_retry_holds_cursor' while the server transaction committed anyway - accounting_cash_source_receipts grew by exactly 50 rows an hour for days. CREDIT_BATCH_SIZE had the same shape of fault: 150 was sized in 2026-08 against the SERVER's ~8 s statement timeout, the functions then set their own 300 s timeout so the server stopped being the constraint, and migration 20260917181100 repointed fn_credit_agent_commissions_batch at fn_process_cash_accounting_source and took one item to ~290 ms. 150 x 290 ms = 43.5 s against a 15 s client. Both literals were honest when written and neither could notice that what bound it had moved (CLAUDE.md 1.1.7). WHAT THIS DOES NOT TOUCH. No rate, bank destination, refusal reason, commission, statistic or payout behaviour changes, and neither does the order in which anything is processed. fn_cash_earning_club and the recorded-seat-scope attribution this qualification reviews are not referenced by the diff; the cash source submission path is unchanged except for how many items one call carries. A batch size decides how much work per call, never what a call decides. REVIEWED AGAINST. The pinned bytes this replaces (29c9ee64...) are origin/main at decdf543d3, which is PR #4979's tournament-sentinel repair merged into this branch first, so the restamp is of the merged tree CI hashes (refs/pull/4978/merge) and carries #4979's change forward untouched. New arithmetic regression protection landed with this: tests/a-cash-batch-is-derived-not-written-down.law.test.ts and server/src/services/cashAccountingBatchBudget.test.ts."
+  }
 }

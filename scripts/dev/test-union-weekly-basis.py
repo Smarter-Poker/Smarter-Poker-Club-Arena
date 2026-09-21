@@ -80,6 +80,10 @@ try:
   sql+='ALTER FUNCTION '+signature+' OWNER TO '+row['owner']+';\n'
  run(sql,'exact-installed-weekly-predecessors')
  run(next((root/'supabase/migrations').glob('20260917234315*.sql')).read_text(),'weekly-qualified-source')
+ # The club settlement floor bounds standalone discovery. Its own preimage
+ # assertions name this exact installed base, so it is applied here, while the
+ # predecessors are still pristine. Its fixture runs last, below.
+ run(next((root/'supabase/migrations').glob('20260920232503*.sql')).read_text(),'club-settlement-floor-source')
  # Export the exact installed candidate before any disposable test calendar or
  # fault injection. These are installation/readback contracts, not live proof.
  migration=next((root/'supabase/migrations').glob('20260917234315*.sql')).read_text()
@@ -121,6 +125,12 @@ try:
  (base/'guard-declaration-qualification.log').write_text(result.stdout+result.stderr)
  if result.returncode:raise AssertionError(result.stdout+result.stderr)
  print(result.stdout,flush=True)
+ # Last on this cluster: the club settlement floor. The declared clock seam and
+ # the synthetic clubs are introduced only after every preceding assertion has
+ # been made, so nothing above can be disturbed by them.
+ run((root/'tests/fixtures/club-settlement-floor/load.sql').read_text(),'club-floor-clock-seam')
+ run((root/'tests/fixtures/club-settlement-floor/seed.sql').read_text(),'club-floor-seed')
+ run((root/'tests/fixtures/club-settlement-floor/regression.sql').read_text(),'club-floor-regression')
 finally:
  if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True)
  print('Evidence retained: '+str(base),flush=True)

@@ -313,7 +313,7 @@
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
     "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
-    "tests/fixtures/union-weekly-basis/source-binding.json": "eba99587a639f1f20754fb7024f11376b3e6f2a6396de3baf629976c10c5ae85",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "9bdc881651bce10ad4c068e4095b18d132a3865b559e34e7c89ea96731e3a1e8",
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
@@ -334,7 +334,7 @@
     "tests/fixtures/union-weekly-basis/captured-document-dependencies.json": "b5f5a9e7e0a2a7c710295bcd6b0a1b5aca7ddf9c27a6268167eba1a8e35fa23b",
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
-    "scripts/dev/test-union-weekly-basis.py": "8d97457e6495f8eeb9f3e1d7b00bbdc94813cab2157fc3fb6be4b748e6ba4dbb",
+    "scripts/dev/test-union-weekly-basis.py": "9e2a62848cae29f8910949c816e9b67d6b37286ba607c285bc17d1a755276ebd",
     "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "fa2f2f378db56fa7b586c6ddecaf43d58cac0b34817e8497b13ebb5159f33798",
     "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
     "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf",
@@ -1563,5 +1563,31 @@
     },
     "reason": "Integration of protected main 15477de6 into the MTT historical-bank-loss branch. scripts/ci/classify-ci-changes.mjs is the union of main's additive Diamond replay/SQL-acceptance and e2e helpers/css directory routing and this branch's additive f06 retired-origin and stopped-bank-custody routing: both sides only added alternatives to the f06HandAuthority selector and to separate selectors, no branch was removed or narrowed, so the merged bytes are new and every pin of that file moves. tests/unit/fixtureNativeCi.test.ts merged to this branch's exact bytes because main's only change to it (the six mixed-custody classification paths from #4907) is already contained here, so its pins return to the value this branch was qualified at. The three nested fixture-binding hashes move only because the bindings that contain those two pins changed. No accounting component, SQL, assertion, captured catalog fixture or limit changed.",
     "verification": "python3 scripts/ci/verify-source-bindings.py re-read every pin map in every source-binding.json in the merged tree and reports 745 pins across 15 sections in 15 binding files all agreeing. python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py accepts the refreshed cash manifest in 6 cases. Every *.manifest.json files{} map in scripts/qualification was re-hashed against the tree: 151 pins, none stale. This refresh establishes no native financial execution and no production installation; the required hosted accounting job must still pass."
+  },
+  "club_settlement_floor_successor_20260920": {
+    "migrations": [
+      "supabase/migrations/20260920232503_club_settlement_floor_bounds_standalone_weekly_discovery.sql",
+      "supabase/migrations/20260920232523_the_uncertifiable_weeks_move_below_the_floor_and_stay_owed.sql"
+    ],
+    "prior_binding_sha256": "ef39943ca84e059c80d6677613313b5f6ee3b9b3d3f4623248f6a5ce393acf72",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/dev/test-union-weekly-basis.py",
+        "previous_sha256": "8d97457e6495f8eeb9f3e1d7b00bbdc94813cab2157fc3fb6be4b748e6ba4dbb",
+        "sha256": "9e2a62848cae29f8910949c816e9b67d6b37286ba607c285bc17d1a755276ebd"
+      },
+      {
+        "path": "tests/fixtures/union-weekly-basis/source-binding.json",
+        "previous_sha256": "eba99587a639f1f20754fb7024f11376b3e6f2a6396de3baf629976c10c5ae85",
+        "sha256": "9bdc881651bce10ad4c068e4095b18d132a3865b559e34e7c89ea96731e3a1e8"
+      }
+    ],
+    "added_repository_inputs": [
+      "tests/fixtures/club-settlement-floor/load.sql",
+      "tests/fixtures/club-settlement-floor/seed.sql",
+      "tests/fixtures/club-settlement-floor/regression.sql"
+    ],
+    "reason": "Standalone-club discovery in fn_process_weekly_accounting_scope carried no settlement floor, so the permanently uncertifiable week of 2026-09-07 re-entered the cursor on every tick and the head-of-line EXIT from 20260907164234 blocked every later week. 20260920232503 adds club_settlement_floor, fn_club_settlement_floor_week and the three GREATEST clamps by the exact-needle pg_get_functiondef successor pattern; 20260920232523 moves both floors to 2026-09-21 07:00Z and records the deferred rakeback. The union scope already respected its floor and is unchanged. The only change to scripts/dev/test-union-weekly-basis.py is four added run() steps that apply 20260920232503 on the exact installed base and then execute the new tests/fixtures/club-settlement-floor regression last, after every pre-existing assertion; tests/fixtures/union-weekly-basis/source-binding.json gains those four inputs and the ordinary JSON formatting the pre-commit hook applies. No captured catalog, component, SQL fixture or existing assertion changed.",
+    "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py: 71 PASS, 0 failures, including club-settlement-floor-source, club-floor-clock-seam, club-floor-seed and club-floor-regression."
   }
 }

@@ -1,4 +1,11 @@
-/** Readiness is a display hint; the claim RPC remains the payout authority. */
+import { pacificAccountingDay, pacificAccountingDayClose } from './pacificAccountingCalendar';
+
+/**
+ * Readiness is a DISPLAY hint only. Rakeback is settled automatically every
+ * Monday at 4:00 AM Central Time by `fn_process_weekly_accounting`; nothing
+ * here moves money, and a ready period is one whose Pacific week has closed
+ * and which the next automatic run will settle.
+ */
 interface ReadinessPeriod {
   id: string;
   club_id: string;
@@ -7,14 +14,33 @@ interface ReadinessPeriod {
   status: string;
 }
 
-// The database DATE is inclusive. A period ending today closes at the next UTC midnight.
-function closesAtUtc(periodEnd: string): number | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(periodEnd)) return null;
-  const start = Date.parse(`${periodEnd}T00:00:00.000Z`);
-  if (!Number.isFinite(start) || new Date(start).toISOString().slice(0, 10) !== periodEnd) {
+/**
+ * `rakeback_periods.period_end` is the INCLUSIVE Pacific Sunday that ends an
+ * accounting week, so the week closes at Pacific midnight starting the next
+ * day - the same instant `accountingWeekEndingOn` derives for that Monday,
+ * 167 and 169-hour DST weeks included. Closing it at UTC midnight instead
+ * presented the week as closed from 17:00 PDT Sunday, 7 hours early (8 in
+ * PST) and 9 hours before the Monday 04:00 America/Chicago run.
+ */
+function closesAtPacific(periodEnd: string): number | null {
+  try {
+    return pacificAccountingDayClose(periodEnd);
+  } catch {
     return null;
   }
-  return start + 24 * 60 * 60 * 1000;
+}
+
+/** The Pacific accounting date an instant falls on: this surface's "today". */
+export function rakebackAccountingDay(nowMs: number): string {
+  return pacificAccountingDay(nowMs);
+}
+
+/**
+ * The next instant any period's readiness can change: Pacific midnight, which
+ * is never later than the close of a period that is still open.
+ */
+export function nextRakebackBoundary(nowMs: number): number | null {
+  return closesAtPacific(pacificAccountingDay(nowMs));
 }
 
 export function getRakebackReadiness(periods: readonly ReadinessPeriod[], nowMs: number) {
@@ -28,7 +54,7 @@ export function getRakebackReadiness(periods: readonly ReadinessPeriod[], nowMs:
     if (period.status !== 'pending') continue;
     const earned = Number(period.rakeback_earned);
     if (!Number.isFinite(earned)) continue;
-    const closesAt = closesAtUtc(period.period_end);
+    const closesAt = closesAtPacific(period.period_end);
     if (earned > 0 && period.club_id && closesAt !== null && closesAt <= nowMs) {
       readyAmount += earned;
       readyPeriodIds.add(period.id);

@@ -4,7 +4,7 @@
   "historical_catalog": "Original37 accepted provider schema from CI35267921827/native105361807361; no production user rows.",
   "scope": "Prospective complete original weeks. Native tests are separate from protected publication and production behavior.",
   "repository_files": {
-    "scripts/dev/test-union-weekly-basis.py": "8d97457e6495f8eeb9f3e1d7b00bbdc94813cab2157fc3fb6be4b748e6ba4dbb",
+    "scripts/dev/test-union-weekly-basis.py": "9e2a62848cae29f8910949c816e9b67d6b37286ba607c285bc17d1a755276ebd",
     "supabase/accounting/weekly-v3/components/20260914150848_union_pnl_evidence_is_distinct_from_posted_chip_payments.sql": "d09383d8ca6a76aa1d42d99bc4646979f4e2d1adedda16b0e66d450e38b2bcac",
     "supabase/accounting/weekly-v3/components/20260914153000_uncertified_union_pnl_blocks_close_and_squareup.sql": "3532e95c4b22e95121d02836607ffba0d8bca9315d94e5b36883d1037ef947a9",
     "supabase/migrations/20260917230515_union_eco_terms_are_observed_at_their_original_write.sql": "b19f682725f07217236da2a20b1bd53e2d3e804d1f8337a7660567deb25bfafd",
@@ -71,6 +71,10 @@
     "tests/fixtures/cash-participant-funding/move-boundary.sql": "24ea87c5deef7974ee486ba5646ff2f4eea5fd8be8f668d34f0a94f775fe0b2b",
     "tests/fixtures/cash-participant-funding/captured-move-preimages.json": "3dd8fc64cd4b8b17ea06794bf5c3556a1f00173d02208040d0f746f36bb83735",
     "tests/fixtures/cash-participant-funding/build-move-candidate.py": "e3b0e431cf94932c4845fb88b97cb2a129e484c4f3f3b2efef737a9db4d5fe39",
-    "tests/fixtures/cash-participant-funding/move-after.sql": "c74c09e5afbac8aeb48de0fae905a132a9a4e1c4503e14beaedcb6d4651a6a0d"
+    "tests/fixtures/cash-participant-funding/move-after.sql": "c74c09e5afbac8aeb48de0fae905a132a9a4e1c4503e14beaedcb6d4651a6a0d",
+    "supabase/migrations/20260920232503_club_settlement_floor_bounds_standalone_weekly_discovery.sql": "8facffa4345b81721f4a408062c96b74bece16df644eb7ff3e6c199c590981f1",
+    "tests/fixtures/club-settlement-floor/load.sql": "7cd182a45ab353a214ee1fde1cd35649b5625c57641e165aec9935f171192669",
+    "tests/fixtures/club-settlement-floor/seed.sql": "0f7ad67c358864fc45d97364606f8504c359cafb32296958d75d8a6290d830bd",
+    "tests/fixtures/club-settlement-floor/regression.sql": "6099eb3f49ea41e33b26626dbbef32d2126634674bd7ac8559357436a2fdb2fd"
   }
 }

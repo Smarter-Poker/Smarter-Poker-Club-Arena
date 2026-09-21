@@ -39,7 +39,7 @@ const read = (p: string) => readFileSync(join(root, p), 'utf8');
 const ci = parse(read('.github/workflows/ci.yml'));
 const wrapper = read(WRAPPER);
 
-/* THE FOURTEEN RUNNERS, NAMED, AND COUNTED IN WORDS.
+/* THE SIXTEEN RUNNERS, NAMED, AND COUNTED IN WORDS.
 
    Every other assertion here derives the population from the directory, which
    is right and is not enough on its own: a directory read agrees with itself
@@ -53,6 +53,7 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-cash-admission.py',
   'run-diamond-cash-custody.py',
   'run-diamond-controlled-play.py',
+  'run-diamond-incident-resolution.py',
   'run-diamond-plain-cash-rule.py',
   'run-diamond-run-it-twice.py',
   'run-diamond-stats-asset-dimension.py',
@@ -60,6 +61,7 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-top-up.py',
   'run-diamond-tournament-doors.py',
   'run-diamond-tournament-lifecycle.py',
+  'run-diamond-transfer-door-and-dr16.py',
   'run-diamond-wallet-transfer.py',
   'run-poker-diamond-custody.py',
 ];
@@ -70,9 +72,9 @@ const A_PRIVATE_CLUSTER = [
   'run-diamond-tournament-doors.py',
   'run-diamond-tournament-lifecycle.py',
 ];
-const HOW_MANY_RUNNERS = 14;
+const HOW_MANY_RUNNERS = 16;
 const HOW_MANY_ON_A_PRIVATE_CLUSTER = 3;
-const HOW_MANY_ON_THE_WRAPPER_CLUSTER = 11;
+const HOW_MANY_ON_THE_WRAPPER_CLUSTER = 13;
 /* No environment variable but PG_BIN may choose a runner's server. PG17_BINDIR
    is the estate's other name for a bin directory, and two variables naming one
    thing is how the two drift apart: a runner that reads it is refused here. */
@@ -90,14 +92,14 @@ describe('every Diamond SQL runner is run by the accounting job', () => {
     expect(findDiamondRunnerProblems(root)).toEqual([]);
   });
 
-  it('is the fourteen runners this file names, counted the same two ways', () => {
+  it('is the sixteen runners this file names, counted the same two ways', () => {
     expect(runnersOnDisk(root)).toEqual(EVERY_DIAMOND_RUNNER);
     expect(EVERY_DIAMOND_RUNNER).toHaveLength(HOW_MANY_RUNNERS);
     expect(runnersOnDisk(root)).toHaveLength(HOW_MANY_RUNNERS);
     expect(HOW_MANY_ON_A_PRIVATE_CLUSTER + HOW_MANY_ON_THE_WRAPPER_CLUSTER).toBe(HOW_MANY_RUNNERS);
   });
 
-  it('names the fourteen runners and the arena access script explicitly', () => {
+  it('names the sixteen runners and the arena access script explicitly', () => {
     const listed = runnersListedInWrapper(wrapper);
     expect(listed).toEqual(expect.arrayContaining(runnersOnDisk(root)));
     expect(listed).toHaveLength(runnersOnDisk(root).length);
@@ -109,6 +111,8 @@ describe('every Diamond SQL runner is run by the accounting job', () => {
     expect(listed).toContain('run-diamond-tournament-doors.py');
     expect(listed).toContain('run-diamond-tournament-lifecycle.py');
     expect(listed).toContain('run-diamond-stats-asset-dimension.py');
+    expect(listed).toContain('run-diamond-incident-resolution.py');
+    expect(listed).toContain('run-diamond-transfer-door-and-dr16.py');
     expect(sqlScriptsListedInWrapper(wrapper)).toEqual(['poker-arena-access.sql']);
   });
 
@@ -141,7 +145,7 @@ describe('every Diamond SQL runner is run by the accounting job', () => {
     /* A proof has to be text the fixture suite really emits, so an invented
        string cannot sit here looking like evidence. Some runners print their
        own closing line and some reach it through an included .sql file, so the
-       haystack is the runner plus every fixture script it can include. Two
+       haystack is the runner plus every fixture script it can include. Four
        runners print a counted total: the count is pinned here and the wording
        is what must exist in the source. */
     const fixtureText = readdirSync(join(root, 'tests/sql'))
@@ -211,6 +215,11 @@ describe('a Diamond acceptance input routes to the accounting job', () => {
     'tests/sql/diamond-controlled-play-driver.ts',
     'tests/sql/diamond-session-fixture.sql',
     'tests/sql/diamond-transfer-cap-fixture.sql',
+    /* The fixtures the incident-resolution and transfer-door runners load.
+       The `diamond-` probe-lane prefix admits them today; naming them here is
+       what fails if that prefix is ever narrowed underneath them. */
+    'tests/sql/diamond-incident-resolution-fixture.sql',
+    'tests/sql/diamond-transfer-door-fixture.sql',
     /* Every file the two tournament runners load out of tests/sql. The runner is
        what the accounting job executes, so a change to what it loads has to
        reach the same job or the acceptance certifies bytes nobody reviewed. */
@@ -243,7 +252,7 @@ const socketPort = /^PORT = '([0-9]+)'$/m.exec(wrapper)?.[1];
 
 /* TWO SHAPES OF RUNNER, AND EVERY RUNNER IS EXACTLY ONE OF THEM.
  *
- * Eleven are hard-wired to the wrapper's socket and port. Three stand up a
+ * Thirteen are hard-wired to the wrapper's socket and port. Three stand up a
  * private cluster of their own, because they load the estate's historical
  * schema base and pin the installed doors against it: they need a cluster
  * nothing else has written to, and two postmasters cannot own one socket and
@@ -303,7 +312,7 @@ describe('the runners stay on their fixed local socket', () => {
       expect(source).not.toContain('/opt/homebrew/opt/postgresql@17/bin/psql');
       /* The cluster is one this runner creates and destroys, in a directory it
          makes for itself. Naming the wrapper's socket or port would put it on a
-         cluster eleven other runners have written to, and would also be the way
+         cluster thirteen other runners have written to, and would also be the way
          a runner slipped from this contract into the other one. */
       expect(source, `${name} must not name the wrapper's socket`).not.toContain(socketDir!);
       expect(source, `${name} must not name the wrapper's port`).not.toContain(socketPort!);

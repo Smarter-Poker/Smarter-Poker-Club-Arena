@@ -1,3 +1,10 @@
+-- This migration creates no object, so it states what a reader would run to see
+-- it is live - one expression per correction, in the order of the header below.
+-- @live-proof: NOT has_function_privilege('authenticated','public.get_current_settlement_period()','EXECUTE')
+-- @live-proof: EXISTS (SELECT 1 FROM public.ca_guard_inventory WHERE id = 30 AND kind = 'cron' AND object_a = 'ca-bbj-repair-unbanked-15m' AND NOT active)
+-- @live-proof: EXISTS (SELECT 1 FROM public.settlement_periods WHERE id = '65d6e3ad-cf2f-41ce-97ff-4c465e8a015f' AND status = 'closed')
+-- @live-proof: NOT EXISTS (SELECT 1 FROM public.chip_ledger WHERE club_id IS NULL AND from_type = 'union_wallet' AND to_type = 'player_wallet' AND to_entity_id = '47965354-0e56-43ef-931c-ddaab82af765' AND category IN ('crash_prize','mines_prize','plinko_prize','wheel_prize'))
+
 -- Four small corrections, each verified against production before writing.
 -- No chips move. Every statement asserts its own scope and aborts the whole
 -- transaction if the board moved underneath it (CLAUDE.md 10.9 rule 4).

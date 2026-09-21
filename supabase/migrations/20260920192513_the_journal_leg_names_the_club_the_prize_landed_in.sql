@@ -1,3 +1,9 @@
+-- This migration creates no object - it replaces two function bodies by asserted
+-- substitution - so it states what a reader would run to see it is live. Both
+-- expressions are the migration's own post-conditions, in its own words.
+-- @live-proof: position('ELSE v_guc_club END;' in pg_get_functiondef('public.fn_ca_autoledger()'::regprocedure)) > 0
+-- @live-proof: EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_diamond_game_pay_chips' AND position('app.ledger_autoledger_club_id' in pg_get_functiondef(p.oid)) > 0)
+
 /* THE JOURNAL LEG NAMES THE CLUB THE PRIZE LANDED IN (2026-09-20)
 
    ==========================================================================

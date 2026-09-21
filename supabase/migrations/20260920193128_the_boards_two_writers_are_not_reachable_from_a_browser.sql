@@ -1,3 +1,9 @@
+-- This migration only REVOKEs and GRANTs, so it creates no object for the
+-- liveness check to look up. These are what a reader would run to see it is live.
+-- @live-proof: NOT has_function_privilege('authenticated','public.fn_ca_incident_escalation_tick()','EXECUTE') AND NOT has_function_privilege('anon','public.fn_ca_incident_escalation_tick()','EXECUTE')
+-- @live-proof: NOT has_function_privilege('authenticated','public.fn_ca_resolve_cleared_incidents()','EXECUTE') AND NOT has_function_privilege('anon','public.fn_ca_resolve_cleared_incidents()','EXECUTE')
+-- @live-proof: has_function_privilege('service_role','public.fn_ca_incident_escalation_tick()','EXECUTE') AND has_function_privilege('service_role','public.fn_ca_resolve_cleared_incidents()','EXECUTE')
+
 -- THE BOARD'S TWO WRITERS ARE NOT REACHABLE FROM A BROWSER
 --
 -- check-definer-authorization refused the previous migration, correctly:

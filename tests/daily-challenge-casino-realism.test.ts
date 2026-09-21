@@ -10,6 +10,7 @@ const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.t
 const surface = readDailyChallengesSurface();
 const presentation = readDailyChallengesUnit('missionPresentation.ts');
 const artwork = readDailyChallengesUnit('MissionArtwork.tsx');
+const loadingState = readDailyChallengesUnit('MissionLoadingState.tsx');
 const css = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'), 'utf8');
 const routeFallback = readFileSync(
   resolve(__dirname, '../src/components/challenges/DailyChallengesRouteFallback.tsx'),
@@ -134,8 +135,8 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(presentation).toContain("weekly: 'cycle-weekly'");
     expect(presentation).toContain("monthly: 'cycle-monthly'");
     expect(page).toContain('variant={TIER_CONTROL_ICONS[tier]}');
-    expect(page).toContain('data-loading-mission-card=""');
-    expect(page).toContain('className={styles.loadingCardInstrument}');
+    expect(loadingState).toContain('data-loading-mission-card=""');
+    expect(loadingState).toContain('className={styles.loadingCardInstrument}');
     expect(css).toContain('.loadingCard > .bevelFrame');
     expect(css).toContain('.loadingCardAction');
   });

@@ -69,7 +69,6 @@ import {
   dailyMissionReasonCode,
   recordDailyMissionOperation,
 } from '../services/DailyMissionTelemetryService';
-import { signInUrl } from '../lib/signIn';
 import { useClubWorkspace } from '../contexts/ClubWorkspaceContext';
 import { withClubContext } from '../utils/clubScopedPath';
 import {
@@ -91,6 +90,8 @@ import {
   FreezeVaultGraphic,
   MissionHeroArtwork,
 } from '../components/challenges/dashboard/MissionArtwork';
+import { MissionLoadingState } from '../components/challenges/dashboard/MissionLoadingState';
+import { MissionUnavailableState } from '../components/challenges/dashboard/MissionUnavailableState';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CARDS
@@ -403,94 +404,6 @@ function ChallengeCard({
         </div>
       </div>
     </article>
-  );
-}
-
-function MissionLoadingState({ tier }: { tier: Tier }) {
-  const presentation = TIER_PRESENTATION[tier];
-  return (
-    <StandardContentLayout className={styles.container}>
-      <div
-        className={styles.page}
-        data-mission-cycle={tier}
-        role="region"
-        aria-busy="true"
-        aria-label={`Loading ${presentation.title}`}
-      >
-        <section className={`${styles.hero} ${styles.loadingHero}`}>
-          <span className={styles.bevelFrame} aria-hidden="true" />
-          <MissionHeroArtwork tier={tier} />
-          <div className={styles.heroShade} />
-          <div className={styles.heroCopy}>
-            <span className={styles.eyebrow}>{presentation.eyebrow}</span>
-            <h1>{presentation.title}</h1>
-            <p>Preparing Your Challenge Ledger, Streak, And Diamond Reward Vault.</p>
-            <div className={styles.loadingSignal} role="status">
-              <span className={styles.loadingSignalBar} />
-              <strong>Preparing Challenge Ledger</strong>
-            </div>
-          </div>
-        </section>
-        <section className={styles.loadingBoard} aria-hidden="true">
-          <span className={styles.bevelFrame} />
-          <div className={styles.loadingBoardHeader} />
-          <div className={styles.loadingCardGrid}>
-            {Array.from({ length: tier === 'daily' ? 5 : tier === 'weekly' ? 3 : 2 }).map(
-              (_, index) => (
-                <div key={index} className={styles.loadingCard} data-loading-mission-card="">
-                  <span className={styles.bevelFrame} />
-                  <span className={styles.loadingCardInstrument}>
-                    <CasinoControlIcon variant="sync" state="pending" size="lg" />
-                  </span>
-                  <span className={styles.loadingCardTitle} />
-                  <span className={styles.loadingCardCopy} />
-                  <span className={styles.loadingCardProgress} />
-                  <span className={styles.loadingCardAction} />
-                </div>
-              )
-            )}
-          </div>
-        </section>
-      </div>
-    </StandardContentLayout>
-  );
-}
-
-function MissionUnavailableState({
-  tier,
-  message,
-  onRetry,
-}: {
-  tier: Tier;
-  message: string;
-  onRetry: () => void;
-}) {
-  const presentation = TIER_PRESENTATION[tier];
-  return (
-    <StandardContentLayout className={styles.container}>
-      <div className={styles.page} data-mission-cycle={tier}>
-        <section className={`${styles.hero} ${styles.unavailableHero}`}>
-          <span className={styles.bevelFrame} aria-hidden="true" />
-          <MissionHeroArtwork tier={tier} />
-          <div className={styles.heroShade} />
-          <div className={styles.heroCopy}>
-            <span className={styles.eyebrow}>{presentation.eyebrow}</span>
-            <h1>{presentation.title}</h1>
-            <p>Your Challenge Progress Is Protected While The Private Ledger Reconnects.</p>
-          </div>
-        </section>
-        <section className={`${styles.emptyState} ${styles.unavailableState}`} role="alert">
-          <span className={styles.bevelFrame} aria-hidden="true" />
-          <span className={styles.panelLabel}>Secure Ledger Connection</span>
-          <h2>Challenge Ledger Unavailable</h2>
-          <p>{message}</p>
-          <button type="button" className={styles.retryButton} onClick={onRetry}>
-            <CasinoControlIcon variant="retry" state="attention" size="sm" />
-            Retry Challenge Ledger
-          </button>
-        </section>
-      </div>
-    </StandardContentLayout>
   );
 }
 
@@ -1810,49 +1723,21 @@ export default function DailyChallengesPage() {
   }
 
   if (!userId) {
-    return (
-      <StandardContentLayout
-        className={styles.container}
-        title={TIER_PRESENTATION[activeTier].title}
-      >
-        <div className={styles.emptyState}>
-          <span className={styles.bevelFrame} aria-hidden="true" />
-          <span className={styles.eyebrow}>Private Challenge Vault</span>
-          <h2>
-            {loadError
-              ? 'Secure Session Check Failed'
-              : `Sign In To See Your ${TIER_LABELS[activeTier]} Challenges`}
-          </h2>
-          {loadError && <p>{loadError}</p>}
-          <div className={styles.emptyActions}>
-            {loadError && (
-              <button
-                type="button"
-                className={styles.retryButton}
-                onClick={() => {
-                  setIsLoading(true);
-                  setAuthRetryNonce((value) => value + 1);
-                }}
-              >
-                <CasinoControlIcon variant="retry" state="attention" size="sm" />
-                Retry Session Check
-              </button>
-            )}
-            <button
-              type="button"
-              className={styles.playButton}
-              onClick={() => {
-                const returnUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-                window.location.assign(signInUrl(returnUrl));
-              }}
-            >
-              <CasinoControlIcon variant="sign-in" state="active" size="sm" />
-              Sign In
-            </button>
-          </div>
-        </div>
-      </StandardContentLayout>
-    );
+    if (loadError) {
+      return (
+        <MissionUnavailableState
+          tier={activeTier}
+          message={loadError}
+          retryLabel="Retry Session Check"
+          onRetry={() => {
+            setIsLoading(true);
+            setAuthRetryNonce((value) => value + 1);
+          }}
+        />
+      );
+    }
+    // AuthGuard owns the signed-out handoff; a signed-out visitor never mounts this page.
+    return null;
   }
 
   if (loadError && lastSyncedAt === null) {

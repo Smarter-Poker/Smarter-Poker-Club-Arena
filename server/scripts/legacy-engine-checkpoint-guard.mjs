@@ -1317,6 +1317,56 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             );
             return found === undefined ? 'none' : found.tableId;
           };
+          // `manager.captureDrainedF06Originals()` in the list below is ONE call
+          // standing in for a fourteen-term conjunction inside the predecessor,
+          // and it answers a bare `null` for every one of them. So `failedCheck`
+          // can name the CALL and never the term that moved - which is exactly
+          // the receipt every release died on through 2026-09-21, with nothing
+          // in it anyone could act on. CLAUDE.md 10.86 rule 1: "I could not
+          // tell" must not wear the same name as an answer. Walk the
+          // predecessor's own terms, in the predecessor's own order, and name
+          // the first that is false. Observability only: this runs inside
+          // `witness`'s `extra()`, on a path that is already refusing, under a
+          // catch that discards it. No check, threshold or outcome moves.
+          const failedDrain = () => {
+            try {
+              if (manager.captureDrainedF06Originals() === originals) return 'none';
+              if (!Array.isArray(originals)) return 'capturedOriginals';
+              if (manager.drainedF06Originals !== originals) return 'manager.drainedF06Originals';
+              const emptyOnDrain = [
+                'lifecycleJobs',
+                'tableEngineStartJobs',
+                'tableEngineRunJobs',
+                'eliminationSchedulerJobs',
+                'lifecycleTimeouts',
+                'lifecycleIntervals',
+              ];
+              const terms = [
+                ['manager.stopFenceApplied', () => manager.stopFenceApplied === true],
+                [
+                  'manager.tournamentLeaseAuthorityExpired',
+                  () => manager.tournamentLeaseAuthorityExpired === true,
+                ],
+                ['manager.running', () => !manager.running],
+                ['manager.teardownPromise', () => !manager.teardownPromise],
+                ['manager.lifecycleOperation', () => !manager.lifecycleOperation],
+                ...emptyOnDrain.map((name) => [`manager.${name}`, () => manager[name]?.size === 0]),
+                ['manager.tableEngines.size', () => manager.tableEngines?.size === originals.length],
+              ];
+              const moved = terms.find(([, evaluate]) => !evaluate());
+              if (moved !== undefined) return moved[0];
+              for (const [id, engine] of originals) {
+                if (manager.tableEngines.get(id) !== engine) return `manager.tableEngines.get:${id}`;
+                if (engine.isRunning()) return `engine.isRunning:${id}`;
+                if (!engine.hasReleasedProcessOwnership())
+                  return `engine.hasReleasedProcessOwnership:${id}`;
+                if (engine.hasSettlementInFlight()) return `engine.hasSettlementInFlight:${id}`;
+              }
+              return 'unnamed';
+            } catch {
+              return 'unreadable';
+            }
+          };
           witness(
             'mixed_owner_changed',
             [
@@ -1393,6 +1443,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               failedMap: failedMap(),
               failedSet: failedSet(),
               failedTable: failedEngine(),
+              failedDrain: failedDrain(),
               seatMoveRevision: describe(manager.tournamentSeatMoveAuthorityRevision),
               capturedSeatMoveRevision: describe(revision),
             })

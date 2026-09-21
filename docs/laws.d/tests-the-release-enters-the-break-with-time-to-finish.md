@@ -1,0 +1,3 @@
+# tests/the-release-enters-the-break-with-time-to-finish.law.test.ts
+
+The engine release enters the maintenance break only with enough of it left to finish: every break gate demands the guard's 285000ms reserve PLUS the measured cost of the entry work that still follows it, so passing an early gate implies the last one can pass. The guard's own reserve is the floor and never moves, and a moved fleet is still a refusal. An attempt that arrives too late refuses above the durable one-shot intent with exit 75, and the owning transaction treats that as a deferral only after proving from the filesystem that no intent exists - so a mistimed arrival waits for the next break instead of ending the release, while anything that actually acted still refuses a retry.

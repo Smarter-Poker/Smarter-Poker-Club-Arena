@@ -49,6 +49,28 @@ NON_BREAK_RECOVERY_MAX_SECONDS=300
 # tests/the-break-clocks-agree.law.test.ts pins them together.
 BREAK_START_MINUTE=55
 MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS) * 1000))
+# The engine's break is BREAK_DURATION_MS = 5 * 60 * 1000 in
+# server/src/maintenance/MaintenanceBreak.ts, pinned across every surface by
+# tests/the-break-clocks-agree.law.test.ts. The reserve above takes 285000 of
+# it, so 15000ms is the whole budget the entry can ever have.
+BREAK_WINDOW_MS=300000
+# WHAT THIS IS FOR (2026-09-21). Four separate gates demand the SAME 285000ms
+# against the same break: maintenance_certificate, legacy_checkpoint_countdown
+# below, the physical probe in legacy-engine-checkpoint.sh, and finally the
+# guard's own reserveMs. Between them sit the engine lock, a sealed-SHA read,
+# prove_rollback_readiness (about twenty bounded host round trips, a loopback
+# probe, a public HTTPS probe and a database leader proof) and a cold node
+# boot. BREAK_DEADLINE_SLACK_SECONDS is 0, so none of that was budgeted: an
+# admission at 285001ms remaining handed the LAST gate a guaranteed deficit,
+# and the refusal was terminal. Run 35615604946 is the measurement - admitted
+# with at least 285000ms, the guard read about 272500ms, so the entry cost at
+# least 12500ms of a 15000ms allowance.
+# This budget is MEASURED ON THIS HOST, not chosen: prove_rollback_readiness
+# is the dominant term and it is timed where it runs, then doubled for margin
+# and clamped to what the break can actually offer. It is 0 until that first
+# measurement exists, which is exactly today's behaviour, so an admission can
+# never become MORE permissive than it is now.
+BREAK_ENTRY_BUDGET_MS=0
 
 die() {
   echo "[engine-release-transaction] FATAL: $*" >&2
@@ -534,13 +556,17 @@ raise SystemExit(4)
 # The helper independently checks every physical table before writing. Only
 # the unchanged maintenance_certificate below can admit a replacement.
 legacy_checkpoint_countdown() {
-  local response http_code body
+  local response http_code body headroom
+  # Required headroom for the entry work that still has to happen AFTER this
+  # admission and BEFORE the guard reads the same reserve. Defaulting to 0
+  # keeps the historical contract for callers that have nothing left to do.
+  headroom="${1:-0}"
   response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
     http://127.0.0.1:8080/health 2>/dev/null)" || return 1
   http_code="${response##*$'\n'}"
   body="${response%$'\n'*}"
   case "$http_code" in 200|503) ;; *) return 1 ;; esac
-  printf '%s' "$body" | MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS" python3 -c '
+  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) python3 -c '
 import json, math, os, sys, time
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -1095,7 +1121,7 @@ while :; do
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
     # Counting down follows the final announcement. Run even when the old
     # certificate says ready: that predecessor can retain a stale saved bit.
-    if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown)"; then
+    if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown "$BREAK_ENTRY_BUDGET_MS")"; then
       # These exact successors already implement the original bounded recovery
       # event. Retain that opportunity; the helper still needs its real durable
       # countdown, and an unknown request can never create another announcement.
@@ -1143,7 +1169,7 @@ while :; do
     fi
   fi
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
-    if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown)"; then
+    if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown "$BREAK_ENTRY_BUDGET_MS")"; then
       release_engine_lock
       bounded_sleep 5
       continue
@@ -1154,9 +1180,42 @@ while :; do
     # persisted as a cutover certificate. Checkpoint cleanup may consume entry
     # slack; it must complete before the strict 285000ms certificate is read.
     BREAK_END_EPOCH="$LEGACY_COUNTDOWN_END"
+    ENTRY_STARTED_MS="$(date +%s%3N)"
     prove_rollback_readiness
+    # Feed the real cost of this host's entry forward to the next admission.
+    # Doubled for margin, clamped to the 15000ms the break has over the
+    # reserve: a budget bigger than that can never be satisfied, so demanding
+    # it would refuse every break for ever instead of refusing this one.
+    BREAK_ENTRY_BUDGET_MS=$(( ( $(date +%s%3N) - ENTRY_STARTED_MS ) * 2 ))
+    [ "$BREAK_ENTRY_BUDGET_MS" -ge 0 ] || BREAK_ENTRY_BUDGET_MS=0
+    [ "$BREAK_ENTRY_BUDGET_MS" -le $((BREAK_WINDOW_MS - MIN_BREAK_REMAINING_MS)) ] \
+      || BREAK_ENTRY_BUDGET_MS=$((BREAK_WINDOW_MS - MIN_BREAK_REMAINING_MS))
     LEGACY_CHECKPOINT_ATTEMPTED=1
-    "$LEGACY_CHECKPOINT" "$RUN_ID" \
+    set +e
+    "$LEGACY_CHECKPOINT" "$RUN_ID"
+    LEGACY_CHECKPOINT_RC=$?
+    set -e
+    if [ "$LEGACY_CHECKPOINT_RC" = 75 ]; then
+      # The helper refused ABOVE its durable one-shot intent: this attempt
+      # arrived too late in the break, and nothing was attempted. That is a
+      # different fact from "the checkpoint is unsafe", and until 2026-09-21
+      # both ended the release for good - so a run that merely mistimed its
+      # arrival burned the whole window, roughly fifteen times in one day.
+      # Prove the non-action from the filesystem rather than trusting the exit
+      # code: an intent file here would mean the operation really did start,
+      # and then a retry stays forbidden however the helper exited. Anything
+      # other than a clean, absent intent is a die, so this fails closed.
+      [ ! -e "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" ] \
+        || die 'legacy checkpoint deferred but its durable intent exists; refusing a retry'
+      LEGACY_CHECKPOINT_ATTEMPTED=0
+      BREAK_END_EPOCH=0
+      release_engine_lock
+      RECOVERY_ADMISSION_MISSED=1
+      echo "[engine-release-transaction] the legacy checkpoint entry did not fit inside this break and nothing was attempted; waiting for a later certificate"
+      bounded_sleep 15
+      continue
+    fi
+    [ "$LEGACY_CHECKPOINT_RC" = 0 ] \
       || die 'legacy checkpoint or cleanup refused; release cannot continue'
     BREAK_END_EPOCH=0
   fi

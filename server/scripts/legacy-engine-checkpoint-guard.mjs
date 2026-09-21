@@ -952,6 +952,31 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               };
             }
           );
+          // An original interrupted mid-hand still holds the integer that
+          // `beginTerminalBoundaryPersistence` reserved immediately before
+          // HandController.start. The single site that removes it,
+          // `finishTerminalBoundaryPersistence`, is reached only from the hand's
+          // own settlement; on a stopped engine `lifecycleCanMutate()` is
+          // permanently false, so the `hand_history` step returns before it runs
+          // and no timer, job, successor or database row can ever reach it again.
+          // The reserved integer therefore IS the interruption this checkpoint
+          // exists to hand over, not work still draining - every other drain
+          // predicate above has already proved nothing is in flight, and a
+          // boundary that was attempted and lost would have set
+          // `terminalBoundaryPersistenceFailed`, which is refused above.
+          //
+          // Admit it ONLY for an engine that still holds the undischarged permit
+          // of that hand, whose live phase was proved equal to the captured phase
+          // through the unmodified `F06HandPermit.prototype.recoveryState` above.
+          // That is not a waiver: `sealAndRetireOriginals` refuses this whole run
+          // with `mixed_original_disposition_unproven` unless the database proves
+          // that same permit `aborted_unsettled` against a committed receipt
+          // naming this exact engine, manager and container - and it does so
+          // before the custody RPC and before the retirement CAS, so an
+          // undischarged interruption still reaches no irreversible step. Nothing
+          // is written for a retained original before that proof.
+          const interrupted =
+            permit !== null && ['unknown', 'reserved', 'terminated'].includes(capture.phase);
           [...engineSets, ...engineMaps].forEach((name, index) => {
             const collection = engine[name];
             const captured = capture.collections[index];
@@ -963,7 +988,16 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               () => ({ failedField: name })
             );
             const size = collection.size;
-            drained(size === 0, 'engineCollection.size', size, '0', () => ({ failedField: name }));
+            // Exactly one hand can be outstanding on a terminal engine, so the
+            // allowance is one entry on one field. For every other field, and for
+            // this field on an engine with no undischarged permit, `allowed` is 0
+            // and `size <= 0` is `size === 0` - including a malformed collection
+            // whose `size` is undefined - so the refusal, its order and its
+            // reported `expected` are unchanged.
+            const allowed = name === 'terminalBoundaryPendingGenerations' && interrupted ? 1 : 0;
+            drained(size <= allowed, 'engineCollection.size', size, String(allowed), () => ({
+              failedField: name,
+            }));
             const expectSet = engineSets.includes(name);
             drained(
               expectSet ? collection instanceof Set : collection instanceof Map,

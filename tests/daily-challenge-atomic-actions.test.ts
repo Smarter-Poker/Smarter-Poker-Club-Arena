@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 
 const migration = readFileSync(
   resolve(
@@ -73,7 +74,9 @@ describe('Daily Missions atomic action receipts', () => {
     expect(page).toContain('const [economyBusy, setEconomyBusy] = useState(false)');
     expect(page.match(/economyGuardRef\.current = true/g)?.length).toBeGreaterThanOrEqual(4);
     expect(page).toContain('disabled={claiming || economyBusy}');
-    expect(page).toContain('disabled={claimingAll || economyBusy}');
+    expect(readDailyChallengesUnit('MissionRewardVault.tsx')).toContain(
+      'disabled={claimingAll || economyBusy}'
+    );
     expect(page).not.toContain('setDiamondBalance((prev) => Math.max(0, prev - 5000))');
     expect(page).not.toContain(
       'setStreak((prev) => (prev ? { ...prev, freezesAvailable: prev.freezesAvailable + 1 } : prev))'

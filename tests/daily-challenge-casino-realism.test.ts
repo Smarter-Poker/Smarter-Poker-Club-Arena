@@ -1,6 +1,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
 const css = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'), 'utf8');
@@ -63,8 +64,9 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(mobile).not.toMatch(/min-height:\s*(?:6\d\d|[7-9]\d\d)px/);
     expect(mobile).not.toContain('clip-path: none');
     expect(mobile).not.toContain('border-inline: 0');
-    expect(page).toContain('View Challenge Ledger');
-    expect(page).toContain("document.getElementById('mission-board-title')?.scrollIntoView");
+    const hero = readDailyChallengesUnit('MissionHero.tsx');
+    expect(hero).toContain('View Challenge Ledger');
+    expect(hero).toContain("document.getElementById('mission-board-title')?.scrollIntoView");
   });
 
   it('keeps server-clock labels in the English Title Case contract in every locale', () => {

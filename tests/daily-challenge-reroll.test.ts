@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 
 const rpc = vi.fn();
 const emit = vi.fn();
@@ -331,7 +332,7 @@ describe('the page ships the casino-realism surface without the old stubs', () =
     expect(page).not.toContain('lastSyncedAtRef');
     expect(page).not.toContain('dateKeyRef');
     expect(page).toContain('MissionLoadingState');
-    expect(page).toContain('Retry Sync');
+    expect(readDailyChallengesUnit('MissionSyncNotice.tsx')).toContain('Retry Sync');
   });
 
   it('distinguishes an unreadable secure session from a signed-out visitor', () => {

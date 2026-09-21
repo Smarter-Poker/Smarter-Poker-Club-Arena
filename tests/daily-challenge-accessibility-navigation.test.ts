@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 import { CHALLENGE_TYPES, type ChallengeType } from '../src/services/DailyChallengeService';
 import { getChallengeMissionAction } from '../src/utils/challengeMissionAction';
 
@@ -140,7 +141,9 @@ describe('Daily Missions accessibility contract', () => {
     expect(PAGE).toContain('aria-controls="mission-panel"');
     expect(PAGE).toContain('id="mission-panel"');
     expect(PAGE).not.toContain('aria-controls={`mission-panel-${tier}`}');
-    expect(PAGE).toContain('role="status" aria-live="polite"');
+    expect(readDailyChallengesUnit('MissionHero.tsx')).toContain(
+      'role="status" aria-live="polite"'
+    );
     expect(PAGE).toContain("if (event.key === 'Escape') onCancelReroll()");
   });
 

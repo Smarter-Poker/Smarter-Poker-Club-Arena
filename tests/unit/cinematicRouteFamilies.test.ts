@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import sharp from 'sharp';
+import { readDailyChallengesUnit } from '../helpers/dailyChallengesSources';
 
 const REWARD_PAGES = [
   'src/pages/PlayerWalletPage.tsx',
@@ -52,7 +53,7 @@ describe('cinematic retained route families', () => {
   it('preserves the mission-native Daily Challenges visual authority', () => {
     const source = readFileSync('src/pages/DailyChallengesPage.tsx', 'utf8');
     expect(source).toContain('data-arena-surface="missions"');
-    expect(source).toContain('className={styles.hero}');
+    expect(readDailyChallengesUnit('MissionHero.tsx')).toContain('className={styles.hero}');
     expect(source).toContain('Club Arena / Daily Challenge Vault');
     expect(source).toContain('Club Arena / Weekly Challenge Circuit');
     expect(source).toContain('Club Arena / Monthly High-Roller Ledger');

@@ -20,6 +20,10 @@ import {
   MissionInstrumentGlyph,
   type CasinoControlIconVariant,
 } from '../components/challenges';
+import { MissionHero } from '../components/challenges/dashboard/MissionHero';
+import { MissionSyncNotice } from '../components/challenges/dashboard/MissionSyncNotice';
+import { MissionRewardVault } from '../components/challenges/dashboard/MissionRewardVault';
+import { MissionFooter } from '../components/challenges/dashboard/MissionFooter';
 import { motion, useReducedMotion } from 'framer-motion';
 import { masterBus } from '../core/MasterBus';
 import { triggerHaptic } from '../services/HapticService';
@@ -1990,6 +1994,8 @@ export default function DailyChallengesPage() {
     );
   }
 
+  const goToArena = () => navigate(routeClubId ? `/clubs/${routeClubId}` : '/');
+
   return (
     <StandardContentLayout className={styles.container}>
       <div
@@ -2001,93 +2007,31 @@ export default function DailyChallengesPage() {
         aria-hidden={reward || confirmingFreeze ? true : undefined}
         inert={reward || confirmingFreeze ? true : undefined}
       >
-        <section className={styles.hero} aria-labelledby="missions-title">
-          <span className={styles.bevelFrame} aria-hidden="true" />
-          <MissionHeroArtwork tier={activeTier} />
-          <div className={styles.heroShade} />
-          <div className={styles.heroCopy}>
-            <span className={styles.eyebrow}>{TIER_PRESENTATION[activeTier].eyebrow}</span>
-            <h1 id="missions-title">{TIER_PRESENTATION[activeTier].title}</h1>
-            <p>{TIER_PRESENTATION[activeTier].description}</p>
-            <div className={styles.heroMeters}>
-              <div>
-                <span>{TIER_LABELS[activeTier]} Cycle</span>
-                <strong>
-                  <MissionCycleCountdown
-                    tier={activeTier}
-                    serverClockOffsetMs={serverClockOffsetMs}
-                  />
-                </strong>
-                <small>Until {TIER_LABELS[activeTier]} Reset</small>
-              </div>
-              <div>
-                <span>Available Diamonds</span>
-                <strong className={styles.balanceWithGem}>
-                  <DiamondMark /> {diamondBalance.toLocaleString()}
-                </strong>
-                <small>Spendable Balance</small>
-              </div>
-            </div>
-            <div className={styles.heroActions}>
-              <button
-                type="button"
-                className={styles.playButton}
-                onClick={() => {
-                  document.getElementById('mission-board-title')?.scrollIntoView({
-                    behavior: reduceMotion ? 'auto' : 'smooth',
-                    block: 'start',
-                  });
-                  requestAnimationFrame(() =>
-                    document.getElementById('mission-board-title')?.focus()
-                  );
-                }}
-              >
-                <CasinoControlIcon variant="ledger" state="active" size="sm" />
-                View Challenge Ledger
-              </button>
-              <button
-                type="button"
-                className={styles.backButton}
-                onClick={() => navigate(routeClubId ? `/clubs/${routeClubId}` : '/')}
-              >
-                <CasinoControlIcon variant="back" state="idle" size="sm" />
-                Back To Arena
-              </button>
-            </div>
-          </div>
-          <div className={styles.heroSeal} role="status" aria-live="polite">
-            <span>{syncLabel}</span>
-            <strong>
-              {tierCounts[activeTier].done}/{tierCounts[activeTier].total}
-            </strong>
-            <small>{TIER_LABELS[activeTier]} Cleared</small>
-          </div>
-        </section>
+        <MissionHero
+          tier={activeTier}
+          diamondBalance={diamondBalance}
+          syncLabel={syncLabel}
+          done={tierCounts[activeTier].done}
+          total={tierCounts[activeTier].total}
+          reduceMotion={reduceMotion}
+          onBackToArena={goToArena}
+          artwork={<MissionHeroArtwork tier={activeTier} />}
+          countdown={
+            <MissionCycleCountdown tier={activeTier} serverClockOffsetMs={serverClockOffsetMs} />
+          }
+          diamondMark={<DiamondMark />}
+          TIER_PRESENTATION={TIER_PRESENTATION}
+          TIER_LABELS={TIER_LABELS}
+        />
 
         {loadError && (
-          <aside className={`${styles.syncNotice} ${styles.syncNoticeError}`} role="alert">
-            <span className={styles.bevelFrame} aria-hidden="true" />
-            <div>
-              <span className={styles.panelLabel}>Challenge Ledger Interrupted</span>
-              <strong>{loadError}</strong>
-              {lastSyncedAt && (
-                <small>Last Successful Sync: {MISSION_SYNC_FORMATTER.format(lastSyncedAt)}</small>
-              )}
-            </div>
-            <button
-              type="button"
-              className={styles.retryButton}
-              onClick={() => userId && loadChallenges(userId, 'refresh')}
-              disabled={isRefreshing}
-            >
-              <CasinoControlIcon
-                variant="sync"
-                state={isRefreshing ? 'pending' : 'attention'}
-                size="sm"
-              />
-              {isRefreshing ? 'Reconnecting...' : 'Retry Sync'}
-            </button>
-          </aside>
+          <MissionSyncNotice
+            loadError={loadError}
+            lastSyncedAt={lastSyncedAt}
+            isRefreshing={isRefreshing}
+            onRetry={() => userId && loadChallenges(userId, 'refresh')}
+            MISSION_SYNC_FORMATTER={MISSION_SYNC_FORMATTER}
+          />
         )}
 
         <section className={styles.commandDeck} aria-label="Challenge Status">
@@ -2257,43 +2201,13 @@ export default function DailyChallengesPage() {
         </section>
 
         {unclaimed.count > 0 && (
-          <aside className={styles.unclaimedBar} aria-label="Unclaimed Challenge Rewards">
-            <span className={styles.bevelFrame} aria-hidden="true" />
-            <img
-              className={styles.vaultArtwork}
-              src={mediaUrl(MISSION_REWARD_ARTWORK)}
-              alt=""
-              width="640"
-              height="474"
-              loading="lazy"
-              decoding="async"
-              aria-hidden="true"
-            />
-            <div className={styles.vaultCopy}>
-              <span className={styles.panelLabel}>Reward Vault Open</span>
-              <strong>
-                {unclaimed.count} Challenge{unclaimed.count === 1 ? '' : 's'} Ready
-              </strong>
-              <small>+{unclaimed.diamonds.toLocaleString()} Diamonds</small>
-            </div>
-            <button
-              type="button"
-              className={styles.claimAllButton}
-              onClick={handleClaimAll}
-              disabled={claimingAll || economyBusy}
-            >
-              <CasinoControlIcon
-                variant="claim"
-                state={claimingAll ? 'pending' : economyBusy ? 'disabled' : 'active'}
-                size="sm"
-              />
-              {claimingAll
-                ? 'Claiming Rewards...'
-                : unclaimed.hasMore
-                  ? `Claim Next ${unclaimed.items.length} Of ${unclaimed.count}`
-                  : `Claim All ${unclaimed.count}`}
-            </button>
-          </aside>
+          <MissionRewardVault
+            unclaimed={unclaimed}
+            claimingAll={claimingAll}
+            economyBusy={economyBusy}
+            onClaimAll={handleClaimAll}
+            MISSION_REWARD_ARTWORK={MISSION_REWARD_ARTWORK}
+          />
         )}
 
         <MissionAlertsPanel userId={userId} />
@@ -2413,26 +2327,7 @@ export default function DailyChallengesPage() {
           </section>
         </section>
 
-        <footer className={styles.footer}>
-          <span className={styles.bevelFrame} aria-hidden="true" />
-          <div>
-            <span className={styles.eyebrow}>Casino Floor Concierge</span>
-            <h2>Play Poker. Your Challenge Ledger Updates Automatically.</h2>
-            <p>
-              Hand Results, Pots, Showdowns, Tournaments, And Social Goals Update Automatically.
-              Daily Challenges Reset At Midnight UTC, Weekly Challenges Each Monday, And Monthly
-              Challenges On The First.
-            </p>
-          </div>
-          <button
-            type="button"
-            className={styles.playButton}
-            onClick={() => navigate(routeClubId ? `/clubs/${routeClubId}` : '/')}
-          >
-            <CasinoControlIcon variant="play" state="active" size="sm" />
-            Browse Cash Games
-          </button>
-        </footer>
+        <MissionFooter onBrowseArena={goToArena} />
       </div>
 
       {confirmingFreeze &&

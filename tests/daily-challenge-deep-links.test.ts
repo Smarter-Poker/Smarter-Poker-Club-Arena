@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 
 const app = readFileSync(resolve(__dirname, '../src/App.tsx'), 'utf8');
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
@@ -34,7 +35,15 @@ describe('Daily Challenge cycle deep links', () => {
 
   it('keeps club context through tier, mission, and arena navigation', () => {
     expect(page).toContain('navigate(withClubContext(action.path, routeClubId))');
-    expect(page.match(/routeClubId \? `\/clubs\/\$\{routeClubId\}` : '\/'/g)).toHaveLength(2);
+    // One arena path, defined once on the page and handed to the hero and the footer.
+    expect(page.match(/routeClubId \? `\/clubs\/\$\{routeClubId\}` : '\/'/g)).toHaveLength(1);
+    expect(page).toContain(
+      "const goToArena = () => navigate(routeClubId ? `/clubs/${routeClubId}` : '/')"
+    );
+    expect(page).toContain('onBackToArena={goToArena}');
+    expect(page).toContain('onBrowseArena={goToArena}');
+    expect(readDailyChallengesUnit('MissionHero.tsx')).toContain('onClick={onBackToArena}');
+    expect(readDailyChallengesUnit('MissionFooter.tsx')).toContain('onClick={onBrowseArena}');
   });
 
   it('uses the cinematic Daily Missions master during auth checks and render recovery', () => {

@@ -38,7 +38,11 @@ export function pendingBonus(user: string, club: string, game: BonusGame): Bonus
     // from before ten drops became the one setting still replays its receipt.
     !Number.isSafeInteger(v.budget.denomination) ||
     v.budget.denomination < 1 ||
-    bonusTotal(v.budget) % v.budget.denomination !== 0
+    // Only Plinko plays its entry in drops of the denomination. The other games
+    // carry the preference's drop value along unused (a 25-diamond Donkey Cross
+    // award keeps a 10-diamond drop), exactly as DiamondBonusService.start
+    // accepts them; requiring it to divide their total deleted a live wager.
+    (v.game === 'plinko' && bonusTotal(v.budget) % v.budget.denomination !== 0)
   ) {
     reportError(new Error('The Saved Bonus Could Not Be Replayed'), 'diamondBonusRecovery.shape');
     sessionStorage.removeItem(key(user, club, game));

@@ -1,7 +1,7 @@
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
 import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
-import { useAwardAutoStart } from '../hooks/useAwardAutoStart';
+import { useAwardAutoStart, useRefusedAward } from '../hooks/useAwardAutoStart';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
@@ -68,7 +68,11 @@ import {
 } from '../utils/bonusGameBudget';
 import { diamondBonusMinimum } from '../utils/diamondBonusPayout';
 import { diamondGameTitle } from '../utils/diamondGameTitles';
-import { DiamondBonusService, BonusRefusal } from '../services/DiamondBonusService';
+import {
+  DiamondBonusService,
+  BonusRefusal,
+  type BonusStart,
+} from '../services/DiamondBonusService';
 import DiamondGamesService, {
   normaliseCrash,
   type CrashRound,
@@ -167,7 +171,11 @@ function DiamondCrashGame() {
   // game never starts itself over it; it is treated as open until the setup
   // panel says otherwise.
   const [offerOpen, setOfferOpen] = useState(true);
-  const heldStart = useRef<Parameters<typeof DiamondBonusService.start>[0] | null>(null);
+  const heldStart = useRef<BonusStart | null>(null);
+  // The exact wager the server refused for its ticket alone, auto cash-out
+  // included. It goes again, unchanged but for the fresh ticket: never rebuilt
+  // from what the page happens to show by then.
+  const owed = useRef<BonusStart | null>(null);
   const [autoCents, setAutoCents] = useState<number>(0);
   const [round, setRound] = useState<CrashRound | null>(null);
   const [revealedRoundId, setRevealedRoundId] = useState<string | null>(null);
@@ -368,6 +376,10 @@ function DiamondCrashGame() {
         if (pending) {
           heldStart.current = pending;
           setBudget(pending.budget);
+          // The page shows the wager it is settling: its seed and its exit.
+          setClientSeed(pending.seed);
+          if (typeof pending.autoCashoutCents === 'number' && pending.autoCashoutCents > 0)
+            setAutoCents(pending.autoCashoutCents);
           setUncertain(true);
         }
         const next = await loadState(uuid);
@@ -439,6 +451,25 @@ function DiamondCrashGame() {
     }
     return null;
   }, [state, player, cfg, bet, betOption, earned.ready, earned.error, earned.loading, budget]);
+  // The blocker is the server's own state (a closed or paused game, the day's
+  // limit, the wallet), never a transient flag such as a start in flight.
+  const refusal = useRefusedAward(earned.award?.id, blocker !== null);
+  /** One place decides what a refusal means; the start and the replay both land here. */
+  const settleRefusal = (e: BonusRefusal, refused: BonusStart | null) => {
+    if (e.ticketGone && refused) {
+      // Only the ticket was refused and nothing was charged: the same wager
+      // goes again on a fresh ticket, by itself.
+      owed.current = refused;
+      setRestartOwed(true);
+      return;
+    }
+    // Anything else: read the award again so the page shows why, and let go of
+    // the player until the server's reasons change.
+    refusal.refuse(refused?.budget.award?.id);
+    void earned.refresh();
+  };
+  const settleRefusalRef = useRef(settleRefusal);
+  settleRefusalRef.current = settleRefusal;
 
   const open = phase === 'open';
   const running = autoRun !== null;
@@ -546,111 +577,118 @@ function DiamondCrashGame() {
     [toast]
   );
 
-  const handleStart = useCallback(async () => {
-    if (
-      !clubUuid ||
-      !commit ||
-      !canStart ||
-      busyRef.current ||
-      open ||
-      uncertain ||
-      !validBonusBudget(budget)
-    )
-      return;
-    busyRef.current = true;
-    stateGeneration.current++;
-    setQuotedAmount(null);
-    setStarting(true);
-    setVerdict(null);
-    soundService.playSpinStart();
-    triggerHaptic('medium');
-    try {
-      const seed = clientSeed.trim().slice(0, MAX_CLIENT_SEED) || randomClientSeed();
-      const request = {
-        clubId: clubUuid,
-        game: 'crash' as const,
-        budget: { ...budget },
-        commitId: commit.id,
-        serverSeedHash: commit.hash,
-        seed,
-        autoCashoutCents: autoTarget,
-      };
-      heldStart.current = request;
-      const result = normaliseCrash(
-        (await DiamondBonusService.start(request, user?.id ?? '')) as Record<string, unknown>
-      );
-      if (!live()) return;
-      earned.consume(heldStart.current?.budget.award?.id);
-      heldStart.current = null;
-      setUncertain(false);
-      if (!result.ok) {
-        toast.error(result.error || 'The Round Was Refused');
-        endRun(autoRunRef.current ? 'Auto Play Stopped' : null);
-        await freshCommit();
-        void loadState(clubUuid).catch(() => undefined);
+  /** Starts the round the plate shows, or - given `resend` - re-sends exactly the
+   * wager the server refused for its ticket, on the ticket now in hand. */
+  const handleStart = useCallback(
+    async (resend?: BonusStart) => {
+      if (
+        !clubUuid ||
+        !commit ||
+        busyRef.current ||
+        open ||
+        uncertain ||
+        (!resend && (!canStart || !validBonusBudget(budget)))
+      )
         return;
-      }
-      if (result.status !== 'open') {
-        finish(result);
-        return;
-      }
-      adopt(result);
-    } catch (err) {
-      reportError(err, 'DiamondCrashPage.start');
-      if (err instanceof PriorBonusPending) {
-        // Another tab's wager is still saved: it settles first, by itself.
-        heldStart.current = err.prior;
-        if (live()) {
-          setBudget(err.prior.budget);
+      busyRef.current = true;
+      stateGeneration.current++;
+      setQuotedAmount(null);
+      setStarting(true);
+      setVerdict(null);
+      soundService.playSpinStart();
+      triggerHaptic('medium');
+      try {
+        const seed = clientSeed.trim().slice(0, MAX_CLIENT_SEED) || randomClientSeed();
+        const request: BonusStart = resend
+          ? { ...resend, commitId: commit.id, serverSeedHash: commit.hash }
+          : {
+              clubId: clubUuid,
+              game: 'crash' as const,
+              budget: { ...budget },
+              commitId: commit.id,
+              serverSeedHash: commit.hash,
+              seed,
+              autoCashoutCents: autoTarget,
+            };
+        heldStart.current = request;
+        const result = normaliseCrash(
+          (await DiamondBonusService.start(request, user?.id ?? '')) as Record<string, unknown>
+        );
+        if (!live()) return;
+        earned.consume(heldStart.current?.budget.award?.id);
+        heldStart.current = null;
+        setUncertain(false);
+        if (!result.ok) {
+          toast.error(result.error || 'The Round Was Refused');
+          endRun(autoRunRef.current ? 'Auto Play Stopped' : null);
+          await freshCommit();
+          void loadState(clubUuid).catch(() => undefined);
+          return;
+        }
+        if (result.status !== 'open') {
+          finish(result);
+          return;
+        }
+        adopt(result);
+      } catch (err) {
+        reportError(err, 'DiamondCrashPage.start');
+        if (err instanceof PriorBonusPending) {
+          // Another tab's wager is still saved: it settles first, by itself.
+          heldStart.current = err.prior;
+          if (live()) {
+            setBudget(err.prior.budget);
+            setUncertain(true);
+            setSettleAttempts(0);
+            toast.info('Settling Your Previous Round First');
+          }
+        } else if (err instanceof BonusRefusal) {
+          // Nothing was charged. The ticket is spent either way, so a fresh one
+          // is dealt; when the ticket itself was the refusal the same wager is
+          // sent again on it.
+          const refused = heldStart.current;
+          heldStart.current = null;
+          setCommit(null);
+          if (live()) {
+            setUncertain(false);
+            toast.error(err.message);
+            settleRefusalRef.current(err, refused);
+            await freshCommit().catch((error) =>
+              reportError(error, 'DiamondCrashPage.refusedTicket')
+            );
+          }
+        } else if (live()) {
+          // The answer never arrived. The saved wager is replayed by
+          // useAutoSettle until the server says what happened.
           setUncertain(true);
           setSettleAttempts(0);
-          toast.info('Settling Your Previous Round First');
+          toast.info('Settling Your Round');
         }
-      } else if (err instanceof BonusRefusal) {
-        // Nothing was charged. The ticket is spent either way, so a fresh one
-        // is dealt; when the ticket itself was the refusal the same wager is
-        // sent again on it.
-        heldStart.current = null;
-        setCommit(null);
-        if (live()) {
-          setUncertain(false);
-          toast.error(err.message);
-          if (err.ticketGone) setRestartOwed(true);
-          await freshCommit().catch((error) =>
-            reportError(error, 'DiamondCrashPage.refusedTicket')
-          );
-        }
-      } else if (live()) {
-        // The answer never arrived. The saved wager is replayed by
-        // useAutoSettle until the server says what happened.
-        setUncertain(true);
-        setSettleAttempts(0);
-        toast.info('Settling Your Round');
+        endRun(autoRunRef.current ? 'Auto Play Stopped' : null);
+      } finally {
+        busyRef.current = false;
+        if (live()) setStarting(false);
       }
-      endRun(autoRunRef.current ? 'Auto Play Stopped' : null);
-    } finally {
-      busyRef.current = false;
-      if (live()) setStarting(false);
-    }
-  }, [
-    clubUuid,
-    user?.id,
-    commit,
-    canStart,
-    open,
-    clientSeed,
-    budget,
-    uncertain,
-    autoTarget,
-    live,
-    toast,
-    freshCommit,
-    loadState,
-    finish,
-    adopt,
-    endRun,
-    setBudget,
-  ]);
+    },
+    [
+      clubUuid,
+      user?.id,
+      commit,
+      canStart,
+      open,
+      clientSeed,
+      budget,
+      uncertain,
+      autoTarget,
+      live,
+      toast,
+      freshCommit,
+      loadState,
+      finish,
+      adopt,
+      endRun,
+      setBudget,
+    ]
+  );
 
   const checkStart = async (): Promise<boolean> => {
     if (busyRef.current) return false;
@@ -687,13 +725,14 @@ function DiamondCrashGame() {
     } catch (err) {
       reportError(err, 'DiamondCrashPage.checkStart');
       if (err instanceof BonusRefusal) {
+        const refused = heldStart.current;
         heldStart.current = null;
         setCommit(null);
         if (live()) {
           setUncertain(false);
           setSettleAttempts(0);
           toast.error(err.message);
-          if (err.ticketGone) setRestartOwed(true);
+          settleRefusalRef.current(err, refused);
           await freshCommit().catch((error) =>
             reportError(error, 'DiamondCrashPage.recoveryTicket')
           );
@@ -715,21 +754,30 @@ function DiamondCrashGame() {
   handleStartRef.current = handleStart;
   const restarts = useRef(0);
   useEffect(() => {
-    // Start refuses silently while the entry is still being quoted, so the
-    // owed restart waits for it rather than being spent on a closed door.
-    if (!restartOwed || !commit || uncertain || starting || !canStart) return;
+    // The owed wager is re-sent as it was, auto cash-out included; only the
+    // server decides whether it can still start (a refusal now settles like
+    // any other).
+    if (!restartOwed || !commit || uncertain || starting || open) return;
     setRestartOwed(false);
-    if (restarts.current >= 2) return;
+    const wager = owed.current;
+    owed.current = null;
+    if (!wager || restarts.current >= 2) return;
     restarts.current += 1;
-    void handleStartRef.current();
-  }, [restartOwed, commit, uncertain, starting, canStart]);
+    void handleStartRef.current(wager);
+  }, [restartOwed, commit, uncertain, starting, open]);
   // A won game starts itself: a short visible countdown, then the same Start
   // the plate would have pressed. Changing the entry or the auto cash-out
   // starts the window again. Auto Play stays off for an award, as before.
   const autoStartIn = useAwardAutoStart(
     earned.award?.id,
-    canStart && !restartOwed && !offerOpen && !loading && phase === 'idle' && !autoRun,
-    `${bet}:${autoChoice}:${clientSeed}`,
+    canStart &&
+      !restartOwed &&
+      !offerOpen &&
+      !loading &&
+      phase === 'idle' &&
+      !autoRun &&
+      !refusal.refused,
+    `${bet}:${autoChoice}:${clientSeed}:${refusal.opening}`,
     () => void handleStartRef.current()
   );
   // Games paused by the platform come back by themselves after the break.
@@ -879,7 +927,7 @@ function DiamondCrashGame() {
       // A won game holds the page only while it can actually start: an award
       // this page cannot start (daily limit, a closed or paused game, a
       // cooldown) never traps the player on it. Money in flight still holds.
-      ((Boolean(earned.award) && canStart && phase === 'idle') ||
+      ((Boolean(earned.award) && canStart && phase === 'idle' && !refusal.refused) ||
         starting ||
         open ||
         cashing ||
@@ -1094,7 +1142,7 @@ function DiamondCrashGame() {
                     : {
                         label: startLabel,
                         ink: 'white',
-                        onClick: handleStart,
+                        onClick: () => void handleStart(),
                         disabled: !canStart,
                       }
         }

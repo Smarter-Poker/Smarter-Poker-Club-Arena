@@ -123,6 +123,29 @@ describe('a saved round settles itself', () => {
     expect(guard).not.toMatch(/Boolean\(earned\.award\)\s*\|\|/);
   });
 
+  it.each(AWARD_PAGES)('%s re-sends the exact refused wager, never a rebuilt one', (file) => {
+    // Review 2026-09-21: a restart rebuilt from the page could charge another
+    // award's Double Down, or drop the saved auto cash-out.
+    const src = code(file);
+    expect(src).toMatch(/owed\.current = refused;/);
+    expect(src).toMatch(/Ref\.current\(wager\)/);
+  });
+
+  it.each(AWARD_PAGES)('%s lets go of a won game the server refused', (file) => {
+    const src = code(file);
+    expect(src).toMatch(/useRefusedAward\(/);
+    const from = src.indexOf('useLiveBonusGuard(');
+    const guard = src.slice(from, src.indexOf(');', from));
+    expect(guard).toMatch(/refusal\.refused/);
+  });
+
+  it('a saved wager is judged by its own game', () => {
+    const src = code('src/services/diamondBonusRecovery.ts');
+    expect(src).toMatch(
+      /v\.game === 'plinko' && bonusTotal\(v\.budget\) % v\.budget\.denomination/
+    );
+  });
+
   it('the wheel recovers an unconfirmed spin by itself', () => {
     const src = read('src/pages/DiamondWheelPage.tsx');
     expect(src).toContain("from '../hooks/useAutoSettle'");

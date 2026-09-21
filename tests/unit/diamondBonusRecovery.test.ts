@@ -172,3 +172,39 @@ describe('a saved bonus settles itself (owner ruling 2026-09-21: no game asks fo
     expect((ordinary as BonusRefusal).ticketGone).toBe(false);
   });
 });
+
+describe('a saved wager is judged by its own game', () => {
+  it('keeps a 25-diamond Donkey Cross award wager whose drop value does not divide it', () => {
+    // Review 2026-09-21: the drop value only matters to Plinko, but every read
+    // used to require it to divide the total, deleting this live wager.
+    const small = {
+      ...request,
+      game: 'crossing' as const,
+      budget: {
+        base: 25,
+        doubled: false,
+        denomination: 10,
+        award: {
+          id: '00000000-0000-0000-0000-000000000077',
+          entryDiamonds: 25,
+          boostMultiplier: 1,
+        },
+      },
+    };
+    rememberBonus('alice', small);
+    expect(pendingBonus('alice', small.clubId, 'crossing')).toEqual(small);
+    expect(pendingBonus('alice', small.clubId, 'crossing')).toEqual(small);
+  });
+  it('still discards a Plinko wager its drop value cannot split', () => {
+    const uneven = {
+      ...request,
+      game: 'plinko' as const,
+      budget: { base: 25, doubled: false, denomination: 10 },
+    };
+    sessionStorage.setItem(
+      `diamond-spins-pending:alice:${request.clubId}:plinko`,
+      JSON.stringify(uneven)
+    );
+    expect(pendingBonus('alice', request.clubId, 'plinko')).toBeNull();
+  });
+});

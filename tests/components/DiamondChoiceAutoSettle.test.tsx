@@ -540,3 +540,88 @@ describe('nothing the page reads waits for a press', () => {
     expect(backend.state).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('a refused ticket re-sends the saved wager, never the one on screen', () => {
+  it("re-sends the saved award's own Double Down on the fresh ticket, not the award the page now shows", async () => {
+    // Review 2026-09-21: the restart used to rebuild the wager from the page,
+    // so an older award's saved Double Down could be charged on a newer award
+    // whose offer never appeared.
+    const OLDER = '00000000-0000-0000-0000-0000000000a1';
+    const olderWager = {
+      ...saved,
+      budget: {
+        ...saved.budget,
+        doubled: true,
+        award: { id: OLDER, entryDiamonds: 100, boostMultiplier: 2 },
+      },
+    };
+    sessionStorage.setItem(SAVED_KEY, JSON.stringify(olderWager));
+    backend.start
+      .mockRejectedValueOnce(
+        new backend.BonusRefusal('That Ticket Expired. A New One Is Being Dealt', true)
+      )
+      .mockImplementationOnce(settles);
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    await advance(1000);
+    expect(backend.start).toHaveBeenCalledTimes(2);
+    const [replay, restart] = backend.start.mock.calls.map((call) => call[0]);
+    expect(replay).toEqual(olderWager);
+    expect(restart).toEqual({
+      ...olderWager,
+      commitId: dealt[0].commit_id,
+      serverSeedHash: dealt[0].server_seed_hash,
+    });
+    // Nothing went out for the award on screen: its own offer was never answered.
+    expect(
+      backend.start.mock.calls.some(
+        ([request]) => (request as typeof saved).budget.award.id === AWARD.id
+      )
+    ).toBe(false);
+  });
+});
+
+describe('a refusal that is not about the ticket never traps the player', () => {
+  it('reads the award again and lets the player go, without retrying on a timer', async () => {
+    backend.start.mockRejectedValueOnce(
+      new backend.BonusRefusal('The Platform Is In Its Maintenance Break')
+    );
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    await answerOffer();
+    const reads = backend.awardState.mock.calls.length;
+    await advance(5000);
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    expect(backend.awardState.mock.calls.length).toBeGreaterThan(reads);
+    expect(guardHolds()).toBe(false);
+    await advance(60000);
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    expect(guardHolds()).toBe(false);
+  });
+
+  it('starts the won game by itself once the break that refused it is over', async () => {
+    let frozen = false;
+    backend.awardState.mockImplementation(async (_club, game: Game, doubled: boolean) =>
+      awardRead(game, doubled, { frozen })
+    );
+    backend.start
+      .mockImplementationOnce(async () => {
+        frozen = true;
+        throw new backend.BonusRefusal('The Platform Is In Its Maintenance Break');
+      })
+      .mockImplementationOnce(settles);
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    await answerOffer();
+    await advance(5000);
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    expect(guardHolds()).toBe(false);
+    // The break ends; the page's own standing re-read notices, and the
+    // countdown runs again with nobody pressing anything.
+    frozen = false;
+    await advance(15000);
+    await advance(6000);
+    expect(backend.start).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: 'Cross Street' })).toBeInTheDocument();
+  });
+});

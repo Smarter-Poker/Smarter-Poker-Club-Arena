@@ -1,7 +1,7 @@
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
 import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
-import { useAwardAutoStart } from '../hooks/useAwardAutoStart';
+import { useAwardAutoStart, useRefusedAward } from '../hooks/useAwardAutoStart';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
@@ -20,6 +20,7 @@ import {
   DiamondBonusService,
   BonusRefusal,
   parsePlinkoBonus,
+  type BonusStart,
   type PlinkoBonus,
 } from '../services/DiamondBonusService';
 import {
@@ -97,7 +98,11 @@ function DiamondPlinkoGame() {
   const live = useRef(true),
     busyRef = useRef(false),
     generation = useRef(0);
-  const held = useRef<Parameters<typeof DiamondBonusService.start>[0] | null>(null);
+  const held = useRef<BonusStart | null>(null);
+  // The exact wager the server refused for its ticket alone. It goes again,
+  // unchanged but for the fresh ticket: never rebuilt from what the page
+  // happens to show by then (another award, another Double Down answer).
+  const owed = useRef<BonusStart | null>(null);
   const [stageRef, width] = useMeasuredWidth<HTMLDivElement>(300);
   const total = bonusTotal(budget);
   const receiptBudget = result
@@ -124,10 +129,12 @@ function DiamondPlinkoGame() {
         result?.multipliers_cents ??
         PLINKO_TABLES[wantedVersion]?.multipliersCents ??
         []);
-  const blocked =
+  // What the server's own state says about dropping now. Deliberately without
+  // the entry quote, which blinks off during every drop and must not count as
+  // the server changing its mind.
+  const stateBlocked =
     !earned.ready ||
     !validPlinkoBudget(budget) ||
-    (!earned.award && quotedAmount !== total) ||
     !state?.available ||
     state.frozen ||
     !state.player?.is_member ||
@@ -135,6 +142,22 @@ function DiamondPlinkoGame() {
     !table ||
     state.player.rounds_today >= (state.config?.max_rounds_per_player_per_day ?? 0) ||
     waitSeconds > 0;
+  const blocked = stateBlocked || (!earned.award && quotedAmount !== total);
+  const refusal = useRefusedAward(earned.award?.id, stateBlocked);
+  /** One place decides what a refusal means; the drop and the replay both land here. */
+  const settleRefusal = (e: BonusRefusal, refused: BonusStart | null) => {
+    if (e.ticketGone && refused) {
+      // Only the ticket was refused and nothing was charged: the same wager
+      // goes again on a fresh ticket, by itself.
+      owed.current = refused;
+      setRestartOwed(true);
+      return;
+    }
+    // Anything else: read the award again so the page shows why, and let go of
+    // the player until the server's reasons change.
+    refusal.refuse(refused?.budget.award?.id);
+    void earned.refresh();
+  };
   /** The chips this game pays whatever the drops do, shown before Start. */
   const guaranteedChips = (() => {
     if (result) return result.minimum_payout_chips ?? 0;
@@ -185,6 +208,7 @@ function DiamondPlinkoGame() {
           // Replayed by useAutoSettle; a ticket follows once it is settled.
           held.current = pending;
           setBudget(pending.budget);
+          setSeed(pending.seed);
           setUncertain(true);
           setTicket(null);
         }
@@ -263,23 +287,28 @@ function DiamondPlinkoGame() {
     if (uuid && !earned.required)
       void load(uuid, total).catch((e) => reportError(e, 'DiamondPlinkoPage.after'));
   };
-  const play = async () => {
-    if (!uuid || !ticket || busyRef.current || blocked || animating || uncertain) return;
+  /** Drops the batch the page shows, or - given `resend` - re-sends exactly the
+   * wager the server refused for its ticket, on the ticket now in hand. */
+  const play = async (resend?: BonusStart) => {
+    if (!uuid || !ticket || busyRef.current || (!resend && blocked) || animating || uncertain)
+      return;
     busyRef.current = true;
     generation.current++;
     setQuotedAmount(null);
     setBusy(true);
     setError(null);
     setVerified(null);
-    const request = {
-      clubId: uuid,
-      game: 'plinko' as const,
-      budget: { ...budget },
-      commitId: ticket.id,
-      serverSeedHash: ticket.hash,
-      seed,
-      tableVersion: table!.version,
-    };
+    const request: BonusStart = resend
+      ? { ...resend, commitId: ticket.id, serverSeedHash: ticket.hash }
+      : {
+          clubId: uuid,
+          game: 'plinko' as const,
+          budget: { ...budget },
+          commitId: ticket.id,
+          serverSeedHash: ticket.hash,
+          seed,
+          tableVersion: table!.version,
+        };
     held.current = request;
     try {
       const next = parsePlinkoBonus(await DiamondBonusService.start(request, user?.id ?? ''));
@@ -298,11 +327,12 @@ function DiamondPlinkoGame() {
           // Nothing was charged. The ticket is spent either way, so a fresh
           // one is dealt; when the ticket itself was the refusal the same
           // wager is sent again on it.
+          const refused = held.current;
           held.current = null;
           setUncertain(false);
           setTicket(null);
           setError(e.message);
-          if (e.ticketGone) setRestartOwed(true);
+          settleRefusal(e, refused);
           // This start cleared the entry quote. Read it again, so the next
           // drop is not held on it until someone refreshes.
           if (!earned.required) setQuoteTry((count) => count + 1);
@@ -342,12 +372,13 @@ function DiamondPlinkoGame() {
       reportError(e, 'DiamondPlinkoPage.check');
       if (live.current) {
         if (e instanceof BonusRefusal) {
+          const refused = held.current;
           held.current = null;
           setUncertain(false);
           setSettleAttempts(0);
           setTicket(null);
           setError(e.message);
-          if (e.ticketGone) setRestartOwed(true);
+          settleRefusal(e, refused);
         } else {
           // Not an answer: the page tries again on its own schedule.
           setSettleAttempts((count) => count + 1);
@@ -367,14 +398,16 @@ function DiamondPlinkoGame() {
   playRef.current = play;
   const restarts = useRef(0);
   useEffect(() => {
-    // Drop refuses silently while the entry is still being quoted, so the
-    // owed restart waits for it rather than being spent on a closed door.
-    if (!restartOwed || !ticket || uncertain || busy || blocked) return;
+    // The owed wager is re-sent as it was; only the server decides whether it
+    // can still start (a refusal now settles like any other).
+    if (!restartOwed || !ticket || uncertain || busy || animating) return;
     setRestartOwed(false);
-    if (restarts.current >= 2) return;
+    const wager = owed.current;
+    owed.current = null;
+    if (!wager || restarts.current >= 2) return;
     restarts.current += 1;
-    void playRef.current();
-  }, [restartOwed, ticket, uncertain, busy, blocked]);
+    void playRef.current(wager);
+  }, [restartOwed, ticket, uncertain, busy, animating]);
   // A won game starts itself: a short visible countdown, then the same drop
   // the button would have pressed.
   const autoStartIn = useAwardAutoStart(
@@ -387,8 +420,9 @@ function DiamondPlinkoGame() {
       !restartOwed &&
       !offerOpen &&
       !result &&
+      !refusal.refused &&
       seed.trim() !== '',
-    `${total}:${seed}`,
+    `${total}:${seed}:${refusal.opening}`,
     () => void playRef.current()
   );
   // Games paused by the platform come back by themselves after the break.
@@ -472,7 +506,7 @@ function DiamondPlinkoGame() {
   // actually start: an award this page cannot start (daily limit, a closed or
   // paused game, a cooldown) never traps the player on it.
   useLiveBonusGuard(
-    (Boolean(earned.award) && !blocked && Boolean(ticket) && !result) ||
+    (Boolean(earned.award) && !blocked && Boolean(ticket) && !result && !refusal.refused) ||
       busy ||
       uncertain ||
       animating,

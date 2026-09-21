@@ -83,6 +83,8 @@ import { WalletService } from '../../services/WalletService';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { formatBuyIn, money, totalBuyIn } from '../../utils/buyIn';
 import { reportError } from '../../utils/errorReporter';
+import { formatPrizeAtUnit, moneyWordAtUnit } from '../../utils/format';
+import { CHIP_UNIT_CENTS, normalizeUnitCents } from '../../../server/src/tournament/tournamentUnit';
 const DiamondsToChipsButton = lazy(() => import('../games/DiamondsToChipsButton'));
 
 export interface SignUpDialogOptions {
@@ -94,6 +96,27 @@ export interface SignUpDialogOptions {
   buyInFee?: number | null;
   /** Bounty per head, when this is a bounty event. Omitted or 0 hides the row. */
   bountyAmount?: number | null;
+  /**
+   * THE UNIT THIS ENTRY IS PRICED IN (2026-09-21), read off the tournament's
+   * own arena by `tournamentService.readTournamentUnitCents` - never guessed
+   * from a figure. It decides two things on this card:
+   *
+   *   - the Bounty row's word. It printed "Chips" whatever the event was, so a
+   *     Diamond bounty event offered a Chip head. At the chip unit the row is
+   *     `money(...)` and "Chips", exactly as before; at a Diamond unit it is
+   *     whole Diamonds and "Diamonds".
+   *   - whether a CHIP WALLET is read at all. `fn_player_spendable_balance`
+   *     falls back to the player's home chip club when the arena has no member
+   *     row, so a Diamond sign-up printed a chip balance, gated Confirm on it
+   *     and offered the chip cashier. A Diamond entry is paid from the Diamond
+   *     wallet and refused by its own door in its own words
+   *     (`insufficient_diamonds`), so no chip figure belongs on its card.
+   *
+   * `null` is "could not tell": the head shows the card's own unknown mark,
+   * no wallet is read, and the gate fails open to the server, exactly as R7
+   * already does for a balance that could not be read.
+   */
+  unitCents: number | null;
   isPko?: boolean;
   isMysteryBounty?: boolean;
   /** ISO start time. Omitted hides the row (a Sit & Go has no clock). */
@@ -246,6 +269,12 @@ export function SignUpHost() {
   const userId = current?.opts.userId;
   const clubId = current?.opts.clubId ?? null;
   const usesTournamentTicket = Boolean(current?.opts.tournamentTicketId);
+  /* A chip wallet belongs on this card only when the entry is priced in chips.
+     `undefined` (an options object built without a unit) is treated as the
+     unread answer it is. */
+  const unitCents = current?.opts.unitCents ?? null;
+  const pricedInChips = unitCents !== null && normalizeUnitCents(unitCents) === CHIP_UNIT_CENTS;
+  const pricedInDiamonds = unitCents !== null && !pricedInChips;
 
   /**
    * R1 + R2: resolve OUTSIDE the state updater, and only ever for the request
@@ -264,7 +293,7 @@ export function SignUpHost() {
   // a figure fetched at app start would be stale by the time anyone buys in.
   useEffect(() => {
     let alive = true;
-    if (!current || !userId || usesTournamentTicket) {
+    if (!current || !userId || usesTournamentTicket || !pricedInChips) {
       setBalance(null);
       return;
     }
@@ -291,7 +320,7 @@ export function SignUpHost() {
     return () => {
       alive = false;
     };
-  }, [current, userId, clubId, usesTournamentTicket]);
+  }, [current, userId, clubId, usesTournamentTicket, pricedInChips]);
 
   // Escape cancels, like every other dialog in the app.
   useEffect(() => {
@@ -364,6 +393,14 @@ export function SignUpHost() {
   const cost = totalBuyIn(o.buyInAmount, o.buyInFee ?? 0);
   const startLabel = formatStart(o.startTime);
   const short = !usesTournamentTicket && balance !== null && balance < cost;
+  /* The head, at the entry's unit. `--` is this card's own unknown mark, the
+     one the balance row has always used for a figure it could not read. */
+  const headText =
+    unitCents === null
+      ? '--'
+      : `${
+          pricedInChips ? money(o.bountyAmount || 0) : formatPrizeAtUnit(o.bountyAmount, unitCents)
+        } ${moneyWordAtUnit(unitCents)}`;
 
   return (
     <div className="signup-overlay" onClick={() => settle(id, false)}>
@@ -445,7 +482,7 @@ export function SignUpHost() {
             <div className="signup-row">
               <span className="signup-label sc-label sc-ink--blue">Bounty</span>
               <span className="signup-value signup-value--bounty">
-                {money(o.bountyAmount || 0)} Chips
+                {headText}
                 {o.isPko && ' (PKO)'}
                 {o.isMysteryBounty && ' (Mystery)'}
               </span>
@@ -459,7 +496,7 @@ export function SignUpHost() {
             </div>
           )}
 
-          {o.userId && !usesTournamentTicket && (
+          {o.userId && !usesTournamentTicket && !pricedInDiamonds && (
             <div className="signup-row">
               <span className="signup-label sc-label sc-ink--blue">Your Balance</span>
               <span

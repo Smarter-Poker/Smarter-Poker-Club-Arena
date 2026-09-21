@@ -40,7 +40,8 @@ import {
 } from '../../services/PlayerStyleClassifier';
 import { soundService } from '../../services/SoundService';
 import { SpadeConsole } from '../console/SpadeConsole';
-import { compactChips } from '../../utils/format';
+import { compactChips, formatPrizeAtUnit, moneyWordAtUnit } from '../../utils/format';
+import { CHIP_UNIT_CENTS, normalizeUnitCents } from '../../../server/src/tournament/tournamentUnit';
 import './FinalTableOverlay.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -66,6 +67,15 @@ interface FinalTableOverlayProps {
   tournamentId: string;
   tournamentName?: string;
   prizePool?: number;
+  /**
+   * THE UNIT THE POOL IS PAID IN (2026-09-21). TournamentDetails passes
+   * `tournamentRowUnitCents(tournament)` off the row it already read; the
+   * table passes `arenaAssetUnitCentsIfRead` off its own arena. The row used
+   * to print "Chips" after every pool, so a Diamond final table advertised a
+   * Chip pool. `null` means the asset has not been read, and the pool line
+   * waits for it instead of guessing.
+   */
+  unitCents: number | null;
   /** Fallback: get client-side HUD stats when DB stats are missing */
   hudStatsProvider?: (
     userId: string
@@ -80,6 +90,7 @@ export const FinalTableOverlay: React.FC<FinalTableOverlayProps> = ({
   tournamentId,
   tournamentName = 'Tournament',
   prizePool = 0,
+  unitCents,
   hudStatsProvider,
 }) => {
   const [isVisible, setIsVisible] = useState(false);
@@ -166,11 +177,16 @@ export const FinalTableOverlay: React.FC<FinalTableOverlayProps> = ({
           pillInk="gold"
           foot="foot"
         >
-          {prizePool > 0 && (
+          {prizePool > 0 && unitCents != null && (
             <div className="ft-overlay__prize-row">
               <span className="ft-overlay__prize-label sc-label sc-ink--blue">Prize Pool</span>
+              {/* A chip pool prints exactly as it always has; a Diamond pool
+                  is whole Diamonds, named, never "Chips" (2026-09-21). */}
               <span className="ft-overlay__prize sc-ink--gold">
-                {compactChips(prizePool)} Chips
+                {normalizeUnitCents(unitCents) === CHIP_UNIT_CENTS
+                  ? compactChips(prizePool)
+                  : formatPrizeAtUnit(prizePool, unitCents)}{' '}
+                {moneyWordAtUnit(unitCents)}
               </span>
             </div>
           )}

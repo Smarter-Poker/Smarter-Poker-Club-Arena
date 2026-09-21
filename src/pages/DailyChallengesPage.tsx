@@ -30,24 +30,12 @@ import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './DailyChallengesPage.module.css';
 import { useClubWorkspace } from '../contexts/ClubWorkspaceContext';
 import {
-  MISSION_DATE_FORMATTER,
-  MISSION_DIAMOND_ARTWORK,
-  MISSION_REWARD_ARTWORK,
-  MISSION_SYNC_FORMATTER,
-  TIER_COLORS,
-  TIER_CONTROL_ICONS,
   TIER_LABELS,
-  TIER_PRESENTATION,
-  TIERS,
   type TieredChallenge,
 } from '../components/challenges/dashboard/missionPresentation';
-import { DiamondMark, MissionHeroArtwork } from '../components/challenges/dashboard/MissionArtwork';
 import { MissionLoadingState } from '../components/challenges/dashboard/MissionLoadingState';
 import { MissionUnavailableState } from '../components/challenges/dashboard/MissionUnavailableState';
-import {
-  MissionCycleCountdown,
-  MissionResetReadout,
-} from '../components/challenges/dashboard/MissionClockLeaves';
+import { MissionResetReadout } from '../components/challenges/dashboard/MissionClockLeaves';
 import { MissionAlertsPanel } from '../components/challenges/dashboard/MissionAlertsPanel';
 import { MissionFreezePurchaseDialog } from '../components/challenges/dashboard/MissionFreezePurchaseDialog';
 import { MissionRewardSettlementDialog } from '../components/challenges/dashboard/MissionRewardSettlementDialog';
@@ -58,13 +46,9 @@ import { useInertAppShell } from '../components/challenges/dashboard/useInertApp
 import { useMissionCycleRoute } from '../components/challenges/dashboard/useMissionCycleRoute';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CARDS
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// The mission card is src/components/challenges/dashboard/MissionCard.tsx (Phase 3, step 9).
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
+// The page composes the dashboard units under src/components/challenges/dashboard/
+// and passes them live data and callbacks only.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function DailyChallengesPage() {
@@ -281,13 +265,7 @@ export default function DailyChallengesPage() {
           total={tierCounts[activeTier].total}
           reduceMotion={reduceMotion}
           onBackToArena={goToArena}
-          artwork={<MissionHeroArtwork tier={activeTier} />}
-          countdown={
-            <MissionCycleCountdown tier={activeTier} serverClockOffsetMs={serverClockOffsetMs} />
-          }
-          diamondMark={<DiamondMark />}
-          TIER_PRESENTATION={TIER_PRESENTATION}
-          TIER_LABELS={TIER_LABELS}
+          serverClockOffsetMs={serverClockOffsetMs}
         />
 
         {loadError && (
@@ -296,7 +274,6 @@ export default function DailyChallengesPage() {
             lastSyncedAt={lastSyncedAt}
             isRefreshing={isRefreshing}
             onRetry={() => userId && loadChallenges(userId, 'refresh')}
-            MISSION_SYNC_FORMATTER={MISSION_SYNC_FORMATTER}
           />
         )}
 
@@ -311,8 +288,6 @@ export default function DailyChallengesPage() {
             onRequestFreeze={() => {
               if (!economyGuardRef.current) setConfirmingFreeze(true);
             }}
-            diamondMark={<DiamondMark />}
-            MISSION_DATE_FORMATTER={MISSION_DATE_FORMATTER}
           />
 
           <MissionSummaryGrid
@@ -320,8 +295,6 @@ export default function DailyChallengesPage() {
             done={tierCounts[activeTier].done}
             total={tierCounts[activeTier].total}
             stats={stats}
-            diamondMark={<DiamondMark />}
-            TIER_LABELS={TIER_LABELS}
           />
         </section>
 
@@ -331,7 +304,6 @@ export default function DailyChallengesPage() {
             claimingAll={claimingAll}
             economyBusy={economyBusy}
             onClaimAll={handleClaimAll}
-            MISSION_REWARD_ARTWORK={MISSION_REWARD_ARTWORK}
           />
         )}
 
@@ -359,10 +331,6 @@ export default function DailyChallengesPage() {
             tierCounts={tierCounts}
             onOpenTier={openTier}
             onTierKeyDown={handleTierKeyDown}
-            TIERS={TIERS}
-            TIER_LABELS={TIER_LABELS}
-            TIER_COLORS={TIER_COLORS}
-            TIER_CONTROL_ICONS={TIER_CONTROL_ICONS}
           />
 
           <MissionLedgerList
@@ -383,10 +351,6 @@ export default function DailyChallengesPage() {
             onCancelReroll={() => setConfirmingRerollId(null)}
             onConfirmReroll={handleReroll}
             onOpenMission={handleOpenMission}
-            diamondMark={<DiamondMark />}
-            TIER_COLORS={TIER_COLORS}
-            TIER_LABELS={TIER_LABELS}
-            MISSION_DIAMOND_ARTWORK={MISSION_DIAMOND_ARTWORK}
           />
         </section>
 

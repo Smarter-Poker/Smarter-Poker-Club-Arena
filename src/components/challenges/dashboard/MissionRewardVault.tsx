@@ -2,24 +2,18 @@ import { CasinoControlIcon } from '../CasinoControlIcon';
 import type { DailyChallengeRewardVault } from '../../../services/DailyChallengeService';
 import { mediaUrl } from '../../../utils/mediaBase';
 import styles from '../../../pages/DailyChallengesPage.module.css';
-
-// Integration seam: the presentation tables and artwork helpers still live on the
-// page while the sibling extraction moves them to `missionPresentation.ts`,
-// `MissionArtwork.tsx` and `MissionClockLeaves.tsx`. Until that lands they are
-// handed in as props under their own names so this body stays verbatim.
+import { MISSION_REWARD_ARTWORK } from './missionPresentation';
 
 export function MissionRewardVault({
   unclaimed,
   claimingAll,
   economyBusy,
   onClaimAll,
-  MISSION_REWARD_ARTWORK,
 }: {
   unclaimed: DailyChallengeRewardVault;
   claimingAll: boolean;
   economyBusy: boolean;
   onClaimAll: () => void;
-  MISSION_REWARD_ARTWORK: string;
 }) {
   return (
     <aside className={styles.unclaimedBar} aria-label="Unclaimed Challenge Rewards">

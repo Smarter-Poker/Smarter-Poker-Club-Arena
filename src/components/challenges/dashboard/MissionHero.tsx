@@ -1,12 +1,9 @@
-import type { ReactNode } from 'react';
 import { CasinoControlIcon } from '../CasinoControlIcon';
 import type { Tier } from '../../../services/DailyChallengeService';
 import styles from '../../../pages/DailyChallengesPage.module.css';
-
-// Integration seam: the presentation tables and artwork helpers still live on the
-// page while the sibling extraction moves them to `missionPresentation.ts`,
-// `MissionArtwork.tsx` and `MissionClockLeaves.tsx`. Until that lands they are
-// handed in as props under their own names so this body stays verbatim.
+import { TIER_LABELS, TIER_PRESENTATION } from './missionPresentation';
+import { DiamondMark, MissionHeroArtwork } from './MissionArtwork';
+import { MissionCycleCountdown } from './MissionClockLeaves';
 
 export function MissionHero({
   tier,
@@ -16,11 +13,7 @@ export function MissionHero({
   total,
   reduceMotion,
   onBackToArena,
-  artwork,
-  countdown,
-  diamondMark,
-  TIER_PRESENTATION,
-  TIER_LABELS,
+  serverClockOffsetMs,
 }: {
   tier: Tier;
   diamondBalance: number;
@@ -29,19 +22,12 @@ export function MissionHero({
   total: number;
   reduceMotion: boolean | null;
   onBackToArena: () => void;
-  /** `<MissionHeroArtwork tier={tier} />`, rendered by the page. */
-  artwork: ReactNode;
-  /** `<MissionCycleCountdown tier={tier} serverClockOffsetMs={ms} />`, rendered by the page. */
-  countdown: ReactNode;
-  /** `<DiamondMark />`, rendered by the page. */
-  diamondMark: ReactNode;
-  TIER_PRESENTATION: Record<Tier, { title: string; eyebrow: string; description: string }>;
-  TIER_LABELS: Record<Tier, string>;
+  serverClockOffsetMs: number | null;
 }) {
   return (
     <section className={styles.hero} aria-labelledby="missions-title">
       <span className={styles.bevelFrame} aria-hidden="true" />
-      {artwork}
+      <MissionHeroArtwork tier={tier} />
       <div className={styles.heroShade} />
       <div className={styles.heroCopy}>
         <span className={styles.eyebrow}>{TIER_PRESENTATION[tier].eyebrow}</span>
@@ -50,13 +36,15 @@ export function MissionHero({
         <div className={styles.heroMeters}>
           <div>
             <span>{TIER_LABELS[tier]} Cycle</span>
-            <strong>{countdown}</strong>
+            <strong>
+              <MissionCycleCountdown tier={tier} serverClockOffsetMs={serverClockOffsetMs} />
+            </strong>
             <small>Until {TIER_LABELS[tier]} Reset</small>
           </div>
           <div>
             <span>Available Diamonds</span>
             <strong className={styles.balanceWithGem}>
-              {diamondMark} {diamondBalance.toLocaleString()}
+              <DiamondMark /> {diamondBalance.toLocaleString()}
             </strong>
             <small>Spendable Balance</small>
           </div>

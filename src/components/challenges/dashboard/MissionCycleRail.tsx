@@ -1,30 +1,18 @@
-import { CasinoControlIcon, type CasinoControlIconVariant } from '../CasinoControlIcon';
+import { CasinoControlIcon } from '../CasinoControlIcon';
 import type { Tier } from '../../../services/DailyChallengeService';
 import styles from '../../../pages/DailyChallengesPage.module.css';
-
-// Integration seam: the presentation tables and artwork helpers still live on the
-// page while the sibling extraction moves them to `missionPresentation.ts`,
-// `MissionArtwork.tsx` and `MissionClockLeaves.tsx`. Until that lands they are
-// handed in as props under their own names so this body stays verbatim.
+import { TIER_COLORS, TIER_CONTROL_ICONS, TIER_LABELS, TIERS } from './missionPresentation';
 
 export function MissionCycleRail({
   activeTier,
   tierCounts,
   onOpenTier,
   onTierKeyDown,
-  TIERS,
-  TIER_LABELS,
-  TIER_COLORS,
-  TIER_CONTROL_ICONS,
 }: {
   activeTier: Tier;
   tierCounts: Record<Tier, { total: number; done: number }>;
   onOpenTier: (tier: Tier) => void;
   onTierKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>, tier: Tier) => void;
-  TIERS: Tier[];
-  TIER_LABELS: Record<Tier, string>;
-  TIER_COLORS: Record<Tier, string>;
-  TIER_CONTROL_ICONS: Record<Tier, CasinoControlIconVariant>;
 }) {
   return (
     <div className={styles.tabs} role="tablist" aria-label="Challenge Period">

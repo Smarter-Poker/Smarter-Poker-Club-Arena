@@ -1,10 +1,9 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { CasinoControlIcon } from '../CasinoControlIcon';
 import { MissionInstrumentGlyph } from '../MissionInstrumentGlyph';
 import {
   DAILY_MISSION_REROLL_COST,
-  type TieredUserChallenge,
   type Tier,
   type ChallengeType,
 } from '../../../services/DailyChallengeService';
@@ -12,13 +11,13 @@ import { mediaUrl } from '../../../utils/mediaBase';
 import { getChallengeMissionAction } from '../../../utils/challengeMissionAction';
 import { prefetchIntent } from '../../../utils/ChunkPreloader';
 import styles from '../../../pages/DailyChallengesPage.module.css';
-
-type TieredChallenge = TieredUserChallenge;
-
-// Integration seam: the presentation tables and artwork helpers still live on the
-// page while the sibling extraction moves them to `missionPresentation.ts`,
-// `MissionArtwork.tsx` and `MissionClockLeaves.tsx`. Until that lands they are
-// handed in as props under their own names so this body stays verbatim.
+import {
+  MISSION_DIAMOND_ARTWORK,
+  TIER_COLORS,
+  TIER_LABELS,
+  type TieredChallenge,
+} from './missionPresentation';
+import { DiamondMark } from './MissionArtwork';
 
 export function ChallengeCard({
   challenge,
@@ -35,10 +34,6 @@ export function ChallengeCard({
   onCancelReroll,
   onConfirmReroll,
   onOpenMission,
-  diamondMark,
-  TIER_COLORS,
-  TIER_LABELS,
-  MISSION_DIAMOND_ARTWORK,
 }: {
   challenge: TieredChallenge;
   tier: Tier;
@@ -54,11 +49,6 @@ export function ChallengeCard({
   onCancelReroll: () => void;
   onConfirmReroll: (c: TieredChallenge) => void;
   onOpenMission: (type: ChallengeType) => void;
-  /** `<DiamondMark />`, rendered by the page. */
-  diamondMark: ReactNode;
-  TIER_COLORS: Record<Tier, string>;
-  TIER_LABELS: Record<Tier, string>;
-  MISSION_DIAMOND_ARTWORK: string;
 }) {
   const reduceMotion = useReducedMotion();
   const rerollButtonRef = useRef<HTMLButtonElement>(null);
@@ -274,7 +264,7 @@ export function ChallengeCard({
                 />
                 {canAffordReroll ? 'Reroll ' : 'Need '}
                 <span className={styles.buttonPrice}>
-                  {diamondMark} {DAILY_MISSION_REROLL_COST}
+                  <DiamondMark /> {DAILY_MISSION_REROLL_COST}
                   {!canAffordReroll && ' Diamond'}
                 </span>
               </button>
@@ -291,7 +281,7 @@ export function ChallengeCard({
               }}
             >
               <span className={styles.rerollPrompt}>
-                Spend {diamondMark} {DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be
+                Spend <DiamondMark /> {DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be
                 Replaced.
               </span>
               <button

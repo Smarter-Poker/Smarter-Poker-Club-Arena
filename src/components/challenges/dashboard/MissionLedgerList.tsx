@@ -1,21 +1,13 @@
-import type { ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { CasinoControlIcon } from '../CasinoControlIcon';
 import {
   DAILY_MISSION_REROLL_COST,
-  type TieredUserChallenge,
   type Tier,
   type ChallengeType,
 } from '../../../services/DailyChallengeService';
 import { ChallengeCard } from './MissionCard';
 import styles from '../../../pages/DailyChallengesPage.module.css';
-
-type TieredChallenge = TieredUserChallenge;
-
-// Integration seam: the presentation tables and artwork helpers still live on the
-// page while the sibling extraction moves them to `missionPresentation.ts`,
-// `MissionArtwork.tsx` and `MissionClockLeaves.tsx`. Until that lands they are
-// handed in as props under their own names so this body stays verbatim.
+import { TIER_LABELS, type TieredChallenge } from './missionPresentation';
 
 export function MissionLedgerList({
   visible,
@@ -35,10 +27,6 @@ export function MissionLedgerList({
   onCancelReroll,
   onConfirmReroll,
   onOpenMission,
-  diamondMark,
-  TIER_COLORS,
-  TIER_LABELS,
-  MISSION_DIAMOND_ARTWORK,
 }: {
   visible: TieredChallenge[];
   activeTier: Tier;
@@ -57,11 +45,6 @@ export function MissionLedgerList({
   onCancelReroll: () => void;
   onConfirmReroll: (c: TieredChallenge) => void;
   onOpenMission: (type: ChallengeType) => void;
-  /** `<DiamondMark />`, rendered by the page. */
-  diamondMark: ReactNode;
-  TIER_COLORS: Record<Tier, string>;
-  TIER_LABELS: Record<Tier, string>;
-  MISSION_DIAMOND_ARTWORK: string;
 }) {
   return (
     <section
@@ -122,10 +105,6 @@ export function MissionLedgerList({
               onCancelReroll={onCancelReroll}
               onConfirmReroll={onConfirmReroll}
               onOpenMission={onOpenMission}
-              diamondMark={diamondMark}
-              TIER_COLORS={TIER_COLORS}
-              TIER_LABELS={TIER_LABELS}
-              MISSION_DIAMOND_ARTWORK={MISSION_DIAMOND_ARTWORK}
             />
           </motion.div>
         ))

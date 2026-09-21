@@ -1,13 +1,9 @@
-import type { ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { CasinoControlIcon } from '../CasinoControlIcon';
 import type { ChallengeStreak, DailyChallengeStats } from '../../../services/DailyChallengeService';
 import styles from '../../../pages/DailyChallengesPage.module.css';
-
-// Integration seam: the presentation tables and artwork helpers still live on the
-// page while the sibling extraction moves them to `missionPresentation.ts`,
-// `MissionArtwork.tsx` and `MissionClockLeaves.tsx`. Until that lands they are
-// handed in as props under their own names so this body stays verbatim.
+import { MISSION_DATE_FORMATTER } from './missionPresentation';
+import { DiamondMark } from './MissionArtwork';
 
 export function MissionStreakConsole({
   streak,
@@ -17,8 +13,6 @@ export function MissionStreakConsole({
   economyBusy,
   reduceMotion,
   onRequestFreeze,
-  diamondMark,
-  MISSION_DATE_FORMATTER,
 }: {
   streak: ChallengeStreak | null;
   stats: DailyChallengeStats | null;
@@ -27,9 +21,6 @@ export function MissionStreakConsole({
   economyBusy: boolean;
   reduceMotion: boolean | null;
   onRequestFreeze: () => void;
-  /** `<DiamondMark />`, rendered by the page. */
-  diamondMark: ReactNode;
-  MISSION_DATE_FORMATTER: Intl.DateTimeFormat;
 }) {
   return (
     <div className={styles.streakConsole}>
@@ -138,7 +129,7 @@ export function MissionStreakConsole({
                     : 'Buy Streak Freeze'}
               {streak.freezesAvailable < 3 && (
                 <span className={styles.buttonPrice}>
-                  {diamondMark} 5,000
+                  <DiamondMark /> 5,000
                   <span className={styles.srOnly}>Diamonds</span>
                 </span>
               )}

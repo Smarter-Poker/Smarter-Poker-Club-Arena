@@ -6,16 +6,6 @@
   padding-top: 24px;
 }
 
-.freezeDialogArtwork {
-  display: block;
-  width: min(72%, 300px);
-  height: 168px;
-  margin: -18px auto -4px;
-  object-fit: contain;
-  filter: drop-shadow(0 15px 18px rgba(0, 0, 0, 0.58))
-    drop-shadow(0 0 12px rgba(85, 232, 255, 0.12));
-}
-
 .freezeDialogDescription {
   max-width: 410px;
   margin: 11px auto 21px;

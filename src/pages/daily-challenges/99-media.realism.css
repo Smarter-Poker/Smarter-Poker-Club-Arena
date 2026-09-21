@@ -433,8 +433,7 @@
     padding-bottom: 20px;
   }
 
-  .celebrateArtwork,
-  .freezeDialogArtwork {
+  .celebrateArtwork {
     width: min(58%, 220px);
     height: 112px;
     margin-block: -12px -2px;

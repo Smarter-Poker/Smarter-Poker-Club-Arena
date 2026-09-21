@@ -109,7 +109,6 @@
   }
 
   .challengeCard:focus-within .iconBox,
-  .challengeCard:focus-within .iconGlyph,
   .inlineDiamond,
   .rewardGem {
     transition: none;

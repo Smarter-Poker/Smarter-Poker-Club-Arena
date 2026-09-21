@@ -135,18 +135,6 @@
   max-height: 36px;
 }
 
-.iconGlyph {
-  position: relative;
-  z-index: 2;
-  color: var(--card-tier-color);
-  font-size: 1.18rem;
-  line-height: 1;
-  text-shadow:
-    0 0 5px color-mix(in srgb, var(--card-tier-color) 78%, transparent),
-    0 1px 1px #000;
-  transition: transform 220ms ease;
-}
-
 .iconPulse {
   z-index: 0;
   inset: 4px;
@@ -175,10 +163,6 @@
   filter: brightness(1.18)
     drop-shadow(0 0 7px color-mix(in srgb, var(--card-tier-color) 35%, transparent));
   transform: translateZ(10px) rotateX(7deg) rotateY(-7deg) scale(1.06);
-}
-
-.challengeCard:focus-within .iconGlyph {
-  transform: scale(1.08);
 }
 
 .iconAssembly[data-icon-state='complete'] .iconOrbit,

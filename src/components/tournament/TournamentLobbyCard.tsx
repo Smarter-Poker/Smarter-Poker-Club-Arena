@@ -64,6 +64,8 @@ import {
   type MttStructureDescription,
 } from '../../../server/src/tournament/mttStructureDescription';
 import { compactChips } from '../../utils/format';
+import { SPIN_MAX_MULTIPLIER } from '../lobby/lobbyEntries';
+import { spinMultiplierLabel } from '../../utils/spinReveal';
 import { SpadeConsole, type ConsoleInk, type PlateButtonProps } from '../console/SpadeConsole';
 
 interface Tournament extends TournamentEntryWindowRow {
@@ -101,6 +103,13 @@ interface Tournament extends TournamentEntryWindowRow {
   addonAllowed?: boolean;
   spinMultiplier?: number;
   started_at?: string | null;
+  /* THE THREE COLUMNS THE SPIN RULE READS (2026-09-21). `spinReveal` decides
+     whether this game's wheel has turned from `variant`/`tournament_type`
+     (is it a Spin at all), `status` and `started_at`; `spin_multiplier` is the
+     draw itself, and is null on every row that has not started. */
+  variant?: string | null;
+  tournament_type?: string | null;
+  spin_multiplier?: number | null;
   late_reg_mins?: number | null;
   late_reg_levels?: number | null;
   current_level?: number | null;
@@ -490,6 +499,55 @@ function TournamentLobbyCardInner({
         : ['spin', 'sng'].includes(tournament.type)
           ? 'mtt'
           : tournament.type;
+
+  /**
+   * A SPIN'S MONEY IS THE LADDER UNTIL THE WHEEL TURNS (2026-09-21).
+   *
+   * `prize_pool` for a Spin is written at START, beside the multiplier
+   * (`TournamentManagerBase`), so a registering Spin carries 0 - and this card
+   * printed that 0 as "PRIZE POOL 0" on every filling Spin in the lobby. The
+   * rule for what to print instead is not new and is not invented here: the
+   * main lobby has carried it since 2026-08-25 in `lobbyEntries.spinPrizeLabel`,
+   * with Dan's own words ("YOU NEED TO ADD THE WIN UP TO 100X THE BUY IN AND
+   * SHOW WHAT THE TOP PRIZE IS"). Before the draw a Spin advertises the CEILING
+   * of the ladder, which is honest and gives nothing away; after it, what it
+   * actually pays.
+   *
+   * The multiplier itself goes through `spinReveal`'s gate rather than the
+   * column, because the draw IS the product and a card must not leak it off a
+   * list (that file exists because five surfaces leaked it independently).
+   */
+  const spinLabels = (() => {
+    if (formatKind !== 'spin') return null;
+    const drawn = spinMultiplierLabel({
+      variant: tournament.variant,
+      tournament_type: tournament.tournament_type ?? tournament.type,
+      status: tournament.status,
+      started_at: tournament.started_at,
+      spin_multiplier: tournament.spin_multiplier,
+    });
+    if (!drawn) {
+      const ceiling = (Number(tournament.buyIn) || 0) * SPIN_MAX_MULTIPLIER;
+      return {
+        multiplier: `Win Up To ${SPIN_MAX_MULTIPLIER}x`,
+        moneyLabel: 'Top Prize',
+        /* A ratio is the one thing a player shopping a board of buy-ins
+           cannot compare at a glance. The chips can. */
+        money: ceiling > 0 ? compactChips(ceiling) : null,
+      };
+    }
+    const pool = Number(tournament.prizePool) || 0;
+    /* The row may not have been re-read since the draw; derive the pool from
+       the two numbers already on the card rather than printing a zero. */
+    const derived =
+      pool > 0 ? pool : (Number(tournament.buyIn) || 0) * Number(tournament.spin_multiplier || 0);
+    return {
+      multiplier: drawn,
+      moneyLabel: 'Prize Pool',
+      money: derived > 0 ? compactChips(derived) : null,
+    };
+  })();
+
   // current_players drifts UP (see the Entries note below), so the subtraction
   // can go negative. "-3 spots remaining" is not a thing.
   const spotsRemaining = hasMaxPlayers
@@ -499,7 +557,7 @@ function TournamentLobbyCardInner({
   /* Only a recorded fixed format can offer a physical seat-first purchase. */
   const isSeatFirstCard = isSeatFirstTournamentFormat(tournament);
 
-    /* The speed as ONE word on the glass, from the recorded structure - the
+  /* The speed as ONE word on the glass, from the recorded structure - the
      same facts the details page prints, never re-derived from a parsed
      blind array. */
   const speedTier =
@@ -683,22 +741,36 @@ function TournamentLobbyCardInner({
         </div>
 
         <div className={styles.row}>
-          <span className="sc-label sc-ink--blue">Prize Pool</span>
+          <span className="sc-label sc-ink--blue">
+            {spinLabels ? spinLabels.moneyLabel : 'Prize Pool'}
+          </span>
           <span className={`${styles.value} sc-ink--silver`}>
-            {(() => {
-              const gtd = tournament.guaranteedPrize || 0;
-              const displayPool =
-                gtd > 0 ? Math.max(tournament.prizePool, gtd) : tournament.prizePool;
-              return compactChips(displayPool);
-            })()}
+            {spinLabels
+              ? (spinLabels.money ?? 'Unavailable')
+              : (() => {
+                  const gtd = tournament.guaranteedPrize || 0;
+                  const displayPool =
+                    gtd > 0 ? Math.max(tournament.prizePool, gtd) : tournament.prizePool;
+                  return compactChips(displayPool);
+                })()}
             {/* `guaranteedPrize && ...` printed a literal 0 after the pool
                 ("400" for a 40-chip pool with no guarantee): React renders the
                 number 0. Compare, never coerce. */}
-            {(tournament.guaranteedPrize ?? 0) > 0 && (
+            {!spinLabels && (tournament.guaranteedPrize ?? 0) > 0 && (
               <span className={`${styles.gtd} sc-ink--gold`}>GTD</span>
             )}
           </span>
         </div>
+
+        {/* The multiplier is the whole reason the format exists, so a Spin
+            says where it stands: the ladder's ceiling while it fills, the
+            drawn number once the wheel has landed. */}
+        {spinLabels && (
+          <div className={styles.row}>
+            <span className="sc-label sc-ink--blue">Multiplier</span>
+            <span className={`${styles.value} sc-ink--gold`}>{spinLabels.multiplier}</span>
+          </div>
+        )}
 
         <div className={styles.row}>
           {/* ENTRIES, NOT PLAYERS (2026-08-25). This number comes from
@@ -763,17 +835,17 @@ function TournamentLobbyCardInner({
         {hasLateReg &&
           (tournament.status === 'registering' ||
             (tournament.status === 'running' && lateRegActive)) && (
-          <div className={styles.row}>
-            <span className="sc-label sc-ink--blue">Late Reg</span>
-            <span className={`${styles.value} sc-ink--gold`}>
-              {tournament.status === 'running'
-                ? lateRegCountdown || 'Open'
-                : lateRegLevels > 0
-                  ? `Through Lvl ${lateRegLevels}`
-                  : `${lateRegMinutes} Min`}
-            </span>
-          </div>
-        )}
+            <div className={styles.row}>
+              <span className="sc-label sc-ink--blue">Late Reg</span>
+              <span className={`${styles.value} sc-ink--gold`}>
+                {tournament.status === 'running'
+                  ? lateRegCountdown || 'Open'
+                  : lateRegLevels > 0
+                    ? `Through Lvl ${lateRegLevels}`
+                    : `${lateRegMinutes} Min`}
+              </span>
+            </div>
+          )}
 
         {tournament.startsAt && tournament.status === 'registering' && countdown && (
           <div className={styles.row}>

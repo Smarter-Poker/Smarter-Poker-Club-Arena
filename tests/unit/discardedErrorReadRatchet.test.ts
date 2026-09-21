@@ -109,7 +109,17 @@ const BASELINE = new Map<string, number>([
   // TournamentResultsPage was cleared to 0 in round 10 (the deep-link work
   // touched the file, so its three reads were fixed under the ratchet's own
   // rule: shrink what you touch).
-  ['src/pages/tournament/TournamentLobbyPage.tsx', 3],
+  /* ZERO SINCE 2026-09-21 (was 3). All three turned "the read did not answer"
+     into a confident wrong answer, which is CLAUDE.md 10.86 rule 1 in one
+     file: the player's registration list became "registered for nothing", so
+     a board of live Register (buy-in) buttons was shown to a player already
+     in every event; union membership became "standalone"; and the union scope
+     read became "no union", quietly dropping every union game off the board.
+     The two union reads keep the outcome they always had (fail open on the
+     affordance, fail closed on scope) - what they no longer do is reach it by
+     accident. Kept at 0 rather than deleted so a reintroduction is a diff on
+     this line. */
+  ['src/pages/tournament/TournamentLobbyPage.tsx', 0],
   ['src/pages/VIPPage.tsx', 2],
   ['src/pages/NotificationsPage.tsx', 0],
   ['src/pages/ClubRulesPage.tsx', 0],

@@ -18,16 +18,25 @@ file it finds). Dated claims; re-check each with one call before acting.
   with traps 7.11b to 7.13 and the three 2026-09-14 rulings (Title Case on
   data, a horse is never named, internal tools are not surfaces).
 
-## Inventory after #4696 (find-generic-surfaces.mjs)
+## Inventory after #4696
 
-221 spoken for, 12 to go:
+`node .claude/skills/club-arena-console/scripts/find-generic-surfaces.mjs`
+(the path, because the last copy of this file said `kit/` and there is no
+`kit/`). Re-run 2026-09-21 on `be423c8b72`: **221 spoken for, 12 to go**, and
+nine of the twelve are dead code.
 
-| surface | why it is still on the list |
-| --- | --- |
-| `ClubAdvertisePage` | its console version needs the sponsor pricing and country targeting `#4711` also dropped (`AdCampaignService`); redo it after the ads owner re-lands (worktree `ads-self`, `agent/cowork-ads12`) |
-| `PokerArenaLandingPage` | public landing page; two importers; never rebuilt |
-| `LeaderboardSettlementCard`, `StatCard` | now owned by the leaderboard (`#4521`) and cinematic Stats (`#4974`) re-lands; score 3 to 4, cosmetic |
-| eight `DEAD?` rows | zero importers (`MiniStatsCard`, `PremiumCard`, `RatingModal`, `ReportPlayerModal`, `SpectatorOverlay`, `FAQPanel`, `Card`, `StatCard`); dead code, delete rather than rebuild |
+| surface                     | score | state                                                                                                                                                                                                                                    |
+| --------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ClubDetailPage`            | 137   | **DEAD.** 1,986 lines, zero importers, no route in `App.tsx`, not in the prerender map. The operator workspace moved to `/hub/club-arena/clubs/:club/operations` and its 26 sub pages; this is what it replaced. Delete, do not rebuild. |
+| `ClubAdvertisePage`         | 34    | **UNBLOCKED as of 2026-09-21.** The previous copy of this file said it waits on the ads owner re-landing `AdCampaignService`; that landed - `src/services/AdCampaignService.ts` is on `main` today. Rebuild it.                          |
+| `PokerArenaLandingPage`     | 16    | public landing page at `/`, lazy in `App.tsx` and in `entry-server.tsx`'s prerender map, so a rebuild has to be checked in the prerendered HTML too. Never rebuilt.                                                                      |
+| `LeaderboardSettlementCard` | 3     | one importer (`LeaderboardPage`), cosmetic                                                                                                                                                                                               |
+| eight `DEAD?` rows          | 4-18  | zero importers: `MiniStatsCard`, `PremiumCard`, `RatingModal`, `ReportPlayerModal`, `SpectatorOverlay`, `FAQPanel`, `Card`, `StatCard`. Delete rather than rebuild.                                                                      |
+
+`StatCard` appears in the old copy of this table twice, once as owned by the
+cinematic Stats re-land and once as dead. The scanner says zero importers; the
+cinematic re-land owns a different file. Treat it as dead and check the
+importer count in one call before deleting it.
 
 ## What not to redo
 

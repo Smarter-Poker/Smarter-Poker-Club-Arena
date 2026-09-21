@@ -3,7 +3,7 @@
     "scripts/ci/classify-ci-changes.mjs": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "2e7ed191fbf0b460be4b88109ca960ecf4bb523d23fd91980573a6c0caa2c694",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "a74e9202e3ca78a4d665d24bd68f674339bf235390360ab4dbc877d80caab4fb",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
@@ -82,6 +82,13 @@
       "to": "05c4f0889695b0153150bf0855f4c24280ac940006805bff6891e44d3118e65b",
       "on": "2026-09-21",
       "why": "Restamped 2026-09-21 by migration 20260921052548 (installed 20260921060422). The only change to this runner is one added acceptance-phase step - the payee-document-privacy preimage, that migration and its regression - plus its log in the retained-artifact list. No existing phase, fixture, candidate or assertion in this file was altered."
+    },
+    {
+      "file": "scripts/dev/test-full-weekly-accounting-activation.sh",
+      "from": "2e7ed191fbf0b460be4b88109ca960ecf4bb523d23fd91980573a6c0caa2c694",
+      "to": "a74e9202e3ca78a4d665d24bd68f674339bf235390360ab4dbc877d80caab4fb",
+      "on": "2026-09-21",
+      "why": "Restamped 2026-09-21: the native accounting cluster now declares LC_ALL=C/LANG=C for its own initdb and pg_ctl lifecycle commands, because an inherited UTF-8 locale made the macOS postmaster refuse to start ('postmaster became multithreaded during startup') and the runner died before its first assertion. No financial function, fixture body, assertion or captured definition changed."
     }
   ]
 }

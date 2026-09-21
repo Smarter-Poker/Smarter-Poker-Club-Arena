@@ -1318,6 +1318,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase3-remediation.sh
+      - name: Lightning Phase 4 counts one live eligible population and the thresholds it is judged by
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase4-population.sh
       - name: Credit invoices bill only uninvoiced drawn debt
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1521,6 +1525,10 @@ jobs:
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-a-bust-is-ranked-by-when-it-happened-pg17.sh
+      - name: Satellite and deal ladders rank a same-hand bust by starting stack
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/probe-satellite-same-hand-bust-order-pg17.sh
 
       - name: Tournament blinds publish atomically across the field
         env:

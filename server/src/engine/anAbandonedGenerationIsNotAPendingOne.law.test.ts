@@ -162,9 +162,30 @@ describe('B. the release guard defers the table and proves it from rows', () => 
   it('a non-empty boundary set is deferred, never refused outright and never ignored', () => {
     expect(physical).toContain("name === 'terminalBoundaryPendingGenerations'");
     expect(physical).toContain('deferredAbandonedBoundaries.set(tableId,');
-    // Every other collection keeps the exact original zero-size refusal.
+    // Every other collection keeps the exact original zero-size refusal. #5011
+    // rewrote that one line as `size <= allowed` so the guard could admit ONE
+    // entry on THIS field for an engine that still holds the interrupted hand's
+    // undischarged permit. For every other field `allowed` is 0, `size <= 0` is
+    // `size === 0`, and the reported `expected` is still '0' - so the guarantee
+    // this law was written for is unchanged and only its wording moved.
     expect(physical).toContain(
-      "drained(size === 0, 'engineCollection.size', size, '0', () => ({ failedField: name }));"
+      "const allowed = name === 'terminalBoundaryPendingGenerations' && interrupted ? 1 : 0;"
+    );
+    expect(physical).toContain(
+      "drained(size <= allowed, 'engineCollection.size', size, String(allowed), () => ({"
+    );
+  });
+
+  it('the deferral and the interrupted-hand allowance are disjoint', () => {
+    // THE PERMIT SEPARATES THEM. #5021 defers only when there is no outstanding
+    // hand at all; #5011 admits one entry only when the engine still holds that
+    // hand's permit in {unknown,reserved,terminated}. A permit in any other
+    // phase - `attempted` above all - is a hand that MAY HAVE STARTED, and it
+    // must keep #5011's refusal (`expected` 0, before any row read and before
+    // any RPC) rather than being softened into a deferral.
+    expect(physical).toContain("name === 'terminalBoundaryPendingGenerations' && permit === null");
+    expect(physical).toContain(
+      "permit !== null && ['unknown', 'reserved', 'terminated'].includes(capture.phase)"
     );
   });
 

@@ -491,15 +491,40 @@ raise SystemExit(4)
     4) ;;
     *) return 1 ;;
   esac
-  # Fail closed. Exit 0 is the ONLY result that proceeds; the helper answers 1
+  # Fail closed. Exit 0 is the ONLY result that proceeds. The helper answers 1
   # for a hand in the air and 3 for "could not tell", and both refuse here.
   # There is deliberately no flag, variable or argument that skips this.
-  if "$INFLIGHT_HANDS" --env-file "$ENV_FILE"; then
-    echo "[engine-release-transaction] the database confirms no hand is in the air; admitting the cutover past the unresolved preparation named above"
-    printf '%s\n' "$verdict"
-    return 0
-  fi
-  echo "[engine-release-transaction] the database did not prove the felt is quiet; the cutover stays refused" >&2
+  #
+  # EVERY refusal is named separately, because on 2026-09-21 they were not.
+  # The helper was absent from the installed control generation, the shell
+  # answered 127, and `if ...; then` reported that as the same thing as "the
+  # felt is not quiet" - so five consecutive releases said the database had
+  # refused when the database had never been asked. A missing helper is
+  # UNKNOWN, and UNKNOWN has to say so in its own words (CLAUDE.md 10.86
+  # rules 1 and 2). All four branches still refuse; only the message differs.
+  set +e
+  "$INFLIGHT_HANDS" --env-file "$ENV_FILE"
+  local inflight_rc=$?
+  set -e
+  case "$inflight_rc" in
+    0)
+      echo "[engine-release-transaction] the database confirms no hand is in the air; admitting the cutover past the unresolved preparation named above"
+      printf '%s\n' "$verdict"
+      return 0
+      ;;
+    1)
+      echo "[engine-release-transaction] the database says a hand IS in the air; the cutover stays refused" >&2
+      ;;
+    3)
+      echo "[engine-release-transaction] the database could not tell whether the felt is quiet; the cutover stays refused" >&2
+      ;;
+    126|127)
+      echo "[engine-release-transaction] UNKNOWN: $INFLIGHT_HANDS is missing from this control generation or is not executable (status $inflight_rc). The database was NEVER ASKED. This is a packaging fault in install-engine-supervisor.sh REQUIRED_FILES, not a verdict about the felt; the cutover stays refused." >&2
+      ;;
+    *)
+      echo "[engine-release-transaction] UNKNOWN: the in-flight-hands helper exited $inflight_rc, which is not one of its three defined answers; the cutover stays refused" >&2
+      ;;
+  esac
   return 1
 }
 

@@ -154,7 +154,15 @@ describe('3. the release gate asks the database, and fails closed', () => {
       statSync(join(ROOT, 'server/scripts/engine-release-inflight-hands.py')).mode & 0o111
     ).toBeGreaterThan(0);
     expect(TRANSACTION).toContain('INFLIGHT_HANDS="$CONTROL_DIR/engine-release-inflight-hands.py"');
-    expect(TRANSACTION).toContain('if "$INFLIGHT_HANDS" --env-file "$ENV_FILE"; then');
+    // 2026-09-21: this pinned `if "$INFLIGHT_HANDS" ...; then`, and that form
+    // is exactly what folded a MISSING helper into "the felt is not quiet".
+    // The helper was absent from the installed generation for five releases,
+    // the shell answered 127, and the gate reported a database refusal that
+    // had never happened. The pin moves to the case that keeps the helper's
+    // three answers apart; the guarantee it protects is unchanged and is
+    // asserted below (exactly one `return 0`, and it is the QUIET branch).
+    expect(TRANSACTION).toContain('"$INFLIGHT_HANDS" --env-file "$ENV_FILE"');
+    expect(TRANSACTION).toContain('case "$inflight_rc" in');
   });
 
   it('keeps the window, durability and budget predicates unchanged', () => {
@@ -232,7 +240,7 @@ describe('3. the release gate asks the database, and fails closed', () => {
     // is that it cannot be talked out of a refusal by hand.
     expect(INFLIGHT).not.toMatch(/--force|--skip|ALLOW_|FORCE_|SKIP_|BYPASS/);
     // Scope to the admission block only - up to the close of the function.
-    const from = TRANSACTION.indexOf('if "$INFLIGHT_HANDS"');
+    const from = TRANSACTION.indexOf('"$INFLIGHT_HANDS" --env-file');
     const admission = TRANSACTION.slice(from, TRANSACTION.indexOf('\n}', from));
     expect(admission).not.toMatch(/\|\|\s*true/);
     expect(admission).not.toMatch(/FORCE|SKIP|BYPASS|OVERRIDE/);

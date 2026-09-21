@@ -961,10 +961,66 @@ function mixedFixture() {
       return { error: null, data: changeResponse ? changeResponse(name, data) : data };
     },
   });
+  /* A SECOND original on one manager holding NO permit at all - the shape the
+     rows actually show for the derelict table. Its hand resolved and cleared
+     `f06CurrentPermit`, while `terminalBoundaryPendingGenerations` kept the
+     integer that nothing downstream of HAND_COMPLETE can ever resolve. The
+     manager keeps its interrupted sibling, so `originalDispositions === 1` -
+     which this profile has required since long before #5011 - still holds.
+     With no permit to carry it, the lifecycle witness is the retained break. */
+  const abandonedOriginal = (managerIndex = 0) => {
+    const { manager } = originals[managerIndex];
+    const e: any = new f.Table(300 + managerIndex);
+    e.running = false;
+    e.terminal = true;
+    e.terminalTeardownComplete = true;
+    e.teardownPromise = Promise.resolve();
+    e.dealingLoopPromise = null;
+    e.seatBoundaryTail = Promise.resolve();
+    e.snapshotFlushPromise = null;
+    e.readContinuationTasks = new Set();
+    e.tournamentMoveOperationByOwner = new Map();
+    e.entryHoldWriteChains = new Map();
+    e.f06HandPreparation = null;
+    e.f06AllocationEpoch = null;
+    e.f06CurrentPermit = null;
+    e.lifecycleDiagnostics = { instanceId: uuid(85500 + managerIndex) };
+    e.engineLeaseScope = 'tournament';
+    e.engineLeaseVerified = true;
+    e.engineLeaseTournamentId = manager.tournamentId;
+    e.engineLeaseGeneration = manager.tournamentLeaseGeneration;
+    e.hasOnlyDrainedTournamentMoveOwner = () => true;
+    e.timeBankEngine.playerBanks.clear();
+    e.timeBankMeta.clear();
+    const breakId = uuid(83500 + managerIndex);
+    manager.retainedTournamentBreakSources.set(e.tableId, { breakId, engine: e });
+    manager.durableTournamentBreaks.set(breakId, { lifecycle: '1' });
+    manager.tableEngines.set(e.tableId, e);
+    manager.drainedF06Originals.push([e.tableId, e]);
+    dataActorContext.bindTournamentDataAuthorityMethods(
+      { tournamentId: manager.tournamentId, leaseGeneration: manager.tournamentLeaseGeneration },
+      e
+    );
+    f.server.tableEngines.set(e.tableId, e);
+    f.server.tournamentOwnedTables.add(e.tableId);
+    return e;
+  };
+  /* Take the interrupted permit off a manager's FIRST original, leaving it the
+     lifecycle witness a permit used to carry - so the run reaches the custody
+     proof rather than stopping at `mixed_original_lifecycle_unproven` and
+     telling us nothing about the disposition. */
+  const clearInterruptedPermit = (managerIndex = 0) => {
+    const { engine, manager } = originals[managerIndex];
+    engine.f06CurrentPermit = null;
+    manager.durableTournamentBreaks.set(uuid(83000 + managerIndex), { lifecycle: '1' });
+    return engine;
+  };
   return {
     ...f,
     intent,
     originals,
+    abandonedOriginal,
+    clearInterruptedPermit,
     receipts,
     rpcCalls,
     onRpc: (cb: typeof onRpc) => {
@@ -1072,6 +1128,83 @@ describe('exact 8825 retained original custody retirement', () => {
       expect(f.server.tableEngines.size).toBe(3);
     }
   );
+  // 8825 originals were interrupted mid-hand. `beginTerminalBoundaryPersistence`
+  // reserved an integer immediately before HandController.start, and the only
+  // site that removes it runs inside that hand's settlement - unreachable once
+  // the engine is stopped, because `lifecycleCanMutate()` gates the step that
+  // calls it. The entry is the interruption being handed over, not live work.
+  it('admits the reserved terminal boundary of an interrupted original and still retires it', async () => {
+    const f = mixedFixture();
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+    expect(f.receipts.size).toBe(2);
+    expect(f.server.tableEngines.has(f.originals[0].engine.tableId)).toBe(false);
+    // Admitted, never discarded: the guard still mutates no engine state.
+    expect(f.originals[0].engine.terminalBoundaryPendingGenerations.size).toBe(1);
+  });
+  it('refuses a reserved terminal boundary that no undischarged permit can discharge', async () => {
+    const f = mixedFixture();
+    // 'attempted' is outside the set `sealAndRetireOriginals` demands an
+    // `aborted_unsettled` receipt for, so nothing downstream would prove it.
+    f.originals[0].engine.f06CurrentPermit.phase = 'attempted';
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_work_not_drained',
+      failedCheck: 'engineCollection.size',
+      failedField: 'terminalBoundaryPendingGenerations',
+      expected: '0',
+    });
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
+  it('refuses more pending boundaries than one interrupted hand can explain', async () => {
+    const f = mixedFixture();
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(8);
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_work_not_drained',
+      failedCheck: 'engineCollection.size',
+      failedField: 'terminalBoundaryPendingGenerations',
+      expected: '1',
+    });
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
+  it.each([
+    ['settlementInFlight', (e: any) => e.settlementInFlight.add(Promise.resolve())],
+    ['tournamentMoveOperations', (e: any) => e.tournamentMoveOperations.add(Promise.resolve())],
+    ['readContinuationTasks', (e: any) => e.readContinuationTasks.add(Promise.resolve())],
+    ['timeBankAccountingPending', (e: any) => e.timeBankAccountingPending.add(Promise.resolve())],
+    ['tournamentMoveOperationByOwner', (e: any) => e.tournamentMoveOperationByOwner.set('a', 1)],
+    ['entryHoldWriteChains', (e: any) => e.entryHoldWriteChains.set('a', 1)],
+  ])('still refuses undrained %s on an interrupted original', async (field, fill) => {
+    const f = mixedFixture();
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    fill(f.originals[0].engine);
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_work_not_drained',
+      failedCheck: 'engineCollection.size',
+      failedField: field,
+      expected: '0',
+    });
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
+  it('still refuses a failed terminal boundary on an interrupted original', async () => {
+    const f = mixedFixture();
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    f.originals[0].engine.terminalBoundaryPersistenceFailed = true;
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_work_not_drained',
+      failedCheck: 'engine.terminalBoundaryPersistenceFailed',
+    });
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
 });
 
 describe('an abandoned boundary generation is proved from rows, never assumed', () => {
@@ -1083,7 +1216,7 @@ describe('an abandoned boundary generation is proved from rows, never assumed', 
 
   it('defers the unreachable generation and retires only after the felt is proved quiet', async () => {
     const f = mixedFixture();
-    const stuck = f.originals[0].engine;
+    const stuck = f.abandonedOriginal();
     stuck.terminalBoundaryPendingGenerations.add(7);
     const before = Date.now();
     const result: any = await f.run();
@@ -1108,14 +1241,14 @@ describe('an abandoned boundary generation is proved from rows, never assumed', 
     ['a body that is not a list', () => ({ data: { table_id: 'x' }, error: null })],
   ])('refuses on %s, and retires nothing', async (_label, answer) => {
     const f = mixedFixture();
-    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    f.abandonedOriginal().terminalBoundaryPendingGenerations.add(7);
     f.onSnapshots(answer as any);
     const result: any = await f.run();
     expect(result.ok).toBe(false);
     expect(result.reason).toBe('mixed_abandoned_generation_unproven');
     expect(result.abandonedBoundaries).toBeUndefined();
     expect(f.rpcCalls).toEqual([]);
-    expect(f.server.tableEngines.size).toBe(3);
+    expect(f.server.tableEngines.size).toBe(4);
   });
 
   it.each([
@@ -1128,18 +1261,18 @@ describe('an abandoned boundary generation is proved from rows, never assumed', 
     ],
   ])('refuses %s without consulting the database', async (_label, alter) => {
     const f = mixedFixture();
-    alter(f.originals[0].engine.terminalBoundaryPendingGenerations);
+    alter(f.abandonedOriginal().terminalBoundaryPendingGenerations);
     const result: any = await f.run();
     expect(result.ok).toBe(false);
     expect(result.reason).toBe('mixed_original_work_not_drained');
     expect(result.failedCheck).toBe('engineCollection.abandonedShape');
     expect(f.snapshotReads).toEqual([]);
-    expect(f.server.tableEngines.size).toBe(3);
+    expect(f.server.tableEngines.size).toBe(4);
   });
 
   it('refuses a boundary that moves between observations', async () => {
     const f = mixedFixture();
-    const stuck = f.originals[0].engine;
+    const stuck = f.abandonedOriginal();
     stuck.terminalBoundaryPendingGenerations.add(7);
     // The live fleet write happens after capture; a boundary that grows there
     // is a moving one, not the abandoned one that was observed.
@@ -1150,16 +1283,38 @@ describe('an abandoned boundary generation is proved from rows, never assumed', 
     expect(result.ok).toBe(false);
     expect(result.reason).toBe('mixed_original_work_not_drained');
     expect(result.failedCheck).toBe('engineCollection.abandonedChanged');
-    expect(f.server.tableEngines.size).toBe(3);
+    expect(f.server.tableEngines.size).toBe(4);
   });
 
   it('still refuses a fenced engine whose boundary is recorded as failed', async () => {
     const f = mixedFixture();
-    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
-    f.originals[0].engine.terminalBoundaryPersistenceFailed = true;
+    const stuck = f.abandonedOriginal();
+    stuck.terminalBoundaryPendingGenerations.add(7);
+    stuck.terminalBoundaryPersistenceFailed = true;
     const result: any = await f.run();
     expect(result.ok).toBe(false);
     expect(result.failedCheck).toBe('engine.terminalBoundaryPersistenceFailed');
     expect(f.snapshotReads).toEqual([]);
+  });
+
+  /* THE DEFERRAL IS NOT A ROUTE PAST THE DISPOSITION PROOF. Proving the felt
+     quiet says a hand is not in the air; it says nothing about who holds
+     custody of the interruption this checkpoint exists to hand over. That is
+     still `sealAndRetireOriginals`' job, and this profile has required exactly
+     one interrupted original per manager since long before #5011. A manager
+     whose only originals have no permit at all is refused after the row proof
+     and before the committing RPC - nothing retired, no custody transferred. */
+  it('refuses a deferred manager that holds no interrupted original at all', async () => {
+    const f = mixedFixture();
+    const stuck = f.abandonedOriginal();
+    stuck.terminalBoundaryPendingGenerations.add(7);
+    f.clearInterruptedPermit();
+    const result: any = await f.run();
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('mixed_original_disposition_set_changed');
+    // The row proof still ran first, and still refused nothing on its own.
+    expect(f.snapshotReads).toHaveLength(1);
+    expect(f.receipts.size).toBe(0);
+    expect(f.server.tableEngines.has(stuck.tableId)).toBe(true);
   });
 });

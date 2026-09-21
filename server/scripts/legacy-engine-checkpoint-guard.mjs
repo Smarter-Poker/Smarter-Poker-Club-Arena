@@ -969,6 +969,31 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               };
             }
           );
+          // An original interrupted mid-hand still holds the integer that
+          // `beginTerminalBoundaryPersistence` reserved immediately before
+          // HandController.start. The single site that removes it,
+          // `finishTerminalBoundaryPersistence`, is reached only from the hand's
+          // own settlement; on a stopped engine `lifecycleCanMutate()` is
+          // permanently false, so the `hand_history` step returns before it runs
+          // and no timer, job, successor or database row can ever reach it again.
+          // The reserved integer therefore IS the interruption this checkpoint
+          // exists to hand over, not work still draining - every other drain
+          // predicate above has already proved nothing is in flight, and a
+          // boundary that was attempted and lost would have set
+          // `terminalBoundaryPersistenceFailed`, which is refused above.
+          //
+          // Admit it ONLY for an engine that still holds the undischarged permit
+          // of that hand, whose live phase was proved equal to the captured phase
+          // through the unmodified `F06HandPermit.prototype.recoveryState` above.
+          // That is not a waiver: `sealAndRetireOriginals` refuses this whole run
+          // with `mixed_original_disposition_unproven` unless the database proves
+          // that same permit `aborted_unsettled` against a committed receipt
+          // naming this exact engine, manager and container - and it does so
+          // before the custody RPC and before the retirement CAS, so an
+          // undischarged interruption still reaches no irreversible step. Nothing
+          // is written for a retained original before that proof.
+          const interrupted =
+            permit !== null && ['unknown', 'reserved', 'terminated'].includes(capture.phase);
           [...engineSets, ...engineMaps].forEach((name, index) => {
             const collection = engine[name];
             const captured = capture.collections[index];
@@ -980,7 +1005,39 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               () => ({ failedField: name })
             );
             const size = collection.size;
-            if (size !== 0 && name === 'terminalBoundaryPendingGenerations') {
+            // THREE OUTCOMES ON THIS ONE FIELD, NOT TWO (merged 2026-09-21).
+            // #5011 and #5021 answer different questions about the same set and
+            // THE PERMIT IS WHAT SEPARATES THEM, so neither can mask the other:
+            //
+            //   permit !== null && interrupted  -> #5011 ADMITS ONE. The engine
+            //     still holds the undischarged permit of the hand that opened
+            //     this generation, so one entry IS the interruption being handed
+            //     over. `sealAndRetireOriginals` then refuses the whole run with
+            //     `mixed_original_disposition_unproven` unless the database
+            //     proves that same permit `aborted_unsettled` against a
+            //     committed receipt naming this engine, manager and container.
+            //   permit !== null && !interrupted -> #5011 REFUSES, `expected` 0,
+            //     before any row is read and before any RPC. A permit outside
+            //     {unknown,reserved,terminated} - `attempted` above all - means a
+            //     hand that MAY HAVE STARTED and that nothing downstream would
+            //     prove. That is not an abandoned generation and it must not be
+            //     deferred into one.
+            //   permit === null                 -> #5021 DEFERS. There is no
+            //     outstanding hand at all, so nothing downstream of
+            //     HAND_COMPLETE can ever resolve the generation; it is abandoned
+            //     and `proveAbandonedBoundaries` proves the felt quiet from rows
+            //     before anything is retired.
+            //
+            // Gating the deferral on `permit === null` rather than on
+            // `!interrupted` keeps #5011 byte-for-byte wherever a permit exists,
+            // including its early refusal for `attempted`, and is the shape the
+            // rows actually show. Measured on engine 8825af51: table 2c621856
+            // refused four times after #5011 merged with `expected:"0"`, which is
+            // `String(allowed)` - so `allowed` was 0, so `interrupted` was false;
+            // and its last permit (hand 12942021) is `aborted_unsettled` with no
+            // dispatch and no `hand_history` row, i.e. resolved and cleared off
+            // the engine while the generation stayed behind.
+            if (size !== 0 && name === 'terminalBoundaryPendingGenerations' && permit === null) {
               // A generation is opened immediately before HandController.start
               // and removed only downstream of HAND_COMPLETE. `handController`
               // is null on this engine - proved above - so no HAND_COMPLETE can
@@ -1036,7 +1093,16 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               );
               deferredAbandonedBoundaries.set(tableId, { signature, count: generations.length });
             } else {
-              drained(size === 0, 'engineCollection.size', size, '0', () => ({ failedField: name }));
+              // Exactly one hand can be outstanding on a terminal engine, so the
+              // allowance is one entry on one field. For every other field, and for
+              // this field on an engine with no undischarged permit, `allowed` is 0
+              // and `size <= 0` is `size === 0` - including a malformed collection
+              // whose `size` is undefined - so the refusal, its order and its
+              // reported `expected` are unchanged.
+              const allowed = name === 'terminalBoundaryPendingGenerations' && interrupted ? 1 : 0;
+              drained(size <= allowed, 'engineCollection.size', size, String(allowed), () => ({
+                failedField: name,
+              }));
             }
             const expectSet = engineSets.includes(name);
             drained(

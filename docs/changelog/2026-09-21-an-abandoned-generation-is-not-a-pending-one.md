@@ -171,3 +171,93 @@ case that reads no row at all because nothing was deferred.
   reinvented.
 - **#5013 (open)** - `engine-release-inflight-hands.py` with named exit codes.
 - **#5010 (merged)** - a quarantined tournament manager as a counted state.
+
+## Merged with #5011, which landed first - and reverts none of it
+
+#5011 ("the 8825 drain guard accepts the interruption it retires", squash
+`9bfa6401a8`, merged 09:33:47Z) touched the same line. It is not a competing
+fix and it has not been weakened here: both mechanisms are kept, and the
+PERMIT is what separates them.
+
+### The measurement that decided the shape
+
+After #5011 merged, `auto-deploy-hetzner` failed four more times - 09:34
+(`9bfa6401`, the squash itself), 09:53 (`c2d69517`), 10:55 (`7f296c07`) and
+12:48 (`079ba380`). Every SHA carries #5011's `allowed` line, and three of the
+four runs' payloads were read back directly:
+
+```
+"failedCheck":"engineCollection.size","failedTable":"2c621856-...",
+"failedField":"terminalBoundaryPendingGenerations","observed":"1","expected":"0"
+```
+
+`expected` is literally `String(allowed)`, and `failedField` is the field, so
+`allowed` was 0 - which means **`interrupted` was false for this table** and
+#5011's allowance never reaches it.
+
+**Why it is false is `permit === null`, not an unadmitted phase.** The six
+phases `F06HandPermit` can hold partition cleanly:
+
+| phase                               | ruled out by                                                                                                                                                                            |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unknown`, `reserved`, `terminated` | the measurement above - these are exactly `interrupted`                                                                                                                                 |
+| `attempted`                         | the rows: permit `12942021` is `aborted_unsettled` with 0 dispatches and 0 `hand_history` rows, so `HandController.start` was never reached and the phase never advanced to `attempted` |
+| `number_refused`                    | `ServerTableEngineBase` clears `f06CurrentPermit` to null on a known number refusal                                                                                                     |
+| `new`                               | `reserveF06Hand` installs the permit and `reserveOriginal` sets `unknown` with no await between, and the guard separately requires `permit.reserveInFlight === false`                   |
+
+Nothing is left but `null`. That is also the shape the guard already names one
+function away: `allocationBacked` filters on `e.permit === null &&
+e.allocationEpoch !== null`, above the comment "8825 retains the original
+allocator epoch **after an accepted hand clears its local permit**".
+
+### The resolution
+
+`physical()` now has three outcomes on this one field instead of two:
+
+- `permit !== null && interrupted` - #5011 admits ONE entry, and
+  `sealAndRetireOriginals` still refuses the run with
+  `mixed_original_disposition_unproven` unless the database proves that permit
+  `aborted_unsettled` against a receipt naming this engine, manager and
+  container.
+- `permit !== null && !interrupted` - #5011 REFUSES, `expected` 0, before any
+  row read and before any RPC. A permit in any other phase is a hand that MAY
+  HAVE STARTED; it is not an abandoned generation and must not become one.
+- `permit === null` - #5021 DEFERS, and `proveAbandonedBoundaries` proves the
+  felt quiet from rows before anything is retired.
+
+Gating the deferral on `permit === null` rather than on `!interrupted` is
+deliberate and is the narrower of the two: every #5011 test passes unchanged,
+including `refuses a reserved terminal boundary that no undischarged permit can
+discharge`, which asserts that refusal happens with `rpcCalls` still empty.
+
+### Ordering, unchanged and still load-bearing
+
+```js
+await proveAbandonedBoundaries(checkAll); // rows: is the felt quiet?
+await sealAndRetireOriginals(checkAll); // custody: who holds the interruption?
+```
+
+Both still precede `sealAndRetireOriginals`' committing RPC, the custody RPC
+and the retirement CAS. They do not short-circuit each other and share no
+state: the first reads `deferredAbandonedBoundaries` and returns immediately
+when it is empty, the second reads `retainedManagers`. A refusal in either
+means nothing was retired and no custody moved.
+
+**They are not substitutes, and a new test says so.** `refuses a deferred
+manager that holds no interrupted original at all` pins that proving the felt
+quiet is not a route past the disposition proof: this profile has required
+exactly one interrupted original per manager since long before #5011, and a
+manager without one is refused with `mixed_original_disposition_set_changed`
+after the row proof and before the committing RPC.
+
+### Tests and laws reconciled
+
+- `tests/legacyEngineCheckpointGuard.test.ts` - both suites kept. #5011's
+  cases still drive a permit-holding original; #5021's now drive
+  `abandonedOriginal()`, a second original on the same manager holding no
+  permit, which is the shape the rows actually show. 82 pass.
+- `server/src/engine/anAbandonedGenerationIsNotAPendingOne.law.test.ts` - the
+  assertion pinning the pre-merge `drained(size === 0, ...)` else-branch was
+  orphaned by #5011 rewriting that line; it now pins the merged `size <=
+allowed` expression, plus a new case pinning that the deferral and the
+  allowance are disjoint.

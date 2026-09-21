@@ -127,7 +127,9 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(page).toContain("daily: 'cycle-daily'");
     expect(page).toContain("weekly: 'cycle-weekly'");
     expect(page).toContain("monthly: 'cycle-monthly'");
-    expect(page).toContain('variant={TIER_CONTROL_ICONS[tier]}');
+    expect(readDailyChallengesUnit('MissionCycleRail.tsx')).toContain(
+      'variant={TIER_CONTROL_ICONS[tier]}'
+    );
     expect(page).toContain('data-loading-mission-card=""');
     expect(page).toContain('className={styles.loadingCardInstrument}');
     expect(css).toContain('.loadingCard > .bevelFrame');

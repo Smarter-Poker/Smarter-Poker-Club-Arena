@@ -144,9 +144,10 @@ describe('Daily Missions accessibility contract', () => {
     ).toHaveLength(1);
     expect(PAGE.match(/role="progressbar"/g)).toHaveLength(1);
     expect(PAGE).toContain('aria-valuetext=');
-    expect(PAGE).toContain('role="tablist"');
+    const rail = readDailyChallengesUnit('MissionCycleRail.tsx');
+    expect(rail).toContain('role="tablist"');
     expect(PAGE).toContain('role="tabpanel"');
-    expect(PAGE).toContain('aria-controls="mission-panel"');
+    expect(rail).toContain('aria-controls="mission-panel"');
     expect(PAGE).toContain('id="mission-panel"');
     expect(PAGE).not.toContain('aria-controls={`mission-panel-${tier}`}');
     expect(readDailyChallengesUnit('MissionHero.tsx')).toContain(

@@ -20,6 +20,7 @@ import {
   MissionInstrumentGlyph,
   type CasinoControlIconVariant,
 } from '../components/challenges';
+import { MissionCycleRail } from '../components/challenges/dashboard/MissionCycleRail';
 import { MissionStreakConsole } from '../components/challenges/dashboard/MissionStreakConsole';
 import { MissionSummaryGrid } from '../components/challenges/dashboard/MissionSummaryGrid';
 import { MissionHero } from '../components/challenges/dashboard/MissionHero';
@@ -2090,36 +2091,16 @@ export default function DailyChallengesPage() {
             />
           </header>
 
-          <div className={styles.tabs} role="tablist" aria-label="Challenge Period">
-            <span className={styles.bevelFrame} aria-hidden="true" />
-            {TIERS.map((tier) => (
-              <button
-                key={tier}
-                id={`mission-tab-${tier}`}
-                type="button"
-                role="tab"
-                aria-selected={activeTier === tier}
-                aria-controls="mission-panel"
-                tabIndex={activeTier === tier ? 0 : -1}
-                className={`${styles.tab} ${activeTier === tier ? styles.tabActive : ''}`}
-                style={{ '--tier-color': TIER_COLORS[tier] } as React.CSSProperties}
-                onKeyDown={(event) => handleTierKeyDown(event, tier)}
-                onClick={() => {
-                  openTier(tier);
-                }}
-              >
-                <CasinoControlIcon
-                  variant={TIER_CONTROL_ICONS[tier]}
-                  state={activeTier === tier ? 'active' : 'idle'}
-                  size="sm"
-                />
-                <span className={styles.tabLabel}>{TIER_LABELS[tier]}</span>
-                <span className={styles.tabCount}>
-                  {tierCounts[tier].done}/{tierCounts[tier].total} Complete
-                </span>
-              </button>
-            ))}
-          </div>
+          <MissionCycleRail
+            activeTier={activeTier}
+            tierCounts={tierCounts}
+            onOpenTier={openTier}
+            onTierKeyDown={handleTierKeyDown}
+            TIERS={TIERS}
+            TIER_LABELS={TIER_LABELS}
+            TIER_COLORS={TIER_COLORS}
+            TIER_CONTROL_ICONS={TIER_CONTROL_ICONS}
+          />
 
           <section
             id="mission-panel"

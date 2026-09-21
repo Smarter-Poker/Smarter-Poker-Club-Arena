@@ -357,7 +357,9 @@ describe('the page ships the casino-realism surface without the old stubs', () =
     // Was `reward.chips.toLocaleString()`. The celebration no longer has a
     // chip payout tile to render (Dan 2026-09-05: rewards are diamonds).
     expect(page).toContain('reward.diamonds.toLocaleString()');
-    expect(page).toContain('aria-controls="mission-panel"');
+    expect(readDailyChallengesUnit('MissionCycleRail.tsx')).toContain(
+      'aria-controls="mission-panel"'
+    );
     expect(page).toContain("event.key === 'ArrowRight'");
     expect(page).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
     expect(page).toContain('Replaced.');

@@ -115,9 +115,11 @@ describe('Daily Mission feedback, consent, and health wiring', () => {
     // Each operation is recorded by the unit that owns it.
     const route = readDailyChallengesUnit('useMissionCycleRoute.ts');
     const actions = readDailyChallengesUnit('useDailyMissionActions.ts');
+    const dashboard = readDailyChallengesUnit('useDailyMissionDashboard.ts');
+    const realtime = readDailyChallengesUnit('useDailyMissionRealtimeCatchUp.ts');
     const eventSources: Record<string, string> = {
-      dashboard_loaded: page,
-      dashboard_failed: page,
+      dashboard_loaded: dashboard,
+      dashboard_failed: dashboard,
       claim_succeeded: actions,
       claim_failed: actions,
       claim_all_succeeded: actions,
@@ -126,8 +128,8 @@ describe('Daily Mission feedback, consent, and health wiring', () => {
       reroll_failed: actions,
       freeze_succeeded: actions,
       freeze_failed: actions,
-      realtime_degraded: page,
-      realtime_recovered: page,
+      realtime_degraded: realtime,
+      realtime_recovered: realtime,
       alerts_enabled: page,
       alerts_disabled: page,
       alerts_failed: page,

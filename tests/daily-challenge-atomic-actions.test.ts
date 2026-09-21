@@ -19,6 +19,7 @@ const service = readFileSync(
 );
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
 const actions = readDailyChallengesUnit('useDailyMissionActions.ts');
+const dashboard = readDailyChallengesUnit('useDailyMissionDashboard.ts');
 const surface = readDailyChallengesSurface();
 
 describe('Daily Missions atomic action receipts', () => {
@@ -124,7 +125,7 @@ describe('Daily Missions atomic action receipts', () => {
     );
     expect(actions).toContain('setConfirmingRerollId(null)');
     expect(actions).toContain("await loadChallenges(userId, 'silent')");
-    expect(page).toContain('dashboard.revision < dashboardRevisionRef.current');
+    expect(dashboard).toContain('dashboard.revision < dashboardRevisionRef.current');
     expect(surface).not.toContain('nextFreezeIn: freezesAvailable >= 3 ? null : prev.nextFreezeIn');
   });
 

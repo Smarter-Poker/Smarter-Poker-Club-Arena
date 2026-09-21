@@ -13,7 +13,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { getAuthUser } from '../lib/supabase';
 import { useToast } from '../components/common/Toast';
 import {
   CasinoControlIcon,
@@ -23,17 +22,11 @@ import {
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   DAILY_MISSION_REROLL_COST,
-  dailyChallengeService,
   type TieredUserChallenge,
   type Tier,
   type ChallengeType,
-  type ChallengeStreak,
-  type DailyChallengeDashboard,
-  type DailyChallengeStats,
-  type DailyChallengeRewardVault,
 } from '../services/DailyChallengeService';
 import { useIsMounted } from '../hooks/useIsMounted';
-import { useMasterBusBroadcastChannel } from '../hooks/useMasterBusBroadcastChannel';
 import { useChallengeClockNow } from '../hooks/useChallengeClock';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { reportError } from '../utils/errorReporter';
@@ -44,16 +37,10 @@ import { mediaUrl } from '../utils/mediaBase';
 import {
   formatChallengeCountdown,
   getChallengeResetAt,
-  getUtcDateKey,
   msUntilChallengeReset,
 } from '../utils/challengeReset';
 import { getChallengeMissionAction } from '../utils/challengeMissionAction';
 import { prefetchIntent } from '../utils/ChunkPreloader';
-import {
-  dailyMissionRevisionFromPayload,
-  isCurrentDailyMissionDashboardReceipt,
-  shouldRefreshQueuedDailyMissionRealtime,
-} from '../utils/dailyMissionReceipt';
 import { capture } from '../lib/analytics';
 import {
   enablePush,
@@ -73,6 +60,8 @@ import {
 } from '../services/DailyMissionTelemetryService';
 import { signInUrl } from '../lib/signIn';
 import { useClubWorkspace } from '../contexts/ClubWorkspaceContext';
+import { useDailyMissionDashboard } from '../components/challenges/dashboard/useDailyMissionDashboard';
+import { useDailyMissionRealtimeCatchUp } from '../components/challenges/dashboard/useDailyMissionRealtimeCatchUp';
 import { useDailyMissionActions } from '../components/challenges/dashboard/useDailyMissionActions';
 import { useInertAppShell } from '../components/challenges/dashboard/useInertAppShell';
 import { useMissionCycleRoute } from '../components/challenges/dashboard/useMissionCycleRoute';
@@ -898,400 +887,42 @@ export default function DailyChallengesPage() {
   const toast = useToast();
   const reduceMotion = useReducedMotion();
 
-  const [userId, setUserId] = useState<string | null>(null);
-  const [authRetryNonce, setAuthRetryNonce] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
-  const [serverClockOffsetMs, setServerClockOffsetMs] = useState<number | null>(null);
-  const [realtimeState, setRealtimeState] = useState<'connecting' | 'live' | 'degraded'>(
-    'connecting'
-  );
-
-  const [challenges, setChallenges] = useState<TieredChallenge[]>([]);
-  const [stats, setStats] = useState<DailyChallengeStats | null>(null);
-  const [streak, setStreak] = useState<ChallengeStreak | null>(null);
-  const [diamondBalance, setDiamondBalance] = useState(0);
-  const [rewardVault, setRewardVault] = useState<DailyChallengeRewardVault>({
-    count: 0,
-    diamonds: 0,
-    items: [],
-    pageSize: 100,
-    hasMore: false,
+  // Hook order is load-bearing for effect order. Reading top to bottom, the
+  // effects run: loader ref sync, initialization, daily-reset rollover
+  // (dashboard); resume listener, timer cleanup, generation bump, broadcast
+  // channel (realtime); reroll Escape, stale reroll close, freeze focus
+  // restore, freeze Escape (actions); the two focus traps and the inert
+  // shell; document title and cycle route (route); toast theme; reward
+  // Escape. Before the hooks were cut the page declared the title, toast
+  // theme, cycle route and reroll Escape effects first; every effect here
+  // owns its own DOM node, listener or timer, so the two orders are
+  // observably the same.
+  const {
+    userId,
+    setAuthRetryNonce,
+    isLoading,
+    setIsLoading,
+    isRefreshing,
+    loadError,
+    lastSyncedAt,
+    serverClockOffsetMs,
+    challenges,
+    setChallenges,
+    stats,
+    streak,
+    diamondBalance,
+    rewardVault,
+    setRewardVault,
+    refs,
+    installDashboardProjection,
+    loadChallenges,
+  } = useDailyMissionDashboard({ isMountedRef });
+  const { realtimeState } = useDailyMissionRealtimeCatchUp({
+    userId,
+    refs,
+    isMountedRef,
+    loadChallenges,
   });
-
-  const loadRequestRef = useRef(0);
-  const mutationEpochRef = useRef(0);
-  const serverClockOffsetRef = useRef<number | null>(null);
-  const periodKeysRef = useRef<Record<Tier, string> | null>(null);
-  const lastResumeRefreshRef = useRef(0);
-  const initialLoadSettledRef = useRef(false);
-  const dashboardRevisionRef = useRef(0);
-  const diamondBalanceRef = useRef(0);
-  const dashboardRequestsInFlightRef = useRef(0);
-  const queuedRealtimeRevisionRef = useRef<number | null>(null);
-  const queuedUnversionedRealtimeRef = useRef(false);
-  const realtimeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const realtimeStatusRef = useRef<'connecting' | 'live' | 'degraded'>('connecting');
-  // Every subscription status, channel error, account change and unmount opens
-  // a new catch-up generation. A cursor reply from an older generation is
-  // discarded, so a retired channel can never repaint this page.
-  const catchUpGenerationRef = useRef(0);
-  // One bounded cursor read at a time. A lifecycle wake that lands while a
-  // read is in flight is folded into exactly one follow-up read.
-  const cursorReadInFlightRef = useRef(false);
-  const cursorCatchUpPendingRef = useRef(false);
-  const userIdRef = useRef<string | null>(null);
-  const loadChallengesRef = useRef<
-    (uid: string, mode: 'initial' | 'refresh' | 'silent') => Promise<void>
-  >(async () => undefined);
-
-  // ── Loaders ──
-  const installDashboardProjection = useCallback(
-    (dashboard: DailyChallengeDashboard): boolean => {
-      if (!isMountedRef.current || dashboard.revision < dashboardRevisionRef.current) return false;
-
-      const acceptedAt = Date.now();
-      const serverSyncedAt = Date.parse(dashboard.syncedAt);
-      if (!Number.isFinite(serverSyncedAt)) {
-        throw new Error('The challenge clock receipt was invalid');
-      }
-      const nextServerClockOffsetMs = serverSyncedAt - acceptedAt;
-      serverClockOffsetRef.current = nextServerClockOffsetMs;
-      periodKeysRef.current = dashboard.periodKeys;
-      dashboardRevisionRef.current = dashboard.revision;
-      diamondBalanceRef.current = dashboard.diamondBalance;
-
-      setChallenges(dashboard.missions);
-      setStats(dashboard.stats);
-      setStreak(dashboard.streak);
-      setDiamondBalance(dashboard.diamondBalance);
-      setRewardVault(dashboard.vault);
-      setLoadError(null);
-      setServerClockOffsetMs(nextServerClockOffsetMs);
-      setLastSyncedAt(serverSyncedAt);
-      return true;
-    },
-    [isMountedRef]
-  );
-
-  const loadChallenges = useCallback(
-    async (uid: string, mode: 'initial' | 'refresh' | 'silent') => {
-      const startedAt = performance.now();
-      const requestId = ++loadRequestRef.current;
-      const mutationEpoch = mutationEpochRef.current;
-      dashboardRequestsInFlightRef.current += 1;
-      if (mode === 'initial') {
-        setIsLoading(true);
-      } else if (mode === 'refresh') {
-        setIsRefreshing(true);
-      }
-
-      try {
-        const dashboard = await dailyChallengeService.getDashboard(uid);
-        if (
-          !isMountedRef.current ||
-          uid !== userIdRef.current ||
-          !isCurrentDailyMissionDashboardReceipt(
-            requestId,
-            loadRequestRef.current,
-            mutationEpoch,
-            mutationEpochRef.current
-          )
-        )
-          return;
-
-        if (!installDashboardProjection(dashboard)) return;
-        recordDailyMissionOperation({
-          userId: uid,
-          event: 'dashboard_loaded',
-          durationMs: performance.now() - startedAt,
-          itemCount: dashboard.missions.length,
-        });
-        if (mode === 'initial') {
-          capture('daily_missions_viewed', {
-            mission_count: dashboard.missions.length,
-            reward_vault_count: dashboard.vault.count,
-            load_duration_ms: Math.round(performance.now() - startedAt),
-          });
-        }
-      } catch (err: any) {
-        if (
-          !isMountedRef.current ||
-          !isCurrentDailyMissionDashboardReceipt(
-            requestId,
-            loadRequestRef.current,
-            mutationEpoch,
-            mutationEpochRef.current
-          )
-        )
-          return;
-
-        reportError(err, 'DailyChallengesPage.load_failed');
-        recordDailyMissionOperation({
-          userId: uid,
-          event: 'dashboard_failed',
-          durationMs: performance.now() - startedAt,
-          reasonCode: dailyMissionReasonCode(err),
-        });
-        setLoadError('Challenge Ledger Unavailable. Your Progress Is Safe. Please Retry.');
-      } finally {
-        dashboardRequestsInFlightRef.current = Math.max(
-          0,
-          dashboardRequestsInFlightRef.current - 1
-        );
-        if (isMountedRef.current && requestId === loadRequestRef.current) {
-          setIsLoading(false);
-          setIsRefreshing(false);
-        }
-        if (isMountedRef.current && dashboardRequestsInFlightRef.current === 0) {
-          const queuedRevision = queuedRealtimeRevisionRef.current;
-          const queuedUnversionedEvent = queuedUnversionedRealtimeRef.current;
-          queuedRealtimeRevisionRef.current = null;
-          queuedUnversionedRealtimeRef.current = false;
-          if (
-            shouldRefreshQueuedDailyMissionRealtime(
-              queuedRevision,
-              queuedUnversionedEvent,
-              dashboardRevisionRef.current
-            )
-          ) {
-            if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
-            realtimeRefreshTimerRef.current = setTimeout(() => {
-              realtimeRefreshTimerRef.current = null;
-              void loadChallengesRef.current(uid, 'silent');
-            }, 250);
-          }
-        }
-      }
-    },
-    [installDashboardProjection, isMountedRef]
-  );
-
-  useEffect(() => {
-    loadChallengesRef.current = loadChallenges;
-  }, [loadChallenges]);
-
-  // ── Initialization ──
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        setLoadError(null);
-        const authResult = await getAuthUser();
-        if (cancelled) return;
-        if (authResult.error || ('failed' in authResult && authResult.failed)) {
-          throw authResult.error || new Error('Secure session check failed');
-        }
-        const authUser = authResult.data.user;
-        if (!authUser) {
-          setIsLoading(false);
-          return;
-        }
-        if (userIdRef.current !== authUser.id) {
-          // A different account has nothing rendered yet. Retire every cursor
-          // and queued event that belonged to the previous account so its
-          // revision numbers cannot fence out the new account's first receipt.
-          userIdRef.current = authUser.id;
-          catchUpGenerationRef.current += 1;
-          cursorCatchUpPendingRef.current = false;
-          dashboardRevisionRef.current = 0;
-          queuedRealtimeRevisionRef.current = null;
-          queuedUnversionedRealtimeRef.current = false;
-          initialLoadSettledRef.current = false;
-        }
-        setUserId(authUser.id);
-        await loadChallenges(authUser.id, 'initial');
-        if (!cancelled) initialLoadSettledRef.current = true;
-      } catch (err) {
-        reportError(err, 'DailyChallengesPage.auth_load_failed');
-        if (!cancelled) {
-          setLoadError('Secure Session Check Failed. Please Retry Or Sign In Again.');
-          setIsLoading(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [authRetryNonce, loadChallenges]);
-
-  // Schedule the one stateful event the clock owns: UTC rollover. Countdown
-  // text itself lives in isolated leaves above and cannot re-render this page.
-  useEffect(() => {
-    if (!userId || serverClockOffsetMs === null) return undefined;
-    let timer: ReturnType<typeof setTimeout>;
-    const scheduleRollover = () => {
-      const serverNow = Date.now() + serverClockOffsetMs;
-      const delay = Math.max(250, msUntilChallengeReset('daily', serverNow) + 250);
-      timer = setTimeout(() => {
-        loadChallenges(userId, 'silent');
-        scheduleRollover();
-      }, delay);
-    };
-    scheduleRollover();
-    return () => clearTimeout(timer);
-  }, [userId, serverClockOffsetMs, loadChallenges]);
-
-  const scheduleRealtimeRefresh = useCallback(
-    (payload?: unknown) => {
-      if (!userId) return;
-      const announcedRevision = dailyMissionRevisionFromPayload(payload);
-
-      if (dashboardRequestsInFlightRef.current > 0) {
-        if (announcedRevision === null) {
-          queuedUnversionedRealtimeRef.current = true;
-        } else {
-          queuedRealtimeRevisionRef.current = Math.max(
-            queuedRealtimeRevisionRef.current ?? 0,
-            announcedRevision
-          );
-        }
-        return;
-      }
-
-      // The dashboard RPC can assign a brand-new account's first missions. Those
-      // inserts broadcast their revision before the same atomic RPC receipt
-      // reaches the browser. Scheduling another full dashboard read here made a
-      // cold open perform two identical RPCs. Keep the event for the debounce,
-      // then compare it with the revision actually rendered by the first receipt:
-      // the matching echo is already covered; a genuinely newer mutation still
-      // refreshes immediately.
-      if (announcedRevision !== null && announcedRevision <= dashboardRevisionRef.current) return;
-      if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
-      realtimeRefreshTimerRef.current = setTimeout(() => {
-        realtimeRefreshTimerRef.current = null;
-        if (announcedRevision !== null && announcedRevision <= dashboardRevisionRef.current) return;
-        loadChallenges(userId, 'silent');
-      }, 250);
-    },
-    [userId, loadChallenges]
-  );
-
-  // Realtime is the immediate path. Everything else is a lifecycle event (a
-  // new subscription generation or a tab resume) that performs ONE bounded
-  // read of the durable per-user revision cursor and fetches the dashboard
-  // only when that cursor is newer than the revision on screen. There is no
-  // repeating timer: the cursor row is the durable record of the obligation
-  // and the owned reconnect lifecycle is what re-enters this path.
-  const requestCursorCatchUp = useCallback(() => {
-    const uid = userIdRef.current;
-    if (!uid || !isMountedRef.current) return;
-    if (cursorReadInFlightRef.current) {
-      cursorCatchUpPendingRef.current = true;
-      return;
-    }
-    const generation = catchUpGenerationRef.current;
-    cursorReadInFlightRef.current = true;
-    void dailyChallengeService
-      .getDashboardRevision(uid)
-      .then((revision) => {
-        if (!isMountedRef.current || uid !== userIdRef.current) return;
-        if (generation !== catchUpGenerationRef.current) return;
-        if (revision > dashboardRevisionRef.current) scheduleRealtimeRefresh({ revision });
-      })
-      .catch(() => {
-        // The service records the read failure. Keep the confirmed page; the
-        // next lifecycle event (rejoin or resume) performs the next read.
-      })
-      .finally(() => {
-        cursorReadInFlightRef.current = false;
-        const followUp = cursorCatchUpPendingRef.current;
-        cursorCatchUpPendingRef.current = false;
-        if (followUp && isMountedRef.current && uid === userIdRef.current) {
-          requestCursorCatchUp();
-        }
-      });
-  }, [isMountedRef, scheduleRealtimeRefresh]);
-
-  // Browsers throttle timers and live sockets in background tabs. Reconcile on
-  // resume so a table left open overnight never shows yesterday's contracts.
-  // The resume is an event: one bounded cursor read decides whether the
-  // dashboard is fetched again. A UTC date change is product timing and still
-  // reloads directly, because the rendered contracts belong to a finished day.
-  useEffect(() => {
-    if (!userId) return undefined;
-
-    const refreshAfterResume = () => {
-      if (document.visibilityState !== 'visible') return;
-      // setUserId installs this listener before the first dashboard receipt
-      // settles. A focus event in that window used to see receiptAt=0 and start
-      // a duplicate cold-load request.
-      if (!initialLoadSettledRef.current) return;
-      const resumedAt = Date.now();
-      if (resumedAt - lastResumeRefreshRef.current < 1000) return;
-
-      const clockOffset = serverClockOffsetRef.current;
-      const renderedDailyKey = periodKeysRef.current?.daily;
-      const dateChanged =
-        clockOffset === null ||
-        renderedDailyKey === undefined ||
-        getUtcDateKey(resumedAt + clockOffset) !== renderedDailyKey;
-      lastResumeRefreshRef.current = resumedAt;
-      if (dateChanged) {
-        loadChallenges(userId, 'silent');
-        return;
-      }
-      requestCursorCatchUp();
-    };
-
-    document.addEventListener('visibilitychange', refreshAfterResume);
-    window.addEventListener('focus', refreshAfterResume);
-    return () => {
-      document.removeEventListener('visibilitychange', refreshAfterResume);
-      window.removeEventListener('focus', refreshAfterResume);
-    };
-  }, [userId, loadChallenges, requestCursorCatchUp]);
-
-  useEffect(
-    () => () => {
-      if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
-    },
-    []
-  );
-
-  useEffect(
-    () => () => {
-      catchUpGenerationRef.current += 1;
-      cursorCatchUpPendingRef.current = false;
-    },
-    [userId]
-  );
-
-  useMasterBusBroadcastChannel({
-    channelName: userId ? `daily-mission-revision:${userId}` : null,
-    event: 'daily_mission_revision_changed',
-    enabled: !!userId,
-    private: true,
-    onPayload: scheduleRealtimeRefresh,
-    onSubscriptionError: () => {
-      // A channel error, timeout or closure only marks the page degraded and
-      // retires any cursor reply still in flight. No fetch happens here: the
-      // owned reconnect lifecycle (supabase-js rejoin, the MasterBus channel
-      // factory and the connection watchdog) ends in a new SUBSCRIBED status,
-      // and that status is what performs the bounded catch-up read.
-      catchUpGenerationRef.current += 1;
-      realtimeStatusRef.current = 'degraded';
-      setRealtimeState('degraded');
-      recordDailyMissionOperation({ userId, event: 'realtime_degraded' });
-    },
-    onSubscriptionStatus: (status) => {
-      catchUpGenerationRef.current += 1;
-      if (status !== 'SUBSCRIBED') return;
-      const recovered = realtimeStatusRef.current === 'degraded';
-      realtimeStatusRef.current = 'live';
-      setRealtimeState('live');
-      if (recovered) recordDailyMissionOperation({ userId, event: 'realtime_recovered' });
-      // The first snapshot can precede the first joined channel, and a rejoin
-      // can follow any number of dropped frames. Both are the same event: one
-      // bounded cursor read per subscription generation, which preserves a
-      // single dashboard RPC when the receipt on screen already covers the
-      // server's current revision.
-      requestCursorCatchUp();
-    },
-  });
-
   const {
     claimingIds,
     claimingAll,
@@ -1319,7 +950,7 @@ export default function DailyChallengesPage() {
     setRewardVault,
     installDashboardProjection,
     loadChallenges,
-    refs: { mutationEpochRef, diamondBalanceRef },
+    refs,
     isMountedRef,
     toast,
   });

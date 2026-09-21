@@ -286,6 +286,8 @@ describe('the page ships the casino-realism surface without the old stubs', () =
   const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
   const route = readDailyChallengesUnit('useMissionCycleRoute.ts');
   const actions = readDailyChallengesUnit('useDailyMissionActions.ts');
+  const dashboard = readDailyChallengesUnit('useDailyMissionDashboard.ts');
+  const realtime = readDailyChallengesUnit('useDailyMissionRealtimeCatchUp.ts');
   const surface = readDailyChallengesSurface();
   const css = readFileSync(
     resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'),
@@ -298,8 +300,8 @@ describe('the page ships the casino-realism surface without the old stubs', () =
   );
 
   it('uses the spendable balance and the real reroll service', () => {
-    expect(page).toContain('dailyChallengeService.getDashboard(uid)');
-    expect(page).toContain('setDiamondBalance(dashboard.diamondBalance)');
+    expect(dashboard).toContain('dailyChallengeService.getDashboard(uid)');
+    expect(dashboard).toContain('setDiamondBalance(dashboard.diamondBalance)');
     expect(actions).toContain('dailyChallengeService.rerollChallenge(');
     expect(actions).toContain('diamondBalance < 5000');
     expect(surface).not.toContain('(Mocked)');
@@ -319,32 +321,34 @@ describe('the page ships the casino-realism surface without the old stubs', () =
   });
 
   it('keeps dashboard failures recoverable and refreshes stale background tabs', () => {
-    expect(page).toContain('dailyChallengeService.getDashboard(uid)');
-    expect(page).toContain("document.addEventListener('visibilitychange'");
-    expect(page.match(/!isCurrentDailyMissionDashboardReceipt\(/g)).toHaveLength(2);
+    expect(dashboard).toContain('dailyChallengeService.getDashboard(uid)');
+    expect(realtime).toContain("document.addEventListener('visibilitychange'");
+    expect(dashboard.match(/!isCurrentDailyMissionDashboardReceipt\(/g)).toHaveLength(2);
     expect(actions).toContain('mutationEpochRef.current += 1');
-    expect(page).toContain('if (!initialLoadSettledRef.current) return;');
-    expect(page).toContain('const acceptedAt = Date.now();');
+    expect(realtime).toContain('if (!initialLoadSettledRef.current) return;');
+    expect(dashboard).toContain('const acceptedAt = Date.now();');
     // A resumed tab asks the durable revision cursor whether it is stale; a
     // wall-clock guess about the last receipt no longer decides a full reload.
-    expect(page).not.toContain('lastDashboardReceiptAtRef');
-    expect(page).not.toContain('60_000');
-    expect(page).toContain('requestCursorCatchUp();');
-    expect(page).toContain('const serverSyncedAt = Date.parse(dashboard.syncedAt);');
-    expect(page).toContain('const nextServerClockOffsetMs = serverSyncedAt - acceptedAt;');
-    expect(page).toContain('periodKeysRef.current = dashboard.periodKeys;');
-    expect(page).toContain("msUntilChallengeReset('daily', serverNow)");
-    expect(page).toContain('getUtcDateKey(resumedAt + clockOffset) !== renderedDailyKey');
-    expect(page).not.toContain('lastSyncedAtRef');
-    expect(page).not.toContain('dateKeyRef');
+    expect(surface).not.toContain('lastDashboardReceiptAtRef');
+    expect(surface).not.toContain('60_000');
+    expect(realtime).toContain('requestCursorCatchUp();');
+    expect(dashboard).toContain('const serverSyncedAt = Date.parse(dashboard.syncedAt);');
+    expect(dashboard).toContain('const nextServerClockOffsetMs = serverSyncedAt - acceptedAt;');
+    expect(dashboard).toContain('periodKeysRef.current = dashboard.periodKeys;');
+    expect(dashboard).toContain("msUntilChallengeReset('daily', serverNow)");
+    expect(realtime).toContain('getUtcDateKey(resumedAt + clockOffset) !== renderedDailyKey');
+    expect(surface).not.toContain('lastSyncedAtRef');
+    expect(surface).not.toContain('dateKeyRef');
     expect(page).toContain('MissionLoadingState');
     expect(page).toContain('Retry Sync');
   });
 
   it('distinguishes an unreadable secure session from a signed-out visitor', () => {
-    expect(page).toContain('const authResult = await getAuthUser();');
-    expect(page).toContain("authResult.error || ('failed' in authResult && authResult.failed)");
-    expect(page).toContain('Secure Session Check Failed. Please Retry Or Sign In Again.');
+    expect(dashboard).toContain('const authResult = await getAuthUser();');
+    expect(dashboard).toContain(
+      "authResult.error || ('failed' in authResult && authResult.failed)"
+    );
+    expect(dashboard).toContain('Secure Session Check Failed. Please Retry Or Sign In Again.');
     expect(page).toContain('Retry Session Check');
   });
 

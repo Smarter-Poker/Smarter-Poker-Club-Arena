@@ -19,6 +19,7 @@ const service = readFileSync(
 );
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
 const actions = readDailyChallengesUnit('useDailyMissionActions.ts');
+const dashboard = readDailyChallengesUnit('useDailyMissionDashboard.ts');
 const surface = readDailyChallengesSurface();
 const titleCaseMigration = readFileSync(
   resolve(__dirname, '../supabase/migrations/20260901030700_daily_mission_catalog_title_case.sql'),
@@ -95,11 +96,11 @@ describe('daily challenge dashboard contract', () => {
     expect(service).toContain("supabase.rpc('get_daily_challenge_dashboard_v3'");
     expect(service).toContain('retryFetch(');
     expect(service).toContain('{ maxRetries: 2, baseDelayMs: 250 }');
-    expect(page).toContain('dailyChallengeService.getDashboard(uid)');
-    expect(page).not.toContain('dailyChallengeService.getAllChallenges(uid)');
-    expect(page).not.toContain('dailyChallengeService.getStats(uid)');
-    expect(page).not.toContain('dailyChallengeService.getStreak(uid)');
-    expect(page).not.toContain('dailyChallengeService.getDiamondBalance(uid)');
+    expect(dashboard).toContain('dailyChallengeService.getDashboard(uid)');
+    expect(surface).not.toContain('dailyChallengeService.getAllChallenges(uid)');
+    expect(surface).not.toContain('dailyChallengeService.getStats(uid)');
+    expect(surface).not.toContain('dailyChallengeService.getStreak(uid)');
+    expect(surface).not.toContain('dailyChallengeService.getDiamondBalance(uid)');
     expect(actions).toContain(
       'const dashboard = await dailyChallengeService.getDashboard(userId);'
     );

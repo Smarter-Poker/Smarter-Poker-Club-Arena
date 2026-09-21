@@ -103,15 +103,39 @@ const rakeChannels = new Map<
   { channel: ReturnType<typeof supabase.channel>; listeners: Set<() => void> }
 >();
 
+/**
+ * A roles read that can say it FAILED (Stats contract truth, 2026-09-20).
+ *
+ * `getMyAgentRoles` used to return [] on an RPC error, and [] is also the
+ * honest answer for a player who holds no agent role. Its only caller, the
+ * Player Stats page, therefore read "we could not ask" as "you hold nothing":
+ * a dropped connection removed a real agent's Downline Rake section and, for
+ * an agent with no rake of their own, left them on "No Rake In This Window",
+ * a statement about their book made on no evidence. `error` separates the two. It is set only when the read failed,
+ * and `roles` is empty in that case - a failure never invents a role, and it
+ * never stands in for an empty list either.
+ */
+export interface AgentRolesRead {
+  roles: AgentRoleRow[];
+  /** Set only when fn_my_agent_roles could not be read. */
+  error?: string;
+}
+
 export const AgentRakeService = {
-  /** Agent roles the signed-in user holds. Empty → hide rake reporting entirely. */
-  async getMyAgentRoles(): Promise<AgentRoleRow[]> {
+  /**
+   * Agent roles the signed-in user holds, WITH the read status.
+   *
+   * An empty `roles` and no `error` means "no roles": hide rake reporting.
+   * An `error` means the list is unknown, and the caller must say so rather
+   * than hide the section.
+   */
+  async getMyAgentRoles(): Promise<AgentRolesRead> {
     const { data, error } = await supabase.rpc('fn_my_agent_roles');
     if (error) {
       reportError(error, 'AgentRakeService.getMyAgentRoles');
-      return [];
+      return { roles: [], error: error.message || error.code || 'read_failed' };
     }
-    return (data ?? []) as AgentRoleRow[];
+    return { roles: (data ?? []) as AgentRoleRow[] };
   },
 
   async getDownlineRake(opts: {

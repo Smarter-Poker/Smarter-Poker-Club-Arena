@@ -42,16 +42,19 @@ describe('engine release recovery stays inside one honest break boundary', () =>
     expect(transaction).toContain('BREAK_ROLLBACK_RESERVE_SECONDS=135');
     expect(transaction).toContain('BREAK_DEADLINE_SLACK_SECONDS=0');
     expect((150 + 135) * 1000).toBeLessThan(5 * 60 * 1000);
-    // The exact legacy checkpoint (publisher workBudgetMs 20000 + cleanupBudgetMs
-    // 5000) is paid out of the 150-second candidate proof, never the 135-second
-    // rollback reserve: 285 - 25 = 260 seconds, 125 of proof left for a
-    // candidate that has measured 51-112 seconds in sealed runs.
-    expect(transaction).toContain('LEGACY_CHECKPOINT_BUDGET_SECONDS=25');
+    // The exact legacy checkpoint - ~15 s of entry measured on run 35615604946
+    // plus the publisher's workBudgetMs 20000 and cleanupBudgetMs 5000 - is
+    // paid out of the 150-second candidate proof, never the 135-second
+    // rollback reserve: 285 - 40 = 245 seconds, 110 of proof left for a
+    // candidate that has measured 51-112 seconds in sealed runs (a proof at
+    // the top of that range rolls back inside the untouched reserve).
+    expect(transaction).toContain('LEGACY_CHECKPOINT_BUDGET_SECONDS=40');
+    expect(transaction).toContain('LEGACY_CHECKPOINT_WORK_MS=25000');
     expect(transaction).toContain(
       'LEGACY_MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS - LEGACY_CHECKPOINT_BUDGET_SECONDS) * 1000))'
     );
-    expect((150 + 135 + 0 - 25) * 1000).toBe(260_000);
-    expect(260_000 - 135_000).toBe(125_000);
+    expect((150 + 135 + 0 - 40) * 1000).toBe(245_000);
+    expect(245_000 - 135_000).toBe(110_000);
     expect(transaction.indexOf('LEGACY_CHECKPOINT_BUDGET_SECONDS')).toBeLessThan(
       transaction.indexOf('MIN_BREAK_REMAINING_MS=$(((')
     );

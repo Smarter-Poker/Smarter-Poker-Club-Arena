@@ -17,11 +17,17 @@ RECOVERY = SOURCE[SOURCE.index('RECOVERY_REQUESTED=0'):SOURCE.index('persist_bre
 
 
 def run_queue(certificates, *, now=100, deadline=1000, certificate_deadline=900,
-              supersede_on=0, cancellation=False, already_released=False, legacy=False):
+              supersede_on=0, cancellation=False, already_released=False, legacy=False,
+              checkpoint_exits=(0,), intent_after_defer=False):
     with tempfile.TemporaryDirectory(prefix='engine-window-queue-') as temp:
         directory = Path(temp)
         sequence = directory / 'certificate-sequence'
         sequence.write_text('0')
+        checkpoint_sequence = directory / 'checkpoint-sequence'
+        checkpoint_sequence.write_text('0')
+        checkpoint_branches = '\n'.join(
+            f'{i}) return {code} ;;' for i, code in enumerate(checkpoint_exits, 1)
+        )
         events = directory / 'events'
         branches = '\n'.join(
             f'{i}) printf "%s\\n" {remaining}; return {code} ;;'
@@ -35,7 +41,14 @@ CERTIFICATE_DEADLINE={certificate_deadline}
 NEXT_FRESHNESS_CHECK=0
 BREAK_END_EPOCH=0
 MIN_BREAK_REMAINING_MS=285000
-LEGACY_MIN_BREAK_REMAINING_MS=260000
+LEGACY_MIN_BREAK_REMAINING_MS=245000
+LEGACY_CHECKPOINT_BUDGET_SECONDS=40
+LEGACY_ENTRY_ALLOWANCE_MS=15000
+BREAK_WINDOW_MS=300000
+BREAK_ENTRY_BUDGET_CEILING_MS=0
+BREAK_ENTRY_BUDGET_MS=0
+REQUEST_ROOT={shlex.quote(str(directory))}
+CHECKPOINT_SEQUENCE={shlex.quote(str(checkpoint_sequence))}
 LOCK_HELD=0
 LEGACY_CHECKPOINT_REQUIRED={int(legacy)}
 LEGACY_CHECKPOINT_ATTEMPTED=0
@@ -43,7 +56,13 @@ FRESHNESS_CALLS=0
 EVENTS={shlex.quote(str(events))}
 SEQUENCE={shlex.quote(str(sequence))}
 event() {{ printf '%s\\n' "$*" >> "$EVENTS"; }}
-date() {{ [ "$1" = +%s ]; printf '%s\\n' "$NOW"; }}
+date() {{
+  case "$1" in
+    +%s) printf '%s\\n' "$NOW" ;;
+    +%s%3N) printf '%s\\n' "$((NOW * 1000))" ;;
+    *) return 1 ;;
+  esac
+}}
 die() {{ event "DIE:$*"; exit 1; }}
 break_proof_seconds() {{ event UNEXPECTED_BREAK_DEADLINE; exit 98; }}
 sleep() {{
@@ -83,7 +102,19 @@ CHECKPOINT_PREDECESSOR_SHA="$CHECKPOINT_8825_SHA"
 legacy_checkpoint_countdown() {{ event "COUNTDOWN:$LOCK_HELD"; printf '%s\\n' $((NOW + 299)); }}
 timeout() {{ printf '%s\\n' "$CHECKPOINT_8825_SHA"; }}
 prove_rollback_readiness() {{ event "ROLLBACK_PROOF:$LOCK_HELD:$BREAK_END_EPOCH"; }}
-legacy_checkpoint_stub() {{ [ "$1" = "$RUN_ID" ]; event "LEGACY_CHECKPOINT:$LOCK_HELD"; NOW=$((NOW + 25)); }}
+# The helper's exit code per invocation: 0 ran, 75 deferred above its durable
+# intent (nothing attempted), anything else refused. A deferral that leaves an
+# intent behind is the fail-closed case and is simulated by writing the file.
+legacy_checkpoint_stub() {{
+  [ "$1" = "$RUN_ID" ]
+  k=$(cat "$CHECKPOINT_SEQUENCE"); k=$((k + 1)); printf '%s\\n' "$k" > "$CHECKPOINT_SEQUENCE"
+  event "LEGACY_CHECKPOINT:$LOCK_HELD:$k"; NOW=$((NOW + 25))
+  if [ {int(intent_after_defer)} = 1 ]; then : > "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent"; fi
+  case "$k" in
+    {checkpoint_branches}
+    *) return 1 ;;
+  esac
+}}
 LEGACY_CHECKPOINT=legacy_checkpoint_stub
 maintenance_certificate() {{
   n=$(cat "$SEQUENCE"); n=$((n + 1)); printf '%s\\n' "$n" > "$SEQUENCE"
@@ -186,31 +217,64 @@ class WindowQueueTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([e for e in events if e.startswith('CERTIFICATE:')],
                          ['CERTIFICATE:1:0:285000', 'CERTIFICATE:2:1:285000'])
-        self.assertNotIn('LEGACY_CHECKPOINT:1', events)
+        self.assertNotIn('LEGACY_CHECKPOINT:1:1', events)
 
     def test_legacy_checkpoint_is_read_against_the_legacy_reserve_after_it_ran(self):
-        # Run 35615604946: the checkpoint enters inside the 285000ms slack and
-        # its 25-second budget comes out of candidate proof. 270000ms after it
-        # is a complete certificate at the 260000ms legacy minimum, never at the
-        # strict one, and only once the checkpoint has actually been attempted.
-        result, events = run_queue([(2, 275000), (0, 270000)], legacy=True)
+        # Run 35615604946: the checkpoint enters at the 285000ms threshold and
+        # its 40-second budget (~15 s entry, 20 s work, 5 s cleanup) comes out
+        # of candidate proof. 260000ms after it is a complete certificate at
+        # the 245000ms legacy minimum, never at the strict one, and only once
+        # the checkpoint has actually been attempted.
+        result, events = run_queue([(2, 275000), (0, 260000)], legacy=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         certificates = [e for e in events if e.startswith('CERTIFICATE:')]
-        self.assertEqual(certificates, ['CERTIFICATE:1:0:285000', 'CERTIFICATE:2:1:260000'])
-        checkpoint = events.index('LEGACY_CHECKPOINT:1')
+        self.assertEqual(certificates, ['CERTIFICATE:1:0:285000', 'CERTIFICATE:2:1:245000'])
+        checkpoint = events.index('LEGACY_CHECKPOINT:1:1')
         self.assertLess(events.index('ROLLBACK_PROOF:1:399'), checkpoint)
-        self.assertLess(checkpoint, events.index('CERTIFICATE:2:1:260000'))
+        self.assertLess(checkpoint, events.index('CERTIFICATE:2:1:245000'))
         self.assertEqual(events[-1], 'PREPARE_ALLOWED:1000:900:0')
         self.assertEqual(events.count('LOCK'), 1)
 
     def test_legacy_checkpoint_that_breaks_the_legacy_reserve_dies_before_prepare(self):
-        result, events = run_queue([(2, 275000), (2, 259999)], legacy=True)
+        result, events = run_queue([(2, 275000), (2, 244999)], legacy=True)
         self.assertEqual(result.returncode, 1)
         self.assert_no_mutation(events)
-        self.assertIn('LEGACY_CHECKPOINT:1', events)
-        self.assertIn('CERTIFICATE:2:1:260000', events)
-        self.assertIn('260000ms legacy reserve', events[-1])
-        self.assertIn('259999ms remaining', events[-1])
+        self.assertIn('LEGACY_CHECKPOINT:1:1', events)
+        self.assertIn('CERTIFICATE:2:1:245000', events)
+        self.assertIn('245000ms legacy reserve', events[-1])
+        self.assertIn('244999ms remaining', events[-1])
+
+    def test_a_deferred_checkpoint_waits_for_a_later_countdown_and_enters_again(self):
+        # The helper exited 75 above its durable intent: nothing was attempted,
+        # so the transaction releases the lock, waits, and the NEXT countdown
+        # admits a fresh attempt that is then read at the legacy minimum. One
+        # attempt per countdown, the one-shot flag reset only for the deferral.
+        result, events = run_queue([(2, 275000), (2, 275000), (0, 260000)], legacy=True,
+                                   checkpoint_exits=(75, 0))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('LEGACY_CHECKPOINT:1:1', events)
+        self.assertIn('LEGACY_CHECKPOINT:1:2', events)
+        deferred = events.index('LEGACY_CHECKPOINT:1:1')
+        self.assertEqual(events[deferred + 1], 'UNLOCK')
+        self.assertTrue(events[deferred + 2].startswith('SLEEP:15:'), events[deferred + 2])
+        # the deferral is read by NO certificate: the next unlocked read is an
+        # ordinary strict one, and only the fresh attempt is read at 245000
+        self.assertEqual([e for e in events if e.startswith('CERTIFICATE:')],
+                         ['CERTIFICATE:1:0:285000', 'CERTIFICATE:2:0:285000', 'CERTIFICATE:3:1:245000'])
+        self.assertLess(events.index('LEGACY_CHECKPOINT:1:2'), events.index('CERTIFICATE:3:1:245000'))
+        self.assertEqual(events.count('LOCK'), 2)
+        self.assertEqual(events[-1], 'PREPARE_ALLOWED:1000:900:0')
+
+    def test_a_deferral_that_left_a_durable_intent_behind_ends_the_release(self):
+        # Exit 75 is not trusted on its own: an intent file means the operation
+        # really started, and a retry stays forbidden however the helper exited.
+        result, events = run_queue([(2, 275000), (2, 275000), (0, 260000)], legacy=True,
+                                   checkpoint_exits=(75, 0), intent_after_defer=True)
+        self.assertEqual(result.returncode, 1)
+        self.assert_no_mutation(events)
+        self.assertIn('LEGACY_CHECKPOINT:1:1', events)
+        self.assertNotIn('LEGACY_CHECKPOINT:1:2', events)
+        self.assertEqual(events[-1], 'DIE:legacy checkpoint deferred but its durable intent exists; refusing a retry')
 
 
 if __name__ == '__main__':

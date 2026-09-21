@@ -67,27 +67,17 @@ if (process.version !== "v22.23.2" ||
     process.env.GIT_COMMIT_SHA !== process.argv[1]) process.exit(1);
 ' "$LEGACY_SHA" || die 'predecessor runtime or loopback inspector configuration refused'
 NODE_BOOT_MS=$(( $(date +%s%3N) - NODE_BOOT_STARTED_MS ))
-
-# DERIVED FROM THIS HOST, NOT CHOSEN. The guard re-reads the SAME 285000ms
-# reserve, and between the probe below and that read sit one durable intent
-# write with two fsyncs and a cold containerised node module boot that also
-# streams the two guard files in and enumerates the fleet. (Spelled out in
-# prose on purpose: the literal invocation below is an anchor other suites
-# locate with indexOf, and repeating it here would shadow it.) Until
-# 2026-09-21 that gap was budgeted at zero, so the probe happily admitted at
-# 285000ms and handed the guard a deficit it had to refuse - terminally.
-# The measurable proxy for that boot is the runtime check immediately above:
-# same container, same node binary, same exec path, already paid for. Measure
-# it and triple it, because the guard's boot additionally parses two modules
-# and walks the table map. A factor over a live measurement is honest where a
-# hard-coded millisecond count would be a guess that outlives its hardware
-# (CLAUDE.md 1.1.7, 10.84). Floor it so an implausibly fast probe cannot
-# produce a zero budget; ceiling it at the 15000ms the 300000ms break has left
-# over the 285000ms reserve, because no budget larger than that is satisfiable
-# and pretending otherwise would refuse every break for ever.
-CHECKPOINT_GUARD_ENTRY_MS=$(( NODE_BOOT_MS * 3 ))
-[ "$CHECKPOINT_GUARD_ENTRY_MS" -ge 1500 ] || CHECKPOINT_GUARD_ENTRY_MS=1500
-[ "$CHECKPOINT_GUARD_ENTRY_MS" -le 9000 ] || CHECKPOINT_GUARD_ENTRY_MS=9000
+# The guard's own boot - one durable intent write with two fsyncs and a cold
+# containerised node module boot that streams the two guard files in and
+# enumerates the fleet - is paid INSIDE the transaction's 40000ms legacy
+# checkpoint budget (engine-release-transaction.sh, LEGACY_CHECKPOINT_BUDGET_
+# SECONDS: ~15000ms of entry, 20000ms of work, 5000ms of cleanup), never
+# added to the entry threshold below. The runtime check immediately above is
+# its measurable proxy - same container, same node binary, same exec path -
+# so it is measured here and reported, as evidence for the next re-derivation
+# of that allowance, not as an admission term. (The literal invocation above
+# is an anchor other suites locate with indexOf; it is not repeated here.)
+echo "[legacy-engine-checkpoint] predecessor runtime check took ${NODE_BOOT_MS}ms; the guard boot it proxies is inside the 40000ms legacy checkpoint budget" >&2
 
 # Installed SQL is a prerequisite, not a trial mutation. Refuse before the
 # durable one-shot intent or inspector; the existing transaction owns failure.
@@ -101,19 +91,25 @@ fi
 INSTANCE="$(curl -sS --max-time 2 http://127.0.0.1:8080/health | python3 -c '
 import json,re,sys
 d=json.load(sys.stdin); m=d.get("maintenance",{}); instance=d.get("instanceId",""); release=sys.argv[1]
-# 285000 is the reserve the guard enforces and is NOT relaxed here. The added
-# term is the measured cost of the intent write and node boot that still have
-# to happen between this probe and that same 285000 being read again.
+# The entry threshold is the reserve the guard holds at every check (245000,
+# reserveMs in legacy-engine-checkpoint-guard.mjs) PLUS the whole 40000
+# budget the checkpoint still has to pay after this probe (entry, work and
+# cleanup, engine-release-transaction.sh LEGACY_CHECKPOINT_BUDGET_SECONDS):
+# 285000, the same figure legacy_checkpoint_countdown admitted on. Nothing is
+# ADDED to it for the boot that follows: the 300000 countdown has exactly
+# 15000 above 285000 and the entry spends it, so any positive term here would
+# defer at every break for ever. A break shorter than this defers (75); it
+# never dies, because nothing has been written yet.
 # (No apostrophes in this comment: it lives inside a single-quoted python -c
 # argument, and one would close the quote and break the command substitution.)
-reserve=285000+int(sys.argv[2])
+reserve=245000+40000
 ok=(d.get("running") is True and d.get("version")==release[:8] and re.fullmatch(r"1-[0-9a-f]{8}",instance)
     and (release=="2f4e33560bcd23bfb5cc731f31816b2c2e2847e5" or d.get("releaseSha")==release)
     and m.get("active") is True and m.get("phase")=="counting_down"
     and m.get("durableConfirmed") is True and m.get("remainingMs",0)>=reserve)
 if not ok: raise SystemExit(1)
 print(instance)
-' "$LEGACY_SHA" "$CHECKPOINT_GUARD_ENTRY_MS")" || defer 'the break window closed before the checkpoint could start; nothing was attempted'
+' "$LEGACY_SHA")" || defer 'the break window closed before the checkpoint could start; nothing was attempted'
 
 # Persist intent before opening debugger access. A disconnect is unknown, not
 # permission to invoke again. Existing release recovery retains this run key.
@@ -145,5 +141,5 @@ PY
   || die 'predecessor changed during checkpoint'
 # This helper cannot certify or start cutover. Entry above demanded the strict
 # 285000ms; the caller must now pass the original maintenance_certificate with
-# the 260000ms legacy reserve (285000ms entry minus the 25000ms checkpoint
+# the 245000ms legacy reserve (285000ms entry minus the 40000ms checkpoint
 # budget, taken from candidate proof, never from the 135s rollback reserve).

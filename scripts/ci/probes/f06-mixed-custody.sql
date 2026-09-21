@@ -100,11 +100,12 @@ SELECT pg_temp.mixed_refuses($q$SELECT pg_temp.mixed_prepare(jsonb_set((SELECT v
 SELECT pg_temp.mixed_refuses($q$UPDATE public.engine_leader SET heartbeat_at='infinity';SELECT pg_temp.mixed_prepare((SELECT value FROM frozen_local))$q$,'FROZEN_CHECKPOINT_UNPROVEN','nonfinite leader clock refuses');
 SELECT pg_temp.mixed_refuses($q$UPDATE public.engine_leader SET heartbeat_at=clock_timestamp()-interval '61 seconds';SELECT pg_temp.mixed_prepare((SELECT value FROM frozen_local))$q$,'FROZEN_CHECKPOINT_UNPROVEN','stale leader refuses');
 -- The reserve is the one interval literal in the installed prepare body: 285 s
--- as first installed by 20260918232558, 260 s once 20260921155216 is applied
--- (the 300 s countdown less the 285 s entry reserve less the 25 s checkpoint
--- budget). One second under it refuses and half a second over it is admitted,
--- which proves the installed integer figure exactly: 259 s refused and 260.5 s
--- admitted fit only a 260-second reserve, 284 s and 285.5 s only a 285-second one.
+-- as first installed by 20260918232558, 245 s once 20260921155216 is applied
+-- (the 285 s entry threshold less the 40 s checkpoint budget: ~15 s of measured
+-- entry, 20 s of work, 5 s of cleanup). One second under it refuses and half a
+-- second over it is admitted, which proves the installed integer figure
+-- exactly: 244 s refused and 245.5 s admitted fit only a 245-second reserve,
+-- 284 s and 285.5 s only a 285-second one.
 CREATE FUNCTION pg_temp.mixed_reserve() RETURNS integer LANGUAGE plpgsql AS $$
 DECLARE found text[];BEGIN
  SELECT regexp_matches(prosrc,$r$break_ends_at'\)::timestamptz-instant>=interval '(\d+) seconds'\)$r$,'g') INTO STRICT found FROM pg_proc WHERE oid=to_regprocedure('public.fn_f06_prepare_mixed_manager_custody(uuid,uuid,uuid,uuid,jsonb,jsonb)');

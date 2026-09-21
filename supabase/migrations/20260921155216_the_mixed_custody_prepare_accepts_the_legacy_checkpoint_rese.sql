@@ -22,22 +22,29 @@
 -- instant, after the entry slack has been consumed, cannot be satisfied: the
 -- database side of the 8825 profile refused structurally, every time.
 --
--- Commit 5cf1486c moved the process side to the figure that fits and wrote the
--- derivation into engine-release-transaction.sh:
+-- Commit 5cf1486c moved the process side to a figure that fits and wrote the
+-- derivation into engine-release-transaction.sh; the reconciliation with
+-- PR #5026 (the deferral) re-derived it from what the transaction ACTUALLY
+-- pays after the admission, entry included:
 --
---     300 s countdown
---   - 285 s entry reserve            (MIN_BREAK_REMAINING_MS, unchanged)
---   -  25 s checkpoint budget         (20 s bounded work + 5 s cleanup)
---   = 260 s  LEGACY_MIN_BREAK_REMAINING_MS = reserveMs in the guard
+--     285 s entry threshold          (MIN_BREAK_REMAINING_MS, unchanged)
+--   -  40 s checkpoint budget         (~15 s measured entry: countdown
+--                                      detection, rollback proof, helper
+--                                      preamble, intent write and guard boot;
+--                                      + 20 s bounded work + 5 s cleanup)
+--   = 245 s  LEGACY_MIN_BREAK_REMAINING_MS = reserveMs in the guard
 --
--- 260,000 - 135,000 ms rollback reserve = 125,000 ms of candidate proof,
--- against 51-112 s measured in sealed runs. The 135 s rollback reserve is not
--- touched here or there; the strict 285,000 ms entry check, every ordinary
--- release, the certificate's readiness predicates and the one-shot rule all
--- keep their figures.
+-- 245,000 - 135,000 ms rollback reserve = 110,000 ms of candidate proof,
+-- against 51-112 s measured in sealed runs: a proof at the top of that range
+-- now rolls back inside the untouched reserve instead of sealing. The 135 s
+-- rollback reserve is not touched here or there; the strict 285,000 ms entry
+-- check, every ordinary release, the certificate's readiness predicates and
+-- the one-shot rule all keep their figures. (The first cut of this file
+-- carried 260 s, budgeting only the publisher's 25 s and leaving the ~15 s
+-- entry to fit inside the 15 s the break has above 285 s; never installed.)
 --
 -- This migration moves the ONE remaining 285-second pin, the one in the
--- database, to the same 260 seconds. It is the only interval literal in the
+-- database, to the same 245 seconds. It is the only interval literal in the
 -- function; nothing else in the body moves, and the post-image proves it:
 -- putting '285 seconds' back into the installed text must reproduce the
 -- pre-image digest exactly. Every other function that carries the predicate
@@ -56,15 +63,15 @@
 --
 -- POST-IMAGE (computed on PostgreSQL 17.11 from the same text; the pre-image
 -- digests reproduced there byte for byte before these were taken):
---     body md5        6ec26321609a5e101bf8fba63a6beaaf
---     definition md5  945338c6b340cee0d1464a7603f72992
+--     body md5        30ad38da71405fdc960599802310e662
+--     definition md5  4f20f5a2f6d7249578931bc877869981
 --
 -- The publisher's MIXED_CUSTODY_CONTRACT (server/scripts/engine-release-
 -- database-proof.py) and tests/fixtures/legacy-engine-checkpoint/
 -- mixed-custody-contract.json pin this function's digests in the 29-function
 -- catalogue; both were regenerated from the native shared-hand-lane
 -- qualification, which installs this migration on its clone after
--- 20260921040823 and proves 259 s is refused and 260 s admitted. INSTALL THIS
+-- 20260921040823 and proves 244 s is refused and 245 s admitted. INSTALL THIS
 -- MIGRATION BEFORE THE RELEASE'S CONTRACT CHECK: a publisher carrying the new
 -- catalogue refuses a database still holding the old digest, and vice versa.
 --
@@ -102,7 +109,7 @@ BEGIN
  -- The literal this migration moves is present exactly once, and the figure
  -- it moves to is not already there.
  IF (SELECT (length(prosrc)-length(replace(prosrc,'interval ''285 seconds''','')))/22 FROM pg_proc WHERE oid=target) <> 1
- OR EXISTS (SELECT 1 FROM pg_proc WHERE oid=target AND prosrc LIKE '%260 seconds%') THEN
+ OR EXISTS (SELECT 1 FROM pg_proc WHERE oid=target AND prosrc LIKE '%245 seconds%') THEN
   RAISE EXCEPTION 'F06_LEGACY_RESERVE_PREIMAGE_CHANGED: reserve literal' USING ERRCODE='55000';
  END IF;
 END $reserve_preimage$;
@@ -144,7 +151,7 @@ BEGIN
  OR NOT isfinite((maintenance->>'announced_at')::timestamptz)
  OR NOT isfinite((maintenance->>'break_started_at')::timestamptz)
  OR NOT isfinite((maintenance->>'break_ends_at')::timestamptz)
- OR NOT (instant>=(maintenance->>'break_started_at')::timestamptz AND (maintenance->>'break_ends_at')::timestamptz-instant>=interval '260 seconds')
+ OR NOT (instant>=(maintenance->>'break_started_at')::timestamptz AND (maintenance->>'break_ends_at')::timestamptz-instant>=interval '245 seconds')
  OR leader->>'instance_id' IS DISTINCT FROM checkpoint->>'instance_id'
  OR leader->>'engine_version' IS DISTINCT FROM '8825af51'
  OR (leader->>'heartbeat_at')::timestamptz IS NULL
@@ -192,8 +199,8 @@ BEGIN
  -- POST-IMAGE, read back from the catalog: the new digests, the same
  -- definer identity, and the proof that only the one literal moved.
  IF target IS NULL
- OR md5((SELECT prosrc FROM pg_proc WHERE oid=target)) IS DISTINCT FROM '6ec26321609a5e101bf8fba63a6beaaf'
- OR md5(pg_get_functiondef(target)) IS DISTINCT FROM '945338c6b340cee0d1464a7603f72992' THEN
+ OR md5((SELECT prosrc FROM pg_proc WHERE oid=target)) IS DISTINCT FROM '30ad38da71405fdc960599802310e662'
+ OR md5(pg_get_functiondef(target)) IS DISTINCT FROM '4f20f5a2f6d7249578931bc877869981' THEN
   RAISE EXCEPTION 'F06_LEGACY_RESERVE_POSTIMAGE_CHANGED: body % definition %',
    md5((SELECT prosrc FROM pg_proc WHERE oid=target)), md5(pg_get_functiondef(target)) USING ERRCODE='55000';
  END IF;
@@ -203,9 +210,9 @@ BEGIN
       AND proconfig=ARRAY['search_path=pg_catalog, public, smarter_private']::text[]) THEN
   RAISE EXCEPTION 'F06_LEGACY_RESERVE_POSTIMAGE_CHANGED: definer identity' USING ERRCODE='55000';
  END IF;
- IF (SELECT (length(prosrc)-length(replace(prosrc,'interval ''260 seconds''','')))/22 FROM pg_proc WHERE oid=target) <> 1
+ IF (SELECT (length(prosrc)-length(replace(prosrc,'interval ''245 seconds''','')))/22 FROM pg_proc WHERE oid=target) <> 1
  OR EXISTS (SELECT 1 FROM pg_proc WHERE oid=target AND prosrc LIKE '%285%')
- OR (SELECT md5(replace(prosrc,'interval ''260 seconds''','interval ''285 seconds''')) FROM pg_proc WHERE oid=target)
+ OR (SELECT md5(replace(prosrc,'interval ''245 seconds''','interval ''285 seconds''')) FROM pg_proc WHERE oid=target)
     IS DISTINCT FROM '3f78b42bcc2455701322b172ab7d42ff' THEN
   RAISE EXCEPTION 'F06_LEGACY_RESERVE_POSTIMAGE_CHANGED: more than the reserve literal moved' USING ERRCODE='55000';
  END IF;

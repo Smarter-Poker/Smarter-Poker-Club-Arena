@@ -32,7 +32,7 @@ MIXED_CUSTODY_PREDECESSOR = "8825af51817f379c4261658ca29ecc9d8d81932d"
 # Exact service-role READ ONLY result from the historical-bank-loss native-17
 # qualification after the reviewed-noon-hand abort migration 20260921040823 and
 # the legacy checkpoint reserve migration 20260921155216 (the prepare RPC accepts
-# 260 s); preserves the retired-origin, original bank and historical-loss boundaries.
+# 245 s); preserves the retired-origin, original bank and historical-loss boundaries.
 # Kept in this immutable control-generation file, never supplied by a caller.
 MIXED_CUSTODY_CONTRACT = {'kind': 'f06_mixed_custody_contract_v1',
  'functions': [{'acl': '{postgres=X/postgres,service_role=X/postgres}',
@@ -94,10 +94,10 @@ MIXED_CUSTODY_CONTRACT = {'kind': 'f06_mixed_custody_contract_v1',
                {'acl': '{postgres=X/postgres,service_role=X/postgres}',
                 'owner': 'postgres',
                 'config': ['search_path=pg_catalog, public, smarter_private'],
-                'body_md5': '6ec26321609a5e101bf8fba63a6beaaf',
+                'body_md5': '30ad38da71405fdc960599802310e662',
                 'signature': 'public.fn_f06_prepare_mixed_manager_custody(uuid,uuid,uuid,uuid,jsonb,jsonb)',
                 'volatility': 'v',
-                'definition_md5': '945338c6b340cee0d1464a7603f72992',
+                'definition_md5': '4f20f5a2f6d7249578931bc877869981',
                 'security_definer': True},
                {'acl': '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}',
                 'owner': 'postgres',

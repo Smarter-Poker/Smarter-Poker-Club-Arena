@@ -15,7 +15,7 @@
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
     ".prettierignore": "9786a63914be31e342f7bd030c7e31648d02d9c06b53636db5cf083494e08fd3",
-    "tests/unit/fixtureNativeCi.test.ts": "cdc183369d5b89f141948a37bff52ad76a31f2d3714ec9744a76654544dd3277",
+    "tests/unit/fixtureNativeCi.test.ts": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   }
 }

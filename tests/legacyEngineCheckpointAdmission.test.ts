@@ -2,7 +2,17 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Subprocess contract suite: these tests drive REAL child processes, so their
+// wall time scales with machine load, not with the code under test. vitest's
+// 5000ms default is a UNIT-test budget: the slowest test here measures 1589ms
+// solo, and the pre-push hook runs this file in a 90-file suite at full width,
+// where contention has been measured to stretch these runs by 7.1x and time
+// them out. 90s is 56x the measured solo runtime - past anything observed,
+// and still a real bound, so a genuinely hung child still fails the suite.
+// File-scoped on purpose: no global testTimeout, no --no-file-parallelism.
+vi.setConfig({ testTimeout: 90_000 });
 import { sliceBetween } from './helpers/sourceWindow';
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
@@ -417,12 +427,7 @@ print(json.dumps({'exit':rc,'requests':requests,'limits':limits,'messages':messa
   );
 }
 
-// Subprocess contract suite: it runs real child processes, so its wall time
-// scales with machine load, not with the code under test. Slowest test here
-// measured 1589ms solo; vitest's 5s default is a unit-test budget and times
-// out under the pre-push hook's 90-file parallel run. 90s is 57x measured,
-// well above the worst contention amplification observed (7.1x).
-describe('installed mixed custody contract prerequisite', { timeout: 90_000 }, () => {
+describe('installed mixed custody contract prerequisite', () => {
   const qualified = JSON.parse(
     read('tests/fixtures/legacy-engine-checkpoint/mixed-custody-contract.json')
   );

@@ -19,7 +19,17 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Subprocess contract suite: these tests drive REAL child processes, so their
+// wall time scales with machine load, not with the code under test. vitest's
+// 5000ms default is a UNIT-test budget: the slowest test here measures 288ms
+// solo, and the pre-push hook runs this file in a 90-file suite at full width,
+// where contention has been measured to stretch these runs by 7.1x and time
+// them out. 90s is 312x the measured solo runtime - past anything observed,
+// and still a real bound, so a genuinely hung child still fails the suite.
+// File-scoped on purpose: no global testTimeout, no --no-file-parallelism.
+vi.setConfig({ testTimeout: 90_000 });
 
 const root = resolve(__dirname, '..');
 const SCRIPT = resolve(root, 'scripts/ci/check-engine-doors-exist.mjs');
@@ -78,12 +88,7 @@ describe('the extractor finds every door the engine calls, and only those', () =
   });
 });
 
-// Subprocess contract suite: it runs real child processes, so its wall time
-// scales with machine load, not with the code under test. Slowest test here
-// measured 288ms solo; vitest's 5s default is a unit-test budget and times
-// out under the pre-push hook's 90-file parallel run. 90s is 312x measured,
-// well above the worst contention amplification observed (7.1x).
-describe('the real script, end to end', { timeout: 90_000 }, () => {
+describe('the real script, end to end', () => {
   it('fails, and names the door, when production lacks one the build calls', async () => {
     const { engineDoors } = await load();
     const all = [...engineDoors(resolve(root, 'server/src')).keys()];

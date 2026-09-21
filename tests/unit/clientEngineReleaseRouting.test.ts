@@ -3,7 +3,17 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parse } from 'yaml';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Subprocess contract suite: these tests drive REAL child processes, so their
+// wall time scales with machine load, not with the code under test. vitest's
+// 5000ms default is a UNIT-test budget: the slowest test here measures 299ms
+// solo, and the pre-push hook runs this file in a 90-file suite at full width,
+// where contention has been measured to stretch these runs by 7.1x and time
+// them out. 90s is 301x the measured solo runtime - past anything observed,
+// and still a real bound, so a genuinely hung child still fails the suite.
+// File-scoped on purpose: no global testTimeout, no --no-file-parallelism.
+vi.setConfig({ testTimeout: 90_000 });
 import {
   classifyChangedPaths,
   gitEnvironmentForCwd,
@@ -15,12 +25,7 @@ const workflow = (name: string) =>
 const stage = workflow('stage-engine-release.yml');
 const publisher = workflow('publish-club-arena.yml');
 
-// Subprocess contract suite: it runs real child processes, so its wall time
-// scales with machine load, not with the code under test. Slowest test here
-// measured 299ms solo; vitest's 5s default is a unit-test budget and times
-// out under the pre-push hook's 90-file parallel run. 90s is 301x measured,
-// well above the worst contention amplification observed (7.1x).
-describe('client delivery never inherits the engine activation window', { timeout: 90_000 }, () => {
+describe('client delivery never inherits the engine activation window', () => {
   it.each([
     ['client behavior', ['src/pages/ClubHomePage.tsx'], false],
     ['client styling', ['src/components/table/Table.css'], false],

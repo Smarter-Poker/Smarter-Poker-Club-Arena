@@ -1,4 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
+
+// Subprocess contract suite: these tests drive REAL child processes, so their
+// wall time scales with machine load, not with the code under test. vitest's
+// 5000ms default is a UNIT-test budget: the slowest test here measures 402ms
+// solo, and the pre-push hook runs this file in a 90-file suite at full width,
+// where contention has been measured to stretch these runs by 7.1x and time
+// them out. 90s is 223x the measured solo runtime - past anything observed,
+// and still a real bound, so a genuinely hung child still fails the suite.
+// File-scoped on purpose: no global testTimeout, no --no-file-parallelism.
+vi.setConfig({ testTimeout: 90_000 });
 import { readFileSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join, dirname } from 'node:path';
@@ -204,12 +214,7 @@ function withForeignGitContext(directory: string, extended: boolean, check: () =
   }
 }
 
-// Subprocess contract suite: it runs real child processes, so its wall time
-// scales with machine load, not with the code under test. Slowest test here
-// measured 402ms solo; vitest's 5s default is a unit-test budget and times
-// out under the pre-push hook's 90-file parallel run. 90s is 224x measured,
-// well above the worst contention amplification observed (7.1x).
-describe('required CI owns native fixture verification', { timeout: 90_000 }, () => {
+describe('required CI owns native fixture verification', () => {
   it.each([
     'scripts/ci/test-hand-submission.py',
     'scripts/ci/build-hand-submission-migration.py',
@@ -1103,140 +1108,130 @@ const spinExpiryAccountingPaths = [
   'tests/unit/fixtureNativeCi.test.ts',
 ] as const;
 
-// Subprocess contract suite: it runs real child processes, so its wall time
-// scales with machine load, not with the code under test. Slowest test here
-// measured 347ms solo; vitest's 5s default is a unit-test budget and times
-// out under the pre-push hook's 90-file parallel run. 90s is 259x measured,
-// well above the worst contention amplification observed (7.1x).
-describe(
-  'required CI owns funded Spin expiry PostgreSQL qualification',
-  { timeout: 90_000 },
-  () => {
-    it.each(spinExpiryAccountingPaths)('selects accounting and its guards for %s', (path) => {
-      const flags = classifyChangedPaths([path]);
-      expect(flags.server).toBe(true);
-      expect(flags.tests).toBe(true);
-      expect(flags.src).toBe(false);
-    });
+describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
+  it.each(spinExpiryAccountingPaths)('selects accounting and its guards for %s', (path) => {
+    const flags = classifyChangedPaths([path]);
+    expect(flags.server).toBe(true);
+    expect(flags.tests).toBe(true);
+    expect(flags.src).toBe(false);
+  });
 
-    it.each(['modified', 'deleted', 'renamed'] as const)(
-      'keeps the full qualification selected when its actual Git paths are %s',
-      (operation) => {
-        withGitFixture(({ directory, git, write, commit }) => {
-          for (const path of spinExpiryAccountingPaths) write(path, 'original qualification input');
-          const base = commit();
-          const relocated = spinExpiryAccountingPaths.map(
-            (_, index) => `docs/relocated-spin-${index}.txt`
-          );
-          for (const [index, path] of spinExpiryAccountingPaths.entries()) {
-            if (operation === 'modified') write(path, 'changed qualification input');
-            if (operation === 'deleted') rmSync(join(directory, path));
-            // The commit stages real filesystem renames in one Git operation. Avoid
-            // one subprocess per path while retaining the actual committed diff.
-            if (operation === 'renamed')
-              renameSync(join(directory, path), join(directory, relocated[index]));
-          }
-          const result = classifyGitChanges({ cwd: directory, base, head: commit() });
-          expect(result.complete).toBe(true);
-          for (const path of spinExpiryAccountingPaths) expect(result.paths).toContain(path);
-          expect(result.flags.server).toBe(true);
-          expect(result.flags.tests).toBe(true);
-          if (operation === 'renamed') {
-            for (const path of relocated) expect(result.paths).toContain(path);
-            // The old paths, rather than harmless destinations, select the job.
-            expect(classifyChangedPaths(relocated).server).toBe(false);
-            expect(classifyChangedPaths(relocated).tests).toBe(false);
-          }
-        });
-      }
-    );
-
-    it.each([
-      'docs/spin-expiry-plan.md',
-      'supabase/components/spin-mixed-basis-current-terminal.sql.bak',
-      'supabase/components/spin-mixed-basis-current-terminal.rollback.sql.bak',
-      'scripts/qualification/spin-positive-fee-entry.py.bak',
-      'scripts/qualification/spin-positive-fee-entry-unrelated.py',
-      'scripts/qualification/spin-mixed-positive-fee-entry.sql.bak',
-      'scripts/qualification/fixtures/spin-mixed-positive-fee-notes/input.sql',
-      'scripts/qualification/spin-mixed-current.py.bak',
-      'scripts/qualification/spin-mixed-current-races.py.bak',
-      'scripts/qualification/spin-mixed-current-assertions.py.bak',
-      'scripts/qualification/spin-mixed-current.hosted.manifest.json.bak',
-      'scripts/qualification/spin-mixed-current.md.bak',
-      'scripts/qualification/spin-mixed-current-unrelated.py',
-      'scripts/qualification/spin-mixed-current-races.md',
-      'scripts/qualification/fixtures/spin-mixed-current-notes/input.sql',
-      'docs/scripts/qualification/fixtures/spin-mixed-current/input.sql',
-      'supabase/components/spin-mixed-basis-current-receipt-lane.sql.bak',
-      'supabase/components/spin-mixed-basis-current-receipt-lane.rollback.sql.bak',
-      'supabase/components/spin-mixed-basis-current-receipt-lane-other.sql',
-      'supabase/components/spin-mixed-basis-receipt-lane.sql.bak',
-      'scripts/qualification/spin-receipt-lane.py.bak',
-      'scripts/qualification/spin-receipt-lane.hosted.manifest.json.bak',
-      'scripts/qualification/unrelated.sql',
-      'supabase/components/unrelated.sql',
-      'supabase/components/spin-expiry-lock-order.sql.bak',
-      'supabase/components/spin-mixed-basis-evidence.sql.bak',
-      'scripts/qualification/spin-mixed-basis-pure.sql.bak',
-      'scripts/qualification/spin-mixed-basis-pure.hosted.manifest.json.bak',
-      'scripts/qualification/spin-mixed-basis-shape.sql.bak',
-      'scripts/qualification/spin-mixed-basis-evidence.preimage.sql.bak',
-      'supabase/components/spin-history-retention.sql.bak',
-      'scripts/qualification/spin-history-retention.sql.bak',
-      'scripts/qualification/spin-history-retention-completed.sql.bak',
-      'scripts/ci/probes/unrelated/input.sql',
-      'scripts/ci/test-spin-expiry-postgres.py.bak',
-    ])('preserves an unrelated accounting skip for %s', (path) => {
-      const flags = classifyChangedPaths([path]);
-      expect(flags.server).toBe(false);
-      expect(flags.tests).toBe(false);
-    });
-
-    it('preserves a verified empty Git diff without weakening uncertain-diff behavior', () => {
-      withGitFixture(({ directory, base }) => {
-        const result = classifyGitChanges({ cwd: directory, base, head: base });
+  it.each(['modified', 'deleted', 'renamed'] as const)(
+    'keeps the full qualification selected when its actual Git paths are %s',
+    (operation) => {
+      withGitFixture(({ directory, git, write, commit }) => {
+        for (const path of spinExpiryAccountingPaths) write(path, 'original qualification input');
+        const base = commit();
+        const relocated = spinExpiryAccountingPaths.map(
+          (_, index) => `docs/relocated-spin-${index}.txt`
+        );
+        for (const [index, path] of spinExpiryAccountingPaths.entries()) {
+          if (operation === 'modified') write(path, 'changed qualification input');
+          if (operation === 'deleted') rmSync(join(directory, path));
+          // The commit stages real filesystem renames in one Git operation. Avoid
+          // one subprocess per path while retaining the actual committed diff.
+          if (operation === 'renamed')
+            renameSync(join(directory, path), join(directory, relocated[index]));
+        }
+        const result = classifyGitChanges({ cwd: directory, base, head: commit() });
         expect(result.complete).toBe(true);
-        expect(result.paths).toEqual([]);
-        expect(result.flags.server).toBe(false);
-        expect(result.flags.tests).toBe(false);
+        for (const path of spinExpiryAccountingPaths) expect(result.paths).toContain(path);
+        expect(result.flags.server).toBe(true);
+        expect(result.flags.tests).toBe(true);
+        if (operation === 'renamed') {
+          for (const path of relocated) expect(result.paths).toContain(path);
+          // The old paths, rather than harmless destinations, select the job.
+          expect(classifyChangedPaths(relocated).server).toBe(false);
+          expect(classifyChangedPaths(relocated).tests).toBe(false);
+        }
       });
-    });
+    }
+  );
 
-    it('calls the finite Spin runner from the existing PostgreSQL dependency', () => {
-      const accounting = ci.jobs.accounting_postgres;
-      expect(accounting.needs).toBe('changes');
-      expect(accounting.if).toContain("needs.changes.outputs.server == 'true'");
-      expect(accounting.if).toContain("needs.changes.result != 'success'");
-      expect(accounting['runs-on']).toBe('ubuntu-latest');
-      expect(accounting['continue-on-error']).toBeUndefined();
-      const calls = accounting.steps.filter(
-        (step: { id?: string }) => step.id === 'spin_expiry_postgres'
-      );
-      expect(calls).toHaveLength(1);
-      expect(calls[0].run).toBe('python3 scripts/ci/test-spin-expiry-postgres.py');
-      expect(calls[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
-      expect(calls[0].if).toBeUndefined();
-      expect(calls[0]['continue-on-error']).toBeUndefined();
-      expect(ci.jobs.server.needs).toContain('accounting_postgres');
-      const gate = ci.jobs.server.steps.find(
-        (step: { name?: string }) =>
-          step.name === 'Every shard and real PostgreSQL accounting passed'
-      );
-      expect(ci.jobs.server.if).toBe('always()');
-      expect(gate.env.ACCOUNTING_RESULT).toBe('${{ needs.accounting_postgres.result }}');
-      expect(gate.run).toContain('"accounting:$ACCOUNTING_RESULT"');
-      expect(gate.run).toContain('exit 1');
-      expect(ci.jobs.unit_shards.if).toContain("needs.changes.outputs.tests == 'true'");
-      expect(
-        ci.jobs.unit_shards.steps.some(
-          (step: { run?: string }) =>
-            step.run === 'npx vitest run tests/ --shard=${{ matrix.shard }}/4'
-        )
-      ).toBe(true);
+  it.each([
+    'docs/spin-expiry-plan.md',
+    'supabase/components/spin-mixed-basis-current-terminal.sql.bak',
+    'supabase/components/spin-mixed-basis-current-terminal.rollback.sql.bak',
+    'scripts/qualification/spin-positive-fee-entry.py.bak',
+    'scripts/qualification/spin-positive-fee-entry-unrelated.py',
+    'scripts/qualification/spin-mixed-positive-fee-entry.sql.bak',
+    'scripts/qualification/fixtures/spin-mixed-positive-fee-notes/input.sql',
+    'scripts/qualification/spin-mixed-current.py.bak',
+    'scripts/qualification/spin-mixed-current-races.py.bak',
+    'scripts/qualification/spin-mixed-current-assertions.py.bak',
+    'scripts/qualification/spin-mixed-current.hosted.manifest.json.bak',
+    'scripts/qualification/spin-mixed-current.md.bak',
+    'scripts/qualification/spin-mixed-current-unrelated.py',
+    'scripts/qualification/spin-mixed-current-races.md',
+    'scripts/qualification/fixtures/spin-mixed-current-notes/input.sql',
+    'docs/scripts/qualification/fixtures/spin-mixed-current/input.sql',
+    'supabase/components/spin-mixed-basis-current-receipt-lane.sql.bak',
+    'supabase/components/spin-mixed-basis-current-receipt-lane.rollback.sql.bak',
+    'supabase/components/spin-mixed-basis-current-receipt-lane-other.sql',
+    'supabase/components/spin-mixed-basis-receipt-lane.sql.bak',
+    'scripts/qualification/spin-receipt-lane.py.bak',
+    'scripts/qualification/spin-receipt-lane.hosted.manifest.json.bak',
+    'scripts/qualification/unrelated.sql',
+    'supabase/components/unrelated.sql',
+    'supabase/components/spin-expiry-lock-order.sql.bak',
+    'supabase/components/spin-mixed-basis-evidence.sql.bak',
+    'scripts/qualification/spin-mixed-basis-pure.sql.bak',
+    'scripts/qualification/spin-mixed-basis-pure.hosted.manifest.json.bak',
+    'scripts/qualification/spin-mixed-basis-shape.sql.bak',
+    'scripts/qualification/spin-mixed-basis-evidence.preimage.sql.bak',
+    'supabase/components/spin-history-retention.sql.bak',
+    'scripts/qualification/spin-history-retention.sql.bak',
+    'scripts/qualification/spin-history-retention-completed.sql.bak',
+    'scripts/ci/probes/unrelated/input.sql',
+    'scripts/ci/test-spin-expiry-postgres.py.bak',
+  ])('preserves an unrelated accounting skip for %s', (path) => {
+    const flags = classifyChangedPaths([path]);
+    expect(flags.server).toBe(false);
+    expect(flags.tests).toBe(false);
+  });
+
+  it('preserves a verified empty Git diff without weakening uncertain-diff behavior', () => {
+    withGitFixture(({ directory, base }) => {
+      const result = classifyGitChanges({ cwd: directory, base, head: base });
+      expect(result.complete).toBe(true);
+      expect(result.paths).toEqual([]);
+      expect(result.flags.server).toBe(false);
+      expect(result.flags.tests).toBe(false);
     });
-  }
-);
+  });
+
+  it('calls the finite Spin runner from the existing PostgreSQL dependency', () => {
+    const accounting = ci.jobs.accounting_postgres;
+    expect(accounting.needs).toBe('changes');
+    expect(accounting.if).toContain("needs.changes.outputs.server == 'true'");
+    expect(accounting.if).toContain("needs.changes.result != 'success'");
+    expect(accounting['runs-on']).toBe('ubuntu-latest');
+    expect(accounting['continue-on-error']).toBeUndefined();
+    const calls = accounting.steps.filter(
+      (step: { id?: string }) => step.id === 'spin_expiry_postgres'
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].run).toBe('python3 scripts/ci/test-spin-expiry-postgres.py');
+    expect(calls[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(calls[0].if).toBeUndefined();
+    expect(calls[0]['continue-on-error']).toBeUndefined();
+    expect(ci.jobs.server.needs).toContain('accounting_postgres');
+    const gate = ci.jobs.server.steps.find(
+      (step: { name?: string }) => step.name === 'Every shard and real PostgreSQL accounting passed'
+    );
+    expect(ci.jobs.server.if).toBe('always()');
+    expect(gate.env.ACCOUNTING_RESULT).toBe('${{ needs.accounting_postgres.result }}');
+    expect(gate.run).toContain('"accounting:$ACCOUNTING_RESULT"');
+    expect(gate.run).toContain('exit 1');
+    expect(ci.jobs.unit_shards.if).toContain("needs.changes.outputs.tests == 'true'");
+    expect(
+      ci.jobs.unit_shards.steps.some(
+        (step: { run?: string }) =>
+          step.run === 'npx vitest run tests/ --shard=${{ matrix.shard }}/4'
+      )
+    ).toBe(true);
+  });
+});
 
 describe('Production Alert SQL checks use the existing accounting job', () => {
   const paths = [

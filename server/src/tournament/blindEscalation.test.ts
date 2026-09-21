@@ -128,6 +128,78 @@ describe('the escalated level is safe to write to the database', () => {
     expect(capped.smallBlind).toBeLessThan(capped.bigBlind);
   });
 
+  /**
+   * THE BAND BETWEEN THE TWO CEILINGS (2026-09-21).
+   *
+   * MAX_BLIND_VALUE used to be applied to the small blind and to the big blind
+   * independently, and the only repair was `SB >= BB`. Between the level where
+   * the big blind reaches the ceiling and the level where the small blind
+   * reaches it too, SB < BB the whole way and nothing fired, so the authored
+   * share walked from 1:2 towards 1:1 one level at a time. Calling the live
+   * SQL resolver on 2026-09-21 with an anchor of sb 2,000,000 / bb 4,000,000
+   * returned 0.5000, 0.6321, 0.8428 and only then 0.5000 again.
+   */
+  it('holds the small blind to its requested share when only the big blind is capped', () => {
+    // The big blind is over the ceiling and the small blind is not: exactly
+    // the band. 1:2 in, 1:2 out.
+    expect(
+      enforcePlayableBlindLevel({
+        smallBlind: 9_000_000,
+        bigBlind: 18_000_000,
+        ante: 0,
+      })
+    ).toMatchObject({ smallBlind: 5_000_000, bigBlind: MAX_BLIND_VALUE, adjusted: true });
+
+    // Right at the top of the band, where the small blind is one chip short
+    // of the ceiling itself.
+    const edge = enforcePlayableBlindLevel({
+      smallBlind: MAX_BLIND_VALUE - 1,
+      bigBlind: 2 * MAX_BLIND_VALUE - 2,
+    });
+    expect(edge.smallBlind).toBe(MAX_BLIND_VALUE / 2);
+    expect(edge.bigBlind).toBe(MAX_BLIND_VALUE);
+
+    // A structure authoring a THIRD keeps its third. bb/2 is not the rule;
+    // the requested share is.
+    const third = enforcePlayableBlindLevel({ smallBlind: 6_000_000, bigBlind: 18_000_000 });
+    expect(third.bigBlind).toBe(MAX_BLIND_VALUE);
+    expect(third.smallBlind).toBe(Math.floor(MAX_BLIND_VALUE / 3));
+  });
+
+  it('leaves every level that is under the ceiling exactly as it was', () => {
+    for (const [sb, bb] of [
+      [50, 100],
+      [1, 2],
+      [25, 50],
+      [1_333_333, 4_000_000],
+      [MAX_BLIND_VALUE / 2, MAX_BLIND_VALUE],
+    ] as const) {
+      const out = enforcePlayableBlindLevel({ smallBlind: sb, bigBlind: bb, ante: 0 });
+      expect([out.smallBlind, out.bigBlind]).toEqual([sb, bb]);
+    }
+  });
+
+  it('never raises a small blind, only ever lowers one', () => {
+    // A request that already asks for SB >= BB is the older repair's business.
+    // The share ceiling must not push it back up.
+    expect(enforcePlayableBlindLevel({ smallBlind: 300, bigBlind: 200 }).smallBlind).toBe(100);
+    expect(enforcePlayableBlindLevel({ smallBlind: 200, bigBlind: 200 }).smallBlind).toBe(100);
+    // And an absurdly small requested share is honoured rather than widened.
+    expect(enforcePlayableBlindLevel({ smallBlind: 1, bigBlind: 1000 }).smallBlind).toBe(1);
+  });
+
+  it('carries the requested share through a deep escalation, not a saturated 1:1', () => {
+    // escalatedBlindLevel used to saturate each number at MAX_BLIND_VALUE
+    // before enforcePlayableBlindLevel could read the share. Past the point
+    // where the big blind alone is capped, the small blind must still be half.
+    for (const idx of [30, 60, 120, 400, 5000]) {
+      const lvl = escalatedBlindLevel({ smallBlind: 1_500_000, bigBlind: 3_000_000, ante: 0 }, idx, LEN, 10);
+      expect(Number.isFinite(lvl.smallBlind)).toBe(true);
+      expect(lvl.smallBlind).toBeLessThan(lvl.bigBlind);
+      expect(lvl.smallBlind).toBeLessThanOrEqual(lvl.bigBlind / 2);
+    }
+  });
+
   it('never produces NaN or Infinity, however far out the level is', () => {
     for (const idx of [50, 100, 1000, 100000]) {
       const lvl = escalatedBlindLevel({ smallBlind: 10, bigBlind: 20, ante: 0 }, idx, LEN, 10);

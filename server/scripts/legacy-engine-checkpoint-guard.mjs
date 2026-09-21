@@ -982,6 +982,21 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           // boundary that was attempted and lost would have set
           // `terminalBoundaryPersistenceFailed`, which is refused above.
           //
+          // The phase that holds it is `attempted`, and only `attempted`.
+          // `beginTerminalBoundaryPersistence` has exactly one call site,
+          // `startExactController` in ServerTableEngineDealing, and on an engine
+          // holding a permit that site runs inside `F06HandPermit.start`, which
+          // sets `phase = 'attempted'` on the line before it actuates. So the
+          // integer cannot exist while the phase is `new`, `reserved`, `unknown`
+          // or `number_refused` - it had not been reserved yet - and the phase
+          // cannot leave `attempted` afterwards: `terminateUnstarted` throws
+          // `f06_hand_may_have_started` on it, `cancelPreparedHand` requires
+          // `reserved` (and `preparedCancellation` is proved false above), and
+          // the settle path that would accept it runs inside the hand's own
+          // settlement, which `lifecycleCanMutate()` has permanently closed.
+          // `attempted` is therefore the exact and only phase of the
+          // interruption this checkpoint exists to hand over.
+          //
           // Admit it ONLY for an engine that still holds the undischarged permit
           // of that hand, whose live phase was proved equal to the captured phase
           // through the unmodified `F06HandPermit.prototype.recoveryState` above.
@@ -991,9 +1006,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           // naming this exact engine, manager and container - and it does so
           // before the custody RPC and before the retirement CAS, so an
           // undischarged interruption still reaches no irreversible step. Nothing
-          // is written for a retained original before that proof.
-          const interrupted =
-            permit !== null && ['unknown', 'reserved', 'terminated'].includes(capture.phase);
+          // is written for a retained original before that proof, and this change
+          // adds `attempted` to the phases that proof is demanded of, so nothing
+          // admitted here escapes it.
+          const interrupted = permit !== null && capture.phase === 'attempted';
           [...engineSets, ...engineMaps].forEach((name, index) => {
             const collection = engine[name];
             const captured = capture.collections[index];
@@ -1006,37 +1022,36 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             );
             const size = collection.size;
             // THREE OUTCOMES ON THIS ONE FIELD, NOT TWO (merged 2026-09-21).
-            // #5011 and #5021 answer different questions about the same set and
+            // #5020 and #5021 answer different questions about the same set and
             // THE PERMIT IS WHAT SEPARATES THEM, so neither can mask the other:
             //
-            //   permit !== null && interrupted  -> #5011 ADMITS ONE. The engine
-            //     still holds the undischarged permit of the hand that opened
-            //     this generation, so one entry IS the interruption being handed
-            //     over. `sealAndRetireOriginals` then refuses the whole run with
-            //     `mixed_original_disposition_unproven` unless the database
-            //     proves that same permit `aborted_unsettled` against a
-            //     committed receipt naming this engine, manager and container.
-            //   permit !== null && !interrupted -> #5011 REFUSES, `expected` 0,
-            //     before any row is read and before any RPC. A permit outside
-            //     {unknown,reserved,terminated} - `attempted` above all - means a
-            //     hand that MAY HAVE STARTED and that nothing downstream would
-            //     prove. That is not an abandoned generation and it must not be
-            //     deferred into one.
-            //   permit === null                 -> #5021 DEFERS. There is no
-            //     outstanding hand at all, so nothing downstream of
-            //     HAND_COMPLETE can ever resolve the generation; it is abandoned
-            //     and `proveAbandonedBoundaries` proves the felt quiet from rows
-            //     before anything is retired.
+            //   permit !== null && phase === 'attempted'  -> #5020 ADMITS ONE.
+            //     `beginTerminalBoundaryPersistence` has one call site and on an
+            //     engine holding a permit it runs inside `F06HandPermit.start`,
+            //     one line after the phase becomes `attempted`. So the integer IS
+            //     that started, cut-off hand, and `sealAndRetireOriginals` demands
+            //     an `aborted_unsettled` receipt naming this engine, manager and
+            //     container before anything irreversible.
+            //   permit !== null && phase !== 'attempted'  -> REFUSE, `expected` 0,
+            //     before any row read and before any RPC. By the same argument the
+            //     integer cannot exist in those phases at all, so this combination
+            //     is an engine we do not understand - exactly the case to fail
+            //     closed on, never to defer.
+            //   permit === null                           -> #5021 DEFERS. #5020's
+            //     argument is about an engine HOLDING a permit; with none there is
+            //     no phase to reason from and no outstanding hand, so nothing
+            //     downstream of HAND_COMPLETE can ever resolve the generation. It
+            //     is abandoned, and `proveAbandonedBoundaries` proves the felt
+            //     quiet from rows before anything is retired.
             //
-            // Gating the deferral on `permit === null` rather than on
-            // `!interrupted` keeps #5011 byte-for-byte wherever a permit exists,
-            // including its early refusal for `attempted`, and is the shape the
-            // rows actually show. Measured on engine 8825af51: table 2c621856
-            // refused four times after #5011 merged with `expected:"0"`, which is
-            // `String(allowed)` - so `allowed` was 0, so `interrupted` was false;
-            // and its last permit (hand 12942021) is `aborted_unsettled` with no
-            // dispatch and no `hand_history` row, i.e. resolved and cleared off
-            // the engine while the generation stayed behind.
+            // Gating the deferral on `permit === null` leaves #5020 byte-for-byte
+            // wherever a permit exists, including its refusal and its reported
+            // `expected`, and covers only the gap its phase argument cannot reach.
+            // Measured on engine 8825af51: under #5011's older triple, table
+            // 2c621856 refused four times with `expected:"0"`; on #5020's SHA
+            // (`db885b29`) the refusal moved off this field entirely, which is
+            // what an admitted `attempted` generation looks like. The deferral
+            // below is therefore dormant for that table and is the net under it.
             if (size !== 0 && name === 'terminalBoundaryPendingGenerations' && permit === null) {
               // A generation is opened immediately before HandController.start
               // and removed only downstream of HAND_COMPLETE. `handController`
@@ -1102,6 +1117,11 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               const allowed = name === 'terminalBoundaryPendingGenerations' && interrupted ? 1 : 0;
               drained(size <= allowed, 'engineCollection.size', size, String(allowed), () => ({
                 failedField: name,
+                // Observability only. The allowance on this one field turns on the
+                // permit phase, so a refusal here is unreadable without it.
+                ...(name === 'terminalBoundaryPendingGenerations'
+                  ? { failedPermitPhase: capture.phase === null ? 'none' : capture.phase }
+                  : {}),
               }));
             }
             const expectSet = engineSets.includes(name);
@@ -1499,7 +1519,16 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           require(found.length === 1 &&
             record(found[0].evidence), 'mixed_original_receipt_missing');
           const { permit, evidence } = found[0];
-          if (['unknown', 'reserved', 'terminated'].includes(item.permit.phase)) {
+          // `unknown`, `reserved` and `terminated` are the engine's own
+          // `hasUnresolvedF06Preparation` triple - a hand that was prepared and
+          // never started. `attempted` is the fourth disposition this checkpoint
+          // can meet and the only one that reserved a terminal boundary integer:
+          // the hand DID start and was cut off, which is exactly the state the
+          // retained 8825 originals are in. It is included here, not to widen
+          // what may be retired, but so that the `aborted_unsettled` receipt is
+          // DEMANDED of it: leaving it out let a started, unsettled hand reach
+          // retirement carrying no proof at all, which is the weaker position.
+          if (['unknown', 'reserved', 'terminated', 'attempted'].includes(item.permit.phase)) {
             require(permit.state === 'aborted_unsettled' &&
               uuid(permit.evidence_id) &&
               evidence.hand?.receipt_id === permit.evidence_id &&

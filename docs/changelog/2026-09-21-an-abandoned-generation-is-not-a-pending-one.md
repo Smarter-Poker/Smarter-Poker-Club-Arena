@@ -172,63 +172,62 @@ case that reads no row at all because nothing was deferred.
 - **#5013 (open)** - `engine-release-inflight-hands.py` with named exit codes.
 - **#5010 (merged)** - a quarantined tournament manager as a counted state.
 
-## Merged with #5011, which landed first - and reverts none of it
+## Merged with #5011 and then #5020, and reverts neither
 
-#5011 ("the 8825 drain guard accepts the interruption it retires", squash
-`9bfa6401a8`, merged 09:33:47Z) touched the same line. It is not a competing
-fix and it has not been weakened here: both mechanisms are kept, and the
-PERMIT is what separates them.
+Two PRs touched the same line while this one was open, and the second corrected
+the first. Both are kept; nothing here weakens either.
 
-### The measurement that decided the shape
+- **#5011** (`9bfa6401a8`, 09:33:47Z) admitted ONE entry on this field for an
+  engine still holding the hand's permit, where `interrupted` was
+  `permit !== null && ['unknown','reserved','terminated'].includes(phase)`.
+- **#5020** (`db885b2941`, ~14:30Z) replaced that triple with
+  `permit !== null && capture.phase === 'attempted'`, on the ground that
+  `beginTerminalBoundaryPersistence` has ONE call site, that it runs inside
+  `F06HandPermit.start` one line after the phase becomes `attempted`, and that
+  the phase cannot leave `attempted` afterwards. It also added
+  `failedPermitPhase` to the refusal payload, and widened
+  `sealAndRetireOriginals` to DEMAND the `aborted_unsettled` receipt of an
+  `attempted` permit too.
 
-After #5011 merged, `auto-deploy-hetzner` failed four more times - 09:34
-(`9bfa6401`, the squash itself), 09:53 (`c2d69517`), 10:55 (`7f296c07`) and
-12:48 (`079ba380`). Every SHA carries #5011's `allowed` line, and three of the
-four runs' payloads were read back directly:
+### A correction, recorded because it was load-bearing while it stood
 
-```
-"failedCheck":"engineCollection.size","failedTable":"2c621856-...",
-"failedField":"terminalBoundaryPendingGenerations","observed":"1","expected":"0"
-```
+While #5011 was the merged state, this branch reasoned from the four failing
+runs (09:34, 09:53, 10:55, 12:48 - all carrying #5011's code, three payloads
+read back directly) that `expected:"0"` proved `interrupted` false, and then
+concluded from the permit rows that the reason must be `permit === null`.
 
-`expected` is literally `String(allowed)`, and `failedField` is the field, so
-`allowed` was 0 - which means **`interrupted` was false for this table** and
-#5011's allowance never reaches it.
-
-**Why it is false is `permit === null`, not an unadmitted phase.** The six
-phases `F06HandPermit` can hold partition cleanly:
-
-| phase                               | ruled out by                                                                                                                                                                            |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `unknown`, `reserved`, `terminated` | the measurement above - these are exactly `interrupted`                                                                                                                                 |
-| `attempted`                         | the rows: permit `12942021` is `aborted_unsettled` with 0 dispatches and 0 `hand_history` rows, so `HandController.start` was never reached and the phase never advanced to `attempted` |
-| `number_refused`                    | `ServerTableEngineBase` clears `f06CurrentPermit` to null on a known number refusal                                                                                                     |
-| `new`                               | `reserveF06Hand` installs the permit and `reserveOriginal` sets `unknown` with no await between, and the guard separately requires `permit.reserveInFlight === false`                   |
-
-Nothing is left but `null`. That is also the shape the guard already names one
-function away: `allocationBacked` filters on `e.permit === null &&
-e.allocationEpoch !== null`, above the comment "8825 retains the original
-allocator epoch **after an accepted hand clears its local permit**".
+**That conclusion was wrong, and production disproved it.** The first two runs
+on #5020's SHA (`35613147982` at 14:35, `35614192763` at 14:44) no longer refuse
+on `terminalBoundaryPendingGenerations` at all - they get past the drain check
+and stop later, at `fleet_identity_changed` and `mixed_owner_changed`. A
+generation that is now admitted is a generation whose phase is `attempted`. So
+`interrupted` was false under #5011 because #5011's triple omitted `attempted`,
+exactly as #5020 says, and not because the permit was gone. The "never started"
+reading of permit `12942021` (0 dispatches, 0 `hand_history`) describes a hand
+that was cut off after `start` was actuated, not one that never reached it.
 
 ### The resolution
 
-`physical()` now has three outcomes on this one field instead of two:
+`physical()` has three outcomes on this field instead of two:
 
-- `permit !== null && interrupted` - #5011 admits ONE entry, and
-  `sealAndRetireOriginals` still refuses the run with
-  `mixed_original_disposition_unproven` unless the database proves that permit
-  `aborted_unsettled` against a receipt naming this engine, manager and
-  container.
-- `permit !== null && !interrupted` - #5011 REFUSES, `expected` 0, before any
-  row read and before any RPC. A permit in any other phase is a hand that MAY
-  HAVE STARTED; it is not an abandoned generation and must not become one.
-- `permit === null` - #5021 DEFERS, and `proveAbandonedBoundaries` proves the
-  felt quiet from rows before anything is retired.
+- `permit !== null && phase === 'attempted'` - #5020 admits one, with its
+  receipt demanded downstream.
+- `permit !== null && phase !== 'attempted'` - refuse, `expected` 0, before any
+  row read and before any RPC. By #5020's own argument the integer cannot exist
+  in those phases, so the combination is an engine we do not understand: fail
+  closed, never defer.
+- `permit === null` - defer, and prove the felt quiet from rows.
 
-Gating the deferral on `permit === null` rather than on `!interrupted` is
-deliberate and is the narrower of the two: every #5011 test passes unchanged,
-including `refuses a reserved terminal boundary that no undischarged permit can
-discharge`, which asserts that refusal happens with `rpcCalls` still empty.
+The deferral is gated on `permit === null`, not on `!interrupted`. That leaves
+#5020 byte-for-byte wherever a permit exists - its refusal, its `expected` and
+its new `failedPermitPhase` - and covers only the gap its phase argument cannot
+reach, since with no permit there is no phase to reason from.
+
+**So this PR no longer unblocks the 8825 cutover; #5020 did that.** What it
+still carries is the half #5020 does not: the ENGINE-side third named outcome,
+so a fence stops leaving an unresolvable generation behind at all (10.11, the
+root fix rather than a guard that tolerates it), plus the row-proved net under
+the one shape the guard could still refuse for ever.
 
 ### Ordering, unchanged and still load-bearing
 
@@ -237,27 +236,26 @@ await proveAbandonedBoundaries(checkAll); // rows: is the felt quiet?
 await sealAndRetireOriginals(checkAll); // custody: who holds the interruption?
 ```
 
-Both still precede `sealAndRetireOriginals`' committing RPC, the custody RPC
-and the retirement CAS. They do not short-circuit each other and share no
-state: the first reads `deferredAbandonedBoundaries` and returns immediately
-when it is empty, the second reads `retainedManagers`. A refusal in either
-means nothing was retired and no custody moved.
+Both precede the committing RPC, the custody RPC and the retirement CAS. They
+share no state and neither short-circuits the other: the first returns
+immediately when `deferredAbandonedBoundaries` is empty, the second reads
+`retainedManagers`. A refusal in either means nothing was retired.
 
-**They are not substitutes, and a new test says so.** `refuses a deferred
-manager that holds no interrupted original at all` pins that proving the felt
-quiet is not a route past the disposition proof: this profile has required
-exactly one interrupted original per manager since long before #5011, and a
-manager without one is refused with `mixed_original_disposition_set_changed`
-after the row proof and before the committing RPC.
+**They are not substitutes, and a test says so.** `refuses a deferred manager
+that holds no interrupted original at all` pins that proving the felt quiet is
+not a route past the disposition proof: this profile has required exactly one
+interrupted original per manager since long before #5011, and a manager without
+one is refused with `mixed_original_disposition_set_changed` after the row proof
+and before the committing RPC.
 
 ### Tests and laws reconciled
 
-- `tests/legacyEngineCheckpointGuard.test.ts` - both suites kept. #5011's
-  cases still drive a permit-holding original; #5021's now drive
-  `abandonedOriginal()`, a second original on the same manager holding no
-  permit, which is the shape the rows actually show. 82 pass.
+- `tests/legacyEngineCheckpointGuard.test.ts` - all three suites kept, 89 pass.
+  #5011's and #5020's cases still drive a permit-holding original; this PR's now
+  drive `abandonedOriginal()`, a second original on the same manager holding no
+  permit.
 - `server/src/engine/anAbandonedGenerationIsNotAPendingOne.law.test.ts` - the
   assertion pinning the pre-merge `drained(size === 0, ...)` else-branch was
-  orphaned by #5011 rewriting that line; it now pins the merged `size <=
-allowed` expression, plus a new case pinning that the deferral and the
-  allowance are disjoint.
+  orphaned when #5011 rewrote that line; it now pins the merged `size <= allowed`
+  expression, plus a case pinning that the deferral and the allowance are
+  disjoint. 16 pass.

@@ -177,16 +177,14 @@ describe('B. the release guard defers the table and proves it from rows', () => 
   });
 
   it('the deferral and the interrupted-hand allowance are disjoint', () => {
-    // THE PERMIT SEPARATES THEM. #5021 defers only when there is no outstanding
-    // hand at all; #5011 admits one entry only when the engine still holds that
-    // hand's permit in {unknown,reserved,terminated}. A permit in any other
-    // phase - `attempted` above all - is a hand that MAY HAVE STARTED, and it
-    // must keep #5011's refusal (`expected` 0, before any row read and before
-    // any RPC) rather than being softened into a deferral.
+    // THE PERMIT SEPARATES THEM. #5020 admits one entry only for an engine that
+    // still holds the permit of the hand that opened the generation, whose phase
+    // is `attempted` and can be nothing else. #5021 defers only where there is no
+    // permit at all - the one case #5020's phase argument cannot reach, because
+    // with no permit there is no phase to reason from. A permit present in any
+    // other phase is an engine we do not understand and keeps the refusal.
     expect(physical).toContain("name === 'terminalBoundaryPendingGenerations' && permit === null");
-    expect(physical).toContain(
-      "permit !== null && ['unknown', 'reserved', 'terminated'].includes(capture.phase)"
-    );
+    expect(physical).toContain("permit !== null && capture.phase === 'attempted'");
   });
 
   it('the deferral is gated on the engine being fenced and fully drained', () => {

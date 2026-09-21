@@ -7,6 +7,8 @@ import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 
 const PAGE = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
 const PRESENTATION = readDailyChallengesUnit('missionPresentation.ts');
+const FREEZE_DIALOG = readDailyChallengesUnit('MissionFreezePurchaseDialog.tsx');
+const REWARD_DIALOG = readDailyChallengesUnit('MissionRewardSettlementDialog.tsx');
 const CSS = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'), 'utf8');
 const APP_LAYOUT = readFileSync(
   resolve(__dirname, '../src/components/layouts/AppLayout.tsx'),
@@ -74,11 +76,12 @@ describe('Daily Missions accessibility contract', () => {
   it('makes the reward payoff a labelled, trapped, untimed dialog', () => {
     expect(PAGE).toContain("useFocusTrap(!!reward, '#challenge-reward-title')");
     expect(PAGE).toContain("useFocusTrap(confirmingFreeze, '#freeze-purchase-title')");
-    expect(PAGE).toMatch(/id="challenge-reward-title"[\s\S]{0,120}tabIndex=\{-1\}/);
-    expect(PAGE).toMatch(/id="freeze-purchase-title"[\s\S]{0,120}tabIndex=\{-1\}/);
-    expect(PAGE).toContain('aria-modal="true"');
-    expect(PAGE).toContain('aria-labelledby="challenge-reward-title"');
-    expect(PAGE).toContain('aria-describedby="challenge-reward-description"');
+    expect(REWARD_DIALOG).toMatch(/id="challenge-reward-title"[\s\S]{0,120}tabIndex=\{-1\}/);
+    expect(FREEZE_DIALOG).toMatch(/id="freeze-purchase-title"[\s\S]{0,120}tabIndex=\{-1\}/);
+    expect(REWARD_DIALOG).toContain('aria-modal="true"');
+    expect(FREEZE_DIALOG).toContain('aria-modal="true"');
+    expect(REWARD_DIALOG).toContain('aria-labelledby="challenge-reward-title"');
+    expect(REWARD_DIALOG).toContain('aria-describedby="challenge-reward-description"');
     expect(PAGE).toContain('inert={reward || confirmingFreeze ? true : undefined}');
     expect(PAGE).toContain('useInertAppShell(!!reward || confirmingFreeze)');
     expect(PAGE).toContain("if (e.key === 'Escape') dismissReward()");
@@ -86,16 +89,13 @@ describe('Daily Missions accessibility contract', () => {
   });
 
   it('requires confirmation before a 5,000 Diamond streak-freeze purchase', () => {
-    expect(PAGE).toContain('Secure A Streak Freeze?');
-    expect(PAGE).toContain('Balance After Purchase');
-    expect(PAGE).toContain('aria-labelledby="freeze-purchase-title"');
+    expect(FREEZE_DIALOG).toContain('Secure A Streak Freeze?');
+    expect(FREEZE_DIALOG).toContain('Balance After Purchase');
+    expect(FREEZE_DIALOG).toContain('aria-labelledby="freeze-purchase-title"');
     expect(PAGE).toContain('if (!economyGuardRef.current) setConfirmingFreeze(true)');
-    expect(PAGE).toContain('onClick={handleBuyFreeze}');
-    const freezeDialog = PAGE.slice(
-      PAGE.indexOf('id="freeze-purchase-title"'),
-      PAGE.indexOf('{reward &&')
-    );
-    expect(freezeDialog).not.toContain('autoFocus');
+    expect(PAGE).toContain('onConfirmPurchase={handleBuyFreeze}');
+    expect(FREEZE_DIALOG).toContain('onClick={onConfirmPurchase}');
+    expect(FREEZE_DIALOG).not.toContain('autoFocus');
   });
 
   it('returns focus to a stable mission target after reward dismissal', () => {
@@ -149,7 +149,7 @@ describe('Daily Missions accessibility contract', () => {
   it('honors reduced motion in JavaScript-driven animation and confetti', () => {
     expect(PAGE).toContain('useReducedMotion()');
     expect(PAGE).toContain('initial={reduceMotion ? false');
-    expect(PAGE).toContain('{!reduceMotion && (');
+    expect(REWARD_DIALOG).toContain('{!reduceMotion && (');
     expect(CSS).toContain('@media (prefers-reduced-motion: reduce)');
   });
 

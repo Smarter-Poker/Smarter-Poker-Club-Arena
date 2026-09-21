@@ -11,6 +11,8 @@ const surface = readDailyChallengesSurface();
 const presentation = readDailyChallengesUnit('missionPresentation.ts');
 const artwork = readDailyChallengesUnit('MissionArtwork.tsx');
 const loadingState = readDailyChallengesUnit('MissionLoadingState.tsx');
+const freezeDialog = readDailyChallengesUnit('MissionFreezePurchaseDialog.tsx');
+const rewardDialog = readDailyChallengesUnit('MissionRewardSettlementDialog.tsx');
 const css = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'), 'utf8');
 const routeFallback = readFileSync(
   resolve(__dirname, '../src/components/challenges/DailyChallengesRouteFallback.tsx'),
@@ -170,10 +172,10 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
   });
 
   it('renders both purchase and reward dialogs as complete casino settlement surfaces', () => {
-    expect(page).toContain('Streak Protection Desk');
-    expect(page).toContain('Balance After Purchase');
-    expect(page).toContain('Reward Settled');
-    expect(page).toContain('Added To Your Club Arena Diamond Balance');
+    expect(freezeDialog).toContain('Streak Protection Desk');
+    expect(freezeDialog).toContain('Balance After Purchase');
+    expect(rewardDialog).toContain('Reward Settled');
+    expect(rewardDialog).toContain('Added To Your Club Arena Diamond Balance');
     expect(css).toContain('.freezePurchaseLedger');
     expect(css).toContain('.celebrateArtwork');
     expect(css).toContain('.freezeVaultArtwork');

@@ -34,7 +34,6 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useMasterBusBroadcastChannel } from '../hooks/useMasterBusBroadcastChannel';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { reportError } from '../utils/errorReporter';
-import { ConfettiEffect } from '../components/effects/ConfettiEffect';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './DailyChallengesPage.module.css';
 import { mediaUrl } from '../utils/mediaBase';
@@ -66,11 +65,7 @@ import {
   TIERS,
   type TieredChallenge,
 } from '../components/challenges/dashboard/missionPresentation';
-import {
-  DiamondMark,
-  FreezeVaultGraphic,
-  MissionHeroArtwork,
-} from '../components/challenges/dashboard/MissionArtwork';
+import { DiamondMark, MissionHeroArtwork } from '../components/challenges/dashboard/MissionArtwork';
 import { MissionLoadingState } from '../components/challenges/dashboard/MissionLoadingState';
 import { MissionUnavailableState } from '../components/challenges/dashboard/MissionUnavailableState';
 import {
@@ -78,6 +73,8 @@ import {
   MissionResetReadout,
 } from '../components/challenges/dashboard/MissionClockLeaves';
 import { MissionAlertsPanel } from '../components/challenges/dashboard/MissionAlertsPanel';
+import { MissionFreezePurchaseDialog } from '../components/challenges/dashboard/MissionFreezePurchaseDialog';
+import { MissionRewardSettlementDialog } from '../components/challenges/dashboard/MissionRewardSettlementDialog';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CARDS
@@ -1917,160 +1914,24 @@ export default function DailyChallengesPage() {
 
       {confirmingFreeze &&
         createPortal(
-          <div
-            className={styles.celebrateOverlay}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="freeze-purchase-title"
-            aria-describedby="freeze-purchase-description"
-            onClick={dismissFreezePurchase}
-          >
-            <div
-              ref={freezeDialogRef}
-              className={`${styles.celebrateCard} ${styles.freezeDialogCard}`}
-              data-dialog-card="fixed-frame"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <span className={styles.bevelFrame} data-dialog-frame="fixed" aria-hidden="true" />
-              <div className={styles.celebrateCardScroll} data-dialog-scroll="true">
-                <FreezeVaultGraphic />
-                <span className={styles.panelLabel}>Streak Protection Desk</span>
-                <h2 id="freeze-purchase-title" className={styles.celebrateTitle} tabIndex={-1}>
-                  Secure A Streak Freeze?
-                </h2>
-                <p id="freeze-purchase-description" className={styles.freezeDialogDescription}>
-                  One Freeze Protects Your Current Run Through One Missed Daily Challenge Cycle.
-                </p>
-                <div className={styles.freezePurchaseLedger}>
-                  <div>
-                    <span>Vault Price</span>
-                    <strong className={styles.balanceWithGem}>
-                      <DiamondMark /> 5,000 Diamonds
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Balance After Purchase</span>
-                    <strong className={styles.balanceWithGem}>
-                      <DiamondMark /> {Math.max(0, diamondBalance - 5000).toLocaleString()} Diamonds
-                    </strong>
-                  </div>
-                </div>
-                <div className={styles.freezeDialogActions}>
-                  <button
-                    type="button"
-                    className={styles.cancelButton}
-                    disabled={buyingFreeze}
-                    onClick={dismissFreezePurchase}
-                  >
-                    <CasinoControlIcon variant="keep" state="idle" size="sm" />
-                    Keep My Diamonds
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.confirmButton}
-                    onClick={handleBuyFreeze}
-                    disabled={buyingFreeze}
-                    aria-busy={buyingFreeze}
-                  >
-                    <CasinoControlIcon
-                      variant="freeze"
-                      state={buyingFreeze ? 'pending' : 'attention'}
-                      size="sm"
-                    />
-                    {buyingFreeze ? 'Confirming Purchase...' : 'Buy Streak Freeze'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>,
+          <MissionFreezePurchaseDialog
+            diamondBalance={diamondBalance}
+            buyingFreeze={buyingFreeze}
+            dialogRef={freezeDialogRef}
+            onDismiss={dismissFreezePurchase}
+            onConfirmPurchase={handleBuyFreeze}
+          />,
           document.body
         )}
 
       {reward &&
         createPortal(
-          <div
-            className={styles.celebrateOverlay}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="challenge-reward-title"
-            aria-describedby="challenge-reward-description"
-            onClick={dismissReward}
-          >
-            {!reduceMotion && (
-              <ConfettiEffect
-                isActive={true}
-                intensity="heavy"
-                colors={['#00f0ff', '#0ff', '#ffffff']}
-                duration={4000}
-              />
-            )}
-            <div
-              ref={celebrateDialogRef}
-              className={styles.celebrateCard}
-              data-dialog-card="fixed-frame"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <span className={styles.bevelFrame} data-dialog-frame="fixed" aria-hidden="true" />
-              <div className={styles.celebrateCardScroll} data-dialog-scroll="true">
-                <img
-                  className={styles.celebrateArtwork}
-                  src={mediaUrl(MISSION_REWARD_ARTWORK)}
-                  alt=""
-                  width="640"
-                  height="474"
-                  decoding="async"
-                  aria-hidden="true"
-                />
-                <h2 id="challenge-reward-title" className={styles.celebrateTitle} tabIndex={-1}>
-                  Reward Settled
-                </h2>
-                <p id="challenge-reward-description" className={styles.celebrateName}>
-                  {reward.name}
-                </p>
-
-                <div className={styles.celebratePayouts} role="group" aria-label="Rewards Earned">
-                  {reward.challengeDiamonds > 0 && (
-                    <div className={styles.celebrateDiamondPayout}>
-                      <span className={styles.celebratePayoutValue}>
-                        +{reward.challengeDiamonds.toLocaleString()}
-                      </span>
-                      <span className={styles.celebratePayoutLabel}>
-                        Challenge {reward.challengeDiamonds === 1 ? 'Diamond' : 'Diamonds'}
-                      </span>
-                    </div>
-                  )}
-                  {reward.milestoneDiamonds > 0 && (
-                    <div className={styles.celebrateMilestonePayout}>
-                      <span className={styles.celebratePayoutValue}>
-                        +{reward.milestoneDiamonds.toLocaleString()}
-                      </span>
-                      <span className={styles.celebratePayoutLabel}>Streak Bonus Diamonds</span>
-                    </div>
-                  )}
-                </div>
-
-                {reward.diamonds > 0 && (
-                  <div className={styles.celebrateBalanceLedger}>
-                    <p className={styles.celebrateTotal}>
-                      Total Credited: +{reward.diamonds.toLocaleString()} Diamonds
-                    </p>
-                    <p className={styles.celebrateBalance}>
-                      New Balance: {reward.diamondBalance.toLocaleString()} Diamonds
-                    </p>
-                  </div>
-                )}
-
-                <p className={styles.celebrateReceipt} role="status">
-                  Added To Your Club Arena Diamond Balance
-                </p>
-
-                <button type="button" className={styles.celebrateButton} onClick={dismissReward}>
-                  <CasinoControlIcon variant="continue" state="success" size="sm" />
-                  Continue
-                </button>
-              </div>
-            </div>
-          </div>,
+          <MissionRewardSettlementDialog
+            reward={reward}
+            reduceMotion={reduceMotion}
+            dialogRef={celebrateDialogRef}
+            onDismiss={dismissReward}
+          />,
           document.body
         )}
     </StandardContentLayout>

@@ -111,8 +111,9 @@ describe('Daily Mission feedback, consent, and health wiring', () => {
   });
 
   it('wires settlement feedback and every critical operation into health signals', () => {
-    expect(page).toContain('Reward Settled');
-    expect(page).toContain('Added To Your Club Arena Diamond Balance');
+    const rewardDialog = readDailyChallengesUnit('MissionRewardSettlementDialog.tsx');
+    expect(rewardDialog).toContain('Reward Settled');
+    expect(rewardDialog).toContain('Added To Your Club Arena Diamond Balance');
     for (const event of [
       'dashboard_loaded',
       'dashboard_failed',

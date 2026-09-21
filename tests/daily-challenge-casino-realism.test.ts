@@ -134,7 +134,7 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(card).toContain('data-mission-icon={c.type}');
     expect(card).toContain('data-icon-state=');
     expect(card).toContain('<MissionInstrumentGlyph');
-    expect(page).toContain('<CasinoControlIcon');
+    expect(surface).toContain('<CasinoControlIcon');
     expect(css).toContain('conic-gradient(');
     expect(css).toContain('@keyframes missionScannerOrbit');
     expect(css).toContain(".iconAssembly[data-mission-icon='friends_added']");

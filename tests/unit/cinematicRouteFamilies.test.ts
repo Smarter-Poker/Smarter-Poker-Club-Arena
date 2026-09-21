@@ -1,7 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import sharp from 'sharp';
-import { readDailyChallengesUnit } from '../helpers/dailyChallengesSources';
+import {
+  readDailyChallengesSurface,
+  readDailyChallengesUnit,
+} from '../helpers/dailyChallengesSources';
 
 const REWARD_PAGES = [
   'src/pages/PlayerWalletPage.tsx',
@@ -112,7 +115,8 @@ describe('cinematic retained route families', () => {
     const account = readFileSync('src/components/account/AccountSurfaceHeader.tsx', 'utf8');
     const community = readFileSync('src/components/community/CommunitySurfaceHeader.tsx', 'utf8');
     const workspaces = readFileSync('src/pages/workspaces/ArenaWorkspacePages.tsx', 'utf8');
-    const missions = readFileSync('src/pages/DailyChallengesPage.tsx', 'utf8');
+    // The Daily Challenges artwork prints from its dashboard units.
+    const missions = readDailyChallengesSurface();
 
     for (const source of [account, community, workspaces, missions]) {
       expect(source).toContain('mediaUrl(');

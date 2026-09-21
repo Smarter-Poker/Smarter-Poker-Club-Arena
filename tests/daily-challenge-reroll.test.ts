@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
+import {
+  readDailyChallengesSurface,
+  readDailyChallengesUnit,
+} from './helpers/dailyChallengesSources';
 import { readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
 import {
@@ -286,6 +289,11 @@ describe('reroll integrity is enforced below the UI', () => {
 describe('the page ships the casino-realism surface without the old stubs', () => {
   const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
   const css = readDailyChallengesStylesheet();
+  const dashboard = readDailyChallengesUnit('useDailyMissionDashboard.ts');
+  const actions = readDailyChallengesUnit('useDailyMissionActions.ts');
+  const realtime = readDailyChallengesUnit('useDailyMissionRealtimeCatchUp.ts');
+  const route = readDailyChallengesUnit('useMissionCycleRoute.ts');
+  const surface = readDailyChallengesSurface();
   const manifest = readFileSync(
     resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'),
     'utf8'
@@ -297,12 +305,12 @@ describe('the page ships the casino-realism surface without the old stubs', () =
   );
 
   it('uses the spendable balance and the real reroll service', () => {
-    expect(page).toContain('dailyChallengeService.getDashboard(uid)');
-    expect(page).toContain('setDiamondBalance(dashboard.diamondBalance)');
-    expect(page).toContain('dailyChallengeService.rerollChallenge(');
-    expect(page).toContain('diamondBalance < 5000');
-    expect(page).not.toContain('(Mocked)');
-    expect(page).not.toContain('window.confirm');
+    expect(dashboard).toContain('dailyChallengeService.getDashboard(uid)');
+    expect(dashboard).toContain('setDiamondBalance(dashboard.diamondBalance)');
+    expect(actions).toContain('dailyChallengeService.rerollChallenge(');
+    expect(actions).toContain('diamondBalance < 5000');
+    expect(surface).not.toContain('(Mocked)');
+    expect(surface).not.toContain('window.confirm');
   });
 
   it('ships an optimized eager hero and responsive accessibility states', () => {
@@ -323,32 +331,34 @@ describe('the page ships the casino-realism surface without the old stubs', () =
   });
 
   it('keeps dashboard failures recoverable and refreshes stale background tabs', () => {
-    expect(page).toContain('dailyChallengeService.getDashboard(uid)');
-    expect(page).toContain("document.addEventListener('visibilitychange'");
-    expect(page.match(/!isCurrentDailyMissionDashboardReceipt\(/g)).toHaveLength(2);
-    expect(page).toContain('mutationEpochRef.current += 1');
-    expect(page).toContain('if (!initialLoadSettledRef.current) return;');
-    expect(page).toContain('const acceptedAt = Date.now();');
+    expect(dashboard).toContain('dailyChallengeService.getDashboard(uid)');
+    expect(realtime).toContain("document.addEventListener('visibilitychange'");
+    expect(dashboard.match(/!isCurrentDailyMissionDashboardReceipt\(/g)).toHaveLength(2);
+    expect(actions).toContain('mutationEpochRef.current += 1');
+    expect(realtime).toContain('if (!initialLoadSettledRef.current) return;');
+    expect(dashboard).toContain('const acceptedAt = Date.now();');
     // A resumed tab asks the durable revision cursor whether it is stale; a
     // wall-clock guess about the last receipt no longer decides a full reload.
-    expect(page).not.toContain('lastDashboardReceiptAtRef');
-    expect(page).not.toContain('60_000');
-    expect(page).toContain('requestCursorCatchUp();');
-    expect(page).toContain('const serverSyncedAt = Date.parse(dashboard.syncedAt);');
-    expect(page).toContain('const nextServerClockOffsetMs = serverSyncedAt - acceptedAt;');
-    expect(page).toContain('periodKeysRef.current = dashboard.periodKeys;');
-    expect(page).toContain("msUntilChallengeReset('daily', serverNow)");
-    expect(page).toContain('getUtcDateKey(resumedAt + clockOffset) !== renderedDailyKey');
-    expect(page).not.toContain('lastSyncedAtRef');
-    expect(page).not.toContain('dateKeyRef');
+    expect(surface).not.toContain('lastDashboardReceiptAtRef');
+    expect(surface).not.toContain('60_000');
+    expect(realtime).toContain('requestCursorCatchUp();');
+    expect(dashboard).toContain('const serverSyncedAt = Date.parse(dashboard.syncedAt);');
+    expect(dashboard).toContain('const nextServerClockOffsetMs = serverSyncedAt - acceptedAt;');
+    expect(dashboard).toContain('periodKeysRef.current = dashboard.periodKeys;');
+    expect(dashboard).toContain("msUntilChallengeReset('daily', serverNow)");
+    expect(realtime).toContain('getUtcDateKey(resumedAt + clockOffset) !== renderedDailyKey');
+    expect(surface).not.toContain('lastSyncedAtRef');
+    expect(surface).not.toContain('dateKeyRef');
     expect(page).toContain('MissionLoadingState');
     expect(readDailyChallengesUnit('MissionSyncNotice.tsx')).toContain('Retry Sync');
   });
 
   it('distinguishes an unreadable secure session from a signed-out visitor', () => {
-    expect(page).toContain('const authResult = await getAuthUser();');
-    expect(page).toContain("authResult.error || ('failed' in authResult && authResult.failed)");
-    expect(page).toContain('Secure Session Check Failed. Please Retry Or Sign In Again.');
+    expect(dashboard).toContain('const authResult = await getAuthUser();');
+    expect(dashboard).toContain(
+      "authResult.error || ('failed' in authResult && authResult.failed)"
+    );
+    expect(dashboard).toContain('Secure Session Check Failed. Please Retry Or Sign In Again.');
     expect(page).toContain('Retry Session Check');
   });
 
@@ -375,7 +385,7 @@ describe('the page ships the casino-realism surface without the old stubs', () =
     expect(readDailyChallengesUnit('MissionCycleRail.tsx')).toContain(
       'aria-controls="mission-panel"'
     );
-    expect(page).toContain("event.key === 'ArrowRight'");
+    expect(route).toContain("event.key === 'ArrowRight'");
     const card = readDailyChallengesUnit('MissionCard.tsx');
     expect(card).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
     expect(card).toContain('Replaced.');

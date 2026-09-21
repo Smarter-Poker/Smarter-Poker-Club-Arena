@@ -1,12 +1,16 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { readDailyChallengesUnit } from '../helpers/dailyChallengesSources';
+import {
+  readDailyChallengesSurface,
+  readDailyChallengesUnit,
+} from '../helpers/dailyChallengesSources';
 import {
   dailyMissionReasonCode,
   recordDailyMissionOperation,
   shouldRecordDailyMissionOperation,
 } from '../../src/services/DailyMissionTelemetryService';
+import { readDailyChallengesUnit } from '../helpers/dailyChallengesSources';
 
 describe('Daily Mission operational telemetry', () => {
   it('keeps every material action, failure, and recovery signal', () => {
@@ -50,6 +54,7 @@ describe('Daily Mission feedback, consent, and health wiring', () => {
     path.resolve(__dirname, '../../src/pages/DailyChallengesPage.tsx'),
     'utf8'
   );
+  const surface = readDailyChallengesSurface();
   const preference = readFileSync(
     path.resolve(__dirname, '../../src/services/DailyMissionNotificationService.ts'),
     'utf8'
@@ -129,7 +134,7 @@ describe('Daily Mission feedback, consent, and health wiring', () => {
       'realtime_recovered',
       'mission_cta_opened',
     ]) {
-      expect(page).toContain(`event: '${event}'`);
+      expect(surface).toContain(`event: '${event}'`);
     }
     const alertsPanel = readDailyChallengesUnit('MissionAlertsPanel.tsx');
     for (const event of ['alerts_enabled', 'alerts_disabled', 'alerts_failed']) {

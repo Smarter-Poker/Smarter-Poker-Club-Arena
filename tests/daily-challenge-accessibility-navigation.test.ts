@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  readDailyChallengesStylesheet,
   readDailyChallengesSurface,
   readDailyChallengesUnit,
 } from './helpers/dailyChallengesSources';
@@ -17,6 +18,9 @@ const PRESENTATION = readDailyChallengesUnit('missionPresentation.ts');
 const FREEZE_DIALOG = readDailyChallengesUnit('MissionFreezePurchaseDialog.tsx');
 const REWARD_DIALOG = readDailyChallengesUnit('MissionRewardSettlementDialog.tsx');
 const CSS = readDailyChallengesStylesheet();
+const ACTIONS = readDailyChallengesUnit('useDailyMissionActions.ts');
+const ROUTE = readDailyChallengesUnit('useMissionCycleRoute.ts');
+const SURFACE = readDailyChallengesSurface();
 const APP_LAYOUT = readFileSync(
   resolve(__dirname, '../src/components/layouts/AppLayout.tsx'),
   'utf8'
@@ -60,7 +64,7 @@ describe('Daily Missions directed actions', () => {
 
 describe('Daily Missions accessibility contract', () => {
   it('sets the browser title from the active direct-route cycle', () => {
-    expect(PAGE).toContain(
+    expect(ROUTE).toContain(
       'document.title = `${TIER_PRESENTATION[activeTier].title} | Smarter Poker`'
     );
     expect(PRESENTATION).toContain("title: 'Daily Challenges'");
@@ -92,7 +96,7 @@ describe('Daily Missions accessibility contract', () => {
     expect(PAGE).toContain('inert={reward || confirmingFreeze ? true : undefined}');
     expect(PAGE).toContain('useInertAppShell(!!reward || confirmingFreeze)');
     expect(PAGE).toContain("if (e.key === 'Escape') dismissReward()");
-    expect(PAGE).not.toMatch(/setTimeout\([^)]*setReward\(null\)[\s\S]{0,80}5000/);
+    expect(SURFACE).not.toMatch(/setTimeout\([^)]*setReward\(null\)[\s\S]{0,80}5000/);
   });
 
   it('requires confirmation before a 5,000 Diamond streak-freeze purchase', () => {
@@ -106,8 +110,8 @@ describe('Daily Missions accessibility contract', () => {
   });
 
   it('returns focus to a stable mission target after reward dismissal', () => {
-    expect(PAGE).toContain('returnFocusId: `mission-card-${challenge.id}`');
-    expect(PAGE).toContain("returnFocusId: 'mission-board-title'");
+    expect(ACTIONS).toContain('returnFocusId: `mission-card-${challenge.id}`');
+    expect(ACTIONS).toContain("returnFocusId: 'mission-board-title'");
     expect(PAGE).toContain(
       'const origin = returnFocusId ? document.getElementById(returnFocusId) : null'
     );
@@ -120,8 +124,8 @@ describe('Daily Missions accessibility contract', () => {
     expect(PRESENTATION).toContain(
       'requestAnimationFrame(() => document.getElementById(targetId)?.focus())'
     );
-    expect(PAGE).toContain('focusAfterMissionUpdate(`mission-card-${challenge.id}`)');
-    expect(PAGE.match(/focusAfterMissionUpdate\('mission-board-title'\)/g)).toHaveLength(2);
+    expect(ACTIONS).toContain('focusAfterMissionUpdate(`mission-card-${challenge.id}`)');
+    expect(ACTIONS.match(/focusAfterMissionUpdate\('mission-board-title'\)/g)).toHaveLength(2);
   });
 
   it('restores purchase and reroll focus only after their controls unlock', () => {
@@ -129,9 +133,9 @@ describe('Daily Missions accessibility contract', () => {
     expect(card).toContain('rerollFocusRestorePendingRef.current');
     expect(card).toContain('!rerollConfirmationOpen &&');
     expect(card).toContain('!economyBusy');
-    expect(PAGE).toContain('freezeFocusRestorePendingRef.current = true');
-    expect(PAGE).toContain("document.getElementById('streak-console-title')?.focus()");
-    expect(PAGE).toContain('buyButton && !buyButton.disabled');
+    expect(readDailyChallengesUnit('useDailyMissionActions.ts')).toContain('freezeFocusRestorePendingRef.current = true');
+    expect(ACTIONS).toContain("document.getElementById('streak-console-title')?.focus()");
+    expect(readDailyChallengesUnit('useDailyMissionActions.ts')).toContain('buyButton && !buyButton.disabled');
   });
 
   it('does not let a closing card steal focus from a newly opened reroll confirmation', () => {

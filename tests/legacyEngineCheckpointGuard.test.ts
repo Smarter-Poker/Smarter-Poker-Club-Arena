@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { legacyEngineCheckpointGuard } from '../server/scripts/legacy-engine-checkpoint-guard.mjs';
 import { F06HandPermit } from '../server/src/services/F06HandPermit';
@@ -1042,34 +1044,131 @@ describe('exact 8825 retained original custody retirement', () => {
   // site that removes it runs inside that hand's settlement - unreachable once
   // the engine is stopped, because `lifecycleCanMutate()` gates the step that
   // calls it. The entry is the interruption being handed over, not live work.
+  // `beginTerminalBoundaryPersistence` runs inside `F06HandPermit.start`, one
+  // line after it sets `phase = 'attempted'`. The phase and the integer are one
+  // event, so a fixture that adds the integer must move the phase with it or it
+  // is modelling a state the engine cannot reach.
+  const interruptMidHand = (f: any) => {
+    f.originals[0].engine.f06CurrentPermit.phase = 'attempted';
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+  };
   it('admits the reserved terminal boundary of an interrupted original and still retires it', async () => {
     const f = mixedFixture();
-    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    interruptMidHand(f);
     expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
     expect(f.receipts.size).toBe(2);
     expect(f.server.tableEngines.has(f.originals[0].engine.tableId)).toBe(false);
     // Admitted, never discarded: the guard still mutates no engine state.
     expect(f.originals[0].engine.terminalBoundaryPendingGenerations.size).toBe(1);
   });
-  it('refuses a reserved terminal boundary that no undischarged permit can discharge', async () => {
-    const f = mixedFixture();
-    // 'attempted' is outside the set `sealAndRetireOriginals` demands an
-    // `aborted_unsettled` receipt for, so nothing downstream would prove it.
-    f.originals[0].engine.f06CurrentPermit.phase = 'attempted';
-    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
-    expect(await f.run()).toMatchObject({
-      ok: false,
-      reason: 'mixed_original_work_not_drained',
-      failedCheck: 'engineCollection.size',
-      failedField: 'terminalBoundaryPendingGenerations',
-      expected: '0',
+  it.each(['new', 'reserved', 'unknown', 'number_refused'] as const)(
+    'refuses a terminal boundary a %s permit could never have reserved',
+    async (phase) => {
+      const f = mixedFixture();
+      // `beginTerminalBoundaryPersistence` runs strictly after the phase becomes
+      // `attempted`, so an integer under any earlier phase is not the handed-over
+      // interruption - it is state this engine has no account of.
+      f.originals[0].engine.f06CurrentPermit.phase = phase;
+      f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+      expect(await f.run()).toMatchObject({
+        ok: false,
+        reason: 'mixed_original_work_not_drained',
+        failedCheck: 'engineCollection.size',
+        failedField: 'terminalBoundaryPendingGenerations',
+        failedPermitPhase: phase,
+        expected: '0',
+      });
+      expect(f.rpcCalls).toEqual([]);
+      expect(f.server.tableEngines.size).toBe(3);
+    }
+  );
+  // The admission above rests on one ordering in code the guard cannot see:
+  // `F06HandPermit.start` must mark the permit `attempted` BEFORE it actuates
+  // the block that reserves the boundary integer. Pin it on the real class, and
+  // pin the single call site that relies on it, so a reordering of either fails
+  // here rather than stranding the next release behind an unexplained refusal.
+  const attemptedPermit = () => {
+    const p = newPermit();
+    (p as any).phase = 'reserved';
+    p.start(() => undefined);
+    return p;
+  };
+  const newPermit = () =>
+    new F06HandPermit(
+      {
+        tournament_id: uuid(1),
+        lease_generation: uuid(2),
+        table_id: uuid(3),
+        lifecycle: '1',
+        permit_id: uuid(4),
+        custody_id: uuid(5),
+        hand_number: '17',
+      },
+      async () => {
+        throw new Error('permit rpc must never be reached');
+      },
+      () => true
+    );
+  it('marks the permit attempted before the boundary integer is reserved', () => {
+    const permit = newPermit();
+    (permit as any).phase = 'reserved';
+    let phaseInsideActuation: string | null = null;
+    permit.start(() => {
+      // This is where `beginTerminalBoundaryPersistence` runs.
+      phaseInsideActuation = permit.recoveryState();
     });
+    expect(phaseInsideActuation).toBe('attempted');
+    expect(permit.recoveryState()).toBe('attempted');
+  });
+  it('cannot leave the attempted phase once the hand has started', async () => {
+    const permit = attemptedPermit();
+    // The two sites that would move it on refuse it, so on a stopped engine -
+    // where the settle path is closed by `lifecycleCanMutate()` - `attempted`
+    // is terminal, and the boundary integer it reserved stays reserved.
+    await expect(
+      permit.terminateUnstarted(
+        async () => undefined,
+        () => true,
+        {
+          evidence_id: uuid(6),
+          process_boot_id: uuid(7),
+          engine_generation: uuid(8),
+          key_id: uuid(9),
+          key: new Uint8Array(32),
+        }
+      )
+    ).rejects.toThrow('f06_hand_may_have_started');
+    await expect(permit.cancelPreparedHand()).rejects.toThrow('f06_prepared_cancellation_unproven');
+    expect(permit.recoveryState()).toBe('attempted');
+  });
+  it('reserves the boundary integer only inside the permit start block', () => {
+    const dealing = readFileSync(
+      path.join(__dirname, '..', 'server/src/engine/ServerTableEngineDealing.ts'),
+      'utf8'
+    );
+    const calls = dealing.match(/this\.beginTerminalBoundaryPersistence\(\)/g) ?? [];
+    expect(calls).toHaveLength(1);
+    // The one call site sits in `startExactController`, and on an engine holding
+    // a permit that function is reached only through `f06CurrentPermit.start`.
+    expect(dealing).toMatch(
+      /const startExactController = \(\) => \{\s*persistenceGeneration = this\.beginTerminalBoundaryPersistence\(\);/
+    );
+    expect(dealing).toMatch(
+      /if \(this\.f06CurrentPermit\) this\.f06CurrentPermit\.start\(startExactController\);/
+    );
+  });
+  it('refuses a terminal boundary on an engine holding no permit at all', async () => {
+    const f = mixedFixture();
+    f.originals[0].engine.f06CurrentPermit = null;
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    const result = await f.run();
+    expect(result.ok).toBe(false);
     expect(f.rpcCalls).toEqual([]);
     expect(f.server.tableEngines.size).toBe(3);
   });
   it('refuses more pending boundaries than one interrupted hand can explain', async () => {
     const f = mixedFixture();
-    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    interruptMidHand(f);
     f.originals[0].engine.terminalBoundaryPendingGenerations.add(8);
     expect(await f.run()).toMatchObject({
       ok: false,
@@ -1090,7 +1189,7 @@ describe('exact 8825 retained original custody retirement', () => {
     ['entryHoldWriteChains', (e: any) => e.entryHoldWriteChains.set('a', 1)],
   ])('still refuses undrained %s on an interrupted original', async (field, fill) => {
     const f = mixedFixture();
-    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    interruptMidHand(f);
     fill(f.originals[0].engine);
     expect(await f.run()).toMatchObject({
       ok: false,
@@ -1104,7 +1203,7 @@ describe('exact 8825 retained original custody retirement', () => {
   });
   it('still refuses a failed terminal boundary on an interrupted original', async () => {
     const f = mixedFixture();
-    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    interruptMidHand(f);
     f.originals[0].engine.terminalBoundaryPersistenceFailed = true;
     expect(await f.run()).toMatchObject({
       ok: false,

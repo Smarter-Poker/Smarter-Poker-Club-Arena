@@ -965,6 +965,21 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           // boundary that was attempted and lost would have set
           // `terminalBoundaryPersistenceFailed`, which is refused above.
           //
+          // The phase that holds it is `attempted`, and only `attempted`.
+          // `beginTerminalBoundaryPersistence` has exactly one call site,
+          // `startExactController` in ServerTableEngineDealing, and on an engine
+          // holding a permit that site runs inside `F06HandPermit.start`, which
+          // sets `phase = 'attempted'` on the line before it actuates. So the
+          // integer cannot exist while the phase is `new`, `reserved`, `unknown`
+          // or `number_refused` - it had not been reserved yet - and the phase
+          // cannot leave `attempted` afterwards: `terminateUnstarted` throws
+          // `f06_hand_may_have_started` on it, `cancelPreparedHand` requires
+          // `reserved` (and `preparedCancellation` is proved false above), and
+          // the settle path that would accept it runs inside the hand's own
+          // settlement, which `lifecycleCanMutate()` has permanently closed.
+          // `attempted` is therefore the exact and only phase of the
+          // interruption this checkpoint exists to hand over.
+          //
           // Admit it ONLY for an engine that still holds the undischarged permit
           // of that hand, whose live phase was proved equal to the captured phase
           // through the unmodified `F06HandPermit.prototype.recoveryState` above.
@@ -974,9 +989,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           // naming this exact engine, manager and container - and it does so
           // before the custody RPC and before the retirement CAS, so an
           // undischarged interruption still reaches no irreversible step. Nothing
-          // is written for a retained original before that proof.
-          const interrupted =
-            permit !== null && ['unknown', 'reserved', 'terminated'].includes(capture.phase);
+          // is written for a retained original before that proof, and this change
+          // adds `attempted` to the phases that proof is demanded of, so nothing
+          // admitted here escapes it.
+          const interrupted = permit !== null && capture.phase === 'attempted';
           [...engineSets, ...engineMaps].forEach((name, index) => {
             const collection = engine[name];
             const captured = capture.collections[index];
@@ -997,6 +1013,11 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             const allowed = name === 'terminalBoundaryPendingGenerations' && interrupted ? 1 : 0;
             drained(size <= allowed, 'engineCollection.size', size, String(allowed), () => ({
               failedField: name,
+              // Observability only. The allowance on this one field turns on the
+              // permit phase, so a refusal here is unreadable without it.
+              ...(name === 'terminalBoundaryPendingGenerations'
+                ? { failedPermitPhase: capture.phase === null ? 'none' : capture.phase }
+                : {}),
             }));
             const expectSet = engineSets.includes(name);
             drained(
@@ -1350,7 +1371,16 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           require(found.length === 1 &&
             record(found[0].evidence), 'mixed_original_receipt_missing');
           const { permit, evidence } = found[0];
-          if (['unknown', 'reserved', 'terminated'].includes(item.permit.phase)) {
+          // `unknown`, `reserved` and `terminated` are the engine's own
+          // `hasUnresolvedF06Preparation` triple - a hand that was prepared and
+          // never started. `attempted` is the fourth disposition this checkpoint
+          // can meet and the only one that reserved a terminal boundary integer:
+          // the hand DID start and was cut off, which is exactly the state the
+          // retained 8825 originals are in. It is included here, not to widen
+          // what may be retired, but so that the `aborted_unsettled` receipt is
+          // DEMANDED of it: leaving it out let a started, unsettled hand reach
+          // retirement carrying no proof at all, which is the weaker position.
+          if (['unknown', 'reserved', 'terminated', 'attempted'].includes(item.permit.phase)) {
             require(permit.state === 'aborted_unsettled' &&
               uuid(permit.evidence_id) &&
               evidence.hand?.receipt_id === permit.evidence_id &&

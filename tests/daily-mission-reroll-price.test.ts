@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 
 const read = (path: string) => readFileSync(resolve(__dirname, '..', path), 'utf8');
 
@@ -32,7 +33,9 @@ describe('Daily Mission one-Diamond reroll contract', () => {
     expect(service).toContain('diamondsSpent,');
 
     expect(page).toContain('diamondBalance < DAILY_MISSION_REROLL_COST');
-    expect(page).toContain('Reroll ${DAILY_MISSION_REROLL_COST} Diamond For ${c.name}');
+    expect(readDailyChallengesUnit('MissionCard.tsx')).toContain(
+      'Reroll ${DAILY_MISSION_REROLL_COST} Diamond For ${c.name}'
+    );
     expect(page).toContain('diamond_cost: result.diamondsSpent ?? 0');
     expect(page).not.toMatch(/Reroll 10|10 Diamonds Required|diamond_cost:\s*10/);
   });

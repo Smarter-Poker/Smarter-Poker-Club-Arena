@@ -53,7 +53,7 @@ describe('cinematic retained route families', () => {
   it('preserves the mission-native Daily Challenges visual authority', () => {
     const source = readFileSync('src/pages/DailyChallengesPage.tsx', 'utf8');
     expect(source).toContain('data-arena-surface="missions"');
-    expect(source).toContain('className={styles.hero}');
+    expect(readDailyChallengesUnit('MissionHero.tsx')).toContain('className={styles.hero}');
     const presentation = readDailyChallengesUnit('missionPresentation.ts');
     expect(presentation).toContain('Club Arena / Daily Challenge Vault');
     expect(presentation).toContain('Club Arena / Weekly Challenge Circuit');

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 
 const migration = readFileSync(
   resolve(
@@ -72,8 +73,12 @@ describe('Daily Missions atomic action receipts', () => {
     expect(page).toContain('const economyGuardRef = useRef(false)');
     expect(page).toContain('const [economyBusy, setEconomyBusy] = useState(false)');
     expect(page.match(/economyGuardRef\.current = true/g)?.length).toBeGreaterThanOrEqual(4);
-    expect(page).toContain('disabled={claiming || economyBusy}');
-    expect(page).toContain('disabled={claimingAll || economyBusy}');
+    expect(readDailyChallengesUnit('MissionCard.tsx')).toContain(
+      'disabled={claiming || economyBusy}'
+    );
+    expect(readDailyChallengesUnit('MissionRewardVault.tsx')).toContain(
+      'disabled={claimingAll || economyBusy}'
+    );
     expect(page).not.toContain('setDiamondBalance((prev) => Math.max(0, prev - 5000))');
     expect(page).not.toContain(
       'setStreak((prev) => (prev ? { ...prev, freezesAvailable: prev.freezesAvailable + 1 } : prev))'
@@ -123,10 +128,13 @@ describe('Daily Missions atomic action receipts', () => {
   });
 
   it('disables unaffordable rerolls while retaining the transaction-time balance guard', () => {
-    expect(page).toContain('canAffordReroll={diamondBalance >= DAILY_MISSION_REROLL_COST}');
-    expect(page).toContain('rerollConfirmationOpen || !canAffordReroll');
-    expect(page).toContain('disabled={rerolling || economyBusy || !canAffordReroll}');
-    expect(page).toContain('`Need ${DAILY_MISSION_REROLL_COST} Diamond To Reroll ${c.name}`');
+    const card = readDailyChallengesUnit('MissionCard.tsx');
+    expect(readDailyChallengesUnit('MissionLedgerList.tsx')).toContain(
+      'canAffordReroll={diamondBalance >= DAILY_MISSION_REROLL_COST}'
+    );
+    expect(card).toContain('rerollConfirmationOpen || !canAffordReroll');
+    expect(card).toContain('disabled={rerolling || economyBusy || !canAffordReroll}');
+    expect(card).toContain('`Need ${DAILY_MISSION_REROLL_COST} Diamond To Reroll ${c.name}`');
     expect(page).toContain('if (diamondBalance < DAILY_MISSION_REROLL_COST)');
     const insufficientGuard = page.slice(
       page.indexOf('if (diamondBalance < DAILY_MISSION_REROLL_COST)'),

@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  readDailyChallengesSurface,
+  readDailyChallengesUnit,
+} from './helpers/dailyChallengesSources';
 import { CHALLENGE_TYPES, type ChallengeType } from '../src/services/DailyChallengeService';
 import { getChallengeMissionAction } from '../src/utils/challengeMissionAction';
 import {
@@ -121,37 +125,53 @@ describe('Daily Missions accessibility contract', () => {
   });
 
   it('restores purchase and reroll focus only after their controls unlock', () => {
-    expect(PAGE).toContain('rerollFocusRestorePendingRef.current');
-    expect(PAGE).toContain('!rerollConfirmationOpen &&');
-    expect(PAGE).toContain('!economyBusy');
+    const card = readDailyChallengesUnit('MissionCard.tsx');
+    expect(card).toContain('rerollFocusRestorePendingRef.current');
+    expect(card).toContain('!rerollConfirmationOpen &&');
+    expect(card).toContain('!economyBusy');
     expect(PAGE).toContain('freezeFocusRestorePendingRef.current = true');
     expect(PAGE).toContain("document.getElementById('streak-console-title')?.focus()");
     expect(PAGE).toContain('buyButton && !buyButton.disabled');
   });
 
   it('does not let a closing card steal focus from a newly opened reroll confirmation', () => {
-    expect(PAGE).toContain('rerollConfirmationOpen={confirmingRerollId !== null}');
-    expect(PAGE).toContain('rerollFocusRestorePendingRef.current = !rerollConfirmationOpen');
-    expect(PAGE).toMatch(
+    const card = readDailyChallengesUnit('MissionCard.tsx');
+    expect(readDailyChallengesUnit('MissionLedgerList.tsx')).toContain(
+      'rerollConfirmationOpen={confirmingRerollId !== null}'
+    );
+    expect(card).toContain('rerollFocusRestorePendingRef.current = !rerollConfirmationOpen');
+    expect(card).toMatch(
       /disabled=\{\s*rerolling \|\| economyBusy \|\| rerollConfirmationOpen \|\| !canAffordReroll\s*\}/
     );
   });
 
   it('exposes progress, tabs, sync state, and reroll confirmation semantically', () => {
-    expect(PAGE.match(/role="progressbar"/g)).toHaveLength(2);
-    expect(PAGE).toContain('aria-valuetext=');
-    expect(PAGE).toContain('role="tablist"');
-    expect(PAGE).toContain('role="tabpanel"');
-    expect(PAGE).toContain('aria-controls="mission-panel"');
-    expect(PAGE).toContain('id="mission-panel"');
-    expect(PAGE).not.toContain('aria-controls={`mission-panel-${tier}`}');
-    expect(PAGE).toContain('role="status" aria-live="polite"');
-    expect(PAGE).toContain("if (event.key === 'Escape') onCancelReroll()");
+    // Exactly two progress bars on the whole surface: the streak milestone and the card.
+    expect(readDailyChallengesSurface().match(/role="progressbar"/g)).toHaveLength(2);
+    expect(
+      readDailyChallengesUnit('MissionStreakConsole.tsx').match(/role="progressbar"/g)
+    ).toHaveLength(1);
+    const card = readDailyChallengesUnit('MissionCard.tsx');
+    const list = readDailyChallengesUnit('MissionLedgerList.tsx');
+    expect(card.match(/role="progressbar"/g)).toHaveLength(1);
+    expect(card).toContain('aria-valuetext=');
+    const rail = readDailyChallengesUnit('MissionCycleRail.tsx');
+    expect(rail).toContain('role="tablist"');
+    expect(list).toContain('role="tabpanel"');
+    expect(rail).toContain('aria-controls="mission-panel"');
+    expect(list).toContain('id="mission-panel"');
+    expect(readDailyChallengesSurface()).not.toContain('aria-controls={`mission-panel-${tier}`}');
+    expect(readDailyChallengesUnit('MissionHero.tsx')).toContain(
+      'role="status" aria-live="polite"'
+    );
+    expect(card).toContain("if (event.key === 'Escape') onCancelReroll()");
   });
 
   it('honors reduced motion in JavaScript-driven animation and confetti', () => {
+    const card = readDailyChallengesUnit('MissionCard.tsx');
     expect(PAGE).toContain('useReducedMotion()');
-    expect(PAGE).toContain('initial={reduceMotion ? false');
+    expect(card).toContain('useReducedMotion()');
+    expect(card).toContain('initial={reduceMotion ? false');
     expect(REWARD_DIALOG).toContain('{!reduceMotion && (');
     expect(CSS).toContain('@media (prefers-reduced-motion: reduce)');
   });

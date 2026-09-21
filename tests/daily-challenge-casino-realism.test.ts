@@ -74,8 +74,9 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(mobile).not.toMatch(/min-height:\s*(?:6\d\d|[7-9]\d\d)px/);
     expect(mobile).not.toContain('clip-path: none');
     expect(mobile).not.toContain('border-inline: 0');
-    expect(page).toContain('View Challenge Ledger');
-    expect(page).toContain("document.getElementById('mission-board-title')?.scrollIntoView");
+    const hero = readDailyChallengesUnit('MissionHero.tsx');
+    expect(hero).toContain('View Challenge Ledger');
+    expect(hero).toContain("document.getElementById('mission-board-title')?.scrollIntoView");
   });
 
   it('keeps server-clock labels in the English Title Case contract in every locale', () => {
@@ -88,11 +89,13 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
   it('fails closed on a cold ledger error and renders freeze settlement truthfully', () => {
     expect(page).toContain('if (loadError && lastSyncedAt === null)');
     expect(page).toContain('<MissionUnavailableState');
-    expect(page).toContain('Streak Freeze Applied');
-    expect(page).toContain('streak.usedFreeze && streak.lastFrozenDate');
-    expect(page).toContain('<span className={styles.srOnly}>Diamonds</span>');
-    expect(page).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
-    expect(page).toContain('Replaced.');
+    const streakConsole = readDailyChallengesUnit('MissionStreakConsole.tsx');
+    expect(streakConsole).toContain('Streak Freeze Applied');
+    expect(streakConsole).toContain('streak.usedFreeze && streak.lastFrozenDate');
+    expect(streakConsole).toContain('<span className={styles.srOnly}>Diamonds</span>');
+    const card = readDailyChallengesUnit('MissionCard.tsx');
+    expect(card).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
+    expect(card).toContain('Replaced.');
     expect(css).not.toMatch(/\.cardClaimed\s*\{[^}]*opacity:/s);
     const claimedCardRules = [
       ...css.matchAll(/\.challengeCard\[data-mission-state='claimed'\]\s*\{([^}]*)\}/g),
@@ -102,7 +105,9 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
   });
 
   it('warms the exact mission destination chunk on mouse, touch, and keyboard intent', () => {
-    expect(page).toContain('{...prefetchIntent(missionAction.path)}');
+    expect(readDailyChallengesUnit('MissionCard.tsx')).toContain(
+      '{...prefetchIntent(missionAction.path)}'
+    );
     expect(preloader).toContain(
       "'/tournaments': () => import('../pages/tournament/TournamentLobbyPage')"
     );
@@ -118,14 +123,17 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
   });
 
   it('closes every chamfer and gives each mission icon live progress and state', () => {
-    expect(page.match(/className=\{styles\.bevelFrame\}/g)?.length).toBeGreaterThanOrEqual(7);
+    expect(
+      readDailyChallengesSurface().match(/className=\{styles\.bevelFrame\}/g)?.length
+    ).toBeGreaterThanOrEqual(7);
     expect(css).toContain('Precision Frame Closure');
     expect(css).toContain('100% 100% / var(--bevel-size) var(--bevel-size) no-repeat');
     expect(css).toContain('.rerollButton::after');
-    expect(page).toContain("'--mission-progress': `${pct}%`");
-    expect(page).toContain('data-mission-icon={c.type}');
-    expect(page).toContain('data-icon-state=');
-    expect(page).toContain('<MissionInstrumentGlyph');
+    const card = readDailyChallengesUnit('MissionCard.tsx');
+    expect(card).toContain("'--mission-progress': `${pct}%`");
+    expect(card).toContain('data-mission-icon={c.type}');
+    expect(card).toContain('data-icon-state=');
+    expect(card).toContain('<MissionInstrumentGlyph');
     expect(page).toContain('<CasinoControlIcon');
     expect(css).toContain('conic-gradient(');
     expect(css).toContain('@keyframes missionScannerOrbit');
@@ -137,7 +145,9 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(presentation).toContain("daily: 'cycle-daily'");
     expect(presentation).toContain("weekly: 'cycle-weekly'");
     expect(presentation).toContain("monthly: 'cycle-monthly'");
-    expect(page).toContain('variant={TIER_CONTROL_ICONS[tier]}');
+    expect(readDailyChallengesUnit('MissionCycleRail.tsx')).toContain(
+      'variant={TIER_CONTROL_ICONS[tier]}'
+    );
     expect(loadingState).toContain('data-loading-mission-card=""');
     expect(loadingState).toContain('className={styles.loadingCardInstrument}');
     expect(css).toContain('.loadingCard > .bevelFrame');

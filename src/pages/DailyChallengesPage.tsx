@@ -15,8 +15,16 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getAuthUser } from '../lib/supabase';
 import { useToast } from '../components/common/Toast';
-import { CasinoControlIcon, MissionInstrumentGlyph } from '../components/challenges';
-import { motion, useReducedMotion } from 'framer-motion';
+import { CasinoControlIcon } from '../components/challenges';
+import { MissionLedgerList } from '../components/challenges/dashboard/MissionLedgerList';
+import { MissionCycleRail } from '../components/challenges/dashboard/MissionCycleRail';
+import { MissionStreakConsole } from '../components/challenges/dashboard/MissionStreakConsole';
+import { MissionSummaryGrid } from '../components/challenges/dashboard/MissionSummaryGrid';
+import { MissionHero } from '../components/challenges/dashboard/MissionHero';
+import { MissionSyncNotice } from '../components/challenges/dashboard/MissionSyncNotice';
+import { MissionRewardVault } from '../components/challenges/dashboard/MissionRewardVault';
+import { MissionFooter } from '../components/challenges/dashboard/MissionFooter';
+import { useReducedMotion } from 'framer-motion';
 import { masterBus } from '../core/MasterBus';
 import { triggerHaptic } from '../services/HapticService';
 import {
@@ -39,7 +47,6 @@ import styles from './DailyChallengesPage.module.css';
 import { mediaUrl } from '../utils/mediaBase';
 import { getUtcDateKey, msUntilChallengeReset } from '../utils/challengeReset';
 import { getChallengeMissionAction } from '../utils/challengeMissionAction';
-import { prefetchIntent } from '../utils/ChunkPreloader';
 import {
   dailyMissionRevisionFromPayload,
   isCurrentDailyMissionDashboardReceipt,
@@ -80,315 +87,7 @@ import { MissionRewardSettlementDialog } from '../components/challenges/dashboar
 // CARDS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function ChallengeCard({
-  challenge,
-  tier,
-  claiming,
-  rerolling,
-  economyBusy,
-  canAffordReroll,
-  confirmingReroll,
-  rerollConfirmationOpen,
-  celebrating,
-  onClaim,
-  onRequestReroll,
-  onCancelReroll,
-  onConfirmReroll,
-  onOpenMission,
-}: {
-  challenge: TieredChallenge;
-  tier: Tier;
-  claiming: boolean;
-  rerolling: boolean;
-  economyBusy: boolean;
-  canAffordReroll: boolean;
-  confirmingReroll: boolean;
-  rerollConfirmationOpen: boolean;
-  celebrating: boolean;
-  onClaim: (c: TieredChallenge) => void;
-  onRequestReroll: (c: TieredChallenge) => void;
-  onCancelReroll: () => void;
-  onConfirmReroll: (c: TieredChallenge) => void;
-  onOpenMission: (type: ChallengeType) => void;
-}) {
-  const reduceMotion = useReducedMotion();
-  const rerollButtonRef = useRef<HTMLButtonElement>(null);
-  const wasConfirmingRerollRef = useRef(confirmingReroll);
-  const rerollFocusRestorePendingRef = useRef(false);
-  const c = challenge.challenge;
-  const pct = c.requirement > 0 ? Math.min((challenge.progress / c.requirement) * 100, 100) : 0;
-  const done = challenge.completed;
-  const claimed = challenge.claimed;
-  const remaining = Math.max(0, c.requirement - challenge.progress);
-  const missionAction = getChallengeMissionAction(c.type);
-
-  useEffect(() => {
-    if (wasConfirmingRerollRef.current && !confirmingReroll) {
-      // A different card can become the active confirmation in the same
-      // render. In that case its auto-focused cancel action owns focus; the
-      // card that just closed must not queue a restoration over it.
-      rerollFocusRestorePendingRef.current = !rerollConfirmationOpen;
-    }
-    if (
-      rerollFocusRestorePendingRef.current &&
-      !confirmingReroll &&
-      !rerollConfirmationOpen &&
-      !economyBusy
-    ) {
-      rerollFocusRestorePendingRef.current = false;
-      const frame = requestAnimationFrame(() => {
-        const rerollButton = rerollButtonRef.current;
-        if (rerollButton && !rerollButton.disabled) {
-          rerollButton.focus();
-          return;
-        }
-        document.getElementById(`mission-card-${challenge.id}`)?.focus();
-      });
-      wasConfirmingRerollRef.current = confirmingReroll;
-      return () => cancelAnimationFrame(frame);
-    }
-    wasConfirmingRerollRef.current = confirmingReroll;
-    return undefined;
-  }, [challenge.id, confirmingReroll, economyBusy, rerollConfirmationOpen]);
-
-  const handleClaim = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (done && !claimed && !claiming) onClaim(challenge);
-  };
-
-  return (
-    <article
-      id={`mission-card-${challenge.id}`}
-      tabIndex={-1}
-      data-mission-tier={tier}
-      data-mission-state={claimed ? 'claimed' : done ? 'complete' : 'active'}
-      aria-busy={claiming || rerolling}
-      className={`
-        ${styles.challengeCard}
-        ${done ? styles.cardCompleted : ''}
-        ${claimed ? styles.cardClaimed : ''}
-        ${celebrating ? styles.cardCelebrating : ''}
-      `}
-      style={
-        {
-          '--card-tier-color': TIER_COLORS[tier],
-          '--mission-progress': `${pct}%`,
-        } as React.CSSProperties
-      }
-    >
-      <span className={styles.bevelFrame} aria-hidden="true" />
-      <div className={styles.cardTopline} data-mission-topline="">
-        <span>{TIER_LABELS[tier]} Challenge</span>
-        <span className={styles.cardState}>
-          {claimed ? 'Reward Collected' : done ? 'Ready To Claim' : 'In Progress'}
-        </span>
-      </div>
-
-      <div className={styles.cardHeader}>
-        <div
-          className={styles.iconAssembly}
-          data-mission-icon={c.type}
-          data-icon-state={claimed ? 'claimed' : done ? 'complete' : 'active'}
-          aria-hidden="true"
-        >
-          <span className={styles.iconOrbit} />
-          <span className={styles.iconBox}>
-            <MissionInstrumentGlyph
-              type={c.type}
-              state={claimed ? 'claimed' : done ? 'complete' : 'active'}
-              progress={pct}
-              size="lg"
-            />
-          </span>
-          <span className={styles.iconPulse} />
-          <span className={styles.iconScanner} />
-        </div>
-        <div className={styles.cardTitles}>
-          <h3 className={styles.cardName}>{c.name}</h3>
-          <p className={styles.cardDesc}>{c.description}</p>
-        </div>
-        <div className={styles.rewardReadout} role="group" aria-label="Challenge Reward">
-          <img
-            className={styles.rewardGem}
-            src={mediaUrl(MISSION_DIAMOND_ARTWORK)}
-            alt=""
-            width="96"
-            height="96"
-            loading="lazy"
-            decoding="async"
-            aria-hidden="true"
-          />
-          <div>
-            <span className={styles.rewardLabel}>Reward</span>
-            {/* 2026-09-05: this led with "{chipReward} Chips" and put the diamonds
-              second. A mission reward is diamonds (Dan: nothing ever earns
-              chips, only diamonds), and as of migration 20260905114421 no code
-              path credits a chip for one. */}
-            <strong className={styles.diamondReward}>
-              {c.diamondReward.toLocaleString()} Diamonds
-            </strong>
-          </div>
-        </div>
-      </div>
-
-      <div className={styles.progressBlock}>
-        <div className={styles.progressLabels}>
-          <span>Challenge Progress</span>
-          <strong>
-            {Math.min(challenge.progress, c.requirement).toLocaleString()} /{' '}
-            {c.requirement.toLocaleString()}
-          </strong>
-        </div>
-        <div
-          className={styles.progressTrack}
-          role="progressbar"
-          aria-label={`${c.name} Progress`}
-          aria-valuemin={0}
-          aria-valuemax={c.requirement}
-          aria-valuenow={Math.min(challenge.progress, c.requirement)}
-          aria-valuetext={`${Math.min(challenge.progress, c.requirement).toLocaleString()} Of ${c.requirement.toLocaleString()} Complete`}
-        >
-          <motion.div
-            className={styles.progressFill}
-            initial={reduceMotion ? false : { width: 0 }}
-            animate={{ width: `${pct}%` }}
-            transition={{ duration: reduceMotion ? 0 : 0.8, ease: 'easeOut' }}
-          />
-        </div>
-      </div>
-
-      <div className={styles.cardFooter}>
-        <span className={styles.completionReadout}>
-          {claimed
-            ? 'Reward Collected'
-            : done
-              ? 'Objective Cleared'
-              : `${remaining.toLocaleString()} Remaining`}
-        </span>
-        <div className={styles.cardActions}>
-          {claimed && (
-            <div className={styles.claimedBadge}>
-              <CasinoControlIcon variant="claim" state="success" size="sm" />
-              Already Claimed
-            </div>
-          )}
-          {done && !claimed && (
-            <button
-              type="button"
-              className={styles.claimButton}
-              onClick={handleClaim}
-              disabled={claiming || economyBusy}
-              aria-label={`Claim Reward For ${c.name}`}
-            >
-              <CasinoControlIcon
-                variant="claim"
-                state={claiming ? 'pending' : economyBusy ? 'disabled' : 'active'}
-                size="sm"
-              />
-              {claiming ? 'Claiming...' : 'Claim Reward'}
-            </button>
-          )}
-          {!done && !confirmingReroll && (
-            <>
-              <button
-                {...prefetchIntent(missionAction.path)}
-                type="button"
-                className={styles.missionActionButton}
-                onClick={() => onOpenMission(c.type)}
-                aria-label={`${missionAction.label} To Advance ${c.name}`}
-              >
-                <CasinoControlIcon variant="play" state="active" size="sm" />
-                {missionAction.label}
-              </button>
-              <button
-                ref={rerollButtonRef}
-                type="button"
-                className={styles.rerollButton}
-                onClick={() => onRequestReroll(challenge)}
-                disabled={rerolling || economyBusy || rerollConfirmationOpen || !canAffordReroll}
-                aria-label={
-                  canAffordReroll
-                    ? `Reroll ${DAILY_MISSION_REROLL_COST} Diamond For ${c.name}`
-                    : `Need ${DAILY_MISSION_REROLL_COST} Diamond To Reroll ${c.name}`
-                }
-              >
-                <CasinoControlIcon
-                  variant="reroll"
-                  state={
-                    rerolling
-                      ? 'pending'
-                      : economyBusy || rerollConfirmationOpen || !canAffordReroll
-                        ? 'disabled'
-                        : 'idle'
-                  }
-                  size="sm"
-                />
-                {canAffordReroll ? 'Reroll ' : 'Need '}
-                <span className={styles.buttonPrice}>
-                  <DiamondMark /> {DAILY_MISSION_REROLL_COST}
-                  {!canAffordReroll && ' Diamond'}
-                </span>
-              </button>
-            </>
-          )}
-          {!done && confirmingReroll && (
-            <div
-              className={styles.rerollConfirm}
-              role="group"
-              aria-label={`Confirm Reroll For ${c.name}`}
-              aria-live="polite"
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') onCancelReroll();
-              }}
-            >
-              <span className={styles.rerollPrompt}>
-                Spend <DiamondMark /> {DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be
-                Replaced.
-              </span>
-              <button
-                type="button"
-                className={styles.cancelButton}
-                onClick={onCancelReroll}
-                disabled={rerolling || economyBusy}
-                autoFocus
-              >
-                <CasinoControlIcon
-                  variant="keep"
-                  state={rerolling || economyBusy ? 'disabled' : 'idle'}
-                  size="sm"
-                />
-                Keep It
-              </button>
-              <button
-                type="button"
-                className={styles.confirmButton}
-                onClick={() => onConfirmReroll(challenge)}
-                disabled={rerolling || economyBusy || !canAffordReroll}
-              >
-                <CasinoControlIcon
-                  variant="confirm"
-                  state={
-                    rerolling
-                      ? 'pending'
-                      : economyBusy || !canAffordReroll
-                        ? 'disabled'
-                        : 'attention'
-                  }
-                  size="sm"
-                />
-                {rerolling
-                  ? 'Replacing...'
-                  : canAffordReroll
-                    ? 'Replace'
-                    : `Need ${DAILY_MISSION_REROLL_COST} Diamond`}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </article>
-  );
-}
+// The mission card is src/components/challenges/dashboard/MissionCard.tsx (Phase 3, step 9).
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -1467,6 +1166,8 @@ export default function DailyChallengesPage() {
     );
   }
 
+  const goToArena = () => navigate(routeClubId ? `/clubs/${routeClubId}` : '/');
+
   return (
     <StandardContentLayout className={styles.container}>
       <div
@@ -1478,299 +1179,66 @@ export default function DailyChallengesPage() {
         aria-hidden={reward || confirmingFreeze ? true : undefined}
         inert={reward || confirmingFreeze ? true : undefined}
       >
-        <section className={styles.hero} aria-labelledby="missions-title">
-          <span className={styles.bevelFrame} aria-hidden="true" />
-          <MissionHeroArtwork tier={activeTier} />
-          <div className={styles.heroShade} />
-          <div className={styles.heroCopy}>
-            <span className={styles.eyebrow}>{TIER_PRESENTATION[activeTier].eyebrow}</span>
-            <h1 id="missions-title">{TIER_PRESENTATION[activeTier].title}</h1>
-            <p>{TIER_PRESENTATION[activeTier].description}</p>
-            <div className={styles.heroMeters}>
-              <div>
-                <span>{TIER_LABELS[activeTier]} Cycle</span>
-                <strong>
-                  <MissionCycleCountdown
-                    tier={activeTier}
-                    serverClockOffsetMs={serverClockOffsetMs}
-                  />
-                </strong>
-                <small>Until {TIER_LABELS[activeTier]} Reset</small>
-              </div>
-              <div>
-                <span>Available Diamonds</span>
-                <strong className={styles.balanceWithGem}>
-                  <DiamondMark /> {diamondBalance.toLocaleString()}
-                </strong>
-                <small>Spendable Balance</small>
-              </div>
-            </div>
-            <div className={styles.heroActions}>
-              <button
-                type="button"
-                className={styles.playButton}
-                onClick={() => {
-                  document.getElementById('mission-board-title')?.scrollIntoView({
-                    behavior: reduceMotion ? 'auto' : 'smooth',
-                    block: 'start',
-                  });
-                  requestAnimationFrame(() =>
-                    document.getElementById('mission-board-title')?.focus()
-                  );
-                }}
-              >
-                <CasinoControlIcon variant="ledger" state="active" size="sm" />
-                View Challenge Ledger
-              </button>
-              <button
-                type="button"
-                className={styles.backButton}
-                onClick={() => navigate(routeClubId ? `/clubs/${routeClubId}` : '/')}
-              >
-                <CasinoControlIcon variant="back" state="idle" size="sm" />
-                Back To Arena
-              </button>
-            </div>
-          </div>
-          <div className={styles.heroSeal} role="status" aria-live="polite">
-            <span>{syncLabel}</span>
-            <strong>
-              {tierCounts[activeTier].done}/{tierCounts[activeTier].total}
-            </strong>
-            <small>{TIER_LABELS[activeTier]} Cleared</small>
-          </div>
-        </section>
+        <MissionHero
+          tier={activeTier}
+          diamondBalance={diamondBalance}
+          syncLabel={syncLabel}
+          done={tierCounts[activeTier].done}
+          total={tierCounts[activeTier].total}
+          reduceMotion={reduceMotion}
+          onBackToArena={goToArena}
+          artwork={<MissionHeroArtwork tier={activeTier} />}
+          countdown={
+            <MissionCycleCountdown tier={activeTier} serverClockOffsetMs={serverClockOffsetMs} />
+          }
+          diamondMark={<DiamondMark />}
+          TIER_PRESENTATION={TIER_PRESENTATION}
+          TIER_LABELS={TIER_LABELS}
+        />
 
         {loadError && (
-          <aside className={`${styles.syncNotice} ${styles.syncNoticeError}`} role="alert">
-            <span className={styles.bevelFrame} aria-hidden="true" />
-            <div>
-              <span className={styles.panelLabel}>Challenge Ledger Interrupted</span>
-              <strong>{loadError}</strong>
-              {lastSyncedAt && (
-                <small>Last Successful Sync: {MISSION_SYNC_FORMATTER.format(lastSyncedAt)}</small>
-              )}
-            </div>
-            <button
-              type="button"
-              className={styles.retryButton}
-              onClick={() => userId && loadChallenges(userId, 'refresh')}
-              disabled={isRefreshing}
-            >
-              <CasinoControlIcon
-                variant="sync"
-                state={isRefreshing ? 'pending' : 'attention'}
-                size="sm"
-              />
-              {isRefreshing ? 'Reconnecting...' : 'Retry Sync'}
-            </button>
-          </aside>
+          <MissionSyncNotice
+            loadError={loadError}
+            lastSyncedAt={lastSyncedAt}
+            isRefreshing={isRefreshing}
+            onRetry={() => userId && loadChallenges(userId, 'refresh')}
+            MISSION_SYNC_FORMATTER={MISSION_SYNC_FORMATTER}
+          />
         )}
 
         <section className={styles.commandDeck} aria-label="Challenge Status">
-          <div className={styles.streakConsole}>
-            <span className={styles.bevelFrame} aria-hidden="true" />
-            <div className={styles.streakCore}>
-              <span className={styles.streakFireVisual} aria-hidden="true">
-                <CasinoControlIcon
-                  variant="streak"
-                  state={(streak?.streak ?? stats?.currentStreak ?? 0) > 0 ? 'active' : 'idle'}
-                  size="lg"
-                />
-              </span>
-              <div className={styles.streakInfo}>
-                <span className={styles.panelLabel}>Daily Streak Circuit</span>
-                <h2 id="streak-console-title" className={styles.streakCount} tabIndex={-1}>
-                  {(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()} Day Streak
-                </h2>
-                <span className={styles.streakDesc}>Play Every Day To Keep The Circuit Alive.</span>
-              </div>
-            </div>
-            <div className={styles.milestoneTracker}>
-              <div className={styles.milestoneLabels}>
-                <span>{(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()} Days</span>
-                <span>Next Reward At {stats?.nextMilestone.toLocaleString()}</span>
-              </div>
-              <div
-                className={styles.milestoneBar}
-                role="progressbar"
-                aria-label="Progress Toward The Next Streak Reward"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={Math.round(stats?.milestoneProgressPercent ?? 0)}
-                aria-valuetext={`${(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()} Days, Next Reward At ${stats?.nextMilestone.toLocaleString() ?? 0}`}
-              >
-                <motion.div
-                  className={styles.milestoneFill}
-                  initial={reduceMotion ? false : { width: 0 }}
-                  animate={{
-                    width: `${stats?.milestoneProgressPercent ?? 0}%`,
-                  }}
-                  transition={{ duration: reduceMotion ? 0 : 1, ease: 'easeOut' }}
-                />
-              </div>
-            </div>
-            {streak && (
-              <div className={styles.freezeLine}>
-                <div className={styles.freezeInfo}>
-                  <span>{streak.freezesAvailable} Banked</span>
-                  <small>
-                    {streak.nextFreezeIn != null
-                      ? `Next Free Freeze In ${streak.nextFreezeIn} Day${streak.nextFreezeIn === 1 ? '' : 's'}`
-                      : 'Freeze Inventory Ready'}
-                  </small>
-                  {streak.usedFreeze && streak.lastFrozenDate && (
-                    <div
-                      className={styles.freezeReceipt}
-                      role="status"
-                      aria-label={`Streak Freeze Applied For ${MISSION_DATE_FORMATTER.format(new Date(`${streak.lastFrozenDate}T00:00:00Z`))}`}
-                    >
-                      <CasinoControlIcon variant="freeze" state="success" size="md" />
-                      <div>
-                        <strong>Streak Freeze Applied</strong>
-                        <small>
-                          {MISSION_DATE_FORMATTER.format(
-                            new Date(`${streak.lastFrozenDate}T00:00:00Z`)
-                          )}{' '}
-                          Cycle Protected
-                        </small>
-                        {streak.honoredFrozenDates > 1 && (
-                          <small>
-                            {streak.honoredFrozenDates.toLocaleString()} Protected Cycles In Current
-                            Streak
-                          </small>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className={styles.freezeAction}>
-                  <button
-                    id="buy-streak-freeze"
-                    type="button"
-                    className={styles.buyFreezeBtn}
-                    onClick={() => {
-                      if (!economyGuardRef.current) setConfirmingFreeze(true);
-                    }}
-                    disabled={
-                      buyingFreeze ||
-                      economyBusy ||
-                      diamondBalance < 5000 ||
-                      streak.freezesAvailable >= 3
-                    }
-                    aria-describedby="freeze-action-hint"
-                    aria-haspopup="dialog"
-                  >
-                    <CasinoControlIcon
-                      variant="freeze"
-                      state={
-                        buyingFreeze
-                          ? 'pending'
-                          : economyBusy || diamondBalance < 5000 || streak.freezesAvailable >= 3
-                            ? 'disabled'
-                            : 'active'
-                      }
-                      size="sm"
-                    />
-                    {buyingFreeze
-                      ? 'Securing...'
-                      : streak.freezesAvailable >= 3
-                        ? 'Freeze Vault Full'
-                        : diamondBalance < 5000
-                          ? 'Need More Diamonds'
-                          : 'Buy Streak Freeze'}
-                    {streak.freezesAvailable < 3 && (
-                      <span className={styles.buttonPrice}>
-                        <DiamondMark /> 5,000
-                        <span className={styles.srOnly}>Diamonds</span>
-                      </span>
-                    )}
-                  </button>
-                  <small id="freeze-action-hint" className={styles.actionHint}>
-                    {streak.freezesAvailable >= 3
-                      ? 'Use A Banked Freeze Before Buying Another.'
-                      : diamondBalance < 5000
-                        ? 'Requires 5,000 Spendable Diamonds.'
-                        : 'Protects One Missed Daily Cycle.'}
-                  </small>
-                </div>
-              </div>
-            )}
-          </div>
+          <MissionStreakConsole
+            streak={streak}
+            stats={stats}
+            diamondBalance={diamondBalance}
+            buyingFreeze={buyingFreeze}
+            economyBusy={economyBusy}
+            reduceMotion={reduceMotion}
+            onRequestFreeze={() => {
+              if (!economyGuardRef.current) setConfirmingFreeze(true);
+            }}
+            diamondMark={<DiamondMark />}
+            MISSION_DATE_FORMATTER={MISSION_DATE_FORMATTER}
+          />
 
-          <div className={styles.summaryGrid}>
-            <span className={styles.bevelFrame} aria-hidden="true" />
-            <div className={styles.summaryTile}>
-              <span className={styles.summaryLabel}>{TIER_LABELS[activeTier]} Cycle</span>
-              <strong className={styles.summaryValue}>
-                {tierCounts[activeTier].done}/{tierCounts[activeTier].total}
-              </strong>
-              <small>Completed</small>
-            </div>
-            <div className={styles.summaryTile}>
-              <span className={styles.summaryLabel}>Career</span>
-              <strong className={styles.summaryValue}>
-                {(stats?.totalCompleted || 0).toLocaleString()}
-              </strong>
-              <small>Challenges Cleared</small>
-            </div>
-            <div className={styles.summaryTile}>
-              <span className={styles.summaryLabel}>Earned Here</span>
-              <strong
-                className={`${styles.summaryValue} ${styles.diamond} ${styles.balanceWithGem}`}
-              >
-                <DiamondMark /> {(stats?.totalDiamondsEarned || 0).toLocaleString()}
-              </strong>
-              <small>Lifetime Diamonds</small>
-            </div>
-            <div className={styles.summaryTile}>
-              <span className={styles.summaryLabel}>Next Milestone</span>
-              <strong className={`${styles.summaryValue} ${styles.gold}`}>
-                +{(stats?.milestoneReward || 0).toLocaleString()}
-              </strong>
-              <small>Bonus Diamonds</small>
-            </div>
-          </div>
+          <MissionSummaryGrid
+            tier={activeTier}
+            done={tierCounts[activeTier].done}
+            total={tierCounts[activeTier].total}
+            stats={stats}
+            diamondMark={<DiamondMark />}
+            TIER_LABELS={TIER_LABELS}
+          />
         </section>
 
         {unclaimed.count > 0 && (
-          <aside className={styles.unclaimedBar} aria-label="Unclaimed Challenge Rewards">
-            <span className={styles.bevelFrame} aria-hidden="true" />
-            <img
-              className={styles.vaultArtwork}
-              src={mediaUrl(MISSION_REWARD_ARTWORK)}
-              alt=""
-              width="640"
-              height="474"
-              loading="lazy"
-              decoding="async"
-              aria-hidden="true"
-            />
-            <div className={styles.vaultCopy}>
-              <span className={styles.panelLabel}>Reward Vault Open</span>
-              <strong>
-                {unclaimed.count} Challenge{unclaimed.count === 1 ? '' : 's'} Ready
-              </strong>
-              <small>+{unclaimed.diamonds.toLocaleString()} Diamonds</small>
-            </div>
-            <button
-              type="button"
-              className={styles.claimAllButton}
-              onClick={handleClaimAll}
-              disabled={claimingAll || economyBusy}
-            >
-              <CasinoControlIcon
-                variant="claim"
-                state={claimingAll ? 'pending' : economyBusy ? 'disabled' : 'active'}
-                size="sm"
-              />
-              {claimingAll
-                ? 'Claiming Rewards...'
-                : unclaimed.hasMore
-                  ? `Claim Next ${unclaimed.items.length} Of ${unclaimed.count}`
-                  : `Claim All ${unclaimed.count}`}
-            </button>
-          </aside>
+          <MissionRewardVault
+            unclaimed={unclaimed}
+            claimingAll={claimingAll}
+            economyBusy={economyBusy}
+            onClaimAll={handleClaimAll}
+            MISSION_REWARD_ARTWORK={MISSION_REWARD_ARTWORK}
+          />
         )}
 
         <MissionAlertsPanel userId={userId} />
@@ -1792,124 +1260,43 @@ export default function DailyChallengesPage() {
             />
           </header>
 
-          <div className={styles.tabs} role="tablist" aria-label="Challenge Period">
-            <span className={styles.bevelFrame} aria-hidden="true" />
-            {TIERS.map((tier) => (
-              <button
-                key={tier}
-                id={`mission-tab-${tier}`}
-                type="button"
-                role="tab"
-                aria-selected={activeTier === tier}
-                aria-controls="mission-panel"
-                tabIndex={activeTier === tier ? 0 : -1}
-                className={`${styles.tab} ${activeTier === tier ? styles.tabActive : ''}`}
-                style={{ '--tier-color': TIER_COLORS[tier] } as React.CSSProperties}
-                onKeyDown={(event) => handleTierKeyDown(event, tier)}
-                onClick={() => {
-                  openTier(tier);
-                }}
-              >
-                <CasinoControlIcon
-                  variant={TIER_CONTROL_ICONS[tier]}
-                  state={activeTier === tier ? 'active' : 'idle'}
-                  size="sm"
-                />
-                <span className={styles.tabLabel}>{TIER_LABELS[tier]}</span>
-                <span className={styles.tabCount}>
-                  {tierCounts[tier].done}/{tierCounts[tier].total} Complete
-                </span>
-              </button>
-            ))}
-          </div>
+          <MissionCycleRail
+            activeTier={activeTier}
+            tierCounts={tierCounts}
+            onOpenTier={openTier}
+            onTierKeyDown={handleTierKeyDown}
+            TIERS={TIERS}
+            TIER_LABELS={TIER_LABELS}
+            TIER_COLORS={TIER_COLORS}
+            TIER_CONTROL_ICONS={TIER_CONTROL_ICONS}
+          />
 
-          <section
-            id="mission-panel"
-            className={styles.list}
-            role="tabpanel"
-            aria-labelledby={`mission-tab-${activeTier}`}
-            tabIndex={0}
-          >
-            {visible.length === 0 ? (
-              <div className={styles.emptyState}>
-                <span className={styles.bevelFrame} aria-hidden="true" />
-                <h3>{loadError ? 'Challenge Ledger Offline' : 'No Challenges Assigned'}</h3>
-                <p>
-                  {loadError
-                    ? 'Use Retry Sync Above To Reconnect. Your Recorded Progress Is Safe.'
-                    : `Your Next ${TIER_LABELS[activeTier]} Challenge Set Is Being Prepared.`}
-                </p>
-                {!loadError && (
-                  <button
-                    type="button"
-                    className={styles.retryButton}
-                    onClick={() => loadChallenges(userId, 'refresh')}
-                    disabled={isRefreshing}
-                  >
-                    <CasinoControlIcon
-                      variant="retry"
-                      state={isRefreshing ? 'pending' : 'attention'}
-                      size="sm"
-                    />
-                    {isRefreshing ? 'Preparing...' : 'Refresh Challenge Ledger'}
-                  </button>
-                )}
-              </div>
-            ) : (
-              visible.map((c, i) => (
-                <motion.div
-                  key={c.id}
-                  initial={reduceMotion ? false : { opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={
-                    reduceMotion
-                      ? { duration: 0 }
-                      : { duration: 0.22, delay: Math.min(i * 0.035, 0.14) }
-                  }
-                  layout={!reduceMotion}
-                >
-                  <ChallengeCard
-                    challenge={c}
-                    tier={c.tier}
-                    claiming={claimingIds.has(c.id)}
-                    rerolling={rerollingIds.has(c.id)}
-                    economyBusy={economyBusy}
-                    canAffordReroll={diamondBalance >= DAILY_MISSION_REROLL_COST}
-                    confirmingReroll={confirmingRerollId === c.id}
-                    rerollConfirmationOpen={confirmingRerollId !== null}
-                    celebrating={celebratingIds.has(c.id)}
-                    onClaim={handleClaim}
-                    onRequestReroll={(challenge) => setConfirmingRerollId(challenge.id)}
-                    onCancelReroll={() => setConfirmingRerollId(null)}
-                    onConfirmReroll={handleReroll}
-                    onOpenMission={handleOpenMission}
-                  />
-                </motion.div>
-              ))
-            )}
-          </section>
+          <MissionLedgerList
+            visible={visible}
+            activeTier={activeTier}
+            loadError={loadError}
+            isRefreshing={isRefreshing}
+            onRefresh={() => loadChallenges(userId, 'refresh')}
+            claimingIds={claimingIds}
+            rerollingIds={rerollingIds}
+            economyBusy={economyBusy}
+            diamondBalance={diamondBalance}
+            confirmingRerollId={confirmingRerollId}
+            celebratingIds={celebratingIds}
+            reduceMotion={reduceMotion}
+            onClaim={handleClaim}
+            onRequestReroll={(challenge) => setConfirmingRerollId(challenge.id)}
+            onCancelReroll={() => setConfirmingRerollId(null)}
+            onConfirmReroll={handleReroll}
+            onOpenMission={handleOpenMission}
+            diamondMark={<DiamondMark />}
+            TIER_COLORS={TIER_COLORS}
+            TIER_LABELS={TIER_LABELS}
+            MISSION_DIAMOND_ARTWORK={MISSION_DIAMOND_ARTWORK}
+          />
         </section>
 
-        <footer className={styles.footer}>
-          <span className={styles.bevelFrame} aria-hidden="true" />
-          <div>
-            <span className={styles.eyebrow}>Casino Floor Concierge</span>
-            <h2>Play Poker. Your Challenge Ledger Updates Automatically.</h2>
-            <p>
-              Hand Results, Pots, Showdowns, Tournaments, And Social Goals Update Automatically.
-              Daily Challenges Reset At Midnight UTC, Weekly Challenges Each Monday, And Monthly
-              Challenges On The First.
-            </p>
-          </div>
-          <button
-            type="button"
-            className={styles.playButton}
-            onClick={() => navigate(routeClubId ? `/clubs/${routeClubId}` : '/')}
-          >
-            <CasinoControlIcon variant="play" state="active" size="sm" />
-            Browse Cash Games
-          </button>
-        </footer>
+        <MissionFooter onBrowseArena={goToArena} />
       </div>
 
       {confirmingFreeze &&

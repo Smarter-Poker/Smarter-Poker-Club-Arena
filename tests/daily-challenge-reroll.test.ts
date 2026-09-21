@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 import { readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
-import { readDailyChallengesStylesheet } from './helpers/dailyChallengesSources';
+import {
+  readDailyChallengesStylesheet,
+  readDailyChallengesUnit,
+} from './helpers/dailyChallengesSources';
 
 const rpc = vi.fn();
 const emit = vi.fn();
@@ -339,7 +342,7 @@ describe('the page ships the casino-realism surface without the old stubs', () =
     expect(page).not.toContain('lastSyncedAtRef');
     expect(page).not.toContain('dateKeyRef');
     expect(page).toContain('MissionLoadingState');
-    expect(page).toContain('Retry Sync');
+    expect(readDailyChallengesUnit('MissionSyncNotice.tsx')).toContain('Retry Sync');
   });
 
   it('distinguishes an unreadable secure session from a signed-out visitor', () => {
@@ -369,9 +372,12 @@ describe('the page ships the casino-realism surface without the old stubs', () =
     expect(readDailyChallengesUnit('MissionRewardSettlementDialog.tsx')).toContain(
       'reward.diamonds.toLocaleString()'
     );
-    expect(page).toContain('aria-controls="mission-panel"');
+    expect(readDailyChallengesUnit('MissionCycleRail.tsx')).toContain(
+      'aria-controls="mission-panel"'
+    );
     expect(page).toContain("event.key === 'ArrowRight'");
-    expect(page).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
-    expect(page).toContain('Replaced.');
+    const card = readDailyChallengesUnit('MissionCard.tsx');
+    expect(card).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
+    expect(card).toContain('Replaced.');
   });
 });

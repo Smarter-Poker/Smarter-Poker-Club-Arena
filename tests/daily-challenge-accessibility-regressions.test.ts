@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sliceBetween } from './helpers/sourceWindow';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 
 const PAGE = readFileSync(resolve('src/pages/DailyChallengesPage.tsx'), 'utf8');
 
@@ -14,14 +15,15 @@ describe('Daily Challenges repaired accessibility contracts', () => {
   });
 
   it('exposes one streak value while keeping the adjacent reactor decorative', () => {
-    const visualStart = PAGE.indexOf('<span className={styles.streakFireVisual}');
-    const copyStart = PAGE.indexOf('<div className={styles.streakInfo}', visualStart);
+    const STREAK = readDailyChallengesUnit('MissionStreakConsole.tsx');
+    const visualStart = STREAK.indexOf('<span className={styles.streakFireVisual}');
+    const copyStart = STREAK.indexOf('<div className={styles.streakInfo}', visualStart);
     expect(visualStart).toBeGreaterThan(-1);
     expect(copyStart).toBeGreaterThan(visualStart);
 
-    const visual = PAGE.slice(visualStart, copyStart);
+    const visual = STREAK.slice(visualStart, copyStart);
     const copy = sliceBetween(
-      PAGE,
+      STREAK,
       '<div className={styles.streakInfo}',
       '<div className={styles.milestoneTracker}'
     );

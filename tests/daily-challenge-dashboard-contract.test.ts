@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 
 const migration = readFileSync(
   resolve(
@@ -102,7 +103,9 @@ describe('daily challenge dashboard contract', () => {
     expect(page).toContain('claimAllGuardRef.current = true;');
     expect(page).toContain('claimAllGuardRef.current = false;');
     expect(page).not.toContain('const ready = rewardVault.items;');
-    expect(page).toContain('width: `${stats?.milestoneProgressPercent ?? 0}%`');
+    expect(readDailyChallengesUnit('MissionStreakConsole.tsx')).toContain(
+      'width: `${stats?.milestoneProgressPercent ?? 0}%`'
+    );
   });
 
   it('returns a coherent dashboard revision for dropped-event reconciliation', () => {

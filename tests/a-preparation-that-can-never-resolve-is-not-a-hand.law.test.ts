@@ -49,6 +49,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceMethod } from './helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8');
@@ -59,11 +60,15 @@ const BREAK = read('server/src/maintenance/MaintenanceBreak.ts');
 const TRANSACTION = read('server/scripts/engine-release-transaction.sh');
 const INFLIGHT = read('server/scripts/engine-release-inflight-hands.py');
 
-/** The body of `async parkForTournamentMove(...)`, up to the next method. */
+/**
+ * The body of `async parkForTournamentMove(...)`, bounded by its own matching
+ * brace - never by a byte count. A fixed window drifts off the code it guards
+ * the moment a comment is added above it, in whichever direction is worse:
+ * red for no reason, or green while watching nothing. See
+ * tests/helpers/sourceWindow.ts.
+ */
 function parkForTournamentMoveBody(): string {
-  const start = ENGINE.indexOf('async parkForTournamentMove(');
-  expect(start).toBeGreaterThan(-1);
-  const body = ENGINE.slice(start, start + 2600);
+  const body = sliceMethod(ENGINE, 'async parkForTournamentMove(');
   expect(body).toContain('this.tournamentMovePauseOwners.add(ownerId)');
   return body;
 }
@@ -99,9 +104,7 @@ describe('1. a stopped generation is answered truthfully, and no live move can b
   });
 
   it('the quarantine replays a pending move to a receipt and never just drops it', () => {
-    const start = MANAGER.indexOf('protected resolveTournamentSeatMoveQuarantine(');
-    expect(start).toBeGreaterThan(-1);
-    const body = MANAGER.slice(start, MANAGER.indexOf('protected async checkTableBalance', start));
+    const body = sliceMethod(MANAGER, 'protected resolveTournamentSeatMoveQuarantine(');
     // The UUID is forgotten ONLY after requestTournamentSeatMoveAtBoundary
     // returned a receipt. Any `delete` that is not downstream of that is a
     // move being discarded, which is the money risk this whole law guards.
@@ -125,9 +128,10 @@ describe('2. both preparation blocker classes share one bound', () => {
   });
 
   it('the manager-retained class is bounded, not counted unconditionally', () => {
-    const start = BREAK.indexOf('for (const tableId of this.deps.retainedPreparationBlockers?.()');
-    expect(start).toBeGreaterThan(-1);
-    const loop = BREAK.slice(start, start + 700);
+    const loop = sliceMethod(
+      BREAK,
+      'for (const tableId of this.deps.retainedPreparationBlockers?.() ?? []) {'
+    );
     // The regression: push + count with no bound, which is what held the gate
     // shut for 70 consecutive breaks.
     expect(loop).toContain('if (this.f06PreparationHoldsGate(tableId)) {');

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 
 const rpc = vi.fn();
 const emit = vi.fn();
@@ -280,6 +281,7 @@ describe('reroll integrity is enforced below the UI', () => {
 
 describe('the page ships the casino-realism surface without the old stubs', () => {
   const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
+  const route = readDailyChallengesUnit('useMissionCycleRoute.ts');
   const css = readFileSync(
     resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'),
     'utf8'
@@ -357,7 +359,7 @@ describe('the page ships the casino-realism surface without the old stubs', () =
     // chip payout tile to render (Dan 2026-09-05: rewards are diamonds).
     expect(page).toContain('reward.diamonds.toLocaleString()');
     expect(page).toContain('aria-controls="mission-panel"');
-    expect(page).toContain("event.key === 'ArrowRight'");
+    expect(route).toContain("event.key === 'ArrowRight'");
     expect(page).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
     expect(page).toContain('Replaced.');
   });

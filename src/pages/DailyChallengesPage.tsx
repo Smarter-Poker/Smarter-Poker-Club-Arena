@@ -75,7 +75,8 @@ import {
 } from '../services/DailyMissionTelemetryService';
 import { signInUrl } from '../lib/signIn';
 import { useClubWorkspace } from '../contexts/ClubWorkspaceContext';
-import { withClubContext } from '../utils/clubScopedPath';
+import { useInertAppShell } from '../components/challenges/dashboard/useInertAppShell';
+import { useMissionCycleRoute } from '../components/challenges/dashboard/useMissionCycleRoute';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -889,24 +890,6 @@ function MissionAlertsPanel({ userId }: { userId: string }) {
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/** Keep the complete application shell unavailable behind a body-level dialog. */
-function useInertAppShell(active: boolean) {
-  useEffect(() => {
-    if (!active) return undefined;
-    const appRoot = document.getElementById('root');
-    if (!appRoot) return undefined;
-    const hadInert = appRoot.hasAttribute('inert');
-    const previousAriaHidden = appRoot.getAttribute('aria-hidden');
-    appRoot.setAttribute('inert', '');
-    appRoot.setAttribute('aria-hidden', 'true');
-    return () => {
-      if (!hadInert) appRoot.removeAttribute('inert');
-      if (previousAriaHidden === null) appRoot.removeAttribute('aria-hidden');
-      else appRoot.setAttribute('aria-hidden', previousAriaHidden);
-    };
-  }, [active]);
-}
-
 export default function DailyChallengesPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -925,9 +908,6 @@ export default function DailyChallengesPage() {
   const [serverClockOffsetMs, setServerClockOffsetMs] = useState<number | null>(null);
   const [realtimeState, setRealtimeState] = useState<'connecting' | 'live' | 'degraded'>(
     'connecting'
-  );
-  const [activeTier, setActiveTier] = useState<Tier>(
-    cycle === 'weekly' || cycle === 'monthly' ? cycle : 'daily'
   );
 
   const [challenges, setChallenges] = useState<TieredChallenge[]>([]);
@@ -1000,9 +980,14 @@ export default function DailyChallengesPage() {
     (uid: string, mode: 'initial' | 'refresh' | 'silent') => Promise<void>
   >(async () => undefined);
 
-  useEffect(() => {
-    document.title = `${TIER_PRESENTATION[activeTier].title} | Smarter Poker`;
-  }, [activeTier]);
+  const { activeTier, openTier, handleTierKeyDown, handleOpenMission } = useMissionCycleRoute({
+    cycle,
+    location,
+    navigate,
+    routeClubId,
+    userId,
+    setConfirmingRerollId,
+  });
 
   useEffect(() => {
     document.body.dataset.toastTheme = 'daily-missions-casino';
@@ -1012,24 +997,6 @@ export default function DailyChallengesPage() {
       }
     };
   }, []);
-
-  // Each mission cycle is a real, bookmarkable subpage. Old or malformed
-  // bookmarks fail safely to Daily instead of producing an empty dashboard.
-  useEffect(() => {
-    if (!cycle) {
-      setActiveTier('daily');
-      setConfirmingRerollId(null);
-      return;
-    }
-    if (cycle === 'daily' || cycle === 'weekly' || cycle === 'monthly') {
-      setActiveTier(cycle);
-      setConfirmingRerollId(null);
-      return;
-    }
-    navigate(withClubContext(`/challenges${location.search}${location.hash}`, routeClubId), {
-      replace: true,
-    });
-  }, [cycle, location.hash, location.search, navigate, routeClubId]);
 
   // Escape always cancels the active reroll confirmation, even after focus
   // moves to another card. The inline control still owns the visible prompt,
@@ -1888,45 +1855,6 @@ export default function DailyChallengesPage() {
           : lastSyncedAt
             ? 'Connecting'
             : 'Live Sync';
-
-  const openTier = useCallback(
-    (tier: Tier) => {
-      setActiveTier(tier);
-      setConfirmingRerollId(null);
-      navigate(
-        withClubContext(`/challenges/${tier}${location.search}${location.hash}`, routeClubId)
-      );
-    },
-    [location.hash, location.search, navigate, routeClubId]
-  );
-
-  const handleTierKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLButtonElement>, tier: Tier) => {
-      const index = TIERS.indexOf(tier);
-      let nextIndex = index;
-      if (event.key === 'ArrowRight') nextIndex = (index + 1) % TIERS.length;
-      else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + TIERS.length) % TIERS.length;
-      else if (event.key === 'Home') nextIndex = 0;
-      else if (event.key === 'End') nextIndex = TIERS.length - 1;
-      else return;
-
-      event.preventDefault();
-      const nextTier = TIERS[nextIndex];
-      openTier(nextTier);
-      requestAnimationFrame(() => document.getElementById(`mission-tab-${nextTier}`)?.focus());
-    },
-    [openTier]
-  );
-
-  const handleOpenMission = useCallback(
-    (type: ChallengeType) => {
-      const action = getChallengeMissionAction(type);
-      capture('daily_mission_cta_clicked', { mission_type: type, destination: action.path });
-      recordDailyMissionOperation({ userId, event: 'mission_cta_opened', tier: activeTier });
-      navigate(withClubContext(action.path, routeClubId));
-    },
-    [activeTier, navigate, routeClubId, userId]
-  );
 
   // ── Render ──
 

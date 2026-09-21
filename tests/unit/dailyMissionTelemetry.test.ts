@@ -6,6 +6,7 @@ import {
   recordDailyMissionOperation,
   shouldRecordDailyMissionOperation,
 } from '../../src/services/DailyMissionTelemetryService';
+import { readDailyChallengesUnit } from '../helpers/dailyChallengesSources';
 
 describe('Daily Mission operational telemetry', () => {
   it('keeps every material action, failure, and recovery signal', () => {
@@ -111,25 +112,28 @@ describe('Daily Mission feedback, consent, and health wiring', () => {
   it('wires settlement feedback and every critical operation into health signals', () => {
     expect(page).toContain('Reward Settled');
     expect(page).toContain('Added To Your Club Arena Diamond Balance');
-    for (const event of [
-      'dashboard_loaded',
-      'dashboard_failed',
-      'claim_succeeded',
-      'claim_failed',
-      'claim_all_succeeded',
-      'claim_all_failed',
-      'reroll_succeeded',
-      'reroll_failed',
-      'freeze_succeeded',
-      'freeze_failed',
-      'realtime_degraded',
-      'realtime_recovered',
-      'alerts_enabled',
-      'alerts_disabled',
-      'alerts_failed',
-      'mission_cta_opened',
-    ]) {
-      expect(page).toContain(`event: '${event}'`);
+    // Each operation is recorded by the unit that owns it.
+    const route = readDailyChallengesUnit('useMissionCycleRoute.ts');
+    const eventSources: Record<string, string> = {
+      dashboard_loaded: page,
+      dashboard_failed: page,
+      claim_succeeded: page,
+      claim_failed: page,
+      claim_all_succeeded: page,
+      claim_all_failed: page,
+      reroll_succeeded: page,
+      reroll_failed: page,
+      freeze_succeeded: page,
+      freeze_failed: page,
+      realtime_degraded: page,
+      realtime_recovered: page,
+      alerts_enabled: page,
+      alerts_disabled: page,
+      alerts_failed: page,
+      mission_cta_opened: route,
+    };
+    for (const [event, source] of Object.entries(eventSources)) {
+      expect(source, event).toContain(`event: '${event}'`);
     }
   });
 

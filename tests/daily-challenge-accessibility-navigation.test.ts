@@ -3,9 +3,11 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CHALLENGE_TYPES, type ChallengeType } from '../src/services/DailyChallengeService';
 import { getChallengeMissionAction } from '../src/utils/challengeMissionAction';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 
 const PAGE = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
 const CSS = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'), 'utf8');
+const ROUTE = readDailyChallengesUnit('useMissionCycleRoute.ts');
 const APP_LAYOUT = readFileSync(
   resolve(__dirname, '../src/components/layouts/AppLayout.tsx'),
   'utf8'
@@ -49,7 +51,7 @@ describe('Daily Missions directed actions', () => {
 
 describe('Daily Missions accessibility contract', () => {
   it('sets the browser title from the active direct-route cycle', () => {
-    expect(PAGE).toContain(
+    expect(ROUTE).toContain(
       'document.title = `${TIER_PRESENTATION[activeTier].title} | Smarter Poker`'
     );
     expect(PAGE).toContain("title: 'Daily Challenges'");

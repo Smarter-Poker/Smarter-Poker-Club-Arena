@@ -146,6 +146,41 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   const require = (condition, code) => {
     if (!condition) refuse(code);
   };
+  // Observability only: it names which sub-condition refused, and never takes
+  // part in a decision. It is written on a refusal path that is already
+  // throwing, under a catch that discards any error, and is read only when the
+  // emitted result object is assembled. No check, threshold or outcome moves.
+  let refusalDetail = null;
+  const noteRefusal = (detail) => {
+    if (reason !== null || refusalDetail !== null) return;
+    try {
+      refusalDetail = detail();
+    } catch {
+      refusalDetail = null;
+    }
+  };
+  // A non-sensitive shape witness: booleans, numbers, sizes, type names and
+  // short identifier-like strings. Any other string becomes its length only, so
+  // no permit payload, card, credential or player identity can reach a log.
+  const describe = (value) => {
+    try {
+      if (value === null) return 'null';
+      if (value === undefined) return 'undefined';
+      const kind = typeof value;
+      if (kind === 'boolean' || kind === 'number') return String(value);
+      if (kind === 'bigint' || kind === 'symbol' || kind === 'function') return kind;
+      if (kind === 'string') return /^[A-Za-z_][A-Za-z0-9_]{0,31}$/.test(value)
+        ? value
+        : `string(${value.length})`;
+      if (Array.isArray(value)) return `Array(${value.length})`;
+      if (value instanceof Map) return `Map(${value.size})`;
+      if (value instanceof Set) return `Set(${value.size})`;
+      if (value instanceof Promise) return 'Promise';
+      return 'object';
+    } catch {
+      return 'unreadable';
+    }
+  };
   const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
   const uuid = (value) =>
     typeof value === 'string' &&
@@ -199,6 +234,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         : 'native_pending_registry_unqualified'
       : 'legacy_untracked',
     restartAuthorized: false,
+    // Appended last so every pre-existing key keeps its exact name, value
+    // and position. `reason` above is untouched for existing parsers.
+    ...(refusalDetail === null ? {} : refusalDetail),
   });
 
   try {
@@ -662,49 +700,278 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         };
         const physical = (capture) => {
           const { tableId, engine, permit, lifecycle } = capture;
-          require(engine.running === false &&
-            engine.terminal === true &&
-            engine.terminalTeardownComplete === true &&
-            engine.hasReleasedProcessOwnership() === true &&
-            !modules.base.ServerTableEngineBase.liveEngines.has(tableId) &&
-            engine.dealingLoopPromise === null &&
-            engine.postHandTasksPromise === null &&
-            engine.snapshotFlushPromise === null &&
-            engine.handController === null &&
-            engine.actionLock === false &&
-            engine.f06HandPreparation === null &&
-            engine.f06RecoveryInFlight === false &&
-            engine.terminalBoundaryPersistenceFailed === false &&
-            engine.timeBankAccountingUnconfirmed === false &&
-            engine.engineLeaseScope === 'tournament' &&
-            engine.engineLeaseVerified === true &&
-            engine.engineLeaseTournamentId === manager.tournamentId &&
-            engine.engineLeaseGeneration === manager.tournamentLeaseGeneration &&
-            engine.f06AllocationEpoch === capture.allocationEpoch &&
-            [engine.f06Allocator, engine.f06AllocationCurrent, engine.f06PermitFactory].every(
-              (method, index) => method === capture.allocation[index]
-            ) &&
-            engine.f06MovementAdmission === capture.movementAdmission &&
-            engine.f06CurrentPermit === permit &&
-            permit?.binding === capture.permitBinding &&
-            (permit?.recoveryState() ?? null) === capture.phase &&
-            (permit === null ||
-              (permit.reserveInFlight === false &&
-                permit.preparedCancellation === false &&
-                permit.recoveryState === modules.permit.F06HandPermit.prototype.recoveryState)) &&
-            serialFields.every((name, index) => engine[name] === capture.queues[index]) &&
-            [engine.hasReleasedProcessOwnership, engine.hasOnlyDrainedTournamentMoveOwner].every(
-              (method, index) => method === capture.methods[index]
-            ) &&
-            engine.hasOnlyDrainedTournamentMoveOwner(manager.tournamentMoveBoundaryOwner) ===
-              true, 'mixed_original_work_not_drained');
+          // Observability only. The one original conjunction below is split into
+          // its exact sub-expressions, evaluated in the exact original
+          // left-to-right order, each refusing with the exact original code.
+          // `drained` is `require` with a name attached: no condition text, no
+          // threshold and no set of checks changed, and nothing extra is read on
+          // a path where the original conjunction short-circuited.
+          const drained = (condition, failedCheck, observed, expected, extra) => {
+            if (condition) return;
+            noteRefusal(() => ({
+              failedCheck,
+              failedTable: tableId,
+              observed: describe(observed),
+              expected,
+              ...(extra === undefined ? {} : extra()),
+            }));
+            refuse('mixed_original_work_not_drained');
+          };
+          const running = engine.running;
+          drained(running === false, 'engine.running', running, 'false');
+          const terminal = engine.terminal;
+          drained(terminal === true, 'engine.terminal', terminal, 'true');
+          const terminalTeardownComplete = engine.terminalTeardownComplete;
+          drained(
+            terminalTeardownComplete === true,
+            'engine.terminalTeardownComplete',
+            terminalTeardownComplete,
+            'true'
+          );
+          const releasedProcessOwnership = engine.hasReleasedProcessOwnership();
+          drained(
+            releasedProcessOwnership === true,
+            'engine.hasReleasedProcessOwnership()',
+            releasedProcessOwnership,
+            'true'
+          );
+          const stillLive = modules.base.ServerTableEngineBase.liveEngines.has(tableId);
+          drained(!stillLive, 'base.liveEngines.has(tableId)', stillLive, 'false');
+          const dealingLoopPromise = engine.dealingLoopPromise;
+          drained(
+            dealingLoopPromise === null,
+            'engine.dealingLoopPromise',
+            dealingLoopPromise,
+            'null'
+          );
+          const postHandTasksPromise = engine.postHandTasksPromise;
+          drained(
+            postHandTasksPromise === null,
+            'engine.postHandTasksPromise',
+            postHandTasksPromise,
+            'null'
+          );
+          const snapshotFlushPromise = engine.snapshotFlushPromise;
+          drained(
+            snapshotFlushPromise === null,
+            'engine.snapshotFlushPromise',
+            snapshotFlushPromise,
+            'null'
+          );
+          const handController = engine.handController;
+          drained(handController === null, 'engine.handController', handController, 'null');
+          const actionLock = engine.actionLock;
+          drained(actionLock === false, 'engine.actionLock', actionLock, 'false');
+          const f06HandPreparation = engine.f06HandPreparation;
+          drained(
+            f06HandPreparation === null,
+            'engine.f06HandPreparation',
+            f06HandPreparation,
+            'null'
+          );
+          const f06RecoveryInFlight = engine.f06RecoveryInFlight;
+          drained(
+            f06RecoveryInFlight === false,
+            'engine.f06RecoveryInFlight',
+            f06RecoveryInFlight,
+            'false'
+          );
+          const terminalBoundaryPersistenceFailed = engine.terminalBoundaryPersistenceFailed;
+          drained(
+            terminalBoundaryPersistenceFailed === false,
+            'engine.terminalBoundaryPersistenceFailed',
+            terminalBoundaryPersistenceFailed,
+            'false'
+          );
+          const timeBankAccountingUnconfirmed = engine.timeBankAccountingUnconfirmed;
+          drained(
+            timeBankAccountingUnconfirmed === false,
+            'engine.timeBankAccountingUnconfirmed',
+            timeBankAccountingUnconfirmed,
+            'false'
+          );
+          const engineLeaseScope = engine.engineLeaseScope;
+          drained(
+            engineLeaseScope === 'tournament',
+            'engine.engineLeaseScope',
+            engineLeaseScope,
+            'tournament'
+          );
+          const engineLeaseVerified = engine.engineLeaseVerified;
+          drained(
+            engineLeaseVerified === true,
+            'engine.engineLeaseVerified',
+            engineLeaseVerified,
+            'true'
+          );
+          const engineLeaseTournamentId = engine.engineLeaseTournamentId;
+          drained(
+            engineLeaseTournamentId === manager.tournamentId,
+            'engine.engineLeaseTournamentId',
+            engineLeaseTournamentId,
+            'manager.tournamentId'
+          );
+          const engineLeaseGeneration = engine.engineLeaseGeneration;
+          drained(
+            engineLeaseGeneration === manager.tournamentLeaseGeneration,
+            'engine.engineLeaseGeneration',
+            engineLeaseGeneration,
+            'manager.tournamentLeaseGeneration'
+          );
+          const f06AllocationEpoch = engine.f06AllocationEpoch;
+          drained(
+            f06AllocationEpoch === capture.allocationEpoch,
+            'engine.f06AllocationEpoch',
+            f06AllocationEpoch,
+            'captured allocation epoch'
+          );
+          const allocationMethods = [
+            engine.f06Allocator,
+            engine.f06AllocationCurrent,
+            engine.f06PermitFactory,
+          ];
+          drained(
+            allocationMethods.every((method, index) => method === capture.allocation[index]),
+            'engine.f06AllocationMethods',
+            allocationMethods,
+            'captured allocation method identity',
+            () => ({
+              failedField: ['f06Allocator', 'f06AllocationCurrent', 'f06PermitFactory'][
+                allocationMethods.findIndex((method, index) => method !== capture.allocation[index])
+              ],
+            })
+          );
+          const f06MovementAdmission = engine.f06MovementAdmission;
+          drained(
+            f06MovementAdmission === capture.movementAdmission,
+            'engine.f06MovementAdmission',
+            f06MovementAdmission,
+            'captured movement admission identity'
+          );
+          const f06CurrentPermit = engine.f06CurrentPermit;
+          drained(
+            f06CurrentPermit === permit,
+            'engine.f06CurrentPermit',
+            f06CurrentPermit,
+            'captured permit identity'
+          );
+          const permitBinding = permit?.binding;
+          drained(
+            permitBinding === capture.permitBinding,
+            'permit.binding',
+            permitBinding,
+            'captured permit binding identity'
+          );
+          const permitPhase = permit?.recoveryState() ?? null;
+          drained(
+            permitPhase === capture.phase,
+            'permit.recoveryState()',
+            permitPhase,
+            'captured permit phase'
+          );
+          if (permit !== null) {
+            const reserveInFlight = permit.reserveInFlight;
+            drained(reserveInFlight === false, 'permit.reserveInFlight', reserveInFlight, 'false');
+            const preparedCancellation = permit.preparedCancellation;
+            drained(
+              preparedCancellation === false,
+              'permit.preparedCancellation',
+              preparedCancellation,
+              'false'
+            );
+            const recoveryStateMethod = permit.recoveryState;
+            drained(
+              recoveryStateMethod === modules.permit.F06HandPermit.prototype.recoveryState,
+              'permit.recoveryStateMethod',
+              recoveryStateMethod,
+              'F06HandPermit.prototype.recoveryState'
+            );
+          }
+          let failedSerialField = null;
+          let failedSerialValue;
+          const serialQueuesIntact = serialFields.every((name, index) => {
+            const value = engine[name];
+            if (value === capture.queues[index]) return true;
+            failedSerialField = name;
+            failedSerialValue = value;
+            return false;
+          });
+          drained(
+            serialQueuesIntact,
+            'engine.serialQueueIdentity',
+            failedSerialValue,
+            'captured queue identity',
+            () => ({ failedField: failedSerialField })
+          );
+          const drainMethods = [
+            engine.hasReleasedProcessOwnership,
+            engine.hasOnlyDrainedTournamentMoveOwner,
+          ];
+          drained(
+            drainMethods.every((method, index) => method === capture.methods[index]),
+            'engine.drainMethodIdentity',
+            drainMethods,
+            'captured method identity',
+            () => ({
+              failedField: ['hasReleasedProcessOwnership', 'hasOnlyDrainedTournamentMoveOwner'][
+                drainMethods.findIndex((method, index) => method !== capture.methods[index])
+              ],
+            })
+          );
+          const onlyDrainedMoveOwner = engine.hasOnlyDrainedTournamentMoveOwner(
+            manager.tournamentMoveBoundaryOwner
+          );
+          drained(
+            onlyDrainedMoveOwner === true,
+            'engine.hasOnlyDrainedTournamentMoveOwner(manager.tournamentMoveBoundaryOwner)',
+            onlyDrainedMoveOwner,
+            'true',
+            () => {
+              // That native predicate collapses six clauses into one boolean and
+              // the read-only diagnostics API does not expose them. Read the same
+              // six inputs back here, so a refusal names the clause rather than
+              // the method. Sizes and booleans only; no owner value is emitted.
+              const owner = manager.tournamentMoveBoundaryOwner;
+              const sizeOf = (value) =>
+                value instanceof Set || value instanceof Map ? value.size : null;
+              const agreement = (value) => {
+                if (!(value instanceof Set)) return 'absent';
+                let matching = 0;
+                for (const held of value) if (held === owner) matching += 1;
+                return `size=${value.size}/allMatchBoundaryOwner=${matching === value.size}`;
+              };
+              return {
+                observedDetail: [
+                  `terminalTeardownComplete=${terminalTeardownComplete === true}`,
+                  `notRunning=${running === false}`,
+                  `tournamentMoveOperations=${sizeOf(engine.tournamentMoveOperations)}`,
+                  `tournamentMoveOperationByOwner=${sizeOf(engine.tournamentMoveOperationByOwner)}`,
+                  `claimedTournamentMovePauseOwners=${agreement(engine.claimedTournamentMovePauseOwners)}`,
+                  `tournamentMovePauseOwners=${agreement(engine.tournamentMovePauseOwners)}`,
+                ].join(','),
+              };
+            }
+          );
           [...engineSets, ...engineMaps].forEach((name, index) => {
             const collection = engine[name];
-            require(collection === capture.collections[index] &&
-              collection.size === 0 &&
-              (engineSets.includes(name)
-                ? collection instanceof Set
-                : collection instanceof Map), 'mixed_original_work_not_drained');
+            const captured = capture.collections[index];
+            drained(
+              collection === captured,
+              'engineCollection.identity',
+              collection,
+              'captured collection identity',
+              () => ({ failedField: name })
+            );
+            const size = collection.size;
+            drained(size === 0, 'engineCollection.size', size, '0', () => ({ failedField: name }));
+            const expectSet = engineSets.includes(name);
+            drained(
+              expectSet ? collection instanceof Set : collection instanceof Map,
+              'engineCollection.type',
+              collection,
+              expectSet ? 'Set' : 'Map',
+              () => ({ failedField: name })
+            );
           });
           require(engine.timeBankMeta === capture.banks[0] &&
             engine.timeBankEngine === capture.banks[1] &&

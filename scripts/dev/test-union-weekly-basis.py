@@ -140,6 +140,13 @@ try:
  run((root/'tests/fixtures/club-settlement-floor/load.sql').read_text(),'club-floor-clock-seam')
  run((root/'tests/fixtures/club-settlement-floor/seed.sql').read_text(),'club-floor-seed')
  run((root/'tests/fixtures/club-settlement-floor/regression.sql').read_text(),'club-floor-regression')
+ # The club scope's discovery BEHAVIOUR, on this same cluster. The 2026-09-14
+ # catalog capture above is union-only, so union_accounting_runs is first brought
+ # to the exact installed union/standalone shape from its own reviewed source;
+ # no coordinator, floor, payer or document definition is touched by that step.
+ run((root/'tests/fixtures/club-settlement-floor-behaviour/installed-run-journal.sql').read_text(),'club-floor-run-journal')
+ run((root/'tests/fixtures/club-settlement-floor-behaviour/seed.sql').read_text(),'club-floor-behaviour-seed')
+ run((root/'tests/fixtures/club-settlement-floor-behaviour/regression.sql').read_text(),'club-floor-behaviour-regression')
 finally:
  if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True)
  print('Evidence retained: '+str(base),flush=True)

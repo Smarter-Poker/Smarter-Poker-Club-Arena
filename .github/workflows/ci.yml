@@ -1314,6 +1314,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase3-feeder-first.sh
+      - name: Lightning Phase 3 remediation makes the front table the main game everywhere
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase3-remediation.sh
       - name: Credit invoices bill only uninvoiced drawn debt
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

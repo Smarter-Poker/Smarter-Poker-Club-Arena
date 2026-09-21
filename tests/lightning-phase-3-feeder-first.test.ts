@@ -363,6 +363,18 @@ describe('Phase 3: scope and safety', () => {
   it('counts no population, compares no threshold and converts nothing', () => {
     // lightning_enabled is a capability flag; cluster_mode stays 'must_move'.
     // The population predicate is spec Phase 4 and the conversion is Phase 5.
+    //
+    // FOUR ABSENCES ARE NOT A TEST. A file containing nothing but `BEGIN;` and
+    // `COMMIT;` passes every not.toMatch below, so each is paired with a
+    // presence that proves this is the file under test and that it did the
+    // work whose ABSENCE of side effects is being asserted.
+    expect(CODE).toContain('fn_cash_cluster_front_table');
+    expect(CODE).toContain('lightning_enabled');
+    expect(CODE).toContain(
+      "public.fn_cash_cluster_open_table(v_game_id, 'feeder', NULL, 'live', v_uid)"
+    );
+    expect(CODE.length).toBeGreaterThan(5000);
+
     expect(CODE).not.toMatch(/SET\s+cluster_mode/i);
     expect(CODE).not.toMatch(/UPDATE\s+public\.cash_games/i);
     expect(CODE).not.toMatch(/thresholds?/i);
@@ -503,5 +515,34 @@ describe('Phase 3 on the board: the stamp does not churn the rows it did not cha
   it('a row with no cluster is handed back untouched', () => {
     const out = withClusterFigures([base]);
     expect(out[0]).toBe(base);
+  });
+});
+
+// ===========================================================================
+//  WHAT CAME AFTER
+// ===========================================================================
+
+describe('Phase 3: 20260921044045 supersedes the front-table body pinned above', () => {
+  it('names the remediation that re-cut it, which is where the live law now lives', () => {
+    // Everything above is TRUE OF 20260921025523, which is the file this suite
+    // reads, and it stays true of it: a migration that has been applied is
+    // history and is not edited. It is no longer true of the CATALOGUE. An
+    // adversarial audit found the single `ORDER BY (t.role = 'main' AND
+    // t.main_index = 1) DESC` sorts NULL first for a row with role 'main' and
+    // a NULL main_index, loses the index condition the old subselect had, and
+    // admits a breaking table; and that the "three readers" this file's header
+    // names were six - the lobby, the seat-change door and the planner were
+    // missed. 20260921044045 re-cuts the function as three coalesced lookups
+    // with no DESC at all and converts those three readers. Its own law is
+    // tests/lightning-phase-3-remediation.test.ts. This case exists so nobody
+    // reads the ORDER BY pin above as a statement about production.
+    const later = path.join(
+      ROOT,
+      'supabase',
+      'migrations',
+      '20260921044045_lightning_phase_3_remediation_the_front_table_is_the_main_ga.sql'
+    );
+    expect(fs.existsSync(later)).toBe(true);
+    expect(fs.readFileSync(later, 'utf8')).toContain('fn_cash_cluster_front_table');
   });
 });

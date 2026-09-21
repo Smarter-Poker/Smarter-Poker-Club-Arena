@@ -34,6 +34,28 @@ interface LeaderboardPrizeWizardProps {
   onSaveError?: (error: Error) => void;
 }
 
+/* The two refusals the publish RPC raises on purpose, restated for the owner.
+   The funding refusal carries both amounts with two decimals ("Requires
+   1000000.00 Promo Chips But Only 250000.00 Are Available ..."): a seven-digit
+   figure trips the house sanitiser, which would swap the reason for a generic
+   line exactly for the largest clubs, and forward-facing copy never prints
+   decimals. Neither restatement re-prices anything: closing the wizard
+   refetches the owner record, and the reopened plan step shows the current
+   capacity and version. Everything else goes through the house sanitiser. */
+const FUNDING_REFUSAL =
+  /Leaderboard Prize Program Requires .+ Promo Chips But Only .+ Are Available/i;
+const VERSION_REFUSAL = /Leaderboard Prize Setup Changed In Another Session/i;
+
+function describeSaveError(error: Error, fundingLabel: string): string {
+  if (FUNDING_REFUSAL.test(error.message)) {
+    return `${fundingLabel} No Longer Covers This Plan After Other Published Commitments. Close And Reopen To See The Current Capacity.`;
+  }
+  if (VERSION_REFUSAL.test(error.message)) {
+    return 'This Prize Setup Changed In Another Session. Close And Reopen To Load The Current Version.';
+  }
+  return safeErrorMessage(error, 'Prize Setup Could Not Be Saved');
+}
+
 const METRICS: Array<{ value: LeaderboardSettings['payout_metric']; label: string }> = [
   { value: 'profit', label: 'Profit' },
   { value: 'hands_played', label: 'Hands Played' },
@@ -198,7 +220,7 @@ export function LeaderboardPrizeWizard({
     } catch (saveError) {
       const failure =
         saveError instanceof Error ? saveError : new Error('Prize Setup Could Not Be Saved');
-      setError(safeErrorMessage(failure, 'Prize Setup Could Not Be Saved'));
+      setError(describeSaveError(failure, setup.funding_label));
       onSaveError?.(failure);
     } finally {
       setSaving(false);

@@ -15,7 +15,7 @@ const STATE_COPY = {
   not_published: {
     label: 'No Program',
     title: 'No Prize Program Applies To This Round',
-    body: 'This Period Started Before A Published Prize Program Took Effect.',
+    body: 'No Published Prize Program Covered This Period When It Started.',
   },
   disabled: {
     label: 'Disabled',
@@ -142,14 +142,13 @@ export function LeaderboardSettlementCard({
         {status.batch && (
           <div>
             <dt>Funding</dt>
-            {/* The batch row records exactly which pool paid: a club's one-time
-                leaderboard seed is drawn down first, the Promo Wallet covers the
-                rest. Print what the ledger says rather than a fixed label. */}
-            <dd>
-              {status.batch.seed_funded > 0
-                ? `Seed ${compactChips(status.batch.seed_funded)} And Promo ${compactChips(status.batch.promo_funded)} Chips`
-                : 'Promo Wallet'}
-            </dd>
+            {/* The batch row records which pools paid. A standalone club's
+                one-time opening leaderboard seed is drawn down before its Promo
+                Wallet; a union batch never has a seed. The sources are named,
+                not re-priced: flooring each part separately (house compact
+                format) would print parts that do not add up to the total above,
+                and a half-chip seed would read "Seed 0". */}
+            <dd>{status.batch.seed_funded > 0 ? 'Seed And Promo Wallet' : 'Promo Wallet'}</dd>
           </div>
         )}
       </dl>

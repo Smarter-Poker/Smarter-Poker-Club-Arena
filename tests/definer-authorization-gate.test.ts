@@ -29,6 +29,7 @@ let unrevokedClones: Verdict;
 let unscopedRosterDefiners: Verdict;
 let clonedFunctions: (sql: string) => string[];
 let stripComments: (sql: string) => string;
+let droppedFunctions: (sql: string) => Set<string>;
 let effectiveGrants: (
   sql: string,
   name: string
@@ -50,6 +51,7 @@ beforeAll(async () => {
   clonedFunctions = mod.clonedFunctions;
   effectiveGrants = mod.effectiveGrants;
   stripComments = mod.stripComments;
+  droppedFunctions = mod.droppedFunctions;
 });
 
 /** The shape that shipped nineteen times: no GRANT written at all, which
@@ -691,5 +693,63 @@ AS $function$ SELECT * FROM bbj_unclaimed_shares WHERE paid_at IS NULL; $functio
     // A genuinely public list - a leaderboard, a lobby - is allowed, once
     // somebody writes down why every row in it is safe for anyone to read.
     expect(unscopedRosterDefiners(SHIPPED, new Set(['fn_bbj_unclaimed_shares']))).toEqual([]);
+  });
+});
+
+/**
+ * A FUNCTION THE BRANCH DROPS CANNOT BE REACHED BY ANYBODY (2026-09-21).
+ *
+ * Grants are already read across the whole branch, because a branch is applied
+ * as a unit. A DROP is the same fact carried one step further. This arose when
+ * 20260921023309 declared fn_ca_reconcile_treasury_positions and
+ * 20260921024924 renamed and dropped it - an applied, byte-exactly recorded
+ * migration cannot be edited, so a rename MUST ship as declare-in-one-file,
+ * drop-in-the-next, and the gate went on reporting a function that no longer
+ * exists. check-no-new-band-aids.mjs has read drops branch-wide since
+ * 2026-09-07 for exactly this reason.
+ *
+ * The danger in a rule like this is that it becomes a way through, so these
+ * pin the narrowness as hard as the behaviour.
+ */
+describe('a dropped function is not a finding, and the drop has to be real', () => {
+  const DROPPED_LATER = `
+DROP FUNCTION IF EXISTS public.increment_member_count(uuid, integer);
+`;
+
+  it('reads a DROP out of SQL, with or without IF EXISTS and public.', () => {
+    expect([...droppedFunctions('DROP FUNCTION public.fn_a();')]).toEqual(['fn_a']);
+    expect([...droppedFunctions('drop function if exists fn_b(text, uuid);')]).toEqual(['fn_b']);
+    expect([...droppedFunctions('DROP FUNCTION IF EXISTS public."fn_c"();')]).toEqual(['fn_c']);
+  });
+
+  it('does NOT read a DROP written in prose - a comment proves nothing', () => {
+    // Every one of these migrations quotes what it is about in its header. If a
+    // sentence could retire a function from this gate, the header would be the
+    // exploit.
+    expect([
+      ...droppedFunctions('-- DROP FUNCTION public.fn_a(); is what we will do later'),
+    ]).toEqual([]);
+    expect([...droppedFunctions('/* DROP FUNCTION public.fn_a(); */')]).toEqual([]);
+  });
+
+  it('still reports the open writer when nothing drops it', () => {
+    // The guard rail on the guard rail: without the DROP this is exactly the
+    // shape that shipped nineteen times.
+    expect(unauthorisedWriters(OPEN_WRITER)).toEqual(['increment_member_count']);
+    expect(droppedFunctions(OPEN_WRITER).has('increment_member_count')).toBe(false);
+  });
+
+  it('a DROP elsewhere in the branch retires it from every rule', () => {
+    // The rules themselves are unchanged - main() filters their output by the
+    // branch-wide drop set - so what is asserted here is that the drop is
+    // visible in the concatenated branch text the filter is built from.
+    const branch = OPEN_WRITER + DROPPED_LATER;
+    expect(droppedFunctions(branch).has('increment_member_count')).toBe(true);
+  });
+
+  it('a function that merely stops being CALLED is untouched', () => {
+    const branch = OPEN_WRITER + '\n-- nothing calls increment_member_count any more\n';
+    expect(droppedFunctions(branch).has('increment_member_count')).toBe(false);
+    expect(unauthorisedWriters(branch)).toEqual(['increment_member_count']);
   });
 });

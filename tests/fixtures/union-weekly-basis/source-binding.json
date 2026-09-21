@@ -4,7 +4,7 @@
   "historical_catalog": "Original37 accepted provider schema from CI35267921827/native105361807361; no production user rows.",
   "scope": "Prospective complete original weeks. Native tests are separate from protected publication and production behavior.",
   "repository_files": {
-    "scripts/dev/test-union-weekly-basis.py": "9e2a62848cae29f8910949c816e9b67d6b37286ba607c285bc17d1a755276ebd",
+    "scripts/dev/test-union-weekly-basis.py": "e312350cec2816c5490c7522b1b850cd751571b70c848201fd1d7f8f6aa2a220",
     "supabase/accounting/weekly-v3/components/20260914150848_union_pnl_evidence_is_distinct_from_posted_chip_payments.sql": "d09383d8ca6a76aa1d42d99bc4646979f4e2d1adedda16b0e66d450e38b2bcac",
     "supabase/accounting/weekly-v3/components/20260914153000_uncertified_union_pnl_blocks_close_and_squareup.sql": "3532e95c4b22e95121d02836607ffba0d8bca9315d94e5b36883d1037ef947a9",
     "supabase/migrations/20260917230515_union_eco_terms_are_observed_at_their_original_write.sql": "b19f682725f07217236da2a20b1bd53e2d3e804d1f8337a7660567deb25bfafd",
@@ -75,6 +75,8 @@
     "supabase/migrations/20260920232503_club_settlement_floor_bounds_standalone_weekly_discovery.sql": "8facffa4345b81721f4a408062c96b74bece16df644eb7ff3e6c199c590981f1",
     "tests/fixtures/club-settlement-floor/load.sql": "7cd182a45ab353a214ee1fde1cd35649b5625c57641e165aec9935f171192669",
     "tests/fixtures/club-settlement-floor/seed.sql": "0f7ad67c358864fc45d97364606f8504c359cafb32296958d75d8a6290d830bd",
-    "tests/fixtures/club-settlement-floor/regression.sql": "6099eb3f49ea41e33b26626dbbef32d2126634674bd7ac8559357436a2fdb2fd"
+    "tests/fixtures/club-settlement-floor/regression.sql": "6099eb3f49ea41e33b26626dbbef32d2126634674bd7ac8559357436a2fdb2fd",
+    "supabase/migrations/20260921022924_rakeback_payouts_carry_their_document_and_run_identity.sql": "29a38f770fbf7364718d15c81e656beb556b669d8ed46786821d53b588c59c87",
+    "tests/fixtures/rakeback-payout-document/regression.sql": "b5082d6d0827418120774d64838024b5fab228c7b9165e55f452e88651f4eef1"
   }
 }

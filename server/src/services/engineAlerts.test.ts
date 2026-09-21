@@ -7,6 +7,7 @@ import {
   firingFingerprints,
   engineAlertDeliverySnapshot,
   persistEngineAlertsBeforeExit,
+  engineAlertPrometheusLines,
   __setEngineAlertJournal,
   __resetEngineAlerts,
 } from './engineAlerts.js';
@@ -147,5 +148,115 @@ describe('engine alert receipt and routing contract', () => {
     expect(shutdown.indexOf('process.exit(')).toBeGreaterThan(
       shutdown.indexOf('await persistEngineAlertsBeforeExit()')
     );
+  });
+});
+
+// ── THE PRODUCER IS OBSERVABLE (2026-09-21) ──────────────────────────────────
+// On 2026-09-19/20 this producer went 17.8 hours without a delivery. Nothing
+// distinguished "down" from "quiet" without ssh: it logged only failures and
+// exported no metric. These five series are read on every scrape from memory
+// alone and are what the engine-alert-producer rule group evaluates.
+const PRODUCER_SERIES = [
+  'poker_engine_alerts_journal_sequence',
+  'poker_engine_alerts_pending',
+  'poker_engine_alerts_active',
+  'poker_engine_alerts_last_delivery_timestamp_seconds',
+  'poker_engine_alerts_delivery_failures_total',
+];
+const sample = (lines: string[], name: string): number => {
+  const line = lines.find((l) => l.startsWith(name + ' '));
+  expect(line, `${name} sample missing from:\n${lines.join('\n')}`).toBeDefined();
+  return Number(line!.split(' ')[1]);
+};
+
+describe('the engine alert producer is observable on /metrics', () => {
+  it('publishes every series at zero from the first scrape, so absence means the exporter is down', () => {
+    const lines = engineAlertPrometheusLines();
+    for (const name of PRODUCER_SERIES) {
+      expect(lines.some((l) => l.startsWith(`# HELP ${name} `) && l.length > 9 + name.length)).toBe(
+        true
+      );
+      expect(lines).toContain(`# TYPE ${name} ${name.endsWith('_total') ? 'counter' : 'gauge'}`);
+      expect(sample(lines, name)).toBe(0);
+    }
+  });
+  it('follows the journal through failure, acknowledgement and recovery', async () => {
+    fetchMock.mockRejectedValue(new Error('ECONNREFUSED'));
+    await expect(raiseEngineAlert(input)).resolves.toBe(false);
+    let lines = engineAlertPrometheusLines();
+    expect(sample(lines, 'poker_engine_alerts_journal_sequence')).toBe(2);
+    expect(sample(lines, 'poker_engine_alerts_pending')).toBe(1);
+    expect(sample(lines, 'poker_engine_alerts_active')).toBe(1);
+    expect(sample(lines, 'poker_engine_alerts_delivery_failures_total')).toBe(1);
+    expect(sample(lines, 'poker_engine_alerts_last_delivery_timestamp_seconds')).toBe(0);
+
+    fetchMock.mockImplementation(receipt);
+    const before = Math.floor(Date.now() / 1000);
+    await raiseEngineAlert(input); // same fingerprint: no new event; drains the pending one
+    lines = engineAlertPrometheusLines();
+    expect(sample(lines, 'poker_engine_alerts_journal_sequence')).toBe(2);
+    expect(sample(lines, 'poker_engine_alerts_pending')).toBe(0);
+    expect(sample(lines, 'poker_engine_alerts_active')).toBe(1);
+    expect(sample(lines, 'poker_engine_alerts_delivery_failures_total')).toBe(1);
+    expect(
+      sample(lines, 'poker_engine_alerts_last_delivery_timestamp_seconds')
+    ).toBeGreaterThanOrEqual(before);
+
+    await expect(resolveEngineAlert(input.alertname, input.component)).resolves.toBe(true);
+    lines = engineAlertPrometheusLines();
+    expect(sample(lines, 'poker_engine_alerts_journal_sequence')).toBe(3);
+    expect(sample(lines, 'poker_engine_alerts_pending')).toBe(0);
+    expect(sample(lines, 'poker_engine_alerts_active')).toBe(0);
+  });
+  it('counts the unconfigured-secret refusal as a delivery failure', async () => {
+    vi.stubEnv('ALERT_WEBHOOK_SECRET', '');
+    await raiseEngineAlert(input);
+    expect(
+      sample(engineAlertPrometheusLines(), 'poker_engine_alerts_delivery_failures_total')
+    ).toBe(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('reads memory only on the scrape path: no journal I/O and no network', () => {
+    const load = vi.fn(async () => {
+      throw new Error('scrape must not touch the journal');
+    });
+    const save = vi.fn(async () => {});
+    __setEngineAlertJournal({ load, save });
+    engineAlertPrometheusLines();
+    engineAlertPrometheusLines();
+    expect(load).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('is spread into the engine /metrics exposition', () => {
+    const source = readFileSync(new URL('../GameServer.ts', import.meta.url), 'utf8');
+    expect(sliceEnclosingBlock(source, 'getPrometheusMetrics(): string {')).toContain(
+      '...engineAlertPrometheusLines()'
+    );
+  });
+  it('emits every metric the engine-alert-producer rule group reads', () => {
+    const rules = readFileSync(
+      new URL('../../../infra/monitoring/alert-rules.yml', import.meta.url),
+      'utf8'
+    );
+    const start = rules.indexOf('- name: engine-alert-producer');
+    expect(start).toBeGreaterThan(-1);
+    const rest = rules.slice(start + 1);
+    const next = rest.search(/\n {2}- name: /);
+    const group = next === -1 ? rest : rest.slice(0, next);
+    // Expressions only, as the CI law does: prose may name a neighbour's series.
+    const exprs = [...group.matchAll(/expr: \|\n((?: {10}.*\n)+)/g)].map((m) => m[1]);
+    expect(exprs.length).toBe(2);
+    const named = exprs.flatMap((e) => [...e.matchAll(/\bpoker_[a-z0-9_]+/g)].map((m) => m[0]));
+    expect(named.length).toBeGreaterThan(0);
+    const types = engineAlertPrometheusLines().filter((l) => l.startsWith('# TYPE '));
+    for (const name of new Set(named)) {
+      // GameServer's own gauge: the file-wide maintenance-break guard, not a producer series.
+      if (name === 'poker_maintenance_break_active') continue;
+      expect(
+        types.some((l) => l.startsWith(`# TYPE ${name} `)),
+        name
+      ).toBe(true);
+    }
   });
 });

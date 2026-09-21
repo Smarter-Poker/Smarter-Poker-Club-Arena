@@ -218,10 +218,15 @@ import {
   raiseEngineAlert,
   resolveEngineAlert,
   engineAlertDeliveryHealth,
+  engineAlertPrometheusLines,
 } from './services/engineAlerts.js';
 import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
 import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
 import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
+import {
+  AlertStoreLiveness,
+  readAlertStoreSourceMaxima,
+} from './observability/AlertStoreLiveness.js';
 import {
   tournamentManagerQuarantineOldestSeconds,
   tournamentManagersQuarantined,
@@ -3084,6 +3089,16 @@ export class GameServer {
     paused: () => this.maintenanceBreak.isActive(),
   });
   /**
+   * Which senders still write to the private alert store (2026-09-21): the
+   * newest operational_alert_events.last_received_at per source, read once a
+   * minute off the scrape path and published on /metrics as
+   * poker_alert_store_*. A dead sender and an empty queue look the same from
+   * the store; the growing silence per source is how they are told apart.
+   */
+  private readonly alertStoreLiveness = new AlertStoreLiveness({
+    read: () => readAlertStoreSourceMaxima(supabase),
+  });
+  /**
    * A5: drains `pending_fee_distributions` — rake / BBJ fees that left a pot but
    * whose banking RPC failed — and runs the independent BBJ ledger-drift alarm.
    */
@@ -3510,6 +3525,7 @@ export class GameServer {
       this.startLeaseReaper();
       this.startClockSkewMonitor();
       this.statsHealth.start();
+      this.alertStoreLiveness.start();
       this.startBombLedgerRepairSweep();
 
       // Step 8b: accepted-hand settlement stores history and projection work in
@@ -3654,6 +3670,7 @@ export class GameServer {
         ['DealRateVerifier', () => this.dealRateVerifier.stop()],
         ['RakebackSettlerService', () => this.rakebackSettler.stop()],
         ['StatsHealthMonitor', () => this.statsHealth.stop()],
+        ['AlertStoreLiveness', () => this.alertStoreLiveness.stop()],
       ];
       return stops.map(([service, stop]) => beginOwnedStop(service, stop));
     };
@@ -5008,6 +5025,19 @@ export class GameServer {
       ...wsAuthRefusalPrometheusLines(),
       ...wsProtocolRefusalPrometheusLines(),
       ...wsTrustLimitPrometheusLines(),
+      // ── THE ALERT PRODUCER ITSELF (2026-09-21) ────────────────────────
+      // On 2026-09-19/20 the engine-alert producer went 17.8 hours without
+      // a delivery and nothing could say whether it was down or quiet.
+      // Journal sequence, pending, active, last acknowledged delivery and
+      // failures, from memory only. See services/engineAlerts.ts and the
+      // engine-alert-producer group in infra/monitoring/alert-rules.yml.
+      ...engineAlertPrometheusLines(),
+      // ── THE ALERT STORE'S SENDERS (2026-09-21) ─────────────────────────
+      // Newest last_received_at per source and the silence since, from the
+      // cache the minute-timer in observability/AlertStoreLiveness.ts keeps;
+      // nothing here reads the store. See alert-store-senders in
+      // infra/monitoring/alert-rules.yml.
+      ...this.alertStoreLiveness.prometheusLines(),
       // ── ACTION LATENCY, ALWAYS ON (Realtime programme Phase 1, 2026-09-04)
       // The number that defines how a table feels, scraped for the first
       // time. Two series (audience=human|horse), never per table. See

@@ -61,7 +61,43 @@ export interface EngineAlertInput {
 const POST_TIMEOUT_MS = 8_000;
 let warnedUnconfigured = false;
 
+// ── THE PRODUCER IS OBSERVABLE (2026-09-21) ──────────────────────────────────
+//
+// On 2026-09-19/20 this module went 17.8 hours without a delivery, and nobody
+// could tell "down" from "quiet" without ssh-ing to the host and reading
+// journal.json: it logged only failures and exported no metric. An alarm that
+// cannot itself be alarmed on is the 2026-08-15 lesson one level up.
+//
+// These are read on every /metrics scrape from memory alone - no journal read,
+// no network - and rendered by engineAlertPrometheusLines(), which
+// GameServer.getPrometheusMetrics() spreads into the exposition. The rules
+// that read them are the engine-alert-producer group in
+// infra/monitoring/alert-rules.yml. Every series is present from the first
+// scrape, so absent() means the exporter is down, never "nothing happened".
+let deliveryFailuresTotal = 0;
+/** `nextSequence` as it last crossed the journal store. The transport keeps
+ * its state private, but every transition saves the whole state through the
+ * store, so this is current after every event. 0 until the first load. In
+ * production the transport loads within milliseconds of construction, long
+ * before the first scrape; in tests it loads on the first observation. */
+let journalSequence = 0;
+
+function observingJournal(store: AlertJournalStore): AlertJournalStore {
+  return {
+    async load() {
+      const state = await store.load();
+      journalSequence = state.nextSequence;
+      return state;
+    },
+    async save(state) {
+      await store.save(state);
+      journalSequence = state.nextSequence;
+    },
+  };
+}
+
 function logDeliveryFailure(message: string, detail?: string): void {
+  deliveryFailuresTotal += 1;
   // Closed or saturated stdout must not make an alert or shutdown throw.
   try {
     console.warn(message, ...(detail === undefined ? [] : [detail]));
@@ -135,11 +171,12 @@ async function post(alert: JournalAlert): Promise<boolean> {
 
 function createDelivery(store?: AlertJournalStore): EngineAlertDelivery {
   return new EngineAlertDelivery({
-    store:
+    store: observingJournal(
       store ??
-      new FileAlertJournal(
-        process.env.ENGINE_ALERT_JOURNAL_DIR || '/var/lib/club-arena/engine-alerts'
-      ),
+        new FileAlertJournal(
+          process.env.ENGINE_ALERT_JOURNAL_DIR || '/var/lib/club-arena/engine-alerts'
+        )
+    ),
     post,
     // Tests exercise scheduling explicitly through the transport class.
     automatic: process.env.NODE_ENV !== 'test',
@@ -183,6 +220,34 @@ export function engineAlertDeliveryHealth() {
   return { ...snapshot, active: firing.length };
 }
 
+/** Prometheus lines for the producer itself. Always present, so a zero is
+ * visible rather than absent; memory only, never the journal or the network. */
+export function engineAlertPrometheusLines(): string[] {
+  const snapshot = delivery.snapshot();
+  const acknowledged = snapshot.lastAcknowledgedAt
+    ? Date.parse(snapshot.lastAcknowledgedAt)
+    : Number.NaN;
+  return [
+    '# HELP poker_engine_alerts_journal_sequence Next event sequence in the durable engine-alert journal; unchanged across a window means no alert transition was journaled',
+    '# TYPE poker_engine_alerts_journal_sequence gauge',
+    `poker_engine_alerts_journal_sequence ${journalSequence}`,
+    '# HELP poker_engine_alerts_pending Engine alert events journaled but not yet durably acknowledged by World Hub /api/alerts/engine',
+    '# TYPE poker_engine_alerts_pending gauge',
+    `poker_engine_alerts_pending ${snapshot.pending}`,
+    '# HELP poker_engine_alerts_active Engine alert episodes currently firing (one per alertname:component fingerprint)',
+    '# TYPE poker_engine_alerts_active gauge',
+    `poker_engine_alerts_active ${snapshot.firing.length}`,
+    '# HELP poker_engine_alerts_last_delivery_timestamp_seconds Unix time of the last durably acknowledged delivery; 0 when none since this process started',
+    '# TYPE poker_engine_alerts_last_delivery_timestamp_seconds gauge',
+    `poker_engine_alerts_last_delivery_timestamp_seconds ${
+      Number.isFinite(acknowledged) ? Math.floor(acknowledged / 1000) : 0
+    }`,
+    '# HELP poker_engine_alerts_delivery_failures_total Delivery failures logged by the producer: receiver error or timeout, unacknowledged receipt, missing ALERT_WEBHOOK_SECRET, unconfirmed shutdown persistence',
+    '# TYPE poker_engine_alerts_delivery_failures_total counter',
+    `poker_engine_alerts_delivery_failures_total ${deliveryFailuresTotal}`,
+  ];
+}
+
 /** Called only after gameplay ownership has been released. No network wait;
  * a broken filesystem cannot extend the existing shutdown deadline. */
 export async function persistEngineAlertsBeforeExit(budgetMs = 1000): Promise<boolean> {
@@ -206,8 +271,10 @@ export async function persistEngineAlertsBeforeExit(budgetMs = 1000): Promise<bo
 export function __setEngineAlertJournal(store: AlertJournalStore): void {
   delivery.stop();
   delivery = createDelivery(store);
+  journalSequence = 0; // the new store's sequence is unknown until it loads
 }
 export function __resetEngineAlerts(): void {
   __setEngineAlertJournal(new MemoryAlertJournal(emptyAlertJournal()));
   warnedUnconfigured = false;
+  deliveryFailuresTotal = 0;
 }

@@ -361,3 +361,34 @@ jobs:
             "$HOME/.ssh/hetzner_known_hosts" \
             "$HOME/.ssh/config" \
             "$HOME/hssh"
+
+      # THE VERDICT REACHES THE ALERT STORE (2026-09-21). A monitoring deploy
+      # that goes red leaves production running rules this repo does not
+      # declare, and until now that verdict lived only in the Actions UI; the
+      # Production Alerts fleet's hourly run never saw it. This posts one firing
+      # operational alert to World Hub's intake naming the protected-main
+      # commit this run was authorized to deploy. It never fails this job, an
+      # unset WORLD_HUB_ALERT_INTAKE_SECRET skips with a warning, and it runs
+      # after the credential sweep so reporting can never delay it. The
+      # hashFiles guard keeps a failure before checkout from turning into a
+      # missing-action error.
+      - name: Report the failed monitoring deploy to the alert store
+        if: failure() && hashFiles('.github/actions/report-post-deploy-failure/action.yml') != ''
+        continue-on-error: true
+        uses: ./.github/actions/report-post-deploy-failure
+        with:
+          source: ci.deploy-monitoring
+          alertname: MonitoringDeployFailed
+          severity: critical
+          released_sha: ${{ steps.target.outputs.sha || github.sha }}
+          run_id: ${{ github.run_id }}
+          run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          job_name: ${{ github.job }}
+          workflow_name: ${{ github.workflow }}
+          detail: >-
+            Monitoring deploy to the engine box ${{ job.status }}:
+            authorized_main=${{ steps.target.outputs.sha || 'unresolved' }}
+            requested=${{ github.event.client_payload.ref_sha || 'push' }}
+            trigger=${{ github.event_name }}
+          step_outcomes: ${{ toJSON(steps) }}
+          intake_secret: ${{ secrets.WORLD_HUB_ALERT_INTAKE_SECRET }}

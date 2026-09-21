@@ -1,0 +1,231 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  A FAILED POST-DEPLOY VERIFICATION REACHES THE ALERT STORE
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Added 2026-09-21 for the Production Alerts fleet.
+#
+# Post-deploy verification (post-deploy-e2e.yml) and the monitoring deploy
+# (deploy-monitoring.yml) are the only checks that look at PRODUCTION after a
+# release. When one of them went red the verdict lived in the Actions UI and
+# nowhere else: no row in the operational-alert inbox, so the fleet's hourly
+# run - the thing that decides whether a release is rolled back - never saw
+# it. A red run nobody is paged for is a comment.
+#
+# This action posts one `firing` operational alert to World Hub's intake,
+# `POST https://smarter.poker/api/internal/operational-alert`, which records it
+# in the same inbox Alertmanager delivers to (World Hub
+# pages/api/internal/operational-alert.js). The intake checks
+# `Authorization: Bearer <secret>` against its CRON_SECRET and requires
+# `{source, alertname, status, severity, payload}`; `eventKey` is optional
+# and deduplicates a repeated delivery of the same failure.
+#
+# THREE RULES, ALL DELIBERATE:
+#
+#   1. It NEVER fails the calling job. The job is already red; a notifier that
+#      adds its own red hides the real verdict. Every path ends in `exit 0`,
+#      and callers still set `continue-on-error: true` so a runner-level
+#      fault in this step cannot mask the job's outcome either.
+#   2. An unconfigured secret SKIPS with a visible `::warning::`, it does not
+#      fail. The owner adds WORLD_HUB_ALERT_INTAKE_SECRET (the World Hub
+#      CRON_SECRET) to this repository's Actions secrets; until then the
+#      warning says exactly what was not delivered.
+#   3. The payload names the RELEASED commit (the SHA production was serving
+#      when it was verified, not merely this run's checkout), the workflow,
+#      run id, run URL, job, the failing steps, and `target_task_id`, the
+#      fleet's task id, so the row is never mistaken for a mis-routed one.
+#
+# `secrets` is not readable inside a composite action, so the caller passes
+# the secret in as `intake_secret`. It is already masked in the log by the
+# secrets context; this script never echoes it and never runs with `set -x`.
+name: Report a post-deploy failure to the alert store
+description: >-
+  Posts one firing operational alert to World Hub's intake so a failed
+  post-deploy verification or monitoring deploy reaches the Production Alerts
+  fleet as a rollback trigger. Never fails the calling job.
+
+inputs:
+  source:
+    description: 'Alert source, e.g. ci.post-deploy-e2e or ci.deploy-monitoring.'
+    required: true
+  alertname:
+    description: 'Alert name, e.g. PostDeployVerificationFailed or MonitoringDeployFailed.'
+    required: true
+  severity:
+    description: 'Alert severity recorded on the row.'
+    required: false
+    default: critical
+  released_sha:
+    description: 'The commit the run verified: the SHA production was serving, not merely the checkout.'
+    required: false
+    default: ''
+  run_id:
+    description: 'The Actions run id that observed the failure.'
+    required: false
+    default: ${{ github.run_id }}
+  run_url:
+    description: 'A link to the Actions run that observed the failure.'
+    required: false
+    default: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  detail:
+    description: 'Free-text context from the calling job (what was being verified, live/engine shas, readiness).'
+    required: false
+    default: ''
+  job_name:
+    description: 'The calling job id.'
+    required: false
+    default: ${{ github.job }}
+  workflow_name:
+    description: 'The calling workflow name.'
+    required: false
+    default: ${{ github.workflow }}
+  step_outcomes:
+    description: 'toJSON(steps) from the calling job; the failing steps are extracted from it.'
+    required: false
+    default: ''
+  intake_secret:
+    description: 'The World Hub intake secret (secrets.WORLD_HUB_ALERT_INTAKE_SECRET). Empty skips delivery with a warning.'
+    required: false
+    default: ''
+  intake_url:
+    description: 'The World Hub operational-alert intake endpoint.'
+    required: false
+    default: https://smarter.poker/api/internal/operational-alert
+  target_task_id:
+    description: 'The Production Alerts fleet task id the row is routed to.'
+    required: false
+    default: 01a09b86-5ba8-7290-8657-1041f13dd3ca
+
+outputs:
+  intake_ids:
+    description: 'Comma-separated operational-alert row ids the intake recorded, empty when nothing was delivered.'
+    value: ${{ steps.deliver.outputs.intake_ids }}
+
+runs:
+  using: composite
+  steps:
+    - name: Deliver the failure to the alert store
+      id: deliver
+      shell: bash
+      continue-on-error: true
+      env:
+        SOURCE: ${{ inputs.source }}
+        ALERTNAME: ${{ inputs.alertname }}
+        SEVERITY: ${{ inputs.severity }}
+        RELEASED_SHA: ${{ inputs.released_sha }}
+        RUN_ID: ${{ inputs.run_id }}
+        RUN_URL: ${{ inputs.run_url }}
+        DETAIL: ${{ inputs.detail }}
+        JOB_NAME: ${{ inputs.job_name }}
+        WORKFLOW_NAME: ${{ inputs.workflow_name }}
+        STEP_OUTCOMES: ${{ inputs.step_outcomes }}
+        INTAKE_SECRET: ${{ inputs.intake_secret }}
+        INTAKE_URL: ${{ inputs.intake_url }}
+        TARGET_TASK_ID: ${{ inputs.target_task_id }}
+      run: |
+        # Never `set -e`, never `set -x`: this step must not fail the job and
+        # must not print the bearer secret.
+        set +e
+        set -u
+        echo "intake_ids=" >> "$GITHUB_OUTPUT"
+
+        if [ -z "${INTAKE_SECRET//[[:space:]]/}" ]; then
+          echo "::warning title=Alert store delivery skipped::WORLD_HUB_ALERT_INTAKE_SECRET is not set in this repository's Actions secrets, so the failure of '${WORKFLOW_NAME}' / '${JOB_NAME}' (run ${RUN_ID}, released ${RELEASED_SHA:-unknown}) was NOT delivered to the alert store and the Production Alerts fleet will not see it. Add the secret (the World Hub CRON_SECRET) to enable delivery."
+          {
+            echo '### Alert store delivery skipped'
+            echo 'WORLD_HUB_ALERT_INTAKE_SECRET is not configured; this failure was not reported to the Production Alerts fleet.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+
+        # The failing steps, from the calling job's `steps` context. Only
+        # id/outcome/conclusion are kept: outputs are not evidence and can be large.
+        FAILED_STEPS='null'
+        if [ -n "${STEP_OUTCOMES//[[:space:]]/}" ]; then
+          FAILED_STEPS="$(printf '%s' "$STEP_OUTCOMES" | jq -c '
+            to_entries
+            | map(select((.value.outcome // "") as $o | $o != "success" and $o != "skipped" and $o != ""))
+            | map({ id: .key, outcome: .value.outcome, conclusion: .value.conclusion })
+          ' 2>/dev/null)" || FAILED_STEPS='null'
+          [ -n "$FAILED_STEPS" ] || FAILED_STEPS='null'
+        fi
+
+        # One key per (run, attempt, job): a repeated delivery of the same
+        # failure deduplicates against the row that already exists, a re-run
+        # that fails again is a new failure.
+        EVENT_KEY="ci:${GITHUB_REPOSITORY}:${WORKFLOW_NAME}:${RUN_ID}:${GITHUB_RUN_ATTEMPT:-1}:${JOB_NAME}"
+        EVENT_KEY="${EVENT_KEY:0:500}"
+
+        PAYLOAD="$(jq -cn \
+          --arg source "$SOURCE" \
+          --arg alertname "$ALERTNAME" \
+          --arg severity "${SEVERITY:-critical}" \
+          --arg event_key "$EVENT_KEY" \
+          --arg released_sha "$RELEASED_SHA" \
+          --arg workflow "$WORKFLOW_NAME" \
+          --arg job "$JOB_NAME" \
+          --arg run_id "$RUN_ID" \
+          --arg run_url "$RUN_URL" \
+          --arg run_attempt "${GITHUB_RUN_ATTEMPT:-1}" \
+          --arg repository "${GITHUB_REPOSITORY:-}" \
+          --arg event_name "${GITHUB_EVENT_NAME:-}" \
+          --arg checkout_sha "${GITHUB_SHA:-}" \
+          --arg actor "${GITHUB_ACTOR:-}" \
+          --arg detail "$DETAIL" \
+          --arg target_task_id "$TARGET_TASK_ID" \
+          --arg reported_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          --argjson failed_steps "$FAILED_STEPS" \
+          '{
+            source: $source,
+            alertname: $alertname,
+            status: "firing",
+            severity: $severity,
+            eventKey: $event_key,
+            payload: {
+              target_task_id: $target_task_id,
+              released_sha: $released_sha,
+              workflow: $workflow,
+              job: $job,
+              run_id: $run_id,
+              run_url: $run_url,
+              run_attempt: $run_attempt,
+              repository: $repository,
+              event_name: $event_name,
+              checkout_sha: $checkout_sha,
+              actor: $actor,
+              failed_steps: $failed_steps,
+              detail: $detail,
+              reported_at: $reported_at
+            }
+          }')" || { echo "::warning::report-post-deploy-failure could not build the alert payload; nothing delivered."; exit 0; }
+
+        RESPONSE="$(mktemp)"
+        HTTP_CODE="$(curl -sS \
+          --max-time 20 \
+          --retry 3 --retry-delay 5 --retry-all-errors \
+          -o "$RESPONSE" -w '%{http_code}' \
+          -X POST "$INTAKE_URL" \
+          -H "Authorization: Bearer ${INTAKE_SECRET}" \
+          -H 'Content-Type: application/json' \
+          -H 'User-Agent: club-arena-report-post-deploy-failure' \
+          --data-binary "$PAYLOAD")"
+        CURL_EXIT=$?
+
+        if [ "$CURL_EXIT" -eq 0 ] && [ "$HTTP_CODE" = "200" ]; then
+          IDS="$(jq -r '(.ids // []) | map(tostring) | join(",")' "$RESPONSE" 2>/dev/null || true)"
+          TASK="$(jq -r '.taskId // empty' "$RESPONSE" 2>/dev/null || true)"
+          echo "Alert store recorded ${ALERTNAME} (${SOURCE}, ${SEVERITY:-critical}) for released ${RELEASED_SHA:-unknown}: intake id(s) ${IDS:-<none returned>}, task ${TASK:-$TARGET_TASK_ID}."
+          echo "intake_ids=${IDS}" >> "$GITHUB_OUTPUT"
+          {
+            echo '### Alert store notified'
+            echo "\`${ALERTNAME}\` recorded for released \`${RELEASED_SHA:-unknown}\` as intake id(s) \`${IDS:-none}\` (task \`${TASK:-$TARGET_TASK_ID}\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+        else
+          BODY="$(head -c 400 "$RESPONSE" 2>/dev/null | tr -d '\r\n')"
+          echo "::warning title=Alert store delivery failed::${ALERTNAME} for released ${RELEASED_SHA:-unknown} was NOT recorded (curl exit ${CURL_EXIT}, HTTP ${HTTP_CODE}): ${BODY:-<no body>}. The Production Alerts fleet will not see this failure from this run."
+          {
+            echo '### Alert store delivery failed'
+            echo "curl exit ${CURL_EXIT}, HTTP ${HTTP_CODE}; the failure was not recorded in the operational-alert inbox."
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
+        rm -f -- "$RESPONSE"
+        exit 0

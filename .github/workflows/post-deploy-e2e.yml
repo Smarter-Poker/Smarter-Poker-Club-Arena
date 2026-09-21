@@ -625,6 +625,38 @@ jobs:
             e2e-report/
           retention-days: 3 # 2026-09-01 cost audit: reports are read same-day or never
 
+      # THE VERDICT REACHES THE ALERT STORE (2026-09-21). A red run here used to
+      # live only in the Actions UI; the Production Alerts fleet's hourly run,
+      # which decides whether a release is rolled back, never saw it. This posts
+      # one firing operational alert to World Hub's intake naming the RELEASED
+      # commit (what production was serving, from the `live` step, not merely
+      # this checkout). It never fails this job: the job is already red, and a
+      # notifier that adds its own red hides the real verdict. An unset
+      # WORLD_HUB_ALERT_INTAKE_SECRET skips with a warning. The hashFiles guard
+      # keeps a failed checkout from turning into a missing-action error.
+      - name: Report the failed verification to the alert store
+        if: always() && (failure() || cancelled()) && hashFiles('.github/actions/report-post-deploy-failure/action.yml') != ''
+        continue-on-error: true
+        uses: ./.github/actions/report-post-deploy-failure
+        with:
+          source: ci.post-deploy-e2e
+          alertname: PostDeployVerificationFailed
+          severity: critical
+          released_sha: ${{ steps.live.outputs.sha || needs.publication-gate.outputs.client_target_sha || github.sha }}
+          run_id: ${{ github.run_id }}
+          run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          job_name: ${{ github.job }}
+          workflow_name: ${{ github.workflow }}
+          detail: >-
+            Client browser verification against production ${{ job.status }}:
+            live=${{ steps.live.outputs.sha || 'unresolved' }}
+            ready=${{ steps.live.outputs.ready || 'false' }}
+            specs=${{ steps.align.outputs.specs || 'unaligned' }}
+            client_target=${{ needs.publication-gate.outputs.client_target_sha || 'none' }}
+            trigger=${{ github.event_name }}
+          step_outcomes: ${{ toJSON(steps) }}
+          intake_secret: ${{ secrets.WORLD_HUB_ALERT_INTAKE_SECRET }}
+
   # A client publication must not wait for an unrelated unshipped engine.
   # This independent verdict retains real-hand/reconnect coverage after every
   # publication, and exact immutable engine certification after engine cutover.
@@ -862,3 +894,36 @@ jobs:
             test-results/
             e2e-report/
           retention-days: 3 # 2026-09-01 cost audit: reports are read same-day or never
+
+      # THE VERDICT REACHES THE ALERT STORE (2026-09-21). A red run here used to
+      # live only in the Actions UI; the Production Alerts fleet's hourly run,
+      # which decides whether a release is rolled back, never saw it. This posts
+      # one firing operational alert to World Hub's intake naming the RELEASED
+      # commit (what production was serving, from the `live` step, not merely
+      # this checkout). It never fails this job: the job is already red, and a
+      # notifier that adds its own red hides the real verdict. An unset
+      # WORLD_HUB_ALERT_INTAKE_SECRET skips with a warning. The hashFiles guard
+      # keeps a failed checkout from turning into a missing-action error.
+      - name: Report the failed verification to the alert store
+        if: always() && (failure() || cancelled()) && hashFiles('.github/actions/report-post-deploy-failure/action.yml') != ''
+        continue-on-error: true
+        uses: ./.github/actions/report-post-deploy-failure
+        with:
+          source: ci.post-deploy-e2e
+          alertname: PostDeployVerificationFailed
+          severity: critical
+          released_sha: ${{ steps.live.outputs.sha || needs.publication-gate.outputs.client_target_sha || github.sha }}
+          run_id: ${{ github.run_id }}
+          run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          job_name: ${{ github.job }}
+          workflow_name: ${{ github.workflow }}
+          detail: >-
+            Live-table and engine verification against production ${{ job.status }}:
+            live=${{ steps.live.outputs.sha || 'unresolved' }}
+            ready=${{ steps.live.outputs.ready || 'false' }}
+            engine=${{ steps.engine.outputs.sha || 'unresolved' }}
+            engine_trigger=${{ needs.publication-gate.outputs.engine_trigger_sha || 'none' }}
+            specs=${{ steps.align.outputs.specs || 'unaligned' }}
+            trigger=${{ github.event_name }}
+          step_outcomes: ${{ toJSON(steps) }}
+          intake_secret: ${{ secrets.WORLD_HUB_ALERT_INTAKE_SECRET }}

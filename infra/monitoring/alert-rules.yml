@@ -2277,3 +2277,177 @@ groups:
             TLS attribution or a runtime memory limit. Use the existing
             on-host build gate to establish build headroom at the actual attempt.
           runbook: 'docs/runbooks/engine-memory.md'
+
+  # ── THE ALERT PRODUCER ITSELF (2026-09-21) ───────────────────────────────
+  #
+  # On 2026-09-19/20 the engine's alert producer (server/src/services/
+  # engineAlerts.ts, the thing that posts every rule above's engine-side
+  # sibling to World Hub /api/alerts/engine) went 17.8 hours without a
+  # delivery. Nobody could tell "down" from "quiet": it logged only failures,
+  # kept its evidence in /var/lib/club-arena/engine-alerts/journal.json, and
+  # exported no metric, so the only way to know was ssh and cat. A producer
+  # of alerts that cannot itself be alerted on is the 2026-08-15 lesson one
+  # level up.
+  #
+  # Since 2026-09-21 the producer renders five series on every scrape, from
+  # memory only (engineAlertPrometheusLines): journal sequence, pending
+  # (journaled, not yet acknowledged), active (episodes firing), the last
+  # acknowledged delivery time, and a failure counter. All are present from
+  # the first scrape at zero, so absent() here means the exporter or the
+  # engine is down, never "nothing happened".
+  #
+  # Two conditions, no invented thresholds. Pending > 0 is the producer's own
+  # definition of "not delivered"; it retries every five seconds, so ten
+  # minutes of a non-empty queue is 120 refused attempts - the receiver, the
+  # secret or the network, not a blip. absent() for fifteen minutes clears
+  # any restart's scrape gap several times over.
+  - name: engine-alert-producer
+    interval: 30s
+    rules:
+      - alert: EngineAlertDeliveryStalled
+        expr: |
+          poker_engine_alerts_pending > 0
+        for: 10m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: '{{ $value }} engine alert event(s) journaled but undelivered for ten minutes - the engine cannot reach /api/alerts/engine'
+          description: |
+            The engine-alert producer has had at least one event pending for
+            ten minutes. Every rule it would have raised - fleet silent, floor
+            lost, tables frozen - is sitting in the durable journal instead of
+            in Codex. Read poker_engine_alerts_delivery_failures_total beside
+            it: rising means the receiver is answering and refusing (check
+            World Hub /api/alerts/engine and ALERT_WEBHOOK_SECRET on the
+            engine host); flat means the attempts themselves are not being
+            made. poker_engine_alerts_last_delivery_timestamp_seconds says
+            when it last worked. The journal preserves event IDs and order;
+            nothing is lost, only late.
+          runbook: 'docs/runbooks/operational-alert-intake.md'
+
+      # Absence is the failure this group exists for: on 2026-09-19/20 the
+      # producer had no series to be absent. The whole family appears on the
+      # first scrape, so a missing sequence gauge is an engine that is not
+      # scraping or a build that predates the exporter, and either way every
+      # engine-raised alert is blind.
+      - alert: EngineAlertMetricsAbsent
+        expr: |
+          absent(poker_engine_alerts_journal_sequence)
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 15m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: 'The engine alert producer is not reporting - poker_engine_alerts_journal_sequence has been absent for fifteen minutes'
+          description: |
+            No scrape has carried poker_engine_alerts_journal_sequence for
+            fifteen minutes. Either the engine is not being scraped at all
+            (check `up{job="engine_game_server"}` and the other engine alerts
+            will be absent too) or the serving build predates the exporter
+            (read poker_engine_info). Until it returns, nothing the engine
+            observes about itself reaches Codex, and the silence is not
+            health.
+          runbook: 'docs/runbooks/engine-and-realtime-diagnostics.md'
+
+  # ───────────────────────────────────────────────────────────────────────
+  # THE ALERT STORE'S SENDERS (2026-09-21)
+  #
+  # public.operational_alert_events is where every operational alert on the
+  # platform ends up, written by a dozen independent senders: alertmanager,
+  # drift-incidents-updates, financial-alerts-updates,
+  # owner-operational-notifications, worldhub.deploy-monitor, openclaw, the
+  # workers.* watchdogs, the *-backfill jobs. A sender that dies writes
+  # nothing, and nothing is also what a healthy quiet sender writes. On
+  # 2026-09-19/20 the engine-alert producer was silent for 17.8 hours and the
+  # store just stopped filling; nobody could tell an empty queue from a dead
+  # pipeline.
+  #
+  # Since 2026-09-21 the engine reads the newest last_received_at per source
+  # once a minute (observability/AlertStoreLiveness.ts, off the scrape path)
+  # and renders five series: the timestamp per source, the silence since it
+  # (computed at scrape, so it keeps growing even while the read fails), the
+  # expected interval for each EXPECTED sender, the collector's own last
+  # success time (0 until the first), and its error counter. The per-source
+  # cache survives a failed read, so silence is measured from the last thing
+  # the store said, never reset by the reader.
+  #
+  # Two rules. AlertStoreSenderSilent compares each sender's silence with
+  # ITS OWN expectation, `on (source)`: the continuous senders (alertmanager,
+  # drift-incidents-updates) get three hours; financial-alerts-backfill, a
+  # live mirror trigger despite its name, six; the daily and weekly ones
+  # (openclaw, engine-alerts-backfill, worldhub.deploy-monitor,
+  # workers.deploy-error-poll) a day to a week, because measured on
+  # 2026-09-20 they were legitimately quiet for 8, 10.6, 17.8 and 90 hours.
+  # The expectations live in code (ALERT_STORE_EXPECTED_SOURCES) and are
+  # rendered as poker_alert_store_source_expected_interval_seconds for those
+  # sources only, so the vector match confines the rule to them: a one-off
+  # backfill, audit or release source still renders its silence, which is
+  # the point, and never alerts, because it has no interval to exceed. To
+  # watch a new sender, add it to the map; nothing here needs to change.
+  #
+  # AlertStoreCollectorStale is the reader's own health: the success gauge
+  # absent (engine not scraped, or a build without the collector) or older
+  # than fifteen minutes (fifteen consecutive failed reads against the 15 s
+  # client deadline). Without it, every silence above is a number from a
+  # reader that may itself be dead, which is the failure this group exists
+  # to end. Like every absent/stale rule in this file it stands down while a
+  # maintenance break is on, when the engine is expected to be restarting.
+  - name: alert-store-senders
+    interval: 60s
+    rules:
+      - alert: AlertStoreSenderSilent
+        expr: |
+          poker_alert_store_source_silence_seconds
+            > on (source) poker_alert_store_source_expected_interval_seconds
+        for: 10m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: 'Alert-store sender {{ $labels.source }} has written nothing for {{ $value | humanizeDuration }}, longer than it ever should'
+          description: |
+            The newest operational_alert_events.last_received_at for source
+            {{ $labels.source }} is older than that sender's own expected
+            interval (poker_alert_store_source_expected_interval_seconds,
+            from ALERT_STORE_EXPECTED_SOURCES in
+            server/src/observability/AlertStoreLiveness.ts). For a continuous
+            sender (alertmanager, drift-incidents-updates,
+            financial-alerts-backfill, financial-alerts-updates,
+            owner-operational-notifications) that is a dead pipeline, not a
+            quiet one: check the sender's own process and its route to
+            Supabase. For a scheduled sender (worldhub.deploy-monitor,
+            openclaw, workers.*, engine-alerts-backfill) check that its
+            schedule ran. poker_alert_store_source_last_received_timestamp_seconds
+            says exactly when it last wrote. If the sender's cadence has
+            genuinely changed, change its entry in the map, not this rule.
+          runbook: 'docs/runbooks/operational-alert-intake.md'
+
+      - alert: AlertStoreCollectorStale
+        expr: |
+          (
+            absent(poker_alert_store_collector_last_success_timestamp_seconds)
+            or (time() - poker_alert_store_collector_last_success_timestamp_seconds > 900)
+          )
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          component: monitoring
+        annotations:
+          summary: 'The alert-store liveness collector has not read operational_alert_events successfully for fifteen minutes'
+          description: |
+            poker_alert_store_collector_last_success_timestamp_seconds is
+            absent or more than fifteen minutes old. Absent means the engine
+            is not being scraped (check `up{job="engine_game_server"}`) or
+            the serving build predates the collector (read
+            poker_engine_info). Old means the engine is up but every read of
+            the store for the last fifteen minutes has failed: read
+            poker_alert_store_collector_errors_total beside it (rising means
+            Supabase is refusing or timing out; 0 since start means the
+            collector never ran) and the engine log for
+            `[AlertStoreLiveness] read failed`. Until it recovers, every
+            AlertStoreSenderSilent value is measured from a stale cache and
+            cannot clear on its own.
+          runbook: 'docs/runbooks/operational-alert-intake.md'

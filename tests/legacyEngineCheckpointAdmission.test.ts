@@ -96,6 +96,12 @@ describe('the exact legacy checkpoint enters the existing release transaction', 
             '-c',
             `set -euo pipefail
 die() { echo "$*" >&2; exit 1; }
+# The physical countdown probe below now DEFERS (75) rather than dying when the
+# break is too short to reach the guard, and demands the reserve plus the
+# measured node-boot budget derived above this slice. Both symbols are declared
+# outside the window this test cuts, so the harness supplies them.
+defer() { echo "$*" >&2; exit 75; }
+CHECKPOINT_GUARD_ENTRY_MS=1500
 timeout() { printf '%s\\n' "$*"; return "$PREREQUISITE_STATUS"; }
 curl() { printf '%s' "$PREREQUISITE_HEALTH"; }
 CONTROL_DIR=/immutable-reviewed-control
@@ -293,7 +299,13 @@ fi
   it('holds the engine lock and proves the actual predecessor before invoking exactly once', () => {
     const lock = transaction.indexOf("acquire_engine_lock 'maintenance cutover'");
     const freshness = transaction.indexOf('source_target_is_current', lock);
-    const entry = transaction.indexOf('legacy_checkpoint_countdown)', freshness);
+    // The post-lock admission now carries the measured entry budget it must
+    // still pay before the guard reads the same reserve - see
+    // tests/the-release-enters-the-break-with-time-to-finish.law.test.ts.
+    const entry = transaction.indexOf(
+      'legacy_checkpoint_countdown "$BREAK_ENTRY_BUDGET_MS")',
+      freshness
+    );
     const noReplay = transaction.indexOf('[ "$LEGACY_CHECKPOINT_ATTEMPTED" = 0 ]', entry);
     const readiness = transaction.indexOf('prove_rollback_readiness', noReplay);
     const attempted = transaction.indexOf('LEGACY_CHECKPOINT_ATTEMPTED=1', readiness);

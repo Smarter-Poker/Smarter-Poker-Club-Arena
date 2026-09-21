@@ -80,6 +80,15 @@ try:
   sql+='ALTER FUNCTION '+signature+' OWNER TO '+row['owner']+';\n'
  run(sql,'exact-installed-weekly-predecessors')
  run(next((root/'supabase/migrations').glob('20260917234315*.sql')).read_text(),'weekly-qualified-source')
+ # The club settlement floor bounds standalone discovery. Its own preimage
+ # assertions name this exact installed base, so it is applied here, while the
+ # predecessors are still pristine. Its fixture runs last, below.
+ run(next((root/'supabase/migrations').glob('20260920232503*.sql')).read_text(),'club-settlement-floor-source')
+ # A rakeback payout leg cannot be written without its source-linked document
+ # and its settlement/run identity. Installed here, with the predecessors still
+ # pristine, so every regression below - including the real raked weekly close -
+ # runs with the constraint armed.
+ run(next((root/'supabase/migrations').glob('20260921022924*.sql')).read_text(),'rakeback-payout-document-source')
  # Export the exact installed candidate before any disposable test calendar or
  # fault injection. These are installation/readback contracts, not live proof.
  migration=next((root/'supabase/migrations').glob('20260917234315*.sql')).read_text()
@@ -113,6 +122,10 @@ try:
  print(result.stdout,flush=True)
  run((root/'tests/fixtures/union-weekly-basis/tournament-regression.sql').read_text(),'tournament-regression')
  run((root/'tests/fixtures/union-weekly-basis/raked-regression.sql').read_text(),'raked-regression')
+ # The refusals, and the proof that the accepted weekly payout above passed the
+ # same guard. Every probe rolls itself back; the money book is fingerprinted
+ # before and after.
+ run((root/'tests/fixtures/rakeback-payout-document/regression.sql').read_text(),'rakeback-payout-document-regression')
  result=subprocess.run(['python3',str(root/'scripts/dev/qualify-final-atomic-receipt.py'),str(pg/'psql'),str(socket),port,str(base)],capture_output=True,text=True)
  (base/'final-atomic-qualification.log').write_text(result.stdout+result.stderr)
  if result.returncode:raise AssertionError(result.stdout+result.stderr)
@@ -121,6 +134,19 @@ try:
  (base/'guard-declaration-qualification.log').write_text(result.stdout+result.stderr)
  if result.returncode:raise AssertionError(result.stdout+result.stderr)
  print(result.stdout,flush=True)
+ # Last on this cluster: the club settlement floor. The declared clock seam and
+ # the synthetic clubs are introduced only after every preceding assertion has
+ # been made, so nothing above can be disturbed by them.
+ run((root/'tests/fixtures/club-settlement-floor/load.sql').read_text(),'club-floor-clock-seam')
+ run((root/'tests/fixtures/club-settlement-floor/seed.sql').read_text(),'club-floor-seed')
+ run((root/'tests/fixtures/club-settlement-floor/regression.sql').read_text(),'club-floor-regression')
+ # The club scope's discovery BEHAVIOUR, on this same cluster. The 2026-09-14
+ # catalog capture above is union-only, so union_accounting_runs is first brought
+ # to the exact installed union/standalone shape from its own reviewed source;
+ # no coordinator, floor, payer or document definition is touched by that step.
+ run((root/'tests/fixtures/club-settlement-floor-behaviour/installed-run-journal.sql').read_text(),'club-floor-run-journal')
+ run((root/'tests/fixtures/club-settlement-floor-behaviour/seed.sql').read_text(),'club-floor-behaviour-seed')
+ run((root/'tests/fixtures/club-settlement-floor-behaviour/regression.sql').read_text(),'club-floor-behaviour-regression')
 finally:
  if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True)
  print('Evidence retained: '+str(base),flush=True)

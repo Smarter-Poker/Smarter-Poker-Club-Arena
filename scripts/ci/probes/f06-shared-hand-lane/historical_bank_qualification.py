@@ -132,4 +132,13 @@ def qualify(root,out,cmd,command,run,probe,require,results):
     exec(compile(module,ns['__file__'],'exec'),ns)
     ns['qualify'](root,out,cmd,command,adapted,probe,require,results)
     run('historical-no-usage-reversal',"SELECT bool_and(usage_count=1620) FROM vip_feature_usage_monthly;",'t')
-    results['historicalLoss']={'passed':True,'ordinarySession':True,'originalOccupancies':23,'separatePendingArrival':1,'historicalBalanceClaim':False,'newRpc':False}
+    # The publisher's pre-intent read-only comparison pins this installed
+    # 29-function catalogue, the one production holds after this migration.
+    catalog=json.loads((out/'qualified-service-contract.json').read_text())
+    fixture=json.loads((root/'tests/fixtures/legacy-engine-checkpoint/mixed-custody-contract.json').read_text())
+    require(catalog==fixture,'Publisher fixture does not equal actual historical-loss catalogue')
+    import ast
+    publisher=ast.parse((root/'server/scripts/engine-release-database-proof.py').read_text())
+    pinned=next(ast.literal_eval(n.value) for n in publisher.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='MIXED_CUSTODY_CONTRACT' for t in n.targets))
+    require(catalog==pinned,'Publisher control generation has stale historical-loss definitions')
+    results['historicalLoss']={'passed':True,'ordinarySession':True,'originalOccupancies':23,'separatePendingArrival':1,'historicalBalanceClaim':False,'newRpc':False,'publisherCatalogEquality':True}

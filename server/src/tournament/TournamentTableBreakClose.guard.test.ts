@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { sliceMethod } from '../testHelpers/sourceWindow.js';
+import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const migrationsDir = join(process.cwd(), '..', 'supabase', 'migrations');
 const closeMigrationNames = readdirSync(migrationsDir).filter((name) =>
@@ -64,9 +64,7 @@ describe('a tournament table break closes durably before releasing process owner
     const stopAt = close.indexOf('await engine.stop()');
     const rpcAt = close.indexOf("supabase.rpc('fn_close_empty_tournament_table'");
     const receiptAt = close.indexOf('const closed =');
-    const unregisterAt = close.indexOf(
-      'this.gameServer.unregisterTournamentTableEngine(tableId, engine)'
-    );
+    const unregisterAt = close.indexOf('this.gameServer.unregisterTableEngine(tableId, engine)');
     const localDeleteAt = close.indexOf('this.tableEngines.delete(tableId)');
     const hfhAt = close.indexOf('this.retireManagedTableFromHandForHand(tableId)');
     expect(stopAt).toBeGreaterThan(-1);
@@ -76,6 +74,18 @@ describe('a tournament table break closes durably before releasing process owner
     expect(localDeleteAt).toBeGreaterThan(unregisterAt);
     expect(hfhAt).toBeGreaterThan(localDeleteAt);
     expect(close.slice(rpcAt, unregisterAt)).toContain('if (!closed)');
+    // THE CLOSED-SESSION FORM, NOT THE RETENTION FORM. Both still exist on
+    // GameServer and they are not interchangeable here.
+    // `unregisterTableEngine` runs `retireStoppedTimeBanksForClosedSession()`
+    // inside the same identity CAS, which is only lawful once the receipt above
+    // proves the table durably closed - that is what the ordering pinned here
+    // buys. `unregisterTournamentTableEngine` instead REFUSES while that
+    // custody is unretired, so a revert to it would fence this manager and
+    // strand a table that is already closed. Pinned inside this method only:
+    // TournamentManagerBase.stop() uses the retention form correctly, and
+    // blanked so that documenting WHY this call is the closed-session form can
+    // never turn this pin red.
+    expect(blankNonCode(close)).not.toContain('unregisterTournamentTableEngine(');
   });
 
   it('retries a response-lost close from the retained empty table without direct writes', () => {

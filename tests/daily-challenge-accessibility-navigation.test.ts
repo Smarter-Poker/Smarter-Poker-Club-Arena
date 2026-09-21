@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
+import {
+  readDailyChallengesSurface,
+  readDailyChallengesUnit,
+} from './helpers/dailyChallengesSources';
 import { CHALLENGE_TYPES, type ChallengeType } from '../src/services/DailyChallengeService';
 import { getChallengeMissionAction } from '../src/utils/challengeMissionAction';
 
@@ -134,7 +137,12 @@ describe('Daily Missions accessibility contract', () => {
   });
 
   it('exposes progress, tabs, sync state, and reroll confirmation semantically', () => {
-    expect(PAGE.match(/role="progressbar"/g)).toHaveLength(2);
+    // Exactly two progress bars on the whole surface: the streak milestone and the card.
+    expect(readDailyChallengesSurface().match(/role="progressbar"/g)).toHaveLength(2);
+    expect(
+      readDailyChallengesUnit('MissionStreakConsole.tsx').match(/role="progressbar"/g)
+    ).toHaveLength(1);
+    expect(PAGE.match(/role="progressbar"/g)).toHaveLength(1);
     expect(PAGE).toContain('aria-valuetext=');
     expect(PAGE).toContain('role="tablist"');
     expect(PAGE).toContain('role="tabpanel"');

@@ -77,9 +77,10 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
   it('fails closed on a cold ledger error and renders freeze settlement truthfully', () => {
     expect(page).toContain('if (loadError && lastSyncedAt === null)');
     expect(page).toContain('<MissionUnavailableState');
-    expect(page).toContain('Streak Freeze Applied');
-    expect(page).toContain('streak.usedFreeze && streak.lastFrozenDate');
-    expect(page).toContain('<span className={styles.srOnly}>Diamonds</span>');
+    const streakConsole = readDailyChallengesUnit('MissionStreakConsole.tsx');
+    expect(streakConsole).toContain('Streak Freeze Applied');
+    expect(streakConsole).toContain('streak.usedFreeze && streak.lastFrozenDate');
+    expect(streakConsole).toContain('<span className={styles.srOnly}>Diamonds</span>');
     expect(page).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
     expect(page).toContain('Replaced.');
     expect(css).not.toMatch(/\.cardClaimed\s*\{[^}]*opacity:/s);

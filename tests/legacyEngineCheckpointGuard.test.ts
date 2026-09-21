@@ -1037,4 +1037,81 @@ describe('exact 8825 retained original custody retirement', () => {
       expect(f.server.tableEngines.size).toBe(3);
     }
   );
+  // 8825 originals were interrupted mid-hand. `beginTerminalBoundaryPersistence`
+  // reserved an integer immediately before HandController.start, and the only
+  // site that removes it runs inside that hand's settlement - unreachable once
+  // the engine is stopped, because `lifecycleCanMutate()` gates the step that
+  // calls it. The entry is the interruption being handed over, not live work.
+  it('admits the reserved terminal boundary of an interrupted original and still retires it', async () => {
+    const f = mixedFixture();
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+    expect(f.receipts.size).toBe(2);
+    expect(f.server.tableEngines.has(f.originals[0].engine.tableId)).toBe(false);
+    // Admitted, never discarded: the guard still mutates no engine state.
+    expect(f.originals[0].engine.terminalBoundaryPendingGenerations.size).toBe(1);
+  });
+  it('refuses a reserved terminal boundary that no undischarged permit can discharge', async () => {
+    const f = mixedFixture();
+    // 'attempted' is outside the set `sealAndRetireOriginals` demands an
+    // `aborted_unsettled` receipt for, so nothing downstream would prove it.
+    f.originals[0].engine.f06CurrentPermit.phase = 'attempted';
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_work_not_drained',
+      failedCheck: 'engineCollection.size',
+      failedField: 'terminalBoundaryPendingGenerations',
+      expected: '0',
+    });
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
+  it('refuses more pending boundaries than one interrupted hand can explain', async () => {
+    const f = mixedFixture();
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(8);
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_work_not_drained',
+      failedCheck: 'engineCollection.size',
+      failedField: 'terminalBoundaryPendingGenerations',
+      expected: '1',
+    });
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
+  it.each([
+    ['settlementInFlight', (e: any) => e.settlementInFlight.add(Promise.resolve())],
+    ['tournamentMoveOperations', (e: any) => e.tournamentMoveOperations.add(Promise.resolve())],
+    ['readContinuationTasks', (e: any) => e.readContinuationTasks.add(Promise.resolve())],
+    ['timeBankAccountingPending', (e: any) => e.timeBankAccountingPending.add(Promise.resolve())],
+    ['tournamentMoveOperationByOwner', (e: any) => e.tournamentMoveOperationByOwner.set('a', 1)],
+    ['entryHoldWriteChains', (e: any) => e.entryHoldWriteChains.set('a', 1)],
+  ])('still refuses undrained %s on an interrupted original', async (field, fill) => {
+    const f = mixedFixture();
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    fill(f.originals[0].engine);
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_work_not_drained',
+      failedCheck: 'engineCollection.size',
+      failedField: field,
+      expected: '0',
+    });
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
+  it('still refuses a failed terminal boundary on an interrupted original', async () => {
+    const f = mixedFixture();
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    f.originals[0].engine.terminalBoundaryPersistenceFailed = true;
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_work_not_drained',
+      failedCheck: 'engine.terminalBoundaryPersistenceFailed',
+    });
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
 });

@@ -287,19 +287,6 @@ function isFilterSafe(value: string): boolean {
   return !/["',()]/.test(value);
 }
 
-/**
- * AUDIT M6 — the composite `(created_at, id)` keyset predicate.
- *
- * Values are DOUBLE-QUOTED: a timestamptz renders as `2026-08-06
- * 20:30:07.941+00`, and both `:` and `+` are meaningful inside a PostgREST
- * filter. Verified against the live REST endpoint before this shipped — the
- * quoted form returns 200, and a malformed filter returns 400, so a green
- * response is real evidence and not a silently ignored parameter.
- */
-function keysetFilter(createdAt: string, id: string): string {
-  return `created_at.gt."${createdAt}",and(created_at.eq."${createdAt}",id.gt."${id}")`;
-}
-
 interface RakeRecordRow {
   id?: string;
   is_tournament?: boolean | null;
@@ -712,7 +699,7 @@ export class RakebackSettlerService {
    *       regressed.
    *
    * Idempotent and cheap: bounded batch per cycle, advances the watermark to the
-   * newest processed ended_at so each tournament is checked once.
+   * newest FULLY CHECKED ended_at so each tournament is checked at least once.
    *
    * THE WINDOW COLUMN WAS WRONG UNTIL 2026-08-31, in exactly the way the retired
    * payout sweep's was until 2026-08-29. This scan
@@ -772,6 +759,28 @@ export class RakebackSettlerService {
 
       let newWatermark = sinceIso;
       let violations = 0;
+      let unchecked = 0;
+      /**
+       * A TOURNAMENT NOBODY COULD CHECK MUST NOT BE RECORDED AS CHECKED.
+       *
+       * Each of the three reads below was written `if (!err) { ... }`, so a
+       * transient PostgREST failure skipped that tournament's integrity check with
+       * no report and no violation counted - while the watermark, assigned at the
+       * TOP of the loop, moved past it regardless. The next cycle reads
+       * `ended_at > mark`, so the event was never looked at again: chips minted or
+       * destroyed inside it would go unreported permanently and leave no trace,
+       * which is the single outcome this sentinel exists to prevent. The two
+       * top-level reads above already skip the cycle on a read failure; the
+       * per-tournament reads were simply never given the same treatment.
+       *
+       * The batch is ordered by `ended_at` ascending, so from the first tournament
+       * whose reads did not complete the mark may not move. Later tournaments are
+       * still checked in this same pass - one unreadable row must not silence the
+       * rest of the batch - they are simply re-read next cycle along with it.
+       * Re-checking costs nothing: all three checks are read-only, and the pass
+       * stays bounded by BATCH with no retry loop of its own.
+       */
+      let watermarkSealed = false;
 
       for (const t of tourneys as Array<{
         id: string;
@@ -781,7 +790,10 @@ export class RakebackSettlerService {
         satellite_target_id: string | null;
         ended_at: string;
       }>) {
-        if (t.ended_at > newWatermark) newWatermark = t.ended_at;
+        // Set by any of the three reads below that did not complete. The mark is
+        // advanced at the END of this iteration, and only for a tournament whose
+        // checks all actually ran.
+        let uncheckable = false;
         // Pool-equality is only meaningful for events where the ENTIRE cash pool
         // flows through tournament_players.prize. It does NOT hold for:
         //   • satellites — they pay tickets/seats, not the cash pool;
@@ -806,7 +818,18 @@ export class RakebackSettlerService {
             .select('prize')
             .eq('tournament_id', t.id)
             .gt('prize', 0);
-          if (!pErr) {
+          if (pErr) {
+            uncheckable = true;
+            unchecked++;
+            reportError(
+              new Error(
+                `Tournament payout conservation UNCHECKED: tournament ${t.id} ` +
+                  `(${t.name ?? 'unnamed'}) prize read failed: ${pErr.message}`
+              ),
+              'TournamentSentinel.payout_conservation_unchecked',
+              { tournamentId: t.id, endedAt: t.ended_at }
+            );
+          } else {
             const paid = (prizeRows ?? []).reduce(
               (s, r) => s + (Number((r as { prize: number | null }).prize) || 0),
               0
@@ -836,7 +859,18 @@ export class RakebackSettlerService {
             .select('id', { count: 'exact', head: true })
             .eq('tournament_id', t.id)
             .in('status', ['playing', 'registered', 'active']);
-          if (!sErr && (count ?? 0) > 0) {
+          if (sErr) {
+            uncheckable = true;
+            unchecked++;
+            reportError(
+              new Error(
+                `Stranded-player check UNCHECKED: tournament ${t.id} ` +
+                  `(${t.name ?? 'unnamed'}) entrant read failed: ${sErr.message}`
+              ),
+              'TournamentSentinel.stranded_players_unchecked',
+              { tournamentId: t.id, endedAt: t.ended_at }
+            );
+          } else if ((count ?? 0) > 0) {
             violations++;
             reportError(
               new Error(
@@ -856,7 +890,18 @@ export class RakebackSettlerService {
             .eq('tournament_id', t.id)
             .not('hand_id', 'is', null)
             .gt('rake_amount', 0);
-          if (!rErr && (count ?? 0) > 0) {
+          if (rErr) {
+            uncheckable = true;
+            unchecked++;
+            reportError(
+              new Error(
+                `Raked-hand check UNCHECKED: tournament ${t.id} ` +
+                  `(${t.name ?? 'unnamed'}) rake read failed: ${rErr.message}`
+              ),
+              'TournamentSentinel.raked_tournament_hands_unchecked',
+              { tournamentId: t.id, endedAt: t.ended_at }
+            );
+          } else if ((count ?? 0) > 0) {
             violations++;
             reportError(
               new Error(
@@ -866,6 +911,19 @@ export class RakebackSettlerService {
               { tournamentId: t.id, rakedHands: count }
             );
           }
+        }
+
+        if (uncheckable) {
+          if (!watermarkSealed) {
+            watermarkSealed = true;
+            // A tie on `ended_at` with an already-advanced mark would still be
+            // stepped over by the strict `>` read filter next cycle, so fall back
+            // to this batch's own starting mark, which that same filter proves is
+            // strictly below every row in the batch.
+            if (newWatermark >= t.ended_at) newWatermark = sinceIso;
+          }
+        } else if (!watermarkSealed && t.ended_at > newWatermark) {
+          newWatermark = t.ended_at;
         }
       }
 
@@ -881,7 +939,8 @@ export class RakebackSettlerService {
         { onConflict: 'daemon' }
       );
       console.log(
-        `[TournamentSentinel] checked ${tourneys.length} completed tournament(s), ${violations} violation(s), watermark → ${newWatermark}`
+        `[TournamentSentinel] read ${tourneys.length} completed tournament(s), ${violations} violation(s), ` +
+          `${unchecked} unchecked read(s), watermark → ${newWatermark}`
       );
     } catch (e) {
       reportError(

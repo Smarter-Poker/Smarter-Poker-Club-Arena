@@ -58,7 +58,12 @@ export default function GameCreationActions({
     <div
       /* Joined rather than interpolated: two false ternaries left a trailing
          double space in the class attribute on every non-compact render. */
-      className={[styles.actions, compact && styles.compact, desktopOnly && styles.desktopOnly]
+      className={[
+        styles.actions,
+        compact && styles.compact,
+        shown.length === 1 && styles.single,
+        desktopOnly && styles.desktopOnly,
+      ]
         .filter(Boolean)
         .join(' ')}
       aria-label="Create Games"

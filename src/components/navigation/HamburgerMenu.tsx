@@ -28,6 +28,7 @@ import { ThemeSettingsModal } from '../table/ThemeSettingsModal';
 import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
+import { mayLeaveCurrentPage } from '../../lib/navigationGuard';
 import { AUTH_STORAGE_KEY, SPA_AUTH_BREADCRUMB } from '../../lib/authUtils';
 import { isPlatformStaffRole } from '../../utils/platformRoles';
 import { fetchGameCreationAccess } from '../../services/GameAccessService';
@@ -634,6 +635,10 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   // Navigate and close
   const handleNavigate = (path: string) => {
+    // A page holding unsaved work (Table Management's ticker and message
+    // drafts) is asked first; these entries are buttons, so no link guard
+    // ever sees them.
+    if (!mayLeaveCurrentPage()) return;
     const nextRecentPaths = [path, ...recentPaths.filter((item) => item !== path)].slice(0, 5);
     setRecentPaths(nextRecentPaths);
     try {

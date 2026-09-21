@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 import { readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { readDailyChallengesStylesheet } from './helpers/dailyChallengesSources';
@@ -302,9 +303,10 @@ describe('the page ships the casino-realism surface without the old stubs', () =
   });
 
   it('ships an optimized eager hero and responsive accessibility states', () => {
-    expect(page).toContain('daily-missions-casino-v2.webp');
-    expect(page).toContain('daily-missions-casino-v2-mobile.webp');
-    expect(page).toContain('fetchPriority="high"');
+    const presentation = readDailyChallengesUnit('missionPresentation.ts');
+    expect(presentation).toContain('daily-missions-casino-v2.webp');
+    expect(presentation).toContain('daily-missions-casino-v2-mobile.webp');
+    expect(readDailyChallengesUnit('MissionArtwork.tsx')).toContain('fetchPriority="high"');
     expect(css).not.toContain('@import url(');
     // The module sheet is a manifest of relative partials that Vite inlines at
     // build time into one CSS-module scope; never a runtime import.
@@ -348,12 +350,15 @@ describe('the page ships the casino-realism surface without the old stubs', () =
   });
 
   it('blocks push enrollment when the current browser cannot support it', () => {
-    expect(page).toContain('const unsupportedBrowser = !isWebPushSupported() && !unsupportedIos;');
-    expect(page).toContain(
+    const alertsPanel = readDailyChallengesUnit('MissionAlertsPanel.tsx');
+    expect(alertsPanel).toContain(
+      'const unsupportedBrowser = !isWebPushSupported() && !unsupportedIos;'
+    );
+    expect(alertsPanel).toContain(
       "const enrollmentBlocked = permission === 'denied' || unsupportedIos || unsupportedBrowser;"
     );
-    expect(page).toContain('Unavailable In This Browser');
-    expect(page).toContain(
+    expect(alertsPanel).toContain('Unavailable In This Browser');
+    expect(alertsPanel).toContain(
       'This Browser Does Not Support Challenge Alerts. Use A Supported Browser Or Device.'
     );
   });
@@ -361,7 +366,9 @@ describe('the page ships the casino-realism surface without the old stubs', () =
   it('ships complete reward feedback and keyboard-operable period tabs', () => {
     // Was `reward.chips.toLocaleString()`. The celebration no longer has a
     // chip payout tile to render (Dan 2026-09-05: rewards are diamonds).
-    expect(page).toContain('reward.diamonds.toLocaleString()');
+    expect(readDailyChallengesUnit('MissionRewardSettlementDialog.tsx')).toContain(
+      'reward.diamonds.toLocaleString()'
+    );
     expect(page).toContain('aria-controls="mission-panel"');
     expect(page).toContain("event.key === 'ArrowRight'");
     expect(page).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');

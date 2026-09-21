@@ -1,6 +1,10 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  readDailyChallengesSurface,
+  readDailyChallengesUnit,
+} from './helpers/dailyChallengesSources';
 
 const migration = readFileSync(
   resolve(
@@ -194,8 +198,9 @@ describe('Daily Missions realtime and render-isolation contract', () => {
   it('keeps the live clock outside page state and inside subscribing leaves', () => {
     expect(clock).toContain('useSyncExternalStore');
     expect(clock).toContain('export const challengeClock = new ChallengeClockStore()');
-    expect(page).toContain('function MissionCycleCountdown');
-    expect(page).toContain('function MissionResetReadout');
-    expect(page).not.toContain('const [now, setNow]');
+    const clockLeaves = readDailyChallengesUnit('MissionClockLeaves.tsx');
+    expect(clockLeaves).toContain('function MissionCycleCountdown');
+    expect(clockLeaves).toContain('function MissionResetReadout');
+    expect(readDailyChallengesSurface()).not.toContain('const [now, setNow]');
   });
 });

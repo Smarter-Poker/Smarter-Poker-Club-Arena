@@ -15,11 +15,7 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getAuthUser } from '../lib/supabase';
 import { useToast } from '../components/common/Toast';
-import {
-  CasinoControlIcon,
-  MissionInstrumentGlyph,
-  type CasinoControlIconVariant,
-} from '../components/challenges';
+import { CasinoControlIcon, MissionInstrumentGlyph } from '../components/challenges';
 import { motion, useReducedMotion } from 'framer-motion';
 import { masterBus } from '../core/MasterBus';
 import { triggerHaptic } from '../services/HapticService';
@@ -36,19 +32,12 @@ import {
 } from '../services/DailyChallengeService';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useMasterBusBroadcastChannel } from '../hooks/useMasterBusBroadcastChannel';
-import { useChallengeClockNow } from '../hooks/useChallengeClock';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { reportError } from '../utils/errorReporter';
-import { ConfettiEffect } from '../components/effects/ConfettiEffect';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './DailyChallengesPage.module.css';
 import { mediaUrl } from '../utils/mediaBase';
-import {
-  formatChallengeCountdown,
-  getChallengeResetAt,
-  getUtcDateKey,
-  msUntilChallengeReset,
-} from '../utils/challengeReset';
+import { getUtcDateKey, msUntilChallengeReset } from '../utils/challengeReset';
 import { getChallengeMissionAction } from '../utils/challengeMissionAction';
 import { prefetchIntent } from '../utils/ChunkPreloader';
 import {
@@ -58,164 +47,34 @@ import {
 } from '../utils/dailyMissionReceipt';
 import { capture } from '../lib/analytics';
 import {
-  enablePush,
-  hasLocalSubscription,
-  isIos,
-  isIosStandalonePwa,
-  isWebPushSupported,
-  notificationPermission,
-} from '../lib/pushClient';
-import {
-  getDailyMissionAlertPreference,
-  setDailyMissionAlertPreference,
-} from '../services/DailyMissionNotificationService';
-import {
   dailyMissionReasonCode,
   recordDailyMissionOperation,
 } from '../services/DailyMissionTelemetryService';
-import { signInUrl } from '../lib/signIn';
 import { useClubWorkspace } from '../contexts/ClubWorkspaceContext';
 import { withClubContext } from '../utils/clubScopedPath';
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// Tier and TieredChallenge now come from the service, which is also what the
-// server-catalog fetch returns -- one definition, so a tier added there cannot
-// silently disagree with the tabs here.
-type TieredChallenge = TieredUserChallenge;
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const TIER_LABELS: Record<Tier, string> = {
-  daily: 'Daily',
-  weekly: 'Weekly',
-  monthly: 'Monthly',
-};
-
-const TIER_COLORS: Record<Tier, string> = {
-  daily: 'var(--realism-cyan, #55e8ff)',
-  weekly: 'var(--realism-chrome, #b8c4c9)',
-  monthly: 'var(--realism-gold, #ffc93c)',
-};
-
-const TIER_CONTROL_ICONS: Record<Tier, CasinoControlIconVariant> = {
-  daily: 'cycle-daily',
-  weekly: 'cycle-weekly',
-  monthly: 'cycle-monthly',
-};
-
-const TIER_PRESENTATION: Record<Tier, { title: string; eyebrow: string; description: string }> = {
-  daily: {
-    title: 'Daily Challenges',
-    eyebrow: 'Club Arena / Daily Challenge Vault',
-    description:
-      'Complete Live Poker Objectives, Protect Your Streak, And Collect Real Diamond Rewards At The Club Arena Rewards Desk.',
-  },
-  weekly: {
-    title: 'Weekly Challenges',
-    eyebrow: 'Club Arena / Weekly Challenge Circuit',
-    description:
-      'Build Momentum Across The Weekly Poker Circuit, Complete Larger Objectives, And Settle Premium Diamond Rewards.',
-  },
-  monthly: {
-    title: 'Monthly Challenges',
-    eyebrow: 'Club Arena / Monthly High-Roller Ledger',
-    description:
-      "Chase Long-Form Poker Milestones, Track Your Monthly Run, And Secure The Vault's Largest Diamond Rewards.",
-  },
-};
-
-const TIERS: Tier[] = ['daily', 'weekly', 'monthly'];
-
-const MISSION_HERO_DESKTOP = 'images/challenges/daily-missions-casino-v2.webp';
-const MISSION_HERO_MOBILE = 'images/challenges/daily-missions-casino-v2-mobile.webp';
-const MISSION_REWARD_ARTWORK = 'images/challenges/daily-missions-reward-pedestal-v1.webp';
-const MISSION_FREEZE_ARTWORK = 'images/challenges/daily-missions-streak-freeze-v1.webp';
-const MISSION_DIAMOND_ARTWORK = 'images/challenges/daily-missions-diamond-96-v1.webp';
-const MISSION_RESET_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  weekday: 'short',
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-  timeZoneName: 'short',
-});
-const MISSION_SYNC_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  hour: 'numeric',
-  minute: '2-digit',
-});
-const MISSION_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  weekday: 'long',
-  month: 'long',
-  day: 'numeric',
-  timeZone: 'UTC',
-});
-
-/** Restore keyboard focus after a state update removes the activated control. */
-function focusAfterMissionUpdate(targetId: string): void {
-  requestAnimationFrame(() => document.getElementById(targetId)?.focus());
-}
-
-function MissionHeroArtwork({ tier }: { tier: Tier }) {
-  return (
-    <div className={styles.heroPicture} data-hero-cycle={tier} aria-hidden="true">
-      <picture>
-        <source media="(max-width: 680px)" srcSet={mediaUrl(MISSION_HERO_MOBILE)} />
-        <img
-          className={styles.heroArtwork}
-          src={mediaUrl(MISSION_HERO_DESKTOP)}
-          alt=""
-          width="1717"
-          height="916"
-          loading="eager"
-          decoding="async"
-          fetchPriority="high"
-        />
-      </picture>
-      <span className={styles.heroCycleAtmosphere} />
-      <span className={styles.heroCycleInstrument} data-cycle-instrument={tier}>
-        <CasinoControlIcon variant={TIER_CONTROL_ICONS[tier]} state="active" size="lg" />
-      </span>
-    </div>
-  );
-}
-
-function DiamondMark({ className = '' }: { className?: string }) {
-  return (
-    <img
-      className={`${styles.inlineDiamond} ${className}`}
-      src={mediaUrl(MISSION_DIAMOND_ARTWORK)}
-      alt=""
-      width="96"
-      height="96"
-      loading="lazy"
-      decoding="async"
-      aria-hidden="true"
-    />
-  );
-}
-
-function FreezeVaultGraphic() {
-  return (
-    <div className={styles.freezeVaultGraphic} aria-hidden="true">
-      <span className={styles.freezeVaultHalo} />
-      <img
-        className={styles.freezeVaultArtwork}
-        src={mediaUrl(MISSION_FREEZE_ARTWORK)}
-        alt=""
-        width="720"
-        height="720"
-        loading="eager"
-        decoding="async"
-      />
-      <span className={styles.freezeVaultScan} />
-    </div>
-  );
-}
+import {
+  focusAfterMissionUpdate,
+  MISSION_DATE_FORMATTER,
+  MISSION_DIAMOND_ARTWORK,
+  MISSION_REWARD_ARTWORK,
+  MISSION_SYNC_FORMATTER,
+  TIER_COLORS,
+  TIER_CONTROL_ICONS,
+  TIER_LABELS,
+  TIER_PRESENTATION,
+  TIERS,
+  type TieredChallenge,
+} from '../components/challenges/dashboard/missionPresentation';
+import { DiamondMark, MissionHeroArtwork } from '../components/challenges/dashboard/MissionArtwork';
+import { MissionLoadingState } from '../components/challenges/dashboard/MissionLoadingState';
+import { MissionUnavailableState } from '../components/challenges/dashboard/MissionUnavailableState';
+import {
+  MissionCycleCountdown,
+  MissionResetReadout,
+} from '../components/challenges/dashboard/MissionClockLeaves';
+import { MissionAlertsPanel } from '../components/challenges/dashboard/MissionAlertsPanel';
+import { MissionFreezePurchaseDialog } from '../components/challenges/dashboard/MissionFreezePurchaseDialog';
+import { MissionRewardSettlementDialog } from '../components/challenges/dashboard/MissionRewardSettlementDialog';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CARDS
@@ -528,360 +387,6 @@ function ChallengeCard({
         </div>
       </div>
     </article>
-  );
-}
-
-function MissionLoadingState({ tier }: { tier: Tier }) {
-  const presentation = TIER_PRESENTATION[tier];
-  return (
-    <StandardContentLayout className={styles.container}>
-      <div
-        className={styles.page}
-        data-mission-cycle={tier}
-        role="region"
-        aria-busy="true"
-        aria-label={`Loading ${presentation.title}`}
-      >
-        <section className={`${styles.hero} ${styles.loadingHero}`}>
-          <span className={styles.bevelFrame} aria-hidden="true" />
-          <MissionHeroArtwork tier={tier} />
-          <div className={styles.heroShade} />
-          <div className={styles.heroCopy}>
-            <span className={styles.eyebrow}>{presentation.eyebrow}</span>
-            <h1>{presentation.title}</h1>
-            <p>Preparing Your Challenge Ledger, Streak, And Diamond Reward Vault.</p>
-            <div className={styles.loadingSignal} role="status">
-              <span className={styles.loadingSignalBar} />
-              <strong>Preparing Challenge Ledger</strong>
-            </div>
-          </div>
-        </section>
-        <section className={styles.loadingBoard} aria-hidden="true">
-          <span className={styles.bevelFrame} />
-          <div className={styles.loadingBoardHeader} />
-          <div className={styles.loadingCardGrid}>
-            {Array.from({ length: tier === 'daily' ? 5 : tier === 'weekly' ? 3 : 2 }).map(
-              (_, index) => (
-                <div key={index} className={styles.loadingCard} data-loading-mission-card="">
-                  <span className={styles.bevelFrame} />
-                  <span className={styles.loadingCardInstrument}>
-                    <CasinoControlIcon variant="sync" state="pending" size="lg" />
-                  </span>
-                  <span className={styles.loadingCardTitle} />
-                  <span className={styles.loadingCardCopy} />
-                  <span className={styles.loadingCardProgress} />
-                  <span className={styles.loadingCardAction} />
-                </div>
-              )
-            )}
-          </div>
-        </section>
-      </div>
-    </StandardContentLayout>
-  );
-}
-
-function MissionUnavailableState({
-  tier,
-  message,
-  onRetry,
-}: {
-  tier: Tier;
-  message: string;
-  onRetry: () => void;
-}) {
-  const presentation = TIER_PRESENTATION[tier];
-  return (
-    <StandardContentLayout className={styles.container}>
-      <div className={styles.page} data-mission-cycle={tier}>
-        <section className={`${styles.hero} ${styles.unavailableHero}`}>
-          <span className={styles.bevelFrame} aria-hidden="true" />
-          <MissionHeroArtwork tier={tier} />
-          <div className={styles.heroShade} />
-          <div className={styles.heroCopy}>
-            <span className={styles.eyebrow}>{presentation.eyebrow}</span>
-            <h1>{presentation.title}</h1>
-            <p>Your Challenge Progress Is Protected While The Private Ledger Reconnects.</p>
-          </div>
-        </section>
-        <section className={`${styles.emptyState} ${styles.unavailableState}`} role="alert">
-          <span className={styles.bevelFrame} aria-hidden="true" />
-          <span className={styles.panelLabel}>Secure Ledger Connection</span>
-          <h2>Challenge Ledger Unavailable</h2>
-          <p>{message}</p>
-          <button type="button" className={styles.retryButton} onClick={onRetry}>
-            <CasinoControlIcon variant="retry" state="attention" size="sm" />
-            Retry Challenge Ledger
-          </button>
-        </section>
-      </div>
-    </StandardContentLayout>
-  );
-}
-
-/** Countdown leaf: its 1 Hz clock never enters DailyChallengesPage state. */
-function MissionCycleCountdown({
-  tier,
-  serverClockOffsetMs,
-}: {
-  tier: Tier;
-  serverClockOffsetMs: number | null;
-}) {
-  const clientNow = useChallengeClockNow();
-  if (serverClockOffsetMs === null) return <>Synchronizing</>;
-  const serverNow = clientNow + serverClockOffsetMs;
-  return <>{formatChallengeCountdown(msUntilChallengeReset(tier, serverNow))}</>;
-}
-
-/** The only reset panel subtree that re-renders as the wall clock advances. */
-function MissionResetReadout({
-  tier,
-  isRefreshing,
-  activeUnclaimed,
-  serverClockOffsetMs,
-}: {
-  tier: Tier;
-  isRefreshing: boolean;
-  activeUnclaimed: number;
-  serverClockOffsetMs: number | null;
-}) {
-  const clientNow = useChallengeClockNow();
-  const serverNow = serverClockOffsetMs === null ? null : clientNow + serverClockOffsetMs;
-  const resetMs = serverNow === null ? null : msUntilChallengeReset(tier, serverNow);
-  const urgent = resetMs !== null && resetMs <= 60 * 60 * 1000;
-  const resetLabel = useMemo(
-    () =>
-      serverNow === null
-        ? 'Server Time Pending'
-        : MISSION_RESET_FORMATTER.format(getChallengeResetAt(tier, serverNow)),
-    [tier, serverNow]
-  );
-
-  return (
-    <div className={`${styles.resetReadout} ${urgent ? styles.resetUrgent : ''}`}>
-      <span>{isRefreshing ? 'Refreshing Challenge Ledger' : `${TIER_LABELS[tier]} Reset`}</span>
-      <strong>{resetMs === null ? 'Synchronizing' : formatChallengeCountdown(resetMs)}</strong>
-      <small>{resetLabel}</small>
-      {urgent && activeUnclaimed > 0 && (
-        <em>
-          Claim {activeUnclaimed} Ready Reward{activeUnclaimed === 1 ? '' : 's'} Before Reset
-        </em>
-      )}
-    </div>
-  );
-}
-
-function MissionAlertsPanel({ userId }: { userId: string }) {
-  const toast = useToast();
-  const [enabled, setEnabled] = useState(false);
-  const [deviceConnected, setDeviceConnected] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.all([getDailyMissionAlertPreference(userId), hasLocalSubscription()])
-      .then(([preference, subscribed]) => {
-        if (cancelled) return;
-        setEnabled(preference.enabled);
-        setDeviceConnected(subscribed);
-        setError(null);
-      })
-      .catch((err) => {
-        reportError(err, 'DailyChallengesPage.alert_preference_load_failed');
-        if (!cancelled) setError('Challenge Alert Status Is Temporarily Unavailable.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [userId]);
-
-  /** Keep this directly on the click path so iOS preserves the permission gesture. */
-  const enableAlerts = async () => {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    const startedAt = performance.now();
-    const pushResultPromise = enablePush();
-    try {
-      const pushResult = await pushResultPromise;
-      if (!pushResult.ok) throw new Error(pushResult.error || 'Push enrollment failed');
-      const preference = await setDailyMissionAlertPreference(userId, true);
-      setEnabled(preference.enabled);
-      setDeviceConnected(true);
-      toast.success('Daily Challenge Reset Alerts Are On For This Device');
-      capture('daily_mission_alerts_changed', { enabled: true, surface: 'daily_missions' });
-      recordDailyMissionOperation({
-        userId,
-        event: 'alerts_enabled',
-        durationMs: performance.now() - startedAt,
-      });
-    } catch (err) {
-      reportError(err, 'DailyChallengesPage.alert_enable_failed');
-      const message = 'Challenge Alerts Could Not Be Enabled. Please Try Again.';
-      setError(message);
-      toast.error(message);
-      recordDailyMissionOperation({
-        userId,
-        event: 'alerts_failed',
-        durationMs: performance.now() - startedAt,
-        reasonCode: dailyMissionReasonCode(err),
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const disableAlerts = async () => {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    const startedAt = performance.now();
-    try {
-      const preference = await setDailyMissionAlertPreference(userId, false);
-      setEnabled(preference.enabled);
-      toast.success('Daily Challenge Reset Alerts Are Off');
-      capture('daily_mission_alerts_changed', { enabled: false, surface: 'daily_missions' });
-      recordDailyMissionOperation({
-        userId,
-        event: 'alerts_disabled',
-        durationMs: performance.now() - startedAt,
-      });
-    } catch (err) {
-      reportError(err, 'DailyChallengesPage.alert_disable_failed');
-      setError('Challenge Alerts Could Not Be Turned Off. Please Try Again.');
-      toast.error('Challenge Alerts Could Not Be Turned Off');
-      recordDailyMissionOperation({
-        userId,
-        event: 'alerts_failed',
-        durationMs: performance.now() - startedAt,
-        reasonCode: dailyMissionReasonCode(err),
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const permission = notificationPermission();
-  const unsupportedIos = !isWebPushSupported() && isIos() && !isIosStandalonePwa();
-  const unsupportedBrowser = !isWebPushSupported() && !unsupportedIos;
-  const deviceNeedsConnection = enabled && !deviceConnected;
-  const enrollmentBlocked = permission === 'denied' || unsupportedIos || unsupportedBrowser;
-  const status = loading
-    ? 'Checking Alert Link'
-    : enabled && deviceConnected
-      ? 'On For This Device'
-      : deviceNeedsConnection
-        ? 'Preference On, Device Disconnected'
-        : permission === 'denied'
-          ? 'Blocked In Browser Settings'
-          : unsupportedIos
-            ? 'Install App To Enable'
-            : unsupportedBrowser
-              ? 'Unavailable In This Browser'
-              : 'Off Until You Opt In';
-
-  return (
-    <aside
-      className={styles.alertConsole}
-      aria-labelledby="mission-alerts-title"
-      aria-busy={loading || busy}
-    >
-      <span className={styles.bevelFrame} aria-hidden="true" />
-      <div className={styles.alertIcon} aria-hidden="true">
-        <CasinoControlIcon
-          variant={enabled && deviceConnected ? 'alert-on' : 'alert-off'}
-          state={
-            loading || busy
-              ? 'pending'
-              : enabled && deviceConnected
-                ? 'active'
-                : error
-                  ? 'error'
-                  : 'idle'
-          }
-          size="lg"
-          className={styles.alertControlIcon}
-        />
-      </div>
-      <div className={styles.alertCopy}>
-        <span className={styles.panelLabel}>Daily Cycle Utility / Optional Challenge Alerts</span>
-        <h2 id="mission-alerts-title">Daily Reset Alerts</h2>
-        <p>
-          Get One Alert When A Fresh Daily Challenge Set Opens. This Is Off By Default And Does Not
-          Change Seat, Message, Tournament, Or Club Alerts.
-        </p>
-        {unsupportedIos && (
-          <small>
-            Add Smarter Poker To Your Home Screen, Then Open The Installed App To Enable.
-          </small>
-        )}
-        {unsupportedBrowser && (
-          <small>
-            This Browser Does Not Support Challenge Alerts. Use A Supported Browser Or Device.
-          </small>
-        )}
-        {permission === 'denied' && (
-          <small>
-            Allow Notifications For Smarter Poker In Your Browser Settings, Then Reload.
-          </small>
-        )}
-        {error && (
-          <small className={styles.alertError} role="alert">
-            {error}
-          </small>
-        )}
-      </div>
-      <div className={styles.alertControls}>
-        <span className={enabled && deviceConnected ? styles.alertStatusOn : styles.alertStatus}>
-          {status}
-        </span>
-        <button
-          type="button"
-          className={styles.alertButton}
-          onClick={enabled && deviceConnected ? disableAlerts : enableAlerts}
-          disabled={loading || busy || (enrollmentBlocked && (!enabled || deviceNeedsConnection))}
-        >
-          <CasinoControlIcon
-            variant={enabled && deviceConnected ? 'alert-off' : 'alert-on'}
-            state={
-              loading || busy
-                ? 'pending'
-                : enrollmentBlocked && (!enabled || deviceNeedsConnection)
-                  ? 'disabled'
-                  : 'active'
-            }
-            size="sm"
-          />
-          {busy
-            ? 'Updating...'
-            : enabled && deviceConnected
-              ? 'Turn Off Challenge Alerts'
-              : deviceNeedsConnection
-                ? 'Reconnect This Device'
-                : 'Turn On Challenge Alerts'}
-        </button>
-        {deviceNeedsConnection && (
-          <button
-            type="button"
-            className={styles.alertSecondaryButton}
-            onClick={disableAlerts}
-            disabled={loading || busy}
-          >
-            <CasinoControlIcon
-              variant="alert-off"
-              state={loading || busy ? 'pending' : 'idle'}
-              size="sm"
-            />
-            Turn Off Without Reconnecting
-          </button>
-        )}
-      </div>
-    </aside>
   );
 }
 
@@ -1935,49 +1440,21 @@ export default function DailyChallengesPage() {
   }
 
   if (!userId) {
-    return (
-      <StandardContentLayout
-        className={styles.container}
-        title={TIER_PRESENTATION[activeTier].title}
-      >
-        <div className={styles.emptyState}>
-          <span className={styles.bevelFrame} aria-hidden="true" />
-          <span className={styles.eyebrow}>Private Challenge Vault</span>
-          <h2>
-            {loadError
-              ? 'Secure Session Check Failed'
-              : `Sign In To See Your ${TIER_LABELS[activeTier]} Challenges`}
-          </h2>
-          {loadError && <p>{loadError}</p>}
-          <div className={styles.emptyActions}>
-            {loadError && (
-              <button
-                type="button"
-                className={styles.retryButton}
-                onClick={() => {
-                  setIsLoading(true);
-                  setAuthRetryNonce((value) => value + 1);
-                }}
-              >
-                <CasinoControlIcon variant="retry" state="attention" size="sm" />
-                Retry Session Check
-              </button>
-            )}
-            <button
-              type="button"
-              className={styles.playButton}
-              onClick={() => {
-                const returnUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-                window.location.assign(signInUrl(returnUrl));
-              }}
-            >
-              <CasinoControlIcon variant="sign-in" state="active" size="sm" />
-              Sign In
-            </button>
-          </div>
-        </div>
-      </StandardContentLayout>
-    );
+    if (loadError) {
+      return (
+        <MissionUnavailableState
+          tier={activeTier}
+          message={loadError}
+          retryLabel="Retry Session Check"
+          onRetry={() => {
+            setIsLoading(true);
+            setAuthRetryNonce((value) => value + 1);
+          }}
+        />
+      );
+    }
+    // AuthGuard owns the signed-out handoff; a signed-out visitor never mounts this page.
+    return null;
   }
 
   if (loadError && lastSyncedAt === null) {
@@ -2437,160 +1914,24 @@ export default function DailyChallengesPage() {
 
       {confirmingFreeze &&
         createPortal(
-          <div
-            className={styles.celebrateOverlay}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="freeze-purchase-title"
-            aria-describedby="freeze-purchase-description"
-            onClick={dismissFreezePurchase}
-          >
-            <div
-              ref={freezeDialogRef}
-              className={`${styles.celebrateCard} ${styles.freezeDialogCard}`}
-              data-dialog-card="fixed-frame"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <span className={styles.bevelFrame} data-dialog-frame="fixed" aria-hidden="true" />
-              <div className={styles.celebrateCardScroll} data-dialog-scroll="true">
-                <FreezeVaultGraphic />
-                <span className={styles.panelLabel}>Streak Protection Desk</span>
-                <h2 id="freeze-purchase-title" className={styles.celebrateTitle} tabIndex={-1}>
-                  Secure A Streak Freeze?
-                </h2>
-                <p id="freeze-purchase-description" className={styles.freezeDialogDescription}>
-                  One Freeze Protects Your Current Run Through One Missed Daily Challenge Cycle.
-                </p>
-                <div className={styles.freezePurchaseLedger}>
-                  <div>
-                    <span>Vault Price</span>
-                    <strong className={styles.balanceWithGem}>
-                      <DiamondMark /> 5,000 Diamonds
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Balance After Purchase</span>
-                    <strong className={styles.balanceWithGem}>
-                      <DiamondMark /> {Math.max(0, diamondBalance - 5000).toLocaleString()} Diamonds
-                    </strong>
-                  </div>
-                </div>
-                <div className={styles.freezeDialogActions}>
-                  <button
-                    type="button"
-                    className={styles.cancelButton}
-                    disabled={buyingFreeze}
-                    onClick={dismissFreezePurchase}
-                  >
-                    <CasinoControlIcon variant="keep" state="idle" size="sm" />
-                    Keep My Diamonds
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.confirmButton}
-                    onClick={handleBuyFreeze}
-                    disabled={buyingFreeze}
-                    aria-busy={buyingFreeze}
-                  >
-                    <CasinoControlIcon
-                      variant="freeze"
-                      state={buyingFreeze ? 'pending' : 'attention'}
-                      size="sm"
-                    />
-                    {buyingFreeze ? 'Confirming Purchase...' : 'Buy Streak Freeze'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>,
+          <MissionFreezePurchaseDialog
+            diamondBalance={diamondBalance}
+            buyingFreeze={buyingFreeze}
+            dialogRef={freezeDialogRef}
+            onDismiss={dismissFreezePurchase}
+            onConfirmPurchase={handleBuyFreeze}
+          />,
           document.body
         )}
 
       {reward &&
         createPortal(
-          <div
-            className={styles.celebrateOverlay}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="challenge-reward-title"
-            aria-describedby="challenge-reward-description"
-            onClick={dismissReward}
-          >
-            {!reduceMotion && (
-              <ConfettiEffect
-                isActive={true}
-                intensity="heavy"
-                colors={['#00f0ff', '#0ff', '#ffffff']}
-                duration={4000}
-              />
-            )}
-            <div
-              ref={celebrateDialogRef}
-              className={styles.celebrateCard}
-              data-dialog-card="fixed-frame"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <span className={styles.bevelFrame} data-dialog-frame="fixed" aria-hidden="true" />
-              <div className={styles.celebrateCardScroll} data-dialog-scroll="true">
-                <img
-                  className={styles.celebrateArtwork}
-                  src={mediaUrl(MISSION_REWARD_ARTWORK)}
-                  alt=""
-                  width="640"
-                  height="474"
-                  decoding="async"
-                  aria-hidden="true"
-                />
-                <h2 id="challenge-reward-title" className={styles.celebrateTitle} tabIndex={-1}>
-                  Reward Settled
-                </h2>
-                <p id="challenge-reward-description" className={styles.celebrateName}>
-                  {reward.name}
-                </p>
-
-                <div className={styles.celebratePayouts} role="group" aria-label="Rewards Earned">
-                  {reward.challengeDiamonds > 0 && (
-                    <div className={styles.celebrateDiamondPayout}>
-                      <span className={styles.celebratePayoutValue}>
-                        +{reward.challengeDiamonds.toLocaleString()}
-                      </span>
-                      <span className={styles.celebratePayoutLabel}>
-                        Challenge {reward.challengeDiamonds === 1 ? 'Diamond' : 'Diamonds'}
-                      </span>
-                    </div>
-                  )}
-                  {reward.milestoneDiamonds > 0 && (
-                    <div className={styles.celebrateMilestonePayout}>
-                      <span className={styles.celebratePayoutValue}>
-                        +{reward.milestoneDiamonds.toLocaleString()}
-                      </span>
-                      <span className={styles.celebratePayoutLabel}>Streak Bonus Diamonds</span>
-                    </div>
-                  )}
-                </div>
-
-                {reward.diamonds > 0 && (
-                  <div className={styles.celebrateBalanceLedger}>
-                    <p className={styles.celebrateTotal}>
-                      Total Credited: +{reward.diamonds.toLocaleString()} Diamonds
-                    </p>
-                    <p className={styles.celebrateBalance}>
-                      New Balance: {reward.diamondBalance.toLocaleString()} Diamonds
-                    </p>
-                  </div>
-                )}
-
-                <p className={styles.celebrateReceipt} role="status">
-                  Added To Your Club Arena Diamond Balance
-                </p>
-
-                <button type="button" className={styles.celebrateButton} onClick={dismissReward}>
-                  <CasinoControlIcon variant="continue" state="success" size="sm" />
-                  Continue
-                </button>
-              </div>
-            </div>
-          </div>,
+          <MissionRewardSettlementDialog
+            reward={reward}
+            reduceMotion={reduceMotion}
+            dialogRef={celebrateDialogRef}
+            onDismiss={dismissReward}
+          />,
           document.body
         )}
     </StandardContentLayout>

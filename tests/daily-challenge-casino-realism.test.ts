@@ -1,9 +1,19 @@
 import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { readDailyChallengesStylesheet } from './helpers/dailyChallengesSources';
+import {
+  readDailyChallengesStylesheet,
+  readDailyChallengesSurface,
+  readDailyChallengesUnit,
+} from './helpers/dailyChallengesSources';
 
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
+const surface = readDailyChallengesSurface();
+const presentation = readDailyChallengesUnit('missionPresentation.ts');
+const artwork = readDailyChallengesUnit('MissionArtwork.tsx');
+const loadingState = readDailyChallengesUnit('MissionLoadingState.tsx');
+const freezeDialog = readDailyChallengesUnit('MissionFreezePurchaseDialog.tsx');
+const rewardDialog = readDailyChallengesUnit('MissionRewardSettlementDialog.tsx');
 const css = readDailyChallengesStylesheet();
 const routeFallback = readFileSync(
   resolve(__dirname, '../src/components/challenges/DailyChallengesRouteFallback.tsx'),
@@ -26,10 +36,10 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
       const path = resolve(__dirname, `../public/images/challenges/${asset}`);
       expect(statSync(path).size).toBeGreaterThan(10_000);
       expect(statSync(path).size).toBeLessThan(200_000);
-      expect(page).toContain(asset);
+      expect(presentation).toContain(asset);
     }
-    expect(page).toContain('className={styles.heroPicture} data-hero-cycle={tier}');
-    expect(page).toContain('<picture>');
+    expect(artwork).toContain('className={styles.heroPicture} data-hero-cycle={tier}');
+    expect(artwork).toContain('<picture>');
   });
 
   it('uses the shared realism vocabulary instead of the retired matrix skin', () => {
@@ -69,8 +79,10 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
   });
 
   it('keeps server-clock labels in the English Title Case contract in every locale', () => {
-    expect(page.match(/new Intl\.DateTimeFormat\('en-US'/g)?.length).toBeGreaterThanOrEqual(3);
-    expect(page).not.toContain('new Intl.DateTimeFormat(undefined');
+    expect(presentation.match(/new Intl\.DateTimeFormat\('en-US'/g)?.length).toBeGreaterThanOrEqual(
+      3
+    );
+    expect(surface).not.toContain('new Intl.DateTimeFormat(undefined');
   });
 
   it('fails closed on a cold ledger error and renders freeze settlement truthfully', () => {
@@ -122,12 +134,12 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
   });
 
   it('gives every cycle a distinct physical instrument and every loading card a closed chassis', () => {
-    expect(page).toContain("daily: 'cycle-daily'");
-    expect(page).toContain("weekly: 'cycle-weekly'");
-    expect(page).toContain("monthly: 'cycle-monthly'");
+    expect(presentation).toContain("daily: 'cycle-daily'");
+    expect(presentation).toContain("weekly: 'cycle-weekly'");
+    expect(presentation).toContain("monthly: 'cycle-monthly'");
     expect(page).toContain('variant={TIER_CONTROL_ICONS[tier]}');
-    expect(page).toContain('data-loading-mission-card=""');
-    expect(page).toContain('className={styles.loadingCardInstrument}');
+    expect(loadingState).toContain('data-loading-mission-card=""');
+    expect(loadingState).toContain('className={styles.loadingCardInstrument}');
     expect(css).toContain('.loadingCard > .bevelFrame');
     expect(css).toContain('.loadingCardAction');
   });
@@ -161,10 +173,10 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
   });
 
   it('renders both purchase and reward dialogs as complete casino settlement surfaces', () => {
-    expect(page).toContain('Streak Protection Desk');
-    expect(page).toContain('Balance After Purchase');
-    expect(page).toContain('Reward Settled');
-    expect(page).toContain('Added To Your Club Arena Diamond Balance');
+    expect(freezeDialog).toContain('Streak Protection Desk');
+    expect(freezeDialog).toContain('Balance After Purchase');
+    expect(rewardDialog).toContain('Reward Settled');
+    expect(rewardDialog).toContain('Added To Your Club Arena Diamond Balance');
     expect(css).toContain('.freezePurchaseLedger');
     expect(css).toContain('.celebrateArtwork');
     expect(css).toContain('.freezeVaultArtwork');

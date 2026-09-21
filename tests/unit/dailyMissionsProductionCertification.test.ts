@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+import { readDailyChallengesUnit } from '../helpers/dailyChallengesSources';
 
 import { readDailyChallengesStylesheet } from '../helpers/dailyChallengesSources';
 
@@ -180,14 +181,14 @@ describe('Daily Missions production certification', () => {
   });
 
   it('keeps a disconnected saved alert preference ahead of browser capability status', () => {
-    const page = source('src/pages/DailyChallengesPage.tsx');
-    const disconnectedStatus = page.indexOf(
+    const alertsPanel = readDailyChallengesUnit('MissionAlertsPanel.tsx');
+    const disconnectedStatus = alertsPanel.indexOf(
       ": deviceNeedsConnection\n        ? 'Preference On, Device Disconnected'"
     );
-    const deniedStatus = page.indexOf(": permission === 'denied'", disconnectedStatus);
+    const deniedStatus = alertsPanel.indexOf(": permission === 'denied'", disconnectedStatus);
     expect(disconnectedStatus).toBeGreaterThan(-1);
     expect(deniedStatus).toBeGreaterThan(disconnectedStatus);
-    expect(page).toContain(
+    expect(alertsPanel).toContain(
       'Allow Notifications For Smarter Poker In Your Browser Settings, Then Reload.'
     );
   });

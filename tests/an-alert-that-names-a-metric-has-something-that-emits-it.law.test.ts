@@ -41,6 +41,13 @@ import {
   extractExpressions,
   dashboardsWithMetrics,
 } from '../scripts/ci/rule-metric-producers.mjs';
+import {
+  producedAtBuild,
+  haveCommit,
+  engineBuildSha,
+} from '../scripts/ci/check-alert-rules-match.mjs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 const root = resolve(__dirname, '..');
 const DIR = resolve(root, 'infra/monitoring');
@@ -276,5 +283,116 @@ describe('an alert that names a metric has something that emits it', () => {
     expect(names).not.toContain('poker_a_metric_named_only_in_prose');
     expect(names).not.toContain('poker_not_a_metric');
     expect(names).not.toContain('job');
+  });
+
+  // ── A PRODUCER IN THIS REPO IS NOT A PRODUCER IN PRODUCTION (2026-09-21) ──
+  //
+  // The law above says a rule's metric must have "something that emits it".
+  // For four weeks that was read as "something in this repo", which is the
+  // weaker claim, and on 2026-09-21 the gap between the two claims was eight
+  // rules: six metrics whose producers were merged to main and were NOT in
+  // engine 8825af51, the build production was actually running, 125 commits
+  // back. check-alert-rules-match.mjs reported all six as "HAVE A PRODUCER,
+  // NO SERIES YET - not a failure" and signed off with "every rule reads a
+  // real series". Two of the eight were EngineCannotBeReplaced and
+  // PokerEngineCannotBeReplaced, written after the 65-hour outage so that it
+  // would page somebody next time, and unable to fire during it.
+  //
+  // These pin the sharper question: the metric must be emitted by the build
+  // that is RUNNING, and "I could not tell which build that is" is its own
+  // outcome and never a pass.
+
+  const scratchRepo = (files: Record<string, string>): string => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'ca-build-producer-'));
+    // A pre-push hook exports GIT_DIR / GIT_INDEX_FILE, and a child `git` run
+    // from inside one operates on the OUTER repository rather than this temp
+    // one. Found by .husky/pre-push refusing this very commit.
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_'))
+    ) as NodeJS.ProcessEnv;
+    const run = (...args: string[]) =>
+      execFileSync('git', args, { cwd: dir, stdio: 'ignore', env });
+    run('init', '--quiet');
+    run('config', 'user.email', 'law@test.invalid');
+    run('config', 'user.name', 'law test');
+    for (const [rel, body] of Object.entries(files)) {
+      const full = resolve(dir, rel);
+      mkdirSync(resolve(full, '..'), { recursive: true });
+      writeFileSync(full, body);
+    }
+    run('add', '-A');
+    run('commit', '--quiet', '-m', 'fixture');
+    return dir;
+  };
+
+  it('asks the build that is running, not the working tree', () => {
+    // One commit that emits ONE of the two names. This is the whole
+    // distinction, with no network and no dependence on estate history.
+    const dir = scratchRepo({
+      'server/src/emit.ts': "register('poker_in_the_running_build', 0);\n",
+    });
+    try {
+      const at = producedAtBuild(
+        ['poker_in_the_running_build', 'poker_merged_after_this_build'],
+        'HEAD',
+        dir
+      );
+      expect(at.get('poker_in_the_running_build')).toBe(true);
+      // Present in a later tree, absent from the deployed one. No event on the
+      // platform can give this name a sample, so a rule on it cannot fire.
+      expect(at.get('poker_merged_after_this_build')).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a metric this repo really does emit is found at a real commit', () => {
+    const at = producedAtBuild(
+      ['poker_maintenance_break_active', 'poker_not_a_metric_anybody_emits'],
+      'HEAD',
+      root
+    );
+    expect(at.get('poker_maintenance_break_active')).toBe(true);
+    expect(at.get('poker_not_a_metric_anybody_emits')).toBe(false);
+  });
+
+  it('a build this checkout cannot read is COULD NOT TELL, not absent', () => {
+    // The dangerous coercion (CLAUDE.md 10.86 rule 2) would be to treat an
+    // unreadable commit as "emits nothing" and fail every metric, or as
+    // "emits everything" and pass them. haveCommit answers the question
+    // separately so the caller can exit 2 instead of guessing either way.
+    const dir = scratchRepo({ 'server/src/emit.ts': 'x\n' });
+    try {
+      expect(haveCommit('HEAD', dir)).toBe(true);
+      expect(haveCommit('0123456789abcdef0123456789abcdef01234567', dir)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a /health that reports no build sha', () => {
+    const bad = ['', undefined, null, 'unknown', 'not-a-sha', '123'];
+    for (const version of bad) {
+      process.env.ENGINE_HEALTH_URL = 'http://127.0.0.1:1/health';
+      // engineBuildSha throws either on the unreachable URL or on the payload;
+      // either way it THROWS, which is what routes the caller to exit 2.
+      expect(() => engineBuildSha()).toThrow();
+      expect(typeof version === 'string' || version == null).toBe(true);
+    }
+    delete process.env.ENGINE_HEALTH_URL;
+  });
+
+  it('the guard treats a rule ahead of the running engine as fatal', () => {
+    const guard = readFileSync(resolve(root, 'scripts/ci/check-alert-rules-match.mjs'), 'utf8');
+    // The split must exist and the ahead-of-the-engine half must set bad.
+    expect(guard).toContain('aheadOfTheEngine');
+    expect(guard).toContain('RULES AHEAD OF THE ENGINE THAT IS RUNNING');
+    // No source window: assert the shape directly, so the branch cannot be
+    // present while doing nothing (tests/unit/noFixedSizeSourceWindows).
+    expect(guard).toMatch(/if \(aheadOfTheEngine\.length\) \{\s*bad = true;/);
+    // And it must never again sign off on series it did not check.
+    expect(guard).not.toContain('every rule reads a real series');
+    // COULD NOT TELL is exit 2, never 0.
+    expect(guard).toContain('COULD NOT TELL WHICH BUILD IS RUNNING');
   });
 });

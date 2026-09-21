@@ -241,8 +241,15 @@ function declaredAlerts() {
  *   unfirable and will read as health forever. Someone writes the producer or
  *   deletes the rule; there is no third option and no waiting it out.
  *
- *   HAVE A PRODUCER, NO SERIES YET (reported, not fatal): the emitting code
- *   exists but has not run. An engine restarted ten minutes ago reads exactly
+ *   AHEAD OF THE ENGINE THAT IS RUNNING (fatal, added 2026-09-21): the
+ *   emitting code exists in this repo and NOT in the build production is
+ *   running, so the series can never arrive. Asked of the engine's own
+ *   /health.version, because the working tree answers for a build that may
+ *   not exist anywhere. Eight rules were in this state on 2026-09-21 and all
+ *   eight were reported as the line below.
+ *
+ *   HAVE A PRODUCER IN THE RUNNING BUILD, NO SERIES YET (reported, not
+ *   fatal): the emitting code is in production but has not run. An engine restarted ten minutes ago reads exactly
  *   like this, and failing on it would paint every post-restart deploy red
  *   until traffic happened to touch that path - which is how a gate stops
  *   being read. It is still printed, because a producer that never runs is
@@ -287,6 +294,91 @@ function ask(url) {
         maxBuffer: 32 * 1024 * 1024,
       });
   return JSON.parse(raw);
+}
+
+/**
+ * THE BUILD THAT IS ACTUALLY RUNNING, from its own mouth.
+ *
+ * `/health.version` is the short commit the engine container was built from.
+ * It is the only honest answer to "does the process that publishes metrics
+ * contain this producer": the repo's working tree answers for a build that may
+ * not exist anywhere yet.
+ */
+/**
+ * The environment with every GIT_* variable removed.
+ *
+ * A git hook exports GIT_DIR and GIT_INDEX_FILE, and a child `git` launched
+ * from inside one IGNORES its own `cwd` and operates on the hook's repository
+ * instead. That is a reader silently answering about a different repository
+ * than the one it was handed - 10.86 rule 2 in git's clothing - and it is how
+ * `.husky/pre-push` refused the commit that introduced these helpers.
+ */
+function gitEnv() {
+  return Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+}
+
+export function engineBuildSha() {
+  const url = process.env.ENGINE_HEALTH_URL || 'http://localhost:8080/health';
+  const health = ask(url);
+  const sha = String(health?.version ?? '').trim();
+  if (!/^[0-9a-f]{7,40}$/.test(sha)) {
+    throw new Error(
+      `engine /health reported no usable build sha (version=${JSON.stringify(health?.version)})`
+    );
+  }
+  return sha;
+}
+
+/** True when `sha` is a commit this checkout can read. Tries one fetch first. */
+export function haveCommit(sha, cwd = process.cwd()) {
+  const exists = () => {
+    try {
+      execFileSync('git', ['cat-file', '-e', `${sha}^{commit}`], {
+        stdio: 'ignore',
+        cwd,
+        env: gitEnv(),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (exists()) return true;
+  try {
+    execFileSync('git', ['fetch', '--quiet', '--depth=1', 'origin', sha], {
+      stdio: 'ignore',
+      cwd,
+      env: gitEnv(),
+    });
+  } catch {
+    /* a shallow or offline checkout simply cannot answer; the caller says so */
+  }
+  return exists();
+}
+
+/**
+ * Does the code running in production emit this metric?
+ *
+ * Asked of the engine's OWN commit, not of HEAD. A `git grep` at that tree is
+ * exact, and unlike scraping /metrics it is not fooled by a labelled counter
+ * that registers no child series until its first observation.
+ */
+export function producedAtBuild(names, sha, cwd = process.cwd()) {
+  const out = new Map();
+  for (const name of names) {
+    let hit = '';
+    try {
+      hit = execFileSync(
+        'git',
+        ['grep', '-l', '--fixed-strings', '-e', name, sha, '--', 'server', 'src'],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], cwd, env: gitEnv() }
+      ).trim();
+    } catch {
+      hit = ''; // git grep exits 1 for "no match"; that is an answer, not an error
+    }
+    out.set(name, hit.length > 0);
+  }
+  return out;
 }
 
 async function main() {
@@ -349,9 +441,64 @@ async function main() {
   const phantom = referenced.filter(
     ([name]) => !isProduced(name, haystack, recordedInRepo, declaredAbsent)
   );
-  const notYetEmitted = referenced.filter(([name]) =>
+  const hasRepoProducer = referenced.filter(([name]) =>
     isProduced(name, haystack, recordedInRepo, declaredAbsent)
   );
+
+  /* A PRODUCER IN THIS REPO IS NOT A PRODUCER IN PRODUCTION (2026-09-21).
+     Until today this check stopped here and printed every one of these as
+     "HAVE A PRODUCER, NO SERIES YET - not a failure", on the reasoning that a
+     counter has no series until its first event. That is true of one of these
+     two states and false of the other, and the difference is the whole point:
+
+       awaiting its first event - the producer IS in the build that is running,
+       so the series appears the moment the thing happens. Not a failure, and
+       failing on it would paint every post-restart deploy red.
+
+       ahead of the running engine - the producer is in this repo and NOT in
+       the build that is running, so no event on the platform can ever produce
+       a sample. The rule is as dead as one whose metric nobody wrote, and it
+       reads as coverage exactly the same way.
+
+     Measured 2026-09-21: six metrics, eight rules, all reported as the first
+     when every one of them was the second. Engine 8825af51 (2026-09-18) was
+     125 commits behind main and contained none of the six producers. Among
+     the eight were EngineCannotBeReplaced and PokerEngineCannotBeReplaced -
+     written after the 65-hour outage so that outage would page somebody, and
+     structurally unable to fire throughout it. The rules had merged and
+     deployed on the monitoring lane; the engine half had not moved. Nothing
+     compared the two generations, so this check answered "not a failure" to a
+     question it had never asked. */
+  let buildSha = null;
+  let producedInProduction = new Map();
+  if (hasRepoProducer.length > 0) {
+    try {
+      buildSha = engineBuildSha();
+      if (!haveCommit(buildSha)) {
+        throw new Error(
+          `the engine is running ${buildSha}, which this checkout does not contain ` +
+            '(give the job fetch-depth: 0)'
+        );
+      }
+      producedInProduction = producedAtBuild(
+        hasRepoProducer.map(([name]) => name),
+        buildSha
+      );
+    } catch (err) {
+      // COULD NOT TELL is its own outcome (CLAUDE.md 10.86 rule 1). Reporting
+      // these as "not a failure" without asking is the defect being fixed.
+      console.error('[alert-rules] COULD NOT TELL WHICH BUILD IS RUNNING.');
+      console.error(`   ${err?.message || err}`);
+      console.error(
+        `   ${hasRepoProducer.length} rule metric(s) have no series, and without the engine's`
+      );
+      console.error('   own build sha there is no way to say whether they are waiting for a');
+      console.error('   first event or can never arrive. This is not a pass.');
+      process.exit(2);
+    }
+  }
+  const notYetEmitted = hasRepoProducer.filter(([name]) => producedInProduction.get(name));
+  const aheadOfTheEngine = hasRepoProducer.filter(([name]) => !producedInProduction.get(name));
 
   const missing = [...declared.keys()].filter((a) => !loaded.has(a)).sort();
   const extra = [...loaded].filter((a) => !declared.has(a)).sort();
@@ -409,19 +556,41 @@ async function main() {
     console.error('  records what a directory of these costs.');
   }
 
+  if (aheadOfTheEngine.length) {
+    bad = true;
+    console.error('');
+    console.error(
+      `RULES AHEAD OF THE ENGINE THAT IS RUNNING (${aheadOfTheEngine.length}) - they cannot fire:`
+    );
+    for (const [name, file] of aheadOfTheEngine) console.error(`   ${name}   (${file})`);
+    console.error(`  The engine is running ${buildSha}. This repo emits each of these metrics and`);
+    console.error('  THAT BUILD DOES NOT, so no event on the platform can produce a sample and');
+    console.error('  the rule evaluates to an empty vector for ever. Prometheus reports it as');
+    console.error('  health=ok, state=inactive, which is the same thing it reports for an alarm');
+    console.error('  that is genuinely quiet.');
+    console.error('  Deploy the engine (auto-deploy-hetzner.yml, at the :55 break) so the half');
+    console.error('  that publishes the metric is the same generation as the half that reads');
+    console.error('  it. Do NOT delete or silence the rule to clear this.');
+  }
+
   if (notYetEmitted.length) {
     console.log('');
-    console.log(`HAVE A PRODUCER, NO SERIES YET (${notYetEmitted.length}) - not a failure:`);
+    console.log(
+      `HAVE A PRODUCER IN THE RUNNING BUILD, NO SERIES YET (${notYetEmitted.length}) - not a failure:`
+    );
     for (const [name, file] of notYetEmitted) console.log(`   ${name}   (${file})`);
-    console.log('  Something in this repo emits each of these. A counter has no series until');
-    console.log('  its first event, and a gauge has none until its first scrape after release.');
+    console.log(`  Engine ${buildSha} - the build actually running - emits each of these. A`);
+    console.log('  counter has no series until its first event, and a gauge has none until its');
+    console.log('  first scrape after release.');
     console.log('  check-monitoring-drift.mjs check 8 is what proves the producer exists, and');
     console.log('  it runs on the pull request rather than after the merge.');
   }
 
   if (!bad)
     console.log(
-      '[alert-rules] OK - the box runs what this repo declares, every rule reads a real series, and the canary is alive.'
+      `[alert-rules] OK - the box runs what this repo declares, every rule reads a series the running build${
+        buildSha ? ` (${buildSha})` : ''
+      } can actually produce, and the canary is alive.`
     );
   process.exit(bad ? 1 : 0);
 }

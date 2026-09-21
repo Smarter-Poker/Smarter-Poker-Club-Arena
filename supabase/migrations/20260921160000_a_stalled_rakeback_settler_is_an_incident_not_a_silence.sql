@@ -394,3 +394,24 @@ BEGIN
 
   RETURN n;
 END $function$;
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- 3. Authorization, stated rather than assumed.
+--
+-- Both are operator/engine telemetry: one is a diagnostic probe, the other is
+-- the scheduled correctness sweep that files incidents. Neither has any reason
+-- to be reachable from a browser, logged in or not, and both are SECURITY
+-- DEFINER, so they run past RLS as the owner.
+--
+-- This re-asserts the posture production already has (verified 2026-09-21:
+-- both hold exactly `postgres=X/postgres | service_role=X/postgres`). It
+-- changes no privilege - it writes the intent down so a later CREATE OR
+-- REPLACE cannot quietly widen it, and so the definer-authorization check can
+-- read the answer out of the migration instead of guessing. pg_cron runs these
+-- as the owner and is unaffected.
+-- ───────────────────────────────────────────────────────────────────────────
+REVOKE ALL ON FUNCTION public.fn_settler_lag_check() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_settler_lag_check() TO service_role;
+
+REVOKE ALL ON FUNCTION public.fn_ca_settlement_correctness_check() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_settlement_correctness_check() TO service_role;

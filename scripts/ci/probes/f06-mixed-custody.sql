@@ -99,7 +99,20 @@ SELECT pg_temp.mixed_refuses($q$SELECT pg_temp.mixed_prepare(jsonb_set((SELECT v
 SELECT pg_temp.mixed_refuses($q$SELECT pg_temp.mixed_prepare(jsonb_set((SELECT value FROM frozen_local),'{release_checkpoint,ownership_token}','"b7900000-0000-4000-8000-000000000098"'))$q$,'FROZEN_CHECKPOINT_UNPROVEN','foreign maintenance token refuses');
 SELECT pg_temp.mixed_refuses($q$UPDATE public.engine_leader SET heartbeat_at='infinity';SELECT pg_temp.mixed_prepare((SELECT value FROM frozen_local))$q$,'FROZEN_CHECKPOINT_UNPROVEN','nonfinite leader clock refuses');
 SELECT pg_temp.mixed_refuses($q$UPDATE public.engine_leader SET heartbeat_at=clock_timestamp()-interval '61 seconds';SELECT pg_temp.mixed_prepare((SELECT value FROM frozen_local))$q$,'FROZEN_CHECKPOINT_UNPROVEN','stale leader refuses');
-SELECT pg_temp.mixed_refuses($q$UPDATE public.engine_maintenance_break SET break_ends_at=clock_timestamp()+interval '284 seconds';UPDATE frozen_local SET value=jsonb_set(value,'{release_checkpoint,break_ends_at}',(SELECT to_jsonb(break_ends_at) FROM public.engine_maintenance_break));SELECT pg_temp.mixed_prepare((SELECT value FROM frozen_local))$q$,'FROZEN_CHECKPOINT_UNPROVEN','full 285-second reserve retained');
+-- The reserve is the one interval literal in the installed prepare body: 285 s
+-- as first installed by 20260918232558, 260 s once 20260921155216 is applied
+-- (the 300 s countdown less the 285 s entry reserve less the 25 s checkpoint
+-- budget). One second under it refuses and half a second over it is admitted,
+-- which proves the installed integer figure exactly: 259 s refused and 260.5 s
+-- admitted fit only a 260-second reserve, 284 s and 285.5 s only a 285-second one.
+CREATE FUNCTION pg_temp.mixed_reserve() RETURNS integer LANGUAGE plpgsql AS $$
+DECLARE found text[];BEGIN
+ SELECT regexp_matches(prosrc,$r$break_ends_at'\)::timestamptz-instant>=interval '(\d+) seconds'\)$r$,'g') INTO STRICT found FROM pg_proc WHERE oid=to_regprocedure('public.fn_f06_prepare_mixed_manager_custody(uuid,uuid,uuid,uuid,jsonb,jsonb)');
+ RETURN found[1]::integer; END $$;
+SELECT pg_temp.mixed_refuses(format($q$UPDATE public.engine_maintenance_break SET break_ends_at=clock_timestamp()+make_interval(secs=>%s);UPDATE frozen_local SET value=jsonb_set(value,'{release_checkpoint,break_ends_at}',(SELECT to_jsonb(break_ends_at) FROM public.engine_maintenance_break));SELECT pg_temp.mixed_prepare((SELECT value FROM frozen_local))$q$,pg_temp.mixed_reserve()-1),'FROZEN_CHECKPOINT_UNPROVEN',format('%s s remaining refuses: the installed reserve is the full %s seconds',pg_temp.mixed_reserve()-1,pg_temp.mixed_reserve()));
+UPDATE public.engine_maintenance_break SET break_ends_at=clock_timestamp()+make_interval(secs=>pg_temp.mixed_reserve()+0.5);
+UPDATE frozen_local SET value=jsonb_set(value,'{release_checkpoint,break_ends_at}',(SELECT to_jsonb(break_ends_at) FROM public.engine_maintenance_break));
+SELECT pg_temp.mixed_check(pg_temp.mixed_prepare((SELECT value FROM frozen_local))->'receipt'='null'::jsonb,format('%s.5 s remaining is admitted: the installed reserve is not more than %s seconds',pg_temp.mixed_reserve(),pg_temp.mixed_reserve()));
 ROLLBACK TO SAVEPOINT frozen_checkpoint_scene;
 SELECT pg_temp.mixed_refuses($q$CREATE OR REPLACE FUNCTION public.fn_engine_lease_stale_seconds() RETURNS integer LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path=public,pg_temp AS 'SELECT 120';SELECT pg_temp.mixed_prepare()$q$,'OLD_LEASE_CHANGED','owning lease policy cannot be replaced by a literal');
 DO $$ DECLARE before jsonb;observed jsonb;prepared jsonb;again jsonb;local_proof jsonb:=pg_temp.mixed_local();BEGIN

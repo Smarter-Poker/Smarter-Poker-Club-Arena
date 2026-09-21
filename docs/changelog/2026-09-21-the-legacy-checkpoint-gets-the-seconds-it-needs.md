@@ -138,3 +138,28 @@ is not touched here. Until it moves to the same 260-second figure, the 8825
 checkpoint's custody RPC will still be refused by the database on the same
 timeline; the 2f4/758/a0 profiles have no such RPC and are fully served by
 this commit.
+
+### Settled: migration 20260921155216
+
+`supabase/migrations/20260921155216_the_mixed_custody_prepare_accepts_the_legacy_checkpoint_rese.sql`
+replaces `fn_f06_prepare_mixed_manager_custody` with the byte-exact
+`20260919033536` text carrying `interval '260 seconds'` in place of `'285
+seconds'`, the only literal in the body, in one transaction with a pre-image
+guard (body md5 `3f78b42bcc2455701322b172ab7d42ff`, definition md5
+`ca0446a62e08d49c2d318072cf465176`, owner, ACL, search_path, SECURITY
+DEFINER, VOLATILE) and a post-image guard (body md5
+`6ec26321609a5e101bf8fba63a6beaaf`, definition md5
+`945338c6b340cee0d1464a7603f72992`, same identity, and the proof that putting
+'285 seconds' back reproduces the pre-image digest). No other function in
+`supabase/migrations/` pins 285 s: the three earlier occurrences are earlier
+versions of this same function, already replaced. The native shared-hand-lane
+qualification installs the migration on its clone after `20260921040823`,
+asserts the post-image digests, proves 259 s remaining is refused and 260.5 s
+admitted, and the publisher's `MIXED_CUSTODY_CONTRACT` and
+`tests/fixtures/legacy-engine-checkpoint/mixed-custody-contract.json` were
+regenerated from its catalogue (1517 cases, `publisherCatalogEquality: true`).
+`scripts/ci/probes/f06-mixed-custody.sql` now reads the installed reserve from
+the function body and proves one second under it refuses and half a second
+over it is admitted, so it is exact for the 285 s authority the drained-custody
+lane installs and for the 260 s one. Install the migration in production before
+the release whose publisher carries the new catalogue runs its contract check.

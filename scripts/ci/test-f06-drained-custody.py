@@ -123,7 +123,7 @@ def main():
   mixed_before=e.snapshot(db,'mixed-before-data');mixed_private=f.private_snapshot(e,db,'mixed-before-private');mixed_catalog=e.catalog_snapshot(db,'mixed-before-catalog')
   rc,stdout,stderr=e.sql(db,file=root/'scripts/ci/probes/f06-mixed-custody.sql',label='mixed-direct-cases',check=False,seconds=60)
   e.report.update(mixed_output=stdout,mixed_errors=stderr)
-  if rc or stderr.count('MIXED_CUSTODY_COMPLETE')!=1 or stderr.count('MIXED_CUSTODY PASS:')!=65 or 'ERROR:' in stderr:raise RuntimeError('mixed custody cases failed')
+  if rc or stderr.count('MIXED_CUSTODY_COMPLETE')!=1 or stderr.count('MIXED_CUSTODY PASS:')!=66 or 'ERROR:' in stderr:raise RuntimeError('mixed custody cases failed')
   if e.snapshot(db,'mixed-after-data')!=mixed_before or f.private_snapshot(e,db,'mixed-after-private')!=mixed_private or e.catalog_snapshot(db,'mixed-after-catalog')!=mixed_catalog:raise RuntimeError('mixed full rollback differs')
   e.report.update(mixed_assertions=stderr.count('MIXED_CUSTODY PASS:'),mixed_rollback=True,mixed_before_missing=True)
 

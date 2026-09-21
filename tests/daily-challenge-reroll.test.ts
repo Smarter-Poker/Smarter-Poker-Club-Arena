@@ -344,12 +344,15 @@ describe('the page ships the casino-realism surface without the old stubs', () =
   });
 
   it('blocks push enrollment when the current browser cannot support it', () => {
-    expect(page).toContain('const unsupportedBrowser = !isWebPushSupported() && !unsupportedIos;');
-    expect(page).toContain(
+    const alertsPanel = readDailyChallengesUnit('MissionAlertsPanel.tsx');
+    expect(alertsPanel).toContain(
+      'const unsupportedBrowser = !isWebPushSupported() && !unsupportedIos;'
+    );
+    expect(alertsPanel).toContain(
       "const enrollmentBlocked = permission === 'denied' || unsupportedIos || unsupportedBrowser;"
     );
-    expect(page).toContain('Unavailable In This Browser');
-    expect(page).toContain(
+    expect(alertsPanel).toContain('Unavailable In This Browser');
+    expect(alertsPanel).toContain(
       'This Browser Does Not Support Challenge Alerts. Use A Supported Browser Or Device.'
     );
   });

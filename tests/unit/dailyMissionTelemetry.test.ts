@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readDailyChallengesUnit } from '../helpers/dailyChallengesSources';
 import {
   dailyMissionReasonCode,
   recordDailyMissionOperation,
@@ -83,14 +84,15 @@ describe('Daily Mission feedback, consent, and health wiring', () => {
   );
 
   it('keeps push permission on the original click path and stores explicit consent', () => {
-    expect(page).toContain('const pushResultPromise = enablePush();');
-    expect(page).toMatch(
+    const alertsPanel = readDailyChallengesUnit('MissionAlertsPanel.tsx');
+    expect(alertsPanel).toContain('const pushResultPromise = enablePush();');
+    expect(alertsPanel).toMatch(
       /const pushResultPromise = enablePush\(\);[\s\S]{0,120}await pushResultPromise/
     );
-    expect(page).toContain('setDailyMissionAlertPreference(userId, true)');
-    expect(page).toContain('setDailyMissionAlertPreference(userId, false)');
-    expect(page).toContain('Reconnect This Device');
-    expect(page).toContain('Turn Off Without Reconnecting');
+    expect(alertsPanel).toContain('setDailyMissionAlertPreference(userId, true)');
+    expect(alertsPanel).toContain('setDailyMissionAlertPreference(userId, false)');
+    expect(alertsPanel).toContain('Reconnect This Device');
+    expect(alertsPanel).toContain('Turn Off Without Reconnecting');
     expect(preference).toContain(".select('daily_mission_reminders')");
     expect(preference).toContain("{ onConflict: 'user_id' }");
   });
@@ -124,12 +126,13 @@ describe('Daily Mission feedback, consent, and health wiring', () => {
       'freeze_failed',
       'realtime_degraded',
       'realtime_recovered',
-      'alerts_enabled',
-      'alerts_disabled',
-      'alerts_failed',
       'mission_cta_opened',
     ]) {
       expect(page).toContain(`event: '${event}'`);
+    }
+    const alertsPanel = readDailyChallengesUnit('MissionAlertsPanel.tsx');
+    for (const event of ['alerts_enabled', 'alerts_disabled', 'alerts_failed']) {
+      expect(alertsPanel).toContain(`event: '${event}'`);
     }
   });
 

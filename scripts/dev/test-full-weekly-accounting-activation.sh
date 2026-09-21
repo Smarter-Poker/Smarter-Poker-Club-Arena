@@ -392,6 +392,7 @@ PY
   -f "$root/tests/fixtures/accounting-alert-38644/regression.sql" 2>&1 | tee "$fixture/historical-conflict.log"
 "${psql[@]}" -A -t -d "$fixture_db" \
   -f "$root/tests/fixtures/pnl-evidence/hooks-seed.sql" \
+  -f "$root/supabase/migrations/20260921023420_the_squareup_quotes_the_recorded_eco_and_the_rake_leg_names_.sql" \
   -f "$root/tests/fixtures/pnl-evidence/hooks-regression.sql" 2>&1 | tee "$fixture/pnl-hooks.log"
 "${psql[@]}" -A -t -d "$fixture_db" \
   -f "$root/tests/fixtures/rakeback-write-authority/regression.sql" 2>&1 | tee "$fixture/period-authority.log"

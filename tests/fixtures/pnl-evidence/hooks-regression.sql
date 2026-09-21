@@ -176,4 +176,53 @@ SELECT pg_temp.assert_pnl_hook((
   'public.fn_union_settle_player_pnl_weekly(uuid,numeric)']) f(signature)
  JOIN pg_proc p ON p.oid=to_regprocedure(f.signature)),
  'both wrappers preserve exact captured owner and ACL with service-only client execution; this is not live authorization proof');
+
+-- ===========================================================================
+-- THE SQUARE-UP QUOTES THE RECORDED ECO, AND THE RAKE LEG NAMES ITS CLUB
+-- (20260921023420)
+--
+-- fn_union_eco_adjustment is a VOLATILE recomputation of the whole week's
+-- P&L. fn_union_settlement_cascade runs it several times in one settlement -
+-- fn_union_eco_record WRITES union_eco_ledger from one call, and
+-- fn_union_club_invoice used to re-derive the ECO from ANOTHER. Under READ
+-- COMMITTED those are two snapshots and can be two answers: on 2026-09-14 the
+-- square-up for club a41434bb stated 11244.03 against a recorded -11242.82,
+-- overstating that club's debt by 1.21 while its other three figures matched
+-- the ledger exactly. A money document quotes the record.
+-- ===========================================================================
+DO $$DECLARE source text;
+BEGIN
+ SELECT pg_get_functiondef(oid) INTO source
+   FROM pg_proc WHERE oid='public.fn_union_club_invoice(uuid,timestamptz,timestamptz)'::regprocedure;
+ PERFORM pg_temp.assert_pnl_hook(strpos(source,'FROM union_eco_ledger l')>0
+  AND strpos(source,'COALESCE(rec.eco_amount, eco.eco_amount)')>0,
+  'the square-up reads the recorded union_eco_ledger row and prefers it over a second live recomputation');
+ SELECT prosrc INTO source FROM pg_proc
+   WHERE oid='public.fn_union_issue_weekly_invoices(uuid,timestamptz,timestamptz,boolean)'::regprocedure;
+ PERFORM pg_temp.assert_pnl_hook(strpos(source,'union_squareup_eco_not_recorded')>0
+  AND strpos(source,'union_squareup_eco_disagrees_with_record')>0
+  AND strpos(source,'union_squareup_eco_disagrees_with_record')<strpos(source,'INSERT INTO settlement_invoices'),
+  'an ECO-enabled square-up with no recorded ECO, and any square-up that disagrees with its record, is refused before the document is written');
+ SELECT prosrc INTO source FROM pg_proc
+   WHERE oid='public.atomic_distribute_rake(uuid,uuid,uuid,integer,numeric,numeric,numeric,integer,jsonb,uuid,jsonb,text)'::regprocedure;
+ PERFORM pg_temp.assert_pnl_hook(
+  (length(source)-length(replace(source,'app.ledger_autoledger_club_id','')))
+   /length('app.ledger_autoledger_club_id')=3
+  AND strpos(source,'set_config(''app.ledger_autoledger_club_id'', COALESCE(p_club_id::text')>0,
+  'the rake producer names the club it was earned in on the autoledger declaration, and clears it before every return so a later union leg cannot inherit it');
+END $$;
+
+-- Whatever ECO this fixture has recorded, no square-up may state a different
+-- one. Vacuously true for a period with no recorded ECO; never weakened to
+-- accept a disagreement.
+DO $$DECLARE bad int;
+BEGIN
+ SELECT count(*) INTO bad
+   FROM public.union_eco_ledger l
+   CROSS JOIN LATERAL public.fn_union_club_invoice(l.union_id,l.period_start,l.period_end) i
+  WHERE i.club_id=l.club_id AND i.eco_enabled
+    AND round(i.eco_amount,2) IS DISTINCT FROM round(l.eco_amount,2);
+ PERFORM pg_temp.assert_pnl_hook(bad=0,
+  format('every recorded ECO is the figure its square-up states (%s disagreeing)',bad));
+END $$;
 ROLLBACK;

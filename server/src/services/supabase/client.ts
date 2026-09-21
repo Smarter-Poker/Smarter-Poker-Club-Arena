@@ -13,6 +13,7 @@
  * module graph acyclic.
  */
 
+import { resolveClientTimeoutMs } from '../cashAccountingBatchBudget.js';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { reportError } from '../errorReporter.js';
 import { dataActorHeaders } from './dataActorContext.js';
@@ -60,7 +61,7 @@ const EFFECTIVE_SERVICE_ROLE_KEY =
  * A hard deadline turns a hung request into a rejection the loop's existing
  * catch can back off and retry on.
  */
-const DB_TIMEOUT_MS = Number(process.env.SUPABASE_TIMEOUT_MS ?? 15_000);
+const DB_TIMEOUT_MS = resolveClientTimeoutMs();
 /* Maintenance boundary writers may legitimately wait behind a guarded entry
  * transaction for up to 30 seconds. They use a dedicated client whose HTTP
  * deadline is longer than the database function's 45-second hard ceiling;
@@ -223,6 +224,10 @@ export const maintenanceSupabase: SupabaseClient =
 
 /* The horse fleet's seat-purchase client. See SEEDING_DB_TIMEOUT_MS. */
 export const seedingSupabase: SupabaseClient = createBoundedServiceClient(SEEDING_DB_TIMEOUT_MS);
+/* Exported so callers can DERIVE their batch sizes from the budget that
+   actually binds them, instead of writing a literal that cannot notice
+   when its own per-item cost changes. See cashAccountingBatchBudget.ts. */
+export { DB_TIMEOUT_MS };
 export { SEEDING_DB_TIMEOUT_MS };
 
 // ═══════════════════════════════════════════════════════════════════════════════

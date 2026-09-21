@@ -52,6 +52,7 @@
 # constraint from the copy and watching this harness go red -- never has to
 # touch the migration in the repository.
 set -euo pipefail
+export LC_ALL=C  # else macOS collation reorders string_agg output and an assertion message stops being deterministic
 root=$(git rev-parse --show-toplevel)
 pgbin=${PG_BIN:-/opt/homebrew/opt/postgresql@17/bin}
 migration=${LIGHTNING_PHASE2_MIGRATION:-$root/supabase/migrations/20260920235343_lightning_phase_2_the_pool_the_instance_the_reservation_and_.sql}

@@ -50,6 +50,24 @@ function table(name: string): string {
   return CODE.slice(start, CODE.indexOf('\n);', start));
 }
 
+/**
+ * The column NAMES of one CREATE TABLE, parsed rather than searched for. A
+ * substring cannot tell `hands` from `hands_since_bb`, nor a column from a word
+ * inside a CHECK, and the manifest comparison below needs real names on both
+ * sides to be a comparison at all. A column line is indented two spaces and is
+ * not one of the table-level constraint keywords.
+ */
+function columnsOf(name: string): string[] {
+  const out: string[] = [];
+  for (const line of table(name).split('\n').slice(1)) {
+    const m = /^ {2}(\w+)\s+\S/.exec(line);
+    if (!m) continue;
+    if (['CONSTRAINT', 'PRIMARY', 'UNIQUE', 'FOREIGN', 'CHECK', 'EXCLUDE'].includes(m[1])) continue;
+    out.push(m[1]);
+  }
+  return out;
+}
+
 describe('Phase 2: the seven relations exist and are locked down', () => {
   it('creates every relation the domain is missing, and no others', () => {
     const created = [...CODE.matchAll(/CREATE TABLE IF NOT EXISTS public\.(\w+) \(/g)].map(
@@ -236,7 +254,13 @@ describe('Phase 2: the invariants are constraints, not intentions', () => {
     );
   });
 
-  it('locks the participant set of a committed hand', () => {
+  it('holds a chair for one player, and holds a player once in one hand', () => {
+    // And that is all it holds, which is why this case is no longer named after
+    // the formation barrier. The barrier itself - a committed hand has at least
+    // two players, and no seat exceeds its instance's max_size - is a statement
+    // about a SET of rows, which no CHECK constraint can ever see, so it belongs
+    // to the formation function of spec Phase 9: the only writer that will hold
+    // the whole set at once.
     expect(CODE).toContain(
       'CONSTRAINT lightning_hand_player_pkey PRIMARY KEY (hand_id, player_id)'
     );
@@ -318,15 +342,52 @@ describe('Phase 2: scope and safety', () => {
     expect(proofs.join('\n')).toContain('relrowsecurity');
   });
 
-  it('declares exactly what it creates to the schema manifest', () => {
+  it('declares exactly what it creates to the schema manifest, in both directions', () => {
+    // BOTH DIRECTIONS, AND BY EXACT NAME. This case used to ask only that every
+    // DECLARED column appeared somewhere in its table's text, which a substring
+    // of a longer column's name satisfies and which says nothing whatever about
+    // a column the migration creates and the fragment never mentions. An
+    // over-declaration turns the nightly Schema Integrity Audit red and is
+    // therefore self-announcing; an UNDER-declaration is the quiet one, because
+    // the audit simply stops watching whatever was left out. So the two sides
+    // are compared as SETS, of parsed names, in both directions.
     const frag = JSON.parse(fs.readFileSync(FRAGMENT, 'utf8'));
     expect([...frag.tables].sort()).toEqual([...RELATIONS].sort());
     expect(frag.columns.cash_cluster_events).toEqual(['cluster_epoch']);
     expect(frag.functions).toBeUndefined();
-    // An over-declaration turns the nightly Schema Integrity Audit red.
-    for (const t of RELATIONS) {
-      for (const c of frag.columns[t]) expect(table(t)).toContain(c);
+
+    // Every relation the migration creates is declared, and no other is.
+    const created = [...CODE.matchAll(/CREATE TABLE IF NOT EXISTS public\.(\w+) \(/g)].map(
+      (m) => m[1]
+    );
+    expect([...frag.tables].sort()).toEqual([...created].sort());
+
+    // Every function it creates is declared, and no other is. It creates none,
+    // so the fragment must declare none - which is what `functions` being
+    // absent means, and it is asserted above rather than assumed here.
+    const functions = [...CODE.matchAll(/CREATE (?:OR REPLACE )?FUNCTION public\.(\w+)/gi)].map(
+      (m) => m[1]
+    );
+    expect(functions).toEqual([]);
+    expect([...(frag.functions ?? [])].sort()).toEqual([...functions].sort());
+
+    // Every column of every created relation, by exact membership on two parsed
+    // arrays rather than by substring against the table body.
+    for (const t of created) {
+      expect([...frag.columns[t]].sort(), t).toEqual([...columnsOf(t)].sort());
     }
+
+    // The columns added to a PRE-EXISTING relation are declared the same way.
+    const altered = new Map<string, string[]>();
+    for (const m of CODE.matchAll(/ALTER TABLE public\.(\w+)\s+ADD COLUMN IF NOT EXISTS (\w+)/g)) {
+      altered.set(m[1], [...(altered.get(m[1]) ?? []), m[2]]);
+    }
+    for (const [t, cols] of altered) {
+      expect([...frag.columns[t]].sort(), t).toEqual([...cols].sort());
+    }
+
+    // And the fragment names no relation this migration never touches.
+    expect(Object.keys(frag.columns).sort()).toEqual([...created, ...altered.keys()].sort());
   });
 
   it('is qualified by a real PostgreSQL harness that CI runs', () => {

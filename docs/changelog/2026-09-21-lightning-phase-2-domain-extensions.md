@@ -175,3 +175,69 @@ and the column restores the prior shape exactly. No existing relation is
 altered except `cash_cluster_events`, which gains a column with a constant
 default - a catalog-only operation on PostgreSQL 11+. No money moved, and no row
 of any pre-existing table was written.
+
+## Correction, 2026-09-21
+
+Written after an adversarial audit of this migration as merged. Migration files
+are immutable, so nothing above is edited; what follows is the record of what
+it got wrong and where each is answered.
+
+**Three counts in this document are wrong.** There are **33** migration files
+that write to `cash_cluster_events`, not 35 (`grep -rl "INSERT INTO
+public.cash_cluster_events" supabase/migrations/ | wc -l`). There were **34**
+mutations of the migration copy, not 32; the commit says 34 and this document
+says thirty-two. Neither number changes a conclusion, and both are stated
+because a document that rounds its own evidence cannot be used as evidence.
+
+**The eighth `@live-proof` line of `20260920235343` is now false.** It reads
+
+```
+array_length(c.conkey, 1) = 3
+```
+
+over `lightning_pool_slot_belongs_to_its_session` and
+`lightning_reservation_belongs_to_its_slot`. `20260921025504` makes both
+four-column keys, so that expression returns false from the moment that
+migration applies. It is superseded, not repaired: the file stays as merged and
+the new migration declares the new truth in its own proofs.
+
+The line is latent rather than red. `scripts/ci/check-migrations-are-live.mjs`
+decides cheapest-first and stops at step 1, the name match, which this
+migration passes - it is recorded in `supabase_migrations.schema_migrations`
+under its own slug. The proofs are evaluated only for a migration that step 1
+and step 2 could not clear. It would fire on a replay into a database whose
+`schema_migrations` was not carried over.
+
+**The hand family was joined to nothing.** `lightning_hand`,
+`lightning_instance` and `lightning_hand_player` were given the cluster, epoch,
+instance and slot columns and none of the keys, so the database permitted a
+hand in a cluster its own instance was not in, a hand naming an instance that
+did not exist, and a participation row pointing at another player's table -
+the exact column whose stated purpose here is that "per-table statistics could
+be reconstructed". Closed by `20260921025504`, which carries this document's
+own stated principle one level further: every level exposes its identity as a
+real UNIQUE constraint and the level below references the whole tuple.
+
+**`cluster_epoch` had no authority.** Six relations carry one and nothing said
+which epochs exist. `20260921025504` makes the epoch a row
+(`public.cash_cluster_epoch`, append-only, one open epoch per cluster) and both
+family roots reference it.
+
+**`cash_cluster_events.cluster_epoch DEFAULT 0` was about to become a lie.**
+Correct while every cluster is at epoch 0, and a silent misfiling on the first
+bump, for all 33 insert sites that name no epoch. `20260921025504` fills it in
+a `BEFORE INSERT` trigger, which a DEFAULT cannot do because a DEFAULT cannot
+read another row.
+
+**One test here claimed more than it proved.** The case named `locks the
+participant set of a committed hand` asserted the primary key and the
+unique-seat index and nothing else. Neither is the formation barrier. It is
+renamed in `20260921025504`'s change to say what it does prove; the barrier
+itself - at least two players, no seat past the instance's `max_size` - is a
+statement about a set of rows that no CHECK constraint can see, and belongs to
+the formation function of spec Phase 9.
+
+**The manifest-honesty case was one-directional.** It checked that the
+migration's objects appeared in the fragment, by substring, and not that the
+fragment contained nothing else. It is now a set equality in both directions on
+exact strings.

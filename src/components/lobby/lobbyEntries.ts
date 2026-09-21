@@ -81,6 +81,13 @@ export interface LobbyTableRow extends CashFeatureSource {
   cluster_players?: number | null;
   cluster_tables?: number | null;
   /**
+   * Stamped by withClusterFigures: this is the one table of its game that
+   * stands for the game on the board. It is NOT a database column - no read
+   * carries it - because the answer is a property of the whole cluster and a
+   * single row cannot hold it. See clusterFronts.
+   */
+  cluster_front?: boolean | null;
+  /**
    * `cash_games.enabled`, when the read carried it (the club-home chain embeds
    * the game row). A disabled game is not taking players: its door,
    * fn_cash_game_join, refuses with GAME_CLOSED, so the board says Closed
@@ -1068,16 +1075,31 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
    question the lobby actually asks. */
 
 // ─── Adapters ──────────────────────────────────────────────────────────────
-/** The one table of a cluster that stands for the whole game on the board. */
+/**
+ * The one table of a cluster that stands for the whole game on the board.
+ *
+ * A row that withClusterFigures has stamped answers from the stamp, which is
+ * the only answer that has seen the whole cluster. A row that has NOT been
+ * stamped - a bare realtime payload, a fixture, a caller that skipped the
+ * stamp - falls back to the pre-Lightning rule, so nothing that used to work
+ * stops working. The fallback cannot recognise a feeder-first cluster's one
+ * table, which is exactly why the stamp exists.
+ */
 export function isClusterFront(
-  t: Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'>
+  t: Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'> & {
+    cluster_front?: boolean | null;
+  }
 ): boolean {
-  return !!t.cluster_id && t.role === 'main' && Number(t.main_index) === 1;
+  if (!t.cluster_id) return false;
+  if (t.cluster_front != null) return t.cluster_front === true;
+  return t.role === 'main' && Number(t.main_index) === 1;
 }
 
 /** A cluster table that is NOT the front is never its own row (R10). */
 export function isHiddenClusterMember(
-  t: Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'>
+  t: Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'> & {
+    cluster_front?: boolean | null;
+  }
 ): boolean {
   return !!t.cluster_id && !isClusterFront(t);
 }
@@ -1156,24 +1178,95 @@ export function clusterFigures(
   return out;
 }
 
+export type ClusterFrontSource = Pick<
+  LobbyTableRow,
+  'id' | 'cluster_id' | 'role' | 'main_index' | 'status' | 'lifecycle'
+> & { is_deleted?: boolean | null };
+
+/* LIGHTNING 2.0 PHASE 3. R10 says a game is ONE row on the board, and that row
+   used to be identified by a property of the row alone: role = main AND
+   main_index = 1. A Lightning-capable Cluster begins life as a single FEEDER
+   (the specification's hard requirement; supabase/migrations/20260921025523),
+   so it HAS no Main 1 for as long as it has one table, and under the old
+   predicate every one of its rows was a hidden cluster member - the game
+   simply did not appear.
+
+   Which table stands for a game is therefore a property of the CLUSTER, not
+   of a row, and it is answered here the same way fn_cash_cluster_front_table
+   answers it in the database: its Main 1 when it has one, otherwise its one
+   live table. R10 is unchanged - still exactly one row per game, and for
+   every cluster that has a Main 1 row on the board this returns that same
+   row, so nothing that looks right today starts looking different.
+
+   The tie-break is the table id rather than age because LobbyTableRow carries
+   no created_at, and it does not need one: a cluster with no Main 1 has one
+   table, and the tick names a Main 1 within five seconds of it having two.
+   What the id guarantees is that the answer is never ambiguous - including
+   for the duplicate-main_index case, where two rows claim to be Main 1 and
+   the board would otherwise paint the game twice. */
+function frontRank(t: ClusterFrontSource): number {
+  const main1 = t.role === 'main' && Number(t.main_index) === 1;
+  /* A LIVE TABLE OUTRANKS A CLOSED MAIN 1, because fn_cash_cluster_front_table
+     says so: it filters `lifecycle <> 'closed' AND NOT is_deleted` before it
+     prefers Main 1, so a cluster whose Main 1 has closed fronts on whatever is
+     still open. The board cannot reach this - ClubHomePage drops non-census
+     cluster rows before stamping - but a realtime payload can, and the two
+     answers must not be able to disagree. */
+  if (isCensusTable(t)) return main1 ? 0 : 1;
+  return main1 ? 2 : 3;
+}
+
+/** The one table of each game on the board that stands for that game. */
+export function clusterFronts(rows: ReadonlyArray<ClusterFrontSource>): Map<string, string> {
+  const best = new Map<string, ClusterFrontSource>();
+  for (const r of rows) {
+    if (!r.cluster_id) continue;
+    const key = String(r.cluster_id);
+    const cur = best.get(key);
+    if (cur === undefined) {
+      best.set(key, r);
+      continue;
+    }
+    const a = frontRank(r);
+    const b = frontRank(cur);
+    if (a < b || (a === b && String(r.id) < String(cur.id))) best.set(key, r);
+  }
+  const out = new Map<string, string>();
+  for (const [key, row] of best) out.set(key, String(row.id));
+  return out;
+}
+
 /**
  * Stamp every cluster row with its game's figures, derived from the whole
  * board. The stamp overwrites whatever a read painted: the read's number was
  * true when it was taken, and this one is true now.
+ *
+ * The same pass stamps cluster_front, for the same reason: it is an answer
+ * about the whole cluster and only this function sees the whole board.
  */
 export function withClusterFigures<
-  T extends ClusterFigureSource & {
-    cluster_players?: number | null;
-    cluster_tables?: number | null;
-  },
+  T extends ClusterFigureSource &
+    ClusterFrontSource & {
+      cluster_players?: number | null;
+      cluster_tables?: number | null;
+      cluster_front?: boolean | null;
+    },
 >(rows: ReadonlyArray<T>): T[] {
   const figures = clusterFigures(rows);
+  const fronts = clusterFronts(rows);
   return rows.map((r) => {
     if (!r.cluster_id) return r;
     const fig = figures.get(String(r.cluster_id));
     if (!fig) return r;
-    if (r.cluster_players === fig.players && r.cluster_tables === fig.tables) return r;
-    return { ...r, cluster_players: fig.players, cluster_tables: fig.tables };
+    const front = fronts.get(String(r.cluster_id)) === String(r.id);
+    if (
+      r.cluster_players === fig.players &&
+      r.cluster_tables === fig.tables &&
+      r.cluster_front === front
+    ) {
+      return r;
+    }
+    return { ...r, cluster_players: fig.players, cluster_tables: fig.tables, cluster_front: front };
   });
 }
 

@@ -678,9 +678,16 @@ test.describe('production Daily Missions certification', () => {
         await waitForCycle('weekly');
         await expect(page).toHaveURL(weeklyURL.toString());
 
+        // A cycle change made from the page keeps the caller's query string
+        // and hash (club context travels the same way), so switching from the
+        // certification-tagged Weekly route lands on Monthly with the same
+        // search and fragment rather than the bare path.
+        const monthlyFromWeeklyURL = new URL(monthlyURL.toString());
+        monthlyFromWeeklyURL.search = weeklyURL.search;
+        monthlyFromWeeklyURL.hash = weeklyURL.hash;
         await missions.chooseTier('Monthly');
         await waitForCycle('monthly');
-        await expect(page).toHaveURL(monthlyURL.toString());
+        await expect(page).toHaveURL(monthlyFromWeeklyURL.toString());
         await page.goBack();
         await waitForCycle('weekly');
         await expect(page).toHaveURL(weeklyURL.toString());

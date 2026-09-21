@@ -30,8 +30,8 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 PROJECT_HOST = "kuklfnapbkmacvwxktbh.supabase.co"
 MIXED_CUSTODY_PREDECESSOR = "8825af51817f379c4261658ca29ecc9d8d81932d"
 # Exact service-role READ ONLY result from the historical-bank-loss native-17
-# qualification, migration 20260919033536; preserves the retired-origin, original
-# bank and historical-loss boundaries.
+# qualification after the reviewed-noon-hand abort migration 20260921040823;
+# preserves the retired-origin, original bank and historical-loss boundaries.
 # Kept in this immutable control-generation file, never supplied by a caller.
 MIXED_CUSTODY_CONTRACT = {'kind': 'f06_mixed_custody_contract_v1',
  'functions': [{'acl': '{postgres=X/postgres,service_role=X/postgres}',
@@ -205,10 +205,10 @@ MIXED_CUSTODY_CONTRACT = {'kind': 'f06_mixed_custody_contract_v1',
                {'acl': '{postgres=X/postgres}',
                 'owner': 'postgres',
                 'config': ['search_path=pg_catalog, public, smarter_private'],
-                'body_md5': '45d5e92898dd9fb2fb72f33917cf96d8',
+                'body_md5': '1339225a48748a2e8cedd9ad882f35d9',
                 'signature': 'smarter_private.f06_retained_mtt_abort_snapshot(jsonb)',
                 'volatility': 'v',
-                'definition_md5': '2d40c8218d043e644faa40f7b78ff772',
+                'definition_md5': '269b7f20c326e04788c003f2a8b081ad',
                 'security_definer': True},
                {'acl': '{postgres=X/postgres}',
                 'owner': 'postgres',
@@ -253,10 +253,10 @@ MIXED_CUSTODY_CONTRACT = {'kind': 'f06_mixed_custody_contract_v1',
                {'acl': '{postgres=X/postgres}',
                 'owner': 'postgres',
                 'config': ['search_path=pg_catalog, public, smarter_private'],
-                'body_md5': 'eef2b4beccc02dffd5efeffe57081a0e',
+                'body_md5': 'af779e9bdaa72cefab1026b6fd236885',
                 'signature': 'smarter_private.f06_retired_origin_snapshot(jsonb)',
                 'volatility': 'v',
-                'definition_md5': 'e821cf8a38c6718237f1d45110bf7f00',
+                'definition_md5': 'f1dc5d4b2a952ebb783e6ae66b844b94',
                 'security_definer': True},
                {'acl': '{postgres=X/postgres}',
                 'owner': 'postgres',

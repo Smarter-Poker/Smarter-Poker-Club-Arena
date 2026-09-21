@@ -114,17 +114,18 @@ describe('Daily Mission feedback, consent, and health wiring', () => {
     expect(page).toContain('Added To Your Club Arena Diamond Balance');
     // Each operation is recorded by the unit that owns it.
     const route = readDailyChallengesUnit('useMissionCycleRoute.ts');
+    const actions = readDailyChallengesUnit('useDailyMissionActions.ts');
     const eventSources: Record<string, string> = {
       dashboard_loaded: page,
       dashboard_failed: page,
-      claim_succeeded: page,
-      claim_failed: page,
-      claim_all_succeeded: page,
-      claim_all_failed: page,
-      reroll_succeeded: page,
-      reroll_failed: page,
-      freeze_succeeded: page,
-      freeze_failed: page,
+      claim_succeeded: actions,
+      claim_failed: actions,
+      claim_all_succeeded: actions,
+      claim_all_failed: actions,
+      reroll_succeeded: actions,
+      reroll_failed: actions,
+      freeze_succeeded: actions,
+      freeze_failed: actions,
       realtime_degraded: page,
       realtime_recovered: page,
       alerts_enabled: page,

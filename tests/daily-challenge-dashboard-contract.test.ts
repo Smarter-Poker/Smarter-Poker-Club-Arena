@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  readDailyChallengesSurface,
+  readDailyChallengesUnit,
+} from './helpers/dailyChallengesSources';
 
 const migration = readFileSync(
   resolve(
@@ -14,6 +18,8 @@ const service = readFileSync(
   'utf8'
 );
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
+const actions = readDailyChallengesUnit('useDailyMissionActions.ts');
+const surface = readDailyChallengesSurface();
 const titleCaseMigration = readFileSync(
   resolve(__dirname, '../supabase/migrations/20260901030700_daily_mission_catalog_title_case.sql'),
   'utf8'
@@ -94,14 +100,16 @@ describe('daily challenge dashboard contract', () => {
     expect(page).not.toContain('dailyChallengeService.getStats(uid)');
     expect(page).not.toContain('dailyChallengeService.getStreak(uid)');
     expect(page).not.toContain('dailyChallengeService.getDiamondBalance(uid)');
-    expect(page).toContain('const dashboard = await dailyChallengeService.getDashboard(userId);');
-    expect(page).toContain('ready = dashboard.vault.items;');
-    expect(page).toContain(
+    expect(actions).toContain(
+      'const dashboard = await dailyChallengeService.getDashboard(userId);'
+    );
+    expect(actions).toContain('ready = dashboard.vault.items;');
+    expect(actions).toContain(
       'if (!userId || claimAllGuardRef.current || economyGuardRef.current) return;'
     );
-    expect(page).toContain('claimAllGuardRef.current = true;');
-    expect(page).toContain('claimAllGuardRef.current = false;');
-    expect(page).not.toContain('const ready = rewardVault.items;');
+    expect(actions).toContain('claimAllGuardRef.current = true;');
+    expect(actions).toContain('claimAllGuardRef.current = false;');
+    expect(surface).not.toContain('const ready = rewardVault.items;');
     expect(page).toContain('width: `${stats?.milestoneProgressPercent ?? 0}%`');
   });
 

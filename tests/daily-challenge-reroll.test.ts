@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
-import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
+import {
+  readDailyChallengesSurface,
+  readDailyChallengesUnit,
+} from './helpers/dailyChallengesSources';
 
 const rpc = vi.fn();
 const emit = vi.fn();
@@ -282,6 +285,8 @@ describe('reroll integrity is enforced below the UI', () => {
 describe('the page ships the casino-realism surface without the old stubs', () => {
   const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
   const route = readDailyChallengesUnit('useMissionCycleRoute.ts');
+  const actions = readDailyChallengesUnit('useDailyMissionActions.ts');
+  const surface = readDailyChallengesSurface();
   const css = readFileSync(
     resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'),
     'utf8'
@@ -295,10 +300,10 @@ describe('the page ships the casino-realism surface without the old stubs', () =
   it('uses the spendable balance and the real reroll service', () => {
     expect(page).toContain('dailyChallengeService.getDashboard(uid)');
     expect(page).toContain('setDiamondBalance(dashboard.diamondBalance)');
-    expect(page).toContain('dailyChallengeService.rerollChallenge(');
-    expect(page).toContain('diamondBalance < 5000');
-    expect(page).not.toContain('(Mocked)');
-    expect(page).not.toContain('window.confirm');
+    expect(actions).toContain('dailyChallengeService.rerollChallenge(');
+    expect(actions).toContain('diamondBalance < 5000');
+    expect(surface).not.toContain('(Mocked)');
+    expect(surface).not.toContain('window.confirm');
   });
 
   it('ships an optimized eager hero and responsive accessibility states', () => {
@@ -317,7 +322,7 @@ describe('the page ships the casino-realism surface without the old stubs', () =
     expect(page).toContain('dailyChallengeService.getDashboard(uid)');
     expect(page).toContain("document.addEventListener('visibilitychange'");
     expect(page.match(/!isCurrentDailyMissionDashboardReceipt\(/g)).toHaveLength(2);
-    expect(page).toContain('mutationEpochRef.current += 1');
+    expect(actions).toContain('mutationEpochRef.current += 1');
     expect(page).toContain('if (!initialLoadSettledRef.current) return;');
     expect(page).toContain('const acceptedAt = Date.now();');
     // A resumed tab asks the durable revision cursor whether it is stale; a

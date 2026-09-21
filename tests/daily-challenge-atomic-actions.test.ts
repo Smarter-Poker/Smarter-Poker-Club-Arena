@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  readDailyChallengesSurface,
+  readDailyChallengesUnit,
+} from './helpers/dailyChallengesSources';
 
 const migration = readFileSync(
   resolve(
@@ -14,6 +18,8 @@ const service = readFileSync(
   'utf8'
 );
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
+const actions = readDailyChallengesUnit('useDailyMissionActions.ts');
+const surface = readDailyChallengesSurface();
 
 describe('Daily Missions atomic action receipts', () => {
   it('claims an entire vault page in one replay-safe transaction', () => {
@@ -59,67 +65,67 @@ describe('Daily Missions atomic action receipts', () => {
     expect(service).toContain("supabase.rpc('claim_daily_challenges'");
     expect(service).toContain('p_request_id: requestId');
     expect(service).toMatch(/this\.mapServerChallenge\(\s*result\.challenge,\s*userId/);
-    expect(page).toContain('dailyChallengeService.claimChallenges(userId, [challenge.id])');
-    expect(page).toContain('dailyChallengeService.claimChallenges(userId, readyIds)');
-    expect(page).toContain('installDashboardProjection(paid.dashboard)');
-    expect(page).not.toContain('setRewardVault(paid.vault)');
-    expect(page).not.toContain('setDiamondBalance(paid.diamondBalance)');
-    expect(page).not.toContain('for (const c of ready)');
-    expect(page).not.toContain('await loadChallenges(userId, false);');
+    expect(actions).toContain('dailyChallengeService.claimChallenges(userId, [challenge.id])');
+    expect(actions).toContain('dailyChallengeService.claimChallenges(userId, readyIds)');
+    expect(actions).toContain('installDashboardProjection(paid.dashboard)');
+    expect(surface).not.toContain('setRewardVault(paid.vault)');
+    expect(surface).not.toContain('setDiamondBalance(paid.diamondBalance)');
+    expect(surface).not.toContain('for (const c of ready)');
+    expect(surface).not.toContain('await loadChallenges(userId, false);');
   });
 
   it('serializes every balance-changing action and never paints an unconfirmed freeze debit', () => {
-    expect(page).toContain('const economyGuardRef = useRef(false)');
-    expect(page).toContain('const [economyBusy, setEconomyBusy] = useState(false)');
-    expect(page.match(/economyGuardRef\.current = true/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(actions).toContain('const economyGuardRef = useRef(false)');
+    expect(actions).toContain('const [economyBusy, setEconomyBusy] = useState(false)');
+    expect(actions.match(/economyGuardRef\.current = true/g)?.length).toBeGreaterThanOrEqual(4);
     expect(page).toContain('disabled={claiming || economyBusy}');
     expect(page).toContain('disabled={claimingAll || economyBusy}');
-    expect(page).not.toContain('setDiamondBalance((prev) => Math.max(0, prev - 5000))');
-    expect(page).not.toContain(
+    expect(surface).not.toContain('setDiamondBalance((prev) => Math.max(0, prev - 5000))');
+    expect(surface).not.toContain(
       'setStreak((prev) => (prev ? { ...prev, freezesAvailable: prev.freezesAvailable + 1 } : prev))'
     );
 
-    const freezeSuccessStart = page.indexOf('if (res.success) {');
-    const freezeSuccessEnd = page.indexOf('} else {', freezeSuccessStart);
-    const freezeSuccess = page.slice(freezeSuccessStart, freezeSuccessEnd);
+    const freezeSuccessStart = actions.indexOf('if (res.success) {');
+    const freezeSuccessEnd = actions.indexOf('} else {', freezeSuccessStart);
+    const freezeSuccess = actions.slice(freezeSuccessStart, freezeSuccessEnd);
     expect(freezeSuccess).toContain('mutationEpochRef.current += 1');
     expect(freezeSuccess).toContain("await loadChallenges(userId, 'silent')");
     expect(freezeSuccess).not.toContain('setDiamondBalance(res.diamondBalance)');
 
-    const rerollSuccess = page.indexOf(
+    const rerollSuccess = actions.indexOf(
       'setConfirmingRerollId(null)',
-      page.indexOf('if (!result.success)')
+      actions.indexOf('if (!result.success)')
     );
-    const authoritativeReload = page.indexOf(
+    const authoritativeReload = actions.indexOf(
       "await loadChallenges(userId, 'silent')",
       rerollSuccess
     );
-    const globalBalanceRefresh = page.indexOf(
+    const globalBalanceRefresh = actions.indexOf(
       "masterBus.emit('BALANCE_UPDATED', { source: 'daily_challenge_reroll', userId })",
       authoritativeReload
     );
     expect(rerollSuccess).toBeGreaterThan(-1);
     expect(authoritativeReload).toBeGreaterThan(rerollSuccess);
     expect(globalBalanceRefresh).toBeGreaterThan(authoritativeReload);
-    expect(page).not.toContain('if (!result.challenge)');
-    expect(page).not.toContain('setDiamondBalance(result.diamondBalance)');
-    expect(page).not.toContain('result.challenge!');
+    expect(surface).not.toContain('if (!result.challenge)');
+    expect(surface).not.toContain('setDiamondBalance(result.diamondBalance)');
+    expect(surface).not.toContain('result.challenge!');
 
-    const rerollRefusalStart = page.indexOf('if (!result.success)');
-    const rerollRefusalEnd = page.indexOf('setConfirmingRerollId(null)', rerollRefusalStart);
-    expect(page.slice(rerollRefusalStart, rerollRefusalEnd)).toContain(
+    const rerollRefusalStart = actions.indexOf('if (!result.success)');
+    const rerollRefusalEnd = actions.indexOf('setConfirmingRerollId(null)', rerollRefusalStart);
+    expect(actions.slice(rerollRefusalStart, rerollRefusalEnd)).toContain(
       "loadChallenges(userId, 'silent')"
     );
   });
 
   it('reconciles cross-device reroll and third-freeze presentation state', () => {
-    expect(page).toContain(
+    expect(actions).toContain(
       'if (!confirmingChallenge || confirmingChallenge.completed || confirmingChallenge.claimed)'
     );
-    expect(page).toContain('setConfirmingRerollId(null)');
-    expect(page).toContain("await loadChallenges(userId, 'silent')");
+    expect(actions).toContain('setConfirmingRerollId(null)');
+    expect(actions).toContain("await loadChallenges(userId, 'silent')");
     expect(page).toContain('dashboard.revision < dashboardRevisionRef.current');
-    expect(page).not.toContain('nextFreezeIn: freezesAvailable >= 3 ? null : prev.nextFreezeIn');
+    expect(surface).not.toContain('nextFreezeIn: freezesAvailable >= 3 ? null : prev.nextFreezeIn');
   });
 
   it('disables unaffordable rerolls while retaining the transaction-time balance guard', () => {
@@ -127,10 +133,10 @@ describe('Daily Missions atomic action receipts', () => {
     expect(page).toContain('rerollConfirmationOpen || !canAffordReroll');
     expect(page).toContain('disabled={rerolling || economyBusy || !canAffordReroll}');
     expect(page).toContain('`Need ${DAILY_MISSION_REROLL_COST} Diamond To Reroll ${c.name}`');
-    expect(page).toContain('if (diamondBalance < DAILY_MISSION_REROLL_COST)');
-    const insufficientGuard = page.slice(
-      page.indexOf('if (diamondBalance < DAILY_MISSION_REROLL_COST)'),
-      page.indexOf('economyGuardRef.current = true', page.indexOf('handleReroll'))
+    expect(actions).toContain('if (diamondBalance < DAILY_MISSION_REROLL_COST)');
+    const insufficientGuard = actions.slice(
+      actions.indexOf('if (diamondBalance < DAILY_MISSION_REROLL_COST)'),
+      actions.indexOf('economyGuardRef.current = true', actions.indexOf('handleReroll'))
     );
     expect(insufficientGuard).toContain('setConfirmingRerollId(null)');
     expect(insufficientGuard).toContain('Not Enough Diamonds');

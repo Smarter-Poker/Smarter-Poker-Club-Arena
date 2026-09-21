@@ -2,15 +2,17 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sliceBetween } from './helpers/sourceWindow';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 
 const PAGE = readFileSync(resolve('src/pages/DailyChallengesPage.tsx'), 'utf8');
+const ACTIONS = readDailyChallengesUnit('useDailyMissionActions.ts');
 
 describe('Daily Challenges repaired accessibility contracts', () => {
   it('keeps Escape available after focus leaves the inline reroll confirmation', () => {
-    expect(PAGE).toMatch(
+    expect(ACTIONS).toMatch(
       /if \(!confirmingRerollId\) return undefined;[\s\S]*window\.addEventListener\('keydown', onKey\)[\s\S]*window\.removeEventListener\('keydown', onKey\)/
     );
-    expect(PAGE).toContain("if (event.key === 'Escape') setConfirmingRerollId(null)");
+    expect(ACTIONS).toContain("if (event.key === 'Escape') setConfirmingRerollId(null)");
   });
 
   it('exposes one streak value while keeping the adjacent reactor decorative', () => {

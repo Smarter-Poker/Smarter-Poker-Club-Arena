@@ -1,10 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  readDailyChallengesSurface,
+  readDailyChallengesUnit,
+} from './helpers/dailyChallengesSources';
 
 const read = (path: string) => readFileSync(resolve(__dirname, '..', path), 'utf8');
 
 const page = read('src/pages/DailyChallengesPage.tsx');
+const actions = readDailyChallengesUnit('useDailyMissionActions.ts');
+const surface = readDailyChallengesSurface();
 const service = read('src/services/DailyChallengeService.ts');
 const migration = read(
   'supabase/migrations/20260906141022_daily_mission_rerolls_cost_one_diamond.sql'
@@ -31,10 +37,10 @@ describe('Daily Mission one-Diamond reroll contract', () => {
     expect(service).toContain('never publish');
     expect(service).toContain('diamondsSpent,');
 
-    expect(page).toContain('diamondBalance < DAILY_MISSION_REROLL_COST');
+    expect(actions).toContain('diamondBalance < DAILY_MISSION_REROLL_COST');
     expect(page).toContain('Reroll ${DAILY_MISSION_REROLL_COST} Diamond For ${c.name}');
-    expect(page).toContain('diamond_cost: result.diamondsSpent ?? 0');
-    expect(page).not.toMatch(/Reroll 10|10 Diamonds Required|diamond_cost:\s*10/);
+    expect(actions).toContain('diamond_cost: result.diamondsSpent ?? 0');
+    expect(surface).not.toMatch(/Reroll 10|10 Diamonds Required|diamond_cost:\s*10/);
   });
 
   it('charges fresh five-argument requests one Diamond after replaying exact history', () => {
@@ -88,7 +94,7 @@ describe('Daily Mission one-Diamond reroll contract', () => {
   it('never publishes a stored replay projection and requires legacy settlement proof', () => {
     expect(service).toContain('if (alreadyRerolled)');
     expect(service).toContain('let the page reload the live dashboard');
-    expect(page).toContain("await loadChallenges(userId, 'silent')");
+    expect(actions).toContain("await loadChallenges(userId, 'silent')");
     expect(replayHardening).toContain("'refreshRequired', true");
     expect(replayHardening).toContain('daily_challenge_reroll_receipts receipt');
     expect(replayHardening).toContain('receipt.cost = p_cost');
@@ -115,9 +121,9 @@ describe('Daily Mission one-Diamond reroll contract', () => {
   });
 
   it('reconciles every successful response before painting its potentially older projection', () => {
-    const handler = page.slice(
-      page.indexOf('const handleReroll = useCallback'),
-      page.indexOf('const handleClaimAll = useCallback')
+    const handler = actions.slice(
+      actions.indexOf('const handleReroll = useCallback'),
+      actions.indexOf('const handleClaimAll = useCallback')
     );
     expect(handler).toContain("await loadChallenges(userId, 'silent')");
     expect(handler).not.toContain('setDiamondBalance(result.diamondBalance)');

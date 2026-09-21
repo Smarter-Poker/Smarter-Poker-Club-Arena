@@ -51,7 +51,7 @@ finish_fixture() {
     fi
     started=0
   fi
-  for artifact in credit-reduction.log credit-concurrency-setup.log credit-concurrency.log credit-concurrency-rows.txt credit-concurrency-final-rows.txt credit-concurrency-final-capture.log accepted-credit-reduction-authority.json initdb.log correction-concurrency-setup.log correction-concurrency.log correction-concurrency-rows.txt correction-concurrency-final-rows.txt correction-concurrency-final-capture.log start.log server.log stop.log baseline.log activation.log rejected.log assertions.log pnl-hooks.log historical-conflict.log period-authority.log period-privacy.log privacy-rejected.log messenger-privacy.log messenger-weekly.log push-ownership.log push-rotation.log credit-request.log cashier-document.log correction-document.log browser-period-observer.log scheduler-catalog.log managed-cron-role.log cron-before.json cron-after.json cron-fixture.log before.sql after.sql before-rows.txt after-rows.txt before-roles.txt after-roles.txt accepted-schema.sql accepted-authority.json accepted-correction-writer-authority.json accepted-roles.json accepted-rows.txt; do
+  for artifact in credit-reduction.log credit-concurrency-setup.log credit-concurrency.log credit-concurrency-rows.txt credit-concurrency-final-rows.txt credit-concurrency-final-capture.log accepted-credit-reduction-authority.json initdb.log correction-concurrency-setup.log correction-concurrency.log correction-concurrency-rows.txt correction-concurrency-final-rows.txt correction-concurrency-final-capture.log start.log server.log stop.log baseline.log activation.log rejected.log assertions.log pnl-hooks.log historical-conflict.log period-authority.log period-privacy.log privacy-rejected.log messenger-privacy.log messenger-weekly.log payee-document-privacy.log push-ownership.log push-rotation.log credit-request.log cashier-document.log correction-document.log browser-period-observer.log scheduler-catalog.log managed-cron-role.log cron-before.json cron-after.json cron-fixture.log before.sql after.sql before-rows.txt after-rows.txt before-roles.txt after-roles.txt accepted-schema.sql accepted-authority.json accepted-correction-writer-authority.json accepted-roles.json accepted-rows.txt; do
     if [ -f "$fixture/$artifact" ]; then
       if ! cp "$fixture/$artifact" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/$artifact"; then
         result=1
@@ -402,6 +402,14 @@ PY
   -f "$root/tests/fixtures/messenger-private-accounting/messenger-private-readers-regression.sql" 2>&1 | tee "$fixture/messenger-privacy.log"
 "${psql[@]}" -A -t -d "$fixture_db" \
   -f "$root/tests/fixtures/messenger-private-accounting/messenger-private-weekly-summary-regression.sql" 2>&1 | tee "$fixture/messenger-weekly.log"
+# A document addressed to a person is private to that person, a rakeback
+# distribution belongs to its two parties, and a roster is not enumerable. The
+# preimage commits the three defects as the installed predecessor answers them,
+# the candidate is applied, and the regression asks the same questions again.
+"${psql[@]}" -A -t -d "$fixture_db" \
+  -f "$root/tests/fixtures/messenger-private-accounting/payee-document-privacy-preimage.sql" \
+  -f "$root/supabase/migrations/20260921052548_payee_documents_are_private_to_their_payee_and_rosters_are_n.sql" \
+  -f "$root/tests/fixtures/messenger-private-accounting/payee-document-privacy-regression.sql" 2>&1 | tee "$fixture/payee-document-privacy.log"
 "${psql[@]}" -A -t -d "$fixture_db" \
   -f "$root/tests/fixtures/push-subscription-ownership/push-subscription-ownership-regression.sql" 2>&1 | tee "$fixture/push-ownership.log"
 "${psql[@]}" -A -t -d "$fixture_db" \

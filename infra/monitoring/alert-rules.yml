@@ -146,9 +146,22 @@ groups:
   # at each break. The felt was healthy. Only the deploy route was dead, and
   # the build that fixes the permit was on the far side of it.
   #
-  # poker_maintenance_breaks_since_restart_certified has been published by the
-  # engine since #4909 and, until this rule, NOTHING READ IT (CLAUDE.md 10.83).
-  # The reader is this rule; the path is Alertmanager, same as its neighbours.
+  # poker_maintenance_breaks_since_restart_certified is emitted by the engine
+  # code merged in #4909 and, until this rule, NOTHING READ IT (CLAUDE.md
+  # 10.83). The reader is this rule; the path is Alertmanager, same as its
+  # neighbours.
+  #
+  # CORRECTED 2026-09-21, and the correction is the point of CLAUDE.md 10.86's
+  # last paragraph. The line above used to read "has been published by the
+  # engine since #4909" - a claim about the environment, written from the repo,
+  # with no expiry and never checked. Production was running 8825af51, built
+  # 2026-09-18 and 125 commits behind main, and that build contains no such
+  # metric: /metrics carried 771 poker_ series and none of them this one. So
+  # this rule and PokerEngineCannotBeReplaced both loaded, both read
+  # health=ok/state=inactive, and both were structurally unable to fire
+  # THROUGHOUT the outage they were written for. A rule is live when the half
+  # that reads the metric and the half that publishes it are the same
+  # generation; check-alert-rules-match.mjs now compares them and refuses.
   - name: engine-release-route
     rules:
       - alert: EngineCannotBeReplaced
@@ -240,7 +253,7 @@ groups:
           component: cron
         annotations:
           summary: '{{ $value }} cron job(s) have logged success for 24h while skipping all their work'
-          description: 'SELECT job_name, result FROM cron_execution_log WHERE status = ''success'' AND result ? ''skipped'' ORDER BY started_at DESC. A kill switch left off, or a handler that reads one it should not. Staleness alerts cannot see this: the job is being dispatched and is answering.'
+          description: "SELECT job_name, result FROM cron_execution_log WHERE status = 'success' AND result ? 'skipped' ORDER BY started_at DESC. A kill switch left off, or a handler that reads one it should not. Staleness alerts cannot see this: the job is being dispatched and is answering."
           runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: OpenClawFleetLongSilence

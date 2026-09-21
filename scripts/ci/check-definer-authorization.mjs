@@ -114,6 +114,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
+import { partition } from './recorded-migration.mjs';
 
 const REPO = process.cwd();
 const DIR = 'supabase/migrations/';
@@ -157,32 +158,16 @@ function changedMigrations(base) {
       process.exit(2);
     }
   }
-  return (
-    out
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'))
-      // BACKFILL EXEMPTION (2026-09-01). A file whose first line marks it as a
-      // recovered record of an ALREADY-APPLIED migration is history, not new
-      // work. It cannot introduce a new definer: the function is already live in
-      // whatever state later migrations left it, and THAT live grant - not this
-      // file's historical creation-time GRANT - is what a browser can actually
-      // reach. Judging a backfill on its own creation-time grants produces false
-      // positives against production truth (verified 2026-09-01). New
-      // declarations are unaffected, and live grants stay covered by
-      // audit-live-definer-exposure.mjs (which asks production directly) and by
-      // this gate on every genuinely new migration. Marker is machine-written by
-      // scripts/ci/backfill-unrecorded-migrations.mjs.
-      .filter((f) => {
-        try {
-          return !/^--\s*(BACKFILLED|UNRECOVERABLE STUB)\b/.test(
-            readFileSync(join(REPO, f), 'utf8')
-          );
-        } catch {
-          return true; // unreadable: check it rather than skip it
-        }
-      })
-  );
+  return out
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'));
+  // The 2026-09-01 BACKFILL EXEMPTION that used to live here read the
+  // file's FIRST LINE for a `-- BACKFILLED` marker and skipped the file.
+  // The intent was right and the proof was not: a marker is text, so
+  // anything could claim it, and a genuinely new migration with that line
+  // pasted on top walked straight through this gate. It is now decided by
+  // a digest against production, in main() - see recorded-migration.mjs.
 }
 
 /** Read comments only in SQL, never inside quoted data. A replacement payload
@@ -632,14 +617,48 @@ export function unrevokedClones(sql, allowlist = new Set(), grantSql = sql) {
 
 export { stripComments, declaredFunctions, browserReachable, anonReachable, effectiveGrants };
 
+/* RECORD OR PROPOSAL (2026-09-21, issue #5008).
+ *
+ * A file whose bytes are exactly what production already applied for its
+ * version is a RECORD of history. Every question this check asks is about a
+ * PREDICTION - what the schema will become if this lands - and none of them
+ * means anything about a migration that ran days ago. Refusing the record does
+ * not undo the change; it only keeps the change out of source control, which
+ * is the gap `Applied Migrations Are Recorded` exists to shout about.
+ *
+ * The proof is a sha256 against production, read from origin/main so a pull
+ * request cannot add its own pardon, and "could not tell" judges the file as a
+ * proposal. One byte different and it is a proposal again. See
+ * scripts/ci/recorded-migration.mjs.
+ */
+function splitOutRecords(files, label, read) {
+  const { records, proposals, note } = partition(files, read);
+  if (note) console.error(note);
+  if (records.length > 0) {
+    console.log(
+      `[${label}] ${records.length} file(s) record a migration production has already applied, ` +
+        'byte for byte; judged as history rather than as a proposal:'
+    );
+    for (const f of records) console.log(`   ${f}`);
+  }
+  return proposals;
+}
+
 function main() {
   const base = ALL ? null : baseRef();
-  const files = ALL
+  const allChangedFiles = ALL
     ? readdirSync(join(REPO, DIR))
         .filter((f) => f.endsWith('.sql'))
         .sort()
         .map((f) => DIR + f)
     : changedMigrations(base);
+  const files = splitOutRecords(allChangedFiles, 'check-definer-authorization', (f) => {
+    try {
+      return readFileSync(join(REPO, f), 'utf8');
+    } catch {
+      return null;
+    }
+  });
 
   if (files.length === 0) {
     console.log(

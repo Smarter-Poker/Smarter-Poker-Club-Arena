@@ -45,6 +45,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
+import { partition } from './recorded-migration.mjs';
 
 const REPO = process.cwd();
 const DIR = 'supabase/migrations/';
@@ -177,16 +178,52 @@ export function offenders(sql) {
   return hits;
 }
 
+/* RECORD OR PROPOSAL (2026-09-21, issue #5008).
+ *
+ * A file whose bytes are exactly what production already applied for its
+ * version is a RECORD of history. Every question this check asks is about a
+ * PREDICTION - what the schema will become if this lands - and none of them
+ * means anything about a migration that ran days ago. Refusing the record does
+ * not undo the change; it only keeps the change out of source control, which
+ * is the gap `Applied Migrations Are Recorded` exists to shout about.
+ *
+ * The proof is a sha256 against production, read from origin/main so a pull
+ * request cannot add its own pardon, and "could not tell" judges the file as a
+ * proposal. One byte different and it is a proposal again. See
+ * scripts/ci/recorded-migration.mjs.
+ */
+function splitOutRecords(files, label, read) {
+  const { records, proposals, note } = partition(files, read);
+  if (note) console.error(note);
+  if (records.length > 0) {
+    console.log(
+      `[${label}] ${records.length} file(s) record a migration production has already applied, ` +
+        'byte for byte; judged as history rather than as a proposal:'
+    );
+    for (const f of records) console.log(`   ${f}`);
+  }
+  return proposals;
+}
+
 function main() {
   const base = baseRef();
-  const files = ALL
+  const allChangedFiles = ALL
     ? git(['ls-files', `${DIR}*.sql`])
         .split('\n')
         .filter(Boolean)
     : changedMigrations(base);
+  const files = splitOutRecords(allChangedFiles, 'check-money-trigger-declared', (f) => {
+    try {
+      return readFileSync(join(REPO, f), 'utf8');
+    } catch {
+      return null;
+    }
+  });
 
   if (files.length === 0) {
-    console.log(`[check-money-trigger-declared] no new migrations against ${base} - nothing to check.`);
+    console.log(
+      `[check-money-trigger-declared] no new migrations against ${base} - nothing to check.`
+    );
     return;
   }
 
@@ -201,7 +238,9 @@ function main() {
 
   if (hits.length > 0) {
     console.error('');
-    console.error('[check-money-trigger-declared] BLOCKED - an undeclared trigger on a money table.');
+    console.error(
+      '[check-money-trigger-declared] BLOCKED - an undeclared trigger on a money table.'
+    );
     console.error('');
     for (const h of hits) {
       console.error(`  ${h.trigger} on public.${h.table}`);

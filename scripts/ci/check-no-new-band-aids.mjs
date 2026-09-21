@@ -50,6 +50,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import process from 'node:process';
+import { partition } from './recorded-migration.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DIR = 'supabase/migrations/';
@@ -96,7 +97,10 @@ export function stripNoise(sql) {
 /** An identifier is band-aid shaped when one of the words is a whole _-separated part of it. */
 export function isBandAidName(name) {
   if (typeof name !== 'string' || name === '') return false;
-  const parts = name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const parts = name
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
   return BAND_AID_WORDS.some((w) => {
     const wp = w.split('_');
     if (wp.length === 1) return parts.includes(w);
@@ -147,7 +151,6 @@ export function scheduledJobs(sql) {
   for (const name of removed) added.delete(name);
   return { added: [...added], removed: [...removed] };
 }
-
 
 /**
  * A MIGRATION MAY SCHEDULE PERIODIC WORK. IT MAY NOT DO IT IN SILENCE.
@@ -305,17 +308,55 @@ export function loadAllowlist() {
     const names = Array.isArray(parsed) ? parsed : parsed.existing_debt || [];
     return new Set(names.map((e) => String(e.name || e).toLowerCase()));
   } catch (err) {
-    console.error(`[check-no-new-band-aids] COULD NOT TELL: ${ALLOWLIST} is unreadable (${err.message}).`);
+    console.error(
+      `[check-no-new-band-aids] COULD NOT TELL: ${ALLOWLIST} is unreadable (${err.message}).`
+    );
     process.exit(2);
   }
+}
+
+/* RECORD OR PROPOSAL (2026-09-21, issue #5008).
+ *
+ * A file whose bytes are exactly what production already applied for its
+ * version is a RECORD of history. Every question this check asks is about a
+ * PREDICTION - what the schema will become if this lands - and none of them
+ * means anything about a migration that ran days ago. Refusing the record does
+ * not undo the change; it only keeps the change out of source control, which
+ * is the gap `Applied Migrations Are Recorded` exists to shout about.
+ *
+ * The proof is a sha256 against production, read from origin/main so a pull
+ * request cannot add its own pardon, and "could not tell" judges the file as a
+ * proposal. One byte different and it is a proposal again. See
+ * scripts/ci/recorded-migration.mjs.
+ */
+function splitOutRecords(files, label, read) {
+  const { records, proposals, note } = partition(files, read);
+  if (note) console.error(note);
+  if (records.length > 0) {
+    console.log(
+      `[${label}] ${records.length} file(s) record a migration production has already applied, ` +
+        'byte for byte; judged as history rather than as a proposal:'
+    );
+    for (const f of records) console.log(`   ${f}`);
+  }
+  return proposals;
 }
 
 function main() {
   const base = baseRef();
   const allowed = loadAllowlist();
-  const files = ALL
-    ? git(['ls-files', `${DIR}*.sql`]).split('\n').filter(Boolean)
+  const allChangedFiles = ALL
+    ? git(['ls-files', `${DIR}*.sql`])
+        .split('\n')
+        .filter(Boolean)
     : changedMigrations(base);
+  const files = splitOutRecords(allChangedFiles, 'check-no-new-band-aids', (f) => {
+    try {
+      return readFileSync(join(REPO, f), 'utf8');
+    } catch {
+      return null;
+    }
+  });
 
   if (files.length === 0) {
     console.log(`[check-no-new-band-aids] no new migrations against ${base} - nothing to check.`);

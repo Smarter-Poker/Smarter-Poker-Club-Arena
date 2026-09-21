@@ -77,6 +77,29 @@ jobs:
           echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           set -e
 
+      # THE DIGESTS THE FOUR MIGRATION CHECKS READ (2026-09-21, issue #5008).
+      #
+      # scripts/ci/installed-migration-digests.d/ is how CI tells a file that
+      # RECORDS an already-applied migration from one that PROPOSES a change.
+      # The checks read it from origin/main, so a pull request cannot add its
+      # own pardon - which only holds while this repo's copy is a faithful
+      # image of production. This is the reader for that (CLAUDE.md 10.86 rule
+      # 3): it never commits (this job is contents: read on purpose, and the
+      # main ruleset has no bypass actors), it reports.
+      #
+      # To refresh: run `node scripts/ci/gen-installed-migration-digests.mjs`
+      # with the service role and open a pull request with the result.
+      - name: The installed-migration digests match production
+        id: digests
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set +e
+          node scripts/ci/gen-installed-migration-digests.mjs --check 2>&1 | tee /tmp/digests.log
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          set -e
+
       - name: Summary
         if: always()
         run: |
@@ -90,6 +113,17 @@ jobs:
             echo "The applied SQL for each one is in"
             echo "\`supabase_migrations.schema_migrations.statements\`. Name the file for the"
             echo "version it was applied under so the two can be tied together."
+          
+            echo ""
+            echo "## Installed-migration digests"
+            echo ""
+            echo '```'
+            cat /tmp/digests.log 2>/dev/null || echo "(the digest check produced no output)"
+            echo '```'
+            echo ""
+            echo "These are what tells CI that a migration file RECORDS what production"
+            echo "already ran rather than PROPOSING a change (issue #5008). Drift here means"
+            echo "the four migration checks are judging records as proposals."
           } >> "$GITHUB_STEP_SUMMARY"
 
       # 2026-09-01: measured drift was 426 of 925 applied migrations with no
@@ -113,6 +147,12 @@ jobs:
               --title "Applied migrations with no file in this repo (~${COUNT})" \
               --body "$(printf 'Production has applied migrations this repo has no file for, so the schema can regress with no source-control record and no guard able to see it.\n\nThe applied SQL for each is in supabase_migrations.schema_migrations.statements — name the backfilled file for the version it was applied under.\n\nRun: %s' "$RUN")" || true
           fi
+
+      - name: Fail the run when the installed digests drift
+        if: steps.digests.outputs.status != '0'
+        run: |
+          echo "::error title=Installed-migration digests drift::scripts/ci/installed-migration-digests.d no longer matches production. The four migration checks (issue #5008) are judging records as proposals. Regenerate with node scripts/ci/gen-installed-migration-digests.mjs and open a pull request."
+          exit 1
 
       - name: Fail the run when migrations are unrecorded
         if: steps.compare.outputs.status != '0'

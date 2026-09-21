@@ -33,6 +33,7 @@ import {
   migrationsMentioning,
   type MigrationFile,
 } from './helpers/migrationCorpus';
+import { classify, installedDigestsFromMain } from '../scripts/ci/recorded-migration.mjs';
 
 /** The migration that introduced the declaration. Migrations before it are history. */
 const LAW = '20260910143032_a_declared_guard_change_is_recorded_not_raised.sql';
@@ -91,6 +92,43 @@ const installedAutoledgerDeclaration: InstalledOmission = {
   successorSha256: BOARD_GUARD_SUCCESSOR_SHA256,
   guard: 'fn_ca_autoledger',
 };
+/* A RECORD IS NOT A RAISE (2026-09-21, issue #5008).
+ *
+ * This law's own title says it: a declared guard change is RECORDED, not
+ * raised. The bound list below is how a migration that redefined a guard
+ * without declaring it gets pardoned, and an entry needs the SUCCESSOR
+ * MIGRATION'S FILE to exist in supabase/migrations. That was reachable while
+ * the successors were being written. It is not reachable from inside the
+ * parity gap: 2,460 applied migrations have no file in either estate repo,
+ * the plausible successors are among them, and a file cannot be added to
+ * close the gap because this law refuses it for lacking a successor that is
+ * itself missing. The mechanism is unreachable from inside the gap it exists
+ * to close.
+ *
+ * So: a migration file whose bytes are exactly what production applied for
+ * its version is a RECORD. Its redefinition happened days ago; whether the
+ * resulting guard drift was declared is a question about rows in production,
+ * which fn_ca_guard_defs_watch is already asking and which no file can
+ * change. Refusing the record removes the record, not the redefinition.
+ *
+ * This pardons ONLY an exact byte match against production, proved from
+ * origin/main so a branch cannot mint its own - see
+ * scripts/ci/recorded-migration.mjs. A migration production has not applied,
+ * or one edited by a single byte, is a proposal and is judged exactly as
+ * before. 'a record pardon needs production, not a marker' below is the
+ * negative half of that.
+ */
+let digestCache: Map<string, string> | null | undefined;
+const installedDigests = (): Map<string, string> | null => {
+  if (digestCache === undefined) {
+    const loaded = installedDigestsFromMain();
+    digestCache = loaded.ok ? loaded.digests : null;
+  }
+  return digestCache;
+};
+const isRecordOfAnInstalledMigration = (m: { name: string; sql: string }): boolean =>
+  classify(m.name, m.sql, installedDigests()) === 'record';
+
 const installedOmissions: InstalledOmission[] = [
   installedFundingDeclaration,
   installedEscalationTickDeclaration,
@@ -185,6 +223,8 @@ describe('a declared guard change is recorded, not raised', () => {
     for (const m of migrationCorpus()) {
       if (m.name < LAW) continue; // history: the declaration did not exist yet
       if (m.sql.includes(DECLARE)) continue;
+      // a byte-exact record of what production already ran is history, not a raise
+      if (isRecordOfAnInstalledMigration(m)) continue;
       for (const g of guards) {
         // history for THIS guard: it was not on the list when the migration ran
         if (m.name < (from.get(g) ?? LAW)) continue;

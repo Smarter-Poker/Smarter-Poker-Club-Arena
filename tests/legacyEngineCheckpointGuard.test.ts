@@ -1197,8 +1197,19 @@ describe('exact 8825 retained original custody retirement', () => {
         ok: false,
         reason: 'mixed_owner_changed',
         failedCheck,
-        failedTournament: tournamentId,
       });
+      // The carried key names the captured tournament, the lease generation
+      // and every drain condition, because an unlisted key never survives
+      // `legacy-engine-checkpoint.mjs` (#5034).
+      expect(result.observedDetail).toContain(`capturedTournament=${tournamentId}`);
+      expect(result.observedDetail).toContain(
+        `tournament=${f.originals[0].manager.tournamentId}`
+      );
+      expect(result.observedDetail).toMatch(/lease=/);
+      expect(result.observedDetail).toMatch(/drain=/);
+      // And it must survive that carrier's own character class and length cap.
+      expect(result.observedDetail.length).toBeLessThanOrEqual(512);
+      expect(result.observedDetail).toMatch(/^[\w .,:/=()+-]+$/);
       // Nothing was retired: the refusal precedes every irreversible step.
       expect(f.server.tableEngines.size).toBe(3);
     }
@@ -1474,14 +1485,29 @@ describe('exact 8825 retained original custody retirement', () => {
     f.onRpc(() => {
       manager.drainedF06Originals = [[engine.tableId, new f.Table(600)]];
     });
-    expect(await f.run()).toMatchObject({
+    const result = await f.run();
+    expect(result).toMatchObject({
       ok: false,
       reason: 'mixed_owner_changed',
       failedCheck: 'manager.captureDrainedF06Originals()',
-      failedTournament: manager.tournamentId,
     });
+    // `failedTournament` is not a carried key; the tournament travels in
+    // `observedDetail` (#5034).
+    expect(result.observedDetail).toContain(`tournament=${manager.tournamentId}`);
     expect(f.server.tableEngines.size).toBe(3);
     expect(f.server.tableEngines.get(engine.tableId)).toBe(engine);
+  });
+  it('names the drain condition that sent captureDrainedF06Originals to null', async () => {
+    const f = mixedFixture();
+    // `captureDrainedF06Originals()` is all-or-nothing, so the identity compare
+    // can only say THAT it flipped. A lifecycle job arriving mid-checkpoint is
+    // one of the thirteen conditions that sends it to null; the witness has to
+    // name that one rather than leave the next release guessing.
+    f.onRpc(() => f.originals[0].manager.lifecycleJobs.add(Promise.resolve()));
+    const result = await f.run();
+    expect(result.ok).toBe(false);
+    expect(String(result.observedDetail ?? '')).toContain('lifecycleJobs');
+    expect(f.server.tableEngines.size).toBe(3);
   });
   it('names the table when one leaves the fleet mid-checkpoint', async () => {
     const f = mixedFixture();
@@ -1556,7 +1582,7 @@ describe('exact 8825 retained original custody retirement', () => {
         reason: 'mixed_original_work_not_drained',
         failedCheck: 'engineCollection.size',
         failedField: 'terminalBoundaryPendingGenerations',
-        failedPermitPhase: phase,
+        observedDetail: `permitPhase=${phase}`,
         expected: '0',
       });
       expect(f.rpcCalls).toEqual([]);

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 import { readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
 
@@ -300,9 +301,10 @@ describe('the page ships the casino-realism surface without the old stubs', () =
   });
 
   it('ships an optimized eager hero and responsive accessibility states', () => {
-    expect(page).toContain('daily-missions-casino-v2.webp');
-    expect(page).toContain('daily-missions-casino-v2-mobile.webp');
-    expect(page).toContain('fetchPriority="high"');
+    const presentation = readDailyChallengesUnit('missionPresentation.ts');
+    expect(presentation).toContain('daily-missions-casino-v2.webp');
+    expect(presentation).toContain('daily-missions-casino-v2-mobile.webp');
+    expect(readDailyChallengesUnit('MissionArtwork.tsx')).toContain('fetchPriority="high"');
     expect(css).not.toContain('@import url(');
     expect(css).toContain('@media (max-width: 680px)');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');

@@ -15,11 +15,7 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getAuthUser } from '../lib/supabase';
 import { useToast } from '../components/common/Toast';
-import {
-  CasinoControlIcon,
-  MissionInstrumentGlyph,
-  type CasinoControlIconVariant,
-} from '../components/challenges';
+import { CasinoControlIcon, MissionInstrumentGlyph } from '../components/challenges';
 import { motion, useReducedMotion } from 'framer-motion';
 import { masterBus } from '../core/MasterBus';
 import { triggerHaptic } from '../services/HapticService';
@@ -76,146 +72,25 @@ import {
 import { signInUrl } from '../lib/signIn';
 import { useClubWorkspace } from '../contexts/ClubWorkspaceContext';
 import { withClubContext } from '../utils/clubScopedPath';
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// Tier and TieredChallenge now come from the service, which is also what the
-// server-catalog fetch returns -- one definition, so a tier added there cannot
-// silently disagree with the tabs here.
-type TieredChallenge = TieredUserChallenge;
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const TIER_LABELS: Record<Tier, string> = {
-  daily: 'Daily',
-  weekly: 'Weekly',
-  monthly: 'Monthly',
-};
-
-const TIER_COLORS: Record<Tier, string> = {
-  daily: 'var(--realism-cyan, #55e8ff)',
-  weekly: 'var(--realism-chrome, #b8c4c9)',
-  monthly: 'var(--realism-gold, #ffc93c)',
-};
-
-const TIER_CONTROL_ICONS: Record<Tier, CasinoControlIconVariant> = {
-  daily: 'cycle-daily',
-  weekly: 'cycle-weekly',
-  monthly: 'cycle-monthly',
-};
-
-const TIER_PRESENTATION: Record<Tier, { title: string; eyebrow: string; description: string }> = {
-  daily: {
-    title: 'Daily Challenges',
-    eyebrow: 'Club Arena / Daily Challenge Vault',
-    description:
-      'Complete Live Poker Objectives, Protect Your Streak, And Collect Real Diamond Rewards At The Club Arena Rewards Desk.',
-  },
-  weekly: {
-    title: 'Weekly Challenges',
-    eyebrow: 'Club Arena / Weekly Challenge Circuit',
-    description:
-      'Build Momentum Across The Weekly Poker Circuit, Complete Larger Objectives, And Settle Premium Diamond Rewards.',
-  },
-  monthly: {
-    title: 'Monthly Challenges',
-    eyebrow: 'Club Arena / Monthly High-Roller Ledger',
-    description:
-      "Chase Long-Form Poker Milestones, Track Your Monthly Run, And Secure The Vault's Largest Diamond Rewards.",
-  },
-};
-
-const TIERS: Tier[] = ['daily', 'weekly', 'monthly'];
-
-const MISSION_HERO_DESKTOP = 'images/challenges/daily-missions-casino-v2.webp';
-const MISSION_HERO_MOBILE = 'images/challenges/daily-missions-casino-v2-mobile.webp';
-const MISSION_REWARD_ARTWORK = 'images/challenges/daily-missions-reward-pedestal-v1.webp';
-const MISSION_FREEZE_ARTWORK = 'images/challenges/daily-missions-streak-freeze-v1.webp';
-const MISSION_DIAMOND_ARTWORK = 'images/challenges/daily-missions-diamond-96-v1.webp';
-const MISSION_RESET_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  weekday: 'short',
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-  timeZoneName: 'short',
-});
-const MISSION_SYNC_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  hour: 'numeric',
-  minute: '2-digit',
-});
-const MISSION_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  weekday: 'long',
-  month: 'long',
-  day: 'numeric',
-  timeZone: 'UTC',
-});
-
-/** Restore keyboard focus after a state update removes the activated control. */
-function focusAfterMissionUpdate(targetId: string): void {
-  requestAnimationFrame(() => document.getElementById(targetId)?.focus());
-}
-
-function MissionHeroArtwork({ tier }: { tier: Tier }) {
-  return (
-    <div className={styles.heroPicture} data-hero-cycle={tier} aria-hidden="true">
-      <picture>
-        <source media="(max-width: 680px)" srcSet={mediaUrl(MISSION_HERO_MOBILE)} />
-        <img
-          className={styles.heroArtwork}
-          src={mediaUrl(MISSION_HERO_DESKTOP)}
-          alt=""
-          width="1717"
-          height="916"
-          loading="eager"
-          decoding="async"
-          fetchPriority="high"
-        />
-      </picture>
-      <span className={styles.heroCycleAtmosphere} />
-      <span className={styles.heroCycleInstrument} data-cycle-instrument={tier}>
-        <CasinoControlIcon variant={TIER_CONTROL_ICONS[tier]} state="active" size="lg" />
-      </span>
-    </div>
-  );
-}
-
-function DiamondMark({ className = '' }: { className?: string }) {
-  return (
-    <img
-      className={`${styles.inlineDiamond} ${className}`}
-      src={mediaUrl(MISSION_DIAMOND_ARTWORK)}
-      alt=""
-      width="96"
-      height="96"
-      loading="lazy"
-      decoding="async"
-      aria-hidden="true"
-    />
-  );
-}
-
-function FreezeVaultGraphic() {
-  return (
-    <div className={styles.freezeVaultGraphic} aria-hidden="true">
-      <span className={styles.freezeVaultHalo} />
-      <img
-        className={styles.freezeVaultArtwork}
-        src={mediaUrl(MISSION_FREEZE_ARTWORK)}
-        alt=""
-        width="720"
-        height="720"
-        loading="eager"
-        decoding="async"
-      />
-      <span className={styles.freezeVaultScan} />
-    </div>
-  );
-}
+import {
+  focusAfterMissionUpdate,
+  MISSION_DATE_FORMATTER,
+  MISSION_DIAMOND_ARTWORK,
+  MISSION_RESET_FORMATTER,
+  MISSION_REWARD_ARTWORK,
+  MISSION_SYNC_FORMATTER,
+  TIER_COLORS,
+  TIER_CONTROL_ICONS,
+  TIER_LABELS,
+  TIER_PRESENTATION,
+  TIERS,
+  type TieredChallenge,
+} from '../components/challenges/dashboard/missionPresentation';
+import {
+  DiamondMark,
+  FreezeVaultGraphic,
+  MissionHeroArtwork,
+} from '../components/challenges/dashboard/MissionArtwork';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CARDS

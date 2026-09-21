@@ -3,8 +3,10 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CHALLENGE_TYPES, type ChallengeType } from '../src/services/DailyChallengeService';
 import { getChallengeMissionAction } from '../src/utils/challengeMissionAction';
+import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
 
 const PAGE = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
+const PRESENTATION = readDailyChallengesUnit('missionPresentation.ts');
 const CSS = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'), 'utf8');
 const APP_LAYOUT = readFileSync(
   resolve(__dirname, '../src/components/layouts/AppLayout.tsx'),
@@ -52,9 +54,9 @@ describe('Daily Missions accessibility contract', () => {
     expect(PAGE).toContain(
       'document.title = `${TIER_PRESENTATION[activeTier].title} | Smarter Poker`'
     );
-    expect(PAGE).toContain("title: 'Daily Challenges'");
-    expect(PAGE).toContain("title: 'Weekly Challenges'");
-    expect(PAGE).toContain("title: 'Monthly Challenges'");
+    expect(PRESENTATION).toContain("title: 'Daily Challenges'");
+    expect(PRESENTATION).toContain("title: 'Weekly Challenges'");
+    expect(PRESENTATION).toContain("title: 'Monthly Challenges'");
   });
 
   it('keeps shell route focus from stealing the challenge tabs roving focus', () => {
@@ -108,7 +110,7 @@ describe('Daily Missions accessibility contract', () => {
   });
 
   it('recovers focus when stale claim receipts remove the activated control', () => {
-    expect(PAGE).toContain(
+    expect(PRESENTATION).toContain(
       'requestAnimationFrame(() => document.getElementById(targetId)?.focus())'
     );
     expect(PAGE).toContain('focusAfterMissionUpdate(`mission-card-${challenge.id}`)');

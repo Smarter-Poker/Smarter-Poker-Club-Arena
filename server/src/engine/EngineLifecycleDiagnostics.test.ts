@@ -890,3 +890,193 @@ describe('separate historical pending source requires complete native absence', 
     await e.stop();
   });
 });
+
+// The two original `mixed_original_work_not_drained` conjunctions refused with
+// one opaque code for ~34 separate facts, and the engine's read-only
+// diagnostics API exposes only a few of them, so a stuck release could not be
+// diagnosed from outside. The refusal now carries the name of the exact
+// sub-condition that failed. These cases pin BOTH halves of that contract: the
+// added fields name the failing check, and `reason` stays byte-identical so
+// every existing parser of `mixed_original_work_not_drained` is unaffected.
+describe('the retained 8825 drain refusal names its failed sub-condition', () => {
+  const drainCases: { check: string; observed: string; fault: (e: any) => void }[] = [
+    { check: 'engine.terminal', observed: 'false', fault: (e) => (e.terminal = false) },
+    {
+      check: 'engine.terminalTeardownComplete',
+      observed: 'false',
+      fault: (e) => (e.terminalTeardownComplete = false),
+    },
+    {
+      check: 'engine.dealingLoopPromise',
+      observed: 'Promise',
+      fault: (e) => (e.dealingLoopPromise = Promise.resolve()),
+    },
+    {
+      check: 'engine.postHandTasksPromise',
+      observed: 'Promise',
+      fault: (e) => (e.postHandTasksPromise = Promise.resolve()),
+    },
+    {
+      check: 'engine.snapshotFlushPromise',
+      observed: 'Promise',
+      fault: (e) => (e.snapshotFlushPromise = Promise.resolve()),
+    },
+    { check: 'engine.handController', observed: 'object', fault: (e) => (e.handController = {}) },
+    { check: 'engine.actionLock', observed: 'true', fault: (e) => (e.actionLock = true) },
+    {
+      check: 'engine.f06HandPreparation',
+      observed: 'Promise',
+      fault: (e) => (e.f06HandPreparation = Promise.resolve()),
+    },
+    {
+      check: 'engine.f06RecoveryInFlight',
+      observed: 'true',
+      fault: (e) => (e.f06RecoveryInFlight = true),
+    },
+    {
+      check: 'engine.terminalBoundaryPersistenceFailed',
+      observed: 'true',
+      fault: (e) => (e.terminalBoundaryPersistenceFailed = true),
+    },
+    {
+      check: 'engine.timeBankAccountingUnconfirmed',
+      observed: 'true',
+      fault: (e) => (e.timeBankAccountingUnconfirmed = true),
+    },
+    {
+      check: 'engine.engineLeaseScope',
+      observed: 'direct',
+      fault: (e) => (e.engineLeaseScope = 'direct'),
+    },
+    {
+      check: 'engine.engineLeaseVerified',
+      observed: 'false',
+      fault: (e) => (e.engineLeaseVerified = false),
+    },
+    {
+      check: 'engine.engineLeaseTournamentId',
+      observed: 'string(36)',
+      fault: (e) => (e.engineLeaseTournamentId = id(999)),
+    },
+    {
+      check: 'engine.engineLeaseGeneration',
+      observed: 'string(36)',
+      fault: (e) => (e.engineLeaseGeneration = id(998)),
+    },
+    {
+      check: 'engine.hasOnlyDrainedTournamentMoveOwner(manager.tournamentMoveBoundaryOwner)',
+      observed: 'false',
+      fault: (e) => e.tournamentMovePauseOwners.add(id(997)),
+    },
+  ];
+  it.each(drainCases)(
+    'names $check and keeps the reason unchanged',
+    async ({ check, observed, fault }) => {
+      const f = await nativeCheckpoint(false, true);
+      const e = f.originals[0].e;
+      fault(e);
+      const result: any = await f.run();
+      // The pre-existing contract: same refusal, same code, nothing authorized.
+      expect(result.ok).toBe(false);
+      expect(result.reason).toBe('mixed_original_work_not_drained');
+      expect(result.restartAuthorized).toBe(false);
+      expect(result.readyForRestart).toBe(false);
+      expect(result.checkpointOutcome).toBe('not_started');
+      // The new contract: the refusal names itself.
+      expect(result.failedCheck).toBe(check);
+      expect(result.failedTable).toBe(e.tableId);
+      expect(result.observed).toBe(observed);
+      expect(f.receipts.size).toBe(0);
+      expect(f.s.tableEngines.size).toBe(2);
+    }
+  );
+
+  it('names the live-engine registry clause without disturbing the registry', async () => {
+    const f = await nativeCheckpoint(false, true);
+    const e = f.originals[0].e;
+    const live: Map<string, unknown> = (base.ServerTableEngineBase as any).liveEngines;
+    live.set(e.tableId, e);
+    try {
+      const result: any = await f.run();
+      expect(result.reason).toBe('mixed_original_work_not_drained');
+      expect(result.failedCheck).toBe('base.liveEngines.has(tableId)');
+      expect(result.observed).toBe('true');
+      expect(result.failedTable).toBe(e.tableId);
+    } finally {
+      live.delete(e.tableId);
+    }
+  });
+
+  it('names the move-owner clause the boolean predicate hides', async () => {
+    const f = await nativeCheckpoint(false, true);
+    const e = f.originals[0].e;
+    // A pause claimed under a different owner is the deadlock this change was
+    // written to expose: the native predicate returns one `false` for six
+    // clauses, and only the claimed/paused owner sets can explain it.
+    e.claimedTournamentMovePauseOwners.add(id(996));
+    const result: any = await f.run();
+    expect(result.reason).toBe('mixed_original_work_not_drained');
+    expect(result.failedCheck).toBe(
+      'engine.hasOnlyDrainedTournamentMoveOwner(manager.tournamentMoveBoundaryOwner)'
+    );
+    expect(result.observedDetail).toContain('terminalTeardownComplete=true');
+    expect(result.observedDetail).toContain('notRunning=true');
+    expect(result.observedDetail).toContain('tournamentMoveOperations=0');
+    expect(result.observedDetail).toContain('tournamentMoveOperationByOwner=0');
+    expect(result.observedDetail).toContain(
+      'claimedTournamentMovePauseOwners=size=1/allMatchBoundaryOwner=false'
+    );
+    expect(result.observedDetail).toContain(
+      'tournamentMovePauseOwners=size=0/allMatchBoundaryOwner=true'
+    );
+    // No owner value of any kind reaches the emitted detail.
+    expect(result.observedDetail).not.toContain(id(996));
+    expect(JSON.stringify(result)).not.toContain(id(996));
+  });
+
+  it('names which retained collection is not drained', async () => {
+    const f = await nativeCheckpoint(false, true);
+    const e = f.originals[0].e;
+    e.readContinuationTasks.add(Promise.resolve());
+    const result: any = await f.run();
+    expect(result.reason).toBe('mixed_original_work_not_drained');
+    expect(result.failedCheck).toBe('engineCollection.size');
+    expect(result.failedField).toBe('readContinuationTasks');
+    expect(result.failedTable).toBe(e.tableId);
+    expect(result.observed).toBe('1');
+    expect(result.expected).toBe('0');
+  });
+
+  it('names which retained collection has the wrong type', async () => {
+    const f = await nativeCheckpoint(false, true);
+    const e = f.originals[0].e;
+    e.timeBankAccountingPending = new Map();
+    const result: any = await f.run();
+    expect(result.reason).toBe('mixed_original_work_not_drained');
+    expect(result.failedCheck).toBe('engineCollection.type');
+    expect(result.failedField).toBe('timeBankAccountingPending');
+    expect(result.observed).toBe('Map(0)');
+    expect(result.expected).toBe('Set');
+  });
+
+  it('adds no field when the checkpoint qualifies', async () => {
+    const f = await nativeCheckpoint(false, true);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true, reason: null });
+    for (const key of ['failedCheck', 'failedTable', 'failedField', 'observed', 'expected'])
+      expect(result[key]).toBeUndefined();
+  });
+
+  it('adds no field to a refusal raised by a different check', async () => {
+    const f = await nativeCheckpoint(false, true);
+    const e = f.originals[0].e;
+    // `mixed_bank_shape` is the require that follows the two split sites; it is
+    // untouched by this change and must still refuse with no added detail.
+    e.handCount = -1;
+    const result: any = await f.run();
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('mixed_bank_shape');
+    for (const key of ['failedCheck', 'failedTable', 'failedField', 'observed', 'expected'])
+      expect(result[key]).toBeUndefined();
+  });
+});

@@ -313,7 +313,7 @@
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
     "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
-    "tests/fixtures/union-weekly-basis/source-binding.json": "9bdc881651bce10ad4c068e4095b18d132a3865b559e34e7c89ea96731e3a1e8",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "06b6e8223bc0fd1759acdda3e2f1cc344d68567f4412f13cce656fd11ad7a6ed",
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
@@ -334,7 +334,7 @@
     "tests/fixtures/union-weekly-basis/captured-document-dependencies.json": "b5f5a9e7e0a2a7c710295bcd6b0a1b5aca7ddf9c27a6268167eba1a8e35fa23b",
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
-    "scripts/dev/test-union-weekly-basis.py": "9e2a62848cae29f8910949c816e9b67d6b37286ba607c285bc17d1a755276ebd",
+    "scripts/dev/test-union-weekly-basis.py": "e312350cec2816c5490c7522b1b850cd751571b70c848201fd1d7f8f6aa2a220",
     "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "fa2f2f378db56fa7b586c6ddecaf43d58cac0b34817e8497b13ebb5159f33798",
     "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
     "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf",
@@ -1617,5 +1617,27 @@
     ],
     "reason": "Flake repair only; no accounting component, SQL, captured catalog, fixture, limit or assertion changed. The pre-push hook's 90-file root suite runs vitest at full width, and its spawnSync contract tests inherit vitest's 5000ms DEFAULT, which is a unit-test budget: their wall time scales with machine load, not with the code under test. tests/unit/fixtureNativeCi.test.ts is one of those suites, so its two describes gained an explicit { timeout: 90_000 } and nothing else. That edit moves its bytes, and this binding, the sep8 and earlybird bindings and the cash qualification manifest all pin those bytes; refreshing the two nested bindings changes their own sha256, which this outer binding also pins, so the three hashes move together. The two historical sha256 records for this file inside mtt_historical_bank_loss_main_integration_20260920 are NOT restamped: they record what that integration did and remain the bytes it qualified.",
     "verification": "python3 scripts/ci/verify-source-bindings.py re-read every pin map in every source-binding.json in the merged tree: 749 pins across 15 sections in 15 binding files, the three refreshed here included, all agree. python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py accepts the refreshed cash manifest in 6 cases. The suite this file belongs to was executed: tests/unit/fixtureNativeCi.test.ts passes 589 tests, and the full 90-file root suite the hook runs passes 2412 tests. No native financial execution and no production installation is established by this refresh; the required hosted accounting job must still pass. Neither cash_games_enabled nor tournaments_enabled was touched, and no production object was read, created or changed."
+  },
+  "rakeback_payout_document_successor_20260921": {
+    "migrations": [
+      "supabase/migrations/20260921022924_rakeback_payouts_carry_their_document_and_run_identity.sql"
+    ],
+    "prior_binding_sha256": "94e822871b6ca53db73671bc96565408702e8c55073f7834c762c5127a64f441",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/dev/test-union-weekly-basis.py",
+        "previous_sha256": "9e2a62848cae29f8910949c816e9b67d6b37286ba607c285bc17d1a755276ebd",
+        "sha256": "e312350cec2816c5490c7522b1b850cd751571b70c848201fd1d7f8f6aa2a220"
+      },
+      {
+        "path": "tests/fixtures/union-weekly-basis/source-binding.json",
+        "previous_sha256": "9bdc881651bce10ad4c068e4095b18d132a3865b559e34e7c89ea96731e3a1e8",
+        "sha256": "06b6e8223bc0fd1759acdda3e2f1cc344d68567f4412f13cce656fd11ad7a6ed"
+      }
+    ],
+    "added_repository_inputs": ["tests/fixtures/rakeback-payout-document/regression.sql"],
+    "reason": "On 2026-09-14, 420 posted rakeback legs moved 84,041.00 from settlement_suspense into 420 player wallets with settlement_id NULL, no invoice, no receipt and no settlement run; accounting_routed_settlement_runs has never held a row. The writer was fn_club_members_ledger_writer, the AFTER UPDATE OF chip_balance journal trigger on club_members, which takes the leg category from app.ledger_category and defaults the counterparty to settlement_suspense, and which knows no period, certificate, payout row, run or document. It now refuses a rakeback movement by name (rakeback_requires_accounting_authority), and a deferrable constraint trigger states the invariant for every writer (rakeback_payout_leg_undocumented). The 420 historical rows are untouched. No cron, watcher, reconciler or repair loop; no second payer and no second document authority.",
+    "qualification": "scripts/dev/test-union-weekly-basis.py installs the migration with the predecessors pristine, so every regression on that cluster - including the real raked weekly close through fn_union_settlement_cascade - runs with the constraint armed. tests/fixtures/rakeback-payout-document/regression.sql then proves both refusals by exact SQLSTATE and name, that the accepted weekly payout satisfies every clause, and that each refusal leaves the journal, documents, deliveries and every balance byte-identical.",
+    "first_settleable_week": "The constraint requires a strict subset of what fn_settle_accounting_rakeback_stage already writes and already asserts with routed_rakeback_invoice_delivery_incomplete. It does NOT require chip_ledger.settlement_id, which that authority does not populate on the payout leg, so it cannot refuse 2026-09-21 07:00Z -> 2026-09-28 07:00Z."
   }
 }

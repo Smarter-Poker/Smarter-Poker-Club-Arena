@@ -9,6 +9,7 @@ import { confirmDialog } from '../common/confirmDialog';
 import { useToast } from '../common/Toast';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { isManagementContentConflict } from '../../services/ManagementContentError';
+import { SpadeConsole, type ConsoleInk } from '../console/SpadeConsole';
 import styles from './ClubMessageManagementPanel.module.css';
 
 const EMPTY_IDENTITY: ClubIdentityMessages = { tagline: '', lobbyMessage: '', description: '' };
@@ -22,6 +23,17 @@ function CharacterCount({ id, value, limit }: { id: string; value: string; limit
   );
 }
 
+/**
+ * CLUB MESSAGES IS ITS OWN PAGE (Dan 2026-09-20: "DO NOT ATTACH EVERYTHING
+ * TOGETHER WITH THE SAME DISPLAY WINDOWS").
+ *
+ * This panel used to print inside the Game Board's console. It now draws its
+ * own frame: the riveted family - bolted corners, the heavier base with the
+ * spade medallion - whose foot paints exactly two plates, which are this
+ * page's two saves: the club's identity copy, and the announcement being
+ * composed. Everything else is a row on the glass. Every load, draft,
+ * revision, conflict and limit rule below is unchanged.
+ */
 export default function ClubMessageManagementPanel({
   clubId,
   clubName,
@@ -222,15 +234,63 @@ export default function ClubMessageManagementPanel({
     }
   };
 
+  const announcementBusy = busyAnnouncement === (editingId || 'new');
+  const firstLoad = loading && identityRevision === null;
+  const pill = loadError ? 'Locked' : firstLoad ? 'Loading' : dirty ? 'Unsaved' : 'Saved';
+  const pillInk: ConsoleInk = loadError ? 'red' : firstLoad ? 'muted' : dirty ? 'gold' : 'green';
+
   return (
-    <section className={styles.panel} aria-labelledby="club-message-management-title">
+    <SpadeConsole
+      family="riveted"
+      className={styles.panel}
+      eyebrow="Identity & Announcements"
+      title="Club Messages"
+      titleId="club-message-management-title"
+      subtitle={clubName}
+      pill={pill}
+      pillInk={pillInk}
+      aria-labelledby="club-message-management-title"
+      plates={{
+        secondary: {
+          label: savingIdentity ? 'Saving…' : 'Save Club Messages',
+          type: 'button',
+          onClick: () => void saveIdentity(),
+          disabled:
+            loading ||
+            savingIdentity ||
+            Boolean(loadError) ||
+            identityRevision === null ||
+            !identityDirty,
+        },
+        primary: {
+          label: announcementBusy
+            ? 'Saving…'
+            : editingId
+              ? 'Update Announcement'
+              : 'Publish Announcement',
+          type: 'button',
+          onClick: () => void saveAnnouncement(),
+          disabled:
+            !draft.title.trim() ||
+            !draft.content.trim() ||
+            Boolean(loadError) ||
+            identityRevision === null ||
+            announcementBusy,
+          ink: 'white',
+        },
+      }}
+    >
       <header className={styles.heading}>
         <div>
-          <span>Club Message Management</span>
-          <h2 id="club-message-management-title">Every Player-Facing Club Message</h2>
-          <p>{clubName} · Edit Identity Copy And Announcement Banners From One Governed Surface.</p>
+          <span className="sc-ink--blue">Club Message Management</span>
+          <h3 className="sc-ink--silver">Every Player-Facing Club Message</h3>
+          <p className="sc-copy">
+            {clubName} · Edit Identity Copy And Announcement Banners From One Governed Surface.
+          </p>
         </div>
-        <span className={styles.limitKey}>Limits Are Enforced In The Database</span>
+        <span className={`${styles.limitKey} sc-ink--muted`}>
+          Limits Are Enforced In The Database
+        </span>
       </header>
 
       {loadError && (
@@ -306,20 +366,6 @@ export default function ClubMessageManagementPanel({
               limit={CLUB_MESSAGE_LIMITS.description}
             />
           </label>
-          <button
-            type="button"
-            className={styles.primary}
-            onClick={() => void saveIdentity()}
-            disabled={
-              loading ||
-              savingIdentity ||
-              Boolean(loadError) ||
-              identityRevision === null ||
-              !identityDirty
-            }
-          >
-            {savingIdentity ? 'Saving…' : 'Save Club Messages'}
-          </button>
         </div>
 
         <aside className={styles.preview}>
@@ -384,42 +430,26 @@ export default function ClubMessageManagementPanel({
             />
           </label>
           <div className={styles.composerOptions}>
-            <label>
+            <label className={`sc-check${draft.isPinned ? ' sc-check--on' : ''}`}>
               <input
                 type="checkbox"
+                className="sc-check__box"
                 checked={draft.isPinned}
                 onChange={(event) => setDraft({ ...draft, isPinned: event.target.checked })}
                 disabled={loading || Boolean(loadError)}
               />
               Pin Banner
             </label>
-            <label>
+            <label className={`sc-check${draft.isActive ? ' sc-check--on' : ''}`}>
               <input
                 type="checkbox"
+                className="sc-check__box"
                 checked={draft.isActive}
                 onChange={(event) => setDraft({ ...draft, isActive: event.target.checked })}
                 disabled={loading || Boolean(loadError)}
               />
               Display Now
             </label>
-            <button
-              type="button"
-              className={styles.primary}
-              disabled={
-                !draft.title.trim() ||
-                !draft.content.trim() ||
-                Boolean(loadError) ||
-                identityRevision === null ||
-                busyAnnouncement === (editingId || 'new')
-              }
-              onClick={() => void saveAnnouncement()}
-            >
-              {busyAnnouncement === (editingId || 'new')
-                ? 'Saving…'
-                : editingId
-                  ? 'Update Announcement'
-                  : 'Publish Announcement'}
-            </button>
           </div>
         </div>
 
@@ -492,9 +522,13 @@ export default function ClubMessageManagementPanel({
           )}
         </div>
       </div>
-      <p className={styles.saveStatus} role="status" aria-live="polite">
+      <p
+        className={`${styles.saveStatus} ${dirty ? 'sc-ink--gold' : 'sc-ink--muted'}`}
+        role="status"
+        aria-live="polite"
+      >
         {dirty ? 'Unsaved Message Changes Are Staged Locally.' : 'All Message Changes Are Saved.'}
       </p>
-    </section>
+    </SpadeConsole>
   );
 }

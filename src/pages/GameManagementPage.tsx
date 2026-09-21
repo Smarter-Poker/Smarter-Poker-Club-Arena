@@ -1915,7 +1915,12 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       )}
 
       {surface === 'ticker' && allowed && scopeId && (
-        <TickerManagementPanel scope={scope} scopeId={scopeId} onDirtyChange={setSurfaceDirty} />
+        <TickerManagementPanel
+          scope={scope}
+          scopeId={scopeId}
+          scopeName={scopeName}
+          onDirtyChange={setSurfaceDirty}
+        />
       )}
 
       {surface === 'messages' && allowed && hostClubId && (

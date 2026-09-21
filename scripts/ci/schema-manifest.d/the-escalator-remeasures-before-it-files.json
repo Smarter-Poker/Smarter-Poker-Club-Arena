@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/the-custody-gate-reads-rows-2026-09-21. Applied to production as migration 20260921023309: fn_ca_escalate_reconcile_criticals re-measures an entity before filing a critical from a stored ledger_reconcile_log row, instead of escalating a reading that may be hours old. fn_ca_reconcile_treasury_positions is now the one definition of the club-treasury position (reconcile_ledger_nightly reads it too, proved equivalent row-for-row at apply time). fn_ca_reconcile_remeasure answers measurable/ok/critical or measurable=false meaning CANNOT TELL, and never guesses ok for an entity type it does not know.",
+  "functions": ["fn_ca_reconcile_treasury_positions", "fn_ca_reconcile_remeasure"]
+}

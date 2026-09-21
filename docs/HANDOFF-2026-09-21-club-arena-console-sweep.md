@@ -18,16 +18,39 @@ file it finds). Dated claims; re-check each with one call before acting.
   with traps 7.11b to 7.13 and the three 2026-09-14 rulings (Title Case on
   data, a horse is never named, internal tools are not surfaces).
 
-## Inventory after #4696 (find-generic-surfaces.mjs)
+## Inventory after #4696
 
-221 spoken for, 12 to go:
+`node .claude/skills/club-arena-console/scripts/find-generic-surfaces.mjs`
+(the path, because the last copy of this file said `kit/` and there is no
+`kit/`). Re-run 2026-09-21 on `be423c8b72`: **229 spoken for, 4 to go.**
 
-| surface | why it is still on the list |
-| --- | --- |
-| `ClubAdvertisePage` | its console version needs the sponsor pricing and country targeting `#4711` also dropped (`AdCampaignService`); redo it after the ads owner re-lands (worktree `ads-self`, `agent/cowork-ads12`) |
-| `PokerArenaLandingPage` | public landing page; two importers; never rebuilt |
-| `LeaderboardSettlementCard`, `StatCard` | now owned by the leaderboard (`#4521`) and cinematic Stats (`#4974`) re-lands; score 3 to 4, cosmetic |
-| eight `DEAD?` rows | zero importers (`MiniStatsCard`, `PremiumCard`, `RatingModal`, `ReportPlayerModal`, `SpectatorOverlay`, `FAQPanel`, `Card`, `StatCard`); dead code, delete rather than rebuild |
+It said twelve until the scanner was taught two things it had been guessing at
+(#5046). Nine of the twelve cannot be reached from the app entry at all, and
+the repo already writes that down in
+`tests/every-file-under-src-is-reachable.law.test.ts`; the scanner reads that
+law now and holds those nine off the sweep with the reader that keeps each one.
+The tenth, `src/components/common/Card.tsx`, printed `DEAD?` because the
+importer count only ever read `.tsx` and every barrel in this tree is a `.ts` -
+so a component re-exported by `components/common/index.ts` and by nothing else
+counted zero importers. It is reachable and it is a real candidate.
+
+| surface                          | score | state                                                                                                                                                                                                              |
+| -------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ClubAdvertisePage`              | 34    | **UNBLOCKED as of 2026-09-21.** The previous copy of this file said it waits on the ads owner re-landing `AdCampaignService`; that landed, and `src/services/AdCampaignService.ts` is on `main` today. Rebuild it. |
+| `PokerArenaLandingPage`          | 16    | the public landing page at `/`, lazy in `App.tsx` **and** in `entry-server.tsx`'s prerender map, so a rebuild has to be checked in the prerendered HTML as well as in the browser. Never rebuilt.                  |
+| `src/components/common/Card.tsx` | 6     | the design-system Card primitive, reachable through `components/common/index.ts`. Find what still renders it before repainting: a primitive is not a surface, and no console surface uses it.                      |
+| `LeaderboardSettlementCard`      | 3     | one importer (`LeaderboardPage`), cosmetic                                                                                                                                                                         |
+
+The nine unreachable files the scanner prints under the table - `ClubDetailPage`
+(1,986 lines, no route, not in the prerender map), `MiniStatsCard`,
+`PremiumCard`, `RatingModal`, `ReportPlayerModal`, `SpectatorOverlay`,
+`FAQPanel`, `StatCard`, `TableOperationsPanel` - are **neither sweep work nor a
+deletion instruction.** Each sits in the reachability law's `RETAINED` map with
+the test, law or CI script that still reads it by path, and that law is
+explicit: removing one means retargeting its reader in the same commit.
+`ClubDetailPage` is the tempting one, and the operator workspace at
+`/hub/club-arena/clubs/:club/operations` did replace it, but three tests read it
+by path today.
 
 ## What not to redo
 

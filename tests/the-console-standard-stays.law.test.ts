@@ -60,6 +60,47 @@ describe('the #ClubArenaConsole standard stays', () => {
     }
   });
 
+  it('the inventory asks the reachability law, and says so when it cannot', () => {
+    /* 2026-09-21: the inventory printed " DEAD? " beside any surface with no
+       importer and left the reader to interpret it. Nine of the last twelve
+       rows - ClubDetailPage at score 137 among them - cannot be reached from
+       the app entry at all, and the repo already records that, with the reader
+       that keeps each one, in tests/every-file-under-src-is-reachable.law.
+       An agent read those twelve as twelve surfaces to rebuild.
+
+       Both halves are pinned. The scanner must consult the law, and it must
+       treat "I could not read the law" as its own outcome rather than as
+       "nothing is retained" - which is the same coercion the law itself
+       exists to catch, one level up (CLAUDE.md 10.86 rules 1 and 2). */
+    const raw = readFileSync(join(SKILL_DIR, 'scripts', 'find-generic-surfaces.mjs'), 'utf8');
+    /* Comments stripped first. The obvious spelling of this pin - does the
+       file CONTAIN the law's name - passed against a mutant that had removed
+       the read, because the paragraph above the read still named the law.
+       A pin that its own explanation satisfies is not a pin. */
+    const code = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    expect(
+      code,
+      'the inventory no longer reads every-file-under-src-is-reachable.law, so it will hand an ' +
+        'agent surfaces no player can reach'
+    ).toMatch(/join\([^)]*'tests',\s*'every-file-under-src-is-reachable\.law\.test\.ts'\)/);
+    expect(code, 'the retained map is read but never consulted').toMatch(/retained\.has\(/);
+    /* The unreadable case is its own outcome, not an empty map: `null` from
+       the reader, and a branch that says so in the output. */
+    expect(code, 'an unreadable law must not fall through to "nothing is retained"').toMatch(
+      /retained === null/
+    );
+    expect(
+      code,
+      'the inventory must SAY it could not tell; a silent fallback reads as a clean sweep'
+    ).toContain('COULD NOT TELL');
+    /* And the importer count reads `.ts` as well as `.tsx`: every barrel in
+       this tree is a `.ts`, so a component re-exported only by its barrel
+       counted zero importers and printed DEAD? for a file the app renders. */
+    expect(code, 'the importer scan is back to .tsx only; barrels are .ts').toMatch(
+      /const importScan = walk\(SRC\)\.filter\(\(f\) => \/\\\.tsx\?\$\//
+    );
+  });
+
   it('the surgery library still offers every technique the doc teaches', () => {
     const lib = readFileSync(join(SKILL_DIR, 'scripts', 'master_surgery.py'), 'utf8');
     for (const fn of [

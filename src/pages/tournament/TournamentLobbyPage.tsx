@@ -13,7 +13,7 @@ import {
  * Central hub for discovering and joining tournaments across all clubs
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { readClubContextParam } from '../../utils/clubScopedPath';
 import { supabase } from '../../lib/supabase';
@@ -66,12 +66,14 @@ interface Tournament extends TournamentEntryWindowRow {
   maxPlayers: number | null;
   startingChips: number;
   structureFacts: MttStructureDescription;
-  isRegistered: boolean;
+  /** true / false from the batch read; null when that read did not answer. */
+  isRegistered: boolean | null;
   gameType: string;
   lateRegMins: number;
   isRebuy: boolean;
   variant: string;
   tournamentType: string;
+  spinMultiplier: number | null;
   satellite_target_id?: string | null;
   isBounty: boolean;
   isPko: boolean;
@@ -86,7 +88,11 @@ interface Tournament extends TournamentEntryWindowRow {
 }
 
 export default function TournamentLobbyPage() {
-  const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
+  /* Only `register` is bound. The hook's `isRegistering` was destructured and
+     never read - each card owns the busy state for its own plate, because the
+     board shows many and one shared flag would grey out every Take A Seat on
+     the page while one of them worked. */
+  const { register: registerMtt } = useTournamentRegistration();
 
   const { clubId: routeClubId } = useParams<{ clubId?: string }>();
   const { user } = useAuthUser();
@@ -120,12 +126,25 @@ export default function TournamentLobbyPage() {
     (async () => {
       try {
         const resolvedId = await resolveClubUUID(clubId);
-        const { data } = await supabase
+        /* The error is bound, because PostgREST RESOLVES with `{ error }`
+           rather than throwing: `const { data }` alone put a failed read and
+           "this club is in no union" in the same shape, and the catch below
+           never saw it. The outcome on a failed read is unchanged and
+           deliberate - fail OPEN, leaving Create Tournament offered, because
+           refusing the affordance on an unreadable row would hide the one way
+           out of an empty board from every standalone club during a blip; the
+           server refuses a union club's create anyway. What changes is that
+           the failure is now reported instead of silently read as "no union". */
+        const { data, error } = await supabase
           .from('union_clubs')
           .select('union_id')
           .eq('club_id', resolvedId)
           .limit(1)
           .maybeSingle();
+        if (error) {
+          reportError(error, 'TournamentLobbyPage.unionMembershipUnreadable');
+          return;
+        }
         if (isMounted.current && data) setIsInUnion(true);
       } catch (e) {
         reportError(e, 'TournamentLobbyPage.async');
@@ -215,7 +234,9 @@ export default function TournamentLobbyPage() {
 
     // Cleanup old channels for tournaments no longer running
     const channelMap = channelRefsRef.current;
-    for (const [tourneyId, channel] of channelMap.entries()) {
+    /* keys(), not entries(): the loop closes a channel by KEY through the bus
+       and never touched the bound value, which read as an unused binding. */
+    for (const tourneyId of [...channelMap.keys()]) {
       if (!runningTournamentIds.includes(tourneyId)) {
         masterBus.removeRegisteredChannel(`t-break-${tourneyId}`);
         channelMap.delete(tourneyId);
@@ -317,6 +338,13 @@ export default function TournamentLobbyPage() {
     try {
       // Fetch active tournaments first (REGISTERING/RUNNING/ANNOUNCED), then completed
       // Two queries to ensure active tournaments always appear regardless of limit
+      /* THIS IS A POSTGREST COLUMN LIST, NOT CODE. Every line inside the
+         backticks below is sent to the server verbatim, so a block comment
+         written in there becomes part of the query string. Reasons go here.
+
+         `spin_multiplier` is read so a RUNNING Spin's card can print what it
+         actually pays; utils/spinReveal is what keeps the draw secret while
+         the game is still filling. */
       const fields = `
                     format_contract,
                     id,
@@ -334,6 +362,7 @@ export default function TournamentLobbyPage() {
                     game_type,
                     variant,
                     tournament_type,
+                    spin_multiplier,
                     satellite_target_id,
                     late_reg_mins,
                     late_reg_levels,
@@ -405,12 +434,22 @@ export default function TournamentLobbyPage() {
       if (clubId) {
         try {
           resolvedClubId = await resolveClubUUID(clubId);
-          const { data: ucRow } = await supabase
+          /* Bound for the same reason as the membership read above: an
+             unreadable `union_clubs` row and "not in a union" were the same
+             value here, and this one decides SCOPE. The fallback is already
+             the safe direction - no union id means this club's own games
+             only, never a sibling's private ones - so the behaviour does not
+             change; the difference is that a union player seeing a board with
+             every union game missing now leaves a trace of why. */
+          const { data: ucRow, error: ucError } = await supabase
             .from('union_clubs')
             .select('union_id')
             .eq('club_id', resolvedClubId)
             .limit(1)
             .maybeSingle();
+          if (ucError) {
+            reportError(ucError, 'TournamentLobbyPage.unionScopeUnreadable');
+          }
           unionId = ucRow?.union_id ?? null;
         } catch (e) {
           reportError(e, 'TournamentLobbyPage.map');
@@ -495,14 +534,29 @@ export default function TournamentLobbyPage() {
       }
 
       if (!error && data) {
-        // Check which tournaments user is registered for
-        let registrations: string[] = [];
+        /* WHICH TOURNAMENTS THIS PLAYER IS ALREADY IN - ONE QUERY, AND THE
+           THIRD OUTCOME IS KEPT (2026-09-21).
+
+           `regData?.map(...) || []` folded a FAILED read into an empty list,
+           and an empty list reads as "registered for nothing". Every card
+           then rendered a live "Register (buy-in)" button at a player who was
+           already in, and pressing it is a second entry attempt against real
+           money. A read that did not answer is its own outcome and is carried
+           as one (CLAUDE.md 10.86 rule 1): `null` here, which is exactly what
+           TournamentLobbyCard's `knownRegistration` contract means by "my
+           batch query failed, go and look for yourself". */
+        let registrations: string[] | null = [];
         if (user?.id) {
-          const { data: regData } = await supabase
+          const { data: regData, error: regError } = await supabase
             .from('tournament_players')
             .select('tournament_id')
             .eq('user_id', user.id);
-          registrations = regData?.map((r) => r.tournament_id) || [];
+          if (regError) {
+            reportError(regError, 'TournamentLobbyPage.registrationsUnreadable');
+            registrations = null;
+          } else {
+            registrations = (regData ?? []).map((r) => r.tournament_id);
+          }
         }
 
         if (!isMounted.current) return;
@@ -529,7 +583,9 @@ export default function TournamentLobbyPage() {
           satellite_target_id: t.satellite_target_id,
           startingChips: t.starting_chips || 0,
           structureFacts: describeStoredMttStructure(t.blind_structure, t.starting_chips),
-          isRegistered: registrations.includes(t.id),
+          /* `null` (the read failed) is carried through as null rather than
+             collapsed to false; the card refuses to guess in that case. */
+          isRegistered: registrations === null ? null : registrations.includes(t.id),
           gameType: t.game_type || 'NLH',
           lateRegMins: t.late_reg_mins || 0,
           late_reg_levels: t.late_reg_levels,
@@ -544,6 +600,7 @@ export default function TournamentLobbyPage() {
           guaranteedPrize: t.guaranteed_prize || 0,
           variant: t.variant || 'freezeout',
           tournamentType: t.tournament_type || '',
+          spinMultiplier: t.spin_multiplier ?? null,
           isBounty: t.is_bounty || t.bounty_amount > 0 || /bounty/i.test(t.name) || false,
           isPko: t.is_pko || /\bpko\b/i.test(t.name) || /progressive\s*k/i.test(t.name) || false,
           isMysteryBounty: t.is_mystery_bounty || /mystery/i.test(t.name) || false,
@@ -612,6 +669,27 @@ export default function TournamentLobbyPage() {
     );
   };
 
+  /* NOTHING ON THIS PAGE CALLS THIS TODAY, AND IT IS NOT DEAD CODE TO DELETE
+     ON SIGHT (read before removing, 2026-09-21).
+
+     The card's Unregister plate navigates to `/tournaments/:id` on purpose -
+     leaving a tournament moves money (a wallet refund or a ticket back), and
+     the details page is where a player sees which, with a confirmation. So the
+     one-tap path was deliberately removed from the board and this handler was
+     left behind.
+
+     It is still named by `tests/unit/tournamentTicketUnregisterSurfaces.test.ts`,
+     which lists this file among the surfaces that must report the COMMITTED
+     rail rather than assuming which one paid, and that assertion is satisfied
+     by `tournamentUnregisterSuccessText` below. (The same law also forbids the
+     hard-coded sentence that assumes the wallet. It is not repeated here: that
+     law greps this file, so quoting the banned phrase in a comment turns it
+     red - which is exactly what the first draft of this note did.) Deleting
+     the handler means removing this file from that list in the same commit,
+     with the reason, and that is a change to a money-copy law's subject rather
+     than a tidy-up. If the board is ever given a direct unregister again, this
+     is the shape it takes. Either way it is a decision, not a lint fix. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleUnregister = async (tournamentId: string) => {
     if (!user?.id) return;
     try {
@@ -846,7 +924,10 @@ export default function TournamentLobbyPage() {
                  SNG/MTT tabs build tournaments. One action, so it is a lit
                  word on the glass, never a lone plate. */
               <p className={styles.emptyWay}>
-                <Link to={`/clubs/${clubId}/create-table`} className={`${styles.link} sc-ink--blue`}>
+                <Link
+                  to={`/clubs/${clubId}/create-table`}
+                  className={`${styles.link} sc-ink--blue`}
+                >
                   Create Tournament
                 </Link>
               </p>
@@ -854,12 +935,25 @@ export default function TournamentLobbyPage() {
           </SpadeConsole>
         ) : (
           groupedTournaments.map((group) => (
-            <div key={group.label}>
-              {/* Time Group Header */}
-              {/* An engraved rule with the window printed on it, not a bar. */}
+            <section key={group.label} aria-labelledby={`tl-window-${group.order}`}>
+              {/* An engraved rule with the window printed on it, not a bar.
+                  It is a real heading: a player running a screen reader down a
+                  seventy-two-hour board has no other way to tell where one
+                  window ends and the next begins, and the bare number beside
+                  it read as "Now 1" with nothing to say what the 1 counted. */}
               <div className={styles.groupHeader}>
-                <span className={`${styles.groupLabel} sc-label sc-ink--blue`}>{group.label}</span>
-                <span className={`${styles.groupCount} sc-label sc-ink--muted`}>
+                <h2
+                  id={`tl-window-${group.order}`}
+                  className={`${styles.groupLabel} sc-label sc-ink--blue`}
+                >
+                  {group.label}
+                </h2>
+                <span
+                  className={`${styles.groupCount} sc-label sc-ink--muted`}
+                  aria-label={`${group.tournaments.length} ${
+                    group.tournaments.length === 1 ? 'Tournament' : 'Tournaments'
+                  }`}
+                >
                   {group.tournaments.length}
                 </span>
               </div>
@@ -910,6 +1004,13 @@ export default function TournamentLobbyPage() {
                       prize_pool_finalized: tournament.prize_pool_finalized,
                       current_level: tournament.current_level,
                       started_at: tournament.started_at,
+                      /* The Spin rule's own inputs: `spinReveal` needs the
+                         format and the state to decide whether the wheel has
+                         turned, and the card prints the ladder ceiling until
+                         it has. */
+                      variant: tournament.variant,
+                      tournament_type: tournament.tournamentType,
+                      spin_multiplier: tournament.spinMultiplier,
                       isRebuy: tournament.isRebuy,
                       guaranteedPrize: tournament.guaranteedPrize,
                       isBounty: tournament.isBounty,
@@ -922,11 +1023,20 @@ export default function TournamentLobbyPage() {
                       isVipOnly: tournament.isVipOnly,
                       isAllInOrFold: tournament.isAllInOrFold,
                     }}
+                    /* THE ANSWER IS ALREADY IN HAND (2026-09-21). The page
+                       reads every one of this player's registrations in ONE
+                       query above. Not passing it made each card run its own
+                       `tournament_players` lookup on mount - on a 72-hour
+                       board that is twenty to forty extra round trips per
+                       load, for a question already answered. The card's own
+                       header says this; the lobby is simply the surface that
+                       never got wired to it. */
+                    knownRegistration={tournament.isRegistered}
                     onRegister={() => handleRegister(tournament.id)}
                   />
                 </div>
               ))}
-            </div>
+            </section>
           ))
         )}
       </div>

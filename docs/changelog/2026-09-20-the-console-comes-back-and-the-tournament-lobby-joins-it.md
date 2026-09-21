@@ -62,9 +62,12 @@ state is a console too, with Create Tournament as a lit word. The page sits on
 black; the Play Circuit skin's gradient and rounded inputs are refused at a
 higher specificity because they are `!important` on the route family.
 
-Before/after at 393px: `shots/sheet-tournament-lobby.png`,
-`shots/sheet-tournament-card.png` (the left column is `main` as it serves
-today).
+Before/after at 393px: [`shots/sheet-tournament-lobby.jpg`](./shots/sheet-tournament-lobby.jpg)
+and [`shots/sheet-tournament-card.jpg`](./shots/sheet-tournament-card.jpg) - the
+left column of each is `main` as it served before this landed. (Those two paths
+named nothing for a day: the sheets were rendered and shown, and the files were
+left in the harness's scratch directory, so the reference resolved only on the
+machine that made it. They are committed beside this file now.)
 
 ## Tests
 

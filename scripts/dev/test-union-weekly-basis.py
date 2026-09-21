@@ -84,6 +84,11 @@ try:
  # assertions name this exact installed base, so it is applied here, while the
  # predecessors are still pristine. Its fixture runs last, below.
  run(next((root/'supabase/migrations').glob('20260920232503*.sql')).read_text(),'club-settlement-floor-source')
+ # A rakeback payout leg cannot be written without its source-linked document
+ # and its settlement/run identity. Installed here, with the predecessors still
+ # pristine, so every regression below - including the real raked weekly close -
+ # runs with the constraint armed.
+ run(next((root/'supabase/migrations').glob('20260921022924*.sql')).read_text(),'rakeback-payout-document-source')
  # Export the exact installed candidate before any disposable test calendar or
  # fault injection. These are installation/readback contracts, not live proof.
  migration=next((root/'supabase/migrations').glob('20260917234315*.sql')).read_text()
@@ -117,6 +122,10 @@ try:
  print(result.stdout,flush=True)
  run((root/'tests/fixtures/union-weekly-basis/tournament-regression.sql').read_text(),'tournament-regression')
  run((root/'tests/fixtures/union-weekly-basis/raked-regression.sql').read_text(),'raked-regression')
+ # The refusals, and the proof that the accepted weekly payout above passed the
+ # same guard. Every probe rolls itself back; the money book is fingerprinted
+ # before and after.
+ run((root/'tests/fixtures/rakeback-payout-document/regression.sql').read_text(),'rakeback-payout-document-regression')
  result=subprocess.run(['python3',str(root/'scripts/dev/qualify-final-atomic-receipt.py'),str(pg/'psql'),str(socket),port,str(base)],capture_output=True,text=True)
  (base/'final-atomic-qualification.log').write_text(result.stdout+result.stderr)
  if result.returncode:raise AssertionError(result.stdout+result.stderr)

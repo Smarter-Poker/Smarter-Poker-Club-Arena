@@ -15,7 +15,12 @@ const workflow = (name: string) =>
 const stage = workflow('stage-engine-release.yml');
 const publisher = workflow('publish-club-arena.yml');
 
-describe('client delivery never inherits the engine activation window', () => {
+// Subprocess contract suite: it runs real child processes, so its wall time
+// scales with machine load, not with the code under test. Slowest test here
+// measured 299ms solo; vitest's 5s default is a unit-test budget and times
+// out under the pre-push hook's 90-file parallel run. 90s is 301x measured,
+// well above the worst contention amplification observed (7.1x).
+describe('client delivery never inherits the engine activation window', { timeout: 90_000 }, () => {
   it.each([
     ['client behavior', ['src/pages/ClubHomePage.tsx'], false],
     ['client styling', ['src/components/table/Table.css'], false],

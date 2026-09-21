@@ -57,7 +57,12 @@ function withGitFixture(check: (fixture: GitFixture) => void) {
   }
 }
 
-describe('Horse Git fixtures stay inside their disposable repository', () => {
+// Subprocess contract suite: it runs real child processes, so its wall time
+// scales with machine load, not with the code under test. Slowest test here
+// measured 399ms solo; vitest's 5s default is a unit-test budget and times
+// out under the pre-push hook's 90-file parallel run. 90s is 226x measured,
+// well above the worst contention amplification observed (7.1x).
+describe('Horse Git fixtures stay inside their disposable repository', { timeout: 90_000 }, () => {
   it.each([false, true])(
     'isolates horse fixture writes from hook context (extended=%s)',
     (extended) => {
@@ -135,7 +140,12 @@ describe('Horse Git fixtures stay inside their disposable repository', () => {
   );
 });
 
-describe('Horse Phase 4 changes admit their PostgreSQL parent job', () => {
+// Subprocess contract suite: it runs real child processes, so its wall time
+// scales with machine load, not with the code under test. Slowest test here
+// measured 300ms solo; vitest's 5s default is a unit-test budget and times
+// out under the pre-push hook's 90-file parallel run. 90s is 300x measured,
+// well above the worst contention amplification observed (7.1x).
+describe('Horse Phase 4 changes admit their PostgreSQL parent job', { timeout: 90_000 }, () => {
   it.each([
     'scripts/ci/probes/horse-phase4-certified-solver/run-pg17.sh',
     'scripts/ci/probes/horse-phase4-certified-solver/certified-v31.sql',
@@ -189,65 +199,74 @@ describe('Horse Phase 4 changes admit their PostgreSQL parent job', () => {
   });
 });
 
-describe('Horse commitment audit remains in the existing accounting PostgreSQL gate', () => {
-  it.each([
-    'scripts/ci/test-horse-commitment-audit.py',
-    'scripts/ci/probes/horse-commitment-audit/bootstrap.sql',
-    'scripts/ci/probes/horse-commitment-audit/setup.sql',
-    'scripts/ci/probes/horse-commitment-audit/original-r1-function.sql',
-    'scripts/ci/probes/horse-commitment-audit/format-and-commitment.sql',
-    'scripts/ci/probes/horse-commitment-audit/roster-identity.sql',
-    'scripts/ci/probes/horse-commitment-audit/reader-auth.sql',
-    'scripts/ci/probes/horse-commitment-audit/reader-page.sql',
-    'scripts/ci/probes/horse-commitment-audit/README.md',
-    'supabase/migrations/20260914161209_horse_committed_pot_daily_audit.sql',
-    'supabase/migrations/20260917051350_horse_commitment_reviews_preserve_format_and_canonical_rosters.sql',
-    'supabase/migrations/20260917052511_horse_private_commitment_review_reader.sql',
-    'tests/unit/horseCi.test.ts',
-  ])('admits the parent job and routing tests for a sole dependency edit: %s', (path) => {
-    const flags = classifyChangedPaths([path]);
-    expect(flags.server).toBe(true);
-    expect(flags.tests).toBe(true);
-    expect(flags.phase4).toBe(false);
-  });
-
-  it.each([
-    'scripts/ci/test-horse-commitment-audit.py.example',
-    'scripts/ci/probes/horse-commitment-audit-other/setup.sql',
-    'docs/horse-commitment-audit.md',
-  ])('does not admit accounting for an unrelated neighbor: %s', (path) => {
-    expect(classifyChangedPaths([path]).server).toBe(false);
-  });
-
-  it('retains admission when a daily fixture is renamed out of the protected path', () => {
-    withGitFixture(({ directory, git, write, commit }) => {
-      const fixture = 'scripts/ci/probes/horse-commitment-audit/roster-identity.sql';
-      write(fixture);
-      const base = commit();
-      git('mv', fixture, 'docs/retired-daily-example.sql');
-      const result = classifyGitChanges({ cwd: directory, base, head: commit() });
-      expect(result.complete).toBe(true);
-      expect(result.paths).toContain(fixture);
-      expect(result.flags.server).toBe(true);
-      expect(result.flags.tests).toBe(true);
+// Subprocess contract suite: it runs real child processes, so its wall time
+// scales with machine load, not with the code under test. Slowest test here
+// measured 402ms solo; vitest's 5s default is a unit-test budget and times
+// out under the pre-push hook's 90-file parallel run. 90s is 224x measured,
+// well above the worst contention amplification observed (7.1x).
+describe(
+  'Horse commitment audit remains in the existing accounting PostgreSQL gate',
+  { timeout: 90_000 },
+  () => {
+    it.each([
+      'scripts/ci/test-horse-commitment-audit.py',
+      'scripts/ci/probes/horse-commitment-audit/bootstrap.sql',
+      'scripts/ci/probes/horse-commitment-audit/setup.sql',
+      'scripts/ci/probes/horse-commitment-audit/original-r1-function.sql',
+      'scripts/ci/probes/horse-commitment-audit/format-and-commitment.sql',
+      'scripts/ci/probes/horse-commitment-audit/roster-identity.sql',
+      'scripts/ci/probes/horse-commitment-audit/reader-auth.sql',
+      'scripts/ci/probes/horse-commitment-audit/reader-page.sql',
+      'scripts/ci/probes/horse-commitment-audit/README.md',
+      'supabase/migrations/20260914161209_horse_committed_pot_daily_audit.sql',
+      'supabase/migrations/20260917051350_horse_commitment_reviews_preserve_format_and_canonical_rosters.sql',
+      'supabase/migrations/20260917052511_horse_private_commitment_review_reader.sql',
+      'tests/unit/horseCi.test.ts',
+    ])('admits the parent job and routing tests for a sole dependency edit: %s', (path) => {
+      const flags = classifyChangedPaths([path]);
+      expect(flags.server).toBe(true);
+      expect(flags.tests).toBe(true);
+      expect(flags.phase4).toBe(false);
     });
-  });
 
-  it('runs the finite daily fixture unconditionally within the admitted accounting job', () => {
-    const job = ci.jobs.accounting_postgres;
-    const steps = job.steps.filter((step: { run?: string }) =>
-      step.run?.includes('python3 -B scripts/ci/test-horse-commitment-audit.py')
-    );
-    expect(steps).toHaveLength(1);
-    expect(steps[0].if).toBeUndefined();
-    expect(steps[0]['continue-on-error']).toBeUndefined();
-    expect(steps[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
-    expect(steps[0].run).toContain('--source-root "$GITHUB_WORKSPACE"');
-    expect(steps[0].run).toContain('--allocation-parent /tmp');
-    expect(job['runs-on']).toBe('ubuntu-latest');
-    expect(ci.jobs.server.needs).toContain('accounting_postgres');
-  });
-});
+    it.each([
+      'scripts/ci/test-horse-commitment-audit.py.example',
+      'scripts/ci/probes/horse-commitment-audit-other/setup.sql',
+      'docs/horse-commitment-audit.md',
+    ])('does not admit accounting for an unrelated neighbor: %s', (path) => {
+      expect(classifyChangedPaths([path]).server).toBe(false);
+    });
+
+    it('retains admission when a daily fixture is renamed out of the protected path', () => {
+      withGitFixture(({ directory, git, write, commit }) => {
+        const fixture = 'scripts/ci/probes/horse-commitment-audit/roster-identity.sql';
+        write(fixture);
+        const base = commit();
+        git('mv', fixture, 'docs/retired-daily-example.sql');
+        const result = classifyGitChanges({ cwd: directory, base, head: commit() });
+        expect(result.complete).toBe(true);
+        expect(result.paths).toContain(fixture);
+        expect(result.flags.server).toBe(true);
+        expect(result.flags.tests).toBe(true);
+      });
+    });
+
+    it('runs the finite daily fixture unconditionally within the admitted accounting job', () => {
+      const job = ci.jobs.accounting_postgres;
+      const steps = job.steps.filter((step: { run?: string }) =>
+        step.run?.includes('python3 -B scripts/ci/test-horse-commitment-audit.py')
+      );
+      expect(steps).toHaveLength(1);
+      expect(steps[0].if).toBeUndefined();
+      expect(steps[0]['continue-on-error']).toBeUndefined();
+      expect(steps[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+      expect(steps[0].run).toContain('--source-root "$GITHUB_WORKSPACE"');
+      expect(steps[0].run).toContain('--allocation-parent /tmp');
+      expect(job['runs-on']).toBe('ubuntu-latest');
+      expect(ci.jobs.server.needs).toContain('accounting_postgres');
+    });
+  }
+);
 
 it('runs the hook-selection laws for a pre-push-only edit', () => {
   expect(classifyChangedPaths(['.husky/pre-push'])).toEqual({

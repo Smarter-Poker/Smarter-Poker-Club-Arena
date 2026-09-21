@@ -437,12 +437,12 @@
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
     "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
-    "tests/unit/fixtureNativeCi.test.ts": "6c3ddda68247adb48a1dda8dda729787fdd86f2cc9101aadcec0035f2c555583",
+    "tests/unit/fixtureNativeCi.test.ts": "cdc183369d5b89f141948a37bff52ad76a31f2d3714ec9744a76654544dd3277",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "7619209291038a1f9b39244f1a6b1da2212a05370676e259ee5ded2a914c2279",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "9feae72d48ef51889aecb2c09c31b4520299faec012462bc626144b27db4064d",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -482,7 +482,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "040fb897792bf51e466a79f3b2d86b3d79e1a126731f725ea30cde1f096c438d",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "598e66ca2b5c5be62d3b2a4e0b74f2586e1dee21ddd0edf7fab2b5ff0a31315f",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
@@ -1589,5 +1589,33 @@
     ],
     "reason": "Standalone-club discovery in fn_process_weekly_accounting_scope carried no settlement floor, so the permanently uncertifiable week of 2026-09-07 re-entered the cursor on every tick and the head-of-line EXIT from 20260907164234 blocked every later week. 20260920232503 adds club_settlement_floor, fn_club_settlement_floor_week and the three GREATEST clamps by the exact-needle pg_get_functiondef successor pattern; 20260920232523 moves both floors to 2026-09-21 07:00Z and records the deferred rakeback. The union scope already respected its floor and is unchanged. The only change to scripts/dev/test-union-weekly-basis.py is four added run() steps that apply 20260920232503 on the exact installed base and then execute the new tests/fixtures/club-settlement-floor regression last, after every pre-existing assertion; tests/fixtures/union-weekly-basis/source-binding.json gains those four inputs and the ordinary JSON formatting the pre-commit hook applies. No captured catalog, component, SQL fixture or existing assertion changed.",
     "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py: 71 PASS, 0 failures, including club-settlement-floor-source, club-floor-clock-seam, club-floor-seed and club-floor-regression."
+  },
+  "mtt_spawn_contract_timeouts_20260920": {
+    "base_commit": "b36dc60552b243412d5aada4e27289845d98a83b",
+    "prior_binding_sha256": "(this binding; not pinned by any other file)",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous_sha256": "6c3ddda68247adb48a1dda8dda729787fdd86f2cc9101aadcec0035f2c555583",
+        "sha256": "cdc183369d5b89f141948a37bff52ad76a31f2d3714ec9744a76654544dd3277",
+        "previous_bytes": 89660,
+        "bytes": 90704,
+        "pinned_in": "tests/fixtures/full-weekly-accounting/source-binding.json, tests/fixtures/sep8-spin-custody/source-binding.json, tests/fixtures/earlybird-fee-custody/source-binding.json, scripts/qualification/cash-native-hosted.manifest.json"
+      },
+      {
+        "path": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+        "previous_sha256": "040fb897792bf51e466a79f3b2d86b3d79e1a126731f725ea30cde1f096c438d",
+        "sha256": "598e66ca2b5c5be62d3b2a4e0b74f2586e1dee21ddd0edf7fab2b5ff0a31315f",
+        "pinned_in": "tests/fixtures/full-weekly-accounting/source-binding.json"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "7619209291038a1f9b39244f1a6b1da2212a05370676e259ee5ded2a914c2279",
+        "sha256": "9feae72d48ef51889aecb2c09c31b4520299faec012462bc626144b27db4064d",
+        "pinned_in": "tests/fixtures/full-weekly-accounting/source-binding.json"
+      }
+    ],
+    "reason": "Flake repair only; no accounting component, SQL, captured catalog, fixture, limit or assertion changed. The pre-push hook's 90-file root suite runs vitest at full width, and its spawnSync contract tests inherit vitest's 5000ms DEFAULT, which is a unit-test budget: their wall time scales with machine load, not with the code under test. tests/unit/fixtureNativeCi.test.ts is one of those suites, so its two describes gained an explicit { timeout: 90_000 } and nothing else. That edit moves its bytes, and this binding, the sep8 and earlybird bindings and the cash qualification manifest all pin those bytes; refreshing the two nested bindings changes their own sha256, which this outer binding also pins, so the three hashes move together. The two historical sha256 records for this file inside mtt_historical_bank_loss_main_integration_20260920 are NOT restamped: they record what that integration did and remain the bytes it qualified.",
+    "verification": "python3 scripts/ci/verify-source-bindings.py re-read every pin map in every source-binding.json in the merged tree: 749 pins across 15 sections in 15 binding files, the three refreshed here included, all agree. python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py accepts the refreshed cash manifest in 6 cases. The suite this file belongs to was executed: tests/unit/fixtureNativeCi.test.ts passes 589 tests, and the full 90-file root suite the hook runs passes 2412 tests. No native financial execution and no production installation is established by this refresh; the required hosted accounting job must still pass. Neither cash_games_enabled nor tournaments_enabled was touched, and no production object was read, created or changed."
   }
 }

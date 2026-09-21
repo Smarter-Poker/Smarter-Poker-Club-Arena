@@ -35,7 +35,12 @@ function shellFunction(name: string, nextName: string): string {
   return transaction.slice(start, end);
 }
 
-describe('a degraded engine can still be replaced', () => {
+// Subprocess contract suite: it runs real child processes, so its wall time
+// scales with machine load, not with the code under test. Slowest test here
+// measured 2916ms solo; vitest's 5s default is a unit-test budget and times
+// out under the pre-push hook's 90-file parallel run. 90s is 31x measured,
+// well above the worst contention amplification observed (7.1x).
+describe('a degraded engine can still be replaced', { timeout: 90_000 }, () => {
   it('the health handler preserves the same certificate body for HTTP 200 and 503', () => {
     expect(healthHandler).toMatch(/sendJSON\(res, dealerReady \? 200 : 503, status\)/);
   });

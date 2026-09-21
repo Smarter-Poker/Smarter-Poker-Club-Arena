@@ -84,72 +84,81 @@ const sourceFiles = (): string[] =>
     .split('\n')
     .filter((file) => Boolean(file) && existsSync(resolve(ROOT, file)));
 
-describe('current_level is treated as an index, never as a level number', () => {
-  /**
-   * The offending shapes, both of which force a floor of 1 onto an index:
-   *
-   *   Number(x.current_level) || 1        <- default of 1 where 0 is meant
-   *   Math.max(1, …current_level…)        <- clamped to 1 without converting
-   *
-   * The second needs care. `tournamentLevel` — the CANONICAL converter — reads
-   * `Math.max(1, (Number(t.current_level) || 0) + 1)`, and that is correct: it
-   * adds the one FIRST and then clamps, so a registering row (0 or null) reads
-   * Level 1. My first draft of this rule flagged it, which is worth recording:
-   * a lint rule that condemns the reference implementation is wrong about the
-   * property, not about the file. The distinguishing feature is the `+ 1`.
-   */
-  const isOffender = (line: string): boolean => {
-    if (!line.includes('current_level')) return false;
-    // A default of 1 on the raw column. The correct default is 0.
-    if (/current_level\s*\)?\s*\|\|\s*1\b/.test(line)) return true;
-    // Clamped to a floor of 1 without ever converting index -> number.
-    if (/Math\.max\(\s*1\s*,[^\n]*current_level/.test(line) && !/\+\s*1/.test(line)) return true;
-    return false;
-  };
+// Subprocess contract suite: it runs real child processes, so its wall time
+// scales with machine load, not with the code under test. Slowest test here
+// measured 499ms solo; vitest's 5s default is a unit-test budget and times
+// out under the pre-push hook's 90-file parallel run. 90s is 180x measured,
+// well above the worst contention amplification observed (7.1x).
+describe(
+  'current_level is treated as an index, never as a level number',
+  { timeout: 90_000 },
+  () => {
+    /**
+     * The offending shapes, both of which force a floor of 1 onto an index:
+     *
+     *   Number(x.current_level) || 1        <- default of 1 where 0 is meant
+     *   Math.max(1, …current_level…)        <- clamped to 1 without converting
+     *
+     * The second needs care. `tournamentLevel` — the CANONICAL converter — reads
+     * `Math.max(1, (Number(t.current_level) || 0) + 1)`, and that is correct: it
+     * adds the one FIRST and then clamps, so a registering row (0 or null) reads
+     * Level 1. My first draft of this rule flagged it, which is worth recording:
+     * a lint rule that condemns the reference implementation is wrong about the
+     * property, not about the file. The distinguishing feature is the `+ 1`.
+     */
+    const isOffender = (line: string): boolean => {
+      if (!line.includes('current_level')) return false;
+      // A default of 1 on the raw column. The correct default is 0.
+      if (/current_level\s*\)?\s*\|\|\s*1\b/.test(line)) return true;
+      // Clamped to a floor of 1 without ever converting index -> number.
+      if (/Math\.max\(\s*1\s*,[^\n]*current_level/.test(line) && !/\+\s*1/.test(line)) return true;
+      return false;
+    };
 
-  it('no file clamps current_level to a minimum of 1', () => {
-    const offenders: string[] = [];
-    for (const file of sourceFiles()) {
-      const src = stripComments(read(file));
-      if (!src.includes('current_level')) continue;
-      src.split('\n').forEach((line, i) => {
-        if (isOffender(line)) offenders.push(`${file}:${i + 1}  ${line.trim()}`);
-      });
-    }
-    expect(
-      offenders,
-      'current_level is a 0-BASED INDEX into blind_structure. Clamping it to a ' +
-        'minimum of 1 is only correct for a level NUMBER, so this is the signature ' +
-        'of reading the index as a number — the bug fixed six times across four ' +
-        'files. Index with it as-is, or convert for display with tournamentLevel() ' +
-        'from components/lobby/tournamentFigures.ts:\n' +
-        offenders.join('\n')
-    ).toEqual([]);
-  });
+    it('no file clamps current_level to a minimum of 1', () => {
+      const offenders: string[] = [];
+      for (const file of sourceFiles()) {
+        const src = stripComments(read(file));
+        if (!src.includes('current_level')) continue;
+        src.split('\n').forEach((line, i) => {
+          if (isOffender(line)) offenders.push(`${file}:${i + 1}  ${line.trim()}`);
+        });
+      }
+      expect(
+        offenders,
+        'current_level is a 0-BASED INDEX into blind_structure. Clamping it to a ' +
+          'minimum of 1 is only correct for a level NUMBER, so this is the signature ' +
+          'of reading the index as a number — the bug fixed six times across four ' +
+          'files. Index with it as-is, or convert for display with tournamentLevel() ' +
+          'from components/lobby/tournamentFigures.ts:\n' +
+          offenders.join('\n')
+      ).toEqual([]);
+    });
 
-  it('the rule actually matches the code it was written against', () => {
-    // A lint rule whose pattern matches nothing passes vacuously forever. These
-    // are the exact lines that shipped, quoted from the pre-fix files.
-    const shipped = [
-      'const rowLevelNumber = Math.max(1, Number(row.current_level) || 1);',
-      'const level = Math.max(1, Number(tournament?.current_level) || 1);',
-      'const lateRegLevels = t?.late_reg_levels || t?.current_level || 1;',
-    ];
-    for (const line of shipped) {
-      expect(isOffender(line), `should have caught: ${line}`).toBe(true);
-    }
-    // ...and must not fire on the correct shapes, the canonical converter first.
-    for (const ok of [
-      'const idx = Math.max(0, Number(tournament?.current_level) || 0);',
-      'return Math.max(1, (Number(t.current_level) || 0) + 1);',
-      'index: Math.max(0, Number(tournament?.current_level) || 0),',
-      'const level = num(t?.current_level) + 1;',
-      'if (lateLevels > 0 && Number(t.current_level || 0) < lateLevels) return true;',
-    ]) {
-      expect(isOffender(ok), `false positive on: ${ok}`).toBe(false);
-    }
-  });
-});
+    it('the rule actually matches the code it was written against', () => {
+      // A lint rule whose pattern matches nothing passes vacuously forever. These
+      // are the exact lines that shipped, quoted from the pre-fix files.
+      const shipped = [
+        'const rowLevelNumber = Math.max(1, Number(row.current_level) || 1);',
+        'const level = Math.max(1, Number(tournament?.current_level) || 1);',
+        'const lateRegLevels = t?.late_reg_levels || t?.current_level || 1;',
+      ];
+      for (const line of shipped) {
+        expect(isOffender(line), `should have caught: ${line}`).toBe(true);
+      }
+      // ...and must not fire on the correct shapes, the canonical converter first.
+      for (const ok of [
+        'const idx = Math.max(0, Number(tournament?.current_level) || 0);',
+        'return Math.max(1, (Number(t.current_level) || 0) + 1);',
+        'index: Math.max(0, Number(tournament?.current_level) || 0),',
+        'const level = num(t?.current_level) + 1;',
+        'if (lateLevels > 0 && Number(t.current_level || 0) < lateLevels) return true;',
+      ]) {
+        expect(isOffender(ok), `false positive on: ${ok}`).toBe(false);
+      }
+    });
+  }
+);
 
 describe('the canonical converter still says what the fixes rely on', () => {
   const figures = read('src/components/lobby/tournamentFigures.ts');

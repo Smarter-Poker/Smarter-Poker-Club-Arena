@@ -319,7 +319,12 @@ describe('a changed rule gets one bounded first-evaluation read', () => {
   });
 });
 
-describe('the deployed command actually enforces the comparison', () => {
+// Subprocess contract suite: it runs real child processes, so its wall time
+// scales with machine load, not with the code under test. Slowest test here
+// measured 582ms solo; vitest's 5s default is a unit-test budget and times
+// out under the pre-push hook's 90-file parallel run. 90s is 155x measured,
+// well above the worst contention amplification observed (7.1x).
+describe('the deployed command actually enforces the comparison', { timeout: 90_000 }, () => {
   it.each(['current', 'old', 'unavailable', 'canary-missing'])(
     'returns the authoritative command outcome for %s evidence',
     (kind) => {

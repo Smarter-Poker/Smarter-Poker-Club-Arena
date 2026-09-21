@@ -147,7 +147,12 @@ describe('a gate exists for the copy only the database knows', () => {
   });
 });
 
-describe('the live source still obeys both rules after the widening', () => {
+// Subprocess contract suite: it runs real child processes, so its wall time
+// scales with machine load, not with the code under test. Slowest test here
+// measured 2997ms solo; vitest's 5s default is a unit-test budget and times
+// out under the pre-push hook's 90-file parallel run. 90s is 30x measured,
+// well above the worst contention amplification observed (7.1x).
+describe('the live source still obeys both rules after the widening', { timeout: 90_000 }, () => {
   const run = (script: string) => {
     try {
       execFileSync(process.execPath, [join(ROOT, script)], { stdio: 'pipe' });

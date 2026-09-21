@@ -78,7 +78,12 @@ describe('the extractor finds every door the engine calls, and only those', () =
   });
 });
 
-describe('the real script, end to end', () => {
+// Subprocess contract suite: it runs real child processes, so its wall time
+// scales with machine load, not with the code under test. Slowest test here
+// measured 288ms solo; vitest's 5s default is a unit-test budget and times
+// out under the pre-push hook's 90-file parallel run. 90s is 312x measured,
+// well above the worst contention amplification observed (7.1x).
+describe('the real script, end to end', { timeout: 90_000 }, () => {
   it('fails, and names the door, when production lacks one the build calls', async () => {
     const { engineDoors } = await load();
     const all = [...engineDoors(resolve(root, 'server/src')).keys()];

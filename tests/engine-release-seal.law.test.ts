@@ -121,27 +121,50 @@ describe('disposable Git fixtures preserve the calling repository', () => {
   );
 });
 
-it('executes the actual bounded recovery request without duplicate pauses', () => {
-  const result = spawnSync(
-    'python3',
-    [resolve(ROOT, 'tests/operations/engine-release-recovery-window.py')],
-    { encoding: 'utf8' }
-  );
-  expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 8 tests');
-});
+// Subprocess contract suite: it runs real child processes, so its wall time
+// scales with machine load, not with the code under test. Slowest test here
+// measured 704ms solo; vitest's 5s default is a unit-test budget and times
+// out under the pre-push hook's 90-file parallel run. 90s is 128x measured,
+// well above the worst contention amplification observed (7.1x).
+it(
+  'executes the actual bounded recovery request without duplicate pauses',
+  { timeout: 90_000 },
+  () => {
+    const result = spawnSync(
+      'python3',
+      [resolve(ROOT, 'tests/operations/engine-release-recovery-window.py')],
+      { encoding: 'utf8' }
+    );
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.stderr).toContain('Ran 8 tests');
+  }
+);
 
-it('recovers only genuinely orphaned finalization through the current completion event', () => {
-  const result = spawnSync(
-    'python3',
-    [resolve(ROOT, 'tests/operations/engine-orphan-finalization.py')],
-    { encoding: 'utf8' }
-  );
-  expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 11 tests');
-});
+// Subprocess contract suite: it runs real child processes, so its wall time
+// scales with machine load, not with the code under test. Slowest test here
+// measured 183ms solo; vitest's 5s default is a unit-test budget and times
+// out under the pre-push hook's 90-file parallel run. 90s is 492x measured,
+// well above the worst contention amplification observed (7.1x).
+it(
+  'recovers only genuinely orphaned finalization through the current completion event',
+  { timeout: 90_000 },
+  () => {
+    const result = spawnSync(
+      'python3',
+      [resolve(ROOT, 'tests/operations/engine-orphan-finalization.py')],
+      { encoding: 'utf8' }
+    );
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.stderr).toContain('Ran 11 tests');
+  }
+);
 
-describe('the durable engine release seal', () => {
+// Subprocess contract suite: it runs real child processes, so its wall time
+// scales with machine load, not with the code under test. Slowest test here
+// measured 2491ms solo; vitest's 5s default is a unit-test budget and times
+// out under the pre-push hook's 90-file parallel run. 90s is 36x measured,
+// well above the worst contention amplification observed (7.1x).
+describe('the durable engine release seal', { timeout: 90_000 }, () => {
   let sandbox = '';
   let bin = '';
   let baseEnv: NodeJS.ProcessEnv;
@@ -1599,732 +1622,757 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
   });
 });
 
-describe('every host mutation path obeys the durable release authority', () => {
-  const workflow = read('.github/workflows/auto-deploy-hetzner.yml');
-  const sealSource = read('server/scripts/engine-release-seal.py');
-  const imageBuilderSource = read('server/scripts/build-engine-image.sh');
-  const engineUp = read('server/scripts/engine-up.sh');
-  const supervisor = read('server/scripts/engine-supervisor.sh');
-  const installer = read('server/scripts/install-engine-supervisor.sh');
-  const transaction = read('server/scripts/engine-release-transaction.sh');
-  const recovery = read('server/scripts/engine-release-recover.sh');
-  const launcher = read('server/scripts/launch-engine-release.sh');
-  const intakeInstaller = read('server/scripts/install-engine-intake.sh');
-  const intake = read('server/scripts/engine-release-intake.sh');
-  const retention = read('server/scripts/retain-engine-images.sh');
-  const observer = read('server/scripts/observe-engine-release.sh');
-  const unitWrapper = read('server/scripts/engine-release-unit-wrapper.sh');
-  const databaseProof = read('server/scripts/engine-release-database-proof.py');
-  const recoveryVerifier = read('server/scripts/verify-recovery-stack.sh');
-  const dockerfile = read('server/Dockerfile');
+// Subprocess contract suite: it runs real child processes, so its wall time
+// scales with machine load, not with the code under test. Slowest test here
+// measured 3488ms solo; vitest's 5s default is a unit-test budget and times
+// out under the pre-push hook's 90-file parallel run. 90s is 26x measured,
+// well above the worst contention amplification observed (7.1x).
+describe(
+  'every host mutation path obeys the durable release authority',
+  { timeout: 90_000 },
+  () => {
+    const workflow = read('.github/workflows/auto-deploy-hetzner.yml');
+    const sealSource = read('server/scripts/engine-release-seal.py');
+    const imageBuilderSource = read('server/scripts/build-engine-image.sh');
+    const engineUp = read('server/scripts/engine-up.sh');
+    const supervisor = read('server/scripts/engine-supervisor.sh');
+    const installer = read('server/scripts/install-engine-supervisor.sh');
+    const transaction = read('server/scripts/engine-release-transaction.sh');
+    const recovery = read('server/scripts/engine-release-recover.sh');
+    const launcher = read('server/scripts/launch-engine-release.sh');
+    const intakeInstaller = read('server/scripts/install-engine-intake.sh');
+    const intake = read('server/scripts/engine-release-intake.sh');
+    const retention = read('server/scripts/retain-engine-images.sh');
+    const observer = read('server/scripts/observe-engine-release.sh');
+    const unitWrapper = read('server/scripts/engine-release-unit-wrapper.sh');
+    const databaseProof = read('server/scripts/engine-release-database-proof.py');
+    const recoveryVerifier = read('server/scripts/verify-recovery-stack.sh');
+    const dockerfile = read('server/Dockerfile');
 
-  it('authorizes immutable identity before engine-up stops the serving container', () => {
-    const authorize = engineUp.indexOf('authorize --image');
-    const stop = engineUp.indexOf('docker stop -t 45', authorize);
-    expect(authorize).toBeGreaterThan(0);
-    expect(authorize).toBeLessThan(stop);
-    expect(engineUp).toContain('GIT_COMMIT_SHA|ENGINE_VERSION');
-    expect(engineUp).toContain('--label "sp.release.sha=$AUTHORIZED_SHA"');
-    expect(dockerfile).toContain('LABEL org.opencontainers.image.revision=$GIT_COMMIT_SHA');
-  });
+    it('authorizes immutable identity before engine-up stops the serving container', () => {
+      const authorize = engineUp.indexOf('authorize --image');
+      const stop = engineUp.indexOf('docker stop -t 45', authorize);
+      expect(authorize).toBeGreaterThan(0);
+      expect(authorize).toBeLessThan(stop);
+      expect(engineUp).toContain('GIT_COMMIT_SHA|ENGINE_VERSION');
+      expect(engineUp).toContain('--label "sp.release.sha=$AUTHORIZED_SHA"');
+      expect(dockerfile).toContain('LABEL org.opencontainers.image.revision=$GIT_COMMIT_SHA');
+    });
 
-  it('fully writes durable JSON and removes every abandoned atomic temporary', () => {
-    expect(sealSource).toContain('def write_all(fd: int, payload: bytes) -> None:');
-    expect(sealSource).toContain('while remaining:');
-    expect(sealSource).toContain('written = os.write(fd, remaining)');
-    expect(sealSource).toContain('temporary_path.unlink(missing_ok=True)');
-    const stateWriter = sealSource.slice(
-      sealSource.indexOf('def write_json_atomic'),
-      sealSource.indexOf('def audit(')
-    );
-    expect(stateWriter).toContain('write_all(fd, payload)');
-    const auditWriter = sealSource.slice(
-      sealSource.indexOf('def audit('),
-      sealSource.indexOf('def audit_once(')
-    );
-    expect(auditWriter).toContain('write_all(');
-  });
-
-  it('runs the authorized image ID, so retagging the requested name after authorization is inert', () => {
-    const authorize = engineUp.indexOf('AUTHORIZATION="$("$RELEASE_SEAL"');
-    const immutable = engineUp.indexOf('AUTHORIZED_IMAGE_ID', authorize);
-    const run = engineUp.indexOf('docker run -d');
-    const runBlock = engineUp.slice(run, engineUp.indexOf('\n\nlog "started', run));
-    expect(authorize).toBeGreaterThan(0);
-    expect(immutable).toBeGreaterThan(authorize);
-    expect(run).toBeGreaterThan(immutable);
-    expect(runBlock).toContain('"$AUTHORIZED_IMAGE_ID"');
-    expect(runBlock).not.toMatch(/^\s*"\$IMAGE"\s*$/m);
-  });
-
-  it('does not make a candidate reboot-persistent until every proof commits the seal', () => {
-    const classBranch = engineUp.slice(
-      engineUp.indexOf('case "$AUTHORIZED_CLASS" in'),
-      engineUp.indexOf('[[ "$AUTHORIZED_SHA"', engineUp.indexOf('case "$AUTHORIZED_CLASS" in'))
-    );
-    const run = engineUp.slice(
-      engineUp.indexOf('docker run -d'),
-      engineUp.indexOf('\n\nlog "started', engineUp.indexOf('docker run -d'))
-    );
-    expect(classBranch).toContain('desired) RESTART_POLICY=always');
-    expect(classBranch).toContain('pending)');
-    expect(classBranch).toContain('RESTART_POLICY=no');
-    expect(run).toContain('--restart "$RESTART_POLICY"');
-    expect(run).not.toContain('--restart always');
-
-    const prove = transaction.indexOf('"$DATABASE_PROOF" --env-file');
-    const publicRecheck = transaction.indexOf('PRECOMMIT_PUBLIC_INSTANCE=', prove);
-    const commit = transaction.indexOf('"$RELEASE_SEAL" commit', publicRecheck);
-    const promote = transaction.indexOf('docker update --restart always', commit);
-    const autoheal = transaction.indexOf('docker start sp-autoheal', commit);
-    expect(prove).toBeGreaterThan(0);
-    expect(publicRecheck).toBeGreaterThan(prove);
-    expect(commit).toBeGreaterThan(publicRecheck);
-    expect(promote).toBeGreaterThan(commit);
-    expect(autoheal).toBeGreaterThan(promote);
-    expect(transaction.slice(commit, promote)).toContain('--container "$CONTAINER"');
-    expect(transaction.slice(commit, promote)).toContain(
-      '--container-id "$CANDIDATE_CID" --started-at "$CANDIDATE_STARTED_AT"'
-    );
-    expect(transaction.slice(prove, commit)).toContain('ACTUAL_STARTED_AT');
-  });
-
-  it('installs the control plane outside the rollbackable application checkout', () => {
-    expect(installer).toContain('/usr/local/lib/club-arena/engine-control');
-    expect(installer).toContain(
-      'GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" archive "$CONTROL_SHA"'
-    );
-    expect(installer).not.toContain('ENGINE_CONTROL_SOURCE_DIR');
-    expect(installer).not.toContain('ExecStart=$CONTROL_DIR/engine-supervisor.sh');
-    expect(installer).toContain('ExecStart=$UNIT_WRAPPER_V1 start %i');
-    expect(installer).toContain('ExecStart=/bin/bash $CONTROL_DIR/verify-recovery-stack.sh');
-    expect(workflow).toContain('STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"');
-    expect(workflow).toContain('git -C "$REPO_DIR" archive "$CONTROL_SHA" server/scripts');
-    expect(workflow).toContain('"$STAGE/server/scripts/install-engine-intake.sh"');
-    expect(installer).toContain(
-      'UNIT_WRAPPER_V1="$CONTROL_PARENT/engine-release-unit-wrapper-v1.sh"'
-    );
-    expect(unitWrapper).toContain('GENERATION="${REQUEST_LINES[3]}"');
-    expect(unitWrapper).toContain('GENERATION="${PIN_LINES[0]}"');
-  });
-
-  it('accepts the canonical engine checkout regardless of GitHub owner casing', () => {
-    const hostStage = workflow.slice(
-      workflow.indexOf('name: Stage exact control bytes'),
-      workflow.indexOf('name: Dispatch the staged SHA through the durable Hetzner intake')
-    );
-
-    expect(hostStage).toContain("grep -Fi 'smarter-poker/smarter-poker-club-arena'");
-    expect(hostStage).not.toContain("grep -F 'Smarter-Poker/Smarter-Poker-Club-Arena'");
-  });
-
-  it('accepts single-digit run attempts while rejecting malformed or traversing stage paths', () => {
-    const hostStage = workflow.slice(
-      workflow.indexOf('name: Stage exact control bytes'),
-      workflow.indexOf('name: Dispatch the staged SHA through the durable Hetzner intake')
-    );
-    const guard = hostStage.match(
-      /^\s*(\[\[ "\$STAGE" =~ \^\/var\/lib\/club-arena\/control-staging\/[^\n]+ \]\])$/m
-    )?.[1];
-
-    expect(guard).toBe(
-      '[[ "$STAGE" =~ ^/var/lib/club-arena/control-staging/[1-9][0-9]*-[1-9][0-9]*$ ]]'
-    );
-    expect(hostStage).not.toContain('case "$STAGE" in');
-    expect(hostStage.indexOf('STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"')).toBeLessThan(
-      hostStage.indexOf(guard ?? 'missing stage guard')
-    );
-    expect(hostStage.indexOf(guard ?? 'missing stage guard')).toBeLessThan(
-      hostStage.indexOf('rm -rf -- "$STAGE"')
-    );
-
-    const accepts = (stage: string) =>
-      spawnSync('bash', ['-c', guard ?? 'exit 99'], {
-        encoding: 'utf8',
-        env: { ...process.env, STAGE: stage },
-      }).status === 0;
-
-    expect(accepts('/var/lib/club-arena/control-staging/34613015733-1')).toBe(true);
-    for (const invalid of [
-      '/var/lib/club-arena/control-staging/34613015733-',
-      '/var/lib/club-arena/control-staging/34613015733-01',
-      '/var/lib/club-arena/control-staging/0-1',
-      '/var/lib/club-arena/control-staging/34613015733-1-extra',
-      '/var/lib/club-arena/control-staging/34613015733-1/../../escape',
-      join(tmpdir(), 'control-staging/34613015733-1'),
-    ]) {
-      expect(accepts(invalid), invalid).toBe(false);
-    }
-  });
-
-  it('uses exact numeric guards throughout intake, recovery, and image-lease cleanup', () => {
-    const extractGuard = (source: string, variable: string) => {
-      const marker = `[[ "$${variable}" =~ `;
-      const line = source.split('\n').find((candidate) => candidate.includes(marker));
-      expect(line, `missing ${variable} guard`).toBeDefined();
-      return line!.slice(line!.indexOf('[['), line!.indexOf(']]') + 2);
-    };
-    const accepts = (guard: string, env: NodeJS.ProcessEnv) =>
-      spawnSync('bash', ['-c', guard], {
-        encoding: 'utf8',
-        env: { ...process.env, ...env },
-      }).status === 0;
-
-    const intakeLockGuard =
-      '[[ "$INTAKE_LOCK" =~ ^/var/lock/club-arena-engine-intake-[1-9][0-9]*-[1-9][0-9]*\\.lock$ ]]';
-    for (const [name, source] of [
-      ['install-engine-intake.sh', intakeInstaller],
-      ['engine-release-intake.sh', intake],
-    ] as const) {
-      const guard = extractGuard(source, 'INTAKE_LOCK');
-      expect(guard, name).toBe(intakeLockGuard);
-      expect(
-        accepts(guard, {
-          INTAKE_LOCK: '/var/lock/club-arena-engine-intake-34613015733-1.lock',
-        }),
-        name
-      ).toBe(true);
-      for (const invalid of [
-        '/var/lock/club-arena-engine-intake-34613015733-01.lock',
-        '/var/lock/club-arena-engine-intake-34613015733-1-extra.lock',
-        '/var/lock/club-arena-engine-intake-34613015733-1/../../escape.lock',
-        join(tmpdir(), 'club-arena-engine-intake-34613015733-1.lock'),
-      ]) {
-        expect(accepts(guard, { INTAKE_LOCK: invalid }), `${name}: ${invalid}`).toBe(false);
-      }
-    }
-
-    for (const [pathVariable, rootVariable, root, suffix] of [
-      ['PIN_FILE', 'PIN_ROOT', '/var/lib/club-arena/engine-release-generation-pins', 'generation'],
-      ['LEASE_FILE', 'LEASE_ROOT', '/var/lib/club-arena/engine-image-leases', 'lease'],
-      [
-        'BREAK_DEADLINE_FILE',
-        'REQUEST_ROOT',
-        '/var/lib/club-arena/engine-release-requests',
-        'break-deadline',
-      ],
-      ['INTENT_FILE', 'REQUEST_ROOT', '/var/lib/club-arena/engine-release-requests', 'intent'],
-      ['REQUEST_FILE', 'REQUEST_ROOT', '/var/lib/club-arena/engine-release-requests', 'request'],
-    ] as const) {
-      const guard = extractGuard(recovery, pathVariable);
-      const rootEnv = { [rootVariable]: root };
-      expect(
-        accepts(guard, { ...rootEnv, [pathVariable]: `${root}/34613015733-1.${suffix}` })
-      ).toBe(true);
-      expect(accepts(guard, { ...rootEnv, [pathVariable]: `${root}/34613015733.${suffix}` })).toBe(
-        true
+    it('fully writes durable JSON and removes every abandoned atomic temporary', () => {
+      expect(sealSource).toContain('def write_all(fd: int, payload: bytes) -> None:');
+      expect(sealSource).toContain('while remaining:');
+      expect(sealSource).toContain('written = os.write(fd, remaining)');
+      expect(sealSource).toContain('temporary_path.unlink(missing_ok=True)');
+      const stateWriter = sealSource.slice(
+        sealSource.indexOf('def write_json_atomic'),
+        sealSource.indexOf('def audit(')
       );
+      expect(stateWriter).toContain('write_all(fd, payload)');
+      const auditWriter = sealSource.slice(
+        sealSource.indexOf('def audit('),
+        sealSource.indexOf('def audit_once(')
+      );
+      expect(auditWriter).toContain('write_all(');
+    });
+
+    it('runs the authorized image ID, so retagging the requested name after authorization is inert', () => {
+      const authorize = engineUp.indexOf('AUTHORIZATION="$("$RELEASE_SEAL"');
+      const immutable = engineUp.indexOf('AUTHORIZED_IMAGE_ID', authorize);
+      const run = engineUp.indexOf('docker run -d');
+      const runBlock = engineUp.slice(run, engineUp.indexOf('\n\nlog "started', run));
+      expect(authorize).toBeGreaterThan(0);
+      expect(immutable).toBeGreaterThan(authorize);
+      expect(run).toBeGreaterThan(immutable);
+      expect(runBlock).toContain('"$AUTHORIZED_IMAGE_ID"');
+      expect(runBlock).not.toMatch(/^\s*"\$IMAGE"\s*$/m);
+    });
+
+    it('does not make a candidate reboot-persistent until every proof commits the seal', () => {
+      const classBranch = engineUp.slice(
+        engineUp.indexOf('case "$AUTHORIZED_CLASS" in'),
+        engineUp.indexOf('[[ "$AUTHORIZED_SHA"', engineUp.indexOf('case "$AUTHORIZED_CLASS" in'))
+      );
+      const run = engineUp.slice(
+        engineUp.indexOf('docker run -d'),
+        engineUp.indexOf('\n\nlog "started', engineUp.indexOf('docker run -d'))
+      );
+      expect(classBranch).toContain('desired) RESTART_POLICY=always');
+      expect(classBranch).toContain('pending)');
+      expect(classBranch).toContain('RESTART_POLICY=no');
+      expect(run).toContain('--restart "$RESTART_POLICY"');
+      expect(run).not.toContain('--restart always');
+
+      const prove = transaction.indexOf('"$DATABASE_PROOF" --env-file');
+      const publicRecheck = transaction.indexOf('PRECOMMIT_PUBLIC_INSTANCE=', prove);
+      const commit = transaction.indexOf('"$RELEASE_SEAL" commit', publicRecheck);
+      const promote = transaction.indexOf('docker update --restart always', commit);
+      const autoheal = transaction.indexOf('docker start sp-autoheal', commit);
+      expect(prove).toBeGreaterThan(0);
+      expect(publicRecheck).toBeGreaterThan(prove);
+      expect(commit).toBeGreaterThan(publicRecheck);
+      expect(promote).toBeGreaterThan(commit);
+      expect(autoheal).toBeGreaterThan(promote);
+      expect(transaction.slice(commit, promote)).toContain('--container "$CONTAINER"');
+      expect(transaction.slice(commit, promote)).toContain(
+        '--container-id "$CANDIDATE_CID" --started-at "$CANDIDATE_STARTED_AT"'
+      );
+      expect(transaction.slice(prove, commit)).toContain('ACTUAL_STARTED_AT');
+    });
+
+    it('installs the control plane outside the rollbackable application checkout', () => {
+      expect(installer).toContain('/usr/local/lib/club-arena/engine-control');
+      expect(installer).toContain(
+        'GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" archive "$CONTROL_SHA"'
+      );
+      expect(installer).not.toContain('ENGINE_CONTROL_SOURCE_DIR');
+      expect(installer).not.toContain('ExecStart=$CONTROL_DIR/engine-supervisor.sh');
+      expect(installer).toContain('ExecStart=$UNIT_WRAPPER_V1 start %i');
+      expect(installer).toContain('ExecStart=/bin/bash $CONTROL_DIR/verify-recovery-stack.sh');
+      expect(workflow).toContain('STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"');
+      expect(workflow).toContain('git -C "$REPO_DIR" archive "$CONTROL_SHA" server/scripts');
+      expect(workflow).toContain('"$STAGE/server/scripts/install-engine-intake.sh"');
+      expect(installer).toContain(
+        'UNIT_WRAPPER_V1="$CONTROL_PARENT/engine-release-unit-wrapper-v1.sh"'
+      );
+      expect(unitWrapper).toContain('GENERATION="${REQUEST_LINES[3]}"');
+      expect(unitWrapper).toContain('GENERATION="${PIN_LINES[0]}"');
+    });
+
+    it('accepts the canonical engine checkout regardless of GitHub owner casing', () => {
+      const hostStage = workflow.slice(
+        workflow.indexOf('name: Stage exact control bytes'),
+        workflow.indexOf('name: Dispatch the staged SHA through the durable Hetzner intake')
+      );
+
+      expect(hostStage).toContain("grep -Fi 'smarter-poker/smarter-poker-club-arena'");
+      expect(hostStage).not.toContain("grep -F 'Smarter-Poker/Smarter-Poker-Club-Arena'");
+    });
+
+    it('accepts single-digit run attempts while rejecting malformed or traversing stage paths', () => {
+      const hostStage = workflow.slice(
+        workflow.indexOf('name: Stage exact control bytes'),
+        workflow.indexOf('name: Dispatch the staged SHA through the durable Hetzner intake')
+      );
+      const guard = hostStage.match(
+        /^\s*(\[\[ "\$STAGE" =~ \^\/var\/lib\/club-arena\/control-staging\/[^\n]+ \]\])$/m
+      )?.[1];
+
+      expect(guard).toBe(
+        '[[ "$STAGE" =~ ^/var/lib/club-arena/control-staging/[1-9][0-9]*-[1-9][0-9]*$ ]]'
+      );
+      expect(hostStage).not.toContain('case "$STAGE" in');
+      expect(
+        hostStage.indexOf('STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"')
+      ).toBeLessThan(hostStage.indexOf(guard ?? 'missing stage guard'));
+      expect(hostStage.indexOf(guard ?? 'missing stage guard')).toBeLessThan(
+        hostStage.indexOf('rm -rf -- "$STAGE"')
+      );
+
+      const accepts = (stage: string) =>
+        spawnSync('bash', ['-c', guard ?? 'exit 99'], {
+          encoding: 'utf8',
+          env: { ...process.env, STAGE: stage },
+        }).status === 0;
+
+      expect(accepts('/var/lib/club-arena/control-staging/34613015733-1')).toBe(true);
       for (const invalid of [
-        `${root}/34613015733-01.${suffix}`,
-        `${root}/34613015733-1-extra.${suffix}`,
-        `${root}/34613015733-1/../../escape.${suffix}`,
-        join(tmpdir(), `34613015733-1.${suffix}`),
+        '/var/lib/club-arena/control-staging/34613015733-',
+        '/var/lib/club-arena/control-staging/34613015733-01',
+        '/var/lib/club-arena/control-staging/0-1',
+        '/var/lib/club-arena/control-staging/34613015733-1-extra',
+        '/var/lib/club-arena/control-staging/34613015733-1/../../escape',
+        join(tmpdir(), 'control-staging/34613015733-1'),
       ]) {
-        expect(accepts(guard, { ...rootEnv, [pathVariable]: invalid }), invalid).toBe(false);
+        expect(accepts(invalid), invalid).toBe(false);
       }
-    }
+    });
 
-    const leaseNameGuard = extractGuard(retention, 'lease_name');
-    expect(accepts(leaseNameGuard, { lease_name: '34613015733-1.lease' })).toBe(true);
-    expect(accepts(leaseNameGuard, { lease_name: '34613015733.lease' })).toBe(true);
-    for (const invalid of [
-      '34613015733-01.lease',
-      '34613015733-1-extra.lease',
-      '34613015733-1/../../escape.lease',
-      'prefix-34613015733-1.lease',
-    ]) {
-      expect(accepts(leaseNameGuard, { lease_name: invalid }), invalid).toBe(false);
-    }
+    it('uses exact numeric guards throughout intake, recovery, and image-lease cleanup', () => {
+      const extractGuard = (source: string, variable: string) => {
+        const marker = `[[ "$${variable}" =~ `;
+        const line = source.split('\n').find((candidate) => candidate.includes(marker));
+        expect(line, `missing ${variable} guard`).toBeDefined();
+        return line!.slice(line!.indexOf('[['), line!.indexOf(']]') + 2);
+      };
+      const accepts = (guard: string, env: NodeJS.ProcessEnv) =>
+        spawnSync('bash', ['-c', guard], {
+          encoding: 'utf8',
+          env: { ...process.env, ...env },
+        }).status === 0;
 
-    for (const [name, source] of [
-      ['workflow', workflow],
-      ['install-engine-intake.sh', intakeInstaller],
-      ['engine-release-intake.sh', intake],
-      ['engine-release-recover.sh', recovery],
-      ['retain-engine-images.sh', retention],
-    ] as const) {
-      for (const caseBlock of source.match(/\bcase\b[\s\S]*?\besac\b/g) ?? []) {
-        expect(caseBlock, `${name} retains a numeric pseudo-regex in a case glob`).not.toMatch(
-          /\[1-9\]\[0-9\]\*/
+      const intakeLockGuard =
+        '[[ "$INTAKE_LOCK" =~ ^/var/lock/club-arena-engine-intake-[1-9][0-9]*-[1-9][0-9]*\\.lock$ ]]';
+      for (const [name, source] of [
+        ['install-engine-intake.sh', intakeInstaller],
+        ['engine-release-intake.sh', intake],
+      ] as const) {
+        const guard = extractGuard(source, 'INTAKE_LOCK');
+        expect(guard, name).toBe(intakeLockGuard);
+        expect(
+          accepts(guard, {
+            INTAKE_LOCK: '/var/lock/club-arena-engine-intake-34613015733-1.lock',
+          }),
+          name
+        ).toBe(true);
+        for (const invalid of [
+          '/var/lock/club-arena-engine-intake-34613015733-01.lock',
+          '/var/lock/club-arena-engine-intake-34613015733-1-extra.lock',
+          '/var/lock/club-arena-engine-intake-34613015733-1/../../escape.lock',
+          join(tmpdir(), 'club-arena-engine-intake-34613015733-1.lock'),
+        ]) {
+          expect(accepts(guard, { INTAKE_LOCK: invalid }), `${name}: ${invalid}`).toBe(false);
+        }
+      }
+
+      for (const [pathVariable, rootVariable, root, suffix] of [
+        [
+          'PIN_FILE',
+          'PIN_ROOT',
+          '/var/lib/club-arena/engine-release-generation-pins',
+          'generation',
+        ],
+        ['LEASE_FILE', 'LEASE_ROOT', '/var/lib/club-arena/engine-image-leases', 'lease'],
+        [
+          'BREAK_DEADLINE_FILE',
+          'REQUEST_ROOT',
+          '/var/lib/club-arena/engine-release-requests',
+          'break-deadline',
+        ],
+        ['INTENT_FILE', 'REQUEST_ROOT', '/var/lib/club-arena/engine-release-requests', 'intent'],
+        ['REQUEST_FILE', 'REQUEST_ROOT', '/var/lib/club-arena/engine-release-requests', 'request'],
+      ] as const) {
+        const guard = extractGuard(recovery, pathVariable);
+        const rootEnv = { [rootVariable]: root };
+        expect(
+          accepts(guard, { ...rootEnv, [pathVariable]: `${root}/34613015733-1.${suffix}` })
+        ).toBe(true);
+        expect(
+          accepts(guard, { ...rootEnv, [pathVariable]: `${root}/34613015733.${suffix}` })
+        ).toBe(true);
+        for (const invalid of [
+          `${root}/34613015733-01.${suffix}`,
+          `${root}/34613015733-1-extra.${suffix}`,
+          `${root}/34613015733-1/../../escape.${suffix}`,
+          join(tmpdir(), `34613015733-1.${suffix}`),
+        ]) {
+          expect(accepts(guard, { ...rootEnv, [pathVariable]: invalid }), invalid).toBe(false);
+        }
+      }
+
+      const leaseNameGuard = extractGuard(retention, 'lease_name');
+      expect(accepts(leaseNameGuard, { lease_name: '34613015733-1.lease' })).toBe(true);
+      expect(accepts(leaseNameGuard, { lease_name: '34613015733.lease' })).toBe(true);
+      for (const invalid of [
+        '34613015733-01.lease',
+        '34613015733-1-extra.lease',
+        '34613015733-1/../../escape.lease',
+        'prefix-34613015733-1.lease',
+      ]) {
+        expect(accepts(leaseNameGuard, { lease_name: invalid }), invalid).toBe(false);
+      }
+
+      for (const [name, source] of [
+        ['workflow', workflow],
+        ['install-engine-intake.sh', intakeInstaller],
+        ['engine-release-intake.sh', intake],
+        ['engine-release-recover.sh', recovery],
+        ['retain-engine-images.sh', retention],
+      ] as const) {
+        for (const caseBlock of source.match(/\bcase\b[\s\S]*?\besac\b/g) ?? []) {
+          expect(caseBlock, `${name} retains a numeric pseudo-regex in a case glob`).not.toMatch(
+            /\[1-9\]\[0-9\]\*/
+          );
+        }
+      }
+    });
+
+    it('admits only generations compatible with the frozen release v1 wire contract', () => {
+      expect(protocolV1).toBe(
+        [
+          'protocol=club-arena-engine-release-v1',
+          'protocol-schema=1',
+          'intake-activation-units=club-arena-engine-intake-v1@.path,club-arena-engine-intake-v1@.service',
+          'intake-request-fields=target-sha,control-sha,run-url,actor,not-after-epoch',
+          'release-request-fields=sha,run-url,actor,generation-path,control-sha,not-after-epoch',
+          'release-intent-contract=byte-identical-to-release-request',
+          'generation-pin-fields=generation-path,control-sha',
+          'launcher-dispatch-cli=--sha,sha,--run-id,run-key,--actor,actor,--not-after-epoch,epoch',
+          'launcher-dispatch-output-fields=ENGINE_RELEASE_HANDOFF,ENGINE_RELEASE_SHA',
+          'launcher-handoff-values=durable,completed,failed',
+          'launcher-terminal-failure-output-fields=ENGINE_RELEASE_HANDOFF,ENGINE_RELEASE_SHA,ENGINE_RELEASE_RESULT',
+          'wrapper-start-cli=start,run-key',
+          'wrapper-recover-cli=recover,run-key,service-result,exit-code,exit-status',
+          'systemd-terminal-outcomes=success:exited:0,exit-code:exited:1',
+          'systemd-unknown-outcome=retryable',
+          'systemd-recovery-timeout-seconds=330',
+          'transaction-cli=--run-id,run-key',
+          'recovery-cli=--run-id,run-key,--mode,terminal-or-retryable',
+          'transaction-terminal-statuses=0,1',
+          'transaction-retry-status=75',
+          'release-result-schema=1',
+          'release-result-attestation-fields=result,sha,image-id,container-id,started-at,instance-id,control-sha',
+          'release-failure-attestation-fields=result,sha,control-sha,invocation-id,transaction-exit-status,recovered-desired-sha,recovered-desired-image-id',
+          'release-seal-state-schema=1',
+          'release-seal-finalization-fields=run-id,sha,image-id',
+          'release-seal-get-cli=get,desired-image-id',
+          'release-seal-attest-commit-cli=attest-commit,--sha,sha,--image-id,image-id,--run-id,run-key',
+          'release-seal-record-result-cli=record-result,--sha,sha,--image-id,image-id,--result,result,--instance-id,instance-id,--container-id,container-id,--started-at,started-at,--run-id,run-key,--control-sha,control-sha,--invocation-id,invocation-id',
+          'release-seal-attest-result-cli=attest-result,--sha,sha,--run-id,run-key,--invocation-id,optional-invocation-id',
+          'release-seal-record-failure-cli=record-failure,--sha,sha,--run-id,run-key,--control-sha,control-sha,--invocation-id,invocation-id,--exit-status,transaction-exit-status,--container,container',
+          'release-seal-attest-failure-cli=attest-failure,--sha,sha,--run-id,run-key,--control-sha,optional-control-sha,--invocation-id,optional-invocation-id',
+          'release-seal-attest-terminal-cli=attest-terminal,--sha,sha,--run-id,run-key,--control-sha,control-sha',
+          'release-seal-abort-cli=abort,--run-id,run-key',
+          '',
+        ].join('\n')
+      );
+      expect(protocolV1Digest).toBe(
+        '7c5aba4d2bc572edc5ef84c5280e1ffe517e5949b41788c18eeb003abea74044'
+      );
+      for (const consumer of [installer, unitWrapper]) {
+        expect(consumer).toContain('PROTOCOL_V1_FILE="engine-release-protocol-v1.schema"');
+        expect(consumer).toContain(`PROTOCOL_V1_SHA256="${protocolV1Digest}"`);
+        expect(consumer).toContain('validate_v1_protocol()');
+        expect(consumer).toContain('incompatible with the frozen release v1 protocol');
+      }
+      expect(installer).toMatch(
+        /REQUIRED_FILES=\([\s\S]*engine-release-protocol-v1\.schema[\s\S]*\)/
+      );
+      expect(installer).toMatch(/CORE_FILES=\([\s\S]*engine-release-protocol-v1\.schema[\s\S]*\)/);
+      expect(installer.indexOf('validate_v1_protocol "$active"')).toBeLessThan(
+        installer.indexOf('mapfile -t ACTIVE_FILES')
+      );
+      expect(installer.indexOf('validate_v1_protocol "$SOURCE_DIR"')).toBeGreaterThan(
+        installer.indexOf('git -C "$REPO_DIR" archive "$CONTROL_SHA"')
+      );
+      expect(installer.indexOf('validate_v1_protocol "$GENERATION_STAGE"')).toBeLessThan(
+        installer.indexOf('mv -T "$GENERATION_STAGE" "$GENERATION_DIR"')
+      );
+      expect(installer).toContain('[ "$file" = "$PROTOCOL_V1_FILE" ]');
+      expect(installer).toContain('install -m 0644 "$SOURCE_DIR/$file" "$GENERATION_STAGE/$file"');
+      expect(unitWrapper).toContain(
+        'pinned generation manifest does not declare the release v1 protocol exactly once'
+      );
+
+      const wrapperGenerationValidation = unitWrapper.slice(
+        unitWrapper.indexOf('validate_generation()'),
+        unitWrapper.indexOf('[ "$(id -u)" = 0 ]')
+      );
+      expect(wrapperGenerationValidation).toContain('validate_v1_protocol "$canonical"');
+      expect(wrapperGenerationValidation.indexOf('validate_v1_protocol "$canonical"')).toBeLessThan(
+        wrapperGenerationValidation.indexOf('engine-release-transaction.sh')
+      );
+      expect(wrapperGenerationValidation.indexOf('validate_v1_protocol "$canonical"')).toBeLessThan(
+        wrapperGenerationValidation.indexOf('engine-release-recover.sh')
+      );
+    });
+
+    it('migrates the unmanifested predecessor without executing any of its bytes', () => {
+      const legacy = installer.slice(
+        installer.indexOf('elif [ -L "$CONTROL_DIR" ]; then'),
+        installer.indexOf('elif [ -e "$CONTROL_DIR" ]; then')
+      );
+      expect(legacy).toContain('migrating unmanifested predecessor control generation');
+      expect(legacy).not.toMatch(/"\$ACTIVE_TARGET\/[^"\n]+\.sh"/);
+      expect(legacy).not.toMatch(/(?:source|exec|bash)\s+"?\$ACTIVE_TARGET/);
+      expect(installer.indexOf('archive "$CONTROL_SHA" server/scripts')).toBeGreaterThan(
+        installer.indexOf('migrating unmanifested predecessor control generation')
+      );
+    });
+
+    it('does not orphan a staged release merely because main advances during its build', () => {
+      const queuedRecheck = workflow.slice(
+        workflow.indexOf('name: Recheck freshness after the FIFO wait'),
+        workflow.indexOf('name: Establish pinned ephemeral SSH transport')
+      );
+      const hostStage = workflow.slice(
+        workflow.indexOf('name: Stage exact control bytes'),
+        workflow.indexOf('name: Dispatch the staged SHA through the durable Hetzner intake')
+      );
+      expect(workflow).toContain(
+        'group: club-arena-engine-request-${{ github.event.client_payload.ref_sha }}'
+      );
+      expect(workflow).toContain('cancel-in-progress: false');
+      expect(workflow).not.toContain('queue: max');
+      expect(queuedRecheck).toContain('git merge-base --is-ancestor "$CONTROL_SHA" "$MAIN_SHA"');
+      expect(queuedRecheck).toContain('[[ "$LATEST_REQUIRED" =~ ^[0-9a-f]{40}$ ]]');
+      expect(queuedRecheck).toContain('host forward-only admission is still required.');
+      expect(hostStage).toContain(
+        'git -C "$REPO_DIR" merge-base --is-ancestor "$commit" "$MAIN_SHA"'
+      );
+      expect(installer).toContain('ACTIVE_IS_CURRENT_GENERATION=1');
+      expect(installer).toContain(
+        'control generation $ACTIVE_CONTROL_SHA is newer; refusing downgrade'
+      );
+      expect(installer).toContain('ENGINE_CONTROL_INSTALL_GENERATION=$ACTIVE_TARGET');
+      expect(intake).toContain('INSTALLED_GENERATION=');
+      expect(intake).toContain('"$CANONICAL_GENERATION/launch-engine-release.sh"');
+    });
+
+    it('activates one complete control-plane generation atomically under the engine lock', () => {
+      const lock = installer.indexOf('flock -w 600 9');
+      const sourceLock = installer.indexOf('flock -w 90 8', lock);
+      const archive = installer.indexOf('git -C "$REPO_DIR" archive "$CONTROL_SHA"');
+      const stage = installer.indexOf('GENERATION_STAGE="$(mktemp -d', archive);
+      const validateShell = installer.indexOf('bash -n "$GENERATION_STAGE/$script"', stage);
+      const durableGeneration = installer.indexOf(
+        'fsync_paths "$GENERATION_STAGE"/* "$GENERATION_STAGE" "$GENERATION_ROOT"',
+        validateShell
+      );
+      const publishGeneration = installer.indexOf('mv -T "$GENERATION_STAGE" "$GENERATION_DIR"');
+      const nextLink = installer.indexOf('ln -s "$GENERATION_DIR" "$NEXT_LINK"', publishGeneration);
+      const activate = installer.indexOf('mv -Tf "$NEXT_LINK" "$CONTROL_DIR"', nextLink);
+      const durableActivation = installer.indexOf('fsync_paths "$CONTROL_PARENT"', activate);
+      expect(lock).toBeGreaterThan(0);
+      expect(sourceLock).toBeGreaterThan(lock);
+      expect(archive).toBeGreaterThan(sourceLock);
+      expect(stage).toBeGreaterThan(archive);
+      expect(validateShell).toBeGreaterThan(stage);
+      expect(durableGeneration).toBeGreaterThan(validateShell);
+      expect(publishGeneration).toBeGreaterThan(durableGeneration);
+      expect(nextLink).toBeGreaterThan(publishGeneration);
+      expect(activate).toBeGreaterThan(nextLink);
+      expect(durableActivation).toBeGreaterThan(activate);
+      expect(installer).toContain('"$GENERATION_DIR/engine-release-seal.py" bootstrap-running');
+      expect(installer).not.toContain('install -d -m 0755 "$CONTROL_DIR"');
+      expect(installer.indexOf('ACTIVE_CONTROL_SHA=', sourceLock)).toBeLessThan(stage);
+      expect(installer).toContain('ExecStart=$UNIT_WRAPPER_V1 start %i');
+      expect(installer).toContain('ExecStopPost=$UNIT_WRAPPER_V1 recover %i');
+      expect(installer).toContain('club-arena-engine-release-v1@.service');
+    });
+
+    it('verifies the sealed recovery image without treating mutable tags as authority', () => {
+      expect(recoveryVerifier).toContain('sealed desired image exists locally');
+      expect(recoveryVerifier).toContain(':current is a repairable cache');
+      expect(recoveryVerifier).toContain('pending candidate is non-persistent');
+      expect(recoveryVerifier).toContain("desired release restart policy is 'always'");
+      expect(recoveryVerifier).not.toContain('a bad deploy could NOT be rolled back');
+      expect(recoveryVerifier).not.toContain('the supervisor cannot recreate the container');
+    });
+
+    it('makes the supervisor restore the sealed image ID, never mutable current', () => {
+      expect(supervisor).toContain(
+        'DESIRED_IMAGE_ID="$(bounded_recovery_command 10 "$RELEASE_SEAL" get desired-image-id)"'
+      );
+      expect(supervisor).toContain('IMAGE="$DESIRED_IMAGE_ID"');
+      expect(supervisor).not.toContain('IMAGE="${IMAGE:-club-arena-engine:current}"');
+      expect(supervisor).not.toContain('docker tag');
+      expect(supervisor).toContain('ENGINE_SUPERVISOR_FORCE_DESIRED');
+      expect(supervisor).toContain('ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH');
+      expect(supervisor).toContain('ENGINE_SUPERVISOR_LOCK_HELD');
+      expect(supervisor).toContain('[ "$RUNNING_IMAGE_ID" != "$DESIRED_IMAGE_ID" ]');
+      expect(supervisor).toContain('[ "$RUNNING_RELEASE" != "$DESIRED_SHA" ]');
+      expect(supervisor).toContain('restoring exact sealed desired release');
+      expect(supervisor).toContain('docker update --restart always "$CONTAINER"');
+      expect(supervisor).toContain('prove_exact_desired_recovery');
+    });
+
+    it('commits the seal only after HTTP, proxy, and strict database proof', () => {
+      const local = transaction.indexOf('CANDIDATE_INSTANCE="$(health_instance');
+      const publicProxy = transaction.indexOf('PUBLIC_INSTANCE="$(health_instance', local);
+      const freshness = transaction.indexOf('source_target_is_current', publicProxy);
+      const localAgain = transaction.indexOf('PRECOMMIT_LOCAL_INSTANCE=', freshness);
+      const publicAgain = transaction.indexOf('PRECOMMIT_PUBLIC_INSTANCE=', localAgain);
+      const database = transaction.indexOf('"$DATABASE_PROOF" --env-file', publicAgain);
+      const commit = transaction.indexOf('"$RELEASE_SEAL" commit', database);
+      expect(local).toBeGreaterThan(0);
+      expect(publicProxy).toBeGreaterThan(local);
+      expect(freshness).toBeGreaterThan(publicProxy);
+      expect(localAgain).toBeGreaterThan(freshness);
+      expect(publicAgain).toBeGreaterThan(localAgain);
+      expect(database).toBeGreaterThan(publicAgain);
+      expect(commit).toBeGreaterThan(database);
+      expect(databaseProof).toContain('engine_version,instance_id,heartbeat_at');
+      expect(databaseProof).toContain('leader_instance == instance_id');
+      expect(databaseProof).toContain('-30 <= age <= args.max_heartbeat_age_seconds');
+      expect(transaction.slice(database, commit)).toContain('--max-heartbeat-age-seconds 15');
+      expect(workflow).toContain(
+        'Independently prove the sealed local, public, and leader identity'
+      );
+    });
+
+    it('queues frozen intake before request publication and lets the host complete the handoff', () => {
+      const unit = 'club-arena-engine-intake-v1@';
+      const intakeServiceUnit = intakeInstaller.slice(
+        intakeInstaller.indexOf('cat > "$UNIT_STAGE"'),
+        intakeInstaller.indexOf('cat > "$PATH_STAGE"')
+      );
+      expect(intakeInstaller).toContain('UNIT_BASENAME="club-arena-engine-intake-v1@.service"');
+      expect(intakeInstaller).toContain('ln -- "$NEXT_UNIT" "$UNIT_PATH"');
+      expect(intakeInstaller).toContain('cmp -s "$NEXT_UNIT" "$UNIT_PATH"');
+      expect(intakeInstaller).not.toMatch(/mv -T[^\n]*engine-intake/);
+      expect(intake).toContain(unit);
+      expect(observer).toContain(unit);
+      expect(workflow).toContain(unit);
+      const publishIntent = intakeInstaller.indexOf('ln -- "$TMP_REQUEST" "$INTENT_FILE"');
+      const durableIntent = intakeInstaller.indexOf('fsync_paths "$INTAKE_ROOT"', publishIntent);
+      const enable = intakeInstaller.indexOf('systemctl enable "$UNIT"');
+      const durableEnable = intakeInstaller.indexOf('fsync_paths "$WANTS_DIR"', enable);
+      const armPath = intakeInstaller.indexOf('systemctl start "$PATH_UNIT"', durableEnable);
+      const start = intakeInstaller.indexOf('systemctl start --no-block "$UNIT"', durableIntent);
+      const authenticatedEntrypoint = intakeInstaller.indexOf(
+        '[ -x "$STAGE/server/scripts/engine-release-intake.sh" ]'
+      );
+      const verifyCopy = intakeInstaller.indexOf('VERIFY_UNIT_STAGE=');
+      const verifyInstance = intakeInstaller.indexOf(
+        'systemd-analyze verify "$VERIFY_UNIT_STAGE" "$VERIFY_PATH_STAGE"',
+        verifyCopy
+      );
+      const removeVerifyCopies = intakeInstaller.indexOf(
+        'rm -f -- "$VERIFY_UNIT_STAGE" "$VERIFY_PATH_STAGE"',
+        verifyInstance
+      );
+      const fsyncCanonicalTemplates = intakeInstaller.indexOf(
+        'fsync_paths "$UNIT_STAGE" "$PATH_STAGE"',
+        removeVerifyCopies
+      );
+      const installCanonicalTemplate = intakeInstaller.indexOf(
+        'install -m 0644 "$UNIT_STAGE" "$NEXT_UNIT"',
+        fsyncCanonicalTemplates
+      );
+      expect(publishIntent).toBeGreaterThan(0);
+      expect(durableIntent).toBeGreaterThan(publishIntent);
+      expect(enable).toBeGreaterThan(0);
+      expect(durableEnable).toBeGreaterThan(enable);
+      expect(armPath).toBeGreaterThan(durableEnable);
+      expect(publishIntent).toBeGreaterThan(armPath);
+      expect(durableIntent).toBeGreaterThan(publishIntent);
+      expect(start).toBeGreaterThan(durableIntent);
+      expect(verifyCopy).toBeGreaterThan(authenticatedEntrypoint);
+      expect(verifyInstance).toBeGreaterThan(verifyCopy);
+      expect(removeVerifyCopies).toBeGreaterThan(verifyInstance);
+      expect(fsyncCanonicalTemplates).toBeGreaterThan(removeVerifyCopies);
+      expect(installCanonicalTemplate).toBeGreaterThan(fsyncCanonicalTemplates);
+      expect(intakeInstaller.indexOf('ln -- "$TMP_REQUEST" "$REQUEST_FILE"')).toBe(-1);
+      expect(intakeInstaller).toContain('PATH_BASENAME="club-arena-engine-intake-v1@.path"');
+      expect(intakeInstaller).toContain(
+        'PathExists=/var/lib/club-arena/engine-intake-requests/%i.intent'
+      );
+      expect(intakeServiceUnit).toContain('Type=oneshot');
+      expect(intakeServiceUnit).toContain('Restart=on-failure');
+      expect(intakeServiceUnit).not.toContain('RestartForceExitStatus=');
+      expect(intakeServiceUnit).toContain('RestartPreventExitStatus=1');
+      expect(intakeInstaller).not.toContain('Requires=docker.service');
+      expect(intakeInstaller).toContain(
+        'VERIFY_UNIT_STAGE="$UNIT_STAGE_DIR/club-arena-engine-intake-v1@$RUN_ID.service"'
+      );
+      expect(intakeInstaller).toContain(
+        'VERIFY_PATH_STAGE="$UNIT_STAGE_DIR/club-arena-engine-intake-v1@$RUN_ID.path"'
+      );
+      expect(intakeInstaller).toContain(
+        'systemd-analyze verify "$VERIFY_UNIT_STAGE" "$VERIFY_PATH_STAGE"'
+      );
+      expect(intakeInstaller).not.toContain('systemd-analyze verify "$UNIT_STAGE" "$PATH_STAGE"');
+      expect(intakeInstaller).toContain('flock -w 30 7');
+      expect(intake).toContain('flock -w 30 7');
+      expect(intakeInstaller).toContain('fsync_paths "$INTAKE_ROOT" "$(dirname "$INTAKE_ROOT")"');
+      expect(intakeInstaller).toContain('if [ "$DURABLE_STATE_EXISTS" = 1 ]');
+      expect(intakeInstaller).toContain(
+        'it must not reset,\n  # re-enable, or retrigger a transaction'
+      );
+      expect(intake).toContain('[ "$INSTALLED_SHA" = "$CONTROL_SHA" ]');
+      const missingRequest = intake.slice(
+        intake.indexOf('if [ ! -e "$REQUEST_FILE" ]'),
+        intake.indexOf('mapfile -t REQUEST_LINES')
+      );
+      expect(missingRequest).toContain('ln -- "$INTENT_FILE" "$REQUEST_FILE"');
+      expect(missingRequest).toContain('fsync_directory "$INTAKE_ROOT"');
+      expect(missingRequest).toContain('systemctl disable "$INTAKE_UNIT"');
+    });
+
+    it('hard-bounds every database proof request and retry sleep', () => {
+      expect(databaseProof).toContain('min(15.0, remaining)');
+      expect(databaseProof).toContain('time.sleep(min(float(args.poll_seconds), remaining))');
+      expect(transaction).toMatch(
+        /timeout --signal=TERM --kill-after=1s "\$\{(?:proof_timeout|DB_TIMEOUT)\}s"/m
+      );
+      expect(workflow).toContain('timeout --signal=TERM --kill-after=1s 62s');
+    });
+
+    it('immediately repeats the idempotent intake after an uncertain transport handoff', () => {
+      const uncertain = workflow.slice(
+        workflow.indexOf('if uncertain_status "$SSH_RC"; then'),
+        workflow.indexOf(
+          'RESULT="$(sed -n',
+          workflow.indexOf('if uncertain_status "$SSH_RC"; then')
+        )
+      );
+      expect(workflow).toContain('uncertain_status()');
+      expect(workflow).toContain('[ "$status" -eq 124 ]');
+      expect(workflow).toContain('[ "$status" -ge 128 ]');
+      expect(uncertain).toContain('if uncertain_status "$SSH_RC"; then');
+      expect(workflow).toContain('RELEASE_DISPATCH_DEADLINE_EPOCH - $(date +%s)');
+      expect(workflow).toContain('timeout --signal=TERM --kill-after=5s "${transport_timeout}s"');
+      expect(uncertain).toContain(
+        'RETRY_REMAINING=$((RELEASE_DISPATCH_DEADLINE_EPOCH - $(date +%s)'
+      );
+      expect(uncertain).toContain('sleep "$RETRY_DELAY"');
+      const retryIntake = uncertain.indexOf('run_remote_intake | tee -a');
+      const retryObserve = uncertain.indexOf('observe_remote_release | tee -a');
+      expect(retryIntake).toBeGreaterThan(0);
+      expect(retryObserve).toBeGreaterThan(retryIntake);
+    });
+
+    it('binds every host retry to the workflow-owned immutable not-after epoch', () => {
+      expect(workflow).toContain("NOT_AFTER_EPOCH='$RELEASE_DISPATCH_DEADLINE_EPOCH'");
+      expect(workflow).toContain('--not-after-epoch "$NOT_AFTER_EPOCH"');
+      expect(intakeInstaller).toContain('"$ACTOR" "$NOT_AFTER_EPOCH" > "$TMP_REQUEST"');
+      expect(intake).toContain('NOT_AFTER_EPOCH="${REQUEST_LINES[4]}"');
+      expect(intake).toContain('--not-after-epoch "$NOT_AFTER_EPOCH"');
+      expect(launcher).toContain('NOT_AFTER_EPOCH="$8"');
+      expect(launcher).toContain('"$NOT_AFTER_EPOCH" > "$TMP_FILE"');
+      expect(transaction).toContain('REQUEST_NOT_AFTER_EPOCH="${REQUEST_LINES[5]}"');
+      expect(transaction).toContain('MUTATION_DEADLINE_EPOCH="$REQUEST_NOT_AFTER_EPOCH"');
+      expect(transaction).toContain(
+        "die 'immutable release not-after epoch expired before new release mutation'"
+      );
+      const finalization = transaction.indexOf('attest-commit');
+      const deadlineFence = transaction.indexOf(
+        'immutable release not-after epoch expired before new release mutation',
+        finalization
+      );
+      const freshness = transaction.indexOf('source_target_is_current', deadlineFence);
+      expect(deadlineFence).toBeGreaterThan(finalization);
+      expect(freshness).toBeGreaterThan(deadlineFence);
+      expect(transaction).not.toContain('REQUEST_NOT_AFTER_EPOCH=$(( $(date +%s)');
+    });
+
+    it('executes the exact full-SHA/process health predicate and rejects empty identities', () => {
+      const helper = transaction.slice(
+        transaction.indexOf('parse_health_instance_for_sha()'),
+        transaction.indexOf('\nhealth_instance_for_sha()')
+      );
+      const python = helper.match(/python3 -c '\n([\s\S]*?)\n' 2>\/dev\/null/)?.[1];
+      expect(python).toContain('d.get("releaseSha")==os.environ["EXPECTED_SHA"]');
+      expect(python).toContain('re.fullmatch(r"[1-9][0-9]*-[0-9a-f]{8}",instance)');
+      expect(
+        spawnSync('python3', ['-c', python!], {
+          input: JSON.stringify({
+            running: true,
+            releaseSha: B_SHA,
+            liveness: 'ok',
+            instanceId: '12345-deadbeef',
+          }),
+          env: { ...process.env, EXPECTED_SHA: B_SHA },
+        }).status
+      ).toBe(0);
+      expect(
+        spawnSync('python3', ['-c', python!], {
+          input: JSON.stringify({
+            running: true,
+            releaseSha: B_SHA,
+            liveness: 'ok',
+            instanceId: '',
+          }),
+          env: { ...process.env, EXPECTED_SHA: B_SHA },
+        }).status
+      ).not.toBe(0);
+    });
+
+    it('prepares one-use authority only after the long drain wait and immediately before cutover', () => {
+      const releaseLoop = transaction.indexOf(
+        'while :; do',
+        transaction.indexOf('source_target_is_current')
+      );
+      const certificate = transaction.indexOf('maintenance_certificate)', releaseLoop);
+      const lock = transaction.indexOf("acquire_engine_lock 'maintenance cutover'", certificate);
+      const lockedCertificate = transaction.indexOf('maintenance_certificate)', lock);
+      const prepare = transaction.indexOf(
+        'PREPARE_OUTPUT="$(bounded_break_command',
+        lockedCertificate
+      );
+      const cutover = transaction.indexOf('docker stop -t 15 sp-autoheal', prepare);
+      expect(certificate).toBeGreaterThan(0);
+      expect(lock).toBeGreaterThan(certificate);
+      expect(lockedCertificate).toBeGreaterThan(lock);
+      expect(prepare).toBeGreaterThan(lockedCertificate);
+      expect(cutover).toBeGreaterThan(prepare);
+      expect(transaction.slice(prepare, cutover)).toContain('PREPARED=1');
+      expect(transaction.slice(prepare, cutover)).toContain('MUTATION_STARTED=1');
+    });
+
+    it('builds every target from its exact server tree and reuses only that proven build contract', () => {
+      const lease = transaction.indexOf('create_image_lease');
+      const build = transaction.indexOf('"$IMAGE_BUILDER" "$REPO_DIR" "$SHA" "$IMAGE_REF"', lease);
+      const freshness = transaction.indexOf('source_target_is_current', build);
+      const certificateWait = transaction.indexOf('while :; do', freshness);
+      expect(lease).toBeGreaterThan(0);
+      expect(build).toBeGreaterThan(lease);
+      expect(freshness).toBeGreaterThan(build);
+      expect(certificateWait).toBeGreaterThan(freshness);
+      expect(transaction.slice(lease, freshness)).toContain(
+        'timeout --signal=TERM --kill-after=15s "${BUILD_TIMEOUT}s"'
+      );
+      expect(transaction).toContain(
+        'MAX_RUNTIME_SECONDS="${ENGINE_RELEASE_MAX_RUNTIME_SECONDS:-8400}"'
+      );
+      expect(installer).toContain('TimeoutStartSec=145min');
+      expect(observer).toContain('OBSERVE_SECONDS="${ENGINE_RELEASE_OBSERVE_SECONDS:-10200}"');
+      // 15m invocation assignment + 145m host unit still leaves ten minutes for
+      // ExecStopPost retirement and the observer's exact live proof.
+      expect(15 * 60 + 145 * 60).toBeLessThanOrEqual(10200 - 600);
+      expect(workflow).not.toMatch(/\bdocker build\b/);
+      expect(statSync(imageBuilder).mode & 0o111).not.toBe(0);
+      expect(imageBuilderSource).toContain('GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" archive');
+      expect(imageBuilderSource).toContain('"${TARGET_SHA}:server"');
+      expect(imageBuilderSource).toContain('com.smarterpoker.engine.source-tree');
+      expect(imageBuilderSource).toContain('com.smarterpoker.engine.build-contract');
+      expect(imageBuilderSource).toContain("BUILD_CONTRACT='clean-server-archive-v1'");
+      expect(imageBuilderSource).toContain("trap 'exit 130' INT");
+      expect(imageBuilderSource).toContain("trap 'exit 143' HUP TERM");
+      expect(imageBuilderSource.indexOf('EXISTING_REVISION')).toBeLessThan(
+        imageBuilderSource.indexOf("echo 'ENGINE_IMAGE_REUSED=true'")
+      );
+      expect(imageBuilderSource.indexOf('EXISTING_TREE')).toBeLessThan(
+        imageBuilderSource.indexOf("echo 'ENGINE_IMAGE_REUSED=true'")
+      );
+      expect(imageBuilderSource.indexOf('EXISTING_CONTRACT')).toBeLessThan(
+        imageBuilderSource.indexOf("echo 'ENGINE_IMAGE_REUSED=true'")
+      );
+    });
+
+    // Builds a repository sandbox and runs the real image builder, so it is
+    // subprocess-bound like the provenance case above; it timed out at 5046ms in
+    // a loaded full-suite run with every assertion holding. Budget, not behaviour.
+    it('excludes mutable host files and credentials from the executable image build path', () => {
+      const sandbox = mkdtempSync(join(tmpdir(), 'engine-clean-build-'));
+      try {
+        const repo = join(sandbox, 'repo');
+        const server = join(repo, 'server');
+        const source = join(server, 'src');
+        const bin = join(sandbox, 'bin');
+        const dockerState = join(sandbox, 'docker-state');
+        const contextRoot = join(sandbox, 'contexts');
+        mkdirSync(source, { recursive: true });
+        mkdirSync(bin);
+        mkdirSync(dockerState);
+        writeFileSync(join(server, 'Dockerfile'), 'FROM scratch\n');
+        writeFileSync(join(server, 'package.json'), '{"name":"exact-tree"}\n');
+        writeFileSync(join(server, 'tsconfig.json'), '{}\n');
+        writeFileSync(join(source, 'tracked.ts'), 'export const tracked = true;\n');
+
+        const emptyGlobalConfig = join(sandbox, 'empty-global.gitconfig');
+        writeFileSync(emptyGlobalConfig, '');
+        const isolatedEnv = fixtureGitEnvironment(emptyGlobalConfig);
+        const runGit = (args: string[]) =>
+          spawnSync('git', args, { cwd: repo, encoding: 'utf8', env: isolatedEnv });
+        expect(runGit(['init', '-q']).status).toBe(0);
+        expect(runGit(['config', 'user.email', 'release-law@example.invalid']).status).toBe(0);
+        expect(runGit(['config', 'user.name', 'Release Law']).status).toBe(0);
+        expect(runGit(['add', 'server']).status).toBe(0);
+        expect(runGit(['commit', '-qm', 'exact committed server tree']).status).toBe(0);
+        const targetSha = runGit(['rev-parse', 'HEAD']).stdout.trim();
+        const serverTree = runGit(['rev-parse', 'HEAD:server']).stdout.trim();
+
+        // These are the production defect: files present beside the checkout but
+        // absent from the target commit must be impossible for Docker to ingest.
+        writeFileSync(
+          join(source, 'untracked-sentinel.ts'),
+          'throw new Error("host contamination");\n'
         );
-      }
-    }
-  });
+        writeFileSync(join(server, '.env'), 'DATABASE_URL=must-never-enter-the-image\n');
 
-  it('admits only generations compatible with the frozen release v1 wire contract', () => {
-    expect(protocolV1).toBe(
-      [
-        'protocol=club-arena-engine-release-v1',
-        'protocol-schema=1',
-        'intake-activation-units=club-arena-engine-intake-v1@.path,club-arena-engine-intake-v1@.service',
-        'intake-request-fields=target-sha,control-sha,run-url,actor,not-after-epoch',
-        'release-request-fields=sha,run-url,actor,generation-path,control-sha,not-after-epoch',
-        'release-intent-contract=byte-identical-to-release-request',
-        'generation-pin-fields=generation-path,control-sha',
-        'launcher-dispatch-cli=--sha,sha,--run-id,run-key,--actor,actor,--not-after-epoch,epoch',
-        'launcher-dispatch-output-fields=ENGINE_RELEASE_HANDOFF,ENGINE_RELEASE_SHA',
-        'launcher-handoff-values=durable,completed,failed',
-        'launcher-terminal-failure-output-fields=ENGINE_RELEASE_HANDOFF,ENGINE_RELEASE_SHA,ENGINE_RELEASE_RESULT',
-        'wrapper-start-cli=start,run-key',
-        'wrapper-recover-cli=recover,run-key,service-result,exit-code,exit-status',
-        'systemd-terminal-outcomes=success:exited:0,exit-code:exited:1',
-        'systemd-unknown-outcome=retryable',
-        'systemd-recovery-timeout-seconds=330',
-        'transaction-cli=--run-id,run-key',
-        'recovery-cli=--run-id,run-key,--mode,terminal-or-retryable',
-        'transaction-terminal-statuses=0,1',
-        'transaction-retry-status=75',
-        'release-result-schema=1',
-        'release-result-attestation-fields=result,sha,image-id,container-id,started-at,instance-id,control-sha',
-        'release-failure-attestation-fields=result,sha,control-sha,invocation-id,transaction-exit-status,recovered-desired-sha,recovered-desired-image-id',
-        'release-seal-state-schema=1',
-        'release-seal-finalization-fields=run-id,sha,image-id',
-        'release-seal-get-cli=get,desired-image-id',
-        'release-seal-attest-commit-cli=attest-commit,--sha,sha,--image-id,image-id,--run-id,run-key',
-        'release-seal-record-result-cli=record-result,--sha,sha,--image-id,image-id,--result,result,--instance-id,instance-id,--container-id,container-id,--started-at,started-at,--run-id,run-key,--control-sha,control-sha,--invocation-id,invocation-id',
-        'release-seal-attest-result-cli=attest-result,--sha,sha,--run-id,run-key,--invocation-id,optional-invocation-id',
-        'release-seal-record-failure-cli=record-failure,--sha,sha,--run-id,run-key,--control-sha,control-sha,--invocation-id,invocation-id,--exit-status,transaction-exit-status,--container,container',
-        'release-seal-attest-failure-cli=attest-failure,--sha,sha,--run-id,run-key,--control-sha,optional-control-sha,--invocation-id,optional-invocation-id',
-        'release-seal-attest-terminal-cli=attest-terminal,--sha,sha,--run-id,run-key,--control-sha,control-sha',
-        'release-seal-abort-cli=abort,--run-id,run-key',
-        '',
-      ].join('\n')
-    );
-    expect(protocolV1Digest).toBe(
-      '7c5aba4d2bc572edc5ef84c5280e1ffe517e5949b41788c18eeb003abea74044'
-    );
-    for (const consumer of [installer, unitWrapper]) {
-      expect(consumer).toContain('PROTOCOL_V1_FILE="engine-release-protocol-v1.schema"');
-      expect(consumer).toContain(`PROTOCOL_V1_SHA256="${protocolV1Digest}"`);
-      expect(consumer).toContain('validate_v1_protocol()');
-      expect(consumer).toContain('incompatible with the frozen release v1 protocol');
-    }
-    expect(installer).toMatch(
-      /REQUIRED_FILES=\([\s\S]*engine-release-protocol-v1\.schema[\s\S]*\)/
-    );
-    expect(installer).toMatch(/CORE_FILES=\([\s\S]*engine-release-protocol-v1\.schema[\s\S]*\)/);
-    expect(installer.indexOf('validate_v1_protocol "$active"')).toBeLessThan(
-      installer.indexOf('mapfile -t ACTIVE_FILES')
-    );
-    expect(installer.indexOf('validate_v1_protocol "$SOURCE_DIR"')).toBeGreaterThan(
-      installer.indexOf('git -C "$REPO_DIR" archive "$CONTROL_SHA"')
-    );
-    expect(installer.indexOf('validate_v1_protocol "$GENERATION_STAGE"')).toBeLessThan(
-      installer.indexOf('mv -T "$GENERATION_STAGE" "$GENERATION_DIR"')
-    );
-    expect(installer).toContain('[ "$file" = "$PROTOCOL_V1_FILE" ]');
-    expect(installer).toContain('install -m 0644 "$SOURCE_DIR/$file" "$GENERATION_STAGE/$file"');
-    expect(unitWrapper).toContain(
-      'pinned generation manifest does not declare the release v1 protocol exactly once'
-    );
-
-    const wrapperGenerationValidation = unitWrapper.slice(
-      unitWrapper.indexOf('validate_generation()'),
-      unitWrapper.indexOf('[ "$(id -u)" = 0 ]')
-    );
-    expect(wrapperGenerationValidation).toContain('validate_v1_protocol "$canonical"');
-    expect(wrapperGenerationValidation.indexOf('validate_v1_protocol "$canonical"')).toBeLessThan(
-      wrapperGenerationValidation.indexOf('engine-release-transaction.sh')
-    );
-    expect(wrapperGenerationValidation.indexOf('validate_v1_protocol "$canonical"')).toBeLessThan(
-      wrapperGenerationValidation.indexOf('engine-release-recover.sh')
-    );
-  });
-
-  it('migrates the unmanifested predecessor without executing any of its bytes', () => {
-    const legacy = installer.slice(
-      installer.indexOf('elif [ -L "$CONTROL_DIR" ]; then'),
-      installer.indexOf('elif [ -e "$CONTROL_DIR" ]; then')
-    );
-    expect(legacy).toContain('migrating unmanifested predecessor control generation');
-    expect(legacy).not.toMatch(/"\$ACTIVE_TARGET\/[^"\n]+\.sh"/);
-    expect(legacy).not.toMatch(/(?:source|exec|bash)\s+"?\$ACTIVE_TARGET/);
-    expect(installer.indexOf('archive "$CONTROL_SHA" server/scripts')).toBeGreaterThan(
-      installer.indexOf('migrating unmanifested predecessor control generation')
-    );
-  });
-
-  it('does not orphan a staged release merely because main advances during its build', () => {
-    const queuedRecheck = workflow.slice(
-      workflow.indexOf('name: Recheck freshness after the FIFO wait'),
-      workflow.indexOf('name: Establish pinned ephemeral SSH transport')
-    );
-    const hostStage = workflow.slice(
-      workflow.indexOf('name: Stage exact control bytes'),
-      workflow.indexOf('name: Dispatch the staged SHA through the durable Hetzner intake')
-    );
-    expect(workflow).toContain(
-      'group: club-arena-engine-request-${{ github.event.client_payload.ref_sha }}'
-    );
-    expect(workflow).toContain('cancel-in-progress: false');
-    expect(workflow).not.toContain('queue: max');
-    expect(queuedRecheck).toContain('git merge-base --is-ancestor "$CONTROL_SHA" "$MAIN_SHA"');
-    expect(queuedRecheck).toContain('[[ "$LATEST_REQUIRED" =~ ^[0-9a-f]{40}$ ]]');
-    expect(queuedRecheck).toContain('host forward-only admission is still required.');
-    expect(hostStage).toContain(
-      'git -C "$REPO_DIR" merge-base --is-ancestor "$commit" "$MAIN_SHA"'
-    );
-    expect(installer).toContain('ACTIVE_IS_CURRENT_GENERATION=1');
-    expect(installer).toContain(
-      'control generation $ACTIVE_CONTROL_SHA is newer; refusing downgrade'
-    );
-    expect(installer).toContain('ENGINE_CONTROL_INSTALL_GENERATION=$ACTIVE_TARGET');
-    expect(intake).toContain('INSTALLED_GENERATION=');
-    expect(intake).toContain('"$CANONICAL_GENERATION/launch-engine-release.sh"');
-  });
-
-  it('activates one complete control-plane generation atomically under the engine lock', () => {
-    const lock = installer.indexOf('flock -w 600 9');
-    const sourceLock = installer.indexOf('flock -w 90 8', lock);
-    const archive = installer.indexOf('git -C "$REPO_DIR" archive "$CONTROL_SHA"');
-    const stage = installer.indexOf('GENERATION_STAGE="$(mktemp -d', archive);
-    const validateShell = installer.indexOf('bash -n "$GENERATION_STAGE/$script"', stage);
-    const durableGeneration = installer.indexOf(
-      'fsync_paths "$GENERATION_STAGE"/* "$GENERATION_STAGE" "$GENERATION_ROOT"',
-      validateShell
-    );
-    const publishGeneration = installer.indexOf('mv -T "$GENERATION_STAGE" "$GENERATION_DIR"');
-    const nextLink = installer.indexOf('ln -s "$GENERATION_DIR" "$NEXT_LINK"', publishGeneration);
-    const activate = installer.indexOf('mv -Tf "$NEXT_LINK" "$CONTROL_DIR"', nextLink);
-    const durableActivation = installer.indexOf('fsync_paths "$CONTROL_PARENT"', activate);
-    expect(lock).toBeGreaterThan(0);
-    expect(sourceLock).toBeGreaterThan(lock);
-    expect(archive).toBeGreaterThan(sourceLock);
-    expect(stage).toBeGreaterThan(archive);
-    expect(validateShell).toBeGreaterThan(stage);
-    expect(durableGeneration).toBeGreaterThan(validateShell);
-    expect(publishGeneration).toBeGreaterThan(durableGeneration);
-    expect(nextLink).toBeGreaterThan(publishGeneration);
-    expect(activate).toBeGreaterThan(nextLink);
-    expect(durableActivation).toBeGreaterThan(activate);
-    expect(installer).toContain('"$GENERATION_DIR/engine-release-seal.py" bootstrap-running');
-    expect(installer).not.toContain('install -d -m 0755 "$CONTROL_DIR"');
-    expect(installer.indexOf('ACTIVE_CONTROL_SHA=', sourceLock)).toBeLessThan(stage);
-    expect(installer).toContain('ExecStart=$UNIT_WRAPPER_V1 start %i');
-    expect(installer).toContain('ExecStopPost=$UNIT_WRAPPER_V1 recover %i');
-    expect(installer).toContain('club-arena-engine-release-v1@.service');
-  });
-
-  it('verifies the sealed recovery image without treating mutable tags as authority', () => {
-    expect(recoveryVerifier).toContain('sealed desired image exists locally');
-    expect(recoveryVerifier).toContain(':current is a repairable cache');
-    expect(recoveryVerifier).toContain('pending candidate is non-persistent');
-    expect(recoveryVerifier).toContain("desired release restart policy is 'always'");
-    expect(recoveryVerifier).not.toContain('a bad deploy could NOT be rolled back');
-    expect(recoveryVerifier).not.toContain('the supervisor cannot recreate the container');
-  });
-
-  it('makes the supervisor restore the sealed image ID, never mutable current', () => {
-    expect(supervisor).toContain(
-      'DESIRED_IMAGE_ID="$(bounded_recovery_command 10 "$RELEASE_SEAL" get desired-image-id)"'
-    );
-    expect(supervisor).toContain('IMAGE="$DESIRED_IMAGE_ID"');
-    expect(supervisor).not.toContain('IMAGE="${IMAGE:-club-arena-engine:current}"');
-    expect(supervisor).not.toContain('docker tag');
-    expect(supervisor).toContain('ENGINE_SUPERVISOR_FORCE_DESIRED');
-    expect(supervisor).toContain('ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH');
-    expect(supervisor).toContain('ENGINE_SUPERVISOR_LOCK_HELD');
-    expect(supervisor).toContain('[ "$RUNNING_IMAGE_ID" != "$DESIRED_IMAGE_ID" ]');
-    expect(supervisor).toContain('[ "$RUNNING_RELEASE" != "$DESIRED_SHA" ]');
-    expect(supervisor).toContain('restoring exact sealed desired release');
-    expect(supervisor).toContain('docker update --restart always "$CONTAINER"');
-    expect(supervisor).toContain('prove_exact_desired_recovery');
-  });
-
-  it('commits the seal only after HTTP, proxy, and strict database proof', () => {
-    const local = transaction.indexOf('CANDIDATE_INSTANCE="$(health_instance');
-    const publicProxy = transaction.indexOf('PUBLIC_INSTANCE="$(health_instance', local);
-    const freshness = transaction.indexOf('source_target_is_current', publicProxy);
-    const localAgain = transaction.indexOf('PRECOMMIT_LOCAL_INSTANCE=', freshness);
-    const publicAgain = transaction.indexOf('PRECOMMIT_PUBLIC_INSTANCE=', localAgain);
-    const database = transaction.indexOf('"$DATABASE_PROOF" --env-file', publicAgain);
-    const commit = transaction.indexOf('"$RELEASE_SEAL" commit', database);
-    expect(local).toBeGreaterThan(0);
-    expect(publicProxy).toBeGreaterThan(local);
-    expect(freshness).toBeGreaterThan(publicProxy);
-    expect(localAgain).toBeGreaterThan(freshness);
-    expect(publicAgain).toBeGreaterThan(localAgain);
-    expect(database).toBeGreaterThan(publicAgain);
-    expect(commit).toBeGreaterThan(database);
-    expect(databaseProof).toContain('engine_version,instance_id,heartbeat_at');
-    expect(databaseProof).toContain('leader_instance == instance_id');
-    expect(databaseProof).toContain('-30 <= age <= args.max_heartbeat_age_seconds');
-    expect(transaction.slice(database, commit)).toContain('--max-heartbeat-age-seconds 15');
-    expect(workflow).toContain('Independently prove the sealed local, public, and leader identity');
-  });
-
-  it('queues frozen intake before request publication and lets the host complete the handoff', () => {
-    const unit = 'club-arena-engine-intake-v1@';
-    const intakeServiceUnit = intakeInstaller.slice(
-      intakeInstaller.indexOf('cat > "$UNIT_STAGE"'),
-      intakeInstaller.indexOf('cat > "$PATH_STAGE"')
-    );
-    expect(intakeInstaller).toContain('UNIT_BASENAME="club-arena-engine-intake-v1@.service"');
-    expect(intakeInstaller).toContain('ln -- "$NEXT_UNIT" "$UNIT_PATH"');
-    expect(intakeInstaller).toContain('cmp -s "$NEXT_UNIT" "$UNIT_PATH"');
-    expect(intakeInstaller).not.toMatch(/mv -T[^\n]*engine-intake/);
-    expect(intake).toContain(unit);
-    expect(observer).toContain(unit);
-    expect(workflow).toContain(unit);
-    const publishIntent = intakeInstaller.indexOf('ln -- "$TMP_REQUEST" "$INTENT_FILE"');
-    const durableIntent = intakeInstaller.indexOf('fsync_paths "$INTAKE_ROOT"', publishIntent);
-    const enable = intakeInstaller.indexOf('systemctl enable "$UNIT"');
-    const durableEnable = intakeInstaller.indexOf('fsync_paths "$WANTS_DIR"', enable);
-    const armPath = intakeInstaller.indexOf('systemctl start "$PATH_UNIT"', durableEnable);
-    const start = intakeInstaller.indexOf('systemctl start --no-block "$UNIT"', durableIntent);
-    const authenticatedEntrypoint = intakeInstaller.indexOf(
-      '[ -x "$STAGE/server/scripts/engine-release-intake.sh" ]'
-    );
-    const verifyCopy = intakeInstaller.indexOf('VERIFY_UNIT_STAGE=');
-    const verifyInstance = intakeInstaller.indexOf(
-      'systemd-analyze verify "$VERIFY_UNIT_STAGE" "$VERIFY_PATH_STAGE"',
-      verifyCopy
-    );
-    const removeVerifyCopies = intakeInstaller.indexOf(
-      'rm -f -- "$VERIFY_UNIT_STAGE" "$VERIFY_PATH_STAGE"',
-      verifyInstance
-    );
-    const fsyncCanonicalTemplates = intakeInstaller.indexOf(
-      'fsync_paths "$UNIT_STAGE" "$PATH_STAGE"',
-      removeVerifyCopies
-    );
-    const installCanonicalTemplate = intakeInstaller.indexOf(
-      'install -m 0644 "$UNIT_STAGE" "$NEXT_UNIT"',
-      fsyncCanonicalTemplates
-    );
-    expect(publishIntent).toBeGreaterThan(0);
-    expect(durableIntent).toBeGreaterThan(publishIntent);
-    expect(enable).toBeGreaterThan(0);
-    expect(durableEnable).toBeGreaterThan(enable);
-    expect(armPath).toBeGreaterThan(durableEnable);
-    expect(publishIntent).toBeGreaterThan(armPath);
-    expect(durableIntent).toBeGreaterThan(publishIntent);
-    expect(start).toBeGreaterThan(durableIntent);
-    expect(verifyCopy).toBeGreaterThan(authenticatedEntrypoint);
-    expect(verifyInstance).toBeGreaterThan(verifyCopy);
-    expect(removeVerifyCopies).toBeGreaterThan(verifyInstance);
-    expect(fsyncCanonicalTemplates).toBeGreaterThan(removeVerifyCopies);
-    expect(installCanonicalTemplate).toBeGreaterThan(fsyncCanonicalTemplates);
-    expect(intakeInstaller.indexOf('ln -- "$TMP_REQUEST" "$REQUEST_FILE"')).toBe(-1);
-    expect(intakeInstaller).toContain('PATH_BASENAME="club-arena-engine-intake-v1@.path"');
-    expect(intakeInstaller).toContain(
-      'PathExists=/var/lib/club-arena/engine-intake-requests/%i.intent'
-    );
-    expect(intakeServiceUnit).toContain('Type=oneshot');
-    expect(intakeServiceUnit).toContain('Restart=on-failure');
-    expect(intakeServiceUnit).not.toContain('RestartForceExitStatus=');
-    expect(intakeServiceUnit).toContain('RestartPreventExitStatus=1');
-    expect(intakeInstaller).not.toContain('Requires=docker.service');
-    expect(intakeInstaller).toContain(
-      'VERIFY_UNIT_STAGE="$UNIT_STAGE_DIR/club-arena-engine-intake-v1@$RUN_ID.service"'
-    );
-    expect(intakeInstaller).toContain(
-      'VERIFY_PATH_STAGE="$UNIT_STAGE_DIR/club-arena-engine-intake-v1@$RUN_ID.path"'
-    );
-    expect(intakeInstaller).toContain(
-      'systemd-analyze verify "$VERIFY_UNIT_STAGE" "$VERIFY_PATH_STAGE"'
-    );
-    expect(intakeInstaller).not.toContain('systemd-analyze verify "$UNIT_STAGE" "$PATH_STAGE"');
-    expect(intakeInstaller).toContain('flock -w 30 7');
-    expect(intake).toContain('flock -w 30 7');
-    expect(intakeInstaller).toContain('fsync_paths "$INTAKE_ROOT" "$(dirname "$INTAKE_ROOT")"');
-    expect(intakeInstaller).toContain('if [ "$DURABLE_STATE_EXISTS" = 1 ]');
-    expect(intakeInstaller).toContain(
-      'it must not reset,\n  # re-enable, or retrigger a transaction'
-    );
-    expect(intake).toContain('[ "$INSTALLED_SHA" = "$CONTROL_SHA" ]');
-    const missingRequest = intake.slice(
-      intake.indexOf('if [ ! -e "$REQUEST_FILE" ]'),
-      intake.indexOf('mapfile -t REQUEST_LINES')
-    );
-    expect(missingRequest).toContain('ln -- "$INTENT_FILE" "$REQUEST_FILE"');
-    expect(missingRequest).toContain('fsync_directory "$INTAKE_ROOT"');
-    expect(missingRequest).toContain('systemctl disable "$INTAKE_UNIT"');
-  });
-
-  it('hard-bounds every database proof request and retry sleep', () => {
-    expect(databaseProof).toContain('min(15.0, remaining)');
-    expect(databaseProof).toContain('time.sleep(min(float(args.poll_seconds), remaining))');
-    expect(transaction).toMatch(
-      /timeout --signal=TERM --kill-after=1s "\$\{(?:proof_timeout|DB_TIMEOUT)\}s"/m
-    );
-    expect(workflow).toContain('timeout --signal=TERM --kill-after=1s 62s');
-  });
-
-  it('immediately repeats the idempotent intake after an uncertain transport handoff', () => {
-    const uncertain = workflow.slice(
-      workflow.indexOf('if uncertain_status "$SSH_RC"; then'),
-      workflow.indexOf('RESULT="$(sed -n', workflow.indexOf('if uncertain_status "$SSH_RC"; then'))
-    );
-    expect(workflow).toContain('uncertain_status()');
-    expect(workflow).toContain('[ "$status" -eq 124 ]');
-    expect(workflow).toContain('[ "$status" -ge 128 ]');
-    expect(uncertain).toContain('if uncertain_status "$SSH_RC"; then');
-    expect(workflow).toContain('RELEASE_DISPATCH_DEADLINE_EPOCH - $(date +%s)');
-    expect(workflow).toContain('timeout --signal=TERM --kill-after=5s "${transport_timeout}s"');
-    expect(uncertain).toContain('RETRY_REMAINING=$((RELEASE_DISPATCH_DEADLINE_EPOCH - $(date +%s)');
-    expect(uncertain).toContain('sleep "$RETRY_DELAY"');
-    const retryIntake = uncertain.indexOf('run_remote_intake | tee -a');
-    const retryObserve = uncertain.indexOf('observe_remote_release | tee -a');
-    expect(retryIntake).toBeGreaterThan(0);
-    expect(retryObserve).toBeGreaterThan(retryIntake);
-  });
-
-  it('binds every host retry to the workflow-owned immutable not-after epoch', () => {
-    expect(workflow).toContain("NOT_AFTER_EPOCH='$RELEASE_DISPATCH_DEADLINE_EPOCH'");
-    expect(workflow).toContain('--not-after-epoch "$NOT_AFTER_EPOCH"');
-    expect(intakeInstaller).toContain('"$ACTOR" "$NOT_AFTER_EPOCH" > "$TMP_REQUEST"');
-    expect(intake).toContain('NOT_AFTER_EPOCH="${REQUEST_LINES[4]}"');
-    expect(intake).toContain('--not-after-epoch "$NOT_AFTER_EPOCH"');
-    expect(launcher).toContain('NOT_AFTER_EPOCH="$8"');
-    expect(launcher).toContain('"$NOT_AFTER_EPOCH" > "$TMP_FILE"');
-    expect(transaction).toContain('REQUEST_NOT_AFTER_EPOCH="${REQUEST_LINES[5]}"');
-    expect(transaction).toContain('MUTATION_DEADLINE_EPOCH="$REQUEST_NOT_AFTER_EPOCH"');
-    expect(transaction).toContain(
-      "die 'immutable release not-after epoch expired before new release mutation'"
-    );
-    const finalization = transaction.indexOf('attest-commit');
-    const deadlineFence = transaction.indexOf(
-      'immutable release not-after epoch expired before new release mutation',
-      finalization
-    );
-    const freshness = transaction.indexOf('source_target_is_current', deadlineFence);
-    expect(deadlineFence).toBeGreaterThan(finalization);
-    expect(freshness).toBeGreaterThan(deadlineFence);
-    expect(transaction).not.toContain('REQUEST_NOT_AFTER_EPOCH=$(( $(date +%s)');
-  });
-
-  it('executes the exact full-SHA/process health predicate and rejects empty identities', () => {
-    const helper = transaction.slice(
-      transaction.indexOf('parse_health_instance_for_sha()'),
-      transaction.indexOf('\nhealth_instance_for_sha()')
-    );
-    const python = helper.match(/python3 -c '\n([\s\S]*?)\n' 2>\/dev\/null/)?.[1];
-    expect(python).toContain('d.get("releaseSha")==os.environ["EXPECTED_SHA"]');
-    expect(python).toContain('re.fullmatch(r"[1-9][0-9]*-[0-9a-f]{8}",instance)');
-    expect(
-      spawnSync('python3', ['-c', python!], {
-        input: JSON.stringify({
-          running: true,
-          releaseSha: B_SHA,
-          liveness: 'ok',
-          instanceId: '12345-deadbeef',
-        }),
-        env: { ...process.env, EXPECTED_SHA: B_SHA },
-      }).status
-    ).toBe(0);
-    expect(
-      spawnSync('python3', ['-c', python!], {
-        input: JSON.stringify({ running: true, releaseSha: B_SHA, liveness: 'ok', instanceId: '' }),
-        env: { ...process.env, EXPECTED_SHA: B_SHA },
-      }).status
-    ).not.toBe(0);
-  });
-
-  it('prepares one-use authority only after the long drain wait and immediately before cutover', () => {
-    const releaseLoop = transaction.indexOf(
-      'while :; do',
-      transaction.indexOf('source_target_is_current')
-    );
-    const certificate = transaction.indexOf('maintenance_certificate)', releaseLoop);
-    const lock = transaction.indexOf("acquire_engine_lock 'maintenance cutover'", certificate);
-    const lockedCertificate = transaction.indexOf('maintenance_certificate)', lock);
-    const prepare = transaction.indexOf(
-      'PREPARE_OUTPUT="$(bounded_break_command',
-      lockedCertificate
-    );
-    const cutover = transaction.indexOf('docker stop -t 15 sp-autoheal', prepare);
-    expect(certificate).toBeGreaterThan(0);
-    expect(lock).toBeGreaterThan(certificate);
-    expect(lockedCertificate).toBeGreaterThan(lock);
-    expect(prepare).toBeGreaterThan(lockedCertificate);
-    expect(cutover).toBeGreaterThan(prepare);
-    expect(transaction.slice(prepare, cutover)).toContain('PREPARED=1');
-    expect(transaction.slice(prepare, cutover)).toContain('MUTATION_STARTED=1');
-  });
-
-  it('builds every target from its exact server tree and reuses only that proven build contract', () => {
-    const lease = transaction.indexOf('create_image_lease');
-    const build = transaction.indexOf('"$IMAGE_BUILDER" "$REPO_DIR" "$SHA" "$IMAGE_REF"', lease);
-    const freshness = transaction.indexOf('source_target_is_current', build);
-    const certificateWait = transaction.indexOf('while :; do', freshness);
-    expect(lease).toBeGreaterThan(0);
-    expect(build).toBeGreaterThan(lease);
-    expect(freshness).toBeGreaterThan(build);
-    expect(certificateWait).toBeGreaterThan(freshness);
-    expect(transaction.slice(lease, freshness)).toContain(
-      'timeout --signal=TERM --kill-after=15s "${BUILD_TIMEOUT}s"'
-    );
-    expect(transaction).toContain(
-      'MAX_RUNTIME_SECONDS="${ENGINE_RELEASE_MAX_RUNTIME_SECONDS:-8400}"'
-    );
-    expect(installer).toContain('TimeoutStartSec=145min');
-    expect(observer).toContain('OBSERVE_SECONDS="${ENGINE_RELEASE_OBSERVE_SECONDS:-10200}"');
-    // 15m invocation assignment + 145m host unit still leaves ten minutes for
-    // ExecStopPost retirement and the observer's exact live proof.
-    expect(15 * 60 + 145 * 60).toBeLessThanOrEqual(10200 - 600);
-    expect(workflow).not.toMatch(/\bdocker build\b/);
-    expect(statSync(imageBuilder).mode & 0o111).not.toBe(0);
-    expect(imageBuilderSource).toContain('GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" archive');
-    expect(imageBuilderSource).toContain('"${TARGET_SHA}:server"');
-    expect(imageBuilderSource).toContain('com.smarterpoker.engine.source-tree');
-    expect(imageBuilderSource).toContain('com.smarterpoker.engine.build-contract');
-    expect(imageBuilderSource).toContain("BUILD_CONTRACT='clean-server-archive-v1'");
-    expect(imageBuilderSource).toContain("trap 'exit 130' INT");
-    expect(imageBuilderSource).toContain("trap 'exit 143' HUP TERM");
-    expect(imageBuilderSource.indexOf('EXISTING_REVISION')).toBeLessThan(
-      imageBuilderSource.indexOf("echo 'ENGINE_IMAGE_REUSED=true'")
-    );
-    expect(imageBuilderSource.indexOf('EXISTING_TREE')).toBeLessThan(
-      imageBuilderSource.indexOf("echo 'ENGINE_IMAGE_REUSED=true'")
-    );
-    expect(imageBuilderSource.indexOf('EXISTING_CONTRACT')).toBeLessThan(
-      imageBuilderSource.indexOf("echo 'ENGINE_IMAGE_REUSED=true'")
-    );
-  });
-
-  // Builds a repository sandbox and runs the real image builder, so it is
-  // subprocess-bound like the provenance case above; it timed out at 5046ms in
-  // a loaded full-suite run with every assertion holding. Budget, not behaviour.
-  it('excludes mutable host files and credentials from the executable image build path', () => {
-    const sandbox = mkdtempSync(join(tmpdir(), 'engine-clean-build-'));
-    try {
-      const repo = join(sandbox, 'repo');
-      const server = join(repo, 'server');
-      const source = join(server, 'src');
-      const bin = join(sandbox, 'bin');
-      const dockerState = join(sandbox, 'docker-state');
-      const contextRoot = join(sandbox, 'contexts');
-      mkdirSync(source, { recursive: true });
-      mkdirSync(bin);
-      mkdirSync(dockerState);
-      writeFileSync(join(server, 'Dockerfile'), 'FROM scratch\n');
-      writeFileSync(join(server, 'package.json'), '{"name":"exact-tree"}\n');
-      writeFileSync(join(server, 'tsconfig.json'), '{}\n');
-      writeFileSync(join(source, 'tracked.ts'), 'export const tracked = true;\n');
-
-      const emptyGlobalConfig = join(sandbox, 'empty-global.gitconfig');
-      writeFileSync(emptyGlobalConfig, '');
-      const isolatedEnv = fixtureGitEnvironment(emptyGlobalConfig);
-      const runGit = (args: string[]) =>
-        spawnSync('git', args, { cwd: repo, encoding: 'utf8', env: isolatedEnv });
-      expect(runGit(['init', '-q']).status).toBe(0);
-      expect(runGit(['config', 'user.email', 'release-law@example.invalid']).status).toBe(0);
-      expect(runGit(['config', 'user.name', 'Release Law']).status).toBe(0);
-      expect(runGit(['add', 'server']).status).toBe(0);
-      expect(runGit(['commit', '-qm', 'exact committed server tree']).status).toBe(0);
-      const targetSha = runGit(['rev-parse', 'HEAD']).stdout.trim();
-      const serverTree = runGit(['rev-parse', 'HEAD:server']).stdout.trim();
-
-      // These are the production defect: files present beside the checkout but
-      // absent from the target commit must be impossible for Docker to ingest.
-      writeFileSync(
-        join(source, 'untracked-sentinel.ts'),
-        'throw new Error("host contamination");\n'
-      );
-      writeFileSync(join(server, '.env'), 'DATABASE_URL=must-never-enter-the-image\n');
-
-      const fakeDocker = `#!/usr/bin/env bash
+        const fakeDocker = `#!/usr/bin/env bash
 set -euo pipefail
 STATE_DIR="$FAKE_DOCKER_STATE_DIR"
 mkdir -p "$STATE_DIR"
@@ -2407,34 +2455,34 @@ if [ "$1" = tag ]; then exit 0; fi
 if [ "$1" = image ] && [ "$2" = rm ]; then exit 0; fi
 exit 5
 `;
-      writeFileSync(join(bin, 'docker'), fakeDocker);
-      chmodSync(join(bin, 'docker'), 0o755);
-      writeFileSync(
-        join(bin, 'awk'),
-        '#!/usr/bin/env bash\nprintf "%s\\n" "${FAKE_AVAILABLE_KIB:-2097152}"\n'
-      );
-      chmodSync(join(bin, 'awk'), 0o755);
-      writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
-      chmodSync(join(bin, 'flock'), 0o755);
-      writeFileSync(join(bin, 'setsid'), '#!/usr/bin/env bash\nexec "$@"\n');
-      chmodSync(join(bin, 'setsid'), 0o755);
-      writeFileSync(
-        join(bin, 'timeout'),
-        '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'
-      );
-      chmodSync(join(bin, 'timeout'), 0o755);
+        writeFileSync(join(bin, 'docker'), fakeDocker);
+        chmodSync(join(bin, 'docker'), 0o755);
+        writeFileSync(
+          join(bin, 'awk'),
+          '#!/usr/bin/env bash\nprintf "%s\\n" "${FAKE_AVAILABLE_KIB:-2097152}"\n'
+        );
+        chmodSync(join(bin, 'awk'), 0o755);
+        writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
+        chmodSync(join(bin, 'flock'), 0o755);
+        writeFileSync(join(bin, 'setsid'), '#!/usr/bin/env bash\nexec "$@"\n');
+        chmodSync(join(bin, 'setsid'), 0o755);
+        writeFileSync(
+          join(bin, 'timeout'),
+          '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'
+        );
+        chmodSync(join(bin, 'timeout'), 0o755);
 
-      // A tar reader may finish at end markers before its producer finishes
-      // trailing block padding. Force that race beyond the pipe buffer so a
-      // successful extraction cannot hide a failed archive producer.
-      const realGit = spawnSync('which', ['git'], {
-        encoding: 'utf8',
-        env: isolatedEnv,
-      }).stdout.trim();
-      expect(realGit.startsWith('/')).toBe(true);
-      writeFileSync(
-        join(bin, 'git'),
-        `#!/usr/bin/env python3
+        // A tar reader may finish at end markers before its producer finishes
+        // trailing block padding. Force that race beyond the pipe buffer so a
+        // successful extraction cannot hide a failed archive producer.
+        const realGit = spawnSync('which', ['git'], {
+          encoding: 'utf8',
+          env: isolatedEnv,
+        }).stdout.trim();
+        expect(realGit.startsWith('/')).toBe(true);
+        writeFileSync(
+          join(bin, 'git'),
+          `#!/usr/bin/env python3
 import os, subprocess, sys
 real_git = ${JSON.stringify(realGit)}
 args = sys.argv[1:]
@@ -2447,443 +2495,450 @@ sys.stdout.buffer.write(bytes(1024 * 1024))
 sys.stdout.buffer.flush()
 sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
 `
-      );
-      chmodSync(join(bin, 'git'), 0o755);
+        );
+        chmodSync(join(bin, 'git'), 0o755);
 
-      // A legacy revision-only tag must rebuild once; revision alone never
-      // proves which bytes the mutable checkout contributed.
-      writeFileSync(join(dockerState, 'built'), '');
-      writeFileSync(join(dockerState, 'revision'), targetSha);
-      const env = {
-        ...isolatedEnv,
-        PATH: `${bin}:${isolatedEnv.PATH ?? ''}`,
-        FAKE_DOCKER_STATE_DIR: dockerState,
-        FAKE_AVAILABLE_KIB: '917504',
-        ENGINE_BUILD_CONTEXT_ROOT: contextRoot,
-        ENGINE_BUILD_LOCK_FILE: join(sandbox, 'engine-build.lock'),
-      };
-      const first = spawnSync(
-        'bash',
-        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
-        { encoding: 'utf8', env }
-      );
-      expect(first.status, `${first.stdout}\n${first.stderr}`).toBe(0);
-      expect(first.stdout).toContain('ENGINE_IMAGE_REUSED=false');
-      expect(readFileSync(join(dockerState, 'source-tree'), 'utf8').trim()).toBe(serverTree);
-      expect(readFileSync(join(dockerState, 'build-contract'), 'utf8').trim()).toBe(
-        'clean-server-archive-v1'
-      );
-      expect(readFileSync(join(dockerState, 'build-arg'), 'utf8')).toBe(
-        `GIT_COMMIT_SHA=${targetSha}`
-      );
-      const usedContext = readFileSync(join(dockerState, 'context-path'), 'utf8').trim();
-      expect(existsSync(usedContext)).toBe(false);
-      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
-
-      const second = spawnSync(
-        'bash',
-        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
-        { encoding: 'utf8', env }
-      );
-      expect(second.status, `${second.stdout}\n${second.stderr}`).toBe(0);
-      expect(second.stdout).toContain('ENGINE_IMAGE_REUSED=true');
-      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
-
-      // Consuming padding must not turn an archive producer failure into a
-      // successful Docker build, even after tar extracted every required file.
-      rmSync(join(dockerState, 'source-tree'));
-      const failedArchive = spawnSync(
-        'bash',
-        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
-        { encoding: 'utf8', env: { ...env, FAKE_GIT_ARCHIVE_FAILURE: '47' } }
-      );
-      expect(failedArchive.status, failedArchive.stderr).toBe(47);
-      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
-      expect(readdirSync(contextRoot)).toEqual([]);
-
-      // Failed cgroup readback never enters Docker's build operation. It stops
-      // the owned builder and removes the source staging directory.
-      const noLimit = spawnSync(
-        'bash',
-        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
-        {
-          encoding: 'utf8',
-          env: { ...env, FAKE_CGROUP_MEMORY: 'max' },
-        }
-      );
-      expect(noLimit.status).toBe(1);
-      expect(noLimit.stderr).toContain('cgroup limits are not enforced');
-      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
-      expect(readFileSync(join(dockerState, 'builder-stops'), 'utf8')).toBe('stop\nstop\n');
-      expect(readdirSync(contextRoot)).toEqual([]);
-      const noHeadroom = spawnSync(
-        'bash',
-        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
-        {
-          encoding: 'utf8',
-          env: { ...env, FAKE_AVAILABLE_KIB: '917503' },
-        }
-      );
-      expect(noHeadroom.status).toBe(1);
-      expect(noHeadroom.stderr).toContain('insufficient memory headroom');
-      expect(noHeadroom.stderr).toContain('available=917503KiB, required=917504KiB');
-      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
-      expect(readdirSync(contextRoot)).toEqual([]);
-      const wrongDriver = spawnSync(
-        'bash',
-        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
-        {
-          encoding: 'utf8',
-          env: { ...env, FAKE_BUILDER_DRIVER: 'docker' },
-        }
-      );
-      expect(wrongDriver.status).toBe(1);
-      expect(wrongDriver.stderr).toContain('not the dedicated container driver');
-      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
-      expect(readdirSync(contextRoot)).toEqual([]);
-      for (const drift of [{ FAKE_WORKER_PARALLELISM: '4' }, { FAKE_CACHE_TARGET: '20GB' }]) {
-        const changedWorker = spawnSync(
+        // A legacy revision-only tag must rebuild once; revision alone never
+        // proves which bytes the mutable checkout contributed.
+        writeFileSync(join(dockerState, 'built'), '');
+        writeFileSync(join(dockerState, 'revision'), targetSha);
+        const env = {
+          ...isolatedEnv,
+          PATH: `${bin}:${isolatedEnv.PATH ?? ''}`,
+          FAKE_DOCKER_STATE_DIR: dockerState,
+          FAKE_AVAILABLE_KIB: '917504',
+          ENGINE_BUILD_CONTEXT_ROOT: contextRoot,
+          ENGINE_BUILD_LOCK_FILE: join(sandbox, 'engine-build.lock'),
+        };
+        const first = spawnSync(
           'bash',
           [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
-          { encoding: 'utf8', env: { ...env, ...drift } }
+          { encoding: 'utf8', env }
         );
-        expect(changedWorker.status).toBe(1);
-        expect(changedWorker.stderr).toContain('worker configuration could not be verified');
+        expect(first.status, `${first.stdout}\n${first.stderr}`).toBe(0);
+        expect(first.stdout).toContain('ENGINE_IMAGE_REUSED=false');
+        expect(readFileSync(join(dockerState, 'source-tree'), 'utf8').trim()).toBe(serverTree);
+        expect(readFileSync(join(dockerState, 'build-contract'), 'utf8').trim()).toBe(
+          'clean-server-archive-v1'
+        );
+        expect(readFileSync(join(dockerState, 'build-arg'), 'utf8')).toBe(
+          `GIT_COMMIT_SHA=${targetSha}`
+        );
+        const usedContext = readFileSync(join(dockerState, 'context-path'), 'utf8').trim();
+        expect(existsSync(usedContext)).toBe(false);
+        expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+
+        const second = spawnSync(
+          'bash',
+          [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+          { encoding: 'utf8', env }
+        );
+        expect(second.status, `${second.stdout}\n${second.stderr}`).toBe(0);
+        expect(second.stdout).toContain('ENGINE_IMAGE_REUSED=true');
+        expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+
+        // Consuming padding must not turn an archive producer failure into a
+        // successful Docker build, even after tar extracted every required file.
+        rmSync(join(dockerState, 'source-tree'));
+        const failedArchive = spawnSync(
+          'bash',
+          [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+          { encoding: 'utf8', env: { ...env, FAKE_GIT_ARCHIVE_FAILURE: '47' } }
+        );
+        expect(failedArchive.status, failedArchive.stderr).toBe(47);
         expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
         expect(readdirSync(contextRoot)).toEqual([]);
+
+        // Failed cgroup readback never enters Docker's build operation. It stops
+        // the owned builder and removes the source staging directory.
+        const noLimit = spawnSync(
+          'bash',
+          [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+          {
+            encoding: 'utf8',
+            env: { ...env, FAKE_CGROUP_MEMORY: 'max' },
+          }
+        );
+        expect(noLimit.status).toBe(1);
+        expect(noLimit.stderr).toContain('cgroup limits are not enforced');
+        expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+        expect(readFileSync(join(dockerState, 'builder-stops'), 'utf8')).toBe('stop\nstop\n');
+        expect(readdirSync(contextRoot)).toEqual([]);
+        const noHeadroom = spawnSync(
+          'bash',
+          [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+          {
+            encoding: 'utf8',
+            env: { ...env, FAKE_AVAILABLE_KIB: '917503' },
+          }
+        );
+        expect(noHeadroom.status).toBe(1);
+        expect(noHeadroom.stderr).toContain('insufficient memory headroom');
+        expect(noHeadroom.stderr).toContain('available=917503KiB, required=917504KiB');
+        expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+        expect(readdirSync(contextRoot)).toEqual([]);
+        const wrongDriver = spawnSync(
+          'bash',
+          [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+          {
+            encoding: 'utf8',
+            env: { ...env, FAKE_BUILDER_DRIVER: 'docker' },
+          }
+        );
+        expect(wrongDriver.status).toBe(1);
+        expect(wrongDriver.stderr).toContain('not the dedicated container driver');
+        expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+        expect(readdirSync(contextRoot)).toEqual([]);
+        for (const drift of [{ FAKE_WORKER_PARALLELISM: '4' }, { FAKE_CACHE_TARGET: '20GB' }]) {
+          const changedWorker = spawnSync(
+            'bash',
+            [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+            { encoding: 'utf8', env: { ...env, ...drift } }
+          );
+          expect(changedWorker.status).toBe(1);
+          expect(changedWorker.stderr).toContain('worker configuration could not be verified');
+          expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+          expect(readdirSync(contextRoot)).toEqual([]);
+        }
+        expect(readFileSync(join(dockerState, 'builder-stops'), 'utf8')).toBe(
+          'stop\nstop\nstop\nstop\n'
+        );
+      } finally {
+        rmSync(sandbox, { recursive: true, force: true });
       }
-      expect(readFileSync(join(dockerState, 'builder-stops'), 'utf8')).toBe(
-        'stop\nstop\nstop\nstop\n'
+    }, 15_000);
+
+    it('revalidates restart authority under the shared lock and starts in that same shell', () => {
+      const releaseLoop = transaction.indexOf(
+        'while :; do',
+        transaction.indexOf('source_target_is_current')
       );
-    } finally {
-      rmSync(sandbox, { recursive: true, force: true });
-    }
-  }, 15_000);
+      const lock = transaction.indexOf("acquire_engine_lock 'maintenance cutover'", releaseLoop);
+      const freshness = transaction.indexOf('source_target_is_current', lock);
+      const certificate = transaction.indexOf('maintenance_certificate)', freshness);
+      const prepare = transaction.indexOf('PREPARE_OUTPUT="$(bounded_break_command', certificate);
+      const autohealFence = transaction.indexOf('docker stop -t 15 sp-autoheal', prepare);
+      const start = transaction.indexOf('ENGINE_UP_LOCK_HELD=1', autohealFence);
+      expect(lock).toBeGreaterThan(0);
+      expect(freshness).toBeGreaterThan(lock);
+      expect(certificate).toBeGreaterThan(freshness);
+      expect(prepare).toBeGreaterThan(certificate);
+      expect(autohealFence).toBeGreaterThan(prepare);
+      expect(start).toBeGreaterThan(autohealFence);
+      expect(transaction).toContain('m.get("active") is True');
+      expect(transaction).toContain('m.get("phase")=="counting_down"');
+      expect(transaction).toContain('m.get("durableConfirmed") is True');
+      expect(transaction).toContain('m.get("unparkedTables")==0');
+      expect(transaction).toContain('if remaining<int(__import__("os").environ["MIN_BREAK_MS"]):');
+      expect(transaction).toContain('MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS"');
+    });
 
-  it('revalidates restart authority under the shared lock and starts in that same shell', () => {
-    const releaseLoop = transaction.indexOf(
-      'while :; do',
-      transaction.indexOf('source_target_is_current')
-    );
-    const lock = transaction.indexOf("acquire_engine_lock 'maintenance cutover'", releaseLoop);
-    const freshness = transaction.indexOf('source_target_is_current', lock);
-    const certificate = transaction.indexOf('maintenance_certificate)', freshness);
-    const prepare = transaction.indexOf('PREPARE_OUTPUT="$(bounded_break_command', certificate);
-    const autohealFence = transaction.indexOf('docker stop -t 15 sp-autoheal', prepare);
-    const start = transaction.indexOf('ENGINE_UP_LOCK_HELD=1', autohealFence);
-    expect(lock).toBeGreaterThan(0);
-    expect(freshness).toBeGreaterThan(lock);
-    expect(certificate).toBeGreaterThan(freshness);
-    expect(prepare).toBeGreaterThan(certificate);
-    expect(autohealFence).toBeGreaterThan(prepare);
-    expect(start).toBeGreaterThan(autohealFence);
-    expect(transaction).toContain('m.get("active") is True');
-    expect(transaction).toContain('m.get("phase")=="counting_down"');
-    expect(transaction).toContain('m.get("durableConfirmed") is True');
-    expect(transaction).toContain('m.get("unparkedTables")==0');
-    expect(transaction).toContain('if remaining<int(__import__("os").environ["MIN_BREAK_MS"]):');
-    expect(transaction).toContain('MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS"');
-  });
-
-  it('executes short-window queue refusal, retry, deadline, supersession and cancellation cases', () => {
-    const result = spawnSync(
-      'python3',
-      [join(ROOT, 'tests/operations/engine-release-window-queue.py')],
-      {
-        cwd: ROOT,
-        encoding: 'utf8',
-        timeout: 10_000,
-      }
-    );
-    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-    expect(result.stderr).toContain('Ran 10 tests');
-  });
-
-  it('guarantee and rollback can only recover the durable desired image', () => {
-    const abort = recovery.indexOf('engine-release-seal.py" abort');
-    const reconcile = recovery.indexOf('engine-supervisor.sh', abort);
-    expect(abort).toBeGreaterThan(0);
-    expect(reconcile).toBeGreaterThan(abort);
-    expect(recovery.indexOf('set +e')).toBeLessThan(abort);
-    expect(recovery).toContain('ENGINE_SUPERVISOR_LOCK_HELD=1');
-    expect(recovery).not.toMatch(/ENGINE_RELEASE_TOKEN|IMAGE=.*\$SHA|engine-up\.sh/);
-    expect(recovery).toContain('ENGINE_SUPERVISOR_FORCE_DESIRED=1');
-    expect(recovery).toContain('ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH=1');
-    expect(transaction).toContain('ENGINE_SUPERVISOR_FORCE_DESIRED=1');
-    expect(transaction).toContain('ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH=1');
-    expect(unitWrapper).toContain('ExecStopPost');
-    expect(unitWrapper).toContain('recovery failed; preserving the immutable generation pin');
-  });
-
-  it('uses the five-minute lane only after a fresh healthy rollback-source readiness proof', () => {
-    expect(transaction).toContain('BREAK_CUTOVER_PROOF_SECONDS=150');
-    expect(transaction).toContain('BREAK_ROLLBACK_RESERVE_SECONDS=135');
-    expect(transaction).toContain('BREAK_DEADLINE_SLACK_SECONDS=0');
-    expect(transaction).toContain(
-      'MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS) * 1000))'
-    );
-    expect((150 + 135) * 1000).toBeLessThan(5 * 60 * 1000);
-    expect(transaction).toContain('if [ "$CERTIFICATE_RC" -eq 2 ]');
-    expect(transaction).toContain('refusing before mutation');
-    const readiness = transaction.indexOf(
-      'prove_rollback_readiness',
-      transaction.indexOf('persist_break_deadline')
-    );
-    const prepare = transaction.indexOf('PREPARE_OUTPUT="$(bounded_break_command', readiness);
-    expect(readiness).toBeGreaterThan(0);
-    expect(prepare).toBeGreaterThan(readiness);
-    expect(transaction).toContain(
-      'rollback readiness found no fresh exact desired database leader'
-    );
-  });
-
-  it('reads the final systemd invocation before accepting its result receipt', () => {
-    const retryLoop = observer.slice(
-      observer.indexOf('if [ -z "$COMPLETED_ATTESTATION" ]; then'),
-      observer.indexOf('unit_completed_and_disabled()')
-    );
-    const invocation = retryLoop.indexOf('CURRENT_INVOCATION="$(systemctl show');
-    const receipt = retryLoop.indexOf('COMPLETED_ATTESTATION="$("$CONTROL_DIR');
-    expect(invocation).toBeGreaterThan(0);
-    expect(receipt).toBeGreaterThan(invocation);
-    expect(retryLoop.slice(invocation, receipt)).toContain('INVOCATION_ID="$CURRENT_INVOCATION"');
-  });
-
-  it('a rejected locked certificate cannot mark mutation or trigger a blind restart', () => {
-    const releaseLoop = transaction.indexOf(
-      'while :; do',
-      transaction.indexOf('source_target_is_current')
-    );
-    const certificate = transaction.indexOf('maintenance_certificate)', releaseLoop);
-    const lockedCertificate = transaction.indexOf('maintenance_certificate)', certificate + 1);
-    const prepared = transaction.indexOf('PREPARED=1', lockedCertificate);
-    const mutated = transaction.indexOf('MUTATION_STARTED=1', prepared);
-    const engineStart = transaction.indexOf('ENGINE_UP_LOCK_HELD=1', mutated);
-    expect(certificate).toBeGreaterThan(0);
-    expect(lockedCertificate).toBeGreaterThan(certificate);
-    expect(prepared).toBeGreaterThan(lockedCertificate);
-    expect(mutated).toBeGreaterThan(prepared);
-    expect(engineStart).toBeGreaterThan(mutated);
-    expect(transaction.slice(certificate, prepared)).not.toContain('docker stop');
-    expect(transaction).toContain('if [ "$rc" -ne 0 ] && [ "$MUTATION_STARTED" = 1 ]');
-  });
-
-  it('resumes one exact release across reboot and retires it only after durable recovery', () => {
-    const intent = launcher.indexOf('ln -- "$TMP_FILE" "$INTENT_FILE"');
-    const enable = launcher.indexOf('systemctl enable "$UNIT"', intent);
-    const start = launcher.indexOf('systemctl start --no-block "$UNIT"');
-    const request = launcher.indexOf('ln -- "$TMP_FILE" "$REQUEST_FILE"', start);
-    expect(intent).toBeGreaterThan(0);
-    expect(enable).toBeGreaterThan(intent);
-    expect(start).toBeGreaterThan(enable);
-    expect(request).toBe(-1);
-    expect(installer).toContain('[Install]\nWantedBy=multi-user.target');
-    expect(launcher).toContain('UNIT="club-arena-engine-release-v1@$RUN_ID.service"');
-    const completed = launcher.indexOf('attest-result');
-    expect(completed).toBeGreaterThan(0);
-    expect(completed).toBeLessThan(intent);
-    expect(launcher).toContain("echo 'ENGINE_RELEASE_HANDOFF=completed'");
-    expect(intake).toContain('case "$HANDOFF" in');
-    expect(intake).toContain('completed)');
-
-    const startupLock = transaction.indexOf("acquire_engine_lock 'duplicate certification'");
-    const pending = transaction.indexOf('read_pending_owner', startupLock);
-    const recoverOwn = transaction.indexOf('recover_pending_owner "$PENDING_RUN"', pending);
-    const source = transaction.indexOf('source_target_is_current', recoverOwn);
-    expect(pending).toBeGreaterThan(startupLock);
-    expect(recoverOwn).toBeGreaterThan(pending);
-    expect(source).toBeGreaterThan(recoverOwn);
-
-    const abort = recovery.indexOf('engine-release-seal.py" abort');
-    const supervisorRepair = recovery.indexOf('engine-supervisor.sh', abort);
-    const terminalReceipt = recovery.indexOf('attest-terminal', supervisorRepair);
-    const pinCleanup = recovery.indexOf('rm -f -- "$PIN_FILE"', supervisorRepair);
-    const leaseCleanup = recovery.indexOf('rm -f -- "$LEASE_FILE"', pinCleanup);
-    const breakDeadlineCleanup = recovery.indexOf('rm -f -- "$BREAK_DEADLINE_FILE"', leaseCleanup);
-    const intentCleanup = recovery.indexOf('rm -f -- "$INTENT_FILE"', breakDeadlineCleanup);
-    const requestCleanup = recovery.indexOf('rm -f -- "$REQUEST_FILE"', intentCleanup);
-    const durableCleanup = recovery.indexOf('fsync_directory "$REQUEST_ROOT"', requestCleanup);
-    const disable = recovery.indexOf('systemctl disable "$UNIT"', durableCleanup);
-    expect(supervisorRepair).toBeGreaterThan(abort);
-    expect(terminalReceipt).toBeGreaterThan(supervisorRepair);
-    expect(pinCleanup).toBeGreaterThan(terminalReceipt);
-    expect(pinCleanup).toBeGreaterThan(supervisorRepair);
-    expect(leaseCleanup).toBeGreaterThan(pinCleanup);
-    expect(breakDeadlineCleanup).toBeGreaterThan(leaseCleanup);
-    expect(intentCleanup).toBeGreaterThan(breakDeadlineCleanup);
-    expect(requestCleanup).toBeGreaterThan(intentCleanup);
-    expect(durableCleanup).toBeGreaterThan(requestCleanup);
-    expect(disable).toBeGreaterThan(durableCleanup);
-    expect(observer).toContain('[ ! -e "$REQUEST_ROOT/$RUN_ID.break-deadline" ]');
-    expect(unitWrapper).toContain('recovery failed; preserving the immutable generation pin');
-  });
-
-  it('retains the immutable request when durability fails immediately after pin removal', () => {
-    const sandbox = mkdtempSync(join(tmpdir(), 'engine-terminal-pin-fsync-'));
-    try {
-      const generation = join(sandbox, 'generation');
-      const requestRoot = join(sandbox, 'requests');
-      const pinRoot = join(sandbox, 'pins');
-      const leaseRoot = join(sandbox, 'leases');
-      const bin = join(sandbox, 'bin');
-      const runKey = '880-1';
-      for (const path of [generation, requestRoot, pinRoot, leaseRoot, bin]) {
-        mkdirSync(path, { recursive: true });
-      }
-      const executableRecovery = recovery.replace(
-        'mapfile -t TERMINAL_REQUEST_LINES < "$REQUEST_FILE" \\\n  || { echo \'[engine-release-recover] FATAL: terminal cleanup request is unreadable\' >&2; exit 1; }',
-        'TERMINAL_REQUEST_LINES=(); while IFS= read -r line; do TERMINAL_REQUEST_LINES[${#TERMINAL_REQUEST_LINES[@]}]="$line"; done < "$REQUEST_FILE"'
-      );
-      expect(executableRecovery).not.toBe(recovery);
-      const recoveryPath = join(generation, 'engine-release-recover.sh');
-      writeFileSync(recoveryPath, executableRecovery);
-      chmodSync(recoveryPath, 0o755);
-      writeFileSync(
-        join(generation, 'engine-release-seal.py'),
-        '#!/usr/bin/env bash\ncase "$1" in abort|attest-terminal) exit 0 ;; *) exit 91 ;; esac\n'
-      );
-      writeFileSync(join(generation, 'engine-supervisor.sh'), '#!/usr/bin/env bash\nexit 0\n');
-      chmodSync(join(generation, 'engine-release-seal.py'), 0o755);
-      chmodSync(join(generation, 'engine-supervisor.sh'), 0o755);
-
-      const requestPath = join(requestRoot, `${runKey}.request`);
-      const intentPath = join(requestRoot, `${runKey}.intent`);
-      const pinPath = join(pinRoot, `${runKey}.generation`);
-      writeFileSync(
-        requestPath,
-        [
-          B_SHA,
-          'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/880',
-          'release-test',
-          generation,
-          C_SHA,
-          String(Math.floor(Date.now() / 1000) - 1),
-          '',
-        ].join('\n'),
-        { mode: 0o600 }
-      );
-      writeFileSync(intentPath, readFileSync(requestPath), { mode: 0o600 });
-      writeFileSync(pinPath, `${generation}\n${C_SHA}\n`, { mode: 0o600 });
-
-      writeFileSync(join(bin, 'id'), '#!/usr/bin/env bash\n[ "$1" = -u ] && echo 0\n');
-      writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
-      writeFileSync(join(bin, 'docker'), '#!/usr/bin/env bash\n[ "$1" = info ]\n');
-      writeFileSync(join(bin, 'stat'), '#!/usr/bin/env bash\necho 0:600\n');
-      writeFileSync(
-        join(bin, 'timeout'),
-        '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'
-      );
-      writeFileSync(join(bin, 'python3'), `#!/usr/bin/env bash\n[ "\${2:-}" != '${pinRoot}' ]\n`);
-      for (const name of ['id', 'flock', 'docker', 'stat', 'timeout', 'python3']) {
-        chmodSync(join(bin, name), 0o755);
-      }
-
-      const result = spawnSync('bash', [recoveryPath, '--run-id', runKey, '--mode', 'terminal'], {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          PATH: `${bin}:${process.env.PATH ?? ''}`,
-          ENGINE_RELEASE_REQUEST_ROOT: requestRoot,
-          ENGINE_RELEASE_PIN_ROOT: pinRoot,
-          ENGINE_RELEASE_IMAGE_LEASE_ROOT: leaseRoot,
-          ENGINE_LOCK_FILE: join(sandbox, 'engine.lock'),
-          CONTAINER: 'club-arena-engine',
-        },
-      });
-      expect(result.status).not.toBe(0);
-      expect(existsSync(pinPath)).toBe(false);
-      expect(existsSync(requestPath), 'request must survive pin-directory fsync failure').toBe(
-        true
-      );
-      expect(existsSync(intentPath), 'intent must survive pin-directory fsync failure').toBe(true);
-    } finally {
-      rmSync(sandbox, { recursive: true, force: true });
-    }
-  });
-
-  it('does not rebind an already-completed run to a newer compatible control generation', () => {
-    const sandbox = mkdtempSync(join(tmpdir(), 'engine-release-launch-replay-'));
-    try {
-      const generations = join(sandbox, 'generations');
-      const generation = join(generations, C_SHA);
-      const requestRoot = join(sandbox, 'requests');
-      const bin = join(sandbox, 'bin');
-      const systemctlLog = join(sandbox, 'systemctl.log');
-      mkdirSync(generation, { recursive: true });
-      mkdirSync(bin);
-      writeFileSync(join(generation, 'control-sha'), `${C_SHA}\n`);
-      writeFileSync(join(generation, 'launch-engine-release.sh'), launcher);
-      chmodSync(join(generation, 'launch-engine-release.sh'), 0o755);
-      writeFileSync(
-        join(generation, 'engine-release-seal.py'),
-        `#!/usr/bin/env bash\n[ "$1" = attest-result ] || exit 92\nprintf '%s\\n' 'sealed ${B_SHA} ${B_IMAGE} ${'d'.repeat(64)} 2026-09-10T04:00:00Z 12345-deadbeef ${A_SHA}'\n`
-      );
-      chmodSync(join(generation, 'engine-release-seal.py'), 0o755);
-      writeFileSync(
-        join(bin, 'id'),
-        '#!/usr/bin/env bash\n[ "${1:-}" = -u ] && { printf "0\\n"; exit 0; }\nexec /usr/bin/id "$@"\n'
-      );
-      writeFileSync(
-        join(bin, 'readlink'),
-        '#!/usr/bin/env bash\npython3 - "$@" <<\'PY\'\nimport os, sys\nprint(os.path.realpath(sys.argv[-1]))\nPY\n'
-      );
-      writeFileSync(
-        join(bin, 'systemctl'),
-        `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> '${systemctlLog}'\nexit 91\n`
-      );
-      for (const command of ['id', 'readlink', 'systemctl']) chmodSync(join(bin, command), 0o755);
-
-      const replay = spawnSync(
-        join(generation, 'launch-engine-release.sh'),
-        [
-          '--sha',
-          B_SHA,
-          '--run-id',
-          '777-1',
-          '--actor',
-          'release-replay-test',
-          '--not-after-epoch',
-          '9999999999',
-        ],
+    it('executes short-window queue refusal, retry, deadline, supersession and cancellation cases', () => {
+      const result = spawnSync(
+        'python3',
+        [join(ROOT, 'tests/operations/engine-release-window-queue.py')],
         {
+          cwd: ROOT,
+          encoding: 'utf8',
+          timeout: 10_000,
+        }
+      );
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expect(result.stderr).toContain('Ran 10 tests');
+    });
+
+    it('guarantee and rollback can only recover the durable desired image', () => {
+      const abort = recovery.indexOf('engine-release-seal.py" abort');
+      const reconcile = recovery.indexOf('engine-supervisor.sh', abort);
+      expect(abort).toBeGreaterThan(0);
+      expect(reconcile).toBeGreaterThan(abort);
+      expect(recovery.indexOf('set +e')).toBeLessThan(abort);
+      expect(recovery).toContain('ENGINE_SUPERVISOR_LOCK_HELD=1');
+      expect(recovery).not.toMatch(/ENGINE_RELEASE_TOKEN|IMAGE=.*\$SHA|engine-up\.sh/);
+      expect(recovery).toContain('ENGINE_SUPERVISOR_FORCE_DESIRED=1');
+      expect(recovery).toContain('ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH=1');
+      expect(transaction).toContain('ENGINE_SUPERVISOR_FORCE_DESIRED=1');
+      expect(transaction).toContain('ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH=1');
+      expect(unitWrapper).toContain('ExecStopPost');
+      expect(unitWrapper).toContain('recovery failed; preserving the immutable generation pin');
+    });
+
+    it('uses the five-minute lane only after a fresh healthy rollback-source readiness proof', () => {
+      expect(transaction).toContain('BREAK_CUTOVER_PROOF_SECONDS=150');
+      expect(transaction).toContain('BREAK_ROLLBACK_RESERVE_SECONDS=135');
+      expect(transaction).toContain('BREAK_DEADLINE_SLACK_SECONDS=0');
+      expect(transaction).toContain(
+        'MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS) * 1000))'
+      );
+      expect((150 + 135) * 1000).toBeLessThan(5 * 60 * 1000);
+      expect(transaction).toContain('if [ "$CERTIFICATE_RC" -eq 2 ]');
+      expect(transaction).toContain('refusing before mutation');
+      const readiness = transaction.indexOf(
+        'prove_rollback_readiness',
+        transaction.indexOf('persist_break_deadline')
+      );
+      const prepare = transaction.indexOf('PREPARE_OUTPUT="$(bounded_break_command', readiness);
+      expect(readiness).toBeGreaterThan(0);
+      expect(prepare).toBeGreaterThan(readiness);
+      expect(transaction).toContain(
+        'rollback readiness found no fresh exact desired database leader'
+      );
+    });
+
+    it('reads the final systemd invocation before accepting its result receipt', () => {
+      const retryLoop = observer.slice(
+        observer.indexOf('if [ -z "$COMPLETED_ATTESTATION" ]; then'),
+        observer.indexOf('unit_completed_and_disabled()')
+      );
+      const invocation = retryLoop.indexOf('CURRENT_INVOCATION="$(systemctl show');
+      const receipt = retryLoop.indexOf('COMPLETED_ATTESTATION="$("$CONTROL_DIR');
+      expect(invocation).toBeGreaterThan(0);
+      expect(receipt).toBeGreaterThan(invocation);
+      expect(retryLoop.slice(invocation, receipt)).toContain('INVOCATION_ID="$CURRENT_INVOCATION"');
+    });
+
+    it('a rejected locked certificate cannot mark mutation or trigger a blind restart', () => {
+      const releaseLoop = transaction.indexOf(
+        'while :; do',
+        transaction.indexOf('source_target_is_current')
+      );
+      const certificate = transaction.indexOf('maintenance_certificate)', releaseLoop);
+      const lockedCertificate = transaction.indexOf('maintenance_certificate)', certificate + 1);
+      const prepared = transaction.indexOf('PREPARED=1', lockedCertificate);
+      const mutated = transaction.indexOf('MUTATION_STARTED=1', prepared);
+      const engineStart = transaction.indexOf('ENGINE_UP_LOCK_HELD=1', mutated);
+      expect(certificate).toBeGreaterThan(0);
+      expect(lockedCertificate).toBeGreaterThan(certificate);
+      expect(prepared).toBeGreaterThan(lockedCertificate);
+      expect(mutated).toBeGreaterThan(prepared);
+      expect(engineStart).toBeGreaterThan(mutated);
+      expect(transaction.slice(certificate, prepared)).not.toContain('docker stop');
+      expect(transaction).toContain('if [ "$rc" -ne 0 ] && [ "$MUTATION_STARTED" = 1 ]');
+    });
+
+    it('resumes one exact release across reboot and retires it only after durable recovery', () => {
+      const intent = launcher.indexOf('ln -- "$TMP_FILE" "$INTENT_FILE"');
+      const enable = launcher.indexOf('systemctl enable "$UNIT"', intent);
+      const start = launcher.indexOf('systemctl start --no-block "$UNIT"');
+      const request = launcher.indexOf('ln -- "$TMP_FILE" "$REQUEST_FILE"', start);
+      expect(intent).toBeGreaterThan(0);
+      expect(enable).toBeGreaterThan(intent);
+      expect(start).toBeGreaterThan(enable);
+      expect(request).toBe(-1);
+      expect(installer).toContain('[Install]\nWantedBy=multi-user.target');
+      expect(launcher).toContain('UNIT="club-arena-engine-release-v1@$RUN_ID.service"');
+      const completed = launcher.indexOf('attest-result');
+      expect(completed).toBeGreaterThan(0);
+      expect(completed).toBeLessThan(intent);
+      expect(launcher).toContain("echo 'ENGINE_RELEASE_HANDOFF=completed'");
+      expect(intake).toContain('case "$HANDOFF" in');
+      expect(intake).toContain('completed)');
+
+      const startupLock = transaction.indexOf("acquire_engine_lock 'duplicate certification'");
+      const pending = transaction.indexOf('read_pending_owner', startupLock);
+      const recoverOwn = transaction.indexOf('recover_pending_owner "$PENDING_RUN"', pending);
+      const source = transaction.indexOf('source_target_is_current', recoverOwn);
+      expect(pending).toBeGreaterThan(startupLock);
+      expect(recoverOwn).toBeGreaterThan(pending);
+      expect(source).toBeGreaterThan(recoverOwn);
+
+      const abort = recovery.indexOf('engine-release-seal.py" abort');
+      const supervisorRepair = recovery.indexOf('engine-supervisor.sh', abort);
+      const terminalReceipt = recovery.indexOf('attest-terminal', supervisorRepair);
+      const pinCleanup = recovery.indexOf('rm -f -- "$PIN_FILE"', supervisorRepair);
+      const leaseCleanup = recovery.indexOf('rm -f -- "$LEASE_FILE"', pinCleanup);
+      const breakDeadlineCleanup = recovery.indexOf(
+        'rm -f -- "$BREAK_DEADLINE_FILE"',
+        leaseCleanup
+      );
+      const intentCleanup = recovery.indexOf('rm -f -- "$INTENT_FILE"', breakDeadlineCleanup);
+      const requestCleanup = recovery.indexOf('rm -f -- "$REQUEST_FILE"', intentCleanup);
+      const durableCleanup = recovery.indexOf('fsync_directory "$REQUEST_ROOT"', requestCleanup);
+      const disable = recovery.indexOf('systemctl disable "$UNIT"', durableCleanup);
+      expect(supervisorRepair).toBeGreaterThan(abort);
+      expect(terminalReceipt).toBeGreaterThan(supervisorRepair);
+      expect(pinCleanup).toBeGreaterThan(terminalReceipt);
+      expect(pinCleanup).toBeGreaterThan(supervisorRepair);
+      expect(leaseCleanup).toBeGreaterThan(pinCleanup);
+      expect(breakDeadlineCleanup).toBeGreaterThan(leaseCleanup);
+      expect(intentCleanup).toBeGreaterThan(breakDeadlineCleanup);
+      expect(requestCleanup).toBeGreaterThan(intentCleanup);
+      expect(durableCleanup).toBeGreaterThan(requestCleanup);
+      expect(disable).toBeGreaterThan(durableCleanup);
+      expect(observer).toContain('[ ! -e "$REQUEST_ROOT/$RUN_ID.break-deadline" ]');
+      expect(unitWrapper).toContain('recovery failed; preserving the immutable generation pin');
+    });
+
+    it('retains the immutable request when durability fails immediately after pin removal', () => {
+      const sandbox = mkdtempSync(join(tmpdir(), 'engine-terminal-pin-fsync-'));
+      try {
+        const generation = join(sandbox, 'generation');
+        const requestRoot = join(sandbox, 'requests');
+        const pinRoot = join(sandbox, 'pins');
+        const leaseRoot = join(sandbox, 'leases');
+        const bin = join(sandbox, 'bin');
+        const runKey = '880-1';
+        for (const path of [generation, requestRoot, pinRoot, leaseRoot, bin]) {
+          mkdirSync(path, { recursive: true });
+        }
+        const executableRecovery = recovery.replace(
+          'mapfile -t TERMINAL_REQUEST_LINES < "$REQUEST_FILE" \\\n  || { echo \'[engine-release-recover] FATAL: terminal cleanup request is unreadable\' >&2; exit 1; }',
+          'TERMINAL_REQUEST_LINES=(); while IFS= read -r line; do TERMINAL_REQUEST_LINES[${#TERMINAL_REQUEST_LINES[@]}]="$line"; done < "$REQUEST_FILE"'
+        );
+        expect(executableRecovery).not.toBe(recovery);
+        const recoveryPath = join(generation, 'engine-release-recover.sh');
+        writeFileSync(recoveryPath, executableRecovery);
+        chmodSync(recoveryPath, 0o755);
+        writeFileSync(
+          join(generation, 'engine-release-seal.py'),
+          '#!/usr/bin/env bash\ncase "$1" in abort|attest-terminal) exit 0 ;; *) exit 91 ;; esac\n'
+        );
+        writeFileSync(join(generation, 'engine-supervisor.sh'), '#!/usr/bin/env bash\nexit 0\n');
+        chmodSync(join(generation, 'engine-release-seal.py'), 0o755);
+        chmodSync(join(generation, 'engine-supervisor.sh'), 0o755);
+
+        const requestPath = join(requestRoot, `${runKey}.request`);
+        const intentPath = join(requestRoot, `${runKey}.intent`);
+        const pinPath = join(pinRoot, `${runKey}.generation`);
+        writeFileSync(
+          requestPath,
+          [
+            B_SHA,
+            'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/880',
+            'release-test',
+            generation,
+            C_SHA,
+            String(Math.floor(Date.now() / 1000) - 1),
+            '',
+          ].join('\n'),
+          { mode: 0o600 }
+        );
+        writeFileSync(intentPath, readFileSync(requestPath), { mode: 0o600 });
+        writeFileSync(pinPath, `${generation}\n${C_SHA}\n`, { mode: 0o600 });
+
+        writeFileSync(join(bin, 'id'), '#!/usr/bin/env bash\n[ "$1" = -u ] && echo 0\n');
+        writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
+        writeFileSync(join(bin, 'docker'), '#!/usr/bin/env bash\n[ "$1" = info ]\n');
+        writeFileSync(join(bin, 'stat'), '#!/usr/bin/env bash\necho 0:600\n');
+        writeFileSync(
+          join(bin, 'timeout'),
+          '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'
+        );
+        writeFileSync(join(bin, 'python3'), `#!/usr/bin/env bash\n[ "\${2:-}" != '${pinRoot}' ]\n`);
+        for (const name of ['id', 'flock', 'docker', 'stat', 'timeout', 'python3']) {
+          chmodSync(join(bin, name), 0o755);
+        }
+
+        const result = spawnSync('bash', [recoveryPath, '--run-id', runKey, '--mode', 'terminal'], {
           encoding: 'utf8',
           env: {
             ...process.env,
             PATH: `${bin}:${process.env.PATH ?? ''}`,
-            ENGINE_CONTROL_GENERATION_ROOT: generations,
             ENGINE_RELEASE_REQUEST_ROOT: requestRoot,
+            ENGINE_RELEASE_PIN_ROOT: pinRoot,
+            ENGINE_RELEASE_IMAGE_LEASE_ROOT: leaseRoot,
+            ENGINE_LOCK_FILE: join(sandbox, 'engine.lock'),
+            CONTAINER: 'club-arena-engine',
           },
-        }
-      );
-      expect(replay.status, replay.stderr).toBe(0);
-      expect(replay.stdout).toContain('ENGINE_RELEASE_HANDOFF=completed');
-      expect(replay.stdout).toContain(`ENGINE_RELEASE_SHA=${B_SHA}`);
-      expect(existsSync(systemctlLog), 'completed replay must not queue another unit').toBe(false);
-      expect(
-        readdirSync(requestRoot),
-        'completed replay must not create intent/request state'
-      ).toEqual([]);
-    } finally {
-      rmSync(sandbox, { recursive: true, force: true });
-    }
-  });
+        });
+        expect(result.status).not.toBe(0);
+        expect(existsSync(pinPath)).toBe(false);
+        expect(existsSync(requestPath), 'request must survive pin-directory fsync failure').toBe(
+          true
+        );
+        expect(existsSync(intentPath), 'intent must survive pin-directory fsync failure').toBe(
+          true
+        );
+      } finally {
+        rmSync(sandbox, { recursive: true, force: true });
+      }
+    });
 
-  it('reports a durable terminal failure without creating or starting another request', () => {
-    const sandbox = mkdtempSync(join(tmpdir(), 'engine-release-launch-failure-replay-'));
-    try {
-      const generations = join(sandbox, 'generations');
-      const generation = join(generations, C_SHA);
-      const requestRoot = join(sandbox, 'requests');
-      const bin = join(sandbox, 'bin');
-      const systemctlLog = join(sandbox, 'systemctl.log');
-      mkdirSync(generation, { recursive: true });
-      mkdirSync(bin);
-      writeFileSync(join(generation, 'control-sha'), `${C_SHA}\n`);
-      writeFileSync(join(generation, 'launch-engine-release.sh'), launcher);
-      chmodSync(join(generation, 'launch-engine-release.sh'), 0o755);
-      writeFileSync(
-        join(generation, 'engine-release-seal.py'),
-        `#!/usr/bin/env bash
+    it('does not rebind an already-completed run to a newer compatible control generation', () => {
+      const sandbox = mkdtempSync(join(tmpdir(), 'engine-release-launch-replay-'));
+      try {
+        const generations = join(sandbox, 'generations');
+        const generation = join(generations, C_SHA);
+        const requestRoot = join(sandbox, 'requests');
+        const bin = join(sandbox, 'bin');
+        const systemctlLog = join(sandbox, 'systemctl.log');
+        mkdirSync(generation, { recursive: true });
+        mkdirSync(bin);
+        writeFileSync(join(generation, 'control-sha'), `${C_SHA}\n`);
+        writeFileSync(join(generation, 'launch-engine-release.sh'), launcher);
+        chmodSync(join(generation, 'launch-engine-release.sh'), 0o755);
+        writeFileSync(
+          join(generation, 'engine-release-seal.py'),
+          `#!/usr/bin/env bash\n[ "$1" = attest-result ] || exit 92\nprintf '%s\\n' 'sealed ${B_SHA} ${B_IMAGE} ${'d'.repeat(64)} 2026-09-10T04:00:00Z 12345-deadbeef ${A_SHA}'\n`
+        );
+        chmodSync(join(generation, 'engine-release-seal.py'), 0o755);
+        writeFileSync(
+          join(bin, 'id'),
+          '#!/usr/bin/env bash\n[ "${1:-}" = -u ] && { printf "0\\n"; exit 0; }\nexec /usr/bin/id "$@"\n'
+        );
+        writeFileSync(
+          join(bin, 'readlink'),
+          '#!/usr/bin/env bash\npython3 - "$@" <<\'PY\'\nimport os, sys\nprint(os.path.realpath(sys.argv[-1]))\nPY\n'
+        );
+        writeFileSync(
+          join(bin, 'systemctl'),
+          `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> '${systemctlLog}'\nexit 91\n`
+        );
+        for (const command of ['id', 'readlink', 'systemctl']) chmodSync(join(bin, command), 0o755);
+
+        const replay = spawnSync(
+          join(generation, 'launch-engine-release.sh'),
+          [
+            '--sha',
+            B_SHA,
+            '--run-id',
+            '777-1',
+            '--actor',
+            'release-replay-test',
+            '--not-after-epoch',
+            '9999999999',
+          ],
+          {
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              PATH: `${bin}:${process.env.PATH ?? ''}`,
+              ENGINE_CONTROL_GENERATION_ROOT: generations,
+              ENGINE_RELEASE_REQUEST_ROOT: requestRoot,
+            },
+          }
+        );
+        expect(replay.status, replay.stderr).toBe(0);
+        expect(replay.stdout).toContain('ENGINE_RELEASE_HANDOFF=completed');
+        expect(replay.stdout).toContain(`ENGINE_RELEASE_SHA=${B_SHA}`);
+        expect(existsSync(systemctlLog), 'completed replay must not queue another unit').toBe(
+          false
+        );
+        expect(
+          readdirSync(requestRoot),
+          'completed replay must not create intent/request state'
+        ).toEqual([]);
+      } finally {
+        rmSync(sandbox, { recursive: true, force: true });
+      }
+    });
+
+    it('reports a durable terminal failure without creating or starting another request', () => {
+      const sandbox = mkdtempSync(join(tmpdir(), 'engine-release-launch-failure-replay-'));
+      try {
+        const generations = join(sandbox, 'generations');
+        const generation = join(generations, C_SHA);
+        const requestRoot = join(sandbox, 'requests');
+        const bin = join(sandbox, 'bin');
+        const systemctlLog = join(sandbox, 'systemctl.log');
+        mkdirSync(generation, { recursive: true });
+        mkdirSync(bin);
+        writeFileSync(join(generation, 'control-sha'), `${C_SHA}\n`);
+        writeFileSync(join(generation, 'launch-engine-release.sh'), launcher);
+        chmodSync(join(generation, 'launch-engine-release.sh'), 0o755);
+        writeFileSync(
+          join(generation, 'engine-release-seal.py'),
+          `#!/usr/bin/env bash
 case "\${1:-}" in
   attest-failure)
     printf '%s\n' 'failed ${B_SHA} ${C_SHA} ${'e'.repeat(32)} 1 ${A_SHA} ${A_IMAGE}'
@@ -2891,293 +2946,299 @@ case "\${1:-}" in
   *) exit 92 ;;
 esac
 `
-      );
-      chmodSync(join(generation, 'engine-release-seal.py'), 0o755);
-      writeFileSync(
-        join(bin, 'id'),
-        '#!/usr/bin/env bash\n[ "${1:-}" = -u ] && { printf "0\\n"; exit 0; }\nexec /usr/bin/id "$@"\n'
-      );
-      writeFileSync(
-        join(bin, 'readlink'),
-        '#!/usr/bin/env bash\npython3 - "$@" <<\'PY\'\nimport os, sys\nprint(os.path.realpath(sys.argv[-1]))\nPY\n'
-      );
-      writeFileSync(
-        join(bin, 'systemctl'),
-        `#!/usr/bin/env bash
+        );
+        chmodSync(join(generation, 'engine-release-seal.py'), 0o755);
+        writeFileSync(
+          join(bin, 'id'),
+          '#!/usr/bin/env bash\n[ "${1:-}" = -u ] && { printf "0\\n"; exit 0; }\nexec /usr/bin/id "$@"\n'
+        );
+        writeFileSync(
+          join(bin, 'readlink'),
+          '#!/usr/bin/env bash\npython3 - "$@" <<\'PY\'\nimport os, sys\nprint(os.path.realpath(sys.argv[-1]))\nPY\n'
+        );
+        writeFileSync(
+          join(bin, 'systemctl'),
+          `#!/usr/bin/env bash
 printf '%s\n' "$*" >> '${systemctlLog}'
 exit 91
 `
-      );
-      for (const command of ['id', 'readlink', 'systemctl']) chmodSync(join(bin, command), 0o755);
+        );
+        for (const command of ['id', 'readlink', 'systemctl']) chmodSync(join(bin, command), 0o755);
 
-      const replay = spawnSync(
-        join(generation, 'launch-engine-release.sh'),
-        [
-          '--sha',
-          B_SHA,
-          '--run-id',
-          '778-1',
-          '--actor',
-          'release-replay-test',
-          '--not-after-epoch',
-          '9999999999',
-        ],
-        {
-          encoding: 'utf8',
-          env: {
-            ...process.env,
-            PATH: `${bin}:${process.env.PATH ?? ''}`,
-            ENGINE_CONTROL_GENERATION_ROOT: generations,
-            ENGINE_RELEASE_REQUEST_ROOT: requestRoot,
-          },
-        }
-      );
-      expect(replay.status).toBe(1);
-      expect(replay.stdout).toContain('ENGINE_RELEASE_HANDOFF=failed');
-      expect(replay.stdout).toContain('ENGINE_RELEASE_RESULT=failed');
-      expect(replay.stderr).toContain('refusing replay');
-      expect(existsSync(systemctlLog), 'failed replay must not queue another unit').toBe(false);
-      expect(readdirSync(requestRoot), 'failed replay must not create request state').toEqual([]);
+        const replay = spawnSync(
+          join(generation, 'launch-engine-release.sh'),
+          [
+            '--sha',
+            B_SHA,
+            '--run-id',
+            '778-1',
+            '--actor',
+            'release-replay-test',
+            '--not-after-epoch',
+            '9999999999',
+          ],
+          {
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              PATH: `${bin}:${process.env.PATH ?? ''}`,
+              ENGINE_CONTROL_GENERATION_ROOT: generations,
+              ENGINE_RELEASE_REQUEST_ROOT: requestRoot,
+            },
+          }
+        );
+        expect(replay.status).toBe(1);
+        expect(replay.stdout).toContain('ENGINE_RELEASE_HANDOFF=failed');
+        expect(replay.stdout).toContain('ENGINE_RELEASE_RESULT=failed');
+        expect(replay.stderr).toContain('refusing replay');
+        expect(existsSync(systemctlLog), 'failed replay must not queue another unit').toBe(false);
+        expect(readdirSync(requestRoot), 'failed replay must not create request state').toEqual([]);
 
-      const intakeReplay = spawnSync(
-        join(generation, 'launch-engine-release.sh'),
-        [
-          '--sha',
-          B_SHA,
-          '--run-id',
-          '778-1',
-          '--actor',
-          'release-replay-test',
-          '--not-after-epoch',
-          '9999999999',
-        ],
-        {
-          encoding: 'utf8',
-          env: {
-            ...process.env,
-            PATH: `${bin}:${process.env.PATH ?? ''}`,
-            ENGINE_CONTROL_GENERATION_ROOT: generations,
-            ENGINE_RELEASE_REQUEST_ROOT: requestRoot,
-            ENGINE_RELEASE_DISPATCH_ONLY: '1',
-          },
-        }
-      );
-      expect(intakeReplay.status, intakeReplay.stderr).toBe(0);
-      expect(intakeReplay.stdout).toContain('ENGINE_RELEASE_HANDOFF=completed');
-      expect(intakeReplay.stdout).toContain('ENGINE_RELEASE_RESULT=failed');
-      expect(existsSync(systemctlLog), 'failed intake replay must not queue another unit').toBe(
-        false
-      );
+        const intakeReplay = spawnSync(
+          join(generation, 'launch-engine-release.sh'),
+          [
+            '--sha',
+            B_SHA,
+            '--run-id',
+            '778-1',
+            '--actor',
+            'release-replay-test',
+            '--not-after-epoch',
+            '9999999999',
+          ],
+          {
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              PATH: `${bin}:${process.env.PATH ?? ''}`,
+              ENGINE_CONTROL_GENERATION_ROOT: generations,
+              ENGINE_RELEASE_REQUEST_ROOT: requestRoot,
+              ENGINE_RELEASE_DISPATCH_ONLY: '1',
+            },
+          }
+        );
+        expect(intakeReplay.status, intakeReplay.stderr).toBe(0);
+        expect(intakeReplay.stdout).toContain('ENGINE_RELEASE_HANDOFF=completed');
+        expect(intakeReplay.stdout).toContain('ENGINE_RELEASE_RESULT=failed');
+        expect(existsSync(systemctlLog), 'failed intake replay must not queue another unit').toBe(
+          false
+        );
 
-      writeFileSync(join(generation, 'observe-engine-release.sh'), observer);
-      chmodSync(join(generation, 'observe-engine-release.sh'), 0o755);
-      const journalLog = join(sandbox, 'journal.log');
-      const timeoutLog = join(sandbox, 'timeout.log');
-      writeFileSync(
-        join(bin, 'timeout'),
-        `#!/usr/bin/env bash
+        writeFileSync(join(generation, 'observe-engine-release.sh'), observer);
+        chmodSync(join(generation, 'observe-engine-release.sh'), 0o755);
+        const journalLog = join(sandbox, 'journal.log');
+        const timeoutLog = join(sandbox, 'timeout.log');
+        writeFileSync(
+          join(bin, 'timeout'),
+          `#!/usr/bin/env bash
 printf '%s\n' "$*" >> '${timeoutLog}'
 [ "\${TEST_JOURNAL_TIMEOUT:-0}" = 1 ] && exit 124
 shift 3
 exec "$@"
 `
-      );
-      writeFileSync(
-        join(bin, 'journalctl'),
-        `#!/usr/bin/env bash
+        );
+        writeFileSync(
+          join(bin, 'journalctl'),
+          `#!/usr/bin/env bash
 printf '%s\n' "$*" >> '${journalLog}'
 [ "\${TEST_JOURNAL_UNAVAILABLE:-0}" = 1 ] && exit 1
 printf '%s\n' '[engine-release-transaction] FATAL: target is stale; protected main requires a newer release'
 `
-      );
-      for (const command of ['timeout', 'journalctl']) chmodSync(join(bin, command), 0o755);
-      const observed = spawnSync(
-        join(generation, 'observe-engine-release.sh'),
-        ['--sha', B_SHA, '--run-id', '778-1'],
-        {
-          encoding: 'utf8',
-          env: {
-            ...process.env,
-            PATH: `${bin}:${process.env.PATH ?? ''}`,
-            ENGINE_RELEASE_OBSERVE_SECONDS: '1',
-            ENGINE_RELEASE_INVOCATION_WAIT_SECONDS: '1',
-          },
-        }
-      );
-      expect(observed.status).toBe(1);
-      expect(observed.stderr).toContain('release attempt failed permanently (status=1)');
-      expect(observed.stderr).toContain(`sealed desired runtime ${A_SHA} was recovered`);
-      expect(observed.stdout).toContain('target is stale; protected main requires a newer release');
-      expect(readFileSync(journalLog, 'utf8').trim()).toBe(
-        `_SYSTEMD_INVOCATION_ID=${'e'.repeat(32)} --no-pager -o cat -n 200`
-      );
-      expect(readFileSync(timeoutLog, 'utf8')).toContain(
-        `--signal=TERM --kill-after=1s 5s journalctl _SYSTEMD_INVOCATION_ID=${'e'.repeat(32)}`
-      );
-      for (const failure of ['TEST_JOURNAL_UNAVAILABLE', 'TEST_JOURNAL_TIMEOUT']) {
-        const unavailable = spawnSync(
+        );
+        for (const command of ['timeout', 'journalctl']) chmodSync(join(bin, command), 0o755);
+        const observed = spawnSync(
           join(generation, 'observe-engine-release.sh'),
           ['--sha', B_SHA, '--run-id', '778-1'],
           {
             encoding: 'utf8',
-            env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, [failure]: '1' },
+            env: {
+              ...process.env,
+              PATH: `${bin}:${process.env.PATH ?? ''}`,
+              ENGINE_RELEASE_OBSERVE_SECONDS: '1',
+              ENGINE_RELEASE_INVOCATION_WAIT_SECONDS: '1',
+            },
           }
         );
-        expect(unavailable.status).toBe(1);
-        expect(unavailable.stderr).toContain('failure journal unavailable within its bounded read');
-        expect(unavailable.stderr).toContain('release attempt failed permanently (status=1)');
-      }
-      const readsBeforeMalformedReceipt = readFileSync(journalLog, 'utf8');
-      writeFileSync(
-        join(generation, 'engine-release-seal.py'),
-        `#!/usr/bin/env bash\nprintf '%s\\n' 'failed ${A_SHA} ${C_SHA} ${'e'.repeat(32)} 1 ${A_SHA} ${A_IMAGE}'\n`
-      );
-      const malformed = spawnSync(
-        join(generation, 'observe-engine-release.sh'),
-        ['--sha', B_SHA, '--run-id', '778-1'],
-        { encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` } }
-      );
-      expect(malformed.status).toBe(1);
-      expect(malformed.stderr).toContain('durable failure attestation is malformed');
-      expect(readFileSync(journalLog, 'utf8')).toBe(readsBeforeMalformedReceipt);
-      expect(existsSync(systemctlLog), 'failed observation must not query systemd').toBe(false);
-    } finally {
-      rmSync(sandbox, { recursive: true, force: true });
-    }
-  });
-
-  it('retries only the frozen transient status and terminally cleans ordinary release failures', () => {
-    const releaseUnit = installer.slice(
-      installer.indexOf('cat > "$UNIT_STAGE/club-arena-engine-release-v1@.service"'),
-      installer.indexOf('systemd-analyze verify')
-    );
-    expect(releaseUnit).toContain('Type=oneshot');
-    expect(releaseUnit).toContain('Restart=on-failure');
-    expect(releaseUnit).not.toContain('RestartForceExitStatus=');
-    expect(releaseUnit).toContain('RestartPreventExitStatus=1');
-    expect(releaseUnit).toContain('TimeoutStopSec=330s');
-    expect(releaseUnit).not.toContain('Requires=docker.service');
-    expect(observer).toContain('systemd_outcome_is_retryable "$RESULT" "$MAIN_STATUS"');
-    expect(observer).toContain('systemctl is-enabled "$UNIT"');
-    expect(observer).toContain('systemd_outcome_is_retryable "$INTAKE_RESULT" "$INTAKE_STATUS"');
-    expect(observer).toContain('systemctl is-enabled "$INTAKE_UNIT"');
-    expect(observer).toContain('success:0|exit-code:1) return 1');
-    expect(observer).toContain('*) return 0');
-    expect(recovery).toContain('RECOVERY_MAX_SECONDS=300');
-
-    const missingRequest = unitWrapper.slice(
-      unitWrapper.indexOf('if [ ! -e "$REQUEST_FILE" ]; then'),
-      unitWrapper.indexOf('mapfile -t REQUEST_LINES')
-    );
-    expect(missingRequest).toContain('ln -- "$INTENT_FILE" "$REQUEST_FILE"');
-    expect(missingRequest).toContain('fsync_path "$REQUEST_ROOT"');
-    expect(missingRequest).toContain('exit 75');
-    expect(missingRequest).toContain(
-      'systemctl disable "club-arena-engine-release-v1@$RUN_KEY.service"'
-    );
-    expect(unitWrapper).toContain('[ "$TRANSACTION_RC" -eq 75 ] && exit 75');
-    expect(unitWrapper).toContain('attest-commit');
-    expect(unitWrapper).toContain('[ "$TERMINAL_RECOVERY_RC" -eq 0 ] || exit 75');
-    expect(unitWrapper).toContain('if [ "$TRANSACTION_RC" -eq 0 ]; then');
-    expect(unitWrapper).toContain('exit 1');
-    expect(unitWrapper).toContain(
-      'recovery failed; preserving the immutable generation pin for diagnosis'
-    );
-    expect(unitWrapper.slice(unitWrapper.lastIndexOf('recovery failed'))).toContain('exit 75');
-
-    const replayFence = unitWrapper.indexOf('attest-failure');
-    const transactionStart = unitWrapper.indexOf('engine-release-transaction.sh', replayFence);
-    const retainedRecovery = unitWrapper.indexOf('--mode retryable', transactionStart);
-    const failureReceipt = unitWrapper.indexOf('record-failure', retainedRecovery);
-    const terminalCleanup = unitWrapper.indexOf('--mode terminal', failureReceipt);
-    expect(replayFence).toBeGreaterThan(0);
-    expect(transactionStart).toBeGreaterThan(replayFence);
-    expect(retainedRecovery).toBeGreaterThan(transactionStart);
-    expect(failureReceipt).toBeGreaterThan(retainedRecovery);
-    expect(terminalCleanup).toBeGreaterThan(failureReceipt);
-    expect(observer).toContain('fail_if_terminal_failure');
-    expect(launcher.indexOf('attest-failure')).toBeLessThan(launcher.indexOf('attest-result'));
-  });
-
-  it('reconstructs a run-owned commit before freshness and preserves unknown systemd failures', () => {
-    const startupRepair = transaction.indexOf(
-      "die 'sealed desired runtime could not be restored before release work'"
-    );
-    const committedImage = transaction.indexOf('COMMITTED_IMAGE="$(timeout', startupRepair);
-    const committedAttestation = transaction.indexOf('attest-commit', committedImage);
-    const committedRuntime = transaction.indexOf('exact_runtime_instance)', committedAttestation);
-    const committedResult = transaction.indexOf('emit_already_released', committedRuntime);
-    const mutableFreshness = transaction.indexOf('source_target_is_current', committedResult);
-    expect(startupRepair).toBeGreaterThan(0);
-    expect(committedImage).toBeGreaterThan(startupRepair);
-    expect(committedAttestation).toBeGreaterThan(committedImage);
-    expect(committedRuntime).toBeGreaterThan(committedAttestation);
-    expect(committedResult).toBeGreaterThan(committedRuntime);
-    expect(mutableFreshness).toBeGreaterThan(committedResult);
-
-    const tupleFence = unitWrapper.slice(
-      unitWrapper.indexOf('case "$SERVICE_RESULT:$EXIT_CODE:$EXIT_STATUS" in'),
-      unitWrapper.indexOf(
-        'esac',
-        unitWrapper.indexOf('case "$SERVICE_RESULT:$EXIT_CODE:$EXIT_STATUS" in')
-      )
-    );
-    expect(tupleFence).toContain('success:exited:0|exit-code:exited:1');
-    expect(tupleFence).toContain('*) RECOVERY_MODE=retryable');
-    expect(tupleFence).not.toContain('*) RECOVERY_MODE=terminal');
-
-    const releaseUnit = installer.slice(
-      installer.indexOf('cat > "$UNIT_STAGE/club-arena-engine-release-v1@.service"'),
-      installer.indexOf('systemd-analyze verify')
-    );
-    expect(releaseUnit).toContain('recover %i \\${SERVICE_RESULT} \\${EXIT_CODE} \\${EXIT_STATUS}');
-  });
-
-  it.each([false, true])(
-    'executes committed-run result reconstruction without restart fallthrough when positive qualification refuses=%s',
-    (refusePositive) => {
-      const sandbox = mkdtempSync(join(tmpdir(), 'engine-committed-replay-'));
-      try {
-        const generation = join(sandbox, 'generation');
-        const requestRoot = join(sandbox, 'requests');
-        const bin = join(sandbox, 'bin');
-        const gitLog = join(sandbox, 'git.log');
-        const replacementLog = join(sandbox, 'replacement.log');
-        const runKey = '991-2';
-        const controlSha = C_SHA;
-        const instanceId = '12345-deadbeef';
-        const containerId = 'd'.repeat(64);
-        mkdirSync(generation);
-        const canonicalGeneration = realpathSync(generation);
-        mkdirSync(requestRoot);
-        mkdirSync(bin);
-        // macOS still ships Bash 3.2 without mapfile. Adapt only the fixture's
-        // request reader; the committed-replay control flow remains byte-for-byte
-        // identical to the production script and is separately asserted above.
-        const executableFixture = transaction.replace(
-          'mapfile -t REQUEST_LINES < "$REQUEST_FILE" || die \'release request is missing\'',
-          'REQUEST_LINES=(); while IFS= read -r line; do REQUEST_LINES[${#REQUEST_LINES[@]}]="$line"; done < "$REQUEST_FILE"'
+        expect(observed.status).toBe(1);
+        expect(observed.stderr).toContain('release attempt failed permanently (status=1)');
+        expect(observed.stderr).toContain(`sealed desired runtime ${A_SHA} was recovered`);
+        expect(observed.stdout).toContain(
+          'target is stale; protected main requires a newer release'
         );
-        expect(executableFixture).not.toBe(transaction);
-        writeFileSync(join(generation, 'engine-release-transaction.sh'), executableFixture);
-        chmodSync(join(generation, 'engine-release-transaction.sh'), 0o755);
-        writeFileSync(join(generation, 'control-sha'), `${controlSha}\n`);
-        writeFileSync(
-          join(requestRoot, `${runKey}.request`),
-          [
-            B_SHA,
-            'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/991',
-            'release-test',
-            canonicalGeneration,
-            controlSha,
-            String(Math.floor(Date.now() / 1000) - 1),
-            '',
-          ].join('\n')
+        expect(readFileSync(journalLog, 'utf8').trim()).toBe(
+          `_SYSTEMD_INVOCATION_ID=${'e'.repeat(32)} --no-pager -o cat -n 200`
         );
-
+        expect(readFileSync(timeoutLog, 'utf8')).toContain(
+          `--signal=TERM --kill-after=1s 5s journalctl _SYSTEMD_INVOCATION_ID=${'e'.repeat(32)}`
+        );
+        for (const failure of ['TEST_JOURNAL_UNAVAILABLE', 'TEST_JOURNAL_TIMEOUT']) {
+          const unavailable = spawnSync(
+            join(generation, 'observe-engine-release.sh'),
+            ['--sha', B_SHA, '--run-id', '778-1'],
+            {
+              encoding: 'utf8',
+              env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, [failure]: '1' },
+            }
+          );
+          expect(unavailable.status).toBe(1);
+          expect(unavailable.stderr).toContain(
+            'failure journal unavailable within its bounded read'
+          );
+          expect(unavailable.stderr).toContain('release attempt failed permanently (status=1)');
+        }
+        const readsBeforeMalformedReceipt = readFileSync(journalLog, 'utf8');
         writeFileSync(
           join(generation, 'engine-release-seal.py'),
-          `#!/usr/bin/env bash
+          `#!/usr/bin/env bash\nprintf '%s\\n' 'failed ${A_SHA} ${C_SHA} ${'e'.repeat(32)} 1 ${A_SHA} ${A_IMAGE}'\n`
+        );
+        const malformed = spawnSync(
+          join(generation, 'observe-engine-release.sh'),
+          ['--sha', B_SHA, '--run-id', '778-1'],
+          { encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` } }
+        );
+        expect(malformed.status).toBe(1);
+        expect(malformed.stderr).toContain('durable failure attestation is malformed');
+        expect(readFileSync(journalLog, 'utf8')).toBe(readsBeforeMalformedReceipt);
+        expect(existsSync(systemctlLog), 'failed observation must not query systemd').toBe(false);
+      } finally {
+        rmSync(sandbox, { recursive: true, force: true });
+      }
+    });
+
+    it('retries only the frozen transient status and terminally cleans ordinary release failures', () => {
+      const releaseUnit = installer.slice(
+        installer.indexOf('cat > "$UNIT_STAGE/club-arena-engine-release-v1@.service"'),
+        installer.indexOf('systemd-analyze verify')
+      );
+      expect(releaseUnit).toContain('Type=oneshot');
+      expect(releaseUnit).toContain('Restart=on-failure');
+      expect(releaseUnit).not.toContain('RestartForceExitStatus=');
+      expect(releaseUnit).toContain('RestartPreventExitStatus=1');
+      expect(releaseUnit).toContain('TimeoutStopSec=330s');
+      expect(releaseUnit).not.toContain('Requires=docker.service');
+      expect(observer).toContain('systemd_outcome_is_retryable "$RESULT" "$MAIN_STATUS"');
+      expect(observer).toContain('systemctl is-enabled "$UNIT"');
+      expect(observer).toContain('systemd_outcome_is_retryable "$INTAKE_RESULT" "$INTAKE_STATUS"');
+      expect(observer).toContain('systemctl is-enabled "$INTAKE_UNIT"');
+      expect(observer).toContain('success:0|exit-code:1) return 1');
+      expect(observer).toContain('*) return 0');
+      expect(recovery).toContain('RECOVERY_MAX_SECONDS=300');
+
+      const missingRequest = unitWrapper.slice(
+        unitWrapper.indexOf('if [ ! -e "$REQUEST_FILE" ]; then'),
+        unitWrapper.indexOf('mapfile -t REQUEST_LINES')
+      );
+      expect(missingRequest).toContain('ln -- "$INTENT_FILE" "$REQUEST_FILE"');
+      expect(missingRequest).toContain('fsync_path "$REQUEST_ROOT"');
+      expect(missingRequest).toContain('exit 75');
+      expect(missingRequest).toContain(
+        'systemctl disable "club-arena-engine-release-v1@$RUN_KEY.service"'
+      );
+      expect(unitWrapper).toContain('[ "$TRANSACTION_RC" -eq 75 ] && exit 75');
+      expect(unitWrapper).toContain('attest-commit');
+      expect(unitWrapper).toContain('[ "$TERMINAL_RECOVERY_RC" -eq 0 ] || exit 75');
+      expect(unitWrapper).toContain('if [ "$TRANSACTION_RC" -eq 0 ]; then');
+      expect(unitWrapper).toContain('exit 1');
+      expect(unitWrapper).toContain(
+        'recovery failed; preserving the immutable generation pin for diagnosis'
+      );
+      expect(unitWrapper.slice(unitWrapper.lastIndexOf('recovery failed'))).toContain('exit 75');
+
+      const replayFence = unitWrapper.indexOf('attest-failure');
+      const transactionStart = unitWrapper.indexOf('engine-release-transaction.sh', replayFence);
+      const retainedRecovery = unitWrapper.indexOf('--mode retryable', transactionStart);
+      const failureReceipt = unitWrapper.indexOf('record-failure', retainedRecovery);
+      const terminalCleanup = unitWrapper.indexOf('--mode terminal', failureReceipt);
+      expect(replayFence).toBeGreaterThan(0);
+      expect(transactionStart).toBeGreaterThan(replayFence);
+      expect(retainedRecovery).toBeGreaterThan(transactionStart);
+      expect(failureReceipt).toBeGreaterThan(retainedRecovery);
+      expect(terminalCleanup).toBeGreaterThan(failureReceipt);
+      expect(observer).toContain('fail_if_terminal_failure');
+      expect(launcher.indexOf('attest-failure')).toBeLessThan(launcher.indexOf('attest-result'));
+    });
+
+    it('reconstructs a run-owned commit before freshness and preserves unknown systemd failures', () => {
+      const startupRepair = transaction.indexOf(
+        "die 'sealed desired runtime could not be restored before release work'"
+      );
+      const committedImage = transaction.indexOf('COMMITTED_IMAGE="$(timeout', startupRepair);
+      const committedAttestation = transaction.indexOf('attest-commit', committedImage);
+      const committedRuntime = transaction.indexOf('exact_runtime_instance)', committedAttestation);
+      const committedResult = transaction.indexOf('emit_already_released', committedRuntime);
+      const mutableFreshness = transaction.indexOf('source_target_is_current', committedResult);
+      expect(startupRepair).toBeGreaterThan(0);
+      expect(committedImage).toBeGreaterThan(startupRepair);
+      expect(committedAttestation).toBeGreaterThan(committedImage);
+      expect(committedRuntime).toBeGreaterThan(committedAttestation);
+      expect(committedResult).toBeGreaterThan(committedRuntime);
+      expect(mutableFreshness).toBeGreaterThan(committedResult);
+
+      const tupleFence = unitWrapper.slice(
+        unitWrapper.indexOf('case "$SERVICE_RESULT:$EXIT_CODE:$EXIT_STATUS" in'),
+        unitWrapper.indexOf(
+          'esac',
+          unitWrapper.indexOf('case "$SERVICE_RESULT:$EXIT_CODE:$EXIT_STATUS" in')
+        )
+      );
+      expect(tupleFence).toContain('success:exited:0|exit-code:exited:1');
+      expect(tupleFence).toContain('*) RECOVERY_MODE=retryable');
+      expect(tupleFence).not.toContain('*) RECOVERY_MODE=terminal');
+
+      const releaseUnit = installer.slice(
+        installer.indexOf('cat > "$UNIT_STAGE/club-arena-engine-release-v1@.service"'),
+        installer.indexOf('systemd-analyze verify')
+      );
+      expect(releaseUnit).toContain(
+        'recover %i \\${SERVICE_RESULT} \\${EXIT_CODE} \\${EXIT_STATUS}'
+      );
+    });
+
+    it.each([false, true])(
+      'executes committed-run result reconstruction without restart fallthrough when positive qualification refuses=%s',
+      (refusePositive) => {
+        const sandbox = mkdtempSync(join(tmpdir(), 'engine-committed-replay-'));
+        try {
+          const generation = join(sandbox, 'generation');
+          const requestRoot = join(sandbox, 'requests');
+          const bin = join(sandbox, 'bin');
+          const gitLog = join(sandbox, 'git.log');
+          const replacementLog = join(sandbox, 'replacement.log');
+          const runKey = '991-2';
+          const controlSha = C_SHA;
+          const instanceId = '12345-deadbeef';
+          const containerId = 'd'.repeat(64);
+          mkdirSync(generation);
+          const canonicalGeneration = realpathSync(generation);
+          mkdirSync(requestRoot);
+          mkdirSync(bin);
+          // macOS still ships Bash 3.2 without mapfile. Adapt only the fixture's
+          // request reader; the committed-replay control flow remains byte-for-byte
+          // identical to the production script and is separately asserted above.
+          const executableFixture = transaction.replace(
+            'mapfile -t REQUEST_LINES < "$REQUEST_FILE" || die \'release request is missing\'',
+            'REQUEST_LINES=(); while IFS= read -r line; do REQUEST_LINES[${#REQUEST_LINES[@]}]="$line"; done < "$REQUEST_FILE"'
+          );
+          expect(executableFixture).not.toBe(transaction);
+          writeFileSync(join(generation, 'engine-release-transaction.sh'), executableFixture);
+          chmodSync(join(generation, 'engine-release-transaction.sh'), 0o755);
+          writeFileSync(join(generation, 'control-sha'), `${controlSha}\n`);
+          writeFileSync(
+            join(requestRoot, `${runKey}.request`),
+            [
+              B_SHA,
+              'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/991',
+              'release-test',
+              canonicalGeneration,
+              controlSha,
+              String(Math.floor(Date.now() / 1000) - 1),
+              '',
+            ].join('\n')
+          );
+
+          writeFileSync(
+            join(generation, 'engine-release-seal.py'),
+            `#!/usr/bin/env bash
 set -euo pipefail
 case "\${1:-}:\${2:-}" in
   pending-owner:) echo none ;;
@@ -3194,52 +3255,52 @@ case "\${1:-}:\${2:-}" in
   *) exit 91 ;;
 esac
 `
-        );
-        writeFileSync(join(generation, 'engine-supervisor.sh'), '#!/usr/bin/env bash\nexit 0\n');
-        writeFileSync(
-          join(generation, 'engine-release-database-proof.py'),
-          '#!/usr/bin/env bash\nexit 0\n'
-        );
-        writeFileSync(
-          join(generation, 'engine-up.sh'),
-          `#!/usr/bin/env bash\nprintf replacement >> '${replacementLog}'\nexit 92\n`
-        );
-        writeFileSync(
-          join(generation, 'build-engine-image.sh'),
-          `#!/usr/bin/env bash\nprintf build >> '${replacementLog}'\nexit 93\n`
-        );
-        for (const name of [
-          'engine-release-seal.py',
-          'engine-supervisor.sh',
-          'engine-release-database-proof.py',
-          'engine-up.sh',
-          'build-engine-image.sh',
-        ]) {
-          chmodSync(join(generation, name), 0o755);
-        }
+          );
+          writeFileSync(join(generation, 'engine-supervisor.sh'), '#!/usr/bin/env bash\nexit 0\n');
+          writeFileSync(
+            join(generation, 'engine-release-database-proof.py'),
+            '#!/usr/bin/env bash\nexit 0\n'
+          );
+          writeFileSync(
+            join(generation, 'engine-up.sh'),
+            `#!/usr/bin/env bash\nprintf replacement >> '${replacementLog}'\nexit 92\n`
+          );
+          writeFileSync(
+            join(generation, 'build-engine-image.sh'),
+            `#!/usr/bin/env bash\nprintf build >> '${replacementLog}'\nexit 93\n`
+          );
+          for (const name of [
+            'engine-release-seal.py',
+            'engine-supervisor.sh',
+            'engine-release-database-proof.py',
+            'engine-up.sh',
+            'build-engine-image.sh',
+          ]) {
+            chmodSync(join(generation, name), 0o755);
+          }
 
-        writeFileSync(join(bin, 'id'), '#!/usr/bin/env bash\n[ "$1" = -u ] && echo 0\n');
-        writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
-        writeFileSync(
-          join(bin, 'timeout'),
-          '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'
-        );
-        writeFileSync(
-          join(bin, 'curl'),
-          `#!/usr/bin/env bash
+          writeFileSync(join(bin, 'id'), '#!/usr/bin/env bash\n[ "$1" = -u ] && echo 0\n');
+          writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
+          writeFileSync(
+            join(bin, 'timeout'),
+            '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'
+          );
+          writeFileSync(
+            join(bin, 'curl'),
+            `#!/usr/bin/env bash
 printf '%s\n%s' '{"running":true,"releaseSha":"${B_SHA}","liveness":"ok","instanceId":"${instanceId}"}' '200'
 `
-        );
-        writeFileSync(
-          join(bin, 'git'),
-          `#!/usr/bin/env bash
+          );
+          writeFileSync(
+            join(bin, 'git'),
+            `#!/usr/bin/env bash
 printf '%s\n' "$*" >> '${gitLog}'
 exit 99
 `
-        );
-        writeFileSync(
-          join(bin, 'docker'),
-          `#!/usr/bin/env bash
+          );
+          writeFileSync(
+            join(bin, 'docker'),
+            `#!/usr/bin/env bash
 set -euo pipefail
 [ "$1" = container ] && [ "$2" = inspect ] && [ "$3" = -f ]
 case "$4" in
@@ -3251,83 +3312,86 @@ case "$4" in
   *) exit 94 ;;
 esac
 `
-        );
-        for (const name of ['id', 'flock', 'timeout', 'curl', 'git', 'docker'])
-          chmodSync(join(bin, name), 0o755);
-
-        const replay = spawnSync(
-          'bash',
-          [join(generation, 'engine-release-transaction.sh'), '--run-id', runKey],
-          {
-            encoding: 'utf8',
-            env: {
-              ...process.env,
-              PATH: `${bin}:${process.env.PATH ?? ''}`,
-              REPO_DIR: join(sandbox, 'repo-with-advanced-main'),
-              ENGINE_RELEASE_REQUEST_ROOT: requestRoot,
-              ENGINE_LOCK_FILE: join(sandbox, 'engine.lock'),
-              SOURCE_LOCK_FILE: join(sandbox, 'source.lock'),
-              ENV_FILE: join(sandbox, 'engine.env'),
-              INVOCATION_ID: 'e'.repeat(32),
-              ENGINE_RELEASE_MAX_RUNTIME_SECONDS: '1200',
-              REFUSE_POSITIVE_QUALIFICATION: refusePositive ? '1' : '0',
-            },
-          }
-        );
-        expect(replay.status, `${replay.stdout}\n${replay.stderr}`).toBe(refusePositive ? 1 : 0);
-        if (refusePositive) {
-          expect(replay.stderr).toContain(
-            'Horse journal is not on its durable writable host mount'
           );
-          expect(replay.stderr).toContain('durable per-run release result could not be recorded');
-          expect(replay.stdout).not.toContain('ENGINE_RELEASE_RESULT=');
-        } else {
-          expect(replay.stdout).toContain('ENGINE_RELEASE_RESULT=sealed');
-          expect(replay.stdout).toContain(`ENGINE_RELEASE_SHA=${B_SHA}`);
+          for (const name of ['id', 'flock', 'timeout', 'curl', 'git', 'docker'])
+            chmodSync(join(bin, name), 0o755);
+
+          const replay = spawnSync(
+            'bash',
+            [join(generation, 'engine-release-transaction.sh'), '--run-id', runKey],
+            {
+              encoding: 'utf8',
+              env: {
+                ...process.env,
+                PATH: `${bin}:${process.env.PATH ?? ''}`,
+                REPO_DIR: join(sandbox, 'repo-with-advanced-main'),
+                ENGINE_RELEASE_REQUEST_ROOT: requestRoot,
+                ENGINE_LOCK_FILE: join(sandbox, 'engine.lock'),
+                SOURCE_LOCK_FILE: join(sandbox, 'source.lock'),
+                ENV_FILE: join(sandbox, 'engine.env'),
+                INVOCATION_ID: 'e'.repeat(32),
+                ENGINE_RELEASE_MAX_RUNTIME_SECONDS: '1200',
+                REFUSE_POSITIVE_QUALIFICATION: refusePositive ? '1' : '0',
+              },
+            }
+          );
+          expect(replay.status, `${replay.stdout}\n${replay.stderr}`).toBe(refusePositive ? 1 : 0);
+          if (refusePositive) {
+            expect(replay.stderr).toContain(
+              'Horse journal is not on its durable writable host mount'
+            );
+            expect(replay.stderr).toContain('durable per-run release result could not be recorded');
+            expect(replay.stdout).not.toContain('ENGINE_RELEASE_RESULT=');
+          } else {
+            expect(replay.stdout).toContain('ENGINE_RELEASE_RESULT=sealed');
+            expect(replay.stdout).toContain(`ENGINE_RELEASE_SHA=${B_SHA}`);
+          }
+          expect(existsSync(replacementLog), 'duplicate completion invoked replacement/build').toBe(
+            false
+          );
+          expect(existsSync(gitLog), 'committed replay consulted mutable protected main').toBe(
+            false
+          );
+        } finally {
+          rmSync(sandbox, { recursive: true, force: true });
         }
-        expect(existsSync(replacementLog), 'duplicate completion invoked replacement/build').toBe(
-          false
-        );
-        expect(existsSync(gitLog), 'committed replay consulted mutable protected main').toBe(false);
-      } finally {
-        rmSync(sandbox, { recursive: true, force: true });
       }
-    }
-  );
+    );
 
-  it('has no alternate workflow that can mutate the live engine outside the sealed cutover', () => {
-    const workflowDir = resolve(ROOT, '.github/workflows');
-    const workflowFiles = readdirSync(workflowDir).filter((name) => /\.ya?ml$/.test(name));
-    expect(workflowFiles).not.toContain('update-hetzner-env.yml');
+    it('has no alternate workflow that can mutate the live engine outside the sealed cutover', () => {
+      const workflowDir = resolve(ROOT, '.github/workflows');
+      const workflowFiles = readdirSync(workflowDir).filter((name) => /\.ya?ml$/.test(name));
+      expect(workflowFiles).not.toContain('update-hetzner-env.yml');
 
-    const mutationOwners = workflowFiles.filter((name) => {
-      const source = readFileSync(resolve(workflowDir, name), 'utf8');
-      return source.split('\n').some((line) => {
-        if (line.trimStart().startsWith('#')) return false;
-        return (
-          /engine-up\.sh(?:["']|\s|$)/.test(line) ||
-          /docker\s+(?:run|stop|start|restart|unpause|rm)\b.*club-arena-engine/.test(line)
-        );
+      const mutationOwners = workflowFiles.filter((name) => {
+        const source = readFileSync(resolve(workflowDir, name), 'utf8');
+        return source.split('\n').some((line) => {
+          if (line.trimStart().startsWith('#')) return false;
+          return (
+            /engine-up\.sh(?:["']|\s|$)/.test(line) ||
+            /docker\s+(?:run|stop|start|restart|unpause|rm)\b.*club-arena-engine/.test(line)
+          );
+        });
       });
-    });
-    expect(mutationOwners).toEqual([]);
-    expect(workflow).toContain('"$STAGE/server/scripts/install-engine-intake.sh"');
-    expect(workflow).not.toMatch(/(?:engine-up|engine-supervisor)\.sh/);
+      expect(mutationOwners).toEqual([]);
+      expect(workflow).toContain('"$STAGE/server/scripts/install-engine-intake.sh"');
+      expect(workflow).not.toMatch(/(?:engine-up|engine-supervisor)\.sh/);
 
-    for (const name of workflowFiles.filter((file) => file !== 'auto-deploy-hetzner.yml')) {
-      const runnable = readFileSync(resolve(workflowDir, name), 'utf8')
-        .split('\n')
-        .filter((line) => !line.trimStart().startsWith('#'))
-        .join('\n');
-      expect(runnable, `${name} invokes a sealed engine controller`).not.toMatch(
-        /(?:engine-up|engine-supervisor)\.sh/
-      );
-      expect(runnable, `${name} touches canonical engine configuration`).not.toMatch(
-        /(?:\/opt\/club-arena|\$?REPO_DIR)\/server\/\.env/
-      );
-      expect(runnable, `${name} mutates the live engine process`).not.toMatch(
-        /docker\s+(?:container\s+)?(?:run|start|stop|kill|rm|restart|unpause|update)\b[^\n]*club-arena-engine/
-      );
-    }
-  });
-});
+      for (const name of workflowFiles.filter((file) => file !== 'auto-deploy-hetzner.yml')) {
+        const runnable = readFileSync(resolve(workflowDir, name), 'utf8')
+          .split('\n')
+          .filter((line) => !line.trimStart().startsWith('#'))
+          .join('\n');
+        expect(runnable, `${name} invokes a sealed engine controller`).not.toMatch(
+          /(?:engine-up|engine-supervisor)\.sh/
+        );
+        expect(runnable, `${name} touches canonical engine configuration`).not.toMatch(
+          /(?:\/opt\/club-arena|\$?REPO_DIR)\/server\/\.env/
+        );
+        expect(runnable, `${name} mutates the live engine process`).not.toMatch(
+          /docker\s+(?:container\s+)?(?:run|start|stop|kill|rm|restart|unpause|update)\b[^\n]*club-arena-engine/
+        );
+      }
+    });
+  }
+);

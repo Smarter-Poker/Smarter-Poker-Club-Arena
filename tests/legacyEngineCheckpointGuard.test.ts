@@ -1051,20 +1051,75 @@ describe('exact 8825 retained original custody retirement', () => {
     // Admitted, never discarded: the guard still mutates no engine state.
     expect(f.originals[0].engine.terminalBoundaryPendingGenerations.size).toBe(1);
   });
-  it('refuses a reserved terminal boundary that no undischarged permit can discharge', async () => {
+  // In the 8825 lineage `F06HandPermit.start()` sets `attempted` BEFORE
+  // `startExactController` reserves the terminal-boundary generation, so a live
+  // engine fenced with one reserved generation can only present `attempted` -
+  // the shape the Noon original 2c621856 (permit 098c0945) actually holds. The
+  // admission stays provisional: the same fixture's row-backed proof
+  // (`aborted_unsettled`, `retained_mtt_interruption_v1`) is still demanded in
+  // `sealAndRetireOriginals` before anything is retired.
+  it('admits the attempted start that reserved its boundary and never produced a controller', async () => {
     const f = mixedFixture();
-    // 'attempted' is outside the set `sealAndRetireOriginals` demands an
-    // `aborted_unsettled` receipt for, so nothing downstream would prove it.
     f.originals[0].engine.f06CurrentPermit.phase = 'attempted';
     f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+    expect(f.receipts.size).toBe(2);
+    expect(f.server.tableEngines.has(f.originals[0].engine.tableId)).toBe(false);
+    // Admitted, never discarded: the guard still mutates no engine state.
+    expect(f.originals[0].engine.terminalBoundaryPendingGenerations.size).toBe(1);
+  });
+  it('refuses an attempted start with more pending boundaries than one start can reserve', async () => {
+    const f = mixedFixture();
+    f.originals[0].engine.f06CurrentPermit.phase = 'attempted';
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(8);
     expect(await f.run()).toMatchObject({
       ok: false,
       reason: 'mixed_original_work_not_drained',
       failedCheck: 'engineCollection.size',
       failedField: 'terminalBoundaryPendingGenerations',
-      expected: '0',
+      expected: '1',
     });
     expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
+  it('refuses an attempted start whose terminal boundary failed', async () => {
+    const f = mixedFixture();
+    f.originals[0].engine.f06CurrentPermit.phase = 'attempted';
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    f.originals[0].engine.terminalBoundaryPersistenceFailed = true;
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_work_not_drained',
+      failedCheck: 'engine.terminalBoundaryPersistenceFailed',
+    });
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
+  it('refuses an attempted start that still holds a hand controller', async () => {
+    const f = mixedFixture();
+    f.originals[0].engine.f06CurrentPermit.phase = 'attempted';
+    f.originals[0].engine.terminalBoundaryPendingGenerations.add(7);
+    f.originals[0].engine.handController = {};
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_work_not_drained',
+      failedCheck: 'engine.handController',
+    });
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
+  it('still refuses an attempted start with no reserved boundary as an unproven disposition', async () => {
+    const f = mixedFixture();
+    // Nothing was reserved, so nothing is admitted provisionally; the phase is
+    // then outside the interrupted shape and the manager has no interrupted
+    // original whose disposition the rows could prove. Refused before commit.
+    f.originals[0].engine.f06CurrentPermit.phase = 'attempted';
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'mixed_original_disposition_set_changed',
+    });
+    expect(f.rpcCalls).toEqual(['fn_f06_prepare_mixed_manager_custody']);
     expect(f.server.tableEngines.size).toBe(3);
   });
   it('refuses more pending boundaries than one interrupted hand can explain', async () => {

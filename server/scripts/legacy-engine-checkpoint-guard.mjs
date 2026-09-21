@@ -211,6 +211,37 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     bank.remainingSeconds <= bank.initialSeconds &&
     bank.baseSeconds <= bank.initialSeconds &&
     bank.dbConsumedSeconds <= bank.initialSeconds - bank.baseSeconds;
+  // The one interrupted-permit shape this checkpoint hands over, defined once.
+  // `physical()` reads it to admit a single reserved terminal-boundary
+  // generation provisionally; `sealAndRetireOriginals` reads the same predicate
+  // on the same captured engine to demand that permit's row-backed disposition
+  // (`aborted_unsettled`, a committed `retained_mtt_interruption_v1` receipt
+  // naming this engine, manager and container) before anything is committed.
+  // #5011 admitted `unknown`, `reserved` and `terminated`. In the 8825 lineage
+  // `F06HandPermit.start()` sets `attempted` BEFORE `startExactController`
+  // reaches `beginTerminalBoundaryPersistence`, so an engine fenced with one
+  // reserved generation can only ever present `attempted`: the three-phase set
+  // was unreachable for the real interruption. `attempted` is admitted only in
+  // that exact shape - a start that was attempted, reserved its generation and
+  // produced neither a controller nor a settlement before the fence: exactly
+  // one pending generation, no persistence failure, no controller, nothing in
+  // `settlementInFlight`. `pendingGenerations` is the count the caller asks
+  // about: `physical()` asks about the one it is about to allow, because the
+  // count itself is what its `size <= allowed` check proves next; the seal
+  // reads the live count, by then proved to be at most one. Each other field
+  // is independently proved by `physical()` in its own order with its own
+  // refusal, and a malformed collection reads as not interrupted here.
+  const interruptedOriginal = (
+    { permit, phase, engine },
+    pendingGenerations = engine.terminalBoundaryPendingGenerations?.size
+  ) =>
+    permit !== null &&
+    (['unknown', 'reserved', 'terminated'].includes(phase) ||
+      (phase === 'attempted' &&
+        pendingGenerations === 1 &&
+        engine.terminalBoundaryPersistenceFailed === false &&
+        engine.handController === null &&
+        engine.settlementInFlight?.size === 0));
   const result = (ok, remainingMs = null) => ({
     schema: 'legacy-engine-checkpoint/v1',
     ok,
@@ -975,8 +1006,19 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           // before the custody RPC and before the retirement CAS, so an
           // undischarged interruption still reaches no irreversible step. Nothing
           // is written for a retained original before that proof.
-          const interrupted =
-            permit !== null && ['unknown', 'reserved', 'terminated'].includes(capture.phase);
+          //
+          // The shape is `interruptedOriginal`, defined once above and shared
+          // with `sealAndRetireOriginals`, so the engine admitted here is exactly
+          // the one whose row-backed disposition is demanded there. It admits
+          // the `attempted` phase only as 8825 actually leaves it: the permit
+          // phase moves to `attempted` before the generation is reserved, so a
+          // fenced engine holding one reserved generation and no controller,
+          // settlement or persistence failure can present no other phase. It is
+          // asked here about the one generation this sweep is about to allow:
+          // a second reserved generation refuses below as `expected 1`, and a
+          // start that reserved none passes below but is no interrupted
+          // original downstream, exactly as before.
+          const interrupted = interruptedOriginal(capture, 1);
           [...engineSets, ...engineMaps].forEach((name, index) => {
             const collection = engine[name];
             const captured = capture.collections[index];
@@ -1350,7 +1392,15 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           require(found.length === 1 &&
             record(found[0].evidence), 'mixed_original_receipt_missing');
           const { permit, evidence } = found[0];
-          if (['unknown', 'reserved', 'terminated'].includes(item.permit.phase)) {
+          // The same predicate `physical()` admitted on, read from the same
+          // captured engine at its live pending count: `checkAll()` above
+          // re-proved every field against the capture, so this is the engine
+          // the receipt must name.
+          const original = capture.exactEngines.find((e) => e.tableId === item.table_id);
+          require(original !== undefined &&
+            original.permit !== null &&
+            original.phase === item.permit.phase, 'mixed_original_disposition_unproven');
+          if (interruptedOriginal(original)) {
             require(permit.state === 'aborted_unsettled' &&
               uuid(permit.evidence_id) &&
               evidence.hand?.receipt_id === permit.evidence_id &&

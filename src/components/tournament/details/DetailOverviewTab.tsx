@@ -69,7 +69,11 @@ import { useMaintenanceBreak } from '../../../hooks/useMaintenanceBreak';
 import { serverNow } from '../../../utils/serverClock';
 import { reportError } from '../../../utils/errorReporter';
 import { formatBuyIn, money } from '../../../utils/buyIn';
-import { moneyWordAtUnit } from '../../../utils/format';
+import { formatPrizeAtUnit, moneySuffixAtUnit, moneyWordAtUnit } from '../../../utils/format';
+import {
+  CHIP_UNIT_CENTS,
+  normalizeUnitCents,
+} from '../../../../server/src/tournament/tournamentUnit';
 import { spinMultiplierLabel } from '../../../utils/spinReveal';
 import RegistrationApprovalsPanel from '../RegistrationApprovalsPanel';
 import TournamentDealReview from '../TournamentDealReview';
@@ -358,6 +362,16 @@ export default function DetailOverviewTab({
      `fn_mystery_bounty_inventory` and needs the same answer, plus the noun
      that goes with it. One reading, used by both. */
   const overviewUnitCents = useMemo(() => tournamentRowUnitCents(tournament), [tournament]);
+  /* A PODIUM PRIZE AT THAT UNIT (2026-09-21). The podium printed "Chips" after
+     every prize, so a finished Diamond event read as though it had paid its
+     winners in chips. Compact chips at a chip event, character for character
+     as before; whole Diamonds at a Diamond one; the word follows the unit. */
+  const podiumPrize = (n: number) =>
+    `${
+      normalizeUnitCents(overviewUnitCents) === CHIP_UNIT_CENTS
+        ? chipsCompact(n)
+        : formatPrizeAtUnit(n, overviewUnitCents)
+    } ${moneyWordAtUnit(overviewUnitCents)}`;
 
   /* ── Prize pool: the stored pool is authoritative, the guarantee is a floor. ── */
   const prize = useMemo(() => {
@@ -534,7 +548,14 @@ export default function DetailOverviewTab({
     ];
 
     if (t.is_bounty) {
-      const parts = [`${money(Number(t.bounty_amount) || 0)} per KO`];
+      /* THE HEAD AT THE EVENT'S UNIT (2026-09-21): `money` at a chip event,
+         exactly as before, and whole Diamonds that say so at a Diamond one. */
+      const head = Number(t.bounty_amount) || 0;
+      const parts = [
+        normalizeUnitCents(overviewUnitCents) === CHIP_UNIT_CENTS
+          ? `${money(head)} per KO`
+          : `${formatPrizeAtUnit(head, overviewUnitCents)}${moneySuffixAtUnit(overviewUnitCents)} per KO`,
+      ];
       if (t.is_pko) parts.push('50% to knocker, 50% to bounty');
       /* `mystery_bounty_min` / `mystery_bounty_max` used to be appended here.
          They were a per-head advertised RANGE drawn at registration time, and
@@ -762,7 +783,7 @@ export default function DetailOverviewTab({
                   <span className="dov-podium__place">{ordinal(player.position)}</span>
                   <span className="dov-podium__name">{player.username}</span>
                   <span className="dov-podium__prize">
-                    {prizeValue > 0 ? `${chipsCompact(prizeValue)} Chips` : '-'}
+                    {prizeValue > 0 ? podiumPrize(prizeValue) : '-'}
                   </span>
                 </div>
               ))}

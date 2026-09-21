@@ -33,11 +33,20 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './TournamentWinnerOverlay.css';
-import { formatTableChips } from '../../utils/format';
+import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../utils/format';
 
 interface TournamentWinnerOverlayProps {
   isWinner: boolean;
   prize: number;
+  /**
+   * THE UNIT THIS EVENT PAID IN (2026-09-21), from the table's own arena via
+   * `arenaAssetUnitCentsIfRead`. A Diamond prize is whole Diamonds and says so;
+   * a chip prize prints exactly as it always has, because `formatPrizeAtUnit`
+   * at the chip unit IS `formatTableChips`. `null` means the table's arena has
+   * not been read yet, and the prize line waits for it rather than printing a
+   * figure in a currency nobody looked up.
+   */
+  unitCents: number | null;
   tournamentName: string;
   position?: number;
   onDismiss: () => void;
@@ -46,6 +55,7 @@ interface TournamentWinnerOverlayProps {
 const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
   isWinner,
   prize,
+  unitCents,
   tournamentName,
   position = 1,
   onDismiss,
@@ -159,11 +169,17 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
         pillInk="gold"
         foot="foot"
       >
-        {prize > 0 && (
+        {prize > 0 && unitCents != null && (
           <div className="winnerPrize prize-counter">
             {/* To the cent (2026-09-09): this is the banner shown at the
-                moment a player cashes, and a prize of 98.72 read "99". */}
-            Prize: {formatTableChips(displayPrize)}
+                moment a player cashes, and a prize of 98.72 read "99".
+                AT THE EVENT'S UNIT (2026-09-21): the odometer climbs through
+                fractions, and the chip contract printed every one of them, so
+                a Diamond prize counted up through "12.37" on its way to a
+                whole number. A Diamond does not divide; each frame is a whole
+                Diamond and the figure names its unit. */}
+            Prize: {formatPrizeAtUnit(displayPrize, unitCents)}
+            {moneySuffixAtUnit(unitCents)}
           </div>
         )}
         {/* ONE ACTION, SO THE FOOT CLOSES (standard §5). The master paints BOTH

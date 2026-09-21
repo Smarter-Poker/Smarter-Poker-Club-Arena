@@ -237,7 +237,7 @@ import TimebankCounter from '../components/table/TimebankCounter';
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
 import { parseTableArenaIdentity, seatCanAddFunds } from '../../server/src/domain/ArenaContext';
-import { arenaAssetUnitCents } from '../lib/arenaUnitCents';
+import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
 import { bootExplanation, seatCopy } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
 import { soundService, haptic } from '../services/SoundService';
@@ -22749,6 +22749,10 @@ function LiveTablePage({
           tap it. Their tap is broadcast so every other seat opens in step. */}
       <MysteryBountyChest
         data={mysteryChest}
+        /* THE GRID THE CHEST WAS DRAWN ON (2026-09-21): whole Diamonds at a
+           Diamond table, the chest's own chip figure at a chip one, and no
+           figure at all while this table's arena is still unread. */
+        unitCents={arenaAssetUnitCentsIfRead(tableState.arenaAsset)}
         viewerUserId={userId}
         remoteOpened={chestRemoteOpened}
         onBroadcastOpen={broadcastChestOpen}

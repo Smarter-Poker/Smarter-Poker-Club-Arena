@@ -63,6 +63,7 @@ import { ParticleSystem } from './ParticleSystem';
 import { HandReveal } from './HandReveal';
 import { BombPotOverlay } from './BombPotOverlay';
 import { FinalTableOverlay } from '../tournament/FinalTableOverlay';
+import { arenaAssetUnitCentsIfRead } from '../../lib/arenaUnitCents';
 import { HeadsUpOverlay } from '../tournament/HeadsUpOverlay';
 import { TableErrorBoundary } from '../common/TableErrorBoundary';
 /* `setSitOut` is no longer imported here: this component reports the intent and
@@ -720,6 +721,11 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
   } = props;
 
   const toast = useToast();
+  /* THE GRID THIS TABLE'S TOURNAMENT PAYS ON (2026-09-21), for the two
+     overlays below that print a tournament prize. Off the arena this table
+     was read with; `null` until it has been, so neither overlay prints a
+     figure in a currency nobody has looked up. */
+  const tournamentPrizeUnitCents = arenaAssetUnitCentsIfRead(arenaAsset);
   // The rake the engine will actually take at this table (table override ->
   // club default -> published schedule). Only queried while the Game Rules
   // modal is open, since this layer is mounted for the whole session.
@@ -1049,6 +1055,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         <FinalTableOverlay
           tournamentId={tournamentId}
           tournamentName={tableName || 'Tournament'}
+          unitCents={tournamentPrizeUnitCents}
           hudStatsProvider={(uid) => {
             const stats = getPlayerHUDStats(uid);
             return stats
@@ -1365,6 +1372,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         <TournamentWinnerOverlay
           isWinner={true}
           prize={tournamentWinner.prize}
+          unitCents={tournamentPrizeUnitCents}
           tournamentName={tournamentWinner.name}
           position={tournamentWinner.position}
           onDismiss={onDismissTournamentWinner}

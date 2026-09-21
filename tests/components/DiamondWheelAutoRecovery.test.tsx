@@ -228,23 +228,23 @@ describe('automatic spins and player-owned recovery', () => {
     );
     expect(backend.spin).not.toHaveBeenCalled();
   });
-  it('stops after a failed next ticket and lets the player refresh without an automatic debit', async () => {
+  it('stops the run after a failed next ticket and prepares the next spin by itself, without a debit', async () => {
     await ready();
     backend.commit.mockResolvedValueOnce({ ok: false });
     vi.useFakeTimers();
     await startAuto();
     await land();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(500);
     });
     expect(backend.spin).toHaveBeenCalledTimes(1);
-    expect(
-      screen.getByText('The Next Spin Could Not Be Prepared. Refresh The Wheel To Retry.')
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh Wheel' }));
+    // Nobody is told to refresh: the page says what it is doing and does it.
+    expect(screen.getByText('Preparing Your Next Spin')).toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3000);
     });
+    // The ticket came back by itself; the run stayed stopped, so nothing was debited.
+    expect(screen.queryByText('Preparing Your Next Spin')).not.toBeInTheDocument();
     expect(backend.spin).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: 'Auto Spin 5' })).toBeEnabled();
   });
@@ -288,6 +288,8 @@ describe('automatic spins and player-owned recovery', () => {
     // One ticket for the whole episode: the saved spin never took a new one.
     expect(backend.commit).toHaveBeenCalledTimes(1);
     // The third answer is the receipt, so the wheel is spinning it.
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Land Wheel' })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Land Wheel' })).toBeInTheDocument()
+    );
   });
 });

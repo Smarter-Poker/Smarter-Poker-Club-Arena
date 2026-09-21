@@ -249,8 +249,10 @@ describe('Plinko starts only its earned funding', () => {
     expectNoChoiceControls();
     expect(screen.getByText(`10 Drops × 500 Diamonds = 5,000 Diamonds`)).toBeVisible();
     expect(screen.queryByText(/Chips Booked From/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
+    // The offer is answered, so the won game is counting down to its own drop;
+    // pressing sooner still works.
+    expect(screen.getByRole('button', { name: /^Dropping In \ds$/ })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: /^Dropping In \ds$/ }));
     expect(backend.start).toHaveBeenCalledTimes(1);
     expect(backend.start).toHaveBeenCalledWith(
       expect.objectContaining({

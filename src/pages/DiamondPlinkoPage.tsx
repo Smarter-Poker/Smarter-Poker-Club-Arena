@@ -1,6 +1,7 @@
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
-import { useAutoSettle } from '../hooks/useAutoSettle';
+import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
+import { useAwardAutoStart } from '../hooks/useAwardAutoStart';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
@@ -44,6 +45,10 @@ import { roundedMinePrize } from '../utils/diamondChoiceMath';
 import styles from './diamondGames.module.css';
 import plinkoStyles from './diamondPlinko.module.css';
 
+/** What the page says while it mends something by itself. */
+const RECONNECTING = 'Reconnecting To Plinko';
+const CHECKING_ENTRY = 'Checking Your Entry';
+const PREPARING_TICKET = 'Preparing Your Ticket';
 export default function DiamondPlinkoPage() {
   const { user } = useAuthUser();
   const { clubId } = useParams();
@@ -74,6 +79,18 @@ function DiamondPlinkoGame() {
   // The server refused a ticket that could no longer open a batch and charged
   // nothing, so the same wager goes again on a fresh ticket - once per press.
   const [restartOwed, setRestartOwed] = useState(false);
+  // The Double Down offer is a question about the player's own diamonds. A won
+  // game never starts itself over it; it is treated as open until the setup
+  // panel says otherwise.
+  const [offerOpen, setOfferOpen] = useState(true);
+  // A read or a ticket deal that failed is tried again by the page itself,
+  // on the same schedule as a saved wager. Nobody is told to refresh.
+  const [loadFailures, setLoadFailures] = useState(0);
+  const [loadTry, setLoadTry] = useState(0);
+  const [quoteFailures, setQuoteFailures] = useState(0);
+  const [quoteTry, setQuoteTry] = useState(0);
+  const [ticketFailures, setTicketFailures] = useState(0);
+  const [ticketTry, setTicketTry] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [verified, setVerified] = useState<boolean | null>(null);
   const [waitSeconds, setWaitSeconds] = useGameCooldown();
@@ -172,9 +189,14 @@ function DiamondPlinkoGame() {
           setTicket(null);
         }
         // The ticket is dealt by its own effect once the club is known.
+        setLoadFailures(0);
+        setError((current) => (current === RECONNECTING ? null : current));
       } catch (e) {
         reportError(e, 'DiamondPlinkoPage.load');
-        if (!cancelled) setError('Plinko Could Not Be Loaded. Try Refresh.');
+        if (!cancelled) {
+          setError(RECONNECTING);
+          setLoadFailures((count) => count + 1);
+        }
       }
     })();
     return () => {
@@ -182,14 +204,34 @@ function DiamondPlinkoGame() {
       live.current = false;
       generation.current++;
     };
-  }, [clubId, user?.id, setBudget]);
+  }, [clubId, user?.id, setBudget, loadTry]);
+  useAutoSettle(loadFailures > 0, loadFailures, async () => {
+    setLoadTry((count) => count + 1);
+    return true;
+  });
   useEffect(() => {
     if (!uuid || !validBonusBudget(budget) || earned.loading || earned.required) return;
-    void load(uuid, total).catch((e) => {
-      reportError(e, 'DiamondPlinkoPage.quote');
-      if (live.current) setError('The Entry Could Not Be Loaded. Try Refresh.');
-    });
-  }, [uuid, total, budget.base, earned.loading, earned.required, load]);
+    let cancelled = false;
+    load(uuid, total)
+      .then(() => {
+        if (cancelled || !live.current) return;
+        setQuoteFailures(0);
+        setError((current) => (current === CHECKING_ENTRY ? null : current));
+      })
+      .catch((e) => {
+        reportError(e, 'DiamondPlinkoPage.quote');
+        if (cancelled || !live.current) return;
+        setError(CHECKING_ENTRY);
+        setQuoteFailures((count) => count + 1);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [uuid, total, budget.base, earned.loading, earned.required, load, quoteTry]);
+  useAutoSettle(quoteFailures > 0, quoteFailures, async () => {
+    setQuoteTry((count) => count + 1);
+    return true;
+  });
   useEffect(() => {
     if (earned.gameState)
       setWaitSeconds((earned.gameState as GameState).player?.seconds_until_next ?? 0);
@@ -261,6 +303,9 @@ function DiamondPlinkoGame() {
           setTicket(null);
           setError(e.message);
           if (e.ticketGone) setRestartOwed(true);
+          // This start cleared the entry quote. Read it again, so the next
+          // drop is not held on it until someone refreshes.
+          if (!earned.required) setQuoteTry((count) => count + 1);
         } else {
           // The answer never arrived. The saved wager is replayed by
           // useAutoSettle until the server says what happened.
@@ -322,24 +367,59 @@ function DiamondPlinkoGame() {
   playRef.current = play;
   const restarts = useRef(0);
   useEffect(() => {
-    if (!restartOwed || !ticket || uncertain || busy) return;
+    // Drop refuses silently while the entry is still being quoted, so the
+    // owed restart waits for it rather than being spent on a closed door.
+    if (!restartOwed || !ticket || uncertain || busy || blocked) return;
     setRestartOwed(false);
     if (restarts.current >= 2) return;
     restarts.current += 1;
     void playRef.current();
-  }, [restartOwed, ticket, uncertain, busy]);
+  }, [restartOwed, ticket, uncertain, busy, blocked]);
+  // A won game starts itself: a short visible countdown, then the same drop
+  // the button would have pressed.
+  const autoStartIn = useAwardAutoStart(
+    earned.award?.id,
+    !uncertain &&
+      !busy &&
+      !animating &&
+      !blocked &&
+      Boolean(ticket) &&
+      !restartOwed &&
+      !offerOpen &&
+      !result &&
+      seed.trim() !== '',
+    `${total}:${seed}`,
+    () => void playRef.current()
+  );
+  // Games paused by the platform come back by themselves after the break.
+  useStandingRefresh(Boolean(state?.frozen) && !busy && !uncertain && !animating, () => {
+    void earned.refresh();
+    if (!earned.required) setQuoteTry((count) => count + 1);
+  });
   // A refused ticket is replaced without a press.
   useEffect(() => {
     if (ticket || uncertain || animating || !uuid) return;
     let cancelled = false;
-    newTicket().catch((e) => {
-      reportError(e, 'DiamondPlinkoPage.redeal');
-      if (!cancelled && live.current) setError('Your Ticket Could Not Be Prepared. Try Refresh.');
-    });
+    newTicket()
+      .then(() => {
+        if (cancelled || !live.current) return;
+        setTicketFailures(0);
+        setError((current) => (current === PREPARING_TICKET ? null : current));
+      })
+      .catch((e) => {
+        reportError(e, 'DiamondPlinkoPage.redeal');
+        if (cancelled || !live.current) return;
+        setError(PREPARING_TICKET);
+        setTicketFailures((count) => count + 1);
+      });
     return () => {
       cancelled = true;
     };
-  }, [ticket, uncertain, animating, uuid, newTicket]);
+  }, [ticket, uncertain, animating, uuid, newTicket, ticketTry]);
+  useAutoSettle(ticketFailures > 0 && !ticket && !uncertain, ticketFailures, async () => {
+    setTicketTry((count) => count + 1);
+    return true;
+  });
   const finish = () => {
     setAnimating(false);
     if (result) setLanded(result.drops.length);
@@ -388,8 +468,15 @@ function DiamondPlinkoGame() {
       if (live.current) setBusy(false);
     }
   };
-  useLiveBonusGuard(Boolean(earned.award) || busy || uncertain || animating, () =>
-    setError('Finish Your Bonus Game Before Leaving.')
+  // Money in flight holds the page. A won game holds it only while it can
+  // actually start: an award this page cannot start (daily limit, a closed or
+  // paused game, a cooldown) never traps the player on it.
+  useLiveBonusGuard(
+    (Boolean(earned.award) && !blocked && Boolean(ticket) && !result) ||
+      busy ||
+      uncertain ||
+      animating,
+    () => setError('Finish Your Bonus Game Before Leaving.')
   );
   const droppedChips = result
     ? result.drops
@@ -417,10 +504,10 @@ function DiamondPlinkoGame() {
               entryReady={earned.ready}
               awardLoading={earned.loading}
               awardError={earned.error}
-              onRefresh={() => void earned.refresh()}
               onChange={setBudget}
+              onOffer={setOfferOpen}
               diamonds={state?.player?.spendable ?? null}
-              disabled={busy || uncertain}
+              disabled={busy || uncertain || restartOwed}
               game="plinko"
               guarantee={earned.quote}
               clubId={clubId ?? ''}
@@ -456,7 +543,12 @@ function DiamondPlinkoGame() {
           disabled: busy || uncertain,
         }}
         primary={{
-          label: waitSeconds > 0 ? `Ready In ${waitSeconds}s` : 'Drop Diamonds',
+          label:
+            waitSeconds > 0
+              ? `Ready In ${waitSeconds}s`
+              : autoStartIn !== null
+                ? `Dropping In ${autoStartIn}s`
+                : 'Drop Diamonds',
           onClick: () => void play(),
           disabled: busy || uncertain || animating || blocked || !ticket,
         }}
@@ -500,7 +592,7 @@ function DiamondPlinkoGame() {
                   ? 'Checking Your Wheel Award'
                   : 'Win Plinko On Diamond Spins To Play.'))
               : state.frozen
-                ? 'Games Are Paused For Maintenance. Refresh After The Break.'
+                ? 'Games Are Paused For Maintenance. Play Resumes By Itself After The Break.'
                 : !state.available
                   ? 'Plinko Is Not Open Here Yet.'
                   : !state.player?.is_member
@@ -514,10 +606,10 @@ function DiamondPlinkoGame() {
                         : !table
                           ? budget.doubled
                             ? 'This Bonus Does Not Cover A Doubled Entry. Choose Keep My Bonus To Play.'
-                            : 'The Plinko Table Is Not Open For This Entry. Refresh Or Return To The Wheel.'
+                            : 'The Plinko Table Is Not Open For This Entry. Return To The Wheel.'
                           : waitSeconds > 0
                             ? `Your Next Drop Is Ready In ${waitSeconds} Seconds.`
-                            : 'Refresh To Check This Entry And The Available Prize Cover.'}
+                            : 'Checking This Entry And The Available Prize Cover'}
           </p>
         )}
       </GameConsole>

@@ -9,7 +9,7 @@ import {
 import { diamondGameTitle, type DiamondBonusGame } from '../../utils/diamondGameTitles';
 import type { BonusGuarantee } from '../../services/WheelBonusEntryService';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import DoubleDownOffer from './DoubleDownOffer';
 import styles from './BonusSetup.module.css';
 
@@ -43,6 +43,7 @@ export default function BonusSetup({
   entryReady = true,
   awardLoading = false,
   awardError,
+  onOffer,
 }: {
   budget: BonusBudget;
   onChange: (value: BonusBudget) => void;
@@ -55,9 +56,10 @@ export default function BonusSetup({
   entryReady?: boolean;
   awardLoading?: boolean;
   awardError?: string | null;
-  /** Unused since 2026-09-21: a failed award read retries itself. Kept so the
-   * three game pages compile unchanged while they stop passing it. */
-  onRefresh?: () => void;
+  /** Told whether the Double Down offer is on screen. A won game starts itself,
+   * but never over a question about the player's own diamonds that is still
+   * waiting for an answer. */
+  onOffer?: (open: boolean) => void;
 }) {
   const navigate = useNavigate();
   const [answeredAward, setAnsweredAward] = useState<string | null>(null);
@@ -67,6 +69,14 @@ export default function BonusSetup({
   const change = (next: BonusBudget) => onChange(next);
   const debit = bonusWalletDebit(budget);
   const promise = guarantee ? guaranteeCopy(game, guarantee) : null;
+  const offering = Boolean(
+    entryReady && budget.award && valid && !disabled && answeredAward !== budget.award.id
+  );
+  const tellOffer = useRef(onOffer);
+  tellOffer.current = onOffer;
+  useEffect(() => {
+    tellOffer.current?.(offering);
+  }, [offering]);
   if (!entryReady)
     return (
       <section className={styles.setup} aria-label="Your Bonus Setup">
@@ -175,7 +185,7 @@ export default function BonusSetup({
           Earn Diamonds
         </button>
       </div>
-      {budget.award && valid && !disabled && answeredAward !== budget.award.id && (
+      {offering && budget.award && (
         <DoubleDownOffer
           key={budget.award.id}
           budget={budget}

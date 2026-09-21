@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 /** How long the page waits before it replays a saved wager again. The first
  * try is immediate; each failure doubles the wait up to eight seconds, and
  * the page keeps trying for as long as the wager is unsettled. */
-export const settleDelay = (attempt: number) => (attempt <= 0 ? 0 : Math.min(500 * 2 ** attempt, 8000));
+export const settleDelay = (attempt: number) =>
+  attempt <= 0 ? 0 : Math.min(500 * 2 ** attempt, 8000);
 
 /** A saved wager settles itself.
  *
@@ -19,11 +20,7 @@ export const settleDelay = (attempt: number) => (attempt <= 0 ? 0 : Math.min(500
  * something else; a skipped turn is retried shortly rather than counted as a
  * failure. `attempts` is the page's own failure count, bumped by the page on
  * every replay that neither settled nor was refused. */
-export function useAutoSettle(
-  pending: boolean,
-  attempts: number,
-  settle: () => Promise<boolean>
-) {
+export function useAutoSettle(pending: boolean, attempts: number, settle: () => Promise<boolean>) {
   const latest = useRef(settle);
   latest.current = settle;
   const [skipped, setSkipped] = useState(0);
@@ -49,4 +46,22 @@ export function useAutoSettle(
       clearTimeout(timer);
     };
   }, [pending, attempts, skipped]);
+}
+
+/** A paused game comes back by itself.
+ *
+ * While the platform has games paused (the hourly break, maintenance) a page
+ * used to tell the player to refresh after the break. It reads its own state
+ * again instead, quietly, for as long as `active` is true and the tab is in
+ * the foreground. */
+export function useStandingRefresh(active: boolean, refresh: () => void, everyMs = 15_000) {
+  const latest = useRef(refresh);
+  latest.current = refresh;
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => {
+      if (!document.hidden) latest.current();
+    }, everyMs);
+    return () => clearInterval(timer);
+  }, [active, everyMs]);
 }

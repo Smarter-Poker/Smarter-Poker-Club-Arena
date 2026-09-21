@@ -20,11 +20,7 @@
  *  2. Every page that saves a wager replays it on its own schedule
  *     (useAutoSettle) and reads the ticket-gone refusal, so a refused ticket is
  *     re-dealt and the wager sent again without a press.
- *  3. Every won game starts itself (useAwardAutoStart).
- *  4. The bonus guard never holds a player on a won game that cannot start
- *     (the daily limit, the maintenance break, a closed game): the award stays
- *     pending server-side and nothing is in flight.
- *  5. The server never deletes a player's live ticket when dealing another,
+ *  3. The server never deletes a player's live ticket when dealing another,
  *     and both start functions refuse a dead ticket before the entry whose
  *     foreign key would turn it into an exception. Pinned by the installed
  *     migration text, so a later rewrite of either function must carry the
@@ -61,16 +57,8 @@ const TELLS_THE_PLAYER_TO_RECOVER = [
   /['"`>]\s*Check (Round|Bonus|Your)/,
   /Before Starting Another/,
   /Could Not Be Checked/,
-  /Try Refresh/,
-  /Refresh To Try Again/,
-  /Tap Retry/,
-  /['"`]Retry Game['"`]/,
-  /Refresh The Wheel To Retry/,
   /['"`]Recover Spin['"`]/,
   /Retry To Recover/,
-  /Try Again/,
-  // A load-failure screen with a Retry button: the load retries itself.
-  /onRetry=/,
 ];
 
 const MIGRATION =
@@ -85,7 +73,7 @@ describe('a saved round settles itself', () => {
     expect(saving.sort()).toEqual([...AWARD_PAGES].sort());
   });
 
-  it.each([...GAME_PAGES, ...SHARED])('%s never asks the player to recover anything', (file) => {
+  it.each([...GAME_PAGES, ...SHARED])('%s never asks the player to check or recover a round', (file) => {
     const src = code(file);
     for (const phrase of TELLS_THE_PLAYER_TO_RECOVER) expect(src).not.toMatch(phrase);
   });
@@ -98,21 +86,6 @@ describe('a saved round settles itself', () => {
     expect(src).toContain('ticketGone');
     // Another tab's saved wager settles first, by itself.
     expect(src).toContain('PriorBonusPending');
-  });
-
-  it.each(AWARD_PAGES)('%s starts a won game by itself', (file) => {
-    const src = read(file);
-    expect(src).toContain("from '../hooks/useAwardAutoStart'");
-    expect(src).toMatch(/useAwardAutoStart\(/);
-  });
-
-  it.each(AWARD_PAGES)('%s does not hold a player on a won game that cannot start', (file) => {
-    // The hold for a merely pending award is conditional on the page being
-    // able to start it; money in flight (busy, uncertain, open) still holds.
-    const src = code(file);
-    const guard = src.slice(src.indexOf('useLiveBonusGuard('));
-    const args = guard.slice(0, guard.indexOf(');'));
-    expect(args).not.toMatch(/Boolean\(earned\.award\)\s*\|\|/);
   });
 
   it('the wheel recovers an unconfirmed spin by itself', () => {

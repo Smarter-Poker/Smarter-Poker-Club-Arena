@@ -1,6 +1,6 @@
 vi.mock('../../src/hooks/useLiveBonusGuard', () => ({ useLiveBonusGuard: vi.fn() }));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import DiamondPlinkoPage from '../../src/pages/DiamondPlinkoPage';
 import { PLINKO_TABLES } from '../../src/utils/diamondBonusPayout';
 import { PLINKO_DROPS } from '../../src/utils/bonusGameBudget';
@@ -329,11 +329,9 @@ describe('Plinko starts only its earned funding', () => {
     expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Check Bonus' })).not.toBeInTheDocument();
     const held = backend.start.mock.calls[0][0];
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
     // The same request, sent again, and the receipt is booked once.
-    expect(backend.start).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(backend.start).toHaveBeenCalledTimes(2));
+    await act(async () => {});
     expect(backend.start.mock.calls[1][0]).toEqual(held);
     expect(screen.getByRole('dialog', { name: '3.25 Chips' })).toBeInTheDocument();
   });

@@ -86,6 +86,19 @@ def qualify(root,out,cmd,command,run,probe,require,results):
             run('historical-native-allowance-authority',allowance)
             forward=runpy.run_path(str(root/'scripts/ci/build-f06-stopped-bank-custody.py'));run('historical-forward-input',forward['render'](root))
             build=runpy.run_path(str(root/'scripts/ci/build-f06-historical-bank-loss.py'));run('historical-install',build['render'](root))
+            # Production then applied 20260921040823, which rewrites the two
+            # retained-original snapshot functions in place from their installed
+            # text and pins the resulting md5 pair of each. Its pre-image census and
+            # its proof read production-only rows (the Noon snapshot row, the
+            # cohort's reserved permit), so this lane installs the byte-exact
+            # predicate plus the self-pinning edit and post-image blocks sliced from
+            # the migration file; the post-image raises unless both functions carry
+            # exactly the digests production reports.
+            noon=(root/'supabase/migrations/20260921040823_only_the_reviewed_noon_hand_may_abort_without_its_hole_cards.sql').read_text()
+            noon=noon[noon.index('CREATE OR REPLACE FUNCTION smarter_private.f06_zero_cards_abort_is_inert('):noon.index('END $inert_postimage$;')+len('END $inert_postimage$;')]
+            run('historical-noon-only-cards-install','BEGIN;\n'+noon+'\nCOMMIT;')
+            run('historical-noon-only-cards-identity',"SELECT string_agg(p.oid::regprocedure::text||' '||md5(prosrc)||' '||md5(pg_get_functiondef(p.oid)),E'\\n' ORDER BY p.oid::regprocedure::text) FROM pg_proc p WHERE p.oid IN (to_regprocedure('smarter_private.f06_retained_mtt_abort_snapshot(jsonb)'),to_regprocedure('smarter_private.f06_retired_origin_snapshot(jsonb)'));",
+                'smarter_private.f06_retained_mtt_abort_snapshot(jsonb) 1339225a48748a2e8cedd9ad882f35d9 269b7f20c326e04788c003f2a8b081ad\nsmarter_private.f06_retired_origin_snapshot(jsonb) af779e9bdaa72cefab1026b6fd236885 f1dc5d4b2a952ebb783e6ae66b844b94')
         if name=='retired-origin-local-proof-store':
             run('historical-explicit-loss',"""UPDATE fixture_origin_inputs SET local_proof=jsonb_set(local_proof,'{engines}',(SELECT jsonb_agg(jsonb_set(e,'{bank_custody,historical_loss}',fixture_history_scope(i)-ARRAY['occupants','pending_arrivals']) ORDER BY e->>'table_id') FROM jsonb_array_elements(local_proof->'engines')e));""")
             run('historical-pending-physical-capture',"""UPDATE fixture_origin_inputs SET local_proof=local_proof||jsonb_build_object('historical_loss_pending_arrivals',(SELECT COALESCE(jsonb_agg(jsonb_build_object('original',e,'durable_presence',NULL,'absence',jsonb_build_object('kind','all_current_engine_maps_absent_v1','source',local_proof#>>'{release_checkpoint,source}','instance_id','1-3846b8bb','table_id',e->>'table_id','global_absent',true,'owned_absent',true,'retirement_absent',true,'managers',(SELECT jsonb_agg(jsonb_build_object('manager_id',fixture_origin_c(j)->>'manager_id','absent',true)) FROM generate_series(1401,1402)j)))),'[]') FROM jsonb_array_elements(fixture_history_scope(i)->'pending_arrivals')e));""")
@@ -133,7 +146,8 @@ def qualify(root,out,cmd,command,run,probe,require,results):
     ns['qualify'](root,out,cmd,command,adapted,probe,require,results)
     run('historical-no-usage-reversal',"SELECT bool_and(usage_count=1620) FROM vip_feature_usage_monthly;",'t')
     # The publisher's pre-intent read-only comparison pins this installed
-    # 29-function catalogue, the one production holds after this migration.
+    # 29-function catalogue, the one production holds after this migration and
+    # the reviewed-noon-hand abort migration 20260921040823.
     catalog=json.loads((out/'qualified-service-contract.json').read_text())
     fixture=json.loads((root/'tests/fixtures/legacy-engine-checkpoint/mixed-custody-contract.json').read_text())
     require(catalog==fixture,'Publisher fixture does not equal actual historical-loss catalogue')

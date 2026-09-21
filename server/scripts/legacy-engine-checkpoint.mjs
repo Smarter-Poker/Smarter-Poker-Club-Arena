@@ -114,18 +114,14 @@ function checkpointSummary(value) {
     'failedCheck',
     'failedTable',
     'failedField',
-    // `failedCheck` names the sub-expression that refused; these name WHICH
-    // map, set, engine field or captured value moved underneath it. The guard
-    // has computed all four since the refusal-detail work and this allow-list
-    // silently dropped them, so `mixed_owner_changed` reached the runner
-    // naming a call and nothing else - which is the whole reason nobody could
-    // act on it (CLAUDE.md 10.86 rule 2: an unreadable answer must not be
-    // coerced into an empty one). Carried verbatim; no decision reads them.
-    'failedMap',
-    'failedSet',
-    'failedDrain',
-    'seatMoveRevision',
-    'capturedSeatMoveRevision',
+    // `failedCheck` names the sub-expression that refused; WHICH map, set,
+    // drain condition or captured revision moved underneath it travels in
+    // `observedDetail` below. This list is FIXED and drops every unlisted key,
+    // so one carrier is the design: a key of its own has to be remembered
+    // here too, and on 2026-09-21 it was not - `mixed_owner_changed` reached
+    // the runner naming a call and nothing else, which is the whole reason
+    // nobody could act on it (CLAUDE.md 10.86 rule 2: an unreadable answer
+    // must not be coerced into an empty one).
     'observed',
     'expected',
     'observedDetail',

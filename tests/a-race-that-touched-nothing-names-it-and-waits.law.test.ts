@@ -16,12 +16,18 @@
  * 1. IT CANNOT NAME ITS OWN CAUSE. `captureDrainedF06Originals()` is a
  *    fourteen-term conjunction inside the predecessor that answers a bare
  *    `null` for every one of them, so `failedCheck` names the CALL and never
- *    the term. Worse, `checkpointSummary`'s allow-list then dropped
+ *    the term. Worse, `checkpointSummary`'s allow-list is FIXED and dropped
  *    `failedMap`, `failedSet` and both seat-move revisions, which the guard had
  *    already computed - so the receipt that reached the runner named a function
  *    and nothing else. CLAUDE.md 10.86 rule 1: "I could not tell" must not wear
  *    the same name as an answer; rule 2: an unreadable answer must never be
  *    coerced into an empty one.
+ *
+ *    Both halves landed, and #5034 settled the shape on main: ONE witness,
+ *    `drainWitness`, naming every condition that sent the capture to null, and
+ *    ONE allow-listed carrier, `observedDetail`, holding it. A second, narrower
+ *    instrument for the same question is not a stronger repo - it is a coin
+ *    flip over which one the next agent reads - so this law pins that one.
  *
  * 2. IT KILLED A RELEASE IT HAD NOT TOUCHED. `stage: preflight`,
  *    `attemptedTables: 0`, `completedCalls: 0`, `checkpointOutcome:
@@ -105,46 +111,67 @@ describe('LAW: a race that touched nothing names it and waits', () => {
       // or this fails. The guard may be WIDER than the method (it runs against
       // a sealed predecessor build, which can lag main) but never narrower.
       expect(fields.length).toBeGreaterThanOrEqual(13);
-      const at2 = guard.indexOf('const failedDrain = () => {');
+      const at2 = guard.indexOf('const drainWitness = () => {');
       expect(at2).toBeGreaterThan(0);
       const diagnosis = guard.slice(at2, guard.indexOf('\n          };', at2));
       for (const field of fields)
-        expect(diagnosis, `failedDrain must name ${field}`).toContain(field);
+        expect(diagnosis, `drainWitness must name ${field}`).toContain(field);
       // and the three per-engine terms the same method reads
       for (const method of ['isRunning', 'hasReleasedProcessOwnership', 'hasSettlementInFlight'])
         expect(diagnosis).toContain(method);
-      // it distinguishes "every term still holds" from "I could not read it"
-      expect(diagnosis).toContain("return 'unnamed'");
-      expect(diagnosis).toContain("return 'unreadable'");
+      // and it keeps the three answers apart, which is the whole point: a term
+      // that MOVED names itself, a term that could not be READ names itself as
+      // unreadable, and "every term still holds" is `none` - the case where the
+      // cause is outside this list and the next release has to be told so.
+      expect(diagnosis).toContain(':unreadable');
+      expect(diagnosis).toContain("=== 0 ? 'none' :");
     });
 
     it('is observability only: computed in extra(), never in the predicate list', () => {
       // `witness` evaluates the predicate list to DECIDE and calls extra() only
-      // on a path that is already refusing. failedDrain must live in the latter,
-      // or a diagnostic would start moving an outcome.
+      // on a path that is already refusing. drainWitness must live in the
+      // latter, or a diagnostic would start moving an outcome.
       const at = guard.indexOf("witness(\n            'mixed_owner_changed',");
       expect(at).toBeGreaterThan(0);
       const call = guard.slice(at, guard.indexOf('\n          return vector();', at));
       const predicates = call.slice(0, call.indexOf('() => ({'));
-      expect(predicates).not.toContain('failedDrain');
-      expect(call).toContain('failedDrain: failedDrain(),');
+      expect(predicates).not.toContain('drainWitness');
+      expect(call).toMatch(/drain=\$\{drainWitness\(\)\}/);
       // the helper itself is declared ABOVE the witness call, beside its peers
-      expect(guard.indexOf('const failedDrain = () => {')).toBeLessThan(at);
+      expect(guard.indexOf('const drainWitness = () => {')).toBeLessThan(at);
     });
 
-    it('the summary carries the sub-condition fields instead of silently dropping them', () => {
+    it('the summary carries the sub-condition detail instead of silently dropping it', () => {
       const at = checkpointModule.indexOf('function checkpointSummary(');
       const body = checkpointModule.slice(at, checkpointModule.indexOf('\n}', at));
-      for (const field of [
-        'failedCheck',
-        'failedTable',
-        'failedMap',
-        'failedSet',
-        'failedDrain',
-        'seatMoveRevision',
-        'capturedSeatMoveRevision',
-      ])
+      for (const field of ['failedCheck', 'failedTable', 'failedField', 'observedDetail'])
         expect(body, `checkpointSummary must carry ${field}`).toContain(`'${field}'`);
+
+      const at2 = guard.indexOf("witness(\n            'mixed_owner_changed',");
+      const call = guard.slice(at2, guard.indexOf('\n          return vector();', at2));
+      // Every sub-condition the 2026-09-21 receipt was missing is in the
+      // carrier: which tournament, which drain condition, which map, which set
+      // and both seat-move revisions.
+      for (const term of [
+        /tournament=/,
+        /drain=\$\{drainWitness\(\)\}/,
+        /map=\$\{failedMap\(\)\}/,
+        /set=\$\{failedSet\(\)\}/,
+        /rev=/,
+      ])
+        expect(call, `observedDetail must carry ${term}`).toMatch(term);
+      // and NONE of them rides as a key of its own, where the fixed allow-list
+      // above drops it before any reader ever sees it. This is the half that
+      // actually failed: the guard computed all four and the summary binned
+      // them, so a key nobody listed is worse than no diagnostic at all.
+      for (const dropped of [
+        'failedMap:',
+        'failedSet:',
+        'failedDrain',
+        'seatMoveRevision:',
+        'capturedSeatMoveRevision:',
+      ])
+        expect(call, `${dropped} would be dropped by checkpointSummary`).not.toContain(dropped);
     });
   });
 

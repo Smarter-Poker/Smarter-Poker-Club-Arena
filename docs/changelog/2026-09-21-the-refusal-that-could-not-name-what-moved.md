@@ -56,13 +56,27 @@ allow-list, and `failedMap`, `failedSet`, `seatMoveRevision` and
 and they were dropped between the guard and the runner. CLAUDE.md 10.86 rule 2:
 an unreadable answer must never be coerced into an empty one.
 
-**Fixed.** `failedDrain` walks the predecessor's own terms, in the predecessor's
-own order, and names the first that is false - `manager.lifecycleJobs`,
-`engine.hasSettlementInFlight:<table>`, and so on - plus `unnamed` when every
-term still holds and `unreadable` when it could not look. It is computed inside
-`witness`'s `extra()`, on a path that is already refusing, under a catch that
-discards it: no check, threshold or outcome moves. The four dropped fields are
-on the allow-list now.
+**Fixed, and then reconciled on merge (2026-09-21).** This branch first shipped
+its own diagnosis, `failedDrain`, and widened `checkpointSummary`'s allow-list
+to let the four dropped fields through as keys of their own. #5034 landed the
+same fix on `main` a few hours earlier and better: `drainWitness` names EVERY
+condition that sent the capture to null rather than only the first - the same
+thirteen terms plus `tableEngines.length` and `engineNotDrained` - and it
+travels, with the tournament, the map, the set and both seat-move revisions, in
+`observedDetail`, the one carrier that is already allow-listed.
+
+So `failedDrain` is gone and the allow-list widening with it. Two instruments
+answering one question is not a stricter repo; it is a coin flip decided by
+whichever the next agent reads first, and a key that has to be remembered in a
+fixed allow-list is exactly the thing that failed here in the first place. What
+this branch DID carry forward is the guarantee, not the code: `drainWitness`
+now keeps three answers apart instead of two, because a term whose read THREW
+was being reported under the name of a term that moved. It reports
+`<term>:unreadable` instead, and `none` still means "the capture flipped and
+every term below still holds, so the cause is outside this list" (CLAUDE.md
+10.86 rule 1). It is computed inside `witness`'s `extra()`, on a path that is
+already refusing, under a catch that discards it: no check, threshold or
+outcome moves.
 
 ## 2. It killed a release it had not touched
 
@@ -145,8 +159,11 @@ death.
 `tests/a-race-that-touched-nothing-names-it-and-waits.law.test.ts` pins both
 halves. The diagnosis is coupled to the engine, not to a word count: it parses
 `captureDrainedF06Originals` out of `TournamentManagerBase.ts` and requires
-`failedDrain` to name every field it reads, so a fifteenth term cannot be added
-without teaching the guard about it. The predicate is driven against the real
+`drainWitness` to name every field it reads, so a fifteenth term cannot be added
+without teaching the guard about it. It also pins the carrier from both ends:
+`checkpointSummary` must allow-list `observedDetail`, the witness call must put
+all four sub-conditions in it, and NONE of them may ride as a key of its own
+where that fixed list would silently bin it. The predicate is driven against the real
 35623804237 receipt and eighteen mutations of it, plus the eight reasons that
 must stay fatal and the past-preflight late arrival that must also stay fatal. The shell block is driven as a real subprocess: matching bytes
 defer and retire, foreign bytes die and **preserve**.

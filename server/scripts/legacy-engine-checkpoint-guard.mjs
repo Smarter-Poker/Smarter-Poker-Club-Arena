@@ -1165,8 +1165,14 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
                 failedField: name,
                 // Observability only. The allowance on this one field turns on the
                 // permit phase, so a refusal here is unreadable without it.
+                // It travels in `observedDetail`, the carried key, not in one of
+                // its own: an unlisted key is dropped before anyone reads it.
                 ...(name === 'terminalBoundaryPendingGenerations'
-                  ? { failedPermitPhase: capture.phase === null ? 'none' : capture.phase }
+                  ? {
+                      observedDetail: `permitPhase=${
+                        capture.phase === null ? 'none' : capture.phase
+                      }`,
+                    }
                   : {}),
               }));
             }
@@ -1305,6 +1311,67 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             );
             return found === undefined ? 'none' : found[0];
           };
+          // `captureDrainedF06Originals()` is all-or-nothing: it returns the
+          // stable `drainedF06Originals` array, or `null` the moment any one of
+          // its thirteen drain conditions stops holding. The identity compare
+          // above therefore reports only THAT it flipped, never which condition
+          // did it - and that method runs inside the deployed engine, which is
+          // the build this release is trying to replace, so it cannot be
+          // instrumented from here. Read the same fields it reads, off the same
+          // manager, and name the ones that are not in the drained shape.
+          // Observability only: every read is a plain property or `.size`.
+          const drainWitness = () => {
+            const size = (value) => (value && typeof value.size === 'number' ? value.size : -1);
+            const flipped = [
+              ['drainedF06Originals', () => !manager.drainedF06Originals],
+              ['stopFenceApplied', () => !manager.stopFenceApplied],
+              ['tournamentLeaseAuthorityExpired', () => !manager.tournamentLeaseAuthorityExpired],
+              ['running', () => Boolean(manager.running)],
+              ['teardownPromise', () => Boolean(manager.teardownPromise)],
+              ['lifecycleOperation', () => Boolean(manager.lifecycleOperation)],
+              ['lifecycleJobs', () => size(manager.lifecycleJobs) > 0],
+              ['tableEngineStartJobs', () => size(manager.tableEngineStartJobs) > 0],
+              ['tableEngineRunJobs', () => size(manager.tableEngineRunJobs) > 0],
+              ['eliminationSchedulerJobs', () => size(manager.eliminationSchedulerJobs) > 0],
+              ['lifecycleTimeouts', () => size(manager.lifecycleTimeouts) > 0],
+              ['lifecycleIntervals', () => size(manager.lifecycleIntervals) > 0],
+              [
+                'tableEngines.length',
+                () =>
+                  size(manager.tableEngines) !==
+                  (manager.drainedF06Originals ? manager.drainedF06Originals.length : -1),
+              ],
+              [
+                'engineNotDrained',
+                () =>
+                  (manager.drainedF06Originals ?? []).some(
+                    ([id, engine]) =>
+                      manager.tableEngines.get(id) !== engine ||
+                      engine.isRunning() ||
+                      !engine.hasReleasedProcessOwnership() ||
+                      engine.hasSettlementInFlight()
+                  ),
+              ],
+            ]
+              .map(([name, test]) => {
+                // Three outcomes, never one (CLAUDE.md 10.86 rule 1). A term
+                // that MOVED names itself. A term that could not be READ is a
+                // different fact - still reported, because an unreadable term
+                // is still suspicious, but it never wears the name of one that
+                // moved, or the next release acts on a finding nobody made.
+                try {
+                  return test() ? name : null;
+                } catch {
+                  return `${name}:unreadable`;
+                }
+              })
+              .filter((name) => name !== null);
+            // And the fourth, which matters most: the identity compare said the
+            // capture flipped and every term below still holds, so the cause is
+            // OUTSIDE this list. `none` says that out loud instead of returning
+            // an empty string that reads as "nothing was wrong".
+            return flipped.length === 0 ? 'none' : flipped.join(',');
+          };
           const failedEngine = () => {
             const found = exactEngines.find(
               ({ tableId, engine }) =>
@@ -1316,56 +1383,6 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
                 )
             );
             return found === undefined ? 'none' : found.tableId;
-          };
-          // `manager.captureDrainedF06Originals()` in the list below is ONE call
-          // standing in for a fourteen-term conjunction inside the predecessor,
-          // and it answers a bare `null` for every one of them. So `failedCheck`
-          // can name the CALL and never the term that moved - which is exactly
-          // the receipt every release died on through 2026-09-21, with nothing
-          // in it anyone could act on. CLAUDE.md 10.86 rule 1: "I could not
-          // tell" must not wear the same name as an answer. Walk the
-          // predecessor's own terms, in the predecessor's own order, and name
-          // the first that is false. Observability only: this runs inside
-          // `witness`'s `extra()`, on a path that is already refusing, under a
-          // catch that discards it. No check, threshold or outcome moves.
-          const failedDrain = () => {
-            try {
-              if (manager.captureDrainedF06Originals() === originals) return 'none';
-              if (!Array.isArray(originals)) return 'capturedOriginals';
-              if (manager.drainedF06Originals !== originals) return 'manager.drainedF06Originals';
-              const emptyOnDrain = [
-                'lifecycleJobs',
-                'tableEngineStartJobs',
-                'tableEngineRunJobs',
-                'eliminationSchedulerJobs',
-                'lifecycleTimeouts',
-                'lifecycleIntervals',
-              ];
-              const terms = [
-                ['manager.stopFenceApplied', () => manager.stopFenceApplied === true],
-                [
-                  'manager.tournamentLeaseAuthorityExpired',
-                  () => manager.tournamentLeaseAuthorityExpired === true,
-                ],
-                ['manager.running', () => !manager.running],
-                ['manager.teardownPromise', () => !manager.teardownPromise],
-                ['manager.lifecycleOperation', () => !manager.lifecycleOperation],
-                ...emptyOnDrain.map((name) => [`manager.${name}`, () => manager[name]?.size === 0]),
-                ['manager.tableEngines.size', () => manager.tableEngines?.size === originals.length],
-              ];
-              const moved = terms.find(([, evaluate]) => !evaluate());
-              if (moved !== undefined) return moved[0];
-              for (const [id, engine] of originals) {
-                if (manager.tableEngines.get(id) !== engine) return `manager.tableEngines.get:${id}`;
-                if (engine.isRunning()) return `engine.isRunning:${id}`;
-                if (!engine.hasReleasedProcessOwnership())
-                  return `engine.hasReleasedProcessOwnership:${id}`;
-                if (engine.hasSettlementInFlight()) return `engine.hasSettlementInFlight:${id}`;
-              }
-              return 'unnamed';
-            } catch {
-              return 'unreadable';
-            }
           };
           witness(
             'mixed_owner_changed',
@@ -1438,14 +1455,24 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
                   ),
               ],
             ],
+            // `legacy-engine-checkpoint.mjs` carries a fixed set of
+            // observability keys and DROPS every other, so anything that needs
+            // to be read travels in `observedDetail` - the same carrier the
+            // move-boundary clause above already uses - inside its
+            // 512-character and character-class limits.
             () => ({
-              failedTournament: manager.tournamentId,
-              failedMap: failedMap(),
-              failedSet: failedSet(),
               failedTable: failedEngine(),
-              failedDrain: failedDrain(),
-              seatMoveRevision: describe(manager.tournamentSeatMoveAuthorityRevision),
-              capturedSeatMoveRevision: describe(revision),
+              observed: describe(manager.captureDrainedF06Originals()),
+              expected: describe(originals),
+              observedDetail: [
+                `tournament=${manager.tournamentId}`,
+                `drain=${drainWitness()}`,
+                `map=${failedMap()}`,
+                `set=${failedSet()}`,
+                `rev=${describe(manager.tournamentSeatMoveAuthorityRevision)}/${describe(revision)}`,
+              ]
+                .join(',')
+                .slice(0, 512),
             })
           );
           return vector();

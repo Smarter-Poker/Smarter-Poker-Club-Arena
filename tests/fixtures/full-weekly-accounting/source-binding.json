@@ -313,7 +313,7 @@
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
     "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
-    "tests/fixtures/union-weekly-basis/source-binding.json": "3105b0e85a226b854f771e1367ff2834df71a3428d5e23fa169af142fcab4044",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "786785945a40cecd83afc5dfa2564320d257e267689a4e3508a2f610f4ad1266",
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
@@ -334,7 +334,7 @@
     "tests/fixtures/union-weekly-basis/captured-document-dependencies.json": "b5f5a9e7e0a2a7c710295bcd6b0a1b5aca7ddf9c27a6268167eba1a8e35fa23b",
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
-    "scripts/dev/test-union-weekly-basis.py": "e16cec72506734cae671e381695eec42fe440f10ad263cf3e25c2fb412e2ce36",
+    "scripts/dev/test-union-weekly-basis.py": "304ad1342654b6fb836ccc8b0ca8fb9322297b64b3dffe3ae908402c9b04c3a7",
     "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "fa2f2f378db56fa7b586c6ddecaf43d58cac0b34817e8497b13ebb5159f33798",
     "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
     "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf",
@@ -1765,5 +1765,24 @@
     ],
     "reason": "20260921040847 taught atomic_distribute_rake, the CASH rake payer, to declare the earning club on app.ledger_autoledger_club_id, and union cash rake legs have named their club since it committed at ~04:08Z on 2026-09-21. A second producer was left club-less: union rake also arrives from a tournament fee. fn_settle_tournament_rake declares app.ledger_category 'rake', app.ledger_counterparty 'prize_liability' and the counterparty entity for exactly those legs, then credits union_wallets.rake_wallet through increment_union_wallet, and never declared the club - so fn_ca_autoledger took the ELSE branch of its club CASE (union_wallets has no club_id column) and wrote the leg club-less. Measured on production 2026-09-21 06:50Z: 436 union rake legs after the cash fix, of which 435 were from_type='table_stack' and all named their club, and the single club-less leg (chip_ledger 7c1236b3-5b71-4859-9c30-d0c5dd8bce15, 80.00) was from_type='prize_liability'. from_type on a credit IS the payer's declared counterparty, which is what identified the producer from the rows. It is a defect and not a union-scoped leg: fn_settle_tournament_rake refuses a club-less fee bank two statements earlier (tournament_fee_bank_club_required) and hands the same club to increment_union_wallet, which recorded it on union_wallet_transactions.club_id for that very leg. 20260921065613 makes the tournament payer declare that club beside its other ledger-context declarations and clear it at the close of the fee block, which brackets the union credit and keeps fn_recognize_accounting_tournament_fees outside the declared window. Historical rows are not backfilled. hooks-regression.sql gains four assertions: the tournament payer declares and clears once, the declaration and clear bracket the credit, the club-less-fee refusal still stands, and - derived from the catalog rather than from a list - every union rake CREDIT producer declares its club, so a third door is caught the day it appears. No existing assertion was weakened or removed and the diff is append-only before that file's final ROLLBACK.",
     "qualification": "scripts/dev/test-full-weekly-accounting-activation.sh loads the migration itself between 20260921023420 and hooks-regression.sql, so the fixture exercises the real migration bytes rather than a copy: the four assertions fail on the captured catalog and pass after it. The same one-line restamp lands in the four other bindings that pin the harness (earlybird-fee-custody, legacy-fee-finality, sep8-spin-custody, spin-mixed-cutover); their phases are unaffected because the added -f runs after them."
+  },
+  "period_coverage_successor_20260921": {
+    "migrations": [],
+    "prior_binding_sha256": "4a1fea3367933537849ce90471a73986b50bd629528cc7ade9772b0e0a7ce574",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/dev/test-union-weekly-basis.py",
+        "previous_sha256": "e16cec72506734cae671e381695eec42fe440f10ad263cf3e25c2fb412e2ce36",
+        "sha256": "304ad1342654b6fb836ccc8b0ca8fb9322297b64b3dffe3ae908402c9b04c3a7"
+      },
+      {
+        "path": "tests/fixtures/union-weekly-basis/source-binding.json",
+        "previous_sha256": "3105b0e85a226b854f771e1367ff2834df71a3428d5e23fa169af142fcab4044",
+        "sha256": "786785945a40cecd83afc5dfa2564320d257e267689a4e3508a2f610f4ad1266"
+      }
+    ],
+    "added_repository_inputs": ["tests/fixtures/union-weekly-basis/period-coverage-regression.sql"],
+    "reason": "The rakeback settler is page-scoped: RakebackSettlerService passes p_user_ids from the rake_records page it just drained and then advances daemon_state.rakeback_settler.high_water_mark past the whole page with a strict >, so mid-week the certificate set is a subset of the week's payees and fn_settle_accounting_rakeback_stage refuses that book with routed_rakeback_player_period_missing. Measured in production on 2026-09-21 for Deep Stack Society and the week 2026-09-21T07:00Z..2026-09-28T07:00Z, with the guard's own predicate: 154 source pairs, 77 certificates, 77 uncovered, 943.27 of uncovered rake_credit. The weekly close does not settle from that subset - fn_prepare_accounting_week re-runs fn_rakeback_recompute_periods(club, from_date, to_date, NULL) for every club of the week before any payer stage, and with a NULL user list fn_calculate_cash_rakeback_periods draws its player set from accounting_payable_earning_sources for the whole period - but nothing in the repository pinned that, and reusing the settler's already-computed page inside the close is exactly the optimisation that would bring the stall back. No migration, schema object, captured catalog, component, money function or existing assertion is changed. The only change to scripts/dev/test-union-weekly-basis.py is one added run() step, placed after every pre-existing fixture on that cluster because the new regression adds a hand to the raked table and closes a later week; tests/fixtures/union-weekly-basis/source-binding.json gains that one input.",
+    "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py: exit 0, 77 PASS steps, 0 failures, including period-coverage-regression (29 assertions): round 3 refuses the page-scoped book by exact SQLSTATE 55000 and name; the period-complete call and the NULL branch are pinned in source; a club scope prepares its own week leaving no source pair uncovered; the page-scoped negative control makes the close refuse with weekly_calculation_receipt_not_confirmed instead of paying an incomplete book; the real due coordinator at a simulated 2026-09-28T09:00Z closes the week with all four rounds successful, both routed stages at shortfalls 0, round 3 routing both certified periods, every ordinary source pair certificated, the zero-entitlement payee closed at zero and the retained union-house source still without a player period; and a replay leaves chip_ledger, settlement_invoices, accounting_invoice_deliveries and rakeback_periods byte-identical. Red control on the same stack, mutating only fn_prepare_accounting_week to a page-scoped recompute: the fixture fails."
   }
 }

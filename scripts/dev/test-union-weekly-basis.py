@@ -153,6 +153,10 @@ try:
  run((root/'tests/fixtures/club-settlement-floor-behaviour/installed-run-journal.sql').read_text(),'club-floor-run-journal')
  run((root/'tests/fixtures/club-settlement-floor-behaviour/seed.sql').read_text(),'club-floor-behaviour-seed')
  run((root/'tests/fixtures/club-settlement-floor-behaviour/regression.sql').read_text(),'club-floor-behaviour-regression')
+ # Last of all, on this same cluster: a week whose payees straddle the rakeback
+ # settler's drain page. It adds a hand to the raked table and closes a later
+ # week, so it runs after every fixture that reads that table's own seals.
+ run((root/'tests/fixtures/union-weekly-basis/period-coverage-regression.sql').read_text(),'period-coverage-regression')
 finally:
  if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True,env=dict(os.environ,LC_ALL='C',LANG='C'))
  print('Evidence retained: '+str(base),flush=True)

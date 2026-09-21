@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { GameServer } from '../GameServer.js';
-import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
+import { GameServer } from '../GameServer.js';
+import { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import type { MoveInstruction } from '../engine/TableBalancer.js';
 import { supabase } from '../services/supabase.js';
 import * as errorReporter from '../services/errorReporter.js';
@@ -120,7 +120,7 @@ function fixture() {
     getTableEngine: (table: string) => globalEngines.get(table),
     ownsTournamentTableEngine: (table: string, expected: ServerTableEngine) =>
       globalEngines.get(table) === expected,
-    unregisterTournamentTableEngine: unregister,
+    unregisterTableEngine: unregister,
     withRetirementCustody: <T>(
       binding: Parameters<typeof custody.withCustody>[0],
       local: Map<string, ServerTableEngine>,
@@ -588,6 +588,43 @@ describe('tournament table-break retirement is one durable ownership chain', () 
       expect(f.manager.broadcast).toHaveBeenCalledTimes(1);
     }
   );
+
+  it('retains actual stopped banks until the exact terminal receipt ends their table session', async () => {
+    const f = fixture();
+    const original: any = new ServerTableEngine(TABLE_ID, {
+      scope: 'tournament',
+      verified: true,
+      tournamentId: TOURNAMENT_ID,
+      generation: LEASE_GENERATION,
+      proofDeadlineMonotonicMs: performance.now() + 20_000,
+    });
+    const user = 'dddddddd-0000-4000-8000-000000000001';
+    original.tableInfo = { tournament_id: TOURNAMENT_ID };
+    original.seatedPlayers = [{ user_id: user, occupancy_id: user, seat_number: 1, stack: 0 }];
+    original.timeBankEngine.initializePlayer(TABLE_ID, user, {
+      remainingSeconds: 7,
+      usesRemaining: 1,
+    });
+    original.timeBankMeta.set(user, { initialSeconds: 80, baseSeconds: 40, dbConsumedSeconds: 33 });
+    f.manager.addEngine(original);
+    f.globalEngines.set(TABLE_ID, original);
+    const host = { tableEngines: f.globalEngines, tournamentOwnedTables: f.tournamentOwnedTables };
+    f.unregister.mockImplementation((table, engine) =>
+      GameServer.prototype.unregisterTableEngine.call(host as unknown as GameServer, table, engine)
+    );
+    const receipt = closeReceipt();
+    vi.spyOn(supabase, 'rpc')
+      .mockResolvedValueOnce({ ...receipt, data: { ...receipt.data, current_players: 1 } } as never)
+      .mockResolvedValueOnce(receipt as never);
+    await expect(f.manager.close(original)).resolves.toBe(false);
+    expect(original.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+    expect(f.unregister).not.toHaveBeenCalled();
+    expect(f.globalEngines.get(TABLE_ID)).toBe(original);
+    await expect(f.manager.close(original)).resolves.toBe(true);
+    expect(original.hasUnretiredStoppedTimeBankCustody()).toBe(false);
+    expect(f.globalEngines.has(TABLE_ID)).toBe(false);
+    f.manager.fence();
+  });
 
   it('stops, proves the exact DB close, then releases every registry by identity CAS', async () => {
     const f = fixture();

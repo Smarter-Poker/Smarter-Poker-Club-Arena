@@ -1,3 +1,4 @@
+import { custodyJSON } from '../tournament/mixedF06Custody.js';
 import type { RetirementCustody } from '../services/TournamentRetirementCustody.js';
 import { AllocatorIssuerMeasurement } from '../services/AllocatorIssuerMeasurement.js';
 import { FinancialPublicationBoundary } from '../services/FinancialPublicationBoundary.js';
@@ -1012,6 +1013,30 @@ export abstract class ServerTableEngineBase {
       permit: this.getF06RetainedPermit(),
       bank_custody: {
         hand_number: this.handCount,
+        ...(this.stoppedTimeBankCustody && !this.stoppedTimeBankCustodyTransferred
+          ? {
+              stopped_capture: {
+                kind: 'mtt_pre_disposal_bank_v1',
+                table_id: tableId,
+                engine_id: this.lifecycleDiagnostics.instanceId,
+                tournament_id: tournamentId,
+                generation,
+                lifecycle,
+                accounting: 'acknowledged',
+                snapshot: {
+                  table_id: tableId,
+                  parked_at: this.stoppedTimeBankCustody.capturedAt,
+                  disconnect_states: structuredClone(this.stoppedTimeBankCustody.disconnectStates),
+                  time_bank_snapshot: {
+                    version: 1,
+                    parkedAt: this.stoppedTimeBankCustody.capturedAt,
+                    handNumber: this.stoppedTimeBankCustody.handNumber,
+                    players: structuredClone(this.stoppedTimeBankCustody.banks),
+                  },
+                },
+              },
+            }
+          : {}),
         roster: this.seatedPlayers.map((seat) => [
           seat.user_id,
           seat.occupancy_id,
@@ -2386,6 +2411,20 @@ export abstract class ServerTableEngineBase {
    */
   protected readonly timeBankBaseSeconds = 40;
   private parkedTimeBanks: Record<string, ParkedTimeBank> = {};
+  // The stopped original remains the owner until a same-process identity CAS
+  // adopts these actual balances or the matching native park was acknowledged.
+  private stoppedTimeBankCustody: {
+    handNumber: number;
+    capturedAt: string;
+    disconnectStates: ReturnType<DisconnectEngine['getFsmStatesForTable']>;
+    occupancies: Readonly<Record<string, string>>;
+    banks: Record<string, ParkedTimeBank>;
+  } | null = null;
+  private inheritedStoppedTimeBankCustody: ServerTableEngineBase['stoppedTimeBankCustody'] = null;
+  private stoppedTimeBankCustodyTransferred = false;
+  private stoppedTimeBankDurableReceipt: { transferId: string; capture: unknown } | null = null;
+  private acknowledgedTimeBankPark: { handNumber: number; banks: string } | null = null;
+
   private presenceSave: Promise<void> = Promise.resolve();
   private presenceSavePending = 0;
   private parkedBankSaveComplete = false;
@@ -3287,9 +3326,13 @@ export abstract class ServerTableEngineBase {
          this reads it back, once, while it is fresh. restoreFsmStates never
          clobbers a seat that has already re-registered, so a player who is
          genuinely back loses nothing to a stale row. */
-      if (!recovered) {
+      if (!recovered || this.inheritedStoppedTimeBankCustody) {
         try {
-          const parked = await loadPresenceFromPark(this.tableId);
+          // An inherited original restores presence only after the authoritative
+          // roster confirms the same occupancies. Do not read an older park over it.
+          const parked = this.inheritedStoppedTimeBankCustody
+            ? null
+            : await loadPresenceFromPark(this.tableId);
           if (!this.lifecycleCanMutate()) return;
           if (parked && Object.keys(parked).length > 0) {
             const restored = this.disconnectEngine.restoreFsmStates(this.tableId, parked);
@@ -3672,6 +3715,52 @@ export abstract class ServerTableEngineBase {
     // Do not release this engine's resources until its transaction returns.
     await this.seatBoundaryTail;
 
+    // A bank debit or a previously accepted park remains owned work. Cancel
+    // the active allocation through its normal accounting event before capture;
+    // a lost debit acknowledgement remains unknown and is never retried here.
+    let banksCaptured = false;
+    if (this.isTournamentTable() || this.engineLeaseScope === 'tournament') {
+      try {
+        this.timeBankEngine.cancelActiveForTable(this.tableId);
+        if (this.presenceSavePending > 0) await this.presenceSave;
+        if (this.timeBankAccountingPending.size > 0)
+          await Promise.all(this.timeBankAccountingPending);
+        const banks = this.captureParkedTimeBanks();
+        for (const [userId] of this.timeBankMeta) {
+          if (!banks[userId]) throw new Error('Stopped time bank metadata has no original balance');
+        }
+        for (const bank of this.timeBankEngine.getBanksForTable(this.tableId)) {
+          if (!banks[bank.playerId]) throw new Error('Stopped time bank has no original occupancy');
+        }
+        this.parkedTimeBanks = structuredClone(banks);
+        this.stoppedTimeBankCustody = Object.freeze({
+          handNumber: this.handCount,
+          capturedAt: new Date().toISOString(),
+          disconnectStates: structuredClone(this.captureRetainedPresence()),
+          occupancies: Object.freeze({
+            ...this.inheritedStoppedTimeBankCustody?.occupancies,
+            ...Object.fromEntries(
+              this.seatedPlayers
+                .filter((seat) => seat.occupancy_id)
+                .map((seat) => [seat.user_id, seat.occupancy_id!])
+            ),
+          }),
+          banks: Object.freeze(
+            Object.fromEntries(
+              Object.entries(banks).map(([userId, bank]) => [userId, Object.freeze({ ...bank })])
+            )
+          ),
+        });
+        banksCaptured = true;
+      } catch (error) {
+        failures.push(error);
+        // Do not dispose a value that could not be captured. The original
+        // object stays quarantined and all retirement paths consult custody.
+      }
+    } else {
+      banksCaptured = true;
+    }
+
     this.recordLifecycleDiagnostic('owned_work_joined');
 
     // CROSS-INSTANCE GUARD (2026-08-22): if a replacement engine for this
@@ -3738,7 +3827,9 @@ export abstract class ServerTableEngineBase {
         () => this.stateVerifier.dispose(),
 
         // Step 5: Dispose supporting modules
-        () => this.timeBankEngine.disposeAll(),
+        () => {
+          if (banksCaptured) this.timeBankEngine.disposeAll();
+        },
         () => this.disconnectEngine.disposeAll(),
         () => this.preActionEngine.disposeAll(),
         () => this.atomicStackService.dispose(),
@@ -4470,7 +4561,21 @@ export abstract class ServerTableEngineBase {
         ...(bank.unlimitedActivations === true ? { unlimitedActivations: true } : {}),
       });
     }
+    const original = this.inheritedStoppedTimeBankCustody;
+    if (original) {
+      const states = Object.fromEntries(
+        nextRoster
+          .filter(
+            (seat) =>
+              original.occupancies[seat.user_id] === seat.occupancy_id &&
+              original.disconnectStates[seat.user_id]
+          )
+          .map((seat) => [seat.user_id, original.disconnectStates[seat.user_id]])
+      );
+      this.disconnectEngine.restoreFsmStates(this.tableId, states);
+    }
     this.parkedTimeBanks = {};
+    this.inheritedStoppedTimeBankCustody = null;
   }
 
   /** Last time the empty-cluster-table check read the row. See below. */
@@ -5726,6 +5831,16 @@ export abstract class ServerTableEngineBase {
    * resetting it. Called when the break is announced and when the loop
    * parks. Never throws; a miss costs exactly what every boot cost before.
    */
+  private captureRetainedPresence(): ReturnType<DisconnectEngine['getFsmStatesForTable']> {
+    // Before the first authoritative roster, another park/stop must retain the
+    // exact inherited FSM. A newer live observation wins; the roster subsequently
+    // filters inherited states by the captured original occupancy.
+    return {
+      ...this.inheritedStoppedTimeBankCustody?.disconnectStates,
+      ...this.disconnectEngine.getFsmStatesForTable(this.tableId),
+    };
+  }
+
   protected captureParkedTimeBanks(): Record<string, ParkedTimeBank> {
     const saved: Record<string, ParkedTimeBank> = { ...this.parkedTimeBanks };
     for (const seat of this.seatedPlayers) {
@@ -5748,6 +5863,14 @@ export abstract class ServerTableEngineBase {
   }
 
   protected async readParkedTimeBanks(): Promise<void> {
+    if (this.inheritedStoppedTimeBankCustody) {
+      const original = this.inheritedStoppedTimeBankCustody;
+      if (this.handCount > original.handNumber)
+        throw new Error('Stopped time bank hand was superseded before adoption');
+      this.handCount = original.handNumber;
+      this.parkedTimeBanks = structuredClone(original.banks);
+      return;
+    }
     try {
       const banks = await loadTimeBanksFromPark(this.tableId, this.handCount);
       if (this.lifecycleCanMutate()) this.parkedTimeBanks = banks;
@@ -5773,6 +5896,7 @@ export abstract class ServerTableEngineBase {
    * gate reads and the reason an operator reads can never disagree.
    */
   maintenanceDurabilityReason(): string | null {
+    if (this.hasUnretiredStoppedTimeBankCustody()) return 'stopped_bank_custody_unconfirmed';
     if (!this.maintenancePaused) return null;
     if (this.timeBankAccountingUnconfirmed) return 'accounting_unconfirmed';
     if (this.timeBankAccountingPending.size > 0) return 'accounting_pending';
@@ -5783,6 +5907,115 @@ export abstract class ServerTableEngineBase {
       );
     if (hasBanks && !this.parkedBankSaveComplete) return 'bank_park_write_incomplete';
     return null;
+  }
+
+  private timeBankCustodyFingerprint(banks: Record<string, ParkedTimeBank>): string {
+    return JSON.stringify(Object.entries(banks).sort(([a], [b]) => a.localeCompare(b)));
+  }
+
+  /** Physical timer release is not authority to discard a stopped bank. */
+  hasUnretiredStoppedTimeBankCustody(): boolean {
+    if (
+      !this.terminal ||
+      this.stoppedTimeBankCustodyTransferred ||
+      !(this.isTournamentTable() || this.engineLeaseScope === 'tournament')
+    )
+      return false;
+    if (
+      this.timeBankAccountingUnconfirmed ||
+      this.timeBankAccountingPending.size > 0 ||
+      this.presenceSavePending > 0
+    )
+      return true;
+    const original = this.stoppedTimeBankCustody;
+    if (original && this.stoppedTimeBankDurableReceipt?.capture === original) return false;
+    if (!original)
+      return (
+        this.timeBankMeta.size > 0 ||
+        Object.keys(this.parkedTimeBanks).length > 0 ||
+        this.timeBankEngine.hasPlayerBanksForTable(this.tableId)
+      );
+    if (Object.keys(original.banks).length === 0) return false;
+    return (
+      this.acknowledgedTimeBankPark?.handNumber !== original.handNumber ||
+      this.acknowledgedTimeBankPark.banks !== this.timeBankCustodyFingerprint(original.banks)
+    );
+  }
+
+  /** Called only inside the owning manager CAS after exact durable receipt validation. */
+  prepareStoppedTimeBankReceipt(
+    transferId: string,
+    tableId: string,
+    tournamentId: string,
+    generation: string,
+    originalProof: unknown
+  ): (() => void) | null {
+    if (!this.hasUnretiredStoppedTimeBankCustody()) return () => undefined;
+    const capture = this.stoppedTimeBankCustody;
+    const physical = this.captureDrainedF06Identity(tableId, tournamentId, generation);
+    if (
+      !capture ||
+      !transferId ||
+      !physical?.bank_custody.stopped_capture ||
+      custodyJSON(physical.bank_custody.stopped_capture) !== custodyJSON(originalProof)
+    )
+      return null;
+    return () => {
+      if (this.stoppedTimeBankCustody !== capture) throw new Error('Stopped bank custody changed');
+      this.stoppedTimeBankDurableReceipt = Object.freeze({ transferId, capture });
+    };
+  }
+
+  /** Synchronous, called only inside the owning map's replacement CAS. The
+   * actual original object supplies balances; metadata never supplies defaults. */
+  adoptStoppedTimeBankCustody(original: ServerTableEngineBase): boolean {
+    const custody = original.stoppedTimeBankCustody;
+    if (!custody) return !original.hasUnretiredStoppedTimeBankCustody();
+    if (
+      original.stoppedTimeBankCustodyTransferred ||
+      !original.terminalTeardownComplete ||
+      !original.hasReleasedProcessOwnership() ||
+      original.timeBankAccountingUnconfirmed ||
+      original.timeBankAccountingPending.size > 0 ||
+      original.presenceSavePending > 0 ||
+      original.hasUnresolvedF06Preparation() ||
+      original.hasClaimedTournamentMoveBoundary() ||
+      this.running ||
+      this.terminal ||
+      this.inheritedStoppedTimeBankCustody ||
+      this.timeBankMeta.size > 0 ||
+      this.timeBankEngine.hasPlayerBanksForTable(this.tableId) ||
+      Object.keys(this.parkedTimeBanks).length > 0 ||
+      this.tableId !== original.tableId ||
+      this.engineLeaseScope !== original.engineLeaseScope ||
+      this.engineLeaseGeneration !== original.engineLeaseGeneration ||
+      this.engineLeaseTournamentId !== original.engineLeaseTournamentId ||
+      (this.tableInfo !== null &&
+        this.tableInfo.tournament_id !== original.tableInfo?.tournament_id) ||
+      !this.engineLeaseAuthorityIsCurrent()
+    )
+      return false;
+    this.inheritedStoppedTimeBankCustody = custody;
+    this.parkedTimeBanks = structuredClone(custody.banks);
+    this.handCount = custody.handNumber;
+    original.stoppedTimeBankCustodyTransferred = true;
+    return true;
+  }
+
+  /** Only the existing confirmed-terminal table cleanup caller may end a
+   * table session. An unknown debit remains held even when the game ended. */
+  retireStoppedTimeBanksForClosedSession(): boolean {
+    if (!this.hasUnretiredStoppedTimeBankCustody()) return true;
+    if (
+      !this.terminalTeardownComplete ||
+      !this.stoppedTimeBankCustody ||
+      this.timeBankAccountingUnconfirmed ||
+      this.timeBankAccountingPending.size > 0 ||
+      this.presenceSavePending > 0
+    )
+      return false;
+    this.stoppedTimeBankCustodyTransferred = true;
+    return true;
   }
 
   /** Existing restart gate must not discard initialized banks before their park write. */
@@ -5816,8 +6049,9 @@ export abstract class ServerTableEngineBase {
           throw new Error('Time bank accounting outcome is unconfirmed');
         }
       }
-      const states = this.disconnectEngine.getFsmStatesForTable(this.tableId);
+      const states = this.captureRetainedPresence();
       const timeBanks = when === 'parked' ? this.captureParkedTimeBanks() : undefined;
+      const bankHandNumber = this.handCount;
       if (Object.keys(states).length === 0 && !Object.keys(timeBanks ?? {}).length) {
         // captureParkedTimeBanks refuses an initialized but unrestorable bank.
         // Only a genuinely empty checkpoint can be complete without a write.
@@ -5829,7 +6063,7 @@ export abstract class ServerTableEngineBase {
           tableId: this.tableId,
           disconnectStates: states,
           engineInstance: `${INSTANCE_ID}:${when}`,
-          handNumber: this.handCount,
+          handNumber: bankHandNumber,
           timeBanks,
         });
       let saved = await write();
@@ -5846,8 +6080,15 @@ export abstract class ServerTableEngineBase {
         if (this.maintenancePaused && generation === this.maintenanceCheckpointGeneration)
           saved = await write();
       }
-      if (when === 'parked' && generation === this.maintenanceCheckpointGeneration)
+      if (when === 'parked' && generation === this.maintenanceCheckpointGeneration) {
         this.parkedBankSaveComplete = saved;
+        this.acknowledgedTimeBankPark = saved
+          ? {
+              handNumber: bankHandNumber,
+              banks: this.timeBankCustodyFingerprint(timeBanks ?? {}),
+            }
+          : null;
+      }
     } catch (err) {
       reportError(err, 'ServerTableEngine.' + this.tableId + '.presence_persist');
     } finally {

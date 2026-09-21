@@ -49,6 +49,12 @@ vi.mock('../services/supabase.js', async () => ({
 }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 import { ServerTableEngine } from './ServerTableEngine.js';
+import { GameServer } from '../GameServer.js';
+import { TournamentRetirementCustody } from '../services/TournamentRetirementCustody.js';
+import {
+  replaceOwnedTableEngine,
+  unregisterOwnedTournamentTableEngine,
+} from '../tournament/TournamentManagerOwnership.js';
 import { loadPresenceFromPark, loadTimeBanksFromPark } from '../services/supabase/snapshots.js';
 const table = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const user = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -649,5 +655,230 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
     await expect(next.readParkedTimeBanks()).rejects.toThrow('unavailable');
     next.adoptSeatRoster(next.seatedPlayers);
     expect(next.timeBankEngine.getPlayerBank(table, user)).toBeNull();
+  });
+});
+
+describe('stopped tournament bank custody', () => {
+  function stoppedCandidate() {
+    const e = engine();
+    e.tableInfo.tournament_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    e.flushSnapshot = vi.fn().mockResolvedValue(undefined);
+    e.timeBankEngine.initializePlayer(table, user, {
+      remainingSeconds: 7,
+      usesRemaining: 1,
+      unlimitedActivations: true,
+    });
+    e.timeBankMeta.set(user, {
+      initialSeconds: 80,
+      baseSeconds: 40,
+      dbConsumedSeconds: 33,
+      unlimitedActivations: true,
+    });
+    return e;
+  }
+
+  it('retains actual stopped banks and transfers them only inside the replacement identity CAS', async () => {
+    const original = stoppedCandidate();
+    original.disconnectEngine.restoreFsmStates(table, {
+      [user]: { state: 'SAT_OUT', sinceMs: Date.now() - 30000, graceDeadlineMs: null },
+    });
+    const capturedPresence = original.disconnectEngine.getFsmStatesForTable(table);
+    const replacement = engine();
+    replacement.tableInfo.tournament_id = original.tableInfo.tournament_id;
+    const originals = new Map([[table, original]]);
+    const owned = new Set([table]);
+    await original.stop();
+    expect(original.captureParkedTimeBanks()[user]).toEqual({
+      occupancyId: stay,
+      remainingSeconds: 7,
+      usesRemaining: 1,
+      initialSeconds: 80,
+      baseSeconds: 40,
+      dbConsumedSeconds: 33,
+      unlimitedActivations: true,
+    });
+    expect(original.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+    expect(unregisterOwnedTournamentTableEngine(originals, owned, table, original)).toBe(false);
+    expect(originals.get(table)).toBe(original);
+    const owner = Object.assign(Object.create(GameServer.prototype), {
+      running: true,
+      tableEngines: originals,
+      tournamentOwnedTables: owned,
+      tournamentRetirementCustody: new TournamentRetirementCustody(),
+      maintenanceBreak: { adopt: vi.fn() },
+    });
+    expect(await owner.replaceTableEngine(table, original, replacement)).toBe(true);
+    expect(originals.get(table)).toBe(replacement);
+    await replacement.readParkedTimeBanks();
+    replacement.adoptSeatRoster([{ user_id: user, occupancy_id: stay, seat_number: 2, stack: 25 }]);
+    expect(replacement.timeBankEngine.getPlayerBank(table, user)).toMatchObject({
+      remainingSeconds: 7,
+      usesRemaining: 1,
+      unlimitedActivations: true,
+    });
+    expect(replacement.disconnectEngine.getFsmStatesForTable(table)).toEqual(capturedPresence);
+    await replacement.stop();
+    expect(replacement.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+  });
+
+  it('retains actual inherited presence through re-park and another stop before the first roster', async () => {
+    const original = stoppedCandidate();
+    original.disconnectEngine.restoreFsmStates(table, {
+      [user]: { state: 'SAT_OUT', sinceMs: Date.now() - 30000, graceDeadlineMs: null },
+    });
+    const states = original.disconnectEngine.getFsmStatesForTable(table);
+    await original.stop();
+    const next = engine();
+    next.tableInfo.tournament_id = original.tableInfo.tournament_id;
+    next.seatedPlayers = [];
+    expect(next.adoptStoppedTimeBankCustody(original)).toBe(true);
+    await next.persistPresenceForRestart('parked');
+    expect(data.row.disconnect_states).toEqual(states);
+    expect(data.row.time_bank_snapshot.players[user].remainingSeconds).toBe(7);
+    await next.stop();
+    const final = engine();
+    final.tableInfo.tournament_id = original.tableInfo.tournament_id;
+    expect(final.adoptStoppedTimeBankCustody(next)).toBe(true);
+    final.adoptSeatRoster([{ user_id: user, occupancy_id: stay, seat_number: 2, stack: 25 }]);
+    expect(final.disconnectEngine.getFsmStatesForTable(table)).toEqual(states);
+    expect(final.timeBankEngine.getPlayerBank(table, user)?.remainingSeconds).toBe(7);
+    await final.stop();
+  });
+
+  it('does not apply inherited presence to a replacement occupancy', async () => {
+    const original = stoppedCandidate();
+    original.disconnectEngine.restoreFsmStates(table, {
+      [user]: { state: 'SAT_OUT', sinceMs: Date.now() - 30000, graceDeadlineMs: null },
+    });
+    await original.stop();
+    const next = engine();
+    next.tableInfo.tournament_id = original.tableInfo.tournament_id;
+    expect(next.adoptStoppedTimeBankCustody(original)).toBe(true);
+    next.adoptSeatRoster([{ user_id: user, occupancy_id: 'new-stay', seat_number: 2, stack: 25 }]);
+    expect(next.disconnectEngine.getFsmStatesForTable(table)).toEqual({});
+    expect(next.timeBankEngine.getPlayerBank(table, user)).toBeNull();
+    await next.stop();
+  });
+
+  it('joins a bank debit before capture and retains unknown outcomes without replay', async () => {
+    const original = stoppedCandidate();
+    original.timeBankEngine.initializePlayer(table, user, {
+      remainingSeconds: 30,
+      usesRemaining: 2,
+      unlimitedActivations: false,
+    });
+    original.timeBankMeta.set(user, { initialSeconds: 80, baseSeconds: 40, dbConsumedSeconds: 10 });
+    original.timeBankEngine.configure(table, { secondsPerUse: 20 });
+    let finish!: (value: any) => void;
+    data.rpc.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    expect(original.timeBankEngine.activate(table, user, () => undefined)).toBe(true);
+    const stopping = original.stop();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(original.timeBankEngine.getPlayerBank(table, user)).not.toBeNull();
+    expect(data.rpc).toHaveBeenCalledOnce();
+    finish({ data: null, error: new Error('response lost') });
+    await stopping;
+    expect(original.captureParkedTimeBanks()[user]).toMatchObject({
+      remainingSeconds: 10,
+      usesRemaining: 1,
+    });
+    expect(original.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+    const next = engine();
+    next.tableInfo.tournament_id = original.tableInfo.tournament_id;
+    expect(next.adoptStoppedTimeBankCustody(original)).toBe(false);
+    expect(original.retireStoppedTimeBanksForClosedSession()).toBe(false);
+    await original.stop();
+    expect(data.rpc).toHaveBeenCalledOnce();
+  });
+
+  it('refuses incomplete capture without disposing the original value', async () => {
+    const original = stoppedCandidate();
+    original.timeBankMeta.delete(user);
+    await expect(original.stop()).rejects.toThrow('teardown failed');
+    expect(original.timeBankEngine.getPlayerBank(table, user)).toMatchObject({
+      remainingSeconds: 7,
+    });
+    expect(original.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+  });
+
+  it('cannot transfer banks after another generation wins the map race', async () => {
+    const original = stoppedCandidate();
+    let finish!: () => void;
+    original.flushSnapshot = () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    const next = engine();
+    const winner = engine();
+    next.tableInfo.tournament_id = original.tableInfo.tournament_id;
+    const originals = new Map([[table, original]]);
+    const adopting = vi.fn(() => next.adoptStoppedTimeBankCustody(original));
+    const replacing = replaceOwnedTableEngine(
+      originals,
+      new Set([table]),
+      table,
+      original,
+      next,
+      () => true,
+      adopting
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    originals.set(table, winner);
+    finish();
+    expect(await replacing).toBe(false);
+    expect(adopting).not.toHaveBeenCalled();
+    expect(original.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+    expect(next.captureParkedTimeBanks()).toEqual({});
+  });
+
+  it.each(['refused', 'lost_reply'])(
+    'retains an unacknowledged native park (%s)',
+    async (outcome) => {
+      const original = stoppedCandidate();
+      data.writeError = new Error(outcome);
+      if (outcome === 'lost_reply')
+        data.beforeWrite = async () => {
+          data.row = {
+            time_bank_snapshot: {
+              version: 1,
+              handNumber: 12,
+              players: structuredClone(original.captureParkedTimeBanks()),
+            },
+          };
+        };
+      await original.persistPresenceForRestart('parked');
+      await original.stop();
+      expect(original.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+      expect(original.isMaintenanceStateDurable()).toBe(false);
+    }
+  );
+
+  it('allows a matching acknowledged park but never an older bank value', async () => {
+    const original = stoppedCandidate();
+    await original.persistPresenceForRestart('parked');
+    await original.stop();
+    expect(original.hasUnretiredStoppedTimeBankCustody()).toBe(false);
+    const changed = stoppedCandidate();
+    await changed.persistPresenceForRestart('parked');
+    changed.timeBankEngine.getPlayerBank(table, user).remainingSeconds = 6;
+    await changed.stop();
+    expect(changed.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+  });
+
+  it('ends a fully captured session only through the existing confirmed-terminal cleanup', async () => {
+    const original = stoppedCandidate();
+    await original.stop();
+    const owner = Object.assign(Object.create(GameServer.prototype), {
+      tableEngines: new Map([[table, original]]),
+      tournamentOwnedTables: new Set([table]),
+    });
+    expect(owner.unregisterTournamentTableEngine(table, original)).toBe(false);
+    expect(owner.unregisterTableEngine(table, original)).toBe(true);
+    expect(owner.tableEngines.has(table)).toBe(false);
   });
 });

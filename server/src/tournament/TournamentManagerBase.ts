@@ -1419,7 +1419,7 @@ export abstract class TournamentManagerBase {
     }
     if (!this.lifecycleIsCurrent(lifecycle) || this.tableEngines.get(tableId) !== engine) return;
 
-    if (deferReadmission) {
+    if (deferReadmission && !engine.hasUnretiredStoppedTimeBankCustody()) {
       if (!this.gameServer.unregisterTournamentTableEngine(tableId, engine)) {
         const ownershipError = new Error(
           `Tournament ${this.tournamentId} lost table ${tableId} while retiring a failed engine start`
@@ -5905,6 +5905,10 @@ export abstract class TournamentManagerBase {
       for (let i = 0; i < engines.length; i++) {
         const [tableId, engine] = engines[i];
         const result = stopResults[i];
+        if (engine.hasUnretiredStoppedTimeBankCustody?.()) {
+          stopFailures.push(new Error(`Tournament table ${tableId} retained time-bank custody`));
+          continue;
+        }
         if (result.status === 'rejected') {
           if (!engine.hasReleasedProcessOwnership()) {
             stopFailures.push(result.reason);
@@ -5932,6 +5936,8 @@ export abstract class TournamentManagerBase {
       // Release both registries only after every accepted move has a verified
       // receipt. A failed shutdown remains the owner and keeps its DB lease.
       for (const [tableId, engine] of engines) {
+        if (engine.hasUnretiredStoppedTimeBankCustody?.())
+          throw new Error(`Tournament table ${tableId} retained time-bank custody`);
         this.gameServer.unregisterTournamentTableEngine(tableId, engine);
         if (this.tableEngines.get(tableId) === engine) this.tableEngines.delete(tableId);
       }
@@ -5995,6 +6001,7 @@ export abstract class TournamentManagerBase {
       for (let index = 0; index < enginesAtCall.length; index++) {
         const [tableId, engine] = enginesAtCall[index];
         const result = results[index];
+        if (engine.hasUnretiredStoppedTimeBankCustody?.()) throw error;
         const ownershipReleased =
           typeof engine.hasReleasedProcessOwnership !== 'function' ||
           engine.hasReleasedProcessOwnership();

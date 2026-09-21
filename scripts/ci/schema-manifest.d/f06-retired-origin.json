@@ -1,0 +1,15 @@
+{
+  "_owner": "mtt-retired-origin-20260919",
+  "_comment": "Exact stopped original owner evidence after native lease-row loss; no lease reconstruction.",
+  "functions": [
+    "fn_f06_attest_retired_manager_origin",
+    "smarter_private.f06_retired_origin_cohort",
+    "smarter_private.f06_retired_origin_lock",
+    "smarter_private.f06_retired_origin_begin",
+    "smarter_private.f06_retired_origin_snapshot",
+    "smarter_private.f06_retired_origin_disposition",
+    "smarter_private.f06_retired_origin_transfer",
+    "smarter_private.f06_retired_origin_claim_guard"
+  ],
+  "tables": ["smarter_private.f06_retired_manager_origins"]
+}

@@ -28,6 +28,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     retained8825 ||
     release === '758610f3f844406bbbaee2f5100ced36d84fb943' ||
     release === 'a0ab287d902879280f0c915e44f5222c5db4d7df';
+  // Fixed historical-loss disposition. It never asserts a native old bank.
+  const historicalBankLoss = {"5a387a75-754a-416e-8fee-b85b15fc2702":{"kind":"historical_loss_normal_session_v1","receipt_id":"7d0f56e9-10ce-4c2f-b337-101b75924257","generation":"66291622-e7d1-4816-8c33-26ff1f092446","bank_witness_sha256":"31d0faaf9c8513f306160f0b7729d6e19dd8284677506d926805dbf9cb801af3","occupants":[{"table_id":"09f5e9eb-df66-4e55-a3c8-4385d27631e2","seat_id":"5cff5b9c-d48d-4391-8ec9-7cae469f57fe","occupancy_id":"164f4293-d57e-42c6-bbad-242f3d11e1cd","joined_at":"2026-09-17T17:06:16.817557+00:00","user_id":"046718c5-474f-4108-a15c-c3a1ce1f8d61","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"2c621856-e728-4e8b-bf08-4c56746a8649","seat_id":"df3e8f01-27ab-4973-bb90-792f82fac562","occupancy_id":"093709bf-995f-4848-bdda-da4f254a0cc9","joined_at":"2026-09-18T22:09:41.227524+00:00","user_id":"23e84589-611a-44ea-99e1-c51ae7ada6c5","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"2c621856-e728-4e8b-bf08-4c56746a8649","seat_id":"f6564dc7-d0ec-46f9-be3d-0ededac28fe3","occupancy_id":"f959c4dc-7b3d-4135-b160-c2fb11014196","joined_at":"2026-09-17T17:06:50.374103+00:00","user_id":"c1b575fb-3efd-43b6-b314-353e1d300aaa","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"49a444ac-553a-4f44-a36f-92781d10a646","seat_id":"7bbe071c-6253-4d65-bb87-8ce8103b1ce0","occupancy_id":"358500d2-527c-4026-81d4-fc8c908b9272","joined_at":"2026-09-17T17:07:48.373927+00:00","user_id":"a23ca5c9-b748-482f-9b59-9db35f7aa996","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"623b526d-0901-4c59-aec5-f8e459af7a6c","seat_id":"96e5f8fa-c883-4107-b469-4d89eb050eb0","occupancy_id":"d767fa91-e33b-446f-8867-30eaab0c2990","joined_at":"2026-09-17T17:08:04.809856+00:00","user_id":"00000000-0000-0000-0000-000000000038","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"6d8512e3-899d-442b-8d6c-7c57a5f4a1f1","seat_id":"933d6d7b-7d2e-455b-84f5-59432760ed9b","occupancy_id":"daf13850-0e47-4dfd-adc0-da5ac09f12dc","joined_at":"2026-09-17T17:07:31.133198+00:00","user_id":"302ba66b-3b1e-4747-9458-84695c70f396","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"815d35dd-a6d5-4469-b0aa-e386cc2145b9","seat_id":"1be3101b-5c33-4561-b64e-138d80609519","occupancy_id":"31c012fd-4f6e-4386-a62a-e44e1ad878a7","joined_at":"2026-09-17T21:38:20.734335+00:00","user_id":"c82e74af-4101-49b0-bd0f-93755f7bb13b","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9bf11d84-684d-4069-916c-c7b5bb397d21","seat_id":"f2169a73-3148-4f14-b438-4fe6e5b40a0c","occupancy_id":"76c77980-c9b3-41ad-9200-896435d29e5c","joined_at":"2026-09-17T23:26:34.171939+00:00","user_id":"92ecbaed-bdec-49ae-96db-90e3d61a8f7b","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"dbd8b7ea-1a99-494f-b564-f86d412dc764","seat_id":"a87d1719-c2e1-4142-98e9-0b246ed249c0","occupancy_id":"c322a02b-5d56-4c0a-adab-8c00cda69381","joined_at":"2026-09-18T22:08:29.04283+00:00","user_id":"00000000-0000-0000-0000-000000000023","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"dbd8b7ea-1a99-494f-b564-f86d412dc764","seat_id":"c8296047-8c8b-458b-8695-e3990e920edb","occupancy_id":"0ebe3f87-4988-45b6-a5a4-b026326bb608","joined_at":"2026-09-18T22:06:46.596949+00:00","user_id":"38563ca3-66a9-40bb-8053-7a698887ec93","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"fcbbd2ea-6fc2-47df-8b61-b9997fcd7b16","seat_id":"4276abea-759f-48e6-ac59-c8a41e8d78b7","occupancy_id":"a94b8085-95f2-4e11-8f62-18d95ba47cb2","joined_at":"2026-09-18T22:10:08.554647+00:00","user_id":"c7a783ee-ac19-4a86-8e26-422666281805","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"fcbbd2ea-6fc2-47df-8b61-b9997fcd7b16","seat_id":"e8ef0440-81c7-4d6d-8c25-d9e1951456c1","occupancy_id":"78e9cbed-1128-439e-8336-349b19237c1a","joined_at":"2026-09-18T19:34:43.230547+00:00","user_id":"cb50fee0-a87b-4ac8-a6fe-8e665c5ddd8c","last_durable_seconds":40,"last_durable_uses":2}],"pending_arrivals":[{"kind":"pending_arrival_historical_loss_v1","table_id":"66b1cb1d-5056-41c1-a951-1bd078f8276f","lifecycle":283892,"seat_id":"093766ff-7108-4a69-a36f-189039af1a93","user_id":"6688345d-e7be-49bd-a318-4ee1e6b10253","occupancy_id":"f45e6d45-f041-4318-bd78-e5e066a77e17","joined_at":"2026-09-17T17:07:20.624929+00:00","seat_number":4,"stack":45000,"break_id":"3ebe59ce-4a7c-4290-960f-2843d7aebd71","origin_generation":"14e79c70-5590-47a4-bb9e-928bb8bd123a","request_id":"48b9a0f7-e40e-4163-845e-1a5244a2dac2","predecessor":"04a81643-7124-41e9-9a76-6111e627c288","amendment_id":"770b2444-2b8d-4f66-8138-d76adeed833f","destination_table_id":"09f5e9eb-df66-4e55-a3c8-4385d27631e2","destination_seat_number":2,"atomic_hand_id":"e18787c7-10a9-4435-85f3-31eaf95526d0","hand_number":12114088,"last_durable_seconds":40,"last_durable_uses":2,"payload_hash":"0af5bc2c83acb25b7c36054b30f6bd0a9af3db6c6bbbc8da8f45a415c29f430b","post_commit_request_hash":"b297208a812da14e5791a8fc5a45ee34b7235fd7acf1fb1e9366bbb3f1d1ebf8","post_commit_payload_hash":"8469adc20e2069d06dde4f35624461f88aa829cde49773ab8ee58791c94329ba","stack_hand_id":"911ceac9-72ab-68bb-405a-82f0e523fc1a","settlement_id":"8b4e4676-e9b2-44c1-8c35-8aa87be96308"}]},"615783bf-15e3-40b7-9368-75f21b6ac53b":{"kind":"historical_loss_normal_session_v1","receipt_id":"16268739-c7c3-4d38-8a8f-e8f08ac0591b","generation":"b3d06bad-c464-4be8-9e1b-66f7191375ff","bank_witness_sha256":"31d0faaf9c8513f306160f0b7729d6e19dd8284677506d926805dbf9cb801af3","occupants":[{"table_id":"383aa2c7-79f1-4937-9d7e-8c49126fce8b","seat_id":"19e141a8-bbc4-4864-a1e7-d5e46a66723c","occupancy_id":"61f4d574-eed6-4487-a4c8-a771ca326eb2","joined_at":"2026-09-17T22:06:23.33465+00:00","user_id":"46887b99-8cd6-45db-861c-ad24232efbfe","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"5973d7f6-5a52-4d78-aa92-cba86e19d4ea","seat_id":"e52388d6-d007-4e31-bafe-aefbe3bf3e40","occupancy_id":"f7056064-b637-47a1-8386-1da512a7d1f0","joined_at":"2026-09-17T22:06:22.513736+00:00","user_id":"374d0e7a-aef5-4d09-a2f2-5d4a18568d97","last_durable_seconds":20,"last_durable_uses":1},{"table_id":"737b1a84-da46-459c-b0e3-bba5b23171c0","seat_id":"0180cd98-024b-4406-8529-2ef52fc3c217","occupancy_id":"a08137de-c7b2-4268-b3ca-7f1720bca0a5","joined_at":"2026-09-17T22:06:36.220363+00:00","user_id":"1d81eaa9-42bc-4815-9616-01ad6e6d5800","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9e18dc43-a81a-4a4f-a360-4f624c60699b","seat_id":"4a597dfc-98a2-4503-9913-c10f9349aa33","occupancy_id":"0eba0337-1825-4969-95ca-ff2260319e5a","joined_at":"2026-09-17T22:06:38.780641+00:00","user_id":"3a94c68d-2dd2-40b0-afea-96a238b505f2","last_durable_seconds":20,"last_durable_uses":1},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"0d1d3c90-5b3d-4f48-9b45-6e4881a4d359","occupancy_id":"a0f25a76-732c-42d5-ab0c-f96d404428dc","joined_at":"2026-09-18T19:48:57.356759+00:00","user_id":"44f1ff92-b5de-44c5-9f7b-319318ff2a74","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"fd4646b0-d531-424c-85ac-f34baae5ac90","occupancy_id":"9eab6eee-7abb-404a-8b22-2747896c3123","joined_at":"2026-09-18T22:12:31.939388+00:00","user_id":"ae0bc48d-f98c-4b25-a9fa-e3522f986173","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"a77f5c0e-36c2-4d5e-9078-32350e36652c","occupancy_id":"292af3a4-995f-4fc9-8852-55d340cdddbe","joined_at":"2026-09-18T22:12:19.599699+00:00","user_id":"c49b2414-97ff-461c-8c20-3c05fe09809b","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"17f5edbc-6f65-4a92-87d9-994096f38a3a","occupancy_id":"af606bd2-8d9d-4692-8e61-ed3b2f1b8bf1","joined_at":"2026-09-18T22:10:36.076555+00:00","user_id":"cb35cc6f-3150-48ce-b7dc-887b6aca8327","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"535d19b3-b732-4d32-b614-f0f4bca07965","occupancy_id":"f137a187-d1c6-41ec-bbe1-8518e702a5ca","joined_at":"2026-09-18T22:10:36.511105+00:00","user_id":"f8c8eb13-14a0-4478-8771-7d29e71036ca","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9fdd5393-6fd9-4497-85b2-f98b89cf168d","seat_id":"f24cd458-be8d-43a6-9375-926524072f5f","occupancy_id":"dcc84998-a924-4bd7-89f0-f9359caba8d1","joined_at":"2026-09-17T22:07:06.763072+00:00","user_id":"f740e628-9097-47cf-91fc-95bbee245792","last_durable_seconds":120,"last_durable_uses":6},{"table_id":"d6199e5e-7c40-4560-afd9-f1a135031097","seat_id":"afb40353-6310-4f3e-8275-754bc26439e5","occupancy_id":"14955bd2-a8e9-4425-8b15-cb9829f48d11","joined_at":"2026-09-17T22:07:07.255289+00:00","user_id":"fdf075f5-e450-4099-a043-691377b0ae64","last_durable_seconds":20,"last_durable_uses":1}],"pending_arrivals":[]}};
   const reserveMs = 285000;
   // Refusal ceilings, not truncation or latency promises. The observed fleet has
   // 1379 tables, so the ordinary PostgREST 1000-row cap cannot bound the fleet.
@@ -431,6 +433,84 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       ];
       const engineMaps = ['tournamentMoveOperationByOwner', 'entryHoldWriteChains'];
       const serialFields = ['presenceSave', 'seatBoundaryTail', 'teardownPromise'];
+      // Inspect every supported engine-holding manager map, not a selected
+      // diagnostic response. Unknown map shape refuses this separate source.
+      const absentPendingSource = (tableId) => {
+        require(!tableMap.has(tableId) && !ownedTables.has(tableId) &&
+          !retirement.held.has(tableId) && !retirement.pending.has(tableId) &&
+          !retirement.active.has(tableId), 'mixed_pending_source_present');
+        for (const key of ['tableEngineStartPromises', 'directTableAdmissionOperations', 'directTableRecoveryTimers',
+          'directTableAdmissionLeaseGenerations', 'directTablePendingLeaseReleases']) {
+          require(server[key] instanceof Map && !server[key].has(tableId), 'mixed_pending_source_admission_unknown');
+        }
+        const managers = [];
+        require(managerMap.size <= maxTables, 'mixed_pending_source_maps_unknown');
+        require(server.tournamentDiagnosticRetirements instanceof Map, 'mixed_pending_source_maps_unknown');
+        const owners = new Map([...managerMap].map(([id, manager]) => [manager, id]));
+        for (const [id, retired] of server.tournamentDiagnosticRetirements) {
+          require(retired instanceof Set && retired.size <= maxTables, 'mixed_pending_source_maps_unknown');
+          for (const manager of retired) owners.set(manager, id);
+        }
+        const packetOwner = (packet) => {
+          require(record(packet) && packet.manager instanceof modules.managerBase.TournamentManagerBase &&
+            Array.isArray(packet.engines) && packet.engines.length <= maxTables, 'mixed_pending_source_maps_unknown');
+          for (const pair of packet.engines) {
+            require(Array.isArray(pair) && pair.length === 2 && pair[1] instanceof modules.base.ServerTableEngineBase,
+              'mixed_pending_source_maps_unknown');
+            require(pair[0] !== tableId && pair[1].tableId !== tableId, 'mixed_pending_source_present');
+          }
+          owners.set(packet.manager, packet.tournamentId);
+        };
+        require(server.drainedF06TournamentCustody instanceof Map && server.completedF06TournamentCustody instanceof Map &&
+          server.drainedF06TournamentCustody.size <= maxTables && server.completedF06TournamentCustody.size <= maxTables,
+          'mixed_pending_source_maps_unknown');
+        for (const packet of server.drainedF06TournamentCustody.values()) packetOwner(packet);
+        for (const packets of server.completedF06TournamentCustody.values()) {
+          require(packets instanceof Set && packets.size <= maxTables, 'mixed_pending_source_maps_unknown');
+          for (const packet of packets) packetOwner(packet.original);
+        }
+        require(owners.size <= maxTables, 'mixed_pending_source_maps_unknown');
+        for (const [owner, tournamentId] of owners) {
+          require(owner instanceof modules.managerBase.TournamentManagerBase &&
+            uuid(owner.managerLifecycleDiagnostics?.instanceId), 'mixed_pending_source_maps_unknown');
+          for (const key of ['tableEngines', 'stoppedDiagnosticOriginals', 'satelliteQualifierEngines', 'retainedTournamentBreakSources', 'pendingNoStartContinuations',
+            'stoppedOriginalBreaks', 'tournamentBreakArrivalWakes']) {
+            const map = owner[key];
+            require(map instanceof Map && map.size <= maxTables, 'mixed_pending_source_maps_unknown');
+            for (const [id, value] of map) {
+              require(uuid(id), 'mixed_pending_source_maps_unknown');
+              require(id !== tableId, 'mixed_pending_source_present');
+              const checkEngine = (engine) => {
+                require(engine instanceof modules.base.ServerTableEngineBase && uuid(engine.tableId), 'mixed_pending_source_maps_unknown');
+                require(engine.tableId !== tableId, 'mixed_pending_source_present');
+              };
+              if (key === 'tournamentBreakArrivalWakes') {
+                require(value instanceof Map && value.size <= maxTables, 'mixed_pending_source_maps_unknown');
+                for (const [request, engine] of value) { require(uuid(request), 'mixed_pending_source_maps_unknown'); checkEngine(engine); }
+              } else if (key === 'retainedTournamentBreakSources' || key === 'pendingNoStartContinuations') {
+                require(record(value), 'mixed_pending_source_maps_unknown'); checkEngine(value.engine);
+                if (key === 'pendingNoStartContinuations') require(record(value.binding) &&
+                  value.binding.tableId === value.engine.tableId, 'mixed_pending_source_maps_unknown');
+              } else checkEngine(value);
+            }
+          }
+          require(owner.drainedF06Originals === null || Array.isArray(owner.drainedF06Originals), 'mixed_pending_source_maps_unknown');
+          for (const pair of owner.drainedF06Originals ?? []) {
+            require(Array.isArray(pair) && pair.length === 2 && pair[1] instanceof modules.base.ServerTableEngineBase,
+              'mixed_pending_source_maps_unknown');
+            require(pair[0] !== tableId && pair[1].tableId !== tableId, 'mixed_pending_source_present');
+          }
+          require(owner.pendingTableBreakRetirement === null || (record(owner.pendingTableBreakRetirement) &&
+            owner.pendingTableBreakRetirement.engine instanceof modules.base.ServerTableEngineBase &&
+            owner.pendingTableBreakRetirement.tableId === owner.pendingTableBreakRetirement.engine.tableId), 'mixed_pending_source_maps_unknown');
+          require(owner.pendingTableBreakRetirement?.tableId !== tableId &&
+            owner.pendingTableBreakRetirement?.engine?.tableId !== tableId, 'mixed_pending_source_present');
+          managers.push({tournament_id: tournamentId, manager_id: owner.managerLifecycleDiagnostics.instanceId, absent: true});
+        }
+        return {kind: 'all_current_engine_maps_absent_v1', source: release, instance_id: options.expectedInstanceId,
+          table_id: tableId, global_absent: true, owned_absent: true, retirement_absent: true,
+          managers: managers.sort((a,b) => a.manager_id.localeCompare(b.manager_id))};
+      };
       const bankRows = new Map();
       const pending = [];
       for (const proposal of intent.custody) {
@@ -648,6 +728,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             permit:
               permit === null ? null : { binding: detached(permit.binding), phase: capture.phase },
             bank_custody: {
+              ...(historicalBankLoss[manager.tournamentId]?.generation === manager.tournamentLeaseGeneration
+                ? { historical_loss: Object.fromEntries(Object.entries(historicalBankLoss[manager.tournamentId]).filter(([key]) => !['occupants', 'pending_arrivals'].includes(key))) }
+                : {}),
               hand_number: engine.handCount,
               roster: engine.seatedPlayers.map((s) => [
                 s.user_id,
@@ -679,6 +762,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             break_ends_at: new Date(maintenanceFence.breakEndsAt).toISOString(),
             reason: maintenanceFence.reason,
           },
+          ...(historicalBankLoss[manager.tournamentId]?.generation === manager.tournamentLeaseGeneration
+            ? { historical_loss_pending_arrivals: historicalBankLoss[manager.tournamentId].pending_arrivals.map((original) => ({
+              original, absence: absentPendingSource(original.table_id), durable_presence: bankRows.get(original.table_id) ?? null,
+            })) } : {}),
           manager_id: manager.managerLifecycleDiagnostics.instanceId,
           move_owner: manager.tournamentMoveBoundaryOwner,
           engines: exactEngines.map(physical),
@@ -766,7 +853,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       );
       require(joined.every((v) => v.status === 'fulfilled'), 'mixed_original_stop_unconfirmed');
       checkMaintenance();
-      const ids = pending.flatMap((m) => m.exactEngines.map((e) => e.tableId));
+      const ids = pending.flatMap((m) => [...m.exactEngines.map((e) => e.tableId), ...(historicalBankLoss[m.manager.tournamentId]?.generation === m.manager.tournamentLeaseGeneration ? historicalBankLoss[m.manager.tournamentId].pending_arrivals.map((e) => e.table_id) : [])]);
       for (let offset = 0; offset < ids.length; offset += readPageSize) {
         const page = ids.slice(offset, offset + readPageSize);
         const { data, error } = await modules.client.supabase
@@ -795,7 +882,14 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           const snapshot = row?.time_bank_snapshot;
           const initialized =
             bank.time_bank_metadata.length + Object.keys(bank.parked_time_banks).length > 0;
-          if (initialized) {
+          // An exact named historical loss is validated by canonical preparation
+          // below, before any map retirement. Raw old fields remain unchanged.
+          if (bank.historical_loss) {
+            require(retained8825 &&
+              canonical(bank.historical_loss) === canonical(Object.fromEntries(
+                Object.entries(historicalBankLoss[capture.manager.tournamentId]).filter(([key]) => !['occupants', 'pending_arrivals'].includes(key))
+              )), 'mixed_historical_loss_scope_changed');
+          } else if (initialized) {
             require(record(row) &&
               row.table_id === item.table_id &&
               row.engine_instance === `${options.expectedInstanceId}:parked` &&
@@ -862,6 +956,49 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           observation.origin_generation === manager.tournamentLeaseGeneration &&
           observation.successor_generation ===
             proposal.successor_generation, 'mixed_original_receipt_missing');
+        const loss = historicalBankLoss[manager.tournamentId];
+        if (local.engines.some((e) => e.bank_custody.historical_loss)) {
+          require(loss?.generation === manager.tournamentLeaseGeneration &&
+            proof.historical_loss?.kind === 'historical_loss_normal_session_v1' &&
+            proof.historical_loss.original_receipt_id === loss.receipt_id &&
+            Array.isArray(proof.historical_loss.plans) &&
+            proof.historical_loss.plans.length === local.engines.length, 'mixed_historical_loss_unproven');
+          require(Array.isArray(proof.historical_loss.pending_arrivals) &&
+            proof.historical_loss.pending_arrivals.length === loss.pending_arrivals.length, 'mixed_historical_pending_unproven');
+          for (const original of loss.pending_arrivals) {
+            const entries = proof.historical_loss.pending_arrivals.filter((p) => p.source?.table_id === original.table_id);
+            require(entries.length === 1 && entries[0].proof?.historical_loss?.original_kind === 'pending_arrival_historical_loss_v1' &&
+              canonical(entries[0].proof.historical_loss.observations?.[0]?.original) === canonical(original), 'mixed_historical_pending_unproven');
+            const allowance = entries[0].proof.historical_loss.observations[0].allowance;
+            require(allowance.user_id === original.user_id && allowance.is_lifetime === true &&
+              allowance.is_vip === true && allowance.unlimited_activations === true && allowance.purchased_seconds === 0 &&
+              allowance.extra_seconds === 0 && allowance.vip_seconds_remaining === null, 'mixed_historical_pending_unproven');
+          }
+          const seen = new Set();
+          for (const plan of proof.historical_loss.plans) {
+            require(local.engines.some((e) => e.table_id === plan.table_id) && !seen.has(plan.table_id), 'mixed_historical_loss_unproven');
+            seen.add(plan.table_id);
+            const originals = loss.occupants.filter((e) => e.table_id === plan.table_id);
+            require(plan.disposition?.old_final_balance === 'unknown' &&
+              plan.disposition.old_debit_outcomes === 'retained_not_replayed' &&
+              plan.disposition.initialization === 'ordinary_lifetime_session' &&
+              Array.isArray(plan.disposition.observations) &&
+              plan.disposition.observations.length === originals.length &&
+              record(plan.normal_session) && Object.keys(plan.normal_session).length === originals.length,
+              'mixed_historical_loss_unproven');
+            for (const original of originals) {
+              const observations = plan.disposition.observations.filter((o) => canonical(o.original) === canonical(original));
+              require(observations.length === 1, 'mixed_historical_loss_unproven');
+              const allowance = observations[0].allowance;
+              require(allowance.user_id === original.user_id && allowance.is_vip === true &&
+                allowance.is_lifetime === true && allowance.unlimited_activations === true &&
+                allowance.vip_seconds_remaining === null && allowance.purchased_seconds === 0 && allowance.extra_seconds === 0 &&
+                canonical(plan.normal_session[original.user_id]) === canonical({occupancyId: original.occupancy_id,
+                  remainingSeconds: 40, usesRemaining: 2, initialSeconds: 40, baseSeconds: 40, dbConsumedSeconds: 0,
+                  unlimitedActivations: true}), 'mixed_historical_loss_allowance_unproven');
+            }
+          }
+        }
         // 8825 retains the original allocator epoch after an accepted hand clears
         // its local permit. Resolve only through the exact original custody rows,
         // never by copying a current table lifecycle into the stopped engine.

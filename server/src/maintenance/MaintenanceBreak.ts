@@ -130,6 +130,8 @@ export interface PausableTableEngine {
   isBetweenHands(): boolean;
   /** Positive original preparation disposition must survive process replacement. */
   hasUnresolvedF06Preparation?(): boolean;
+  /** Stopped originals still own actual banks until custody is confirmed. */
+  hasUnretiredStoppedTimeBankCustody?(): boolean;
   /** Initialized time banks have reached the durable park row. */
   isMaintenanceStateDurable?(): boolean;
   /**
@@ -1874,6 +1876,11 @@ export class MaintenanceBreak {
     }
     for (const [tableId, engine] of this.deps.engines()) {
       try {
+        if (engine.hasUnretiredStoppedTimeBankCustody?.()) {
+          out.push(tableId);
+          count('stopped_bank_custody_unconfirmed');
+          continue;
+        }
         if (engine.hasUnresolvedF06Preparation?.()) {
           seenUnresolved.add(tableId);
           const since = this.f06UnresolvedSince.get(tableId) ?? this.now();

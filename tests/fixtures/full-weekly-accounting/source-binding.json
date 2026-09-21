@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "2ba475d3ae45a4f8a50d8be839019d1356e8644fd71bb2bcb84803398565d92e",
+    "scripts/ci/classify-ci-changes.mjs": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "a886f1e701397caef5b0388070579c300a7f38172d225d781145edf1670dbb46",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "77c6743c00070baa33ec11bc8dd3d9ebc4ca1efa8401cc88c0b0a6bd0c4021e9",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -437,12 +437,12 @@
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
     "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
-    "tests/unit/fixtureNativeCi.test.ts": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57",
+    "tests/unit/fixtureNativeCi.test.ts": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "c1a2ec073d728dfb02a953e1e6952d9d3d2cea7665468e0306c12e1c955e160e",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "819819f141511ae978fb961f5a1c10e4a1a580348d588345e1f03dc06896f47e",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -482,7 +482,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "01be03c770510fbedf02ac005d679841538b61f0c44c4870dfea39e63afd2563",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "13c27ad79ba8b7f9b1b923a111bb173f03a2fdc5882ff5308adca230c56777a3",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
@@ -1503,6 +1503,67 @@
     "reason": "The classifier gained additive Diamond SQL acceptance routing: a change to any tests/sql/run-*diamond*.py runner, any tests/sql/poker-diamond-*.sql fixture, poker-arena-access.sql, the controlled-play driver, the session and transfer cap fixtures, any tests/sql/diamond-tournament-*.sql or tests/sql/diamond-tournament-*.manifest.json input the two tournament runners load, scripts/ci/run-diamond-sql-acceptance.py or scripts/ci/check-diamond-runners-listed.mjs now selects the PostgreSQL accounting job and its routing tests, so the fourteen Diamond money-door runners and the arena access script execute there instead of only by hand. The diamond-tournament-* inputs were added on 2026-09-20 with the tournament doors and tournament lifecycle runners that read them: they selected tests but not server, so the job that executes the runner could skip on a pull request that changed what it executes. No existing classification branch was removed or narrowed, and no accounting component, assertion, capture or fixture changed. The two nested financial bindings already retain the reviewed classifier bytes; refreshing them changes their own sha256, which this outer binding also pins, so the four hashes move together. The workflow pin moves for the same edit: the accounting job gained the list check, the acceptance step and its evidence upload, and nothing else. Every previous_sha256 here is the value on origin/main d0e04ed4fe, the revision this branch is merged up to.",
     "verification": "All fourteen runners and poker-arena-access.sql were executed on an isolated PostgreSQL 17 through scripts/ci/run-diamond-sql-acceptance.py against freshly created empty fixture databases, and each proved its own terminal line: 15 of 15 runs passed in 18.1 seconds, the eleven shared-cluster runners on the socket the wrapper builds and the three private-cluster runners each on a cluster it created and destroyed. The three new runners were also executed with PG_BIN set to a directory that does not exist on this machine, proving PG_BIN is honoured and that the fixed fallback in source resolves PostgreSQL 17 without a second environment variable. node scripts/ci/check-diamond-runners-listed.mjs reports 14 runners all run by CI and was proved to refuse an unlisted one; npx vitest run tests/unit/diamondAcceptanceCi.test.ts passes with 80 tests; python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py accepts the refreshed cash manifest in 6 cases. python3 scripts/ci/verify-source-bindings.py re-read every pin map in every source-binding.json in the merged tree: 745 pins across 15 sections in 15 binding files, the five refreshed here included, all agree. This refresh establishes no native financial execution and no production installation; the required hosted accounting job must still pass. Neither cash_games_enabled nor tournaments_enabled was touched, and no production object was read, created or changed."
   },
+  "mtt_historical_bank_loss_main_integration_20260920": {
+    "base_commit": "15477de6f1b155de78121a05b0441914596e2269",
+    "branch_commit": "680604c8e0",
+    "prior_binding_sha256": "0e90cf83c318fb95a866b5f34ef8a64c65ecad91da4a4e1ee4ec1283d065c3bf",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "2ba475d3ae45a4f8a50d8be839019d1356e8644fd71bb2bcb84803398565d92e",
+        "sha256": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
+        "pinned_in": "tests/fixtures/full-weekly-accounting/source-binding.json, tests/fixtures/legacy-fee-finality/source-binding.json, tests/fixtures/sep8-spin-custody/source-binding.json"
+      },
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous_sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57",
+        "sha256": "6c3ddda68247adb48a1dda8dda729787fdd86f2cc9101aadcec0035f2c555583",
+        "pinned_in": "tests/fixtures/full-weekly-accounting/source-binding.json, tests/fixtures/sep8-spin-custody/source-binding.json, tests/fixtures/earlybird-fee-custody/source-binding.json"
+      },
+      {
+        "path": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+        "previous_sha256": "fe075445bb89eef17d3d90031d20de772dc81975e53593072cf7112f7e8c0af1",
+        "sha256": "040fb897792bf51e466a79f3b2d86b3d79e1a126731f725ea30cde1f096c438d"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "8cd800ebf3c4823f239af6c1af4242d5ec966b5d0858eda6a671645403bbd17e",
+        "sha256": "83af00a9d3883edcfc7a7561eab21c53df8072bd62750aabb198e53a7b2af3fc"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "76dd59f9abdc3137b7d731e917a620fb49607121138ba94cbcd0de344e851887",
+        "sha256": "7619209291038a1f9b39244f1a6b1da2212a05370676e259ee5ded2a914c2279"
+      }
+    ],
+    "changed_qualification_manifest_pins": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_bytes": 22175,
+        "bytes": 22326,
+        "previous_sha256": "2ba475d3ae45a4f8a50d8be839019d1356e8644fd71bb2bcb84803398565d92e",
+        "sha256": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
+        "pinned_in": "scripts/qualification/cash-native-hosted.manifest.json"
+      },
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous_bytes": 88814,
+        "bytes": 89660,
+        "previous_sha256": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57",
+        "sha256": "6c3ddda68247adb48a1dda8dda729787fdd86f2cc9101aadcec0035f2c555583",
+        "pinned_in": "scripts/qualification/cash-native-hosted.manifest.json"
+      }
+    ],
+    "corrected_captured_fixture": {
+      "path": "README.md",
+      "section": "fixtures",
+      "previous_sha256": "aa75b2abd5e0a58be26d9a89e3500553549af487f6849c5df3f8d8098bc0c1f9",
+      "sha256": "bf85e5a6a9e760cab02342baecece42bdd89c5ce78542775254da4853118979c",
+      "note": "Not a refresh. The fixtures section resolves against tests/fixtures/full-weekly-accounting, so \"README.md\" is that directory's README, which has never changed from the merge base. This branch carried the sha256 of the REPOSITORY ROOT README.md, a wrong value produced by an earlier repo-root pin recompute; protected main already held the correct fixture-relative value and the merge restores it. The file itself is byte-identical on the merge base, on this branch and on protected main."
+    },
+    "reason": "Integration of protected main 15477de6 into the MTT historical-bank-loss branch. scripts/ci/classify-ci-changes.mjs is the union of main's additive Diamond replay/SQL-acceptance and e2e helpers/css directory routing and this branch's additive f06 retired-origin and stopped-bank-custody routing: both sides only added alternatives to the f06HandAuthority selector and to separate selectors, no branch was removed or narrowed, so the merged bytes are new and every pin of that file moves. tests/unit/fixtureNativeCi.test.ts merged to this branch's exact bytes because main's only change to it (the six mixed-custody classification paths from #4907) is already contained here, so its pins return to the value this branch was qualified at. The three nested fixture-binding hashes move only because the bindings that contain those two pins changed. No accounting component, SQL, assertion, captured catalog fixture or limit changed.",
+    "verification": "python3 scripts/ci/verify-source-bindings.py re-read every pin map in every source-binding.json in the merged tree and reports 745 pins across 15 sections in 15 binding files all agreeing. python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py accepts the refreshed cash manifest in 6 cases. Every *.manifest.json files{} map in scripts/qualification was re-hashed against the tree: 151 pins, none stale. This refresh establishes no native financial execution and no production installation; the required hosted accounting job must still pass."
+  },
   "club_settlement_floor_successor_20260920": {
     "migrations": [
       "supabase/migrations/20260920232503_club_settlement_floor_bounds_standalone_weekly_discovery.sql",
@@ -1528,6 +1589,34 @@
     ],
     "reason": "Standalone-club discovery in fn_process_weekly_accounting_scope carried no settlement floor, so the permanently uncertifiable week of 2026-09-07 re-entered the cursor on every tick and the head-of-line EXIT from 20260907164234 blocked every later week. 20260920232503 adds club_settlement_floor, fn_club_settlement_floor_week and the three GREATEST clamps by the exact-needle pg_get_functiondef successor pattern; 20260920232523 moves both floors to 2026-09-21 07:00Z and records the deferred rakeback. The union scope already respected its floor and is unchanged. The only change to scripts/dev/test-union-weekly-basis.py is four added run() steps that apply 20260920232503 on the exact installed base and then execute the new tests/fixtures/club-settlement-floor regression last, after every pre-existing assertion; tests/fixtures/union-weekly-basis/source-binding.json gains those four inputs and the ordinary JSON formatting the pre-commit hook applies. No captured catalog, component, SQL fixture or existing assertion changed.",
     "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py: 71 PASS, 0 failures, including club-settlement-floor-source, club-floor-clock-seam, club-floor-seed and club-floor-regression."
+  },
+  "mtt_spawn_contract_timeouts_20260920": {
+    "base_commit": "b36dc60552b243412d5aada4e27289845d98a83b",
+    "prior_binding_sha256": "(this binding; not pinned by any other file)",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous_sha256": "6c3ddda68247adb48a1dda8dda729787fdd86f2cc9101aadcec0035f2c555583",
+        "sha256": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9",
+        "previous_bytes": 89660,
+        "bytes": 90321,
+        "pinned_in": "tests/fixtures/full-weekly-accounting/source-binding.json, tests/fixtures/sep8-spin-custody/source-binding.json, tests/fixtures/earlybird-fee-custody/source-binding.json, scripts/qualification/cash-native-hosted.manifest.json"
+      },
+      {
+        "path": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+        "previous_sha256": "040fb897792bf51e466a79f3b2d86b3d79e1a126731f725ea30cde1f096c438d",
+        "sha256": "451e98c157280f28a6e1f5704ed1590133b2733acf87c311f10ca940603d4bb4",
+        "pinned_in": "tests/fixtures/full-weekly-accounting/source-binding.json"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "7619209291038a1f9b39244f1a6b1da2212a05370676e259ee5ded2a914c2279",
+        "sha256": "ae60506fbdd19a185776de2e951514f5b05a8a1fe22eac7f531f83836bf6e764",
+        "pinned_in": "tests/fixtures/full-weekly-accounting/source-binding.json"
+      }
+    ],
+    "reason": "Flake repair only; no accounting component, SQL, captured catalog, fixture, limit or assertion changed. The pre-push hook's 90-file root suite runs vitest at full width, and its spawnSync contract tests inherit vitest's 5000ms DEFAULT, which is a unit-test budget: their wall time scales with machine load, not with the code under test. tests/unit/fixtureNativeCi.test.ts is one of those suites, so its two describes gained an explicit { timeout: 90_000 } and nothing else. That edit moves its bytes, and this binding, the sep8 and earlybird bindings and the cash qualification manifest all pin those bytes; refreshing the two nested bindings changes their own sha256, which this outer binding also pins, so the three hashes move together. The two historical sha256 records for this file inside mtt_historical_bank_loss_main_integration_20260920 are NOT restamped: they record what that integration did and remain the bytes it qualified.",
+    "verification": "python3 scripts/ci/verify-source-bindings.py re-read every pin map in every source-binding.json in the merged tree: 749 pins across 15 sections in 15 binding files, the three refreshed here included, all agree. python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py accepts the refreshed cash manifest in 6 cases. The suite this file belongs to was executed: tests/unit/fixtureNativeCi.test.ts passes 589 tests, and the full 90-file root suite the hook runs passes 2412 tests. No native financial execution and no production installation is established by this refresh; the required hosted accounting job must still pass. Neither cash_games_enabled nor tournaments_enabled was touched, and no production object was read, created or changed."
   },
   "rakeback_payout_document_successor_20260921": {
     "migrations": [

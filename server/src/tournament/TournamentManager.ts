@@ -18,6 +18,7 @@ import {
  */
 
 import { randomUUID } from 'node:crypto';
+import { INSTANCE_ID, INSTANCE_VERSION } from '../services/tableLease.js';
 import { readF06RecoveryAdmission, type DrainedF06Custody } from './drainedF06Custody.js';
 import { verifyF06MovementAdmission } from './f06MovementAdmission.js';
 import {
@@ -205,10 +206,44 @@ export class TournamentManager extends TournamentManagerEliminations {
       load('custody_ids', this.pendingTournamentBreakCustodyIds);
       load('cleanup_kinds', this.pendingTournamentCleanupKinds);
       const retained = local.retained as { table_id: string; break_id: string }[];
+      const sources = new Map(retained.map((row) => [row.table_id, row.break_id]));
+      const historical = (transfer.canonical as any).historical_loss;
+      const pendingSources = historical?.pending_arrivals ?? [];
+      if (!Array.isArray(pendingSources)) throw new Error('f06_mixed_pending_source_unproven');
+      for (const entry of pendingSources) {
+        const proof = entry?.proof?.historical_loss;
+        const original = proof?.observations?.[0]?.original;
+        const captured = (local.historical_loss_pending_arrivals as any[])?.find(
+          (row) => custodyJSON(row.original) === custodyJSON(original)
+        );
+        const operation = (transfer.canonical as any).operations?.find(
+          (row: any) => row.break_id === original?.break_id
+        );
+        if (
+          historical.kind !== 'historical_loss_normal_session_v1' ||
+          proof?.original_kind !== 'pending_arrival_historical_loss_v1' ||
+          !original ||
+          !captured ||
+          !operation ||
+          entry.source?.table_id !== original.table_id ||
+          captured.absence?.table_id !== original.table_id ||
+          captured.absence.global_absent !== true ||
+          captured.absence.owned_absent !== true ||
+          captured.absence.retirement_absent !== true ||
+          operation.source_table_id !== original.table_id ||
+          String(operation.lifecycle) !== String(original.lifecycle) ||
+          operation.tournament_id !== this.tournamentId ||
+          sources.has(original.table_id)
+        )
+          throw new Error('f06_mixed_pending_source_unproven');
+        // This receipt owns an already absent original source, separately from
+        // the stopped engine cohort. No old dealer is recreated.
+        sources.set(original.table_id, original.break_id);
+      }
       this.mixedRecovery = {
         transfer,
         assertCurrent,
-        sources: new Map(retained.map((row) => [row.table_id, row.break_id])),
+        sources,
         completion: null,
       };
     }
@@ -1392,7 +1427,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           (custody.engine ? 'retired' : 'verified_absent');
         this.pendingTournamentCleanupKinds.set(owned.break_id, cleanupKind);
         if (custody.engine) {
-          if (!this.gameServer.unregisterTournamentTableEngine(binding.tableId, custody.engine))
+          if (!this.gameServer.unregisterTableEngine(binding.tableId, custody.engine))
             throw new Error('F06 global registry CAS refused');
           if (this.tableEngines.get(binding.tableId) !== custody.engine)
             throw new Error('F06 local registry CAS refused');
@@ -1686,7 +1721,8 @@ export class TournamentManager extends TournamentManagerEliminations {
         !engines ||
         !originGeneration ||
         originGeneration === successorGeneration ||
-        !this.retainedTournamentBreakSources.size ||
+        (!this.retainedTournamentBreakSources.size &&
+          !engines.some(([, engine]) => engine.hasUnretiredStoppedTimeBankCustody())) ||
         this.activeStoppedOriginalCustody.size
       )
         return null;
@@ -1720,6 +1756,13 @@ export class TournamentManager extends TournamentManagerEliminations {
       const presenceByTable = new Map(presence.map((row) => [row.table_id, immutableCustody(row)]));
       const vector = () => ({
         manager_id: this.getLifecycleDiagnosticSnapshot().instanceId,
+        stopped_bank_owner: {
+          kind: 'mtt_pre_disposal_bank_v1',
+          instance_id: INSTANCE_ID,
+          version: INSTANCE_VERSION,
+          generation: originGeneration,
+          tournament_id: this.tournamentId,
+        },
         move_owner: this.tournamentMoveBoundaryOwner,
         engines: physical().map(
           (engine) =>
@@ -2093,7 +2136,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       return false;
     }
 
-    if (!this.gameServer.unregisterTournamentTableEngine(tableId, engine)) {
+    if (!this.gameServer.unregisterTableEngine(tableId, engine)) {
       const ownershipError = new Error(
         `[Tournament:${this.tournamentId.slice(0, 8)}] broken table ${tableId.slice(0, 8)} changed global engine generation before retirement CAS`
       );

@@ -1,4 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Subprocess contract suite: these tests drive REAL child processes, so their
+// wall time scales with machine load, not with the code under test. vitest's
+// 5000ms default is a UNIT-test budget: the slowest test here measures 582ms
+// solo, and the pre-push hook runs this file in a 90-file suite at full width,
+// where contention has been measured to stretch these runs by 7.1x and time
+// them out. 90s is 154x the measured solo runtime - past anything observed,
+// and still a real bound, so a genuinely hung child still fails the suite.
+// File-scoped on purpose: no global testTimeout, no --no-file-parallelism.
+vi.setConfig({ testTimeout: 90_000 });
 import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { basename, delimiter, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';

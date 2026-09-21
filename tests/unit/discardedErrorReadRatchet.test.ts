@@ -84,7 +84,6 @@ const BASELINE = new Map<string, number>([
   ['src/services/FriendSuggestionService.ts', 1],
   ['src/services/CreditRequestService.ts', 1],
   ['src/services/ChipFlowService.ts', 4],
-  ['src/pages/HomePage.tsx', 1],
   /* 4 -> 2 on 2026-09-11: removing the promo-rain control took two discarded
      reads with it (the owner probe and the rain handler's catch). The ratchet
      asked for this in the same commit, which is the point of it. */
@@ -98,7 +97,6 @@ const BASELINE = new Map<string, number>([
   ['src/pages/BadBeatJackpotPage.tsx', 0],
   ['src/components/social/PlayerActivityFeed.tsx', 4],
   ['src/components/agent/ChipTransferModal.tsx', 2],
-  ['src/components/agent/AgentScoreCard.tsx', 4],
   ['src/services/VoiceSignalService.ts', 3],
   // 3 -> 1 on 2026-09-20: submitDispute and withdrawDispute stopped doing raw
   // table writes and now call fn_dispute_submit / fn_dispute_withdraw, which
@@ -193,7 +191,6 @@ const BASELINE = new Map<string, number>([
   ['src/components/tournament/TournamentRankingCard.tsx', 1],
   ['src/components/tournament/MysteryBountyPanel.tsx', 1],
   ['src/components/tournament/MysteryBountyCelebration.tsx', 1],
-  ['src/components/table/RealTimeResultPanel.tsx', 1],
   ['src/components/social/PresenceIndicator.tsx', 1],
   ['src/components/session/SessionSummaryHost.tsx', 1],
   ['src/components/navigation/NotificationDropdown.tsx', 1],

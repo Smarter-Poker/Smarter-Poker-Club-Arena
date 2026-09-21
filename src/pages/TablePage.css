@@ -18,7 +18,6 @@
   --z-header: 100;
   --z-action-panel: 100;
   --z-overlay: 200;
-  --z-side-menu: 300;
   --z-modal-backdrop: 400;
   --z-modal: 500;
   --z-toast: 600;
@@ -2441,24 +2440,33 @@
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
 }
 
+/* ── ONE ACTION IS A LIT WORD, NOT A DRAWN BUTTON (#ClubArenaConsole, §5) ───
+   This bar carries exactly one control (Show Hand at showdown), and the
+   standard's rule for a single action is a lit word on the glass rather than
+   a button painted in CSS - the same control Club Rules uses for Copy and
+   Retry, and TableLoadFailureOverlay for Back To Lobby. So the 12px radius,
+   the rim and the two white gradients are gone; the word is the master's own
+   lit blue in condensed caps, and the press is the feedback. */
 .footer-action-bar__btn {
-  flex: 1;
+  flex: 0 0 auto;
   max-width: 360px;
   min-height: 48px;
   padding: 12px 24px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.06) 100%);
-  color: #fff;
+  appearance: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #45adff;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 0.95rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
 .footer-action-bar__btn:active {
-  transform: scale(0.98);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.1) 100%);
+  filter: brightness(1.3);
 }
 
 /* ─── SPECTATOR MODE — REMOVED (seats already show "+ SIT") ─── */
@@ -2645,114 +2653,6 @@
 /* ActionPanel.css handles its own button styling */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   SIDE MENU
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.menu-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  z-index: var(--z-modal-backdrop);
-  animation: fadeIn 0.2s ease;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-.side-menu {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 280px;
-  background: #161b22;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  z-index: var(--z-modal);
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  animation: tableSlideIn 0.25s ease;
-}
-
-@keyframes tableSlideIn {
-  from {
-    transform: translateX(-100%);
-  }
-
-  to {
-    transform: translateX(0);
-  }
-}
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  color: #e4e6eb;
-  font-size: 0.9375rem;
-  text-align: left;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.menu-item.exit {
-  margin-top: auto;
-}
-
-.menu-item-icon {
-  font-size: 1.25rem;
-  width: 28px;
-  text-align: center;
-  color: var(--sp-warn);
-}
-
-.menu-item-label {
-  flex: 1;
-}
-
-.menu-item-arrow {
-  color: #6e7681;
-  font-size: 1.25rem;
-}
-
-.menu-item-toggle {
-  padding: 4px 10px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  border-radius: 12px;
-  text-transform: uppercase;
-}
-
-.menu-item-toggle.on {
-  background: #3fb950;
-  color: #0a0a0f;
-}
-
-.menu-item-toggle.off {
-  background: #6e7681;
-  color: #ffffff;
-}
-
-.menu-footer {
-  padding: 20px;
-  font-size: 0.75rem;
-  color: #6e7681;
-  text-align: center;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
    OBSERVING INDICATOR
    ═══════════════════════════════════════════════════════════════════════════════ */
 
@@ -2832,11 +2732,6 @@
 
   .jackpot-label {
     font-size: 0.5rem;
-  }
-
-  .side-menu {
-    width: 100%;
-    max-width: 320px;
   }
 
   /* Dan 2026-08-25 (item 8): the mobile .dealer-button block is gone. A puck
@@ -3298,12 +3193,19 @@
   max-width: 92%;
   padding: 6px 18px;
   border-radius: 999px;
-  background: rgba(10, 12, 24, 0.82);
-  border: 1px solid rgba(139, 92, 246, 0.35);
-  color: rgba(235, 235, 245, 0.92);
+  /* SCHEMA INK (#ClubArenaConsole, 2026-09-14): the rim was
+     rgba(139, 92, 246) - a mauve, and "ALWAYS USE SMARTER.POKER COLOR SCHEMA
+     COLORS, NO BROWNS OR PINKS" has no exceptions. Insurance is a decision
+     somebody else is making, so it reads as the master's own muted meta on
+     black glass with a brand-blue hairline. */
+  background: rgb(5 6 7 / 88%);
+  border: 1px solid rgba(24, 119, 242, 0.4);
+  color: #9aa5b3;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4043,40 +3945,48 @@
   align-items: center;
   gap: 2px;
   padding: 10px 24px;
-  border: 2px solid #00d4ff;
+  /* ── SCHEMA INK (#ClubArenaConsole, 2026-09-14) ───────────────────────────
+     This pill was #00d4ff on a #1f2937 -> #111827 slate ramp. Cyan is not a
+     colour the smarter.poker scheme owns and slate is not the felt's ground:
+     the master's lit blue is #45adff, its glow is the brand --fb-blue, and
+     everything it paints sits on black glass. Nothing about the shape or the
+     position moved - both are load-bearing (see the `bottom` note above) and
+     there is no master art for a control that floats over a live felt, so it
+     is re-inked, not re-framed. */
+  border: 2px solid var(--fb-blue, #1877f2);
   border-radius: 24px;
-  background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
-  color: #00d4ff;
-  font-family: inherit;
-  font-weight: 700;
+  background: linear-gradient(180deg, rgb(14 18 26 / 96%) 0%, rgb(5 6 7 / 98%) 100%);
+  color: #45adff;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   box-shadow:
-    0 0 18px rgba(0, 212, 255, 0.45),
+    0 0 18px rgba(24, 119, 242, 0.45),
     0 4px 14px rgba(0, 0, 0, 0.5);
 }
-/* Interactive affordances live here, on the button form only. */
+/* Interactive affordances live here, on the button form only.
+   THE PULSE ALWAYS PLAYS (CLAUDE.md 10.6): this is the one cue that tells a
+   waiting player there is a way into the next hand, and it is owed for its
+   full duration every time the pill is up. */
 button.post-bb-overlay-button {
   cursor: pointer;
   animation: post-bb-pulse 1.6s ease-in-out infinite alternate;
 }
-/* The notice: informational, not tappable. Calmer than the old pulsing pill,
-   because nothing is being asked of the player — they are already seated and
-   will be dealt in free. */
-.post-bb-overlay-button--notice {
-  cursor: default;
-  animation: none;
-  border-color: rgba(0, 212, 255, 0.55);
-  box-shadow:
-    0 0 12px rgba(0, 212, 255, 0.22),
-    0 4px 14px rgba(0, 0, 0, 0.5);
-}
+/* `--notice` DELETED 2026-09-14. It dressed an informational, non-tappable
+   form of this pill; nothing has rendered that form since the notice became a
+   real choice again (Dan 2026-08-26), so the modifier had no consumer in src/
+   at all - it read as coverage for a state that does not exist. */
 .post-bb-overlay-button__title {
   font-size: 14px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 .post-bb-overlay-button__sub {
   font-size: 11px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.75);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: none;
+  color: #9aa5b3;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -4094,69 +4004,53 @@ button.post-bb-overlay-button {
   padding: 16px;
   background: rgba(0, 0, 0, 0.55);
 }
+/* ON THE MASTER (#ClubArenaConsole, 2026-09-14). This drew a 14px-radius card
+   with a cyan rim, a cyan glow and a teal gradient button - none of those a
+   colour the smarter.poker schema owns, and all of it a frame drawn around a
+   frame. The box now carries only the size of the picture; SpadeConsole paints
+   the head, the rails and both foot plates. */
+/* AND metallic-popups.css NAMES THIS CLASS (#ClubArenaConsole §3.5, trap 7.2).
+   The global popup chassis carries `.post-or-wait` in its shell list and
+   paints a 16px-radius bevelled frame with `!important` - so the console
+   ended up inside a second, rounded frame, which is precisely "FRAMES SHOULD
+   NEVER SIT ON TOP OF FRAMES". Its selector is `:where(...)`, i.e.
+   specificity 0,0,0, but every declaration is `!important`, so it is switched
+   off LONGHAND BY LONGHAND at !important here. A `background` shorthand alone
+   would leave the border, the radius, the outline and the shadow painting. */
 .post-or-wait {
   width: 100%;
   max-width: 360px;
-  border-radius: 14px;
-  border: 1px solid rgba(0, 212, 255, 0.45);
-  background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
-  box-shadow:
-    0 0 18px rgba(0, 212, 255, 0.3),
-    0 8px 28px rgba(0, 0, 0, 0.6);
-  padding: 18px 16px 16px;
-  color: #fff;
-  text-align: center;
-}
-.post-or-wait__title {
-  margin: 0 0 8px;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: none !important;
+  background-image: none !important;
+  box-shadow: none !important;
 }
 .post-or-wait__body {
-  margin: 0 0 14px;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.78);
+  margin: 0;
+  padding: 2cqw 1.5cqw 3cqw;
+  font-size: 3.7cqw;
+  line-height: 1.5;
 }
-.post-or-wait__actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.post-or-wait__post,
-.post-or-wait__wait {
-  width: 100%;
-  padding: 12px 14px;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  cursor: pointer;
-}
-.post-or-wait__post {
-  border: 1px solid rgba(0, 212, 255, 0.7);
-  background: linear-gradient(180deg, #0e7490 0%, #155e75 100%);
-  color: #fff;
-}
-.post-or-wait__post:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-.post-or-wait__wait {
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: transparent;
-  color: rgba(255, 255, 255, 0.85);
-}
+/* `__title`, `__actions`, `__post` and `__wait` are gone with the markup they
+   dressed: the question is a ZONE on the master's header well, and the two
+   answers are PlateButtons over the plates the foot already paints. Both
+   handlers, the `isPostingBB` disable and every toast branch moved across
+   untouched. */
+/* The pulse follows the pill onto the schema: the glow is the brand blue
+   rgb(24 119 242) at two strengths, not the retired cyan. Same duration, same
+   easing, same alternate - the cue itself is untouched. */
 @keyframes post-bb-pulse {
   from {
     box-shadow:
-      0 0 18px rgba(0, 212, 255, 0.45),
+      0 0 18px rgba(24, 119, 242, 0.45),
       0 4px 14px rgba(0, 0, 0, 0.5);
   }
   to {
     box-shadow:
-      0 0 28px rgba(0, 212, 255, 0.85),
+      0 0 28px rgba(24, 119, 242, 0.85),
       0 4px 14px rgba(0, 0, 0, 0.5);
   }
 }
@@ -4296,24 +4190,6 @@ button.post-bb-overlay-button {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   SIDE-MENU EMBEDDED CONTROL
-   For rows that host a real control (StraddleToggle) rather than a button.
-   Added 2026-08-20: StraddleToggle was imported by TablePage and never
-   rendered, so a player had no way to turn straddling on at all.
-   ═══════════════════════════════════════════════════════════════════════════ */
-.menu-item--embed {
-  cursor: default;
-  padding: 10px 20px;
-}
-
-/* Disabled menu rows (e.g. Tip Dealer while not seated) must read as
-   unavailable rather than silently doing nothing when tapped. */
-.menu-item:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
    POT-WIN FLOAT (Dan 2026-08-21, PokerBros reference: the "+1" above the
    winner's avatar). Phase 1 (0-30%): the number rides from the pot to the
    winner's seat alongside the chip fan. Phase 2 (30-100%): it holds above the
@@ -4430,15 +4306,18 @@ button.post-bb-overlay-button {
   background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(3px);
 }
+/* ON THE MASTER (#ClubArenaConsole, 2026-09-14). This box drew the card: an
+   18px radius, its own two-stop gradient, a 1px rim and a drop shadow, i.e. a
+   frame in CSS around a frame in art. It carries nothing now except the size
+   of the picture and the entrance; SpadeConsole paints the rest. */
 .seat-buyin-confirm__card {
   position: relative;
   width: min(340px, 100%);
-  padding: 26px 22px 20px;
-  border-radius: 18px;
-  text-align: center;
-  background: linear-gradient(180deg, #1b1e24 0%, #121419 100%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
   animation: seatBuyInConfirmIn 0.18s ease-out;
   max-height: calc(100dvh - 40px);
   overflow-y: auto;
@@ -4452,10 +4331,6 @@ button.post-bb-overlay-button {
   }
   .seat-buyin-confirm__card {
     max-height: calc(100dvh - 20px);
-    padding: 16px 18px 14px;
-  }
-  .seat-buyin-confirm__actions {
-    margin-top: 12px;
   }
 }
 @keyframes seatBuyInConfirmIn {
@@ -4468,37 +4343,40 @@ button.post-bb-overlay-button {
     transform: none;
   }
 }
-.seat-buyin-confirm__eyebrow {
-  font-size: 11px;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
+/* ROWS ON THE GLASS, NOT BAYS (#ClubArenaConsole §4). The four-bay deck
+   belongs to the buy-in family's own sheet; every other surface prints its
+   figures as a label in lit blue on the left and a value in silver on the
+   right, with an ENGRAVED rule between them - a hairline of black with a
+   highlight under it, cut into the glass rather than drawn on top of it. */
+.seat-buyin-confirm__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3cqw;
+  padding: 2.4cqw 1cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
-.seat-buyin-confirm__title {
-  margin-top: 10px;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: rgba(255, 255, 255, 0.82);
+
+.seat-buyin-confirm__row:first-child {
+  border-top: 0;
+  box-shadow: none;
 }
+
+/* The price is the one figure a player is deciding on, so it keeps its size.
+   The glow it used to carry was a warm halo (rgba(255,190,80)) that is not a
+   schema colour; engraved silver is the master's own ink for a value. */
 .seat-buyin-confirm__amount {
-  margin-top: 2px;
-  font-size: 40px;
+  font-size: 7.4cqw;
   font-weight: 800;
-  line-height: 1.1;
-  color: var(--sp-text-bright);
-  text-shadow: 0 2px 14px rgba(255, 190, 80, 0.28);
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
 }
-.seat-buyin-confirm__meta {
-  margin-top: 8px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.62);
-}
+
 .seat-buyin-confirm__note {
-  margin-top: 14px;
-  font-size: 12px;
+  padding: 2.6cqw 2cqw 3cqw;
+  font-size: 3.5cqw;
   line-height: 1.45;
-  color: rgba(255, 255, 255, 0.45);
 }
 /* ── THE MULTIPLIER ODDS LADDER IS DELETED (Dan 2026-09-05, binding) ───────
    "HIDE THE MULTIPLIER ODDS, GET RIDE OF THAT ALL TOGETHER, NOBODY SHOULD
@@ -4510,41 +4388,20 @@ button.post-bb-overlay-button {
    behind is how a deleted surface gets rebuilt by the next agent who finds
    CSS with no owner and assumes something is missing. */
 
-.seat-buyin-confirm__actions {
-  margin-top: 20px;
-  display: flex;
-  gap: 10px;
-}
-.seat-buyin-confirm__btn {
-  flex: 1;
-  min-height: 46px;
-  border-radius: 12px;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  transition:
-    transform 0.08s ease,
-    opacity 0.12s ease;
-}
-.seat-buyin-confirm__btn:active:not(:disabled) {
-  transform: scale(0.97);
-}
-.seat-buyin-confirm__btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.seat-buyin-confirm__btn--ghost {
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: rgba(255, 255, 255, 0.85);
-}
-.seat-buyin-confirm__btn--go {
-  flex: 1.4;
-  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  color: #fff;
-}
+/* ── THE TWO DRAWN BUTTONS ARE GONE (#ClubArenaConsole, 2026-09-14) ────────
+   `.seat-buyin-confirm__actions`, `__btn`, `__btn--ghost` and `__btn--go`
+   drew a 12px-radius ghost button and a blue gradient one in CSS. The foot of
+   the spade console already PAINTS both plates, so Cancel and Buy In are
+   `PlateButton`s laid over that art with nothing but their labels; the
+   disabled branches and the three label states moved with them, unchanged.
+   The rules went with the markup in the same edit - leaving orphaned styling
+   behind is how a deleted surface gets rebuilt by the next agent who finds
+   CSS with no owner and assumes something is missing (the odds ladder above
+   is the worked example).
+
+   `__eyebrow`, `__title` and `__meta` went the same way: the eyebrow and the
+   title are ZONES on the master's own header well, printed by ZoneText, and
+   the meta lines are rows on the glass. */
 
 .spin-heads-up-note {
   position: absolute;
@@ -4553,16 +4410,21 @@ button.post-bb-overlay-button {
   top: clamp(76px, 13vh, 126px);
   transform: translateX(-50%);
   padding: 8px 16px;
-  border: 1px solid rgba(126, 211, 255, 0.5);
+  /* SCHEMA INK (#ClubArenaConsole, 2026-09-14): a pale-cyan rim and #d8f4ff
+     type were a second blue nothing else on the platform wears. The master's
+     lit blue is #45adff and its hairlines are the brand blue over black. */
+  border: 1px solid rgba(24, 119, 242, 0.5);
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(20, 29, 38, 0.96), rgba(6, 10, 15, 0.96));
+  background: linear-gradient(180deg, rgb(14 18 26 / 96%), rgb(5 6 7 / 96%));
   box-shadow:
     0 10px 28px rgba(0, 0, 0, 0.48),
     inset 0 1px rgba(255, 255, 255, 0.12);
-  color: #d8f4ff;
+  color: #45adff;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 13px;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   pointer-events: none;
   animation: spinHeadsUpNote 1.5s ease both;
 }

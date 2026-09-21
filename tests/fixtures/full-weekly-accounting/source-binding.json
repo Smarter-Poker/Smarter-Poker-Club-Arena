@@ -313,7 +313,7 @@
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
     "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
-    "tests/fixtures/union-weekly-basis/source-binding.json": "eba99587a639f1f20754fb7024f11376b3e6f2a6396de3baf629976c10c5ae85",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "9bdc881651bce10ad4c068e4095b18d132a3865b559e34e7c89ea96731e3a1e8",
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
@@ -334,7 +334,7 @@
     "tests/fixtures/union-weekly-basis/captured-document-dependencies.json": "b5f5a9e7e0a2a7c710295bcd6b0a1b5aca7ddf9c27a6268167eba1a8e35fa23b",
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
-    "scripts/dev/test-union-weekly-basis.py": "8d97457e6495f8eeb9f3e1d7b00bbdc94813cab2157fc3fb6be4b748e6ba4dbb",
+    "scripts/dev/test-union-weekly-basis.py": "9e2a62848cae29f8910949c816e9b67d6b37286ba607c285bc17d1a755276ebd",
     "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "fa2f2f378db56fa7b586c6ddecaf43d58cac0b34817e8497b13ebb5159f33798",
     "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
     "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf",
@@ -1502,5 +1502,31 @@
     ],
     "reason": "The classifier gained additive Diamond SQL acceptance routing: a change to any tests/sql/run-*diamond*.py runner, any tests/sql/poker-diamond-*.sql fixture, poker-arena-access.sql, the controlled-play driver, the session and transfer cap fixtures, any tests/sql/diamond-tournament-*.sql or tests/sql/diamond-tournament-*.manifest.json input the two tournament runners load, scripts/ci/run-diamond-sql-acceptance.py or scripts/ci/check-diamond-runners-listed.mjs now selects the PostgreSQL accounting job and its routing tests, so the fourteen Diamond money-door runners and the arena access script execute there instead of only by hand. The diamond-tournament-* inputs were added on 2026-09-20 with the tournament doors and tournament lifecycle runners that read them: they selected tests but not server, so the job that executes the runner could skip on a pull request that changed what it executes. No existing classification branch was removed or narrowed, and no accounting component, assertion, capture or fixture changed. The two nested financial bindings already retain the reviewed classifier bytes; refreshing them changes their own sha256, which this outer binding also pins, so the four hashes move together. The workflow pin moves for the same edit: the accounting job gained the list check, the acceptance step and its evidence upload, and nothing else. Every previous_sha256 here is the value on origin/main d0e04ed4fe, the revision this branch is merged up to.",
     "verification": "All fourteen runners and poker-arena-access.sql were executed on an isolated PostgreSQL 17 through scripts/ci/run-diamond-sql-acceptance.py against freshly created empty fixture databases, and each proved its own terminal line: 15 of 15 runs passed in 18.1 seconds, the eleven shared-cluster runners on the socket the wrapper builds and the three private-cluster runners each on a cluster it created and destroyed. The three new runners were also executed with PG_BIN set to a directory that does not exist on this machine, proving PG_BIN is honoured and that the fixed fallback in source resolves PostgreSQL 17 without a second environment variable. node scripts/ci/check-diamond-runners-listed.mjs reports 14 runners all run by CI and was proved to refuse an unlisted one; npx vitest run tests/unit/diamondAcceptanceCi.test.ts passes with 80 tests; python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py accepts the refreshed cash manifest in 6 cases. python3 scripts/ci/verify-source-bindings.py re-read every pin map in every source-binding.json in the merged tree: 745 pins across 15 sections in 15 binding files, the five refreshed here included, all agree. This refresh establishes no native financial execution and no production installation; the required hosted accounting job must still pass. Neither cash_games_enabled nor tournaments_enabled was touched, and no production object was read, created or changed."
+  },
+  "club_settlement_floor_successor_20260920": {
+    "migrations": [
+      "supabase/migrations/20260920232503_club_settlement_floor_bounds_standalone_weekly_discovery.sql",
+      "supabase/migrations/20260920232523_the_uncertifiable_weeks_move_below_the_floor_and_stay_owed.sql"
+    ],
+    "prior_binding_sha256": "ef39943ca84e059c80d6677613313b5f6ee3b9b3d3f4623248f6a5ce393acf72",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/dev/test-union-weekly-basis.py",
+        "previous_sha256": "8d97457e6495f8eeb9f3e1d7b00bbdc94813cab2157fc3fb6be4b748e6ba4dbb",
+        "sha256": "9e2a62848cae29f8910949c816e9b67d6b37286ba607c285bc17d1a755276ebd"
+      },
+      {
+        "path": "tests/fixtures/union-weekly-basis/source-binding.json",
+        "previous_sha256": "eba99587a639f1f20754fb7024f11376b3e6f2a6396de3baf629976c10c5ae85",
+        "sha256": "9bdc881651bce10ad4c068e4095b18d132a3865b559e34e7c89ea96731e3a1e8"
+      }
+    ],
+    "added_repository_inputs": [
+      "tests/fixtures/club-settlement-floor/load.sql",
+      "tests/fixtures/club-settlement-floor/seed.sql",
+      "tests/fixtures/club-settlement-floor/regression.sql"
+    ],
+    "reason": "Standalone-club discovery in fn_process_weekly_accounting_scope carried no settlement floor, so the permanently uncertifiable week of 2026-09-07 re-entered the cursor on every tick and the head-of-line EXIT from 20260907164234 blocked every later week. 20260920232503 adds club_settlement_floor, fn_club_settlement_floor_week and the three GREATEST clamps by the exact-needle pg_get_functiondef successor pattern; 20260920232523 moves both floors to 2026-09-21 07:00Z and records the deferred rakeback. The union scope already respected its floor and is unchanged. The only change to scripts/dev/test-union-weekly-basis.py is four added run() steps that apply 20260920232503 on the exact installed base and then execute the new tests/fixtures/club-settlement-floor regression last, after every pre-existing assertion; tests/fixtures/union-weekly-basis/source-binding.json gains those four inputs and the ordinary JSON formatting the pre-commit hook applies. No captured catalog, component, SQL fixture or existing assertion changed.",
+    "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py: 71 PASS, 0 failures, including club-settlement-floor-source, club-floor-clock-seam, club-floor-seed and club-floor-regression."
   }
 }

@@ -117,6 +117,9 @@ function checkpointSummary(value) {
     'observed',
     'expected',
     'observedDetail',
+    // Which tables were proved abandoned from rows, and how many unreachable
+    // boundary generations each carried. Carried verbatim; nothing reads it.
+    'abandonedBoundaries',
   ]) {
     const item = value?.[key];
     if (

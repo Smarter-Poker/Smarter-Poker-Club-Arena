@@ -26,6 +26,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { cashAccountingBatchSize, resolveClientTimeoutMs } from './cashAccountingBatchBudget.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import {
@@ -59,10 +60,32 @@ const CATCH_UP_DELAY_MS = 60 * 1000; // 1 minute
  * ~8s statement timeout on the commission batch (five 500s, five
  * "canceling statement due to statement timeout" entries at 23:38). A timeout
  * aborts the whole call, so those items were skipped and the cursor advanced
- * past them. The functions now set their own 300s timeout AND the chunk is
- * 150, so a chunk is comfortably inside even a slow window with headroom.
+ * past them. The functions now set their own 300s timeout.
+ *
+ * 2026-09-20: AND THEN THE SERVER STOPPED BEING THE CONSTRAINT, SO 150 WAS
+ * SIZED AGAINST A LIMIT THAT NO LONGER BOUND IT. The 300s server timeout left
+ * the engine client's DB_TIMEOUT_MS (15s) as the only real budget, and
+ * migration 20260917181100 repointed fn_credit_agent_commissions_batch at
+ * fn_process_cash_accounting_source, taking one item to ~290ms. 150 x 290ms =
+ * 43.5s against a 15s client. The settler halted every cycle for three days
+ * while the server committed the work anyway and the cursor never moved.
+ * The size is now DERIVED from the budget that binds (CLAUDE.md 1.1.7); the
+ * arithmetic and its measurement live in cashAccountingBatchBudget.ts.
  */
-const CREDIT_BATCH_SIZE = 150;
+/* Exported for the same reason as FETCH_LIMIT: a regression suite must build
+   a dataset that genuinely straddles this boundary, not hard-code a number
+   that drifts away from the real one. A test asserting 150 was exactly how
+   this constant stopped matching its own cost. */
+export const CREDIT_BATCH_SIZE = cashAccountingBatchSize(resolveClientTimeoutMs());
+
+/**
+ * The durable-refusal retry opens every cycle, BEFORE any new work is read, so
+ * it is the call that decides whether the cursor can move at all. It was a
+ * literal 50 and cost ~20.6s - past the client budget - which is precisely how
+ * a queue of 150 permanently-refused sources held 264,835 records hostage.
+ * Same budget, same arithmetic, same reason.
+ */
+const CASH_RETRY_LIMIT = cashAccountingBatchSize(resolveClientTimeoutMs());
 const PERIOD_USER_BATCH_SIZE = 2000;
 const DAEMON_KEY = 'rakeback_settler';
 
@@ -1244,11 +1267,11 @@ export class RakebackSettlerService {
     let retriedSources: CashSourceReceipt[];
     try {
       const { data, error } = await supabase.rpc('fn_retry_cash_accounting_sources', {
-        p_limit: 50,
+        p_limit: CASH_RETRY_LIMIT,
       });
       if (error) throw new Error('Cash source retry failed', { cause: error });
       retriedSources = readCashSourceBatch(data);
-      if (retriedSources.length > 50)
+      if (retriedSources.length > CASH_RETRY_LIMIT)
         throw new Error('Cash retry exceeded its requested source bound');
       await confirmCashSourceRefusals(retriedSources);
     } catch (error) {

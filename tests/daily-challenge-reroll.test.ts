@@ -361,7 +361,8 @@ describe('the page ships the casino-realism surface without the old stubs', () =
       'aria-controls="mission-panel"'
     );
     expect(page).toContain("event.key === 'ArrowRight'");
-    expect(page).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
-    expect(page).toContain('Replaced.');
+    const card = readDailyChallengesUnit('MissionCard.tsx');
+    expect(card).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
+    expect(card).toContain('Replaced.');
   });
 });

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+import { readDailyChallengesUnit } from '../helpers/dailyChallengesSources';
 
 const root = resolve(import.meta.dirname, '../..');
 
@@ -168,11 +169,11 @@ describe('Daily Missions production certification', () => {
   });
 
   it('targets the enforced title-case reroll accessibility contract', () => {
-    const page = source('src/pages/DailyChallengesPage.tsx');
+    const card = readDailyChallengesUnit('MissionCard.tsx');
     const pageObject = source('tests/e2e/support/DailyMissionsPage.ts');
     const certification = source('tests/e2e/production-daily-missions.spec.ts');
-    expect(page).toContain('? `Reroll ${DAILY_MISSION_REROLL_COST} Diamond For ${c.name}`');
-    expect(page).toContain(': `Need ${DAILY_MISSION_REROLL_COST} Diamond To Reroll ${c.name}`');
+    expect(card).toContain('? `Reroll ${DAILY_MISSION_REROLL_COST} Diamond For ${c.name}`');
+    expect(card).toContain(': `Need ${DAILY_MISSION_REROLL_COST} Diamond To Reroll ${c.name}`');
     expect(pageObject).toContain('name: /^Reroll 1 Diamond For .+$/');
     expect(certification).toContain('name: /^Confirm Reroll For /');
   });

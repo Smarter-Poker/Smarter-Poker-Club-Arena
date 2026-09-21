@@ -1,7 +1,10 @@
 import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { readDailyChallengesUnit } from './helpers/dailyChallengesSources';
+import {
+  readDailyChallengesSurface,
+  readDailyChallengesUnit,
+} from './helpers/dailyChallengesSources';
 
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
 const css = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'), 'utf8');
@@ -81,8 +84,9 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(streakConsole).toContain('Streak Freeze Applied');
     expect(streakConsole).toContain('streak.usedFreeze && streak.lastFrozenDate');
     expect(streakConsole).toContain('<span className={styles.srOnly}>Diamonds</span>');
-    expect(page).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
-    expect(page).toContain('Replaced.');
+    const card = readDailyChallengesUnit('MissionCard.tsx');
+    expect(card).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
+    expect(card).toContain('Replaced.');
     expect(css).not.toMatch(/\.cardClaimed\s*\{[^}]*opacity:/s);
     const claimedCardRules = [
       ...css.matchAll(/\.challengeCard\[data-mission-state='claimed'\]\s*\{([^}]*)\}/g),
@@ -92,7 +96,9 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
   });
 
   it('warms the exact mission destination chunk on mouse, touch, and keyboard intent', () => {
-    expect(page).toContain('{...prefetchIntent(missionAction.path)}');
+    expect(readDailyChallengesUnit('MissionCard.tsx')).toContain(
+      '{...prefetchIntent(missionAction.path)}'
+    );
     expect(preloader).toContain(
       "'/tournaments': () => import('../pages/tournament/TournamentLobbyPage')"
     );
@@ -108,14 +114,17 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
   });
 
   it('closes every chamfer and gives each mission icon live progress and state', () => {
-    expect(page.match(/className=\{styles\.bevelFrame\}/g)?.length).toBeGreaterThanOrEqual(7);
+    expect(
+      readDailyChallengesSurface().match(/className=\{styles\.bevelFrame\}/g)?.length
+    ).toBeGreaterThanOrEqual(7);
     expect(css).toContain('Precision Frame Closure');
     expect(css).toContain('100% 100% / var(--bevel-size) var(--bevel-size) no-repeat');
     expect(css).toContain('.rerollButton::after');
-    expect(page).toContain("'--mission-progress': `${pct}%`");
-    expect(page).toContain('data-mission-icon={c.type}');
-    expect(page).toContain('data-icon-state=');
-    expect(page).toContain('<MissionInstrumentGlyph');
+    const card = readDailyChallengesUnit('MissionCard.tsx');
+    expect(card).toContain("'--mission-progress': `${pct}%`");
+    expect(card).toContain('data-mission-icon={c.type}');
+    expect(card).toContain('data-icon-state=');
+    expect(card).toContain('<MissionInstrumentGlyph');
     expect(page).toContain('<CasinoControlIcon');
     expect(css).toContain('conic-gradient(');
     expect(css).toContain('@keyframes missionScannerOrbit');

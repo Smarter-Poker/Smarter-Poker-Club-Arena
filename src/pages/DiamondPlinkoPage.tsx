@@ -386,8 +386,9 @@ function DiamondPlinkoGame() {
       Boolean(ticket) &&
       !restartOwed &&
       !offerOpen &&
-      !result,
-    String(total),
+      !result &&
+      seed.trim() !== '',
+    `${total}:${seed}`,
     () => void playRef.current()
   );
   // Games paused by the platform come back by themselves after the break.
@@ -470,8 +471,12 @@ function DiamondPlinkoGame() {
   // Money in flight holds the page. A won game holds it only while it can
   // actually start: an award this page cannot start (daily limit, a closed or
   // paused game, a cooldown) never traps the player on it.
-  useLiveBonusGuard((Boolean(earned.award) && !blocked) || busy || uncertain || animating, () =>
-    setError('Finish Your Bonus Game Before Leaving.')
+  useLiveBonusGuard(
+    (Boolean(earned.award) && !blocked && Boolean(ticket) && !result) ||
+      busy ||
+      uncertain ||
+      animating,
+    () => setError('Finish Your Bonus Game Before Leaving.')
   );
   const droppedChips = result
     ? result.drops

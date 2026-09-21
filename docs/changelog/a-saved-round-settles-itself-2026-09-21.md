@@ -19,9 +19,10 @@ schedule (`useAutoSettle`), re-deals a refused ticket and sends the same wager
 again, and the wheel recovers an unconfirmed spin itself. No Check Round, Check
 Bonus or Recover Spin control remains.
 
-Client, second change: a won game starts itself. After the Double Down offer is
-answered (it spends the player's own diamonds, so nothing starts over it), a
-five-second visible countdown presses Start; changing the answer starts the window
+Client, second change: a won game starts itself. The Double Down offer spends the
+player's own diamonds, so nothing starts over it; left unanswered for eight seconds
+it keeps the bonus by itself (the choice that costs nothing), and only a press ever
+adds diamonds. Then a five-second visible countdown presses Start; changing the answer starts the window
 again; a refused automatic start is shown, not retried on a timer. The bonus guard
 holds a page for money in flight, and for a won game only while that game can
 start, so a daily limit, a pause or a closed game never traps the player. A failed

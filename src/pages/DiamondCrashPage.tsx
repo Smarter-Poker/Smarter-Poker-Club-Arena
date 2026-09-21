@@ -145,6 +145,8 @@ function DiamondCrashGame() {
   const [ticketFailures, setTicketFailures] = useState(0);
   const [loadFailures, setLoadFailures] = useState(0);
   const [loadTry, setLoadTry] = useState(0);
+  const [quoteFailures, setQuoteFailures] = useState(0);
+  const [quoteTry, setQuoteTry] = useState(0);
   const ticketInFlight = useRef<Promise<void> | null>(null);
   const [clientSeed, setClientSeed] = useState<string>(() => randomClientSeed());
   const [selectedBudget, setBudget] = useBonusBudget(routeClubId, 'crash');
@@ -498,10 +500,28 @@ function DiamondCrashGame() {
     waitSeconds <= 0
   );
 
+  // A failed entry quote is read again on the same widening schedule, so Start
+  // never sits on "Checking Your Entry" until somebody reloads the page.
   useEffect(() => {
-    if (clubUuid && validBonusBudget(budget) && !open && !starting)
-      void loadState(clubUuid).catch((e) => reportError(e, 'DiamondCrashPage.entryQuote'));
-  }, [clubUuid, budget.base, budget.doubled, open, starting, loadState]);
+    if (!clubUuid || !validBonusBudget(budget) || open || starting) return;
+    let cancelled = false;
+    loadState(clubUuid)
+      .then(() => {
+        if (!cancelled && live()) setQuoteFailures(0);
+      })
+      .catch((e) => {
+        reportError(e, 'DiamondCrashPage.entryQuote');
+        if (!cancelled && live()) setQuoteFailures((count) => count + 1);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clubUuid, budget.base, budget.doubled, open, starting, loadState, quoteTry]);
+  useAutoSettle(quoteFailures > 0 && !open && !starting, quoteFailures, async () => {
+    setQuoteTry((count) => count + 1);
+    return true;
+  });
 
   const cycleAuto = useCallback(() => {
     if (open || starting || running) return;
@@ -709,7 +729,7 @@ function DiamondCrashGame() {
   const autoStartIn = useAwardAutoStart(
     earned.award?.id,
     canStart && !restartOwed && !offerOpen && !loading && phase === 'idle' && !autoRun,
-    `${bet}:${autoChoice}`,
+    `${bet}:${autoChoice}:${clientSeed}`,
     () => void handleStartRef.current()
   );
   // Games paused by the platform come back by themselves after the break.
@@ -859,7 +879,11 @@ function DiamondCrashGame() {
       // A won game holds the page only while it can actually start: an award
       // this page cannot start (daily limit, a closed or paused game, a
       // cooldown) never traps the player on it. Money in flight still holds.
-      ((Boolean(earned.award) && canStart) || starting || open || cashing || uncertain),
+      ((Boolean(earned.award) && canStart && phase === 'idle') ||
+        starting ||
+        open ||
+        cashing ||
+        uncertain),
     () => toast.error('Finish Your Bonus Game Before Leaving.')
   );
   if (loading) return <PageSkeleton />;

@@ -491,8 +491,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       Boolean(ticket) &&
       !restartOwed &&
       !offerOpen &&
-      !finishedOnScene,
-    String(bet),
+      !finishedOnScene &&
+      seed.trim() !== '',
+    `${bet}:${seed}`,
     () => void startRef.current()
   );
   const picks = round?.picked.length ?? 0;
@@ -533,9 +534,15 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             : 'Ready';
   // Money in flight holds the page. A won game holds it only while it can
   // actually start: an award this page cannot start (daily limit, a closed or
-  // frozen game, a cooldown) never traps the player on it.
+  // frozen game, a cooldown, no ticket dealt yet) never traps the player on
+  // it, and neither does the next award while a finished round's receipt is
+  // waiting to take them back to the wheel.
   useLiveBonusGuard(
-    (Boolean(earned.award) && !blocked) || busy || uncertain || open || sceneBusy,
+    (Boolean(earned.award) && !blocked && Boolean(ticket) && !finishedOnScene) ||
+      busy ||
+      uncertain ||
+      open ||
+      sceneBusy,
     () => setError('Finish Your Bonus Game Before Leaving.')
   );
   const cashLabel = open && picks > 0 ? 'Book The Win' : 'Refresh';
@@ -666,7 +673,13 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         />
         <div className={styles.readout} aria-live="polite">
           {error ? (
-            <p className={CALM.has(error) ? 'sc-copy' : 'sc-copy sc-ink--red'}>{error}</p>
+            CALM.has(error) ? (
+              <p className="sc-copy" role="status">
+                {error}
+              </p>
+            ) : (
+              <p className="sc-copy sc-ink--red">{error}</p>
+            )
           ) : null}
           {round?.status === 'cashed' ? (
             <>

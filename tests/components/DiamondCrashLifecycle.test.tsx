@@ -557,7 +557,7 @@ describe('Crash shows its guarantee before the round starts', () => {
     await act(async () => {});
     // The offer spends the player's own diamonds, so nothing starts over it.
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(20_000);
+      await vi.advanceTimersByTimeAsync(1_000);
     });
     expect(backend.start).not.toHaveBeenCalled();
     const dialog = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });

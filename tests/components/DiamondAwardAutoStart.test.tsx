@@ -129,13 +129,28 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('a won game starts itself', () => {
-  it('never starts over an unanswered Double Down offer', async () => {
+  it('never starts over the Double Down offer; unanswered, the offer keeps the bonus and the game still starts', async () => {
     render(<DiamondPlinkoPage />);
     await act(async () => {});
+    const offer = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
+    fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
+    // Eight seconds to answer. Nothing counts down underneath the question.
+    await tick(7_000);
     expect(screen.getByRole('dialog', { name: 'Double Down Your Bonus' })).toBeInTheDocument();
-    await tick(20_000);
     expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeInTheDocument();
     expect(backend.start).not.toHaveBeenCalled();
+    await tick(1_100);
+    // It answered itself with the choice that costs nothing.
+    expect(screen.queryByRole('dialog', { name: 'Double Down Your Bonus' })).toBeNull();
+    expect(backend.start).not.toHaveBeenCalled();
+    await tick(5_100);
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    expect(backend.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        budget: expect.objectContaining({ base: 200, doubled: false }),
+      }),
+      'player-a'
+    );
   });
 
   it('counts five visible seconds after the answer, then drops without a press', async () => {

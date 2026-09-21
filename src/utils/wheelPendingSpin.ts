@@ -58,6 +58,17 @@ export function saveWheelPending(a: WheelPendingSpin): void {
   if (localStorage.getItem(key) !== value) throw new Error('The Spin Request Could Not Be Saved');
 }
 
+/**
+ * Drop a saved value that `readWheelPending` refused (owner ruling 2026-09-21,
+ * R18 audit: a malformed saved spin used to fail the whole page load with no
+ * way out). A value that fails validation could never be resubmitted, so
+ * there is no receipt to protect; the spin's own history row, if it ran, is
+ * still in the History list.
+ */
+export function discardWheelPending(userId: string, clubId: string): void {
+  localStorage.removeItem(keyFor(userId, clubId));
+}
+
 export function clearWheelPending(a: WheelPendingSpin): void {
   const current = readWheelPending(a.userId, a.clubId);
   if (current?.commitId === a.commitId) localStorage.removeItem(keyFor(a.userId, a.clubId));

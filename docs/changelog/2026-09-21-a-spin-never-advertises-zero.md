@@ -106,7 +106,19 @@ before the first card rendered. One prop.
   reader down the board had nothing to tell them where one window ended and the
   next began, and the bare count beside the label announced as "Now 1" with
   nothing to say what the 1 counted. They are `<section aria-labelledby>` with
-  an `<h2>` now, and the count carries its unit. No pixel moved.
+  an `<h2>` now, and the count carries its unit.
+
+  Promoting a `<span>` to an `<h2>` is not free and the first draft of this
+  note claimed it was. `globals.css` and `club-engine.css` both give `h1`-`h6`
+  a `line-height` of 1.2, where a span here inherited the body's 1.6, so the
+  swap would have shortened the row. It happens not to, because `.groupCount`
+  beside it is still a span at 1.6 and the row is `align-items: baseline` - but
+  that is the sibling holding the height open by luck, and it would end the
+  first time the count moved. `.groupLabel` declares the 1.6 now, so the
+  promotion is inert by construction. Size, weight, letter-spacing and case
+  were already `.sc-label`'s, the colour is `sc-ink--blue`'s, and the UA margin
+  dies on `* { margin: 0 }`.
+
 - **Search reported nothing.** Typing in the field silently re-filtered the
   board; the result count only exists on the console's pill. It now announces
   "N Tournaments Found" through a `role="status"` live region tied to the input

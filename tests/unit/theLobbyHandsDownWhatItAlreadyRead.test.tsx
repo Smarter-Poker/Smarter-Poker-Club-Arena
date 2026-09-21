@@ -58,6 +58,22 @@ describe('the tournament lobby hands its cards the answer it already has', () =>
     expect(card).toMatch(/typeof knownRegistration === 'boolean'/);
   });
 
+  it('the time-window heading cannot shrink its own row', () => {
+    /* The window label is an <h2> so a screen reader can move between the
+       windows. globals.css and club-engine.css both give h1-h6 a line-height
+       of 1.2 and a span here inherited the body's 1.6, so the promotion would
+       have shortened this row; it does not only because the count beside it is
+       still a span. `.groupLabel` declares the 1.6 itself, which makes the
+       element choice inert rather than luckily inert. */
+    const css = readFileSync(
+      join(__dirname, '../../src/pages/tournament/TournamentLobbyPage.module.css'),
+      'utf8'
+    );
+    const block = css.slice(css.indexOf('.groupLabel {'));
+    expect(block.slice(0, block.indexOf('}'))).toMatch(/line-height:\s*1\.6/);
+    expect(page).toMatch(/<h2\s/);
+  });
+
   it('the lobby reads the one column the Spin rule needs', () => {
     expect(page).toMatch(/spin_multiplier/);
     expect(page).toMatch(/spin_multiplier: tournament\.spinMultiplier/);

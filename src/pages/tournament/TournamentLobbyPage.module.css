@@ -161,11 +161,24 @@
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
+/* The window's name. It is an <h2> so a screen reader can move between the
+   time windows; it was a <span>.
+   `line-height` is declared because of that swap and for no other reason:
+   globals.css and club-engine.css both give h1-h6 `line-height: 1.2`, while a
+   span here inherited the body's 1.6, so promoting the element would have
+   shortened this row. It does not today - `.groupCount` beside it is still a
+   span at 1.6 and the row is `align-items: baseline`, so the sibling holds the
+   height open - but that is luck, not a rule, and it would end the first time
+   the count moved or got its own line-height. Pinned so the promotion is inert
+   by construction. Everything else the heading would bring is already pinned:
+   `.sc-label` owns the size, weight, letter-spacing and case, `sc-ink--blue`
+   owns the colour, and `* { margin: 0 }` in globals.css kills the UA margin. */
 .groupLabel {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.6;
 }
 
 .groupCount {

@@ -13,7 +13,7 @@ import {
  * Central hub for discovering and joining tournaments across all clubs
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { readClubContextParam } from '../../utils/clubScopedPath';
 import { supabase } from '../../lib/supabase';
@@ -88,7 +88,11 @@ interface Tournament extends TournamentEntryWindowRow {
 }
 
 export default function TournamentLobbyPage() {
-  const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
+  /* Only `register` is bound. The hook's `isRegistering` was destructured and
+     never read - each card owns the busy state for its own plate, because the
+     board shows many and one shared flag would grey out every Take A Seat on
+     the page while one of them worked. */
+  const { register: registerMtt } = useTournamentRegistration();
 
   const { clubId: routeClubId } = useParams<{ clubId?: string }>();
   const { user } = useAuthUser();
@@ -230,7 +234,9 @@ export default function TournamentLobbyPage() {
 
     // Cleanup old channels for tournaments no longer running
     const channelMap = channelRefsRef.current;
-    for (const [tourneyId, channel] of channelMap.entries()) {
+    /* keys(), not entries(): the loop closes a channel by KEY through the bus
+       and never touched the bound value, which read as an unused binding. */
+    for (const tourneyId of [...channelMap.keys()]) {
       if (!runningTournamentIds.includes(tourneyId)) {
         masterBus.removeRegisteredChannel(`t-break-${tourneyId}`);
         channelMap.delete(tourneyId);
@@ -663,6 +669,27 @@ export default function TournamentLobbyPage() {
     );
   };
 
+  /* NOTHING ON THIS PAGE CALLS THIS TODAY, AND IT IS NOT DEAD CODE TO DELETE
+     ON SIGHT (read before removing, 2026-09-21).
+
+     The card's Unregister plate navigates to `/tournaments/:id` on purpose -
+     leaving a tournament moves money (a wallet refund or a ticket back), and
+     the details page is where a player sees which, with a confirmation. So the
+     one-tap path was deliberately removed from the board and this handler was
+     left behind.
+
+     It is still named by `tests/unit/tournamentTicketUnregisterSurfaces.test.ts`,
+     which lists this file among the surfaces that must report the COMMITTED
+     rail rather than assuming which one paid, and that assertion is satisfied
+     by `tournamentUnregisterSuccessText` below. (The same law also forbids the
+     hard-coded sentence that assumes the wallet. It is not repeated here: that
+     law greps this file, so quoting the banned phrase in a comment turns it
+     red - which is exactly what the first draft of this note did.) Deleting
+     the handler means removing this file from that list in the same commit,
+     with the reason, and that is a change to a money-copy law's subject rather
+     than a tidy-up. If the board is ever given a direct unregister again, this
+     is the shape it takes. Either way it is a decision, not a lint fix. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleUnregister = async (tournamentId: string) => {
     if (!user?.id) return;
     try {

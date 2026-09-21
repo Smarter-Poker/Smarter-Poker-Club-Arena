@@ -91,6 +91,7 @@ import { SpinOverrunReporter, describeOverrun } from './spinOverrunReporter.js';
 import { mayTakeSynchronizedBreak } from './breakEligibility.js';
 import {
   capLevelToChipsInPlay,
+  enforcePlayableBlindLevel,
   escalatedBlindLevel,
   lastPlayableIndex,
 } from './blindEscalation.js';
@@ -7372,11 +7373,24 @@ export abstract class TournamentManagerBase {
       const resolved =
         this.pendingBlindTransition?.level ?? this.resolveBlindLevel(blindStructure, nextLevel);
       if (!resolved) throw new Error('Next blind level is missing');
+      /* ONE CEILING, NOT THREE (2026-09-21). These three lines used to read
+         `Math.min(resolved.<x> ?? 0, 10_000_000)`, a hard ceiling applied to
+         the small blind, the big blind and the ante INDEPENDENTLY - the same
+         shape repaired in fn_resolve_tournament_blinds for the ante and for
+         the small blind. A Spin past level ~280 resolves blinds orders of
+         magnitude above the ceiling, both saturate to 10,000,000, and
+         fn_publish_tournament_blind_level accepts it because it refuses only
+         sb > bb. On 2026-09-21, 25 RUNNING Spin events were publishing
+         10,000,000/10,000,000 and table 494b1580 was dealing a small blind
+         equal to its big blind. enforcePlayableBlindLevel applies the very
+         same MAX_BLIND_VALUE ceiling, once, and holds the small blind to the
+         share the resolved level asked for. */
+      const playable = enforcePlayableBlindLevel(resolved);
       const level = {
         ...resolved,
-        smallBlind: Math.min(resolved.smallBlind ?? 0, 10_000_000),
-        bigBlind: Math.min(resolved.bigBlind ?? 0, 10_000_000),
-        ante: Math.min(resolved.ante ?? 0, 10_000_000),
+        smallBlind: playable.smallBlind,
+        bigBlind: playable.bigBlind,
+        ante: playable.ante,
       };
       this.pendingBlindTransition ??= {
         previousLevel: prevLevel,
@@ -7398,9 +7412,10 @@ export abstract class TournamentManagerBase {
       // shift applied after a committed response was lost.
       const generation = this.getTournamentLeaseGeneration();
       if (!generation) throw new Error('Blind publication requires the active tournament lease');
-      const smallBlind = Math.min(level.smallBlind ?? 0, 10_000_000);
-      const bigBlind = Math.min(level.bigBlind ?? 0, 10_000_000);
-      const ante = Math.min(level.ante ?? 0, 10_000_000);
+      // The same one ceiling again, on the value actually being published -
+      // `level` may have come from a pendingBlindTransition recovered from an
+      // earlier process, which never passed through the block above.
+      const { smallBlind, bigBlind, ante } = enforcePlayableBlindLevel(level);
       const { data: receipt, error: levelErr } = await supabase.rpc(
         'fn_publish_tournament_blind_level',
         {

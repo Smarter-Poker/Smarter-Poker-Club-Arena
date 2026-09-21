@@ -213,7 +213,16 @@ export function useDailyMissionActions({
         }
       }
     },
-    [userId, installDashboardProjection, loadChallenges, toast, isMountedRef]
+    [
+      userId,
+      installDashboardProjection,
+      loadChallenges,
+      toast,
+      isMountedRef,
+      diamondBalanceRef,
+      mutationEpochRef,
+      setChallenges,
+    ]
   );
 
   // ── Claim All ──
@@ -325,7 +334,7 @@ export function useDailyMissionActions({
         setEconomyBusy(false);
       }
     }
-  }, [userId, buyingFreeze, diamondBalance, toast, loadChallenges, isMountedRef]);
+  }, [userId, buyingFreeze, diamondBalance, toast, loadChallenges, isMountedRef, mutationEpochRef]);
 
   const handleReroll = useCallback(
     async (challenge: TieredUserChallenge) => {
@@ -416,7 +425,7 @@ export function useDailyMissionActions({
         }
       }
     },
-    [userId, diamondBalance, loadChallenges, toast, isMountedRef]
+    [userId, diamondBalance, loadChallenges, toast, isMountedRef, mutationEpochRef]
   );
 
   const handleClaimAll = useCallback(async () => {
@@ -531,7 +540,17 @@ export function useDailyMissionActions({
         });
       }
     }
-  }, [userId, toast, installDashboardProjection, loadChallenges, isMountedRef]);
+  }, [
+    userId,
+    toast,
+    installDashboardProjection,
+    loadChallenges,
+    isMountedRef,
+    diamondBalanceRef,
+    mutationEpochRef,
+    setChallenges,
+    setRewardVault,
+  ]);
 
   return {
     claimingIds,

@@ -76,7 +76,15 @@ export function useDailyMissionRealtimeCatchUp({
         loadChallenges(userId, 'silent');
       }, 250);
     },
-    [userId, loadChallenges]
+    [
+      userId,
+      loadChallenges,
+      dashboardRequestsInFlightRef,
+      dashboardRevisionRef,
+      queuedRealtimeRevisionRef,
+      queuedUnversionedRealtimeRef,
+      realtimeRefreshTimerRef,
+    ]
   );
 
   // Realtime is the immediate path. Everything else is a lifecycle event (a
@@ -113,7 +121,15 @@ export function useDailyMissionRealtimeCatchUp({
           requestCursorCatchUp();
         }
       });
-  }, [isMountedRef, scheduleRealtimeRefresh]);
+  }, [
+    isMountedRef,
+    scheduleRealtimeRefresh,
+    catchUpGenerationRef,
+    cursorCatchUpPendingRef,
+    cursorReadInFlightRef,
+    dashboardRevisionRef,
+    userIdRef,
+  ]);
 
   // Browsers throttle timers and live sockets in background tabs. Reconcile on
   // resume so a table left open overnight never shows yesterday's contracts.
@@ -152,13 +168,21 @@ export function useDailyMissionRealtimeCatchUp({
       document.removeEventListener('visibilitychange', refreshAfterResume);
       window.removeEventListener('focus', refreshAfterResume);
     };
-  }, [userId, loadChallenges, requestCursorCatchUp]);
+  }, [
+    userId,
+    loadChallenges,
+    requestCursorCatchUp,
+    initialLoadSettledRef,
+    lastResumeRefreshRef,
+    periodKeysRef,
+    serverClockOffsetRef,
+  ]);
 
   useEffect(
     () => () => {
       if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
     },
-    []
+    [realtimeRefreshTimerRef]
   );
 
   useEffect(
@@ -166,7 +190,7 @@ export function useDailyMissionRealtimeCatchUp({
       catchUpGenerationRef.current += 1;
       cursorCatchUpPendingRef.current = false;
     },
-    [userId]
+    [userId, catchUpGenerationRef, cursorCatchUpPendingRef]
   );
 
   useMasterBusBroadcastChannel({

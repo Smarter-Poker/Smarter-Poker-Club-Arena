@@ -51,7 +51,7 @@ export function useMissionCycleRoute({
     navigate(withClubContext(`/challenges${location.search}${location.hash}`, routeClubId), {
       replace: true,
     });
-  }, [cycle, location.hash, location.search, navigate, routeClubId]);
+  }, [cycle, location.hash, location.search, navigate, routeClubId, setConfirmingRerollId]);
 
   const openTier = useCallback(
     (tier: Tier) => {
@@ -61,7 +61,7 @@ export function useMissionCycleRoute({
         withClubContext(`/challenges/${tier}${location.search}${location.hash}`, routeClubId)
       );
     },
-    [location.hash, location.search, navigate, routeClubId]
+    [location.hash, location.search, navigate, routeClubId, setConfirmingRerollId]
   );
 
   const handleTierKeyDown = useCallback(

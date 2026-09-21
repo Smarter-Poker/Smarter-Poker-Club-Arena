@@ -395,6 +395,16 @@ BEGIN
   RETURN n;
 END $function$;
 
+-- fn_ca_settlement_correctness_check is on fn_ca_guard_watchlist(), so this
+-- redefinition is DECLARED in the same transaction that makes it. Undeclared,
+-- fn_ca_guard_defs_watch opens an INFO notice a human has to close by hand;
+-- declared, the baseline moves with the change and the watcher has nothing to
+-- report. Sections B through G are the live definition unchanged; section H is
+-- the addition this migration exists for.
+SELECT public.fn_ca_declare_guard_redefinition(
+  'fn_ca_settlement_correctness_check',
+  'migration a_stalled_rakeback_settler_is_an_incident_not_a_silence');
+
 -- ───────────────────────────────────────────────────────────────────────────
 -- 3. Authorization, stated rather than assumed.
 --

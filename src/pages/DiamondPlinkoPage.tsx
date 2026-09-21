@@ -187,7 +187,7 @@ function DiamondPlinkoGame() {
     if (!uuid || !validBonusBudget(budget) || earned.loading || earned.required) return;
     void load(uuid, total).catch((e) => {
       reportError(e, 'DiamondPlinkoPage.quote');
-      if (live.current) setError('The Entry Could Not Be Checked. Try Refresh.');
+      if (live.current) setError('The Entry Could Not Be Loaded. Try Refresh.');
     });
   }, [uuid, total, budget.base, earned.loading, earned.required, load]);
   useEffect(() => {
@@ -392,8 +392,9 @@ function DiamondPlinkoGame() {
     setError('Finish Your Bonus Game Before Leaving.')
   );
   const droppedChips = result
-    ? result.drops.slice(0, landed).reduce((sum, ball) => sum + Math.round(ball.payout_chips * 100), 0) /
-      100
+    ? result.drops
+        .slice(0, landed)
+        .reduce((sum, ball) => sum + Math.round(ball.payout_chips * 100), 0) / 100
     : 0;
   // Every drop has landed, so the booked figure is the receipt: a Super batch
   // whose drops fell short is topped up to its guarantee, and that is what paid.
@@ -440,8 +441,7 @@ function DiamondPlinkoGame() {
           },
           {
             label: 'Drops',
-            value:
-              animating && result ? `${landed}/${result.drops.length}` : String(PLINKO_DROPS),
+            value: animating && result ? `${landed}/${result.drops.length}` : String(PLINKO_DROPS),
           },
           {
             label: 'Guaranteed',

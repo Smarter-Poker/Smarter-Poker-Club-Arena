@@ -378,7 +378,7 @@ export default function DiamondWheelPage() {
       })
       .catch((err) => {
         reportError(err, 'DiamondWheelPage.entry');
-        if (current) setLoadError('The Spin Amount Could Not Be Checked');
+        if (current) setLoadError('The Spin Amount Could Not Be Loaded');
       })
       .finally(() => {
         if (current) setQuoting(false);

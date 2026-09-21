@@ -1,0 +1,49 @@
+.emptyState {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 220px;
+  place-items: center;
+  align-content: center;
+  padding: 32px;
+  border: 1px dashed #3b464e;
+  color: #7d8991;
+  text-align: center;
+}
+
+.emptyState > :not(.bevelFrame) {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.emptyState h2,
+.emptyState h3 {
+  margin: 0 0 8px;
+  color: #dbe3e8;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.emptyState p {
+  margin: 0;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.8rem;
+}
+
+.emptyState .retryButton {
+  margin-top: 18px;
+}
+
+.unavailableHero {
+  min-height: min(54vh, 510px);
+}
+
+.unavailableState {
+  margin-top: 18px;
+}

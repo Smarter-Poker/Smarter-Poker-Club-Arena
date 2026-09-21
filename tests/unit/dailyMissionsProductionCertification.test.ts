@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+import { readDailyChallengesUnit } from '../helpers/dailyChallengesSources';
+
+import { readDailyChallengesStylesheet } from '../helpers/dailyChallengesSources';
 
 const root = resolve(import.meta.dirname, '../..');
 
@@ -144,7 +147,7 @@ describe('Daily Missions production certification', () => {
   });
 
   it('keeps decorative card chrome out of every mission control hit target', () => {
-    const css = source('src/pages/DailyChallengesPage.module.css');
+    const css = readDailyChallengesStylesheet();
     const before = css.slice(
       css.indexOf('.challengeCard::before'),
       css.indexOf('.challengeCard::after')
@@ -168,36 +171,36 @@ describe('Daily Missions production certification', () => {
   });
 
   it('targets the enforced title-case reroll accessibility contract', () => {
-    const page = source('src/pages/DailyChallengesPage.tsx');
+    const card = readDailyChallengesUnit('MissionCard.tsx');
     const pageObject = source('tests/e2e/support/DailyMissionsPage.ts');
     const certification = source('tests/e2e/production-daily-missions.spec.ts');
-    expect(page).toContain('? `Reroll ${DAILY_MISSION_REROLL_COST} Diamond For ${c.name}`');
-    expect(page).toContain(': `Need ${DAILY_MISSION_REROLL_COST} Diamond To Reroll ${c.name}`');
+    expect(card).toContain('? `Reroll ${DAILY_MISSION_REROLL_COST} Diamond For ${c.name}`');
+    expect(card).toContain(': `Need ${DAILY_MISSION_REROLL_COST} Diamond To Reroll ${c.name}`');
     expect(pageObject).toContain('name: /^Reroll 1 Diamond For .+$/');
     expect(certification).toContain('name: /^Confirm Reroll For /');
   });
 
   it('keeps a disconnected saved alert preference ahead of browser capability status', () => {
-    const page = source('src/pages/DailyChallengesPage.tsx');
-    const disconnectedStatus = page.indexOf(
+    const alertsPanel = readDailyChallengesUnit('MissionAlertsPanel.tsx');
+    const disconnectedStatus = alertsPanel.indexOf(
       ": deviceNeedsConnection\n        ? 'Preference On, Device Disconnected'"
     );
-    const deniedStatus = page.indexOf(": permission === 'denied'", disconnectedStatus);
+    const deniedStatus = alertsPanel.indexOf(": permission === 'denied'", disconnectedStatus);
     expect(disconnectedStatus).toBeGreaterThan(-1);
     expect(deniedStatus).toBeGreaterThan(disconnectedStatus);
-    expect(page).toContain(
+    expect(alertsPanel).toContain(
       'Allow Notifications For Smarter Poker In Your Browser Settings, Then Reload.'
     );
   });
 
   it('keeps every mission control above the fixed Club Arena footer', () => {
-    const css = source('src/pages/DailyChallengesPage.module.css');
+    const css = readDailyChallengesStylesheet();
     expect(css).toContain('padding: 24px 18px calc(var(--bottom-nav-clearance, 74px) + 24px)');
     expect(css).toContain('padding: 0 0 max(84px, calc(var(--bottom-nav-clearance, 74px) + 12px))');
   });
 
   it('keeps modal dialogs above inert toasts and contains backdrop scrolling', () => {
-    const pageCss = source('src/pages/DailyChallengesPage.module.css');
+    const pageCss = readDailyChallengesStylesheet();
     const toastCss = source('src/components/common/Toast.css');
     const overlay = pageCss.slice(
       pageCss.indexOf('.celebrateOverlay {'),

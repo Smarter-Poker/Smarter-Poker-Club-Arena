@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/f08-satellite-deal-samehand-order",
+  "functions": ["fn_ca_tournament_bust_at"]
+}

@@ -1525,6 +1525,10 @@ jobs:
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-a-bust-is-ranked-by-when-it-happened-pg17.sh
+      - name: Satellite and deal ladders rank a same-hand bust by starting stack
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/probe-satellite-same-hand-bust-order-pg17.sh
 
       - name: Tournament blinds publish atomically across the field
         env:

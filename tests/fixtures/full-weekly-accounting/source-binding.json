@@ -313,7 +313,7 @@
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
     "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
-    "tests/fixtures/union-weekly-basis/source-binding.json": "06b6e8223bc0fd1759acdda3e2f1cc344d68567f4412f13cce656fd11ad7a6ed",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "042ab6583213323c275c6111b6301b40e6f85901a6a89a6e5852eac2b2c39cb4",
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
@@ -334,7 +334,7 @@
     "tests/fixtures/union-weekly-basis/captured-document-dependencies.json": "b5f5a9e7e0a2a7c710295bcd6b0a1b5aca7ddf9c27a6268167eba1a8e35fa23b",
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
-    "scripts/dev/test-union-weekly-basis.py": "e312350cec2816c5490c7522b1b850cd751571b70c848201fd1d7f8f6aa2a220",
+    "scripts/dev/test-union-weekly-basis.py": "2c7627d9e12934c97386eb4c5004786336f2e2b94f9a46fffab76fad6280d3af",
     "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "fa2f2f378db56fa7b586c6ddecaf43d58cac0b34817e8497b13ebb5159f33798",
     "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
     "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf",
@@ -1635,7 +1635,9 @@
         "sha256": "06b6e8223bc0fd1759acdda3e2f1cc344d68567f4412f13cce656fd11ad7a6ed"
       }
     ],
-    "added_repository_inputs": ["tests/fixtures/rakeback-payout-document/regression.sql"],
+    "added_repository_inputs": [
+      "tests/fixtures/rakeback-payout-document/regression.sql"
+    ],
     "reason": "On 2026-09-14, 420 posted rakeback legs moved 84,041.00 from settlement_suspense into 420 player wallets with settlement_id NULL, no invoice, no receipt and no settlement run; accounting_routed_settlement_runs has never held a row. The writer was fn_club_members_ledger_writer, the AFTER UPDATE OF chip_balance journal trigger on club_members, which takes the leg category from app.ledger_category and defaults the counterparty to settlement_suspense, and which knows no period, certificate, payout row, run or document. It now refuses a rakeback movement by name (rakeback_requires_accounting_authority), and a deferrable constraint trigger states the invariant for every writer (rakeback_payout_leg_undocumented). The 420 historical rows are untouched. No cron, watcher, reconciler or repair loop; no second payer and no second document authority.",
     "qualification": "scripts/dev/test-union-weekly-basis.py installs the migration with the predecessors pristine, so every regression on that cluster - including the real raked weekly close through fn_union_settlement_cascade - runs with the constraint armed. tests/fixtures/rakeback-payout-document/regression.sql then proves both refusals by exact SQLSTATE and name, that the accepted weekly payout satisfies every clause, and that each refusal leaves the journal, documents, deliveries and every balance byte-identical.",
     "first_settleable_week": "The constraint requires a strict subset of what fn_settle_accounting_rakeback_stage already writes and already asserts with routed_rakeback_invoice_delivery_incomplete. It does NOT require chip_ledger.settlement_id, which that authority does not populate on the payout leg, so it cannot refuse 2026-09-21 07:00Z -> 2026-09-28 07:00Z."
@@ -1686,5 +1688,31 @@
     "reason": "fn_union_club_invoice re-derived the weekly ECO from fn_union_eco_adjustment, a VOLATILE recomputation of the whole week's P&L, instead of quoting the union_eco_ledger row fn_union_eco_record had written from an earlier call in the same settlement. Under READ COMMITTED those are different snapshots: on 2026-09-14 settlement_invoices 7deff43f stated eco/net 11244.03 against a recorded -11242.82 for club a41434bb, overstating that club's debt by 1.21 while rake_generated, rakeback_due and union_fee_kept matched the ledger to the cent. 20260921023420 makes the square-up read the recorded row, makes fn_union_issue_weekly_invoices refuse a square-up whose ECO is not the recorded one (and a non-zero ECO with ECO terms disabled), and makes atomic_distribute_rake declare the earning club on the autoledger GUC 20260920192513 introduced for prize legs, so a union rake journal leg names its club going forward. hooks-regression.sql gains four assertions for exactly those three source contracts and for the universal invariant that every recorded ECO is the figure its square-up states; no existing assertion was weakened or removed and the diff is append-only after that file's previous final ROLLBACK.",
     "qualification": "scripts/dev/test-full-weekly-accounting-activation.sh loads the migration itself between hooks-seed.sql and hooks-regression.sql, so the fixture exercises the real migration bytes rather than a copy: the four assertions fail on the captured catalog and pass after it. The same one-line restamp lands in the four other bindings that pin the harness (earlybird-fee-custody, legacy-fee-finality, sep8-spin-custody, spin-mixed-cutover); their phases are unaffected because the added -f runs after them. Proved failing-before / passing-after on PostgreSQL 17.11 against the exact substituted bytes, and the migration is a clean no-op on replay.",
     "first_settleable_week": "Nothing here moves a discovery cursor: STEP 4 refuses if union_settlement_floor for the Midway union is not still 2026-09-21T07:00Z. The square-up now quotes the union_eco_ledger row that fn_union_settlement_cascade writes through fn_union_eco_record earlier in the same transaction, so 2026-09-21 07:00Z -> 2026-09-28 07:00Z has its record to quote before the document is written."
+  },
+  "club_settlement_floor_behaviour_successor_20260921": {
+    "migrations": [
+      "supabase/migrations/20260920232503_club_settlement_floor_bounds_standalone_weekly_discovery.sql"
+    ],
+    "prior_binding_sha256": "00e2919f6c2ae62084152342ee7b11d7ad1b53f130b21cae71e2f9b88fa46caa",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/dev/test-union-weekly-basis.py",
+        "previous_sha256": "e312350cec2816c5490c7522b1b850cd751571b70c848201fd1d7f8f6aa2a220",
+        "sha256": "2c7627d9e12934c97386eb4c5004786336f2e2b94f9a46fffab76fad6280d3af"
+      },
+      {
+        "path": "tests/fixtures/union-weekly-basis/source-binding.json",
+        "previous_sha256": "06b6e8223bc0fd1759acdda3e2f1cc344d68567f4412f13cce656fd11ad7a6ed",
+        "sha256": "042ab6583213323c275c6111b6301b40e6f85901a6a89a6e5852eac2b2c39cb4"
+      }
+    ],
+    "added_repository_inputs": [
+      "tests/fixtures/club-settlement-floor-behaviour/README.md",
+      "tests/fixtures/club-settlement-floor-behaviour/installed-run-journal.sql",
+      "tests/fixtures/club-settlement-floor-behaviour/seed.sql",
+      "tests/fixtures/club-settlement-floor-behaviour/regression.sql"
+    ],
+    "reason": "club_settlement_floor_successor_20260920 shipped the floor and proved its arithmetic, but not the discovery BEHAVIOUR it exists for. The reason was the run journal, not the migration's preimage guard: tests/fixtures/full-weekly-accounting/schema.sql is a 2026-09-14 catalog capture, and on that date public.union_accounting_runs was still union-only - PRIMARY KEY(union_id,period_start,period_end), union_id NOT NULL, no standalone_club_id, scope_kind, scope_id or last_scheduler_visit_at - so every term of the coordinator's standalone-club discovery fails 42703 before a floor predicate is reached. (tests/fixtures/weekly-scheduler-fairness has the journal shape but builds the coordinator from the weekly-v3 components, so 20260920232503 correctly refuses there with weekly_coordinator_preimage_drift.) tests/fixtures/club-settlement-floor-behaviour/installed-run-journal.sql brings that captured journal to the exact installed union/standalone shape using the reviewed source of that shape verbatim - components 20260914142600 and 20260914154500 and migration 20260917195207 - and reads it back against the column, constraint and index inventory captured read-only from production on 2026-09-21, refusing on drift. No coordinator, floor, payer or document definition is changed, no guard is loosened, no preimage is relaxed and no captured catalog, component or existing assertion is edited. The only change to scripts/dev/test-union-weekly-basis.py is three added run() steps after the existing club-floor regression; tests/fixtures/union-weekly-basis/source-binding.json gains those three inputs plus the fixture README, and tests/fixtures/club-settlement-floor/seed.sql gains one corrected comment naming where the club behaviour is now proved.",
+    "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py: 74 PASS steps, 0 failures, including club-floor-run-journal, club-floor-behaviour-seed and club-floor-behaviour-regression (20 assertions). Red control on the same stack, reverting only the three GREATEST clamps of 20260920232503 in the running coordinator: 5 of those 20 assertions fail - the below-floor club week is re-attempted, the first week above the floor is neither reached nor completed, and the club whose earlier week succeeded no longer reaches its next due week."
   }
 }

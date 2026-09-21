@@ -1,5 +1,6 @@
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
-import { pendingBonus } from '../services/diamondBonusRecovery';
+import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
+import { useAutoSettle } from '../hooks/useAutoSettle';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
@@ -147,7 +148,13 @@ function DiamondCrashGame() {
   const bet = bonusTotal(budget);
   const budgetRef = useRef(budget);
   budgetRef.current = budget;
+  // A wager whose answer never arrived. The page settles it on its own
+  // schedule (useAutoSettle); the player is never asked to check anything.
   const [uncertain, setUncertain] = useState(false);
+  const [settleAttempts, setSettleAttempts] = useState(0);
+  // The server refused a ticket that could no longer open a round and charged
+  // nothing, so the same wager goes again on a fresh ticket - once per press.
+  const [restartOwed, setRestartOwed] = useState(false);
   const heldStart = useRef<Parameters<typeof DiamondBonusService.start>[0] | null>(null);
   const [autoCents, setAutoCents] = useState<number>(0);
   const [round, setRound] = useState<CrashRound | null>(null);
@@ -541,20 +548,35 @@ function DiamondCrashGame() {
       adopt(result);
     } catch (err) {
       reportError(err, 'DiamondCrashPage.start');
-      if (live()) {
-        setUncertain(!(err instanceof BonusRefusal));
-        toast.error(
-          err instanceof BonusRefusal ? err.message : 'Check Your Round Before Starting Another.'
-        );
-      }
-      if (err instanceof BonusRefusal) {
+      if (err instanceof PriorBonusPending) {
+        // Another tab's wager is still saved: it settles first, by itself.
+        heldStart.current = err.prior;
+        if (live()) {
+          setBudget(err.prior.budget);
+          setUncertain(true);
+          setSettleAttempts(0);
+          toast.info('Settling Your Previous Round First');
+        }
+      } else if (err instanceof BonusRefusal) {
+        // Nothing was charged. The ticket is spent either way, so a fresh one
+        // is dealt; when the ticket itself was the refusal the same wager is
+        // sent again on it.
         heldStart.current = null;
         setCommit(null);
         if (live()) {
+          setUncertain(false);
+          toast.error(err.message);
+          if (err.ticketGone) setRestartOwed(true);
           await freshCommit().catch((error) =>
             reportError(error, 'DiamondCrashPage.refusedTicket')
           );
         }
+      } else if (live()) {
+        // The answer never arrived. The saved wager is replayed by
+        // useAutoSettle until the server says what happened.
+        setUncertain(true);
+        setSettleAttempts(0);
+        toast.info('Settling Your Round');
       }
       endRun(autoRunRef.current ? 'Auto Play Stopped' : null);
     } finally {
@@ -578,10 +600,25 @@ function DiamondCrashGame() {
     finish,
     adopt,
     endRun,
+    setBudget,
   ]);
 
-  const checkStart = async () => {
-    if (!heldStart.current || busyRef.current) return;
+  const checkStart = async (): Promise<boolean> => {
+    if (busyRef.current) return false;
+    if (!heldStart.current) {
+      // Nothing saved to replay: the round, if one opened, is on the server.
+      if (clubUuid) {
+        try {
+          const next = await loadState(clubUuid);
+          if (live() && next.open_round?.status === 'open') adopt(next.open_round);
+          if (live()) setUncertain(false);
+        } catch (err) {
+          reportError(err, 'DiamondCrashPage.reread');
+          if (live()) setSettleAttempts((count) => count + 1);
+        }
+      }
+      return true;
+    }
     busyRef.current = true;
     setStarting(true);
     try {
@@ -591,33 +628,50 @@ function DiamondCrashGame() {
           unknown
         >
       );
-      if (!live()) return;
+      if (!live()) return true;
       earned.consume(heldStart.current?.budget.award?.id);
       heldStart.current = null;
       setUncertain(false);
       if (result.status === 'open') adopt(result);
       else finish(result);
+      setSettleAttempts(0);
     } catch (err) {
       reportError(err, 'DiamondCrashPage.checkStart');
-      if (live())
-        toast.error(
-          err instanceof BonusRefusal ? err.message : 'Your Round Could Not Be Checked. Try Again.'
-        );
       if (err instanceof BonusRefusal) {
         heldStart.current = null;
-        setUncertain(false);
         setCommit(null);
         if (live()) {
+          setUncertain(false);
+          setSettleAttempts(0);
+          toast.error(err.message);
+          if (err.ticketGone) setRestartOwed(true);
           await freshCommit().catch((error) =>
             reportError(error, 'DiamondCrashPage.recoveryTicket')
           );
         }
+      } else if (live()) {
+        // Not an answer: the page tries again on its own schedule.
+        setSettleAttempts((count) => count + 1);
       }
     } finally {
       busyRef.current = false;
       if (live()) setStarting(false);
     }
+    return true;
   };
+  useAutoSettle(uncertain && !loading, settleAttempts, checkStart);
+  // A wager the server refused for its ticket alone is sent again on the
+  // fresh ticket, once, without the player pressing Start twice.
+  const handleStartRef = useRef(handleStart);
+  handleStartRef.current = handleStart;
+  const restarts = useRef(0);
+  useEffect(() => {
+    if (!restartOwed || !commit || uncertain || starting) return;
+    setRestartOwed(false);
+    if (restarts.current >= 2) return;
+    restarts.current += 1;
+    void handleStartRef.current();
+  }, [restartOwed, commit, uncertain, starting]);
 
   const startRun = useCallback(() => {
     if (!autoSize || running || open || starting || earned.required || budget.award) return;
@@ -950,7 +1004,7 @@ function DiamondCrashGame() {
           // says: the money is already on the table and getting it back is not
           // something a shortage may stand in front of.
           uncertain
-            ? { label: 'Check Round', onClick: () => void checkStart(), disabled: starting }
+            ? { label: 'Settling', onClick: () => undefined, disabled: true }
             : open
               ? {
                   label: cashing ? 'Booking Win' : 'Book The Win',

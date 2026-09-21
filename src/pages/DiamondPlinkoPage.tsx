@@ -1,5 +1,6 @@
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
-import { pendingBonus } from '../services/diamondBonusRecovery';
+import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
+import { useAutoSettle } from '../hooks/useAutoSettle';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
@@ -66,7 +67,13 @@ function DiamondPlinkoGame() {
   const [landed, setLanded] = useState(0);
   const [animating, setAnimating] = useState(false);
   const [busy, setBusy] = useState(false);
+  // A wager whose answer never arrived. The page settles it on its own
+  // schedule (useAutoSettle); the player is never asked to check anything.
   const [uncertain, setUncertain] = useState(false);
+  const [settleAttempts, setSettleAttempts] = useState(0);
+  // The server refused a ticket that could no longer open a batch and charged
+  // nothing, so the same wager goes again on a fresh ticket - once per press.
+  const [restartOwed, setRestartOwed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [verified, setVerified] = useState<boolean | null>(null);
   const [waitSeconds, setWaitSeconds] = useGameCooldown();
@@ -158,14 +165,13 @@ function DiamondPlinkoGame() {
         setUuid(id);
         const pending = pendingBonus(user?.id ?? '', id, 'plinko');
         if (pending) {
+          // Replayed by useAutoSettle; a ticket follows once it is settled.
           held.current = pending;
           setBudget(pending.budget);
           setUncertain(true);
           setTicket(null);
-          setError('Check Your Saved Bonus Before Starting Another.');
-          return;
         }
-        await newTicket();
+        // The ticket is dealt by its own effect once the club is known.
       } catch (e) {
         reportError(e, 'DiamondPlinkoPage.load');
         if (!cancelled) setError('Plinko Could Not Be Loaded. Try Refresh.');
@@ -176,7 +182,7 @@ function DiamondPlinkoGame() {
       live.current = false;
       generation.current++;
     };
-  }, [clubId, user?.id, newTicket, setBudget]);
+  }, [clubId, user?.id, setBudget]);
   useEffect(() => {
     if (!uuid || !validBonusBudget(budget) || earned.loading || earned.required) return;
     void load(uuid, total).catch((e) => {
@@ -239,43 +245,28 @@ function DiamondPlinkoGame() {
     } catch (e) {
       reportError(e, 'DiamondPlinkoPage.start');
       if (live.current) {
-        setUncertain(!(e instanceof BonusRefusal));
-        setError(
-          e instanceof BonusRefusal ? e.message : 'Check Your Bonus Before Starting Another.'
-        );
-      }
-    } finally {
-      busyRef.current = false;
-      if (live.current) setBusy(false);
-    }
-  };
-  const check = async () => {
-    if (!uuid || busyRef.current) return;
-    busyRef.current = true;
-    setBusy(true);
-    try {
-      if (held.current && uncertain) {
-        const next = parsePlinkoBonus(
-          await DiamondBonusService.start(held.current, user?.id ?? '')
-        );
-        if (!live.current) return;
-        accept(next, false);
-      }
-      if (!live.current) return;
-      await earned.refresh();
-      if (!earned.required) await load(uuid, validBonusBudget(budget) ? total : 100);
-      if (!live.current) return;
-      if (!ticket || uncertain) await newTicket();
-      if (live.current) setError(null);
-    } catch (e) {
-      reportError(e, 'DiamondPlinkoPage.check');
-      if (live.current) {
-        setError(
-          e instanceof BonusRefusal ? e.message : 'Your Bonus Could Not Be Checked. Try Again.'
-        );
-        if (e instanceof BonusRefusal) {
+        if (e instanceof PriorBonusPending) {
+          // Another tab's wager is still saved: it settles first, by itself.
+          held.current = e.prior;
+          setBudget(e.prior.budget);
+          setUncertain(true);
+          setSettleAttempts(0);
+          setError('Settling Your Previous Bonus First');
+        } else if (e instanceof BonusRefusal) {
+          // Nothing was charged. The ticket is spent either way, so a fresh
+          // one is dealt; when the ticket itself was the refusal the same
+          // wager is sent again on it.
           held.current = null;
           setUncertain(false);
+          setTicket(null);
+          setError(e.message);
+          if (e.ticketGone) setRestartOwed(true);
+        } else {
+          // The answer never arrived. The saved wager is replayed by
+          // useAutoSettle until the server says what happened.
+          setUncertain(true);
+          setSettleAttempts(0);
+          setError('Settling Your Bonus');
         }
       }
     } finally {
@@ -283,13 +274,76 @@ function DiamondPlinkoGame() {
       if (live.current) setBusy(false);
     }
   };
+  const check = async (): Promise<boolean> => {
+    if (!uuid || busyRef.current) return false;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      if (held.current && uncertain) {
+        const next = parsePlinkoBonus(
+          await DiamondBonusService.start(held.current, user?.id ?? '')
+        );
+        if (!live.current) return true;
+        accept(next, false);
+      }
+      if (!live.current) return true;
+      await earned.refresh();
+      if (!earned.required) await load(uuid, validBonusBudget(budget) ? total : 100);
+      if (live.current) {
+        setError(null);
+        setSettleAttempts(0);
+      }
+    } catch (e) {
+      reportError(e, 'DiamondPlinkoPage.check');
+      if (live.current) {
+        if (e instanceof BonusRefusal) {
+          held.current = null;
+          setUncertain(false);
+          setSettleAttempts(0);
+          setTicket(null);
+          setError(e.message);
+          if (e.ticketGone) setRestartOwed(true);
+        } else {
+          // Not an answer: the page tries again on its own schedule.
+          setSettleAttempts((count) => count + 1);
+          setError('Settling Your Bonus');
+        }
+      }
+    } finally {
+      busyRef.current = false;
+      if (live.current) setBusy(false);
+    }
+    return true;
+  };
+  useAutoSettle(uncertain, settleAttempts, check);
+  // A wager the server refused for its ticket alone is sent again on the
+  // fresh ticket, once, without the player pressing Drop twice.
+  const playRef = useRef(play);
+  playRef.current = play;
+  const restarts = useRef(0);
+  useEffect(() => {
+    if (!restartOwed || !ticket || uncertain || busy) return;
+    setRestartOwed(false);
+    if (restarts.current >= 2) return;
+    restarts.current += 1;
+    void playRef.current();
+  }, [restartOwed, ticket, uncertain, busy]);
+  // A refused ticket is replaced without a press.
+  useEffect(() => {
+    if (ticket || uncertain || animating || !uuid) return;
+    let cancelled = false;
+    newTicket().catch((e) => {
+      reportError(e, 'DiamondPlinkoPage.redeal');
+      if (!cancelled && live.current) setError('Your Ticket Could Not Be Prepared. Try Refresh.');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ticket, uncertain, animating, uuid, newTicket]);
   const finish = () => {
     setAnimating(false);
     if (result) setLanded(result.drops.length);
-    void newTicket().catch((e) => {
-      reportError(e, 'DiamondPlinkoPage.ticket');
-      if (live.current) setError('Refresh To Prepare Your Next Ticket.');
-    });
+    // The next ticket is dealt by its own effect once the drops have landed.
   };
   const verify = async () => {
     if (!result || busyRef.current) return;
@@ -375,7 +429,7 @@ function DiamondPlinkoGame() {
         title={diamondGameTitle('plinko', boost)}
         eyebrow="Diamond Spins"
         pill={
-          uncertain ? 'Check Bonus' : animating ? 'Dropping' : completionId ? 'Completed' : 'Ready'
+          uncertain ? 'Settling' : animating ? 'Dropping' : completionId ? 'Completed' : 'Ready'
         }
         bays={[
           {
@@ -397,9 +451,9 @@ function DiamondPlinkoGame() {
           { label: 'Chip Prize', value: gameChips(shownWin), ink: 'gold' },
         ]}
         secondary={{
-          label: uncertain ? 'Check Bonus' : animating ? 'Show Results' : 'Refresh',
+          label: animating ? 'Show Results' : 'Refresh',
           onClick: () => (animating ? finish() : void check()),
-          disabled: busy,
+          disabled: busy || uncertain,
         }}
         primary={{
           label: waitSeconds > 0 ? `Ready In ${waitSeconds}s` : 'Drop Diamonds',

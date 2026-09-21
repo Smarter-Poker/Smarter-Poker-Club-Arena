@@ -269,20 +269,25 @@ describe('automatic spins and player-owned recovery', () => {
     });
     expect(backend.spin).toHaveBeenCalledTimes(1);
   });
-  it('refresh preserves an unknown spin and Recover Spin submits the original identity', async () => {
+  it('an unknown spin is recovered by the page itself, with the original identity', async () => {
     await ready();
-    backend.spin.mockRejectedValueOnce(new Error('Connection Lost'));
+    // Two dropped answers in a row: the page keeps resending the SAME saved
+    // request (never a fresh wager) until the receipt lands. Nobody presses
+    // anything - owner ruling 2026-09-21, no game may require a check.
+    backend.spin
+      .mockRejectedValueOnce(new Error('Connection Lost'))
+      .mockRejectedValueOnce(new Error('Connection Lost Again'));
     fireEvent.click(screen.getByRole('button', { name: 'Spin 100', exact: true }));
     await waitFor(() => expect(backend.toast.error).toHaveBeenCalled());
     const saved = readWheelPending('player', sample.club_id!);
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh Wheel' }));
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Refresh Wheel' })).toBeEnabled()
-    );
-    expect(readWheelPending('player', sample.club_id!)).toEqual(saved);
-    expect(backend.commit).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Recover Spin' }));
-    await waitFor(() => expect(backend.spin).toHaveBeenCalledTimes(2));
+    expect(saved).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Recover Spin' })).not.toBeInTheDocument();
+    await waitFor(() => expect(backend.spin).toHaveBeenCalledTimes(3), { timeout: 4000 });
     expect(backend.spin.mock.calls[1][0]).toEqual(backend.spin.mock.calls[0][0]);
+    expect(backend.spin.mock.calls[2][0]).toEqual(backend.spin.mock.calls[0][0]);
+    // One ticket for the whole episode: the saved spin never took a new one.
+    expect(backend.commit).toHaveBeenCalledTimes(1);
+    // The third answer is the receipt, so the wheel is spinning it.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Land Wheel' })).toBeInTheDocument());
   });
 });

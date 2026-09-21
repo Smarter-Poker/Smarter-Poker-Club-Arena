@@ -314,21 +314,24 @@ describe('Plinko starts only its earned funding', () => {
       quote: quoteFor(2, 10),
     });
     backend.start.mockRejectedValueOnce(new Error('The Network Dropped'));
-    render(<DiamondPlinkoPage />);
-    await act(async () => {});
-    fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
-    await act(async () => {});
-    // An uncertain start is never retried as a fresh wager.
-    expect(screen.getByText('Check Your Bonus Before Starting Another.')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeDisabled();
-    const held = backend.start.mock.calls[0][0];
     backend.start.mockResolvedValue({
       ...fixtures.receipts.plinko,
       table_version: 4,
       payout_chips: 3.25,
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Check Bonus' }));
+    render(<DiamondPlinkoPage />);
     await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
+    await act(async () => {});
+    // An uncertain start is never retried as a fresh wager, and nobody is
+    // asked to check anything: the page replays the held request itself.
+    expect(screen.getByText('Settling Your Bonus')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Check Bonus' })).not.toBeInTheDocument();
+    const held = backend.start.mock.calls[0][0];
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
     // The same request, sent again, and the receipt is booked once.
     expect(backend.start).toHaveBeenCalledTimes(2);
     expect(backend.start.mock.calls[1][0]).toEqual(held);

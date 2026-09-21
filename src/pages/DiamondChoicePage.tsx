@@ -1,5 +1,5 @@
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
-import { pendingBonus } from '../services/diamondBonusRecovery';
+import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
@@ -12,6 +12,7 @@ import BonusSetup, { guaranteeCopy } from '../components/games/BonusSetup';
 import TodayLine from '../components/games/TodayLine';
 import SealedPrize from '../components/games/SealedPrize';
 import { useGameCooldown } from '../hooks/useGameCooldown';
+import { useAutoSettle } from '../hooks/useAutoSettle';
 import {
   bonusTotal,
   bonusWalletDebit,
@@ -87,7 +88,14 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const [busy, setBusy] = useState(false);
   const [sceneBusy, setSceneBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A wager whose answer never arrived, or a move whose confirmed result the
+  // page has not read yet. The page settles it on its own schedule
+  // (useAutoSettle); the player is never asked to check anything.
   const [uncertain, setUncertain] = useState(false);
+  const [settleAttempts, setSettleAttempts] = useState(0);
+  // The server refused a ticket that could no longer open a round and charged
+  // nothing, so the same wager goes again on a fresh ticket - once per press.
+  const [restartOwed, setRestartOwed] = useState(false);
   const [verified, setVerified] = useState<boolean | null>(null);
   const [waitSeconds, setWaitSeconds] = useGameCooldown();
   const mounted = useRef(true),
@@ -158,11 +166,11 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         setUuid(id);
         const pending = pendingBonus(user?.id ?? '', id, game);
         if (pending) {
+          // Replayed by useAutoSettle as soon as the game state is in.
           heldStart.current = pending;
           uncertainTicket.current = pending.commitId;
           setBudget(pending.budget);
           setUncertain(true);
-          setError('Check Your Saved Round Before Starting Another.');
         }
         await load(id);
       } catch (e) {
@@ -214,8 +222,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     };
   }, [state?.available, round?.status, ticket, uncertain, newTicket]);
 
-  const refresh = async () => {
-    if (!uuid || busyRef.current) return;
+  const refresh = async (): Promise<boolean> => {
+    if (!uuid || busyRef.current) return false;
     busyRef.current = true;
     setBusy(true);
     try {
@@ -223,7 +231,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         const recovered = parseChoiceRound(
           await DiamondBonusService.start(heldStart.current, user?.id ?? '')
         );
-        if (!mounted.current) return;
+        if (!mounted.current) return true;
         earned.consume(recovered.award_id);
         currentRound.current = recovered;
         setRound(recovered);
@@ -235,24 +243,34 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       }
       await earned.refresh();
       await load(uuid);
-      if (mounted.current) setError(null);
+      if (mounted.current) {
+        setError(null);
+        setSettleAttempts(0);
+      }
     } catch (e) {
       reportError(e, 'DiamondChoicePage.refresh');
       if (mounted.current) {
-        setError(
-          e instanceof BonusRefusal ? e.message : 'The Round Could Not Be Checked. Try Again.'
-        );
         if (e instanceof BonusRefusal) {
           heldStart.current = null;
           uncertainTicket.current = null;
           setUncertain(false);
+          setSettleAttempts(0);
+          setTicket(null);
+          setError(e.message);
+          if (e.ticketGone) setRestartOwed(true);
+        } else {
+          // Not an answer: the page tries again on its own schedule.
+          setSettleAttempts((count) => count + 1);
+          setError('Settling Your Round');
         }
       }
     } finally {
       busyRef.current = false;
       if (mounted.current) setBusy(false);
     }
+    return true;
   };
+  useAutoSettle(uncertain, settleAttempts, refresh);
   const blocked =
     !earned.ready ||
     !validBonusBudget(budget) ||
@@ -322,12 +340,31 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     } catch (e) {
       reportError(e, 'DiamondChoicePage.start');
       if (mounted.current) {
-        if (e instanceof BonusRefusal) {
+        if (e instanceof PriorBonusPending) {
+          // Another tab's wager is still saved: it settles first, by itself.
+          heldStart.current = e.prior;
+          uncertainTicket.current = e.prior.commitId;
+          setBudget(e.prior.budget);
+          setUncertain(true);
+          setSettleAttempts(0);
+          setError('Settling Your Previous Round First');
+        } else if (e instanceof BonusRefusal) {
+          // Nothing was charged. The ticket is spent either way, so a fresh
+          // one is dealt; when the ticket itself was the refusal the same
+          // wager is sent again on it.
           heldStart.current = null;
           uncertainTicket.current = null;
+          setUncertain(false);
+          setTicket(null);
+          setError(e.message);
+          if (e.ticketGone) setRestartOwed(true);
+        } else {
+          // The answer never arrived. The saved wager is replayed by
+          // useAutoSettle until the server says what happened.
+          setUncertain(true);
+          setSettleAttempts(0);
+          setError('Settling Your Round');
         }
-        setUncertain(!(e instanceof BonusRefusal));
-        setError(e instanceof BonusRefusal ? e.message : 'Check Your Round Before Trying Again.');
       }
     } finally {
       busyRef.current = false;
@@ -359,14 +396,28 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     } catch (e) {
       reportError(e, 'DiamondChoicePage.act');
       if (mounted.current) {
+        // The confirmed result is read back by useAutoSettle.
         setUncertain(true);
-        setError('Check Your Round To See The Confirmed Result.');
+        setSettleAttempts(0);
+        setError('Confirming Your Move');
       }
     } finally {
       busyRef.current = false;
       if (mounted.current) setBusy(false);
     }
   };
+  // A wager the server refused for its ticket alone is sent again on the
+  // fresh ticket, once, without the player pressing Start twice.
+  const startRef = useRef(start);
+  startRef.current = start;
+  const restarts = useRef(0);
+  useEffect(() => {
+    if (!restartOwed || !ticket || uncertain || busy) return;
+    setRestartOwed(false);
+    if (restarts.current >= 2) return;
+    restarts.current += 1;
+    void startRef.current();
+  }, [restartOwed, ticket, uncertain, busy]);
   const open = round?.status === 'open';
   const picks = round?.picked.length ?? 0;
   const prizes = open ? round.prizes : (state?.prizes ?? []);
@@ -394,7 +445,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const roadMultiplier = roadEnd !== null && roadEnd > 0 ? ladder[roadEnd - 1] : 0;
   const payableRoadEnd = Math.min(roadEnd ?? 0, round?.max_steps ?? 0);
   const status = uncertain
-    ? 'Check Round'
+    ? 'Settling'
     : busy
       ? 'One Moment'
       : open
@@ -485,10 +536,10 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           },
         ]}
         secondary={{
-          label: uncertain ? 'Check Round' : cashLabel,
+          label: cashLabel,
           onClick: () =>
             open && picks > 0 && !uncertain ? void act('cashout', null) : void refresh(),
-          disabled: busy || sceneBusy,
+          disabled: busy || sceneBusy || uncertain,
         }}
         primary={{
           label: open

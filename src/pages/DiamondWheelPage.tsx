@@ -10,6 +10,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useIdleSpinCountdown } from '../hooks/useIdleSpinCountdown';
+import { useAutoSettle } from '../hooks/useAutoSettle';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { Modal } from '../components/common/Modal';
 import { ErrorState } from '../components/common/EmptyState';
@@ -143,6 +144,10 @@ export default function DiamondWheelPage() {
   const [dailyBonus, setDailyBonus] = useState<WheelDailyBonusState | null>(null);
   const [dailyBonusError, setDailyBonusError] = useState(false);
   const [recovery, setRecovery] = useState<WheelPendingSpin | null>(null);
+  // A spin whose answer never arrived is recovered by the page, never by a
+  // press: the exact saved request is resent on useAutoSettle's schedule until
+  // its receipt lands or the server refuses it.
+  const [settleAttempts, setSettleAttempts] = useState(0);
   /* The face on the rim. It lags the offer by one spin on purpose: after the
      welcome spin lands, the prize it landed on stays under the pointer until
      the next spin starts, and only then does the paid table come round. */
@@ -588,11 +593,15 @@ export default function DiamondWheelPage() {
       setPending(result);
       setSpinKey((k) => k + 1);
       setSpinning(true);
+      setSettleAttempts(0);
     } catch (err) {
       reportError(err, 'DiamondWheelPage.spin');
       endAuto(autoRunRef.current ? 'Auto Spin Stopped' : null);
-      if (live() && scopeRef.current === scope)
-        toast.error('The Spin Is Not Confirmed. Retry To Recover Its Receipt');
+      if (live() && scopeRef.current === scope) {
+        // The saved request stays; useAutoSettle resends it.
+        setSettleAttempts((count) => count + 1);
+        toast.error('The Spin Is Not Confirmed Yet. Recovering Its Receipt');
+      }
     } finally {
       if (scopeRef.current === scope) busyRef.current = false;
     }
@@ -751,6 +760,16 @@ export default function DiamondWheelPage() {
     return () => clearTimeout(t);
   }, [autoRun, spinning, pending, preparing, blocker, canSpin, handleSpin, toast]);
 
+  useAutoSettle(
+    Boolean(recovery) && !spinning && !pending && !loading && !loadError,
+    settleAttempts,
+    async () => {
+      if (busyRef.current || preparingRef.current || !canSpin) return false;
+      await handleSpin();
+      return true;
+    }
+  );
+
   const refreshWheel = useCallback(async () => {
     if (!clubUuid || busyRef.current || spinning || preparingRef.current) return;
     endAuto(null);
@@ -814,7 +833,7 @@ export default function DiamondWheelPage() {
   const spinLabel = spinning
     ? 'Spinning'
     : recovery
-      ? 'Recover Spin'
+      ? 'Recovering Spin'
       : dailyBonusMode && !spinning
         ? 'Bonus Spin'
         : autoRun
@@ -925,7 +944,7 @@ export default function DiamondWheelPage() {
           blocker ? (
             <p role="status">{blocker}</p>
           ) : recovery ? (
-            <p role="status">Recover Your Previous Spin Before Starting Another.</p>
+            <p role="status">Recovering Your Previous Spin.</p>
           ) : lastResult && !spinning ? (
             <p role="status">{outcomeHeadline(lastResult)}</p>
           ) : null
@@ -1101,7 +1120,7 @@ export default function DiamondWheelPage() {
               : blocker
                 ? 'Check The Spin Controls Below To Continue'
                 : recovery
-                  ? 'Your Previous Spin Needs Its Receipt. Recover It Before Starting Another.'
+                  ? 'Your Previous Spin Is Being Recovered. Its Prize Opens Next.'
                   : dailyBonusMode
                     ? 'One Claimed Bonus Spin. 100 Diamond Value, No Diamonds Taken From You.'
                     : welcomeMode

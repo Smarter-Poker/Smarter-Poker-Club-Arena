@@ -31,7 +31,7 @@ export LC_ALL=C LANG=C PGTZ=UTC
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 fixture="$repo/scripts/dev/fixtures/a-financially-inert-abort-needs-no-hole-cards"
-migration="$repo/supabase/migrations/20260921023053_a_financially_inert_abort_needs_no_hole_cards.sql"
+migration="$repo/supabase/migrations/20260921040823_only_the_reviewed_noon_hand_may_abort_without_its_hole_cards.sql"
 
 if [[ -z "${PGBIN:-}" ]]; then
   if [[ -x /opt/homebrew/opt/postgresql@17/bin/initdb ]]; then
@@ -123,16 +123,20 @@ psql_db postgres -c 'CREATE DATABASE fx_fixed TEMPLATE fx_live' >/dev/null
 psql_db fx_fixed -f "$migration" >"$root/apply.log" 2>&1
 psql_db fx_fixed -f "$migration" >>"$root/apply.log" 2>&1
 echo "ok   the migration applies twice (replay safe)"
-for want in 'still hold cards and every one of them is refused' \
-            'the predicate equals its five stated conditions' \
+for want in 'exactly 1 hand admitted, and it is the reviewed triple' \
+            'no non-pinned snapshot is admitted' \
+            'the second retired-origin cohort tournament is refused' \
+            'still hold cards and every one of them is refused' \
+            'the predicate equals its seven stated conditions' \
             'the refusal algebra holds for all 7 reviewed card shapes'; do
   if grep -q "$want" "$root/apply.log"; then
-    echo "ok   in-transaction proof ran: $(grep -o "inert-abort proof: .*$want.*" "$root/apply.log" | head -1)"
+    echo "ok   in-transaction proof ran: $(grep -o "noon-only proof: .*$want.*" "$root/apply.log" | head -1)"
   else
     echo "FAIL the migration in-transaction proof did not run: $want"; failures=$((failures + 1))
   fi
 done
-grep -o 'NOTICE:  inert-abort admits .*' "$root/apply.log" | sort -u | sed 's/^/     /'
+grep -o 'NOTICE:  noon-only admits .*' "$root/apply.log" | sort -u | sed 's/^/     /'
+grep -o 'NOTICE:  noon-only proof: the five financial conditions alone .*' "$root/apply.log" | sort -u | sed 's/^/     /'
 grep -o 'NOTICE:  smarter_private.* already admits .*' "$root/apply.log" | sed 's/^/     /'
 
 echo "== after $(basename "$migration")"
@@ -157,11 +161,11 @@ fi
 # Six kinds of drift, each refused, each leaving the function catalog exactly
 # as it was. These exercise the real transaction, not the presence of guard text.
 catalog="SELECT md5(jsonb_agg(jsonb_build_array(oid,pg_get_functiondef(oid),proowner,proacl) ORDER BY oid)::text) FROM pg_proc WHERE pronamespace IN ('public'::regnamespace,'smarter_private'::regnamespace)"
-python3 - "$migration" "$root/wrong-composition.sql" "$root/wrong-helper.sql" <<'FAULT_PY'
+python3 - "$migration" "$root/wrong-composition.sql" "$root/wrong-helper.sql" "$root/unpinned-scope.sql" <<'FAULT_PY'
 from pathlib import Path
 import sys
 text = Path(sys.argv[1]).read_text()
-pin = '83d871d42ecc2e1933035b62bdb5be72'
+pin = 'f1dc5d4b2a952ebb783e6ae66b844b94'
 assert text.count(pin) == 3, text.count(pin)
 # Break only the composition pin, so the migration composes a body it then
 # refuses to accept: the guard must roll the whole transaction back.
@@ -170,23 +174,53 @@ composition = text.replace(
   "'smarter_private.f06_retired_origin_snapshot(jsonb)',     '" + '0'*32 + "',")
 assert composition != text
 Path(sys.argv[2]).write_text(composition)
-helper_pin = '5d92c217691518a3a6cf90a9ba328e6a'
+
+helper_pin = '41e3b42c1b203814d8a90eca9dd5a7a1'
 assert text.count(helper_pin) == 2, text.count(helper_pin)
 # Widen the predicate by dropping condition 1, the exactly-zero test. The
 # helper post-image pin must catch it before anything is committed.
-broken = text.replace("""    NOT EXISTS (SELECT 1 FROM public.table_hole_cards c
+broken = text.replace("""    AND NOT EXISTS (SELECT 1 FROM public.table_hole_cards c
                  WHERE c.table_id = p_table_id AND c.hand_number = p_hand_number)
     -- 2. The hand never committed.
-    AND NOT EXISTS""", """    NOT EXISTS (SELECT 1 FROM public.table_hole_cards c
+    AND NOT EXISTS""", """    AND NOT EXISTS (SELECT 1 FROM public.table_hole_cards c
                  WHERE false AND c.table_id = p_table_id AND c.hand_number = p_hand_number)
     -- 2. The hand never committed.
     AND NOT EXISTS""")
 assert broken != text
 Path(sys.argv[3]).write_text(broken)
+
+# THE REGRESSION THIS WHOLE MIGRATION EXISTS TO PREVENT: the identity pin is
+# removed, so the predicate falls back to the five financial conditions that
+# admitted 468 hands in production. Every md5 guard that would notice is
+# removed WITH it - the helper pre-image pin, the helper post-image pin, the
+# "identity pin absent" text check, and the pin inside the contract-equivalence
+# proof - so that NOTHING is left standing except the in-transaction scope
+# proof. If that proof is not load-bearing, this fault installs a wide
+# relaxation and the gate fails.
+scope = text.replace("""    p_tournament_id = '5a387a75-754a-416e-8fee-b85b15fc2702'::uuid
+    AND p_table_id  = '2c621856-e728-4e8b-bf08-4c56746a8649'::uuid
+    AND p_hand_number = 12942021::bigint""", "    true")
+assert scope != text, 'helper identity pin not found'
+before = scope
+scope = scope.replace("""            tb.tournament_id='5a387a75-754a-416e-8fee-b85b15fc2702'::uuid
+        AND s.table_id='2c621856-e728-4e8b-bf08-4c56746a8649'::uuid
+        AND s.hand_number=12942021
+        AND NOT EXISTS""", """            true
+        AND NOT EXISTS""")
+assert scope != before, 'contract-proof identity pin not found'
+before = scope
+scope = scope.replace("'" + helper_pin + "'", "md5(pg_get_functiondef(helper))")
+assert scope.count("md5(pg_get_functiondef(helper))") >= 4, 'helper md5 guards not neutralised'
+before = scope
+scope = scope.replace("""      AND prosrc LIKE '%5a387a75-754a-416e-8fee-b85b15fc2702%'
+      AND prosrc LIKE '%2c621856-e728-4e8b-bf08-4c56746a8649%'
+      AND prosrc LIKE '%12942021%') <> 1 THEN""", """      ) <> 1 THEN""")
+assert scope != before, 'identity-pin text check not found'
+Path(sys.argv[4]).write_text(scope)
 FAULT_PY
 
 echo "== refusals"
-for fault in body acl secdef column_type snapshot_key composition widened_predicate; do
+for fault in body acl secdef column_type one_active_index second_snapshot_row composition widened_predicate unpinned_scope; do
   psql_db postgres -c 'CREATE DATABASE fx_fault TEMPLATE fx_live' >/dev/null
   fault_migration="$migration"
   case "$fault" in
@@ -198,25 +232,44 @@ DO $$ DECLARE d text; b text; BEGIN
  EXECUTE replace(d, b, E'\n-- isolated source drift\n' || b);
 END $$;
 DRIFT
-      expected='F06_INERT_ABORT_CARDS_PREIMAGE_CHANGED' ;;
+      expected='F06_NOON_ONLY_CARDS_PREIMAGE_CHANGED' ;;
     acl)
       psql_db fx_fault -c 'GRANT EXECUTE ON FUNCTION smarter_private.f06_retired_origin_snapshot(jsonb) TO authenticated' >/dev/null
-      expected='F06_INERT_ABORT_CARDS_PREIMAGE_CHANGED' ;;
+      expected='F06_NOON_ONLY_CARDS_PREIMAGE_CHANGED' ;;
     secdef)
       psql_db fx_fault -c 'ALTER FUNCTION smarter_private.f06_retired_origin_snapshot(jsonb) SECURITY INVOKER' >/dev/null
-      expected='F06_INERT_ABORT_CARDS_PREIMAGE_CHANGED' ;;
+      expected='F06_NOON_ONLY_CARDS_PREIMAGE_CHANGED' ;;
     column_type)
       psql_db fx_fault -c 'ALTER TABLE public.tournament_players ALTER COLUMN chips TYPE bigint' >/dev/null
-      expected='F06_INERT_ABORT_CARDS_DEPENDENCY_CHANGED' ;;
-    snapshot_key)
-      psql_db fx_fault -c 'ALTER TABLE public.hand_state_snapshots DROP CONSTRAINT hand_state_snapshots_table_hand_key' >/dev/null
-      expected='F06_INERT_ABORT_CARDS_DEPENDENCY_CHANGED' ;;
+      expected='F06_NOON_ONLY_CARDS_DEPENDENCY_CHANGED' ;;
+    one_active_index)
+      # The real production object the guard pins: the PARTIAL unique index that
+      # bounds condition 4 to at most one incomplete snapshot per table.
+      psql_db fx_fault -c 'DROP INDEX public.idx_hand_snapshots_one_active_per_table' >/dev/null
+      expected='F06_NOON_ONLY_CARDS_DEPENDENCY_CHANGED: one-active-snapshot index' ;;
+    second_snapshot_row)
+      # A SECOND snapshot row for the pinned (table_id, hand_number). Production
+      # has no UNIQUE (table_id, hand_number), and the partial unique index
+      # permits this row because it is is_complete = true - so conditions 4 and 5
+      # could be speaking about different rows. This is the hole the refused
+      # guard pretended a constraint was closing; count(*) = 1 actually closes it.
+      psql_db fx_fault <<'SECONDROW' >/dev/null
+INSERT INTO public.hand_state_snapshots(id,table_id,hand_number,state_json,stage,is_complete)
+VALUES ('cccc0004-0000-4000-8000-00000000000c','2c621856-e728-4e8b-bf08-4c56746a8649',12942021,
+        '{"stage":"showdown","actionHistory":[],"players":[]}'::jsonb,'showdown',true);
+SECONDROW
+      expected='F06_NOON_ONLY_CARDS_DEPENDENCY_CHANGED: snapshot is not exactly one row' ;;
     composition)
       fault_migration="$root/wrong-composition.sql"
-      expected='F06_INERT_ABORT_CARDS_COMPOSITION_CHANGED' ;;
+      expected='F06_NOON_ONLY_CARDS_COMPOSITION_CHANGED' ;;
     widened_predicate)
       fault_migration="$root/wrong-helper.sql"
-      expected='F06_INERT_ABORT_CARDS_HELPER_CHANGED' ;;
+      expected='F06_NOON_ONLY_CARDS_HELPER_CHANGED' ;;
+    unpinned_scope)
+      # Every md5 guard stripped along with the pin: only the in-transaction
+      # scope proof can catch this one, and it must.
+      fault_migration="$root/unpinned-scope.sql"
+      expected='F06_NOON_ONLY_CARDS_PROOF_SCOPE_' ;;
   esac
   before_catalog="$(psql_db fx_fault -Atc "$catalog")"
   if psql_db fx_fault -f "$fault_migration" >"$root/guard.log" 2>&1; then

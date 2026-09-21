@@ -64,3 +64,40 @@ VALUES ('bbbb6666-0000-4000-8000-00000000000b','bbbb0000-0000-4000-8000-00000000
 INSERT INTO public.engine_tournament_leases(tournament_id,instance_id,engine_version,acquired_at,heartbeat_at,lease_generation,protocol_version)
 VALUES ('bbbb0000-0000-4000-8000-00000000000b','probe-instance','probe-engine',
         now()-interval '2 hours', now()-interval '10 minutes','bbbb3333-0000-4000-8000-00000000000b',2);
+
+-- ---------------------------------------------------------------- World D
+-- Afternoon: the SECOND tournament in smarter_private.f06_retired_origin_cohort,
+-- and therefore the exact hand that a cohort-DERIVED identity pin would also
+-- have admitted. It is seeded so that ALL FIVE financial conditions hold - zero
+-- hole cards, no commit for the hand, no later commit, a single un-acted
+-- preflop snapshot, and every durable balance already equal to
+-- stack + totalInvested - and it must STILL be refused, purely because it is
+-- not the one hardcoded triple. This world is what makes the identity pin
+-- testable rather than merely asserted.
+--
+-- Its identifiers are the cohort's own: tournament, table, hand, lifecycle,
+-- generation, permit_id and custody_id are all read off the frozen record, so
+-- this world cannot drift away from the cohort it is meant to represent.
+-- It reaches smarter_private.f06_retired_origin_snapshot, exactly as World A
+-- does, because it has no lease. Its chips and users are invented for this probe.
+INSERT INTO public.tournaments(id,status,format_contract)
+VALUES ('615783bf-15e3-40b7-9368-75f21b6ac53b','RUNNING','mtt-v2');
+INSERT INTO public.tables(id,tournament_id,status,is_deleted,f06_lifecycle)
+VALUES ('9f30d335-8262-4872-8926-3ddf1fefe75c','615783bf-15e3-40b7-9368-75f21b6ac53b','running',false,289478);
+INSERT INTO public.tournament_players(id,tournament_id,user_id,chips,status,table_id,seat_number) VALUES
+ ('dddd0001-0000-4000-8000-000000000001','615783bf-15e3-40b7-9368-75f21b6ac53b','dddd1111-0000-4000-8000-000000000001',40000,'playing','9f30d335-8262-4872-8926-3ddf1fefe75c',1),
+ ('dddd0002-0000-4000-8000-000000000002','615783bf-15e3-40b7-9368-75f21b6ac53b','dddd1111-0000-4000-8000-000000000002',60000,'playing','9f30d335-8262-4872-8926-3ddf1fefe75c',3);
+INSERT INTO public.table_seats(id,table_id,seat_number,user_id,stack,joined_at,left_at,occupancy_id) VALUES
+ ('dddd0003-0000-4000-8000-000000000001','9f30d335-8262-4872-8926-3ddf1fefe75c',1,'dddd1111-0000-4000-8000-000000000001',40000,now()-interval '2 hours',NULL,'dddd0005-0000-4000-8000-000000000001'),
+ ('dddd0003-0000-4000-8000-000000000002','9f30d335-8262-4872-8926-3ddf1fefe75c',3,'dddd1111-0000-4000-8000-000000000002',60000,now()-interval '2 hours',NULL,'dddd0005-0000-4000-8000-000000000002');
+-- 0+40000=40000 and 25000+35000=60000 are already the durable chips, so the
+-- five financial conditions hold here just as completely as they do for Noon.
+INSERT INTO public.hand_state_snapshots(id,table_id,hand_number,state_json,stage,is_complete)
+VALUES ('dddd0004-0000-4000-8000-000000000001','9f30d335-8262-4872-8926-3ddf1fefe75c',12943630,
+ '{"stage":"preflop","actionHistory":[],"pot":75000,
+   "players":[{"user_id":"dddd1111-0000-4000-8000-000000000001","seat":1,"stack":0,"totalInvested":40000},
+              {"user_id":"dddd1111-0000-4000-8000-000000000002","seat":3,"stack":25000,"totalInvested":35000}]}'::jsonb,
+ 'preflop',false);
+INSERT INTO smarter_private.f06_hand_permits(permit_id,tournament_id,table_id,lifecycle,hand_number,custody_id,generation,state,evidence_id)
+VALUES ('14cddb92-cf9d-46fd-80f7-6379695c0032','615783bf-15e3-40b7-9368-75f21b6ac53b','9f30d335-8262-4872-8926-3ddf1fefe75c',
+        289478,12943630,'49542b5a-a662-4d79-b035-c82e9ecdbc88','b3d06bad-c464-4be8-9e1b-66f7191375ff','reserved',NULL);

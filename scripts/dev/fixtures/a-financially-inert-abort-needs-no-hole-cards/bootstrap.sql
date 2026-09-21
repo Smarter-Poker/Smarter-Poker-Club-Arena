@@ -48,8 +48,22 @@ CREATE TABLE public.hand_state_snapshots (
   dealer_seat integer NOT NULL DEFAULT 0, players_json jsonb NOT NULL DEFAULT '[]',
   stage text NOT NULL, is_complete boolean NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  pending_deadlines jsonb NOT NULL DEFAULT '{}', disconnect_states jsonb NOT NULL DEFAULT '{}',
-  CONSTRAINT hand_state_snapshots_table_hand_key UNIQUE (table_id, hand_number));
+  pending_deadlines jsonb NOT NULL DEFAULT '{}', disconnect_states jsonb NOT NULL DEFAULT '{}');
+-- Production shape, verified read-only on kuklfnapbkmacvwxktbh 2026-09-20.
+-- There is NO UNIQUE (table_id, hand_number) on this table and there never
+-- was; an earlier version of this fixture invented one, which is why migration
+-- 20260921023053 passed the probe and was then refused by its own dependency
+-- guard against the real database. What production actually has:
+--   hand_state_snapshots_pkey            PRIMARY KEY (id)
+--   idx_hand_state_snapshots_table_hand  NON-unique btree (table_id, hand_number)
+--   idx_hand_snapshots_one_active_per_table  UNIQUE btree (table_id) WHERE is_complete = false
+-- The partial index permits a SECOND row for one (table_id, hand_number) as
+-- long as it is is_complete = true, which is exactly the drift the new
+-- count(*) = 1 assertion closes and which the probe feeds in.
+CREATE INDEX idx_hand_state_snapshots_table_hand
+  ON public.hand_state_snapshots USING btree (table_id, hand_number);
+CREATE UNIQUE INDEX idx_hand_snapshots_one_active_per_table
+  ON public.hand_state_snapshots USING btree (table_id) WHERE (is_complete = false);
 CREATE TABLE public.table_hole_cards (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), table_id uuid NOT NULL,
   hand_number bigint NOT NULL, user_id uuid NOT NULL, seat_number integer NOT NULL,

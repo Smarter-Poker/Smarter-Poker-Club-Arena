@@ -1,6 +1,9 @@
--- FIXED. (a) Exactly zero hole cards and all five conditions hold, so the
--- abort moves no chips and the destroyed cards cannot decide anything. This is
--- the one case the repair admits, and it must fail on the live bodies.
+-- FIXED. (a) The pinned hand: exactly zero hole cards, all five financial
+-- conditions hold, so the abort moves no chips and the destroyed cards cannot
+-- decide anything. This is the one case the repair admits - World A and World C
+-- are the SAME tournament, table and hand seen through the two edited
+-- functions - and it must fail on the live bodies. The two non-pinned worlds
+-- are asserted refused here too, by probe.expect_inert_both.
 \set ON_ERROR_STOP on
 BEGIN;
 SELECT probe.expect_inert_both(true, 'zero cards, hand never committed, nothing later, un-acted preflop, every durable balance already equals stack+totalInvested');
@@ -10,7 +13,7 @@ SELECT probe.expect_both('ACCEPTED', 'zero cards, provably financially inert');
 DO $$
 DECLARE which text; c jsonb;
 BEGIN
- FOREACH which IN ARRAY ARRAY['A','B'] LOOP
+ FOREACH which IN ARRAY ARRAY['A','C'] LOOP
   PERFORM set_config('request.jwt.claim.role','service_role',true);
   PERFORM set_config('app.smarter_data_actor','service',true);
   c := probe.cards(which);

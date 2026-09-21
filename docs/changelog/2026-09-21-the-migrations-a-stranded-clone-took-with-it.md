@@ -36,19 +36,18 @@ Every restored file is byte-identical to the applied statement:
 
     printf '%s' "$(cat <file>)" | md5 -q  ==  md5(rtrim(statements[1], E'\n'))
 
-Seven restored in this change:
+Six restored in this change:
 
 | version | md5 | name |
 | --- | --- | --- |
 | 20260823141355 | 18623bce5d797be1338b23f651164a6a | rabbit_hunt_server_enforced_economy |
 | 20260912050321 | f5931e1c5c9cfbd7f71ff68646dc31a9 | the_ladder_is_the_one_the_money_was_paid_by |
-| 20260912050353 | 650059637b07be60e7eb115701a8fad7 | a_money_adjacent_post_hand_failure_is_not_info |
 | 20260912061735 | 504a28eb315f3282e4a3e61162766cb6 | the_felt_register_is_read_only_and_the_incident_is_closed |
 | 20260912101218 | 1b72f54cc0838c531f33a896d70ecac8 | reconcile_pr3449_retired_lane_and_tuner_race_never_applied |
 | 20260912102321 | 719e0c9c91a75cc2516880c88be7c719 | revoke_dead_client_write_grants_rls_denied |
 | 20260912104716 | 679d9a415928ab6cf10e3342cf4caaee | admin_writes_trust_profiles_not_self_written_metadata |
 
-Seven recovered, proved, and NOT shipped here. The reason is a defect worth its
+Eight recovered, proved, and NOT shipped here. The reason is a defect worth its
 own section, below:
 
 | version | md5 | name |
@@ -60,6 +59,7 @@ own section, below:
 | 20260912093734 | b87827b250aa204637ae869c88eabd81 | a_silence_is_a_failure_the_board_can_see |
 | 20260914003624 | d8898394ffb68addc624a412758cfaff | tournament_prize_rounding_contract_v2 |
 | 20260912110448 | d522638896a7ccfc4bd55fc688b6553d | a_platform_that_is_not_dealing_is_worth_waking_someone |
+| 20260912050353 | 650059637b07be60e7eb115701a8fad7 | a_money_adjacent_post_hand_failure_is_not_info |
 
 **Nothing was applied.** These are already installed; replaying an installed
 migration is forbidden, and this is a repo restoration rather than a database
@@ -86,9 +86,9 @@ merged as PR #3449 and was never applied, and this migration carries that body
 forward. Both functions it defines are live, so the reconcile itself ran. It is
 a legitimate applied migration and it gets a file. No history row was removed.
 
-## Why seven of the fourteen are not in this change
+## Why eight of the fourteen are not in this change
 
-Three pre-push guards refuse them. Each guard reads only the added file and asks
+Three pre-push guards and one law test refuse them. Each guard reads only the added file and asks
 "is this branch introducing something unreviewed" - and none of the three ever
 asks whether the file is a RECORD of something production applied nine days ago.
 For a restoration that question has a different answer, and two of the three
@@ -123,7 +123,18 @@ claims are demonstrably false today:
    `scripts/ci/band-aid.allowlist.json`, so every file that records its lineage
    is refused - including `20260820165242`, which is also in the parity gap.
 
-The shape is one defect, not three: **a guard that judges an added migration
+4. **`tests/a-declared-guard-change-is-recorded-not-raised.law.test.ts`** refuses
+   `20260912050353` for redefining `fn_ca_financial_alert_to_incident` without
+   calling `fn_ca_declare_guard_redefinition` in the same transaction. That law
+   has already met this exact problem and solved it - it carries a BOUND list
+   for migrations that are "already installed and therefore immutable", each
+   entry naming the original file, the guard, a successor migration that
+   declares it, and the hashes of both files. An entry needs that successor's
+   FILE, and the plausible successors here (`20260914100445`, `20260917024440`)
+   are themselves in the parity gap with no file on main. The mechanism exists;
+   it cannot be reached from inside the gap it is needed to close.
+
+The shape is one defect, not four: **a guard that judges an added migration
 file as a prediction about what production will become, when the file is a
 record of what production already is.** It is CLAUDE.md 10.86 in a new costume,
 and its effect is that the repo cannot be made to match the database, because
@@ -134,20 +145,20 @@ not currently have - that a file whose version is already in
 `schema_migrations` with byte-identical statements is a RESTORATION - and then,
 for a restoration, to consult the live database rather than predict it: live
 grants for rule 2, the live register for the trigger rule, the existing register
-row for the band-aid rule. A genuinely new migration is not in
+row for the band-aid rule, and the live guard baseline for the fourth. A genuinely new migration is not in
 `schema_migrations`, so nothing about new work changes. "Could not ask" must be
 its own outcome and must keep blocking.
 
 That is a change to three security guards, which is the highest-risk edit
 available in this repo and is not something to smuggle in underneath a
 restoration that it happens to unblock. It is filed rather than done here, and
-the seven files above are recovered, md5-proved and ready for whoever takes it.
+the eight files above are recovered, md5-proved and ready for whoever takes it.
 
 ## What is still open, stated plainly
 
 `check-applied-migrations-are-recorded.mjs` reports **491** applied migrations
-since 2026-08-20 with no file in either repo. This change closes 7 of them; the
-seven above account for another 7. The remaining 477 are not this work:
+since 2026-08-20 with no file in either repo. This change closes 6 of them; the
+eight above account for another 8. The remaining 477 are not this work:
 
 - **299** were applied 2026-08-20 to 2026-08-24, which is the backlog the check
   itself calls archaeology.

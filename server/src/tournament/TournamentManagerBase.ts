@@ -698,6 +698,8 @@ export abstract class TournamentManagerBase {
     durationMs: number;
   } | null = null;
   private breakResumeRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Consecutive empty results for the retained release proposal. */
+  private breakReleaseRefusals = 0;
   // Hand-for-hand sync
   protected handForHandRePauseTimer: NodeJS.Timeout | null = null;
   // Late reg finalization
@@ -2582,6 +2584,7 @@ export abstract class TournamentManagerBase {
         startedAtMs: Date.now() - (durationMs - remainingMs),
         durationMs,
       };
+      this.breakReleaseRefusals = 0;
     }
     const clock = this.pendingBreakResumeClock;
     if (clock) {
@@ -2600,8 +2603,52 @@ export abstract class TournamentManagerBase {
         .select('id,status,current_level,on_break,break_ends_at,level_started_at')
         .maybeSingle();
       if (error) throw error;
+      if (!data) {
+        /**
+         * A PROPOSAL THE ROW NO LONGER ACCEPTS IS RE-MEASURED, NOT REPLAYED
+         * FOREVER (2026-09-20).
+         *
+         * An empty result is not proof of anything on its own. It is equally
+         * a LOST ACKNOWLEDGEMENT - the row version committed and the response
+         * did not arrive - and a filter that matched no row because
+         * `current_level` moved between the read that measured this proposal
+         * and this write. The first is why `pendingBreakResumeClock` is
+         * retained and replayed byte-for-byte: the read-back recognises the
+         * commit instead of crediting a second clock.
+         *
+         * Retained, it is also PINNED to the level it was measured at. When
+         * the row really has moved on, every retry filters on a level that no
+         * longer exists, matches nothing, and throws again - and the bounded
+         * retry it arms can never land, however long it runs. Measured
+         * 2026-09-18 23:12: 39 RUNNING tournaments, 794 players and
+         * $11,198.75 adopted on a break that had expired 72 minutes earlier,
+         * never released, still on_break 46 hours later.
+         *
+         * So the replay keeps its first, identical attempt - that is the lost
+         * acknowledgement's whole recovery - and only a proposal refused
+         * AGAIN asks the row what it actually committed. Nothing is released
+         * here either way; an unproven result still throws.
+         */
+        this.breakReleaseRefusals += 1;
+        if (this.breakReleaseRefusals >= TournamentManagerBase.BREAK_RELEASE_REMEASURE_AFTER) {
+          const committed = await this.readCommittedBreakState();
+          if (
+            committed &&
+            committed.status === 'RUNNING' &&
+            committed.on_break === true &&
+            committed.current_level !== clock.level
+          ) {
+            // The durable row is the authority on its own level, exactly as
+            // it is at adoption. Drop the proposal it will never accept and
+            // re-measure against what it committed.
+            this.pendingBreakResumeClock = null;
+            this.currentLevel = committed.current_level;
+            this.breakReleaseRefusals = 0;
+          }
+        }
+        throw new Error('Tournament break release did not acknowledge its exact level clock');
+      }
       if (
-        !data ||
         data.id !== this.tournamentId ||
         data.status !== 'RUNNING' ||
         data.current_level !== clock.level ||
@@ -2611,6 +2658,7 @@ export abstract class TournamentManagerBase {
       ) {
         throw new Error('Tournament break release did not acknowledge its exact level clock');
       }
+      this.breakReleaseRefusals = 0;
       return;
     }
     // A stopped event, an outstanding blind publication, an add-on pause or
@@ -2622,6 +2670,54 @@ export abstract class TournamentManagerBase {
     // PostgREST reports rejected writes as a result, not a thrown exception.
     // The caller must retain its pause (or fail adoption) until acknowledged.
     if (error) throw error;
+  }
+
+  /**
+   * What the row itself says about the break this manager is trying to
+   * release. Read as its own statement, never merged with the cached
+   * adoption row: the point of the read is that the cache is stale.
+   */
+  private async readCommittedBreakState(): Promise<{
+    status: string;
+    current_level: number;
+    on_break: boolean;
+  } | null> {
+    const { data, error } = await supabase
+      .from('tournaments')
+      .select('id,status,current_level,on_break')
+      .eq('id', this.tournamentId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data || data.id !== this.tournamentId) return null;
+    if (!Number.isSafeInteger(data.current_level)) return null;
+    return {
+      status: String(data.status),
+      current_level: data.current_level as number,
+      on_break: data.on_break === true,
+    };
+  }
+
+  /** How long a release that could not finish waits before trying again. */
+  static readonly BREAK_RESUME_RETRY_MS = 1_000;
+  /**
+   * How many empty results the retained proposal is replayed through before
+   * the row is asked what it committed. One replay is the lost
+   * acknowledgement's recovery and must stay exactly as it was.
+   */
+  static readonly BREAK_RELEASE_REMEASURE_AFTER = 2;
+
+  /**
+   * Arm the bounded, lifecycle-fenced retry that finishes a release which
+   * could not finish in the pass that wanted it. One timer at a time; the
+   * successful release clears it. A dead lifecycle arms nothing - a manager
+   * that no longer owns the event leaves its flags for the one that does.
+   */
+  protected armBreakResumeRetry(lifecycle: TournamentLifecycleToken | null): void {
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle) || this.breakResumeRetryTimer) return;
+    this.breakResumeRetryTimer = this.setLifecycleTimeout(() => {
+      this.breakResumeRetryTimer = null;
+      return this.resumeFromBreak();
+    }, TournamentManagerBase.BREAK_RESUME_RETRY_MS);
   }
 
   /**
@@ -2720,18 +2816,24 @@ export abstract class TournamentManagerBase {
      */
     // Keep the hold throughout persistence. Concurrent deadline/adoption calls
     // must not release twice while the durable clear is still in flight.
-    if (this.breakResumePersisting) return;
+    if (this.breakResumePersisting) {
+      /**
+       * A release is already in flight and owns this attempt - but an attempt
+       * in flight is not an attempt that landed. Whoever wanted this one has
+       * no other way back: on the adoption path this manager holds the
+       * event's lease for the rest of its life and resumeLifecycle never runs
+       * for it again. Leave the in-flight release alone and arm the bounded
+       * retry, which no-ops the moment the release it is waiting on commits.
+       */
+      this.armBreakResumeRetry(lifecycle);
+      return;
+    }
     this.breakResumePersisting = true;
     try {
       await this.clearPersistedBreak();
     } catch (error) {
       reportError(error, 'TournamentManagerBase.resumeFromBreak_persist');
-      if (lifecycle && this.lifecycleIsCurrent(lifecycle) && !this.breakResumeRetryTimer) {
-        this.breakResumeRetryTimer = this.setLifecycleTimeout(() => {
-          this.breakResumeRetryTimer = null;
-          return this.resumeFromBreak();
-        }, 1_000);
-      }
+      this.armBreakResumeRetry(lifecycle);
       return;
     } finally {
       this.breakResumePersisting = false;
@@ -5715,6 +5817,30 @@ export abstract class TournamentManagerBase {
           // a row stranded by the two defects described above.
           await this.resumeFromBreak();
           this.assertLifecycleCurrent(lifecycle);
+          /**
+           * ADOPTION IS NOT THE ONLY ATTEMPT (2026-09-20).
+           *
+           * resumeFromBreak has several honest reasons to decline: the
+           * platform is still frozen, another release is in flight, the
+           * durable write did not land. Every one of them is temporary, and
+           * each leaves this event exactly as it was found — on a break that
+           * expired while the engine was down, with every replacement dealer
+           * held by prepareManagedTableEngineForPlay's `untilResumed` pause.
+           *
+           * Nothing else comes back for it. This manager keeps the lease and
+           * heartbeats it for the life of the event, so discovery never
+           * re-adopts and resumeLifecycle never runs again. Declining here
+           * used to be permanent: measured 2026-09-18 23:12, 39 tournaments
+           * and 794 players adopted on an expired break and still on it 46
+           * hours later.
+           *
+           * So an adoption that did not get the break off keeps the bounded,
+           * lifecycle-fenced retry that every other caller gets. The release
+           * itself is unchanged — it still refuses while the platform is
+           * frozen and still answers to its lifecycle — and a break that has
+           * NOT expired never reaches this arm at all.
+           */
+          if (this.onBreak) this.armBreakResumeRetry(lifecycle);
         }
       }
 

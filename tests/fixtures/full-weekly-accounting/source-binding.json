@@ -295,7 +295,7 @@
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "f94ca2ae32d92fc4e5d981e8089d42d91f15a448c56483f7d3669d57942d4200",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "05c4f0889695b0153150bf0855f4c24280ac940006805bff6891e44d3118e65b",
     "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
@@ -384,7 +384,7 @@
     "tests/fixtures/spin-mixed-cutover/setup.sql": "023ca3e1c6b4614d83190bcd7c1ad8f8a1e7d5ceea8ffa419564b59aa5d2e06c",
     "scripts/dev/qualify-spin-mixed-cutover.py": "4b50779f6ed435262e7281057d4dbf588dab131fb0a6862fb743d7b13e5d402f",
     "supabase/migrations/20260918085836_original_mixed_cutover_spin_fee_proof.sql": "a79d6e958f06bf17470a870e20167fa2e9b0cc358cb79a22f75f5866e737f8c6",
-    "tests/fixtures/spin-mixed-cutover/source-binding.json": "d13caff6d4d67c678df9b23b51223a6ec9f0944413b29bd68554df2140544433",
+    "tests/fixtures/spin-mixed-cutover/source-binding.json": "2e7226d731652f73f59568f2f59e8c5101e884b261b5eb2d26d8573831226914",
     "tests/fixtures/legacy-fee-finality/fn_terminal_tournament_evidence_is_immutable.sql": "dfb2ee68610de70577b3ed8a61c90a397e4b987bfdec0903654daea61e5c9906",
     "tests/fixtures/legacy-fee-finality/build-candidate.py": "2fc2667d4b6ab644b3f97ba440922900daeb0f9edf67fc6a2874869d6bd90f37",
     "tests/fixtures/legacy-fee-finality/negative.sql": "9a824c9f45318ed8cb665b4de7868fe80788de3f80aff84d06c3a08ee11cc14f",
@@ -423,7 +423,7 @@
     "scripts/ci/classify-ci-changes.mjs": "60793cc63933a26bc281d7af8c3d6869c3237ca6041ecba400a402d3200610ed",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "77c6743c00070baa33ec11bc8dd3d9ebc4ca1efa8401cc88c0b0a6bd0c4021e9",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "9f970764fd8b9dcf7d8d0b179df60cb22836592bf6f68109444e40d187b6ba9f",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "819819f141511ae978fb961f5a1c10e4a1a580348d588345e1f03dc06896f47e",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "4d2a8a4fbefefdc4584b9aff31102b3729e20bcab2995433779c5ec18a16fa75",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -482,10 +482,13 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "13c27ad79ba8b7f9b1b923a111bb173f03a2fdc5882ff5308adca230c56777a3",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "1af93ae7995459bd760e1d183f4bae9bc7f6698cb9e6fd4b3197ab24bcaf295d",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
-    "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
+    "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
+    "tests/fixtures/messenger-private-accounting/payee-document-privacy-preimage.sql": "1f45bab2cf5905b7e3ba1000a60fc84b29201d977a77fd14c76239b40666d8dc",
+    "tests/fixtures/messenger-private-accounting/payee-document-privacy-regression.sql": "c06ddff8284d5d0e5f8d940edbdc99aafa34228104071061f7b48ae1009e8eac",
+    "supabase/migrations/20260921052548_payee_documents_are_private_to_their_payee_and_rosters_are_n.sql": "42a061f0c9101f11a847c415f7814dcd76a24a265a8525b32b23e2fd395c4b5e"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",
@@ -1635,9 +1638,7 @@
         "sha256": "06b6e8223bc0fd1759acdda3e2f1cc344d68567f4412f13cce656fd11ad7a6ed"
       }
     ],
-    "added_repository_inputs": [
-      "tests/fixtures/rakeback-payout-document/regression.sql"
-    ],
+    "added_repository_inputs": ["tests/fixtures/rakeback-payout-document/regression.sql"],
     "reason": "On 2026-09-14, 420 posted rakeback legs moved 84,041.00 from settlement_suspense into 420 player wallets with settlement_id NULL, no invoice, no receipt and no settlement run; accounting_routed_settlement_runs has never held a row. The writer was fn_club_members_ledger_writer, the AFTER UPDATE OF chip_balance journal trigger on club_members, which takes the leg category from app.ledger_category and defaults the counterparty to settlement_suspense, and which knows no period, certificate, payout row, run or document. It now refuses a rakeback movement by name (rakeback_requires_accounting_authority), and a deferrable constraint trigger states the invariant for every writer (rakeback_payout_leg_undocumented). The 420 historical rows are untouched. No cron, watcher, reconciler or repair loop; no second payer and no second document authority.",
     "qualification": "scripts/dev/test-union-weekly-basis.py installs the migration with the predecessors pristine, so every regression on that cluster - including the real raked weekly close through fn_union_settlement_cascade - runs with the constraint armed. tests/fixtures/rakeback-payout-document/regression.sql then proves both refusals by exact SQLSTATE and name, that the accepted weekly payout satisfies every clause, and that each refusal leaves the journal, documents, deliveries and every balance byte-identical.",
     "first_settleable_week": "The constraint requires a strict subset of what fn_settle_accounting_rakeback_stage already writes and already asserts with routed_rakeback_invoice_delivery_incomplete. It does NOT require chip_ledger.settlement_id, which that authority does not populate on the payout leg, so it cannot refuse 2026-09-21 07:00Z -> 2026-09-28 07:00Z."
@@ -1714,5 +1715,35 @@
     ],
     "reason": "club_settlement_floor_successor_20260920 shipped the floor and proved its arithmetic, but not the discovery BEHAVIOUR it exists for. The reason was the run journal, not the migration's preimage guard: tests/fixtures/full-weekly-accounting/schema.sql is a 2026-09-14 catalog capture, and on that date public.union_accounting_runs was still union-only - PRIMARY KEY(union_id,period_start,period_end), union_id NOT NULL, no standalone_club_id, scope_kind, scope_id or last_scheduler_visit_at - so every term of the coordinator's standalone-club discovery fails 42703 before a floor predicate is reached. (tests/fixtures/weekly-scheduler-fairness has the journal shape but builds the coordinator from the weekly-v3 components, so 20260920232503 correctly refuses there with weekly_coordinator_preimage_drift.) tests/fixtures/club-settlement-floor-behaviour/installed-run-journal.sql brings that captured journal to the exact installed union/standalone shape using the reviewed source of that shape verbatim - components 20260914142600 and 20260914154500 and migration 20260917195207 - and reads it back against the column, constraint and index inventory captured read-only from production on 2026-09-21, refusing on drift. No coordinator, floor, payer or document definition is changed, no guard is loosened, no preimage is relaxed and no captured catalog, component or existing assertion is edited. The only change to scripts/dev/test-union-weekly-basis.py is three added run() steps after the existing club-floor regression; tests/fixtures/union-weekly-basis/source-binding.json gains those three inputs plus the fixture README, and tests/fixtures/club-settlement-floor/seed.sql gains one corrected comment naming where the club behaviour is now proved.",
     "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py: 74 PASS steps, 0 failures, including club-floor-run-journal, club-floor-behaviour-seed and club-floor-behaviour-regression (20 assertions). Red control on the same stack, reverting only the three GREATEST clamps of 20260920232503 in the running coordinator: 5 of those 20 assertions fail - the below-floor club week is re-attempted, the first week above the floor is neither reached nor completed, and the club whose earlier week succeeded no longer reaches its next due week."
-  }
+  },
+  "restamp_audit": [
+    {
+      "file": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+      "from": "13c27ad79ba8b7f9b1b923a111bb173f03a2fdc5882ff5308adca230c56777a3",
+      "to": "1af93ae7995459bd760e1d183f4bae9bc7f6698cb9e6fd4b3197ab24bcaf295d",
+      "on": "2026-09-21",
+      "why": "Cascade of the 2026-09-21 restamp of scripts/dev/test-full-weekly-accounting-activation.sh for migration 20260921052548 (installed 20260921060422). The only substantive change is one added acceptance-phase step - the payee-document-privacy preimage, that migration and its regression - plus its log in the retained-artifact list; every other pinned byte in the chain is unchanged."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "from": "77c6743c00070baa33ec11bc8dd3d9ebc4ca1efa8401cc88c0b0a6bd0c4021e9",
+      "to": "9f970764fd8b9dcf7d8d0b179df60cb22836592bf6f68109444e40d187b6ba9f",
+      "on": "2026-09-21",
+      "why": "Cascade of the 2026-09-21 restamp of scripts/dev/test-full-weekly-accounting-activation.sh for migration 20260921052548 (installed 20260921060422). The only substantive change is one added acceptance-phase step - the payee-document-privacy preimage, that migration and its regression - plus its log in the retained-artifact list; every other pinned byte in the chain is unchanged."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "from": "819819f141511ae978fb961f5a1c10e4a1a580348d588345e1f03dc06896f47e",
+      "to": "4d2a8a4fbefefdc4584b9aff31102b3729e20bcab2995433779c5ec18a16fa75",
+      "on": "2026-09-21",
+      "why": "Cascade of the 2026-09-21 restamp of scripts/dev/test-full-weekly-accounting-activation.sh for migration 20260921052548 (installed 20260921060422). The only substantive change is one added acceptance-phase step - the payee-document-privacy preimage, that migration and its regression - plus its log in the retained-artifact list; every other pinned byte in the chain is unchanged."
+    },
+    {
+      "file": "tests/fixtures/spin-mixed-cutover/source-binding.json",
+      "from": "d13caff6d4d67c678df9b23b51223a6ec9f0944413b29bd68554df2140544433",
+      "to": "2e7226d731652f73f59568f2f59e8c5101e884b261b5eb2d26d8573831226914",
+      "on": "2026-09-21",
+      "why": "Cascade of the 2026-09-21 restamp of scripts/dev/test-full-weekly-accounting-activation.sh for migration 20260921052548 (installed 20260921060422). The only substantive change is one added acceptance-phase step - the payee-document-privacy preimage, that migration and its regression - plus its log in the retained-artifact list; every other pinned byte in the chain is unchanged."
+    }
+  ]
 }

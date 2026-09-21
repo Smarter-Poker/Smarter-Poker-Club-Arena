@@ -1,5 +1,5 @@
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
-import { pendingBonus } from '../services/diamondBonusRecovery';
+import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
@@ -12,6 +12,8 @@ import BonusSetup, { guaranteeCopy } from '../components/games/BonusSetup';
 import TodayLine from '../components/games/TodayLine';
 import SealedPrize from '../components/games/SealedPrize';
 import { useGameCooldown } from '../hooks/useGameCooldown';
+import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
+import { useAwardAutoStart } from '../hooks/useAwardAutoStart';
 import {
   bonusTotal,
   bonusWalletDebit,
@@ -54,6 +56,17 @@ interface Ticket {
 /** "1.10x" and "20.00x": the road's multipliers always read with two decimals. */
 const multiplierCopy = (cents: number) => `${(cents / 100).toFixed(2)}x`;
 const ROAD = ROAD_LADDERS[CHOICE_MODE.crossing];
+/** What the page says while it mends something by itself. None of these asks
+ * the player to do anything, so none of them reads as an error. */
+const RECONNECTING = 'Reconnecting To Your Game';
+const PREPARING_TICKET = 'Preparing Your Ticket';
+const CALM = new Set([
+  RECONNECTING,
+  PREPARING_TICKET,
+  'Settling Your Round',
+  'Settling Your Previous Round First',
+  'Confirming Your Move',
+]);
 /** What the rules say about the one setting, from the same constants the server mirrors. */
 const ONE_SETTING = {
   crossing: `${ROAD.length} Streets Pay ${multiplierCopy(ROAD[0])} Up To ${multiplierCopy(ROAD[ROAD.length - 1])}.`,
@@ -87,7 +100,24 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const [busy, setBusy] = useState(false);
   const [sceneBusy, setSceneBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A wager whose answer never arrived, or a move whose confirmed result the
+  // page has not read yet. The page settles it on its own schedule
+  // (useAutoSettle); the player is never asked to check anything.
   const [uncertain, setUncertain] = useState(false);
+  const [settleAttempts, setSettleAttempts] = useState(0);
+  // The server refused a ticket that could no longer open a round and charged
+  // nothing, so the same wager goes again on a fresh ticket - once per press.
+  const [restartOwed, setRestartOwed] = useState(false);
+  // The Double Down offer is a question about the player's own diamonds. A won
+  // game never starts itself over it; it is treated as open until the setup
+  // panel says otherwise.
+  const [offerOpen, setOfferOpen] = useState(true);
+  // A game read or a ticket deal that failed is tried again by the page
+  // itself, on the same schedule as a saved wager. Nobody is told to refresh.
+  const [loadFailures, setLoadFailures] = useState(0);
+  const [loadTry, setLoadTry] = useState(0);
+  const [ticketFailures, setTicketFailures] = useState(0);
+  const [ticketTry, setTicketTry] = useState(0);
   const [verified, setVerified] = useState<boolean | null>(null);
   const [waitSeconds, setWaitSeconds] = useGameCooldown();
   const mounted = useRef(true),
@@ -158,16 +188,23 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         setUuid(id);
         const pending = pendingBonus(user?.id ?? '', id, game);
         if (pending) {
+          // Replayed by useAutoSettle as soon as the game state is in.
           heldStart.current = pending;
           uncertainTicket.current = pending.commitId;
           setBudget(pending.budget);
           setUncertain(true);
-          setError('Check Your Saved Round Before Starting Another.');
         }
         await load(id);
+        if (!cancelled) {
+          setLoadFailures(0);
+          setError((current) => (current === RECONNECTING ? null : current));
+        }
       } catch (e) {
         reportError(e, 'DiamondChoicePage.load');
-        if (!cancelled) setError('The Game Could Not Be Loaded. Try Again.');
+        if (!cancelled) {
+          setError(RECONNECTING);
+          setLoadFailures((count) => count + 1);
+        }
       }
     })();
     return () => {
@@ -175,7 +212,11 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       mounted.current = false;
       generation.current++;
     };
-  }, [clubId, user?.id, load, game, setBudget]);
+  }, [clubId, user?.id, load, game, setBudget, loadTry]);
+  useAutoSettle(loadFailures > 0, loadFailures, async () => {
+    setLoadTry((count) => count + 1);
+    return true;
+  });
 
   const newTicket = useCallback(async () => {
     const { data, error: rpcError } = await supabase.rpc('fn_diamond_game_commit', {
@@ -205,17 +246,29 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   useEffect(() => {
     if (!state?.available || round?.status === 'open' || ticket || uncertain) return;
     let cancelled = false;
-    newTicket().catch((e) => {
-      reportError(e, 'DiamondChoicePage.ticket');
-      if (!cancelled) setError('The Game Ticket Could Not Be Loaded. Refresh To Try Again.');
-    });
+    newTicket()
+      .then(() => {
+        if (cancelled) return;
+        setTicketFailures(0);
+        setError((current) => (current === PREPARING_TICKET ? null : current));
+      })
+      .catch((e) => {
+        reportError(e, 'DiamondChoicePage.ticket');
+        if (cancelled) return;
+        setError(PREPARING_TICKET);
+        setTicketFailures((count) => count + 1);
+      });
     return () => {
       cancelled = true;
     };
-  }, [state?.available, round?.status, ticket, uncertain, newTicket]);
+  }, [state?.available, round?.status, ticket, uncertain, newTicket, ticketTry]);
+  useAutoSettle(ticketFailures > 0 && !ticket && !uncertain, ticketFailures, async () => {
+    setTicketTry((count) => count + 1);
+    return true;
+  });
 
-  const refresh = async () => {
-    if (!uuid || busyRef.current) return;
+  const refresh = async (): Promise<boolean> => {
+    if (!uuid || busyRef.current) return false;
     busyRef.current = true;
     setBusy(true);
     try {
@@ -223,7 +276,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         const recovered = parseChoiceRound(
           await DiamondBonusService.start(heldStart.current, user?.id ?? '')
         );
-        if (!mounted.current) return;
+        if (!mounted.current) return true;
         earned.consume(recovered.award_id);
         currentRound.current = recovered;
         setRound(recovered);
@@ -235,24 +288,34 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       }
       await earned.refresh();
       await load(uuid);
-      if (mounted.current) setError(null);
+      if (mounted.current) {
+        setError(null);
+        setSettleAttempts(0);
+      }
     } catch (e) {
       reportError(e, 'DiamondChoicePage.refresh');
       if (mounted.current) {
-        setError(
-          e instanceof BonusRefusal ? e.message : 'The Round Could Not Be Checked. Try Again.'
-        );
         if (e instanceof BonusRefusal) {
           heldStart.current = null;
           uncertainTicket.current = null;
           setUncertain(false);
+          setSettleAttempts(0);
+          setTicket(null);
+          setError(e.message);
+          if (e.ticketGone) setRestartOwed(true);
+        } else {
+          // Not an answer: the page tries again on its own schedule.
+          setSettleAttempts((count) => count + 1);
+          setError('Settling Your Round');
         }
       }
     } finally {
       busyRef.current = false;
       if (mounted.current) setBusy(false);
     }
+    return true;
   };
+  useAutoSettle(uncertain, settleAttempts, refresh);
   const blocked =
     !earned.ready ||
     !validBonusBudget(budget) ||
@@ -322,12 +385,37 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     } catch (e) {
       reportError(e, 'DiamondChoicePage.start');
       if (mounted.current) {
-        if (e instanceof BonusRefusal) {
+        if (e instanceof PriorBonusPending) {
+          // Another tab's wager is still saved: it settles first, by itself.
+          heldStart.current = e.prior;
+          uncertainTicket.current = e.prior.commitId;
+          setBudget(e.prior.budget);
+          setUncertain(true);
+          setSettleAttempts(0);
+          setError('Settling Your Previous Round First');
+        } else if (e instanceof BonusRefusal) {
+          // Nothing was charged. The ticket is spent either way, so a fresh
+          // one is dealt; when the ticket itself was the refusal the same
+          // wager is sent again on it.
           heldStart.current = null;
           uncertainTicket.current = null;
+          setUncertain(false);
+          setTicket(null);
+          setError(e.message);
+          if (e.ticketGone) setRestartOwed(true);
+          // This start cleared the entry quote. Read it again, so the next
+          // start is not held on "Checking Your Entry" until someone refreshes.
+          void load(uuid).catch((requoteError) => {
+            reportError(requoteError, 'DiamondChoicePage.requote');
+            if (mounted.current) setLoadFailures((count) => count + 1);
+          });
+        } else {
+          // The answer never arrived. The saved wager is replayed by
+          // useAutoSettle until the server says what happened.
+          setUncertain(true);
+          setSettleAttempts(0);
+          setError('Settling Your Round');
         }
-        setUncertain(!(e instanceof BonusRefusal));
-        setError(e instanceof BonusRefusal ? e.message : 'Check Your Round Before Trying Again.');
       }
     } finally {
       busyRef.current = false;
@@ -359,15 +447,55 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     } catch (e) {
       reportError(e, 'DiamondChoicePage.act');
       if (mounted.current) {
+        // The confirmed result is read back by useAutoSettle.
         setUncertain(true);
-        setError('Check Your Round To See The Confirmed Result.');
+        setSettleAttempts(0);
+        setError('Confirming Your Move');
       }
     } finally {
       busyRef.current = false;
       if (mounted.current) setBusy(false);
     }
   };
+  // A wager the server refused for its ticket alone is sent again on the
+  // fresh ticket, once, without the player pressing Start twice.
+  const startRef = useRef(start);
+  startRef.current = start;
+  const restarts = useRef(0);
+  useEffect(() => {
+    // Start refuses silently while the entry is still being quoted, so the
+    // owed restart waits for it rather than being spent on a closed door.
+    if (!restartOwed || !ticket || uncertain || busy || blocked) return;
+    setRestartOwed(false);
+    if (restarts.current >= 2) return;
+    restarts.current += 1;
+    void startRef.current();
+  }, [restartOwed, ticket, uncertain, busy, blocked]);
+  // Games paused by the platform come back by themselves after the break.
+  useStandingRefresh(Boolean(state?.frozen) && !busy && !uncertain && !sceneBusy, () => {
+    void earned.refresh();
+    setLoadTry((count) => count + 1);
+  });
   const open = round?.status === 'open';
+  // A won game starts itself: a short visible countdown, then the same Start
+  // the button would have pressed. A finished round still on the scene keeps
+  // the floor until its completion has taken the player back to the wheel.
+  const finishedOnScene = Boolean(round && round.status !== 'open' && completionId === round.id);
+  const autoStartIn = useAwardAutoStart(
+    earned.award?.id,
+    !open &&
+      !uncertain &&
+      !busy &&
+      !sceneBusy &&
+      !blocked &&
+      Boolean(ticket) &&
+      !restartOwed &&
+      !offerOpen &&
+      !finishedOnScene &&
+      seed.trim() !== '',
+    `${bet}:${seed}`,
+    () => void startRef.current()
+  );
   const picks = round?.picked.length ?? 0;
   const prizes = open ? round.prizes : (state?.prizes ?? []);
   const prize =
@@ -394,7 +522,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const roadMultiplier = roadEnd !== null && roadEnd > 0 ? ladder[roadEnd - 1] : 0;
   const payableRoadEnd = Math.min(roadEnd ?? 0, round?.max_steps ?? 0);
   const status = uncertain
-    ? 'Check Round'
+    ? 'Settling'
     : busy
       ? 'One Moment'
       : open
@@ -404,8 +532,18 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           : round?.status === 'lost'
             ? 'Round Over'
             : 'Ready';
-  useLiveBonusGuard(Boolean(earned.award) || busy || uncertain || open || sceneBusy, () =>
-    setError('Finish Your Bonus Game Before Leaving.')
+  // Money in flight holds the page. A won game holds it only while it can
+  // actually start: an award this page cannot start (daily limit, a closed or
+  // frozen game, a cooldown, no ticket dealt yet) never traps the player on
+  // it, and neither does the next award while a finished round's receipt is
+  // waiting to take them back to the wheel.
+  useLiveBonusGuard(
+    (Boolean(earned.award) && !blocked && Boolean(ticket) && !finishedOnScene) ||
+      busy ||
+      uncertain ||
+      open ||
+      sceneBusy,
+    () => setError('Finish Your Bonus Game Before Leaving.')
   );
   const cashLabel = open && picks > 0 ? 'Book The Win' : 'Refresh';
   // History is available for proof, but must not replay an old collision on entry.
@@ -454,10 +592,10 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               entryReady={earned.ready}
               awardLoading={earned.loading}
               awardError={earned.error}
-              onRefresh={() => void earned.refresh()}
               onChange={setBudget}
+              onOffer={setOfferOpen}
               diamonds={state?.diamonds ?? null}
-              disabled={busy || uncertain}
+              disabled={busy || uncertain || restartOwed}
               clubId={clubId ?? ''}
             />
           )
@@ -485,10 +623,10 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           },
         ]}
         secondary={{
-          label: uncertain ? 'Check Round' : cashLabel,
+          label: cashLabel,
           onClick: () =>
             open && picks > 0 && !uncertain ? void act('cashout', null) : void refresh(),
-          disabled: busy || sceneBusy,
+          disabled: busy || sceneBusy || uncertain,
         }}
         primary={{
           label: open
@@ -497,7 +635,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               : 'Choose A Tile'
             : waitSeconds > 0
               ? `Ready In ${waitSeconds}s`
-              : 'Start Round',
+              : autoStartIn !== null
+                ? `Starting In ${autoStartIn}s`
+                : 'Start Round',
           onClick: () => (open ? void act('pick', picks) : void start()),
           disabled:
             busy || sceneBusy || uncertain || (open ? game === 'mines' : blocked || !ticket),
@@ -532,7 +672,15 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           }
         />
         <div className={styles.readout} aria-live="polite">
-          {error ? <p className="sc-copy sc-ink--red">{error}</p> : null}
+          {error ? (
+            CALM.has(error) ? (
+              <p className="sc-copy" role="status">
+                {error}
+              </p>
+            ) : (
+              <p className="sc-copy sc-ink--red">{error}</p>
+            )
+          ) : null}
           {round?.status === 'cashed' ? (
             <>
               <strong className="sc-ink--gold">{gameChips(round.payout_chips)} Chips Booked</strong>
@@ -577,13 +725,15 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                     : quotedEntry !== `${uuid}:${game}:${mode}:${bet}`
                       ? 'Checking Your Entry'
                       : blocked
-                        ? state.diamonds < bonusWalletDebit(budget)
-                          ? 'Not Enough Diamonds For This Bet'
-                          : !state.is_member
-                            ? 'Join The Club To Play'
-                            : !state.available
-                              ? 'This Game Is Not Open Here Yet'
-                              : 'This Bet Is Not Available Right Now'
+                        ? state.frozen
+                          ? 'Games Are Paused For Maintenance. Play Resumes By Itself After The Break.'
+                          : state.diamonds < bonusWalletDebit(budget)
+                            ? 'Not Enough Diamonds For This Bet'
+                            : !state.is_member
+                              ? 'Join The Club To Play'
+                              : !state.available
+                                ? 'This Game Is Not Open Here Yet'
+                                : 'This Bet Is Not Available Right Now'
                         : `${promise ?? `${compactChips(bet)} Diamonds To Play.`} ${state.max_steps} ${game === 'mines' ? 'Safe Picks' : 'Streets'} In This Round.`}
             </p>
           )}

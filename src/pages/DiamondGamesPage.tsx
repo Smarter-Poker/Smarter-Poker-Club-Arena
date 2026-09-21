@@ -11,7 +11,7 @@ import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
  * than it has taken in.
  *
  * THE RULES COPY IS DERIVED, NOT TYPED (2026-09-19). Every figure in a "How It
- * Pays" panel comes from the constant the game actually plays: PLINKO_DROPS,
+ * Pays" panel comes from the constant the game actually plays: PLINKO_MAX_DROPS,
  * PLINKO_TABLES, ROAD_LADDERS and CHOICE_MODE. The page used to claim the
  * Plinko centre and a crash "pay nothing", and both were false the day the
  * guaranteed minimum shipped. A number written twice drifts; a number imported
@@ -42,7 +42,7 @@ import { useGameFloor } from '../hooks/useGameFloor';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { DiamondChoiceService, type ChoiceState } from '../services/DiamondChoiceService';
-import { PLINKO_DROPS } from '../utils/bonusGameBudget';
+import { PLINKO_MAX_DROPS, PLINKO_MIN_DROPS } from '../utils/bonusGameBudget';
 import { CHOICE_MODE, ROAD_LADDERS } from '../utils/diamondChoiceMath';
 import { PLINKO_TABLES, plinkoTableVersion } from '../utils/diamondBonusPayout';
 import { DIAMOND_GAME_TITLES } from '../utils/diamondGameTitles';
@@ -347,19 +347,20 @@ export default function DiamondGamesPage() {
           />
           <Row
             label="Drops"
-            value={String(PLINKO_DROPS)}
+            value={`${PLINKO_MIN_DROPS} To ${PLINKO_MAX_DROPS}`}
             ink="silver"
-            meta="Your Entry Split Equally"
+            meta="You Choose The Value Of Each"
           />
         </div>
         {explained === 'plinko' ? (
           <p className="sc-copy">
-            Your Entry Plays As {PLINKO_DROPS} Drops, Each An Equal Share Of It, On One Board. That
-            Board Is The {ORDINARY_TABLE.name} Board, {TABLE_ROWS} Rows Of Pegs Above{' '}
-            {TABLE_SLOTS.length} Slots, And The Ball Goes Left Or Right At Every Peg With Equal
-            Odds. Every Slot Pays Something, From {multiplierCopy(Math.min(...TABLE_SLOTS))} In The
-            Middle Up To {multiplierCopy(Math.max(...TABLE_SLOTS))} Per Drop On The Outer Slots. A
-            Super Award Plays The {SUPER_TABLE.name} Board, Where The Middle Slot Pays{' '}
+            You Choose How Many Diamonds Each Drop Plays, So Your Entry Becomes {PLINKO_MIN_DROPS}{' '}
+            To {PLINKO_MAX_DROPS} Equal Drops On One Board. That Board Is The {ORDINARY_TABLE.name}{' '}
+            Board, {TABLE_ROWS} Rows Of Pegs Above {TABLE_SLOTS.length} Slots, And The Ball Goes
+            Left Or Right At Every Peg With Equal Odds. Every Slot Pays Something, From{' '}
+            {multiplierCopy(Math.min(...TABLE_SLOTS))} In The Middle Up To{' '}
+            {multiplierCopy(Math.max(...TABLE_SLOTS))} Per Drop On The Outer Slots. A Super Award
+            Plays The {SUPER_TABLE.name} Board, Where The Middle Slot Pays{' '}
             {multiplierCopy(Math.min(...SUPER_TABLE.multipliersCents))}. {GUARANTEE_COPY}
           </p>
         ) : null}

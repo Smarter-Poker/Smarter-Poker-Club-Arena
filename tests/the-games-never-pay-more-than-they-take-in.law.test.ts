@@ -40,8 +40,11 @@ import { resolve } from 'path';
 import {
   MAX_DIAMOND_SPIN,
   MIN_DIAMOND_SPIN,
-  PLINKO_DROPS,
-  plinkoDenomination,
+  PLINKO_DIAMONDS_PER_DROP,
+  PLINKO_MAX_DROPS,
+  PLINKO_MIN_DROPS,
+  plinkoAllocations,
+  validPlinkoDenomination,
 } from '../src/utils/bonusGameBudget';
 import {
   PLINKO_TABLES,
@@ -125,9 +128,13 @@ const bank = latest('the_bank_backs_the_promo_wallet');
  * it one.
  *
  * supabase/migrations/20260919220610_diamond_bonus_games_have_one_setting_and_super_guarantees_the_entry.sql
- * fixes it twice over: every Plinko game is exactly PLINKO_DROPS drops of a
- * tenth of the entry (the server refuses any other split), and the two open
- * tables carry real weight at the top. So this law now pins BOTH halves:
+ * fixed it twice over: every Plinko game became exactly ten drops of a tenth
+ * of the entry (the server refused any other split), and the two open tables
+ * carry real weight at the top. AMENDED 2026-09-21 (Dan, R6): the player
+ * chooses the drop value again, from a fixed list, with the drop count held
+ * between 1 and 100, so the 2,500-drop award stays impossible while the
+ * choice is the player's; ten drops is now this file's REFERENCE game, the one
+ * the calibration was measured on. So this law pins BOTH halves:
  *
  *   - the house edge, which was already here: exactly 0.80, by integer
  *     arithmetic, on every table and at every stopping point;
@@ -198,6 +205,17 @@ const CHIP_CENTS = 100;
  * stated in chip cents so it holds whatever the row says.
  */
 const DIAMONDS_PER_CHIP = 100;
+/**
+ * THE REFERENCE GAME. The calibration below was measured on a ten-drop game,
+ * and ten drops of a tenth was the one setting from 2026-09-19 to 2026-09-21.
+ * Dan's ruling of 2026-09-21 (R6: "the player must choose how many diamonds to
+ * drop and the value of each drop") gives the choice back, between
+ * PLINKO_MIN_DROPS and PLINKO_MAX_DROPS drops, so ten is now the game this
+ * file measures, not the only game a player can have. The maths does not
+ * change with the choice: the mean is 0.80 at any drop count, only the
+ * variance moves, and the drop-count item below pins the range Dan accepted.
+ */
+const REFERENCE_DROPS = 10;
 
 /** The ordinary table (boost 1) and the Super table (boost 2). Nobody chooses either. */
 const DIAMOND = PLINKO_TABLES[plinkoTableVersion(1)];
@@ -207,26 +225,26 @@ const SUPER = PLINKO_TABLES[plinkoTableVersion(2)];
 const ratio = (num: bigint, den: bigint) => Number(num) / Number(den);
 
 /**
- * P(at least one of PLINKO_DROPS drops pays `floorCents` or better), EXACTLY:
+ * P(at least one of REFERENCE_DROPS drops pays `floorCents` or better), EXACTLY:
  * P(none) is ((space - hit)/space)^drops on the binomial weights, so nothing is
  * simulated and no seed can flatter the answer.
  */
 function atLeastOneDrop(table: number[], floorCents: number) {
   let hit = 0n;
   for (let k = 0; k < SLOTS; k++) if (table[k] >= floorCents) hit += WEIGHTS[k];
-  const drops = BigInt(PLINKO_DROPS);
+  const drops = BigInt(REFERENCE_DROPS);
   const all = SPACE ** drops;
   return { hit, perDrop: ratio(hit, SPACE), atLeastOne: ratio(all - (SPACE - hit) ** drops, all) };
 }
 
 /**
- * THE EXACT DISTRIBUTION OF A WHOLE GAME. A game is PLINKO_DROPS drops of a
+ * THE EXACT DISTRIBUTION OF A WHOLE GAME. A game is REFERENCE_DROPS drops of a
  * tenth of the entry, so its return is sum(multiplier cents)/(100 x drops) of
- * the entry, and a total of 100 x PLINKO_DROPS cents is exactly the entry back.
+ * the entry, and a total of 100 x REFERENCE_DROPS cents is exactly the entry back.
  *
  * 17^10 paths is 2 x 10^12, which is too many to walk and completely
  * unnecessary: collapse the seventeen slots to their seven distinct
- * multipliers, then convolve that cents -> weight map PLINKO_DROPS times in
+ * multipliers, then convolve that cents -> weight map REFERENCE_DROPS times in
  * integer cents and BigInt weights. 6,063 reachable totals, ~30ms, and the
  * answer is exact - no sampling, no floating point, no seed.
  *
@@ -238,16 +256,16 @@ function atLeastOneDrop(table: number[], floorCents: number) {
  */
 const EXACTLY_MEASURABLE_DROPS = 20;
 function gameDistribution(table: number[]): Map<number, bigint> {
-  if (PLINKO_DROPS > EXACTLY_MEASURABLE_DROPS) {
+  if (REFERENCE_DROPS > EXACTLY_MEASURABLE_DROPS) {
     throw new Error(
-      `A ${PLINKO_DROPS}-drop game cannot be measured exactly, which is itself ` +
+      `A ${REFERENCE_DROPS}-drop game cannot be measured exactly, which is itself ` +
         `the finding: see the drop-count assertion in this file.`
     );
   }
   const per = new Map<number, bigint>();
   for (let k = 0; k < SLOTS; k++) per.set(table[k], (per.get(table[k]) ?? 0n) + WEIGHTS[k]);
   let dist = new Map<number, bigint>([[0, 1n]]);
-  for (let d = 0; d < PLINKO_DROPS; d++) {
+  for (let d = 0; d < REFERENCE_DROPS; d++) {
     const next = new Map<number, bigint>();
     for (const [total, w] of dist)
       for (const [cents, weight] of per)
@@ -507,9 +525,9 @@ describe('plinko returns exactly 80 percent or the table cannot be activated', (
       superFloorCents - 1
     );
     expect(lowest).toBeGreaterThanOrEqual(superFloorCents);
-    // Stated as the whole game: PLINKO_DROPS drops of a tenth, worst case.
-    const worstCents = PLINKO_DROPS * lowest;
-    const entryCents = PLINKO_DROPS * CHIP_CENTS;
+    // Stated as the whole game: REFERENCE_DROPS drops of a tenth, worst case.
+    const worstCents = REFERENCE_DROPS * lowest;
+    const entryCents = REFERENCE_DROPS * CHIP_CENTS;
     expect(worstCents * CHIP_CENTS).toBeGreaterThanOrEqual(entryCents * superFloorCents);
     // And the ordinary table is NOT held to this: it is a 0.08x-to-20x board,
     // and its tenth-of-the-stake floor is what a losing ordinary game returns.
@@ -688,10 +706,10 @@ describe('the calibration: the Diamond table can actually be hit, and a game can
   /**
    * ITEM 3. REACHABILITY, MEASURED EXACTLY. Dan's sentence was "never saw a 5x,
    * 10x or 20x", so those are the three thresholds. P(no drop at or above t) is
-   * ((65,536 - hit)/65,536)^PLINKO_DROPS on the binomial weights, and one minus
+   * ((65,536 - hit)/65,536)^REFERENCE_DROPS on the binomial weights, and one minus
    * that is the chance a game shows the player at least one.
    *
-   * Measured on the live Diamond table, over PLINKO_DROPS = 10 drops:
+   * Measured on the live Diamond table, over REFERENCE_DROPS = 10 drops:
    *
    *     5x or better    5,034/65,536 per drop (1 in 13.0)   55.03% per game
    *     10x or better   1,394/65,536 per drop (1 in 47.0)   19.35% per game
@@ -732,12 +750,12 @@ describe('the calibration: the Diamond table can actually be hit, and a game can
    * ITEM 4. THE EXACT DISTRIBUTION OF A WHOLE GAME. Reachability is not the
    * same question as "does a game pay": ten drops averaging 0.80 can put a 20x
    * on the board and still hand back less than the entry. So the seventeen-slot
-   * distribution is convolved PLINKO_DROPS times in integer cents and BigInt
+   * distribution is convolved REFERENCE_DROPS times in integer cents and BigInt
    * weights - 65,536^10 total weight, 6,063 reachable totals - and the whole
    * game's return is read straight off it.
    *
-   * A game plays PLINKO_DROPS drops of a tenth of the entry, so a total of
-   * 100 x PLINKO_DROPS = 1,000 multiplier cents is exactly the entry back.
+   * A game plays REFERENCE_DROPS drops of a tenth of the entry, so a total of
+   * 100 x REFERENCE_DROPS = 1,000 multiplier cents is exactly the entry back.
    *
    * Measured on the live Diamond table (exact, not sampled):
    *
@@ -758,13 +776,13 @@ describe('the calibration: the Diamond table can actually be hit, and a game can
     // convenience of the test: the whole defect was a game so long that its
     // outcome was its mean. Refused by name before the convolution runs.
     expect(
-      PLINKO_DROPS,
+      REFERENCE_DROPS,
       'a game this long cannot be measured exactly, which is the finding'
     ).toBeLessThanOrEqual(EXACTLY_MEASURABLE_DROPS);
     const dist = gameDistribution(DIAMOND.multipliersCents);
-    const all = SPACE ** BigInt(PLINKO_DROPS);
+    const all = SPACE ** BigInt(REFERENCE_DROPS);
     /** The multiplier-cents total that hands the entry back: ten drops of a tenth. */
-    const entryCents = CHIP_CENTS * PLINKO_DROPS;
+    const entryCents = CHIP_CENTS * REFERENCE_DROPS;
 
     // Nothing leaked in the convolution: the weights are a whole probability.
     // Measured: 6,063 reachable totals out of 65,536^10 weight.
@@ -786,13 +804,13 @@ describe('the calibration: the Diamond table can actually be hit, and a game can
     for (const [total, w] of dist) mean += BigInt(total) * w;
     expect(mean * RETURN_DEN).toBe(RETURN_NUM * BigInt(entryCents) * all);
     expect(mean).toBe(
-      BigInt(PLINKO_DROPS) * EXACT_RETURN_WEIGHT * SPACE ** BigInt(PLINKO_DROPS - 1)
+      BigInt(REFERENCE_DROPS) * EXACT_RETURN_WEIGHT * SPACE ** BigInt(REFERENCE_DROPS - 1)
     );
 
     // The extremes are the table's own, ten times over: nothing is clipped.
     const totals = [...dist.keys()].sort((a, b) => a - b);
-    expect(totals[0]).toBe(PLINKO_DROPS * Math.min(...DIAMOND.multipliersCents));
-    expect(totals[totals.length - 1]).toBe(PLINKO_DROPS * TOP_CENTS);
+    expect(totals[0]).toBe(REFERENCE_DROPS * Math.min(...DIAMOND.multipliersCents));
+    expect(totals[totals.length - 1]).toBe(REFERENCE_DROPS * TOP_CENTS);
   });
 
   /**
@@ -811,7 +829,7 @@ describe('the calibration: the Diamond table can actually be hit, and a game can
    * deviation is 222.91 cents. So the distance from 0.80 to 2.00, in standard
    * deviations of the game's return:
    *
-   *     PLINKO_DROPS = 10 drops    sd 0.7049 of the entry    1.70 sigma
+   *     REFERENCE_DROPS = 10 drops    sd 0.7049 of the entry    1.70 sigma
    *                    100 drops   sd 0.2229                 5.38 sigma
    *                    500 drops   sd 0.0997                12.04 sigma
    *                  2,500 drops   sd 0.0446                26.92 sigma
@@ -822,18 +840,43 @@ describe('the calibration: the Diamond table can actually be hit, and a game can
    * table's mean. Both bounds below are exact integer comparisons on the
    * table's own variance, so they move with the table.
    */
-  it('a game is PLINKO_DROPS drops, and PLINKO_DROPS is small enough that a good day is a real win', () => {
-    // A game is PLINKO_DROPS drops of a tenth of the entry, and nobody chooses.
-    expect(PLINKO_DROPS).toBe(10);
-    for (const entry of [MIN_DIAMOND_SPIN * 2, 100, 500, MAX_DIAMOND_SPIN]) {
-      expect(plinkoDenomination(entry)! * PLINKO_DROPS).toBe(entry);
+  it('the player chooses the drop value, within 1 to 100 drops, and the ten-drop reference game is a real game', () => {
+    // Dan 2026-09-21, R6: the value of a drop is the player's choice from a
+    // fixed list; it must divide the stake exactly; the stake split by it is
+    // the drop count, held between PLINKO_MIN_DROPS and PLINKO_MAX_DROPS; and
+    // NOTHING is pre-selected (the complaint was that it "just defaulted at 10").
+    expect(PLINKO_DIAMONDS_PER_DROP).toEqual([1, 2, 4, 5, 10, 20, 25, 50, 100, 250, 500]);
+    expect(PLINKO_MIN_DROPS).toBe(1);
+    expect(PLINKO_MAX_DROPS).toBe(100);
+    for (const entry of [MIN_DIAMOND_SPIN * 2, 100, 500, MAX_DIAMOND_SPIN, MAX_DIAMOND_SPIN * 3]) {
+      const offered = plinkoAllocations(entry);
+      expect(offered.length).toBeGreaterThan(0);
+      for (const choice of offered) {
+        expect(PLINKO_DIAMONDS_PER_DROP).toContain(choice.diamondsPerDrop);
+        expect(choice.diamondsPerDrop * choice.drops).toBe(entry);
+        expect(choice.drops).toBeGreaterThanOrEqual(PLINKO_MIN_DROPS);
+        expect(choice.drops).toBeLessThanOrEqual(PLINKO_MAX_DROPS);
+        expect(validPlinkoDenomination(entry, choice.diamondsPerDrop)).toBe(true);
+      }
+      // Every listed value that is NOT offered either fails to divide the stake
+      // or would exceed the drop ceiling: nothing else is ever withheld.
+      for (const value of PLINKO_DIAMONDS_PER_DROP) {
+        if (offered.some((c) => c.diamondsPerDrop === value)) continue;
+        expect(entry % value !== 0 || entry / value > PLINKO_MAX_DROPS).toBe(true);
+      }
     }
-    // Anything that is not the tenth has no drop value at all.
-    expect(plinkoDenomination(MIN_DIAMOND_SPIN)).toBeNull();
+    // The biggest award can no longer be 2,500 single-diamond drops: the ceiling holds.
+    expect(plinkoAllocations(MAX_DIAMOND_SPIN).map((c) => c.diamondsPerDrop)).toEqual([
+      25, 50, 100, 250, 500,
+    ]);
+    // A value the client shows is one the server accepts, and the reverse: the
+    // list is the contract with fn_wheel_bonus_start(p_denom).
+    expect(validPlinkoDenomination(MAX_DIAMOND_SPIN, 10)).toBe(false);
+    expect(validPlinkoDenomination(MAX_DIAMOND_SPIN, 750)).toBe(false);
 
     const dist = gameDistribution(DIAMOND.multipliersCents);
-    const all = SPACE ** BigInt(PLINKO_DROPS);
-    const entryCents = CHIP_CENTS * PLINKO_DROPS;
+    const all = SPACE ** BigInt(REFERENCE_DROPS);
+    const entryCents = CHIP_CENTS * REFERENCE_DROPS;
 
     // Measured p99 = 3,170 cents = 3.170x the entry. The bound is 2x: a
     // calibration whose top percentile is not even a doubling is a game whose
@@ -861,14 +904,20 @@ describe('the calibration: the Diamond table can actually be hit, and a game can
       num: 36n * 10000n * BigInt(drops) * varDen,
       den: 25n * varNum,
     });
-    // At PLINKO_DROPS: 2.898, so 1.70 sigma - a doubling is an ordinary night.
-    const now = sigmaSq(PLINKO_DROPS);
+    // At the reference ten drops: 2.898, so 1.70 sigma - a doubling is an ordinary night.
+    const now = sigmaSq(REFERENCE_DROPS);
     expect(now.num).toBeLessThan(9n * now.den);
+    // At the ceiling Dan accepted, 100 drops: 28.98, so 5.38 sigma. The player
+    // who chooses the most drops chooses the flattest game, and the selector
+    // prints the drop count beside every value so the choice is an informed one.
+    const ceiling = sigmaSq(PLINKO_MAX_DROPS);
+    expect(ceiling.num).toBeLessThan(36n * ceiling.den);
     // At MAX_DIAMOND_SPIN / 5 = 500 drops, the old five-diamond drop on the
     // biggest award: 144.9, so 12.04 sigma. Beyond ten sigma the top of the
-    // table stops being a prize and becomes a label.
+    // table stops being a prize and becomes a label - and the ceiling keeps it out.
     const old = sigmaSq(MAX_DIAMOND_SPIN / 5);
     expect(old.num).toBeGreaterThan(100n * old.den);
+    expect(MAX_DIAMOND_SPIN / 5).toBeGreaterThan(PLINKO_MAX_DROPS);
     // And at MAX_DIAMOND_SPIN drops - one diamond a drop, the award Dan
     // actually played twenty of - it is worse still: 26.92 sigma.
     const worst = sigmaSq(MAX_DIAMOND_SPIN);
@@ -1194,17 +1243,19 @@ describe('the calibration is installed server-side exactly as the client mirrors
     );
   });
 
-  it('the ten-drop refusal is PLINKO_DROPS, server-side, and nothing else can be started', () => {
-    // The defect, closed at the source: a game is PLINKO_DROPS drops of a tenth
-    // of the entry and fn_plinko_bonus_run refuses any other split. There is no
-    // drop-value menu left to land a 2,500-diamond award on 2,500 drops.
+  it('the 2026-09-19 migration installed the ten-drop refusal server-side, on its exact preimage', () => {
+    // The 2026-09-19 fix, as installed: a game was ten drops of a tenth of the
+    // entry and fn_plinko_bonus_run refused any other split, which closed the
+    // 2,500-drop award at the source. Dan's 2026-09-21 ruling (R6) reopens the
+    // choice, within 1 to 100 drops, in a LATER migration; this installed text
+    // is history and still reads exactly as it was applied.
     expect(calib.sql).toContain(
-      `IF p_total IS NULL OR p_total%${PLINKO_DROPS}<>0` +
-        ` OR p_denom IS DISTINCT FROM p_total/${PLINKO_DROPS} THEN`
+      `IF p_total IS NULL OR p_total%${REFERENCE_DROPS}<>0` +
+        ` OR p_denom IS DISTINCT FROM p_total/${REFERENCE_DROPS} THEN`
     );
     expect(calib.sql).toContain("'Plinko Plays Ten Drops. Refresh Before You Play'");
     expect(calib.sql).toContain(
-      `strpos(pg_get_functiondef('public.fn_plinko_bonus_run(uuid,uuid,text,integer,integer,integer)'::regprocedure),'p_denom IS DISTINCT FROM p_total/${PLINKO_DROPS}')=0`
+      `strpos(pg_get_functiondef('public.fn_plinko_bonus_run(uuid,uuid,text,integer,integer,integer)'::regprocedure),'p_denom IS DISTINCT FROM p_total/${REFERENCE_DROPS}')=0`
     );
     // The old drop-value menu is named as the exact text being REMOVED, not
     // merely left unreachable: 1 to 100 diamonds a drop is how a 2,500-diamond

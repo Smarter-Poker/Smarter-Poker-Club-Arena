@@ -57,7 +57,7 @@ import { ErrorState } from '../components/common/EmptyState';
 import CrashCurve, { type CrashPhase } from '../components/crash/CrashCurve';
 import { GameConsole, GamePanel } from '../components/games/GameConsole';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
-import BonusSetup, { guaranteeCopy } from '../components/games/BonusSetup';
+import BonusSetup, { bonusEntryStep, guaranteeCopy } from '../components/games/BonusSetup';
 import {
   bonusTotal,
   bonusWalletDebit,
@@ -75,7 +75,6 @@ import DiamondGamesService, {
 import { randomClientSeed } from '../utils/wheelFairness';
 import {
   multiplierLabel,
-  crashMultiplierCents,
   verifyCrashRound,
   type CrashFairnessVerdict,
 } from '../utils/diamondGamesFairness';
@@ -95,6 +94,8 @@ import styles from './diamondGames.module.css';
 
 const MAX_CLIENT_SEED = 64;
 const POLL_MS = 320;
+/** The displayed hundredth from which Book The Win is offered: the same floor crashSettle enforces. */
+const CASHOUT_OPENS_CENTS = 101;
 /** The pause between a settled round and the next of a run, so the result can be read. */
 const AUTO_PAUSE_MS = 1500;
 /** The odds table's rows and the auto cash-out presets, in cents. 0 is Off. */
@@ -140,9 +141,13 @@ function DiamondCrashGame() {
   const [ticketError, setTicketError] = useState<string | null>(null);
   const ticketInFlight = useRef<Promise<void> | null>(null);
   const [clientSeed, setClientSeed] = useState<string>(() => randomClientSeed());
-  const [selectedBudget, setBudget] = useBonusBudget(routeClubId, 'crash');
+  const [selectedBudget, setBudget, offer] = useBonusBudget(routeClubId, 'crash');
   const earned = useEarnedBonus(clubUuid, 'crash', selectedBudget);
   const budget = earned.budget;
+  // Screen one of a won game is the Double Your Diamonds decision; only the
+  // player's own tap on Start begins the climb (Dan 2026-09-21, R9).
+  const offerAnswered = budget.award ? offer.answered(budget.award.id) : true;
+  const step = bonusEntryStep(budget, offerAnswered);
   const state = (earned.gameState as GameState | null) ?? legacyState;
   const bet = bonusTotal(budget);
   const budgetRef = useRef(budget);
@@ -154,7 +159,27 @@ function DiamondCrashGame() {
   const [revealedRoundId, setRevealedRoundId] = useState<string | null>(null);
   const [phase, setPhase] = useState<CrashPhase>('idle');
   const [startedAtLocal, setStartedAtLocal] = useState<number | null>(null);
-  const [liveCents, setLiveCents] = useState(100);
+  /**
+   * THE LIVE MULTIPLIER IS A REF, NOT STATE (Dan 2026-09-21, R20: mobile is
+   * choppy). Every frame used to call setState here and re-render this whole
+   * page. Now the curve's own frame loop hands each figure to `onTick`, which
+   * writes it into the readout's text nodes directly; React re-renders only on
+   * phase changes and once when the cash-out opens. The figure the player sees
+   * is exactly the figure a tap on Book The Win sends: one number per frame,
+   * read from this ref at the tap.
+   */
+  const liveCentsRef = useRef(100);
+  const readoutValueRef = useRef<HTMLSpanElement>(null);
+  const readoutWorthRef = useRef<HTMLSpanElement>(null);
+  const [cashoutOpen, setCashoutOpen] = useState(false);
+  const cashoutOpenRef = useRef(false);
+  const cashingRef = useRef(false);
+  const openCashout = useCallback((cents: number) => {
+    const opens = cents >= CASHOUT_OPENS_CENTS;
+    if (cashoutOpenRef.current === opens) return;
+    cashoutOpenRef.current = opens;
+    setCashoutOpen(opens);
+  }, []);
   const [starting, setStarting] = useState(false);
   const [cashing, setCashing] = useState(false);
   const [history, setHistory] = useState<CrashRound[]>([]);
@@ -175,24 +200,23 @@ function DiamondCrashGame() {
   const [stageRef, stageWidth] = useMeasuredWidth<HTMLDivElement>(300);
   const { floor, refresh: refreshFloor } = useGameFloor(clubUuid, 20);
 
-  // The multiplier must keep working even when WebGL cannot render the flight.
-  // Freeze the displayed value while its exact cash-out request is pending.
-  useEffect(() => {
-    if (phase !== 'open' || !round || startedAtLocal === null || cashing) return;
-    let frame = 0;
-    const update = () => {
-      setLiveCents(
-        crashMultiplierCents(
-          round.growth_k,
-          Math.max(0, performance.now() - startedAtLocal),
-          round.cap_cents
-        )
-      );
-      frame = requestAnimationFrame(update);
-    };
-    update();
-    return () => cancelAnimationFrame(frame);
-  }, [phase, round?.round_id, round?.growth_k, round?.cap_cents, startedAtLocal, cashing]);
+  /**
+   * One figure per frame from the curve's clock (it keeps ticking when WebGL
+   * cannot draw the flight). The displayed value freezes while its exact
+   * cash-out request is pending, and nothing here calls setState except the
+   * single transition that opens Book The Win.
+   */
+  const onTick = useCallback(
+    (cents: number) => {
+      if (cashingRef.current || roundRef.current?.status !== 'open') return;
+      liveCentsRef.current = cents;
+      if (readoutValueRef.current) readoutValueRef.current.textContent = multiplierLabel(cents);
+      if (readoutWorthRef.current && roundRef.current)
+        readoutWorthRef.current.textContent = `Worth ${chipsLabel((roundRef.current.bet_chips * cents) / 100)} Chips Right Now`;
+      if (cents >= CASHOUT_OPENS_CENTS) openCashout(cents);
+    },
+    [openCashout]
+  );
 
   const loadState = useCallback(
     async (uuid: string) => {
@@ -301,7 +325,8 @@ function DiamondCrashGame() {
       setRound(open);
       setPhase('open');
       setStartedAtLocal(performance.now() - open.elapsed_ms);
-      setLiveCents(open.multiplier_now_cents ?? 100);
+      liveCentsRef.current = open.multiplier_now_cents ?? 100;
+      openCashout(liveCentsRef.current);
       stopPolling();
       const generation = pollGeneration.current;
       const current = () =>
@@ -330,7 +355,7 @@ function DiamondCrashGame() {
       };
       pollRef.current = setTimeout(tick, POLL_MS);
     },
-    [stopPolling, live, finish, toast]
+    [stopPolling, live, finish, toast, openCashout]
   );
 
   useEffect(() => {
@@ -447,6 +472,7 @@ function DiamondCrashGame() {
   const shortOfDiamonds = blocker === SHORT_OF_DIAMONDS;
   const canStart = Boolean(
     earned.ready &&
+    step === 'setup' &&
     clubUuid &&
     commit &&
     validBonusBudget(budget) &&
@@ -658,15 +684,17 @@ function DiamondCrashGame() {
 
   const handleCashOut = useCallback(async () => {
     const current = roundRef.current;
+    const liveCents = liveCentsRef.current;
     if (
       !current ||
       current.status !== 'open' ||
       phase !== 'open' ||
       busyRef.current ||
-      liveCents < 101
+      liveCents < CASHOUT_OPENS_CENTS
     )
       return;
     busyRef.current = true;
+    cashingRef.current = true;
     setCashing(true);
     triggerHaptic('heavy');
     try {
@@ -693,9 +721,10 @@ function DiamondCrashGame() {
       if (live()) toast.error('The Cash Out Could Not Be Confirmed. Checking Your Round');
     } finally {
       busyRef.current = false;
+      cashingRef.current = false;
       if (live()) setCashing(false);
     }
-  }, [phase, live, toast, finish, liveCents]);
+  }, [phase, live, toast, finish]);
 
   const handleVerify = useCallback(
     async (r: CrashRound) => {
@@ -789,23 +818,26 @@ function DiamondCrashGame() {
           ? 'Climbing'
           : 'Ready';
   const readoutValue =
-    phase === 'idle' ? '1x' : multiplierLabel(open ? liveCents : (finalCents ?? 100));
-  const liveWorth = open && round ? (round.bet_chips * liveCents) / 100 : 0;
+    phase === 'idle' ? '1x' : multiplierLabel(open ? liveCentsRef.current : (finalCents ?? 100));
+  const liveWorth = open && round ? (round.bet_chips * liveCentsRef.current) / 100 : 0;
   /* A run cannot start on a wheel award (startRun refuses it), so a size left
      over from ordinary play must not dress the plate or the readout as one. */
   const runSize = budget.award ? 0 : autoSize;
   const startLabel = starting
     ? 'Starting'
-    : autoRun
-      ? `Round ${Math.min(autoRun.done + 1, autoRun.total)} Of ${autoRun.total}`
-      : waitSeconds > 0
-        ? `Ready In ${waitSeconds}s`
-        : runSize
-          ? `Auto Play ${runSize}`
-          : `Start ${bet.toLocaleString()}`;
+    : step === 'offer'
+      ? 'Answer The Offer First'
+      : autoRun
+        ? `Round ${Math.min(autoRun.done + 1, autoRun.total)} Of ${autoRun.total}`
+        : waitSeconds > 0
+          ? `Ready In ${waitSeconds}s`
+          : runSize
+            ? `Auto Play ${runSize}`
+            : `Start ${bet.toLocaleString()}`;
   const runLabel = running ? 'Stop' : runSize ? `Run ${runSize}` : 'Run Off';
-  const boost =
-    (round ? round.bonus?.boost_multiplier === 2 : budget.award?.boostMultiplier === 2) ? 2 : 1;
+  const boost = (round ? round.bonus?.boost_multiplier === 2 : budget.award?.boostMultiplier === 2)
+    ? 2
+    : 1;
   const title = diamondGameTitle('crash', boost);
   /** The tenth an ordinary entry keeps, from the client mirror of the server's rule. */
   const standardFloor = (() => {
@@ -891,6 +923,8 @@ function DiamondCrashGame() {
               diamonds={player?.spendable ?? null}
               disabled={starting || cashing || running || uncertain}
               clubId={routeClubId ?? ''}
+              offerAnswered={offerAnswered}
+              onOfferAnswered={offer.answer}
             />
           )
         }
@@ -956,7 +990,7 @@ function DiamondCrashGame() {
                   label: cashing ? 'Booking Win' : 'Book The Win',
                   ink: 'green',
                   onClick: handleCashOut,
-                  disabled: cashing || liveCents < 101,
+                  disabled: cashing || !cashoutOpen,
                 }
               : shortOfDiamonds
                 ? { label: 'Get Diamonds', ink: 'gold', onClick: () => navigate(BUY_DIAMONDS) }
@@ -999,7 +1033,8 @@ function DiamondCrashGame() {
               crashCents={settledRound?.outcome?.crash_cents ?? null}
               cashoutCents={settledRound?.outcome?.cashout_cents ?? null}
               autoCashoutCents={open ? roundAuto : autoTarget}
-              tickerCents={open ? liveCents : null}
+              tickerCents={open && cashing ? liveCentsRef.current : null}
+              onTick={onTick}
               minimumPayoutChips={guaranteed?.chips ?? null}
               betChips={guaranteed?.betChips ?? null}
               onSettled={() => {
@@ -1011,29 +1046,40 @@ function DiamondCrashGame() {
           </div>
           <div className={styles.readout} role="status">
             <span className="sc-label sc-ink--blue">{readoutLabel}</span>
-            <span className={`${styles.readoutValue} ${styles.readoutCompact} ${readoutInk}`}>
+            <span
+              ref={readoutValueRef}
+              className={`${styles.readoutValue} ${styles.readoutCompact} ${readoutInk}`}
+            >
               {readoutValue}
             </span>
             <span className={`sc-copy ${styles.readoutSub}`}>
-              {open
-                ? `Worth ${chipsLabel(liveWorth)} Chips Right Now`
-                : settledRound
-                  ? settledRound.status === 'cashed'
-                    ? `${chipsLabel(settledRound.outcome?.payout_chips ?? 0)} Chips Paid${settledRound.outcome?.settled_by === 'time' ? ' By Your Auto Cash Out' : ''}`
-                    : `Crashed At ${multiplierLabel(settledRound.outcome?.crash_cents ?? 100)}. ${chipsLabel(settledRound.outcome?.payout_chips ?? 0)} Chips Paid`
-                  : blocker
-                    ? blocker
-                    : ticketError
-                      ? ticketError
-                      : !commit
-                        ? 'Preparing Your Game'
-                        : quotedAmount !== bet
-                          ? 'Checking Your Entry'
-                          : runSize
-                            ? autoTarget
-                              ? `${promise ? `${promise} ` : ''}Auto Play Runs ${runSize} Rounds At ${compactChips(bet)} Diamonds Each, Cashing Out At ${multiplierLabel(autoTarget)} Every Time, And Stops On Its Own If A Round Is Refused. Tap Run To Change It.`
-                              : 'Auto Play Needs An Auto Cash Out: Tap Auto To Set One, Or It Cannot Cash Out For You.'
-                            : `${promise ? `${promise} ` : ''}Up To ${multiplierLabel(capCents)} On This Bet. ${budget.award ? 'Your Wheel Award Is Ready.' : 'Choose Your Entry And Start.'} Auto Cash Out Is Optional.`}
+              {open ? (
+                <span
+                  ref={readoutWorthRef}
+                >{`Worth ${chipsLabel(liveWorth)} Chips Right Now`}</span>
+              ) : settledRound ? (
+                settledRound.status === 'cashed' ? (
+                  `${chipsLabel(settledRound.outcome?.payout_chips ?? 0)} Chips Paid${settledRound.outcome?.settled_by === 'time' ? ' By Your Auto Cash Out' : ''}`
+                ) : (
+                  `Crashed At ${multiplierLabel(settledRound.outcome?.crash_cents ?? 100)}. ${chipsLabel(settledRound.outcome?.payout_chips ?? 0)} Chips Paid`
+                )
+              ) : blocker ? (
+                blocker
+              ) : ticketError ? (
+                ticketError
+              ) : !commit ? (
+                'Preparing Your Game'
+              ) : quotedAmount !== bet ? (
+                'Checking Your Entry'
+              ) : runSize ? (
+                autoTarget ? (
+                  `${promise ? `${promise} ` : ''}Auto Play Runs ${runSize} Rounds At ${compactChips(bet)} Diamonds Each, Cashing Out At ${multiplierLabel(autoTarget)} Every Time, And Stops On Its Own If A Round Is Refused. Tap Run To Change It.`
+                ) : (
+                  'Auto Play Needs An Auto Cash Out: Tap Auto To Set One, Or It Cannot Cash Out For You.'
+                )
+              ) : (
+                `${promise ? `${promise} ` : ''}Up To ${multiplierLabel(capCents)} On This Bet. ${budget.award ? 'Your Wheel Award Is Ready.' : 'Choose Your Entry And Start.'} Auto Cash Out Is Optional.`
+              )}
               {autoRun && !open ? ` Auto Play ${autoRun.done} Of ${autoRun.total}.` : ''}
             </span>
             {settledRound?.status === 'cashed' ? (
@@ -1210,6 +1256,8 @@ function DiamondCrashGame() {
           <BonusCompletion
             key={settledRound.round_id}
             clubId={routeClubId ?? ''}
+            clubUuid={clubUuid}
+            awardId={settledRound.award_id ?? null}
             chips={settledRound.outcome.payout_chips}
             detail={`The Flight Crashed At ${multiplierLabel(settledRound.outcome.crash_cents)}.`}
           />

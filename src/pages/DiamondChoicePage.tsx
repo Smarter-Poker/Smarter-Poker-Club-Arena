@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { GameConsole, GamePanel } from '../components/games/GameConsole';
-import BonusSetup, { guaranteeCopy } from '../components/games/BonusSetup';
+import BonusSetup, { bonusEntryStep, guaranteeCopy } from '../components/games/BonusSetup';
 import TodayLine from '../components/games/TodayLine';
 import SealedPrize from '../components/games/SealedPrize';
 import { useGameCooldown } from '../hooks/useGameCooldown';
@@ -77,9 +77,13 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // The one setting. Nobody picks a difficulty; the payout carries it, and the
   // server refuses any other mode for a new round. A saved open round keeps its own.
   const mode = CHOICE_MODE[game];
-  const [selectedBudget, setBudget] = useBonusBudget(clubId, game);
+  const [selectedBudget, setBudget, offer] = useBonusBudget(clubId, game);
   const earned = useEarnedBonus(uuid, game, selectedBudget, mode);
   const budget = earned.budget;
+  // Screen one of a won game is the Double Your Diamonds decision; only the
+  // player's own tap on Start Round begins play (Dan 2026-09-21, R9).
+  const offerAnswered = budget.award ? offer.answered(budget.award.id) : true;
+  const step = bonusEntryStep(budget, offerAnswered);
   const state = (earned.gameState as ChoiceState | null) ?? legacyState;
   const bet = bonusTotal(budget);
   const [seed, setSeed] = useState(randomClientSeed);
@@ -123,7 +127,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                     ? next.open_round!.bet_diamonds / 2
                     : next.open_round!.bet_diamonds,
                 doubled: next.open_round!.bet_diamonds > 2500,
-                denomination: 1,
+                denomination: null,
               })
         );
         setTicket(null);
@@ -255,6 +259,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   };
   const blocked =
     !earned.ready ||
+    step !== 'setup' ||
     !validBonusBudget(budget) ||
     quotedEntry !== `${uuid}:${game}:${mode}:${bet}` ||
     !state?.available ||
@@ -459,6 +464,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               diamonds={state?.diamonds ?? null}
               disabled={busy || uncertain}
               clubId={clubId ?? ''}
+              offerAnswered={offerAnswered}
+              onOfferAnswered={offer.answer}
             />
           )
         }
@@ -497,7 +504,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               : 'Choose A Tile'
             : waitSeconds > 0
               ? `Ready In ${waitSeconds}s`
-              : 'Start Round',
+              : step === 'offer'
+                ? 'Answer The Offer First'
+                : 'Start Round',
           onClick: () => (open ? void act('pick', picks) : void start()),
           disabled:
             busy || sceneBusy || uncertain || (open ? game === 'mines' : blocked || !ticket),
@@ -576,15 +585,17 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                     ? 'Loading Your Game'
                     : quotedEntry !== `${uuid}:${game}:${mode}:${bet}`
                       ? 'Checking Your Entry'
-                      : blocked
-                        ? state.diamonds < bonusWalletDebit(budget)
-                          ? 'Not Enough Diamonds For This Bet'
-                          : !state.is_member
-                            ? 'Join The Club To Play'
-                            : !state.available
-                              ? 'This Game Is Not Open Here Yet'
-                              : 'This Bet Is Not Available Right Now'
-                        : `${promise ?? `${compactChips(bet)} Diamonds To Play.`} ${state.max_steps} ${game === 'mines' ? 'Safe Picks' : 'Streets'} In This Round.`}
+                      : step === 'offer'
+                        ? `${promise ? `${promise} ` : ''}Decide Whether To Double Your Diamonds, Then Start Your Round.`
+                        : blocked
+                          ? state.diamonds < bonusWalletDebit(budget)
+                            ? 'Not Enough Diamonds For This Bet'
+                            : !state.is_member
+                              ? 'Join The Club To Play'
+                              : !state.available
+                                ? 'This Game Is Not Open Here Yet'
+                                : 'This Bet Is Not Available Right Now'
+                          : `${promise ?? `${compactChips(bet)} Diamonds To Play.`} ${state.max_steps} ${game === 'mines' ? 'Safe Picks' : 'Streets'} In This Round.`}
             </p>
           )}
         </div>
@@ -683,6 +694,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           <BonusCompletion
             key={round.id}
             clubId={clubId ?? ''}
+            clubUuid={uuid}
+            awardId={round.award_id ?? null}
             chips={round.payout_chips}
             detail={
               game === 'mines'

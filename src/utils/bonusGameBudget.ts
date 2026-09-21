@@ -2,39 +2,62 @@
 export const MIN_DIAMOND_SPIN = 25;
 export const MAX_DIAMOND_SPIN = 2500;
 /**
- * Every Plinko game is ten drops of a tenth of the entry. Nobody chooses a drop
- * value: at one to five diamonds a drop a 2,500-diamond award was hundreds of
- * drops whose average could only ever be the table's 0.80, so the game could
- * never return more than its entry. Ten drops is one setting, built into the
- * payout maths, and the server refuses any other split.
+ * THE PLAYER CHOOSES THE DROP (Dan, 2026-09-21, R6: "On Plinko the player must
+ * choose how many diamonds to drop and the value of each drop. Today it is just
+ * defaulted at 10 diamonds"). The value of one drop comes from this list, it
+ * must divide the stake exactly, and the stake split by it is the number of
+ * drops, which the server keeps between PLINKO_MIN_DROPS and PLINKO_MAX_DROPS.
+ * Nothing is pre-selected: a budget whose `denomination` is null has not been
+ * chosen yet and cannot start.
  */
-export const PLINKO_DROPS = 10;
+export const PLINKO_DIAMONDS_PER_DROP = [1, 2, 4, 5, 10, 20, 25, 50, 100, 250, 500] as const;
+export const PLINKO_MIN_DROPS = 1;
+export const PLINKO_MAX_DROPS = 100;
 
 export function validSpinAmount(amount: number): boolean {
   return Number.isSafeInteger(amount) && amount >= MIN_DIAMOND_SPIN && amount <= MAX_DIAMOND_SPIN;
 }
 
-/** The diamonds each of the ten drops plays, or null when the entry does not split into whole diamonds. */
-export function plinkoDenomination(totalDiamonds: number): number | null {
-  return Number.isSafeInteger(totalDiamonds) &&
-    totalDiamonds > 0 &&
-    totalDiamonds % PLINKO_DROPS === 0
-    ? totalDiamonds / PLINKO_DROPS
-    : null;
+export interface PlinkoAllocation {
+  diamondsPerDrop: number;
+  drops: number;
+  totalDiamonds: number;
+}
+/** True when `value` is an offered drop value that splits `totalDiamonds` into an allowed number of drops. */
+export function validPlinkoDenomination(
+  totalDiamonds: number,
+  value: number | null
+): value is number {
+  if (!Number.isSafeInteger(totalDiamonds) || totalDiamonds <= 0) return false;
+  if (typeof value !== 'number' || !(PLINKO_DIAMONDS_PER_DROP as readonly number[]).includes(value))
+    return false;
+  if (totalDiamonds % value !== 0) return false;
+  const drops = totalDiamonds / value;
+  return drops >= PLINKO_MIN_DROPS && drops <= PLINKO_MAX_DROPS;
+}
+/** Every drop value the player may choose for this stake, smallest value (most drops) first. */
+export function plinkoAllocations(totalDiamonds: number): PlinkoAllocation[] {
+  return PLINKO_DIAMONDS_PER_DROP.filter((value) =>
+    validPlinkoDenomination(totalDiamonds, value)
+  ).map((value) => ({
+    diamondsPerDrop: value,
+    drops: totalDiamonds / value,
+    totalDiamonds,
+  }));
 }
 
 export interface BonusBudget {
   base: number;
   doubled: boolean;
-  /** Plinko only: the diamonds each drop plays. Always the tenth of the entry. */
-  denomination: number;
+  /** Plinko only: the diamonds each drop plays, chosen by the player. Null until chosen. */
+  denomination: number | null;
   /** The server-funded wheel entitlement. The original stake alone may be added. */
   award?: { id: string; entryDiamonds: number; boostMultiplier: 1 | 2 };
 }
 export const defaultBonusBudget = (): BonusBudget => ({
   base: 100,
   doubled: false,
-  denomination: 10,
+  denomination: null,
 });
 export const bonusAdded = (budget: BonusBudget) =>
   budget.doubled ? (budget.award?.entryDiamonds ?? budget.base) : 0;
@@ -53,16 +76,23 @@ export function validBonusBudget(budget: BonusBudget): boolean {
       : validSpinAmount(budget.base))
   );
 }
-/** The same budget with its Plinko drop value derived from the entry, never chosen. */
+/**
+ * The same budget with a drop value that no longer fits its stake cleared, so
+ * the player chooses again rather than starting on a split the server refuses.
+ * A drop value is never invented here.
+ */
 export function plinkoBudget(budget: BonusBudget): BonusBudget {
-  const denomination = validBonusBudget(budget) ? plinkoDenomination(bonusTotal(budget)) : null;
-  return denomination === null || denomination === budget.denomination
+  if (budget.denomination === null || !validBonusBudget(budget)) return budget;
+  return validPlinkoDenomination(bonusTotal(budget), budget.denomination)
     ? budget
-    : { ...budget, denomination };
+    : { ...budget, denomination: null };
 }
-/** True when the budget's drop value is the tenth of its entry, as the server requires. */
+/** True when the player has chosen a drop value the server accepts for this stake. */
 export const validPlinkoBudget = (budget: BonusBudget) =>
-  validBonusBudget(budget) && plinkoDenomination(bonusTotal(budget)) === budget.denomination;
+  validBonusBudget(budget) && validPlinkoDenomination(bonusTotal(budget), budget.denomination);
+/** How many drops a chosen budget plays, or null before the choice is made. */
+export const plinkoDrops = (budget: BonusBudget): number | null =>
+  validPlinkoBudget(budget) ? bonusTotal(budget) / (budget.denomination as number) : null;
 
 /** A larger game receipt is valid only with the complete wheel funding identity. */
 export function earnedReceiptBudget(value: Record<string, unknown>): BonusBudget | null {
@@ -82,7 +112,8 @@ export function earnedReceiptBudget(value: Record<string, unknown>): BonusBudget
   const budget: BonusBudget = {
     base: Number(bonus.base_diamonds),
     doubled: bonus.added_diamonds !== 0,
-    denomination: 1,
+    // A Plinko receipt names the drop value it was dealt; every other game has none.
+    denomination: typeof value.diamonds_per_drop === 'number' ? value.diamonds_per_drop : null,
     award: {
       id: value.award_id,
       entryDiamonds: Number(bonus.entry_diamonds),
@@ -93,7 +124,7 @@ export function earnedReceiptBudget(value: Record<string, unknown>): BonusBudget
     bonusAdded(budget) === bonus.added_diamonds &&
     bonusTotal(budget) === bonus.total_diamonds &&
     bonus.total_diamonds === value.bet_diamonds
-    ? plinkoBudget(budget)
+    ? budget
     : null;
 }
 /** Monetary prizes keep their cents even below the compact-number threshold. */

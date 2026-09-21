@@ -27,10 +27,15 @@
  * is static and every meaning is kept; every timed effect scales with the
  * player's Animation Speed the way the flight itself does.
  *
- * THE FIGURE SEEN IS THE FIGURE BOOKED. While a round is open the page owns
- * the multiplier (it is what a tap on Book The Win sends), so the page hands
- * it to the hero through `tickerCents`; the hero never prints a number of its
- * own beside it. Replays, which book nothing, let the hero follow the clock.
+ * THE FIGURE SEEN IS THE FIGURE BOOKED. While a round is open this loop is the
+ * one clock: each drawn frame computes the multiplier once, hands it to the
+ * page through `onTick` (what a tap on Book The Win sends) and prints the same
+ * number into the hero. Neither side re-renders for it (Dan 2026-09-21, R20:
+ * mobile is choppy; a setState per frame re-rendered the whole page). A page
+ * that must freeze the figure, while its cash-out request is pending, hands
+ * the frozen number back through `tickerCents` and the hero prints exactly
+ * that. Replays, which book nothing, let the hero follow the clock. The loop
+ * stops while the tab is hidden and resumes when it is shown.
  */
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -53,9 +58,9 @@ export interface CrashCurveProps {
   crashCents?: number | null;
   autoCashoutCents: number | null;
   /**
-   * The multiplier the page holds while the round is open. The hero prints
-   * exactly this, so the figure the player sees is the figure a tap books.
-   * Absent (a replay), the hero follows the scene clock.
+   * A multiplier the page holds still while the round is open (its cash-out
+   * request is pending). The hero prints exactly this. Absent, the hero prints
+   * the scene clock's figure, the same one `onTick` hands the page each frame.
    */
   tickerCents?: number | null;
   /** The sealed floor in chips and the stake it sits under: the floor line is drawn at L/B. */
@@ -74,8 +79,21 @@ export function tickerLabel(cents: number): string {
 export function tickerHeat(cents: number): 'calm' | 'warm' | 'hot' {
   return cents >= 500 ? 'hot' : cents >= 200 ? 'warm' : 'calm';
 }
+/** What the hero prints in each phase; `clock` is the open round's live figure. */
+function heroFigure(p: CrashCurveProps, clock: number): number {
+  return p.phase === 'idle'
+    ? 100
+    : p.phase === 'crashed'
+      ? (p.finalCents ?? 100)
+      : p.phase === 'cashed'
+        ? (p.cashoutCents ?? p.finalCents ?? 100)
+        : (p.tickerCents ?? clock);
+}
 /** The multiplier equivalent of a guaranteed floor, in cents, or null when there is none to draw. */
-export function floorCents(minimumPayoutChips: number | null | undefined, betChips: number | null | undefined) {
+export function floorCents(
+  minimumPayoutChips: number | null | undefined,
+  betChips: number | null | undefined
+) {
   if (!minimumPayoutChips || !betChips || minimumPayoutChips <= 0 || betChips <= 0) return null;
   return Math.round((minimumPayoutChips / betChips) * 100);
 }
@@ -397,8 +415,10 @@ export default function CrashCurve(props: CrashCurveProps) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const glass = useRef<SVGSVGElement>(null);
   const [failed, setFailed] = useState(false);
-  /** What the hero prints when the page hands it nothing: the scene clock's own figure. */
-  const [clockCents, setClockCents] = useState(100);
+  /** The hero's text node, written by the frame loop while the round is open. */
+  const ticker = useRef<HTMLDivElement>(null);
+  /** The last figure the loop printed, so a re-render prints the same one rather than an older one. */
+  const clockCents = useRef(100);
   const [reduced] = useState(prefersReducedMotion);
   const latest = useRef(props);
   latest.current = props;
@@ -443,8 +463,16 @@ export default function CrashCurve(props: CrashCurveProps) {
       axisLog = 0,
       clockShown = -1;
     let lastVisibleFrame: number | null = null;
+    // Hidden: the loop is cancelled outright, not merely skipped. Shown again:
+    // it resumes from the next frame with no visible time charged for the gap.
     const visibilityChanged = () => {
       lastVisibleFrame = null;
+      if (document.hidden) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      } else if (raf === 0) {
+        raf = requestAnimationFrame(draw);
+      }
     };
     document.addEventListener('visibilitychange', visibilityChanged);
     const speed = getAnimationSpeed();
@@ -453,8 +481,12 @@ export default function CrashCurve(props: CrashCurveProps) {
       return [((s.x + 1) / 2) * width, ((1 - s.y) / 2) * height];
     };
     const draw = (now: number) => {
+      if (document.hidden) {
+        raf = 0;
+        return;
+      }
       raf = requestAnimationFrame(draw);
-      if (document.hidden || now - last < (reduced ? 180 : 30)) return;
+      if (now - last < (reduced ? 180 : 30)) return;
       last = now;
       const visibleDelta = lastVisibleFrame === null ? 0 : now - lastVisibleFrame;
       lastVisibleFrame = now;
@@ -471,11 +503,16 @@ export default function CrashCurve(props: CrashCurveProps) {
         p.phase === 'open'
           ? crashMultiplierCents(p.growthK, elapsed, p.capCents)
           : (p.finalCents ?? 100);
-      if (p.phase === 'open') {
-        p.onTick?.(current);
-        if (p.tickerCents == null && current !== clockShown) {
-          clockShown = current;
-          setClockCents(current);
+      if (p.phase === 'open') p.onTick?.(current);
+      // The hero is written here every time its figure moves, in every phase,
+      // so the text node always agrees with what React last rendered for it.
+      const printed = heroFigure(p, current);
+      if (printed !== clockShown) {
+        clockShown = printed;
+        if (p.phase === 'open') clockCents.current = printed;
+        if (ticker.current) {
+          ticker.current.textContent = tickerLabel(printed);
+          ticker.current.dataset.heat = tickerHeat(printed);
         }
       }
       const target =
@@ -501,7 +538,8 @@ export default function CrashCurve(props: CrashCurveProps) {
       // between rounds.
       const wantLog = Math.max(Math.log(4), Math.log(Math.max(shown, target) / 100) * 1.12);
       if (reduced || axisLog === 0 || wantLog < axisLog || p.phase === 'idle') axisLog = wantLog;
-      else axisLog += (wantLog - axisLog) * (1 - Math.exp(-visibleDelta / (AXIS_FOLLOW_MS * speed)));
+      else
+        axisLog += (wantLog - axisLog) * (1 - Math.exp(-visibleDelta / (AXIS_FOLLOW_MS * speed)));
       const maxLog = axisLog;
       const progressOf = (cents: number) => Math.log(Math.max(100, cents) / 100) / maxLog;
       const progress = p.phase === 'idle' ? 0.14 : Math.min(0.92, progressOf(shown));
@@ -643,14 +681,7 @@ export default function CrashCurve(props: CrashCurveProps) {
       while (glassNode.firstChild) glassNode.removeChild(glassNode.firstChild);
     };
   }, [width, height, reduced]);
-  const heroCents =
-    props.phase === 'idle'
-      ? 100
-      : props.phase === 'crashed'
-        ? (props.finalCents ?? 100)
-        : props.phase === 'cashed'
-          ? (props.cashoutCents ?? props.finalCents ?? 100)
-          : (props.tickerCents ?? clockCents);
+  const heroCents = heroFigure(props, clockCents.current);
   return (
     <div className={styles.wrap} data-motion="keep">
       <div
@@ -675,6 +706,7 @@ export default function CrashCurve(props: CrashCurveProps) {
           aria-hidden="true"
         />
         <div
+          ref={ticker}
           className={styles.ticker}
           data-phase={props.phase}
           data-heat={tickerHeat(heroCents)}

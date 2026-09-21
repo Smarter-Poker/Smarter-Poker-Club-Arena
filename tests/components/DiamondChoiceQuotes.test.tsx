@@ -1,6 +1,6 @@
 vi.mock('../../src/hooks/useLiveBonusGuard', () => ({ useLiveBonusGuard: vi.fn() }));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import DiamondChoicePage from '../../src/pages/DiamondChoicePage';
 import { CHOICE_MODE } from '../../src/utils/diamondChoiceMath';
@@ -60,27 +60,44 @@ vi.mock('../../src/components/games/ChoiceScene', () => ({
     </section>
   ),
 }));
-vi.mock('../../src/components/wheel/WheelWinReveal', () => ({
-  WheelWinReveal: ({
-    title,
-    detail,
-    onOpen,
-  }: {
-    title: string;
-    detail: string;
-    onOpen: () => void;
-  }) => (
-    <div role="dialog" aria-label={title}>
-      {detail}
-      <button onClick={onOpen}>Finish Prize</button>
-    </div>
-  ),
+vi.mock('../../src/services/DiamondWheelService', () => ({
+  default: { getStateV2: () => Promise.resolve({ pending_awards: [] }) },
 }));
+vi.mock('../../src/services/SoundService', () => ({ soundService: { playWin: vi.fn() } }));
+/** Screen one of a won game (R9): the offer is answered by the player's own tap. */
+const answerOffer = (choice: 'Play Without' | 'Add The Diamonds' = 'Play Without') => {
+  const offer = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
+  fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
+  fireEvent.click(within(offer).getByRole('button', { name: choice }));
+};
 vi.mock('../../src/components/games/SealedPrize', () => ({ default: () => null }));
 vi.mock('../../src/components/games/DiamondSpinsTabs', () => ({ default: () => null }));
 vi.mock('../../src/components/games/TodayLine', () => ({ default: () => null }));
 vi.mock('../../src/components/console/SpadeConsole', () => ({
-  SpadeConsole: ({ children }: { children?: ReactNode }) => <section>{children}</section>,
+  SpadeConsole: ({
+    children,
+    plates,
+  }: {
+    children?: ReactNode;
+    plates?: {
+      primary?: { label: string; disabled?: boolean; onClick?: () => void };
+      secondary?: { label: string; disabled?: boolean; onClick?: () => void };
+    };
+  }) => (
+    <section>
+      {children}
+      {plates?.secondary && (
+        <button disabled={plates.secondary.disabled} onClick={plates.secondary.onClick}>
+          {plates.secondary.label}
+        </button>
+      )}
+      {plates?.primary && (
+        <button disabled={plates.primary.disabled} onClick={plates.primary.onClick}>
+          {plates.primary.label}
+        </button>
+      )}
+    </section>
+  ),
 }));
 vi.mock('../../src/components/console/DeckConsole', () => ({
   DeckConsole: ({
@@ -185,10 +202,14 @@ describe('choice-game entry quotes belong to the selected settings', () => {
       await act(async () => {});
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
-      expect(screen.getByRole('dialog', { name: `${amount.toFixed(2)} Chips` })).toHaveTextContent(
+      const receipt = screen.getByRole('dialog', { name: `${amount.toFixed(2)} Chips` });
+      expect(receipt).toHaveTextContent(
         amount ? 'Your Prize Is Booked.' : 'No Chips Won This Round.'
       );
-      fireEvent.click(screen.getByRole('button', { name: 'Finish Prize' }));
+      // The receipt stays until the player taps (R1); nothing leaves by itself.
+      expect(backend.navigate).not.toHaveBeenCalled();
+      fireEvent.animationEnd(receipt.querySelector('[data-motion="keep"]')!);
+      fireEvent.click(within(receipt).getByRole('button', { name: 'Back To The Wheel' }));
       expect(backend.navigate).toHaveBeenCalledWith(
         '/clubs/00000000-0000-0000-0000-000000000003/wheel',
         { replace: true }
@@ -433,6 +454,10 @@ describe('choice games consume wheel-funded entry', () => {
         .getAllByRole('status')
         .filter((line) => line.textContent?.includes(sentence));
       expect(statusLines.some((line) => line.tagName === 'P')).toBe(true);
+      // Screen one (R9): the offer holds Start Round until it is answered by a tap.
+      expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
+      answerOffer();
+      await act(async () => {});
       expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
       expect(screen.queryByLabelText('Entry Diamonds')).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));

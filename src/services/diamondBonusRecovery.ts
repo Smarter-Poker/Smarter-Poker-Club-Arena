@@ -20,11 +20,16 @@ export function pendingBonus(user: string, club: string, game: BonusGame): Bonus
     !v.budget ||
     !validBonusBudget(v.budget) ||
     typeof v.budget.doubled !== 'boolean' ||
-    // A saved request keeps the drop value it was sent with, so a completed game
-    // from before ten drops became the one setting still replays its receipt.
-    !Number.isSafeInteger(v.budget.denomination) ||
-    v.budget.denomination < 1 ||
-    bonusTotal(v.budget) % v.budget.denomination !== 0
+    // A Plinko request keeps the drop value it was sent with, so a completed game
+    // from an older drop rule still replays its receipt. The other games carry
+    // no drop value (null, or 1 from an older client).
+    (v.game === 'plinko'
+      ? typeof v.budget.denomination !== 'number' ||
+        !Number.isSafeInteger(v.budget.denomination) ||
+        v.budget.denomination < 1 ||
+        bonusTotal(v.budget) % v.budget.denomination !== 0
+      : v.budget.denomination !== null &&
+        (typeof v.budget.denomination !== 'number' || !Number.isSafeInteger(v.budget.denomination)))
   ) {
     throw new Error('The Saved Bonus Needs To Be Checked');
   }

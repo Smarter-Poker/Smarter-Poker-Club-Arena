@@ -1021,6 +1021,43 @@ describe('exact 8825 retained original custody retirement', () => {
       expect(f.server.tableEngines.size).toBe(3);
     }
   );
+  // A preflight refusal used to name only its code. These conjunctions are wide
+  // and run against live state, so the code alone cost a deploy to interpret.
+  // Each sub-condition now reports itself, and the fixture proves it.
+  it('names the sub-condition when the manager vector moves', async () => {
+    const f = mixedFixture();
+    // It has to move DURING the run: a bump before `run()` is simply the
+    // baseline the capture takes.
+    f.onRpc(() => f.originals[0].manager.tournamentSeatMoveAuthorityRevision++);
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'mixed_owner_changed',
+      failedCheck: 'manager.tournamentSeatMoveAuthorityRevision',
+      failedTournament: f.originals[0].manager.tournamentId,
+    });
+    // Nothing was retired: the refusal precedes every irreversible step.
+    expect(f.server.tableEngines.size).toBe(3);
+  });
+  it('names the table when one leaves the fleet mid-checkpoint', async () => {
+    const f = mixedFixture();
+    const departing = f.originals[0].engine.tableId;
+    f.onRpc(() => f.server.tableEngines.delete(departing));
+    const result = await f.run();
+    expect(result).toMatchObject({ ok: false });
+    expect(String(result.failedTable ?? '')).toContain(departing);
+  });
+  it('names the sub-condition when the server identity moves', async () => {
+    const f = mixedFixture();
+    f.onRpc(() => {
+      f.server.lifecycleGeneration += 1;
+    });
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'server_changed',
+      failedCheck: 'server.lifecycleGeneration',
+    });
+  });
   it.each(['original', 'canonical', 'readback', 'healthy'])(
     'refuses %s evidence loss without hiding originals',
     async (fault) => {

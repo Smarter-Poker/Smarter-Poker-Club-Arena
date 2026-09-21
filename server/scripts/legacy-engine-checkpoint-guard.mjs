@@ -159,6 +159,18 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       refusalDetail = null;
     }
   };
+  // Observability only. `witness` evaluates the exact original sub-expressions
+  // of one conjunction, in the exact original left-to-right order, and stops at
+  // the first false one - so nothing extra is read on a path where the original
+  // `&&` short-circuited, and no check, threshold or outcome moves. It refuses
+  // with the exact original code, naming the sub-condition that refused.
+  const witness = (code, parts, extra) => {
+    for (const [failedCheck, evaluate] of parts) {
+      if (evaluate()) continue;
+      noteRefusal(() => ({ failedCheck, ...(extra === undefined ? {} : extra()) }));
+      refuse(code);
+    }
+  };
   // A non-sensitive shape witness: booleans, numbers, sizes, type names and
   // short identifier-like strings. Any other string becomes its length only, so
   // no permit payload, card, credential or player identity can reach a log.
@@ -315,11 +327,13 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       // inherit one tournament's actor for another table or the fleet readback.
       require(modules.dataActorContext.currentTournamentDataAuthority() ===
         null, 'unexpected_tournament_context');
-      require(server.running === true &&
-        server.teardownPromise === null &&
-        server.lifecycleGeneration === serverGeneration &&
-        server.tableEngines === tableMap &&
-        server.maintenanceBreak === maintenance, 'server_changed');
+      witness('server_changed', [
+        ['server.running', () => server.running === true],
+        ['server.teardownPromise', () => server.teardownPromise === null],
+        ['server.lifecycleGeneration', () => server.lifecycleGeneration === serverGeneration],
+        ['server.tableEngines', () => server.tableEngines === tableMap],
+        ['server.maintenanceBreak', () => server.maintenanceBreak === maintenance],
+      ]);
       require(discoveredServers.length === 1 &&
         discoveredServers[0] === server, 'server_not_unique');
       require(modules.freezeState.isMaintenanceFrozen() === true &&
@@ -347,10 +361,42 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         initialRemainingMs - (performance.now() - beganMonotonicMs)
       );
       require(Number.isFinite(remaining) && remaining >= reserveMs, 'insufficient_reserve');
-      require(tableMap.size === entries.length - retiredOriginals.size &&
-        entries.every(([id, engine]) =>
-          retiredOriginals.has(id) ? !tableMap.has(id) : tableMap.get(id) === engine
-        ), 'fleet_identity_changed');
+      // A live fleet that gains or loses a table mid-checkpoint refuses here.
+      // Name the first table that moved and which way, so the next refusal is
+      // readable without a deploy: an arrival shows in the size, a departure or
+      // a replacement shows as the offending id.
+      const movedTable = () => {
+        const found = entries.find(([id, engine]) =>
+          retiredOriginals.has(id) ? tableMap.has(id) : tableMap.get(id) !== engine
+        );
+        if (found === undefined) return 'none';
+        return retiredOriginals.has(found[0])
+          ? `retired_still_present:${found[0]}`
+          : tableMap.has(found[0])
+            ? `engine_replaced:${found[0]}`
+            : `table_departed:${found[0]}`;
+      };
+      witness(
+        'fleet_identity_changed',
+        [
+          [
+            'fleet.size',
+            () => tableMap.size === entries.length - retiredOriginals.size,
+          ],
+          [
+            'fleet.identity',
+            () =>
+              entries.every(([id, engine]) =>
+                retiredOriginals.has(id) ? !tableMap.has(id) : tableMap.get(id) === engine
+              ),
+          ],
+        ],
+        () => ({
+          observed: describe(tableMap.size),
+          expected: String(entries.length - retiredOriginals.size),
+          failedTable: movedTable(),
+        })
+      );
       checkRetained();
       return remaining;
     };
@@ -1133,34 +1179,119 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         });
         const initial = canonical(vector());
         const current = () => {
-          require(server.tournamentEngines === managerMap &&
-            managerMap.get(manager.tournamentId) === manager &&
-            server.tournamentRetirementCustody === retirement &&
-            server.tournamentOwnedTables === ownedTables &&
-            server.unregisterTournamentTableEngine === unregister &&
-            manager.gameServer === server &&
-            manager.captureDrainedF06Originals === captureMethod &&
-            manager.captureDrainedF06Originals() === originals &&
-            manager.pendingTableBreakRetirement === exactRetirement &&
-            manager.tournamentSeatMoveAuthorityRevision === revision &&
-            manager.tournamentSeatMoveSerialTail === serial &&
-            manager.activeStoppedOriginalCustody.size === 0 &&
-            Object.entries(exactMaps).every(
+          // The manager vector is a wide conjunction over live state, so a
+          // bare `mixed_owner_changed` names nothing. Split into the exact
+          // original sub-expressions, in the exact original order, and report
+          // the one that refused plus the map/set or table it refused on.
+          const failedMap = () => {
+            const found = Object.entries(exactMaps).find(
               ([name, map]) =>
-                manager[name] === map &&
-                map.size === exactMapEntries[name].length &&
-                exactMapEntries[name].every(([key, value]) => map.get(key) === value)
-            ) &&
-            Object.entries(exactSets).every(
-              ([name, set]) => manager[name] === set && set.size === 0
-            ) &&
-            exactEngines.every(
+                !(
+                  manager[name] === map &&
+                  map.size === exactMapEntries[name].length &&
+                  exactMapEntries[name].every(([key, value]) => map.get(key) === value)
+                )
+            );
+            return found === undefined ? 'none' : found[0];
+          };
+          const failedSet = () => {
+            const found = Object.entries(exactSets).find(
+              ([name, set]) => !(manager[name] === set && set.size === 0)
+            );
+            return found === undefined ? 'none' : found[0];
+          };
+          const failedEngine = () => {
+            const found = exactEngines.find(
               ({ tableId, engine }) =>
-                manager.tableEngines.get(tableId) === engine &&
-                (retiredOriginals.has(tableId)
-                  ? !tableMap.has(tableId) && !ownedTables.has(tableId)
-                  : tableMap.get(tableId) === engine && ownedTables.has(tableId))
-            ), 'mixed_owner_changed');
+                !(
+                  manager.tableEngines.get(tableId) === engine &&
+                  (retiredOriginals.has(tableId)
+                    ? !tableMap.has(tableId) && !ownedTables.has(tableId)
+                    : tableMap.get(tableId) === engine && ownedTables.has(tableId))
+                )
+            );
+            return found === undefined ? 'none' : found.tableId;
+          };
+          witness(
+            'mixed_owner_changed',
+            [
+              ['server.tournamentEngines', () => server.tournamentEngines === managerMap],
+              [
+                'managerMap.get(tournamentId)',
+                () => managerMap.get(manager.tournamentId) === manager,
+              ],
+              [
+                'server.tournamentRetirementCustody',
+                () => server.tournamentRetirementCustody === retirement,
+              ],
+              ['server.tournamentOwnedTables', () => server.tournamentOwnedTables === ownedTables],
+              [
+                'server.unregisterTournamentTableEngine',
+                () => server.unregisterTournamentTableEngine === unregister,
+              ],
+              ['manager.gameServer', () => manager.gameServer === server],
+              [
+                'manager.captureDrainedF06Originals',
+                () => manager.captureDrainedF06Originals === captureMethod,
+              ],
+              [
+                'manager.captureDrainedF06Originals()',
+                () => manager.captureDrainedF06Originals() === originals,
+              ],
+              [
+                'manager.pendingTableBreakRetirement',
+                () => manager.pendingTableBreakRetirement === exactRetirement,
+              ],
+              [
+                'manager.tournamentSeatMoveAuthorityRevision',
+                () => manager.tournamentSeatMoveAuthorityRevision === revision,
+              ],
+              [
+                'manager.tournamentSeatMoveSerialTail',
+                () => manager.tournamentSeatMoveSerialTail === serial,
+              ],
+              [
+                'manager.activeStoppedOriginalCustody.size',
+                () => manager.activeStoppedOriginalCustody.size === 0,
+              ],
+              [
+                'manager.exactMaps',
+                () =>
+                  Object.entries(exactMaps).every(
+                    ([name, map]) =>
+                      manager[name] === map &&
+                      map.size === exactMapEntries[name].length &&
+                      exactMapEntries[name].every(([key, value]) => map.get(key) === value)
+                  ),
+              ],
+              [
+                'manager.exactSets',
+                () =>
+                  Object.entries(exactSets).every(
+                    ([name, set]) => manager[name] === set && set.size === 0
+                  ),
+              ],
+              [
+                'manager.exactEngines',
+                () =>
+                  exactEngines.every(
+                    ({ tableId, engine }) =>
+                      manager.tableEngines.get(tableId) === engine &&
+                      (retiredOriginals.has(tableId)
+                        ? !tableMap.has(tableId) && !ownedTables.has(tableId)
+                        : tableMap.get(tableId) === engine && ownedTables.has(tableId))
+                  ),
+              ],
+            ],
+            () => ({
+              failedTournament: manager.tournamentId,
+              failedMap: failedMap(),
+              failedSet: failedSet(),
+              failedTable: failedEngine(),
+              seatMoveRevision: describe(manager.tournamentSeatMoveAuthorityRevision),
+              capturedSeatMoveRevision: describe(revision),
+            })
+          );
           return vector();
         };
         pending.push({ manager, proposal, exactEngines, vector, current, initial, serial });

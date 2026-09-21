@@ -102,18 +102,25 @@ session bound to the _wrong_ cluster is corruption and is refused.
 ## Qualification
 
 - `scripts/dev/test-lightning-phase1-cluster-session.sh` - real PostgreSQL 17
-  via `initdb`, unix socket only. Ten checks: backfill; continuity of `id`,
-  `baseline`, `opened_at`, both clocks, rejoin window and `closed_at`; the new
-  open path carrying `cluster_id`; an unclustered table still opening a normal
-  session; the three defaults; both named CHECKs refusing; all ten modes
-  accepted; the reader exact; and idempotent re-apply.
-  Each check was verified non-vacuous by mutating a **copy** of the migration -
-  deleting the backfill, perturbing `baseline`, dropping `cluster_id` from the
-  INSERT, and widening the mode CHECK each produced the expected failure.
-- `tests/lightning-phase-1-cluster-session.test.ts` - 24 source-level pins,
-  including that the mode did not land in `cash_games.state`, that no session
-  is flipped to cluster scope, that the tick path is untouched, and that no
-  matcher, threshold or conversion arrived early.
+  via `initdb`, unix socket only. It prints one `ok` line per check. The checks
+  are named here rather than counted, so this list cannot go stale as more are
+  added: BACKFILL; CONTINUITY of `id`, `baseline`, `opened_at`, both clocks,
+  rejoin window and `closed_at`; INDEX, the partial index on open sessions by
+  cluster; NEW OPEN PATH carrying `cluster_id`; UNCLUSTERED, a table outside
+  every cluster still opening a normal session; SECOND IDENTITY, the
+  `ON CONFLICT` one-identity guard; DEFAULTS, the three of them; CHECK
+  ENFORCED, both named CHECKs refusing; VALID MODES, all ten accepted; READER,
+  exact; and RE-APPLY, idempotent.
+  Four of those checks are mutation-proven, not all of them. Mutating a
+  **copy** of the migration to delete the backfill, to perturb `baseline`, to
+  drop `cluster_id` from the INSERT, and to widen the mode CHECK each produced
+  the expected failure, which proves BACKFILL, CONTINUITY, NEW OPEN PATH and
+  CHECK ENFORCED respectively. The remaining checks are not mutation-proven.
+- `tests/lightning-phase-1-cluster-session.test.ts` - source-level pins, one
+  `it()` block each; the runner reports how many, so no count is restated here.
+  They include that the mode did not land in `cash_games.state`, that no
+  session is flipped to cluster scope, that the tick path is untouched, and
+  that no matcher, threshold or conversion arrived early.
 - `scripts/ci/schema-manifest.d/lightning-phase1-cluster-session.json` declares
   the four new columns and the new function.
 
@@ -124,3 +131,32 @@ additive and defaulted; dropping them restores the prior shape exactly.
 `fn_cash_session_open` reverts by re-applying the body in
 `20260904160500_cash_games_slice_1.sql`. No money moved, so there is no
 financial state to reverse.
+
+## Correction (2026-09-20)
+
+An adversarial audit found three claims in the Qualification section above to
+be false as originally written. They are corrected in place above; what was
+wrong is recorded here rather than edited away quietly.
+
+1. **"Ten checks."** The harness printed nine `ok` lines, not ten: BACKFILL,
+   CONTINUITY, NEW OPEN PATH, UNCLUSTERED, DEFAULTS, CHECK ENFORCED, VALID
+   MODES, READER, RE-APPLY. The checks are now named instead of counted.
+2. **"Each check was verified non-vacuous by mutating a copy of the
+   migration."** Only four mutations were ever run: backfill deleted,
+   `baseline` perturbed, `cluster_id` dropped from the INSERT, mode CHECK
+   widened. The audit found that the READER check, the
+   `cash_player_session_open_by_cluster` index and the `ON CONFLICT`
+   one-identity guard were covered by no mutation at all. INDEX and SECOND
+   IDENTITY checks have since been added to the harness; READER is still not
+   mutation-proven.
+3. **"24 source-level pins."** The file held 25 `it()` blocks. The count is
+   gone rather than corrected, because it drifts on every added test.
+
+The same audit also found defects in
+`tests/lightning-phase-1-cluster-session.test.ts`, now fixed: the ADD COLUMN
+pairing test mirrored a stricter regex than the gate it guards, so a mixed
+`ADD COLUMN IF NOT EXISTS a, ADD COLUMN b` statement passed it while the gate
+saw only the first column; the "not the live eligible population" test asserted
+on a `--` comment rather than on the function body; a `18`/`27`/`12` digit
+proxy stood in for "no threshold logic arrived early"; and three
+`not.toContain` tokens could not fail by construction.

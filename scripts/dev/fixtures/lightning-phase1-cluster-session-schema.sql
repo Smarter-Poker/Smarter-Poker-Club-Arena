@@ -124,8 +124,10 @@ CREATE TABLE public.cash_player_session (
 );
 
 -- The ON CONFLICT inference target of fn_cash_session_open. One open row per
--- player per scope: the reason a Phase 1 that opened a SECOND economic
--- identity would be caught here rather than in production.
+-- player per scope. The SECOND IDENTITY check in the test script opens the
+-- same player at the same table three times, with and without a buy-in, so
+-- this index is load-bearing rather than decorative: it is what refuses a
+-- second economic identity here instead of in production.
 CREATE UNIQUE INDEX cash_player_session_one_open
   ON public.cash_player_session (player_id, scope_type, scope_id)
   WHERE closed_at IS NULL;

@@ -59,8 +59,16 @@ describe('Lightning Phase 1: the cluster state machine has its own column', () =
     // scripts/ci/check-migrations-applied.mjs pairs each added column with its
     // own ALTER TABLE. A comma-separated list would declare only the first,
     // and the other two would reach production undeclared.
-    const added = [...CODE.matchAll(/ADD COLUMN IF NOT EXISTS/g)];
-    const alters = [...CODE.matchAll(/ALTER TABLE public\.\w+\s+ADD COLUMN IF NOT EXISTS/g)];
+    //
+    // Counted on ADD COLUMN, not on ADD COLUMN IF NOT EXISTS, because the gate
+    // makes IF NOT EXISTS optional in its own regex. Anchoring on the longer
+    // phrase left a hole: a mixed statement such as
+    //   ALTER TABLE public.cash_games ADD COLUMN IF NOT EXISTS a text,
+    //     ADD COLUMN b boolean;
+    // scored added=1, alters=1 and passed, while the gate declared only `a`
+    // and `b` reached production undeclared - the exact failure this pins.
+    const added = [...CODE.matchAll(/ADD\s+COLUMN\b/gi)];
+    const alters = [...CODE.matchAll(/ALTER TABLE public\.\w+\s+ADD\s+COLUMN\b/gi)];
     expect(alters.length).toBe(added.length);
   });
 
@@ -189,13 +197,27 @@ describe('Lightning Phase 1: the authoritative reader', () => {
   });
 
   it('does not pretend to be the live eligible population, which is Phase 4', () => {
+    // Pinned on the reader's BODY, not on the comment that explains it. The
+    // old assertion matched a `--` comment, so deleting that comment failed
+    // the test while rewriting the function to actually approximate Phase 4's
+    // predicate passed it. Phase 4 owns eligibility - watchers, waitlist-only
+    // users, expired disconnects - and centralises it there. Phase 1 counts
+    // bound sessions and knows none of that vocabulary.
     expect(CODE).toContain('open_cluster_sessions');
-    expect(SQL).toMatch(/NOT the live eligible population/);
+    expect(CODE).not.toMatch(/eligible|watcher|waitlist|disconnect/i);
   });
 });
 
 describe('Lightning Phase 1: the phase boundary holds', () => {
   it('leaves the hot five-second tick path completely alone', () => {
+    // What this proves, and what it does not. Of the five names only
+    // fn_cash_cluster_tick appears in the migration at all, and it appears
+    // solely inside a COMMENT ON documentation string, never as a statement
+    // target. The other four do not appear anywhere, so those four assertions
+    // are weak - true of almost any SQL file - and are kept as tripwires for a
+    // later phase that starts editing the tick path in THIS file. The verb set
+    // includes GRANT and REVOKE as well as CREATE/ALTER/DROP, so a migration
+    // that only re-permissioned one of these functions is caught too.
     for (const untouched of [
       'fn_cash_cluster_tick',
       'fn_cash_clusters_tick_all',
@@ -203,23 +225,31 @@ describe('Lightning Phase 1: the phase boundary holds', () => {
       'fn_cash_cluster_open_table',
       'fn_cash_game_create',
     ]) {
-      expect(CODE).not.toMatch(new RegExp(`(?:CREATE|ALTER|DROP)[\\s\\S]{0,60}?${untouched}\\b`));
+      expect(CODE).not.toMatch(
+        new RegExp(`(?:CREATE|ALTER|DROP|GRANT|REVOKE)[\\s\\S]{0,60}?${untouched}\\b`)
+      );
     }
   });
 
   it('ships no matcher, no threshold and no conversion', () => {
     // Phases 4, 5 and 6. Phase 1 is "no matcher yet".
-    for (const tooEarly of [
-      'matcher',
-      'lightning_pool',
-      'instance_id',
-      'reservation',
-      "pending_on's",
-      'ON threshold',
-    ]) {
+    // Only tokens that could genuinely appear. Three earlier entries could
+    // not fail by construction and were removed: "pending_on's" (an
+    // apostrophe-possessive; in the CHECK list 'pending_on' is followed by
+    // `',`), 'ON threshold' (a two-word English phrase), and 'lightning_pool'
+    // (an invented identifier).
+    for (const tooEarly of ['matcher', 'instance_id', 'reservation']) {
       expect(CODE.toLowerCase()).not.toContain(tooEarly.toLowerCase());
     }
-    expect(CODE).not.toMatch(/\b18\b|\b27\b|\b12\b/);
+    // The concept, not three digit strings. The old /\b18\b|\b27\b|\b12\b/
+    // proxy also matched numeric(12,2), varchar(12), interval '12 hours' and
+    // LIMIT 12 - all legitimate future edits, none a Lightning threshold - and
+    // said nothing about 10, 2 or 5, which are present and unforbidden.
+    //
+    // Pinned on the executable statements: a COMMENT ON documentation string
+    // is allowed to say which later phase owns conversion, and two of them do.
+    const executable = CODE.replace(/COMMENT\s+ON[\s\S]*?;\s*$/gim, '');
+    expect(executable).not.toMatch(/thresholds?|convert|conversion/i);
   });
 
   it('is a single transaction, as the production DDL policy requires', () => {
@@ -264,5 +294,13 @@ describe('Lightning Phase 1: the phase boundary holds', () => {
     const sh = fs.readFileSync(HARNESS, 'utf8');
     expect(sh).toContain('initdb');
     expect(sh).toContain('20260920172736_lightning_phase_1_the_cash_session_knows_its_cluster.sql');
+  });
+
+  it('has the harness assert the new index exists, not just the columns', () => {
+    // cash_player_session_open_by_cluster is what keeps every open-by-cluster
+    // read off a sequential scan of a hot table. A migration that quietly lost
+    // it would still pass every column and function check above.
+    const sh = fs.readFileSync(HARNESS, 'utf8');
+    expect(sh).toContain('cash_player_session_open_by_cluster');
   });
 });

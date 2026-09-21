@@ -387,8 +387,9 @@ describe('an alert that names a metric has something that emits it', () => {
     // The split must exist and the ahead-of-the-engine half must set bad.
     expect(guard).toContain('aheadOfTheEngine');
     expect(guard).toContain('RULES AHEAD OF THE ENGINE THAT IS RUNNING');
-    const branch = guard.slice(guard.indexOf('if (aheadOfTheEngine.length) {'));
-    expect(branch.slice(0, 200)).toContain('bad = true');
+    // No source window: assert the shape directly, so the branch cannot be
+    // present while doing nothing (tests/unit/noFixedSizeSourceWindows).
+    expect(guard).toMatch(/if \(aheadOfTheEngine\.length\) \{\s*bad = true;/);
     // And it must never again sign off on series it did not check.
     expect(guard).not.toContain('every rule reads a real series');
     // COULD NOT TELL is exit 2, never 0.

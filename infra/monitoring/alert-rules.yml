@@ -134,6 +134,67 @@ groups:
   # Restored verbatim from the running file so the repo is a superset and a
   # deploy is safe. The reasoning comments are the original author's.
   # ═══════════════════════════════════════════════════════════════════
+  # ═══════════════════════════════════════════════════════════════════
+  #  THE ENGINE CANNOT BE REPLACED
+  # ═══════════════════════════════════════════════════════════════════
+  #
+  # The gap this closes, stated plainly: on 2026-09-18 engine 8825af51 took a
+  # tournament hand permit that could never resolve, and the restart gate shut
+  # behind it. It stayed shut for 70 of the 71 breaks that engine lived
+  # through - 57 hours - and NOTHING PAGED. /health said ok the whole time,
+  # because every table was dealing; thaw_ok was true and ~158 tables resumed
+  # at each break. The felt was healthy. Only the deploy route was dead, and
+  # the build that fixes the permit was on the far side of it.
+  #
+  # poker_maintenance_breaks_since_restart_certified has been published by the
+  # engine since #4909 and, until this rule, NOTHING READ IT (CLAUDE.md 10.83).
+  # The reader is this rule; the path is Alertmanager, same as its neighbours.
+  - name: engine-release-route
+    rules:
+      - alert: EngineCannotBeReplaced
+        # THRESHOLD DERIVED FROM THE LIVE SERIES, NOT GUESSED (CLAUDE.md 10.84).
+        # Every run of consecutive uncertified breaks in engine_maintenance_break_log
+        # over the 30 days to 2026-09-21, by run length:
+        #
+        #     1 break   20 times      4 breaks   2 times
+        #     2 breaks   2 times      8 breaks   1 time    <- real outage
+        #     3 breaks   1 time      70 breaks   1 time    <- this outage
+        #
+        # A single uncertified break is ORDINARY - 20 of them in a month, a
+        # long hand outlasting the window, retried an hour later. Runs of two
+        # to four happened five times and each resolved itself. Only 8 and 70
+        # were "the engine cannot be replaced at all".
+        #
+        # >= 6 therefore fires on both real events and on NONE of the 25
+        # benign runs in the same window. It is deliberately not 2 (the
+        # engine's own comment calls two "cannot be replaced", which the data
+        # says is too eager) and not 8 (that is the observed ceiling, and a
+        # budget set to the number you just read has no headroom - 10.86
+        # rule 4). Six consecutive breaks is about six hours of undeployable
+        # production, caught instead of the 57 hours it actually took.
+        expr: |
+          max_over_time(poker_maintenance_breaks_since_restart_certified[15m]) >= 6
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: 'Engine cannot be replaced: {{ $value }} consecutive breaks certified no restart'
+          description: |
+            {{ $labels.instance }} has ended {{ $value }} consecutive maintenance
+            breaks without ever opening readyForRestart. Poker is unaffected and
+            will look healthy; what is broken is the DEPLOY ROUTE, so this will
+            not surface anywhere else.
+
+            Read /health maintenance.unparkedReasons for the cause by name.
+            f06_preparation_stuck means a permit outlived its bound and is no
+            longer holding the gate - the release should now pass. Anything
+            else, especially cards_in_air, is still blocking on purpose.
+
+            This is NOT repaired by a job, a sweep or a retry (CLAUDE.md 10.12).
+            Find the live path that wedged and fix that.
+
   - name: cron-health
     interval: 30s
     rules:

@@ -11,6 +11,7 @@ RELEASE_SEAL="$CONTROL_DIR/engine-release-seal.py"
 ENGINE_UP="$CONTROL_DIR/engine-up.sh"
 IMAGE_BUILDER="$CONTROL_DIR/build-engine-image.sh"
 DATABASE_PROOF="$CONTROL_DIR/engine-release-database-proof.py"
+INFLIGHT_HANDS="$CONTROL_DIR/engine-release-inflight-hands.py"
 LEGACY_CHECKPOINT="$CONTROL_DIR/legacy-engine-checkpoint.sh"
 LEGACY_CHECKPOINT_SHA=2f4e33560bcd23bfb5cc731f31816b2c2e2847e5
 CHECKPOINT_758_SHA=758610f3f844406bbbaee2f5100ced36d84fb943
@@ -397,8 +398,34 @@ health_instance() {
   health_instance_for_sha "$1" "$SHA"
 }
 
+# THE RESTART CERTIFICATE ASKS WHETHER A HAND IS IN THE AIR (2026-09-21)
+# ─────────────────────────────────────────────────────────────────────
+# This used to be one line: readyForRestart AND unparkedTables == 0. That asks
+# process memory "did every engine object report itself parked", and treats
+# every other answer as "a hand may be in flight". They are different
+# questions, and the difference froze the platform for two and a half days.
+#
+# Engine 8825af51 held one tournament hand permit that could never resolve
+# inside that process. Measured in engine_maintenance_break_log: of the 71
+# breaks that engine lived through, 70 ended with ready_for_restart_at NULL,
+# unparked_at_countdown 1 every time - while thaw_ok stayed true and ~158
+# tables resumed each break. The poker was fine. The RESTART was impossible,
+# including the restart carrying the build that fixes the permit.
+#
+# So when the gate would refuse SOLELY because of an unresolved preparation,
+# it now asks the database, which can tell a hand from a corpse independently
+# of any bug in the engine holding it. Three things must all agree before a
+# cutover is admitted, and the first two are unchanged:
+#
+#   1. the countdown window is real and durable, with the full budget left;
+#   2. the engine own handsInFlightTotal is present and zero;
+#   3. the database finds no incomplete hand snapshot written recently.
+#
+# That is STRICTLY STRONGER than the old line for a real in-flight hand - it
+# adds two independent witnesses to it - and weaker only for a preparation
+# that is provably not a hand. Unreadable is a refusal at every step.
 maintenance_certificate() {
-  local response http_code body
+  local response http_code body verdict status
   # A degraded optional subsystem can correctly make /health return 503 while
   # the engine is still running and has durably parked every table for this
   # certified break. Preserve that JSON so the certificate predicates below,
@@ -411,11 +438,13 @@ maintenance_certificate() {
     200|503) ;;
     *) return 1 ;;
   esac
-  printf '%s' "$body" | MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS" python3 -c '
+  set +e
+  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS" python3 -c '
 import json, sys
 d=json.load(sys.stdin); m=d.get("maintenance")
-remaining=int(m.get("remainingMs") or 0) if isinstance(m,dict) else 0
-window=(d.get("running") is True and isinstance(m,dict) and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True)
+if not isinstance(m,dict): raise SystemExit(1)
+remaining=int(m.get("remainingMs") or 0)
+window=(d.get("running") is True and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True)
 if not window: raise SystemExit(1)
 # A straggler can prevent restart certification for the entire real window.
 # Record that missed opportunity separately from permission to cut over. Only
@@ -424,9 +453,54 @@ if remaining<int(__import__("os").environ["MIN_BREAK_MS"]):
     print(remaining)
     raise SystemExit(2)
 ok=(m.get("readyForRestart") is True and m.get("unparkedTables")==0)
-if not ok: raise SystemExit(1)
+if ok:
+    print(remaining)
+    raise SystemExit(0)
+# ── Refusing. Is this "a hand is in the air", or "a preparation that can never
+# resolve in this process"? Those are different facts and only the first is a
+# reason not to restart. See the block comment above this function.
+#
+# The window, durability and time-remaining predicates above have all already
+# passed, and this script demands 285000ms where the engine demands 180000ms,
+# so at this exact point the ONLY thing keeping readyForRestart shut is the
+# unparked count. Nothing else is being relaxed.
+PREPARATION_ONLY={"f06_preparation_unresolved","f06_preparation_stuck"}
+unparked=m.get("unparkedTables")
+if not isinstance(unparked,int) or isinstance(unparked,bool) or unparked<1: raise SystemExit(1)
+reasons=m.get("unparkedReasons")
+if not isinstance(reasons,dict) or not reasons: raise SystemExit(1)
+# An ALLOW-list, never a deny-list: a reason string this script does not
+# recognise refuses. cards_in_air, the bank-durability classes and anything a
+# future engine invents are all outside the set and all keep the gate shut.
+for k,v in reasons.items():
+    if not isinstance(k,str) or k not in PREPARATION_ONLY: raise SystemExit(1)
+    if not isinstance(v,int) or isinstance(v,bool) or v<0: raise SystemExit(1)
+# The engine own physical witness, which must be PRESENT and zero. Absent is
+# unreadable, and unreadable is a refusal, never an assumed zero.
+hands=d.get("handsInFlightTotal")
+if not isinstance(hands,int) or isinstance(hands,bool) or hands!=0: raise SystemExit(1)
+sys.stderr.write("[engine-release-transaction] restart certificate is held shut only by " + repr(reasons) + "; consulting the database for hands actually in the air\n")
 print(remaining)
-' 2>/dev/null
+raise SystemExit(4)
+')"
+  status=$?
+  set -e
+  case "$status" in
+    0) printf '%s\n' "$verdict"; return 0 ;;
+    2) printf '%s\n' "$verdict"; return 2 ;;
+    4) ;;
+    *) return 1 ;;
+  esac
+  # Fail closed. Exit 0 is the ONLY result that proceeds; the helper answers 1
+  # for a hand in the air and 3 for "could not tell", and both refuse here.
+  # There is deliberately no flag, variable or argument that skips this.
+  if "$INFLIGHT_HANDS" --env-file "$ENV_FILE"; then
+    echo "[engine-release-transaction] the database confirms no hand is in the air; admitting the cutover past the unresolved preparation named above"
+    printf '%s\n' "$verdict"
+    return 0
+  fi
+  echo "[engine-release-transaction] the database did not prove the felt is quiet; the cutover stays refused" >&2
+  return 1
 }
 
 # Entry to the exact predecessor's checkpoint, NOT restart authority. Its old

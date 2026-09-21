@@ -1862,6 +1862,36 @@ export class MaintenanceBreak {
     return this.f06StuckTableCount;
   }
 
+  /**
+   * Has this table's unresolved F06 preparation stayed inside the bound?
+   *
+   * One definition for both blocker classes - the manager-retained
+   * preparations and the per-engine ones. Two copies of a bound drift, and a
+   * bound that applies to only one of two paths is what left the unbounded one
+   * holding the platform shut for 70 breaks.
+   *
+   * True  - still inside F06_UNRESOLVED_GATE_MS; it holds the gate.
+   * False - past it. Still named, counted, published and alertable; it simply
+   *         stops deciding whether every other table may be restarted.
+   */
+  private f06PreparationHoldsGate(tableId: string): boolean {
+    const since = this.f06UnresolvedSince.get(tableId) ?? this.now();
+    this.f06UnresolvedSince.set(tableId, since);
+    const heldForMs = this.now() - since;
+    if (heldForMs <= MaintenanceBreak.F06_UNRESOLVED_GATE_MS) return true;
+    if (!this.f06StuckAnnounced.has(tableId)) {
+      this.f06StuckAnnounced.add(tableId);
+      console.error(
+        `[MaintenanceBreak] table ${tableId} has held an unresolved F06 preparation for ` +
+          `${Math.round(heldForMs / 1000)}s, past the ${Math.round(
+            MaintenanceBreak.F06_UNRESOLVED_GATE_MS / 1000
+          )}s gate. It no longer holds the platform's restart certificate shut. ` +
+          `Its engine needs replacing; the permit is process-local and only that clears it.`
+      );
+    }
+    return false;
+  }
+
   private unparkedTables(): string[] {
     const out: string[] = [];
     const reasons: Record<string, number> = {};
@@ -1870,9 +1900,27 @@ export class MaintenanceBreak {
     const count = (reason: string) => {
       reasons[reason] = (reasons[reason] ?? 0) + 1;
     };
+    /* THE SAME BOUND, APPLIED TO THE OTHER BLOCKER CLASS (2026-09-21).
+       The per-engine test below has been bounded since #4909, for the reason
+       written above it: a fail-closed gate with no bound, on a resource the
+       whole platform shares, trades "breaks get dismantled" for "a stuck table
+       never recovers", and the second is the worse bug. THIS loop - the
+       manager-retained preparations - was left unbounded in that change, and
+       it is the one that then held engine 8825af51 shut for 70 consecutive
+       breaks: unparked_at_countdown was 1 at every single countdown while
+       thaw_ok stayed true and ~158 tables resumed each time. The felt was
+       healthy; only the restart was impossible, including the restart that
+       carried the fix. Same class, same bound, same reason strings, so the
+       release gate needs no new vocabulary to understand it. */
     for (const tableId of this.deps.retainedPreparationBlockers?.() ?? []) {
-      out.push(tableId);
-      count('f06_preparation_unresolved');
+      seenUnresolved.add(tableId);
+      if (this.f06PreparationHoldsGate(tableId)) {
+        out.push(tableId);
+        count('f06_preparation_unresolved');
+        continue;
+      }
+      stuck += 1;
+      count('f06_preparation_stuck');
     }
     for (const [tableId, engine] of this.deps.engines()) {
       try {
@@ -1883,10 +1931,7 @@ export class MaintenanceBreak {
         }
         if (engine.hasUnresolvedF06Preparation?.()) {
           seenUnresolved.add(tableId);
-          const since = this.f06UnresolvedSince.get(tableId) ?? this.now();
-          this.f06UnresolvedSince.set(tableId, since);
-          const heldForMs = this.now() - since;
-          if (heldForMs <= MaintenanceBreak.F06_UNRESOLVED_GATE_MS) {
+          if (this.f06PreparationHoldsGate(tableId)) {
             out.push(tableId);
             count('f06_preparation_unresolved');
             continue;
@@ -1896,16 +1941,6 @@ export class MaintenanceBreak {
              tables may be restarted. */
           stuck += 1;
           count('f06_preparation_stuck');
-          if (!this.f06StuckAnnounced.has(tableId)) {
-            this.f06StuckAnnounced.add(tableId);
-            console.error(
-              `[MaintenanceBreak] table ${tableId} has held an unresolved F06 preparation for ` +
-                `${Math.round(heldForMs / 1000)}s, past the ${Math.round(
-                  MaintenanceBreak.F06_UNRESOLVED_GATE_MS / 1000
-                )}s gate. It no longer holds the platform's restart certificate shut. ` +
-                `Its engine needs replacing; the permit is process-local and only that clears it.`
-            );
-          }
           continue;
         }
         if (!engine.isRunning()) continue;

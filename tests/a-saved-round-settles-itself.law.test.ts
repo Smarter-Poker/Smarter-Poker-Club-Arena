@@ -14,13 +14,17 @@
  * that replays a saved wager is fine; a control the player MUST press to get
  * their game back is the bug.
  *
- * This law pins three things:
- *  1. No Diamond Spins page prints a "Check ..." instruction or a "Check Round"
- *     / "Check Bonus" control. A saved wager is replayed by useAutoSettle.
- *  2. Every page that saves a wager (imports pendingBonus) mounts useAutoSettle
- *     and reads the ticket-gone refusal, so a refused ticket is re-dealt and the
- *     wager sent again without a press.
- *  3. The server never deletes a player's live ticket when dealing another,
+ * This law pins the whole class, not the one message:
+ *  1. No Diamond Spins game surface tells the player to check, refresh, retry
+ *     or recover anything. Every such state recovers by itself.
+ *  2. Every page that saves a wager replays it on its own schedule
+ *     (useAutoSettle) and reads the ticket-gone refusal, so a refused ticket is
+ *     re-dealt and the wager sent again without a press.
+ *  3. Every won game starts itself (useAwardAutoStart).
+ *  4. The bonus guard never holds a player on a won game that cannot start
+ *     (the daily limit, the maintenance break, a closed game): the award stays
+ *     pending server-side and nothing is in flight.
+ *  5. The server never deletes a player's live ticket when dealing another,
  *     and both start functions refuse a dead ticket before the entry whose
  *     foreign key would turn it into an exception. Pinned by the installed
  *     migration text, so a later rewrite of either function must carry the
@@ -32,36 +36,89 @@ import { join } from 'node:path';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
+/** Source without comments: history may be explained, never shown. */
+const code = (p: string) =>
+  read(p)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 
-const GAME_PAGES = readdirSync(join(ROOT, 'src/pages')).filter((f) => /^Diamond.*Page\.tsx$/.test(f));
-const SAVING_PAGES = GAME_PAGES.filter((f) => read(`src/pages/${f}`).includes('pendingBonus('));
+/** The four Diamond Spins games a player can be sent to by the wheel. */
+const GAME_PAGES = [
+  'src/pages/DiamondChoicePage.tsx',
+  'src/pages/DiamondPlinkoPage.tsx',
+  'src/pages/DiamondCrashPage.tsx',
+  'src/pages/DiamondWheelPage.tsx',
+];
+/** The games a wheel award opens. */
+const AWARD_PAGES = GAME_PAGES.filter((p) => !p.endsWith('DiamondWheelPage.tsx'));
+/** Shared pieces every one of those pages renders or reads. */
+const SHARED = ['src/hooks/useEarnedBonus.ts', 'src/components/games/BonusSetup.tsx'];
+
+/** Copy that hands recovery to the player. Each was on a game page before
+ * this law; each state now recovers by itself. */
+const TELLS_THE_PLAYER_TO_RECOVER = [
+  /['"`>]\s*Check (Round|Bonus|Your)/,
+  /Before Starting Another/,
+  /Could Not Be Checked/,
+  /Try Refresh/,
+  /Refresh To Try Again/,
+  /Tap Retry/,
+  /['"`]Retry Game['"`]/,
+  /Refresh The Wheel To Retry/,
+  /['"`]Recover Spin['"`]/,
+  /Retry To Recover/,
+  /Try Again/,
+  // A load-failure screen with a Retry button: the load retries itself.
+  /onRetry=/,
+];
 
 const MIGRATION =
   'supabase/migrations/20260921185541_a_saved_round_settles_itself_and_a_ticket_is_never_pulled_from_under_a_live_page.sql';
 
 describe('a saved round settles itself', () => {
-  it('finds the pages that save a wager', () => {
-    expect(SAVING_PAGES.sort()).toEqual(
-      ['DiamondChoicePage.tsx', 'DiamondCrashPage.tsx', 'DiamondPlinkoPage.tsx'].sort()
-    );
+  it('every page that saves a wager is on the list', () => {
+    const saving = readdirSync(join(ROOT, 'src/pages'))
+      .filter((f) => /\.tsx$/.test(f))
+      .filter((f) => read(`src/pages/${f}`).includes('pendingBonus('))
+      .map((f) => `src/pages/${f}`);
+    expect(saving.sort()).toEqual([...AWARD_PAGES].sort());
   });
 
-  it.each(GAME_PAGES)('%s never asks the player to check anything', (file) => {
-    const src = read(`src/pages/${file}`);
-    // Copy, labels and pills. "Check" as an instruction to the player is the
-    // whole class; a comment may still explain history.
-    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
-    expect(code).not.toMatch(/['"`]Check (Round|Bonus|Your)/);
-    expect(code).not.toMatch(/Could Not Be Checked\. Try Again/);
+  it.each([...GAME_PAGES, ...SHARED])('%s never asks the player to recover anything', (file) => {
+    const src = code(file);
+    for (const phrase of TELLS_THE_PLAYER_TO_RECOVER) expect(src).not.toMatch(phrase);
   });
 
-  it.each(SAVING_PAGES)('%s replays a saved wager on its own schedule', (file) => {
-    const src = read(`src/pages/${file}`);
+  it.each(AWARD_PAGES)('%s replays a saved wager on its own schedule', (file) => {
+    const src = read(file);
     expect(src).toContain("from '../hooks/useAutoSettle'");
     expect(src).toMatch(/useAutoSettle\(/);
     // A ticket the server refused is re-dealt and the wager sent again.
     expect(src).toContain('ticketGone');
+    // Another tab's saved wager settles first, by itself.
     expect(src).toContain('PriorBonusPending');
+  });
+
+  it.each(AWARD_PAGES)('%s starts a won game by itself', (file) => {
+    const src = read(file);
+    expect(src).toContain("from '../hooks/useAwardAutoStart'");
+    expect(src).toMatch(/useAwardAutoStart\(/);
+  });
+
+  it.each(AWARD_PAGES)('%s does not hold a player on a won game that cannot start', (file) => {
+    // The hold for a merely pending award is conditional on the page being
+    // able to start it; money in flight (busy, uncertain, open) still holds.
+    const src = code(file);
+    const guard = src.slice(src.indexOf('useLiveBonusGuard('));
+    const args = guard.slice(0, guard.indexOf(');'));
+    expect(args).not.toMatch(/Boolean\(earned\.award\)\s*\|\|/);
+  });
+
+  it('the wheel recovers an unconfirmed spin by itself', () => {
+    const src = read('src/pages/DiamondWheelPage.tsx');
+    expect(src).toContain("from '../hooks/useAutoSettle'");
+    expect(src).toMatch(/useAutoSettle\(/);
   });
 
   it('the bonus service surfaces the ticket-gone refusal', () => {
@@ -76,6 +133,11 @@ describe('a saved round settles itself', () => {
     expect(src).toContain('class PriorBonusPending');
   });
 
+  it('a failed award read retries itself', () => {
+    const src = read('src/hooks/useEarnedBonus.ts');
+    expect(src).toMatch(/useAutoSettle\(/);
+  });
+
   it('the server keeps live tickets and refuses a dead one before any entry', () => {
     const sql = read(MIGRATION);
     // Dealing a ticket sweeps only this player's EXPIRED unconsumed tickets.
@@ -85,6 +147,8 @@ describe('a saved round settles itself', () => {
     expect(sql).not.toContain(
       'DELETE FROM public.diamond_game_commits WHERE user_id = v_user AND game = p_game AND consumed_by IS NULL;'
     );
+    // The refusal holds the ticket row until the entry that references it is written.
+    expect(sql).toMatch(/WHERE id = p_commit_id FOR KEY SHARE;/);
     // Both start functions ask the ticket refusal before their INSERT.
     for (const fn of ['fn_diamond_bonus_start', 'fn_wheel_bonus_start']) {
       const body = sql.slice(sql.indexOf(`FUNCTION public.${fn}(`));

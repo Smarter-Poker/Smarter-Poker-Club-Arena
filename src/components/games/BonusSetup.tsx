@@ -43,7 +43,6 @@ export default function BonusSetup({
   entryReady = true,
   awardLoading = false,
   awardError,
-  onRefresh,
 }: {
   budget: BonusBudget;
   onChange: (value: BonusBudget) => void;
@@ -56,6 +55,8 @@ export default function BonusSetup({
   entryReady?: boolean;
   awardLoading?: boolean;
   awardError?: string | null;
+  /** Unused since 2026-09-21: a failed award read retries itself. Kept so the
+   * three game pages compile unchanged while they stop passing it. */
   onRefresh?: () => void;
 }) {
   const navigate = useNavigate();
@@ -69,7 +70,9 @@ export default function BonusSetup({
   if (!entryReady)
     return (
       <section className={styles.setup} aria-label="Your Bonus Setup">
-        <p className={styles.total} role={awardError ? 'alert' : 'status'}>
+        {/* A failed award read retries itself (useEarnedBonus), so there is
+            nothing here for the player to press. */}
+        <p className={styles.total} role="status">
           {awardError ??
             (awardLoading
               ? 'Checking Your Wheel Award'
@@ -90,11 +93,6 @@ export default function BonusSetup({
           >
             Buy More
           </button>
-          {awardError && onRefresh && (
-            <button type="button" disabled={disabled} onClick={onRefresh}>
-              Refresh
-            </button>
-          )}
         </div>
       </section>
     );

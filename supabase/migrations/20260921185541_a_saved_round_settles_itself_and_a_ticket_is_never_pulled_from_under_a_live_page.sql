@@ -74,15 +74,18 @@ END $function$;
 -- The one answer both start functions give for a ticket that cannot open a
 -- round. 'gone' tells the client nothing was charged and a fresh ticket may be
 -- dealt without a human in the loop.
+-- FOR KEY SHARE holds the ticket row until the caller's transaction ends, so
+-- the expired-ticket sweep in fn_diamond_game_commit cannot delete it between
+-- this check and the entry INSERT that references it.
 CREATE OR REPLACE FUNCTION public.fn_diamond_ticket_refusal(p_user uuid, p_game text, p_commit_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
- STABLE
+ VOLATILE
  SET search_path TO 'public'
 AS $function$
 DECLARE c public.diamond_game_commits;
 BEGIN
-  SELECT * INTO c FROM public.diamond_game_commits WHERE id = p_commit_id;
+  SELECT * INTO c FROM public.diamond_game_commits WHERE id = p_commit_id FOR KEY SHARE;
   IF c.id IS NULL OR c.user_id IS DISTINCT FROM p_user OR c.game IS DISTINCT FROM p_game OR c.consumed_by IS NOT NULL THEN
     RETURN jsonb_build_object('ok', false, 'ticket', 'gone', 'error', 'That Ticket Is Not Yours Or Was Already Used. A New One Is Being Dealt');
   END IF;

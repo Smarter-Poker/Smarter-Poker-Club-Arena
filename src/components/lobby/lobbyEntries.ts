@@ -1210,8 +1210,17 @@ function frontRank(t: ClusterFrontSource): number {
      says so: it filters `lifecycle <> 'closed' AND NOT is_deleted` before it
      prefers Main 1, so a cluster whose Main 1 has closed fronts on whatever is
      still open. The board cannot reach this - ClubHomePage drops non-census
-     cluster rows before stamping - but a realtime payload can, and the two
-     answers must not be able to disagree. */
+     cluster rows before stamping - but a realtime payload can.
+
+     THE TWO PREDICATES ARE NOT IDENTICAL, AND THAT IS DELIBERATE. isCensusTable
+     also requires a non-terminal `status`; the SQL function asks only about
+     `lifecycle`. That gap is not an oversight in either place. The tick's
+     worklist must still see a table stranded at lifecycle 'live' with status
+     'closed', because repairing exactly that stranding is what the tick is
+     for; the board must not, because a game painted on a table nobody can sit
+     at is an offer that cannot be taken. They answer the same question for
+     two different consumers and they agree wherever a table is not stranded,
+     which live is all of them. */
   if (isCensusTable(t)) return main1 ? 0 : 1;
   return main1 ? 2 : 3;
 }

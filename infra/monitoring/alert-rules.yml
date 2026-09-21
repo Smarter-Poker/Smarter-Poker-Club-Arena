@@ -1340,6 +1340,120 @@ groups:
             Tournament completion must remain blocked until this reaches zero.
           runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/runbooks/tournament-scheduler-and-engine-saturation.md'
 
+      # ── A TOURNAMENT NOBODY IS DEALING (2026-09-21) ────────────────────
+      #
+      # On 2026-09-21 six RUNNING tournaments holding 49 live seats and
+      # 4,908,000 tournament chips had no row in engine_tournament_leases. The
+      # oldest had been that way since 2026-09-14 - SEVEN DAYS - and nothing
+      # anywhere raised anything, because the managers holding their slots were
+      # counted as healthy owners: /health read activeTournaments 472 against
+      # 465 lease rows, tournamentResumesFailing 0 and a full resume budget.
+      # No series existed for "a RUNNING tournament nobody is dealing", so
+      # there was nothing for an alert to be written against. There is now.
+      #
+      # THRESHOLD, MEASURED - NOT GUESSED (CLAUDE.md 10.84).
+      # Measured against production at 2026-09-21 08:12 UTC: 471 RUNNING
+      # tournaments, 465 holding a lease whose newest heartbeat was 2.7s old,
+      # 6 holding none. The legitimate window in which this gauge is non-zero
+      # is bounded by the re-adoption lane itself: it runs every 5s
+      # (TOURNAMENT_DISCOVERY_INTERVAL) with a budget of at most 25
+      # (ENGINE_START_BUDGET_MAX), so offering every one of 471 tournaments
+      # takes ~95s after a restart or a thaw, and a resume that keeps failing
+      # backs off to at most 5 minutes (RESUME_COOLDOWN_CAP_MS). 15m is three
+      # times that worst legitimate window. The six would have fired this on
+      # their first hour, every hour, for a week.
+      #
+      # The break guard is CLAUDE.md section 13 rule 6: the engine is replaced
+      # at :55 inside the announced break, every tournament is unowned while it
+      # boots, and a 15m window necessarily overlaps that. Without the guard
+      # this pages hourly about a stop we scheduled.
+      - alert: TournamentRunningWithNoOwner
+        expr: |
+          poker_tournaments_running_without_owner > 0
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 15m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: '{{ $value }} RUNNING tournament(s) that no manager is dealing'
+          description: |
+            {{ $labels.instance }} read these tournaments from the RUNNING
+            board and is not dealing them: either the slot is empty, or a
+            manager that could not be stopped still holds it. Read
+            /health.quarantinedTournamentManagers for the ids, the age and the
+            error context of each, and poker_tournament_managers_quarantined
+            for how many are the second kind. A quarantined manager is retried
+            by settleQuarantinedTournamentManagers on its own backoff; one that
+            never clears means its stop is still failing, and the stop error is
+            the defect to fix - not this alert.
+          runbook: 'docs/changelog/2026-09-21-a-manager-that-owns-nothing-is-not-a-manager.md'
+
+      # The same condition an hour in. Fifteen minutes can still be a slow
+      # thaw; an hour is a tournament that has stopped dealing for its players.
+      - alert: TournamentRunningWithNoOwnerCritical
+        expr: |
+          poker_tournaments_running_without_owner > 0
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 1h
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: '{{ $value }} RUNNING tournament(s) undealt for an hour'
+          description: |
+            Players are seated at a tournament that is not dealing and has not
+            been for an hour. This is the condition that ran for seven days
+            undetected on 2026-09-21.
+          runbook: 'docs/changelog/2026-09-21-a-manager-that-owns-nothing-is-not-a-manager.md'
+
+      # A quarantine that outlives a maintenance cycle is a stop that will
+      # never succeed on its own: only a restart has ever cleared one, and the
+      # point of the retry pass is that a restart should not be required. Two
+      # hours is two :55 cutovers.
+      - alert: TournamentManagerQuarantineStuck
+        expr: |
+          poker_tournament_manager_quarantine_oldest_seconds > 7200
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: 'A tournament manager has been unstoppable for {{ $value | humanizeDuration }}'
+          description: |
+            settleQuarantinedTournamentManagers has been re-offering this
+            manager to the stop path and the stop keeps failing. Read the
+            reason on /health.quarantinedTournamentManagers and fix the stop;
+            the slot is deliberately never released while its table engines may
+            still be live (TournamentManagerOwnership.stopOwnedTournamentManager).
+          runbook: 'docs/changelog/2026-09-21-a-manager-that-owns-nothing-is-not-a-manager.md'
+
+      # Custody reads that did not prove custody, by what actually happened.
+      # Before 2026-09-21 all three outcomes were one bare log string and none
+      # was a number: production logged f06_drained_custody_unproven 1,551
+      # times in ninety minutes and moved no series at all. A sustained
+      # `refused` rate means the database is deliberately turning a handover
+      # down and some manager is not retiring because of it.
+      - alert: F06DrainedCustodyRefused
+        expr: |
+          sum(rate(poker_f06_drained_custody_outcomes_total{outcome="refused"}[15m])) > 0.05
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 30m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: 'Drained-custody handovers are being refused by the database'
+          description: |
+            More than three refusals a minute, sustained for half an hour. The
+            refusal names itself in the engine log now
+            (f06_drained_custody_unproven [refused:F06_...]); that token is the
+            defect. 0.05/s is just above the zero this series reads in normal
+            operation and well under the 0.29/s measured during the 2026-09-21
+            incident.
+          runbook: 'docs/changelog/2026-09-21-a-manager-that-owns-nothing-is-not-a-manager.md'
+
   - name: cluster
     interval: 15s
     rules:

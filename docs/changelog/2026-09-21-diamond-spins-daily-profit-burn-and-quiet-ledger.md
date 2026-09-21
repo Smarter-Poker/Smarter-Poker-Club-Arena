@@ -116,8 +116,14 @@ rolled back, every public/auth row compared), exit 0:
   `fn_ca_diamond_trial_balance` before and after; replay; burn failure rolls
   back; quiet notice, no push; three statement lines; addendum receipts)
 - `tests/sql/diamond-spins-every-movement-has-a-ledger-row.sql` (R16: one paid
-  spin per prize kind the live model produces, both hosts; found no path that
-  pays or debits without a record)
+  spin per prize kind the live wheel shows, both hosts; found no path that
+  pays or debits without a record). The kinds come from `fn_wheel_state_v2`'s
+  own segments and each outcome is forced by retrying the REAL spin with fixed
+  seeds in rolled-back subtransactions, so the probe does not depend on the draw
+  domain, the weights, the wheel v4 follow-up matrix or a VIP table. A v4
+  Diamonds outcome (`outcome.cards`) is settled through
+  `fn_wheel_diamond_cards_pick` and must pay exactly once from custody; that
+  branch follows WHEEL-V4-SPEC section 4 and runs only once wheel v4 exists.
 - the two-connection settlement race, now on the burn contract
   (`daily-custody-concurrency-assert.sql`: one transfer of 80, one burn of 20,
   one quiet notification, no push)

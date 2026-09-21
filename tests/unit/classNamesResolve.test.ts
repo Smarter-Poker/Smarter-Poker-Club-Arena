@@ -59,6 +59,18 @@ const globalClasses = (() => {
   );
   const all = new Set<string>();
   for (const sheet of sheets) for (const c of classesIn(sheet)) all.add(c);
+  /*
+   * THE CONSOLE KIT IS GLOBAL TOO (2026-09-09).
+   *
+   * `SpadeConsole.css` is a plain stylesheet - unhashed class names, loaded by
+   * every route that renders a console - but it arrives through the component
+   * rather than through main.tsx, so this resolver could not see it. Surfaces
+   * that correctly use the kit's own ink classes (`sc-ink--red` and friends)
+   * were being counted as unresolved while resolving perfectly at runtime, and
+   * the only way to satisfy the count was to restate a house colour in a module
+   * sheet - which is the thing the palette law exists to stop.
+   */
+  for (const c of classesIn(join(SRC, 'components', 'console', 'SpadeConsole.css'))) all.add(c);
   return all;
 })();
 

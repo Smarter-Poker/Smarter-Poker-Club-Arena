@@ -320,7 +320,9 @@ describe('heartbeatTournaments - "could not ask" is not "lost everything"', () =
     ).resolves.toEqual({
       status: 'answered',
       proofs: [],
-      lostTournamentIds: [T],
+      // Authority is NOT extended - that is what this case pins. It is also
+      // not a loss: the database answered `kept` for this exact generation.
+      lostTournamentIds: [],
     });
   });
 

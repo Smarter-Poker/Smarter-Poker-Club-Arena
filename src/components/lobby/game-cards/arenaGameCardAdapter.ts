@@ -1,3 +1,4 @@
+import { compactChips } from '../../../utils/format';
 import {
   cashTemplateLabel,
   cashTitleLines,
@@ -12,9 +13,8 @@ import { tournamentBlinds, tournamentLevel } from '../tournamentFigures';
 import type { ArenaGameCardData, ArenaGameFamily, ArenaGameStatus } from './arenaGameCardTypes';
 
 function compactChipAmount(value: number): string {
-  if (!Number.isFinite(value) || value < 1_000) return value.toLocaleString('en-US');
-  const thousands = value / 1_000;
-  return `${Number.isInteger(thousands) ? thousands : thousands.toFixed(1).replace(/\.0$/, '')}K`;
+  /* One rule for every printed chip figure outside the felt (utils/format). */
+  return compactChips(value);
 }
 
 /**

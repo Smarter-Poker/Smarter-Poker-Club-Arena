@@ -220,13 +220,13 @@
 }
 
 .agc-nlh-premium__status--red {
-  --status-glow: #ff4b52;
-  --status-ink: #ffc2c4;
+  --status-glow: #f02849;
+  --status-ink: #ff5b6e;
 }
 
 .agc-nlh-premium__status--gold {
-  --status-glow: #f1b83a;
-  --status-ink: #ffe9a8;
+  --status-glow: #ffd700;
+  --status-ink: #ffd700;
 }
 
 .agc-nlh-premium__status--neutral {
@@ -244,6 +244,82 @@
   background: transparent;
   color: transparent;
   cursor: pointer;
+}
+
+/* The label on a painted plate: fitted to the face inside the rim, centred,
+   in the plate's ink. */
+.agc-nlh-premium__action {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: #fff;
+}
+
+.agc-nlh-premium__action-well {
+  display: grid;
+  justify-items: center;
+  width: 80%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.agc-nlh-premium__action-text {
+  display: inline-block;
+  max-width: 100%;
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: calc(5.2cqw * var(--fit, 1));
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.agc-nlh-premium__action--silver .agc-nlh-premium__action-text {
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+}
+
+.agc-nlh-premium__action--white .agc-nlh-premium__action-text {
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%),
+    0 0.5cqw 1cqw rgb(0 0 0 / 60%);
+}
+
+.agc-nlh-premium__action--green .agc-nlh-premium__action-text {
+  color: #c8ffd2;
+  -webkit-text-fill-color: #c8ffd2;
+  text-shadow:
+    0 0 1cqw rgb(53 217 90 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.agc-nlh-premium__action--red .agc-nlh-premium__action-text {
+  color: #ff5b6e;
+  -webkit-text-fill-color: #ff5b6e;
+  text-shadow:
+    0 0 1cqw rgb(240 40 73 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.agc-nlh-premium__action--gold .agc-nlh-premium__action-text {
+  color: #ffd700;
+  -webkit-text-fill-color: #ffd700;
+  text-shadow:
+    0 0 1cqw rgb(255 215 0 / 70%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.agc-nlh-premium__hitbox:disabled .agc-nlh-premium__action-text {
+  opacity: 0.5;
 }
 
 .agc-nlh-premium__hitbox:focus-visible {

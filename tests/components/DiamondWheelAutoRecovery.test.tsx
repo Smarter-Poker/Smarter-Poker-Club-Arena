@@ -228,23 +228,23 @@ describe('automatic spins and player-owned recovery', () => {
     );
     expect(backend.spin).not.toHaveBeenCalled();
   });
-  it('stops after a failed next ticket and lets the player refresh without an automatic debit', async () => {
+  it('stops the run after a failed next ticket and prepares the next spin by itself, without a debit', async () => {
     await ready();
     backend.commit.mockResolvedValueOnce({ ok: false });
     vi.useFakeTimers();
     await startAuto();
     await land();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(500);
     });
     expect(backend.spin).toHaveBeenCalledTimes(1);
-    expect(
-      screen.getByText('The Next Spin Could Not Be Prepared. Refresh The Wheel To Retry.')
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh Wheel' }));
+    // Nobody is told to refresh: the page says what it is doing and does it.
+    expect(screen.getByText('Preparing Your Next Spin')).toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3000);
     });
+    // The ticket came back by itself; the run stayed stopped, so nothing was debited.
+    expect(screen.queryByText('Preparing Your Next Spin')).not.toBeInTheDocument();
     expect(backend.spin).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: 'Auto Spin 5' })).toBeEnabled();
   });
@@ -269,20 +269,27 @@ describe('automatic spins and player-owned recovery', () => {
     });
     expect(backend.spin).toHaveBeenCalledTimes(1);
   });
-  it('refresh preserves an unknown spin and Recover Spin submits the original identity', async () => {
+  it('an unknown spin is recovered by the page itself, with the original identity', async () => {
     await ready();
-    backend.spin.mockRejectedValueOnce(new Error('Connection Lost'));
+    // Two dropped answers in a row: the page keeps resending the SAME saved
+    // request (never a fresh wager) until the receipt lands. Nobody presses
+    // anything - owner ruling 2026-09-21, no game may require a check.
+    backend.spin
+      .mockRejectedValueOnce(new Error('Connection Lost'))
+      .mockRejectedValueOnce(new Error('Connection Lost Again'));
     fireEvent.click(screen.getByRole('button', { name: 'Spin 100', exact: true }));
     await waitFor(() => expect(backend.toast.error).toHaveBeenCalled());
     const saved = readWheelPending('player', sample.club_id!);
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh Wheel' }));
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Refresh Wheel' })).toBeEnabled()
-    );
-    expect(readWheelPending('player', sample.club_id!)).toEqual(saved);
-    expect(backend.commit).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Recover Spin' }));
-    await waitFor(() => expect(backend.spin).toHaveBeenCalledTimes(2));
+    expect(saved).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Recover Spin' })).not.toBeInTheDocument();
+    await waitFor(() => expect(backend.spin).toHaveBeenCalledTimes(3), { timeout: 4000 });
     expect(backend.spin.mock.calls[1][0]).toEqual(backend.spin.mock.calls[0][0]);
+    expect(backend.spin.mock.calls[2][0]).toEqual(backend.spin.mock.calls[0][0]);
+    // One ticket for the whole episode: the saved spin never took a new one.
+    expect(backend.commit).toHaveBeenCalledTimes(1);
+    // The third answer is the receipt, so the wheel is spinning it.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Land Wheel' })).toBeInTheDocument()
+    );
   });
 });

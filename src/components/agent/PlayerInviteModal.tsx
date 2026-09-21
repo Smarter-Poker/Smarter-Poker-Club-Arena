@@ -3,6 +3,26 @@
  *  PLAYER INVITE MODAL — Add Players to Agent
  * Allows agents to invite new players under their hierarchy
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * THE CONSOLE (#ClubArenaConsole). This was a rounded sheet with a header bar,
+ * a square close button, two rounded tab pills, a filled search well, a round
+ * avatar disc and a bordered card per result, a rounded "+ Add" lozenge, a
+ * gradient "Generate" button and a boxed code display.
+ *
+ * It is now Dan's approved spade master: ADD PLAYER is engraved in the header
+ * well, the two modes are lit words, the search box is a groove cut in the
+ * glass, each player is a ROW (name and handle on the left, ADD in lit white
+ * on the right, an engraved rule between), and CLOSE is a lit word on the flat
+ * cap - a surface with one action never leaves a painted plate empty.
+ *
+ * ONE DEFECT FIXED ON THE WAY. The search button's label was the empty string
+ * (`{searching ? '...' : ''}`), so the control a person has to press to run a
+ * search had no word in it at all. It says SEARCH now.
+ *
+ * NOTHING ELSE MOVED. The profiles search and its `.or()` filter, the
+ * already-in-club exclusion, AgentService.attachPlayerToAgent, the invite link
+ * built from player_number, the clipboard copy, the mount timer and the
+ * open-reset effect are all exactly as they were.
  */
 
 import { useState, useEffect } from 'react';
@@ -14,6 +34,7 @@ import styles from './PlayerInviteModal.module.css';
 import { reportError } from '../../utils/errorReporter';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 import { publicOrigin } from '../../lib/appBase';
+import { SpadeConsole } from '../console/SpadeConsole';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -230,109 +251,149 @@ export default function PlayerInviteModal({
           transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
         }}
       >
-        {/* Header */}
-        <div className={styles.header}>
-          <h2> Add Player</h2>
-          <button className={styles.closeBtn} onClick={onClose}>
-            ✕
-          </button>
-        </div>
-
-        {/* Mode Tabs */}
-        <div className={styles.tabs}>
-          <button
-            className={`${styles.tab} ${mode === 'search' ? styles.active : ''}`}
-            onClick={() => setMode('search')}
-          >
-            Find Existing
-          </button>
-          <button
-            className={`${styles.tab} ${mode === 'invite' ? styles.active : ''}`}
-            onClick={() => setMode('invite')}
-          >
-            Invite New
-          </button>
-        </div>
-
-        {/* Message */}
-        {message && (
-          <div className={`${styles.message} ${styles[message.type]}`}>{message.text}</div>
-        )}
-
-        {/* Search Mode */}
-        {mode === 'search' && (
-          <div className={styles.searchSection}>
-            <div className={styles.searchBar}>
-              <input
-                type="text"
-                placeholder="Search By Username..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-              />
-              <button onClick={handleSearch} disabled={searching || !searchQuery.trim()}>
-                {searching ? '...' : ''}
-              </button>
-            </div>
-
-            <div className={styles.results}>
-              {searchResults.length === 0 ? (
-                <div className={styles.noResults}>
-                  {searchQuery ? 'No Players Found' : 'Search For Players To Add'}
-                </div>
-              ) : (
-                searchResults.map((player) => (
-                  <div key={player.id} className={styles.resultCard}>
-                    <div className={styles.playerAvatar}>
-                      {player.avatarUrl ? (
-                        <img loading="lazy" decoding="async" src={player.avatarUrl} alt="" />
-                      ) : (
-                        <span>{player.displayName.charAt(0)}</span>
-                      )}
-                    </div>
-                    <div className={styles.playerInfo}>
-                      <span className={styles.playerName}>{player.displayName}</span>
-                      <span className={styles.playerUsername}>@{player.username}</span>
-                    </div>
-                    <button
-                      className={styles.addBtn}
-                      onClick={() => handleAddPlayer(player)}
-                      disabled={adding === player.id}
-                    >
-                      {adding === player.id ? '...' : '+ Add'}
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
+        <SpadeConsole
+          as="div"
+          eyebrow="Downline"
+          title="Add Player"
+          titleId="player-invite-title"
+          foot="foot"
+        >
+          {/* Two modes, as lit words on the glass. */}
+          <div className={styles.tabs} role="group" aria-label="Add Player Mode">
+            <button
+              type="button"
+              className={`${styles.tab} ${mode === 'search' ? styles.tabOn : ''}`}
+              aria-pressed={mode === 'search'}
+              onClick={() => setMode('search')}
+            >
+              Find Existing
+            </button>
+            <button
+              type="button"
+              className={`${styles.tab} ${mode === 'invite' ? styles.tabOn : ''}`}
+              aria-pressed={mode === 'invite'}
+              onClick={() => setMode('invite')}
+            >
+              Invite New
+            </button>
           </div>
-        )}
 
-        {/* Invite Mode */}
-        {mode === 'invite' && (
-          <div className={styles.inviteSection}>
-            {!inviteCode ? (
-              <button
-                className={styles.generateBtn}
-                onClick={generateInviteCode}
-                disabled={inviting}
-              >
-                {inviting ? 'Generating...' : 'Generate Invite Link'}
-              </button>
-            ) : (
-              <div className={styles.codeDisplay}>
-                <span className={styles.code}>{inviteCode}</span>
-                <button onClick={copyCode}>Copy</button>
+          {/* Message */}
+          {message && (
+            <div
+              className={`${styles.message} ${
+                message.type === 'success' ? 'sc-ink--green' : 'sc-ink--red'
+              }`}
+              role={message.type === 'error' ? 'alert' : 'status'}
+            >
+              {message.text}
+            </div>
+          )}
+
+          {/* Search Mode */}
+          {mode === 'search' && (
+            <div className={styles.searchSection}>
+              <div className={styles.searchBar}>
+                <input
+                  type="text"
+                  className={styles.searchInput}
+                  placeholder="Search By Username..."
+                  aria-label="Search By Username"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                />
+                {/* This button's label used to be the empty string. */}
+                <button
+                  type="button"
+                  className={styles.searchGo}
+                  onClick={handleSearch}
+                  disabled={searching || !searchQuery.trim()}
+                >
+                  {searching ? 'Searching' : 'Search'}
+                </button>
               </div>
-            )}
 
-            <div className={styles.inviteInfo}>
-              <p>Share This Link With New Players</p>
-              <p>Anyone Who Joins Through It Is Added To Your Downline</p>
-              <p>New Players Always Start With Zero Chips</p>
+              <div className={styles.results}>
+                {searchResults.length === 0 ? (
+                  <div className={`${styles.noResults} sc-copy sc-copy--center`}>
+                    {searchQuery ? 'No Players Found' : 'Search For Players To Add'}
+                  </div>
+                ) : (
+                  searchResults.map((player) => (
+                    <div key={player.id} className={styles.resultRow}>
+                      <span className={styles.playerFace} aria-hidden="true">
+                        {player.avatarUrl ? (
+                          <img
+                            loading="lazy"
+                            decoding="async"
+                            src={player.avatarUrl}
+                            alt=""
+                            className={styles.playerFaceImg}
+                          />
+                        ) : (
+                          <span className={styles.playerInitial}>
+                            {player.displayName.charAt(0)}
+                          </span>
+                        )}
+                      </span>
+                      <span className={styles.playerInfo}>
+                        <span className={`${styles.playerName} sc-ink--silver`}>
+                          {player.displayName}
+                        </span>
+                        <span className={styles.playerUsername}>@{player.username}</span>
+                      </span>
+                      <button
+                        type="button"
+                        className={styles.addWord}
+                        onClick={() => handleAddPlayer(player)}
+                        disabled={adding === player.id}
+                      >
+                        {adding === player.id ? 'Adding' : 'Add'}
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
+          )}
+
+          {/* Invite Mode */}
+          {mode === 'invite' && (
+            <div className={styles.inviteSection}>
+              {!inviteCode ? (
+                <button
+                  type="button"
+                  className={styles.generateWord}
+                  onClick={generateInviteCode}
+                  disabled={inviting}
+                >
+                  {inviting ? 'Generating' : 'Generate Invite Link'}
+                </button>
+              ) : (
+                <div className={styles.codeDisplay}>
+                  <span className={styles.code}>{inviteCode}</span>
+                  <button type="button" className={styles.copyWord} onClick={copyCode}>
+                    Copy
+                  </button>
+                </div>
+              )}
+
+              <div className={styles.inviteInfo}>
+                <p className="sc-copy">Share This Link With New Players</p>
+                <p className="sc-copy">Anyone Who Joins Through It Is Added To Your Downline</p>
+                <p className="sc-copy">New Players Always Start With Zero Chips</p>
+              </div>
+            </div>
+          )}
+
+          {/* ONE action for the whole sheet, so the foot stays the flat cap. */}
+          <div className={styles.close}>
+            <button type="button" className={styles.closeWord} onClick={onClose}>
+              Close
+            </button>
           </div>
-        )}
+        </SpadeConsole>
       </div>
     </div>
   );

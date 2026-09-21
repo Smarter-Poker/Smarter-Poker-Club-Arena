@@ -118,7 +118,7 @@ export function MustMoveLobbyModal({
   const labelFor = (id: string | null | undefined): string | null => {
     if (!id) return null;
     const t = tableById.get(id);
-    return t ? lobbyTableLabel(t) : null;
+    return t ? lobbyTableLabel(t, lobby?.front_table_id ?? null) : null;
   };
 
   const request = async (toTableId: string | null) => {
@@ -228,9 +228,14 @@ export function MustMoveLobbyModal({
   const playersTotal = (lobby?.tables ?? []).reduce((n, t) => n + Number(t.seated ?? 0), 0);
   const tablesOpen = (lobby?.tables ?? []).length;
   const myTableId = me?.table_id ?? null;
+  /* LIGHTNING 2.0 PHASE 3. The server says which table is the main game - a
+     Lightning-capable Cluster begins as a single feeder and has no Main 1 at
+     all - and this mirrors fn_cash_seat_change_request's own refusal, so the
+     button and the door cannot disagree about what they forbid. */
+  const frontTableId = lobby?.front_table_id ?? null;
   const canRequestTo = (t: LobbyTable): boolean =>
     Boolean(me?.seat_change.available) &&
-    !isMainOne(t) &&
+    !isMainOne(t, frontTableId) &&
     t.id !== myTableId &&
     (t.lifecycle === 'live' || t.lifecycle === 'opening');
   const otherTablesExist = (lobby?.tables ?? []).some((t) => canRequestTo(t));
@@ -413,7 +418,9 @@ export function MustMoveLobbyModal({
                     className={`mml-table${t.id === currentTableId ? ' mml-table--here' : ''}${t.lifecycle === 'breaking' ? ' mml-table--closing' : ''}`}
                   >
                     <div className="mml-table-head">
-                      <span className="mml-table-name">{lobbyTableLabel(t)}</span>
+                      <span className="mml-table-name">
+                        {lobbyTableLabel(t, lobby.front_table_id ?? null)}
+                      </span>
                       <span className="mml-table-state">{lifecycleLabel(t)}</span>
                       <span className="mml-table-count">
                         {t.seated}/{t.max_players}

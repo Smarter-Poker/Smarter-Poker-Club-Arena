@@ -1,61 +1,92 @@
 /**
- * PushEnableBanner — sits above the notification list. Mobile first at 375px
- * (CLAUDE.md section 10 rule 6): the button drops below the copy on narrow
- * screens rather than squeezing the text to two words a line.
+ * PushEnableBanner — #ClubArenaConsole (2026-09-14)
+ *
+ * A BANNER IS NOT A CARD. This was a rounded teal slab - `border-radius: 14px`
+ * over `rgba(20, 184, 166, 0.08)` with a teal rim and a filled teal button at
+ * `border-radius: 10px` - a frame and a control both drawn in CSS, in a colour
+ * (#14b8a6) the smarter.poker schema does not own at all. It is INKED now: no
+ * fill, no rim, no radius, no gradient, no plate. The title is engraved silver,
+ * the body is Inter in the console's copy grey, the error is the master's red,
+ * and the one action is a LIT WORD on the glass - not a button shape - closed
+ * by a single engraved rule (a black cut with a hairline of light under it).
+ * The inks come from SpadeConsole.css, which the component loads itself.
+ *
+ * Mobile first at 375px (CLAUDE.md section 10 rule 6); sizes are in cqw against
+ * the banner, so the same rules fit a 320px phone and a 430px one. The lit word
+ * keeps a 44px tap target through its padding, not through a drawn box.
+ * No :hover (tests/no-hover-effects.law.test.ts).
  */
 
 .ca-push-banner {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 3cqw;
   align-items: stretch;
   margin: 8px 12px 4px;
-  padding: 14px 16px;
-  border: 1px solid rgba(20, 184, 166, 0.35);
-  border-radius: 14px;
-  background: rgba(20, 184, 166, 0.08);
-}
-
-.ca-push-banner--info {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
+  padding: 3cqw 1cqw 3.4cqw;
+  /* The engraved rule that closes the banner, and its only edge. */
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
 }
 
 .ca-push-banner__text {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 1.2cqw;
   min-width: 0;
 }
 
 .ca-push-banner__title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #f3f4f6;
+  font-size: 4.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
 }
 
 .ca-push-banner__body {
-  font-size: 13px;
-  line-height: 1.45;
-  color: #9ca3af;
+  color: #d7dee7;
+  font:
+    500 3.5cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  overflow-wrap: anywhere;
 }
 
 .ca-push-banner__error {
-  margin-top: 4px;
-  font-size: 12px;
-  color: #fca5a5;
+  margin-top: 0.8cqw;
+  font-size: 3.3cqw;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
+/* The lit word: an action printed on the glass, no plate and no box. */
 .ca-push-banner__btn {
-  flex-shrink: 0;
-  padding: 10px 18px;
-  border: none;
-  border-radius: 10px;
-  background: #14b8a6;
-  color: #04211e;
-  font-size: 14px;
-  font-weight: 700;
+  align-self: flex-start;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 2cqw 0 0;
+  border: 0;
+  background: none;
+  font:
+    800 3.6cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   cursor: pointer;
+}
+
+.ca-push-banner__btn:active {
+  filter: brightness(1.3);
+}
+
+.ca-push-banner__btn:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
 }
 
 .ca-push-banner__btn:disabled {
@@ -67,10 +98,15 @@
   .ca-push-banner {
     flex-direction: row;
     align-items: center;
-    gap: 16px;
+    gap: 4cqw;
+  }
+
+  .ca-push-banner__text {
+    flex: 1 1 auto;
   }
 
   .ca-push-banner__btn {
     align-self: center;
+    flex: 0 0 auto;
   }
 }

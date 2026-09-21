@@ -26,7 +26,8 @@
  */
 
 import { supabase } from './supabase.js';
-import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { cashAccountingBatchSize, resolveClientTimeoutMs } from './cashAccountingBatchBudget.js';
+import { isMaintenanceFrozen, onMaintenanceThaw } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import {
   readCashSourceBatch,
@@ -59,10 +60,32 @@ const CATCH_UP_DELAY_MS = 60 * 1000; // 1 minute
  * ~8s statement timeout on the commission batch (five 500s, five
  * "canceling statement due to statement timeout" entries at 23:38). A timeout
  * aborts the whole call, so those items were skipped and the cursor advanced
- * past them. The functions now set their own 300s timeout AND the chunk is
- * 150, so a chunk is comfortably inside even a slow window with headroom.
+ * past them. The functions now set their own 300s timeout.
+ *
+ * 2026-09-20: AND THEN THE SERVER STOPPED BEING THE CONSTRAINT, SO 150 WAS
+ * SIZED AGAINST A LIMIT THAT NO LONGER BOUND IT. The 300s server timeout left
+ * the engine client's DB_TIMEOUT_MS (15s) as the only real budget, and
+ * migration 20260917181100 repointed fn_credit_agent_commissions_batch at
+ * fn_process_cash_accounting_source, taking one item to ~290ms. 150 x 290ms =
+ * 43.5s against a 15s client. The settler halted every cycle for three days
+ * while the server committed the work anyway and the cursor never moved.
+ * The size is now DERIVED from the budget that binds (CLAUDE.md 1.1.7); the
+ * arithmetic and its measurement live in cashAccountingBatchBudget.ts.
  */
-const CREDIT_BATCH_SIZE = 150;
+/* Exported for the same reason as FETCH_LIMIT: a regression suite must build
+   a dataset that genuinely straddles this boundary, not hard-code a number
+   that drifts away from the real one. A test asserting 150 was exactly how
+   this constant stopped matching its own cost. */
+export const CREDIT_BATCH_SIZE = cashAccountingBatchSize(resolveClientTimeoutMs());
+
+/**
+ * The durable-refusal retry opens every cycle, BEFORE any new work is read, so
+ * it is the call that decides whether the cursor can move at all. It was a
+ * literal 50 and cost ~20.6s - past the client budget - which is precisely how
+ * a queue of 150 permanently-refused sources held 264,835 records hostage.
+ * Same budget, same arithmetic, same reason.
+ */
+const CASH_RETRY_LIMIT = cashAccountingBatchSize(resolveClientTimeoutMs());
 const PERIOD_USER_BATCH_SIZE = 2000;
 const DAEMON_KEY = 'rakeback_settler';
 
@@ -264,19 +287,6 @@ function isFilterSafe(value: string): boolean {
   return !/["',()]/.test(value);
 }
 
-/**
- * AUDIT M6 — the composite `(created_at, id)` keyset predicate.
- *
- * Values are DOUBLE-QUOTED: a timestamptz renders as `2026-08-06
- * 20:30:07.941+00`, and both `:` and `+` are meaningful inside a PostgREST
- * filter. Verified against the live REST endpoint before this shipped — the
- * quoted form returns 200, and a malformed filter returns 400, so a green
- * response is real evidence and not a silently ignored parameter.
- */
-function keysetFilter(createdAt: string, id: string): string {
-  return `created_at.gt."${createdAt}",and(created_at.eq."${createdAt}",id.gt."${id}")`;
-}
-
 interface RakeRecordRow {
   id?: string;
   is_tournament?: boolean | null;
@@ -339,6 +349,34 @@ export class RakebackSettlerService {
    * CATCH_UP_DELAY_MS. Same work, same batch semantics, just sooner.
    */
   private catchUpHandle: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * A TICK THE FREEZE ATE IS STILL OWED (2026-09-21).
+   *
+   * The interval callback below must not settle during a maintenance freeze -
+   * settlement credits commissions and rakeback, which is chip movement, and
+   * the whole platform is meant to be still. That part was always right. What
+   * was wrong is that it `return`ed and the tick was simply GONE.
+   *
+   * The freeze runs :53 to :00 and the interval is 30 minutes, so on a process
+   * whose ticks land at :26 and :56 exactly half of them were inside the
+   * freeze. Measured live 2026-09-21 on engine-01: settlement runs began at
+   * 09:26, 10:26, 11:27, 12:27, 13:27 and 14:27 - once per hour, never at :56,
+   * for a service configured to run every thirty minutes. At 15:26:06Z the
+   * watermark was 2026-09-21T14:34:09Z, 52 minutes stale, with 985
+   * rake_records above it; `fn_process_weekly_accounting_scope` raises
+   * `weekly_rake_source_not_fully_accrued` and refuses to settle the week on
+   * exactly that state.
+   *
+   * The drain has ample capacity - the 15:26 run cleared all 985 rows in under
+   * a minute - so this was never a throughput problem. It was a lost tick.
+   *
+   * Remembering the debt and paying it on the thaw EVENT keeps both
+   * guarantees: nothing moves during the freeze, and nothing is skipped
+   * because of it. No timer, no poll, no repair loop - one boolean and one
+   * edge-triggered callback.
+   */
+  private tickOwedFromFreeze = false;
+  private thawUnsubscribe: (() => void) | null = null;
   /**
    * Timer handles only describe future work. Settlement, financial-close and
    * conservation passes which already started keep mutating shared ledgers
@@ -403,13 +441,41 @@ export class RakebackSettlerService {
     console.log(`[RakebackSettler] Starting (interval: ${SETTLEMENT_INTERVAL_MS / 60000}m)`);
     // Run once immediately on startup, then every 30 min
     this.launchSettlement(generation, 'RakebackSettler.startup_run');
+    this.tickOwedFromFreeze = false;
+    this.thawUnsubscribe = onMaintenanceThaw(() => this.payTickOwedFromFreeze(generation));
     this.intervalHandle = setInterval(() => {
       // THE FREEZE (Dan 2026-09-01): settlement credits commissions and
       // rakeback - chip movement by definition. A 30-minute cadence loses
       // nothing to a 5-minute wait.
-      if (isMaintenanceFrozen()) return;
+      //
+      // ...but it loses a whole THIRTY-MINUTE cadence to a dropped tick. Wait,
+      // do not skip: the debt is recorded here and paid on the thaw edge. See
+      // `tickOwedFromFreeze`.
+      if (isMaintenanceFrozen()) {
+        if (!this.tickOwedFromFreeze) {
+          this.tickOwedFromFreeze = true;
+          console.log(
+            '[RakebackSettler] maintenance freeze is on - holding this tick and running it at the thaw'
+          );
+        }
+        return;
+      }
       this.launchSettlement(generation, 'RakebackSettler.interval_run');
     }, SETTLEMENT_INTERVAL_MS);
+  }
+
+  /**
+   * The freeze just lifted. Run the tick it swallowed, once, and only if this
+   * generation still owns the schedule - `launchSettlement` re-checks that too,
+   * and `runSettlement`'s own `isSettling` guard makes a collision with the
+   * regular interval a no-op rather than a double credit.
+   */
+  private payTickOwedFromFreeze(generation: number): void {
+    if (!this.tickOwedFromFreeze) return;
+    this.tickOwedFromFreeze = false;
+    if (!this.lifecycleIsCurrent(generation)) return;
+    console.log('[RakebackSettler] maintenance freeze lifted - running the tick it held');
+    this.launchSettlement(generation, 'RakebackSettler.freeze_deferred_run');
   }
 
   stop(): Promise<void> {
@@ -428,6 +494,15 @@ export class RakebackSettlerService {
       clearTimeout(this.catchUpHandle);
       this.catchUpHandle = null;
     }
+    // A live thaw listener holding a fenced generation is exactly the
+    // post-stop admission race the lifecycle exists to close. Drop it, and
+    // forget the debt: the next start() opens a new generation and its own
+    // startup run already reads from the durable watermark.
+    if (this.thawUnsubscribe) {
+      this.thawUnsubscribe();
+      this.thawUnsubscribe = null;
+    }
+    this.tickOwedFromFreeze = false;
 
     const drain = (async () => {
       await this.drainLifecycleJobs();
@@ -689,7 +764,7 @@ export class RakebackSettlerService {
    *       regressed.
    *
    * Idempotent and cheap: bounded batch per cycle, advances the watermark to the
-   * newest processed ended_at so each tournament is checked once.
+   * newest FULLY CHECKED ended_at so each tournament is checked at least once.
    *
    * THE WINDOW COLUMN WAS WRONG UNTIL 2026-08-31, in exactly the way the retired
    * payout sweep's was until 2026-08-29. This scan
@@ -749,6 +824,28 @@ export class RakebackSettlerService {
 
       let newWatermark = sinceIso;
       let violations = 0;
+      let unchecked = 0;
+      /**
+       * A TOURNAMENT NOBODY COULD CHECK MUST NOT BE RECORDED AS CHECKED.
+       *
+       * Each of the three reads below was written `if (!err) { ... }`, so a
+       * transient PostgREST failure skipped that tournament's integrity check with
+       * no report and no violation counted - while the watermark, assigned at the
+       * TOP of the loop, moved past it regardless. The next cycle reads
+       * `ended_at > mark`, so the event was never looked at again: chips minted or
+       * destroyed inside it would go unreported permanently and leave no trace,
+       * which is the single outcome this sentinel exists to prevent. The two
+       * top-level reads above already skip the cycle on a read failure; the
+       * per-tournament reads were simply never given the same treatment.
+       *
+       * The batch is ordered by `ended_at` ascending, so from the first tournament
+       * whose reads did not complete the mark may not move. Later tournaments are
+       * still checked in this same pass - one unreadable row must not silence the
+       * rest of the batch - they are simply re-read next cycle along with it.
+       * Re-checking costs nothing: all three checks are read-only, and the pass
+       * stays bounded by BATCH with no retry loop of its own.
+       */
+      let watermarkSealed = false;
 
       for (const t of tourneys as Array<{
         id: string;
@@ -758,7 +855,10 @@ export class RakebackSettlerService {
         satellite_target_id: string | null;
         ended_at: string;
       }>) {
-        if (t.ended_at > newWatermark) newWatermark = t.ended_at;
+        // Set by any of the three reads below that did not complete. The mark is
+        // advanced at the END of this iteration, and only for a tournament whose
+        // checks all actually ran.
+        let uncheckable = false;
         // Pool-equality is only meaningful for events where the ENTIRE cash pool
         // flows through tournament_players.prize. It does NOT hold for:
         //   • satellites — they pay tickets/seats, not the cash pool;
@@ -783,7 +883,18 @@ export class RakebackSettlerService {
             .select('prize')
             .eq('tournament_id', t.id)
             .gt('prize', 0);
-          if (!pErr) {
+          if (pErr) {
+            uncheckable = true;
+            unchecked++;
+            reportError(
+              new Error(
+                `Tournament payout conservation UNCHECKED: tournament ${t.id} ` +
+                  `(${t.name ?? 'unnamed'}) prize read failed: ${pErr.message}`
+              ),
+              'TournamentSentinel.payout_conservation_unchecked',
+              { tournamentId: t.id, endedAt: t.ended_at }
+            );
+          } else {
             const paid = (prizeRows ?? []).reduce(
               (s, r) => s + (Number((r as { prize: number | null }).prize) || 0),
               0
@@ -813,7 +924,18 @@ export class RakebackSettlerService {
             .select('id', { count: 'exact', head: true })
             .eq('tournament_id', t.id)
             .in('status', ['playing', 'registered', 'active']);
-          if (!sErr && (count ?? 0) > 0) {
+          if (sErr) {
+            uncheckable = true;
+            unchecked++;
+            reportError(
+              new Error(
+                `Stranded-player check UNCHECKED: tournament ${t.id} ` +
+                  `(${t.name ?? 'unnamed'}) entrant read failed: ${sErr.message}`
+              ),
+              'TournamentSentinel.stranded_players_unchecked',
+              { tournamentId: t.id, endedAt: t.ended_at }
+            );
+          } else if ((count ?? 0) > 0) {
             violations++;
             reportError(
               new Error(
@@ -833,7 +955,18 @@ export class RakebackSettlerService {
             .eq('tournament_id', t.id)
             .not('hand_id', 'is', null)
             .gt('rake_amount', 0);
-          if (!rErr && (count ?? 0) > 0) {
+          if (rErr) {
+            uncheckable = true;
+            unchecked++;
+            reportError(
+              new Error(
+                `Raked-hand check UNCHECKED: tournament ${t.id} ` +
+                  `(${t.name ?? 'unnamed'}) rake read failed: ${rErr.message}`
+              ),
+              'TournamentSentinel.raked_tournament_hands_unchecked',
+              { tournamentId: t.id, endedAt: t.ended_at }
+            );
+          } else if ((count ?? 0) > 0) {
             violations++;
             reportError(
               new Error(
@@ -843,6 +976,19 @@ export class RakebackSettlerService {
               { tournamentId: t.id, rakedHands: count }
             );
           }
+        }
+
+        if (uncheckable) {
+          if (!watermarkSealed) {
+            watermarkSealed = true;
+            // A tie on `ended_at` with an already-advanced mark would still be
+            // stepped over by the strict `>` read filter next cycle, so fall back
+            // to this batch's own starting mark, which that same filter proves is
+            // strictly below every row in the batch.
+            if (newWatermark >= t.ended_at) newWatermark = sinceIso;
+          }
+        } else if (!watermarkSealed && t.ended_at > newWatermark) {
+          newWatermark = t.ended_at;
         }
       }
 
@@ -858,7 +1004,8 @@ export class RakebackSettlerService {
         { onConflict: 'daemon' }
       );
       console.log(
-        `[TournamentSentinel] checked ${tourneys.length} completed tournament(s), ${violations} violation(s), watermark → ${newWatermark}`
+        `[TournamentSentinel] read ${tourneys.length} completed tournament(s), ${violations} violation(s), ` +
+          `${unchecked} unchecked read(s), watermark → ${newWatermark}`
       );
     } catch (e) {
       reportError(
@@ -1185,11 +1332,11 @@ export class RakebackSettlerService {
     let retriedSources: CashSourceReceipt[];
     try {
       const { data, error } = await supabase.rpc('fn_retry_cash_accounting_sources', {
-        p_limit: 50,
+        p_limit: CASH_RETRY_LIMIT,
       });
       if (error) throw new Error('Cash source retry failed', { cause: error });
       retriedSources = readCashSourceBatch(data);
-      if (retriedSources.length > 50)
+      if (retriedSources.length > CASH_RETRY_LIMIT)
         throw new Error('Cash retry exceeded its requested source bound');
       await confirmCashSourceRefusals(retriedSources);
     } catch (error) {

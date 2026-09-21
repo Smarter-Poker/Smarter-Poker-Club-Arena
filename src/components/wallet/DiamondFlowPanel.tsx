@@ -18,7 +18,7 @@
  * Three outcomes, never a zero that means unknown: reading, failed
  * (Unavailable + Retry), known.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { masterBus } from '../../core/MasterBus';
 import {
   DiamondService,
@@ -95,12 +95,18 @@ export default function DiamondFlowPanel({ userId }: { userId: string | undefine
   const isMounted = useIsMounted();
   const [flow, setFlow] = useState<DiamondFlow | null | undefined>(undefined);
   const [span, setSpan] = useState<DiamondFlowSpan>('lifetime');
+  const seq = useRef(0);
 
+  // A re-read keeps the last known figures on screen until the new ones
+  // arrive (no flash to "Reading" on every balance change), and only the
+  // latest read is allowed to land: two overlapping reads resolve in any
+  // order, and the older one must not overwrite the newer.
   const load = useCallback(async () => {
     if (!userId) return;
-    setFlow(undefined);
+    const mine = ++seq.current;
+    setFlow((prev) => (prev ? prev : undefined));
     const next = await DiamondService.getDiamondFlow();
-    if (isMounted.current) setFlow(next);
+    if (isMounted.current && mine === seq.current) setFlow(next);
   }, [userId, isMounted]);
 
   useEffect(() => {

@@ -1,18 +1,36 @@
-/* BBJ winners list — one row per jackpot hit, 375px-first. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   BBJ WINNERS - printed on a jackpot console's glass (#ClubArenaConsole)
+
+   This list paints nothing of its own: it is a page of the BBJInfoModal
+   console and a section of the jackpot page's console, so the frame is the
+   master's and every hit is a row on the black glass under an engraved
+   rule - the avatar drawn the way the felt draws it (no ring, no
+   background), the winner in silver, YOU and the game in lit blue, the
+   payout in green, the hand as the real card art centred under itself.
+   Show More is a lit word. No box, no dashed border, no corner. 375px-first;
+   sizes are cqw against the console except the avatar, which is pinned in
+   pixels (tests/unit/bbjAvatarSize.test.ts). No :hover.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .bbj-hits {
+  --bbjh-rule: 1px solid #000;
+  --bbjh-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
 }
 
 .bbj-hits__caption {
-  padding: 2px 2px 6px;
-  text-align: center;
-  font-size: 12px;
+  padding: 0 0 1.6cqw;
+  color: #45adff;
+  font-size: 2.9cqw;
   font-weight: 700;
-  color: #aab3c0;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
 /* TWO ROWS, not four columns.
@@ -28,12 +46,11 @@
     'avatar who right'
     'avatar hand hand';
   align-items: center;
-  column-gap: 8px;
-  row-gap: 6px;
-  padding: 8px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(255, 255, 255, 0.03);
+  column-gap: 2cqw;
+  row-gap: 1.2cqw;
+  padding: 2.4cqw 0;
+  border-top: var(--bbjh-rule);
+  box-shadow: var(--bbjh-rule-lit);
   text-align: left;
 }
 
@@ -52,27 +69,23 @@
 
 .bbj-hits__row.is-clickable {
   cursor: pointer;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
 }
 
+.bbj-hits__row.is-clickable:active {
+  filter: brightness(1.25);
+}
+
+/* A row that behaves as a button needs a focus ring that is actually visible. */
 .bbj-hits__row.is-clickable:focus-visible {
-  background: rgba(213, 218, 226, 0.07);
-  border-color: rgba(213, 218, 226, 0.3);
-  outline: none;
-}
-
-.bbj-hits__row.is-you {
-  border-color: rgba(52, 199, 89, 0.35);
-  background: rgba(52, 199, 89, 0.07);
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
 }
 
 /* Dan 2026-08-27: "double the size of the current avatar, and remove the circle
    frame ... avatars should display here like they do on the table with no
    background". The avatar was 48px, so double is 96 - it was drawn at 60 from
    2026-08-27 (PR #1469) until this was caught in the phase-6 audit, which is
-   1.25x, not double. No circle frame, no background, no level pill —
+   1.25x, not double. No circle frame, no background, no level pill -
    drawn the way the felt draws it. The library art is a free-standing bust with
    its own transparency, so any crop or ring here is something we are adding,
    not something the artwork needs. `object-fit: contain` keeps the bust whole;
@@ -91,37 +104,54 @@
 .bbj-hits__who {
   display: flex;
   flex-direction: column;
+  gap: 0.4cqw;
   min-width: 0;
-  gap: 1px;
 }
 
 .bbj-hits__name {
   display: flex;
   align-items: center;
-  gap: 5px;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: #fff;
+  gap: 1.6cqw;
   overflow: hidden;
+  color: #e4e7ec;
+  font-size: 3.8cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607;
 }
 
-.bbj-hits__you {
+/* The two small words beside a name: YOU, and the mini badge. Lit blue,
+   never a box. */
+.bbj-hits__you,
+.bbj-hits__mini,
+.bbj-hits__tag {
   flex-shrink: 0;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(52, 199, 89, 0.2);
-  color: #34c759;
-  font-size: 8.5px;
+  color: #45adff;
+  font-size: 2.5cqw;
   font-weight: 800;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 0 0.9cqw rgb(49 168 255 / 70%);
+}
+
+.bbj-hits__mini {
+  margin-left: 0;
+  vertical-align: middle;
 }
 
 .bbj-hits__id {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.38);
+  color: #9aa5b3;
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 /* Dan 2026-08-27: "the winning hand should be displayed with the first letter
@@ -133,14 +163,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 0.8cqw;
   min-width: 0;
   max-width: 100%;
 }
 
 .bbj-hits__cards {
   display: flex;
-  gap: 2px;
+  gap: 0.6cqw;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
@@ -148,91 +178,105 @@
 
 .bbj-hits__handname {
   max-width: 100%;
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.55);
-  white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  color: #9aa5b3;
+  font-size: 2.8cqw;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 .bbj-hits__right {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
   flex-shrink: 0;
+  align-items: flex-end;
+  gap: 0.4cqw;
 }
 
 /* Dan 2026-08-27: "above the jackpot should be the game type that it was hit
    on". It sits directly over the payout figure, in the same column. */
 .bbj-hits__gametype {
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: rgba(240, 185, 11, 0.14);
-  color: #f0b90b;
-  font-size: 9px;
+  color: #45adff;
+  font-size: 2.5cqw;
   font-weight: 800;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   white-space: nowrap;
+  text-shadow: 0 0 0.9cqw rgb(49 168 255 / 70%);
 }
 
 .bbj-hits__amt {
-  font-size: 13px;
+  color: #c8ffd2;
+  font-size: 3.8cqw;
   font-weight: 800;
-  color: #aab3c0;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  text-shadow:
+    0 0 1cqw rgb(53 217 90 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
 .bbj-hits__when {
-  font-size: 9px;
-  color: rgba(255, 255, 255, 0.35);
+  color: #9aa5b3;
+  font-size: 2.5cqw;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
-.bbj-hits__hint {
-  margin: 4px 0 0;
+.bbj-hits__hint,
+.bbj-hits__examplenote {
+  margin: 0;
+  padding: 1.2cqw 0 0;
+  color: #9aa5b3;
+  font:
+    600 3cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
   text-align: center;
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.35);
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+.bbj-hits__examplenote {
+  padding: 0 0 1.6cqw;
 }
 
 .bbj-hits__empty {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 28px 16px;
+  gap: 1cqw;
+  padding: 6cqw 2cqw;
+  color: #d7dee7;
+  font:
+    600 3.4cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
   text-align: center;
-  font-size: 12.5px;
-  color: rgba(255, 255, 255, 0.55);
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 .bbj-hits__empty-sub {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
+  color: #9aa5b3;
+  font-size: 3cqw;
 }
 
 .bbj-hits__skeleton {
-  height: 54px;
-  border-radius: 10px;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.04) 25%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.04) 75%
-  );
-  background-size: 200% 100%;
-  animation: bbj-hits-shimmer 1.3s infinite;
+  height: 14cqw;
+  margin-top: 1.2cqw;
+  background: rgb(255 255 255 / 8%);
+  animation: bbj-hits-shimmer 1.3s ease-in-out infinite;
 }
 
 @keyframes bbj-hits-shimmer {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
+  50% {
+    opacity: 0.45;
   }
 }
 
@@ -254,35 +298,12 @@
     width: 72px;
     height: 72px;
   }
-
-  .bbj-hits__when {
-    font-size: 8.5px;
-  }
 }
 
-/* Example rows: unmistakably not a real win. Greyed, dashed, tagged, inert. */
+/* Example rows: unmistakably not a real win. Dimmed, tagged EXAMPLE, inert. */
 .bbj-hits__row.is-example {
   opacity: 0.72;
-  border-style: dashed;
   cursor: default;
-}
-
-.bbj-hits__tag {
-  flex-shrink: 0;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 8.5px;
-  font-weight: 800;
-  letter-spacing: 0.5px;
-}
-
-.bbj-hits__examplenote {
-  margin: 0 0 2px;
-  text-align: center;
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.42);
 }
 
 /* THE HAND THAT BEAT IT. A list headed "Bad Beat Jackpot Winners" used to show
@@ -291,88 +312,94 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  margin-top: 2px;
-  padding-top: 5px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  gap: 0.8cqw;
   max-width: 100%;
+  margin-top: 0.6cqw;
+  padding-top: 1.2cqw;
+  border-top: var(--bbjh-rule);
+  box-shadow: var(--bbjh-rule-lit);
 }
 
 .bbj-hits__beat-label {
-  font-size: 8px;
+  color: #ff5b6e;
+  font-size: 2.4cqw;
   font-weight: 800;
-  letter-spacing: 0.6px;
-  color: rgba(255, 107, 107, 0.75);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow: 0 0 1cqw rgb(240 40 73 / 80%);
 }
 
 .bbj-hits__beat-name {
   max-width: 100%;
-  font-size: 9.5px;
-  color: rgba(255, 255, 255, 0.42);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: #9aa5b3;
+  font-size: 2.6cqw;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-align: center;
-}
-
-/* The EXAMPLE stamp the doc-comment always claimed these rows carried. */
-.bbj-hits__row.is-example .bbj-hits__tag {
-  background: rgba(255, 149, 0, 0.18);
-  color: #ff9500;
-}
-
-/* A row that behaves as a button needs a focus ring that is actually visible.
-   `outline: none` plus a ~1.1:1 background change is not one. */
-.bbj-hits__row.is-clickable:focus-visible {
-  outline: 2px solid #f0b90b;
-  outline-offset: 2px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 /* SHOW MORE. Full width and 44px tall because this list is read on a 375px
    phone and a paging control that is hard to hit is a paging control nobody
-   uses. Same yellow as the focus ring, at rest as an outline rather than a
-   fill, so it never competes with a winner row for attention. */
+   uses. A lit word on the glass, never a fill. */
 .bbj-hits__more {
+  appearance: none;
   display: block;
   width: 100%;
   min-height: 44px;
-  margin: 10px 0 2px;
-  padding: 11px 12px;
-  border: 1px solid rgba(240, 185, 11, 0.35);
-  border-radius: 10px;
-  background: rgba(240, 185, 11, 0.08);
-  color: #f0b90b;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  margin: 0;
+  padding: 2cqw 2cqw;
+  border: 0;
+  border-top: var(--bbjh-rule);
+  box-shadow: var(--bbjh-rule-lit);
+  background: transparent;
+  color: #f4f7fb;
+  font:
+    800 3.4cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   cursor: pointer;
+  touch-action: manipulation;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.bbj-hits__more:active {
+  filter: brightness(1.25);
 }
 
 .bbj-hits__more:disabled {
-  opacity: 0.55;
+  opacity: 0.45;
   cursor: default;
 }
 
 .bbj-hits__more:focus-visible {
-  outline: 2px solid #f0b90b;
-  outline-offset: 2px;
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
 }
 
-/* THE MINI BADGE (BBJ phase 6, 2026-09-07). A mini pays a flat few hundred
-   chips out of the backup reserve; a main pays a share of the pool. They share
-   this list, so the row has to say which one it was - a 700-chip row with no
-   label reads as a main jackpot that paid almost nothing. Quieter than the YOU
-   badge beside it: this is a fact about the hit, not about the reader. */
-.bbj-hits__mini {
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  vertical-align: middle;
-  white-space: nowrap;
+/* metallic-popups.css bevels every button inside a dialog with !important
+   and its primary rule is a `background` shorthand at 0,2,1. Inside the
+   BBJInfoModal console the lit word paints nothing: the longhands are
+   restated at 0,3,0. */
+[role='dialog'] .bbj-hits__more.bbj-hits__more,
+[aria-modal='true'] .bbj-hits__more.bbj-hits__more {
+  min-width: 0;
+  min-height: 44px;
+  border: 0 !important;
+  border-top: var(--bbjh-rule) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  color: #f4f7fb !important;
+  box-shadow: var(--bbjh-rule-lit) !important;
+  transform: none !important;
 }

@@ -17,7 +17,7 @@
  * Three outcomes, never a zero that means unknown: reading, failed
  * (Unavailable + Retry), known.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { masterBus } from '../../core/MasterBus';
 import {
   DiamondService,
@@ -35,12 +35,17 @@ const fmt = (n: number) => (Number.isFinite(n) ? n : 0).toLocaleString();
 export default function DiamondArenaStatement({ userId }: { userId: string | undefined }) {
   const isMounted = useIsMounted();
   const [statement, setStatement] = useState<Statement | null | undefined>(undefined);
+  const seq = useRef(0);
 
+  // A re-read keeps the last known statement on screen until the new one
+  // arrives, and only the latest read is allowed to land (phase 5 deep dive:
+  // overlapping reads must not let an older answer overwrite a newer one).
   const load = useCallback(async () => {
     if (!userId) return;
-    setStatement(undefined);
+    const mine = ++seq.current;
+    setStatement((prev) => (prev ? prev : undefined));
     const next = await DiamondService.getArenaStatement();
-    if (isMounted.current) setStatement(next);
+    if (isMounted.current && mine === seq.current) setStatement(next);
   }, [userId, isMounted]);
 
   useEffect(() => {

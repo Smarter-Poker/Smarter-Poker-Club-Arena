@@ -65,6 +65,12 @@ interface AuthGuardProps {
    * Signed-in players are unaffected: `children` renders as before.
    */
   publicFallback?: ReactNode;
+  /**
+   * Rendered while the session is still resolving, so a route with its own
+   * cinematic chassis (Daily Challenges) paints in its own family instead of
+   * the generic application spinner.
+   */
+  loadingFallback?: ReactNode;
 }
 
 /**
@@ -128,7 +134,7 @@ function isDefinitelyAuthenticated(): boolean {
   return false;
 }
 
-export function AuthGuard({ children, publicFallback }: AuthGuardProps) {
+export function AuthGuard({ children, publicFallback, loadingFallback }: AuthGuardProps) {
   // CRITICAL: Check ALL evidence sources synchronously on mount.
   // This prevents the loading flash on navigation between protected routes.
   const initiallyAuthenticated = isDefinitelyAuthenticated();
@@ -315,6 +321,7 @@ export function AuthGuard({ children, publicFallback }: AuthGuardProps) {
 
   // Show loading state
   if (isLoading) {
+    if (loadingFallback) return <>{loadingFallback}</>;
     return (
       <div
         style={{

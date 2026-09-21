@@ -1,15 +1,32 @@
-/**
- * WINNER — the single biggest moment the product has.
- *
- * Dan 2026-08-23: "boring, flat and basic." It was: plain white WINNER, flat
- * gold CHAMPION!, a monospace "Prize: 33" and a default button. Winning a
- * tournament should feel like the room stops.
- *
- * Built from: a warm radial bloom behind the card, a slow conic god-ray sweep,
- * a glass trophy plate, metallic gold type with a travelling sheen, an
- * odometer prize with its own pedestal, and rising embers. All CSS — no new
- * assets, no library, no bundle cost.
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOURNAMENT WINNER - on the spade console (#ClubArenaConsole)
+
+   The chassis, its inks and its flat closing cap come from SpadeConsole.css.
+   This sheet keeps the two backdrop cues that were always right - the slow
+   conic god-rays and the rising embers - places the console on them, and
+   prints the prize and the one action on the black glass between the rails.
+
+   WHAT WAS DELETED, AND WHY. `.winnerContent` was a 1.5rem rounded card with
+   an amber border, a two-stop gradient fill and three box-shadows; the kicker
+   was a 999px pill; the prize sat on its own 0.9rem "pedestal" with a border,
+   a gradient and two more shadows; the button was a rounded gold lozenge.
+   Every one of those drew a control the master already paints, and a frame
+   around a frame besides. There is no border-radius, no gradient on a box, no
+   box-shadow and no :hover anywhere in this file.
+
+   EVERY ANIMATION STILL PLAYS (CLAUDE.md 10.6). Not one keyframe was removed
+   and not one duration was shortened; each cue moved onto the element that
+   replaced its old host:
+
+     winnerRays          .winnerOverlay::before        26s     unchanged
+     sparkleFloat        .sparkle                      4000ms  unchanged
+     winnerGrandEntrance .winner-entrance              900ms   -> the console
+     trophyBounce        .trophy-bounce (was the pill) 2000ms  -> the painted
+                                                                 pill slot
+     winnerSheen         .winner-golden                3600ms  -> the engraved
+                                                                 headline
+     prizeCounterSlideIn .prize-counter                800ms   -> the prize line
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .winnerOverlay {
   position: fixed;
@@ -17,12 +34,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 12px;
   z-index: 9999;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.55s ease;
   background:
-    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(251, 191, 36, 0.2) 0%, transparent 62%),
+    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(255, 215, 0, 0.16) 0%, transparent 62%),
     radial-gradient(ellipse at center, rgba(2, 6, 23, 0.9) 0%, rgba(2, 6, 23, 0.985) 72%);
   backdrop-filter: blur(9px) saturate(120%);
   -webkit-backdrop-filter: blur(9px) saturate(120%);
@@ -45,146 +63,139 @@
   background: conic-gradient(
     from 0deg,
     transparent 0deg,
-    rgba(251, 191, 36, 0.14) 12deg,
+    rgba(255, 215, 0, 0.13) 12deg,
     transparent 26deg,
     transparent 90deg,
-    rgba(251, 191, 36, 0.1) 104deg,
+    rgba(255, 215, 0, 0.1) 104deg,
     transparent 118deg,
     transparent 190deg,
-    rgba(251, 191, 36, 0.13) 205deg,
+    rgba(255, 215, 0, 0.12) 205deg,
     transparent 220deg,
     transparent 300deg,
-    rgba(251, 191, 36, 0.09) 315deg,
+    rgba(255, 215, 0, 0.08) 315deg,
     transparent 330deg
   );
   animation: winnerRays 26s linear infinite;
   pointer-events: none;
 }
 
-.winnerContent {
+/* ── The console: one picture, nothing drawn around it ────────────────── */
+
+.winner-console {
   position: relative;
   z-index: 2;
-  text-align: center;
-  padding: 2.4rem 2rem 2rem;
-  max-width: min(30rem, 92vw);
-  border-radius: 1.5rem;
-  border: 1px solid rgba(251, 191, 36, 0.3);
-  background: linear-gradient(180deg, rgba(30, 27, 15, 0.72), rgba(9, 9, 11, 0.86));
-  box-shadow:
-    0 40px 90px -20px rgba(0, 0, 0, 0.85),
-    0 0 70px -22px rgba(251, 191, 36, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  width: min(100%, 420px);
+  max-height: 100%;
+  overflow: visible auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .winner-entrance {
   animation: winnerGrandEntrance 900ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* "WINNER" — the small caps kicker above the headline. */
-.winnerTrophy {
-  display: inline-block;
-  padding: 0.3rem 1.1rem;
-  margin-bottom: 0.9rem;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.42em;
-  text-indent: 0.42em;
-  color: #fde68a;
-  text-transform: uppercase;
-  border-radius: 999px;
-  border: 1px solid rgba(251, 191, 36, 0.42);
-  background: rgba(251, 191, 36, 0.1);
-  box-shadow: 0 0 26px -8px rgba(251, 191, 36, 0.8);
-}
-
+/* THE KICKER IS THE PAINTED PILL SLOT NOW. `trophyBounce` used to open a
+   999px CSS pill; it opens the master's own slot instead, at the same
+   duration, the same easing and the same `both`. Only the letter-spacing
+   endpoints moved, because the slot's type is tighter than the pill's was. */
+.winner-console .sc__pill,
 .trophy-bounce {
   animation: trophyBounce 2000ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* "CHAMPION!" — metallic gold with a sheen that travels across it. */
-.winnerTitle {
-  font-size: clamp(2.4rem, 11vw, 3.9rem);
-  font-weight: 900;
-  line-height: 1.02;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+/* THE HEADLINE. `winnerSheen` travels across the engraved title exactly as it
+   travelled across the old one - same 3.6s, same easing, same infinite. The
+   ramp is the house gold: the old one opened on #b45309, a BROWN, which Dan
+   has ruled out of the scheme outright. */
+.winner-golden .sc__title.sc-ink--silver {
+  color: #ffd700;
   background: linear-gradient(
     100deg,
-    #b45309 0%,
-    #fbbf24 22%,
-    #fffbeb 42%,
-    #fbbf24 58%,
-    #b45309 100%
+    #8a6d00 0%,
+    #ffd700 22%,
+    #fffbe6 42%,
+    #ffd700 58%,
+    #8a6d00 100%
   );
   background-size: 260% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 3px 10px rgba(0, 0, 0, 0.85));
+  text-shadow: none;
+  filter: drop-shadow(0 0.3cqw 0.9cqw rgb(0 0 0 / 85%));
   animation: winnerSheen 3.6s ease-in-out infinite;
 }
 
-.winnerTournament {
-  margin-top: 0.75rem;
-  font-size: 0.92rem;
-  color: #cbd5e1;
+/* ── The prize: the number people screenshot, on the glass ────────────── */
+
+.winnerPrize {
+  padding: 3cqw 0.5cqw 1cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #ffd700;
+  -webkit-text-fill-color: #ffd700;
+  font-size: 6.4cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
   letter-spacing: 0.02em;
+  text-align: center;
+  text-shadow:
+    0 0 1cqw rgb(255 215 0 / 70%),
+    0 0 2cqw rgb(255 215 0 / 30%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
-/* The prize sits on its own pedestal — it is the number people screenshot. */
 .prize-counter {
   animation: prizeCounterSlideIn 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.winnerPrize {
-  margin: 1.35rem auto 0;
-  padding: 0.75rem 1.4rem;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  border-radius: 0.9rem;
-  font-size: clamp(1.5rem, 6.5vw, 2.1rem);
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  color: #fef3c7;
-  border: 1px solid rgba(251, 191, 36, 0.34);
-  background: linear-gradient(180deg, rgba(120, 53, 15, 0.42), rgba(0, 0, 0, 0.42));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.09),
-    0 0 34px -12px rgba(251, 191, 36, 0.85);
-  text-shadow: 0 0 22px rgba(251, 191, 36, 0.55);
-}
+/* ── The one action: a lit word above the flat cap ────────────────────── */
 
 .winnerDismissBtn {
-  margin-top: 1.5rem;
-  padding: 0.72rem 2.3rem;
-  font-size: 0.95rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  margin: 1cqw 0 0;
+  padding: 2cqw;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  font-family: inherit;
+  font-size: 3.6cqw;
+  font-weight: 800;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #1c1917;
-  border: none;
-  border-radius: 999px;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
   cursor: pointer;
-  background: linear-gradient(180deg, #fcd34d, #f59e0b);
-  box-shadow:
-    0 10px 26px -10px rgba(245, 158, 11, 0.95),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
-  transition:
-    transform 0.16s ease,
-    box-shadow 0.16s ease,
-    filter 0.16s ease;
+  touch-action: manipulation;
 }
 
 .winnerDismissBtn:active {
-  transform: translateY(0);
-}
-.winnerDismissBtn:focus-visible {
-  outline: 2px solid #fff;
-  outline-offset: 3px;
+  filter: brightness(1.25);
+  transform: none !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
 }
 
-/* Embers drifting up past the card. */
+.winnerDismissBtn:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -1cqw;
+}
+
+/* ── Embers drifting up past the console ──────────────────────────────── */
+
 .sparkleContainer {
   position: absolute;
   inset: 0;
@@ -197,8 +208,8 @@
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: radial-gradient(circle, #fffbeb 0%, #fbbf24 55%, transparent 72%);
-  box-shadow: 0 0 12px 2px rgba(251, 191, 36, 0.75);
+  background: radial-gradient(circle, #fffbe6 0%, #ffd700 55%, transparent 72%);
+  box-shadow: 0 0 12px 2px rgba(255, 215, 0, 0.7);
   opacity: 0;
   animation: sparkleFloat 4000ms ease-in-out infinite;
 }
@@ -236,6 +247,7 @@
     transform: translate(-50%, -50%) rotate(360deg);
   }
 }
+
 @keyframes winnerSheen {
   0% {
     background-position: 150% 0;
@@ -260,31 +272,39 @@
   0% {
     opacity: 0;
     transform: translateY(-8px);
-    letter-spacing: 0.8em;
+    letter-spacing: 0.5em;
   }
   100% {
     opacity: 1;
     transform: translateY(0);
-    letter-spacing: 0.42em;
+    letter-spacing: 0.08em;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .winnerOverlay::before,
   .sparkle,
-  .winnerTitle,
+  .winner-golden .sc__title.sc-ink--silver,
   .winner-entrance,
+  .winner-console .sc__pill,
   .trophy-bounce {
     animation: none !important;
   }
   /* 2026-08-27: the base .sparkle rule is opacity 0 and relied on its
-     keyframe to become visible — `animation: none` above therefore made the
+     keyframe to become visible - `animation: none` above therefore made the
      sparkles permanently invisible under Reduce Motion. Show them statically
-     instead: motion removed, decoration kept. */
+     instead: motion removed, decoration kept. The same trap applies to the
+     pill and the headline, which open at opacity 0 / transparent fill. */
   .sparkle {
     opacity: 0.5;
   }
-  .winnerTitle {
-    -webkit-text-fill-color: var(--sp-text-bright);
+  .winner-console .sc__pill,
+  .trophy-bounce {
+    opacity: 1;
+    letter-spacing: 0.08em;
+  }
+  .winner-golden .sc__title.sc-ink--silver {
+    background: none;
+    -webkit-text-fill-color: #ffd700;
   }
 }

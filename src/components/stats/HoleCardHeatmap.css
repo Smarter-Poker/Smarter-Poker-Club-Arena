@@ -8,16 +8,26 @@
  */
 
 .heatmap-card {
+  position: relative;
   margin: 0 0.75rem 1rem;
   padding: 1rem;
-  border-radius: 16px;
-  background: linear-gradient(145deg, rgba(0, 212, 255, 0.05) 0%, rgba(139, 92, 246, 0.035) 100%);
-  border: 1px solid rgba(0, 212, 255, 0.14);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border-radius: 2px;
+  background: linear-gradient(155deg, rgba(17, 26, 35, 0.96), rgba(3, 7, 11, 0.99));
+  border: 1px solid rgba(199, 210, 220, 0.15);
   box-shadow:
-    0 0 30px rgba(0, 212, 255, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    inset 3px 0 0 rgba(72, 123, 166, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.heatmap-card::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 96px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(72, 159, 228, 0.8));
+  content: '';
 }
 
 .heatmap-title {
@@ -48,7 +58,7 @@
   display: inline-flex;
   gap: 0.3rem;
   padding: 0.2rem;
-  border-radius: 999px;
+  border-radius: 2px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -56,7 +66,7 @@
 .heatmap-mode {
   padding: 0.35rem 0.7rem;
   border: none;
-  border-radius: 999px;
+  border-radius: 1px;
   background: transparent;
   color: rgba(220, 238, 255, 0.55);
   font-size: 0.72rem;
@@ -98,7 +108,7 @@
 
 .heatmap-select {
   padding: 0.3rem 0.5rem;
-  border-radius: 8px;
+  border-radius: 2px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(10, 14, 24, 0.85);
   color: #e8f4ff;
@@ -185,7 +195,7 @@
   align-items: baseline;
   margin-top: 0.7rem;
   padding: 0.5rem 0.65rem;
-  border-radius: 10px;
+  border-radius: 2px;
   background: rgba(0, 212, 255, 0.06);
   border: 1px solid rgba(0, 212, 255, 0.16);
   font-size: 0.72rem;
@@ -225,7 +235,7 @@
 
 .heatmap-skeleton {
   height: 300px;
-  border-radius: 12px;
+  border-radius: 2px;
   background: linear-gradient(
     90deg,
     rgba(255, 255, 255, 0.03) 25%,
@@ -277,15 +287,19 @@
 /* These were applied in TSX with no rule defined anywhere, so the empty
    states rendered inconsistently - only .pos-radar-empty was centred. */
 
-.heatmap-empty { text-align: center; }
-.heatmap-head { text-align: left; }
+.heatmap-empty {
+  text-align: center;
+}
+.heatmap-head {
+  text-align: left;
+}
 
 /* ── Drill-down: the hands behind one cell ─────────────────────────────── */
 
 .heatmap-drill {
   margin-top: 0.6rem;
   padding: 0.6rem 0.7rem;
-  border-radius: 12px;
+  border-radius: 2px;
   border: 1px solid rgba(139, 92, 246, 0.25);
   background: rgba(139, 92, 246, 0.07);
 }
@@ -308,7 +322,7 @@
   margin-left: auto;
   padding: 0.2rem 0.5rem;
   min-height: 30px;
-  border-radius: 8px;
+  border-radius: 2px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: transparent;
   color: rgba(220, 238, 255, 0.7);
@@ -340,7 +354,7 @@
   gap: 0.4rem;
   align-items: baseline;
   padding: 0.3rem 0.35rem;
-  border-radius: 8px;
+  border-radius: 1px;
   background: rgba(255, 255, 255, 0.03);
   font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
@@ -367,7 +381,8 @@
   font-style: normal;
   font-size: 0.58rem;
   padding: 0.05rem 0.3rem;
-  border-radius: 999px;
+  border: 1px solid rgba(0, 212, 255, 0.22);
+  border-radius: 1px;
   background: rgba(0, 212, 255, 0.14);
   color: #7dd3fc;
   white-space: nowrap;

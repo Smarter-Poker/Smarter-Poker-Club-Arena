@@ -134,7 +134,6 @@ export function droppedFunctions(sql) {
 
 /** Job names this SQL schedules with pg_cron, and the ones it unschedules. */
 export function scheduledJobs(sql) {
-  const clean = stripNoise(sql);
   const added = new Set();
   const removed = new Set();
   // cron.schedule('name', '* * * * *', $$...$$) - the literal was stripped, so
@@ -147,6 +146,80 @@ export function scheduledJobs(sql) {
   }
   for (const name of removed) added.delete(name);
   return { added: [...added], removed: [...removed] };
+}
+
+
+/**
+ * A MIGRATION MAY SCHEDULE PERIODIC WORK. IT MAY NOT DO IT IN SILENCE.
+ *
+ * 2026-09-19: 20260919152626_schedule_daily_diamond_spin_settlement created the
+ * cron job `diamond-spin-daily-settlement` and this gate said nothing. Every
+ * rule above is keyed on the NAME - repair, backpay, catchup - so a schedule
+ * whose name carries none of those words walks past all of them. The name was
+ * never what 10.12 is about. The schedule is.
+ *
+ * So a new migration that schedules anything must say, in the file, that the
+ * schedule IS the product rather than a way to catch up with a defect:
+ *
+ *     -- periodic-work: <why this is not compensation>
+ *
+ * A sentence a reviewer can disagree with, which is the whole point. This is
+ * deliberately NOT an allowlist entry: band-aid.allowlist.json is existing debt
+ * that may only ever get shorter, and a legitimate end-of-day settlement is not
+ * debt. It is a decision, and it gets to be written down as one.
+ */
+export const PERIODIC_WORK_MARKER = /^[ \t]*--[ \t]*periodic-work:[ \t]*\S/im;
+
+/**
+ * FROM WHICH MIGRATION VERSION THIS BINDS.
+ *
+ * Measured 2026-09-19: 101 of the migrations on disk call cron.schedule in code
+ * and NONE carries the marker, so the rule cannot be retrospective without
+ * making `--all` useless overnight. The newest migration that schedules
+ * anything is 20260919152626 and nothing at or after 20260920 exists, so the
+ * cutoff is provably clean today and every migration written from here on is
+ * covered.
+ */
+export const PERIODIC_WORK_BINDS_FROM = '20260920';
+
+/** The version a migration path carries: `.../20260920093000_x.sql` -> `20260920093000`. */
+export function migrationVersion(file) {
+  const base = String(file).split('/').pop() || '';
+  const cut = base.indexOf('_');
+  return cut < 0 ? base.replace(/\.sql$/i, '') : base.slice(0, cut);
+}
+
+/**
+ * Does this SQL actually CALL cron.schedule?
+ *
+ * Asked of stripNoise'd source, never of raw text. Migrations in this class
+ * quote what they are about, and several already mention cron.schedule in prose
+ * alone - reading raw text would refuse them for explaining themselves.
+ */
+export function schedulesPeriodicWork(sql) {
+  return /cron\.schedule\s*\(/i.test(stripNoise(sql));
+}
+
+/**
+ * The justification, read from the RAW text. stripNoise strips SQL comments and
+ * the marker IS a SQL comment, so the two halves of this rule read different
+ * copies ON PURPOSE: the call out of code, the reason out of prose.
+ */
+export function carriesPeriodicWorkJustification(sql) {
+  return PERIODIC_WORK_MARKER.test(String(sql));
+}
+
+/**
+ * A new migration that schedules periodic work without saying why, or null.
+ * Takes the FILE, because this rule binds by version; every other rule in this
+ * script judges content alone.
+ */
+export function unjustifiedPeriodicWork(file, sql) {
+  if (migrationVersion(file) < PERIODIC_WORK_BINDS_FROM) return null;
+  if (!schedulesPeriodicWork(sql)) return null;
+  if (carriesPeriodicWorkJustification(sql)) return null;
+  const { added } = scheduledJobs(sql);
+  return { kind: 'periodic work', name: added.join(', ') || 'cron.schedule(...)' };
 }
 
 /**
@@ -262,7 +335,10 @@ function main() {
   for (const file of files) {
     const path = join(REPO, file);
     if (!existsSync(path)) continue;
-    for (const o of offenders(readFileSync(path, 'utf8'), allowed, droppedInBranch)) hits.push({ ...o, file });
+    const sql = readFileSync(path, 'utf8');
+    for (const o of offenders(sql, allowed, droppedInBranch)) hits.push({ ...o, file });
+    const periodic = unjustifiedPeriodicWork(file, sql);
+    if (periodic) hits.push({ ...periodic, file });
   }
 
   if (hits.length === 0) {
@@ -273,14 +349,50 @@ function main() {
     return 0;
   }
 
+  const named = hits.filter((h) => h.kind !== 'periodic work');
+  const periodic = hits.filter((h) => h.kind === 'periodic work');
+
   console.error('');
-  console.error('[check-no-new-band-aids] BLOCKED - this is a band-aid (CLAUDE.md 10.12).');
+  console.error(
+    named.length > 0
+      ? '[check-no-new-band-aids] BLOCKED - this is a band-aid (CLAUDE.md 10.12).'
+      : '[check-no-new-band-aids] BLOCKED - a new schedule must say why it exists (CLAUDE.md 10.12).'
+  );
   console.error('');
   for (const h of hits) {
     console.error(`  ${h.kind}: ${h.name}`);
     console.error(`    in ${h.file}`);
   }
   console.error('');
+
+  if (periodic.length > 0) {
+    console.error('  THIS MIGRATION SCHEDULES PERIODIC WORK AND DOES NOT SAY WHY.');
+    console.error('');
+    console.error('  Every other rule in this gate is keyed on the NAME - repair, backpay,');
+    console.error('  catchup - so a schedule whose name carries none of those words walks');
+    console.error('  past all of them. On 2026-09-19 that is exactly what happened:');
+    console.error('  20260919152626_schedule_daily_diamond_spin_settlement created');
+    console.error('  diamond-spin-daily-settlement and this gate said nothing.');
+    console.error('');
+    console.error('  If the schedule IS the product - an end-of-day settlement, a nightly');
+    console.error('  prune, a tournament that launches at 20:00 - say so in the migration,');
+    console.error('  on a line of its own, and this passes:');
+    console.error('');
+    console.error('      -- periodic-work: <why this is not compensation>');
+    console.error('');
+    console.error('  Write a reason a reviewer can disagree with. "Runs daily" is not one.');
+    console.error('');
+    console.error('  If the schedule is NOT the product - if it exists because something');
+    console.error('  upstream can fail, be missed, or land late - then it is the thing 10.12');
+    console.error('  refuses, and a comment does not make it legal. Fix the line that');
+    console.error('  produced the wrong outcome so the outcome cannot occur.');
+    console.error('');
+    console.error(`  This rule binds from migration version ${PERIODIC_WORK_BINDS_FROM}.`);
+    console.error('');
+  }
+
+  if (named.length === 0) return 1;
+
   console.error('  Dan, 2026-09-07: "I WANT THE ERRORS FIXED AND PLUGGED AND HARD CODED');
   console.error('  SOLUTIONS TO THE ISSUES ... NOT A FUCKING BAND AID."');
   console.error('');

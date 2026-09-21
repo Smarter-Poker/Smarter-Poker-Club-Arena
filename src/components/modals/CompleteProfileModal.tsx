@@ -4,6 +4,27 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * Forces users to configure their Poker Alias, Real Name, and Avatar
  * if they signed in via a provider (Google) that skipped the Hub signup form.
+ *
+ * ── ON THE SPADE CONSOLE (#ClubArenaConsole) ────────────────────────────────
+ * This was a rounded card with a gradient header bar, a 96px avatar disc with
+ * a dashed ring and a "+" tile inside it, two bordered input wells each with a
+ * lozenge glyph glued to the left, a spinner / tick / cross glyph column for
+ * alias availability, a die glyph on the randomiser, a tinted info box and a
+ * blue gradient ENTER button. Every one of those was CSS pretending to be a
+ * control, and four of them were glyphs stuck on top of a frame.
+ *
+ * It is now Dan's approved spade master, cut into head / rails / foot by
+ * SpadeConsole: COMPLETE YOUR PROFILE engraved in the header well, whether the
+ * form is ready in the well's painted pill slot, the avatar printed plainly on
+ * the black glass, both fields as grooves cut into that glass, availability
+ * said in the master's own inks as a WORD rather than a glyph, and the two
+ * actions on the painted plates in the foot - CHANGE AVATAR on steel, ENTER
+ * ARENA on the blue glass.
+ *
+ * Nothing about the behaviour changed. The store hydration, the debounce and
+ * its cleanup, the sanitiser, the 23505 duplicate branch, the avatar-refused
+ * guard, the "gate stands down while the gallery is up" rule, and the whole of
+ * useCompleteProfile below are the ones that were here.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -11,6 +32,7 @@ import { supabase } from '../../lib/supabase';
 import { useUserStore } from '../../stores/useUserStore';
 import { sanitizeInput } from '../../utils/sanitizeInput';
 import { reportError } from '../../utils/errorReporter';
+import { SpadeConsole } from '../console/SpadeConsole';
 import styles from './CompleteProfileModal.module.css';
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import { AvatarGallery } from '../customization/AvatarGallery';
@@ -285,6 +307,21 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
     }
   };
 
+  /* Availability is said in the master's own inks as a WORD. The spinner, the
+     tick and the cross were three glyphs stuck on top of the frame. */
+  const aliasState = isCheckingAlias
+    ? { text: 'Checking', ink: 'sc-ink--blue' }
+    : aliasLocalError
+      ? { text: 'Not Allowed', ink: 'sc-ink--red' }
+      : aliasAvailable === true
+        ? { text: 'Available', ink: 'sc-ink--green' }
+        : aliasAvailable === false
+          ? { text: 'Taken', ink: 'sc-ink--red' }
+          : null;
+
+  const canSubmit =
+    !isSaving && !isSuccess && !!alias.trim() && hasAvatar && aliasAvailable !== false;
+
   return (
     <>
       {/*
@@ -310,60 +347,72 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
         <div className={styles.overlay}>
           <div
             className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="complete-profile-title"
             style={{
               opacity: mounted ? 1 : 0,
               transform: mounted ? 'translateY(0)' : 'translateY(8px)',
               transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
             }}
           >
-            <header className={styles.header}>
-              <h2>Complete Your Profile</h2>
-            </header>
+            <div className={styles.scroller}>
+              <SpadeConsole
+                as="div"
+                className={styles.console}
+                eyebrow="Poker Arena"
+                title="Complete Your Profile"
+                titleId="complete-profile-title"
+                pill={canSubmit ? 'Ready' : 'Required'}
+                pillInk={canSubmit ? 'green' : 'gold'}
+                plates={{
+                  secondary: {
+                    label: user.avatar_url ? 'Change Avatar' : 'Select Avatar',
+                    onClick: () => setShowAvatarGallery(true),
+                  },
+                  primary: {
+                    label: isSuccess ? 'Welcome' : isSaving ? 'Saving' : 'Enter Arena',
+                    ink: 'white',
+                    type: 'submit',
+                    form: 'complete-profile-form',
+                    disabled: !canSubmit,
+                  },
+                }}
+              >
+                <p className={`sc-copy sc-copy--center ${styles.intro}`}>
+                  Welcome To Poker Arena! Before You Hit The Tables, Please Choose Your Poker Alias
+                  And Avatar.
+                </p>
 
-            <div className={styles.content}>
-              <p className={styles.intro}>
-                Welcome To Poker Arena! Before You Hit The Tables, Please Choose Your Poker Alias
-                And Avatar.
-              </p>
-
-              <div className={styles.avatarSection}>
-                <label>Profile Avatar (Required)</label>
-                <div className={styles.avatarControls}>
-                  <div
-                    className={`${styles.avatarPreview} ${!hasAvatar ? styles.avatarPreviewNeedsAvatar : ''}`}
-                    onClick={() => setShowAvatarGallery(true)}
-                  >
-                    {hasAvatar ? (
-                      <img src={currentAvatar!} alt="Your Avatar" className={styles.avatarImg} />
-                    ) : (
-                      <div className={styles.avatarPlaceholder}>
-                        <span>+</span>
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    className={styles.selectAvatarBtn}
-                    onClick={() => setShowAvatarGallery(true)}
-                  >
-                    {user.avatar_url ? 'Change Avatar' : 'Select Avatar'}
-                  </button>
+                {/* The avatar prints plainly on the glass: no disc, no ring,
+                    no dashed placeholder tile. The one way to change it is the
+                    plate painted into the foot. */}
+                <div className={styles.avatarRow}>
+                  {hasAvatar ? (
+                    <img src={currentAvatar!} alt="Your Avatar" className={styles.avatarImg} />
+                  ) : (
+                    <span className={`sc-label sc-ink--gold ${styles.avatarMissing}`}>
+                      No Avatar Chosen Yet
+                    </span>
+                  )}
                 </div>
-              </div>
 
-              <form id="complete-profile-form" onSubmit={handleSave} className={styles.formGroup}>
-                <div className={styles.formGroup}>
-                  <div className={styles.labelRow}>
-                    <label>Poker Alias (Required)</label>
-                    <button type="button" className={styles.randomizeBtn} onClick={handleRandomize}>
-                      ⚄ Randomize
-                    </button>
-                  </div>
-                  <div
-                    className={`${styles.inputWrapper} ${aliasAvailable === false ? styles.inputInvalid : ''} ${aliasAvailable === true ? styles.inputValid : ''}`}
-                  >
-                    <span className={styles.inputIcon}>◆</span>
+                <form id="complete-profile-form" onSubmit={handleSave} className={styles.form}>
+                  <div className={styles.field}>
+                    <div className={styles.fieldHead}>
+                      <label htmlFor="complete-profile-alias" className="sc-label sc-ink--blue">
+                        Poker Alias (Required)
+                      </label>
+                      <button
+                        type="button"
+                        className={`${styles.word} sc-ink--blue`}
+                        onClick={handleRandomize}
+                      >
+                        Randomize
+                      </button>
+                    </div>
                     <input
+                      id="complete-profile-alias"
                       className={styles.input}
                       placeholder="E.G. SharkPro99"
                       value={alias}
@@ -372,26 +421,24 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
                       maxLength={16}
                       required
                     />
-                    <div className={styles.availabilityIndicator}>
-                      {isCheckingAlias && <span className={styles.spinner}>↻</span>}
-                      {!isCheckingAlias && aliasAvailable === true && (
-                        <span className={styles.iconAvailable}>✓</span>
-                      )}
-                      {!isCheckingAlias && aliasAvailable === false && !aliasLocalError && (
-                        <span className={styles.iconTaken}>✗</span>
-                      )}
-                    </div>
+                    <span className={`sc-label ${styles.fieldState}`} aria-live="polite">
+                      {aliasState && <span className={aliasState.ink}>{aliasState.text}</span>}
+                    </span>
+                    {aliasLocalError && (
+                      <p className={`sc-copy sc-ink--red ${styles.fieldError}`}>
+                        {aliasLocalError}
+                      </p>
+                    )}
                   </div>
-                  {aliasLocalError && (
-                    <div className={styles.localErrorText}>{aliasLocalError}</div>
-                  )}
-                </div>
 
-                <div className={styles.formGroup} style={{ marginTop: '0.5rem' }}>
-                  <label>Real Name (Optional)</label>
-                  <div className={styles.inputWrapper}>
-                    <span className={styles.inputIcon}>◉</span>
+                  <div className={styles.field}>
+                    <div className={styles.fieldHead}>
+                      <label htmlFor="complete-profile-real-name" className="sc-label sc-ink--blue">
+                        Real Name (Optional)
+                      </label>
+                    </div>
                     <input
+                      id="complete-profile-real-name"
                       className={styles.input}
                       placeholder="E.G. John Doe"
                       value={realName}
@@ -399,28 +446,19 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
                       maxLength={24}
                     />
                   </div>
-                </div>
 
-                {error && <div className={styles.errorText}>{error}</div>}
+                  {error && (
+                    <p className={`sc-copy sc-ink--red ${styles.fieldError}`} role="alert">
+                      {error}
+                    </p>
+                  )}
 
-                <div className={styles.infoBox}>
-                  <p>You Can Change These Later In Your Profile Settings.</p>
-                </div>
-              </form>
+                  <p className={`sc-copy sc-copy--center sc-ink--muted ${styles.note}`}>
+                    You Can Change These Later In Your Profile Settings.
+                  </p>
+                </form>
+              </SpadeConsole>
             </div>
-
-            <footer className={styles.footer}>
-              <button
-                type="submit"
-                form="complete-profile-form"
-                className={`${styles.submitButton} ${isSuccess ? styles.submitSuccess : ''}`}
-                disabled={
-                  isSaving || isSuccess || !alias.trim() || !hasAvatar || aliasAvailable === false
-                }
-              >
-                {isSuccess ? '✓ Welcome!' : isSaving ? 'Saving...' : 'Enter Arena'}
-              </button>
-            </footer>
           </div>
         </div>
       )}

@@ -2,7 +2,7 @@
   --control-size: 2rem;
   --control-signal: #72eeff;
   --control-signal-soft: rgba(80, 223, 241, 0.2);
-  --control-cut: #ff9a84;
+  --control-cut: #f02849;
 
   position: relative;
   isolation: isolate;
@@ -93,14 +93,14 @@
 }
 
 .root[data-state='attention'] {
-  --control-signal: #f1c76a;
-  --control-signal-soft: rgba(229, 181, 69, 0.28);
+  --control-signal: #ffd700;
+  --control-signal-soft: rgb(255 215 0 / 28%);
 }
 
 .root[data-state='error'] {
-  --control-signal: #ff8e7b;
-  --control-signal-soft: rgba(241, 94, 73, 0.28);
-  --control-cut: #ffb09e;
+  --control-signal: #ff5b6e;
+  --control-signal-soft: rgb(240 40 73 / 28%);
+  --control-cut: #f02849;
 }
 
 .root[data-state='disabled'] {
@@ -201,7 +201,7 @@
 .cutLine {
   stroke: var(--control-cut);
   stroke-width: 2;
-  filter: drop-shadow(0 0 2px rgba(255, 117, 91, 0.5));
+  filter: drop-shadow(0 0 2px rgb(240 40 73 / 50%));
 }
 
 .railLine {
@@ -218,7 +218,10 @@
 
 .rotor,
 .crystal,
-.streakReactor {
+.streakReactor,
+.cycleDial,
+.cycleWheel,
+.cycleSeal {
   transform-box: fill-box;
   transform-origin: center;
 }
@@ -293,6 +296,18 @@
 .root[data-state='active'][data-variant='play'] .signalFill,
 .root[data-state='active'][data-variant='continue'] .signalLine {
   animation: instrumentReady 1.55s ease-in-out infinite;
+}
+
+.root[data-state='active'][data-variant='cycle-daily'] .cycleDial {
+  animation: instrumentCycleTick 4.8s steps(12, end) infinite;
+}
+
+.root[data-state='active'][data-variant='cycle-weekly'] .cycleWheel {
+  animation: instrumentCycleWheel 7s linear infinite;
+}
+
+.root[data-state='active'][data-variant='cycle-monthly'] .cycleSeal {
+  animation: instrumentCycleSeal 2.4s ease-in-out infinite;
 }
 
 @keyframes instrumentRotor {
@@ -412,6 +427,31 @@
   50% {
     opacity: 1;
     transform: translateX(1.1px);
+  }
+}
+
+@keyframes instrumentCycleTick {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes instrumentCycleWheel {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes instrumentCycleSeal {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 1px var(--control-signal));
+    transform: scale(0.96);
+  }
+
+  50% {
+    filter: drop-shadow(0 0 4px var(--control-signal));
+    transform: scale(1.04);
   }
 }
 

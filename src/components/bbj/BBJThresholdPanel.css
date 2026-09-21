@@ -9,81 +9,201 @@
  * (TickerManagementPanel.module.css, BBJAdminAnalytics.css) already do it this
  * way. BBJTicker.css used to be cited here too and was deleted with its
  * component on 2026-09-12 - a precedent has to be a file somebody can open.
+ *
+ * ── ON THE CONSOLE (#ClubArenaConsole, 2026-09-14) ────────────────────────
+ * The panel used to be a `settings-section` - a bevelled realism card with a
+ * 14px radius - holding rounded rows at 8px, a gold amount, a green state
+ * chip and three `btn btn-*` pills. Every one of those is gone. The frame,
+ * the header well, the pill slot and the two action plates are PAINTED in
+ * Dan's approved master; this sheet only sizes what is printed on the black
+ * glass between its rails.
+ *
+ * A ROW IS A LINE, NOT A CARD. Amount in engraved silver on the left, the
+ * operator's note muted beside it, the state and the two actions as lit words
+ * on the right, and an ENGRAVED RULE between rows - never a drawn divider,
+ * never a border around a row. Sizes are cqw against the console, so a 375px
+ * phone and a 1000px desktop get the same picture. No radius, no gradient,
+ * no :hover.
  */
-/* ── THE JACKPOT ANNOUNCEMENTS (BBJ phase 3.4, 2026-09-07) ─────────────────
-   A list of amounts and a small form under them. Mobile-first (375px): the
-   row wraps rather than truncating the amount, because the amount is the one
-   thing on the row that must never be half-read. */
+
+.bbj-threshold-panel {
+  --bbjt-rule: 1px solid #000;
+  --bbjt-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
+  margin-bottom: 1rem;
+}
+
 .bbj-threshold-panel__intro {
-  color: rgba(214, 224, 240, 0.72);
-  font-size: 0.85rem;
-  line-height: 1.5;
-  margin: 0 0 12px;
+  margin: 0;
+  color: #d7dee7;
+  font:
+    500 3.4cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+.bbj-threshold-panel__intro strong {
+  color: #e4e7ec;
+  font-weight: 800;
 }
 
 .bbj-threshold-panel__empty {
-  color: rgba(214, 224, 240, 0.55);
-  font-size: 0.85rem;
-  margin: 0 0 12px;
+  margin: 0;
+  padding-top: 2.4cqw;
+  border-top: var(--bbjt-rule);
+  box-shadow: var(--bbjt-rule-lit);
+  color: #9aa5b3;
+  font:
+    600 3.2cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
 }
 
 .bbj-threshold-panel__list {
   list-style: none;
-  margin: 0 0 14px;
+  margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
+/* Mobile-first (375px): the row wraps rather than truncating the amount,
+   because the amount is the one thing on the row that must never be
+   half-read. */
 .bbj-threshold-panel__row {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
+  align-items: baseline;
+  gap: 1.4cqw 2.4cqw;
+  padding: 2.4cqw 0;
+  border-top: var(--bbjt-rule);
+  box-shadow: var(--bbjt-rule-lit);
 }
 
 .bbj-threshold-panel__amount {
+  font-size: 4.2cqw;
   font-weight: 800;
-  color: rgba(255, 215, 0, 0.85);
+  letter-spacing: 0.02em;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .bbj-threshold-panel__label {
-  color: rgba(214, 224, 240, 0.6);
-  font-size: 0.82rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 3cqw;
+  font-weight: 600;
 }
 
 .bbj-threshold-panel__state {
   margin-left: auto;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: 2.6cqw;
+  font-weight: 800;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(120, 220, 150, 0.9);
+  white-space: nowrap;
 }
 
+/* An announcement that is switched off says so in the muted ink; the modifier
+   is kept because the markup and the tests have always carried it. */
 .bbj-threshold-panel__state--off {
-  color: rgba(214, 224, 240, 0.4);
+  font-weight: 700;
 }
 
+/* When the row is too narrow for everything, the actions take the next line
+   and stay against the right rail rather than drifting under the amount. */
 .bbj-threshold-panel__actions {
   display: flex;
-  gap: 6px;
+  flex: 0 0 auto;
+  gap: 4cqw;
+  margin-left: auto;
 }
+
+/* An action on a row is a LIT WORD on the glass, never a pill: the console
+   paints buttons only in its foot, and a row that drew its own would be a
+   control the master does not contain. */
+.bbj-threshold-panel__word {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 2.8cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.bbj-threshold-panel__word:active {
+  filter: brightness(1.25);
+}
+
+.bbj-threshold-panel__word:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.bbj-threshold-panel__word:focus-visible,
+.bbj-threshold-panel__input:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
+}
+
+/* ── The two things the art does not paint ─────────────────────────────── */
 
 .bbj-threshold-panel__add {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 10px;
+  gap: 3cqw;
+  padding-top: 2.4cqw;
+  border-top: var(--bbjt-rule);
+  box-shadow: var(--bbjt-rule-lit);
 }
 
-.bbj-threshold-panel__add .form-group {
-  flex: 1 1 140px;
+.bbj-threshold-panel__field {
+  display: flex;
+  flex: 1 1 34cqw;
+  flex-direction: column;
+  gap: 1.2cqw;
+  min-width: 0;
+}
+
+.bbj-threshold-panel__field-label {
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* A line on the glass, engraved top and bottom - not a well and not a card.
+   16px floor on the font: anything smaller makes iOS zoom the page on focus. */
+.bbj-threshold-panel__input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   margin: 0;
+  padding: 2.4cqw 1cqw;
+  border: 0;
+  border-top: var(--bbjt-rule);
+  border-bottom: var(--bbjt-rule);
+  border-radius: 0;
+  background: transparent;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%);
+  color: #e4e7ec;
+  font:
+    500 max(16px, 3.6cqw) / 1.45 Inter,
+    system-ui,
+    sans-serif;
+  caret-color: #5bb8ff;
+  outline: none;
+}
+
+.bbj-threshold-panel__input::placeholder {
+  color: #6b7784;
 }

@@ -1,191 +1,191 @@
-/* CLUB BOMB POT REPORT — mobile-first (375px), staff-facing. 2026-08-29.
-   Same shape as ClubInsuranceReportPage.module.css: the two staff reports sit
-   side by side in the dashboard and must not look like different products. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLUB BOMB POT REPORT - on the spade console (#ClubArenaConsole)
+
+   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
+   spade master (components/console/SpadeConsole.css); this file lays the
+   report on the black glass between the rails: the window as lit words, the
+   six totals as rows (label in lit blue, value in silver), and every table's
+   record as a row between engraved rules with its figures beneath - never an
+   HTML table. The two painted plates carry Back and Export CSV. Nothing is
+   drawn. Sizes are cqw against the console. No :hover.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .page {
+  --bpr-rule: 1px solid #000;
+  --bpr-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
   min-height: 100vh;
-  padding: 14px 12px 40px;
-  background: var(--bg-primary, #0d1117);
-  color: var(--text-primary, #e4e6eb);
-}
-
-.header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 14px;
-}
-
-.header h1 {
-  font-size: 1.05rem;
-  font-weight: 800;
-  margin: 0;
-  flex: 1 1 auto;
-}
-
-.backBtn {
-  padding: 8px 14px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  color: var(--text-primary, #e4e6eb);
-  cursor: pointer;
-}
-
-.windows {
-  display: flex;
-  gap: 6px;
-}
-
-.window,
-.windowActive {
-  padding: 7px 12px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-secondary, #8a8f98);
-  cursor: pointer;
-}
-
-.windowActive {
-  background: rgba(24, 119, 242, 0.2);
-  border-color: #1877f2;
-  color: #1877f2;
-}
-
-.cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  padding: 10px 12px;
-}
-
-.cardValue {
-  font-size: 1.1rem;
-  font-weight: 700;
-}
-
-.cardLabel {
-  font-size: 0.7rem;
-  color: var(--text-secondary, #8a8f98);
-  margin-top: 2px;
-}
-
-.tableSection {
-  margin-top: 6px;
-}
-
-.tableHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.tableHeader h2 {
-  font-size: 0.95rem;
-  margin: 0;
-}
-
-.exportBtn {
-  padding: 7px 12px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  background: rgba(24, 119, 242, 0.15);
-  border: 1px solid rgba(24, 119, 242, 0.5);
-  border-radius: 8px;
-  color: #1877f2;
-  cursor: pointer;
-}
-
-.tableScroll {
-  overflow-x: auto;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-}
-
-.table {
+  min-height: 100dvh;
   width: 100%;
-  border-collapse: collapse;
-  font-size: 0.75rem;
-  min-width: 560px;
+  max-width: 100vw;
+  padding: 12px 8px max(70px, env(safe-area-inset-bottom));
+  overflow-x: hidden;
+  overflow-x: clip;
+  background: #020305;
+  color: #e6e9ee;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  color-scheme: dark;
 }
 
-.table th,
-.table td {
-  padding: 8px 10px;
-  text-align: right;
-  white-space: nowrap;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+.console {
+  --sc-max: 640px;
+  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
 }
 
-.table th:first-child,
-.table td:first-child {
-  text-align: left;
-}
-
-.table th {
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary, #8a8f98);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.empty {
-  color: var(--text-secondary, #8a8f98);
-  font-size: 0.85rem;
-  padding: 18px 4px;
-}
-
-.deniedCard {
-  max-width: 420px;
-  margin: 60px auto;
-  text-align: center;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  padding: 24px 18px;
-}
-
-.deniedCard h1 {
-  font-size: 1rem;
-  margin: 0 0 8px;
-}
-
-.deniedCard p {
-  color: var(--text-secondary, #8a8f98);
-  font-size: 0.85rem;
-  margin: 0 0 16px;
-}
-
-/* 2026-08-29: the ledger telling on itself. Non-zero unrecorded hands mean the
-   scoop figures above are computed over a subset, and a report that hides that
-   is how a hole in a ledger stays invisible. Amber, not red — the money is
-   fine; it is the OUTCOME record that is incomplete. */
+.state,
 .notice {
-  margin: 0 0 16px;
-  padding: 10px 14px;
-  border-radius: 8px;
-  background: rgba(255, 176, 32, 0.12);
-  border: 1px solid rgba(255, 176, 32, 0.35);
-  color: #ffce7a;
-  font-size: 13px;
-  line-height: 1.45;
+  margin: 0;
+}
+
+/* ── The window and the back-outs: lit words ────────────────────────────── */
+
+.windows,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 2cqw;
+}
+
+.actions {
+  padding-top: 2.6cqw;
+  border-top: var(--bpr-rule);
+  box-shadow: var(--bpr-rule-lit);
+}
+
+.word {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 1.2cqw 1.6cqw;
+  border: 0;
+  background: transparent;
+  font:
+    800 3.4cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.word:active {
+  filter: brightness(1.25);
+}
+
+.word:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.4cqw;
+}
+
+/* ── Sections: rows on the glass ────────────────────────────────────────── */
+
+.section {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding-top: 2.4cqw;
+  border-top: var(--bpr-rule);
+  box-shadow: var(--bpr-rule-lit);
+}
+
+.sectionTitle {
+  margin: 0 0 1cqw;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 3cqw;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3cqw;
+  min-height: 9cqw;
+  padding: 1.8cqw 0;
+}
+
+.row + .row {
+  border-top: var(--bpr-rule);
+  box-shadow: var(--bpr-rule-lit);
+}
+
+.rowLabel {
+  font-size: 3cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.rowValue {
+  font-size: 4.2cqw;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Per table: records as rows, figures beneath ────────────────────────── */
+
+.records {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.record {
+  display: grid;
+  gap: 1.4cqw;
+  padding: 2.2cqw 0;
+  border-top: var(--bpr-rule);
+  box-shadow: var(--bpr-rule-lit);
+}
+
+.recordHead {
+  display: grid;
+  gap: 0.6cqw;
+}
+
+.recordName {
+  font-size: 4cqw;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  overflow-wrap: anywhere;
+}
+
+.recordMeta {
+  font-size: 2.9cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.figures {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.6cqw 2cqw;
+  margin: 0;
+}
+
+.figure {
+  display: grid;
+  gap: 0.4cqw;
+  min-width: 0;
+}
+
+.figureLabel {
+  font-size: 2.5cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.figureValue {
+  margin: 0;
+  font-size: 3.6cqw;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }

@@ -40,7 +40,13 @@ describe('HomePage issues independent queries together', () => {
 
   it('asks for active-player counts with the ids it already has', () => {
     const counts = indexOf(src, 'const activeCountsPromise = supabase', 'HomePage');
-    const clubRows = indexOf(src, 'const { data: clubRows } = await supabase', 'HomePage');
+    // The anchor binds the error since 2026-09-14 (discardedErrorReadRatchet:
+    // HomePage is at zero); the ordering this pins is unchanged.
+    const clubRows = indexOf(
+      src,
+      'const { data: clubRows, error: clubRowsError } = await supabase',
+      'HomePage'
+    );
     expect(counts, 'the counts RPC waits on the club rows again').toBeLessThan(clubRows);
     expect(
       /p_club_ids: clubRows\.map/.test(src),

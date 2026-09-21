@@ -1,230 +1,297 @@
-/**
- * AgentCashoutPanel Styles
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   PENDING CASHOUTS - on the spade console (#ClubArenaConsole)
 
-.agent-cashout-panel {
-  background: linear-gradient(180deg, #1a1a2e 0%, #12122a 100%);
-  border-radius: 18px;
-  overflow: hidden;
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 32px rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+   The chassis, its inks, its type and its head zones come from
+   SpadeConsole.css. This sheet only lays the queue out on the black glass
+   between the rails.
+
+   WHAT WAS DELETED. An 18px rounded navy panel with a blur and two shadows; a
+   header bar with its own rule; an orange gradient count pill (the queue
+   length prints into the master's PAINTED pill slot now); a rounded square
+   refresh button; a 44px round avatar disc with an amber ring and a glow; a
+   bordered card per request; a green gradient Approve lozenge; a red outlined
+   Reject lozenge; a rounded italic note box; and a dashed amber notice box.
+
+   EVERY CLASS IN THIS FILE IS PREFIXED `acp-`. It used to declare
+   `.panel-header`, `.count-badge`, `.player-name`, `.amount-value`,
+   `.empty-state` and a dozen more generic names, and a plain stylesheet is
+   GLOBAL the moment a component imports it - which is the exact shape
+   tests/global-css-does-not-leak-across-pages.law.test.ts exists to stop. It
+   also carried `.player-avatar` and `.action-btn`, two names that had already
+   had to be scoped by hand in 2026-09-05; neither name appears here any more.
+
+   EVERY ANIMATION STILL PLAYS (CLAUDE.md 10.6): the first-load skeleton keeps
+   `animationsShimmerFade` (1.4s, 0.1s stagger) and `animationsShimmerSlide`
+   (1.4s), both from src/styles/animations.css, moved onto flat engraved bars.
+   The shimmer gradient stays because it IS the animation; it draws no control.
+
+   No border-radius on a card, tile, pill, avatar or button. No :hover.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.acp {
+  width: 100%;
 }
 
-.panel-header {
+/* ── Rows on the glass ────────────────────────────────────────────────── */
+
+.acp-list {
   display: flex;
+  flex-direction: column;
+}
+
+.acp-item {
+  display: flex;
+  flex-direction: column;
+  padding: 2.4cqw 0 3cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.acp-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 3cqw;
   align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border, #2a2a4a);
+  padding: 0 0.5cqw;
 }
 
-.panel-header h3 {
-  margin: 0;
-  font-size: 1.1rem;
-  color: #fff;
-  flex: 1;
-}
-
-.count-badge {
-  background: linear-gradient(135deg, #ffa726, #ff7043);
-  color: #fff;
-  font-size: 0.75rem;
-  font-weight: 800;
-  padding: 4px 12px;
-  border-radius: 20px;
-  box-shadow: 0 0 12px rgba(255, 167, 38, 0.3);
-}
-
-.refresh-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  border: none;
-  background: var(--surface-elevated, #2a2a4a);
-  cursor: pointer;
-  font-size: 1rem;
-  transition: background 0.2s;
-}
-
-.loading-state,
-.empty-state {
-  padding: 40px 20px;
-  text-align: center;
-}
-
-.empty-icon {
-  font-size: 3rem;
+/* The face is the picture, not a disc drawn around it. */
+.acp-face {
   display: block;
-  margin-bottom: 12px;
+  width: 10cqw;
+  height: 10cqw;
+  overflow: hidden;
 }
 
-.empty-state p {
-  color: var(--text-secondary, #8a8a9a);
-  margin: 0;
-}
-
-.spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--border, #2a2a4a);
-  border-top-color: var(--primary, #667eea);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin: 0 auto;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.error-banner {
-  background: rgba(239, 83, 80, 0.1);
-  border-bottom: 1px solid #ef5350;
-  color: #ef5350;
-  padding: 12px 20px;
-  font-size: 0.875rem;
-}
-
-.cashout-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.cashout-card {
-  padding: 20px;
-  border-bottom: 1px solid var(--border, #2a2a4a);
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.cashout-card:last-child {
-  border-bottom: none;
-}
-
-.cashout-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.player-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-/* SCOPED 2026-09-05. This was a bare selector, and the same class name is
-   defined bare in several other stylesheets. Every stylesheet here is global
-   once imported, so whichever file loaded last won any property the owning
-   page did not itself declare - which is how a 32px admin icon button ended
-   up sizing the public dossier's player actions in production. Scoped to
-   this component's own container; its own appearance is unchanged. */
-.agent-cashout-panel .player-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
+.acp-face-img {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  background: var(--surface-elevated, #2a2a4a);
-  border: 2px solid rgba(255, 167, 38, 0.3);
-  box-shadow: 0 0 8px rgba(255, 167, 38, 0.1);
 }
 
-.player-details {
+.acp-who {
   display: flex;
   flex-direction: column;
+  gap: 0.4cqw;
+  min-width: 0;
 }
 
-.player-name {
-  font-weight: 600;
-  color: #fff;
+.acp-name {
+  overflow: hidden;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.request-time {
-  font-size: 0.75rem;
-  color: var(--text-secondary, #8a8a9a);
+.acp-time {
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font:
+    500 2.7cqw/1.3 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
-.cashout-amount {
+.acp-amount {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  gap: 0.3cqw;
 }
 
-.amount-value {
-  font-size: 1.5rem;
+.acp-amount-value {
+  font-size: 5cqw;
   font-weight: 800;
-  color: #ffa726;
-  text-shadow: 0 0 8px rgba(255, 167, 38, 0.2);
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
-.amount-label {
-  font-size: 0.75rem;
-  color: var(--text-secondary, #8a8a9a);
+.acp-amount-label {
+  font-size: 2.4cqw;
 }
 
-.player-note {
-  background: var(--surface, #1a1a2e);
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-size: 0.875rem;
-  color: var(--text-secondary, #8a8a9a);
-  font-style: italic;
-  margin-bottom: 12px;
+.acp-note {
+  margin: 2.4cqw 0 0;
+  padding: 2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font:
+    italic 500 3cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
-.cashout-actions {
+/* ── The two decisions: lit words, never two drawn lozenges ───────────── */
+
+.acp-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  margin-top: 2.4cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.acp-tools {
   display: flex;
-  gap: 12px;
+  justify-content: flex-end;
 }
 
-/* SCOPED 2026-09-05. This was a bare selector, and the same class name is
-   defined bare in several other stylesheets. Every stylesheet here is global
-   once imported, so whichever file loaded last won any property the owning
-   page did not itself declare - which is how a 32px admin icon button ended
-   up sizing the public dossier's player actions in production. Scoped to
-   this component's own container; its own appearance is unchanged. */
-.agent-cashout-panel .action-btn {
-  flex: 1;
-  padding: 12px 16px;
-  border-radius: 8px;
-  border: none;
-  font-size: 0.9rem;
-  font-weight: 600;
+.acp-word {
+  appearance: none;
+  /* An agent decides real money on a phone; 44px is the floor. */
+  min-height: 44px;
+  margin: 0;
+  padding: 2.2cqw 2cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  font-family: inherit;
+  font-size: 3cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  touch-action: manipulation;
 }
 
-.agent-cashout-panel .action-btn.approve {
-  background: linear-gradient(135deg, #00c853 0%, #2e7d32 100%);
-  color: #fff;
-  box-shadow: 0 4px 16px rgba(0, 200, 83, 0.25);
+.acp-word-white {
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
-.agent-cashout-panel .action-btn.reject {
-  background: transparent;
-  border: 1px solid #ef5350;
-  color: #ef5350;
+.acp-word-red {
+  color: #ff5b6e;
+  -webkit-text-fill-color: #ff5b6e;
+  text-shadow:
+    0 0 1cqw rgb(240 40 73 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
-.agent-cashout-panel .action-btn:disabled {
-  opacity: 0.5;
+.acp-word-blue {
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+}
+
+.acp-word:disabled {
+  color: #3a424d;
+  -webkit-text-fill-color: #3a424d;
   cursor: not-allowed;
 }
 
-.escrow-notice {
-  margin-top: 12px;
-  font-size: 0.75rem;
-  color: var(--text-secondary, #8a8a9a);
+.acp-word:active:not(:disabled) {
+  filter: brightness(1.25);
+  transform: none;
+}
+
+.acp-word:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -1cqw;
+}
+
+.acp-escrow {
+  padding: 2.4cqw 0.5cqw 0;
+  font-size: 2.8cqw;
   text-align: center;
-  padding: 8px 12px;
-  background: rgba(255, 167, 38, 0.05);
-  border-radius: 8px;
-  border: 1px dashed rgba(255, 167, 38, 0.15);
+}
+
+/* ── Empty, and failed ────────────────────────────────────────────────── */
+
+.acp-error {
+  padding: 2.4cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  font:
+    600 3.1cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+}
+
+.acp-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.6cqw;
+  padding: 6cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.acp-state-mark {
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 8cqw;
+  line-height: 1;
+  text-shadow:
+    0 0 1.4cqw rgb(49 168 255 / 60%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+}
+
+.acp-state-text {
+  margin: 0;
+}
+
+/* ── First load: the same two shimmers, on flat bars ──────────────────── */
+
+.acp-skeleton {
+  display: flex;
+  flex-direction: column;
+}
+
+.acp-skeleton-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3cqw;
+  align-items: center;
+  padding: 2.8cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  animation: animationsShimmerFade 1.4s ease-in-out infinite;
+}
+
+.acp-skeleton-face,
+.acp-skeleton-bar {
+  display: block;
+  background: linear-gradient(
+    90deg,
+    rgb(255 255 255 / 4%) 25%,
+    rgb(255 255 255 / 8%) 50%,
+    rgb(255 255 255 / 4%) 75%
+  );
+  background-size: 200px 100%;
+  animation: animationsShimmerSlide 1.4s ease-in-out infinite;
+}
+
+.acp-skeleton-face {
+  width: 10cqw;
+  height: 10cqw;
+}
+
+.acp-skeleton-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4cqw;
+  min-width: 0;
+}
+
+.acp-skeleton-bar {
+  height: 3cqw;
+}
+
+.acp-skeleton-bar-short {
+  width: 40%;
 }

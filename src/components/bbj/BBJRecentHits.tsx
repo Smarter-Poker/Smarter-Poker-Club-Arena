@@ -514,7 +514,7 @@ export function BBJRecentHits({
             </div>
             <div className="bbj-hits__right">
               <span className="bbj-hits__amt">
-                {examplePool > 0 ? `+ ${money(examplePool * ex.share)}` : 'Bad Beat Share'}
+                {examplePool > 0 ? `+ ${money(examplePool * ex.share, 0)}` : 'Bad Beat Share'}
               </span>
               <span className="bbj-hits__when">{ex.dateStr}</span>
             </div>
@@ -628,7 +628,9 @@ export function BBJRecentHits({
 
             <div className="bbj-hits__right">
               {gameType && <span className="bbj-hits__gametype">{gameType}</span>}
-              <span className="bbj-hits__amt">+ {money(amount)}</span>
+              {/* NEVER A DECIMAL POINT ON A FORWARD-FACING PAGE (#ClubArenaConsole):
+                  the row printed 6,240.00; the label already said 6,240. */}
+              <span className="bbj-hits__amt">+ {money(amount, 0)}</span>
               <span className="bbj-hits__when">{stamp(hit.awarded_at)}</span>
             </div>
           </div>

@@ -39,6 +39,7 @@ REQUIRED_FILES=(
   verify-recovery-stack.sh
   collect-monitoring-health.sh
   engine-release-database-proof.py
+  engine-release-inflight-hands.py
   engine-release-transaction.sh
   legacy-engine-checkpoint.sh
   legacy-engine-checkpoint.mjs
@@ -317,7 +318,8 @@ else
     install-engine-intake.sh retain-engine-images.sh install-engine-supervisor.sh; do
     bash -n "$GENERATION_STAGE/$script"
   done
-  for script in engine-release-seal.py engine-release-database-proof.py; do
+  for script in engine-release-seal.py engine-release-database-proof.py \
+    engine-release-inflight-hands.py; do
     python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
       "$GENERATION_STAGE/$script"
   done

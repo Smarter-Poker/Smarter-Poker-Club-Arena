@@ -24,6 +24,10 @@ import React, {
 } from 'react';
 import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
+/* #ClubArenaConsole: this page's cards, sheets and states print into Dan's
+   approved master rather than drawing a frame in CSS. See
+   .claude/skills/club-arena-console/SKILL.md. */
+import { SpadeConsole } from '../components/console/SpadeConsole';
 import lobbyButtonArt from '../assets/lobby-button.webp';
 import { serverNow } from '../utils/serverClock';
 import { isSitOutUrgent } from '../lib/sitOutDeadline';
@@ -3547,19 +3551,35 @@ export default function MultiTablePage() {
    * lives on the server, and this component crashing does not vacate it.
    */
   const tableCrashFallback = (name: string) => (
+    /* ON THE MASTER (#ClubArenaConsole, 2026-09-14). A crashed tile is the
+       worst moment this page has, and it was a 12px-radius card with its own
+       amber rim. It is the console's flat head now - the table that threw has
+       no crest to wear - and the reassurance that matters ("your seat and your
+       chips are safe") is stated in the painted pill as well as in the copy.
+       One action, so the flat cap and a lit word rather than two plates.
+       `formatGameTitle` still names the table, in the eyebrow zone. */
     <div className="multi-table-page__crashed" role="alert">
-      <span className="multi-table-page__crashed-title">This Table Could Not Be Displayed</span>
-      <span className="multi-table-page__crashed-body">
-        Your Seat And Your Chips Are Safe On The Server. Your Other Tables Are Still Running.
-      </span>
-      <span className="multi-table-page__crashed-name">{formatGameTitle(name)}</span>
-      <button
-        type="button"
-        className="multi-table-page__crashed-btn"
-        onClick={() => window.location.reload()}
+      <SpadeConsole
+        as="div"
+        eyebrow={formatGameTitle(name)}
+        title="Table Not Displayed"
+        titleId="multi-table-crashed-title"
+        crest="flat"
+        pill="Seat Safe"
+        pillInk="green"
+        foot="foot"
       >
-        Reload
-      </button>
+        <p className="sc-copy sc-copy--center multi-table-page__crashed-body">
+          Your Seat And Your Chips Are Safe On The Server. Your Other Tables Are Still Running.
+        </p>
+        <button
+          type="button"
+          className="multi-table-page__way-out sc-ink--blue"
+          onClick={() => window.location.reload()}
+        >
+          Reload
+        </button>
+      </SpadeConsole>
     </div>
   );
 
@@ -4208,9 +4228,38 @@ export default function MultiTablePage() {
     // Hidden with nothing mounted: render nothing at all.
     if (hidden) return null;
     return (
+      /* ON THE MASTER (#ClubArenaConsole, 2026-09-14). This was a bare <p> and
+         an unstyled <button> - the most generic surface in the file, and the
+         one a player meets when they have closed their last table. It is the
+         console's flat head (no crest: nothing here belongs to a game) with
+         the flat closing cap, and the one way out is a lit word on the glass,
+         because the plated foot paints TWO buttons and a surface with one
+         action would leave the other painted and empty. */
       <div className="multi-table-page multi-table-page--empty">
-        <p>No Tables Open</p>
-        <button onClick={goToLobby}>Go To Lobby</button>
+        <SpadeConsole
+          as="div"
+          eyebrow="Your Tables"
+          title="No Tables Open"
+          titleId="multi-table-empty-title"
+          crest="flat"
+          /* The pill slot is PAINTED into the header well, so it is never left
+             empty - an empty chrome capsule reads as a control that failed to
+             load rather than as spare. */
+          pill="None Open"
+          pillInk="muted"
+          foot="foot"
+        >
+          <p className="sc-copy sc-copy--center multi-table-page__empty-body">
+            Nothing Is Running In This Window. Open The Lobby To Pick A Game.
+          </p>
+          <button
+            type="button"
+            className="multi-table-page__way-out sc-ink--blue"
+            onClick={goToLobby}
+          >
+            Go To Lobby
+          </button>
+        </SpadeConsole>
       </div>
     );
   }
@@ -4477,48 +4526,66 @@ export default function MultiTablePage() {
               className="multi-table-page__quickjoin-backdrop"
               onClick={() => setShowSessionAgg(false)}
             />
+            {/* ON THE MASTER (#ClubArenaConsole, 2026-09-14). A ledger IS a
+                card, so this one is framed: the diamond head (it is a money
+                surface, not a game one), the session's net in the painted pill,
+                and one row per table on the black glass with an engraved rule
+                between them. No actions, so the flat closing cap. The figures,
+                their signs and the up/down classes are unchanged - only the ink
+                moved onto the schema's own green and red. */}
             <div className="multi-table-page__session-agg" role="dialog" aria-label="Session">
-              <div className="multi-table-page__quickjoin-title">Session - All Tables</div>
-              {sessionAgg.rows.map((r) => (
-                <div key={r.id} className="multi-table-page__session-row">
-                  <span className="multi-table-page__session-name">{r.name}</span>
-                  <span className="multi-table-page__session-hands">
-                    {r.tracked ? `${r.hands} Hands` : 'Observing'}
+              <SpadeConsole
+                as="div"
+                eyebrow="All Tables"
+                title="Session"
+                crest="diamond"
+                pill={`${sessionAgg.net > 0 ? '+' : ''}${sessionAgg.net.toLocaleString('en-US')}`}
+                pillInk={sessionAgg.net > 0 ? 'green' : sessionAgg.net < 0 ? 'red' : 'muted'}
+                foot="foot"
+              >
+                {sessionAgg.rows.map((r) => (
+                  <div key={r.id} className="multi-table-page__session-row">
+                    <span className="multi-table-page__session-name sc-label sc-ink--blue">
+                      {r.name}
+                    </span>
+                    <span className="multi-table-page__session-hands sc-label sc-ink--muted">
+                      {r.tracked ? `${r.hands} Hands` : 'Observing'}
+                    </span>
+                    <span
+                      className={`multi-table-page__session-net sc-label${
+                        r.net > 0
+                          ? ' multi-table-page__session-net--up sc-ink--green'
+                          : r.net < 0
+                            ? ' multi-table-page__session-net--down sc-ink--red'
+                            : ' sc-ink--muted'
+                      }`}
+                    >
+                      {r.tracked ? `${r.net > 0 ? '+' : ''}${r.net.toLocaleString('en-US')}` : ''}
+                    </span>
+                  </div>
+                ))}
+                <div className="multi-table-page__session-row multi-table-page__session-row--total">
+                  <span className="multi-table-page__session-name sc-label sc-ink--silver">
+                    {sessionAgg.rows.length} {sessionAgg.rows.length === 1 ? 'Table' : 'Tables'}
+                  </span>
+                  <span className="multi-table-page__session-hands sc-label sc-ink--muted">
+                    {sessionAgg.hands} Hands
+                    {sessionAgg.handsPerHour > 0 ? ` - ${sessionAgg.handsPerHour}/Hr` : ''}
                   </span>
                   <span
-                    className={`multi-table-page__session-net${
-                      r.net > 0
-                        ? ' multi-table-page__session-net--up'
-                        : r.net < 0
-                          ? ' multi-table-page__session-net--down'
-                          : ''
+                    className={`multi-table-page__session-net sc-label${
+                      sessionAgg.net > 0
+                        ? ' multi-table-page__session-net--up sc-ink--green'
+                        : sessionAgg.net < 0
+                          ? ' multi-table-page__session-net--down sc-ink--red'
+                          : ' sc-ink--muted'
                     }`}
                   >
-                    {r.tracked ? `${r.net > 0 ? '+' : ''}${r.net.toLocaleString('en-US')}` : ''}
+                    {sessionAgg.net > 0 ? '+' : ''}
+                    {sessionAgg.net.toLocaleString('en-US')}
                   </span>
                 </div>
-              ))}
-              <div className="multi-table-page__session-row multi-table-page__session-row--total">
-                <span className="multi-table-page__session-name">
-                  {sessionAgg.rows.length} {sessionAgg.rows.length === 1 ? 'Table' : 'Tables'}
-                </span>
-                <span className="multi-table-page__session-hands">
-                  {sessionAgg.hands} Hands
-                  {sessionAgg.handsPerHour > 0 ? ` - ${sessionAgg.handsPerHour}/Hr` : ''}
-                </span>
-                <span
-                  className={`multi-table-page__session-net${
-                    sessionAgg.net > 0
-                      ? ' multi-table-page__session-net--up'
-                      : sessionAgg.net < 0
-                        ? ' multi-table-page__session-net--down'
-                        : ''
-                  }`}
-                >
-                  {sessionAgg.net > 0 ? '+' : ''}
-                  {sessionAgg.net.toLocaleString('en-US')}
-                </span>
-              </div>
+              </SpadeConsole>
             </div>
           </>
         )}
@@ -4527,50 +4594,95 @@ export default function MultiTablePage() {
         {quickJoin.open && (
           <>
             <div className="multi-table-page__quickjoin-backdrop" onClick={closeQuickJoin} />
+            {/* ON THE MASTER (#ClubArenaConsole, 2026-09-14). A sheet of games
+                is a card, so it is framed: the club head, rows on the black
+                glass with an engraved rule between them, and the one way on
+                ("Browse Full Lobby") as a lit word rather than a dashed box.
+                The rows keep their own hit target - they are what a player
+                taps - but the drawn rim, the white-wash ground and the blue
+                gradient CTA are gone.
+
+                AND THE NAME ELLIPSISES AGAIN. `__quickjoin-name` set
+                `text-overflow: ellipsis` on a `display: flex` box, where it
+                does nothing: the longest table name was hard-clipped mid-word
+                and the reason tag beside it was cut in half (measured in the
+                393px render, 2026-09-14). The text is its own span now, which
+                is the box the ellipsis can apply to, and the tag keeps its
+                width as its comment always said it should. */}
             <div className="multi-table-page__quickjoin" role="dialog" aria-label="Quick Join">
-              <div className="multi-table-page__quickjoin-title">Quick Join</div>
-              {quickJoin.loading ? (
-                <div className="multi-table-page__quickjoin-empty">Finding Games…</div>
-              ) : quickJoin.rows.length === 0 ? (
-                <div className="multi-table-page__quickjoin-empty">No Open Seats Right Now</div>
-              ) : (
-                quickJoin.rows.map((row) => (
-                  <button
-                    key={row.id}
-                    type="button"
-                    className="multi-table-page__quickjoin-row"
-                    onClick={() => handleQuickJoinPick(row)}
-                  >
-                    <span className="multi-table-page__quickjoin-name">
-                      {row.name}
-                      {row.reason && (
-                        <span
-                          className={`multi-table-page__quickjoin-tag${
-                            row.tier === 'favorite' ? ' multi-table-page__quickjoin-tag--fav' : ''
-                          }`}
-                        >
-                          {row.reason}
-                        </span>
-                      )}
-                    </span>
-                    <span className="multi-table-page__quickjoin-meta">
-                      {row.code && <span>{row.code}</span>}
-                      {row.stakes && <span>{row.stakes}</span>}
-                      <span>
-                        {row.players}/{row.max}
-                      </span>
-                    </span>
-                    <span className="multi-table-page__quickjoin-cta">Join</span>
-                  </button>
-                ))
-              )}
-              <button
-                type="button"
-                className="multi-table-page__quickjoin-lobby"
-                onClick={handleQuickJoinLobby}
+              {/* THE PILL SLOT IS PAINTED, SO IT IS NEVER LEFT EMPTY. The
+                  master's header well carries a chrome capsule whether or not
+                  anything is printed into it, and an empty one reads as a
+                  control that failed to load - the same defect "two actions or
+                  none" describes on the foot. It says how many seats the sheet
+                  actually found, which is the one figure a player wants before
+                  they read a single row. */}
+              <SpadeConsole
+                as="div"
+                eyebrow="Open Seats"
+                title="Quick Join"
+                crest="club"
+                pill={
+                  quickJoin.loading
+                    ? 'Looking'
+                    : quickJoin.rows.length === 0
+                      ? 'None'
+                      : `${quickJoin.rows.length} Open`
+                }
+                pillInk={!quickJoin.loading && quickJoin.rows.length === 0 ? 'muted' : 'blue'}
+                foot="foot"
               >
-                Browse Full Lobby
-              </button>
+                {quickJoin.loading ? (
+                  <div className="multi-table-page__quickjoin-empty sc-copy sc-copy--center">
+                    Finding Games…
+                  </div>
+                ) : quickJoin.rows.length === 0 ? (
+                  <div className="multi-table-page__quickjoin-empty sc-copy sc-copy--center">
+                    No Open Seats Right Now
+                  </div>
+                ) : (
+                  quickJoin.rows.map((row) => (
+                    <button
+                      key={row.id}
+                      type="button"
+                      className="multi-table-page__quickjoin-row"
+                      onClick={() => handleQuickJoinPick(row)}
+                    >
+                      <span className="multi-table-page__quickjoin-name">
+                        <span className="multi-table-page__quickjoin-label sc-ink--silver">
+                          {row.name}
+                        </span>
+                        {row.reason && (
+                          <span
+                            className={`multi-table-page__quickjoin-tag${
+                              row.tier === 'favorite'
+                                ? ' multi-table-page__quickjoin-tag--fav sc-ink--gold'
+                                : ' sc-ink--blue'
+                            }`}
+                          >
+                            {row.reason}
+                          </span>
+                        )}
+                      </span>
+                      <span className="multi-table-page__quickjoin-meta sc-ink--muted">
+                        {row.code && <span>{row.code}</span>}
+                        {row.stakes && <span>{row.stakes}</span>}
+                        <span>
+                          {row.players}/{row.max}
+                        </span>
+                      </span>
+                      <span className="multi-table-page__quickjoin-cta sc-ink--blue">Join</span>
+                    </button>
+                  ))
+                )}
+                <button
+                  type="button"
+                  className="multi-table-page__way-out sc-ink--blue"
+                  onClick={handleQuickJoinLobby}
+                >
+                  Browse Full Lobby
+                </button>
+              </SpadeConsole>
             </div>
           </>
         )}

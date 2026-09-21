@@ -44,6 +44,7 @@ imports) - all pass, including the pre-existing `assignPreferredStakes` pins. No
 ## Findings
 
 ### 1. NOT FIXED - two written rules on occupancy: named, sourced, and put as options (CLAUDE.md 10.8 / 10.9)
+
 Side A: `HorseBehavior.ts` L60-70, Dan verbatim 2026-09-02: "HORSES NEED TO BE OCCUPYING AT LEAST 75% OF ALL
 SEATS IN THE CASH GAMES, AND THEY SHOULD BE PLAYING 4 TABLES AT ONCE" (`CASH_FULL_FRACTION = 0.75`,
 HorseOccupancy.test.ts).
@@ -70,6 +71,7 @@ daytime curve and keep only the 03:00-08:00 night cap. Recommendation: (a) now, 
 is where the seats are; (b) only if Dan wants 75% at 09:00 as well.
 
 ### 2. P1 FIXED - the tag book was drawn from the PLATFORM ladder, so 51 Midway bodies could never sit
+
 `StableHand.ts` `assignPreferredStakes` (old L1606-1653) drew anchor + neighbour from `STAKE_LADDER`
 (11 rungs) and `assignVariants` from `VARIANT_COVERAGE` with no knowledge of what the HOST deals.
 Measured (above): Midway deals no 0.01/0.02, no 0.02/0.05, nothing above 2/5 in any variant, and 1/2 only
@@ -92,6 +94,7 @@ TO LAND IT: `cd server && npm run horses:tag -- --club=all --dry-run` then `--fo
 compares row counts, so a re-tag needs --force; the tags then carry `tagged_at` = now, finding 10).
 
 ### 3. P1 NOT FIXED (config, not code) - DSS's ladder makes 4 tables per body impossible for 66% of its horses
+
 One seat per game is the rule (HorseBuyerAllocation L112, DB ALREADY_IN_GAME); a tag is 1-3 variants x
 1-2 rungs; DSS runs ONE game per (variant, rung) (`cash_games` DSS: 42 games, template 'classic' only)
 while Midway runs three templates (classic/action/madness) on its popular rungs. Measured: 156 of 292 DSS
@@ -103,6 +106,7 @@ the one adjacent rung" (Section 8.7, and his 08-29 "a horse plays one stake leve
 the numbers; not touched.
 
 ### 4. P1 FIXED (StableHand side; HorseSitVerdict edit described) - the mutex refused `brm` on an UNREAD roll
+
 `HorseSitVerdict.ts` L215 `const balance = ctx.bankrolls.get(...) ?? 0` feeds `evaluateSit({ available:
 balance })`; `StableHand.evaluateSit` L1294 `isLicensed(0, bb)` is false for every stake, so when the
 bankroll read fails (`bankrollsLoaded` false, map empty) every tagged horse with a state row is refused
@@ -113,6 +117,7 @@ exist. Change: `SitRequest.available` / `sessionStartBalance` are `number | null
 money checks only (identity checks unchanged); `commitAllows` falls back to `available` when the session
 start is null. Pinned: 'an unread roll is not a zero at the mutex' (2 cases).
 EDIT NEEDED IN `HorseSitVerdict.ts` L215-229 (lane A's file):
+
 ```
 const roll = ctx.bankrolls.get(`${seatClub}:${horseId}`);
 const balance = ctx.bankrollsLoaded && roll !== undefined ? roll : null;
@@ -125,11 +130,13 @@ sessionStartBalance:
       ? balance                                   // a NEW session: never last week's start
       : (sitState.sessionStartBalance ?? balance),
 ```
+
 The second half fixes a P3 in the same lines: `sessionStartBalance` is written when a session starts
 (HorseFleetManager L3219) and never cleared, so the first sit of a NEW session is judged against the
 previous session's start balance (636 rows carry one).
 
 ### 5. P1 FIXED - the planner asked for a band the host has no enabled game in; the seeder refused it forever
+
 `StableHandController.ts` old L365-375 / L401-411: `neediestStakeBand(bandSeats)` over the platform's
 four bands; `high` holds 0 seats on Midway because the operator closed every game above 2/5 on 09-04, so
 its deficit (0.11) wins every under-curve cycle, `stakeForBand('high')` = 25/50, and
@@ -146,6 +153,7 @@ EDIT NEEDED IN `HorseFleetManager.ts` L3991 (lane A's file): `const stake = orde
 stakeForBand(order.band);` (the PlanBus pins on `p_sb: stake.sb` / `p_bb: stake.bb` are unchanged).
 
 ### 6. P1 FIXED (own file) / EDIT DESCRIBED (fleet) - the stranded-tag fallthrough is platform-wide
+
 Same root as finding 2 from the seeder's side: `HorseFleetManager.ts` L1686-1692 builds `stakesWithAGame`
 over every open cash table on BOTH hosts, and L2712 tests a Midway horse's tag against it. Finding 2 stops
 the tagger producing such tags; the seeder should still judge per host so a game switched off on one host
@@ -156,6 +164,7 @@ Number(s).toFixed(2)))`. Update the three literal pins in
 `theFeederFillsFromTheCountItOpenedOn.test.ts` L226-236 in the same edit.
 
 ### 7. P2 FIXED - `lastBeatAt` coerced a failed read into `never_beat` (10.86)
+
 `StableHandBeats.ts` old L184 `if (error || !data) return null`. `beatVerdict(null)` = `never_beat`, and
 HorseFleetManager L3639-3660 raises a financial alert "has never written a heartbeat - the controller
 looks installed but is not running" on it; the dashboard printed the same verdict with HTTP 200. A
@@ -164,6 +173,7 @@ a read error throws (the fleet's existing try/catch reports it and raises nothin
 500 `stable_hand_dashboard_failed`); an honest empty table is still null. Pinned by source + both readers.
 
 ### 8. P2 FIXED - yield victims were picked blind: `sittingOut` false and `minutesAtTable` 0 for every horse
+
 `StableHandSnapshot.ts` old L297-303 hard-coded both, so `pickYieldVictims` (Section 5.5: sitting out
 first, then shortest time at the table) fell through to smallest stack on every table: a sitting-out horse
 kept its chair while the shortest stack was stood for a waiting human. Change: the seat read selects
@@ -171,6 +181,7 @@ kept its chair while the shortest stack was stood for a waiting human. Change: t
 rotator's ledger read; documented). Source-pinned.
 
 ### 9. P2 NOT FIXED - `mayRebuyInSeat` / `inTwoHourWindow` / `TWO_HOUR_WINDOW_MS` have no live reader (lane A 11)
+
 `StableHand.ts` L988-1005, `StableHandTags.ts` L395-404; `two_hour_window` is written every cycle
 (HorseFleetManager L3601-3607, now keyed per game after lane A). The OPORD (Section 9, "2-hour same-key
 window" in the recon's build list) makes it a SIT rule ("stops a horse buying straight back into a game it
@@ -180,6 +191,7 @@ game-level key a wind-down or session end would bar that horse from that game fo
 whoever owns the OPORD; the column write is cheap and correct meanwhile.
 
 ### 10. P3 FIXED - `tagged_at` never moved on a re-tag; the tagger's weekday was server-local
+
 `horsesTag.ts`: the upsert row now carries `tagged_at: now` (the column default fires on INSERT only, so the
 09-05 re-tag left all 1,580 rows at 09-04 08:42 - the freshness question in the brief was unanswerable).
 `daily_cap_minutes` used `new Date().getDay()` (UTC on the engine) - now `chicagoNow().weekday`.
@@ -191,6 +203,7 @@ st.dailyCapMinutes`. Also noted: `personaOf` is per BODY from per-WALLET tags (l
 for Midway bodies) - deterministic, harmless, noted.
 
 ### 11. P2 NOT FIXED (dead path, documented) - the night park is a no-op; nothing consolidates the night
+
 `StableHandController.ts` L497-518 never parks a cluster table; `StableHandExecutor.setTableFlag` L397
 refuses one. Every open cash table on both hosts is a cluster table (53/53, 76/76 measured), so
 `plan.park` is always empty and `park_pending` 0 in every beat since Gate 7. Dan's "fewer tables, more
@@ -199,6 +212,7 @@ in the rest -> newest table breaks), which is per game, not per host. `unparkTab
 per cycle for 0 rows. Left as is; the ClusterController owns table lifetime by design (R9).
 
 ### 12. P3 NOTED - `plan.stand` `shape_adjust` orders are never executed
+
 `StableHandExecutor` executes `human_yield` and `occupancy_wind_down` only (`ripeYields` / `ripeWindDowns`
 filter by reason); `planFloor` step 2/3 emits `shape_adjust` stands (FULL -> ONE_OPEN / JOINABLE). Reported
 only, by design (executor header). Consistent with the shape being off (`shape_error 55`), not a bug;
@@ -271,6 +285,7 @@ recorded so nobody reads the beat's stand counts as executed.
   reads are identification (who may be stood for a yield, who is not a waiting human) per 10.5.
 
 ## Tests to run (server/)
+
 `npx vitest run src/services/StableHand.test.ts src/services/StableHandController.test.ts
 src/services/StableHandBeats.test.ts src/services/StableHandExecutor.test.ts src/services/StableHandPlanBus.test.ts
 src/services/StableHandSeatingWiring.test.ts src/services/StableHandTags.test.ts src/services/StableHandState.test.ts

@@ -13,6 +13,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { haptic } from '../../services/SoundService';
 import './LeaderboardPanel.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { SpadeConsole } from '../console/SpadeConsole';
+import { compactChips } from '../../utils/format';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -48,14 +51,8 @@ export interface LeaderboardPanelProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Smart precision — whole dollars for clean amounts, decimals only when fractional
-function formatAmount(amount: number, currency: string = ''): string {
-  const abs = Math.abs(amount);
-  const sign = amount < 0 ? '-' : '';
-  if (Math.abs(abs - Math.round(abs)) < 0.005) {
-    return `${sign}${Math.round(abs).toLocaleString('en-US')}`;
-  }
-  return `${sign}${abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function formatAmount(amount: number): string {
+  return compactChips(amount);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -76,11 +73,10 @@ const PERIOD_LABELS: Record<LeaderboardPeriod, string> = {
 
 interface PlayerRowProps {
   player: LeaderboardPlayer;
-  currency: string;
   index?: number;
 }
 
-function PlayerRow({ player, currency, index = 0 }: PlayerRowProps) {
+function PlayerRow({ player, index = 0 }: PlayerRowProps) {
   const [mounted, setMounted] = useState(false);
   // LP-2 BUG FIX: track stagger timer so it cancels on unmount — prevents
   // stale setState when the panel closes mid-animation.
@@ -139,7 +135,7 @@ function PlayerRow({ player, currency, index = 0 }: PlayerRowProps) {
             {player.isCurrentUser && <span className="leaderboard-row__you">(You)</span>}
           </span>
           {player.handsPlayed !== undefined && (
-            <span className="leaderboard-row__hands">{player.handsPlayed} Hands</span>
+            <span className="leaderboard-row__hands">{compactChips(player.handsPlayed)} Hands</span>
           )}
         </div>
       </div>
@@ -149,7 +145,7 @@ function PlayerRow({ player, currency, index = 0 }: PlayerRowProps) {
           className={`leaderboard-row__amount ${player.isPositive ? 'leaderboard-row__amount--positive' : 'leaderboard-row__amount--negative'}`}
         >
           {player.isPositive ? '+' : ''}
-          {formatAmount(player.amount, currency)}
+          {formatAmount(player.amount)}
         </span>
         {player.winRate !== undefined && (
           <span className="leaderboard-row__winrate">
@@ -173,109 +169,96 @@ export function LeaderboardPanel({
   players,
   period,
   onPeriodChange,
-  currency = '',
+  metric = 'winnings',
   isLoading = false,
 }: LeaderboardPanelProps) {
+  const dialogRef = useFocusTrap(isOpen);
+  useEffect(() => {
+    if (!isOpen) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', close);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', close);
+    };
+  }, [isOpen, onClose]);
   if (!isOpen) return null;
 
   return (
     <div className="leaderboard-overlay" onClick={onClose}>
-      <div className="leaderboard-panel" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="leaderboard-panel__header">
-          <h2 className="leaderboard-panel__title">{title}</h2>
-          <button className="leaderboard-panel__close" onClick={onClose}>
-            ×
+      <div
+        ref={dialogRef}
+        className="leaderboard-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="table-leaderboard-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <SpadeConsole
+          crest="flat"
+          eyebrow="Table Rankings"
+          title={title}
+          titleId="table-leaderboard-title"
+          subtitle={
+            metric === 'hands' ? 'Hands Played' : metric === 'profit' ? 'Net Profit' : 'Winnings'
+          }
+          pill={PERIOD_LABELS[period]}
+        >
+          <button
+            className="leaderboard-panel__dismiss"
+            onClick={onClose}
+            aria-label="Close Leaderboard"
+          >
+            Close
           </button>
-        </div>
 
-        {/* Period Tabs */}
-        <div className="leaderboard-panel__tabs">
-          {(Object.keys(PERIOD_LABELS) as LeaderboardPeriod[]).map((p) => (
-            <button
-              key={p}
-              className={`leaderboard-panel__tab ${period === p ? 'leaderboard-panel__tab--active' : ''}`}
-              onClick={() => {
-                haptic.light();
-                onPeriodChange(p);
-              }}
-            >
-              {PERIOD_LABELS[p]}
-            </button>
-          ))}
-        </div>
+          {/* Period Tabs */}
+          <div className="leaderboard-panel__tabs">
+            {(Object.keys(PERIOD_LABELS) as LeaderboardPeriod[]).map((p) => (
+              <button
+                key={p}
+                className={`leaderboard-panel__tab ${period === p ? 'leaderboard-panel__tab--active' : ''}`}
+                aria-pressed={period === p}
+                onClick={() => {
+                  haptic.light();
+                  onPeriodChange(p);
+                }}
+              >
+                {PERIOD_LABELS[p]}
+              </button>
+            ))}
+          </div>
 
-        {/* Content */}
-        <div className="leaderboard-panel__body">
-          {isLoading ? (
-            <div className="leaderboard-panel__loading">
-              <div className="leaderboard-panel__spinner" />
-              <span>Loading Rankings...</span>
-            </div>
-          ) : players.length === 0 ? (
-            <div className="leaderboard-panel__empty">
-              <span className="leaderboard-panel__empty-icon">≡</span>
-              <span className="leaderboard-panel__empty-text">No Rankings Yet</span>
-              <span className="leaderboard-panel__empty-hint">
-                Play Some Hands To Appear On The Leaderboard
-              </span>
-            </div>
-          ) : (
-            <div className="leaderboard-panel__list">
-              {/* Top 3 Highlight */}
-              {players.length > 0 && (
-                <div className="leaderboard-panel__podium">
-                  {players.slice(0, 3).map((player) => (
-                    <div
-                      key={player.playerId}
-                      className={`leaderboard-podium leaderboard-podium--rank${player.rank}`}
-                    >
-                      <div className="leaderboard-podium__avatar">
-                        {player.avatar ? (
-                          <img
-                            loading="lazy"
-                            decoding="async"
-                            src={player.avatar}
-                            alt=""
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = generateDefaultAvatar();
-                            }}
-                          />
-                        ) : (
-                          <span>{player.playerName[0]?.toUpperCase()}</span>
-                        )}
-                        <span className="leaderboard-podium__medal">
-                          {player.rank === 1 ? '1st' : player.rank === 2 ? '2nd' : '3rd'}
-                        </span>
-                      </div>
-                      <span className="leaderboard-podium__name">{player.playerName}</span>
-                      <span
-                        className={`leaderboard-podium__amount ${player.isPositive ? 'leaderboard-podium__amount--positive' : 'leaderboard-podium__amount--negative'}`}
-                      >
-                        {player.isPositive ? '+' : ''}
-                        {formatAmount(player.amount, currency)}
-                      </span>
-                    </div>
+          {/* Content */}
+          <div className="leaderboard-panel__body">
+            {isLoading ? (
+              <div className="leaderboard-panel__loading" role="status">
+                <span>Loading Rankings...</span>
+              </div>
+            ) : players.length === 0 ? (
+              <div className="leaderboard-panel__empty">
+                <span className="leaderboard-panel__empty-text">No Rankings Yet</span>
+                <span className="leaderboard-panel__empty-hint">
+                  Play Some Hands To Appear On The Leaderboard
+                </span>
+              </div>
+            ) : (
+              <div className="leaderboard-panel__list">
+                <div className="leaderboard-panel__rows">
+                  {players.map((player, idx) => (
+                    // LP-1 BUG FIX: pass index so stagger animation actually staggers
+                    // (previously index defaulted to 0 → all rows animated simultaneously)
+                    <PlayerRow key={player.playerId} player={player} index={idx} />
                   ))}
                 </div>
-              )}
-
-              {/* Rest of the list */}
-              <div className="leaderboard-panel__rows">
-                {players.slice(3).map((player, idx) => (
-                  // LP-1 BUG FIX: pass index so stagger animation actually staggers
-                  // (previously index defaulted to 0 → all rows animated simultaneously)
-                  <PlayerRow
-                    key={player.playerId}
-                    player={player}
-                    currency={currency}
-                    index={idx}
-                  />
-                ))}
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        </SpadeConsole>
       </div>
     </div>
   );

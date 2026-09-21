@@ -7,12 +7,22 @@
  *  - Player retention rate
  *  - Clawback rate (lower is better)
  *  - Active player count
+ *
+ *  #ClubArenaConsole: one console, closed flat. The grade in the pill, the
+ *  overall score as the first row, the four sub-scores and the three
+ *  headline figures as rows on the black glass (label in lit blue, value in
+ *  the master's ink by threshold). No ring, no bars: nothing is drawn.
+ *  Every read now binds its error and stops rather than scoring an agent
+ *  off a query that failed.
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
+import { SpadeConsole, type ConsoleInk } from '../console/SpadeConsole';
+import { compactChips } from '../../utils/format';
+import { titleCase } from '../../utils/titleCase';
 import './AgentScoreCard.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -47,12 +57,13 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
       const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
 
       // Get agent PK
-      const { data: agentRow } = await supabase
+      const { data: agentRow, error: agentError } = await supabase
         .from('agents')
         .select('id')
         .eq('user_id', userId)
         .eq('club_id', clubId)
         .maybeSingle();
+      if (agentError) throw agentError;
 
       if (!agentRow?.id) {
         if (isMounted.current) setLoading(false);
@@ -60,21 +71,23 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
       }
 
       // Get distributions (30d)
-      const { data: distributions } = await supabase
+      const { data: distributions, error: distributionsError } = await supabase
         .from('chip_transactions')
         .select('id, amount, clawed_back')
         .eq('from_user_id', userId)
         .eq('club_id', clubId)
         .in('transaction_type', ['agent_to_player', 'promo_agent_to_player'])
         .gte('created_at', thirtyDaysAgo);
+      if (distributionsError) throw distributionsError;
 
       // Get unique recipients (players)
-      const { data: recipients } = await supabase
+      const { data: recipients, error: recipientsError } = await supabase
         .from('chip_transactions')
         .select('to_user_id')
         .eq('from_user_id', userId)
         .eq('club_id', clubId)
         .in('transaction_type', ['agent_to_player', 'promo_agent_to_player']);
+      if (recipientsError) throw recipientsError;
 
       // Get active players (seen in last 7 days)
       const uniquePlayerIds = [
@@ -83,11 +96,12 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
       let activePlayers = 0;
       if (uniquePlayerIds.length > 0) {
         const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
-        const { data: activeProfiles } = await supabase
+        const { data: activeProfiles, error: activeError } = await supabase
           .from('profiles')
           .select('id')
           .in('id', uniquePlayerIds.slice(0, 50))
           .gte('last_seen', sevenDaysAgo);
+        if (activeError) throw activeError;
         activePlayers = (activeProfiles || []).length;
       }
 
@@ -148,11 +162,13 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
     if (isMounted.current) loadScore();
   });
 
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return '#31A24C';
-    if (score >= 60) return '#4599FF';
-    if (score >= 40) return '#F7C52A';
-    return '#FA383E';
+  /* A score prints in the master's own ink by threshold: green from 80,
+     blue from 60, gold from 40, red below. */
+  const getScoreInk = (score: number): ConsoleInk => {
+    if (score >= 80) return 'green';
+    if (score >= 60) return 'blue';
+    if (score >= 40) return 'gold';
+    return 'red';
   };
 
   const getGrade = (score: number) => {
@@ -167,159 +183,130 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
 
   if (loading) {
     return (
-      <div className="agent-score-card">
-        <div className="score-header">
-          <h3>Agent Performance Score</h3>
-        </div>
-        <div className="score-loading">
-          <div className="score-skeleton score-skeleton-ring" />
-          <div className="score-skeleton-grid">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="score-skeleton score-skeleton-bar" />
-            ))}
-          </div>
-        </div>
-      </div>
+      <SpadeConsole
+        className="agent-score-card"
+        eyebrow="Agent"
+        title="Performance Score"
+        titleId="agent-score-title"
+        pill="Scoring"
+        pillInk="muted"
+        foot="foot"
+      >
+        <p className="sc-copy sc-copy--center asc__state" aria-busy="true">
+          Scoring The Last 30 Days...
+        </p>
+      </SpadeConsole>
     );
   }
 
   if (!data) {
     return (
-      <div className="agent-score-card">
-        <div className="score-header">
-          <h3>Agent Performance Score</h3>
-        </div>
-        <div className="score-empty">
-          <span className="score-empty-icon">★</span>
-          <p>No Performance Data Available Yet</p>
-        </div>
-      </div>
+      <SpadeConsole
+        className="agent-score-card"
+        eyebrow="Agent"
+        title="Performance Score"
+        titleId="agent-score-title"
+        pill="No Data"
+        pillInk="muted"
+        foot="foot"
+      >
+        <p className="sc-copy sc-copy--center asc__state">No Performance Data Available Yet</p>
+      </SpadeConsole>
     );
   }
 
-  const scoreColor = getScoreColor(data.overallScore);
-  const circumference = 2 * Math.PI * 54;
-  const dashOffset = circumference - (data.overallScore / 100) * circumference;
+  const overallInk = getScoreInk(data.overallScore);
 
   return (
-    <div className="agent-score-card">
-      <div className="score-header">
-        <h3>Agent Performance Score</h3>
-        <span className="score-period">Last 30 Days</span>
+    <SpadeConsole
+      className="agent-score-card"
+      eyebrow="Agent / Last 30 Days"
+      title="Performance Score"
+      titleId="agent-score-title"
+      pill={`Grade ${getGrade(data.overallScore)}`}
+      pillInk={overallInk}
+      foot="foot"
+    >
+      <div className="asc__row asc__row--overall">
+        <span className="asc__row-label sc-ink--blue">Overall Score</span>
+        <span className={`asc__overall sc-ink--${overallInk}`}>{data.overallScore}</span>
       </div>
 
-      <div className="score-body">
-        {/* Ring Gauge */}
-        <div className="score-ring-container">
-          <svg viewBox="0 0 120 120" className="score-ring-svg">
-            <circle
-              cx="60"
-              cy="60"
-              r="54"
-              fill="none"
-              stroke="rgba(255,255,255,0.06)"
-              strokeWidth="8"
-            />
-            <circle
-              cx="60"
-              cy="60"
-              r="54"
-              fill="none"
-              stroke={scoreColor}
-              strokeWidth="8"
-              strokeLinecap="round"
-              strokeDasharray={circumference}
-              strokeDashoffset={dashOffset}
-              transform="rotate(-90 60 60)"
-              style={{ transition: 'stroke-dashoffset 1s ease-in-out' }}
-            />
-          </svg>
-          <div className="score-ring-center">
-            <span className="score-ring-value" style={{ color: scoreColor }}>
-              {data.overallScore}
-            </span>
-            <span className="score-ring-grade" style={{ color: scoreColor }}>
-              {getGrade(data.overallScore)}
-            </span>
-          </div>
-        </div>
+      {/* Sub-scores */}
+      <section className="asc__section" aria-label="Score Breakdown">
+        <ScoreRow
+          label="Distribution Volume"
+          score={data.distributionScore}
+          ink={getScoreInk(data.distributionScore)}
+          detail={`${data.totalDistributions30d} Txns`}
+        />
+        <ScoreRow
+          label="Player Retention"
+          score={data.retentionScore}
+          ink={getScoreInk(data.retentionScore)}
+          detail={`${data.activePlayers}/${data.totalPlayers} Active`}
+        />
+        <ScoreRow
+          label="Clawback Health"
+          score={data.clawbackScore}
+          ink={getScoreInk(data.clawbackScore)}
+          detail={`${data.clawbackRate.toFixed(1)}% Rate`}
+        />
+        <ScoreRow
+          label="Network Activity"
+          score={data.activityScore}
+          ink={getScoreInk(data.activityScore)}
+          detail={`${data.activePlayers} Active Players`}
+        />
+      </section>
 
-        {/* Sub-scores */}
-        <div className="score-breakdown">
-          <ScoreBar
-            label="Distribution Volume"
-            score={data.distributionScore}
-            detail={`${data.totalDistributions30d} txns`}
-          />
-          <ScoreBar
-            label="Player Retention"
-            score={data.retentionScore}
-            detail={`${data.activePlayers}/${data.totalPlayers} active`}
-          />
-          <ScoreBar
-            label="Clawback Health"
-            score={data.clawbackScore}
-            detail={`${data.clawbackRate.toFixed(1)}% rate`}
-          />
-          <ScoreBar
-            label="Network Activity"
-            score={data.activityScore}
-            detail={`${data.activePlayers} active players`}
-          />
-        </div>
-      </div>
-
-      {/* Stats Footer */}
-      <div className="score-stats">
-        <div className="score-stat">
-          <span className="score-stat-value">
-            {data.avgDistribution >= 1000
-              ? `${(data.avgDistribution / 1000).toFixed(1)}K`
-              : data.avgDistribution.toFixed(0)}
+      {/* Headline figures */}
+      <section className="asc__section" aria-label="Headline Figures">
+        <div className="asc__row">
+          <span className="asc__row-label sc-ink--blue">Avg Distribution</span>
+          <span className="asc__row-value sc-ink--silver">
+            {compactChips(data.avgDistribution)}
           </span>
-          <span className="score-stat-label">Avg Distribution</span>
         </div>
-        <div className="score-stat">
+        <div className="asc__row">
+          <span className="asc__row-label sc-ink--blue">Clawback Rate</span>
           <span
-            className="score-stat-value"
-            style={{ color: data.clawbackRate > 10 ? '#FA383E' : '#31A24C' }}
+            className={`asc__row-value ${data.clawbackRate > 10 ? 'sc-ink--red' : 'sc-ink--green'}`}
           >
             {data.clawbackRate.toFixed(1)}%
           </span>
-          <span className="score-stat-label">Clawback Rate</span>
         </div>
-        <div className="score-stat">
+        <div className="asc__row">
+          <span className="asc__row-label sc-ink--blue">Retention</span>
           <span
-            className="score-stat-value"
-            style={{ color: data.retentionRate > 50 ? '#31A24C' : '#F7C52A' }}
+            className={`asc__row-value ${data.retentionRate > 50 ? 'sc-ink--green' : 'sc-ink--gold'}`}
           >
             {data.retentionRate.toFixed(0)}%
           </span>
-          <span className="score-stat-label">Retention</span>
         </div>
-      </div>
-    </div>
+      </section>
+    </SpadeConsole>
   );
 }
 
-function ScoreBar({ label, score, detail }: { label: string; score: number; detail: string }) {
-  const color =
-    score >= 80 ? '#31A24C' : score >= 60 ? '#4599FF' : score >= 40 ? '#F7C52A' : '#FA383E';
+function ScoreRow({
+  label,
+  score,
+  ink,
+  detail,
+}: {
+  label: string;
+  score: number;
+  ink: ConsoleInk;
+  detail: string;
+}) {
   return (
-    <div className="score-bar-item">
-      <div className="score-bar-header">
-        <span className="score-bar-label">{label}</span>
-        <span className="score-bar-value" style={{ color }}>
-          {score}
-        </span>
-      </div>
-      <div className="score-bar-track">
-        <div
-          className="score-bar-fill"
-          style={{ width: `${score}%`, background: color, transition: 'width 0.8s ease-in-out' }}
-        />
-      </div>
-      <span className="score-bar-detail">{detail}</span>
+    <div className="asc__row">
+      <span className="asc__row-lead">
+        <span className="asc__row-label sc-ink--blue">{label}</span>
+        <span className="asc__row-detail sc-ink--muted">{titleCase(detail)}</span>
+      </span>
+      <span className={`asc__row-value sc-ink--${ink}`}>{score}</span>
     </div>
   );
 }

@@ -17,6 +17,7 @@ import { EmptyState } from './EmptyState';
 interface PageErrorBoundaryProps {
   children: React.ReactNode;
   pageName?: string;
+  fallback?: (context: { error: Error | null; retry: () => void }) => React.ReactNode;
 }
 
 interface PageErrorBoundaryState {
@@ -103,6 +104,9 @@ export class PageErrorBoundary extends React.Component<
 
   render() {
     if (this.state.hasError) {
+      if (this.props.fallback) {
+        return this.props.fallback({ error: this.state.error, retry: this.handleRetry });
+      }
       return (
         <EmptyState
           icon="FAULT"

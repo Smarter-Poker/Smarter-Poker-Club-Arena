@@ -1,17 +1,58 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  INSURANCE MODAL — All-In Insurance + EV Cashout
+ *  INSURANCE MODAL - All-In Insurance + EV Cashout, on the spade console
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Two-tab modal:
- *   1. Insurance — coverage slider with premium calculation
- *   2. EV Cashout — take guaranteed equity payout at slight rake discount
+ *   1. Insurance - the fee slider, priced at the exact rate
+ *   2. EV Cashout - take guaranteed equity now at a small fee
+ *
+ * THE CONSOLE (2026-09-08). This was a rounded glass card with a gradient
+ * header, a shield glyph stuck on the title, pill tabs, filled player rows and
+ * two gradient buttons - a generic sheet over a live table, on the one popup in
+ * the app that spends chips. It is now Dan's approved spade master, the same
+ * one every Omaha card is drawn from, cut into three boxes that each paint
+ * their own slice: top.png for the header well, mid.png for the rails the body
+ * runs between, bottom-plates.png for the two painted action plates. The title
+ * is engraved in the well, the countdown prints into the well's painted pill
+ * slot, everything else prints on the black glass in the master's own inks,
+ * and the rows are separated by an engraved rule rather than a drawn card.
+ * Nothing is drawn except the fee slider, which the master does not paint -
+ * and it stands UP AND DOWN, because a sideways drag at the felt is the
+ * table-switch gesture.
+ *
+ * WHY THE THREE BOXES ARE DIRECT CHILDREN OF THE DIALOG. The clipped-buttons
+ * fix below (Dan's recording, hand #3158299) is pinned by
+ * tests/unit/insuranceModalLayout.test.tsx as a STRUCTURE: the action row is a
+ * sibling of the scroll body and a direct child of the modal, so a short
+ * viewport can never hide Insure/No again. The painted foot IS that action
+ * row, so the console is composed here from its own slices rather than nested
+ * inside <SpadeConsole>, exactly as BuyInModal composes the buy-in master.
+ *
+ * MONEY IS PRINTED TO THE CENT HERE, DELIBERATELY. compactChips is the rule for
+ * figures outside the felt and the headline pot uses it. Every other number on
+ * this surface is a TERM OF THE CONTRACT the player is about to buy - the fee
+ * they are charged, the rate it multiplies by, the pot it insures, what each
+ * outcome pays, the guaranteed cashout - and the 2026-08-28 exact-rate fix
+ * exists because a display that rounded charged 76.66 for a dialog that said
+ * 75.62. "What is displayed is what is bought, to the cent."
  */
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { haptic, soundService } from '../../services/SoundService';
 import { masterBus } from '../../core/MasterBus';
 import { serverNow } from '../../utils/serverClock';
+import { compactChips } from '../../utils/format';
+import {
+  PlateButton,
+  SPADE_CONSOLE_PLATES_H,
+  SPADE_CONSOLE_TOP_H,
+  SPADE_CONSOLE_W,
+  SPADE_CONSOLE_ZONES,
+  ZoneText,
+  zonePct,
+} from '../console/SpadeConsole';
+import { useFitText } from '../lobby/game-cards/useFitText';
 import { CardImage } from './CardImage';
 import type { Card as CardImageCard } from './CardImage';
 import './InsuranceModal.css';
@@ -322,6 +363,12 @@ export function InsuranceModal({
     if (!(feeMax > 0)) return feeMax;
     return Math.floor(feeMax / feeStep) * feeStep;
   }, [feeMax, feeStep]);
+  // The lit run of the vertical groove: the fee, as a share of its own range.
+  const feePercent = feeMax > feeMin ? ((feeAmount - feeMin) / (feeMax - feeMin)) * 100 : 0;
+
+  // The countdown prints into the master's painted pill slot; it is fitted the
+  // same way every other zone is.
+  const timerRef = useFitText<HTMLSpanElement>(`${secondsLeft}s`, 1, 0.5);
 
   if (!isOpen) return null;
 
@@ -329,7 +376,7 @@ export function InsuranceModal({
     <div className="insurance-overlay">
       <div
         ref={modalRef}
-        className="insurance-modal"
+        className="insurance-modal ac-popup"
         role="dialog"
         aria-modal="true"
         aria-labelledby="insurance-modal-title"
@@ -341,44 +388,62 @@ export function InsuranceModal({
           transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
         }}
       >
-        {/* Header */}
-        <div className="insurance-modal__header">
-          <div className="insurance-modal__title-row">
-            <span className="insurance-modal__icon">⛨</span>
-            <h2 id="insurance-modal-title" className="insurance-modal__title">
-              {activeTab === 'insurance' ? 'All-In Insurance' : 'EV Cashout'}
-            </h2>
-          </div>
+        {/* ── Head: the master's own header well ─────────────────────────── */}
+        <div className="insurance-modal__head">
+          <ZoneText
+            text={activeTab === 'insurance' ? 'Insurance Offer' : 'Cash Out Offer'}
+            className="sc__eyebrow sc-ink--blue"
+            style={zonePct(SPADE_CONSOLE_ZONES.eyebrow, SPADE_CONSOLE_W, SPADE_CONSOLE_TOP_H)}
+          />
+          <ZoneText
+            as="h2"
+            id="insurance-modal-title"
+            text={activeTab === 'insurance' ? 'All-In Insurance' : 'EV Cashout'}
+            className="sc__title sc-ink--silver"
+            style={zonePct(
+              SPADE_CONSOLE_ZONES.titleBesidePill,
+              SPADE_CONSOLE_W,
+              SPADE_CONSOLE_TOP_H
+            )}
+          />
+          {/* Gold, red inside the last five seconds - the master's own inks.
+              The window closes into a decline that is final for the hand. */}
           <span
-            className={`insurance-modal__timer ${secondsLeft <= 5 ? 'insurance-modal__timer--urgent' : ''}`}
+            className={`sc-zone sc__pill insurance-modal__timer ${secondsLeft <= 5 ? 'insurance-modal__timer--urgent sc-ink--red' : 'sc-ink--gold'}`}
+            style={zonePct(SPADE_CONSOLE_ZONES.pill, SPADE_CONSOLE_W, SPADE_CONSOLE_TOP_H)}
             role="timer"
             aria-label={`${secondsLeft} Seconds Remaining`}
           >
-            {secondsLeft}s
+            <span ref={timerRef}>{secondsLeft}s</span>
           </span>
         </div>
 
         {/* CLIPPED-BUTTONS FIX 2026-08-28 (Dan's recording, hand #3158299):
-            the modal is `max-height: 90vh; overflow: hidden` and on a phone
-            the content above the actions row is TALLER than 90vh — so the
-            No/Insure buttons rendered below the clip line and could not be
-            seen or tapped. The 25s window then expired into an auto-decline,
-            final for the hand. Everything except the header and the actions
-            now lives in this scrollable body; the buttons are pinned below
-            it and always on screen. */}
+            the modal is height-capped and on a phone the content above the
+            actions row is TALLER than the cap - so the No/Insure buttons
+            rendered below the clip line and could not be seen or tapped. The
+            25s window then expired into an auto-decline, final for the hand.
+            Everything except the head and the painted plates lives in this
+            scrollable body; the plates are the foot, pinned below it and
+            always on screen. */}
         <div className="insurance-modal__body">
-          {/* Info strip: outs count, pot, live countdown context.
-            PREFLOP OFFER 2026-08-28: with no flop there are no "outs" — the
-            strip labels the street instead of showing a meaningless 0. */}
+          {/* The street and the pot, on the glass between the rails.
+              PREFLOP OFFER 2026-08-28: with no flop there are no "outs" — the
+              strip labels the street instead of showing a meaningless 0. */}
           <div className="insurance-modal__info-strip">
             {offer.board.length >= 3 ? (
-              <span className="insurance-modal__info-item">Outs: {offer.outs?.length ?? 0}</span>
+              <span className="insurance-modal__info-item sc-ink--blue">
+                Outs: {offer.outs?.length ?? 0}
+              </span>
             ) : (
-              <span className="insurance-modal__info-item">Preflop All-In</span>
+              <span className="insurance-modal__info-item sc-ink--blue">Preflop All-In</span>
             )}
-            <span className="insurance-modal__info-item">
+            {/* The headline pot is context, not a term of the contract, so it
+                is the one figure here that abbreviates (Dan: over 1,000 use
+                1K). Everything the player is charged or paid stays exact. */}
+            <span className="insurance-modal__info-item sc-ink--silver">
               Pot: {currency}
-              {offer.potAmount.toLocaleString()}
+              {compactChips(offer.potAmount)}
             </span>
           </div>
 
@@ -393,7 +458,7 @@ export function InsuranceModal({
                   setActiveTab('insurance');
                 }}
               >
-                ⛨ Insurance
+                Insurance
               </button>
               <button
                 type="button"
@@ -410,7 +475,7 @@ export function InsuranceModal({
 
           {/* Board */}
           <div className="insurance-modal__board">
-            <span className="insurance-modal__board-label">Board:</span>
+            <span className="insurance-modal__board-label sc-label sc-ink--muted">Board:</span>
             {offer.board.map((card, i) => (
               <span key={i} className="insurance-modal__board-card">
                 <CardImage card={toCardImage(card)} size="xs" />
@@ -422,8 +487,10 @@ export function InsuranceModal({
             then every all-in opponent (multiway shows them all). */}
           <div className="insurance-modal__players">
             <div className="insurance-modal__player-row insurance-modal__player-row--hero">
-              <span className="insurance-modal__player-name">{offer.heroName || 'You'}</span>
-              <span className="insurance-modal__player-equity">
+              <span className="insurance-modal__player-name sc-ink--gold">
+                {offer.heroName || 'You'}
+              </span>
+              <span className="insurance-modal__player-equity sc-ink--green">
                 {offer.equityPercent.toFixed(2)}%
               </span>
               <span className="insurance-modal__player-cards">
@@ -442,8 +509,8 @@ export function InsuranceModal({
               : [{ name: 'Opponent', cards: offer.opponentCards ?? [] }]
             ).map((opp, oi, arr) => (
               <div key={oi} className="insurance-modal__player-row">
-                <span className="insurance-modal__player-name">{opp.name}</span>
-                <span className="insurance-modal__player-equity">
+                <span className="insurance-modal__player-name sc-ink--silver">{opp.name}</span>
+                <span className="insurance-modal__player-equity sc-ink--muted">
                   {/* Heads-up the villain's share is the complement; multiway
                     shows the leader's number only (server sends one equity). */}
                   {arr.length === 1 ? `${(100 - offer.equityPercent).toFixed(2)}%` : ''}
@@ -462,7 +529,7 @@ export function InsuranceModal({
           {/* Outs — the specific next-street cards that put you behind */}
           {offer.outs && offer.outs.length > 0 && (
             <div className="insurance-modal__outs">
-              <span className="insurance-modal__outs-label">
+              <span className="insurance-modal__outs-label sc-label sc-ink--red">
                 Outs Against You ({offer.outs.length}
                 {offer.outPct ? ` • ${offer.outPct.toFixed(1)}%` : ''})
               </span>
@@ -482,47 +549,62 @@ export function InsuranceModal({
               {/* Fee / Rate / Insured Pot readouts */}
               <div className="insurance-modal__readouts">
                 <div className="insurance-modal__readout">
-                  <span className="insurance-modal__readout-label">Insurance Fee</span>
-                  <span className="insurance-modal__readout-value insurance-modal__readout-value--fee">
+                  <span className="insurance-modal__readout-label sc-label sc-ink--blue">
+                    Insurance Fee
+                  </span>
+                  <span className="insurance-modal__readout-value insurance-modal__readout-value--fee sc-ink--gold">
                     {currency}
                     {premium.toLocaleString()}
                   </span>
                 </div>
                 <div className="insurance-modal__readout">
-                  <span className="insurance-modal__readout-label">Rate</span>
+                  <span className="insurance-modal__readout-label sc-label sc-ink--blue">Rate</span>
                   {/* EXACT-RATE FIX 2026-08-28: 2 decimals so Fee x Rate matches
                     the Insured Pot readout instead of drifting ~1.4%. */}
-                  <span className="insurance-modal__readout-value">{rate.toFixed(2)}</span>
+                  <span className="insurance-modal__readout-value sc-ink--silver">
+                    {rate.toFixed(2)}
+                  </span>
                 </div>
                 <div className="insurance-modal__readout">
-                  <span className="insurance-modal__readout-label">Insured Pot</span>
-                  <span className="insurance-modal__readout-value insurance-modal__readout-value--insured">
+                  <span className="insurance-modal__readout-label sc-label sc-ink--blue">
+                    Insured Pot
+                  </span>
+                  <span className="insurance-modal__readout-value insurance-modal__readout-value--insured sc-ink--green">
                     {currency}
                     {insuredPot.toLocaleString()}
                   </span>
                 </div>
               </div>
 
-              {/* Fee slider with the range printed at both ends */}
+              {/* The one control the master does not paint. It stands UP AND
+                  DOWN (Dan, binding): a sideways drag at the felt is the
+                  table-switch gesture, so a horizontal slider here fights the
+                  page on the surface that is spending chips. */}
               <div className="insurance-modal__coverage">
-                <input
-                  type="range"
-                  className="insurance-modal__slider"
-                  min={feeMin}
-                  max={feeMax}
-                  step={feeStep}
-                  value={feeAmount}
-                  /* A range input only emits `min + n*step`; treat the last grid
-                   stop as the true maximum, exactly as the raise slider does. */
-                  onChange={(e) => {
-                    const raw = parseFloat(e.target.value);
-                    setFeeAmount(clampFee(raw >= feeGridMax ? feeMax : raw));
-                  }}
-                  aria-label={`Insurance Fee, ${feeMin} To ${feeMax}`}
-                />
-                <div className="insurance-modal__slider-range">
-                  <span>{feeMin.toLocaleString()}</span>
-                  <span>{feeMax.toLocaleString()}</span>
+                <div className="insurance-modal__slider-container">
+                  <input
+                    type="range"
+                    className="insurance-modal__slider"
+                    min={feeMin}
+                    max={feeMax}
+                    step={feeStep}
+                    value={feeAmount}
+                    /* A range input only emits `min + n*step`; treat the last grid
+                     stop as the true maximum, exactly as the raise slider does. */
+                    onChange={(e) => {
+                      const raw = parseFloat(e.target.value);
+                      setFeeAmount(clampFee(raw >= feeGridMax ? feeMax : raw));
+                    }}
+                    aria-label={`Insurance Fee, ${feeMin} To ${feeMax}`}
+                    aria-orientation="vertical"
+                    style={{ '--slider-percent': `${feePercent}%` } as React.CSSProperties}
+                  />
+                  {/* Column-reverse: the DOM keeps min first, the groove puts
+                      the maximum at the top where the slider's own max is. */}
+                  <div className="insurance-modal__slider-range">
+                    <span>{feeMin.toLocaleString()}</span>
+                    <span>{feeMax.toLocaleString()}</span>
+                  </div>
                 </div>
                 {/* The reference's two hedging presets */}
                 <div className="insurance-modal__presets">
@@ -553,7 +635,7 @@ export function InsuranceModal({
 
               {/* What each outcome pays */}
               <div className="insurance-modal__outcomes">
-                <span className="insurance-modal__outcomes-label">
+                <span className="insurance-modal__outcomes-label sc-label sc-ink--muted">
                   With Insurance You Will Get:
                 </span>
                 <div className="insurance-modal__outcomes-row">
@@ -581,49 +663,55 @@ export function InsuranceModal({
             <>
               <div className="insurance-modal__ev-section">
                 <div className="insurance-modal__ev-hero">
-                  <span className="insurance-modal__ev-amount">
+                  <span className="insurance-modal__ev-amount sc-ink--green">
                     {currency}
                     {evCashoutAmount.toLocaleString()}
                   </span>
-                  <span className="insurance-modal__ev-subtitle">Guaranteed Payout</span>
+                  <span className="insurance-modal__ev-subtitle sc-label sc-ink--muted">
+                    Guaranteed Payout
+                  </span>
                 </div>
 
                 <div className="insurance-modal__summary">
                   <div className="insurance-modal__summary-row">
-                    <span className="insurance-modal__summary-label">Pot Size</span>
-                    <span className="insurance-modal__summary-value">
+                    <span className="insurance-modal__summary-label sc-label sc-ink--blue">
+                      Pot Size
+                    </span>
+                    <span className="insurance-modal__summary-value sc-ink--silver">
                       {currency}
                       {offer.potAmount.toLocaleString()}
                     </span>
                   </div>
                   <div className="insurance-modal__summary-row">
-                    <span className="insurance-modal__summary-label">
+                    <span className="insurance-modal__summary-label sc-label sc-ink--blue">
                       Your Equity ({offer.equityPercent.toFixed(1)}%)
                     </span>
-                    <span className="insurance-modal__summary-value">
+                    <span className="insurance-modal__summary-value sc-ink--silver">
                       {currency}
                       {evRaw.toLocaleString()}
                     </span>
                   </div>
                   <div className="insurance-modal__summary-row">
-                    <span className="insurance-modal__summary-label">
+                    <span className="insurance-modal__summary-label sc-label sc-ink--blue">
                       Cashout Fee ({(evCashoutRake * 100).toFixed(0)}%)
                     </span>
-                    <span className="insurance-modal__summary-value insurance-modal__summary-value--negative">
+                    <span className="insurance-modal__summary-value insurance-modal__summary-value--negative sc-ink--red">
                       -{currency}
                       {evRakeAmount.toLocaleString()}
                     </span>
                   </div>
                   <div className="insurance-modal__summary-row insurance-modal__summary-row--total">
-                    <span className="insurance-modal__summary-label">You Receive</span>
-                    <span className="insurance-modal__summary-value insurance-modal__summary-value--highlight">
+                    <span className="insurance-modal__summary-label sc-label sc-ink--blue">
+                      You Receive
+                    </span>
+                    <span className="insurance-modal__summary-value insurance-modal__summary-value--highlight sc-ink--green">
                       {currency}
                       {evCashoutAmount.toLocaleString()}
                     </span>
                   </div>
                 </div>
 
-                <p className="insurance-modal__ev-note">
+                <p className="insurance-modal__ev-note sc-copy sc-copy--center">
                   Take Your Guaranteed Equity Now. The Hand Will Continue But Your Payout Is Locked.
                 </p>
               </div>
@@ -631,49 +719,53 @@ export function InsuranceModal({
           )}
         </div>
 
-        {/* CLIPPED-BUTTONS FIX 2026-08-28: actions pinned OUTSIDE the
-            scrollable body — a timed financial decision's buttons must never
-            depend on scroll position or viewport height. */}
+        {/* CLIPPED-BUTTONS FIX 2026-08-28: the actions are the master's own
+            painted foot - a sibling of the scrollable body and a direct child
+            of the dialog, so a timed financial decision's buttons never depend
+            on scroll position or viewport height. Nothing is drawn here: the
+            two plates are in the art and the buttons over them add a label. */}
         {activeTab === 'insurance' && (
           /* A decline is FINAL for the hand (Dan 2026-08-26). */
           <div className="insurance-modal__actions">
-            <button
-              type="button"
+            <PlateButton
+              zone={SPADE_CONSOLE_ZONES.plateSecondary}
+              canvasH={SPADE_CONSOLE_PLATES_H}
+              label="No"
               className="insurance-modal__btn insurance-modal__btn--decline"
               onClick={handleDeclineForHand}
               disabled={isSubmitting}
               title="Decline Insurance For The Rest Of This Hand"
-            >
-              No
-            </button>
-            <button
-              type="button"
+            />
+            <PlateButton
+              zone={SPADE_CONSOLE_ZONES.platePrimary}
+              canvasH={SPADE_CONSOLE_PLATES_H}
+              label="Insure"
+              ink="white"
               className="insurance-modal__btn insurance-modal__btn--accept"
               onClick={handleAccept}
               disabled={isSubmitting}
-            >
-              Insure
-            </button>
+            />
           </div>
         )}
         {activeTab === 'ev-cashout' && evCashoutAvailable && (
           <div className="insurance-modal__actions">
-            <button
-              type="button"
+            <PlateButton
+              zone={SPADE_CONSOLE_ZONES.plateSecondary}
+              canvasH={SPADE_CONSOLE_PLATES_H}
+              label="Play It Out"
               className="insurance-modal__btn insurance-modal__btn--decline"
               onClick={handleDecline}
               disabled={isSubmitting}
-            >
-              Play It Out
-            </button>
-            <button
-              type="button"
+            />
+            <PlateButton
+              zone={SPADE_CONSOLE_ZONES.platePrimary}
+              canvasH={SPADE_CONSOLE_PLATES_H}
+              label="Cash Out"
+              ink="green"
               className="insurance-modal__btn insurance-modal__btn--cashout"
               onClick={handleEvCashout}
               disabled={isSubmitting}
-            >
-              Cash Out
-            </button>
+            />
           </div>
         )}
       </div>

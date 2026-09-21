@@ -17,3 +17,17 @@ the enforcement itself: that the check exists, that it is wired into the CI job
 running the other monitoring guards, and that it still fails when a producer is
 taken away. A guard nobody can prove still bites is the same shape of problem
 as the rules it guards.
+
+SHARPENED 2026-09-21: "something that emits it" means something in the BUILD
+THAT IS RUNNING, not something in this repo. The weaker reading held for four
+weeks and cost eight rules across two files - six metrics merged to main and
+absent from engine 8825af51, the build production was actually running, 125
+commits behind. check-alert-rules-match.mjs printed all six as "HAVE A
+PRODUCER, NO SERIES YET - not a failure" and signed off with "every rule reads
+a real series". Two of the eight were EngineCannotBeReplaced and
+PokerEngineCannotBeReplaced, written after the 65-hour outage so the next one
+would page somebody, and structurally unable to fire throughout it. The check
+now asks the engine's own /health.version, reads the producer at THAT commit,
+and separates a counter waiting for its first event (not a failure) from a
+rule ahead of the engine (fatal). A build it cannot identify is exit 2,
+COULD NOT TELL, never a pass.

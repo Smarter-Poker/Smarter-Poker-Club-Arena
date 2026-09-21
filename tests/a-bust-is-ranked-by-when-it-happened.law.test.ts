@@ -40,8 +40,10 @@
  *      head was never collected, handing that head to the player's next
  *      knocker; it now requires the head collected.
  *
- * Satellites and final-table deals keep their own authorities and still rank
- * by recording order; the header says so rather than claiming them. The
+ * Satellites and final-table deals keep their own authorities, which this
+ * migration did not claim and which ranked by recording order until
+ * 20260921095012 gave them the same bust witness; the header says so rather
+ * than claiming them, and the assertions below still hold of THIS file. The
  * reviewed inverse is docs/changelog/2026-09-11-a-bust-is-ranked-by-when-it-happened.rollback.sql.
  *
  * These pins are on the migration text and the engine source. The behaviour is

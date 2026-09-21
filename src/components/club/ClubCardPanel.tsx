@@ -1,10 +1,43 @@
 /**
- * ClubCardPanel — Premium four-zone club/union card
- * ZONES: ID Plate → Image Viewport → Name Plate → Stats Bar
+ * ClubCardPanel — the club's card in the lobby carousel, on the spade console
+ *
+ * THE CONSOLE (#ClubArenaConsole). This was four CSS-drawn zones: a 10px
+ * rounded shell with a 4px brushed-nickel border, a gradient fill and two
+ * shadows; a gradient "ID plate" with an inset rivet line; a recessed gradient
+ * viewport; a gradient "name plate"; and a gradient stats bar. Five drawn
+ * plates around one picture, and the union variant re-coloured every one of
+ * their borders.
+ *
+ * It is now Dan's approved spade master. The head well IS the id plate and the
+ * name plate: CLUB ID (or UNION ID) is the eyebrow, the club's name is
+ * engraved beside it, and the number prints into the master's PAINTED pill
+ * slot. The club's own square art - what ClubCardGenerator bakes, viewport art
+ * with no frame of its own, so nothing is laid over anything - prints on the
+ * black glass between the rails, and MEMBERS / LEVEL / ACTIVE are rows under
+ * it. The foot is the flat closing cap: this card has no actions, and the foot
+ * never paints a plate with nothing on it.
+ *
+ * The union dress varies by INK, not by structure (Dan: "I don't want every
+ * single frame and button to be 100% exactly the same, just the same style") -
+ * the pill and the fallback mark go gold, and everything else is the master.
+ *
+ * NOTHING IN THE DATA LAYER MOVED. The image/logo/fallback ladder, the
+ * load-and-error state resets, the lobbyFigureCache read and write (Dan
+ * 2026-09-02: "the game cards should never say unavailable, they should have
+ * 0's until the card loads"), the level tooltip and the progressbar's ARIA are
+ * all exactly as they were.
+ *
+ * EVERY ANIMATION STILL PLAYS (CLAUDE.md 10.6): clubCardShimmer on the
+ * skeleton, clubCardFadeIn on the art, the staggered label and value reveals,
+ * and the infinite pulse on a live ACTIVE count - same durations, same delays,
+ * same chain. Two of them were named `statLabelReveal` and `activePulse`;
+ * @keyframes is a global namespace in a plain stylesheet, so both now carry
+ * this component's prefix.
  */
 
 import { useState, useEffect, useMemo } from 'react';
 import { figureOr, readFigures, rememberFigures } from '../../lib/lobbyFigureCache';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './ClubCardPanel.css';
 
 interface ClubCardPanelProps {
@@ -126,22 +159,23 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
     cached.events
   );
 
+  const hasId = clubId != null && clubId !== '';
+
   return (
-    <div className={`club-card-panel ${isUnion ? 'club-card-panel--union' : ''}`}>
+    <SpadeConsole
+      as="div"
+      className={`club-card-panel ${isUnion ? 'club-card-panel--union' : ''}`}
+      eyebrow={idLabel}
+      title={clubName}
+      pill={hasId ? String(clubId) : undefined}
+      pillInk={isUnion ? 'gold' : 'blue'}
+      foot="foot"
+    >
       {!imgLoaded && <div className="club-card-skeleton" />}
 
-      {/* ZONE 1: ID Plate */}
-      <div className="club-card-id-plate">
-        {clubId != null && clubId !== '' ? (
-          <span className="club-card-id-text">
-            {idLabel}: {clubId}
-          </span>
-        ) : (
-          <span className="club-card-id-text">{idLabel}</span>
-        )}
-      </div>
-
-      {/* ZONE 2: Image Viewport */}
+      {/* The club's own art, on the glass. It is viewport art with no frame of
+          its own (ClubCardGenerator bakes 600x600 and nothing else), so no
+          picture is laid over another picture. */}
       <div className="club-card-viewport">
         {useBakedCard ? (
           <img
@@ -154,89 +188,92 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             onError={() => setCardFailed(true)}
           />
         ) : showLogo ? (
-          <div className="club-card-logo-container">
-            <div className="club-card-logo-backdrop"></div>
-            <img
-              src={logoUrl}
-              alt={`${clubName} Logo`}
-              className="club-card-viewport-logo"
-              loading="lazy"
-              decoding="async"
-              onLoad={() => setImgLoaded(true)}
-              onError={() => {
-                setLogoFailed(true);
-                setImgLoaded(true);
-              }}
-            />
-          </div>
+          <img
+            src={logoUrl}
+            alt={`${clubName} Logo`}
+            className="club-card-viewport-logo"
+            loading="lazy"
+            decoding="async"
+            onLoad={() => setImgLoaded(true)}
+            onError={() => {
+              setLogoFailed(true);
+              setImgLoaded(true);
+            }}
+          />
         ) : (
-          <div className="club-card-viewport-fallback">
-            <span className="club-card-fallback-icon">{isUnion ? '◈' : '♠'}</span>
-          </div>
+          <span
+            className={`club-card-fallback-icon ${isUnion ? 'sc-ink--gold' : 'sc-ink--blue'}`}
+            aria-hidden="true"
+          >
+            {isUnion ? '◈' : '♠'}
+          </span>
         )}
       </div>
 
-      {/* ZONE 3: Name Plate */}
-      <div className="club-card-name-plate">
-        <span className="club-card-name-text">{clubName}</span>
-      </div>
-
-      {/* ZONE 4: Stats Bar — no badge pill, just stats */}
-      <div className="club-card-stats-bar">
-        <div className="club-card-stats-row">
-          <div className="club-card-stat">
-            <span className="club-card-stat-label">MEMBERS</span>
-            <span className="club-card-stat-value">{membersText}</span>
-          </div>
-          {/* Dan 2026-08-20: level is now the 1-55 member ladder, so the bare
-              number is worth explaining on hover — which tier it is, and how
-              many members away the next one is. */}
-          <div
-            className="club-card-stat"
-            title={
-              levelTierLabel
-                ? membersToNextLevel != null
-                  ? `${levelTierLabel} - ${membersToNextLevel.toLocaleString()} More Members To Level ${Math.max(1, clubLevel ?? 1) + 1}`
-                  : `${levelTierLabel} - Maximum Level`
-                : undefined
-            }
-          >
-            <span className="club-card-stat-label">LEVEL</span>
-            <span className="club-card-stat-value club-card-stat-value--level">{levelText}</span>
-          </div>
-          <div
-            className={`club-card-stat ${(activePlayers ?? 0) > 0 ? 'club-card-stat--active' : ''}`}
-          >
-            <span className="club-card-stat-label">ACTIVE</span>
-            <span className="club-card-stat-value">{activeText}</span>
-            <span className="club-card-stat-split" aria-label="Active Players By Game">
-              <span className="club-card-stat-split-part">{cashText} CASH</span>
-              <span className="club-card-stat-split-dot" aria-hidden="true" />
-              <span className="club-card-stat-split-part">{eventsText} EVENTS</span>
-            </span>
-          </div>
+      {/* Three figures, three engraved rows; ACTIVE carries its cash/events split. */}
+      <div className="club-card-stats">
+        <div className="club-card-stat">
+          <span className="club-card-stat-label sc-label sc-ink--blue">MEMBERS</span>
+          <span className="club-card-stat-value sc-ink--silver">{membersText}</span>
         </div>
-
-        {/* Progress toward the next level. A bare number does not say whether a
-            club just levelled or is one member short of the next; this does,
-            in 3px. Hidden entirely when no progress was supplied. */}
-        {levelProgressPercent != null && (
-          <div
-            className="club-card-level-track"
-            role="progressbar"
-            aria-valuenow={Math.round(levelProgressPercent)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label={`Progress To Level ${Math.max(1, clubLevel ?? 1) + 1}`}
+        {/* Dan 2026-08-20: level is now the 1-55 member ladder, so the bare
+            number is worth explaining on hover — which tier it is, and how
+            many members away the next one is. */}
+        <div
+          className="club-card-stat"
+          title={
+            levelTierLabel
+              ? membersToNextLevel != null
+                ? `${levelTierLabel} - ${membersToNextLevel.toLocaleString()} More Members To Level ${Math.max(1, clubLevel ?? 1) + 1}`
+                : `${levelTierLabel} - Maximum Level`
+              : undefined
+          }
+        >
+          <span className="club-card-stat-label sc-label sc-ink--blue">LEVEL</span>
+          <span className="club-card-stat-value sc-ink--silver">{levelText}</span>
+        </div>
+        <div
+          className={`club-card-stat ${(activePlayers ?? 0) > 0 ? 'club-card-stat--active' : ''}`}
+        >
+          <span className="club-card-stat-label sc-label sc-ink--blue">ACTIVE</span>
+          <span
+            className={`club-card-stat-value ${(activePlayers ?? 0) > 0 ? 'sc-ink--green' : 'sc-ink--silver'}`}
           >
-            <span
-              className="club-card-level-fill"
-              style={{ width: `${Math.max(0, Math.min(100, levelProgressPercent))}%` }}
-            />
-          </div>
-        )}
+            {activeText}
+          </span>
+          {/* Dan 2026-09-09: the split prints under the total, in the same
+              small caps as the labels, so 291 ACTIVE beside 21 cash players
+              on the floor no longer reads as a wrong number. */}
+          <span
+            className="club-card-stat-split sc-label sc-ink--muted"
+            aria-label="Active Players By Game"
+          >
+            <span className="club-card-stat-split-part">{cashText} CASH</span>
+            <span className="club-card-stat-split-dot" aria-hidden="true" />
+            <span className="club-card-stat-split-part">{eventsText} EVENTS</span>
+          </span>
+        </div>
       </div>
-    </div>
+
+      {/* Progress toward the next level. A bare number does not say whether a
+          club just levelled or is one member short of the next; this does,
+          in 3px. Hidden entirely when no progress was supplied. */}
+      {levelProgressPercent != null && (
+        <div
+          className="club-card-level-track"
+          role="progressbar"
+          aria-valuenow={Math.round(levelProgressPercent)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`Progress To Level ${Math.max(1, clubLevel ?? 1) + 1}`}
+        >
+          <span
+            className="club-card-level-fill"
+            style={{ width: `${Math.max(0, Math.min(100, levelProgressPercent))}%` }}
+          />
+        </div>
+      )}
+    </SpadeConsole>
   );
 };
 

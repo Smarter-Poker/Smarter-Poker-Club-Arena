@@ -1,23 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
 
 /** One foreground decision window. Hidden tabs, dialogs and unavailable funds
- * cannot spend it, and an elapsed window never starts a second spin. */
+ * cannot spend it, and an elapsed window never starts a second spin.
+ *
+ * The wheel's idle spin uses the default thirty seconds; a won game starts on
+ * a shorter window (useAwardAutoStart). */
 export function useIdleSpinCountdown(
   armed: boolean,
   ready: boolean,
   resetKey: string,
-  onElapsed: () => void
+  onElapsed: () => void,
+  windowMs = 30_000
 ) {
-  const remaining = useRef(30_000);
+  const remaining = useRef(windowMs);
   const fired = useRef(false);
   const callback = useRef(onElapsed);
   callback.current = onElapsed;
-  const [seconds, setSeconds] = useState(30);
+  const [seconds, setSeconds] = useState(Math.ceil(windowMs / 1000));
   useEffect(() => {
-    remaining.current = 30_000;
+    remaining.current = windowMs;
     fired.current = false;
-    setSeconds(30);
-  }, [armed, resetKey]);
+    setSeconds(Math.ceil(windowMs / 1000));
+  }, [armed, resetKey, windowMs]);
   useEffect(() => {
     if (!armed || !ready) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -51,6 +55,6 @@ export function useIdleSpinCountdown(
       pause();
       document.removeEventListener('visibilitychange', visibility);
     };
-  }, [armed, ready, resetKey]);
+  }, [armed, ready, resetKey, windowMs]);
   return seconds;
 }

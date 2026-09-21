@@ -202,9 +202,15 @@ beforeEach(() => {
 
 describe('the words', () => {
   it('names tables Main 1 / Main 2 / Feeder', () => {
-    expect(lobbyTableLabel({ role: 'main', main_index: 1, name: 'x' })).toBe('Main 1');
-    expect(lobbyTableLabel({ role: 'main', main_index: 3, name: 'x' })).toBe('Main 3');
-    expect(lobbyTableLabel({ role: 'feeder', main_index: null, name: 'x' })).toBe('Feeder');
+    /* id is carried since 20260921044045: a Cluster's front table can be a
+       feeder, so the label needs to know which row it is looking at. These
+       three calls name no front table, which is the fallback every caller
+       that predates the front table takes. */
+    expect(lobbyTableLabel({ id: 't1', role: 'main', main_index: 1, name: 'x' })).toBe('Main 1');
+    expect(lobbyTableLabel({ id: 't3', role: 'main', main_index: 3, name: 'x' })).toBe('Main 3');
+    expect(lobbyTableLabel({ id: 'tf', role: 'feeder', main_index: null, name: 'x' })).toBe(
+      'Feeder'
+    );
   });
 
   it('reads a refusal back in the player words, and never an em dash', () => {

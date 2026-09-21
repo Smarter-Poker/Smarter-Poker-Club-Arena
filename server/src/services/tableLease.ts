@@ -449,8 +449,9 @@ export async function heartbeatTables(
     if (outcome.status !== 'answered') continue;
     answered = true;
     for (const proof of outcome.proofs) {
+      // A proof that outran its own window extends nothing. It is not a loss:
+      // the database answered `kept` for this exact generation to produce it.
       if (tableLeaseMonotonicNow() < proof.proofDeadlineMonotonicMs) proofs.push(proof);
-      else lostTableIds.push(proof.tableId);
     }
     lostTableIds.push(...outcome.lostTableIds);
   }
@@ -461,12 +462,24 @@ export async function heartbeatTables(
 
 async function heartbeatTableBatch(
   claims: TableLeaseHeartbeatClaim[],
-  proofDeadlineMonotonicMs: number
+  passDeadlineMonotonicMs: number
 ): Promise<TableLeaseHeartbeatOutcome> {
   const tableIds = claims.map((claim) => claim.tableId);
-  if (tableLeaseMonotonicNow() >= proofDeadlineMonotonicMs) {
-    return { status: 'answered', proofs: [], lostTableIds: tableIds };
+  /* A QUEUED BATCH HAS NO EVIDENCE OF LOSS (2026-09-21). See the matching
+     block in tournamentLease.ts: a batch that waited out the pass window
+     never asked the database anything, so naming its claims as lost turned
+     silence into a verdict and fenced live dealers. UNKNOWN extends nothing
+     and accuses nothing; the ordinary expiry timer still owns the decision. */
+  if (tableLeaseMonotonicNow() >= passDeadlineMonotonicMs) {
+    return { status: 'uncertain', reason: 'pending' };
   }
+  /* A PROOF IS MEASURED FROM THE REQUEST THAT EARNED IT. The window was
+     opened once per PASS, before the first request, then shared by every
+     batch; a batch that queued behind three others spent it waiting and its
+     `kept` answer was discarded for arriving late. `heartbeat_at` is set by
+     THIS statement, so a reading taken immediately before it is a
+     conservative floor for it, well inside the audited stale window. */
+  const proofDeadlineMonotonicMs = tableLeaseMonotonicNow() + TABLE_LEASE_PROOF_WINDOW_MS;
   try {
     const { data, error } = await supabase.rpc('heartbeat_table_leases_v4', {
       p_instance_id: INSTANCE_ID,
@@ -556,6 +569,13 @@ async function heartbeatTableBatch(
       // checks the existing monotonic deadline after this response and its
       // ordinary expiry timer remains armed throughout repeated busy replies.
       if (row.state === 'busy' && exactGeneration) continue;
+
+      /* A RENEWAL THAT ARRIVED LATE IS STILL A RENEWAL (2026-09-21). `kept`
+         on the exact generation is the database saying this instance owned
+         the row and advanced `heartbeat_at`. Too late to open a fresh local
+         window grants no proof, but it is the strongest evidence AGAINST
+         loss - and it used to fall through and fence the dealer. */
+      if (row.state === 'kept' && exactGeneration) continue;
 
       lostTableIds.push(claim.tableId);
       if (row.state === 'taken' || (row.state === 'kept' && !exactGeneration)) {

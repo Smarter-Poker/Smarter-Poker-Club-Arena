@@ -7,6 +7,16 @@ REQUEST_ROOT="${ENGINE_RELEASE_REQUEST_ROOT:-/var/lib/club-arena/engine-release-
 CONTAINER="${CONTAINER:-club-arena-engine}"
 
 die() { echo "[legacy-engine-checkpoint] $*" >&2; exit 1; }
+# Two refusals, not one, because conflating them is what burned every release
+# on 2026-09-21. `die` (1) ends the operation for good. `defer` (75) says the
+# break window closed while this entry was still running and NOTHING durable
+# was created - no intent file, no inspector, no write - so the owning
+# transaction may wait for a later certificate and enter again. It is only
+# ever reachable ABOVE the O_EXCL intent write below; once that file exists a
+# retry is forbidden and every remaining path is `die`. CLAUDE.md 10.86 rule 1:
+# "this attempt arrived late" is a different outcome from "this attempt is
+# unsafe", so it gets its own name and its own code.
+defer() { echo "[legacy-engine-checkpoint] $*" >&2; exit 75; }
 [ "$(id -u)" = 0 ] || die 'root-owned release required'
 [ "$#" = 1 ] || die 'expected owning run key'
 RUN_ID="$1"
@@ -47,6 +57,7 @@ if [ "$LEGACY_SHA" = 8825af51817f379c4261658ca29ecc9d8d81932d ]; then
     && [ "$STARTED_AT" = 2026-09-18T21:55:50.88305198Z ] && [ "$HOST_PID" = 1231816 ] \
     || die 'original mixed-custody process changed'
 fi
+NODE_BOOT_STARTED_MS="$(date +%s%3N)"
 timeout 3s docker exec "$CONTAINER_ID" node -e '
 const fs = require("node:fs");
 const args = fs.readFileSync("/proc/1/cmdline", "utf8").split("\0").filter(Boolean);
@@ -55,6 +66,28 @@ if (process.version !== "v22.23.2" ||
     /--(?:inspect|debug)/.test(process.env.NODE_OPTIONS ?? "") ||
     process.env.GIT_COMMIT_SHA !== process.argv[1]) process.exit(1);
 ' "$LEGACY_SHA" || die 'predecessor runtime or loopback inspector configuration refused'
+NODE_BOOT_MS=$(( $(date +%s%3N) - NODE_BOOT_STARTED_MS ))
+
+# DERIVED FROM THIS HOST, NOT CHOSEN. The guard re-reads the SAME 285000ms
+# reserve, and between the probe below and that read sit one durable intent
+# write with two fsyncs and a cold containerised node module boot that also
+# streams the two guard files in and enumerates the fleet. (Spelled out in
+# prose on purpose: the literal invocation below is an anchor other suites
+# locate with indexOf, and repeating it here would shadow it.) Until
+# 2026-09-21 that gap was budgeted at zero, so the probe happily admitted at
+# 285000ms and handed the guard a deficit it had to refuse - terminally.
+# The measurable proxy for that boot is the runtime check immediately above:
+# same container, same node binary, same exec path, already paid for. Measure
+# it and triple it, because the guard's boot additionally parses two modules
+# and walks the table map. A factor over a live measurement is honest where a
+# hard-coded millisecond count would be a guess that outlives its hardware
+# (CLAUDE.md 1.1.7, 10.84). Floor it so an implausibly fast probe cannot
+# produce a zero budget; ceiling it at the 15000ms the 300000ms break has left
+# over the 285000ms reserve, because no budget larger than that is satisfiable
+# and pretending otherwise would refuse every break for ever.
+CHECKPOINT_GUARD_ENTRY_MS=$(( NODE_BOOT_MS * 3 ))
+[ "$CHECKPOINT_GUARD_ENTRY_MS" -ge 1500 ] || CHECKPOINT_GUARD_ENTRY_MS=1500
+[ "$CHECKPOINT_GUARD_ENTRY_MS" -le 9000 ] || CHECKPOINT_GUARD_ENTRY_MS=9000
 
 # Installed SQL is a prerequisite, not a trial mutation. Refuse before the
 # durable one-shot intent or inspector; the existing transaction owns failure.
@@ -68,13 +101,19 @@ fi
 INSTANCE="$(curl -sS --max-time 2 http://127.0.0.1:8080/health | python3 -c '
 import json,re,sys
 d=json.load(sys.stdin); m=d.get("maintenance",{}); instance=d.get("instanceId",""); release=sys.argv[1]
+# 285000 is the reserve the guard enforces and is NOT relaxed here. The added
+# term is the measured cost of the intent write and node boot that still have
+# to happen between this probe and that same 285000 being read again.
+# (No apostrophes in this comment: it lives inside a single-quoted python -c
+# argument, and one would close the quote and break the command substitution.)
+reserve=285000+int(sys.argv[2])
 ok=(d.get("running") is True and d.get("version")==release[:8] and re.fullmatch(r"1-[0-9a-f]{8}",instance)
     and (release=="2f4e33560bcd23bfb5cc731f31816b2c2e2847e5" or d.get("releaseSha")==release)
     and m.get("active") is True and m.get("phase")=="counting_down"
-    and m.get("durableConfirmed") is True and m.get("remainingMs",0)>=285000)
+    and m.get("durableConfirmed") is True and m.get("remainingMs",0)>=reserve)
 if not ok: raise SystemExit(1)
 print(instance)
-' "$LEGACY_SHA")" || die 'physical countdown entry unavailable'
+' "$LEGACY_SHA" "$CHECKPOINT_GUARD_ENTRY_MS")" || defer 'the break window closed before the checkpoint could start; nothing was attempted'
 
 # Persist intent before opening debugger access. A disconnect is unknown, not
 # permission to invoke again. Existing release recovery retains this run key.

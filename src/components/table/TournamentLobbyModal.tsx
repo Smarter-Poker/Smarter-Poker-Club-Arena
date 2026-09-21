@@ -40,6 +40,7 @@
 
 import { useEffect, useRef } from 'react';
 import TournamentDetails from '../../pages/tournament/TournamentDetails';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './TournamentLobbyModal.css';
 
 export interface TournamentLobbyModalProps {
@@ -76,6 +77,12 @@ export function TournamentLobbyModal({ isOpen, tournamentId, onClose }: Tourname
 
   if ((!isOpen && !everOpenedRef.current) || !tournamentId) return null;
 
+  /* ONE CONSOLE (#ClubArenaConsole) inside the 3/4 sheet: the spade
+     master's head at the top, the lobby page on the black glass between the
+     rails, the flat cap at the bottom. The sheet's geometry (tlm-overlay /
+     tlm-panel) is Dan's and stays; only what it holds changed. A page of
+     content with one way out, so the foot carries no plate and CLOSE is a
+     lit word under the head. */
   return (
     <div
       className="tlm-overlay"
@@ -84,34 +91,41 @@ export function TournamentLobbyModal({ isOpen, tournamentId, onClose }: Tourname
       style={isOpen ? undefined : { display: 'none' }}
     >
       <div
-        className="tlm-panel"
+        className="tlm-panel tlm-panel--console"
         role="dialog"
         aria-modal="true"
         aria-label="Tournament Lobby"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Phone affordance: the sheet is draggable-looking and the quarter of
-            the screen above it is a tappable backdrop. */}
-        <div className="tlm-grab" aria-hidden="true">
-          <span />
-        </div>
+        <SpadeConsole
+          eyebrow="Tournament"
+          title="Lobby"
+          pill="In Game"
+          pillInk="blue"
+          foot="foot"
+          className="tlm-console"
+        >
+          <div className="tlm-console__bar">
+            <button
+              type="button"
+              className="tlm-word sc-ink--white"
+              onClick={onClose}
+              aria-label="Close"
+            >
+              Close
+            </button>
+          </div>
 
-        <div className="tlm-header">
-          <span className="tlm-title">Tournament Lobby</span>
-          <button type="button" className="tlm-close" onClick={onClose} aria-label="Close">
-            Close
-          </button>
-        </div>
-
-        <div className="tlm-body">
-          {/* suppressAutoOpenTable: the player is ALREADY at this tournament's
-              table — that is where this overlay was opened from. Without it the
-              page's auto-seat effect fires `navigate('/table/...')` from inside
-              the overlay, which at best re-enters the route we are standing on
-              and at worst pulls a multi-tabling player off the table they were
-              watching. */}
-          <TournamentDetails tournamentIdOverride={tournamentId} suppressAutoOpenTable />
-        </div>
+          <div className="tlm-body">
+            {/* suppressAutoOpenTable: the player is ALREADY at this tournament's
+                table - that is where this overlay was opened from. Without it the
+                page's auto-seat effect fires `navigate('/table/...')` from inside
+                the overlay, which at best re-enters the route we are standing on
+                and at worst pulls a multi-tabling player off the table they were
+                watching. */}
+            <TournamentDetails tournamentIdOverride={tournamentId} suppressAutoOpenTable />
+          </div>
+        </SpadeConsole>
       </div>
     </div>
   );

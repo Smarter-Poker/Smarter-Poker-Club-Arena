@@ -1,5 +1,8 @@
 /** Actual mounted page, serializer/downloader and account guard. Synthetic read-only responses. UNRUN. */
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+/* Fixture messages are Title Case because the console prints every alert
+   message through titleCase() (Dan 2026-09-14: the first letter of every word
+   is capitalised, data included); a raw-cased fixture would not be found. */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { WEEKLY_ID as ID } from '../helpers/clubWeeklyStatement';
 const state = vi.hoisted(() => ({
@@ -103,10 +106,10 @@ afterEach(() => {
 
 describe('loaded-alert export scope without monitoring mutation', () => {
   it('labels a capped critical list as loaded records without claiming complete critical coverage', async () => {
-    state.getRows.mockResolvedValue([row(ID.invoice, 'Loaded critical alert', 'critical')]);
+    state.getRows.mockResolvedValue([row(ID.invoice, 'Loaded Critical Alert', 'critical')]);
     state.getCounts.mockResolvedValue({ total: 700, critical: 700, warning: 0, info: 0 });
     render(<FinancialAlertsPage />);
-    await screen.findByText('Loaded critical alert');
+    await screen.findByText('Loaded Critical Alert');
     expect(
       screen.getByText(
         'Loaded 1 Alerts; Separate Reads Report 700 Unresolved. This List May Be Incomplete.'
@@ -118,13 +121,13 @@ describe('loaded-alert export scope without monitoring mutation', () => {
   it('maps exact columns, preserves all-loaded export regardless of selected severity and sanitizes text', async () => {
     state.getRows.mockResolvedValue([
       row(ID.invoice, '=HYPERLINK("x")'),
-      row(ID.period, 'Other loaded alert', 'critical'),
+      row(ID.period, 'Other Loaded Alert', 'critical'),
     ]);
     state.getCounts.mockResolvedValue({ total: 2, critical: 1, warning: 1, info: 0 });
     const serialize = vi.spyOn(FinancialExportService, 'generateCSV');
     render(<FinancialAlertsPage />);
-    await screen.findByText('Other loaded alert');
-    fireEvent.click(screen.getByRole('button', { name: /Warning \(1\)/ }));
+    await screen.findByText('Other Loaded Alert');
+    fireEvent.click(screen.getByRole('button', { name: /^Warning/ }));
     fireEvent.click(screen.getByTitle('Export Loaded Alerts CSV'));
     expect(serialize).toHaveBeenCalledTimes(1);
     const [columns, rows] = serialize.mock.calls[0];
@@ -151,9 +154,9 @@ describe('loaded-alert export scope without monitoring mutation', () => {
     expect(state.resolve).not.toHaveBeenCalled();
   });
   it('refuses an absent alert identity at serialization rather than exporting a null substitute', async () => {
-    state.getRows.mockResolvedValue([{ ...row(ID.invoice, 'Bad identity'), id: undefined }]);
+    state.getRows.mockResolvedValue([{ ...row(ID.invoice, 'Bad Identity'), id: undefined }]);
     render(<FinancialAlertsPage />);
-    await screen.findByText('Bad identity');
+    await screen.findByText('Bad Identity');
     fireEvent.click(screen.getByTitle('Export Loaded Alerts CSV'));
     expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
     expect(state.error).toHaveBeenCalledWith('Export unavailable');
@@ -162,13 +165,13 @@ describe('loaded-alert export scope without monitoring mutation', () => {
     render(<FinancialAlertsPage />);
     await screen.findByText('No Loaded Alerts');
     expect(screen.queryByText('All Clear')).toBeNull();
-    state.getRows.mockResolvedValue([row(ID.invoice, 'Old record')]);
+    state.getRows.mockResolvedValue([row(ID.invoice, 'Old Record')]);
     fireEvent.click(screen.getByTitle('Refresh'));
-    await screen.findByText('Old record');
+    await screen.findByText('Old Record');
     state.getRows.mockRejectedValue(new Error('unavailable'));
     fireEvent.click(screen.getByTitle('Refresh'));
     await screen.findByRole('alert');
-    expect(screen.queryByText('Old record')).toBeNull();
+    expect(screen.queryByText('Old Record')).toBeNull();
     expect(screen.queryByTitle('Export Loaded Alerts CSV')).toBeNull();
   });
   it('invalidates a pending read under account ABA without intermediate manual render', async () => {
@@ -188,9 +191,9 @@ describe('loaded-alert export scope without monitoring mutation', () => {
     expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
   });
   it('does not emit a download or success after canonical identity changes without a React render', async () => {
-    state.getRows.mockResolvedValue([row(ID.invoice, 'Loaded record')]);
+    state.getRows.mockResolvedValue([row(ID.invoice, 'Loaded Record')]);
     render(<FinancialAlertsPage />);
-    await screen.findByText('Loaded record');
+    await screen.findByText('Loaded Record');
     // No auth event/render: the predicate must inspect current canonical identity.
     state.userId = ID.otherActor;
     fireEvent.click(screen.getByTitle('Export Loaded Alerts CSV'));
@@ -198,9 +201,9 @@ describe('loaded-alert export scope without monitoring mutation', () => {
     expect(state.success).not.toHaveBeenCalled();
   });
   it('holds account retirement between serialization and actual click and cleans the Blob URL', async () => {
-    state.getRows.mockResolvedValue([row(ID.invoice, 'Loaded record')]);
+    state.getRows.mockResolvedValue([row(ID.invoice, 'Loaded Record')]);
     render(<FinancialAlertsPage />);
-    await screen.findByText('Loaded record');
+    await screen.findByText('Loaded Record');
     vi.mocked(URL.createObjectURL).mockImplementation(() => {
       signIn(ID.otherActor);
       signIn(ID.actor);
@@ -214,10 +217,10 @@ describe('loaded-alert export scope without monitoring mutation', () => {
   it('preserves the existing resolve writer and suppresses only stale completion UI', async () => {
     const pending = deferred<void>();
     state.resolve.mockReturnValueOnce(pending.promise);
-    state.getRows.mockResolvedValue([row(ID.invoice, 'Resolve me')]);
+    state.getRows.mockResolvedValue([row(ID.invoice, 'Resolve Me')]);
     render(<FinancialAlertsPage />);
-    await screen.findByText('Resolve me');
-    fireEvent.click(screen.getByRole('button', { name: /Resolve/i }));
+    await screen.findByText('Resolve Me');
+    fireEvent.click(screen.getByRole('button', { name: /Mark Resolved/i }));
     expect(state.resolve).toHaveBeenCalledWith(ID.invoice);
     state.getRows.mockResolvedValue([]);
     act(() => {
@@ -227,6 +230,6 @@ describe('loaded-alert export scope without monitoring mutation', () => {
     await screen.findByText('No Loaded Alerts');
     await act(async () => pending.resolve());
     expect(state.resolve).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('Resolve me')).toBeNull();
+    expect(screen.queryByText('Resolve Me')).toBeNull();
   });
 });

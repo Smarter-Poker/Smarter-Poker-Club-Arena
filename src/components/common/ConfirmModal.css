@@ -1,20 +1,23 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * ✓ CONFIRM MODAL — Premium Confirmation Dialog Styles
- * ═══════════════════════════════════════════════════════════════════════════════
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONFIRM MODAL - on the spade console (2026-09-04)
 
-/* Overlay */
+   The dialog is the spade console (SpadeConsole.css): crest, rails,
+   engraved title, message on the glass, two painted plates. This sheet only
+   places the console on the backdrop and switches off the global popup
+   chassis (metallic-popups.css paints a rounded shell on `.confirm-modal`
+   with !important; the console brings its own paint, so that shell goes).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .confirm-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(12px) saturate(1.2);
-  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  z-index: 10000;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
+  padding: 16px;
+  /* Black, not grey: the console floats on the same black as the page. */
+  background: rgb(0 0 0 / 90%);
   animation: confirmOverlayFadeIn 0.2s ease;
 }
 
@@ -28,28 +31,22 @@
   }
 }
 
-/* Modal */
-.confirm-modal {
-  background: linear-gradient(180deg, rgba(42, 42, 42, 0.95) 0%, rgba(26, 26, 26, 0.98) 100%);
-  backdrop-filter: blur(20px) saturate(1.3);
-  -webkit-backdrop-filter: blur(20px) saturate(1.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  padding: 24px;
-  width: 90%;
-  max-width: 360px;
+.confirm-modal.ac-popup {
+  width: min(100%, 400px);
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
   text-align: center;
   animation: confirmModalSlideIn 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.04),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 @keyframes confirmModalSlideIn {
   from {
     opacity: 0;
-    transform: translateY(-20px) scale(0.95);
+    transform: translateY(-14px) scale(0.97);
   }
 
   to {
@@ -58,102 +55,16 @@
   }
 }
 
-/* Danger variant */
-.confirm-modal--danger {
-  border-color: rgba(239, 68, 68, 0.3);
-}
-
-/* Icon */
-.confirm-modal__icon {
-  width: 56px;
-  height: 56px;
-  margin: 0 auto 16px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
-}
-
-.confirm-modal--danger .confirm-modal__icon {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
-
-.confirm-modal__icon svg {
-  width: 28px;
-  height: 28px;
-}
-
-/* Title */
-.confirm-modal__title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #fff;
-  margin: 0 0 8px;
-}
-
-/* Message */
+/* The message prints straight onto the glass, centred, with room around it. */
 .confirm-modal__message {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.7);
-  margin: 0 0 24px;
-  line-height: 1.5;
+  padding: 1cqw 1cqw 2cqw;
+  font-size: 4cqw;
+  color: #dbe2ea;
 }
 
-/* Actions */
-.confirm-modal__actions {
-  display: flex;
-  gap: 12px;
-}
-
-/* Buttons */
-.confirm-modal__btn {
-  flex: 1;
-  padding: 12px 16px;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.confirm-modal__btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.confirm-modal__btn--cancel {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.confirm-modal__btn--confirm {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  color: #fff;
-}
-.confirm-modal__btn--danger {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-}
-
-/* Spinner */
-.confirm-modal__spinner {
-  width: 18px;
-  height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: confirmSpin 0.8s linear infinite;
-}
-
-@keyframes confirmSpin {
-  to {
-    transform: rotate(360deg);
+@media (prefers-reduced-motion: reduce) {
+  .confirm-modal-overlay,
+  .confirm-modal.ac-popup {
+    animation: none;
   }
 }

@@ -27,6 +27,12 @@ on:
     - cron: '40 1,7,13,19 * * *'
   repository_dispatch:
     types: [audit-cron-health]
+  # RUN IT NOW (2026-09-19). Six hours is the right cadence for an alarm and the
+  # wrong one for a person who has just fixed a failing job and wants to watch
+  # it go green. Adds no schedule and no new case: github.event.schedule is
+  # already empty on the repository_dispatch above, and this workflow's job
+  # carries no `if:` that reads it.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -90,6 +96,27 @@ jobs:
           echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           set -e
 
+      # THE ROSTER, OUTSIDE THE DATABASE (2026-09-19).
+      #
+      # 20260906114257 deleted ca_expected_cron_jobs and the hourly job that
+      # watched it, and kept the finding in prose: a migration recorded as
+      # applied whose cron job was simply gone from cron.job, invisible because
+      # every cron check measures jobs that RUN AND FAIL. This writes the active
+      # roster to a file git owns, on the schedule this workflow already has.
+      # No table, no new timer, no watcher.
+      - name: Anchor the scheduled-work roster outside the database
+        id: roster
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          set +e
+          node scripts/ci/anchor-cron-roster.mjs 2>&1 | tee /tmp/cron-roster.log
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          set -e
+
       - name: Summary
         if: always()
         run: |
@@ -121,4 +148,10 @@ jobs:
         if: always() && steps.dbcopy.outputs.status != '0'
         run: |
           echo "::error title=Banned copy character in the database::A public function still carries a dash character Dan banned. See the job summary."
+          exit 1
+
+      - name: Fail the run when the roster changed
+        if: always() && steps.roster.outputs.status != '0'
+        run: |
+          echo "::error title=Scheduled-work roster changed::A pg_cron job appeared or vanished on production. See the job summary, then commit the regenerated docs/attestation/cron-roster.tsv and the new count in tests/the-scheduled-work-roster-is-pinned.law.test.ts."
           exit 1

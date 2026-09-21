@@ -3,10 +3,19 @@ import { Modal } from '../common/Modal';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { WheelPrizeArt } from '../wheel/WheelPrizeArt';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
+import { useIdleSpinCountdown } from '../../hooks/useIdleSpinCountdown';
 import type { BonusBudget } from '../../utils/bonusGameBudget';
 import styles from '../wheel/WheelWinReveal.module.css';
 
-/** Choosing an offer changes setup only. The existing game admission owns the debit. */
+/** How long the offer waits for an answer before it keeps the bonus as it is. */
+export const DOUBLE_DOWN_OFFER_SECONDS = 8;
+
+/** Choosing an offer changes setup only. The existing game admission owns the debit.
+ *
+ * A won game starts itself (owner ruling, 2026-09-21), so the offer may not be
+ * the one thing a player has to press. Left unanswered, it answers itself with
+ * the choice that costs nothing: Keep My Bonus. Only a press ever adds the
+ * player's own diamonds. */
 export default function DoubleDownOffer({
   budget,
   diamonds,
@@ -27,6 +36,21 @@ export default function DoubleDownOffer({
     document.addEventListener('visibilitychange', update);
     return () => document.removeEventListener('visibilitychange', update);
   }, []);
+  // The plates open when the reveal has played. If the browser never reports
+  // the animation's end (reduced motion, a throttled tab), they open anyway a
+  // moment after it would have, so the offer can never be a dead end.
+  useEffect(() => {
+    if (ready || !visible) return;
+    const timer = setTimeout(() => setReady(true), 1400 * getAnimationSpeed() + 600);
+    return () => clearTimeout(timer);
+  }, [ready, visible]);
+  const keepIn = useIdleSpinCountdown(
+    ready,
+    ready && visible,
+    budget.award?.id ?? '',
+    () => onChoose(false),
+    DOUBLE_DOWN_OFFER_SECONDS * 1000
+  );
   return (
     <Modal
       isOpen
@@ -51,7 +75,7 @@ export default function DoubleDownOffer({
         <SpadeConsole
           eyebrow="Your Bonus Game"
           title="Double Down"
-          pill="Optional"
+          pill={ready ? `Keeps In ${keepIn}s` : 'Optional'}
           plates={{
             secondary: { label: 'Keep My Bonus', disabled: !ready, onClick: () => onChoose(false) },
             primary: {

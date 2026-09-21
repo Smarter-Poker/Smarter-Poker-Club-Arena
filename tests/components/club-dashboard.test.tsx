@@ -275,25 +275,23 @@ describe('the leaderboard', () => {
     );
   });
 
-  it('offers the horse toggle only when the viewer can see the flag', async () => {
-    await mountAndOpen();
-    expect(screen.getByLabelText('Hide Horses')).toBeTruthy();
-    expect(localStorage.getItem('ca_dashboard_hide_horses')).toBeNull();
-  });
-
-  it('hides the toggle when every row reads false, because it could do nothing', async () => {
-    stubRpc({ ca_club_top_players: { data: [player(1, false), player(2, false)], error: null } });
+  // Dan, 2026-09-14 (binding): "NOTHING SHOULD EVER REVEAL A HORSES
+  // IDENTITY." The toggle these three tests used to pin - offered only when
+  // a horse was in the list, relabelling the totals it scoped - is retired.
+  // See tests/a-horse-is-never-named.law.test.ts for the estate-wide guard.
+  it('never offers a horse toggle, badge or filter, even with a horse in the list', async () => {
+    stubRpc({ ca_club_top_players: { data: [player(1, true), player(2, false)], error: null } });
     await mountAndOpen();
     expect(screen.queryByLabelText('Hide Horses')).toBeNull();
+    expect(screen.queryByText('Hide Horses')).toBeNull();
+    expect(screen.queryByText('People Only')).toBeNull();
+    expect(screen.queryByTitle('Horse')).toBeNull();
   });
 
-  it('relabels the scoped figures while the filter is on, and forgets it on the next visit', async () => {
+  it('ranks every player from the default fixture - the horse included - with no tell apart', async () => {
     await mountAndOpen();
-    await act(async () => {
-      fireEvent.click(screen.getByLabelText('Hide Horses'));
-    });
-    expect(screen.getByText(/Person-Hands \(Horses Hidden\)/)).toBeTruthy();
-    expect(localStorage.getItem('ca_dashboard_hide_horses')).toBeNull();
+    expect(screen.getByText('Player 1')).toBeTruthy();
+    expect(screen.getByText('Player 2')).toBeTruthy();
   });
 });
 

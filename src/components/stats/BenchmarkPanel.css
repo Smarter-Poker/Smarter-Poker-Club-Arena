@@ -3,16 +3,28 @@
  */
 
 .bench-panel {
+  position: relative;
   margin: 0 0.75rem 1rem;
   padding: 1rem;
-  border-radius: 16px;
-  background: linear-gradient(145deg, rgba(0, 212, 255, 0.05) 0%, rgba(139, 92, 246, 0.035) 100%);
-  border: 1px solid rgba(0, 212, 255, 0.14);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border-radius: 2px;
+  background:
+    linear-gradient(90deg, rgba(166, 119, 59, 0.08), transparent 28%),
+    linear-gradient(155deg, rgba(18, 26, 34, 0.96), rgba(3, 7, 11, 0.99));
+  border: 1px solid rgba(207, 191, 159, 0.18);
   box-shadow:
-    0 0 30px rgba(0, 212, 255, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    inset 3px 0 0 rgba(166, 119, 59, 0.58),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.bench-panel::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 88px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(166, 119, 59, 0.82));
+  content: '';
 }
 
 .bench-title {
@@ -31,8 +43,8 @@
 .bench-warn {
   margin: 0.7rem 0 0;
   padding: 0.5rem 0.65rem;
-  border-radius: 10px;
-  background: rgba(245, 158, 11, 0.08);
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.1), rgba(10, 12, 14, 0.5));
   border: 1px solid rgba(245, 158, 11, 0.22);
   font-size: 0.72rem;
   line-height: 1.5;
@@ -71,7 +83,8 @@
 
 .bench-pill {
   padding: 0.12rem 0.45rem;
-  border-radius: 999px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -102,7 +115,7 @@
 .bench-bar-track {
   position: relative;
   height: 6px;
-  border-radius: 999px;
+  border-radius: 0;
   background: linear-gradient(
     90deg,
     rgba(239, 68, 68, 0.22) 0%,
@@ -128,8 +141,8 @@
   width: 12px;
   height: 12px;
   margin-left: -6px;
-  border-radius: 50%;
-  transform: translateY(-50%);
+  border-radius: 1px;
+  transform: translateY(-50%) rotate(45deg);
   border: 2px solid rgba(10, 14, 24, 0.9);
   box-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
 }
@@ -172,7 +185,7 @@
 
 .bench-skeleton {
   height: 180px;
-  border-radius: 12px;
+  border-radius: 2px;
   background: linear-gradient(
     90deg,
     rgba(255, 255, 255, 0.03) 25%,

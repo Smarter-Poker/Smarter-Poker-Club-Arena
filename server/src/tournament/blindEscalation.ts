@@ -144,11 +144,22 @@ interface PlayableBlindLevel {
  * ceiling or scale. A shared numeric ceiling can turn a valid 1:2 level into
  * SB = BB; applying another common scale cannot repair that equality.
  */
-export function enforcePlayableBlindLevel(level: {
-  smallBlind?: unknown;
-  bigBlind?: unknown;
-  ante?: unknown;
-}): PlayableBlindLevel {
+export function enforcePlayableBlindLevel(
+  level: {
+    smallBlind?: unknown;
+    bigBlind?: unknown;
+    ante?: unknown;
+  },
+  /**
+   * The row `level` was grown from, when the caller has it. `level`'s own two
+   * numbers are each a rounded product, so their quotient is a rounded share
+   * and can sit a fraction of a chip under the authored one - enough for the
+   * floor below to shave a whole chip off a level that was already correct.
+   * The anchor row is authored, exact, and the share the SQL resolver reads.
+   * Omitted, the level speaks for itself.
+   */
+  authoredShareFrom?: { smallBlind?: unknown; bigBlind?: unknown }
+): PlayableBlindLevel {
   const positive = (value: unknown, fallback: number) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, MAX_BLIND_VALUE) : fallback;
@@ -157,8 +168,64 @@ export function enforcePlayableBlindLevel(level: {
   const rawBigBlind = positive(level?.bigBlind, 2);
   const rawAnte = Number(level?.ante);
   const bigBlind = Math.max(2, rawBigBlind);
-  const smallBlind =
+  let smallBlind =
     rawSmallBlind < bigBlind ? rawSmallBlind : Math.max(1, Math.floor(bigBlind / 2));
+
+  /**
+   * THE SMALL BLIND KEEPS ITS REQUESTED SHARE OF THE BIG BLIND (2026-09-21).
+   *
+   * The line above repairs SB >= BB, which is the END of the distortion and
+   * not the whole of it. `positive()` applies MAX_BLIND_VALUE to the small
+   * blind and to the big blind INDEPENDENTLY, so between the level where the
+   * big blind reaches the ceiling and the level where the small blind reaches
+   * it too, the big blind is pinned at MAX_BLIND_VALUE while the small blind
+   * is still growing underneath it. SB < BB the whole way, nothing above
+   * fires, and an authored 1:2 walks up through 0.63 and 0.84 towards 1:1.
+   *
+   * Production on 2026-09-21: of 12,371 published levels past the end of their
+   * ladder, 5,298 carried a small blind above its authored share - 4,770 at
+   * SB = BB exactly and 528 inside that band, 48 of them at 0.9762 of their
+   * big blind. Every one of the 21 structures on the platform authors 0.5.
+   *
+   * So hold the small blind to the share the level it was HANDED asked for,
+   * read before either ceiling touched it. This is the same rule the SQL
+   * resolver applies to the ante (`the_overflow_ante_keeps_its_authored_share
+   * _of_the_big_blind`) and to the small blind (`the_overflow_small_blind
+   * _keeps_its_authored_share_of_the_big`). It is a CEILING and never a floor:
+   * it only ever lowers a small blind, so no level becomes more expensive than
+   * it is today. A request that already asks for SB >= BB is left to the
+   * repair above, which has put the small blind at half the big blind;
+   * raising it back is not this ceiling's job.
+   */
+  const shareSource = authoredShareFrom ?? level;
+  const requestedSmallBlind = Number(shareSource?.smallBlind);
+  const requestedBigBlind = Number(shareSource?.bigBlind);
+  /* Only where the ceiling actually BIT. Below it the pair is already in
+     proportion, and two independently rounded whole-chip products can sit a
+     fraction of a chip over the authored share - 200/400 at the ladder's own
+     1.27787 cadence grows to 256/511, which is 0.5009 and is whole chips
+     (2026-09-11), not this defect. Shaving that to 255 would be a different
+     bug wearing this one's clothes. */
+  const levelBigBlind = Number(level?.bigBlind);
+  if (
+    Number.isFinite(levelBigBlind) &&
+    levelBigBlind > MAX_BLIND_VALUE &&
+    Number.isFinite(requestedSmallBlind) &&
+    requestedSmallBlind > 0 &&
+    Number.isFinite(requestedBigBlind) &&
+    requestedBigBlind > 0 &&
+    requestedSmallBlind < requestedBigBlind
+  ) {
+    // Multiply before dividing, so a share like 1,333,333/4,000,000 is not
+    // rounded to a quotient before it is applied.
+    const ceiling = (bigBlind * requestedSmallBlind) / requestedBigBlind;
+    // Compared unrounded, assigned rounded: a level already sitting at its
+    // requested share is left alone rather than shaved by the floor.
+    if (Number.isFinite(ceiling) && smallBlind > ceiling) {
+      smallBlind = Math.max(1, Math.floor(ceiling));
+    }
+  }
+
   const ante = Number.isFinite(rawAnte) && rawAnte >= 0 ? Math.min(rawAnte, MAX_BLIND_VALUE) : 0;
 
   return {
@@ -255,13 +322,28 @@ export function escalatedBlindLevel(
    */
   const scale = (v: unknown) => {
     const n = Number(v);
-    return Math.round(Math.min((Number.isFinite(n) ? n : 0) * factor, MAX_BLIND_VALUE));
+    /* MAX_BLIND_VALUE used to be applied HERE, to each of the three numbers on
+       its own. That is the independent ceiling this file's header warns about:
+       it saturates the pair to 10,000,000/10,000,000 before
+       enforcePlayableBlindLevel below can see how far past the ceiling the
+       level really was, and a level that arrives already saturated cannot be
+       told apart from one that legitimately asks for 10,000,000. The ceiling
+       has not moved or softened - it is applied once, below. A product so
+       large that it overflows the double cannot express a share at all and
+       saturates exactly as this line always did. */
+    const grown = (Number.isFinite(n) ? n : 0) * factor;
+    return Number.isFinite(grown) ? Math.round(grown) : MAX_BLIND_VALUE;
   };
-  const playable = enforcePlayableBlindLevel({
-    smallBlind: scale(lastPlayable?.smallBlind),
-    bigBlind: scale(lastPlayable?.bigBlind),
-    ante: scale(lastPlayable?.ante),
-  });
+  const playable = enforcePlayableBlindLevel(
+    {
+      smallBlind: scale(lastPlayable?.smallBlind),
+      bigBlind: scale(lastPlayable?.bigBlind),
+      ante: scale(lastPlayable?.ante),
+    },
+    // scale() saturates each number at MAX_BLIND_VALUE on its own, so past the
+    // ceiling the grown pair no longer carries the share. The anchor row does.
+    lastPlayable
+  );
   return {
     level: index + 1,
     smallBlind: playable.smallBlind,

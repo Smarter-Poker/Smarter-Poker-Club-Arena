@@ -139,11 +139,11 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
       ? statsData.reduce((worst, current) => (current.winRate < worst.winRate ? current : worst))
       : null;
 
-  const getTrendArrow = (value: number) => {
-    if (value > 3) return '↑ Exceptional';
-    if (value > 1.5) return '↑ Strong';
-    if (value >= 0) return '→ Neutral';
-    return '↓ Losing';
+  const getTrendLabel = (value: number) => {
+    if (value > 3) return 'Exceptional';
+    if (value > 1.5) return 'Strong';
+    if (value >= 0) return 'Neutral';
+    return 'Losing';
   };
 
   const getPositionColor = (winRate: number) => {
@@ -307,7 +307,6 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
       {bestPosition && worstPosition && statsData.length > 1 && (
         <div className="position-callouts">
           <div className="callout strongest">
-            <span className="callout-icon">▲</span>
             <div className="callout-text">
               <span className="callout-label">Strongest Position</span>
               <span className="callout-value">{bestPosition.position}</span>
@@ -315,7 +314,6 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
             </div>
           </div>
           <div className="callout weakest">
-            <span className="callout-icon">▼</span>
             <div className="callout-text">
               <span className="callout-label">Weakest Position</span>
               <span className="callout-value">{worstPosition.position}</span>
@@ -370,7 +368,7 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
                   />
                 </div>
                 <div className="card-trend">
-                  <span>{getTrendArrow(pos.winRate)}</span>
+                  <span>{getTrendLabel(pos.winRate)}</span>
                 </div>
               </div>
             );

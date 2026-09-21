@@ -13,13 +13,15 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import './RakebackPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
-import { retryFetch } from '../utils/retryFetch';
 import { formatDateShort as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import { ErrorState } from '../components/common/EmptyState';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
-import { getRakebackReadiness } from '../utils/rakebackReadiness';
-import { readRakebackClaimResult } from '../utils/rakebackClaimResult';
+import {
+  getRakebackReadiness,
+  nextRakebackBoundary,
+  rakebackAccountingDay,
+} from '../utils/rakebackReadiness';
 
 interface RakebackPeriod {
   id: string;
@@ -41,8 +43,6 @@ function rateLabel(rate: number | null | undefined) {
     : 'Unavailable';
 }
 
-type ClaimStatus = 'idle' | 'claiming' | 'success' | 'error';
-
 export default function RakebackPage() {
   const navigate = useNavigate();
   useVisibilityRefresh(() => loadRakebackData());
@@ -55,17 +55,12 @@ export default function RakebackPage() {
   const [readinessAt, setReadinessAt] = useState(Date.now);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [claimStatus, setClaimStatus] = useState<ClaimStatus>('idle');
-  const [claimMessage, setClaimMessage] = useState('');
   const [visiblePeriodRows, setVisiblePeriodRows] = useState(new Set<number>());
-  const claimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const claimAttemptRef = useRef<{ current: boolean } | null>(null);
   const mountedRef = useRef(true);
   const scopeRef = useRef({ userId: user?.id, epoch: 0 });
   // Invalidate old continuations immediately when the rendered account changes.
   if (scopeRef.current.userId !== user?.id) {
     scopeRef.current = { userId: user?.id, epoch: scopeRef.current.epoch + 1 };
-    if (claimAttemptRef.current) claimAttemptRef.current.current = false;
   }
   const loadRakebackDataRef = useRef<() => void>(() => {});
   const loadingRef = useRef(false);
@@ -85,8 +80,6 @@ export default function RakebackPage() {
       mountedRef.current = false;
       scopeRef.current.epoch += 1;
       reloadQueuedRef.current = false;
-      if (claimAttemptRef.current) claimAttemptRef.current.current = false;
-      if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
     };
   }, []);
 
@@ -102,7 +95,8 @@ export default function RakebackPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const todayUtc = new Date().toISOString().slice(0, 10);
+      // The book is a Pacific calendar; a UTC date opens the window early.
+      const accountingToday = rakebackAccountingDay(Date.now());
       const [history, eligible] = await Promise.all([
         supabase
           .from('rakeback_periods')
@@ -116,7 +110,7 @@ export default function RakebackPage() {
           .eq('user_id', userId)
           .eq('status', 'pending')
           .gt('rakeback_earned', 0)
-          .lt('period_end', todayUtc)
+          .lt('period_end', accountingToday)
           .not('club_id', 'is', null)
           .order('period_start', { ascending: false })
           .limit(1),
@@ -151,11 +145,6 @@ export default function RakebackPage() {
     setReadyPeriod(null);
     setDataEpoch(null);
     setLoadError(null);
-    setClaimStatus('idle');
-    setClaimMessage('');
-    if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
-    claimTimerRef.current = null;
-    claimAttemptRef.current = null;
     setReadinessAt(Date.now());
     if (user?.id) loadRakebackDataRef.current();
     else {
@@ -231,147 +220,49 @@ export default function RakebackPage() {
     () => getRakebackReadiness(periods, readinessAt),
     [periods, readinessAt]
   );
-  const { readyAmount, targetClubId } = useMemo(
+  // The discovered club is read for its AMOUNT only. Nothing on this surface
+  // targets a club for a write any more.
+  const { readyAmount } = useMemo(
     () => getRakebackReadiness(discoveredPeriods, readinessAt),
     [discoveredPeriods, readinessAt]
   );
   const pendingAmount = recentReadiness.readyAmount + recentReadiness.pendingAmount;
   const readyPeriodIds = recentReadiness.readyPeriodIds;
 
-  // Always rediscover at UTC midnight, including eligible clubs outside the recent history.
+  // Always rediscover at the Pacific accounting midnight, including eligible
+  // clubs outside the recent history. UTC midnight is 7 hours early (8 in PST)
+  // and would show a week as closed before its book closed.
   useEffect(() => {
     if (!user?.id) return;
-    const now = new Date();
-    const nextMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+    const boundary = nextRakebackBoundary(Date.now());
+    if (boundary === null) return;
     const timer = setTimeout(
       () => {
         setReadinessAt(Date.now());
         loadRakebackDataRef.current();
       },
-      Math.max(0, nextMidnight - Date.now())
+      Math.max(0, boundary - Date.now())
     );
     return () => clearTimeout(timer);
   }, [readinessAt, user?.id]);
 
-  // ── Claim rakeback handler ──
-  const handleClaimRakeback = async () => {
-    if (!ownsData || loading || loadError || claimAttemptRef.current?.current) return;
-    const epoch = scopeRef.current.epoch;
-    const initiatingUserId = user?.id;
-    const attempt = { current: true };
-    claimAttemptRef.current = attempt;
-    const ownsAttempt = () =>
-      mountedRef.current &&
-      attempt.current &&
-      scopeRef.current.epoch === epoch &&
-      scopeRef.current.userId === initiatingUserId;
-    if (claimTimerRef.current) {
-      clearTimeout(claimTimerRef.current);
-      claimTimerRef.current = null;
-    }
-    setClaimStatus('claiming');
-    setClaimMessage('');
-    let unconfirmedTransport = false;
-    try {
-      if (!user?.id) {
-        setClaimStatus('error');
-        setClaimMessage('Authentication error. Please refresh.');
-        return;
-      }
-
-      // Single atomic, server-authoritative claim. fn_claim_rakeback derives the player
-      // from auth.uid(), recomputes the payout server-side from rake_records, marks each
-      // pending period paid, and credits the PLAYER wallet through the whitelisted,
-      // ledger-logging path — all in ONE transaction, idempotent and horse-safe. Replaces
-      // the old client-side "mark paid, then credit with a client-supplied amount" flow,
-      // which could not write the wallet under RLS (leaving periods flipped to paid with
-      // no chips delivered) and trusted a client-supplied amount.
-      // Recheck the current clock at the click boundary and always scope the legacy RPC.
-      const targetClubId = getRakebackReadiness(discoveredPeriods, Date.now()).targetClubId;
-      if (!targetClubId) {
-        setClaimStatus('error');
-        setClaimMessage('No Closed Earning Periods Are Ready To Claim.');
-        setReadinessAt(Date.now());
-        return;
-      }
-
-      const { data: claimRes, error: claimErr } = await retryFetch(
-        async () => {
-          if (!ownsAttempt()) throw new DOMException('Claim Attempt Ended', 'AbortError');
-          try {
-            const result = await supabase.rpc('fn_claim_rakeback', { p_club_id: targetClubId });
-            if (result.error && !result.error.code) unconfirmedTransport = true;
-            return result;
-          } catch (error) {
-            unconfirmedTransport = true;
-            throw error;
-          }
-        },
-        { maxRetries: 2, isMountedRef: attempt }
-      );
-      if (!ownsAttempt()) return;
-      if (claimErr) throw new Error(claimErr.message);
-
-      const claimed = readRakebackClaimResult(claimRes);
-      if (claimed.kind === 'refused') throw new Error(claimed.message);
-      if (claimed.kind === 'unconfirmed') {
-        // A malformed reply does not establish whether money moved. Refresh authoritative reads.
-        void loadRakebackData();
-        masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
-        throw new Error(
-          'Claim Result Could Not Be Confirmed. Please Check Your Refreshed Balances.'
-        );
-      }
-      if (claimed.kind === 'unpaid') {
-        setClaimStatus('error');
-        setClaimMessage('No Additional Payout Was Confirmed. Pending Periods May Be Deferred.');
-        void loadRakebackData();
-        masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
-        return;
-      }
-
-      const claimedTotal = claimed.amount;
-      setClaimStatus('success');
-      setClaimMessage(`Claimed ${claimedTotal.toLocaleString()} chips!`);
-      // Reload data to reflect changed status
-      loadRakebackData();
-      // Current WALLET_REFRESHED subscribers refetch; this RPC does not return wallet balances.
-      masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
-      masterBus.emit('RAKEBACK_CLAIMED', {
-        clubId: targetClubId ?? '',
-        amount: claimedTotal,
-        userId: initiatingUserId!,
-      });
-      if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
-      claimTimerRef.current = setTimeout(() => {
-        if (!mountedRef.current || scopeRef.current.epoch !== epoch) return;
-        setClaimStatus('idle');
-        setClaimMessage('');
-        claimTimerRef.current = null;
-      }, 3000);
-    } catch (err: any) {
-      if (!ownsAttempt() || err.name === 'AbortError') return;
-      setClaimStatus('error');
-      if (unconfirmedTransport) {
-        void loadRakebackData();
-        masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
-      }
-      const msg = unconfirmedTransport
-        ? 'Claim Result Could Not Be Confirmed. Please Check Your Refreshed Balances.'
-        : err.message || 'Claim Failed. Please Try Again.';
-      setClaimMessage(msg);
-      toast.error(msg);
-    } finally {
-      attempt.current = false;
-    }
-  };
-
+  // NO CLAIM ACTION LIVES HERE (2026-09-20).
+  //
+  // fn_claim_rakeback was retired by the weekly accounting cutover: it derives
+  // no payout any more and unconditionally answers
+  // {success:false, code:'automatic_weekly_settlement'}. The page kept calling
+  // it, so every eligible player who pressed the green button was told their
+  // rakeback had failed - the database was right and the interface was not.
+  // fn_process_weekly_accounting is the single authority and it runs every
+  // Monday at 04:00 America/Chicago. This surface therefore REPORTS: what has
+  // closed, what is still open, and when the run will settle it. Restoring a
+  // claim button here needs a paying server authority first, not a retry.
   return (
     <div className="rakeback-page">
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Rakeback"
         title="Rakeback Engine"
-        description="See The Value Returning From Completed Play, Inspect Every Earning Period, And Claim Eligible Funds Through The Existing Settlement Workflow."
+        description="See The Value Returning From Completed Play And Inspect Every Earning Period. Rakeback Is Settled Automatically Every Monday At 4:00 AM Central Time."
         art="diamonds"
         status="RAKEBACK ENGINE // LIVE"
         crest="flat"
@@ -399,37 +290,11 @@ export default function RakebackPage() {
             <span className="card-label">Next Ready Period</span>
             <p className="card-label">Recent Pending Earnings: {pendingAmount.toLocaleString()}</p>
             <p className="card-label">
-              Estimate For One Period. A Club Claim May Include More Periods.
+              Estimate For One Period. The Automatic Run May Settle More Periods.
             </p>
-            {targetClubId && (
-              <button
-                className="claim-btn"
-                onClick={() => handleClaimRakeback()}
-                disabled={!ownsData || loading || !!loadError || claimStatus === 'claiming'}
-                style={{
-                  marginTop: '8px',
-                  padding: '6px 16px',
-                  minHeight: '44px',
-                  touchAction: 'manipulation',
-                  background:
-                    claimStatus === 'success' ? '#34c759' : 'var(--accent-success, #34c759)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontWeight: 700,
-                  fontSize: '0.8rem',
-                  cursor: claimStatus === 'claiming' ? 'wait' : 'pointer',
-                  opacity: claimStatus === 'claiming' ? 0.6 : 1,
-                  transition: 'all 0.2s',
-                }}
-              >
-                {claimStatus === 'claiming'
-                  ? 'Claiming...'
-                  : claimStatus === 'success'
-                    ? '✓ Claimed!'
-                    : 'Claim Rakeback'}
-              </button>
-            )}
+            <p className="card-label settlement-schedule">
+              Settled Automatically Every Monday At 4:00 AM Central Time.
+            </p>
           </div>
         </div>
       </div>
@@ -457,33 +322,13 @@ export default function RakebackPage() {
         </div>
       )}
 
-      {ownsData && claimMessage && (
-        <div
-          style={{
-            padding: '10px 16px',
-            borderRadius: '8px',
-            fontSize: '0.85rem',
-            fontWeight: 600,
-            background:
-              claimStatus === 'success'
-                ? 'rgba(52, 199, 89, 0.15)'
-                : claimStatus === 'error'
-                  ? 'rgba(255, 59, 48, 0.15)'
-                  : 'transparent',
-            color: claimStatus === 'success' ? '#34c759' : '#ff3b30',
-            border: `1px solid ${claimStatus === 'success' ? 'rgba(52, 199, 89, 0.3)' : 'rgba(255, 59, 48, 0.3)'}`,
-          }}
-        >
-          {claimMessage}
-        </div>
-      )}
-
       <div className="rakeback-info">
         <h3>How Rakeback Works</h3>
         <p>
           You Earn Back A Percentage Of The Rake You Generate At The Tables. Your Rate Increases As
-          You Play More And Move Up VIP Levels. Earning Periods Close At 00:00 UTC After Their End
-          Date. Claims Are Processed One Club At A Time, And The Server Confirms The Payout.
+          You Play More And Move Up VIP Levels. Earning Periods Close At Midnight Pacific Time After
+          Their End Date. Rakeback Is Settled Automatically Every Monday At 4:00 AM Central Time,
+          And Every Transfer Is Recorded In Your Invoices.
         </p>
       </div>
 
@@ -530,7 +375,7 @@ export default function RakebackPage() {
                     {period.status === 'paid'
                       ? ' Paid'
                       : readyPeriodIds.has(period.id)
-                        ? ' Ready To Claim'
+                        ? ' Ready To Settle'
                         : ' Pending'}
                   </span>
                 </div>

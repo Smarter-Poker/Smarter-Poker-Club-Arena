@@ -17,7 +17,12 @@
  *
  * Writes are direct table writes under RLS (policy trapp_admin_write); reads
  * batch the member profiles exactly like MembershipService does. No emoji, no
- * hand-rolled popups — all feedback goes through the Toast layer.
+ * hand-rolled popups - all feedback goes through the Toast layer.
+ *
+ * #ClubArenaConsole: one console, closed flat. The approved count in the
+ * pill, every player a row on the black glass with Approve or Revoke as a
+ * lit word, the search printed on the glass over an engraved rule. Every
+ * read, write and guard is kept; only the paint changed.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -27,6 +32,8 @@ import { MembershipService } from '../../services/MembershipService';
 import { readLocalSession } from '../../lib/authUtils';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
+import { SpadeConsole } from '../console/SpadeConsole';
+import { titleCase } from '../../utils/titleCase';
 import './RegistrationApprovalsPanel.css';
 
 interface ApprovalRow {
@@ -163,27 +170,37 @@ export default function RegistrationApprovalsPanel({
   if (!authorizedToRegister || !isAdmin) return null;
 
   return (
-    <section className="regApprovals" aria-label="Registration Approvals">
-      <div className="regApprovalsHeader">
-        <h3 className="regApprovalsTitle">Authorized To Register</h3>
-        <span className="regApprovalsCount">{approvals.length} Approved</span>
-      </div>
-      <p className="regApprovalsHint">
+    <SpadeConsole
+      as="section"
+      className="regApprovals"
+      aria-label="Registration Approvals"
+      eyebrow="Registration"
+      title="Authorized To Register"
+      titleId="registration-approvals-title"
+      pill={`${approvals.length} Approved`}
+      pillInk={approvals.length > 0 ? 'green' : 'muted'}
+      foot="foot"
+    >
+      <p className="sc-copy regApprovals__hint">
         This Event Only Admits Players You Approve. Club Staff Can Always Register.
       </p>
 
       {loading ? (
-        <div className="regApprovalsLoading">Loading Members...</div>
+        <p className="sc-copy sc-copy--center regApprovals__state" aria-busy="true">
+          Loading Members...
+        </p>
       ) : (
         <>
           {approvals.length > 0 && (
-            <ul className="regApprovalsList">
+            <ul className="regApprovals__list" aria-label="Approved Players">
               {approvals.map((a) => (
-                <li key={a.user_id} className="regApprovalsRow">
-                  <span className="regApprovalsName">{nameById[a.user_id] || 'Player'}</span>
+                <li key={a.user_id} className="regApprovals__row">
+                  <span className="regApprovals__name sc-ink--silver">
+                    {titleCase(nameById[a.user_id] || 'Player')}
+                  </span>
                   <button
                     type="button"
-                    className="regApprovalsBtn regApprovalsBtnRevoke"
+                    className="regApprovals-word sc-ink--red"
                     disabled={busyUserId === a.user_id}
                     onClick={() => void revoke(a.user_id)}
                   >
@@ -196,26 +213,26 @@ export default function RegistrationApprovalsPanel({
 
           <input
             type="search"
-            className="regApprovalsSearch"
+            className="regApprovals__search"
             placeholder="Search Members To Approve"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             aria-label="Search Members"
           />
           {candidates.length === 0 ? (
-            <div className="regApprovalsEmpty">
+            <p className="sc-copy sc-copy--center regApprovals__state">
               {members.length === 0
                 ? 'No Club Members Found.'
                 : 'Every Matching Member Is Already Approved.'}
-            </div>
+            </p>
           ) : (
-            <ul className="regApprovalsList">
+            <ul className="regApprovals__list" aria-label="Members To Approve">
               {candidates.map((m) => (
-                <li key={m.userId} className="regApprovalsRow">
-                  <span className="regApprovalsName">{m.username}</span>
+                <li key={m.userId} className="regApprovals__row">
+                  <span className="regApprovals__name sc-ink--silver">{titleCase(m.username)}</span>
                   <button
                     type="button"
-                    className="regApprovalsBtn"
+                    className="regApprovals-word sc-ink--green"
                     disabled={busyUserId === m.userId}
                     onClick={() => void approve(m.userId)}
                   >
@@ -227,6 +244,6 @@ export default function RegistrationApprovalsPanel({
           )}
         </>
       )}
-    </section>
+    </SpadeConsole>
   );
 }

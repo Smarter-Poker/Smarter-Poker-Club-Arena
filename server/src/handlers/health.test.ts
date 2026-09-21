@@ -60,6 +60,55 @@ describe('handleHealth', () => {
     expect(gameServer.getStatus).not.toHaveBeenCalled();
   });
 
+  it('carries the Horse journal section without letting it move the routing verdict', () => {
+    // 2026-09-21: a journal whose catalog filled stopped capturing with nothing
+    // on /health to say so. The section is the publisher's cached view; the
+    // handler never waits on the journal worker and a failed journal is a
+    // diagnostics gap, not a reason to route traffic away from a dealer.
+    const { res, captured } = mockRes();
+    const status = {
+      liveness: 'ok',
+      status: 'ok',
+      dealerPrerequisitesReady: true,
+      liveHorseDecision: { phase: 'ready' },
+    };
+    const horseJournal = {
+      mode: 'failed' as const,
+      lastFailureReason: 'archive_catalog_capacity' as const,
+      queued: 16,
+      appliedMaxCatalogBytes: 6 * 1024 * 1024 * 1024,
+      maxCatalogBytes: 6 * 1024 * 1024 * 1024,
+      catalogBytes: 6 * 1024 * 1024 * 1024,
+      pendingSegments: 0,
+      records: 7_000_000,
+      maxRecords: 8_000_000,
+      maxRowid: 7_000_000,
+      statsAgeMs: 900,
+    };
+    const gameServer = {
+      getStatus: vi.fn().mockReturnValue(status),
+      getPrometheusMetrics: () => '',
+    };
+    const journal = vi.fn().mockReturnValue(horseJournal);
+    handleHealth(res, { gameServer, horseJournal: journal });
+    expect(journal).toHaveBeenCalledTimes(1);
+    expect(captured.statusCode).toBe(200);
+    expect(parseJson(captured)).toEqual({ ...status, horseJournal });
+  });
+
+  it('leaves the body untouched when no Horse journal is configured', () => {
+    const { res, captured } = mockRes();
+    const status = { liveness: 'standby', status: 'ok' };
+    const gameServer = {
+      getStatus: vi.fn().mockReturnValue(status),
+      getPrometheusMetrics: () => '',
+    };
+    handleHealth(res, { gameServer, horseJournal: () => null });
+    expect(captured.statusCode).toBe(503);
+    expect(parseJson(captured)).toEqual(status);
+    expect(parseJson(captured)).not.toHaveProperty('horseJournal');
+  });
+
   it('requests the scoped table snapshot without weakening dealer routing readiness', () => {
     const { res, captured } = mockRes();
     const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';

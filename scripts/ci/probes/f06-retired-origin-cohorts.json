@@ -1,0 +1,61 @@
+{
+  "5a387a75-754a-416e-8fee-b85b15fc2702": {
+    "engines": {
+      "09f5e9eb-df66-4e55-a3c8-4385d27631e2": "771c20b5-a303-43fe-a6a8-fda2012ac4eb",
+      "12482d21-a767-474f-aa1e-6b78ba368968": "5e7ef136-a773-4e0b-b0e5-7c311693f50b",
+      "2c621856-e728-4e8b-bf08-4c56746a8649": "71ad1853-ab7c-4b29-9170-9e35819e665b",
+      "49a444ac-553a-4f44-a36f-92781d10a646": "10a16e4e-c347-4e59-b04c-4c6341ba2e5c",
+      "623b526d-0901-4c59-aec5-f8e459af7a6c": "2c4582be-ad47-4d17-b41f-d0524a021983",
+      "6d8512e3-899d-442b-8d6c-7c57a5f4a1f1": "28fd7b0c-70bc-4d95-a423-0940518f3e7c",
+      "7af8a050-53da-4094-8d8d-5c38565eedfc": "42985b85-213e-47e4-a0f2-8288fc3f0462",
+      "815d35dd-a6d5-4469-b0aa-e386cc2145b9": "2ffa5273-5a36-4fac-b4e4-c9deb8c6b783",
+      "98232ade-1f3d-4541-902f-cd13697bc0b8": "831836ee-98eb-46cd-bec2-50b35a288c28",
+      "9bf11d84-684d-4069-916c-c7b5bb397d21": "a75b056b-4e70-440a-9c34-5a44e1f78856",
+      "cde664d1-8c53-49dd-9534-bc298ed25a76": "a73e4809-548f-485d-b25e-4bbb0dd73c73",
+      "dbd8b7ea-1a99-494f-b564-f86d412dc764": "ab05c24a-69f2-4194-b822-5a934a8a423b",
+      "dfe93cf3-157c-45ea-b16b-6c27ab9ad3fe": "bcd61ad8-8a57-47bc-92c5-65dfe56d9261",
+      "fcbbd2ea-6fc2-47df-8b61-b9997fcd7b16": "4e4fd230-30a1-4244-9ca6-eb64655f251b"
+    },
+    "generation": "66291622-e7d1-4816-8c33-26ff1f092446",
+    "manager_id": "d55415ea-1306-410b-a336-bc6f7ea83944",
+    "permit": {
+      "custody_id": "37815b8d-668b-472d-bc0c-3c5ae0da55b3",
+      "evidence_id": null,
+      "generation": "66291622-e7d1-4816-8c33-26ff1f092446",
+      "hand_number": 12942021,
+      "lifecycle": 283878,
+      "permit_id": "098c0945-54f9-4c48-a600-3b8845da267b",
+      "state": "reserved",
+      "table_id": "2c621856-e728-4e8b-bf08-4c56746a8649",
+      "tournament_id": "5a387a75-754a-416e-8fee-b85b15fc2702"
+    },
+    "receipt_id": "7d0f56e9-10ce-4c2f-b337-101b75924257"
+  },
+  "615783bf-15e3-40b7-9368-75f21b6ac53b": {
+    "engines": {
+      "383aa2c7-79f1-4937-9d7e-8c49126fce8b": "72688412-7be5-4ebc-afed-2fba5ad8d747",
+      "5973d7f6-5a52-4d78-aa92-cba86e19d4ea": "0e362019-a967-4d15-b50e-68dbbe787dfd",
+      "737b1a84-da46-459c-b0e3-bba5b23171c0": "48f0243d-176c-4209-b692-076edd23b339",
+      "9e18dc43-a81a-4a4f-a360-4f624c60699b": "d4e2be78-93f4-408a-a9ea-3ea199158312",
+      "9f30d335-8262-4872-8926-3ddf1fefe75c": "99065d93-c07d-42fa-bda9-74edd2e04a6e",
+      "9fdd5393-6fd9-4497-85b2-f98b89cf168d": "f9a26fe0-1f69-4f8e-bf67-d5cc72f600d4",
+      "ac93f9eb-d288-400a-b626-b3331a1de466": "31a7dfa8-bdbc-4b8c-aad8-9a57b2d0e2b1",
+      "d6199e5e-7c40-4560-afd9-f1a135031097": "4c9965d7-a041-4628-a319-f81e4e709c62",
+      "f6bd2252-5c11-40df-b842-cdf99a1e8323": "31bac5c5-cafc-4aca-a4e6-50693e3dace5"
+    },
+    "generation": "b3d06bad-c464-4be8-9e1b-66f7191375ff",
+    "manager_id": "bf78d180-dacc-41c8-80dd-765b6fe6d9c4",
+    "permit": {
+      "custody_id": "49542b5a-a662-4d79-b035-c82e9ecdbc88",
+      "evidence_id": null,
+      "generation": "b3d06bad-c464-4be8-9e1b-66f7191375ff",
+      "hand_number": 12943630,
+      "lifecycle": 289478,
+      "permit_id": "14cddb92-cf9d-46fd-80f7-6379695c0032",
+      "state": "reserved",
+      "table_id": "9f30d335-8262-4872-8926-3ddf1fefe75c",
+      "tournament_id": "615783bf-15e3-40b7-9368-75f21b6ac53b"
+    },
+    "receipt_id": "16268739-c7c3-4d38-8a8f-e8f08ac0591b"
+  }
+}

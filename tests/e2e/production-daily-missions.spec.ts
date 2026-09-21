@@ -7,6 +7,7 @@ import {
   type Page,
   type Request,
   type Response,
+  type WebSocketRoute,
 } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { randomUUID } from 'node:crypto';
@@ -33,6 +34,12 @@ const LCP_BUDGET_MS = 4_000;
 const CLS_BUDGET = 0.1;
 const INITIAL_MISSION_ART_BUDGET_BYTES = 180_000;
 const WARM_NAVIGATION_BUDGET_MS = 3_000;
+// The Daily Missions page owns no repair timer. The missed-frame step holds a
+// healthy socket with the revision frames suppressed for longer than the
+// 15 s cursor poll this page used to run, and proves that no revision cursor
+// read is issued until a lifecycle event (the reconnect) asks for one.
+const NO_POLL_QUIET_WINDOW_MS = 20_000;
+const REVISION_CURSOR_PATH = '/rest/v1/daily_challenge_dashboard_revisions';
 
 type JsonObject = Record<string, unknown>;
 
@@ -318,9 +325,15 @@ test.describe('production Daily Missions certification', () => {
       let blockAllRealtimeFrames = false;
       const observedRealtimeFrames = new Set<string>();
       let interceptedRealtimeSockets = 0;
+      // Every routed realtime socket keeps its server-side handle. Closing that
+      // side is how a step interrupts the live connection the way a realtime
+      // restart would: Playwright forwards the closure to the page's WebSocket
+      // and supabase-js owns the reconnect and rejoin that follow.
+      const routedRealtimeServers: WebSocketRoute[] = [];
       await desktopContext.routeWebSocket(/\/realtime\/v1\/websocket/, (socket) => {
         interceptedRealtimeSockets += 1;
         const server = socket.connectToServer();
+        routedRealtimeServers.push(server);
         server.onMessage((message) => {
           if (observedRealtimeFrames.size < 30) {
             observedRealtimeFrames.add(realtimeFrameDescriptor(message));
@@ -665,9 +678,16 @@ test.describe('production Daily Missions certification', () => {
         await waitForCycle('weekly');
         await expect(page).toHaveURL(weeklyURL.toString());
 
+        // A cycle change made from the page keeps the caller's query string
+        // and hash (club context travels the same way), so switching from the
+        // certification-tagged Weekly route lands on Monthly with the same
+        // search and fragment rather than the bare path.
+        const monthlyFromWeeklyURL = new URL(monthlyURL.toString());
+        monthlyFromWeeklyURL.search = weeklyURL.search;
+        monthlyFromWeeklyURL.hash = weeklyURL.hash;
         await missions.chooseTier('Monthly');
         await waitForCycle('monthly');
-        await expect(page).toHaveURL(monthlyURL.toString());
+        await expect(page).toHaveURL(monthlyFromWeeklyURL.toString());
         await page.goBack();
         await waitForCycle('weekly');
         await expect(page).toHaveURL(weeklyURL.toString());
@@ -1472,13 +1492,28 @@ test.describe('production Daily Missions certification', () => {
         page.on('framenavigated', (frame) => {
           if (frame === page.mainFrame()) navigations += 1;
         });
+        // Every read of the durable per-user revision cursor the page issues.
+        // The page has no repair timer, so this count may only move when a
+        // lifecycle event (a new SUBSCRIBED generation or a tab resume) asks
+        // for one bounded read.
+        let cursorReads = 0;
+        const onCursorRead = (request: Request) => {
+          if (new URL(request.url()).pathname.endsWith(REVISION_CURSOR_PATH)) cursorReads += 1;
+        };
+        page.on('request', onCursorRead);
         // Realtime has no backlog. Prove the browser has joined through an
         // intercepted socket before advancing contracts, then suppress every
-        // server frame. This is intentionally protocol-agnostic: Supabase can
+        // revision frame. This is intentionally protocol-agnostic: Supabase can
         // encode Phoenix frames as arrays or objects, and parsing one transport
         // shape here previously let the supposed outage test receive the real
-        // change. The revision cursor watchdog must open the vault while no
-        // realtime delivery can help it, without navigation or a manual reload.
+        // change. While the socket, join and heartbeat stay healthy the page
+        // owes nothing and must issue no cursor read: there is no watchdog and
+        // no poll. Catch-up is owned by the reconnect lifecycle, so the step
+        // then drops the live socket from the server side. supabase-js
+        // reconnects and rejoins, the new SUBSCRIBED generation performs one
+        // bounded cursor read, sees a newer revision, loads the dashboard once
+        // and opens the vault while no realtime delivery can help it, without
+        // navigation or a manual reload.
         await expect(page.getByText('Live Now')).toBeVisible({
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });
@@ -1530,6 +1565,8 @@ test.describe('production Daily Missions certification', () => {
           );
         }
         blockedRevisionFrames = 0;
+        const socketsAtBlock = interceptedRealtimeSockets;
+        const cursorReadsAtBlock = cursorReads;
         blockRevisionFrames = true;
         try {
           await completeEveryAssignedMission(environment, account!);
@@ -1558,10 +1595,53 @@ test.describe('production Daily Missions certification', () => {
               { cause: error }
             );
           }
+          // The completion frame is gone and the socket, join and heartbeat
+          // are all healthy, so no lifecycle event has happened. Hold that
+          // state for longer than the repair interval this page used to run
+          // and prove the durable cursor is not being polled.
+          await page.waitForTimeout(NO_POLL_QUIET_WINDOW_MS);
+          expect(
+            cursorReads - cursorReadsAtBlock,
+            'revision cursor reads were issued while the routed socket stayed healthy ' +
+              `(routed sockets at block: ${socketsAtBlock}, now: ${interceptedRealtimeSockets})`
+          ).toBe(0);
+
+          // Interrupt the live connection from the server side of every routed
+          // socket, the way a realtime restart would. The client must observe a
+          // dropped link and own the reconnect: a new routed socket proves the
+          // reconnect happened, and the rejoin's SUBSCRIBED status is the only
+          // thing allowed to read the cursor.
+          const socketsBeforeInterruption = interceptedRealtimeSockets;
+          const cursorReadsBeforeInterruption = cursorReads;
+          for (const server of routedRealtimeServers.splice(0)) {
+            try {
+              await server.close({ code: 1012, reason: 'Certification Realtime Interruption' });
+            } catch {
+              // A side the client already closed is not an interruption failure.
+              // The reconnect proof below is what decides that.
+            }
+          }
+          await expect
+            .poll(() => interceptedRealtimeSockets, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
+            .toBeGreaterThan(socketsBeforeInterruption);
           const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
           await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
+          await expect(page.getByText('Live Now')).toBeVisible({
+            timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+          });
+          const catchUpReads = cursorReads - cursorReadsBeforeInterruption;
+          expect(
+            catchUpReads,
+            'the rejoin must perform a bounded revision cursor read'
+          ).toBeGreaterThan(0);
+          expect(
+            catchUpReads,
+            'the rejoin must not turn the revision cursor into a poll'
+          ).toBeLessThanOrEqual(2);
+          report.reconnectCursorReads = catchUpReads;
         } finally {
           blockRevisionFrames = false;
+          page.off('request', onCursorRead);
         }
         expect(navigations).toBe(0);
         report.interceptedRealtimeSockets = interceptedRealtimeSockets;
@@ -1917,6 +1997,11 @@ test.describe('production Daily Missions certification', () => {
         'freeze_succeeded',
         'claim_succeeded',
         'claim_all_succeeded',
+        // The missed-frame step drops the live socket. Both realtime events
+        // are unsampled, so their receipts prove the interruption reached the
+        // page's subscription lifecycle and that the rejoin recovered it.
+        'realtime_degraded',
+        'realtime_recovered',
       ];
       let operations: Array<{ event: string }> = [];
       // Product telemetry is deliberately fire-and-forget so it can never

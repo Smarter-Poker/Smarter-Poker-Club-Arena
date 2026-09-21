@@ -1,0 +1,68 @@
+/* ========================================================================== */
+/* PHASE 10 CASINO COMMAND SYSTEM                                             */
+/* ========================================================================== */
+
+.page {
+  --mission-cycle-color: var(--mission-blue);
+  --mission-cycle-glow: rgba(85, 232, 255, 0.22);
+}
+
+.page[data-mission-cycle='weekly'] {
+  --mission-cycle-color: #c8d5da;
+  --mission-cycle-glow: rgba(200, 213, 218, 0.2);
+}
+
+.page[data-mission-cycle='monthly'] {
+  --mission-cycle-color: var(--mission-gold);
+  --mission-cycle-glow: rgba(214, 173, 82, 0.24);
+}
+
+.hero > .bevelFrame {
+  --bevel-frame-color: color-mix(in srgb, var(--mission-cycle-color) 66%, var(--mission-chrome));
+  filter: drop-shadow(0 0 7px var(--mission-cycle-glow));
+}
+
+.heroPicture picture {
+  position: absolute;
+  inset: 0;
+}
+
+.heroCycleAtmosphere {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background:
+    radial-gradient(circle at 73% 42%, var(--mission-cycle-glow), transparent 21rem),
+    linear-gradient(
+      120deg,
+      transparent 54%,
+      color-mix(in srgb, var(--mission-cycle-color) 8%, transparent)
+    );
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.heroPicture[data-hero-cycle='weekly'] .heroArtwork {
+  filter: contrast(1.08) saturate(0.64) brightness(0.94) hue-rotate(154deg);
+}
+
+.heroPicture[data-hero-cycle='monthly'] .heroArtwork {
+  filter: contrast(1.08) saturate(1.02) brightness(0.92) sepia(0.13);
+}
+
+.heroCycleInstrument {
+  position: absolute;
+  z-index: 2;
+  top: 30px;
+  right: 34px;
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  color: var(--mission-cycle-color);
+  filter: drop-shadow(0 0 8px var(--mission-cycle-glow));
+}
+
+.heroCycleInstrument > [data-casino-control-icon] {
+  --control-size: 58px;
+}

@@ -1,0 +1,80 @@
+.playButton {
+  min-width: 160px;
+  padding: 0 26px;
+  border-color: var(--mission-blue);
+}
+
+.backButton:focus-visible,
+.playButton:focus-visible,
+.claimButton:focus-visible,
+.claimAllButton:focus-visible,
+.buyFreezeBtn:focus-visible,
+.missionActionButton:focus-visible,
+.confirmButton:focus-visible,
+.rerollButton:focus-visible,
+.cancelButton:focus-visible,
+.retryButton:focus-visible,
+.alertButton:focus-visible,
+.alertSecondaryButton:focus-visible,
+.streakCount:focus-visible,
+.tab:focus-visible,
+.celebrateButton:focus-visible {
+  outline: 3px solid var(--mission-blue);
+  outline-offset: -4px;
+}
+
+.challengeCard:focus-visible {
+  outline: 3px solid var(--card-tier-color);
+  outline-offset: -4px;
+}
+
+.boardHeader h2:focus-visible {
+  outline: 2px solid var(--mission-blue);
+  outline-offset: 4px;
+}
+
+.inlineDiamond {
+  width: 1.08em;
+  height: 1.08em;
+  flex: none;
+  object-fit: contain;
+  vertical-align: -0.15em;
+  filter: drop-shadow(0 0 5px rgba(85, 232, 255, 0.28));
+}
+
+.balanceWithGem,
+.buttonPrice,
+.rerollPrompt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32em;
+}
+
+.buttonPrice {
+  color: var(--mission-blue);
+  white-space: nowrap;
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.heroActions .backButton,
+.heroActions .playButton {
+  width: auto;
+  min-width: 174px;
+  margin-top: 0;
+}
+
+.heroActions .playButton {
+  border-color: var(--mission-gold);
+}
+
+.syncNotice small {
+  color: #87938f;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.72rem;
+}

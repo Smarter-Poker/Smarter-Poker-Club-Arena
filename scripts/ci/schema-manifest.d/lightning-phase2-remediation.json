@@ -1,0 +1,24 @@
+{
+  "_owner": "agent/claude-lightning-p3/lightning/phase3-feeder-first - migration 20260921025504_lightning_phase_2_remediation_the_hand_knows_its_cluster_its",
+  "_comment": "Lightning 2.0 Phase 2 remediation. An adversarial audit of the merged 20260920235343 found the instance/hand/hand_player family carrying cluster, epoch, instance and slot columns with no keys on any of them, so a hand could sit in a cluster its own instance was not in and a participation row could name another player's table; and it found cluster_epoch with no authority anywhere, a single mutable integer on cash_games that would unanchor every historical Lightning row the moment Phase 5 bumped it. Both are closed here while all seven relations are still empty, which makes every ALTER a catalogue edit with no rewrite. public.cash_cluster_epoch is the new authority: append-only history, one row per (cluster, epoch), the mode it ran under and when it started and ended, with cash_cluster_epoch_current enforcing exactly one open epoch per cluster. It is NOT a foreign key onto cash_games.cluster_epoch, because that integer is mutable by design and a key onto it would refuse Phase 5's bump forever. The epoch joins both pool-family identity tuples and the two roots answer to the epoch history directly. public.fn_cash_cluster_event_takes_the_clusters_epoch is a BEFORE INSERT trigger function that fills cash_cluster_events.cluster_epoch from the event's own cluster when the row arrives at the column default of 0 and the cluster has moved past 0; 33 insert sites across the estate name no epoch and would otherwise file under a genesis epoch the cluster had left. The formation barrier itself - at least two players, no seat past the instance's max_size - is a statement about a SET of rows that no CHECK can see and belongs to the formation function of spec Phase 9.",
+  "tables": [
+    "cash_cluster_epoch"
+  ],
+  "functions": [
+    "fn_cash_cluster_event_takes_the_clusters_epoch"
+  ],
+  "columns": {
+    "cash_cluster_epoch": [
+      "cluster_id",
+      "epoch",
+      "mode",
+      "started_by",
+      "started_at",
+      "ended_at"
+    ],
+    "lightning_hand_player": [
+      "cluster_id",
+      "cluster_epoch"
+    ]
+  }
+}

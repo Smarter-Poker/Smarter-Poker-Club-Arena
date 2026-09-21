@@ -264,11 +264,16 @@ export function LayeredActionButton({
       style={layeredZoneStyle(canvas, { ...zone, align: 'center' })}
       onClick={onClick}
     >
-      <LayeredFitText
-        as="span"
-        text={busy ? 'Working...' : label}
-        className="agc-layered__action-text"
-      />
+      {/* The label fits the plate's FACE (the well inside the chrome rim),
+          not the whole zone: Dan 2026-09-08, "adjust the font sizes so they
+          never go over the edges of the frame". */}
+      <span className="agc-layered__action-well">
+        <LayeredFitText
+          as="span"
+          text={busy ? 'Working' : label}
+          className="agc-layered__action-text"
+        />
+      </span>
     </button>
   );
 }

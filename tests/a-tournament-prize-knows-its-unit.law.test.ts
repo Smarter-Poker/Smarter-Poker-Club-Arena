@@ -194,7 +194,13 @@ describe('LAW: a tournament prize knows its unit', () => {
     }
   });
 
-  it('every caller of every unit-bearing rule passes a unit', () => {
+  /* THIS IS A TREE SCAN, NOT A UNIT TEST (2026-09-21). It reads every .ts/.tsx
+     under src/ and server/src/ and blanks each one per call site, which is
+     seven seconds beside the rest of the pre-push run on a loaded Mac and was
+     failing there with "Test timed out in 5000ms" - a message that names no
+     cause (CLAUDE.md 10.86). The budget is the scan's, well above the ceiling
+     it was measured at, never equal to it (10.86 rule 4). */
+  it('every caller of every unit-bearing rule passes a unit', { timeout: 60_000 }, () => {
     const scanned: string[] = [];
     for (const { fn, declaredIn, arity } of UNIT_BEARING_RULES) {
       expect(

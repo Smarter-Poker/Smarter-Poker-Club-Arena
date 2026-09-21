@@ -23,6 +23,7 @@ import './ClubRulesPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
+import { SpadeConsole } from '../components/console/SpadeConsole';
 
 const rulesLineAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -272,107 +273,131 @@ export default function ClubRulesPage() {
     setSaving(false);
   };
 
-  if (loading) {
-    return (
-      <StandardContentLayout className="club-rules-page" title="Club Rules">
-        <div className="loading-state">
-          <PageSkeleton variant="settings" />
-        </div>
-      </StandardContentLayout>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <StandardContentLayout className="club-rules-page" title="Club Rules">
-        <div style={{ textAlign: 'center', padding: '60px 20px', color: '#aaa' }}>
-          <p style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠</p>
-          <p style={{ marginBottom: '16px' }}>Failed To Load Club Rules</p>
-          <button
-            onClick={() => loadRules()}
-            style={{
-              padding: '10px 24px',
-              background: 'rgba(24, 119, 242, 0.15)',
-              border: '1px solid rgba(24, 119, 242, 0.3)',
-              borderRadius: '8px',
-              color: '#1877f2',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            Retry
-          </button>
-        </div>
-      </StandardContentLayout>
-    );
-  }
+  /* THE CONSOLE (2026-09-04). The rules sat in a rounded navy card under a
+     plain "Club Rules" heading with a rounded blue Edit button - the same
+     generic sheet every other page had. It is now the spade console - the
+     master every Omaha card is drawn from, cut into head, rails and foot:
+     the club's name and CLUB RULES engraved in the header well, each rule
+     printed on the glass with a lit blue numeral, and for staff the plates
+     painted into the foot (COPY on steel, EDIT RULES on the blue glass;
+     CANCEL / SAVE RULES while editing). Members see the closing foot only.
+     Same data, same handlers, same guards (the fn_set_club_rules save path
+     above is untouched). */
+  const ruleLines = rules.split('\n');
+  let ruleNumber = 0;
+  const staffPlates =
+    isAdmin && !loading && !loadError
+      ? isEditing
+        ? {
+            secondary: {
+              label: 'Cancel',
+              className: 'rules-cancel',
+              onClick: () => setIsEditing(false),
+              disabled: saving,
+            },
+            primary: {
+              label: saving ? 'Saving' : 'Save Rules',
+              ink: 'white' as const,
+              className: 'rules-save',
+              onClick: () => void handleSave(),
+              disabled: saving,
+            },
+          }
+        : {
+            secondary: {
+              label: 'Copy',
+              className: 'rules-copy',
+              disabled: !rules,
+              onClick: () => {
+                void navigator.clipboard?.writeText(rules).then(
+                  () => toast.success('Rules Copied'),
+                  () => toast.error('Could Not Copy')
+                );
+              },
+            },
+            primary: {
+              label: rules ? 'Edit Rules' : 'Add Rules',
+              ink: 'white' as const,
+              className: 'edit-btn',
+              onClick: () => {
+                setEditValue(rules);
+                setIsEditing(true);
+              },
+            },
+          }
+      : undefined;
 
   return (
-    <StandardContentLayout className="club-rules-page" title="Club Rules">
-      <div className="rules-header">
-        <h1>{clubName}</h1>
-        <h2>Club Rules & Guidelines</h2>
-      </div>
-
-      <div className="rules-content">
-        {isEditing ? (
+    <StandardContentLayout className="club-rules-page">
+      <SpadeConsole
+        className="club-rules-console"
+        aria-busy={loading || saving || undefined}
+        eyebrow={clubName || 'Club'}
+        title="Club Rules"
+        pill={loadError ? 'Offline' : isAdmin ? 'Staff' : undefined}
+        pillInk={loadError ? 'red' : 'blue'}
+        plates={staffPlates}
+        foot={staffPlates ? 'plates' : 'foot'}
+      >
+        {loading ? (
+          <div className="loading-state">
+            <PageSkeleton variant="settings" />
+          </div>
+        ) : loadError ? (
+          <div className="rules-empty">
+            <span className="sc-label sc-ink--red">Could Not Load</span>
+            <p className="sc-copy sc-copy--center">Failed To Load Club Rules.</p>
+            <button type="button" className="rules-retry sc-ink--blue" onClick={() => loadRules()}>
+              Retry
+            </button>
+          </div>
+        ) : isEditing ? (
           <div className="rules-editor">
             <textarea
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
               placeholder="Enter Your Club Rules And Guidelines Here...&#10;&#10;Example:&#10;1. Be Respectful To All Players&#10;2. No Slow-Rolling&#10;3. Minimum Buy-In Is 50 BB&#10;4. Seat Changes Allowed Between Hands&#10;5. No External Software Allowed"
-              rows={18}
+              rows={14}
               className="rules-textarea"
+              aria-label="Club Rules"
             />
-            <div className="rules-actions">
-              <button
-                className="btn btn-ghost"
-                onClick={() => setIsEditing(false)}
-                disabled={saving}
-              >
-                Cancel
-              </button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-                {saving ? 'Saving...' : 'Save Rules'}
-              </button>
-            </div>
           </div>
         ) : (
           <div className="rules-display">
             {rules ? (
-              <div className="rules-text">
-                {rules.split('\n').map((line, i) => (
-                  <p key={i} style={rulesLineAnimationStyle(i)}>
-                    {line || '\u00A0'}
-                  </p>
-                ))}
-              </div>
+              <ol className="rules-text">
+                {ruleLines.map((line, i) => {
+                  const trimmed = line.trim();
+                  if (!trimmed) return <li key={i} className="rules-gap" aria-hidden="true" />;
+                  /* A line that already starts with its own number keeps it
+                     as the lit numeral; any other line is numbered in order. */
+                  const m = trimmed.match(/^(\d+)[.)]\s*(.*)$/);
+                  const label = m ? m[1] : String(++ruleNumber);
+                  if (m) ruleNumber = Number(m[1]);
+                  const body = m ? m[2] : trimmed;
+                  return (
+                    <li key={i} className="rules-line" style={rulesLineAnimationStyle(i)}>
+                      <span className="rules-line__number sc-ink--blue" aria-hidden="true">
+                        {label}
+                      </span>
+                      <span className="rules-line__text">{body}</span>
+                    </li>
+                  );
+                })}
+              </ol>
             ) : (
-              <div className="empty-rules">
-                <span className="empty-icon">▤</span>
-                <h3>No Rules Set</h3>
-                <p>
+              <div className="rules-empty empty-rules">
+                <span className="sc-label sc-ink--blue">No Rules Set</span>
+                <p className="sc-copy sc-copy--center">
                   {isAdmin
                     ? 'Add Rules And Guidelines For Your Club Members.'
                     : "The Club Owner Hasn't Set Any Rules Yet."}
                 </p>
               </div>
             )}
-
-            {isAdmin && (
-              <button
-                className="btn btn-primary edit-btn"
-                onClick={() => {
-                  setEditValue(rules);
-                  setIsEditing(true);
-                }}
-              >
-                {rules ? 'Edit Rules' : 'Add Rules'}
-              </button>
-            )}
           </div>
         )}
-      </div>
+      </SpadeConsole>
     </StandardContentLayout>
   );
 }

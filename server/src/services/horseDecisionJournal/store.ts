@@ -23,7 +23,11 @@ import {
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { gzipSync, gunzipSync } from 'node:zlib';
-import { HORSE_JOURNAL_ARCHIVE_CATALOG_BYTES, type HorseJournalArchiveOptions } from './config.js';
+import {
+  HORSE_JOURNAL_ARCHIVE_CATALOG_BYTES,
+  HORSE_JOURNAL_ARCHIVE_RECORDS,
+  type HorseJournalArchiveOptions,
+} from './config.js';
 import { isAbsolute, join } from 'node:path';
 import { horseJournalJson, validateHorseJournalRecord, type HorseJournalRecord } from './record.js';
 
@@ -244,7 +248,19 @@ class LegacyHorseJournalStore {
 }
 
 const DECODE_BYTES = 4 * 1024 * 1024;
-const CATALOG_PAGES = HORSE_JOURNAL_ARCHIVE_CATALOG_BYTES / 4096;
+const CATALOG_PAGE_BYTES = 4096;
+const CATALOG_PAGES = HORSE_JOURNAL_ARCHIVE_CATALOG_BYTES / CATALOG_PAGE_BYTES;
+/** Pages a reservation may need before the writer commits anything. The
+ * catalog used to reach its ceiling only as SQLITE_FULL inside finishPending,
+ * after the batch had been reserved; the estimate below refuses first, by name.
+ * A record touches the events table and its three indexes, each of which may
+ * split one leaf, so four pages per record is a ceiling, not a measurement
+ * (~639 bytes/record observed). The reserved compressed blob lives in overflow
+ * pages until finishPending deletes it, so it is charged in full. The fixed
+ * margin covers meta rows, the segments table and interior b-tree growth. */
+const CATALOG_PAGES_PER_RECORD = 4;
+const CATALOG_MARGIN_PAGES = 64;
+const CATALOG_OVERFLOW_BYTES = CATALOG_PAGE_BYTES - 4;
 const SHA = /^[0-9a-f]{64}$/;
 const digest = (bytes: Uint8Array | string): string =>
   createHash('sha256').update(bytes).digest('hex');
@@ -378,6 +394,7 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
   private readonly legacyPath: string;
   private legacyStamp: string | undefined;
   private catalogPath: string | undefined;
+  private appliedCatalogPages: number | undefined;
   constructor(
     directory: string,
     limits: {
@@ -449,9 +466,14 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
         db.exec(
           `PRAGMA journal_mode=DELETE; PRAGMA synchronous=EXTRA; PRAGMA fullfsync=ON; PRAGMA max_page_count=${CATALOG_PAGES};`
         );
+        // The ceiling this connection actually applied, read back rather than
+        // assumed, so diagnostics report the writer's pragma and not the source.
+        this.appliedCatalogPages = Number(
+          db.prepare('PRAGMA max_page_count').get()!.max_page_count
+        );
         if (
-          db.prepare('PRAGMA page_size').get()!.page_size !== 4096 ||
-          db.prepare('PRAGMA max_page_count').get()!.max_page_count !== CATALOG_PAGES ||
+          db.prepare('PRAGMA page_size').get()!.page_size !== CATALOG_PAGE_BYTES ||
+          this.appliedCatalogPages !== CATALOG_PAGES ||
           db.prepare('PRAGMA journal_mode').get()!.journal_mode !== 'delete' ||
           db.prepare('PRAGMA synchronous').get()!.synchronous !== 3 ||
           db.prepare('PRAGMA fullfsync').get()!.fullfsync !== 1
@@ -719,7 +741,7 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
           (n) => !Number.isSafeInteger(n) || Number(n) < 0
         ) ||
         Number(usage.segments) > 500000 ||
-        Number(usage.records) > 8000000
+        Number(usage.records) > HORSE_JOURNAL_ARCHIVE_RECORDS
       )
         throw Error('Horse archive usage corruption');
       if (
@@ -736,6 +758,7 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
           Number(usage.records) + fresh.length > this.archive.maxSegments * 16)
       )
         throw Error('horse_archive_segment_capacity');
+      if (fresh.length) this.assertCatalogCapacity(fresh.length, segments);
       segments.forEach((s, i) =>
         db
           .prepare('INSERT INTO archive_pending VALUES(?,?,?,?,?,?,?)')
@@ -760,6 +783,25 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
     }
     this.finishPending();
     return outcomes;
+  }
+  /** Refuse, by name, a batch the catalog cannot index, while the reservation
+   * transaction holds the write lock and has written nothing. Page counts are
+   * read here rather than remembered: a test or an operator connection can
+   * lower the ceiling, and the freelist changes with every completed batch.
+   * An unlimited connection (max_page_count 0) never refuses on this ground. */
+  private assertCatalogCapacity(records: number, segments: readonly Segment[]): void {
+    const db = this.catalog!;
+    const pages = Number(db.prepare('PRAGMA page_count').get()!.page_count),
+      max = Number(db.prepare('PRAGMA max_page_count').get()!.max_page_count),
+      free = Number(db.prepare('PRAGMA freelist_count').get()!.freelist_count);
+    if (![pages, max, free].every((n) => Number.isSafeInteger(n) && n >= 0))
+      throw Error('Horse archive catalog state unavailable');
+    if (max === 0) return;
+    const needed =
+      records * CATALOG_PAGES_PER_RECORD +
+      segments.reduce((n, s) => n + Math.ceil(s.bytes / CATALOG_OVERFLOW_BYTES) + 1, 0) +
+      CATALOG_MARGIN_PAGES;
+    if (max - pages + free < needed) throw Error('horse_archive_catalog_capacity');
   }
   override readHand(handKey: string): readonly HorseJournalRecord[] {
     this.assertLegacy();
@@ -852,9 +894,12 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       records: number;
       pendingSegments: number;
       catalogBytes: number;
+      maxRowid: number;
       maxBytes: number;
       maxSegments: number;
+      maxRecords: number;
       maxCatalogBytes: number;
+      appliedMaxCatalogBytes: number | null;
     };
   } {
     this.assertLegacy();
@@ -885,12 +930,26 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
           pendingSegments: Number(
             this.catalog.prepare('SELECT count(*) AS n FROM archive_pending').get()!.n
           ),
-          catalogBytes: Number(this.catalog.prepare('PRAGMA page_count').get()!.page_count) * 4096,
+          catalogBytes:
+            Number(this.catalog.prepare('PRAGMA page_count').get()!.page_count) *
+            CATALOG_PAGE_BYTES,
+          // The rowid b-tree answers max() from its rightmost leaf; no scan.
+          maxRowid: Number(
+            this.catalog.prepare('SELECT coalesce(max(rowid),0) AS n FROM archive_events').get()!.n
+          ),
           maxBytes: Number(usage.max_bytes),
           maxSegments: Number(usage.max_segments),
+          // The record cap the writer enforces alongside the segment cap.
+          maxRecords: Number(usage.max_segments) * 16,
           // Source policy of this reader's release, not the connection-local
           // pragma default of a read-only observer or another running writer.
           maxCatalogBytes: HORSE_JOURNAL_ARCHIVE_CATALOG_BYTES,
+          // What this writer's connection applied and read back at open; null
+          // for a read-only observer, which applies no ceiling of its own.
+          appliedMaxCatalogBytes:
+            this.appliedCatalogPages === undefined
+              ? null
+              : this.appliedCatalogPages * CATALOG_PAGE_BYTES,
         };
         this.catalog.exec('COMMIT');
       } catch (e) {
@@ -921,11 +980,20 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
  * filesystem messages. BUSY/LOCKED retry classification stays unchanged. */
 export function horseJournalCapacityReason(
   error: unknown
-): 'archive_bytes' | 'archive_segments' | 'archive_storage_capacity' | undefined {
+):
+  | 'archive_bytes'
+  | 'archive_segments'
+  | 'archive_catalog_capacity'
+  | 'archive_storage_capacity'
+  | undefined {
   if (error instanceof Error && error.message === 'horse_archive_byte_capacity')
     return 'archive_bytes';
   if (error instanceof Error && error.message === 'horse_archive_segment_capacity')
     return 'archive_segments';
+  // The named pre-reservation refusal; SQLITE_FULL below is the same limit
+  // reached after a reservation, which the writer recovers at reopen.
+  if (error instanceof Error && error.message === 'horse_archive_catalog_capacity')
+    return 'archive_catalog_capacity';
   const e = error as { code?: unknown; errcode?: unknown } | null;
   if (e?.code === 'ENOSPC') return 'archive_storage_capacity';
   if (e?.code === 'ERR_SQLITE_ERROR' && typeof e.errcode === 'number' && (e.errcode & 255) === 13)

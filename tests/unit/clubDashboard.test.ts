@@ -19,7 +19,6 @@ import {
 const mk = (over: Partial<RankablePlayer>): RankablePlayer => ({
   userId: over.userId ?? 'u',
   displayName: over.displayName ?? 'Player',
-  isHorse: over.isHorse ?? false,
   totalProfit: over.totalProfit ?? 0,
   totalWon: over.totalWon ?? 0,
   handsPlayed: over.handsPlayed ?? 0,
@@ -63,45 +62,35 @@ describe('rangeLabel', () => {
 describe('rankPlayers', () => {
   const players = [
     mk({ userId: 'a', totalProfit: 10, handsPlayed: 5, winRate: 50, biggestPotWon: 3 }),
-    mk({
-      userId: 'b',
-      totalProfit: 50,
-      handsPlayed: 1,
-      winRate: 10,
-      biggestPotWon: 99,
-      isHorse: true,
-    }),
+    mk({ userId: 'b', totalProfit: 50, handsPlayed: 1, winRate: 10, biggestPotWon: 99 }),
     mk({ userId: 'c', totalProfit: -5, handsPlayed: 90, winRate: 80, biggestPotWon: 1 }),
   ];
 
   it('sorts by profit descending by default', () => {
-    expect(rankPlayers(players, 'profit', false).map((p) => p.userId)).toEqual(['b', 'a', 'c']);
+    expect(rankPlayers(players, 'profit').map((p) => p.userId)).toEqual(['b', 'a', 'c']);
   });
 
   it('supports hands, win rate and biggest pot orderings', () => {
-    expect(rankPlayers(players, 'hands', false).map((p) => p.userId)).toEqual(['c', 'a', 'b']);
-    expect(rankPlayers(players, 'winrate', false).map((p) => p.userId)).toEqual(['c', 'a', 'b']);
-    expect(rankPlayers(players, 'biggest', false).map((p) => p.userId)).toEqual(['b', 'a', 'c']);
+    expect(rankPlayers(players, 'hands').map((p) => p.userId)).toEqual(['c', 'a', 'b']);
+    expect(rankPlayers(players, 'winrate').map((p) => p.userId)).toEqual(['c', 'a', 'b']);
+    expect(rankPlayers(players, 'biggest').map((p) => p.userId)).toEqual(['b', 'a', 'c']);
   });
 
-  it('excludes horses when humans-only is on', () => {
-    const out = rankPlayers(players, 'profit', true);
-    expect(out.map((p) => p.userId)).toEqual(['a', 'c']);
-    expect(out.every((p) => !p.isHorse)).toBe(true);
-  });
-
-  it('assigns contiguous ranks AFTER filtering, so positions never skip', () => {
-    expect(rankPlayers(players, 'profit', true).map((p) => p.rank)).toEqual([1, 2]);
+  it('ranks every player - horses are players too (CLAUDE.md 10.5) - nothing here filters one out', () => {
+    // rankPlayers takes no filtering argument at all any more: there is no
+    // way to call it that leaves a player off the board.
+    expect(rankPlayers(players, 'profit')).toHaveLength(3);
+    expect(rankPlayers(players, 'profit').map((p) => p.rank)).toEqual([1, 2, 3]);
   });
 
   it('does not mutate the input array', () => {
     const before = players.map((p) => p.userId);
-    rankPlayers(players, 'hands', false);
+    rankPlayers(players, 'hands');
     expect(players.map((p) => p.userId)).toEqual(before);
   });
 
   it('handles an empty roster', () => {
-    expect(rankPlayers([], 'profit', false)).toEqual([]);
+    expect(rankPlayers([], 'profit')).toEqual([]);
   });
 });
 
@@ -142,7 +131,8 @@ describe('CSV export', () => {
     ]);
     const lines = csv.split('\n');
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toContain('rank,player,is_horse');
+    expect(lines[0]).toContain('rank,player,hands_played');
+    expect(lines[0]).not.toContain('is_horse');
     expect(lines[1]).toContain('"Ann"');
     expect(lines[1]).toContain('12.5');
   });

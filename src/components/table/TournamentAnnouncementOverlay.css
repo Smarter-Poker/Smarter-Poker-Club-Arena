@@ -8,6 +8,16 @@
  * CINEMATIC (bubble burst, final table, knockouts, mystery bounty): these
  * happen once, so they get the room. Layered vignette, a sweep of light
  * across the title, and a rule that draws itself under the text.
+ *
+ * INK (2026-09-13, #ClubArenaConsole): this is felt cinematics, not a card,
+ * so it is not framed on the console - but every colour on it is a
+ * smarter.poker schema colour. The accent per beat is set in the component
+ * (brass, gold, lit blue, house green, accent red); the blacks here are the
+ * console's own bevel black #050607, the type is silver #e4e7ec and white
+ * #f4f7fb, and the final-table rules are brass #d6ad52 at reduced alpha over
+ * black, the same technique the console's engraved rules use. No slate, no
+ * amber, no cream-on-amber. Reduced motion collapses the motion below and
+ * never the meaning: the subtitle and the rule land fully drawn.
  */
 
 .tournamentAnnouncement {
@@ -22,8 +32,8 @@
   transition: opacity 0.45s ease;
   background: radial-gradient(
     ellipse at center,
-    rgba(3, 7, 18, 0.82) 0%,
-    rgba(3, 7, 18, 0.45) 45%,
+    rgb(5 6 7 / 82%) 0%,
+    rgb(5 6 7 / 45%) 45%,
     transparent 72%
   );
   backdrop-filter: blur(5px) saturate(115%);
@@ -53,11 +63,11 @@
   position: relative;
   font-size: clamp(1.65rem, 6vw, 2.5rem);
   font-weight: 900;
-  color: #fff;
+  color: #f4f7fb;
   text-transform: uppercase;
   letter-spacing: 0.16em;
   margin-bottom: 0.45rem;
-  background: linear-gradient(100deg, var(--accent-color) 0%, #ffffff 42%, var(--accent-color) 78%);
+  background: linear-gradient(100deg, var(--accent-color) 0%, #f4f7fb 42%, var(--accent-color) 78%);
   background-size: 220% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -82,7 +92,7 @@
 
 .announcementSubtitle {
   font-size: clamp(0.85rem, 3.4vw, 1rem);
-  color: #e2e8f0;
+  color: #e4e7ec;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
   max-width: 34rem;
   margin: 0 auto;
@@ -92,33 +102,29 @@
 
 .tournamentAnnouncement.finalTableAnnouncement {
   background:
-    linear-gradient(90deg, transparent, rgba(197, 145, 54, 0.12), transparent),
-    radial-gradient(
-      ellipse at center,
-      rgba(3, 8, 18, 0.9),
-      rgba(2, 5, 11, 0.46) 54%,
-      transparent 76%
-    );
+    linear-gradient(90deg, transparent, rgb(214 173 82 / 12%), transparent),
+    radial-gradient(ellipse at center, rgb(5 6 7 / 90%), rgb(5 6 7 / 46%) 54%, transparent 76%);
   backdrop-filter: blur(7px) saturate(105%);
 }
 .finalTableAnnouncement .announcementContent {
   padding: 1.1rem 1.4rem 1.25rem;
-  border-block: 1px solid rgba(217, 170, 78, 0.42);
-  background: linear-gradient(90deg, transparent, rgba(7, 13, 23, 0.72), transparent);
+  border-block: 1px solid rgb(214 173 82 / 42%);
+  background: linear-gradient(90deg, transparent, rgb(5 6 7 / 72%), transparent);
 }
 .finalTableAnnouncement .announcementIcon {
   display: inline-grid;
   place-items: center;
   width: 3.2rem;
   height: 3.2rem;
-  border: 1px solid rgba(217, 170, 78, 0.64);
+  border: 1px solid rgb(214 173 82 / 64%);
   border-radius: 50%;
-  color: #f5d48f;
-  background: #080d16;
+  color: #ffd700;
+  background: #050607;
   font:
-    800 0.9rem/1 'JetBrains Mono',
-    ui-monospace,
-    monospace;
+    800 0.9rem/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
 }
 
 /* ── COMPACT: the level-change banner ─────────────────────────────────── */
@@ -140,7 +146,7 @@
   padding: 0.55rem 1rem 0.55rem 0.8rem;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--accent-color) 55%, transparent);
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.97), rgba(2, 6, 23, 0.97));
+  background: linear-gradient(180deg, rgb(17 19 24 / 97%), rgb(5 6 7 / 97%));
   box-shadow:
     0 10px 30px rgba(0, 0, 0, 0.55),
     0 0 0 1px rgba(255, 255, 255, 0.04) inset,
@@ -156,7 +162,7 @@
   width: 1.85rem;
   height: 1.85rem;
   border-radius: 50%;
-  color: #fff;
+  color: #f4f7fb;
   background: color-mix(in srgb, var(--accent-color) 26%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent-color) 60%, transparent);
   filter: none;
@@ -186,7 +192,7 @@
 
 .tournamentAnnouncement.compact .announcementSubtitle {
   font-size: 0.78rem;
-  color: #cbd5e1;
+  color: #e4e7ec;
   margin: 0;
   max-width: none;
   animation: none;

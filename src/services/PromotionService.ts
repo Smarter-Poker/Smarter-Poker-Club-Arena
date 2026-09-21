@@ -346,7 +346,10 @@ class PromotionServiceClass {
       .order('rank', { ascending: true })
       .limit(limit);
 
-    if (error || !data) return [];
+    // An unavailable board is not an empty competition. Both consumers handle
+    // rejection; preserve it so the console can offer its working retry.
+    if (error) throw error;
+    if (!data) return [];
 
     return data.map((entry: any) => {
       const profile = entry.profiles as

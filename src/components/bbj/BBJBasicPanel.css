@@ -1,127 +1,163 @@
-/* BBJ "Basic" tab — conditions plus the fee and payout ladder. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   BBJ "BASIC" - printed on the jackpot console's glass (#ClubArenaConsole)
+
+   This panel paints nothing of its own: it is a page of the BBJInfoModal
+   console, so the frame is the master's and the fee-and-payout ladder is a
+   table on the black glass - headings in lit blue caps, the tier in silver,
+   the money in silver, the caveats muted - with an engraved rule between
+   rows. The ladder is wide by nature and scrolls inside its own box so the
+   sheet itself never scrolls sideways on a 375px screen; that box has no
+   border and no corner. Sizes are cqw against the console. No :hover.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .bbj-basic {
+  --bbjb-rule: 1px solid #000;
+  --bbjb-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 2.4cqw;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
 }
 
-.bbj-basic__rules {
+.bbj-basic__rules,
+.bbj-basic__note {
   margin: 0;
-  font-size: 11.5px;
-  line-height: 1.55;
-  color: rgba(255, 255, 255, 0.65);
+  color: #d7dee7;
+  font:
+    500 3.4cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
-/* The table is wide by nature. It scrolls inside its own box so the sheet
-   itself never scrolls sideways on a 375px screen. */
+.bbj-basic__note {
+  padding-top: 2.4cqw;
+  border-top: var(--bbjb-rule);
+  box-shadow: var(--bbjb-rule-lit);
+  color: #9aa5b3;
+}
+
 .bbj-basic__scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* Five columns at 393px: the ladder fits the glass by letting the payout
+   split wrap onto a second line rather than sliding off the frame. */
 .bbj-basic__table {
   width: 100%;
-  min-width: 340px;
+  /* club-engine.css turns every table into a nowrap scroll box on a phone;
+     on the glass the rows wrap and fit the frame instead. */
+  display: table;
+  overflow: visible;
+  white-space: normal;
   border-collapse: collapse;
-  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .bbj-basic__table th {
-  padding: 7px 8px;
-  text-align: left;
-  vertical-align: top;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 10px;
+  padding: 1.6cqw 1.6cqw 1.6cqw 0;
+  border-top: var(--bbjb-rule);
+  box-shadow: var(--bbjb-rule-lit);
+  color: #45adff;
+  font-size: 2.7cqw;
   font-weight: 700;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.14em;
+  text-align: left;
+  text-transform: uppercase;
+  vertical-align: top;
   white-space: nowrap;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
 .bbj-basic__subhead {
   display: block;
-  margin-top: 2px;
-  font-size: 8.5px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.4);
-  letter-spacing: 0;
+  margin-top: 0.4cqw;
+  white-space: normal;
+  color: #9aa5b3;
+  font-size: 2.3cqw;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 .bbj-basic__table td {
-  padding: 7px 8px;
+  padding: 1.8cqw 1.6cqw 1.8cqw 0;
+  border-top: var(--bbjb-rule);
+  box-shadow: var(--bbjb-rule-lit);
+  color: #e4e7ec;
+  font-size: 3.2cqw;
   vertical-align: middle;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.82);
 }
 
-.bbj-basic__table tr.is-current {
-  background: rgba(213, 218, 226, 0.08);
-}
-
+/* The reader's own stakes: the row is named, never boxed. */
 .bbj-basic__tier {
-  font-weight: 700;
-  color: #fff;
+  color: #e4e7ec;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
   white-space: nowrap;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607;
 }
 
 .bbj-basic__here {
   display: block;
-  margin-top: 2px;
-  font-size: 8px;
+  margin-top: 0.4cqw;
+  color: #45adff;
+  font-size: 2.4cqw;
   font-weight: 800;
-  letter-spacing: 0.5px;
-  color: #d5dae2;
+  letter-spacing: 0.16em;
   white-space: nowrap;
+  text-shadow: 0 0 0.9cqw rgb(49 168 255 / 70%);
 }
 
 .bbj-basic__blinds,
 .bbj-basic__fee {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.bbj-basic__fee {
-  color: #aab3c0;
+  color: #9aa5b3;
+  font-size: 2.8cqw;
   font-weight: 700;
 }
 
-.bbj-basic__pay {
+.bbj-basic__fee {
   white-space: nowrap;
+}
+
+.bbj-basic__pay {
+  white-space: normal;
 }
 
 .bbj-basic__pcts {
   display: block;
-  font-variant-numeric: tabular-nums;
-  color: #fff;
-  font-weight: 600;
+  color: #e4e7ec;
+  font-size: 3cqw;
+  font-weight: 800;
+  line-height: 1.3;
 }
 
 .bbj-basic__today {
   display: block;
-  margin-top: 2px;
-  font-size: 9.5px;
-  color: rgba(213, 218, 226, 0.7);
-  font-variant-numeric: tabular-nums;
-}
-
-.bbj-basic__note {
-  margin: 0;
-  font-size: 10.5px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.45);
+  margin-top: 0.4cqw;
+  color: #9aa5b3;
+  font-size: 2.6cqw;
+  font-weight: 700;
+  letter-spacing: 0.06em;
 }
 
 /* Shown only when bbj_stakes_tiers could not be read and the panel is falling
    back to the client's published copy (see the file header for why the two can
    disagree). Deliberately muted: it is a caveat, not an error. */
 .bbj-basic__stale {
-  margin: 6px 0 0;
-  font-size: 0.6875rem;
-  line-height: 1.45;
-  color: #9fb4d0;
-  opacity: 0.85;
+  margin: 0;
+  color: #9aa5b3;
+  font:
+    600 2.9cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }

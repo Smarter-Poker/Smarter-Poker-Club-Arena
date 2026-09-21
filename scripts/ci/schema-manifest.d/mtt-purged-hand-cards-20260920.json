@@ -1,0 +1,8 @@
+{
+  "_owner": "work/mtt-purged-hand-cards-20260920",
+  "_comment": "Two helper predicates installed with the hole-card retention repair and the Noon inert-abort relaxation. smarter_private.f06_hand_cards_unresolved(uuid,bigint) is the predicate public.cleanup_old_hole_cards() consults before deleting a hand's table_hole_cards rows, so a hand whose f06 permit is still unresolved keeps its cards. smarter_private.f06_zero_cards_abort_is_inert(uuid,uuid,bigint) is the five-condition-plus-identity predicate the two retained-original snapshot functions consult before accepting an abort with no surviving hole cards. Both migrations are ALREADY APPLIED to kuklfnapbkmacvwxktbh - 20260920234208 unresolved_hand_permits_retain_their_original_hole_cards and 20260921051510 only_the_reviewed_noon_hand_may_abort_without_its_hole_cards - and both functions were confirmed live read-only on 2026-09-21: f06_hand_cards_unresolved(p_table_id uuid, p_hand_number bigint) returns boolean, STABLE, SECURITY DEFINER, search_path=pg_catalog, public, smarter_private, owner postgres, acl {postgres=X/postgres,service_role=X/postgres}; f06_zero_cards_abort_is_inert(p_tournament_id uuid, p_table_id uuid, p_hand_number bigint) returns boolean, STABLE, SECURITY DEFINER, same search_path, owner postgres, acl {postgres=X/postgres}. This fragment only tells the base snapshot what production already has; the nightly schema-manifest refresh will absorb it and would go red if either promise were untrue.",
+  "functions": [
+    "smarter_private.f06_hand_cards_unresolved",
+    "smarter_private.f06_zero_cards_abort_is_inert"
+  ]
+}

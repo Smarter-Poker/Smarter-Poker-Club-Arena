@@ -15,6 +15,32 @@ import {
  *  TOURNAMENT LOBBY CARD — Tournament Registration Display
  * Shows tournament info with registration countdown and join button
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * THE CONSOLE (#ClubArenaConsole, 2026-09-08; re-landed 2026-09-20 on the
+ * fixed-format entry contract). The card was a rounded sheet with a strip of
+ * coloured badge pills, a six-cell info GRID, a second strip of feature pills,
+ * a gradient progress bar and a gradient button. Dan, on exactly that shape:
+ * "I'M NOT A BIG FAN OF THESE CARDS. I DON'T LIKE THE 4 BOXES ... I'D MUCH
+ * RATHER SEE THEM LOOK MORE LIKE [the plain console]."
+ *
+ * So it is Dan's approved spade master now: the format is the eyebrow, the
+ * event name is engraved in the header well, the state (Open / Late Reg /
+ * Running / Full) sits in the well's painted pill slot, every figure prints as
+ * a row on the black glass - label in the master's lit blue on the left, value
+ * in silver on the right, an engraved rule between rows - and the two actions
+ * are the plates painted into the foot. Nothing is drawn: no badge pills, no
+ * grid cells, no progress bar, no gradient button.
+ *
+ * THE FOOT PAINTS BOTH PLATES OR NEITHER, so this card always offers two: the
+ * contextual action (Register / Take A Seat / Watch / Open Tournament) on the
+ * blue glass, and Details on the steel - which is what tapping the card itself
+ * has always done, now said out loud.
+ *
+ * Every behaviour is unchanged: the registration check and its three states,
+ * the countdowns, the entry-window projection, the recorded-format tests
+ * (`tournamentPresentation`), the seat-first branch, the watch intent in the
+ * URL and the useAppNavigate routing that keeps a seated player inside their
+ * lobby tab.
  */
 
 import { useState, useEffect, memo } from 'react';
@@ -37,7 +63,10 @@ import {
   mttClockDescription,
   type MttStructureDescription,
 } from '../../../server/src/tournament/mttStructureDescription';
-import { chipsCompact } from './details/types';
+import { compactChips } from '../../utils/format';
+import { SPIN_MAX_MULTIPLIER } from '../lobby/lobbyEntries';
+import { spinMultiplierLabel } from '../../utils/spinReveal';
+import { SpadeConsole, type ConsoleInk, type PlateButtonProps } from '../console/SpadeConsole';
 
 interface Tournament extends TournamentEntryWindowRow {
   format_contract?: unknown;
@@ -74,6 +103,13 @@ interface Tournament extends TournamentEntryWindowRow {
   addonAllowed?: boolean;
   spinMultiplier?: number;
   started_at?: string | null;
+  /* THE THREE COLUMNS THE SPIN RULE READS (2026-09-21). `spinReveal` decides
+     whether this game's wheel has turned from `variant`/`tournament_type`
+     (is it a Spin at all), `status` and `started_at`; `spin_multiplier` is the
+     draw itself, and is null on every row that has not started. */
+  variant?: string | null;
+  tournament_type?: string | null;
+  spin_multiplier?: number | null;
   late_reg_mins?: number | null;
   late_reg_levels?: number | null;
   current_level?: number | null;
@@ -369,45 +405,44 @@ function TournamentLobbyCardInner({
   const getTypeLabel = (type: string): string => {
     switch (type) {
       case 'sng':
-        return 'HEADS UP';
+        return 'Heads Up';
       case 'mtt':
         return 'MTT';
       case 'satellite':
         return 'Satellite';
       case 'spin':
-        return 'SPIN & GO';
+        return 'Spin And Go';
       case 'bounty':
-        return 'BOUNTY';
+        return 'Bounty';
       case 'pko':
         return 'PKO';
       case 'mystery':
-        return 'MYSTERY';
+        return 'Mystery';
       default:
         return type.toUpperCase();
     }
   };
 
-  const getStatusColor = (status: string): string => {
+  /** The master's own inks. No hexes on this surface (Dan: house colours only). */
+  const getStatusInk = (status: string): ConsoleInk => {
     switch (status) {
       case 'registering':
-        return '#10b981'; // Green
+        return 'green';
       case 'running':
-        return '#0a5dc2'; // Amber
-      case 'finished':
-        return '#6b7280'; // Gray
+        return 'blue';
       case 'cancelled':
-        return '#ef4444'; // Red
+        return 'red';
       default:
-        return '#6b7280';
+        return 'muted';
     }
   };
 
   const getStatusLabel = (status: string): string => {
     switch (status) {
       case 'registering':
-        return 'Registering';
+        return 'Open';
       case 'running':
-        return 'In Progress';
+        return 'Running';
       case 'finished':
         return 'Completed';
       case 'cancelled':
@@ -464,6 +499,55 @@ function TournamentLobbyCardInner({
         : ['spin', 'sng'].includes(tournament.type)
           ? 'mtt'
           : tournament.type;
+
+  /**
+   * A SPIN'S MONEY IS THE LADDER UNTIL THE WHEEL TURNS (2026-09-21).
+   *
+   * `prize_pool` for a Spin is written at START, beside the multiplier
+   * (`TournamentManagerBase`), so a registering Spin carries 0 - and this card
+   * printed that 0 as "PRIZE POOL 0" on every filling Spin in the lobby. The
+   * rule for what to print instead is not new and is not invented here: the
+   * main lobby has carried it since 2026-08-25 in `lobbyEntries.spinPrizeLabel`,
+   * with Dan's own words ("YOU NEED TO ADD THE WIN UP TO 100X THE BUY IN AND
+   * SHOW WHAT THE TOP PRIZE IS"). Before the draw a Spin advertises the CEILING
+   * of the ladder, which is honest and gives nothing away; after it, what it
+   * actually pays.
+   *
+   * The multiplier itself goes through `spinReveal`'s gate rather than the
+   * column, because the draw IS the product and a card must not leak it off a
+   * list (that file exists because five surfaces leaked it independently).
+   */
+  const spinLabels = (() => {
+    if (formatKind !== 'spin') return null;
+    const drawn = spinMultiplierLabel({
+      variant: tournament.variant,
+      tournament_type: tournament.tournament_type ?? tournament.type,
+      status: tournament.status,
+      started_at: tournament.started_at,
+      spin_multiplier: tournament.spin_multiplier,
+    });
+    if (!drawn) {
+      const ceiling = (Number(tournament.buyIn) || 0) * SPIN_MAX_MULTIPLIER;
+      return {
+        multiplier: `Win Up To ${SPIN_MAX_MULTIPLIER}x`,
+        moneyLabel: 'Top Prize',
+        /* A ratio is the one thing a player shopping a board of buy-ins
+           cannot compare at a glance. The chips can. */
+        money: ceiling > 0 ? compactChips(ceiling) : null,
+      };
+    }
+    const pool = Number(tournament.prizePool) || 0;
+    /* The row may not have been re-read since the draw; derive the pool from
+       the two numbers already on the card rather than printing a zero. */
+    const derived =
+      pool > 0 ? pool : (Number(tournament.buyIn) || 0) * Number(tournament.spin_multiplier || 0);
+    return {
+      multiplier: drawn,
+      moneyLabel: 'Prize Pool',
+      money: derived > 0 ? compactChips(derived) : null,
+    };
+  })();
+
   // current_players drifts UP (see the Entries note below), so the subtraction
   // can go negative. "-3 spots remaining" is not a thing.
   const spotsRemaining = hasMaxPlayers
@@ -472,82 +556,223 @@ function TournamentLobbyCardInner({
   const isFull = isTournamentEntryUnavailable(tournament, tournament.registeredPlayers);
   /* Only a recorded fixed format can offer a physical seat-first purchase. */
   const isSeatFirstCard = isSeatFirstTournamentFormat(tournament);
-  const fillPct =
-    entryCapacity !== null
-      ? Math.min(100, Math.max(0, (tournament.registeredPlayers / entryCapacity) * 100))
-      : 0;
+
+  /* The speed as ONE word on the glass, from the recorded structure - the
+     same facts the details page prints, never re-derived from a parsed
+     blind array. */
+  const speedTier =
+    structureFacts.speed === 'hyper_turbo' ||
+    structureFacts.speed === 'turbo' ||
+    structureFacts.speed === 'slow'
+      ? structureFacts.speedLabel
+      : null;
+  const tags: string[] = [];
+  if (tournament.isPinned) tags.push('Pinned');
+  if (tournament.isNew) tags.push('New');
+  if (tournament.isVipOnly) tags.push('VIP');
+  if (tournament.isAllInOrFold) tags.push('All In Or Fold');
+  if (speedTier) tags.push(speedTier);
+  if (isFreezout(tournament)) tags.push('Freezeout');
+  if (tournament.isBounty && !tournament.isPko && !tournament.isMysteryBounty) {
+    tags.push(tournament.bountyAmount ? `Bounty ${money(tournament.bountyAmount)}` : 'Bounty');
+  }
+  if (tournament.isPko) tags.push('PKO');
+  if (tournament.isMysteryBounty) tags.push('Mystery Bounty');
+  if (tournament.isMultiDay) tags.push('Multi-Day');
+  if (tournament.isRebuy) tags.push('Rebuy');
+
+  /* THE PILL SLOT. One short word for the state a player is deciding on. */
+  const pill =
+    tournament.status === 'running' && hasLateReg && lateRegActive
+      ? 'Late Reg'
+      : tournament.status === 'registering' && isFull
+        ? 'Full'
+        : getStatusLabel(tournament.status);
+  const pillInk: ConsoleInk =
+    tournament.status === 'running' && hasLateReg && lateRegActive
+      ? 'gold'
+      : tournament.status === 'registering' && isFull
+        ? 'red'
+        : getStatusInk(tournament.status);
+
+  /**
+   * THE ACTION, on the blue glass. One branch per state, exactly the branches
+   * this card has always had - only their chrome changed.
+   */
+  /* A finished or cancelled event offers no admission control at all, and the
+     foot paints both plates or neither (SKILL.md 1.5): so it paints neither,
+     the state prints in the pill, and the card itself is still the way to its
+     history. */
+  let primary: PlateButtonProps | null = null;
+  if (tournament.status === 'registering' && regCheckFailed) {
+    // We could not ask whether this player is already in. Offering
+    // "Register" here risks a duplicate paid entry; offering "Registered"
+    // risks hiding the only way in. Say what is actually true.
+    primary = { label: 'Entry Status Unavailable', ink: 'muted', disabled: true };
+  } else if (tournament.status === 'registering' && isSeatFirstCard) {
+    /* A SEAT-FIRST GAME IS NOT REGISTERED, IT IS SAT AT (2026-09-03).
+       Every row this card renders on a target's Satellites tab used to be
+       a registerable MTT. The satellite heads-ups added today are two-seat
+       games, and a two-seat game is entered by taking a seat at its table:
+       fn_register_for_tournament refuses it outright with
+       `seat_first_variant` ("This game is entered by taking a seat at its
+       table"). Offering Register there is a button that cannot ever
+       succeed - the same dead end lobbyEntries.isSeatFirstTournament was
+       written to prevent on the main board, which this tab never learned.
+
+       The recorded fixed format owns this route, including funded legacy
+       satellites. */
+    primary = {
+      label: isFull ? 'Entry Unavailable' : `Take A Seat (${money(tournament.buyIn)})`,
+      ink: isFull ? 'muted' : 'white',
+      disabled: isFull,
+      onClick: (e) => {
+        e.stopPropagation();
+        if (!isFull) navigate(`/tournaments/${tournament.id}?seat=1`);
+      },
+    };
+  } else if (tournament.status === 'registering' && isRegistered) {
+    primary = {
+      label: 'Unregister',
+      ink: 'red',
+      onClick: (e) => {
+        e.stopPropagation();
+        handleUnregister();
+      },
+    };
+  } else if (tournament.status === 'registering') {
+    primary = {
+      label: registering
+        ? 'Registering...'
+        : !entryDetailsKnown
+          ? 'Entry Status Unavailable'
+          : isFull
+            ? 'Tournament Full'
+            : `Register (${money(tournament.buyIn)})`,
+      ink: isFull || !entryDetailsKnown ? 'muted' : 'white',
+      disabled: registering || isFull,
+      onClick: (e) => {
+        e.stopPropagation();
+        handleRegister();
+      },
+    };
+  } else if (tournament.status === 'running') {
+    /* Dan 2026-08-25 (binding): "when I click on a tournament that's
+       RUNNING I should be able to click a button and watch."
+       This branch was gated on `isRegistered`, so a running tournament you
+       were not in rendered NO action at all — the card was a dead end for
+       exactly the player who wants to watch. Everyone gets a button now;
+       only its wording differs, because "open the tournament you are
+       playing" and "watch someone else's" are different intents. Both land
+       on the tournament screen, whose footer carries WATCH straight to the
+       featured table. */
+    primary = {
+      label: isRegistered ? 'Open Tournament' : 'Watch',
+      ink: 'white',
+      onClick: (e) => {
+        e.stopPropagation();
+        /* 2026-08-25, second audit: both labels navigated to the
+           details page, so a button that says "Watch" dropped the player
+           on a screen where they still had to find the real WATCH
+           button. This card has only a tournament id — it cannot know
+           which table is featured without a query per card — so it hands
+           the intent along in the URL and the details page acts on it
+           the moment its featured table resolves. */
+        navigate(
+          isRegistered ? `/tournaments/${tournament.id}` : `/tournaments/${tournament.id}?watch=1`
+        );
+      },
+    };
+  }
 
   return (
-    <div
-      className={`${styles.card} ${tournament.isPinned ? styles.pinnedCard : ''}`}
+    <SpadeConsole
+      as="div"
+      className={styles.card}
+      /* The recorded format names the card; a format nobody has recorded is
+         plainly a Tournament, never a guess. */
+      eyebrow={formatKnown ? getTypeLabel(displayType) : 'Tournament'}
+      /* The name, and only the name. Prefixing the guarantee pushed the title
+         past the header well and truncated it ("5K GTD SUNDAY DEEPSTAC"); the
+         guarantee already prints, in gold, on the PRIZE POOL row below. */
+      title={formatGameTitle(tournament.name)}
+      pill={pill}
+      pillInk={pillInk}
       onClick={() => navigate(`/tournaments/${tournament.id}`)}
       style={{
         cursor: 'pointer',
         opacity: mounted ? 1 : 0,
         transform: mounted ? 'translateY(0)' : 'translateY(8px)',
-        transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+        transition:
+          'opacity 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
       }}
+      foot={primary ? undefined : 'foot'}
+      plates={
+        primary
+          ? {
+              secondary: {
+                label: 'Details',
+                onClick: (e) => {
+                  e.stopPropagation();
+                  navigate(`/tournaments/${tournament.id}`);
+                },
+              },
+              primary,
+            }
+          : undefined
+      }
     >
-      {/* Header */}
-      <div className={styles.header}>
-        {tournament.isPinned && <span className={styles.pinnedBadge}>PINNED</span>}
-        {tournament.isNew && <span className={styles.newBadge}>NEW</span>}
-        {tournament.isVipOnly && <span className={styles.vipBadge}>VIP</span>}
-        {tournament.isAllInOrFold && <span className={styles.aofBadge}>AoF</span>}
-        <span className={styles.type}>
-          {formatKnown ? getTypeLabel(displayType) : 'Tournament'}
-        </span>
-        <span className={styles.status} style={{ color: getStatusColor(tournament.status) }}>
-          {getStatusLabel(tournament.status)}
-        </span>
-        {(() => {
-          const speedTier =
-            structureFacts.speed === 'hyper_turbo'
-              ? { tier: structureFacts.speedLabel, color: '#ef4444' }
-              : structureFacts.speed === 'turbo'
-                ? { tier: structureFacts.speedLabel, color: '#1877f2' }
-                : structureFacts.speed === 'slow'
-                  ? { tier: structureFacts.speedLabel, color: '#0ea5e9' }
-                  : null;
-          return speedTier ? (
-            <span className={styles.speedBadge} style={{ backgroundColor: speedTier.color }}>
-              {speedTier.tier}
+      {tags.length > 0 && (
+        <p className={styles.tags}>
+          {tags.map((tag) => (
+            <span key={tag} className={`${styles.tag} sc-label sc-ink--blue`}>
+              {tag}
             </span>
-          ) : null;
-        })()}
-        {isFreezout(tournament) && <span className={styles.freezeoutTag}>Freezeout</span>}
-      </div>
+          ))}
+        </p>
+      )}
 
-      {/* Title */}
-      <h3 className={styles.title}>
-        {tournament.guaranteedPrize && tournament.guaranteedPrize > 0
-          ? `${chipsCompact(tournament.guaranteedPrize)} GTD `
-          : ''}
-        {formatGameTitle(tournament.name)}
-      </h3>
-
-      {/* Info Grid */}
-      <div className={styles.info}>
-        <div className={styles.infoItem}>
-          <span className={styles.infoLabel}>Buy-In</span>
-          {/* Whole chips only (Dan 2026-08-20) - never a decimal buy-in. */}
-          <span className={styles.infoValue}>{money(tournament.buyIn)}</span>
+      <div className={styles.rows}>
+        <div className={styles.row}>
+          <span className="sc-label sc-ink--blue">Buy-In</span>
+          {/* Whole chips only (Dan 2026-08-20), and EXACT: this is the figure
+              the server charges, so it is never abbreviated. */}
+          <span className={`${styles.value} sc-ink--silver`}>{money(tournament.buyIn)}</span>
         </div>
-        <div className={styles.infoItem}>
-          <span className={styles.infoLabel}>Prize Pool</span>
-          <span className={styles.infoValue}>
-            {(() => {
-              const gtd = tournament.guaranteedPrize || 0;
-              const displayPool =
-                gtd > 0 ? Math.max(tournament.prizePool, gtd) : tournament.prizePool;
-              return money(displayPool);
-            })()}
-            {tournament.guaranteedPrize && tournament.guaranteedPrize > 0 && (
-              <span className={styles.gtdBadge}>GTD</span>
+
+        <div className={styles.row}>
+          <span className="sc-label sc-ink--blue">
+            {spinLabels ? spinLabels.moneyLabel : 'Prize Pool'}
+          </span>
+          <span className={`${styles.value} sc-ink--silver`}>
+            {spinLabels
+              ? (spinLabels.money ?? 'Unavailable')
+              : (() => {
+                  const gtd = tournament.guaranteedPrize || 0;
+                  const displayPool =
+                    gtd > 0 ? Math.max(tournament.prizePool, gtd) : tournament.prizePool;
+                  return compactChips(displayPool);
+                })()}
+            {/* `guaranteedPrize && ...` printed a literal 0 after the pool
+                ("400" for a 40-chip pool with no guarantee): React renders the
+                number 0. Compare, never coerce. */}
+            {!spinLabels && (tournament.guaranteedPrize ?? 0) > 0 && (
+              <span className={`${styles.gtd} sc-ink--gold`}>GTD</span>
             )}
           </span>
         </div>
-        <div className={styles.infoItem}>
+
+        {/* The multiplier is the whole reason the format exists, so a Spin
+            says where it stands: the ladder's ceiling while it fills, the
+            drawn number once the wheel has landed. */}
+        {spinLabels && (
+          <div className={styles.row}>
+            <span className="sc-label sc-ink--blue">Multiplier</span>
+            <span className={`${styles.value} sc-ink--gold`}>{spinLabels.multiplier}</span>
+          </div>
+        )}
+
+        <div className={styles.row}>
           {/* ENTRIES, NOT PLAYERS (2026-08-25). This number comes from
               tournaments.current_players, which is a REGISTRATION counter: it
               is incremented on entry and is never decremented on an
@@ -555,24 +780,26 @@ function TournamentLobbyCardInner({
               people actually sitting down. Labelling it "Players" presented a
               registration total as live seat truth. The seat truth lives in
               tournament_players and is what TournamentInfoPanel reads. */}
-          <span className={styles.infoLabel}>Entries</span>
-          <span className={styles.infoValue}>
+          <span className="sc-label sc-ink--blue">Entries</span>
+          <span className={`${styles.value} sc-ink--silver`}>
             {tournament.registeredPlayers.toLocaleString()}
             {entryCapacity !== null ? `/${entryCapacity.toLocaleString()}` : ''}
           </span>
         </div>
-        <div className={styles.infoItem}>
-          <span className={styles.infoLabel}>Starting Chips</span>
-          <span className={styles.infoValue}>
-            {tournament.startingChips ? tournament.startingChips.toLocaleString() : '-'}
+
+        <div className={styles.row}>
+          <span className="sc-label sc-ink--blue">Starting Chips</span>
+          <span className={`${styles.value} sc-ink--silver`}>
+            {tournament.startingChips ? compactChips(tournament.startingChips) : '-'}
             {structureFacts.startingDepthBB !== null &&
               ` · ${structureFacts.startingDepthBB.toLocaleString(undefined, { maximumFractionDigits: 2 })} BB`}
           </span>
         </div>
+
         {tournament.gameType && (
-          <div className={styles.infoItem}>
-            <span className={styles.infoLabel}>Game</span>
-            <span className={styles.infoValue}>
+          <div className={styles.row}>
+            <span className="sc-label sc-ink--blue">Game</span>
+            <span className={`${styles.value} sc-ink--silver`}>
               {(
                 {
                   NLH: 'NLH',
@@ -590,178 +817,61 @@ function TournamentLobbyCardInner({
             </span>
           </div>
         )}
-        <div className={styles.infoItem}>
-          <span className={styles.infoLabel}>Structure</span>
-          <span className={styles.infoValue}>{structureFacts.speedLabel ?? 'Unconfirmed'}</span>
-        </div>
-        <div className={styles.infoItem}>
-          <span className={styles.infoLabel}>Levels</span>
-          <span className={styles.infoValue}>{mttClockDescription(structureFacts)}</span>
-        </div>
-      </div>
 
-      {/* Feature Tags */}
-      {(hasLateReg ||
-        tournament.isRebuy ||
-        tournament.isBounty ||
-        tournament.isPko ||
-        tournament.isMysteryBounty ||
-        tournament.isMultiDay) && (
-        <div className={styles.featureTags}>
-          {tournament.isBounty && !tournament.isPko && !tournament.isMysteryBounty && (
-            <span className={`${styles.featureTag} ${styles.bountyTag}`}>
-              Bounty {tournament.bountyAmount ? tournament.bountyAmount : ''}
-            </span>
-          )}
-          {tournament.isPko && <span className={`${styles.featureTag} ${styles.pkoTag}`}>PKO</span>}
-          {tournament.isMysteryBounty && (
-            <span className={`${styles.featureTag} ${styles.mysteryTag}`}>Mystery Bounty</span>
-          )}
-          {tournament.isMultiDay && (
-            <span className={`${styles.featureTag} ${styles.multiDayTag}`}>Multi-Day</span>
-          )}
-          {tournament.status === 'running' && hasLateReg ? (
-            <span
-              className={`${styles.featureTag} ${styles.lateRegTag} ${!lateRegActive ? styles.lateRegClosed : ''} ${!lateRegActive ? styles.criticalWarning : ''}`}
-            >
-              Late Reg: {lateRegActive ? lateRegCountdown || 'Open' : 'Closed'}
-            </span>
-          ) : (
-            tournament.status === 'registering' &&
-            hasLateReg && (
-              <span className={styles.featureTag}>
-                {lateRegLevels > 0
-                  ? `Late Reg Through Lvl ${lateRegLevels}`
-                  : `Late Reg ${lateRegMinutes} Min`}
-              </span>
-            )
-          )}
-          {tournament.isRebuy && <span className={styles.featureTag}>Rebuy</span>}
-        </div>
-      )}
-
-      {/* Countdown */}
-      {tournament.startsAt && tournament.status === 'registering' && (
-        <div className={`${styles.countdown} ${isCountdownCritical ? styles.critical : ''}`}>
-          <span className={styles.countdownLabel}>Starts In</span>
-          <span className={styles.countdownValue}>{countdown}</span>
-        </div>
-      )}
-
-      {/* Progress Bar — only show for capped tournaments (SNG/Spin) */}
-      {hasMaxPlayers ? (
-        <>
-          <div className={styles.progressBar}>
-            <div className={styles.progressFill} style={{ width: `${fillPct}%` }} />
-          </div>
-          <span className={styles.spotsLabel}>
-            {isFull ? 'Tournament Full' : `${spotsRemaining.toLocaleString()} Spots Remaining`}
+        <div className={styles.row}>
+          <span className="sc-label sc-ink--blue">Structure</span>
+          <span className={`${styles.value} sc-ink--silver`}>
+            {structureFacts.speedLabel ?? 'Unconfirmed'}
           </span>
-        </>
-      ) : (
-        <span className={styles.spotsLabel}>
-          {tournament.registeredPlayers.toLocaleString()} Registered
-          {unlimited ? ' - Open Entry' : ''}
-        </span>
-      )}
+        </div>
 
-      {/* Action Button */}
-      <div className={styles.actions}>
-        {tournament.status === 'registering' && regCheckFailed ? (
-          // We could not ask whether this player is already in. Offering
-          // "Register" here risks a duplicate paid entry; offering "Registered"
-          // risks hiding the only way in. Say what is actually true.
-          <button className={styles.registerBtn} disabled>
-            Entry Status Unavailable
-          </button>
-        ) : null}
-        {/* A SEAT-FIRST GAME IS NOT REGISTERED, IT IS SAT AT (2026-09-03).
-            Every row this card renders on a target's Satellites tab used to be
-            a registerable MTT. The satellite heads-ups added today are two-seat
-            games, and a two-seat game is entered by taking a seat at its table:
-            fn_register_for_tournament refuses it outright with
-            `seat_first_variant` ("This game is entered by taking a seat at its
-            table"). Offering Register there is a button that cannot ever
-            succeed - the same dead end lobbyEntries.isSeatFirstTournament was
-            written to prevent on the main board, which this tab never learned.
+        <div className={styles.row}>
+          <span className="sc-label sc-ink--blue">Levels</span>
+          <span className={`${styles.value} sc-ink--silver`}>
+            {mttClockDescription(structureFacts)}
+          </span>
+        </div>
 
-            The recorded fixed format owns this route, including funded legacy satellites. */}
-        {tournament.status === 'registering' && isSeatFirstCard && !regCheckFailed && (
-          <button
-            className={styles.registerBtn}
-            disabled={isFull}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (!isFull) navigate(`/tournaments/${tournament.id}?seat=1`);
-            }}
-          >
-            {isFull ? 'Entry Unavailable' : `Take A Seat (${money(tournament.buyIn)})`}
-          </button>
-        )}
-        {tournament.status === 'registering' &&
-          !isSeatFirstCard &&
-          !regCheckFailed &&
-          (isRegistered ? (
-            <button
-              className={styles.unregisterBtn}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleUnregister();
-              }}
+        {hasLateReg &&
+          (tournament.status === 'registering' ||
+            (tournament.status === 'running' && lateRegActive)) && (
+            <div className={styles.row}>
+              <span className="sc-label sc-ink--blue">Late Reg</span>
+              <span className={`${styles.value} sc-ink--gold`}>
+                {tournament.status === 'running'
+                  ? lateRegCountdown || 'Open'
+                  : lateRegLevels > 0
+                    ? `Through Lvl ${lateRegLevels}`
+                    : `${lateRegMinutes} Min`}
+              </span>
+            </div>
+          )}
+
+        {tournament.startsAt && tournament.status === 'registering' && countdown && (
+          <div className={styles.row}>
+            <span className="sc-label sc-ink--blue">Starts In</span>
+            <span
+              className={`${styles.value} ${isCountdownCritical ? 'sc-ink--red' : 'sc-ink--silver'}`}
             >
-              Registered - Unregister?
-            </button>
-          ) : (
-            <button
-              className={styles.registerBtn}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRegister();
-              }}
-              disabled={registering || isFull}
-            >
-              {registering
-                ? 'Registering...'
-                : !entryDetailsKnown
-                  ? 'Entry Status Unavailable'
-                  : isFull
-                    ? 'Tournament Full'
-                    : `Register (${money(tournament.buyIn)})`}
-            </button>
-          ))}
-        {/* Dan 2026-08-25 (binding): "when I click on a tournament that's
-            RUNNING I should be able to click a button and watch."
-            This branch was gated on `isRegistered`, so a running tournament you
-            were not in rendered NO action at all — the card was a dead end for
-            exactly the player who wants to watch. Everyone gets a button now;
-            only its wording differs, because "open the tournament you are
-            playing" and "watch someone else's" are different intents. Both land
-            on the tournament screen, whose footer carries WATCH straight to the
-            featured table. */}
-        {tournament.status === 'running' && (
-          <button
-            className={styles.playBtn}
-            onClick={(e) => {
-              e.stopPropagation();
-              /* 2026-08-25, second audit: both labels navigated to the
-                 details page, so a button that says "Watch" dropped the player
-                 on a screen where they still had to find the real WATCH
-                 button. This card has only a tournament id — it cannot know
-                 which table is featured without a query per card — so it hands
-                 the intent along in the URL and the details page acts on it
-                 the moment its featured table resolves. */
-              navigate(
-                isRegistered
-                  ? `/tournaments/${tournament.id}`
-                  : `/tournaments/${tournament.id}?watch=1`
-              );
-            }}
-          >
-            {isRegistered ? 'Open Tournament' : 'Watch'}
-          </button>
+              {countdown}
+            </span>
+          </div>
         )}
+
+        <div className={styles.row}>
+          <span className="sc-label sc-ink--blue">Seats</span>
+          <span className={`${styles.value} sc-ink--silver`}>
+            {hasMaxPlayers
+              ? isFull
+                ? 'Tournament Full'
+                : `${spotsRemaining.toLocaleString()} ${spotsRemaining === 1 ? 'Spot' : 'Spots'} Remaining`
+              : unlimited
+                ? 'Open Entry'
+                : 'Entry Details Unavailable'}
+          </span>
+        </div>
       </div>
-    </div>
+    </SpadeConsole>
   );
 }
 export default memo(TournamentLobbyCardInner);

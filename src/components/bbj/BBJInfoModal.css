@@ -1,45 +1,65 @@
-/* BBJ info modal — bottom sheet on phones, centered card on wider screens */
+/* ═══════════════════════════════════════════════════════════════════════════
+   BBJ INFO MODAL - on the spade console (#ClubArenaConsole)
 
-/* NO backdrop-filter HERE (2026-08-21).
- *
- * The club lobby already paints fourteen blurred surfaces. Laying a
- * full-viewport backdrop-filter on top of that asks the compositor to
- * re-blur the entire page - and every blurred layer under it - on every
- * frame, while the lobby's ambient animations keep invalidating it. On the
- * machines that showed it, opening the popup made the whole page stutter.
- * A slightly deeper flat scrim reads the same and costs one paint.
- *
- * `isolation` keeps the overlay in its own stacking context, and
- * `contain: paint` stops anything inside it invalidating the page behind. */
+   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
+   spade master (components/console/SpadeConsole.css): the pool is the
+   engraved title, the tier is the word in the painted pill slot, the stakes
+   line is the subtitle. This file lays the rest on the black glass between
+   the rails: the three pages and the Bad Beat Jackpot | Mini pair as lit
+   words, the "at this table" figures as rows separated by engraved rules (a
+   black cut with a lit edge above it), and CLOSE as the lit word at the
+   foot. Nothing is drawn: no sheet, no pill, no card, no button face. Sizes
+   are cqw against the console. No :hover (tests/no-hover-effects.law.test.ts).
+
+   NO backdrop-filter HERE (2026-08-21). The club lobby already paints
+   fourteen blurred surfaces; a full-viewport blur on top of that re-blurs
+   the whole page on every frame. A flat scrim reads the same and costs one
+   paint. `isolation` keeps the overlay in its own stacking context, and
+   `contain: paint` stops anything inside it invalidating the page behind.
+
+   BadBeatJackpotPage.tsx imports this sheet for the Bad Beat Jackpot | Mini
+   pair (.bbj-modal__tiers) it prints above its own winners list, so those
+   two rules size in px at the base and in cqw only inside the console.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .bbj-modal__backdrop {
+  --bbjc-rule: 1px solid #000;
+  --bbjc-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
   position: fixed;
   inset: 0;
   z-index: 1200;
-  background: rgba(0, 0, 0, 0.78);
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: center;
+  padding: max(10px, env(safe-area-inset-top)) 8px max(10px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgb(2 4 7 / 88%);
   isolation: isolate;
   contain: paint;
+  color: #e6e9ee;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  color-scheme: dark;
 }
 
-.bbj-modal {
-  width: 100%;
-  max-width: 520px;
-  max-height: 86vh;
-  display: flex;
-  flex-direction: column;
-  border-radius: 16px 16px 0 0;
-  border: 1px solid rgba(213, 218, 226, 0.3);
-  border-bottom: none;
-  background: linear-gradient(180deg, #15171c 0%, #0e0e10 100%);
-  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.6);
+/* The dialog is the console and nothing else; its name is deliberately not
+   one metallic-popups.css paints a steel shell on. */
+.bbjc {
+  width: min(100%, 560px);
+  min-width: 0;
+  margin: auto 0;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: 0;
   animation: bbj-modal-up 0.22s ease-out;
-  /* The entry animation moves and fades this panel; telling the compositor
-     up front stops it promoting and demoting a layer mid-animation. */
   will-change: transform, opacity;
-  /* iOS safe area */
-  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.bbjc:focus-visible {
+  outline: 0;
 }
 
 @keyframes bbj-modal-up {
@@ -47,6 +67,7 @@
     transform: translateY(16px);
     opacity: 0;
   }
+
   to {
     transform: translateY(0);
     opacity: 1;
@@ -54,212 +75,274 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bbj-modal {
+  .bbjc {
     animation: none;
   }
 }
 
-@media (min-width: 600px) {
-  .bbj-modal__backdrop {
-    align-items: center;
-  }
-
-  .bbj-modal {
-    border-radius: 16px;
-    border-bottom: 1px solid rgba(213, 218, 226, 0.3);
-  }
+.bbjc__console {
+  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
 }
 
-.bbj-modal__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+.bbjc .sc__title,
+.bbjc .sc__eyebrow,
+.bbjc .sc__subtitle,
+.bbjc .sc__pill {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
 }
 
-.bbj-modal__title {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+/* The header follows the row: a flat mini reads as a smaller figure than
+   the pool. */
+.bbj-modal__amount--mini .sc__title {
+  font-size: 5.8cqw;
 }
 
-.bbj-modal__label {
-  font-size: 10px;
-  letter-spacing: 1.6px;
-  font-weight: 700;
-  color: rgba(226, 231, 238, 0.75);
-}
-
-.bbj-modal__amount {
-  font-size: 26px;
-  font-weight: 900;
-  color: #d5dae2;
-  text-shadow: 0 0 16px rgba(213, 218, 226, 0.45);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.15;
-}
-
-.bbj-modal__close {
-  flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 24px;
-  line-height: 1;
-  cursor: pointer;
-}
+/* ── The three pages: lit words on the glass ────────────────────────────── */
 
 .bbj-modal__tabs {
   display: flex;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  gap: 2cqw;
+  justify-content: space-between;
 }
 
+/* Three words across 79% of the console: the longest, QUALIFYING HANDS, is
+   what sets the size, so the row is measured against it at 393px. */
 .bbj-modal__tab {
-  flex: 1;
+  appearance: none;
+  flex: 0 1 auto;
+  min-width: 0;
   min-height: 44px;
+  margin: 0;
+  padding: 1.6cqw 0;
+  border: 0;
   background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 13px;
-  font-weight: 700;
+  color: #9aa5b3;
+  font:
+    800 3.1cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
   cursor: pointer;
+  touch-action: manipulation;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 .bbj-modal__tab.is-active {
-  color: #d5dae2;
-  box-shadow: inset 0 -2px 0 #d5dae2;
+  color: #f4f7fb;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
 /* THE SECOND ROW (Dan 2026-09-11): Bad Beat Jackpot | Mini. Smaller and
-   quieter than the three page tabs on purpose - "shouldn't be a main feature"
-   - a pill pair under the tabs rather than a fourth tab beside them. */
+   quieter than the three page tabs on purpose - "shouldn't be a main
+   feature" - a pair of small lit words under the pages rather than a
+   fourth page beside them. Base sizes in px for the jackpot page. */
 .bbj-modal__tiers {
   display: flex;
-  gap: 6px;
-  padding: 8px 12px 0;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: var(--bbjc-rule, 1px solid #000);
+  box-shadow: var(--bbjc-rule-lit, inset 0 1px 0 rgb(255 255 255 / 8%));
 }
 
 .bbj-modal__tier {
+  appearance: none;
   min-height: 30px;
-  padding: 0 12px;
-  border-radius: 15px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.4px;
+  margin: 0;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: #9aa5b3;
+  font:
+    800 12px/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
   cursor: pointer;
+  touch-action: manipulation;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
 }
 
 .bbj-modal__tier.is-active {
-  color: #0a1626;
-  background: #d5dae2;
-  border-color: #d5dae2;
+  color: #45adff;
+  text-shadow:
+    0 0 6px rgb(49 168 255 / 70%),
+    0 1px 2px rgb(0 0 0 / 85%);
 }
 
-/* The header follows the row: a flat mini reads as a smaller figure than the
-   pool, and it carries one line under it saying which stakes it is for. */
-.bbj-modal__amount--mini {
-  font-size: 22px;
+.bbjc .bbj-modal__tiers {
+  gap: 2cqw;
+  padding-top: 2cqw;
 }
 
-.bbj-modal__sublabel {
-  font-size: 10px;
-  letter-spacing: 0.6px;
-  color: rgba(226, 231, 238, 0.6);
-  margin-top: 2px;
+.bbjc .bbj-modal__tier {
+  padding: 1.6cqw 2cqw;
+  font-size: 2.9cqw;
 }
+
+.bbj-modal__tab:active,
+.bbj-modal__tier:active,
+.bbjc-word:active {
+  filter: brightness(1.25);
+}
+
+.bbj-modal__tab:focus-visible,
+.bbj-modal__tier:focus-visible,
+.bbjc-word:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
+}
+
+/* metallic-popups.css bevels every button inside a dialog with !important
+   at 0,0,1 and paints steel hardware on anything labelled Close. Lit words
+   paint nothing: the longhands are restated at 0,2,1 or more. */
+[role='dialog'] .bbj-modal__tab.bbj-modal__tab,
+[role='dialog'] .bbj-modal__tier.bbj-modal__tier,
+[role='dialog'] .bbjc-word.bbjc-word {
+  min-width: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+[role='dialog'] .bbjc-word.bbjc-word {
+  color: #f4f7fb !important;
+}
+
+/* ── The page: printed on the glass under an engraved rule ──────────────── */
 
 .bbj-modal__body {
-  padding: 12px;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  padding-top: 2.6cqw;
+  border-top: var(--bbjc-rule);
+  box-shadow: var(--bbjc-rule-lit);
 }
 
-/* Wrapper for the two rules tabs, so their blocks breathe the same way. */
+.bbj-modal__body:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
+}
+
 .bbj-modal__rules {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 3cqw;
 }
+
+/* "At this table" - the summary above the full tables, as rows. */
+.bbj-modal__here {
+  display: grid;
+  gap: 1.2cqw;
+  padding-bottom: 2.6cqw;
+  border-bottom: var(--bbjc-rule);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+}
+
 .bbj-modal__rule-label {
   display: block;
-  font-size: 10px;
-  letter-spacing: 0.8px;
+  color: #45adff;
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.45);
-  margin-bottom: 4px;
+  text-shadow: 0 0 0.9cqw rgb(49 168 255 / 60%);
 }
 
 .bbj-modal__rule-text {
   margin: 0;
-  font-size: 14px;
-  line-height: 1.45;
-  color: #fff;
+  color: #d7dee7;
+  font:
+    500 3.7cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 .bbj-modal__rule-text strong {
-  color: #d5dae2;
+  color: #e4e7ec;
+  font-weight: 800;
 }
 
 .bbj-modal__rule-sub {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.55);
+  margin: 0;
+  color: #9aa5b3;
+  font:
+    500 3.1cqw/1.4 Inter,
+    system-ui,
+    sans-serif;
 }
 
 .bbj-modal__split {
-  margin-top: 10px;
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: grid;
+  margin-top: 1.4cqw;
 }
 
 .bbj-modal__split-row {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.85);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.bbj-modal__split-row + .bbj-modal__split-row {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  gap: 2.4cqw;
+  padding: 1.8cqw 0;
+  border-top: var(--bbjc-rule);
+  box-shadow: var(--bbjc-rule-lit);
+  color: #45adff;
+  font-size: 2.9cqw;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .bbj-modal__split-row span:last-child {
-  color: #d5dae2;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
+  color: #e4e7ec;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: none;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .bbj-modal__fineprint {
   margin: 0;
-  font-size: 11px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.5);
+  color: #9aa5b3;
+  font:
+    500 2.9cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
 }
 
-/* "At this table" summary above the full tables (2026-08-18) */
-.bbj-modal__here {
-  margin-bottom: 14px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(213, 218, 226, 0.3);
-  background: rgba(213, 218, 226, 0.06);
+/* ── The lit word at the foot: CLOSE ────────────────────────────────────── */
+
+.bbjc__actions {
+  display: flex;
+  justify-content: center;
+  padding-top: 2.6cqw;
+  border-top: var(--bbjc-rule);
+  box-shadow: var(--bbjc-rule-lit);
 }
 
-.bbj-modal__here .bbj-modal__rule-text {
-  font-size: 13px;
+.bbjc-word {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 1.6cqw 4cqw;
+  border: 0;
+  background: transparent;
+  font:
+    800 3.6cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
 }

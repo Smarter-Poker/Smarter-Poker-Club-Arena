@@ -1,0 +1,310 @@
+.commandDeck {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(380px, 0.85fr);
+  gap: 14px;
+}
+
+.streakConsole,
+.summaryGrid,
+.unclaimedBar,
+.alertConsole,
+.syncNotice,
+.missionBoard,
+.footer {
+  border: 1px solid #3d4851;
+  background: #080c0f;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.055),
+    0 18px 44px rgba(0, 0, 0, 0.28);
+}
+
+.syncNotice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 15px 18px;
+  border-left: 3px solid var(--mission-gold);
+}
+
+.syncNoticeError {
+  border-left-color: #f02849;
+}
+
+.syncNotice > div {
+  display: grid;
+  gap: 5px;
+}
+
+.syncNotice strong {
+  color: #dce4e9;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.retryButton {
+  min-height: 44px;
+  flex: none;
+  padding: 0 16px;
+  border: 1px solid #71818c;
+  background: #0b1013;
+  color: #ecf3f6;
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.retryButton:disabled {
+  cursor: wait;
+  opacity: 0.52;
+}
+
+.streakConsole {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(180px, 1fr);
+  gap: 18px 24px;
+  padding: 22px;
+}
+
+.streakCore {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.streakFireVisual {
+  display: inline-grid;
+  width: 58px;
+  height: 58px;
+  flex: 0 0 58px;
+  place-items: center;
+  border: 1px solid rgba(214, 173, 82, 0.42);
+  background:
+    radial-gradient(circle, rgba(85, 232, 255, 0.08), transparent 64%),
+    linear-gradient(145deg, #1c2423, #040706 70%);
+  clip-path: polygon(
+    10px 0,
+    100% 0,
+    100% calc(100% - 10px),
+    calc(100% - 10px) 100%,
+    0 100%,
+    0 10px
+  );
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.12),
+    0 0 18px rgba(214, 173, 82, 0.08);
+}
+
+.streakFireVisual > [data-casino-control-icon] {
+  --control-size: 44px;
+}
+
+.streakInfo {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.streakCount {
+  margin: 0;
+  color: var(--mission-white);
+  font-size: 1.45rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.streakDesc {
+  color: #8a98a2;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+
+.milestoneTracker {
+  align-self: center;
+  min-width: 0;
+}
+
+.milestoneLabels {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 8px;
+  color: #88949d;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.milestoneBar,
+.progressTrack {
+  position: relative;
+  overflow: hidden;
+  height: 7px;
+  border: 1px solid #222a30;
+  background: #020405;
+  box-shadow: inset 0 2px 4px #000;
+}
+
+.milestoneFill {
+  height: 100%;
+  background: var(--gradient-gold, linear-gradient(135deg, #ffd700 0%, #ffa500 100%));
+  box-shadow: 0 0 12px rgb(255 215 0 / 45%);
+}
+
+.freezeLine {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(165, 180, 190, 0.15);
+}
+
+.freezeInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.freezeInfo span {
+  color: #dbe4e9;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.freezeInfo small {
+  color: #83919b;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.66rem;
+}
+
+.freezeReceipt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(85, 232, 255, 0.3);
+  background: linear-gradient(100deg, rgba(4, 55, 61, 0.38), rgba(4, 10, 12, 0.72));
+  box-shadow: inset 0 0 16px rgba(85, 232, 255, 0.05);
+}
+
+.freezeReceipt > div {
+  display: grid;
+  gap: 2px;
+}
+
+.freezeReceipt strong {
+  color: #d8fbff;
+  font-size: 0.7rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.buyFreezeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 18px;
+}
+
+.freezeAction {
+  display: grid;
+  flex: none;
+  gap: 6px;
+  justify-items: stretch;
+}
+
+.actionHint {
+  max-width: 250px;
+  color: #8b99a3;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.64rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.buyFreezeBtn .buttonPrice,
+.diamond {
+  color: var(--mission-blue);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  margin: -1px;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.buyFreezeBtn:disabled,
+.claimButton:disabled,
+.claimAllButton:disabled,
+.rerollButton:disabled,
+.missionActionButton:disabled,
+.cancelButton:disabled,
+.confirmButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+  filter: saturate(0.3);
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.summaryTile {
+  display: flex;
+  min-width: 0;
+  min-height: 108px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 18px 20px;
+}
+
+.summaryTile:nth-of-type(odd) {
+  border-right: 1px solid rgba(174, 190, 201, 0.14);
+}
+
+.summaryTile:nth-of-type(-n + 2) {
+  border-bottom: 1px solid rgba(174, 190, 201, 0.14);
+}
+
+.summaryValue {
+  color: var(--mission-white);
+  font-size: 1.62rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.summaryTile small {
+  color: #7d8a94;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.66rem;
+}
+
+.gold {
+  color: var(--mission-gold);
+}

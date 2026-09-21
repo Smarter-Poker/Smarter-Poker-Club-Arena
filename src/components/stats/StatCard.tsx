@@ -5,14 +5,12 @@ interface StatCardProps {
   label: string;
   value: string | number;
   subValue?: string;
-  icon?: React.ReactNode;
   trend?: 'up' | 'down' | 'neutral';
 }
 
-export const StatCard: React.FC<StatCardProps> = ({ label, value, subValue, icon, trend }) => {
+export const StatCard: React.FC<StatCardProps> = ({ label, value, subValue, trend }) => {
   return (
     <div className="stat-card">
-      {icon && <div className="stat-icon">{icon}</div>}
       <div className="stat-content">
         <div className="stat-label">{label}</div>
         <div className="stat-value">{value}</div>

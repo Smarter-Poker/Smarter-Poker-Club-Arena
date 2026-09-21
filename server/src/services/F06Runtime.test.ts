@@ -374,8 +374,23 @@ it.each(['reservation', 'movement', 'none'])(
       stop: () => new Promise<void>((_, r) => (reject = r)),
       hasReleasedProcessOwnership: () => true,
       hasClaimedTournamentMoveBoundary: () => claimed,
+      // Nothing was ever parked on this incumbent, so the real
+      // ServerTableEngineBase.hasUnretiredStoppedTimeBankCustody() is false
+      // for it: no stopped capture, no pending accounting, no outstanding
+      // presence write. That is what makes the slot safe to hand over.
+      hasUnretiredStoppedTimeBankCustody: () => false,
     };
-    const replacement = {};
+    const replacement = {
+      // The no-capture branch of
+      // ServerTableEngineBase.adoptStoppedTimeBankCustody(): when the original
+      // holds no stopped capture, adoption succeeds exactly when the original
+      // has nothing unretired that taking the map slot would strand. Give the
+      // incumbent above an unretired bank and this refuses, which is the
+      // production `throw error` path. The capture-carrying branch is pinned
+      // against the real class in engine/ParkedTimeBank.test.ts.
+      adoptStoppedTimeBankCustody: (original: { hasUnretiredStoppedTimeBankCustody(): boolean }) =>
+        !original.hasUnretiredStoppedTimeBankCustody(),
+    };
     s.tableEngines.set(binding.tableId, incumbent);
     const pending = s.replaceTableEngine(binding.tableId, incumbent, replacement);
     await Promise.resolve();

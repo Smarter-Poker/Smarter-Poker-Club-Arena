@@ -298,23 +298,23 @@ describe('the page reads the floor through ca_club_tables', () => {
   });
 });
 
-describe('the horse toggle is a per-visit viewing filter that can only do what it says', () => {
-  it('is never persisted, and the old key is tombstoned', () => {
-    expect(PAGE).not.toContain("getLocalStorage('ca_dashboard_hide_horses'");
-    expect(PAGE).not.toContain("setLocalStorage('ca_dashboard_hide_horses'");
-    expect(PAGE).toContain("removeLocalStorage('ca_dashboard_hide_horses')");
-    expect(PAGE).toContain('useState<boolean>(false)');
+describe('a horse is never named on this page (Dan 2026-09-14, binding)', () => {
+  // "NOTHING SHOULD EVER REVEAL A HORSES IDENTITY." This retires the toggle
+  // the three tests above this block used to pin: it defaulted to showing
+  // horses and relabelled the totals it scoped, which was the correct
+  // behaviour for the rule that stood before today. That rule is superseded.
+  // See tests/a-horse-is-never-named.law.test.ts for the estate-wide guard.
+  it('carries no toggle, no per-player tell, and no filtered filename', () => {
+    expect(PAGE).not.toContain('hideHorses');
+    expect(PAGE).not.toContain('setHideHorses');
+    expect(PAGE).not.toContain('horseFlagVisible');
+    expect(PAGE).not.toContain('Hide Horses');
+    expect(PAGE).not.toMatch(/title="Horse"/);
+    expect(PAGE).not.toContain('leaderboard-people');
   });
 
-  it('is offered only when the viewer can see the flag it filters on', () => {
-    expect(PAGE).toContain('const horseFlagVisible = topPlayers.some((p) => p.isHorse);');
-    expect(PAGE).toMatch(/\{horseFlagVisible && \(\s*<label/);
-  });
-
-  it('relabels every figure it scopes, so a filtered number can never be read as the club’s', () => {
-    expect(PAGE).toContain("hideHorses ? 'leaderboard-people' : 'leaderboard'");
-    expect(PAGE).toContain("hideHorses ? 'People (Horses Hidden)' : 'Players'");
-    expect(PAGE).toContain("hideHorses ? 'Person-Hands (Horses Hidden)' : 'Player-Hands'");
+  it('ranks and exports every player - rankPlayers is never asked to filter one out', () => {
+    expect(PAGE).toContain('rankPlayers(topPlayers, sortBy)');
   });
 });
 

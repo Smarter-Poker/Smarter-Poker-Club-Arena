@@ -44,9 +44,7 @@ export default function RakeTab({
         (!rakeStats || rakeStats.hands === 0) &&
         agentRoles.length === 0 && (
           <div className="stats-empty-state" role="status">
-            <span className="empty-icon" aria-hidden="true">
-              $
-            </span>
+            <span className="empty-status">Rake Ledger Empty</span>
             <span className="empty-title">No Rake In This Window</span>
             <span className="empty-description">
               Player-Attributed Rake Will Appear Here After A Raked Cash Hand Is Recorded.

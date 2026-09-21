@@ -28,6 +28,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     retained8825 ||
     release === '758610f3f844406bbbaee2f5100ced36d84fb943' ||
     release === 'a0ab287d902879280f0c915e44f5222c5db4d7df';
+  // Fixed historical-loss disposition. It never asserts a native old bank.
+  const historicalBankLoss = {"5a387a75-754a-416e-8fee-b85b15fc2702":{"kind":"historical_loss_normal_session_v1","receipt_id":"7d0f56e9-10ce-4c2f-b337-101b75924257","generation":"66291622-e7d1-4816-8c33-26ff1f092446","bank_witness_sha256":"31d0faaf9c8513f306160f0b7729d6e19dd8284677506d926805dbf9cb801af3","occupants":[{"table_id":"09f5e9eb-df66-4e55-a3c8-4385d27631e2","seat_id":"5cff5b9c-d48d-4391-8ec9-7cae469f57fe","occupancy_id":"164f4293-d57e-42c6-bbad-242f3d11e1cd","joined_at":"2026-09-17T17:06:16.817557+00:00","user_id":"046718c5-474f-4108-a15c-c3a1ce1f8d61","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"2c621856-e728-4e8b-bf08-4c56746a8649","seat_id":"df3e8f01-27ab-4973-bb90-792f82fac562","occupancy_id":"093709bf-995f-4848-bdda-da4f254a0cc9","joined_at":"2026-09-18T22:09:41.227524+00:00","user_id":"23e84589-611a-44ea-99e1-c51ae7ada6c5","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"2c621856-e728-4e8b-bf08-4c56746a8649","seat_id":"f6564dc7-d0ec-46f9-be3d-0ededac28fe3","occupancy_id":"f959c4dc-7b3d-4135-b160-c2fb11014196","joined_at":"2026-09-17T17:06:50.374103+00:00","user_id":"c1b575fb-3efd-43b6-b314-353e1d300aaa","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"49a444ac-553a-4f44-a36f-92781d10a646","seat_id":"7bbe071c-6253-4d65-bb87-8ce8103b1ce0","occupancy_id":"358500d2-527c-4026-81d4-fc8c908b9272","joined_at":"2026-09-17T17:07:48.373927+00:00","user_id":"a23ca5c9-b748-482f-9b59-9db35f7aa996","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"623b526d-0901-4c59-aec5-f8e459af7a6c","seat_id":"96e5f8fa-c883-4107-b469-4d89eb050eb0","occupancy_id":"d767fa91-e33b-446f-8867-30eaab0c2990","joined_at":"2026-09-17T17:08:04.809856+00:00","user_id":"00000000-0000-0000-0000-000000000038","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"6d8512e3-899d-442b-8d6c-7c57a5f4a1f1","seat_id":"933d6d7b-7d2e-455b-84f5-59432760ed9b","occupancy_id":"daf13850-0e47-4dfd-adc0-da5ac09f12dc","joined_at":"2026-09-17T17:07:31.133198+00:00","user_id":"302ba66b-3b1e-4747-9458-84695c70f396","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"815d35dd-a6d5-4469-b0aa-e386cc2145b9","seat_id":"1be3101b-5c33-4561-b64e-138d80609519","occupancy_id":"31c012fd-4f6e-4386-a62a-e44e1ad878a7","joined_at":"2026-09-17T21:38:20.734335+00:00","user_id":"c82e74af-4101-49b0-bd0f-93755f7bb13b","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9bf11d84-684d-4069-916c-c7b5bb397d21","seat_id":"f2169a73-3148-4f14-b438-4fe6e5b40a0c","occupancy_id":"76c77980-c9b3-41ad-9200-896435d29e5c","joined_at":"2026-09-17T23:26:34.171939+00:00","user_id":"92ecbaed-bdec-49ae-96db-90e3d61a8f7b","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"dbd8b7ea-1a99-494f-b564-f86d412dc764","seat_id":"a87d1719-c2e1-4142-98e9-0b246ed249c0","occupancy_id":"c322a02b-5d56-4c0a-adab-8c00cda69381","joined_at":"2026-09-18T22:08:29.04283+00:00","user_id":"00000000-0000-0000-0000-000000000023","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"dbd8b7ea-1a99-494f-b564-f86d412dc764","seat_id":"c8296047-8c8b-458b-8695-e3990e920edb","occupancy_id":"0ebe3f87-4988-45b6-a5a4-b026326bb608","joined_at":"2026-09-18T22:06:46.596949+00:00","user_id":"38563ca3-66a9-40bb-8053-7a698887ec93","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"fcbbd2ea-6fc2-47df-8b61-b9997fcd7b16","seat_id":"4276abea-759f-48e6-ac59-c8a41e8d78b7","occupancy_id":"a94b8085-95f2-4e11-8f62-18d95ba47cb2","joined_at":"2026-09-18T22:10:08.554647+00:00","user_id":"c7a783ee-ac19-4a86-8e26-422666281805","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"fcbbd2ea-6fc2-47df-8b61-b9997fcd7b16","seat_id":"e8ef0440-81c7-4d6d-8c25-d9e1951456c1","occupancy_id":"78e9cbed-1128-439e-8336-349b19237c1a","joined_at":"2026-09-18T19:34:43.230547+00:00","user_id":"cb50fee0-a87b-4ac8-a6fe-8e665c5ddd8c","last_durable_seconds":40,"last_durable_uses":2}],"pending_arrivals":[{"kind":"pending_arrival_historical_loss_v1","table_id":"66b1cb1d-5056-41c1-a951-1bd078f8276f","lifecycle":283892,"seat_id":"093766ff-7108-4a69-a36f-189039af1a93","user_id":"6688345d-e7be-49bd-a318-4ee1e6b10253","occupancy_id":"f45e6d45-f041-4318-bd78-e5e066a77e17","joined_at":"2026-09-17T17:07:20.624929+00:00","seat_number":4,"stack":45000,"break_id":"3ebe59ce-4a7c-4290-960f-2843d7aebd71","origin_generation":"14e79c70-5590-47a4-bb9e-928bb8bd123a","request_id":"48b9a0f7-e40e-4163-845e-1a5244a2dac2","predecessor":"04a81643-7124-41e9-9a76-6111e627c288","amendment_id":"770b2444-2b8d-4f66-8138-d76adeed833f","destination_table_id":"09f5e9eb-df66-4e55-a3c8-4385d27631e2","destination_seat_number":2,"atomic_hand_id":"e18787c7-10a9-4435-85f3-31eaf95526d0","hand_number":12114088,"last_durable_seconds":40,"last_durable_uses":2,"payload_hash":"0af5bc2c83acb25b7c36054b30f6bd0a9af3db6c6bbbc8da8f45a415c29f430b","post_commit_request_hash":"b297208a812da14e5791a8fc5a45ee34b7235fd7acf1fb1e9366bbb3f1d1ebf8","post_commit_payload_hash":"8469adc20e2069d06dde4f35624461f88aa829cde49773ab8ee58791c94329ba","stack_hand_id":"911ceac9-72ab-68bb-405a-82f0e523fc1a","settlement_id":"8b4e4676-e9b2-44c1-8c35-8aa87be96308"}]},"615783bf-15e3-40b7-9368-75f21b6ac53b":{"kind":"historical_loss_normal_session_v1","receipt_id":"16268739-c7c3-4d38-8a8f-e8f08ac0591b","generation":"b3d06bad-c464-4be8-9e1b-66f7191375ff","bank_witness_sha256":"31d0faaf9c8513f306160f0b7729d6e19dd8284677506d926805dbf9cb801af3","occupants":[{"table_id":"383aa2c7-79f1-4937-9d7e-8c49126fce8b","seat_id":"19e141a8-bbc4-4864-a1e7-d5e46a66723c","occupancy_id":"61f4d574-eed6-4487-a4c8-a771ca326eb2","joined_at":"2026-09-17T22:06:23.33465+00:00","user_id":"46887b99-8cd6-45db-861c-ad24232efbfe","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"5973d7f6-5a52-4d78-aa92-cba86e19d4ea","seat_id":"e52388d6-d007-4e31-bafe-aefbe3bf3e40","occupancy_id":"f7056064-b637-47a1-8386-1da512a7d1f0","joined_at":"2026-09-17T22:06:22.513736+00:00","user_id":"374d0e7a-aef5-4d09-a2f2-5d4a18568d97","last_durable_seconds":20,"last_durable_uses":1},{"table_id":"737b1a84-da46-459c-b0e3-bba5b23171c0","seat_id":"0180cd98-024b-4406-8529-2ef52fc3c217","occupancy_id":"a08137de-c7b2-4268-b3ca-7f1720bca0a5","joined_at":"2026-09-17T22:06:36.220363+00:00","user_id":"1d81eaa9-42bc-4815-9616-01ad6e6d5800","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9e18dc43-a81a-4a4f-a360-4f624c60699b","seat_id":"4a597dfc-98a2-4503-9913-c10f9349aa33","occupancy_id":"0eba0337-1825-4969-95ca-ff2260319e5a","joined_at":"2026-09-17T22:06:38.780641+00:00","user_id":"3a94c68d-2dd2-40b0-afea-96a238b505f2","last_durable_seconds":20,"last_durable_uses":1},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"0d1d3c90-5b3d-4f48-9b45-6e4881a4d359","occupancy_id":"a0f25a76-732c-42d5-ab0c-f96d404428dc","joined_at":"2026-09-18T19:48:57.356759+00:00","user_id":"44f1ff92-b5de-44c5-9f7b-319318ff2a74","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"fd4646b0-d531-424c-85ac-f34baae5ac90","occupancy_id":"9eab6eee-7abb-404a-8b22-2747896c3123","joined_at":"2026-09-18T22:12:31.939388+00:00","user_id":"ae0bc48d-f98c-4b25-a9fa-e3522f986173","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"a77f5c0e-36c2-4d5e-9078-32350e36652c","occupancy_id":"292af3a4-995f-4fc9-8852-55d340cdddbe","joined_at":"2026-09-18T22:12:19.599699+00:00","user_id":"c49b2414-97ff-461c-8c20-3c05fe09809b","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"17f5edbc-6f65-4a92-87d9-994096f38a3a","occupancy_id":"af606bd2-8d9d-4692-8e61-ed3b2f1b8bf1","joined_at":"2026-09-18T22:10:36.076555+00:00","user_id":"cb35cc6f-3150-48ce-b7dc-887b6aca8327","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"535d19b3-b732-4d32-b614-f0f4bca07965","occupancy_id":"f137a187-d1c6-41ec-bbe1-8518e702a5ca","joined_at":"2026-09-18T22:10:36.511105+00:00","user_id":"f8c8eb13-14a0-4478-8771-7d29e71036ca","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9fdd5393-6fd9-4497-85b2-f98b89cf168d","seat_id":"f24cd458-be8d-43a6-9375-926524072f5f","occupancy_id":"dcc84998-a924-4bd7-89f0-f9359caba8d1","joined_at":"2026-09-17T22:07:06.763072+00:00","user_id":"f740e628-9097-47cf-91fc-95bbee245792","last_durable_seconds":120,"last_durable_uses":6},{"table_id":"d6199e5e-7c40-4560-afd9-f1a135031097","seat_id":"afb40353-6310-4f3e-8275-754bc26439e5","occupancy_id":"14955bd2-a8e9-4425-8b15-cb9829f48d11","joined_at":"2026-09-17T22:07:07.255289+00:00","user_id":"fdf075f5-e450-4099-a043-691377b0ae64","last_durable_seconds":20,"last_durable_uses":1}],"pending_arrivals":[]}};
   const reserveMs = 285000;
   // Refusal ceilings, not truncation or latency promises. The observed fleet has
   // 1379 tables, so the ordinary PostgREST 1000-row cap cannot bound the fleet.
@@ -35,6 +37,13 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   const maxEntriesPerTable = 64;
   const concurrency = 32;
   const readPageSize = 100;
+  // ONE definition of "a hand is in the air", shared with the release gate:
+  // an INCOMPLETE `hand_state_snapshots` row WRITTEN TO in the last 120s.
+  // Measured and derived in server/scripts/engine-release-inflight-hands.py
+  // (PR #5003) - live hands cluster under 60s, corpses are hours to weeks old,
+  // and the band between is empty. Do not invent a second predicate here: two
+  // definitions of the same fact is how a gate ends up disagreeing with itself.
+  const inflightWindowMs = 120000;
   const filePins = retained8825
     ? [
         [
@@ -137,12 +146,62 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   let verifiedTables = 0;
   let bankCount = 0;
   let uninitializedSeats = 0;
+  // Observability only: which tables were PROVED abandoned from rows, and how
+  // many generations each carried. Never read by a decision.
+  let abandonedBoundaries = null;
   const refuse = (code) => {
     if (reason === null) reason = code;
     throw new Error('legacy_checkpoint_refused');
   };
   const require = (condition, code) => {
     if (!condition) refuse(code);
+  };
+  // Observability only: it names which sub-condition refused, and never takes
+  // part in a decision. It is written on a refusal path that is already
+  // throwing, under a catch that discards any error, and is read only when the
+  // emitted result object is assembled. No check, threshold or outcome moves.
+  let refusalDetail = null;
+  const noteRefusal = (detail) => {
+    if (reason !== null || refusalDetail !== null) return;
+    try {
+      refusalDetail = detail();
+    } catch {
+      refusalDetail = null;
+    }
+  };
+  // Observability only. `witness` evaluates the exact original sub-expressions
+  // of one conjunction, in the exact original left-to-right order, and stops at
+  // the first false one - so nothing extra is read on a path where the original
+  // `&&` short-circuited, and no check, threshold or outcome moves. It refuses
+  // with the exact original code, naming the sub-condition that refused.
+  const witness = (code, parts, extra) => {
+    for (const [failedCheck, evaluate] of parts) {
+      if (evaluate()) continue;
+      noteRefusal(() => ({ failedCheck, ...(extra === undefined ? {} : extra()) }));
+      refuse(code);
+    }
+  };
+  // A non-sensitive shape witness: booleans, numbers, sizes, type names and
+  // short identifier-like strings. Any other string becomes its length only, so
+  // no permit payload, card, credential or player identity can reach a log.
+  const describe = (value) => {
+    try {
+      if (value === null) return 'null';
+      if (value === undefined) return 'undefined';
+      const kind = typeof value;
+      if (kind === 'boolean' || kind === 'number') return String(value);
+      if (kind === 'bigint' || kind === 'symbol' || kind === 'function') return kind;
+      if (kind === 'string') return /^[A-Za-z_][A-Za-z0-9_]{0,31}$/.test(value)
+        ? value
+        : `string(${value.length})`;
+      if (Array.isArray(value)) return `Array(${value.length})`;
+      if (value instanceof Map) return `Map(${value.size})`;
+      if (value instanceof Set) return `Set(${value.size})`;
+      if (value instanceof Promise) return 'Promise';
+      return 'object';
+    } catch {
+      return 'unreadable';
+    }
   };
   const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
   const uuid = (value) =>
@@ -197,6 +256,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         : 'native_pending_registry_unqualified'
       : 'legacy_untracked',
     restartAuthorized: false,
+    // Appended last so every pre-existing key keeps its exact name, value
+    // and position. `reason` above is untouched for existing parsers.
+    ...(abandonedBoundaries === null ? {} : { abandonedBoundaries }),
+    ...(refusalDetail === null ? {} : refusalDetail),
   });
 
   try {
@@ -263,6 +326,12 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     const beganMonotonicMs = performance.now();
     const entries = [...tableMap.entries()];
     const retiredOriginals = new Set();
+    // Tables whose ONLY unfinished item is a terminal-boundary generation that
+    // can never resolve in this process. They are NOT waved through here:
+    // `physical()` is synchronous and may not read a row, so it DEFERS them,
+    // and `proveAbandonedBoundaries` refuses unless the database says the felt
+    // is quiet for each one, before any original is retired.
+    const deferredAbandonedBoundaries = new Map();
     const retainedManagers = [];
     let checkRetained = () => {};
     const engines = new Set();
@@ -275,11 +344,13 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       // inherit one tournament's actor for another table or the fleet readback.
       require(modules.dataActorContext.currentTournamentDataAuthority() ===
         null, 'unexpected_tournament_context');
-      require(server.running === true &&
-        server.teardownPromise === null &&
-        server.lifecycleGeneration === serverGeneration &&
-        server.tableEngines === tableMap &&
-        server.maintenanceBreak === maintenance, 'server_changed');
+      witness('server_changed', [
+        ['server.running', () => server.running === true],
+        ['server.teardownPromise', () => server.teardownPromise === null],
+        ['server.lifecycleGeneration', () => server.lifecycleGeneration === serverGeneration],
+        ['server.tableEngines', () => server.tableEngines === tableMap],
+        ['server.maintenanceBreak', () => server.maintenanceBreak === maintenance],
+      ]);
       require(discoveredServers.length === 1 &&
         discoveredServers[0] === server, 'server_not_unique');
       require(modules.freezeState.isMaintenanceFrozen() === true &&
@@ -307,10 +378,42 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         initialRemainingMs - (performance.now() - beganMonotonicMs)
       );
       require(Number.isFinite(remaining) && remaining >= reserveMs, 'insufficient_reserve');
-      require(tableMap.size === entries.length - retiredOriginals.size &&
-        entries.every(([id, engine]) =>
-          retiredOriginals.has(id) ? !tableMap.has(id) : tableMap.get(id) === engine
-        ), 'fleet_identity_changed');
+      // A live fleet that gains or loses a table mid-checkpoint refuses here.
+      // Name the first table that moved and which way, so the next refusal is
+      // readable without a deploy: an arrival shows in the size, a departure or
+      // a replacement shows as the offending id.
+      const movedTable = () => {
+        const found = entries.find(([id, engine]) =>
+          retiredOriginals.has(id) ? tableMap.has(id) : tableMap.get(id) !== engine
+        );
+        if (found === undefined) return 'none';
+        return retiredOriginals.has(found[0])
+          ? `retired_still_present:${found[0]}`
+          : tableMap.has(found[0])
+            ? `engine_replaced:${found[0]}`
+            : `table_departed:${found[0]}`;
+      };
+      witness(
+        'fleet_identity_changed',
+        [
+          [
+            'fleet.size',
+            () => tableMap.size === entries.length - retiredOriginals.size,
+          ],
+          [
+            'fleet.identity',
+            () =>
+              entries.every(([id, engine]) =>
+                retiredOriginals.has(id) ? !tableMap.has(id) : tableMap.get(id) === engine
+              ),
+          ],
+        ],
+        () => ({
+          observed: describe(tableMap.size),
+          expected: String(entries.length - retiredOriginals.size),
+          failedTable: movedTable(),
+        })
+      );
       checkRetained();
       return remaining;
     };
@@ -431,6 +534,84 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       ];
       const engineMaps = ['tournamentMoveOperationByOwner', 'entryHoldWriteChains'];
       const serialFields = ['presenceSave', 'seatBoundaryTail', 'teardownPromise'];
+      // Inspect every supported engine-holding manager map, not a selected
+      // diagnostic response. Unknown map shape refuses this separate source.
+      const absentPendingSource = (tableId) => {
+        require(!tableMap.has(tableId) && !ownedTables.has(tableId) &&
+          !retirement.held.has(tableId) && !retirement.pending.has(tableId) &&
+          !retirement.active.has(tableId), 'mixed_pending_source_present');
+        for (const key of ['tableEngineStartPromises', 'directTableAdmissionOperations', 'directTableRecoveryTimers',
+          'directTableAdmissionLeaseGenerations', 'directTablePendingLeaseReleases']) {
+          require(server[key] instanceof Map && !server[key].has(tableId), 'mixed_pending_source_admission_unknown');
+        }
+        const managers = [];
+        require(managerMap.size <= maxTables, 'mixed_pending_source_maps_unknown');
+        require(server.tournamentDiagnosticRetirements instanceof Map, 'mixed_pending_source_maps_unknown');
+        const owners = new Map([...managerMap].map(([id, manager]) => [manager, id]));
+        for (const [id, retired] of server.tournamentDiagnosticRetirements) {
+          require(retired instanceof Set && retired.size <= maxTables, 'mixed_pending_source_maps_unknown');
+          for (const manager of retired) owners.set(manager, id);
+        }
+        const packetOwner = (packet) => {
+          require(record(packet) && packet.manager instanceof modules.managerBase.TournamentManagerBase &&
+            Array.isArray(packet.engines) && packet.engines.length <= maxTables, 'mixed_pending_source_maps_unknown');
+          for (const pair of packet.engines) {
+            require(Array.isArray(pair) && pair.length === 2 && pair[1] instanceof modules.base.ServerTableEngineBase,
+              'mixed_pending_source_maps_unknown');
+            require(pair[0] !== tableId && pair[1].tableId !== tableId, 'mixed_pending_source_present');
+          }
+          owners.set(packet.manager, packet.tournamentId);
+        };
+        require(server.drainedF06TournamentCustody instanceof Map && server.completedF06TournamentCustody instanceof Map &&
+          server.drainedF06TournamentCustody.size <= maxTables && server.completedF06TournamentCustody.size <= maxTables,
+          'mixed_pending_source_maps_unknown');
+        for (const packet of server.drainedF06TournamentCustody.values()) packetOwner(packet);
+        for (const packets of server.completedF06TournamentCustody.values()) {
+          require(packets instanceof Set && packets.size <= maxTables, 'mixed_pending_source_maps_unknown');
+          for (const packet of packets) packetOwner(packet.original);
+        }
+        require(owners.size <= maxTables, 'mixed_pending_source_maps_unknown');
+        for (const [owner, tournamentId] of owners) {
+          require(owner instanceof modules.managerBase.TournamentManagerBase &&
+            uuid(owner.managerLifecycleDiagnostics?.instanceId), 'mixed_pending_source_maps_unknown');
+          for (const key of ['tableEngines', 'stoppedDiagnosticOriginals', 'satelliteQualifierEngines', 'retainedTournamentBreakSources', 'pendingNoStartContinuations',
+            'stoppedOriginalBreaks', 'tournamentBreakArrivalWakes']) {
+            const map = owner[key];
+            require(map instanceof Map && map.size <= maxTables, 'mixed_pending_source_maps_unknown');
+            for (const [id, value] of map) {
+              require(uuid(id), 'mixed_pending_source_maps_unknown');
+              require(id !== tableId, 'mixed_pending_source_present');
+              const checkEngine = (engine) => {
+                require(engine instanceof modules.base.ServerTableEngineBase && uuid(engine.tableId), 'mixed_pending_source_maps_unknown');
+                require(engine.tableId !== tableId, 'mixed_pending_source_present');
+              };
+              if (key === 'tournamentBreakArrivalWakes') {
+                require(value instanceof Map && value.size <= maxTables, 'mixed_pending_source_maps_unknown');
+                for (const [request, engine] of value) { require(uuid(request), 'mixed_pending_source_maps_unknown'); checkEngine(engine); }
+              } else if (key === 'retainedTournamentBreakSources' || key === 'pendingNoStartContinuations') {
+                require(record(value), 'mixed_pending_source_maps_unknown'); checkEngine(value.engine);
+                if (key === 'pendingNoStartContinuations') require(record(value.binding) &&
+                  value.binding.tableId === value.engine.tableId, 'mixed_pending_source_maps_unknown');
+              } else checkEngine(value);
+            }
+          }
+          require(owner.drainedF06Originals === null || Array.isArray(owner.drainedF06Originals), 'mixed_pending_source_maps_unknown');
+          for (const pair of owner.drainedF06Originals ?? []) {
+            require(Array.isArray(pair) && pair.length === 2 && pair[1] instanceof modules.base.ServerTableEngineBase,
+              'mixed_pending_source_maps_unknown');
+            require(pair[0] !== tableId && pair[1].tableId !== tableId, 'mixed_pending_source_present');
+          }
+          require(owner.pendingTableBreakRetirement === null || (record(owner.pendingTableBreakRetirement) &&
+            owner.pendingTableBreakRetirement.engine instanceof modules.base.ServerTableEngineBase &&
+            owner.pendingTableBreakRetirement.tableId === owner.pendingTableBreakRetirement.engine.tableId), 'mixed_pending_source_maps_unknown');
+          require(owner.pendingTableBreakRetirement?.tableId !== tableId &&
+            owner.pendingTableBreakRetirement?.engine?.tableId !== tableId, 'mixed_pending_source_present');
+          managers.push({tournament_id: tournamentId, manager_id: owner.managerLifecycleDiagnostics.instanceId, absent: true});
+        }
+        return {kind: 'all_current_engine_maps_absent_v1', source: release, instance_id: options.expectedInstanceId,
+          table_id: tableId, global_absent: true, owned_absent: true, retirement_absent: true,
+          managers: managers.sort((a,b) => a.manager_id.localeCompare(b.manager_id))};
+      };
       const bankRows = new Map();
       const pending = [];
       for (const proposal of intent.custody) {
@@ -582,49 +763,427 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         };
         const physical = (capture) => {
           const { tableId, engine, permit, lifecycle } = capture;
-          require(engine.running === false &&
-            engine.terminal === true &&
-            engine.terminalTeardownComplete === true &&
-            engine.hasReleasedProcessOwnership() === true &&
-            !modules.base.ServerTableEngineBase.liveEngines.has(tableId) &&
-            engine.dealingLoopPromise === null &&
-            engine.postHandTasksPromise === null &&
-            engine.snapshotFlushPromise === null &&
-            engine.handController === null &&
-            engine.actionLock === false &&
-            engine.f06HandPreparation === null &&
-            engine.f06RecoveryInFlight === false &&
-            engine.terminalBoundaryPersistenceFailed === false &&
-            engine.timeBankAccountingUnconfirmed === false &&
-            engine.engineLeaseScope === 'tournament' &&
-            engine.engineLeaseVerified === true &&
-            engine.engineLeaseTournamentId === manager.tournamentId &&
-            engine.engineLeaseGeneration === manager.tournamentLeaseGeneration &&
-            engine.f06AllocationEpoch === capture.allocationEpoch &&
-            [engine.f06Allocator, engine.f06AllocationCurrent, engine.f06PermitFactory].every(
-              (method, index) => method === capture.allocation[index]
-            ) &&
-            engine.f06MovementAdmission === capture.movementAdmission &&
-            engine.f06CurrentPermit === permit &&
-            permit?.binding === capture.permitBinding &&
-            (permit?.recoveryState() ?? null) === capture.phase &&
-            (permit === null ||
-              (permit.reserveInFlight === false &&
-                permit.preparedCancellation === false &&
-                permit.recoveryState === modules.permit.F06HandPermit.prototype.recoveryState)) &&
-            serialFields.every((name, index) => engine[name] === capture.queues[index]) &&
-            [engine.hasReleasedProcessOwnership, engine.hasOnlyDrainedTournamentMoveOwner].every(
-              (method, index) => method === capture.methods[index]
-            ) &&
-            engine.hasOnlyDrainedTournamentMoveOwner(manager.tournamentMoveBoundaryOwner) ===
-              true, 'mixed_original_work_not_drained');
+          // Observability only. The one original conjunction below is split into
+          // its exact sub-expressions, evaluated in the exact original
+          // left-to-right order, each refusing with the exact original code.
+          // `drained` is `require` with a name attached: no condition text, no
+          // threshold and no set of checks changed, and nothing extra is read on
+          // a path where the original conjunction short-circuited.
+          const drained = (condition, failedCheck, observed, expected, extra) => {
+            if (condition) return;
+            noteRefusal(() => ({
+              failedCheck,
+              failedTable: tableId,
+              observed: describe(observed),
+              expected,
+              ...(extra === undefined ? {} : extra()),
+            }));
+            refuse('mixed_original_work_not_drained');
+          };
+          const running = engine.running;
+          drained(running === false, 'engine.running', running, 'false');
+          const terminal = engine.terminal;
+          drained(terminal === true, 'engine.terminal', terminal, 'true');
+          const terminalTeardownComplete = engine.terminalTeardownComplete;
+          drained(
+            terminalTeardownComplete === true,
+            'engine.terminalTeardownComplete',
+            terminalTeardownComplete,
+            'true'
+          );
+          const releasedProcessOwnership = engine.hasReleasedProcessOwnership();
+          drained(
+            releasedProcessOwnership === true,
+            'engine.hasReleasedProcessOwnership()',
+            releasedProcessOwnership,
+            'true'
+          );
+          const stillLive = modules.base.ServerTableEngineBase.liveEngines.has(tableId);
+          drained(!stillLive, 'base.liveEngines.has(tableId)', stillLive, 'false');
+          const dealingLoopPromise = engine.dealingLoopPromise;
+          drained(
+            dealingLoopPromise === null,
+            'engine.dealingLoopPromise',
+            dealingLoopPromise,
+            'null'
+          );
+          const postHandTasksPromise = engine.postHandTasksPromise;
+          drained(
+            postHandTasksPromise === null,
+            'engine.postHandTasksPromise',
+            postHandTasksPromise,
+            'null'
+          );
+          const snapshotFlushPromise = engine.snapshotFlushPromise;
+          drained(
+            snapshotFlushPromise === null,
+            'engine.snapshotFlushPromise',
+            snapshotFlushPromise,
+            'null'
+          );
+          const handController = engine.handController;
+          drained(handController === null, 'engine.handController', handController, 'null');
+          const actionLock = engine.actionLock;
+          drained(actionLock === false, 'engine.actionLock', actionLock, 'false');
+          const f06HandPreparation = engine.f06HandPreparation;
+          drained(
+            f06HandPreparation === null,
+            'engine.f06HandPreparation',
+            f06HandPreparation,
+            'null'
+          );
+          const f06RecoveryInFlight = engine.f06RecoveryInFlight;
+          drained(
+            f06RecoveryInFlight === false,
+            'engine.f06RecoveryInFlight',
+            f06RecoveryInFlight,
+            'false'
+          );
+          const terminalBoundaryPersistenceFailed = engine.terminalBoundaryPersistenceFailed;
+          drained(
+            terminalBoundaryPersistenceFailed === false,
+            'engine.terminalBoundaryPersistenceFailed',
+            terminalBoundaryPersistenceFailed,
+            'false'
+          );
+          const timeBankAccountingUnconfirmed = engine.timeBankAccountingUnconfirmed;
+          drained(
+            timeBankAccountingUnconfirmed === false,
+            'engine.timeBankAccountingUnconfirmed',
+            timeBankAccountingUnconfirmed,
+            'false'
+          );
+          const engineLeaseScope = engine.engineLeaseScope;
+          drained(
+            engineLeaseScope === 'tournament',
+            'engine.engineLeaseScope',
+            engineLeaseScope,
+            'tournament'
+          );
+          const engineLeaseVerified = engine.engineLeaseVerified;
+          drained(
+            engineLeaseVerified === true,
+            'engine.engineLeaseVerified',
+            engineLeaseVerified,
+            'true'
+          );
+          const engineLeaseTournamentId = engine.engineLeaseTournamentId;
+          drained(
+            engineLeaseTournamentId === manager.tournamentId,
+            'engine.engineLeaseTournamentId',
+            engineLeaseTournamentId,
+            'manager.tournamentId'
+          );
+          const engineLeaseGeneration = engine.engineLeaseGeneration;
+          drained(
+            engineLeaseGeneration === manager.tournamentLeaseGeneration,
+            'engine.engineLeaseGeneration',
+            engineLeaseGeneration,
+            'manager.tournamentLeaseGeneration'
+          );
+          const f06AllocationEpoch = engine.f06AllocationEpoch;
+          drained(
+            f06AllocationEpoch === capture.allocationEpoch,
+            'engine.f06AllocationEpoch',
+            f06AllocationEpoch,
+            'captured allocation epoch'
+          );
+          const allocationMethods = [
+            engine.f06Allocator,
+            engine.f06AllocationCurrent,
+            engine.f06PermitFactory,
+          ];
+          drained(
+            allocationMethods.every((method, index) => method === capture.allocation[index]),
+            'engine.f06AllocationMethods',
+            allocationMethods,
+            'captured allocation method identity',
+            () => ({
+              failedField: ['f06Allocator', 'f06AllocationCurrent', 'f06PermitFactory'][
+                allocationMethods.findIndex((method, index) => method !== capture.allocation[index])
+              ],
+            })
+          );
+          const f06MovementAdmission = engine.f06MovementAdmission;
+          drained(
+            f06MovementAdmission === capture.movementAdmission,
+            'engine.f06MovementAdmission',
+            f06MovementAdmission,
+            'captured movement admission identity'
+          );
+          const f06CurrentPermit = engine.f06CurrentPermit;
+          drained(
+            f06CurrentPermit === permit,
+            'engine.f06CurrentPermit',
+            f06CurrentPermit,
+            'captured permit identity'
+          );
+          const permitBinding = permit?.binding;
+          drained(
+            permitBinding === capture.permitBinding,
+            'permit.binding',
+            permitBinding,
+            'captured permit binding identity'
+          );
+          const permitPhase = permit?.recoveryState() ?? null;
+          drained(
+            permitPhase === capture.phase,
+            'permit.recoveryState()',
+            permitPhase,
+            'captured permit phase'
+          );
+          if (permit !== null) {
+            const reserveInFlight = permit.reserveInFlight;
+            drained(reserveInFlight === false, 'permit.reserveInFlight', reserveInFlight, 'false');
+            const preparedCancellation = permit.preparedCancellation;
+            drained(
+              preparedCancellation === false,
+              'permit.preparedCancellation',
+              preparedCancellation,
+              'false'
+            );
+            const recoveryStateMethod = permit.recoveryState;
+            drained(
+              recoveryStateMethod === modules.permit.F06HandPermit.prototype.recoveryState,
+              'permit.recoveryStateMethod',
+              recoveryStateMethod,
+              'F06HandPermit.prototype.recoveryState'
+            );
+          }
+          let failedSerialField = null;
+          let failedSerialValue;
+          const serialQueuesIntact = serialFields.every((name, index) => {
+            const value = engine[name];
+            if (value === capture.queues[index]) return true;
+            failedSerialField = name;
+            failedSerialValue = value;
+            return false;
+          });
+          drained(
+            serialQueuesIntact,
+            'engine.serialQueueIdentity',
+            failedSerialValue,
+            'captured queue identity',
+            () => ({ failedField: failedSerialField })
+          );
+          const drainMethods = [
+            engine.hasReleasedProcessOwnership,
+            engine.hasOnlyDrainedTournamentMoveOwner,
+          ];
+          drained(
+            drainMethods.every((method, index) => method === capture.methods[index]),
+            'engine.drainMethodIdentity',
+            drainMethods,
+            'captured method identity',
+            () => ({
+              failedField: ['hasReleasedProcessOwnership', 'hasOnlyDrainedTournamentMoveOwner'][
+                drainMethods.findIndex((method, index) => method !== capture.methods[index])
+              ],
+            })
+          );
+          const onlyDrainedMoveOwner = engine.hasOnlyDrainedTournamentMoveOwner(
+            manager.tournamentMoveBoundaryOwner
+          );
+          drained(
+            onlyDrainedMoveOwner === true,
+            'engine.hasOnlyDrainedTournamentMoveOwner(manager.tournamentMoveBoundaryOwner)',
+            onlyDrainedMoveOwner,
+            'true',
+            () => {
+              // That native predicate collapses six clauses into one boolean and
+              // the read-only diagnostics API does not expose them. Read the same
+              // six inputs back here, so a refusal names the clause rather than
+              // the method. Sizes and booleans only; no owner value is emitted.
+              const owner = manager.tournamentMoveBoundaryOwner;
+              const sizeOf = (value) =>
+                value instanceof Set || value instanceof Map ? value.size : null;
+              const agreement = (value) => {
+                if (!(value instanceof Set)) return 'absent';
+                let matching = 0;
+                for (const held of value) if (held === owner) matching += 1;
+                return `size=${value.size}/allMatchBoundaryOwner=${matching === value.size}`;
+              };
+              return {
+                observedDetail: [
+                  `terminalTeardownComplete=${terminalTeardownComplete === true}`,
+                  `notRunning=${running === false}`,
+                  `tournamentMoveOperations=${sizeOf(engine.tournamentMoveOperations)}`,
+                  `tournamentMoveOperationByOwner=${sizeOf(engine.tournamentMoveOperationByOwner)}`,
+                  `claimedTournamentMovePauseOwners=${agreement(engine.claimedTournamentMovePauseOwners)}`,
+                  `tournamentMovePauseOwners=${agreement(engine.tournamentMovePauseOwners)}`,
+                ].join(','),
+              };
+            }
+          );
+          // An original interrupted mid-hand still holds the integer that
+          // `beginTerminalBoundaryPersistence` reserved immediately before
+          // HandController.start. The single site that removes it,
+          // `finishTerminalBoundaryPersistence`, is reached only from the hand's
+          // own settlement; on a stopped engine `lifecycleCanMutate()` is
+          // permanently false, so the `hand_history` step returns before it runs
+          // and no timer, job, successor or database row can ever reach it again.
+          // The reserved integer therefore IS the interruption this checkpoint
+          // exists to hand over, not work still draining - every other drain
+          // predicate above has already proved nothing is in flight, and a
+          // boundary that was attempted and lost would have set
+          // `terminalBoundaryPersistenceFailed`, which is refused above.
+          //
+          // The phase that holds it is `attempted`, and only `attempted`.
+          // `beginTerminalBoundaryPersistence` has exactly one call site,
+          // `startExactController` in ServerTableEngineDealing, and on an engine
+          // holding a permit that site runs inside `F06HandPermit.start`, which
+          // sets `phase = 'attempted'` on the line before it actuates. So the
+          // integer cannot exist while the phase is `new`, `reserved`, `unknown`
+          // or `number_refused` - it had not been reserved yet - and the phase
+          // cannot leave `attempted` afterwards: `terminateUnstarted` throws
+          // `f06_hand_may_have_started` on it, `cancelPreparedHand` requires
+          // `reserved` (and `preparedCancellation` is proved false above), and
+          // the settle path that would accept it runs inside the hand's own
+          // settlement, which `lifecycleCanMutate()` has permanently closed.
+          // `attempted` is therefore the exact and only phase of the
+          // interruption this checkpoint exists to hand over.
+          //
+          // Admit it ONLY for an engine that still holds the undischarged permit
+          // of that hand, whose live phase was proved equal to the captured phase
+          // through the unmodified `F06HandPermit.prototype.recoveryState` above.
+          // That is not a waiver: `sealAndRetireOriginals` refuses this whole run
+          // with `mixed_original_disposition_unproven` unless the database proves
+          // that same permit `aborted_unsettled` against a committed receipt
+          // naming this exact engine, manager and container - and it does so
+          // before the custody RPC and before the retirement CAS, so an
+          // undischarged interruption still reaches no irreversible step. Nothing
+          // is written for a retained original before that proof, and this change
+          // adds `attempted` to the phases that proof is demanded of, so nothing
+          // admitted here escapes it.
+          const interrupted = permit !== null && capture.phase === 'attempted';
           [...engineSets, ...engineMaps].forEach((name, index) => {
             const collection = engine[name];
-            require(collection === capture.collections[index] &&
-              collection.size === 0 &&
-              (engineSets.includes(name)
-                ? collection instanceof Set
-                : collection instanceof Map), 'mixed_original_work_not_drained');
+            const captured = capture.collections[index];
+            drained(
+              collection === captured,
+              'engineCollection.identity',
+              collection,
+              'captured collection identity',
+              () => ({ failedField: name })
+            );
+            const size = collection.size;
+            // THREE OUTCOMES ON THIS ONE FIELD, NOT TWO (merged 2026-09-21).
+            // #5020 and #5021 answer different questions about the same set and
+            // THE PERMIT IS WHAT SEPARATES THEM, so neither can mask the other:
+            //
+            //   permit !== null && phase === 'attempted'  -> #5020 ADMITS ONE.
+            //     `beginTerminalBoundaryPersistence` has one call site and on an
+            //     engine holding a permit it runs inside `F06HandPermit.start`,
+            //     one line after the phase becomes `attempted`. So the integer IS
+            //     that started, cut-off hand, and `sealAndRetireOriginals` demands
+            //     an `aborted_unsettled` receipt naming this engine, manager and
+            //     container before anything irreversible.
+            //   permit !== null && phase !== 'attempted'  -> REFUSE, `expected` 0,
+            //     before any row read and before any RPC. By the same argument the
+            //     integer cannot exist in those phases at all, so this combination
+            //     is an engine we do not understand - exactly the case to fail
+            //     closed on, never to defer.
+            //   permit === null                           -> #5021 DEFERS. #5020's
+            //     argument is about an engine HOLDING a permit; with none there is
+            //     no phase to reason from and no outstanding hand, so nothing
+            //     downstream of HAND_COMPLETE can ever resolve the generation. It
+            //     is abandoned, and `proveAbandonedBoundaries` proves the felt
+            //     quiet from rows before anything is retired.
+            //
+            // Gating the deferral on `permit === null` leaves #5020 byte-for-byte
+            // wherever a permit exists, including its refusal and its reported
+            // `expected`, and covers only the gap its phase argument cannot reach.
+            // Measured on engine 8825af51: under #5011's older triple, table
+            // 2c621856 refused four times with `expected:"0"`; on #5020's SHA
+            // (`db885b29`) the refusal moved off this field entirely, which is
+            // what an admitted `attempted` generation looks like. The deferral
+            // below is therefore dormant for that table and is the net under it.
+            if (size !== 0 && name === 'terminalBoundaryPendingGenerations' && permit === null) {
+              // A generation is opened immediately before HandController.start
+              // and removed only downstream of HAND_COMPLETE. `handController`
+              // is null on this engine - proved above - so no HAND_COMPLETE can
+              // dispatch here and no resolver can ever run. This count cannot
+              // reach zero however long anyone waits: it says "pending" while
+              // the truth is "abandoned, and nothing will ever resolve me"
+              // (CLAUDE.md 10.86). Refusing on it forever is how one derelict
+              // table held 70 consecutive cutovers shut.
+              //
+              // It is NOT waved through here. This function is synchronous and
+              // cannot ask the database, and a drain check satisfied with no
+              // row read is exactly the hazard this gate exists to prevent. So
+              // the table is DEFERRED, and `proveAbandonedBoundaries` refuses
+              // the whole checkpoint unless rows prove the felt is quiet for it
+              // - before `sealAndRetireOriginals` retires anything.
+              const generations = collection instanceof Set ? [...collection] : [];
+              drained(
+                collection instanceof Set &&
+                  size <= maxEntriesPerTable &&
+                  generations.every((value) => Number.isSafeInteger(value) && value > 0) &&
+                  // Every conjunct below was read above and already refused on;
+                  // they are restated so the deferral is legible in one place
+                  // and cannot outlive the drain proof it depends on.
+                  running === false &&
+                  terminal === true &&
+                  terminalTeardownComplete === true &&
+                  releasedProcessOwnership === true &&
+                  handController === null &&
+                  dealingLoopPromise === null &&
+                  postHandTasksPromise === null &&
+                  snapshotFlushPromise === null &&
+                  f06HandPreparation === null &&
+                  f06RecoveryInFlight === false &&
+                  // "Did not succeed" is a different claim, checked one step
+                  // earlier. An abandoned boundary never asserts it.
+                  terminalBoundaryPersistenceFailed === false,
+                'engineCollection.abandonedShape',
+                size,
+                'an unreachable generation on a fenced, fully drained engine',
+                () => ({ failedField: name })
+              );
+              const signature = canonical([...generations].sort((a, b) => a - b));
+              const previous = deferredAbandonedBoundaries.get(tableId);
+              // physical() runs again on every re-verification. A set that
+              // MOVED is a live boundary, not the abandoned one that was
+              // proved, and it refuses with the original code.
+              drained(
+                previous === undefined || previous.signature === signature,
+                'engineCollection.abandonedChanged',
+                size,
+                'the exact generations first observed',
+                () => ({ failedField: name })
+              );
+              deferredAbandonedBoundaries.set(tableId, { signature, count: generations.length });
+            } else {
+              // Exactly one hand can be outstanding on a terminal engine, so the
+              // allowance is one entry on one field. For every other field, and for
+              // this field on an engine with no undischarged permit, `allowed` is 0
+              // and `size <= 0` is `size === 0` - including a malformed collection
+              // whose `size` is undefined - so the refusal, its order and its
+              // reported `expected` are unchanged.
+              const allowed = name === 'terminalBoundaryPendingGenerations' && interrupted ? 1 : 0;
+              drained(size <= allowed, 'engineCollection.size', size, String(allowed), () => ({
+                failedField: name,
+                // Observability only. The allowance on this one field turns on the
+                // permit phase, so a refusal here is unreadable without it.
+                // It travels in `observedDetail`, the carried key, not in one of
+                // its own: an unlisted key is dropped before anyone reads it.
+                ...(name === 'terminalBoundaryPendingGenerations'
+                  ? {
+                      observedDetail: `permitPhase=${
+                        capture.phase === null ? 'none' : capture.phase
+                      }`,
+                    }
+                  : {}),
+              }));
+            }
+            const expectSet = engineSets.includes(name);
+            drained(
+              expectSet ? collection instanceof Set : collection instanceof Map,
+              'engineCollection.type',
+              collection,
+              expectSet ? 'Set' : 'Map',
+              () => ({ failedField: name })
+            );
           });
           require(engine.timeBankMeta === capture.banks[0] &&
             engine.timeBankEngine === capture.banks[1] &&
@@ -648,6 +1207,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             permit:
               permit === null ? null : { binding: detached(permit.binding), phase: capture.phase },
             bank_custody: {
+              ...(historicalBankLoss[manager.tournamentId]?.generation === manager.tournamentLeaseGeneration
+                ? { historical_loss: Object.fromEntries(Object.entries(historicalBankLoss[manager.tournamentId]).filter(([key]) => !['occupants', 'pending_arrivals'].includes(key))) }
+                : {}),
               hand_number: engine.handCount,
               roster: engine.seatedPlayers.map((s) => [
                 s.user_id,
@@ -679,6 +1241,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             break_ends_at: new Date(maintenanceFence.breakEndsAt).toISOString(),
             reason: maintenanceFence.reason,
           },
+          ...(historicalBankLoss[manager.tournamentId]?.generation === manager.tournamentLeaseGeneration
+            ? { historical_loss_pending_arrivals: historicalBankLoss[manager.tournamentId].pending_arrivals.map((original) => ({
+              original, absence: absentPendingSource(original.table_id), durable_presence: bankRows.get(original.table_id) ?? null,
+            })) } : {}),
           manager_id: manager.managerLifecycleDiagnostics.instanceId,
           move_owner: manager.tournamentMoveBoundaryOwner,
           engines: exactEngines.map(physical),
@@ -724,34 +1290,182 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         });
         const initial = canonical(vector());
         const current = () => {
-          require(server.tournamentEngines === managerMap &&
-            managerMap.get(manager.tournamentId) === manager &&
-            server.tournamentRetirementCustody === retirement &&
-            server.tournamentOwnedTables === ownedTables &&
-            server.unregisterTournamentTableEngine === unregister &&
-            manager.gameServer === server &&
-            manager.captureDrainedF06Originals === captureMethod &&
-            manager.captureDrainedF06Originals() === originals &&
-            manager.pendingTableBreakRetirement === exactRetirement &&
-            manager.tournamentSeatMoveAuthorityRevision === revision &&
-            manager.tournamentSeatMoveSerialTail === serial &&
-            manager.activeStoppedOriginalCustody.size === 0 &&
-            Object.entries(exactMaps).every(
+          // The manager vector is a wide conjunction over live state, so a
+          // bare `mixed_owner_changed` names nothing. Split into the exact
+          // original sub-expressions, in the exact original order, and report
+          // the one that refused plus the map/set or table it refused on.
+          const failedMap = () => {
+            const found = Object.entries(exactMaps).find(
               ([name, map]) =>
-                manager[name] === map &&
-                map.size === exactMapEntries[name].length &&
-                exactMapEntries[name].every(([key, value]) => map.get(key) === value)
-            ) &&
-            Object.entries(exactSets).every(
-              ([name, set]) => manager[name] === set && set.size === 0
-            ) &&
-            exactEngines.every(
+                !(
+                  manager[name] === map &&
+                  map.size === exactMapEntries[name].length &&
+                  exactMapEntries[name].every(([key, value]) => map.get(key) === value)
+                )
+            );
+            return found === undefined ? 'none' : found[0];
+          };
+          const failedSet = () => {
+            const found = Object.entries(exactSets).find(
+              ([name, set]) => !(manager[name] === set && set.size === 0)
+            );
+            return found === undefined ? 'none' : found[0];
+          };
+          // `captureDrainedF06Originals()` is all-or-nothing: it returns the
+          // stable `drainedF06Originals` array, or `null` the moment any one of
+          // its thirteen drain conditions stops holding. The identity compare
+          // above therefore reports only THAT it flipped, never which condition
+          // did it - and that method runs inside the deployed engine, which is
+          // the build this release is trying to replace, so it cannot be
+          // instrumented from here. Read the same fields it reads, off the same
+          // manager, and name the ones that are not in the drained shape.
+          // Observability only: every read is a plain property or `.size`.
+          const drainWitness = () => {
+            const size = (value) => (value && typeof value.size === 'number' ? value.size : -1);
+            const flipped = [
+              ['drainedF06Originals', () => !manager.drainedF06Originals],
+              ['stopFenceApplied', () => !manager.stopFenceApplied],
+              ['tournamentLeaseAuthorityExpired', () => !manager.tournamentLeaseAuthorityExpired],
+              ['running', () => Boolean(manager.running)],
+              ['teardownPromise', () => Boolean(manager.teardownPromise)],
+              ['lifecycleOperation', () => Boolean(manager.lifecycleOperation)],
+              ['lifecycleJobs', () => size(manager.lifecycleJobs) > 0],
+              ['tableEngineStartJobs', () => size(manager.tableEngineStartJobs) > 0],
+              ['tableEngineRunJobs', () => size(manager.tableEngineRunJobs) > 0],
+              ['eliminationSchedulerJobs', () => size(manager.eliminationSchedulerJobs) > 0],
+              ['lifecycleTimeouts', () => size(manager.lifecycleTimeouts) > 0],
+              ['lifecycleIntervals', () => size(manager.lifecycleIntervals) > 0],
+              [
+                'tableEngines.length',
+                () =>
+                  size(manager.tableEngines) !==
+                  (manager.drainedF06Originals ? manager.drainedF06Originals.length : -1),
+              ],
+              [
+                'engineNotDrained',
+                () =>
+                  (manager.drainedF06Originals ?? []).some(
+                    ([id, engine]) =>
+                      manager.tableEngines.get(id) !== engine ||
+                      engine.isRunning() ||
+                      !engine.hasReleasedProcessOwnership() ||
+                      engine.hasSettlementInFlight()
+                  ),
+              ],
+            ]
+              .filter(([, test]) => {
+                try {
+                  return test();
+                } catch {
+                  return true;
+                }
+              })
+              .map(([name]) => name);
+            return flipped.length === 0 ? 'none' : flipped.join(',');
+          };
+          const failedEngine = () => {
+            const found = exactEngines.find(
               ({ tableId, engine }) =>
-                manager.tableEngines.get(tableId) === engine &&
-                (retiredOriginals.has(tableId)
-                  ? !tableMap.has(tableId) && !ownedTables.has(tableId)
-                  : tableMap.get(tableId) === engine && ownedTables.has(tableId))
-            ), 'mixed_owner_changed');
+                !(
+                  manager.tableEngines.get(tableId) === engine &&
+                  (retiredOriginals.has(tableId)
+                    ? !tableMap.has(tableId) && !ownedTables.has(tableId)
+                    : tableMap.get(tableId) === engine && ownedTables.has(tableId))
+                )
+            );
+            return found === undefined ? 'none' : found.tableId;
+          };
+          witness(
+            'mixed_owner_changed',
+            [
+              ['server.tournamentEngines', () => server.tournamentEngines === managerMap],
+              [
+                'managerMap.get(tournamentId)',
+                () => managerMap.get(manager.tournamentId) === manager,
+              ],
+              [
+                'server.tournamentRetirementCustody',
+                () => server.tournamentRetirementCustody === retirement,
+              ],
+              ['server.tournamentOwnedTables', () => server.tournamentOwnedTables === ownedTables],
+              [
+                'server.unregisterTournamentTableEngine',
+                () => server.unregisterTournamentTableEngine === unregister,
+              ],
+              ['manager.gameServer', () => manager.gameServer === server],
+              [
+                'manager.captureDrainedF06Originals',
+                () => manager.captureDrainedF06Originals === captureMethod,
+              ],
+              [
+                'manager.captureDrainedF06Originals()',
+                () => manager.captureDrainedF06Originals() === originals,
+              ],
+              [
+                'manager.pendingTableBreakRetirement',
+                () => manager.pendingTableBreakRetirement === exactRetirement,
+              ],
+              [
+                'manager.tournamentSeatMoveAuthorityRevision',
+                () => manager.tournamentSeatMoveAuthorityRevision === revision,
+              ],
+              [
+                'manager.tournamentSeatMoveSerialTail',
+                () => manager.tournamentSeatMoveSerialTail === serial,
+              ],
+              [
+                'manager.activeStoppedOriginalCustody.size',
+                () => manager.activeStoppedOriginalCustody.size === 0,
+              ],
+              [
+                'manager.exactMaps',
+                () =>
+                  Object.entries(exactMaps).every(
+                    ([name, map]) =>
+                      manager[name] === map &&
+                      map.size === exactMapEntries[name].length &&
+                      exactMapEntries[name].every(([key, value]) => map.get(key) === value)
+                  ),
+              ],
+              [
+                'manager.exactSets',
+                () =>
+                  Object.entries(exactSets).every(
+                    ([name, set]) => manager[name] === set && set.size === 0
+                  ),
+              ],
+              [
+                'manager.exactEngines',
+                () =>
+                  exactEngines.every(
+                    ({ tableId, engine }) =>
+                      manager.tableEngines.get(tableId) === engine &&
+                      (retiredOriginals.has(tableId)
+                        ? !tableMap.has(tableId) && !ownedTables.has(tableId)
+                        : tableMap.get(tableId) === engine && ownedTables.has(tableId))
+                  ),
+              ],
+            ],
+            // `legacy-engine-checkpoint.mjs` carries a fixed set of
+            // observability keys and DROPS every other, so anything that needs
+            // to be read travels in `observedDetail` - the same carrier the
+            // move-boundary clause above already uses - inside its
+            // 512-character and character-class limits.
+            () => ({
+              failedTable: failedEngine(),
+              observed: describe(manager.captureDrainedF06Originals()),
+              expected: describe(originals),
+              observedDetail: [
+                `tournament=${manager.tournamentId}`,
+                `drain=${drainWitness()}`,
+                `map=${failedMap()}`,
+                `set=${failedSet()}`,
+                `rev=${describe(manager.tournamentSeatMoveAuthorityRevision)}/${describe(revision)}`,
+              ]
+                .join(',')
+                .slice(0, 512),
+            })
+          );
           return vector();
         };
         pending.push({ manager, proposal, exactEngines, vector, current, initial, serial });
@@ -766,7 +1480,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       );
       require(joined.every((v) => v.status === 'fulfilled'), 'mixed_original_stop_unconfirmed');
       checkMaintenance();
-      const ids = pending.flatMap((m) => m.exactEngines.map((e) => e.tableId));
+      const ids = pending.flatMap((m) => [...m.exactEngines.map((e) => e.tableId), ...(historicalBankLoss[m.manager.tournamentId]?.generation === m.manager.tournamentLeaseGeneration ? historicalBankLoss[m.manager.tournamentId].pending_arrivals.map((e) => e.table_id) : [])]);
       for (let offset = 0; offset < ids.length; offset += readPageSize) {
         const page = ids.slice(offset, offset + readPageSize);
         const { data, error } = await modules.client.supabase
@@ -795,7 +1509,14 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           const snapshot = row?.time_bank_snapshot;
           const initialized =
             bank.time_bank_metadata.length + Object.keys(bank.parked_time_banks).length > 0;
-          if (initialized) {
+          // An exact named historical loss is validated by canonical preparation
+          // below, before any map retirement. Raw old fields remain unchanged.
+          if (bank.historical_loss) {
+            require(retained8825 &&
+              canonical(bank.historical_loss) === canonical(Object.fromEntries(
+                Object.entries(historicalBankLoss[capture.manager.tournamentId]).filter(([key]) => !['occupants', 'pending_arrivals'].includes(key))
+              )), 'mixed_historical_loss_scope_changed');
+          } else if (initialized) {
             require(record(row) &&
               row.table_id === item.table_id &&
               row.engine_instance === `${options.expectedInstanceId}:parked` &&
@@ -825,6 +1546,49 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       }
       checkMaintenance();
       return retained;
+    }
+
+    // Prove, PER TABLE and from rows, that every deferred boundary generation
+    // is abandoned rather than in flight. Nothing is retired and no custody RPC
+    // is sent until this has answered for all of them.
+    //
+    // The predicate is the one the release gate already uses (see
+    // `inflightWindowMs`): an INCOMPLETE `hand_state_snapshots` row WRITTEN TO
+    // inside the window. Freshness is the discriminator - thousands of stale
+    // incomplete rows exist fleet-wide, and gating on their mere existence
+    // would refuse every cutover for ever, which is the same forever-block one
+    // level up (CLAUDE.md 10.86 rule 4).
+    //
+    // THREE OUTCOMES. Zero fresh rows is QUIET. Any fresh row is A HAND IN THE
+    // AIR. An error, a non-array body or a page that filled is COULD NOT TELL,
+    // and it refuses - never folded into "no rows" (10.86 rules 1-2). There is
+    // no flag, option or argument that turns this refusal into permission.
+    async function proveAbandonedBoundaries(checkAll) {
+      if (deferredAbandonedBoundaries.size === 0) return;
+      stage = 'mixed_custody';
+      const ids = [...deferredAbandonedBoundaries.keys()].sort();
+      require(ids.length <= maxTables, 'mixed_abandoned_generation_unproven');
+      const since = new Date(Date.now() - inflightWindowMs).toISOString();
+      for (let offset = 0; offset < ids.length; offset += readPageSize) {
+        const page = ids.slice(offset, offset + readPageSize);
+        checkAll();
+        const { data, error } = await modules.client.supabase
+          .from('hand_state_snapshots')
+          .select('table_id,hand_number,stage,updated_at')
+          .in('table_id', page)
+          .eq('is_complete', false)
+          .gte('updated_at', since)
+          .limit(page.length + 1);
+        checkAll();
+        // `error` first, every time: `(await res).data` on a failed read is not
+        // an empty result, and `undefined || []` reads as good news.
+        require(!error && Array.isArray(data) && data.length === 0,
+          'mixed_abandoned_generation_unproven');
+      }
+      checkAll();
+      abandonedBoundaries = `tables=${ids.length} ${ids
+        .map((id) => `${id}:${deferredAbandonedBoundaries.get(id).count}`)
+        .join(' ')}`.slice(0, 512);
     }
 
     async function sealAndRetireOriginals(checkAll) {
@@ -862,6 +1626,49 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           observation.origin_generation === manager.tournamentLeaseGeneration &&
           observation.successor_generation ===
             proposal.successor_generation, 'mixed_original_receipt_missing');
+        const loss = historicalBankLoss[manager.tournamentId];
+        if (local.engines.some((e) => e.bank_custody.historical_loss)) {
+          require(loss?.generation === manager.tournamentLeaseGeneration &&
+            proof.historical_loss?.kind === 'historical_loss_normal_session_v1' &&
+            proof.historical_loss.original_receipt_id === loss.receipt_id &&
+            Array.isArray(proof.historical_loss.plans) &&
+            proof.historical_loss.plans.length === local.engines.length, 'mixed_historical_loss_unproven');
+          require(Array.isArray(proof.historical_loss.pending_arrivals) &&
+            proof.historical_loss.pending_arrivals.length === loss.pending_arrivals.length, 'mixed_historical_pending_unproven');
+          for (const original of loss.pending_arrivals) {
+            const entries = proof.historical_loss.pending_arrivals.filter((p) => p.source?.table_id === original.table_id);
+            require(entries.length === 1 && entries[0].proof?.historical_loss?.original_kind === 'pending_arrival_historical_loss_v1' &&
+              canonical(entries[0].proof.historical_loss.observations?.[0]?.original) === canonical(original), 'mixed_historical_pending_unproven');
+            const allowance = entries[0].proof.historical_loss.observations[0].allowance;
+            require(allowance.user_id === original.user_id && allowance.is_lifetime === true &&
+              allowance.is_vip === true && allowance.unlimited_activations === true && allowance.purchased_seconds === 0 &&
+              allowance.extra_seconds === 0 && allowance.vip_seconds_remaining === null, 'mixed_historical_pending_unproven');
+          }
+          const seen = new Set();
+          for (const plan of proof.historical_loss.plans) {
+            require(local.engines.some((e) => e.table_id === plan.table_id) && !seen.has(plan.table_id), 'mixed_historical_loss_unproven');
+            seen.add(plan.table_id);
+            const originals = loss.occupants.filter((e) => e.table_id === plan.table_id);
+            require(plan.disposition?.old_final_balance === 'unknown' &&
+              plan.disposition.old_debit_outcomes === 'retained_not_replayed' &&
+              plan.disposition.initialization === 'ordinary_lifetime_session' &&
+              Array.isArray(plan.disposition.observations) &&
+              plan.disposition.observations.length === originals.length &&
+              record(plan.normal_session) && Object.keys(plan.normal_session).length === originals.length,
+              'mixed_historical_loss_unproven');
+            for (const original of originals) {
+              const observations = plan.disposition.observations.filter((o) => canonical(o.original) === canonical(original));
+              require(observations.length === 1, 'mixed_historical_loss_unproven');
+              const allowance = observations[0].allowance;
+              require(allowance.user_id === original.user_id && allowance.is_vip === true &&
+                allowance.is_lifetime === true && allowance.unlimited_activations === true &&
+                allowance.vip_seconds_remaining === null && allowance.purchased_seconds === 0 && allowance.extra_seconds === 0 &&
+                canonical(plan.normal_session[original.user_id]) === canonical({occupancyId: original.occupancy_id,
+                  remainingSeconds: 40, usesRemaining: 2, initialSeconds: 40, baseSeconds: 40, dbConsumedSeconds: 0,
+                  unlimitedActivations: true}), 'mixed_historical_loss_allowance_unproven');
+            }
+          }
+        }
         // 8825 retains the original allocator epoch after an accepted hand clears
         // its local permit. Resolve only through the exact original custody rows,
         // never by copying a current table lifecycle into the stopped engine.
@@ -912,7 +1719,16 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           require(found.length === 1 &&
             record(found[0].evidence), 'mixed_original_receipt_missing');
           const { permit, evidence } = found[0];
-          if (['unknown', 'reserved', 'terminated'].includes(item.permit.phase)) {
+          // `unknown`, `reserved` and `terminated` are the engine's own
+          // `hasUnresolvedF06Preparation` triple - a hand that was prepared and
+          // never started. `attempted` is the fourth disposition this checkpoint
+          // can meet and the only one that reserved a terminal boundary integer:
+          // the hand DID start and was cut off, which is exactly the state the
+          // retained 8825 originals are in. It is included here, not to widen
+          // what may be retired, but so that the `aborted_unsettled` receipt is
+          // DEMANDED of it: leaving it out let a started, unsettled hand reach
+          // retirement carrying no proof at all, which is the weaker position.
+          if (['unknown', 'reserved', 'terminated', 'attempted'].includes(item.permit.phase)) {
             require(permit.state === 'aborted_unsettled' &&
               uuid(permit.evidence_id) &&
               evidence.hand?.receipt_id === permit.evidence_id &&
@@ -1300,7 +2116,12 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       }
       checkAll();
     }
-    if (retained8825) await sealAndRetireOriginals(checkAll);
+    if (retained8825) {
+      // Order is load-bearing: the row proof comes first, and a refusal there
+      // means nothing was retired and no custody was transferred.
+      await proveAbandonedBoundaries(checkAll);
+      await sealAndRetireOriginals(checkAll);
+    }
     verifyFiles();
     checkAll();
     require(captures.every(({ engine }) => engine.isMaintenanceStateDurable() === true) &&

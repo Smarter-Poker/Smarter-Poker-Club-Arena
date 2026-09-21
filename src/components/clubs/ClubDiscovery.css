@@ -1,256 +1,266 @@
-/**
- * ♠ CLUB ARENA — Club Discovery Styles
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLUB DISCOVERY - on the spade console (#ClubArenaConsole)
 
+   The frame, the crest, the header well, the pill slot and the closing cap
+   come from SpadeConsole.css. This sheet only lays out what prints on the
+   black glass between the rails: the search groove, the four lit view words,
+   and one row per club.
+
+   NOTHING HERE DRAWS A CONTROL. Every rounded card face, every gradient, the
+   48px logo well, the `--radius-full` tag pills, the gradient level badge,
+   the pulsing green dot and the blue JOIN button are gone with the markup
+   that carried them - a frame may never sit on a frame, and this component
+   renders directly beneath the Clubs page console.
+
+   IT IS ALSO NAMESPACED NOW. This is a plain global stylesheet, not a module,
+   and it used to declare bare `.club-card`, `.club-stats`, `.club-logo`,
+   `.join-btn`, `.tag`, `.stars`, `.search-bar`, `.filter-group` and
+   `.empty-state` - all of which are live class names in OTHER components
+   (ClubCardPanel, InvitePage, ClubLogoSelector, FavoriteTablesWidget,
+   LeaderboardPage, SearchBar). Whichever sheet the bundler emitted last won.
+   Every selector below is under `.club-discovery`, so it cannot reach them.
+
+   Sizes are cqw against the console (`.sc` sets container-type), so a 320px
+   phone and a 430px phone get the same picture. No :hover: phones do not
+   hover and a stuck hover state is a bug.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* One picture, centred, the same width as the console above it. */
 .club-discovery {
-  padding: var(--space-4);
-}
-
-.discovery-header {
-  margin-bottom: var(--space-4);
-}
-
-.discovery-header h2 {
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-bold);
-  color: var(--text-primary);
-}
-
-.search-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  margin-bottom: var(--space-4);
-}
-
-.search-icon {
-  font-size: 16px;
-  opacity: 0.6;
-}
-
-.search-bar input {
-  flex: 1;
-  background: transparent;
-  border: none;
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-  outline: none;
-}
-
-.filter-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.filter-group {
-  display: flex;
-  gap: 2px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-md);
-  padding: 2px;
-}
-
-.filter-group button {
-  padding: var(--space-2) var(--space-3);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
-.filter-group button.active {
-  background: var(--fb-blue);
-  color: white;
-}
-
-.stake-select {
-  padding: var(--space-2) var(--space-3);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-}
-
-.clubs-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--space-4);
-}
-
-.club-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
-  padding: var(--space-4);
-  cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.club-card.skeleton {
-  height: 220px;
-  animation: shimmer 1.5s infinite;
-}
-
-.club-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-2);
-}
-
-.club-logo {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  background: var(--bg-card);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.club-logo img {
+  margin: 0 auto;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  max-width: 560px;
 }
 
-.club-logo span {
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-bold);
-  color: var(--fb-blue);
+/* ── The search groove: cut into the glass, never a bordered box ───────── */
+
+.club-discovery .club-discovery__search {
+  display: grid;
+  gap: 1.4cqw;
+  padding: 1cqw 0 0;
 }
 
-.club-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+.club-discovery .club-discovery__search-label {
+  justify-self: start;
 }
 
-.club-meta h3 {
-  font-size: var(--fs-md);
-  font-weight: var(--fw-bold);
-  color: var(--text-primary);
-}
-
-.private-badge {
-  font-size: 12px;
-}
-
-.club-desc {
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-  margin-bottom: var(--space-3);
-  line-height: 1.4;
-}
-
-.club-tags {
-  display: flex;
-  gap: var(--space-1);
-  flex-wrap: wrap;
-  margin-bottom: var(--space-3);
-}
-
-.tag {
-  padding: 2px 8px;
-  background: var(--bg-card);
-  border-radius: var(--radius-full);
-  font-size: 10px;
-  color: var(--text-secondary);
-}
-
-.club-stats {
-  display: flex;
-  gap: var(--space-3);
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-bottom: var(--space-3);
-}
-
-.club-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
-}
-
-.stars {
-  color: var(--accent-gold);
-  font-size: 12px;
-}
-
-.rating-value {
-  margin-left: 4px;
-  color: var(--text-muted);
-}
-
-.join-btn {
-  padding: var(--space-2) var(--space-4);
-  background: var(--fb-blue);
-  border: none;
-  border-radius: var(--radius-md);
-  color: white;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
-  cursor: pointer;
-}
-
-.empty-state {
-  grid-column: 1 / -1;
-  text-align: center;
-  padding: var(--space-8);
-}
-
-.empty-state span {
-  font-size: 3rem;
+.club-discovery .club-discovery__search-field {
   display: block;
-  margin-bottom: var(--space-2);
+  width: 100%;
+  margin: 0;
+  padding: 2.6cqw 1cqw;
+  border: 0;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  border-radius: 0;
+  background: transparent;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%);
+  color: #e6e9ee;
+  /* 16px floor: anything smaller makes iOS zoom the page on focus. */
+  font:
+    500 max(16px, 3.6cqw) / 1.4 Inter,
+    system-ui,
+    sans-serif;
+  outline: none;
+  caret-color: #5bb8ff;
 }
 
-.empty-state p {
-  color: var(--text-muted);
+.club-discovery .club-discovery__search-field::placeholder {
+  color: #6b7784;
 }
 
-/* Q3: Live Activity Indicator */
-.live-indicator {
-  display: inline-flex;
+.club-discovery .club-discovery__search-field:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
+}
+
+/* ── The four views: lit words, never drawn tabs ──────────────────────── */
+
+.club-discovery .club-discovery__views {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5cqw;
+  padding: 0.5cqw 0 1cqw;
+}
+
+.club-discovery .club-discovery__view {
+  appearance: none;
+  margin: 0;
+  /* 44px minimum tap target on a phone, expressed against the console so it
+     scales with the picture rather than against it. */
+  min-height: 44px;
+  padding: 1cqw 1.5cqw;
+  border: 0;
+  background: transparent;
+  font:
+    800 3.6cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.club-discovery .club-discovery__view:active {
+  filter: brightness(1.3);
+}
+
+.club-discovery .club-discovery__view:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
+}
+
+/* ── The list: one club per row on the glass ──────────────────────────── */
+
+.club-discovery .club-discovery__loading {
+  padding: 1cqw 0;
+}
+
+.club-discovery .club-discovery__empty {
+  padding: 4cqw 2cqw;
+  color: #9aa5b3;
+}
+
+.club-discovery .club-discovery__list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.club-discovery .club-discovery__row {
+  display: grid;
+  gap: 2cqw;
+  padding: 3.4cqw 0;
+  min-width: 0;
+}
+
+/* The engraved rule the master uses between its own rows: a black hairline
+   with one pixel of highlight beneath it. Never a drawn divider, never a
+   border around the row - that would be a frame on a frame. */
+.club-discovery .club-discovery__row + .club-discovery__row {
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.club-discovery .club-discovery__row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2cqw;
+  min-width: 0;
+}
+
+.club-discovery .club-discovery__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font:
+    800 5cqw/1.2 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+/* A word in the master's own ink, not a capsule. HOT used to be a gradient
+   badge and PRIVATE a lozenge glyph; the standard paints pills in the art,
+   so a status here is simply lit type. */
+.club-discovery .club-discovery__flag {
+  flex: 0 0 auto;
+}
+
+.club-discovery .club-discovery__desc {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ── The figures: label left in lit blue, value right in silver ───────── */
+
+.club-discovery .club-discovery__facts {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.club-discovery .club-discovery__fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3cqw;
+  padding: 1.8cqw 0;
+  min-width: 0;
+}
+
+.club-discovery .club-discovery__fact + .club-discovery__fact {
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.club-discovery .club-discovery__fact-label {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.club-discovery .club-discovery__fact-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font:
+    700 3.6cqw/1.3 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.03em;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* ── The two actions on a row: lit words, never plates ────────────────── */
+
+.club-discovery .club-discovery__row-actions {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  color: #10b981;
-  font-weight: 700;
-  font-size: 10px;
+  gap: 7cqw;
 }
 
-.live-pulse {
-  width: 6px;
-  height: 6px;
-  background: #10b981;
-  border-radius: 50%;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.8);
-  animation: livePulse 2s infinite;
+.club-discovery .club-discovery__word {
+  appearance: none;
+  margin: 0;
+  min-height: 44px;
+  padding: 1cqw 0;
+  border: 0;
+  background: transparent;
+  font:
+    800 3.6cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
-@keyframes livePulse {
-  0%,
-  100% {
-    opacity: 1;
-    box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
-  }
-  50% {
-    opacity: 0.5;
-    box-shadow: 0 0 12px rgba(16, 185, 129, 0.8);
+.club-discovery .club-discovery__word:active {
+  filter: brightness(1.3);
+}
+
+.club-discovery .club-discovery__word:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .club-discovery .club-discovery__row {
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
   }
 }

@@ -1,80 +1,264 @@
-/**
- * ♠ CLUB ARENA — Tournament Page Styles
- * Premium Metal UI Theme — Brushed Steel + Cyan Glow
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOURNAMENTS - on the spade console (2026-09-08)
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   BASE THEME
-   ═══════════════════════════════════════════════════════════════════════════════ */
+   The frame, the crest, the header well, the pill slot, the two action plates
+   and the flat closing cap all come from the approved master via
+   SpadeConsole.css. This sheet stacks the consoles on black and types the
+   figures on the black glass between the rails.
+
+   What it replaced: a two-column split of rounded cards with their own
+   gradients, a filter-chip strip, a gradient progress bar per card, an inline
+   pill for the live level, a four-cell stat GRID, three bordered tables and a
+   stack of gradient buttons. Every figure is a row now: label in the master's
+   lit blue on the left, value in silver on the right, an engraved rule
+   between rows - a black cut with a light lip, the same cut the master's own
+   chrome rules are made of.
+
+   Sizes are cqw against the console; no :hover anywhere; nothing drawn.
+
+   THE ENTRANCE STILL PLAYS (CLAUDE.md 10.6): `.hidden` / `.fadeInUp` and the
+   `fadeInUp` keyframes are unchanged and still live HERE, because the cards
+   ask for the name as a raw class and Vite splits CSS per chunk.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .tournament-page {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
-  min-height: 100vh;
-  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
-  padding: 1rem;
-  width: 100%;
-  max-width: 100vw;
-  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
-     one axis computes the other to `auto`, which makes this a scroll container,
-     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
-     viewport. The bar leaves the bottom of the screen and rides up the page. */
-  overflow-x: hidden;
-  overflow-x: clip;
-  /* Dan 2026-08-25: was max(70px, env(safe-area-inset-bottom)). The bar is
-     74px PLUS the home-indicator inset (additive), and max() picks one or
-     the other - so this reserved 70px on every phone and hid the last row
-     of content under the footer, by 4px on a flat screen and ~38px on a
-     notched one. --bottom-nav-clearance is the token the bar itself is
-     pinned to. */
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 8px 12px;
   padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
+  background: #000;
+  min-height: 100%;
 }
 
-.tournament-header {
+.tournament-console {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+/* The selected card is LIT, not filled: brighter type, the same frame. */
+.tournament-card.selected {
+  filter: brightness(1.12);
+}
+
+/* ── The filters: lit words on the glass, never chips ────────────────────── */
+
+.tourn-filters {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: 1.5rem;
-  background: linear-gradient(135deg, rgba(26, 37, 53, 0.95) 0%, rgba(13, 21, 32, 0.98) 100%);
-  backdrop-filter: blur(20px) saturate(1.3);
-  -webkit-backdrop-filter: blur(20px) saturate(1.3);
-  border: 2px solid #2a3a4a;
-  border-radius: 12px;
-  box-shadow:
-    0 0 20px rgba(0, 212, 255, 0.1),
-    0 8px 32px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  position: relative;
+  flex-wrap: wrap;
+  gap: 1.6cqw 5cqw;
+  padding: 1cqw 0.5cqw 2cqw;
 }
 
-.tournament-header::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent 0%, rgba(0, 212, 255, 0.3) 50%, transparent 100%);
-}
-
-.tournament-header .header-left {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.tournament-header h1 {
+.tourn-filter {
+  appearance: none;
   margin: 0;
-  font-size: var(--text-2xl);
-  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
-  color: #00d4ff;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #7f8b99;
+  font:
+    800 3cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  letter-spacing: 2px;
-  text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+  cursor: pointer;
 }
+
+.tourn-filter:active {
+  filter: brightness(1.3);
+}
+
+.tourn-filter.is-active {
+  color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0 2cqw rgb(49 168 255 / 30%);
+}
+
+/* ── Lit words: the actions the two painted plates cannot carry ──────────── */
+
+.tourn-words {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2cqw 6cqw;
+  justify-content: center;
+  margin: 0;
+  padding: 2.4cqw 0.5cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.tourn-word {
+  appearance: none;
+  margin: 0;
+  padding: 1cqw 1.6cqw;
+  border: 0;
+  background: transparent;
+  font:
+    800 3.4cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.tourn-word:active {
+  filter: brightness(1.3);
+}
+
+.tourn-word:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.tourn-filter:focus-visible,
+.tourn-word:focus-visible {
+  outline: 0.5cqw solid #8fd4ff;
+  outline-offset: 0.4cqw;
+}
+
+/* ── The figures ─────────────────────────────────────────────────────────── */
+
+.tourn-rows {
+  display: grid;
+}
+
+.tourn-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3cqw;
+  align-items: baseline;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.tourn-row--triple {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.tourn-value {
+  justify-self: end;
+  min-width: 0;
+  font-size: 3.8cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tourn-table-name {
+  min-width: 0;
+  font-size: 3.4cqw;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tourn-heading {
+  margin: 3.4cqw 0 1.6cqw;
+  padding: 0 0.5cqw;
+  font-size: 4cqw;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ── The live pane ───────────────────────────────────────────────────────── */
+
+.tourney-live-pane {
+  display: grid;
+  gap: 2cqw;
+  padding-top: 2cqw;
+}
+
+.tourney-live-section {
+  display: grid;
+}
+
+.tourney-live-empty {
+  padding: 2.4cqw 1cqw;
+}
+
+/* ── The skeleton, and the entrance ──────────────────────────────────────── */
+
+.tourn-skeleton {
+  display: grid;
+  gap: 2.4cqw;
+  padding: 3cqw 0.5cqw;
+}
+
+.skel-line {
+  height: 2.6cqw;
+  background: rgb(255 255 255 / 5%);
+  animation: tournSkelShimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes tournSkelShimmer {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ═══════ PREMIUM ANIMATIONS ═══════ */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hidden {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.fadeInUp {
+  animation: fadeInUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fadeInUp,
+  .skel-line {
+    animation: none;
+  }
+
+  .hidden {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SHARED CHASSIS THIS ROUTE ALSO LOADS - NOT PART OF THE CONSOLE SURFACE
+   ───────────────────────────────────────────────────────────────────────────
+   `CreateTournamentModal` imports no stylesheet of its own and renders from
+   this page, so `.modal-overlay`, `.modal`, `.form-group`, `.form-row` and
+   `.modal-actions` are its ONLY styling on this route. They are left exactly
+   as they were: deleting them would leave the create-tournament form unstyled,
+   which is the same failure signUpDialog was written up for. `.back-link` is
+   in the same position for GameLobbyPanel.
+
+   These belong to whoever rebuilds those surfaces on the master; they are not
+   this sweep's to take away.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .back-link {
   color: #6a7a8a;
@@ -82,511 +266,6 @@
   font-size: 0.85rem;
   transition: all 0.2s;
 }
-
-.tournament-header .btn-primary {
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-  border: none;
-  color: #fff;
-  padding: 0.75rem 1.5rem;
-  border-radius: 8px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  cursor: pointer;
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.4);
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  position: relative;
-  overflow: hidden;
-}
-
-.tournament-header .btn-primary::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 50%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.4s ease;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   CONTENT LAYOUT
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.tournament-content {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: var(--space-6);
-  min-height: 500px;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   TOURNAMENT LIST — Brushed Metal Panel
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.tournament-list {
-  background: linear-gradient(180deg, rgba(26, 37, 53, 0.95) 0%, rgba(13, 21, 32, 0.98) 100%);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border: 2px solid #2a3a4a;
-  border-radius: 16px;
-  padding: var(--space-5);
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-.tournament-list h2 {
-  font-size: var(--text-lg);
-  margin: 0 0 var(--space-4);
-  color: #8899aa;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
-}
-
-.tournament-card {
-  padding: var(--space-4);
-  background: linear-gradient(
-    145deg,
-    rgba(255, 255, 255, 0.08) 0%,
-    rgba(200, 200, 200, 0.05) 50%,
-    rgba(100, 100, 100, 0.03) 100%
-  );
-  border: 2px solid #3a4a5a;
-  border-radius: 12px;
-  cursor: pointer;
-  margin-bottom: var(--space-3);
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-  position: relative;
-  overflow: hidden;
-}
-
-.tournament-card.selected {
-  border-color: #00d4ff;
-  background: linear-gradient(
-    145deg,
-    rgba(0, 212, 255, 0.15) 0%,
-    rgba(255, 255, 255, 0.05) 50%,
-    rgba(100, 100, 100, 0.03) 100%
-  );
-  box-shadow:
-    0 0 20px rgba(0, 212, 255, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-}
-
-.tournament-card.selected::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: #00d4ff;
-  box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
-}
-
-.tourn-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--space-2);
-}
-
-.tourn-name {
-  font-weight: 700;
-  color: #fff;
-  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
-}
-
-.tourn-status {
-  font-size: 0.7rem;
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.tourn-status.registering {
-  color: #00ff88;
-  background: rgba(0, 255, 136, 0.15);
-  border: 1px solid rgba(0, 255, 136, 0.3);
-  box-shadow: 0 0 8px rgba(0, 255, 136, 0.15);
-}
-
-.tourn-status.running {
-  color: #ff6b6b;
-  background: rgba(255, 107, 107, 0.15);
-  border: 1px solid rgba(255, 107, 107, 0.3);
-  box-shadow: 0 0 8px rgba(255, 107, 107, 0.15);
-}
-
-.tourn-info {
-  display: flex;
-  justify-content: space-between;
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  margin-bottom: var(--space-2);
-}
-
-.tourn-type {
-  font-weight: 700;
-  color: #00d4ff;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.tourn-buyin {
-  font-family: 'Rajdhani', monospace;
-  color: #00d4ff;
-}
-
-.tourn-meta {
-  display: flex;
-  gap: var(--space-4);
-  font-size: var(--text-xs);
-  color: #6a7a8a;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   TOURNAMENT DETAILS — Premium Metal Panel
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.tournament-details {
-  background: linear-gradient(180deg, rgba(26, 37, 53, 0.95) 0%, rgba(13, 21, 32, 0.98) 100%);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border: 2px solid #2a3a4a;
-  border-radius: 16px;
-  padding: var(--space-6);
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-.detail-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--space-6);
-}
-
-.detail-header h2 {
-  margin: 0;
-  font-size: var(--text-xl);
-  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
-  color: #fff;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.status-badge {
-  padding: 6px 14px;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.status-badge.registering {
-  background: rgba(0, 255, 136, 0.15);
-  color: #00ff88;
-  border: 1px solid rgba(0, 255, 136, 0.3);
-  box-shadow: 0 0 10px rgba(0, 255, 136, 0.15);
-}
-
-.status-badge.running {
-  background: rgba(255, 107, 107, 0.15);
-  color: #ff6b6b;
-  border: 1px solid rgba(255, 107, 107, 0.3);
-  box-shadow: 0 0 10px rgba(255, 107, 107, 0.15);
-}
-
-/* Stats Grid — Brushed Metal Cards */
-.detail-stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-4);
-  margin-bottom: var(--space-6);
-}
-
-@media (max-width: 640px) {
-  .detail-stats {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-.detail-stats .stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-4);
-  background: linear-gradient(
-    145deg,
-    rgba(255, 255, 255, 0.08) 0%,
-    rgba(200, 200, 200, 0.05) 50%,
-    rgba(100, 100, 100, 0.03) 100%
-  );
-  border: 2px solid #3a4a5a;
-  border-radius: 12px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-  transition: all 0.25s;
-}
-
-.detail-stats .stat.highlight {
-  border-color: #ffd700;
-  background: linear-gradient(
-    145deg,
-    rgba(255, 215, 0, 0.12) 0%,
-    rgba(255, 255, 255, 0.05) 50%,
-    rgba(100, 100, 100, 0.03) 100%
-  );
-  box-shadow:
-    0 0 15px rgba(255, 215, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-}
-
-.stat-label {
-  font-size: 0.7rem;
-  color: #6a7a8a;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.stat-value {
-  font-size: var(--text-lg);
-  font-weight: 700;
-  font-family: 'Rajdhani', monospace;
-  color: #00d4ff;
-}
-
-.stat-value.gold {
-  color: #ffd700;
-  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   BLIND STRUCTURE — Metal Table
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.blind-structure {
-  margin-bottom: var(--space-6);
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.03) 0%, rgba(0, 0, 0, 0.1) 100%);
-  border: 1px solid #2a3a4a;
-  border-radius: 10px;
-  padding: 1rem;
-}
-
-.blind-structure h3 {
-  font-size: 0.8rem;
-  color: #00d4ff;
-  margin-bottom: var(--space-3);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
-}
-
-.blind-structure {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.blind-structure table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.blind-structure th,
-.blind-structure td {
-  padding: var(--space-2);
-  text-align: left;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.blind-structure th {
-  font-size: 0.7rem;
-  color: #6a7a8a;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.blind-structure td {
-  font-size: var(--text-sm);
-  font-family: 'Rajdhani', monospace;
-  color: #00d4ff;
-}
-
-.more-row td {
-  text-align: center;
-  font-style: normal;
-  color: #6a7a8a;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   PAYOUT STRUCTURE
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.payout-structure {
-  margin-bottom: var(--space-6);
-}
-
-.payout-structure h3 {
-  font-size: 0.8rem;
-  color: #00d4ff;
-  margin-bottom: var(--space-3);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
-}
-
-.payout-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.payout-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3);
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(0, 0, 0, 0.1) 100%);
-  border: 1px solid #2a3a4a;
-  border-radius: 8px;
-  transition: all 0.2s;
-}
-
-.payout-place {
-  font-size: var(--text-lg);
-  min-width: 40px;
-}
-
-.payout-percent {
-  flex: 1;
-  font-size: var(--text-sm);
-  color: #6a7a8a;
-}
-
-.payout-amount {
-  font-weight: 700;
-  font-family: 'Rajdhani', monospace;
-  color: #ffd700;
-  text-shadow: 0 0 8px rgba(255, 215, 0, 0.3);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   ACTIONS — Metal Buttons
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-/**
- * Dan 2026-08-21 (item 2): "there needs to be an UNREGISTER button that players
- * can unregister before a tournament starts."
- *
- * The button existed — it was just unreachable. This block sits at the BOTTOM
- * of the detail pane, below the full blind structure and the whole payout
- * ladder, so on a real tournament the only action on the page was several
- * screens below the fold. A player looking at the tournament they had just
- * registered for could not see any way to undo it, which is indistinguishable
- * from it not being there.
- *
- * Sticky to the bottom of the pane, so Register / Unregister is on screen the
- * whole time the tournament is open, wherever the reader has scrolled to.
- */
-.detail-actions {
-  margin-top: var(--space-6);
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
-  padding: var(--space-3) 0 var(--space-2);
-  background: linear-gradient(
-    180deg,
-    rgba(13, 21, 32, 0) 0%,
-    rgba(13, 21, 32, 0.92) 22%,
-    rgba(13, 21, 32, 0.98) 100%
-  );
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-}
-
-.detail-actions .btn-block {
-  width: 100%;
-  padding: 1rem;
-  border-radius: 10px;
-  font-weight: 700;
-  font-size: 1rem;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  position: relative;
-  overflow: hidden;
-}
-
-.detail-actions .btn-primary {
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-  border: none;
-  color: #fff;
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.4);
-}
-.detail-actions .btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.detail-actions .btn-danger {
-  background: linear-gradient(135deg, #ff6b6b 0%, #cc4444 100%);
-  border: none;
-  color: #fff;
-}
-
-.detail-actions .btn-warning {
-  background: linear-gradient(135deg, #ff9500 0%, #cc7700 100%);
-  border: none;
-  color: #fff;
-}
-
-.detail-actions .btn-success {
-  background: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
-  border: none;
-  color: #000;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   EMPTY STATES
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.empty-state,
-.empty-detail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  gap: var(--space-3);
-  text-align: center;
-  color: #6a7a8a;
-  padding: 3rem;
-}
-
-.empty-icon {
-  font-size: 48px;
-  opacity: 0.3;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   MODALS — Metal Frame
-   ═══════════════════════════════════════════════════════════════════════════════ */
 
 .modal-overlay {
   position: fixed;
@@ -714,100 +393,7 @@
   transition: all 0.2s;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   RESPONSIVE
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
 @media (max-width: 768px) {
-  .tournament-page {
-    padding: 0.5rem;
-    /* the shorthand above resets padding-bottom; restate the footer clearance */
-    padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
-    gap: var(--space-3);
-  }
-
-  .tournament-content {
-    grid-template-columns: 1fr;
-    gap: var(--space-3);
-    min-height: auto;
-  }
-
-  .tournament-header {
-    flex-direction: column;
-    gap: var(--space-2);
-    padding: 1rem;
-  }
-
-  .tournament-header h1 {
-    font-size: var(--text-lg);
-    letter-spacing: 1px;
-  }
-
-  .tournament-list {
-    padding: var(--space-3);
-    border-radius: 12px;
-  }
-
-  .tournament-card {
-    padding: var(--space-3);
-  }
-
-  .tourn-name {
-    font-size: 0.85rem;
-  }
-
-  .tournament-details {
-    padding: var(--space-3);
-  }
-
-  .detail-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-2);
-    margin-bottom: var(--space-3);
-  }
-
-  .detail-header h2 {
-    font-size: var(--text-base);
-  }
-
-  .detail-stats {
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--space-2);
-  }
-
-  .detail-stats .stat {
-    padding: var(--space-2);
-  }
-
-  .stat-label {
-    font-size: 0.6rem;
-  }
-
-  .stat-value {
-    font-size: var(--text-base);
-  }
-
-  .blind-structure {
-    padding: 0.75rem;
-  }
-
-  .blind-structure th,
-  .blind-structure td {
-    padding: var(--space-1);
-    font-size: 0.75rem;
-  }
-
-  .payout-item {
-    padding: var(--space-2);
-    gap: var(--space-2);
-  }
-
-  .detail-actions .btn-block {
-    padding: 0.75rem;
-    font-size: 0.9rem;
-  }
-
   .form-row {
     grid-template-columns: 1fr;
   }
@@ -817,334 +403,9 @@
     padding: 1rem;
   }
 
-  .tourn-filter-chip {
-    min-height: 44px;
-    display: inline-flex;
-    align-items: center;
-  }
-
-  .detail-actions .btn-block,
   .modal-actions .btn-primary,
-  .modal-actions .btn-ghost,
-  .tournament-header .btn-primary {
+  .modal-actions .btn-ghost {
     min-height: 44px;
     touch-action: manipulation;
   }
-}
-
-@media (max-width: 380px) {
-  .detail-stats {
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-  }
-
-  .stat-value {
-    font-size: 0.85rem;
-  }
-
-  .action-tabs-metal button {
-    font-size: 0.65rem !important;
-    padding: 8px 4px !important;
-  }
-}
-
-/* ═══════ PREMIUM ANIMATIONS ═══════ */
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.hidden {
-  opacity: 0;
-  transform: translateY(8px);
-}
-
-.fadeInUp {
-  animation: fadeInUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   SKELETON LOADING (Initiative 3)
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.tournament-skeleton-card {
-  background: linear-gradient(145deg, rgba(26, 37, 53, 0.6), rgba(13, 21, 32, 0.8));
-  border: 2px solid rgba(42, 58, 74, 0.5);
-  border-radius: 12px;
-  overflow: hidden;
-  position: relative;
-  margin-bottom: var(--space-3);
-}
-
-.tournament-skeleton-card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent 0%, rgba(0, 212, 255, 0.05) 50%, transparent 100%);
-  animation: tournSkelShimmer 1.5s infinite;
-}
-
-@keyframes tournSkelShimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
-
-.skel-header {
-  height: 24px;
-  margin: 16px 16px 12px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.skel-body {
-  padding: 0 16px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.skel-line {
-  height: 10px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.04);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   FILTER PILL CHIPS (Initiative 3)
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.tourn-filter-chips {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.tourn-filter-chip {
-  touch-action: manipulation;
-  padding: 6px 14px;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-  color: #8899aa;
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.25s ease;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.tourn-filter-chip.active {
-  border-color: #00d4ff;
-  color: #fff;
-  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 153, 204, 0.15));
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.2);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   REGISTRATION PROGRESS BAR (Initiative 2)
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.tourn-progress-bar {
-  height: 3px;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 2px;
-  margin-top: 8px;
-  overflow: hidden;
-}
-
-.tourn-progress-fill {
-  height: 100%;
-  border-radius: 2px;
-  background: linear-gradient(90deg, #00d4ff, #00ff88);
-  transition: width 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  box-shadow: 0 0 6px rgba(0, 212, 255, 0.4);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   COUNTDOWN TIMER (Initiative 2)
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.tourn-countdown {
-  margin-top: 8px;
-  font-size: 0.7rem;
-  font-family: 'Rajdhani', monospace;
-  color: #00d4ff;
-  letter-spacing: 1px;
-  padding: 4px 8px;
-  background: rgba(0, 212, 255, 0.06);
-  border: 1px solid rgba(0, 212, 255, 0.15);
-  border-radius: 6px;
-  display: inline-block;
-}
-
-.tourn-countdown.starting {
-  color: #ff6b6b;
-  background: rgba(255, 107, 107, 0.1);
-  border-color: rgba(255, 107, 107, 0.3);
-  animation: countdownPulse 1s infinite;
-}
-
-@keyframes countdownPulse {
-  0%,
-  100% {
-    opacity: 1;
-    box-shadow: 0 0 8px rgba(255, 107, 107, 0.2);
-  }
-  50% {
-    opacity: 0.7;
-    box-shadow: 0 0 16px rgba(255, 107, 107, 0.4);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   TOURNAMENT RESULTS OVERLAY (Initiative 13)
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.tourn-results-overlay {
-  margin-top: var(--space-6);
-  padding: var(--space-5);
-  background: linear-gradient(145deg, rgba(255, 215, 0, 0.06), rgba(0, 212, 255, 0.04));
-  border: 2px solid rgba(255, 215, 0, 0.2);
-  border-radius: 16px;
-  text-align: center;
-  animation: resultsSlideIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-@keyframes resultsSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.results-header {
-  font-size: 1.125rem;
-  font-weight: 700;
-  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
-  color: #ffd700;
-  text-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
-  margin-bottom: var(--space-4);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.results-podium {
-  display: flex;
-  justify-content: center;
-  align-items: flex-end;
-  gap: var(--space-4);
-}
-
-.podium-place {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.1));
-  border: 1px solid #3a4a5a;
-  border-radius: 12px;
-  min-width: 80px;
-  transition: all 0.3s;
-}
-
-.podium-1 {
-  border-color: #ffd700;
-  box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);
-  transform: scale(1.1);
-}
-
-.podium-2 {
-  border-color: #c0c0c0;
-  box-shadow: 0 0 12px rgba(192, 192, 192, 0.15);
-}
-
-.podium-3 {
-  border-color: #cd7f32;
-  box-shadow: 0 0 10px rgba(205, 127, 50, 0.15);
-}
-
-.podium-icon {
-  font-size: 1.5rem;
-}
-
-.podium-payout {
-  font-size: 0.85rem;
-  font-weight: 700;
-  font-family: 'Rajdhani', monospace;
-  color: #ffd700;
-  text-shadow: 0 0 6px rgba(255, 215, 0, 0.3);
-}
-
-/* Live pane (2026-08-15): clock + chip counts + table list for a tournament
-   that is actually running. The detail pane used to show the same static
-   blind chart whether the event had started or not. */
-.tourney-live-pane {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin: 16px 0;
-}
-
-.tourney-live-section h3 {
-  font-size: 13px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  opacity: 0.7;
-  margin: 0 0 8px;
-}
-
-.tourney-live-empty {
-  font-size: 13px;
-  opacity: 0.6;
-  margin: 0;
-}
-
-.tourney-table-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.tourney-table-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  font-size: 13px;
-}
-
-.tourney-table-name {
-  flex: 1;
-  font-weight: 600;
-}
-
-.tourney-table-blinds {
-  opacity: 0.65;
-  font-variant-numeric: tabular-nums;
-}
-
-.tourney-table-seats {
-  min-width: 44px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  color: #ffd700;
 }

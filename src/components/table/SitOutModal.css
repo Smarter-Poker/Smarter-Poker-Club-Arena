@@ -1,12 +1,29 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- * 🚶 SIT OUT MODAL — Styles
- * ═══════════════════════════════════════════════════════════════════════════════
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  SIT OUT NOTICE - the spade master, cut narrow for a felt corner
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * #ClubArenaConsole (2026-09-14). This file used to draw the surface: a 20px
+ * radius, a 1px white border at 10%, a backdrop blur and a red-outlined pill
+ * button. None of that is here any more. The frame, the header well and the
+ * clock's capsule are PAINTED in Dan's approved master (SpadeConsole), and
+ * this sheet only says where the console sits on the felt and how big the
+ * text printed on its glass is.
+ *
+ * --sc-max NARROWS it, and may never raise it past the art's own 1000px. The
+ * notice lives in the bottom-right corner over a live hand, so it is cut to
+ * 330px: at that width the head is 115px, the glass carries two lines and the
+ * flat closing cap is 24px.
+ *
+ * metallic-popups.css names `.sitout-modal` in its shell list and paints a
+ * steel bevel on it with `!important` from inside a `:where()` - specificity
+ * 0. The longhands are restated here at 0,1,0, which wins the tie, so the
+ * master is the only thing that paints.
+ *
+ * No :hover (phones do not hover). Every colour is the master's own ink from
+ * SpadeConsole.css; the only hex in this file is the red the urgent rule has
+ * always carried.
  */
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   OVERLAY
-   ═══════════════════════════════════════════════════════════════════════════════ */
 
 .sitout-overlay {
   position: fixed;
@@ -30,21 +47,21 @@
   }
 }
 
+/* The console is the picture; this element is only its position on the felt.
+   Every paint longhand metallic-popups.css applies is switched off here. */
 .sitout-modal {
   pointer-events: auto; /* Re-enable clicks for the button */
-  background: rgba(0, 0, 0, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  width: min(330px, calc(100vw - 48px));
   animation: sitoutFadeIn 0.3s ease;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  padding: 6px 6px 6px 16px;
-  gap: 12px;
-  backdrop-filter: blur(8px);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 /* `@keyframes slideUp` REMOVED 2026-08-29. Unused in this file — `.sitout-modal`
@@ -55,14 +72,14 @@
    merely dead weight, it is a silent participant in whichever of those six
    actually renders. */
 
-.sitout-modal__status-label {
-  font-size: 0.875rem;
-  font-weight: 700;
-  color: #8b949e;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0 4px;
+.sitout-modal__console {
+  --sc-max: 330px;
+  filter: drop-shadow(0 10px 22px rgb(0 0 0 / 80%));
 }
+
+/* `.sitout-modal__status-label` REMOVED 2026-09-14: "Sitting Out" is engraved
+   in the master's header well now (the console's `title`), so a span drawing
+   the same words on the glass would be the label printed twice. */
 
 /* ─── THE DEADLINE ────────────────────────────────────────────────────────
    Added 2026-08-29, and it should have shipped with the element: the markup
@@ -74,61 +91,72 @@
    was computed, applied and INVISIBLE: the whole "shout in the last minute"
    design was a no-op.
 
-   Secondary to the buttons on purpose. The player's decision is Back or
-   Leave; this is the fact that informs it, not a third thing to press.
+   Secondary to the action on purpose. The player's decision is Back (the
+   footer bar) or Leave (below); this is the fact that informs it, not a third
+   thing to press. It sizes in cqw against the console, like every other
+   string printed on this art, and it may wrap: the max-width keeps it inside
+   the rails at 330px and at 1000px alike.
    No gold/amber/orange, per .agent/workflows/design-guidelines.md. */
 .sitout-modal__deadline {
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.15;
-  color: rgba(255, 255, 255, 0.62);
-  letter-spacing: 0.01em;
-  /* It may wrap; it may not push the buttons off a narrow phone. */
-  max-width: 15ch;
-  flex: 0 1 auto;
+  display: block;
+  max-width: 100%;
   min-width: 0;
+  color: #9aa5b3;
+  font:
+    600 3.9cqw/1.35 Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.01em;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
-/* Under a minute. Red, and the only colour change on the bar — the seat is
-   about to be taken and this is the last thing that will say so. */
+/* Under a minute. Red, and so is the clock in the painted pill beside it: the
+   seat is about to be taken, and the two surfaces that say so change together
+   rather than disagreeing. Both read the SAME predicate (isSitOutUrgent), so
+   they cannot drift apart. */
 .sitout-modal__deadline--urgent {
-  color: #f85149;
-  font-weight: 700;
+  color: #ff5b6e;
 }
 
-/* The "I'm Back" pill that lived here is gone (Dan 2026-09-04): the footer
-   bar carries the one I'm Back. See SitOutModal.tsx. */
+/* ONE ACTION, SO IT IS A LIT WORD (#ClubArenaConsole). The foot paints both
+   plates or neither; a single plate would leave the other painted and empty,
+   which reads as broken. Leave Table is engraved on the glass instead, under
+   the rule that separates it from the sentence above. */
+.sitout-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 2.6cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
 
-/* Leave Table. Added 2026-08-25 with the button itself —
-   the component had built a handleLeave for a prop it was given and then never
-   rendered anything to call it.
-
-   Deliberately secondary styling, not another green pill: returning is the
-   expected action and leaving is the exit. It must still read as a real button,
-   because for a sitting-out player this is the only way off the table. */
 .sitout-modal__leave-btn {
-  padding: 10px 20px;
-  font-size: 0.9375rem;
-  font-weight: 700;
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
   background: transparent;
-  border: 1px solid rgba(248, 81, 73, 0.55);
-  border-radius: 12px;
-  color: #f85149;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
-/* =================================================================================
-   RESPONSIVE — Mobile
-   ================================================================================= */
+.sitout-modal__leave-btn:active {
+  filter: brightness(1.25);
+}
 
-@media (max-width: 480px) {
-  .sitout-modal {
-    padding: 6px 6px 6px 12px;
-    gap: 8px;
-  }
-  .sitout-modal__status-label {
-    font-size: 0.75rem;
-  }
+.sitout-modal__leave-btn:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
+}
+
+/* The master's own ink carries the COLOUR (SpadeConsole.css); the size of a
+   lit word is the surface's, because it is measured against this console's
+   own width. */
+.sitout-modal .sc-ink--red {
+  font-size: 3.9cqw;
 }

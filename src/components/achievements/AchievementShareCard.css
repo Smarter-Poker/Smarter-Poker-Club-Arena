@@ -1,25 +1,28 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * ♠ ACHIEVEMENT SHARE CARD — Styles (Q3 Wave 2)
- * ═══════════════════════════════════════════════════════════════════════════════
+/*
+ * ACHIEVEMENT SHARE CARD - #ClubArenaConsole (2026-09-14)
+ *
+ * The dialog is a SpadeConsole (src/components/console/SpadeConsole.css paints
+ * the chassis, the plates and the inks). This sheet only lays the achievement
+ * out on the black glass between the rails: nothing here is a frame, a plate
+ * or a pill. Sizes are in cqw against the console.
  */
 
-/* ── Overlay ────────────────────────────────────────────────────────────────── */
 .share-card-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   z-index: 9999;
-  padding: 20px;
-  animation: fadeIn 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  padding: max(10px, env(safe-area-inset-top)) 8px max(10px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgb(2 4 7 / 88%);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: achievementShareCardFadeIn 0.2s ease;
 }
 
-@keyframes fadeIn {
+@keyframes achievementShareCardFadeIn {
   from {
     opacity: 0;
   }
@@ -28,14 +31,11 @@
   }
 }
 
-/* ── Modal ──────────────────────────────────────────────────────────────────── */
-.share-card-modal {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  padding: 20px;
-  max-width: 380px;
-  width: 100%;
+.share-card-sheet {
+  container-type: inline-size;
+  width: min(100%, 560px);
+  margin: auto;
+  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
   animation: achievementShareCardSlideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
@@ -50,101 +50,85 @@
   }
 }
 
-.share-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  font-weight: 600;
-  color: #fff;
-}
+/* Named "-sheet", not "-modal" or "-dialog": metallic-popups.css bevels and
+   fills every [class$='-modal'] and [class$='-dialog'] with !important, and
+   the console brings its own paint. */
 
-.share-card-close {
-  background: none;
-  border: none;
-  color: #8a9aaa;
-  font-size: 1.5rem;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 8px;
-  transition: all 0.2s;
-}
+/* ── The achievement on the glass ───────────────────────────────────── */
 
-/* ── Preview Card ───────────────────────────────────────────────────────────── */
 .share-card-preview {
-  background: #0a0a14;
-  border: 2px solid;
-  border-radius: 12px;
-  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5cqw;
+  padding: 1cqw 0 0;
   text-align: center;
-  margin-bottom: 16px;
 }
 
 .share-card-icon {
-  font-size: 3rem;
   display: block;
-  margin-bottom: 12px;
+  font-size: 14cqw;
+  line-height: 1;
+  margin-bottom: 1cqw;
+}
+
+.share-rarity-common .share-card-icon {
+  filter: drop-shadow(0 0 1.5cqw rgb(154 165 179 / 40%));
+}
+
+.share-rarity-rare .share-card-icon {
+  filter: drop-shadow(0 0 1.5cqw rgb(49 168 255 / 60%));
+}
+
+.share-rarity-epic .share-card-icon {
+  filter: drop-shadow(0 0 1.5cqw rgb(140 210 255 / 70%));
+}
+
+.share-rarity-legendary .share-card-icon {
+  filter: drop-shadow(0 0 1.5cqw rgb(255 215 0 / 60%));
 }
 
 .share-card-name {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: #fff;
-  margin: 0 0 4px 0;
+  margin: 0;
+  font:
+    800 6.2cqw/1.1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
 }
 
 .share-card-desc {
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.5);
-  margin: 0 0 8px 0;
+  max-width: 90%;
 }
 
-.share-card-rarity {
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-
-/* Rarity glow effects */
-.share-rarity-legendary {
-  box-shadow:
-    0 0 20px rgba(255, 152, 0, 0.2),
-    inset 0 0 20px rgba(255, 152, 0, 0.05);
-}
-
-.share-rarity-epic {
-  box-shadow:
-    0 0 20px rgba(156, 39, 176, 0.2),
-    inset 0 0 20px rgba(156, 39, 176, 0.05);
-}
-
-.share-rarity-rare {
-  box-shadow:
-    0 0 20px rgba(33, 150, 243, 0.2),
-    inset 0 0 20px rgba(33, 150, 243, 0.05);
-}
-
-/* ── Share Button ───────────────────────────────────────────────────────────── */
-.share-card-btn {
+/* Figures as rows on the glass: label lit blue on the left, value on the
+   right, an engraved rule between them. */
+.share-card-rows {
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  padding: 12px;
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-.share-card-btn:active {
-  transform: scale(0.97);
+  margin-top: 2cqw;
 }
 
-.share-card-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
+.share-card-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3cqw;
+  padding: 2.2cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.share-card-row__label {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+}
+
+.share-card-row__value {
+  font-size: 4.2cqw;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }

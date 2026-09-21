@@ -1,8 +1,25 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * DEPOSIT/WITHDRAW MODAL — Premium Financial Engine (Q2 Upgrade)
- * Branded payment logos, step progress indicator, celebration animations
+ * DEPOSIT/WITHDRAW MODAL - the chips-in and chips-out sheet
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * ON THE MASTER (#ClubArenaConsole). This was a rounded navy bottom sheet with
+ * a drag handle, an amber progress bar drawn from three inline divs, a filled
+ * balance strip, six rounded quick-amount pills, a gradient Continue button and
+ * a green gradient disc with a tick inside it. It is the spade console now:
+ * ADD CHIPS / CASH OUT CHIPS is engraved in the header well, the stage the
+ * request has reached sits in the well's painted pill slot, the balance, the
+ * amount, the limits and the summary print on the black glass between the
+ * rails, and the two actions per step are the plates painted into the foot.
+ * The three-step indicator is PRINTED - the step names, ink by state - because
+ * the master paints no bars, and the success tick is the word instead of a
+ * disc.
+ *
+ * NOTHING ABOUT THE MONEY MOVED. Every guard, focus trap, body-scroll lock,
+ * idempotency key and limit below is the one that was here before. Every
+ * figure on this sheet is a term of the request - the balance it is checked
+ * against, the minimum and maximum it must sit between, the amount that will
+ * be asked for - so every one of them stays exact and none is abbreviated.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -10,6 +27,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
+import { SpadeConsole } from '../console/SpadeConsole';
 import styles from './DepositWithdrawModal.module.css';
 import { reportError } from '../../utils/errorReporter';
 import { fireVibration } from '../../utils/vibrationGate';
@@ -23,7 +41,7 @@ const triggerHaptic = (pattern: number | number[] = 10) => {
     fireVibration(pattern);
   } catch (err) {
     reportError(err, 'DepositWithdrawModal.Error');
-    /* silent — not all devices support vibration */
+    /* silent - not all devices support vibration */
   }
 };
 
@@ -88,74 +106,54 @@ interface PaymentMethodInfo {
   processingTime: string;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// METHOD ICON
-// ═══════════════════════════════════════════════════════════════════════════════
-
 /* Four branded third-party logos used to live here - Bitcoin orange, Venmo
    blue, Zelle purple, Cash App green - under a banner calling them "high-trust
    payment method icons". They were doing trust-transfer work for a claim that
    was not true: none of those companies has any relationship with Club Arena,
    and Club Arena takes no payment through any of them. Deleted with the rails
-   they belonged to. */
-const PaymentLogo = ({ method }: { method: PaymentMethod }) => {
-  const size = 32;
-  const logos: Record<PaymentMethod, React.ReactNode> = {
-    agent: (
-      <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
-        <circle cx="16" cy="16" r="14" fill="#1a73e8" />
-        <circle cx="16" cy="12" r="5" fill="white" />
-        <path d="M8 26c0-4.4 3.6-8 8-8s8 3.6 8 8" fill="white" />
-      </svg>
-    ),
-  };
-  return logos[method] || null;
-};
+   they belonged to. The one path left is not an icon at all now: an emblem is
+   part of the render or it is not there, and the master paints its own crest,
+   so the agent path is stated in words on the glass. */
 
 /** The stages a request passes through. `method` was the first of four until
     2026-09-04; with one path there is nothing to choose, and a select screen
     offering a single card is a step that exists only to be clicked past. */
 type Step = 'amount' | 'confirm' | 'success';
 
-// Step progress indicator
+const STEP_LABELS: Array<{ key: Step; label: string }> = [
+  { key: 'amount', label: 'Amount' },
+  { key: 'confirm', label: 'Confirm' },
+  { key: 'success', label: 'Done' },
+];
+
+/**
+ * PRINTED, NOT DRAWN. Three inline-styled bars with a border-radius and a
+ * colour ramp used to sit here. The master paints no bars, so the three stages
+ * are printed instead and the INK carries the state: green behind you, white
+ * where you are, muted ahead of you.
+ */
 const StepProgress = ({ current }: { current: Step }) => {
-  const steps: Step[] = ['amount', 'confirm', 'success'];
-  const currentIdx = steps.indexOf(current);
+  const currentIdx = STEP_LABELS.findIndex((s) => s.key === current);
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '4px',
-        padding: '12px 24px 0',
-      }}
-    >
-      {steps.map((s, i) => (
-        <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <div
-            style={{
-              width: i <= currentIdx ? '24px' : '8px',
-              height: '4px',
-              borderRadius: '2px',
-              background:
-                i <= currentIdx
-                  ? i === currentIdx && current === 'success'
-                    ? '#00C853'
-                    : '#fbbf24'
-                  : 'rgba(255,255,255,0.1)',
-              transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-            }}
-          />
-        </div>
+    <ol className={styles.steps} aria-label="Progress">
+      {STEP_LABELS.map((s, i) => (
+        <li
+          key={s.key}
+          className={`${styles.step} ${
+            i < currentIdx ? 'sc-ink--green' : i === currentIdx ? 'sc-ink--white' : 'sc-ink--muted'
+          }`}
+          aria-current={i === currentIdx ? 'step' : undefined}
+        >
+          {s.label}
+        </li>
       ))}
-    </div>
+    </ol>
   );
 };
 
 /**
  * The server route that would accept a funding request. `null` means there is
- * none — see the block comment on handleConfirm for the four separate reasons
+ * none - see the block comment on handleConfirm for the four separate reasons
  * the old direct `wallet_transactions` insert could never work, and why it must
  * not simply be repaired into working. Set this to the route path once it
  * exists and the POST below starts carrying real requests.
@@ -200,25 +198,26 @@ export default function DepositWithdrawModal({
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [referenceId, setReferenceId] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
   const isMounted = useIsMounted();
-  const mountTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
   // Withdrawal-specific fields
   const [withdrawAddress, setWithdrawAddress] = useState('');
 
-  useEffect(() => {
-    if (isOpen) {
-      mountTimer.current = setTimeout(() => setMounted(true), 50);
-    } else {
-      setMounted(false);
-    }
-    return () => {
-      if (mountTimer.current) clearTimeout(mountTimer.current);
-    };
-  }, [isOpen]);
+  /**
+   * THE ENTRANCE IS CSS NOW, AND IT ACTUALLY PLAYS.
+   *
+   * A `mounted` state, a 50ms timer and a render per open used to gate an
+   * INLINE animation property whose value was a raw string naming a keyframe
+   * declared in this component's .module.css. CSS Modules hashes keyframe
+   * names, so that string could never resolve: the declaration was dropped,
+   * the sheet has not animated in for as long as the rule has existed, and all
+   * the state bought was a 50ms translate before it appeared. The same timer
+   * and the same dead entrance were deleted from CashoutRequestModal for the
+   * same reason. It is one rule on `.modal` in the stylesheet now, declared and
+   * applied in the same file, so it resolves and it plays every time.
+   */
 
   // ── Close handler: resets all form state and calls parent onClose ──
   const handleClose = useCallback(() => {
@@ -264,7 +263,7 @@ export default function DepositWithdrawModal({
 
   /* THE EFFECT BELOW MUST DEPEND ON `isOpen` AND NOTHING ELSE.
      It used to list `handleFocusTrap`, which is a useCallback on `handleClose`,
-     which is a useCallback on the `onClose` PROP — and PlayerWalletPage passes
+     which is a useCallback on the `onClose` PROP - and PlayerWalletPage passes
      `onClose={() => setShowDepositModal(false)}`, a fresh arrow on every one of
      its renders. That page also runs three `useAnimatedNumber` counters, so it
      re-renders at 60fps whenever a balance moves. The effect therefore tore
@@ -272,7 +271,7 @@ export default function DepositWithdrawModal({
      the keydown listener was churned, the 100ms autofocus timer was cancelled
      and restarted before it could ever fire (so the sheet never focused
      anything), and the cleanup's `previousFocusRef.current?.focus()` ran on
-     every one of those passes — pulling focus back out of the modal, from
+     every one of those passes - pulling focus back out of the modal, from
      inside an open modal, while the user was typing an amount into it.
 
      The handler goes in a ref instead: one stable listener for the life of the
@@ -363,14 +362,14 @@ export default function DepositWithdrawModal({
    * It inserted into `wallet_transactions` and that insert was impossible in
    * FOUR independent ways, every one of them verified against production:
    *
-   *  1. RLS. `wallet_transactions` carries exactly one policy — "Users view own
+   *  1. RLS. `wallet_transactions` carries exactly one policy - "Users view own
    *     transactions", cmd SELECT. There is no INSERT policy for `public` or
    *     `authenticated`, so the write returned 42501 every single time. This is
    *     the same control WalletService.logTransaction documents at length: the
    *     browser is deliberately not allowed to forge ledger rows, and "the
    *     denial is the control working".
    *  2. FOUR COLUMNS THAT DO NOT EXIST. It set `fee`, `payment_method`,
-   *     `status` and `metadata`. The table has none of them — its columns are
+   *     `status` and `metadata`. The table has none of them - its columns are
    *     id, user_id, wallet_type, amount, type, category, description,
    *     related_entity_id, table_id, hand_id, created_at, balance_after.
    *  3. A CHECK VIOLATION. `type` was set to 'deposit' / 'withdraw';
@@ -383,7 +382,7 @@ export default function DepositWithdrawModal({
    * has existed.
    *
    * AND IT SHOULD NOT BE REPAIRED INTO WORKING. `wallet_transactions` is the
-   * SETTLED ledger — TransactionHistory, three lines up the same page, reads
+   * SETTLED ledger - TransactionHistory, three lines up the same page, reads
    * it. A pending deposit written there would render to the player as a
    * completed credit for money that has not arrived, above a running balance it
    * did not change. There is no client-writable table for a funding REQUEST
@@ -471,6 +470,38 @@ export default function DepositWithdrawModal({
 
   if (!isOpen) return null;
 
+  /* THE FOOT PAINTS BOTH PLATES, so a step with one action uses the flat cap
+     and prints that action as a lit word on the glass instead. The success
+     step has exactly one: Done. */
+  const plates =
+    step === 'amount'
+      ? {
+          secondary: {
+            label: 'Close',
+            onClick: handleClose,
+            'aria-label': 'Close Chip Transfer',
+          },
+          primary: {
+            label: 'Continue',
+            ink: numericAmount > 0 ? ('white' as const) : ('muted' as const),
+            onClick: handleAmountSubmit,
+            disabled: numericAmount <= 0,
+          },
+        }
+      : {
+          secondary: { label: 'Back', onClick: () => setStep('amount') },
+          primary: {
+            label: processing
+              ? 'Processing'
+              : mode === 'deposit'
+                ? 'Confirm Deposit'
+                : 'Confirm Withdrawal',
+            ink: processing || !FUNDING_ENDPOINT ? ('muted' as const) : ('white' as const),
+            onClick: handleConfirm,
+            disabled: processing || !FUNDING_ENDPOINT,
+          },
+        };
+
   return (
     <div
       className={styles.overlay}
@@ -479,294 +510,249 @@ export default function DepositWithdrawModal({
       aria-modal="true"
       aria-labelledby="deposit-withdraw-modal-title"
     >
-      <div
-        className={styles.modal}
-        ref={modalRef}
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          animation: mounted ? 'sheetSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards' : 'none',
-          transform: mounted ? undefined : 'translateY(100%)',
-        }}
-      >
-        {/* Bottom-sheet drag handle */}
-        <div className={styles.dragHandle} />
-        {/* Header */}
-        <div className={styles.header}>
-          {/* "Funds" was the wrong noun and the wrong claim. What moves here is
-              chips, and the welcome disclaimer the player accepted on the way in
-              says the chips are virtual and that Club Arena provides no
-              real-money service. A sheet headed "Deposit Funds" contradicted
-              that in its own title bar. */}
-          <h2>{mode === 'deposit' ? 'Add Chips' : 'Cash Out Chips'}</h2>
-          {step === 'confirm' && (
-            <button className={styles.backBtn} onClick={() => setStep('amount')}>
-              ← Back
-            </button>
+      <div className={styles.modal} ref={modalRef} onClick={(e) => e.stopPropagation()}>
+        <SpadeConsole
+          as="div"
+          /* "Funds" was the wrong noun and the wrong claim. What moves here is
+             chips, and the welcome disclaimer the player accepted on the way in
+             says the chips are virtual and that Club Arena provides no
+             real-money service. A sheet headed "Deposit Funds" contradicted
+             that in its own title bar. */
+          eyebrow={mode === 'deposit' ? 'Chips In' : 'Chips Out'}
+          title={mode === 'deposit' ? 'Add Chips' : 'Cash Out Chips'}
+          titleId="deposit-withdraw-modal-title"
+          pill={step === 'success' ? 'Sent' : step === 'confirm' ? 'Check It' : 'Agent'}
+          pillInk={step === 'success' ? 'green' : 'blue'}
+          foot={step === 'success' ? 'foot' : 'plates'}
+          plates={step === 'success' ? undefined : plates}
+        >
+          <StepProgress current={step} />
+
+          <div className={styles.row}>
+            <span className="sc-label sc-ink--blue">Current Balance</span>
+            <strong className={`${styles.value} sc-ink--silver`}>
+              {currentBalance.toLocaleString()}
+            </strong>
+          </div>
+
+          {error && (
+            <p role="alert" className={`sc-copy sc-copy--center sc-ink--red ${styles.error}`}>
+              {error}
+            </p>
           )}
-          <button className={styles.closeBtn} onClick={handleClose}>
-            ✕
-          </button>
-        </div>
 
-        {/* Step Progress Indicator */}
-        <StepProgress current={step} />
+          {/* The four-card method grid stood here. One card is not a choice, so
+              the sheet now opens on the amount and states the path instead of
+              asking for it. */}
 
-        {/* Current Balance */}
-        <div className={styles.balanceBar}>
-          <span>Current Balance</span>
-          <span className={styles.balanceValue}>{currentBalance.toLocaleString()}</span>
-        </div>
+          {/* Step 1: Enter Amount */}
+          {step === 'amount' && currentMethod && (
+            <>
+              <div className={styles.row}>
+                <span className="sc-label sc-ink--blue">Through</span>
+                <span className={`${styles.meta} sc-ink--silver`}>
+                  {currentMethod.label} {currentMethod.processingTime}
+                </span>
+              </div>
 
-        {/* Error */}
-        {error && <div className={styles.error}>{error}</div>}
-
-        {/* The four-card method grid stood here. One card is not a choice, so
-            the sheet now opens on the amount and states the path instead of
-            asking for it. */}
-
-        {/* Step 1: Enter Amount */}
-        {step === 'amount' && currentMethod && (
-          <div className={styles.amountSection}>
-            <div className={styles.selectedMethod}>
-              <PaymentLogo method={currentMethod.id} />
-              <span>{currentMethod.label}</span>
-              <span className={styles.processingTime}> {currentMethod.processingTime}</span>
-            </div>
-
-            <div className={styles.amountInput}>
               <input
+                className={styles.amountInput}
                 type="number"
                 placeholder="0.00"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
+                aria-label={mode === 'deposit' ? 'Chips To Add' : 'Chips To Cash Out'}
                 autoFocus
               />
-            </div>
 
-            <div className={styles.quickAmounts}>
-              {quickAmounts.map((qa) => (
-                <button
-                  key={qa}
-                  onClick={() => setAmount(qa.toString())}
-                  className={numericAmount === qa ? styles.active : ''}
-                  style={qa === 500 ? { position: 'relative' } : undefined}
-                >
-                  {qa.toLocaleString()}
-                  {qa === 500 && (
-                    <span
-                      style={{
-                        position: 'absolute',
-                        top: '-8px',
-                        right: '-4px',
-                        fontSize: '8px',
-                        background: '#00C853',
-                        color: '#fff',
-                        padding: '1px 5px',
-                        borderRadius: '6px',
-                        fontWeight: 700,
-                        letterSpacing: '0.3px',
-                        lineHeight: '1.4',
-                      }}
-                    >
-                      BEST
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {/* A WITHDRAWAL'S REAL CEILING IS THE BALANCE.
-                This showed the METHOD's limit for both directions, so a player
-                with 300 chips reading "Max: 100,000" typed 5,000, pressed
-                Continue, and only then learned they had 300 — the balance check
-                is in handleAmountSubmit, one screen later. Stating the binding
-                limit is not a new rule, it is the rule that was already being
-                enforced, moved to where it can be read before it bites. */}
-            <div className={styles.limits}>
-              <span>Min: {currentMethod.minAmount.toLocaleString()}</span>
-              <span>
-                Max:{' '}
-                {(mode === 'withdraw'
-                  ? Math.min(currentMethod.maxAmount, Math.max(0, currentBalance))
-                  : currentMethod.maxAmount
-                ).toLocaleString()}
-              </span>
-            </div>
-
-            {/* A five-branch ternary picked a label per rail here - Wallet
-                Address, Venmo Username, Email/Phone, Cash App Tag, Agent ID.
-                Four of those destinations no longer exist. */}
-            {mode === 'withdraw' && (
-              <div className={styles.addressInput}>
-                <label>Agent ID (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="Which Agent Is Cashing You Out?"
-                  value={withdrawAddress}
-                  onChange={(e) => setWithdrawAddress(e.target.value)}
-                />
+              {/* Lit numerals on the glass under an engraved rule, not six
+                  drawn pills. The 500 no longer wears a green BEST tag: it was
+                  a sticker on a number Club Arena has no stake in. */}
+              <div className={styles.quickAmounts} role="group" aria-label="Quick Amounts">
+                {quickAmounts.map((qa) => (
+                  <button
+                    key={qa}
+                    type="button"
+                    onClick={() => setAmount(qa.toString())}
+                    className={`${styles.quick} ${
+                      numericAmount === qa ? 'sc-ink--white' : 'sc-ink--blue'
+                    }`}
+                    aria-pressed={numericAmount === qa}
+                  >
+                    {qa.toLocaleString()}
+                  </button>
+                ))}
               </div>
-            )}
 
-            <button
-              className={styles.continueBtn}
-              onClick={handleAmountSubmit}
-              disabled={numericAmount <= 0}
-            >
-              Continue
-            </button>
-          </div>
-        )}
+              {/* A WITHDRAWAL'S REAL CEILING IS THE BALANCE.
+                  This showed the METHOD's limit for both directions, so a player
+                  with 300 chips reading "Max: 100,000" typed 5,000, pressed
+                  Continue, and only then learned they had 300 - the balance check
+                  is in handleAmountSubmit, one screen later. Stating the binding
+                  limit is not a new rule, it is the rule that was already being
+                  enforced, moved to where it can be read before it bites. */}
+              <div className={styles.row}>
+                <span className="sc-label sc-ink--blue">Min</span>
+                <span className={`${styles.meta} sc-ink--silver`}>
+                  {currentMethod.minAmount.toLocaleString()}
+                </span>
+              </div>
+              <div className={styles.row}>
+                <span className="sc-label sc-ink--blue">Max</span>
+                <span className={`${styles.meta} sc-ink--silver`}>
+                  {(mode === 'withdraw'
+                    ? Math.min(currentMethod.maxAmount, Math.max(0, currentBalance))
+                    : currentMethod.maxAmount
+                  ).toLocaleString()}
+                </span>
+              </div>
 
-        {/* Step 3: Confirm */}
-        {step === 'confirm' && currentMethod && (
-          <div className={styles.confirmSection}>
-            <div className={styles.summary}>
-              <div className={styles.summaryRow}>
-                <span>Amount</span>
-                <span>{numericAmount.toLocaleString()}</span>
+              {/* A five-branch ternary picked a label per rail here - Wallet
+                  Address, Venmo Username, Email/Phone, Cash App Tag, Agent ID.
+                  Four of those destinations no longer exist. */}
+              {mode === 'withdraw' && (
+                <div className={styles.field}>
+                  <label className="sc-label sc-ink--blue" htmlFor="deposit-withdraw-agent">
+                    Agent ID (Optional)
+                  </label>
+                  <input
+                    id="deposit-withdraw-agent"
+                    className={styles.textInput}
+                    type="text"
+                    placeholder="Which Agent Is Cashing You Out?"
+                    value={withdrawAddress}
+                    onChange={(e) => setWithdrawAddress(e.target.value)}
+                  />
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Step 2: Confirm */}
+          {step === 'confirm' && currentMethod && (
+            <>
+              <div className={styles.row}>
+                <span className="sc-label sc-ink--blue">Amount</span>
+                <strong className={`${styles.value} sc-ink--silver`}>
+                  {numericAmount.toLocaleString()}
+                </strong>
               </div>
               {feeAmount > 0 && (
-                <div className={styles.summaryRow}>
-                  <span>Fee ({currentMethod.fee}%)</span>
-                  <span>
+                <div className={styles.row}>
+                  <span className="sc-label sc-ink--blue">Fee ({currentMethod.fee}%)</span>
+                  <strong className={`${styles.value} sc-ink--red`}>
                     -
                     {feeAmount.toLocaleString(undefined, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
-                  </span>
+                  </strong>
                 </div>
               )}
-              <div className={`${styles.summaryRow} ${styles.total}`}>
+              <div className={styles.row}>
                 {/* "You Pay" named a payment Club Arena never takes. What this
                     row totals is chips moving between two member accounts. */}
-                <span>{mode === 'deposit' ? 'Chips Requested' : 'Chips Released'}</span>
-                <span>
+                <span className="sc-label sc-ink--blue">
+                  {mode === 'deposit' ? 'Chips Requested' : 'Chips Released'}
+                </span>
+                <strong className={`${styles.total} sc-ink--white`}>
                   {mode === 'deposit'
                     ? numericAmount.toLocaleString()
                     : (Math.round((numericAmount - feeAmount) * 100) / 100).toLocaleString(
                         undefined,
                         { minimumFractionDigits: 2, maximumFractionDigits: 2 }
                       )}
+                </strong>
+              </div>
+              <div className={styles.row}>
+                <span className="sc-label sc-ink--blue">Through</span>
+                <span className={`${styles.meta} sc-ink--silver`}>
+                  {currentMethod.label} {currentMethod.processingTime}
                 </span>
               </div>
-            </div>
 
-            <div className={styles.methodInfo}>
-              <span className={styles.methodIcon}>{currentMethod.icon}</span>
-              <span>{currentMethod.label}</span>
-              <span className={styles.processingTime}> {currentMethod.processingTime}</span>
-            </div>
+              {/* The old three-step list read "Send 500 To Transfer Through Your
+                  Agent", then "Include Your Reference ID In The Memo" - a bank
+                  memo line, for a transfer Club Arena is not a party to. It was
+                  written for the four rails and made no sense once they were the
+                  agent. What is true of the agent path is stated instead. */}
+              {mode === 'deposit' && (
+                <div className={styles.block}>
+                  <span className="sc-label sc-ink--blue">How This Works</span>
+                  <ol className={styles.steplist}>
+                    <li className="sc-copy">
+                      Your Agent Sends You {numericAmount.toLocaleString()} Chips From Their Own
+                      Balance
+                    </li>
+                    <li className="sc-copy">
+                      The Chips Appear In Your Wallet As Soon As They Send Them
+                    </li>
+                    <li className="sc-copy">
+                      Anything You Arrange With Your Agent Is Between The Two Of You. Club Arena Is
+                      Not A Party To It And Takes No Payment
+                    </li>
+                  </ol>
+                </div>
+              )}
 
-            {/* The old three-step list read "Send 500 To Transfer Through Your
-                Agent", then "Include Your Reference ID In The Memo" - a bank
-                memo line, for a transfer Club Arena is not a party to. It was
-                written for the four rails and made no sense once they were the
-                agent. What is true of the agent path is stated instead. */}
-            {mode === 'deposit' && (
-              <div className={styles.instructions}>
-                <p>How This Works:</p>
-                <ol>
-                  <li>
-                    Your Agent Sends You {numericAmount.toLocaleString()} Chips From Their Own
-                    Balance
-                  </li>
-                  <li>The Chips Appear In Your Wallet As Soon As They Send Them</li>
-                  <li>
-                    Anything You Arrange With Your Agent Is Between The Two Of You. Club Arena Is
-                    Not A Party To It And Takes No Payment
-                  </li>
-                </ol>
-              </div>
-            )}
-
-            {/* Say it BEFORE the button, not after the click. Leading someone
-                through three steps of a money flow and only then telling them
-                the channel does not exist is the same discourtesy as the old
-                generic "Please try again" - it just costs them more time
-                first. */}
-            {!FUNDING_ENDPOINT && (
-              <div className={styles.error}>
-                {mode === 'deposit'
-                  ? 'Deposits Are Not Open On This Channel Yet. Ask Your Agent To Send You Chips'
-                  : 'Withdrawals Are Not Open On This Channel Yet. Ask Your Agent To Cash You Out'}
-              </div>
-            )}
-
-            <button
-              className={styles.confirmBtn}
-              onClick={handleConfirm}
-              disabled={processing || !FUNDING_ENDPOINT}
-            >
-              {processing
-                ? 'Processing...'
-                : `Confirm ${mode === 'deposit' ? 'Deposit' : 'Withdrawal'}`}
-            </button>
-          </div>
-        )}
-
-        {/* Step 4: Success */}
-        {step === 'success' && (
-          <div className={styles.successSection}>
-            {/* Animated checkmark */}
-            <div
-              style={{
-                width: '80px',
-                height: '80px',
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, #00C853, #69F0AE)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 8px 32px rgba(0, 200, 83, 0.3)',
-                animation: 'animationsSuccessIconPulse 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              }}
-            >
-              <svg
-                width="40"
-                height="40"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="white"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            </div>
-            <h3>{mode === 'deposit' ? 'Deposit Initiated!' : 'Withdrawal Submitted!'}</h3>
-
-            {mode === 'deposit' && (
-              <>
-                <p>
-                  Send Exactly <strong>{numericAmount.toLocaleString()}</strong> To:
+              {/* Say it BEFORE the button, not after the click. Leading someone
+                  through three steps of a money flow and only then telling them
+                  the channel does not exist is the same discourtesy as the old
+                  generic "Please try again" - it just costs them more time
+                  first. */}
+              {!FUNDING_ENDPOINT && (
+                <p className={`sc-copy sc-copy--center sc-ink--red ${styles.error}`}>
+                  {mode === 'deposit'
+                    ? 'Deposits Are Not Open On This Channel Yet. Ask Your Agent To Send You Chips'
+                    : 'Withdrawals Are Not Open On This Channel Yet. Ask Your Agent To Cash You Out'}
                 </p>
-                <div className={styles.paymentDetails}>
-                  <span className={styles.destination}>{currentMethod?.description}</span>
-                </div>
-                <div className={styles.referenceBox}>
-                  <span className={styles.refLabel}>Reference ID</span>
-                  <span className={styles.refValue}>{referenceId?.slice(0, 8).toUpperCase()}</span>
-                </div>
-                <p className={styles.hint}>Include This ID In Your Payment Memo</p>
-              </>
-            )}
+              )}
+            </>
+          )}
 
-            {mode === 'withdraw' && (
-              <p style={{ color: 'rgba(255,255,255,0.6)' }}>
-                Your Withdrawal Is Being Processed. You'll Receive Confirmation Soon.
+          {/* Step 3: Success */}
+          {step === 'success' && (
+            <>
+              <p className={`sc-copy sc-copy--center sc-ink--green ${styles.headline}`}>
+                {mode === 'deposit' ? 'Deposit Initiated!' : 'Withdrawal Submitted!'}
               </p>
-            )}
 
-            <button className={styles.doneBtn} onClick={handleClose}>
-              Done
-            </button>
-          </div>
-        )}
-        {/* Bottom safe area spacer */}
-        <div className={styles.bottomSpacer} />
+              {mode === 'deposit' && (
+                <>
+                  <div className={styles.row}>
+                    <span className="sc-label sc-ink--blue">Send Exactly</span>
+                    <strong className={`${styles.value} sc-ink--silver`}>
+                      {numericAmount.toLocaleString()}
+                    </strong>
+                  </div>
+                  <div className={styles.row}>
+                    <span className="sc-label sc-ink--blue">To</span>
+                    <span className={`${styles.meta} sc-ink--silver`}>
+                      {currentMethod?.description}
+                    </span>
+                  </div>
+                  <div className={styles.row}>
+                    <span className="sc-label sc-ink--blue">Reference ID</span>
+                    <strong className={`${styles.value} sc-ink--gold`}>
+                      {referenceId?.slice(0, 8).toUpperCase()}
+                    </strong>
+                  </div>
+                  <p className="sc-copy sc-copy--center">Include This ID In Your Payment Memo</p>
+                </>
+              )}
+
+              {mode === 'withdraw' && (
+                <p className="sc-copy sc-copy--center">
+                  Your Withdrawal Is Being Processed. You'll Receive Confirmation Soon.
+                </p>
+              )}
+
+              <button type="button" className={styles.doneBtn} onClick={handleClose}>
+                Done
+              </button>
+            </>
+          )}
+        </SpadeConsole>
       </div>
     </div>
   );

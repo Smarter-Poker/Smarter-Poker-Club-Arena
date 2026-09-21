@@ -363,7 +363,7 @@ describe('ClubDataPage', () => {
     // test deadline even though the immutable export already completed.
     await waitFor(() => expect(downloadMock).toHaveBeenCalledOnce(), { timeout: 10_000 });
     expect(
-      await screen.findAllByText('Exported all 2 games.', undefined, { timeout: 10_000 })
+      await screen.findAllByText('Exported All 2 Games.', undefined, { timeout: 10_000 })
     ).toHaveLength(2);
     expect(downloadMock.mock.calls[0][1].split('\n')).toHaveLength(3);
     expect(rpcMock).toHaveBeenCalledWith(
@@ -376,85 +376,68 @@ describe('ClubDataPage', () => {
   }, 20_000);
 
   /**
-   * THIS TEST USED TO ASSERT THE OPPOSITE, and the reason it changed matters.
+   * THIS TEST USED TO ASSERT THE OPPOSITE, and the reason it changed matters
+   * a second time.
    *
-   * It read `queryByText('HORSE')` and required the flag to be absent. That was
-   * written when ca_club_player_breakdown returned is_horse UNMASKED - to
-   * anyone who could read club finances, which includes super agents, a role
-   * the estate's own fn_can_see_horse_flag deliberately excludes. Hiding it in
-   * the UI was the right defensive call while the database was handing it to
-   * the wrong people.
-   *
-   * The database now masks it: staff get the truth, everyone else a uniform
-   * false. So the flag only ARRIVES for an owner, co-owner or admin, and for
-   * them it is the answer to a question they need - which of my top players is
-   * a person. Painting it is now safe in the only case where it is non-false.
-   *
-   * Worth recording: the old assertion did not fail when the badge was added.
-   * It searched for 'HORSE' and the badge renders 'Horse', uppercased in CSS -
-   * so it passed by accident rather than by agreement. An assertion that would
-   * not have noticed the change it existed to prevent is worse than none, so
-   * both directions are now explicit.
+   * It briefly asserted the badge WAS present for an owner, because the
+   * database masks the flag from everyone else and painting it for the one
+   * entitled role was judged safe. Dan closed that on 2026-09-14, binding:
+   * "NOTHING SHOULD EVER REVEAL A HORSES IDENTITY." The client now never
+   * paints the flag for anyone, entitled or not - see
+   * tests/a-horse-is-never-named.law.test.ts for the estate-wide guard.
    */
-  it('names a horse for the staff entitled to know', async () => {
+  it('never names a horse, even for the staff who could once see the flag', async () => {
     render(<ClubDataPage />);
 
     fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
     await waitFor(() => expect(screen.getByText('Table Regular')).toBeInTheDocument());
     expect(screen.getByRole('list', { name: 'Players' })).toHaveAttribute('tabindex', '0');
 
-    // The fixture's player carries is_horse: true, which only reaches a
-    // viewer the database decided may see it.
-    expect(screen.getByText('Horse')).toBeInTheDocument();
+    // The fixture's player carries is_horse: true, exactly as the masked RPC
+    // still hands an owner - and the page paints nothing from it.
+    expect(screen.queryByText('Horse')).not.toBeInTheDocument();
   });
 
   /**
-   * A CLIENT-SIDE FILTER OVER A SERVER-PAGED LIST HAS TWO WAYS TO GO WRONG,
-   * and Phase 4 shipped both of them before this test existed.
+   * A CLIENT-SIDE RESET OVER A SERVER-PAGED LIST HAS TWO WAYS TO GO WRONG, and
+   * Phase 4 shipped one of them before this test existed.
    *
    * The infinite-scroll trigger compared the virtual window's endIndex against
-   * the length of the list ON SCREEN. Hiding horses on a club that is 577
-   * horses and one person takes that length to 1, so `endIndex >= 1 - 8` is
-   * already true before anyone scrolls; every page fetched is filtered
-   * straight back out, the length never grows, and the condition never stops
-   * being true. A filter became a fetch loop.
+   * the length of the list ON SCREEN. The Hide Horses toggle (retired
+   * 2026-09-14 - "NOTHING SHOULD EVER REVEAL A HORSES IDENTITY", Dan, binding)
+   * used to shrink that length: hiding horses on a club that is 577 horses and
+   * one person took it to 1, so `endIndex >= 1 - 8` was already true before
+   * anyone scrolled, every page fetched was filtered straight back out, the
+   * length never grew, and the condition never stopped being true. A filter
+   * became a fetch loop.
    *
-   * Whether more rows exist on the SERVER is a fact about what has been
-   * fetched, so the trigger reads the unfiltered length.
+   * The filter is gone, but the trigger still deliberately reads
+   * allPlayers.length rather than sortedPlayers.length (see the comment on
+   * that effect in ClubDataPage.tsx) - a sort change resets the same virtual
+   * window a filter once shared. This is that guard's remaining edge: changing
+   * the sort must settle the pager once, not loop.
    */
-  it('hiding horses does not turn the pager into a fetch loop', async () => {
-    const manyHorses = Array.from({ length: 30 }, (_, i) => ({
+  it('changing the sort resets the pager once and does not loop', async () => {
+    const manyRows = Array.from({ length: 30 }, (_, i) => ({
       ...playerBreakdown.players[0],
-      user_id: `horse-${i}`,
-      username: `Horse ${i}`,
-      is_horse: true,
+      user_id: `winner-${i}`,
+      username: `Winner ${i}`,
     }));
-    const onePerson = {
-      ...playerBreakdown.players[0],
-      user_id: 'person-1',
-      username: 'The Only Person',
-      is_horse: false,
-    };
-    const roster = [onePerson, ...manyHorses];
 
     rpcMock.mockImplementation((fn: string) => {
       if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
       if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
       if (fn === 'ca_club_player_breakdown') {
         return Promise.resolve({
-          data: { ...playerBreakdown, players: roster, player_count: 200 },
+          data: { ...playerBreakdown, players: manyRows, player_count: 200 },
           error: null,
         });
       }
       if (fn === 'ca_club_player_page') {
-        // filtered_count exceeds the rows returned, which is what makes
-        // playersHasMore true and hands the pager a cursor. Without that the
-        // loader can never fire and this test proves nothing - the first
-        // version claimed 31 of 31 and the mutation it was written for passed.
         return Promise.resolve({
           data: {
             ...playerPage,
-            rows: roster,
+            rows: manyRows,
             has_more: true,
             filtered_count: 200,
             next_cursor: { v: 1 },
@@ -467,10 +450,15 @@ describe('ClubDataPage', () => {
 
     render(<ClubDataPage />);
     fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
-    await waitFor(() => expect(screen.getByText('The Only Person')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Winner 0')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: /Hide Horses/i }));
-    await waitFor(() => expect(screen.queryByText('Horse 0')).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Biggest Losers' }));
+    await waitFor(() =>
+      expect(rpcMock).toHaveBeenCalledWith(
+        'ca_club_player_page',
+        expect.objectContaining({ p_sort: 'losers' })
+      )
+    );
 
     const after = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_player_page').length;
     // Let any runaway effect run. A loop would add calls without bound.
@@ -478,7 +466,7 @@ describe('ClubDataPage', () => {
     const later = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_player_page').length;
 
     expect(later - after).toBeLessThanOrEqual(1);
-    expect(screen.getByText('The Only Person')).toBeInTheDocument();
+    expect(screen.getByText('Winner 0')).toBeInTheDocument();
   });
 
   it('shows nothing at all when the flag was masked before it arrived', async () => {
@@ -672,7 +660,7 @@ describe('ClubDataPage', () => {
         { timeout: 12_000 }
       );
       expect(screen.getByText('Shark Table One')).toBeInTheDocument();
-      expect(screen.queryByText('Could not load club data.')).not.toBeInTheDocument();
+      expect(screen.queryByText('Could Not Load Club Data.')).not.toBeInTheDocument();
       expect(screen.getByText(/Showing The Last Verified Snapshot/i)).toBeInTheDocument();
     } finally {
       errorSpy.mockRestore();
@@ -706,7 +694,7 @@ describe('ClubDataPage', () => {
         { timeout: 2_000 }
       );
       expect(screen.getByText('Table Regular')).toBeInTheDocument();
-      expect(screen.queryByText('Could not load player data.')).not.toBeInTheDocument();
+      expect(screen.queryByText('Could Not Load Player Data.')).not.toBeInTheDocument();
     } finally {
       errorSpy.mockRestore();
     }
@@ -767,7 +755,7 @@ describe('ClubDataPage', () => {
 
     await screen.findByText('Shark Table One');
     expect(snapshotRequest).toBe(2);
-    expect(screen.queryByText('Could not load club data.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Could Not Load Club Data.')).not.toBeInTheDocument();
   });
 
   it('keeps healing through a contended cold start before exposing an error state', async () => {
@@ -794,7 +782,7 @@ describe('ClubDataPage', () => {
     // authoritative read after first paint, so the user contract is a lower
     // bound rather than an arbitrary transport-call ceiling.
     expect(snapshotRequest).toBeGreaterThanOrEqual(4);
-    expect(screen.queryByText('Could not load club data.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Could Not Load Club Data.')).not.toBeInTheDocument();
   });
 
   it('aborts a protected request when its response deadline expires', async () => {
@@ -824,7 +812,7 @@ describe('ClubDataPage', () => {
 
       expect(snapshotSignal?.aborted).toBe(true);
       expect(
-        screen.getByText('Club data took too long to respond. Try again.')
+        screen.getByText('Club Data Took Too Long To Respond. Try Again.')
       ).toBeInTheDocument();
     } finally {
       errorSpy.mockRestore();
@@ -944,8 +932,6 @@ describe('ClubDataPage', () => {
           screen.queryByRole('button', { name: /Load More Players|Loading More Players/ })
         ).not.toBeInTheDocument()
       );
-      fireEvent.click(screen.getByRole('button', { name: 'Hide Horses' }));
-      await screen.findByText('Next Loser');
       expect(rpcMock).toHaveBeenCalledWith(
         'ca_club_player_page',
         expect.objectContaining({ p_sort: 'losers', p_cursor: loserCursor })
@@ -1065,8 +1051,6 @@ describe('ClubDataPage', () => {
           screen.queryByRole('button', { name: /Load More Players|Loading More Players/ })
         ).not.toBeInTheDocument()
       );
-      fireEvent.click(screen.getByRole('button', { name: 'Hide Horses' }));
-      await screen.findByText('Next Loser');
     } finally {
       await act(async () => {
         resolveOldPage?.({ data: playerPage, error: null });

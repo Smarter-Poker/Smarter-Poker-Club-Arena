@@ -16,6 +16,18 @@ try {
       port.close();
       return;
     }
+    if (message && typeof message === 'object' && 'type' in message && message.type === 'STATS') {
+      // Aggregate-only diagnostics for /health. A failed read answers null and
+      // never reclassifies the writer: a probe must not stop capture.
+      let stats: ReturnType<typeof store.storageStats> | null = null;
+      try {
+        stats = store.storageStats();
+      } catch {
+        stats = null;
+      }
+      port.postMessage({ type: 'STATS', stats });
+      return;
+    }
     try {
       const batch = message as { type?: string; records?: unknown[] };
       if (batch?.type !== 'APPEND' || !Array.isArray(batch.records) || batch.records.length > 16)

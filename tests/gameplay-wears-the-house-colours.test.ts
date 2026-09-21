@@ -22,12 +22,13 @@
  *
  * WHAT IS AND IS NOT A HOUSE GREEN
  * The rule is about SEMANTIC colour - success, profit, win, active, online,
- * check/call/raise. Those are brand. Four other kinds of green are not brand and
+ * check/call/raise. Those are brand. Other approved green palettes are
  * are deliberately exempt, each one listed below with the file it lives in:
  *   - card suit greens (four-colour deck readability convention)
  *   - casino chip denomination greens (a 25-chip is green everywhere on earth)
  *   - felt, card-back and button skins the user picks from a gallery
  *   - celebration/particle art palettes, and one third-party brand (WhatsApp)
+ *   - the explicitly approved off-felt leaderboard painted-console ink
  *
  * Adding a green to the allowlist is a deliberate act with a reason attached.
  * That is the whole point: the next person cannot add a 37th shade by accident.
@@ -46,10 +47,14 @@ const HOUSE_DARK = '#2ea043';
 const HOUSE_FAMILY = new Set([HOUSE, HOUSE_LIGHT, HOUSE_DARK]);
 
 /**
- * Greens that are NOT brand colour. Each entry names the only file allowed to
- * carry it and why it is not a house green.
+ * Approved non-house palettes. Each entry names the only file allowed to carry
+ * it and the artwork or user-approved surface contract that owns that colour.
  */
 const EXEMPT: Record<string, { files: string[]; why: string }> = {
+  '#c8ffd2': {
+    files: ['src/components/table/LeaderboardPanel.css'],
+    why: 'Dan explicitly approved rebuilding all leaderboard dialogs on #ClubArenaConsole; its off-felt positive-value ink is #c8ffd2 (skill section 3.4), not the on-felt action palette',
+  },
   '#22c55e': {
     files: [
       'src/components/table/CardImage.tsx',

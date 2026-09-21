@@ -431,7 +431,9 @@ describe('heartbeatTables', () => {
     ).resolves.toEqual({
       status: 'answered',
       proofs: [],
-      lostTableIds: [TABLE],
+      // Authority is NOT extended - that is what this case pins. It is also
+      // not a loss: the database answered `kept` for this exact generation.
+      lostTableIds: [],
     });
   });
 

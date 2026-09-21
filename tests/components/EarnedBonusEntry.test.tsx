@@ -139,7 +139,36 @@ describe('server-owned earned game entry', () => {
       await view.result.current.refresh();
     });
     expect(view.result.current.ready).toBe(false);
-    expect(view.result.current.error).toMatch(/Could Not Be Checked/);
+    // Nobody is told to press Refresh: the read is retried by itself.
+    expect(view.result.current.error).toBe('Reconnecting To Your Wheel Award');
+  });
+  it('retries a failed award read by itself until it answers', async () => {
+    vi.useFakeTimers();
+    try {
+      backend.rpc.mockResolvedValue({ error: Error('Offline'), data: null });
+      const view = renderHook(() => useEarnedBonus(club, 'plinko', preference), { wrapper });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(view.result.current.error).toBe('Reconnecting To Your Wheel Award');
+      const failedReads = backend.rpc.mock.calls.length;
+      backend.rpc.mockResolvedValue({ error: null, data: quote() });
+      // First retry after one second, with no press.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(backend.rpc.mock.calls.length).toBeGreaterThan(failedReads);
+      expect(view.result.current.error).toBeNull();
+      expect(view.result.current.award?.id).toBe(id);
+      const settledReads = backend.rpc.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30000);
+      });
+      // Settled: no more reads on a timer.
+      expect(backend.rpc.mock.calls.length).toBe(settledReads);
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it.each([
     { club_id: '00000000-0000-0000-0000-000000000099' },

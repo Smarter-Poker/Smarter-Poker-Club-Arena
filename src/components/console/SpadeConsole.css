@@ -91,13 +91,30 @@
   background-image: url('/assets/club-buttons/console/spade-console-v1/top-vip.png');
 }
 
-/* Between the rails: inside x 85-915 of the master, with a little air. */
+/* Between the rails: inside x 85-915 of the master, with a little air.
+
+   THE SEAMS OVERLAP BY A PIXEL, AND THAT IS NOT DECORATION (2026-09-15).
+   Every slice's height comes from an `aspect-ratio` against a container width
+   the browser rarely hands us as a whole number: at 375px - the design width -
+   the head is 375 x 0.348 = 130.5px. Two boxes that meet on a fractional
+   device row can BOTH round away from it, and neither paints it, so a 1px
+   black band cut straight across the console and through both side rails. It
+   was found on the sign-in page, but nothing about it was particular to that
+   page: it is arithmetic, and it was reachable by every surface in the kit at
+   some width.
+
+   The body carries the rails that its neighbours also show, so extending its
+   box one pixel into each of them closes the junction with the right art and
+   moves no content: the negative margin is paid straight back as padding.
+   Do not "tidy" these four declarations into a plain `padding` shorthand. */
 .sc__body {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 3cqw;
-  padding: 0 10.5% 3cqw;
+  padding: 1px 10.5% calc(3cqw + 1px);
+  margin-top: -1px;
+  margin-bottom: -1px;
   background: url('/assets/club-buttons/console/spade-console-v1/mid.png') top center / 100% auto
     repeat-y;
 }
@@ -140,7 +157,11 @@
 
 /* Between the shark's rails: glass runs x 60-673 of 733. */
 .sc--family-shark .sc__body {
-  padding: 0 9% 3cqw;
+  /* The shorthand would wipe the pixel the seam overlap pays back as
+     padding (see "THE SEAMS OVERLAP BY A PIXEL" above), leaving the
+     negative margins to shift this family's content up by one row.
+     Restate all three, never a plain `padding`. */
+  padding: 1px 9% calc(3cqw + 1px);
   background-image: url('/assets/club-buttons/console/shark-console-v2/mid.png');
 }
 
@@ -169,7 +190,11 @@
 /* Between the riveted rails: glass runs x 70-660 of 729, and the head prints
    its title from x 88 - the body lines up with it. */
 .sc--family-riveted .sc__body {
-  padding: 0 12% 3cqw;
+  /* The shorthand would wipe the pixel the seam overlap pays back as
+     padding (see "THE SEAMS OVERLAP BY A PIXEL" above), leaving the
+     negative margins to shift this family's content up by one row.
+     Restate all three, never a plain `padding`. */
+  padding: 1px 12% calc(3cqw + 1px);
   background-image: url('/assets/club-buttons/console/riveted-console-v2/mid.png');
 }
 
@@ -387,4 +412,61 @@
   letter-spacing: 0.16em;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   THE TICK WELL (Dan 2026-09-15: "there needs to be an area for the box
+   check to the 'I Agree' part").
+
+   The master art paints no tick box, and an earlier pass read that as "draw
+   nothing" - the agreement became a lit word with `role="checkbox"`, correct
+   to a screen reader and invisible to everybody else. A person being asked to
+   agree to something has to SEE the box they are ticking.
+
+   So it is cut into the glass rather than drawn on top of it: the same black
+   top rule and 8% inner light as every engraved row, closed into a square.
+   Ticked, its core lights in the master's own green - no glyph, no tick
+   character, nothing that needs a font to arrive before it reads.
+   ───────────────────────────────────────────────────────────────────────── */
+.sc-check {
+  display: flex;
+  align-items: center;
+  gap: 2.6cqw;
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+}
+
+.sc-check__box {
+  position: relative;
+  flex: 0 0 auto;
+  width: 5.4cqw;
+  height: 5.4cqw;
+  min-width: 18px;
+  min-height: 18px;
+  background: #05070b;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    inset 0 0 0 1px rgb(0 0 0 / 88%),
+    inset 0 -1px 0 rgb(255 255 255 / 4%);
+}
+
+/* The lit core. Inset far enough that the groove's own edge still reads. */
+.sc-check__box::after {
+  position: absolute;
+  inset: 26%;
+  content: '';
+  background: transparent;
+  transition: background 120ms linear;
+}
+
+.sc-check--on .sc-check__box::after {
+  background: #c8ffd2;
+  box-shadow: 0 0 6px rgb(53 217 90 / 65%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-check__box::after {
+    transition: none;
+  }
 }

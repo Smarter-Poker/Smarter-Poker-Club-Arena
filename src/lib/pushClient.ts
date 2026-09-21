@@ -374,7 +374,7 @@ async function getPushRegistration(): Promise<ServiceWorkerRegistration> {
     // half done throws that work away and starts it over. Say what is true.
     if (reg.installing) {
       throw new Error(
-        'Notifications are still setting up on this device. Give it a moment and tap Enable again.'
+        'Notifications Are Still Setting Up On This Device. Give It A Moment And Tap Enable Again.'
       );
     }
   }
@@ -383,7 +383,7 @@ async function getPushRegistration(): Promise<ServiceWorkerRegistration> {
   // controls this page — on a Club Arena route that is sw-bus.js, which
   // cannot display a push, so a subscription made against it would be a
   // silent dead end. Refusing here produces an error the user can act on.
-  throw new Error('The notification service worker did not start. Reload and try again.');
+  throw new Error('The Notification Service Worker Did Not Start. Reload And Try Again.');
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -393,11 +393,11 @@ async function getPushRegistration(): Promise<ServiceWorkerRegistration> {
 async function fetchVapidKey(): Promise<string> {
   const res = await withTimeout(fetch('/api/push/vapid-public-key'), T.vapid, 'VAPID key fetch');
   if (!res.ok) {
-    if (res.status === 503) throw new Error('Push is not configured on this deployment yet.');
+    if (res.status === 503) throw new Error('Push Is Not Configured On This Deployment Yet.');
     throw new Error(`Could not load the push key (${res.status})`);
   }
   const json = (await res.json()) as { key?: string };
-  if (!json?.key) throw new Error('Push key response was empty');
+  if (!json?.key) throw new Error('Push Key Response Was Empty');
   return json.key;
 }
 
@@ -430,9 +430,9 @@ async function persistSubscription(
     T.save,
     'Saving your subscription'
   );
-  if (res.status === 401) throw new Error('You need to be signed in to enable notifications.');
+  if (res.status === 401) throw new Error('You Need To Be Signed In To Enable Notifications.');
   if (res.status === 409) {
-    throw new Error('This device is registered to another account. Sign out there first.');
+    throw new Error('This Device Is Registered To Another Account. Sign Out There First.');
   }
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -516,7 +516,7 @@ export async function enablePush(): Promise<PushResult> {
           'On iPhone and iPad, add Smarter Poker to your Home Screen first. Tap Share, then Add To Home Screen, then open it from there.',
       };
     }
-    return { ok: false, error: 'This browser does not support push notifications.' };
+    return { ok: false, error: 'This Browser Does Not Support Push Notifications.' };
   }
 
   // ── STEP 1: permission FIRST, while the tap gesture is still alive ──────
@@ -541,7 +541,7 @@ export async function enablePush(): Promise<PushResult> {
       permission,
       error:
         permission === 'denied'
-          ? 'Notifications are blocked for this site. Turn them back on in your browser settings and try again.'
+          ? 'Notifications Are Blocked For This Site. Turn Them Back On In Your Browser Settings And Try Again.'
           : 'Notification permission was not granted.',
     };
   }
@@ -704,7 +704,7 @@ export async function sendTestPush(): Promise<TestPushResult> {
       return { ok: false, sent: 0, error: 'You need to be signed in to send a test.' };
     }
     if (res.status === 503) {
-      return { ok: false, sent: 0, error: 'Push is not configured on this deployment yet.' };
+      return { ok: false, sent: 0, error: 'Push Is Not Configured On This Deployment Yet.' };
     }
     if (!res.ok) {
       return { ok: false, sent: 0, error: json?.error || `Test failed (${res.status})` };

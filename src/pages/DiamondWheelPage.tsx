@@ -10,9 +10,10 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useIdleSpinCountdown } from '../hooks/useIdleSpinCountdown';
+import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { Modal } from '../components/common/Modal';
-import { ErrorState } from '../components/common/EmptyState';
+import { LoadingState } from '../components/common/EmptyState';
 import { wheelPrizeTitle, WheelExperience } from '../components/wheel/WheelExperience';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { WheelCabinet, WheelEntry, WheelPrizeGallery } from '../components/wheel/WheelCabinet';
@@ -143,6 +144,16 @@ export default function DiamondWheelPage() {
   const [dailyBonus, setDailyBonus] = useState<WheelDailyBonusState | null>(null);
   const [dailyBonusError, setDailyBonusError] = useState(false);
   const [recovery, setRecovery] = useState<WheelPendingSpin | null>(null);
+  // A spin whose answer never arrived is recovered by the page, never by a
+  // press: the exact saved request is resent on useAutoSettle's schedule until
+  // its receipt lands or the server refuses it.
+  const [settleAttempts, setSettleAttempts] = useState(0);
+  // A load, a next-spin preparation or a bonus-spin read that failed is tried
+  // again by the page itself on the same schedule. Nobody is told to retry.
+  const [loadFailures, setLoadFailures] = useState(0);
+  const [loadTry, setLoadTry] = useState(0);
+  const [prepareFailures, setPrepareFailures] = useState(0);
+  const [bonusFailures, setBonusFailures] = useState(0);
   /* The face on the rim. It lags the offer by one spin on purpose: after the
      welcome spin lands, the prize it landed on stays under the pointer until
      the next spin starts, and only then does the paid table come round. */
@@ -209,6 +220,7 @@ export default function DiamondWheelPage() {
         if (live() && scopeRef.current === scope) {
           setDailyBonus(next);
           setDailyBonusError(false);
+          setBonusFailures(0);
         }
         return next;
       } catch (err) {
@@ -216,6 +228,7 @@ export default function DiamondWheelPage() {
         if (live() && scopeRef.current === scope) {
           setDailyBonus(null);
           setDailyBonusError(true);
+          setBonusFailures((count) => count + 1);
         }
         return null;
       }
@@ -263,10 +276,13 @@ export default function DiamondWheelPage() {
         const next = await loadState(uuid);
         if (!live() || scopeRef.current !== scope) return;
         if (next.available) await freshCommit();
+        if (live() && scopeRef.current === scope) setPrepareFailures(0);
       } catch (err) {
         reportError(err, 'DiamondWheelPage.prepare');
-        if (live() && scopeRef.current === scope)
-          setPreparationError('The Next Spin Could Not Be Prepared. Refresh The Wheel To Retry.');
+        if (live() && scopeRef.current === scope) {
+          setPreparationError('Preparing Your Next Spin');
+          setPrepareFailures((count) => count + 1);
+        }
       } finally {
         if (live() && scopeRef.current === scope) {
           preparingRef.current = false;
@@ -323,9 +339,13 @@ export default function DiamondWheelPage() {
           setClientSeed(saved.clientSeed);
         } else if (next.available) await freshCommit();
         void loadHistory(uuid);
+        setLoadFailures(0);
       } catch (err) {
         reportError(err, 'DiamondWheelPage.load');
-        if (!cancelled && live()) setLoadError('The Wheel Could Not Be Loaded');
+        if (!cancelled && live()) {
+          setLoadError('Reconnecting To The Wheel');
+          setLoadFailures((count) => count + 1);
+        }
       } finally {
         if (!cancelled && live()) setLoading(false);
       }
@@ -343,7 +363,12 @@ export default function DiamondWheelPage() {
     loadDailyBonus,
     freshCommit,
     loadHistory,
+    loadTry,
   ]);
+  useAutoSettle(loadFailures > 0, loadFailures, async () => {
+    setLoadTry((count) => count + 1);
+    return true;
+  });
 
   useEffect(() => {
     if (waitSeconds <= 0) return;
@@ -373,7 +398,7 @@ export default function DiamondWheelPage() {
       })
       .catch((err) => {
         reportError(err, 'DiamondWheelPage.entry');
-        if (current) setLoadError('The Spin Amount Could Not Be Checked');
+        if (current) setLoadError('The Spin Amount Could Not Be Loaded');
       })
       .finally(() => {
         if (current) setQuoting(false);
@@ -446,7 +471,7 @@ export default function DiamondWheelPage() {
     if (player && !player.is_member) return 'Join The Club To Spin';
     if (dailyBonusMode)
       return dailyBonusError
-        ? 'Bonus Spins Could Not Be Loaded. Retry Below'
+        ? 'Reconnecting To Your Bonus Spins'
         : !dailyBonus
           ? 'Loading Bonus Spins'
           : !dailyBonus.available
@@ -588,11 +613,15 @@ export default function DiamondWheelPage() {
       setPending(result);
       setSpinKey((k) => k + 1);
       setSpinning(true);
+      setSettleAttempts(0);
     } catch (err) {
       reportError(err, 'DiamondWheelPage.spin');
       endAuto(autoRunRef.current ? 'Auto Spin Stopped' : null);
-      if (live() && scopeRef.current === scope)
-        toast.error('The Spin Is Not Confirmed. Retry To Recover Its Receipt');
+      if (live() && scopeRef.current === scope) {
+        // The saved request stays; useAutoSettle resends it.
+        setSettleAttempts((count) => count + 1);
+        toast.error('The Spin Is Not Confirmed Yet. Recovering Its Receipt');
+      }
     } finally {
       if (scopeRef.current === scope) busyRef.current = false;
     }
@@ -751,6 +780,41 @@ export default function DiamondWheelPage() {
     return () => clearTimeout(t);
   }, [autoRun, spinning, pending, preparing, blocker, canSpin, handleSpin, toast]);
 
+  useAutoSettle(
+    Boolean(recovery) && !spinning && !pending && !loading && !loadError,
+    settleAttempts,
+    async () => {
+      if (busyRef.current || preparingRef.current || !canSpin) return false;
+      await handleSpin();
+      return true;
+    }
+  );
+
+  // A next spin that could not be prepared, and bonus spins that could not be
+  // read, are tried again here. A saved spin always goes first: nothing is
+  // prepared over it, so recovery never competes with a new wager.
+  useAutoSettle(
+    Boolean(preparationError) && !preparing && !spinning && !pending && !recovery && !loading,
+    prepareFailures,
+    async () => {
+      if (!clubUuid || busyRef.current || preparingRef.current) return false;
+      await prepareNextSpin(clubUuid);
+      return true;
+    }
+  );
+  useAutoSettle(dailyBonusError && !loading, bonusFailures, async () => {
+    if (!clubUuid) return false;
+    await loadDailyBonus(clubUuid);
+    return true;
+  });
+  // Games paused by the platform come back by themselves after the break.
+  useStandingRefresh(
+    Boolean(state?.frozen) && !spinning && !pending && !recovery && !preparing && !loading,
+    () => {
+      if (clubUuid && !busyRef.current && !preparingRef.current) void prepareNextSpin(clubUuid);
+    }
+  );
+
   const refreshWheel = useCallback(async () => {
     if (!clubUuid || busyRef.current || spinning || preparingRef.current) return;
     endAuto(null);
@@ -758,7 +822,7 @@ export default function DiamondWheelPage() {
       await prepareNextSpin(clubUuid);
     } else {
       // Refresh is read-only. An unknown spin keeps its exact durable identity;
-      // only Recover Spin may resubmit that same idempotent request.
+      // only the page's own recovery resubmits that same idempotent request.
       const scope = scopeRef.current;
       preparingRef.current = true;
       setPreparing(true);
@@ -803,10 +867,7 @@ export default function DiamondWheelPage() {
   if (loadError || !state) {
     return (
       <div className={`${styles.page} ${styles.fullscreenPage}`}>
-        <ErrorState
-          message={loadError || 'The Wheel Could Not Be Loaded'}
-          onRetry={() => window.location.reload()}
-        />
+        <LoadingState message={loadError || 'Reconnecting To The Wheel'} />
       </div>
     );
   }
@@ -814,7 +875,7 @@ export default function DiamondWheelPage() {
   const spinLabel = spinning
     ? 'Spinning'
     : recovery
-      ? 'Recover Spin'
+      ? 'Recovering Spin'
       : dailyBonusMode && !spinning
         ? 'Bonus Spin'
         : autoRun
@@ -836,7 +897,7 @@ export default function DiamondWheelPage() {
   const pill = preparing
     ? 'Checking'
     : preparationError
-      ? 'Retry'
+      ? 'Preparing'
       : dailyBonusMode
         ? 'Bonus Spin'
         : state.frozen
@@ -925,7 +986,7 @@ export default function DiamondWheelPage() {
           blocker ? (
             <p role="status">{blocker}</p>
           ) : recovery ? (
-            <p role="status">Recover Your Previous Spin Before Starting Another.</p>
+            <p role="status">Recovering Your Previous Spin.</p>
           ) : lastResult && !spinning ? (
             <p role="status">{outcomeHeadline(lastResult)}</p>
           ) : null
@@ -979,16 +1040,6 @@ export default function DiamondWheelPage() {
                   }}
                 >
                   Bonus Spins ({dailyBonus?.ticket_count})
-                </button>
-              )}
-              {dailyBonusError && (
-                <button
-                  type="button"
-                  className={styles.back}
-                  disabled={spinning || Boolean(recovery)}
-                  onClick={() => clubUuid && void loadDailyBonus(clubUuid)}
-                >
-                  Retry Bonus Spins
                 </button>
               )}
             </nav>
@@ -1101,7 +1152,7 @@ export default function DiamondWheelPage() {
               : blocker
                 ? 'Check The Spin Controls Below To Continue'
                 : recovery
-                  ? 'Your Previous Spin Needs Its Receipt. Recover It Before Starting Another.'
+                  ? 'Your Previous Spin Is Being Recovered. Its Prize Opens Next.'
                   : dailyBonusMode
                     ? 'One Claimed Bonus Spin. 100 Diamond Value, No Diamonds Taken From You.'
                     : welcomeMode

@@ -1,320 +1,228 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPLETE YOUR PROFILE - on the spade console (#ClubArenaConsole)
+
+   The frame, the crest, the header well, the pill slot and the two painted
+   action plates come from SpadeConsole.css. This sheet only places that
+   picture on the backdrop, switches off the global popup chassis, and types
+   what prints on the black glass between the rails.
+
+   THE CHASSIS HAS TO BE SWITCHED OFF LONGHAND BY LONGHAND. metallic-popups.css
+   matches this container on `[class*='_modal_']` and paints it with a 16px
+   radius, a machined border and a six-layer shadow at !important; inside a
+   dialog it also wells every input and bevels every button the same way. Each
+   of those declarations is restated here at a specificity the shorthand
+   cannot outrank.
+
+   NOTHING HERE DRAWS A CONTROL. The gradient header bar, the 96px avatar disc
+   and its dashed ring, the bordered input wells, the glyph column, the tinted
+   info box and the blue gradient button are gone with the markup that carried
+   them. Sizes inside the console are cqw against it (`.sc` sets
+   container-type). No :hover.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(8px);
+  inset: 0;
   z-index: 10000;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
+  padding: 12px;
+  /* Black, not grey: the console floats on the same black as the page. */
+  background: rgb(0 0 0 / 93%);
 }
 
 .modal {
-  background: var(--surface-800, #1f2937);
-  border: 1px solid var(--border-color, #374151);
-  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 520px);
+  max-height: 100%;
+  min-height: 0;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.scroller {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.console {
   width: 100%;
-  max-width: 440px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.header {
-  background: linear-gradient(135deg, var(--primary-600, #2563eb), var(--primary-800, #1e40af));
-  padding: 1.5rem;
-  text-align: center;
-  color: #fff;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.header h2 {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.content {
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
 }
 
 .intro {
-  color: var(--text-secondary, #9ca3af);
-  font-size: 0.95rem;
-  line-height: 1.5;
   margin: 0;
-  text-align: center;
+  padding: 1cqw 1cqw 0;
 }
 
-.formGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
+/* ── The avatar: printed on the glass, never a disc ───────────────────── */
 
-.formGroup label {
-  color: var(--text-primary, #f3f4f6);
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.inputWrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.input {
-  width: 100%;
-  background: var(--surface-900, #111827);
-  border: 1px solid var(--border-color, #374151);
-  color: #fff;
-  padding: 0.875rem 1rem;
-  padding-left: 2.5rem;
-  border-radius: 8px;
-  font-size: 1rem;
-  transition: all 0.2s ease;
-}
-
-.input:focus {
-  outline: none;
-  border-color: var(--primary-500, #3b82f6);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
-}
-
-.inputIcon {
-  position: absolute;
-  left: 1rem;
-  color: var(--text-secondary, #9ca3af);
-  font-size: 1.1rem;
-  pointer-events: none;
-}
-
-.infoBox {
-  background: rgba(59, 130, 246, 0.1);
-  border-left: 3px solid var(--primary-500, #3b82f6);
-  padding: 0.875rem;
-  border-radius: 4px;
-}
-
-.infoBox p {
-  margin: 0;
-  color: var(--primary-200, #bfdbfe);
-  font-size: 0.85rem;
-  line-height: 1.4;
-}
-
-.errorText {
-  color: #ef4444;
-  font-size: 0.85rem;
-  margin-top: -0.25rem;
-  font-weight: 500;
-}
-
-.footer {
-  padding: 1rem 1.5rem 1.5rem;
-  display: flex;
-  gap: 1rem;
-  flex-direction: column;
-}
-
-.submitButton {
-  background: linear-gradient(
-    135deg,
-    var(--primary-500, #3b82f6) 0%,
-    var(--primary-700, #1d4ed8) 100%
-  );
-  color: #fff;
-  border: none;
-  padding: 1rem;
-  border-radius: 8px;
-  font-weight: 700;
-  font-size: 1.05rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
-}
-.submitButton:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
-.submitButton:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-  background: var(--surface-700, #374151);
-}
-
-.cancelButton {
-  background: transparent;
-  color: var(--text-secondary, #9ca3af);
-  border: none;
-  padding: 0.5rem;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: color 0.2s ease;
-  text-decoration: underline;
-}
-
-.avatarSection {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.avatarSection label {
-  color: var(--text-primary, #f3f4f6);
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.avatarControls {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-}
-
-.avatarPreview {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  background: var(--surface-900, #111827);
-  border: 2px dashed var(--border-color, #374151);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  cursor: pointer;
-  transition: all 0.2s ease;
+.avatarRow {
+  display: grid;
+  justify-items: center;
+  gap: 2cqw;
+  padding: 2cqw 0 3cqw;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .avatarImg {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  display: block;
+  width: 24cqw;
+  height: 24cqw;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  object-fit: contain;
 }
 
-.avatarPlaceholder {
-  color: var(--text-secondary, #9ca3af);
-  font-size: 2rem;
-  font-weight: 300;
+.avatarMissing {
+  text-align: center;
 }
 
-.selectAvatarBtn {
-  background: var(--surface-700, #374151);
-  color: #fff;
-  border: 1px solid var(--border-color, #4b5563);
-  padding: 0.6rem 1.2rem;
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
+/* ── The form: grooves cut into the glass ─────────────────────────────── */
+
+.form {
+  display: grid;
+  gap: 3cqw;
+  margin: 0;
+  padding: 1cqw 0 0;
 }
 
-@keyframes pulseGlow {
-  0% {
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
-  }
-  70% {
-    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
-  }
+.field {
+  display: grid;
+  gap: 1.2cqw;
 }
 
-.avatarPreviewNeedsAvatar {
-  animation: pulseGlow 2s infinite;
-  border-color: var(--primary-500, #3b82f6);
-  border-style: solid;
-}
-
-.labelRow {
+.fieldHead {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.25rem;
+  gap: 3cqw;
+  min-width: 0;
 }
 
-.randomizeBtn {
-  background: none;
-  border: none;
-  color: var(--primary-400, #60a5fa);
-  font-size: 0.75rem;
-  font-weight: 600;
+.fieldState {
+  min-height: 1.2em;
+  text-align: right;
+}
+
+.fieldError {
+  margin: 0;
+  font-size: 3.2cqw;
+}
+
+.note {
+  margin: 0;
+  padding: 1cqw 1cqw 0;
+  font-size: 3.2cqw;
+}
+
+/* metallic-popups.css wells every input inside a dialog with a fill, a border
+   and an inset shadow at !important. The groove is restated on top of it. */
+.input.input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 2.8cqw 1cqw;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-bottom: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%) !important;
+  color: #e4e7ec !important;
+  /* 16px floor: anything smaller makes iOS zoom the page on focus. */
+  font:
+    600 max(16px, 4cqw) / 1.3 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.04em;
+  outline: none;
+  caret-color: #5bb8ff;
+}
+
+.input.input::placeholder {
+  color: #6b7784;
+  letter-spacing: 0.02em;
+}
+
+.input.input:focus-visible {
+  outline: 0.6cqw solid #8fd4ff !important;
+  outline-offset: -0.6cqw;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%) !important;
+}
+
+/* ── The randomiser: a lit word, never a plate ────────────────────────── */
+
+/* Doubled so it outranks metallic-popups.css, which bevels every `button`
+   inside a dialog with !important. */
+.word.word {
+  appearance: none;
+  margin: 0;
+  /* 44px minimum tap target on a phone. */
+  min-height: 44px;
+  padding: 1cqw 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  font:
+    800 3.2cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   cursor: pointer;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  transition: opacity 0.2s;
+  touch-action: manipulation;
 }
 
-.availabilityIndicator {
-  position: absolute;
-  right: 1rem;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
+.word.word:active {
+  box-shadow: none !important;
+  transform: none !important;
+  filter: brightness(1.3);
 }
 
-.spinner {
-  display: inline-block;
-  animation: spin 1s linear infinite;
-  color: var(--text-muted, #9ca3af);
+.word.word:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
 }
 
-@keyframes spin {
-  100% {
-    transform: rotate(360deg);
+@media (prefers-reduced-motion: reduce) {
+  .modal {
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
   }
 }
 
-.iconAvailable {
-  color: var(--success-500, #10b981);
-}
+@media (prefers-contrast: more) {
+  .intro,
+  .note {
+    color: #fff;
+  }
 
-.iconTaken {
-  color: var(--error-500, #ef4444);
-}
-
-.inputInvalid {
-  border-color: var(--error-500, #ef4444) !important;
-}
-
-.inputValid {
-  border-color: var(--success-500, #10b981) !important;
-}
-
-.localErrorText {
-  color: var(--error-500, #ef4444);
-  font-size: 0.8rem;
-  margin-top: 0.25rem;
-  font-weight: 500;
-}
-
-.submitSuccess {
-  background: linear-gradient(
-    135deg,
-    var(--success-500, #10b981) 0%,
-    var(--success-700, #047857) 100%
-  ) !important;
-  pointer-events: none;
+  .input.input {
+    border-top-color: #fff !important;
+    border-bottom-color: #fff !important;
+    color: #fff !important;
+  }
 }

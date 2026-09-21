@@ -1,233 +1,125 @@
+/* Settlement is live ink inside the board's console, never a nested frame. */
 .lb-settlement-card {
-  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(230px, 0.8fr);
-  gap: 20px;
-  margin: 18px 0;
-  padding: 22px;
-  overflow: hidden;
-  border: 1px solid rgba(215, 177, 92, 0.38);
-  border-radius: 18px;
-  background:
-    radial-gradient(circle at 8% 0%, rgba(207, 164, 66, 0.15), transparent 34%),
-    linear-gradient(145deg, rgba(26, 31, 34, 0.98), rgba(10, 13, 15, 0.98));
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.06),
-    0 16px 38px rgba(0, 0, 0, 0.28);
+  gap: 3cqw;
+  padding-block: 4cqw;
+  color: #e4e7ec;
+  font:
+    400 clamp(13px, 3.5cqw, 17px)/1.5 Inter,
+    sans-serif;
 }
-
-.lb-settlement-card::before {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 4px;
-  content: '';
-  background: linear-gradient(#f6d785, #9d6b18);
+.lb-settlement-card :is(h2, p, dl) {
+  margin: 0;
 }
-
-.lb-settlement-card.state-paid {
-  border-color: rgba(83, 206, 145, 0.48);
+.lb-settlement-card h2 {
+  font:
+    700 clamp(19px, 4.8cqw, 26px)/1.18 'Roboto Condensed',
+    sans-serif;
+  color: #e4e7ec;
+  text-shadow: 0 1px 1px #050607;
 }
-
-.lb-settlement-card.state-paid::before {
-  background: linear-gradient(#72e2ae, #1d8a5a);
+.lb-settlement-main {
+  display: grid;
+  gap: 2cqw;
 }
-
-.lb-settlement-card.state-failed,
-.lb-settlement-card.is-error {
-  border-color: rgba(224, 116, 96, 0.5);
-}
-
-.lb-settlement-card.state-failed::before,
-.lb-settlement-card.is-error::before {
-  background: linear-gradient(#ee9b88, #a83d32);
-}
-
 .lb-settlement-heading {
   display: flex;
-  align-items: flex-start;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2cqw;
   justify-content: space-between;
-  gap: 16px;
 }
-
+.lb-settlement-heading > div {
+  display: grid;
+  gap: 2cqw;
+}
 .lb-settlement-kicker {
-  color: #d9b75f;
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  color: #9aa5b3;
+  font:
+    600 0.85em 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.06em;
 }
-
-.lb-settlement-heading h2,
-.lb-settlement-card.is-error h2 {
-  margin: 5px 0 8px;
-  color: #f7f2e7;
-  font-family: var(--font-display, Georgia, serif);
-  font-size: clamp(1.15rem, 2.8vw, 1.5rem);
-}
-
-.lb-settlement-main p,
-.lb-settlement-card.is-error p {
-  max-width: 700px;
-  margin: 0 0 10px;
-  color: rgba(239, 236, 226, 0.74);
-  line-height: 1.55;
-}
-
 .lb-settlement-state {
-  flex: 0 0 auto;
-  padding: 7px 10px;
-  border: 1px solid rgba(218, 183, 100, 0.42);
-  border-radius: 999px;
-  color: #f4d785;
-  background: rgba(114, 82, 23, 0.22);
-  font-size: 0.68rem;
-  font-weight: 900;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  color: #45adff;
+  font:
+    600 0.85em 'Roboto Condensed',
+    sans-serif;
 }
-
 .state-paid .lb-settlement-state {
-  border-color: rgba(83, 206, 145, 0.42);
-  color: #83e7b9;
-  background: rgba(26, 110, 73, 0.22);
+  color: #c8ffd2;
 }
-
 .state-failed .lb-settlement-state {
-  border-color: rgba(224, 116, 96, 0.44);
-  color: #f0a08f;
-  background: rgba(122, 43, 35, 0.24);
+  color: #ff5b6e;
 }
-
+.lb-settlement-card p,
 .lb-settlement-window,
-.lb-settlement-retry {
-  display: block;
-  color: rgba(239, 236, 226, 0.55);
-  font-size: 0.75rem;
+.lb-settlement-retry,
+.lb-settlement-rule {
+  color: #9aa5b3;
 }
-
-.lb-settlement-retry {
-  margin-top: 6px;
-  color: #edb2a5;
+.lb-settlement-window,
+.lb-settlement-retry,
+.lb-settlement-rule {
+  font-size: 0.8em;
 }
-
 .lb-settlement-ledger {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-content: start;
-  gap: 8px;
-  margin: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3cqw;
 }
-
-.lb-settlement-ledger div {
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.035);
-}
-
 .lb-settlement-ledger dt {
-  margin-bottom: 4px;
-  color: rgba(239, 236, 226, 0.48);
-  font-size: 0.64rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  color: #9aa5b3;
+  font-size: 0.8em;
 }
-
 .lb-settlement-ledger dd {
-  margin: 0;
-  overflow: hidden;
-  color: #f4e2ae;
-  font-size: 0.9rem;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin: 0.4em 0 0;
+  color: #e4e7ec;
+  font-weight: 600;
 }
-
+.lb-settlement-ledger > div:first-child dd {
+  color: #ffd700;
+}
 .lb-settlement-receipt {
-  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 3px 14px;
-  padding: 13px 15px;
-  border: 1px solid rgba(83, 206, 145, 0.3);
-  border-radius: 12px;
-  background: rgba(25, 103, 69, 0.16);
-  color: #d8f5e6;
+  gap: 0.4em;
+  color: #9aa5b3;
 }
-
 .lb-settlement-receipt strong {
-  color: #83e7b9;
+  color: #ffd700;
+  font:
+    700 1.5em 'Roboto Condensed',
+    sans-serif;
 }
-
 .lb-settlement-receipt small {
-  grid-column: 1 / -1;
-  color: rgba(216, 245, 230, 0.56);
+  font-size: 0.8em;
 }
-
 .lb-settlement-actions {
-  grid-column: 1 / -1;
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 3cqw;
 }
-
 .lb-settlement-card button {
   min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid rgba(215, 177, 92, 0.5);
-  border-radius: 10px;
-  color: #f5dd9c;
-  background: linear-gradient(180deg, rgba(116, 83, 28, 0.52), rgba(55, 39, 17, 0.62));
-  font-weight: 800;
+  min-width: 44px;
+  padding: 8px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #45adff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
 }
-
-.lb-settlement-card.is-loading {
-  grid-template-columns: 1fr;
+.lb-settlement-card button:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 3px;
 }
-
-.lb-settlement-skeleton {
-  width: 48%;
-  height: 18px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  animation: lb-settlement-pulse 1.5s ease-in-out infinite;
+.lb-settlement-card button:active {
+  color: #f4f7fb;
 }
-
-.lb-settlement-skeleton.wide {
-  width: 78%;
-  height: 30px;
-}
-
-@keyframes lb-settlement-pulse {
-  50% {
-    opacity: 0.45;
-  }
-}
-
-@media (max-width: 700px) {
-  .lb-settlement-card {
-    grid-template-columns: 1fr;
-    padding: 18px 16px 18px 19px;
-  }
-
-  .lb-settlement-heading {
-    align-items: center;
-  }
-
-  .lb-settlement-ledger {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .lb-settlement-actions,
-  .lb-settlement-actions button {
-    width: 100%;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lb-settlement-skeleton {
-    animation: none;
-  }
+.lb-settlement-card.is-error h2 {
+  color: #ff5b6e;
 }

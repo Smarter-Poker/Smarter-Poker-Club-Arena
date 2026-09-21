@@ -673,14 +673,15 @@
   gap: 8px;
 }
 
+/* A money label wraps rather than clips: "Daily Rewards And Challenges"
+   beside a six-figure amount at 375px must still read in full. */
 .flow-row__label {
   min-width: 0;
-  overflow: hidden;
   color: var(--vault-chrome-hot);
   font-size: 0.82rem;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .flow-row__amount {

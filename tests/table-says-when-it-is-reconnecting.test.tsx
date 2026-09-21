@@ -167,7 +167,16 @@ describe('the table says when it is not connected', () => {
     const ruleAt = BANNER_CSS.indexOf('.table-conn-banner {');
     expect(ruleAt).toBeGreaterThan(-1);
     const rule = BANNER_CSS.slice(ruleAt, BANNER_CSS.indexOf('}', ruleAt));
-    expect(rule).not.toMatch(/\btop:\s*\d+px/);
+    /* THE PROPERTY `top`, NOT ANY LONGHAND ENDING IN IT (2026-09-14). This was
+       `/\btop:\s*\d+px/`, and `\b` sits between the hyphen and the `t` of
+       `border-top`, so the pin read `border-top: 1px solid #000` as a pixel
+       POSITION. That rule is the engraved edge the #ClubArenaConsole ink pass
+       gave the banner when its drawn pill was removed, and it has nothing to do
+       with where the banner sits. What is still forbidden is exactly what was
+       forbidden before - the position `top` as a pixel literal, which is the
+       2026-08-30 bug - so the lookbehind narrows the pin to that and nothing
+       else. `top: 12px` still fails here; verified by flipping it. */
+    expect(rule).not.toMatch(/(?<![\w-])top:\s*\d+px/);
     /* 2026-08-30 audit: the anchor is no longer a literal. `--sp-brand-top` is
        declared on `.table-surface` (58%) and MOVED by the `[data-boards]`
        rules to 72% / 84%, so a multi-board table carries its masthead lower

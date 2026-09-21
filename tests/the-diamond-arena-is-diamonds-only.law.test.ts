@@ -76,11 +76,12 @@ describe('the Diamond Arena is diamonds only', () => {
   });
 
   it('where the diamonds go buckets the arena as diamonds and the panel has no chip vocabulary (phase 5)', () => {
-    /* The LIVE map is the one 20260914114052 (the_diamond_kind_map_names_every
-       writer) defines; it superseded the first draft in 20260914110559 the
-       same day. Pin the version production runs. */
+    /* The LIVE map is the latest redefinition of fn_diamond_kind_bucket
+       (20260914110559 first draft, 20260914114052 every writer, 20260920141527
+       the Diamond Games, 20260920141807 the Diamond Spins perks). Pin the
+       version production runs. */
     const migration = read(
-      'supabase/migrations/20260914114052_the_diamond_kind_map_names_every_writer.sql'
+      'supabase/migrations/20260920141807_the_diamond_kind_map_names_the_spins_perks.sql'
     );
     const map = migration.slice(
       migration.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_bucket'),

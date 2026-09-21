@@ -15,7 +15,6 @@ import styles from './BlacklistManagerPage.module.css';
 interface MemberOption {
   user_id: string;
   display_name: string;
-  is_horse: boolean;
   status: string | null;
 }
 
@@ -377,10 +376,7 @@ export default function BlacklistManagerPage() {
                 <label htmlFor="blacklist-member-search">Player</label>
                 {selectedMember ? (
                   <div className={styles.selectedMember}>
-                    <span>
-                      {selectedMember.display_name}
-                      {selectedMember.is_horse ? ' (Horse)' : ''}
-                    </span>
+                    <span>{selectedMember.display_name}</span>
                     <button
                       className={styles.secondaryButton}
                       type="button"
@@ -425,7 +421,6 @@ export default function BlacklistManagerPage() {
                               }}
                             >
                               <span>{option.display_name}</span>
-                              {option.is_horse && <span className={styles.horseTag}>Horse</span>}
                             </button>
                           </li>
                         ))}

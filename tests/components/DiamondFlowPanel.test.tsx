@@ -13,6 +13,20 @@ vi.mock('@/services/DiamondService', () => ({
 }));
 vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(), rpc: vi.fn(), auth: {} } }));
 vi.mock('@/utils/errorReporter', () => ({ reportError: vi.fn() }));
+// The bus is replaced so a balance change can be delivered on demand, with
+// no debounce clock: the handler the panel registers is what the test fires.
+const balanceHandlers: Array<() => void> = [];
+vi.mock('@/core/MasterBus', () => ({
+  masterBus: {
+    subscribeDebounced: (_type: string, handler: () => void) => {
+      balanceHandlers.push(handler);
+      return () => {
+        const i = balanceHandlers.indexOf(handler);
+        if (i >= 0) balanceHandlers.splice(i, 1);
+      };
+    },
+  },
+}));
 
 const { default: DiamondFlowPanel } = await import('@/components/wallet/DiamondFlowPanel');
 
@@ -156,6 +170,47 @@ describe('DiamondFlowPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(screen.getByText(/No Diamond Movements Yet/)).toBeTruthy());
     expect(getDiamondFlow).toHaveBeenCalledTimes(2);
+  });
+
+  it('a re-read keeps the last figures on screen and only the latest read lands', async () => {
+    getDiamondFlow.mockResolvedValueOnce(flow());
+    render(<DiamondFlowPanel userId="u-1" />);
+    await waitFor(() => expect(screen.getByText('Diamond Arena Seats')).toBeTruthy());
+    expect(balanceHandlers.length).toBeGreaterThan(0);
+    const balanceChanged = () => balanceHandlers[balanceHandlers.length - 1]();
+
+    // Two balance changes arrive back to back; the first read is slow and
+    // stale, the second is fast and current.
+    let resolveSlow!: (f: DiamondFlow) => void;
+    getDiamondFlow.mockReturnValueOnce(new Promise((r) => (resolveSlow = r))).mockResolvedValueOnce(
+      flow({
+        spent: [
+          line({ bucket: 'arena', label: 'Diamond Arena Seats', lifetime: 900, lifetimeCount: 11 }),
+        ],
+        spentTotal: 900,
+      })
+    );
+    balanceChanged();
+    expect(getDiamondFlow).toHaveBeenCalledTimes(2);
+    // Still the old figures, never "Reading" over them.
+    expect(screen.getByText('Diamond Arena Seats')).toBeTruthy();
+    expect(screen.getByText('800')).toBeTruthy();
+    expect(screen.queryByText('Reading Where Your Diamonds Go...')).toBeNull();
+    balanceChanged();
+    expect(getDiamondFlow).toHaveBeenCalledTimes(3);
+    await waitFor(() => expect(screen.getByText('900')).toBeTruthy());
+    // The stale answer arrives last and must not overwrite the current one.
+    resolveSlow(
+      flow({
+        spent: [
+          line({ bucket: 'arena', label: 'Diamond Arena Seats', lifetime: 111, lifetimeCount: 1 }),
+        ],
+        spentTotal: 111,
+      })
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByText('900')).toBeTruthy();
+    expect(screen.queryByText('111')).toBeNull();
   });
 
   it('does not read without a user', () => {

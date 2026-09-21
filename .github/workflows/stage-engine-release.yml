@@ -49,7 +49,7 @@ jobs:
             || { echo "::error::Protected-main push did not provide one full lowercase commit SHA."; exit 1; }
 
           LATEST_REQUIRED=$(git log "$AFTER_SHA" -1 --format=%H -- \
-            'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')
+            'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**' ':(exclude)server/qualification/**')
           [[ "$LATEST_REQUIRED" =~ ^[0-9a-f]{40}$ ]] \
             || { echo "::error::Could not resolve one engine-runtime commit from protected main."; exit 1; }
 
@@ -58,7 +58,7 @@ jobs:
              [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] && \
              git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
             if git diff --quiet "$BEFORE_SHA" "$AFTER_SHA" -- \
-              'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**'; then
+              'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**' ':(exclude)server/qualification/**'; then
               RELEASE_REQUIRED=false
             fi
           else

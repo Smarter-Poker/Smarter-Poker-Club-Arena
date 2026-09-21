@@ -14,8 +14,23 @@ describe('GameServer tournament table-engine ownership', () => {
     ]);
     const dropTable = vi.spyOn(tableStateHub, 'dropTable').mockImplementation(() => {});
     const tableId = 'table-1';
-    const stale = {} as ServerTableEngine;
-    const replacement = {} as ServerTableEngine;
+    // Both engines model a stopped table session that never parked a time
+    // bank. For one of those the real
+    // ServerTableEngineBase.hasUnretiredStoppedTimeBankCustody() is false - no
+    // stopped capture, no pending accounting, no outstanding presence write -
+    // so retireStoppedTimeBanksForClosedSession() takes its first branch,
+    // returns true and mutates nothing. The refusal branch, a closed session
+    // still holding an unretired capture, is pinned against the real class in
+    // engine/ParkedTimeBank.test.ts.
+    const stoppedEngineWithNoParkedBank = (): ServerTableEngine => {
+      const hasUnretiredStoppedTimeBankCustody = () => false;
+      return {
+        hasUnretiredStoppedTimeBankCustody,
+        retireStoppedTimeBanksForClosedSession: () => !hasUnretiredStoppedTimeBankCustody(),
+      } as ServerTableEngine;
+    };
+    const stale = stoppedEngineWithNoParkedBank();
+    const replacement = stoppedEngineWithNoParkedBank();
     const registry = new Map<string, ServerTableEngine>([[tableId, replacement]]);
     const owned = new Set<string>([tableId]);
     const server = Object.assign(Object.create(GameServer.prototype), {

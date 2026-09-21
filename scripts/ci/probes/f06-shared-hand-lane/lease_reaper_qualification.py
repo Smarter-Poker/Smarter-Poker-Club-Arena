@@ -114,6 +114,10 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     run('lease-reaper-completion', "INSERT INTO smarter_private.f06_manager_custody_completions VALUES(md5('lr-transfer2012')::uuid,md5('lr-event2012')::uuid,md5('lr-successor2012')::uuid,'{}','[]','[]');")
     run('lease-reaper-completed-transfer-call', 'SELECT * FROM reap_dead_engine_leases(3600);')
     run('lease-reaper-completed-transfer-collected', presence(2012), 'false|false')
+    # These two minimal schema projections belong only to this qualifier.
+    # Remove them after proof so the next owning custody qualifier installs its
+    # complete real schema; no production table is created or removed here.
+    run('lease-reaper-release-fixture-projections', 'DROP TABLE smarter_private.f06_manager_custody_completions;DROP TABLE smarter_private.f06_manager_custody_transfers;')
     results['leaseReaper'] = {'passed': True, 'beforeReproducedLeaseDeletion': True,
         'nativeConcurrency': True, 'unrelatedStaleLeasesCollected': True,
         'newBackgroundMechanisms': 0, 'scope': 'existing reaper only; no missing lease reconstruction'}

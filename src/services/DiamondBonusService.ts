@@ -13,7 +13,18 @@ import { validateCrashSettlement } from '../utils/crashReceipt';
 import { diamondBonusMinimum, plinkoTableVersion } from '../utils/diamondBonusPayout';
 
 export type BonusGame = 'plinko' | 'crash' | 'crossing' | 'mines';
-export class BonusRefusal extends Error {}
+/** The server said no and charged nothing. `ticketGone` marks the one refusal
+ * the page settles by itself: the sealed ticket can no longer open a round
+ * (missing, expired, or used by another round), so a fresh ticket is dealt and
+ * the same wager is sent again without a human in the loop. */
+export class BonusRefusal extends Error {
+  constructor(
+    message: string,
+    readonly ticketGone = false
+  ) {
+    super(message);
+  }
+}
 export interface BonusStart {
   clubId: string;
   game: BonusGame;
@@ -217,7 +228,7 @@ export const DiamondBonusService = {
     const result = data as Record<string, unknown> | null;
     if (result?.ok === false && typeof result.error === 'string') {
       clearPendingBonus(userId, input);
-      throw new BonusRefusal(result.error);
+      throw new BonusRefusal(result.error, result.ticket === 'gone');
     }
     const bonus = result?.bonus as PlinkoBonus['bonus'] | undefined;
     const fairness = result?.fairness as Record<string, unknown> | undefined;

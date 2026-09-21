@@ -100,6 +100,8 @@ class LocalWriter implements HorseJournalWorker {
       queueMicrotask(() => this.emit({ type: 'STOPPED' }));
       return;
     }
+    // Only /health asks for STATS; this lifecycle fixture never does.
+    if (message.type !== 'APPEND') return;
     const statuses = this.store.appendBatch(message.records);
     queueMicrotask(() =>
       this.emit({

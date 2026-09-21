@@ -27,9 +27,9 @@ describe('the engine provenance audit observes production without releasing it',
   it('reads the served engine version and compares it with engine code on main', () => {
     expect(code).toContain('$ENGINE_URL/health');
     expect(code).toContain('JSON.parse(body).releaseSha');
-    expect(code).toContain("'server/**'");
-    expect(code).toContain(':(exclude)server/**/*.test.ts');
-    expect(code).toContain(':(exclude)server/sim/**');
+    expect(code).toContain(
+      "'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**' ':(exclude)server/qualification/**'"
+    );
     expect(code).toContain('git merge-base --is-ancestor "$SERVED" "$MAIN_SHA"');
     expect(code).toContain('git merge-base --is-ancestor "$REQ_SHA" "$SERVED"');
   });

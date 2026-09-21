@@ -19,6 +19,11 @@ vi.mock('../services/supabase/client.js', () => ({
   maintenanceSupabase: {},
 }));
 
+vi.mock('../services/tableLease.js', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('../services/tableLease.js')),
+  INSTANCE_ID: '1-3846b8bb',
+}));
+
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 const id = (n: number) => '00000000-0000-4000-8000-' + String(n).padStart(12, '0');
 function deferred() {
@@ -111,7 +116,23 @@ describe('bounded engine lifecycle observations', () => {
 // is isolated; the archived 8825 qualification executes these same cases on dist.
 const release8825 = '8825af51817f379c4261658ca29ecc9d8d81932d';
 const events8825 = ['5a387a75-754a-416e-8fee-b85b15fc2702', '615783bf-15e3-40b7-9368-75f21b6ac53b'];
-async function nativeCheckpoint(includeAcceptedOriginal = false, includeOriginalBank = false) {
+const historicalCohorts = JSON.parse(
+  readFileSync(
+    new URL('../../../scripts/ci/probes/f06-historical-bank-loss-cohorts.json', import.meta.url),
+    'utf8'
+  )
+);
+const retiredCohorts = JSON.parse(
+  readFileSync(
+    new URL('../../../scripts/ci/probes/f06-retired-origin-cohorts.json', import.meta.url),
+    'utf8'
+  )
+);
+async function nativeCheckpoint(
+  includeAcceptedOriginal = false,
+  includeOriginalBank = false,
+  historical = false
+) {
   checkpointIo.rpc.mockReset();
   const bankRows = new Map();
   checkpointIo.from.mockReset().mockImplementation((table: string) => {
@@ -119,6 +140,10 @@ async function nativeCheckpoint(includeAcceptedOriginal = false, includeOriginal
     let ids: string[] = [];
     const q: any = {
       select: () => q,
+      upsert: async (row: any) => {
+        bankRows.set(row.table_id, structuredClone(row));
+        return { error: null };
+      },
       in: (_key: string, values: string[]) => {
         ids = values;
         return q;
@@ -138,18 +163,37 @@ async function nativeCheckpoint(includeAcceptedOriginal = false, includeOriginal
     tournamentEngines: new Map(),
     tableEngines: new Map(),
     tournamentOwnedTables: new Set(),
+    tournamentDiagnosticRetirements: new Map(),
+    drainedF06TournamentCustody: new Map(),
+    completedF06TournamentCustody: new Map(),
+    tableEngineStartPromises: new Map(),
+    directTableAdmissionOperations: new Map(),
+    directTableRecoveryTimers: new Map(),
+    directTableAdmissionLeaseGenerations: new Map(),
+    directTablePendingLeaseReleases: new Map(),
     tournamentRetirementCustody: new retirement.TournamentRetirementCustody(),
   });
   const originals: any[] = [];
   for (let i = 0; i < events8825.length; i++) {
     const event = events8825[i],
-      generation = id(800 + i);
+      generation = historical ? historicalCohorts[event].generation : id(800 + i);
     const m: any = new manager.TournamentManager(event, s, generation, performance.now() + 30000);
     dataActorContext.bindTournamentDataAuthorityMethods(
       { tournamentId: event, leaseGeneration: generation },
       m
     );
-    const e: any = m.createManagedTableEngine(id(810 + i));
+    // originalTables[0] is the interrupted one: the single table the recorded
+    // cohort names as holding the unsettled permit, not whichever sorts first.
+    const interrupted = historical ? retiredCohorts[event].permit.table_id : id(810 + i);
+    const originalTables = historical
+      ? [
+          interrupted,
+          ...Object.keys(retiredCohorts[event].engines)
+            .sort()
+            .filter((t) => t !== interrupted),
+        ]
+      : [interrupted];
+    const e: any = m.createManagedTableEngine(originalTables[0]);
     e.installF06Allocator(
       id(840 + i),
       async () => 1,
@@ -229,13 +273,10 @@ async function nativeCheckpoint(includeAcceptedOriginal = false, includeOriginal
       e.applyParkedTimeBanks(e.seatedPlayers);
       const players = e.captureParkedTimeBanks();
       expect(players[player].unlimitedActivations).toBe(true);
-      bankRows.set(e.tableId, {
-        table_id: e.tableId,
-        engine_instance: '1-3846b8bb:parked',
-        parked_at: new Date().toISOString(),
-        disconnect_states: {},
-        time_bank_snapshot: { version: 1, handNumber: e.handCount, players },
-      });
+      // Current-source stop additionally needs its actual acknowledged park.
+      // The pinned 8825 run has no new custody state, and uses the same writer.
+      await e.persistPresenceForRestart('parked');
+      expect(bankRows.get(e.tableId).time_bank_snapshot.players).toEqual(players);
     }
     // An ordinary previously played table has neither a current permit nor a
     // movement admission. The actual accepted-hand method clears its permit,
@@ -295,11 +336,73 @@ async function nativeCheckpoint(includeAcceptedOriginal = false, includeOriginal
         allocation: [played.f06Allocator, played.f06AllocationCurrent, played.f06PermitFactory],
       };
     }
+    // The recorded cohort holds exactly ONE unsettled permit per event - the
+    // single table that was mid-hand when the release stopped. Every other
+    // original table was between hands: its last accepted hand cleared the
+    // permit and left only the original allocator epoch as the witness. Giving
+    // all 23 a live reserved permit would assert 14 and 9 simultaneously
+    // interrupted hands, which the recorded originals do not show.
+    const extras: any[] = [];
+    for (const [index, tableId] of originalTables.slice(1).entries()) {
+      const extra: any = m.createManagedTableEngine(tableId);
+      const binding = {
+        tournament_id: event,
+        lease_generation: generation,
+        table_id: tableId,
+        lifecycle: '1',
+        permit_id: id(1100 + i * 100 + index),
+        hand_number: '3',
+        custody_id: id(1200 + i * 100 + index),
+      };
+      const evidenceId = id(1300 + i * 100 + index);
+      const extraPermit = new permitModule.F06HandPermit(
+        binding,
+        async (name: string) => ({
+          error: null,
+          data: {
+            ok: true,
+            ...binding,
+            generation,
+            state: name === 'fn_f06_begin_hand' ? 'reserved' : 'accepted',
+            evidence_id: evidenceId,
+          },
+        }),
+        () => true
+      );
+      extra.installF06Allocator(
+        binding.custody_id,
+        async () => 4,
+        () => true
+      );
+      extra.installF06HandAdmission(() => extraPermit);
+      await extraPermit.reserve();
+      extra.f06CurrentPermit = extraPermit;
+      extraPermit.start(() => undefined);
+      await extra.finishF06AcceptedHand(binding.hand_number, evidenceId);
+      expect(extra.f06CurrentPermit).toBeNull();
+      expect(extra.f06AllocationEpoch).toBe(binding.custody_id);
+      m.tableEngines.set(tableId, extra);
+      s.tableEngines.set(tableId, extra);
+      s.tournamentOwnedTables.add(tableId);
+      extras.push({
+        e: extra,
+        permit: extraPermit,
+        row: {
+          ...binding,
+          generation,
+          lifecycle: 1,
+          hand_number: 3,
+          state: 'accepted',
+          evidence_id: evidenceId,
+        },
+      });
+    }
     vi.spyOn(m, 'resolveTournamentSeatMoveQuarantine').mockResolvedValue(false);
     m.fenceForTournamentLeaseLoss();
     await expect(m.stop()).rejects.toThrow('failed to stop');
     expect(m.captureDrainedF06Originals()).toEqual([
       [e.tableId, e],
+      ...extras.map(({ e }) => [e.tableId, e]),
       ...(accepted ? [[accepted.engine.tableId, accepted.engine]] : []),
     ]);
     expect(
@@ -328,6 +431,7 @@ async function nativeCheckpoint(includeAcceptedOriginal = false, includeOriginal
     originals.push({
       m,
       e,
+      extras,
       permit,
       pending,
       pendingMap: m.pendingTournamentSeatMoveOutcomes,
@@ -367,39 +471,100 @@ async function nativeCheckpoint(includeAcceptedOriginal = false, includeOriginal
     const o = originals.find((v) => v.m.tournamentId === a.p_tournament_id)!;
     const receiptId = id(900 + events8825.indexOf(a.p_tournament_id));
     const canonical = a.p_expected ?? {
-      engine_lifecycles: o.accepted
-        ? [
-            {
-              table_id: o.accepted.engine.tableId,
-              allocation_epoch: o.accepted.row.custody_id,
-              lifecycle: '1',
-              permits: [structuredClone(o.accepted.row)],
-            },
-          ]
-        : [],
+      engine_lifecycles: [
+        ...(o.accepted
+          ? [
+              {
+                table_id: o.accepted.engine.tableId,
+                allocation_epoch: o.accepted.row.custody_id,
+                lifecycle: '1',
+                permits: [structuredClone(o.accepted.row)],
+              },
+            ]
+          : []),
+        ...o.extras.map((extra: any) => ({
+          table_id: extra.e.tableId,
+          allocation_epoch: extra.row.custody_id,
+          lifecycle: '1',
+          permits: [structuredClone(extra.row)],
+        })),
+      ],
       pending_original_tables: [],
-      original_evidence: [
-        {
-          binding: o.permit.binding,
-          permit: { ...o.permit.binding, state: 'aborted_unsettled', evidence_id: receiptId },
-          evidence: {
-            hand: { receipt_id: receiptId, permit_id: o.permit.binding.permit_id },
-            receipt: {
-              receipt_id: receiptId,
-              outcome: 'aborted_unsettled',
-              expected: {
-                kind: 'retained_mtt_interruption_v1',
-                physical: {
-                  manager_id: a.p_local.manager_id,
-                  engine_id: a.p_local.engines[0].engine_id,
-                  container_id: options.custodyIntent.container,
-                },
+      original_evidence: [o].map((original) => ({
+        binding: original.permit.binding,
+        permit: { ...original.permit.binding, state: 'aborted_unsettled', evidence_id: receiptId },
+        evidence: {
+          hand: { receipt_id: receiptId, permit_id: original.permit.binding.permit_id },
+          receipt: {
+            receipt_id: receiptId,
+            outcome: 'aborted_unsettled',
+            expected: {
+              kind: 'retained_mtt_interruption_v1',
+              physical: {
+                manager_id: a.p_local.manager_id,
+                engine_id: a.p_local.engines.find((e: any) => e.table_id === original.e.tableId)
+                  .engine_id,
+                container_id: options.custodyIntent.container,
               },
             },
           },
         },
-      ],
+      })),
     };
+    if (historical && !a.p_expected) {
+      const scope = historicalCohorts[a.p_tournament_id];
+      const allowance = (user_id: string) => ({
+        user_id,
+        is_vip: true,
+        is_lifetime: true,
+        unlimited_activations: true,
+        vip_seconds_remaining: null,
+        purchased_seconds: 0,
+        extra_seconds: 0,
+      });
+      const bank = (occupancyId: string) => ({
+        occupancyId,
+        remainingSeconds: 40,
+        usesRemaining: 2,
+        initialSeconds: 40,
+        baseSeconds: 40,
+        dbConsumedSeconds: 0,
+        unlimitedActivations: true,
+      });
+      (canonical as any).historical_loss = {
+        kind: scope.kind,
+        original_receipt_id: scope.receipt_id,
+        plans: a.p_local.engines.map((e: any) => ({
+          table_id: e.table_id,
+          disposition: {
+            old_final_balance: 'unknown',
+            old_debit_outcomes: 'retained_not_replayed',
+            initialization: 'ordinary_lifetime_session',
+            disposition: e.bank_custody.historical_loss,
+            observations: scope.occupants
+              .filter((o: any) => o.table_id === e.table_id)
+              .map((original: any) => ({ original, allowance: allowance(original.user_id) })),
+          },
+          normal_session: Object.fromEntries(
+            scope.occupants
+              .filter((o: any) => o.table_id === e.table_id)
+              .map((o: any) => [o.user_id, bank(o.occupancy_id)])
+          ),
+        })),
+        pending_arrivals: scope.pending_arrivals.map((original: any) => ({
+          source: { table_id: original.table_id },
+          proof: {
+            historical_loss: {
+              original_kind: original.kind,
+              observations: [{ original, allowance: allowance(original.user_id) }],
+            },
+            presence: {
+              time_bank_snapshot: { players: { [original.user_id]: bank(original.occupancy_id) } },
+            },
+          },
+        })),
+      };
+    }
     const receipt = a.p_expected
       ? {
           transfer_id: a.p_transfer_id,
@@ -510,7 +675,8 @@ describe('native retained 8825 release checkpoint', () => {
   it('retains the exact native original bank snapshot after stop disposes live banks', async () => {
     const f = await nativeCheckpoint(false, true);
     const prior = structuredClone([...f.bankRows]);
-    expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+    const result = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true, readyForRestart: true });
     expect([...f.bankRows]).toEqual(prior);
     for (const o of f.originals) {
       expect(o.e.timeBankEngine.playerBanks.size).toBe(0);
@@ -655,4 +821,262 @@ describe('native retained 8825 release checkpoint', () => {
       ).toHaveLength(2);
     }
   );
+});
+
+describe('separate historical pending source requires complete native absence', () => {
+  it('captures all 23 actual original engines and the separate absent pending source', async () => {
+    const f = await nativeCheckpoint(false, false, true);
+    expect(f.s.tableEngines.size).toBe(23);
+    expect(await f.run()).toMatchObject({ ok: true, restartAuthorized: false });
+    const noon = f.receipts.get(events8825[0]);
+    expect(noon.local_proof.engines).toHaveLength(14);
+    expect(noon.local_proof.historical_loss_pending_arrivals).toHaveLength(1);
+    expect(noon.local_proof.historical_loss_pending_arrivals[0].absence.managers).toHaveLength(2);
+  });
+  it.each([
+    'global',
+    'manager',
+    'diagnostic',
+    'drained',
+    'satellite',
+    'retired-manager',
+    'packet',
+    'completed-packet',
+    'no-start',
+    'arrival',
+    'unknown-map',
+    'admission',
+    'late-global',
+  ])('refuses a present or unavailable pending source: %s', async (kind) => {
+    const f = await nativeCheckpoint(false, false, true),
+      owner = f.originals[0].m;
+    const table = '66b1cb1d-5056-41c1-a951-1bd078f8276f';
+    const e: any = new ServerTableEngine(table);
+    const apply = () => {
+      if (kind === 'global' || kind === 'late-global') f.s.tableEngines.set(table, e);
+      if (kind === 'manager') owner.tableEngines.set(table, e);
+      if (kind === 'diagnostic') owner.stoppedDiagnosticOriginals.set(table, e);
+      if (kind === 'drained')
+        owner.drainedF06Originals = [...owner.drainedF06Originals, [table, e]];
+      if (kind === 'satellite') owner.satelliteQualifierEngines.set(table, e);
+      if (kind === 'retired-manager') {
+        const m: any = new manager.TournamentManager(
+          id(1900),
+          f.s,
+          id(1901),
+          performance.now() + 30000
+        );
+        m.tableEngines.set(table, e);
+        f.s.tournamentDiagnosticRetirements.set(id(1900), new Set([m]));
+      }
+      const packet = { manager: owner, tournamentId: owner.tournamentId, engines: [[table, e]] };
+      if (kind === 'packet') f.s.drainedF06TournamentCustody.set(owner.tournamentId, packet);
+      if (kind === 'completed-packet')
+        f.s.completedF06TournamentCustody.set(owner.tournamentId, new Set([{ original: packet }]));
+      if (kind === 'no-start')
+        owner.pendingNoStartContinuations.set(id(1991), { engine: e, binding: { tableId: table } });
+      if (kind === 'arrival')
+        owner.tournamentBreakArrivalWakes.set(id(1992), new Map([[id(1993), e]]));
+      if (kind === 'unknown-map') f.s.tournamentDiagnosticRetirements = undefined;
+      if (kind === 'admission') f.s.tableEngineStartPromises.set(table, Promise.resolve());
+    };
+    if (kind === 'late-global')
+      f.onBoundary((name) => {
+        if (name === 'fn_f06_prepare_mixed_manager_custody') apply();
+      });
+    else apply();
+    expect(await f.run()).toMatchObject({ ok: false, restartAuthorized: false });
+    expect(f.receipts.size).toBe(0);
+    await e.stop();
+  });
+});
+
+// The two original `mixed_original_work_not_drained` conjunctions refused with
+// one opaque code for ~34 separate facts, and the engine's read-only
+// diagnostics API exposes only a few of them, so a stuck release could not be
+// diagnosed from outside. The refusal now carries the name of the exact
+// sub-condition that failed. These cases pin BOTH halves of that contract: the
+// added fields name the failing check, and `reason` stays byte-identical so
+// every existing parser of `mixed_original_work_not_drained` is unaffected.
+describe('the retained 8825 drain refusal names its failed sub-condition', () => {
+  const drainCases: { check: string; observed: string; fault: (e: any) => void }[] = [
+    { check: 'engine.terminal', observed: 'false', fault: (e) => (e.terminal = false) },
+    {
+      check: 'engine.terminalTeardownComplete',
+      observed: 'false',
+      fault: (e) => (e.terminalTeardownComplete = false),
+    },
+    {
+      check: 'engine.dealingLoopPromise',
+      observed: 'Promise',
+      fault: (e) => (e.dealingLoopPromise = Promise.resolve()),
+    },
+    {
+      check: 'engine.postHandTasksPromise',
+      observed: 'Promise',
+      fault: (e) => (e.postHandTasksPromise = Promise.resolve()),
+    },
+    {
+      check: 'engine.snapshotFlushPromise',
+      observed: 'Promise',
+      fault: (e) => (e.snapshotFlushPromise = Promise.resolve()),
+    },
+    { check: 'engine.handController', observed: 'object', fault: (e) => (e.handController = {}) },
+    { check: 'engine.actionLock', observed: 'true', fault: (e) => (e.actionLock = true) },
+    {
+      check: 'engine.f06HandPreparation',
+      observed: 'Promise',
+      fault: (e) => (e.f06HandPreparation = Promise.resolve()),
+    },
+    {
+      check: 'engine.f06RecoveryInFlight',
+      observed: 'true',
+      fault: (e) => (e.f06RecoveryInFlight = true),
+    },
+    {
+      check: 'engine.terminalBoundaryPersistenceFailed',
+      observed: 'true',
+      fault: (e) => (e.terminalBoundaryPersistenceFailed = true),
+    },
+    {
+      check: 'engine.timeBankAccountingUnconfirmed',
+      observed: 'true',
+      fault: (e) => (e.timeBankAccountingUnconfirmed = true),
+    },
+    {
+      check: 'engine.engineLeaseScope',
+      observed: 'direct',
+      fault: (e) => (e.engineLeaseScope = 'direct'),
+    },
+    {
+      check: 'engine.engineLeaseVerified',
+      observed: 'false',
+      fault: (e) => (e.engineLeaseVerified = false),
+    },
+    {
+      check: 'engine.engineLeaseTournamentId',
+      observed: 'string(36)',
+      fault: (e) => (e.engineLeaseTournamentId = id(999)),
+    },
+    {
+      check: 'engine.engineLeaseGeneration',
+      observed: 'string(36)',
+      fault: (e) => (e.engineLeaseGeneration = id(998)),
+    },
+    {
+      check: 'engine.hasOnlyDrainedTournamentMoveOwner(manager.tournamentMoveBoundaryOwner)',
+      observed: 'false',
+      fault: (e) => e.tournamentMovePauseOwners.add(id(997)),
+    },
+  ];
+  it.each(drainCases)(
+    'names $check and keeps the reason unchanged',
+    async ({ check, observed, fault }) => {
+      const f = await nativeCheckpoint(false, true);
+      const e = f.originals[0].e;
+      fault(e);
+      const result: any = await f.run();
+      // The pre-existing contract: same refusal, same code, nothing authorized.
+      expect(result.ok).toBe(false);
+      expect(result.reason).toBe('mixed_original_work_not_drained');
+      expect(result.restartAuthorized).toBe(false);
+      expect(result.readyForRestart).toBe(false);
+      expect(result.checkpointOutcome).toBe('not_started');
+      // The new contract: the refusal names itself.
+      expect(result.failedCheck).toBe(check);
+      expect(result.failedTable).toBe(e.tableId);
+      expect(result.observed).toBe(observed);
+      expect(f.receipts.size).toBe(0);
+      expect(f.s.tableEngines.size).toBe(2);
+    }
+  );
+
+  it('names the live-engine registry clause without disturbing the registry', async () => {
+    const f = await nativeCheckpoint(false, true);
+    const e = f.originals[0].e;
+    const live: Map<string, unknown> = (base.ServerTableEngineBase as any).liveEngines;
+    live.set(e.tableId, e);
+    try {
+      const result: any = await f.run();
+      expect(result.reason).toBe('mixed_original_work_not_drained');
+      expect(result.failedCheck).toBe('base.liveEngines.has(tableId)');
+      expect(result.observed).toBe('true');
+      expect(result.failedTable).toBe(e.tableId);
+    } finally {
+      live.delete(e.tableId);
+    }
+  });
+
+  it('names the move-owner clause the boolean predicate hides', async () => {
+    const f = await nativeCheckpoint(false, true);
+    const e = f.originals[0].e;
+    // A pause claimed under a different owner is the deadlock this change was
+    // written to expose: the native predicate returns one `false` for six
+    // clauses, and only the claimed/paused owner sets can explain it.
+    e.claimedTournamentMovePauseOwners.add(id(996));
+    const result: any = await f.run();
+    expect(result.reason).toBe('mixed_original_work_not_drained');
+    expect(result.failedCheck).toBe(
+      'engine.hasOnlyDrainedTournamentMoveOwner(manager.tournamentMoveBoundaryOwner)'
+    );
+    expect(result.observedDetail).toContain('terminalTeardownComplete=true');
+    expect(result.observedDetail).toContain('notRunning=true');
+    expect(result.observedDetail).toContain('tournamentMoveOperations=0');
+    expect(result.observedDetail).toContain('tournamentMoveOperationByOwner=0');
+    expect(result.observedDetail).toContain(
+      'claimedTournamentMovePauseOwners=size=1/allMatchBoundaryOwner=false'
+    );
+    expect(result.observedDetail).toContain(
+      'tournamentMovePauseOwners=size=0/allMatchBoundaryOwner=true'
+    );
+    // No owner value of any kind reaches the emitted detail.
+    expect(result.observedDetail).not.toContain(id(996));
+    expect(JSON.stringify(result)).not.toContain(id(996));
+  });
+
+  it('names which retained collection is not drained', async () => {
+    const f = await nativeCheckpoint(false, true);
+    const e = f.originals[0].e;
+    e.readContinuationTasks.add(Promise.resolve());
+    const result: any = await f.run();
+    expect(result.reason).toBe('mixed_original_work_not_drained');
+    expect(result.failedCheck).toBe('engineCollection.size');
+    expect(result.failedField).toBe('readContinuationTasks');
+    expect(result.failedTable).toBe(e.tableId);
+    expect(result.observed).toBe('1');
+    expect(result.expected).toBe('0');
+  });
+
+  it('names which retained collection has the wrong type', async () => {
+    const f = await nativeCheckpoint(false, true);
+    const e = f.originals[0].e;
+    e.timeBankAccountingPending = new Map();
+    const result: any = await f.run();
+    expect(result.reason).toBe('mixed_original_work_not_drained');
+    expect(result.failedCheck).toBe('engineCollection.type');
+    expect(result.failedField).toBe('timeBankAccountingPending');
+    expect(result.observed).toBe('Map(0)');
+    expect(result.expected).toBe('Set');
+  });
+
+  it('adds no field when the checkpoint qualifies', async () => {
+    const f = await nativeCheckpoint(false, true);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true, reason: null });
+    for (const key of ['failedCheck', 'failedTable', 'failedField', 'observed', 'expected'])
+      expect(result[key]).toBeUndefined();
+  });
+
+  it('adds no field to a refusal raised by a different check', async () => {
+    const f = await nativeCheckpoint(false, true);
+    const e = f.originals[0].e;
+    // `mixed_bank_shape` is the require that follows the two split sites; it is
+    // untouched by this change and must still refuse with no added detail.
+    e.handCount = -1;
+    const result: any = await f.run();
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('mixed_bank_shape');
+    for (const key of ['failedCheck', 'failedTable', 'failedField', 'observed', 'expected'])
+      expect(result[key]).toBeUndefined();
+  });
 });

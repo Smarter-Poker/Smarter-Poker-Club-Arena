@@ -1,0 +1,34 @@
+.loadingBoard,
+.streakConsole,
+.summaryGrid,
+.unclaimedBar,
+.alertConsole,
+.syncNotice,
+.missionBoard,
+.tabs,
+.footer {
+  position: relative;
+}
+
+.loadingBoard > .bevelFrame,
+.streakConsole > .bevelFrame,
+.summaryGrid > .bevelFrame,
+.alertConsole > .bevelFrame,
+.syncNotice > .bevelFrame,
+.missionBoard > .bevelFrame,
+.tabs > .bevelFrame,
+.footer > .bevelFrame {
+  --bevel-size: 8px;
+  --bevel-frame-color: rgba(184, 196, 201, 0.42);
+}
+
+.unclaimedBar > .bevelFrame {
+  --bevel-size: 8px;
+  --bevel-frame-color: rgba(214, 173, 82, 0.64);
+}
+
+.missionBoard > .bevelFrame,
+.tabs > .bevelFrame {
+  z-index: 5;
+  --bevel-frame-color: color-mix(in srgb, var(--mission-cycle-color) 46%, var(--mission-chrome));
+}

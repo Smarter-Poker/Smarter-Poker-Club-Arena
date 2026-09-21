@@ -31,6 +31,33 @@
  *   Agent Fees        agent_commissions, accrued in the window
  *   Union Fee         union_fee_kept on the weekly square-up statements
  *   Net Revenue       net rake + tournament fees - the three outflows
+ *
+ * ── #ClubArenaConsole (2026-09-09) ────────────────────────────────────────
+ * The page was eight rounded summary tiles in a two-up grid, a gradient
+ * "revenue" card, a gradient "net" card, three filled period buttons and two
+ * lists of bordered rows. It is now printed on Dan's approved spade master:
+ * one console per section - Financials, Revenue Trend, Summary, Top Tables,
+ * Recent Rake - with every figure a row on the black glass, label in the
+ * master's lit blue on the left and value in engraved silver on the right,
+ * separated by the engraved rule the master cuts between its own rows.
+ *
+ * WHAT DID NOT CHANGE, AND MUST NOT: the single `ca_club_financials` call and
+ * its window, the strict club resolve, the `isAuthzError` -> `setDenied`
+ * permission gate and its `<PermissionState>`, the eight masterBus
+ * subscriptions and their debounce windows, the `loadingRef` in-flight guard,
+ * the stagger timers on Recent Rake, the CSV export's columns and arithmetic,
+ * and every wallet the header opens (club bank, promo, agent, player). This
+ * page reads a club's books and opens its cashiers; not one of those paths
+ * was touched.
+ *
+ * THE FIGURES ARE STILL EXACT, DELIBERATELY. `compactChips` is the rule for
+ * chip figures outside the felt, and it is used here for the COUNTS. It is
+ * not used for the money, and the reason is arithmetic: it floors below
+ * 1,000, so `compactChips(0.5)` is "0". Rake on this platform is routinely
+ * under one chip a hand - "0 Raked From A 42 Pot" is not a rounding, it is a
+ * false statement about money on the one screen whose job is the ledger. The
+ * `chips()` formatter below is untouched from the version this page shipped
+ * with.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -53,11 +80,13 @@ import DynamicWallet from '../components/wallet/DynamicWallet';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
 import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
+import StandardContentLayout from '../components/layouts/StandardContentLayout';
+import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsole';
 import './ClubFinancialsPage.css';
 import { isUUID } from '../utils/clubIdResolver';
 import { isAuthzError } from '../utils/clubDashboard';
 import { useIsMounted } from '../hooks/useIsMounted';
-import { formatDateShort as formatDate } from '../utils/format';
+import { formatDateShort as formatDate, compactChips } from '../utils/format';
 import { downloadCsv, toCsv } from '../utils/downloadCsv';
 import { reportError } from '../utils/errorReporter';
 import { formatPopupText } from '../utils/popupStyle';
@@ -147,7 +176,10 @@ function windowFor(period: Period): { start: string | null; end: string | null }
 
 const chips = (n: number | null | undefined) =>
   Number(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const count = (n: number | null | undefined) => Number(n ?? 0).toLocaleString();
+/* Counts are whole and can never be a fraction of a chip, so they take the
+   platform's compact form: 124,549 raked hands reads "124.5K", rounded down,
+   never overstated. */
+const count = (n: number | null | undefined) => compactChips(Math.trunc(Number(n ?? 0)));
 
 /** "Sep 3", from a UTC date string, without letting the local zone shift it. */
 function dayLabel(iso: string): string {
@@ -385,40 +417,50 @@ export default function ClubFinancialsPage() {
 
   if (notFound) {
     return (
-      <div className="financials-page">
+      <StandardContentLayout className="financials-page">
         <ErrorState
           message="That Club Could Not Be Found."
           onRetry={() => navigate('/clubs', { replace: true })}
         />
-      </div>
+      </StandardContentLayout>
     );
   }
 
   if (denied) {
     return (
-      <div className="financials-page">
+      <StandardContentLayout className="financials-page">
         <PermissionState
           title="Financials Are Restricted"
           description="Club Financials Are Available To Club Owners, Admins And Super Agents."
           onBack={() => navigate(`/clubs/${clubId}`)}
         />
-      </div>
+      </StandardContentLayout>
     );
   }
 
   if (loading && !data) {
     return (
-      <div className="financials-page">
-        <PageSkeleton variant="financial" />
-      </div>
+      <StandardContentLayout className="financials-page">
+        <SpadeConsole
+          className="cf-console"
+          aria-busy
+          eyebrow="Club Arena"
+          title="Financials"
+          pill="Loading"
+          pillInk="muted"
+          foot="foot"
+        >
+          <PageSkeleton variant="financial" />
+        </SpadeConsole>
+      </StandardContentLayout>
     );
   }
 
   if (loadError && !data) {
     return (
-      <div className="financials-page">
+      <StandardContentLayout className="financials-page">
         <ErrorState message={loadError} onRetry={() => void load()} />
-      </div>
+      </StandardContentLayout>
     );
   }
 
@@ -431,8 +473,43 @@ export default function ClubFinancialsPage() {
       }`
     : '';
 
+  /* THE SAME EIGHT FIGURES, IN THE SAME ORDER, WITH THE SAME ARITHMETIC.
+     They were a grid of drawn tiles; they are rows on the glass now, and an
+     outflow is a red value rather than a repainted box. */
+  const summaryRows: { label: string; value: string; ink: ConsoleInk; note?: string }[] = totals
+    ? [
+        { label: 'Raked Hands', value: count(totals.raked_hands), ink: 'silver' },
+        { label: 'Pot Volume', value: chips(totals.pot_volume), ink: 'silver' },
+        {
+          label: 'Net Rake',
+          value: chips(totals.net_rake),
+          ink: 'green',
+          /* Gross and drop, because the club keeps one and not the other. */
+          note: `${chips(totals.gross_rake)} Raked, ${chips(totals.bbj_drop)} To The Jackpot`,
+        },
+        { label: 'Tournament Fees', value: chips(totals.tournament_fees), ink: 'silver' },
+        { label: 'Rakeback', value: `-${chips(totals.rakeback_paid)}`, ink: 'red' },
+        { label: 'Agent Fees', value: `-${chips(totals.agent_commissions)}`, ink: 'red' },
+        /* The union line is only a line for a club that is in a union. It read
+           invoice_type 'union_to_club' - a type the weekly square-up never
+           writes - so it contributed a silent zero to Net Revenue for every
+           club on the platform. */
+        {
+          label: data?.union_id ? 'Union Fee' : 'Union Fee (No Union)',
+          value: data?.union_id ? `-${chips(totals.union_fee)}` : '-',
+          ink: data?.union_id ? 'red' : 'muted',
+        },
+        {
+          label: 'Net Revenue',
+          value: `${totals.net_revenue >= 0 ? '+' : ''}${chips(totals.net_revenue)}`,
+          ink: totals.net_revenue >= 0 ? 'green' : 'red',
+          note: 'Net Rake Plus Tournament Fees, Less Rakeback, Agent Fees And Union Fees',
+        },
+      ]
+    : [];
+
   return (
-    <div className="financials-page">
+    <StandardContentLayout className="financials-page">
       {/* Real-Time Wallet Overview */}
       {clubId && user?.id && (
         <DynamicWallet
@@ -467,112 +544,96 @@ export default function ClubFinancialsPage() {
         </>
       )}
 
-      {/* Period Selector */}
-      <div className="period-selector">
-        {(['week', 'month', 'all'] as const).map((p) => (
-          <button
-            key={p}
-            className={period === p ? 'active' : ''}
-            aria-pressed={period === p}
-            onClick={() => setPeriod(p)}
-          >
-            {p === 'week' ? 'This Week' : p === 'month' ? 'This Month' : 'All Time'}
-          </button>
-        ))}
-        <button className="export-btn" onClick={exportCsv} disabled={!data}>
+      {/* ── The window: three lit words and the export ───────────────── */}
+      <SpadeConsole
+        className="cf-console"
+        aria-busy={loading || undefined}
+        eyebrow="Club Arena"
+        title="Financials"
+        pill={period === 'week' ? 'Week' : period === 'month' ? 'Month' : 'All Time'}
+        pillInk="blue"
+        foot="foot"
+      >
+        {/* The master paints no tab, so nothing here draws one: the three
+            windows are lit words cut into the glass. */}
+        <div className="cf-rail" role="tablist" aria-label="Reporting Window">
+          {(['week', 'month', 'all'] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              role="tab"
+              className={`cf-rail__word ${period === p ? 'sc-ink--silver' : 'sc-ink--muted'}`}
+              aria-selected={period === p}
+              aria-pressed={period === p}
+              onClick={() => setPeriod(p)}
+            >
+              {p === 'week' ? 'This Week' : p === 'month' ? 'This Month' : 'All Time'}
+            </button>
+          ))}
+        </div>
+
+        {rangeNote && (
+          <p className="sc-copy sc-copy--center" aria-live="polite">
+            {rangeNote}
+            {loading ? ' - Refreshing' : ''}
+          </p>
+        )}
+
+        {loadError && data && (
+          <p className="sc-copy sc-copy--center sc-ink--red" role="alert">
+            {loadError}
+          </p>
+        )}
+
+        {/* ONE ACTION, SO NO PLATES: the foot paints both plates or neither,
+            and a lone export would leave the other painted and empty. */}
+        <button type="button" className="cf-word sc-ink--blue" onClick={exportCsv} disabled={!data}>
           Export CSV
         </button>
-      </div>
-
-      {rangeNote && (
-        <p className="range-note" aria-live="polite">
-          {rangeNote}
-          {loading ? ' - Refreshing' : ''}
-        </p>
-      )}
-
-      {loadError && data && (
-        <p className="range-note" role="alert">
-          {loadError}
-        </p>
-      )}
+      </SpadeConsole>
 
       {/* Revenue Chart. ca_club_financials caps the daily series at the
           last 92 days of the window while the totals cover all of it, so on a
           club with a longer history the chart is a SHORTER window than the
-          cards below it. Say which, rather than letting the picture imply the
-          numbers. */}
-      <section className="chart-section">
-        <h3>
-          Revenue Trend
-          {data && data.range.series_from > data.range.start
-            ? ` - Last ${chartDays} Days Of This Window`
-            : ''}
-        </h3>
+          figures below it. Say which, rather than letting the picture imply
+          the numbers. */}
+      <SpadeConsole
+        className="cf-console"
+        eyebrow="Club Arena"
+        title="Revenue Trend"
+        subtitle={
+          data && data.range.series_from > data.range.start
+            ? `Last ${chartDays} Days Of This Window`
+            : undefined
+        }
+        foot="foot"
+      >
         <FinancialChart data={chartData} height={180} showRakeback={true} showCommissions={true} />
-      </section>
+      </SpadeConsole>
 
-      {/* Summary Cards */}
+      {/* ── Summary: eight figures as rows on the glass ──────────────── */}
       {totals && (
-        <div className="summary-cards">
-          <div className="summary-row">
-            <div className="summary-card">
-              <span className="card-value">{count(totals.raked_hands)}</span>
-              <span className="card-label">Raked Hands</span>
-            </div>
-            <div className="summary-card">
-              <span className="card-value">{chips(totals.pot_volume)}</span>
-              <span className="card-label">Pot Volume</span>
-            </div>
-          </div>
-          <div className="summary-card revenue">
-            <span className="card-value">{chips(totals.net_rake)}</span>
-            <span className="card-label">Net Rake</span>
-            {/* Gross and drop, because the club keeps one and not the other. */}
-            <span className="card-sub">
-              {chips(totals.gross_rake)} Raked, {chips(totals.bbj_drop)} To The Jackpot
-            </span>
-          </div>
-          <div className="summary-row">
-            <div className="summary-card">
-              <span className="card-value">{chips(totals.tournament_fees)}</span>
-              <span className="card-label">Tournament Fees</span>
-            </div>
-            <div className="summary-card">
-              <span className="card-value expense">-{chips(totals.rakeback_paid)}</span>
-              <span className="card-label">Rakeback</span>
-            </div>
-          </div>
-          <div className="summary-row">
-            <div className="summary-card">
-              <span className="card-value expense">-{chips(totals.agent_commissions)}</span>
-              <span className="card-label">Agent Fees</span>
-            </div>
-            {/* The union line is only a line for a club that is in a union.
-                It read invoice_type 'union_to_club' - a type the weekly
-                square-up never writes - so it contributed a silent zero to
-                Net Revenue for every club on the platform. */}
-            <div className="summary-card">
-              <span className="card-value expense">
-                {data?.union_id ? `-${chips(totals.union_fee)}` : '-'}
-              </span>
-              <span className="card-label">
-                {data?.union_id ? 'Union Fee' : 'Union Fee (No Union)'}
-              </span>
-            </div>
-          </div>
-          <div className="summary-card net">
-            <span className={`card-value ${totals.net_revenue >= 0 ? 'positive' : 'negative'}`}>
-              {totals.net_revenue >= 0 ? '+' : ''}
-              {chips(totals.net_revenue)}
-            </span>
-            <span className="card-label">Net Revenue</span>
-            <span className="card-sub">
-              Net Rake Plus Tournament Fees, Less Rakeback, Agent Fees And Union Fees
-            </span>
-          </div>
+        <SpadeConsole
+          className="cf-console"
+          eyebrow={rangeNote || 'Club Arena'}
+          title="Summary"
+          pill={totals.net_revenue >= 0 ? 'Up' : 'Down'}
+          pillInk={totals.net_revenue >= 0 ? 'green' : 'red'}
+          foot="foot"
+        >
+          <dl className="cf-facts">
+            {summaryRows.map((row) => (
+              <div key={row.label} className="cf-fact">
+                <dt className="cf-fact__label sc-label sc-ink--blue">{row.label}</dt>
+                <dd className={`cf-fact__value sc-ink--${row.ink}`}>
+                  {row.value}
+                  {row.note && <span className="cf-fact__note sc-ink--muted">{row.note}</span>}
+                </dd>
+              </div>
+            ))}
+          </dl>
           {data?.union_id && totals.union_statements > 0 && (
-            <p className="range-note">
+            <p className="sc-copy">
               {count(totals.union_statements)} Weekly Square-Up
               {totals.union_statements === 1 ? '' : 's'} Issued In This Window,{' '}
               {totals.union_squareup >= 0
@@ -581,28 +642,32 @@ export default function ClubFinancialsPage() {
               .
             </p>
           )}
-        </div>
+        </SpadeConsole>
       )}
 
       {/* Where the rake came from */}
       {data && data.by_table.length > 0 && (
-        <section className="transactions-section">
-          <h3>Top Tables By Rake</h3>
-          <div className="table-list">
+        <SpadeConsole
+          className="cf-console"
+          eyebrow="Club Arena"
+          title="Top Tables By Rake"
+          pill={count(data.by_table.length)}
+          pillInk="blue"
+          foot="foot"
+        >
+          <ol className="cf-list">
             {data.by_table.map((t) => (
-              <div key={t.table_id} className="table-row">
-                <div className="tx-info">
-                  <span className="tx-desc">{t.name}</span>
-                  <span className="tx-date">
-                    {[t.variant, t.stakes].filter(Boolean).join(' ')} - {count(t.raked_hands)} Raked
-                    Hands
-                  </span>
-                </div>
-                <span className="tx-amount positive">{chips(t.rake)}</span>
-              </div>
+              <li key={t.table_id} className="cf-row">
+                <span className="cf-row__name sc-ink--silver">{t.name}</span>
+                <span className="cf-row__meta sc-ink--muted">
+                  {[t.variant, t.stakes].filter(Boolean).join(' ')} - {count(t.raked_hands)} Raked
+                  Hands
+                </span>
+                <span className="cf-row__amount sc-ink--green">{chips(t.rake)}</span>
+              </li>
             ))}
-          </div>
-        </section>
+          </ol>
+        </SpadeConsole>
       )}
 
       {/* Club Financial Dashboard - Chip Minting & Commission (club staff).
@@ -610,93 +675,102 @@ export default function ClubFinancialsPage() {
           do except appoint another co owner" - without the one screen that
           mints chips. fn_actor_can_manage_club_treasury admits all three. */}
       {clubId && isClubStaff(userRole) && (
-        <section className="financial-dashboard-section">
+        /* ClubFinancialDashboard and RakeReports below are separate
+           components with their own markup and their own stylesheets. They
+           are not part of this rebuild, so they are given room rather than a
+           frame: a card drawn here would be a frame on their frame. */
+        <section className="cf-embed">
           <ClubFinancialDashboard clubId={clubId} />
         </section>
       )}
 
       {/* Rake Analytics Reports */}
       {clubId && (
-        <section className="rake-reports-section">
+        <section className="cf-embed">
           <RakeReports clubId={clubId} />
         </section>
       )}
 
-      {/* Recent raked hands */}
-      <section className="transactions-section">
-        <h3>Recent Rake</h3>
+      {/* ── Recent raked hands ───────────────────────────────────────── */}
+      <SpadeConsole
+        className="cf-console"
+        eyebrow="Club Arena"
+        title="Recent Rake"
+        pill={recent.length === 0 ? 'Empty' : count(recent.length)}
+        pillInk={recent.length === 0 ? 'muted' : 'blue'}
+        foot="foot"
+      >
         {recent.length === 0 ? (
-          <div className="empty-state">
-            <p>No Rake In This Period</p>
+          <div className="cf-empty">
+            <span className="sc-label sc-ink--muted">Nothing Raked</span>
+            <p className="sc-copy sc-copy--center">No Rake In This Period.</p>
           </div>
         ) : (
-          <div className="transactions-list">
+          <ol className="cf-list">
             {recent.map((tx) => (
-              <div
+              /* THE STAGGER STILL PLAYS. Same `visibleTransactions` set, same
+                 60ms step, same eight-pixel lift - it just runs on the global
+                 `animationsFadeInUp` keyframe instead of a local copy. */
+              <li
                 key={tx.id}
-                className={`transaction-row ${visibleTransactions.has(tx.id) ? 'fadeInUp' : 'hidden'}`}
+                className="cf-row"
                 style={
                   visibleTransactions.has(tx.id)
-                    ? undefined
+                    ? {
+                        opacity: 0,
+                        transform: 'translateY(8px)',
+                        animation: 'animationsFadeInUp 0.4s ease-out forwards',
+                      }
                     : { opacity: 0, transform: 'translateY(8px)' }
                 }
               >
-                <span className="tx-icon">{tx.kind === 'cash_rake' ? '%' : 'T'}</span>
-                <div className="tx-info">
-                  <span className="tx-desc">
-                    {formatPopupText(
-                      tx.kind === 'cash_rake'
-                        ? `${chips(tx.rake_amount)} Raked From A ${chips(tx.pot_size)} Pot At ${tx.table_name}`
-                        : `${chips(tx.rake_amount)} Tournament Fee`
-                    )}
-                  </span>
-                  <span className="tx-date">
-                    {formatDate(tx.created_at)}
-                    {tx.bbj_contribution > 0
-                      ? ` - ${chips(tx.bbj_contribution)} To The Jackpot`
-                      : ''}
-                  </span>
-                </div>
-                <span className="tx-amount positive">+{chips(tx.rake_amount)}</span>
-              </div>
+                <span className="cf-row__name sc-ink--silver">
+                  {formatPopupText(
+                    tx.kind === 'cash_rake'
+                      ? `${chips(tx.rake_amount)} Raked From A ${chips(tx.pot_size)} Pot At ${tx.table_name}`
+                      : `${chips(tx.rake_amount)} Tournament Fee`
+                  )}
+                </span>
+                <span className="cf-row__meta sc-ink--muted">
+                  {formatDate(tx.created_at)}
+                  {tx.bbj_contribution > 0 ? ` - ${chips(tx.bbj_contribution)} To The Jackpot` : ''}
+                </span>
+                <span className="cf-row__amount sc-ink--green">+{chips(tx.rake_amount)}</span>
+              </li>
             ))}
-          </div>
+          </ol>
         )}
-      </section>
+      </SpadeConsole>
 
-      {/* Chip Ledger — Club Transaction Audit Trail.
+      {/* Chip Ledger - Club Transaction Audit Trail.
           Through the club-scoped RPC: chip_ledger's own RLS returns the
           CALLER's rows, so this panel showed a club owner their personal
           movements under the heading "Club Chip Audit Trail". */}
       {resolvedClubId && (
-        <section className="ledger-section">
-          <div className="ledger-card">
-            <h3>Club Chip Audit Trail</h3>
-            <TransactionLedgerView clubId={resolvedClubId} clubScoped limit={25} />
-          </div>
-        </section>
+        <SpadeConsole
+          className="cf-console"
+          eyebrow="Club Arena"
+          title="Club Chip Audit Trail"
+          foot="foot"
+        >
+          <TransactionLedgerView clubId={resolvedClubId} clubScoped limit={25} />
+        </SpadeConsole>
       )}
 
       {/* Phase 7 (roadmap 9.5): the treasury's own statement - balance now,
           both directions, and the nightly reading it is checked against. Same
           gate as the ledger above (ca_can_view_club_finances). */}
       {resolvedClubId && isUUID(resolvedClubId) && (
-        <section className="ledger-section">
-          <div className="ledger-card">
-            <ChipStatement
-              scope="club_treasury"
-              clubId={resolvedClubId}
-              title="Treasury Statement"
-            />
-          </div>
+        <section className="cf-embed">
+          <ChipStatement scope="club_treasury" clubId={resolvedClubId} title="Treasury Statement" />
         </section>
       )}
 
       {data?.data_updated_at && (
-        <p className="range-note">
+        <p className="cf-footnote sc-ink--muted">
           Rake Updated {formatDate(data.data_updated_at)} - Figures Are From The Club Ledger
         </p>
       )}
-    </div>
+    </StandardContentLayout>
   );
 }

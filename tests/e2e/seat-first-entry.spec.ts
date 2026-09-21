@@ -37,11 +37,11 @@
  * clicking an empty seat all cost nothing — the sheet's own header says it:
  * "Nothing above this sheet spends money."
  *
- * So this spec opens the sheet and CANCELS it. `.seat-buyin-confirm__btn--go`
- * is asserted to exist and is NEVER clicked. If you are editing this file and
- * find yourself reaching for that locator's `.click()`, stop — that is a real
- * buy-in on a real account, and section 11.5 was written in the aftermath of
- * exactly that instinct.
+ * So this spec opens the sheet and CANCELS it. `CONFIRM` (declared below; the
+ * primary plate in the console's painted foot) is asserted to exist and is
+ * NEVER clicked. If you are editing this file and find yourself reaching for
+ * that locator's `.click()`, stop — that is a real buy-in on a real account,
+ * and section 11.5 was written in the aftermath of exactly that instinct.
  */
 
 import { test, expect, type Page } from '@playwright/test';
@@ -65,10 +65,26 @@ import { expectRoute } from './routes/utils';
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const LOBBY = `clubs/${CLUB_ID}`;
 
-/** The sheet, and the two controls that decide whether money moves. */
+/**
+ * The sheet, and the two controls that decide whether money moves.
+ *
+ * MOVED, NOT WEAKENED (2026-09-14, #ClubArenaConsole). The sheet is on the
+ * spade console: the two drawn buttons (`__btn--ghost` / `__btn--go`) are
+ * gone, and Cancel and Buy In are `PlateButton`s laid over the two plates
+ * PAINTED into the foot of Dan's master. So the locators name the foot and
+ * take the first plate and the last - which is the order the chassis renders
+ * them in (SpadeConsole.tsx: secondary, then primary) and the order they are
+ * painted in the art.
+ *
+ * The rule this file exists to enforce is untouched: CONFIRM is asserted to
+ * exist and is NEVER clicked.
+ */
 const SHEET = '.seat-buyin-confirm';
-const CONFIRM = '.seat-buyin-confirm__btn--go';
-const CANCEL = '.seat-buyin-confirm__btn--ghost';
+const CONFIRM = '.seat-buyin-confirm .sc__foot .sc-plate >> nth=-1';
+const CANCEL = '.seat-buyin-confirm .sc__foot .sc-plate >> nth=0';
+/** The header well's printed zones, which replaced `__title` / `__eyebrow`. */
+const TITLE = '#seat-buyin-confirm-title';
+const EYEBROW = '.seat-buyin-confirm .sc__eyebrow';
 
 /**
  * Say why, out loud, whenever this file declines to assert something.
@@ -257,16 +273,16 @@ test.describe('Seat-first entry', () => {
        produces the buy-in sheet. Not an error, not a silent nothing. */
     const sheet = page.locator(SHEET);
     await expect(sheet).toHaveCount(1);
-    await expect(sheet.locator('.seat-buyin-confirm__title')).toHaveText(/Buy In/);
+    await expect(page.locator(TITLE)).toHaveText(/Buy In/i);
 
     // It must name a seat and a price, or the player cannot know what they
     // are agreeing to.
-    await expect(sheet.locator('.seat-buyin-confirm__eyebrow')).toContainText(/Seat \d+/);
+    await expect(page.locator(EYEBROW)).toContainText(/Seat \d+/i);
     const amount = (await sheet.locator('.seat-buyin-confirm__amount').innerText()).trim();
     expect(amount, 'the sheet must print a buy-in amount').toMatch(/[0-9]/);
 
     // Confirm EXISTS and is deliberately never clicked. See the header.
-    await expect(sheet.locator(CONFIRM)).toBeVisible();
+    await expect(page.locator(CONFIRM)).toBeVisible();
   });
 
   test('the held-seat countdown is real and it counts DOWN', async ({ page }) => {
@@ -275,11 +291,18 @@ test.describe('Seat-first entry', () => {
     const opened = await openSeatSheet(page);
     test.skip(!opened, 'no open seat on this spin right now');
 
-    const line = page.locator(SHEET).getByText(/Seat Held For \d+s/);
+    /* The countdown is a ROW on the console's glass now: "Seat Held For" in
+       lit blue on the left, the figure on the right. It reads "12 Sec" rather
+       than "12s" because every label on the glass prints in the master's
+       condensed CAPS, and a bare unit rendered as "12S". The row is the unit
+       of the assertion, so the text is matched on the row. */
+    const line = page.locator(`${SHEET} .seat-buyin-confirm__row`, {
+      hasText: /Seat Held For/i,
+    });
     await expect(line, 'round 14 put the 60s window on the sheet').toBeVisible({ timeout: 10000 });
 
     const read = async (): Promise<number> =>
-      Number(((await line.innerText()).match(/(\d+)/) ?? [])[1]);
+      Number(((await line.innerText()).match(/(\d+)\s*SEC/i) ?? [])[1]);
 
     const first = await read();
     expect(first, 'the countdown must start inside the 60s window').toBeGreaterThan(0);
@@ -344,7 +367,7 @@ test.describe('Seat-first entry', () => {
     // It collapses again, and the sheet survives it.
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await expect(sheet.locator(CONFIRM)).toBeVisible();
+    await expect(page.locator(CONFIRM)).toBeVisible();
   });
 
   test('Cancel closes it, takes nothing, and the seat can be opened again', async ({ page }) => {

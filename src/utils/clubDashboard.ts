@@ -12,7 +12,6 @@ export type SortId = 'profit' | 'hands' | 'winrate' | 'biggest';
 export interface RankablePlayer {
   userId: string;
   displayName: string;
-  isHorse: boolean;
   totalProfit: number;
   totalWon: number;
   handsPlayed: number;
@@ -52,17 +51,12 @@ export function rangeLabel(range: RangeId): string {
 }
 
 /**
- * Filters horses out (optional) and orders the leaderboard, then assigns
- * contiguous ranks so rank always matches displayed position — ranking before
- * filtering would leave visible gaps like #1, #4, #7.
+ * Orders the leaderboard, then assigns contiguous ranks so rank always
+ * matches displayed position. Every player is ranked - horses are players
+ * too (CLAUDE.md 10.5) and nothing here may filter one out.
  */
-export function rankPlayers<T extends RankablePlayer>(
-  players: T[],
-  sortBy: SortId,
-  hideHorses: boolean
-): T[] {
-  const filtered = hideHorses ? players.filter((p) => !p.isHorse) : players;
-  const sorted = [...filtered].sort((a, b) => {
+export function rankPlayers<T extends RankablePlayer>(players: T[], sortBy: SortId): T[] {
+  const sorted = [...players].sort((a, b) => {
     switch (sortBy) {
       case 'hands':
         return b.handsPlayed - a.handsPlayed;
@@ -110,7 +104,6 @@ export function leaderboardToCsv(players: RankablePlayer[]): string {
   const header = [
     'rank',
     'player',
-    'is_horse',
     'hands_played',
     'hands_attributed',
     'hands_won',
@@ -125,7 +118,6 @@ export function leaderboardToCsv(players: RankablePlayer[]): string {
       [
         p.rank,
         csvEscape(p.displayName),
-        p.isHorse,
         p.handsPlayed,
         p.handsAttributed,
         p.handsWon,

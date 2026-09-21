@@ -41,9 +41,15 @@
  * generation's capture time instead, which precedes that commit by
  * milliseconds; it never falls back to the order busts were recorded in.
  * Satellites and final-table deals settle through their own authorities
- * (`fn_settle_satellite_tournament`, `fn_settle_tournament_final_table_deal`),
- * which still number places by `elimination_sequence` - the recording order.
- * The rule above is not yet theirs.
+ * (`fn_ca_settle_satellite_cohort`,
+ * `fn_settle_satellite_tournament_pre_money_path_gate`,
+ * `fn_settle_tournament_final_table_deal`), which numbered places by
+ * `elimination_sequence` - the recording order - until migration
+ * 20260921095012. The rule above is theirs now: all of them, and the standings
+ * and deal-batch gates that check their ladders, read the same witness through
+ * the shared `public.fn_ca_tournament_bust_at`. A satellite seat is a fixed
+ * award and its bubble is exactly this boundary, so the recording order could
+ * hand a seat to a player who busted first in the deciding hand.
  *
  * This sweep does NOT sort by commit time. It records busts in HAND-NUMBER
  * order - the global deal order - because the PKO watermark

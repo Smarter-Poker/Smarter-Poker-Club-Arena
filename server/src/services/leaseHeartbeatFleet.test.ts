@@ -215,16 +215,32 @@ describe.each(['tournament', 'table'] as const)('%s heartbeat fleet', (scope) =>
     for (const request of requests.slice(1)) request.resolve(kept(request.claims));
     const result = await pending;
     expect(rpc).toHaveBeenCalledTimes(5);
+    /* A PASS THAT RAN OUT OF TIME RENEWS NOTHING AND ACCUSES NOBODY.
+       Every answer here said `kept`; they simply arrived after their own
+       window, and the batches never sent were never asked about. Naming all
+       3,001 as lost is what fenced live managers and discarded the hand each
+       of their tables was committing - 403 tournament hands, 2026-09-08..18.
+       Withholding the proofs is the real requirement, and it still holds. */
     expect(result).toEqual({
       status: 'answered',
       proofs: [],
-      [lostKey]: capture(3_001).map((claim) => claim[inputKey]),
+      [lostKey]: [],
     });
   });
 
-  it('anchors all waves before the pass instead of granting queued work more time', async () => {
+  /* ANCHORING EVERY WAVE TO THE PASS IS WHAT LOST THE LEASES (2026-09-21).
+     One window was opened before the first request and shared by all six
+     waves, so a wave that queued behind three others spent it waiting and its
+     `kept` answer was discarded - and then named as a loss. The window belongs
+     to the request that earned it: `heartbeat_at` is set by that statement, so
+     a reading taken immediately before it is a conservative floor for it, and
+     `+ WINDOW` stays inside the audited 30s takeover boundary for every wave
+     exactly as it did for the first. */
+  it('anchors each wave to its own request, never beyond the takeover boundary', async () => {
     let now = 500;
+    const issuedAt: number[] = [];
     rpc.mockImplementation(async (_name, args) => {
+      issuedAt.push(now);
       now += 1_000;
       return kept(args.p_claims);
     });
@@ -233,10 +249,22 @@ describe.each(['tournament', 'table'] as const)('%s heartbeat fleet', (scope) =>
     const result = await heartbeat(capture(2_501));
     expect(result.status).toBe('answered');
     if (result.status !== 'answered') throw new Error('expected exact answers');
+    // Every wave is renewed. Under the pass-wide anchor the later waves were
+    // dropped for lateness and reported lost instead.
     expect(result.proofs).toHaveLength(2_501);
-    expect(new Set(result.proofs.map((proof) => proof.proofDeadlineMonotonicMs))).toEqual(
-      new Set([20_500])
-    );
+    expect(result).toHaveProperty(lostKey, []);
+    const deadlines = new Set(result.proofs.map((proof) => proof.proofDeadlineMonotonicMs));
+    // Six waves, six request times, six windows - not one shared window.
+    expect(issuedAt).toHaveLength(6);
+    expect(deadlines.size).toBe(6);
+    // Each window opens at its own request and never outlives the 30s boundary
+    // the database would let another instance take this lease at.
+    const window = Math.min(...deadlines) - issuedAt[0];
+    for (const deadline of deadlines) {
+      const issued = deadline - window;
+      expect(issuedAt).toContain(issued);
+      expect(deadline - issued).toBeLessThan(30_000);
+    }
   });
 
   it('keeps four transports across passes, releases completed claims, and expires queued generations', async () => {

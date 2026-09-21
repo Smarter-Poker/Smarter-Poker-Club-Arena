@@ -1,0 +1,47 @@
+.unclaimedBar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  overflow: hidden;
+  padding: 18px 20px 18px 24px;
+  border-color: #60717e;
+}
+
+.unclaimedBar::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--mission-blue);
+  box-shadow: 0 0 18px var(--mission-blue);
+  content: '';
+}
+
+.unclaimedBar > div {
+  display: grid;
+  gap: 3px;
+}
+
+.unclaimedBar strong {
+  color: #f4f8fa;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.unclaimedBar small {
+  color: #8b98a1;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.72rem;
+}
+
+.claimAllButton {
+  min-width: 180px;
+  padding: 0 22px;
+  border-color: var(--mission-blue);
+  box-shadow: 0 0 18px rgba(85, 232, 255, 0.13);
+}

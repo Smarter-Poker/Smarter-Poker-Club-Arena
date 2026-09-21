@@ -9,6 +9,13 @@
  * register/unregister, spinQuickJoin). No parallel join systems.
  *
  * Desktop: right-side drawer. Small screens: full-width sheet. Esc closes.
+ *
+ * #ClubArenaConsole (2026-09-14): the cash variant is Dan's approved shark
+ * console (PremiumGameLobbyPanel.css, 2026-09-03) and is untouched here. The
+ * tournament variant's sections - Overview / Details, Blind Structure,
+ * Payouts, Format - each print on a SpadeConsole (flat crest, flat cap):
+ * figures as rows on the black glass, tables with engraved rules, the tabs
+ * and links as lit words. Nothing under the plaque is drawn in CSS any more.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -17,7 +24,7 @@ import CasinoPlaque, { PlaqueSeats } from './CasinoPlaque';
 import ArenaGameCard from './game-cards/ArenaGameCard';
 import { arenaGameCardDataFromEntry } from './game-cards/arenaGameCardAdapter';
 import type { ArenaGameCardActions } from './game-cards/arenaGameCardTypes';
-import type { LobbyEntry, LobbyTableRow, LobbyTournamentRow } from './lobbyEntries';
+import type { LobbyEntry, LobbyTableRow, LobbyTournamentRow, RuleMedallion } from './lobbyEntries';
 import { parseBlindStructure, tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import { parseTableSettings, seatsTakenLabel, seatFirstJoinable } from './lobbyEntries';
 import { cashBuyInRange } from '../../lib/cashBuyIn';
@@ -38,6 +45,8 @@ import {
 } from '../tournament/details/types';
 import type { PayoutPlace } from '../tournament/details/types';
 import { staffTickLine, tickIsStale } from './cashGameTick';
+import { SpadeConsole } from '../console/SpadeConsole';
+import { titleCase } from '../../utils/titleCase';
 import './GameLobbyPanel.css';
 import './PremiumGameLobbyPanel.css';
 import { formatPrizeAtUnit, formatTableChips } from '../../utils/format';
@@ -96,6 +105,28 @@ interface CtaSpec {
   link?: string;
   needsAuth?: boolean;
   note?: string;
+}
+
+/* THE FIRST LETTER OF EVERY WORD (Dan 2026-09-14): a medallion's label and
+   its explanation are data, and they are Title Cased where they print. */
+const titleCaseRule = (r: RuleMedallion): RuleMedallion => ({
+  ...r,
+  label: titleCase(r.label),
+  tip: titleCase(r.tip),
+});
+
+/** One rule under its label - the label lit blue on a console, plain on the
+ *  approved cash sheet, which paints its own ink. */
+function RuleLine({ r, lit }: { r: RuleMedallion; lit?: boolean }) {
+  return (
+    <li>
+      <b className={lit ? 'sc-label sc-ink--blue' : undefined}>
+        {r.label}
+        {r.detail ? ` ${r.detail}` : ''}
+      </b>
+      <span>{r.tip}</span>
+    </li>
+  );
 }
 
 const lvlNum = (
@@ -927,13 +958,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   <h3 className="glp__h">Rules</h3>
                   <ul className="glp__rules">
                     {entry.rules.map((r) => (
-                      <li key={r.key}>
-                        <b>
-                          {r.label}
-                          {r.detail ? ` ${r.detail}` : ''}
-                        </b>
-                        <span>{r.tip}</span>
-                      </li>
+                      <RuleLine key={r.key} r={titleCaseRule(r)} />
                     ))}
                   </ul>
                 </section>
@@ -1008,8 +1033,14 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
               )}
 
               {(entry.kind !== 'mtt' || tab === 'overview') && (
-                <section
-                  className="glp__section"
+                <SpadeConsole
+                  as="section"
+                  className="glp__console"
+                  crest="flat"
+                  foot="foot"
+                  title={entry.kind === 'mtt' ? 'Overview' : 'Details'}
+                  pill={entry.statusLabel}
+                  pillInk={entry.live ? 'green' : 'blue'}
                   {...(entry.kind === 'mtt'
                     ? {
                         id: 'glp-panel-overview',
@@ -1019,7 +1050,6 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                       }
                     : {})}
                 >
-                  <h3 className="glp__h">{entry.kind === 'mtt' ? 'Overview' : 'Details'}</h3>
                   <dl className="glp__grid">
                     <div>
                       <dt>Game</dt>
@@ -1118,18 +1148,26 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                       Full Details Could Not Be Loaded. The Figures Above Come From The Lobby.
                     </p>
                   )}
-                </section>
+                </SpadeConsole>
               )}
 
               {entry.kind === 'mtt' && tab === 'structure' && (
-                <section
-                  className="glp__section"
+                <SpadeConsole
+                  as="section"
+                  className="glp__console"
+                  crest="flat"
+                  foot="foot"
+                  title="Blind Structure"
+                  pill={
+                    panelBlindLevels.some((l) => !l.isBreak)
+                      ? `${panelBlindLevels.filter((l) => !l.isBreak).length} Levels`
+                      : entry.gameLabel
+                  }
                   id="glp-panel-structure"
                   role="tabpanel"
                   aria-labelledby="glp-tab-structure"
                   tabIndex={0}
                 >
-                  <h3 className="glp__h">Blind Structure</h3>
                   {panelBlindLevels.length ? (
                     <div className="glp__tablewrap">
                       <table className="glp__table">
@@ -1170,18 +1208,22 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                           : 'Loading Structure'}
                     </p>
                   )}
-                </section>
+                </SpadeConsole>
               )}
 
               {entry.kind === 'mtt' && tab === 'payouts' && (
-                <section
-                  className="glp__section"
+                <SpadeConsole
+                  as="section"
+                  className="glp__console"
+                  crest="flat"
+                  foot="foot"
+                  title="Payouts"
+                  pill={panelPayouts.length ? `${panelPayouts.length} Paid` : entry.gameLabel}
                   id="glp-panel-payouts"
                   role="tabpanel"
                   aria-labelledby="glp-tab-payouts"
                   tabIndex={0}
                 >
-                  <h3 className="glp__h">Payouts</h3>
                   {tournament && panelPayouts.length > 0 ? (
                     <>
                       <div className="glp__tablewrap">
@@ -1241,7 +1283,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                           : 'Loading Payouts'}
                     </p>
                   )}
-                </section>
+                </SpadeConsole>
               )}
 
               {/* NO TAB CONDITION (2026-08-26). The board's Rules column is
@@ -1251,20 +1293,20 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   title attribute needs a hover this panel's traffic does not
                   have. It renders under all three tabs, as the plaque does. */}
               {entry.rules.length > 0 && (
-                <section className="glp__section">
-                  <h3 className="glp__h">Format</h3>
+                <SpadeConsole
+                  as="section"
+                  className="glp__console"
+                  crest="flat"
+                  foot="foot"
+                  title="Format"
+                  pill={entry.gameLabel}
+                >
                   <ul className="glp__rules">
                     {entry.rules.map((r) => (
-                      <li key={r.key}>
-                        <b>
-                          {r.label}
-                          {r.detail ? ` ${r.detail}` : ''}
-                        </b>
-                        <span>{r.tip}</span>
-                      </li>
+                      <RuleLine key={r.key} r={titleCaseRule(r)} lit />
                     ))}
                   </ul>
-                </section>
+                </SpadeConsole>
               )}
 
               {entry.kind === 'mtt' && (

@@ -1,4 +1,37 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  TOURNAMENT WINNER — the biggest moment the product has, on the spade console
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * THE CONSOLE (#ClubArenaConsole). The celebration used to be a hand-drawn
+ * card: a 1.5rem rounded rectangle with an amber border, a warm gradient fill,
+ * three stacked box-shadows, a pill-shaped kicker badge, a boxed prize
+ * "pedestal" and a rounded gold button. Six drawn controls on a surface where
+ * the frame is supposed to be painted.
+ *
+ * It is now Dan's approved spade master. The event is the eyebrow, the
+ * headline is engraved in the header well, the finish sits in the well's
+ * painted pill slot, the prize prints on the black glass between the rails,
+ * and Continue is a lit word on the flat closing cap (one action, so the foot
+ * closes rather than painting two plates with one of them empty).
+ *
+ * EVERY ANIMATION STILL PLAYS (CLAUDE.md 10.6). Nothing was deleted; each cue
+ * moved onto the element that replaced its old host, at its full duration:
+ *
+ *   winnerRays          .winnerOverlay::before   26s   unchanged (the backdrop)
+ *   sparkleFloat        .sparkle                 4.0s  unchanged (the embers)
+ *   winnerGrandEntrance .winner-entrance         900ms now the console itself
+ *   trophyBounce        .trophy-bounce           2.0s  now the painted pill slot
+ *   winnerSheen         .winner-golden           3.6s  now the engraved headline
+ *   prizeCounterSlideIn .prize-counter           800ms now the prize line
+ *
+ * The requestAnimationFrame odometer, its stale-frame guard and the 500ms
+ * dismiss timer are untouched - they are pinned by
+ * tests/unit/winnerPrizeAnimationLifecycle.test.ts.
+ */
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './TournamentWinnerOverlay.css';
 import { formatTableChips } from '../../utils/format';
 
@@ -117,10 +150,15 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
           />
         ))}
       </div>
-      <div className="winnerContent winner-entrance">
-        <div className="winnerTrophy trophy-bounce">{paidFinish ? positionLabel : 'Winner'}</div>
-        <div className="winnerTitle winner-golden">{paidFinish ? 'Paid Finish!' : 'Champion!'}</div>
-        <div className="winnerTournament">{tournamentName}</div>
+      <SpadeConsole
+        as="div"
+        className="winner-console winner-entrance winner-golden"
+        eyebrow={tournamentName}
+        title={paidFinish ? 'Paid Finish!' : 'Champion!'}
+        pill={paidFinish ? positionLabel : 'Winner'}
+        pillInk="gold"
+        foot="foot"
+      >
         {prize > 0 && (
           <div className="winnerPrize prize-counter">
             {/* To the cent (2026-09-09): this is the banner shown at the
@@ -128,10 +166,15 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
             Prize: {formatTableChips(displayPrize)}
           </div>
         )}
-        <button className="winnerDismissBtn" onClick={handleDismiss}>
+        {/* ONE ACTION, SO THE FOOT CLOSES (standard §5). The master paints BOTH
+            plates, so a single action would leave the other painted and empty,
+            which reads as broken rather than spare. Continue is a lit word on
+            the glass above the flat closing cap - the same control Club Rules
+            uses for Copy and Retry. */}
+        <button type="button" className="winnerDismissBtn" onClick={handleDismiss}>
           Continue
         </button>
-      </div>
+      </SpadeConsole>
     </div>
   );
 };

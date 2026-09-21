@@ -51,7 +51,7 @@ function fixture() {
   const server: any = {
     getTableEngine: vi.fn((table: string) => global.get(table)),
     ownsTournamentTableEngine: (table: string, expected: unknown) => global.get(table) === expected,
-    unregisterTournamentTableEngine: vi.fn((table: string, expected: unknown) => {
+    unregisterTableEngine: vi.fn((table: string, expected: unknown) => {
       if (global.get(table) !== expected) return false;
       events.push('CAS');
       global.delete(table);
@@ -130,7 +130,7 @@ describe('actual Manager durable close through actual Lease custody', () => {
     await expect(f.manager.retireTournamentBreak(f.state())).rejects.toThrow('unknown');
     expect(f.global.get(source)).toBe(f.engine);
     expect(f.manager.tableEngines.get(source)).toBe(f.engine);
-    expect(f.server.unregisterTournamentTableEngine).not.toHaveBeenCalled();
+    expect(f.server.unregisterTableEngine).not.toHaveBeenCalled();
     expect(f.custody.admissionAllowed(source)).toBe(false);
   });
   it('recovers committed close after lost response without calling close again', async () => {
@@ -155,7 +155,7 @@ describe('actual Manager durable close through actual Lease custody', () => {
     expect(f.custody.admissionAllowed(source)).toBe(false);
     await f.manager.retireTournamentBreak(f.state());
     expect(f.engine.stop).toHaveBeenCalledTimes(1);
-    expect(f.server.unregisterTournamentTableEngine).toHaveBeenCalledTimes(1);
+    expect(f.server.unregisterTableEngine).toHaveBeenCalledTimes(1);
     expect(f.api.ackCleanup).toHaveBeenCalledTimes(1);
     expect(f.custody.admissionAllowed(source)).toBe(true);
   });
@@ -244,7 +244,7 @@ describe('actual Manager durable close through actual Lease custody', () => {
     f.manager.tableEngines.clear();
     await f.manager.recoverTournamentBreak(f.state());
     expect(f.engine.stop).not.toHaveBeenCalled();
-    expect(f.server.unregisterTournamentTableEngine).not.toHaveBeenCalled();
+    expect(f.server.unregisterTableEngine).not.toHaveBeenCalled();
     expect(f.api.close).toHaveBeenCalledTimes(1);
     expect(f.api.ackCleanup.mock.calls[0][3]).toBe('verified_absent');
     expect(f.custody.admissionAllowed(source)).toBe(true);
@@ -261,7 +261,7 @@ describe('actual Manager durable close through actual Lease custody', () => {
       await expect(f.manager.retireTournamentBreak(f.state())).rejects.toThrow('exact close');
       expect(f.global.get(source)).toBe(f.engine);
       expect(f.manager.tableEngines.get(source)).toBe(f.engine);
-      expect(f.server.unregisterTournamentTableEngine).not.toHaveBeenCalled();
+      expect(f.server.unregisterTableEngine).not.toHaveBeenCalled();
       expect(f.api.ackCleanup).not.toHaveBeenCalled();
       expect(f.custody.admissionAllowed(source)).toBe(false);
     }

@@ -1,0 +1,10 @@
+{
+  "_owner": "mtt-historical-bank-loss-20260919",
+  "_comment": "Historical MTT bank loss replayed through one ordinary lifetime session; cohort evidence is frozen in the migration, not reconstructed.",
+  "functions": [
+    "smarter_private.f06_historical_bank_loss_cohort",
+    "smarter_private.f06_historical_loss_bank_proof",
+    "smarter_private.f06_historical_loss_snapshot",
+    "smarter_private.f06_historical_loss_pending"
+  ]
+}

@@ -301,7 +301,6 @@ export type BusEventType =
   | 'HAND_REPLAYED'
   | 'HAND_COMPLETE'
   | 'PLAYER_LEFT'
-  | 'RAKEBACK_CLAIMED'
   | 'CLUB_SETTINGS_UPDATED'
   | 'TICKER_SETTINGS_CHANGED'
   | 'GAME_MANAGEMENT_ACCESS_CHANGED'
@@ -1137,7 +1136,6 @@ export interface BusPayloadMap {
   HAND_REPLAYED: { handId: string; clubId?: string };
   HAND_COMPLETE: { tableId?: string; clubId?: string; handNumber?: number };
   PLAYER_LEFT: { clubId: string; userId?: string; tableId?: string };
-  RAKEBACK_CLAIMED: { clubId: string; amount?: number; userId?: string };
   CLUB_SETTINGS_UPDATED: { clubId?: string; setting?: string; value?: unknown };
   TICKER_SETTINGS_CHANGED: { scope: 'club' | 'union'; scopeId: string };
   GAME_MANAGEMENT_ACCESS_CHANGED: {

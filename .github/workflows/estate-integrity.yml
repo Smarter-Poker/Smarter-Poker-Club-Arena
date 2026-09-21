@@ -25,6 +25,11 @@ on:
     - cron: '17 */4 * * *'
   repository_dispatch:
     types: [run-estate-integrity]
+  # RUN IT NOW (2026-09-19). Four hours bounds drift to a working half-day,
+  # which is right for drift and wrong for someone who has just repaired a
+  # ruleset and needs to confirm all seven repos agree again. No schedule
+  # changes and no job here reads github.event.schedule.
+  workflow_dispatch:
 
 permissions:
   contents: read

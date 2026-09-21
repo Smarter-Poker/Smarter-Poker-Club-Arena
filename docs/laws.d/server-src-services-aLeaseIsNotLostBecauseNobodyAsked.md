@@ -1,0 +1,3 @@
+# server/src/services/aLeaseIsNotLostBecauseNobodyAsked.law.test.ts
+
+A Lease Is Not Lost Because Nobody Asked: A Heartbeat Pass May Withhold A Renewal For Any Reason But May Report A Loss Only On Evidence Of One, So The Proof Window Is Measured From The Request That Earned It Rather Than The Pass That Queued It, A Kept Answer On The Exact Generation Is Never Filed As A Loss However Late It Arrives, And A Batch That Was Never Sent Returns Unknown Instead Of Naming Every Claim It Never Asked About, While Taken, Stale, Missing And A Kept Row Carrying A Different Generation All Still Fence On The First Answer.

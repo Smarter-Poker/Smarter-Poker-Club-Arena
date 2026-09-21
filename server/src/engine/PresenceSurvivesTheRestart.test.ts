@@ -121,10 +121,22 @@ describe('the break writes the FSM, the boot reads it', () => {
 
   it('start() reads the park when there was no crash snapshot, and the loop persists when it parks', () => {
     const base = readFileSync(resolve(__dirname, 'ServerTableEngineBase.ts'), 'utf8');
-    // The block that runs only when checkCrashRecovery found nothing.
-    const noCrash = sliceBlockAfter(base, 'if (!recovered) {');
+    // The block that runs when checkCrashRecovery found nothing - and, since
+    // the stopped-bank custody work, also when this engine adopted an
+    // original's parked banks, so that readParkedTimeBanks() still runs for
+    // them. The park read itself is still gated on the no-crash case.
+    const noCrash = sliceBlockAfter(
+      base,
+      'if (!recovered || this.inheritedStoppedTimeBankCustody) {'
+    );
     expect(noCrash).toMatch(/loadPresenceFromPark\(this\.tableId\)/);
     expect(noCrash).toMatch(/restoreFsmStates\(this\.tableId, parked\)/);
+    // An engine that adopted an original's custody must NOT read an older park
+    // row over the presence it inherited: the original's roster is the
+    // authoritative one, so the read is skipped rather than merged.
+    expect(noCrash).toMatch(
+      /const parked = this\.inheritedStoppedTimeBankCustody\s*\?\s*null\s*:\s*await loadPresenceFromPark\(this\.tableId\);/
+    );
     const dealing = readFileSync(resolve(__dirname, 'ServerTableEngineDealing.ts'), 'utf8');
     // The gate that parks the loop for the break.
     const park = sliceBlockAfter(

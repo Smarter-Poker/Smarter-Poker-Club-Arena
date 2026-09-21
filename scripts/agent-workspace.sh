@@ -499,6 +499,28 @@ bash "$ROOT/scripts/check-node-modules.sh" --check 2>&1 | sed "s/^/# /" >&2 || t
 # frequent moment anybody looks at this machine, so the scan happens here.
 bash "$ROOT/scripts/check-unpushed-work.sh" --quiet 2>&1 | sed "s/^/# /" >&2 || true
 
+# The freshness scan is the same argument one guard over, and until 2026-09-21
+# it was the one with no reader at all. `.husky/pre-push` was its ONLY caller
+# anywhere in this repo - no workflow references it - and
+# `scripts/guard-shared-clone.sh` forbids pushing from ~/Documents/club-arena.
+# So the single tree every Cowork agent is pointed at, and the tree an agent
+# LOADS `CLAUDE.md` and `.claude/skills/**` out of, was the one tree the check
+# never ran in. On 2026-09-21 it was found 258 commits and four days behind,
+# serving the SUPERSEDED September 16 owner instruction: every agent that read
+# it was told it was a read-only helper waiting in a numbered release queue,
+# which the September 17 instruction on origin/main had already revoked.
+#
+# The jam was not the 2026-09-12 one. No commit sat on local main - HEAD was a
+# clean ancestor of origin/main. 1218 tracked files were dirty, so
+# `git merge --ff-only` refused with "Your local changes would be overwritten",
+# and the estate runs it as `pull -q --ff-only` into a log nobody reads.
+#
+# Same placement and same reason as the scan above: an agent claiming a
+# workspace is the most frequent moment anybody looks at this machine. ADVISORY
+# and never blocking - CLAUDE.md 10.87 rule 1 is explicit that a freshness
+# guard which can wedge every push is worse than the staleness it reports.
+bash "$ROOT/scripts/check-checkout-freshness.sh" --quiet 2>&1 | sed "s/^/# /" >&2 || true
+
 provision_all_package_roots
 verify_all_native_deps
 

@@ -117,6 +117,80 @@ describe('LeaderboardSettlementCard', () => {
     expect(screen.getByText('Your Verified Receipt')).toBeInTheDocument();
     expect(screen.getByText('75 Chips')).toBeInTheDocument();
     expect(screen.getByText(/Receipt ABCDEF12/)).toBeInTheDocument();
+    expect(screen.getByText('Promo Wallet')).toBeInTheDocument();
+    expect(screen.getByText('Tied Places Share Their Occupied Prizes.')).toBeInTheDocument();
+  });
+
+  const seededBatch = (seed: number, promo: number) => ({
+    id: 'batch-5678',
+    program_id: 'program-1',
+    program_version: 3,
+    program_hash: 'a'.repeat(64),
+    metric: 'profit',
+    funding_owner_type: 'club' as const,
+    funding_union_id: null,
+    total_paid: seed + promo,
+    seed_funded: seed,
+    promo_funded: promo,
+    winner_count: 2,
+    tie_policy: 'split_occupied_places' as const,
+    settled_at: '2026-09-13T00:20:00Z',
+  });
+
+  it('names the pools the batch row recorded when an opening seed paid part of it', () => {
+    render(
+      <LeaderboardSettlementCard
+        status={{ ...openStatus, state: 'paid', planned_total: 150, batch: seededBatch(100, 50) }}
+        onRetry={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Seed And Promo Wallet')).toBeInTheDocument();
+    expect(screen.getByText('150 Chips')).toBeInTheDocument();
+    expect(screen.queryByText('Promo Only')).not.toBeInTheDocument();
+  });
+
+  it('never prints parts that contradict the total when the seed is a fraction of a chip', () => {
+    /* numeric(18,2): a 0.50 seed with a 9.50 promo debit pays exactly 10. The
+       house compact format floors each figure, so printing the parts would
+       have read "Seed 0 And Promo 9" beside "Paid 10". The sources are named
+       instead, and the only figure is the batch total. */
+    render(
+      <LeaderboardSettlementCard
+        status={{ ...openStatus, state: 'paid', planned_total: 10, batch: seededBatch(0.5, 9.5) }}
+        onRetry={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Seed And Promo Wallet')).toBeInTheDocument();
+    expect(screen.getByText('10 Chips')).toBeInTheDocument();
+    expect(screen.queryByText(/Seed 0/)).not.toBeInTheDocument();
+  });
+
+  it('says a round had no program without claiming why a never-published club had none', () => {
+    render(
+      <LeaderboardSettlementCard
+        status={{ ...openStatus, state: 'not_published', program: null, planned_total: 0 }}
+        onRetry={vi.fn()}
+      />
+    );
+
+    expect(
+      screen.getByRole('heading', { name: 'No Prize Program Applies To This Round' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('No Published Prize Program Covered This Period When It Started.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Started Before A Published/)).not.toBeInTheDocument();
+  });
+
+  it('states the tie rule on a pending round, not only the live one', () => {
+    render(
+      <LeaderboardSettlementCard status={{ ...openStatus, state: 'pending' }} onRetry={vi.fn()} />
+    );
+
+    expect(screen.getByRole('heading', { name: 'Settlement Pending' })).toBeInTheDocument();
+    expect(screen.getByText('Tied Places Share Their Occupied Prizes.')).toBeInTheDocument();
   });
 
   it('keeps a transport failure explicit and retryable', async () => {

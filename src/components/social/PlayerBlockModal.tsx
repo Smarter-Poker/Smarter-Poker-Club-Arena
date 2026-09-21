@@ -2,9 +2,24 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  PLAYER BLOCK MODAL — Confirmation for Blocking a Player
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * ── ON THE SPADE CONSOLE (#ClubArenaConsole) ────────────────────────────────
+ * This was a rounded card washed in a red gradient, with a bordered "!" tile
+ * stuck beside the heading, red disc markers down a bullet list, a bordered
+ * text box for the reason and two rounded buttons underneath. It is now Dan's
+ * approved spade master, cut into head / rails / foot by SpadeConsole: the
+ * heading engraved in the header well, SURE? in the well's painted pill slot,
+ * what a block does printed as rows on the black glass, the reason field a
+ * groove cut into that glass, and the two actions on the painted plates in
+ * the foot - CANCEL on steel, BLOCK PLAYER in red ink on the blue glass.
+ *
+ * Nothing about the behaviour changed. The focus trap, the Escape guard that
+ * refuses while a request is in flight, the returned focus, the submitting
+ * ref, the submit error and its `role="alert"` are all the ones that were here.
  */
 
 import { useEffect, useId, useRef, useState } from 'react';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './PlayerBlockModal.css';
 
 interface PlayerBlockModalProps {
@@ -12,6 +27,14 @@ interface PlayerBlockModalProps {
   onConfirm: (reason?: string) => void | Promise<void>;
   onCancel: () => void;
 }
+
+/** What a block does. Rows on the glass, never a bulleted list with markers. */
+const BLOCK_EFFECTS = [
+  'Prevent Them From Messaging You',
+  'Remove Them From Your Friends List',
+  'Hide Them From Your Friend Suggestions',
+  'Block Friend Requests Between You',
+] as const;
 
 export default function PlayerBlockModal({
   playerName,
@@ -76,32 +99,51 @@ export default function PlayerBlockModal({
     <div className="block-modal-overlay" onClick={() => !submitting && onCancel()}>
       <div
         ref={dialogRef}
-        className="block-modal"
+        className="block-modal ac-popup"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-busy={submitting || undefined}
       >
-        <div className="block-modal-header">
-          <span className="block-icon" aria-hidden="true">
-            !
-          </span>
-          <h3 id={titleId}>Block {playerName}?</h3>
-        </div>
-
-        <div className="block-modal-body">
-          <p className="block-warning">Blocking This Player Will:</p>
+        <SpadeConsole
+          as="div"
+          eyebrow="Player Safety"
+          title={`Block ${playerName}?`}
+          titleId={titleId}
+          pill="Sure?"
+          pillInk="red"
+          plates={{
+            secondary: {
+              label: 'Cancel',
+              onClick: onCancel,
+              disabled: submitting,
+            },
+            primary: {
+              label: submitting ? 'Blocking' : 'Block Player',
+              ink: 'red',
+              onClick: handleConfirm,
+              disabled: submitting,
+            },
+          }}
+        >
+          <span className="block-warning sc-label sc-ink--blue">Blocking This Player Will</span>
           <ul className="block-effects">
-            <li>Prevent Them From Messaging You</li>
-            <li>Remove Them From Your Friends List</li>
-            <li>Hide Them From Your Friend Suggestions</li>
-            <li>Block Friend Requests Between You</li>
+            {BLOCK_EFFECTS.map((effect) => (
+              <li key={effect} className="block-effect sc-copy">
+                {effect}
+              </li>
+            ))}
           </ul>
 
+          {/* A groove cut into the glass, not a bordered box. */}
           <div className="block-reason-field">
-            <label htmlFor={reasonId}>Reason (Optional)</label>
+            <label htmlFor={reasonId} className="block-reason-label sc-label sc-ink--blue">
+              Reason (Optional)
+            </label>
             <input
               id={reasonId}
+              className="block-reason-input"
               type="text"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
@@ -110,26 +152,13 @@ export default function PlayerBlockModal({
               autoFocus
             />
           </div>
-        </div>
 
-        <div className="block-modal-actions">
           {submitError && (
-            <p className="block-modal-error" role="alert">
+            <p className="block-modal-error sc-copy sc-ink--red" role="alert">
               {submitError}
             </p>
           )}
-          <button type="button" className="cancel-btn" onClick={onCancel} disabled={submitting}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="confirm-btn"
-            onClick={handleConfirm}
-            disabled={submitting}
-          >
-            {submitting ? 'Blocking...' : 'Block Player'}
-          </button>
-        </div>
+        </SpadeConsole>
       </div>
     </div>
   );

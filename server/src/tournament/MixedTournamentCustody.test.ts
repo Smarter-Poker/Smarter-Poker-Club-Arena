@@ -393,21 +393,19 @@ it('process replacement retains source recovery gate after terminal hand adoptio
   expect(owner.isF06RecoveryOwner()).toBe(true);
   expect(resume).not.toHaveBeenCalled();
   expect(await replacement.drainHands(0)).toEqual({ drained: 0, total: 1, timedOut: true });
-  const maintenance = Object.create(MaintenanceBreak.prototype) as any;
+  // The real constructor runs, so every field unparkedTables() reads holds its
+  // own initial value. This replaced an Object.create(MaintenanceBreak.prototype)
+  // stub that had to list them by hand: #4909 added the F06 unresolved clock
+  // after that stub was written and the list went stale silently - the method
+  // reached .keys() on undefined. Only the two values this proof asserts about
+  // are assigned below.
+  const maintenance = new MaintenanceBreak({
+    engines: () => [],
+    retainedPreparationBlockers: () => replacement.mixedF06PreparationBlockers(),
+  } as never) as any;
   Object.assign(maintenance, {
-    deps: {
-      engines: () => [],
-      retainedPreparationBlockers: () => replacement.mixedF06PreparationBlockers(),
-    },
     phase: 'counting_down',
     peakUnparked: 0,
-    // Object.create skips the constructor, so every field unparkedTables()
-    // reads has to be stubbed at its real initial value. #4909 added the
-    // F06 unresolved clock after this test was written and the stub went
-    // stale silently: the method reached .keys() on undefined.
-    f06UnresolvedSince: new Map<string, number>(),
-    f06StuckAnnounced: new Set<string>(),
-    f06StuckTableCount: 0,
   });
   expect(maintenance.unparkedTables()).toEqual([id(3)]);
   expect(maintenance.unparkedReasonCounts).toEqual({ f06_preparation_unresolved: 1 });
@@ -496,8 +494,8 @@ it('freezes detached nested local and canonical proof before durable capture', a
 });
 
 /** Transport is modeled; real manager, guards, RPC parsers and replay execute. */
-async function recoverableMixedScene(interrupt?: string) {
-  const { s, m, engines, permit } = await mixedStopped();
+async function recoverableMixedScene(interrupt?: string, absentSource = false) {
+  let { s, m, engines, permit } = await mixedStopped();
   const inputs = [11, 21].map((user, i) => ({
     user_id: id(user),
     source_seat_id: id(user + 20),
@@ -546,7 +544,46 @@ async function recoverableMixedScene(interrupt?: string) {
       },
     });
   await s.transferDrainedF06Custody(id(1), m);
-  const transfer = s.drainedF06TournamentCustody.get(id(1)).mixed;
+  let transfer = s.drainedF06TournamentCustody.get(id(1)).mixed;
+  if (absentSource) {
+    transfer = structuredClone(transfer);
+    const original = { table_id: id(3), break_id: id(5), lifecycle: '1' };
+    transfer.local.retained = [];
+    transfer.local.historical_loss_pending_arrivals = [
+      {
+        original,
+        absence: {
+          table_id: id(3),
+          global_absent: true,
+          owned_absent: true,
+          retirement_absent: true,
+        },
+      },
+    ];
+    transfer.canonical.operations[0] = {
+      ...transfer.canonical.operations[0],
+      tournament_id: id(1),
+      source_table_id: id(3),
+      lifecycle: '1',
+    };
+    transfer.canonical.historical_loss = {
+      kind: 'historical_loss_normal_session_v1',
+      pending_arrivals: [
+        {
+          source: { table_id: id(3) },
+          proof: {
+            historical_loss: {
+              original_kind: 'pending_arrival_historical_loss_v1',
+              observations: [{ original }],
+            },
+          },
+        },
+      ],
+    };
+    transfer.receipt.local_proof = transfer.local;
+    transfer.receipt.canonical_proof = transfer.canonical;
+    s = server();
+  }
   const winners = new Map<string, any>(),
     intents = new Map<string, unknown>(),
     calls: Array<{ name: string; args: any }> = [];
@@ -816,4 +853,206 @@ it('a normal resume failure after completed recovery enters exact-owner cleanup'
   );
   expect(successor.isF06RecoveryOwner()).toBe(false);
   expect(s.mixedF06AdmissionContinuations.has(id(1))).toBe(false);
+});
+
+it.each(['confirmed', 'lost-reply'])(
+  'hands bank-only custody to the selected successor after %s preparation',
+  async (outcome) => {
+    const s = server(),
+      m = manager(s);
+    const engine: any = new ServerTableEngine(id(3), {
+      scope: 'tournament',
+      verified: true,
+      tournamentId: id(1),
+      generation: id(2),
+      proofDeadlineMonotonicMs: performance.now() + 30_000,
+    });
+    engine.installF06Allocator(
+      id(15),
+      async () => 1,
+      () => true,
+      '1'
+    );
+    engine.tableInfo = { tournament_id: id(1) };
+    engine.handCount = 12;
+    engine.seatedPlayers = [{ user_id: id(11), occupancy_id: id(31), seat_number: 1, stack: 1500 }];
+    engine.timeBankEngine.initializePlayer(id(3), id(11), {
+      remainingSeconds: 7,
+      usesRemaining: 1,
+      unlimitedActivations: true,
+    });
+    engine.timeBankMeta.set(id(11), {
+      initialSeconds: 80,
+      baseSeconds: 40,
+      dbConsumedSeconds: 33,
+      unlimitedActivations: true,
+    });
+    m.tableEngines.set(id(3), engine);
+    s.tableEngines.set(id(3), engine);
+    s.tournamentOwnedTables.add(id(3));
+    s.tournamentEngines.set(id(1), m);
+    m.fenceForTournamentLeaseLoss();
+    let transfer: any,
+      nativeRow: any,
+      savedReceipt: any,
+      lost = false;
+    mocks.rpc.mockImplementation(async (name, a) => {
+      if (name === 'fn_f06_prepare_mixed_manager_custody') {
+        expect(a.p_local.retained).toEqual([]);
+        const capture = a.p_local.engines[0].bank_custody.stopped_capture;
+        expect(capture.snapshot.time_bank_snapshot.players[id(11)]).toMatchObject({
+          remainingSeconds: 7,
+          usesRemaining: 1,
+          unlimitedActivations: true,
+        });
+        const canonical = {
+          operations: [],
+          tables: [{ id: id(3) }],
+          attempts: [],
+          originals: [],
+          pending_original_tables: [],
+          no_start_continuations: [],
+        };
+        const r = mixedResponse(name, a);
+        r.data.canonical = canonical;
+        if (r.data.receipt) {
+          r.data.receipt.canonical_proof = canonical;
+          if (savedReceipt) expect(r.data.receipt.transfer_id).toBe(savedReceipt.transfer_id);
+          savedReceipt = r.data.receipt;
+          if (outcome === 'lost-reply' && !lost) {
+            lost = true;
+            return { data: null, error: { message: 'committed reply lost' } };
+          }
+        }
+        return r;
+      }
+      if (name === 'fn_f06_find_mixed_manager_custody')
+        return {
+          data: { ok: true, tournament_id: id(1), receipt: transfer?.receipt ?? null },
+          error: null,
+        };
+      if (name === 'fn_f06_admit_mixed_manager_custody') return mixedResponse(name, a);
+      if (name === 'fn_f06_complete_mixed_manager_custody') {
+        nativeRow = structuredClone(
+          transfer.local.engines[0].bank_custody.stopped_capture.snapshot
+        );
+        return {
+          data: {
+            ok: true,
+            transfer_id: transfer.transferId,
+            tournament_id: id(1),
+            lease_generation: transfer.successorGeneration,
+            completion: {
+              transfer_id: transfer.transferId,
+              generation: transfer.successorGeneration,
+              operation_receipts: [],
+              presence_receipts: [],
+            },
+          },
+          error: null,
+        };
+      }
+      throw new Error(`unexpected bank-only RPC ${name}`);
+    });
+    mocks.release.mockImplementationOnce(async () => {
+      transfer = s.drainedF06TournamentCustody.get(id(1)).mixed;
+      expect(transfer.receipt).toBeTruthy();
+      expect(engine.hasUnretiredStoppedTimeBankCustody()).toBe(false);
+      expect(s.tournamentEngines.has(id(1))).toBe(false);
+      return { status: 'confirmed', attempts: 1 };
+    });
+    const maintenance: any = new MaintenanceBreak({
+      engines: () => s.enginesIncludingMixedF06Custody(),
+      isRunning: () => true,
+      emit: vi.fn(),
+      store: { save: vi.fn(), clear: vi.fn() },
+      now: () => Date.now(),
+    } as any);
+    maintenance.phase = 'counting_down';
+    if (outcome === 'lost-reply') {
+      await expect(s.stopTournamentManagerIfOwned(id(1), m, 'bank-only')).rejects.toThrow(
+        'transfer_unproven'
+      );
+      expect(savedReceipt).toBeTruthy();
+      expect(engine.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+      expect(s.tableEngines.get(id(3))).toBe(engine);
+      expect(s.tournamentEngines.get(id(1))).toBe(m);
+      expect(mocks.release).not.toHaveBeenCalled();
+      expect(maintenance.unparkedTables()).toEqual([id(3)]);
+    }
+    expect(await s.stopTournamentManagerIfOwned(id(1), m, 'bank-only')).toBe(true);
+    expect(maintenance.unparkedTables()).toEqual([]);
+    expect(mocks.release).toHaveBeenCalledOnce();
+    expect(transfer.local.engines[0].bank_custody.durable_presence).toBeNull();
+    mocks.claim.mockImplementation(async (_id, generation) => ({
+      status: 'granted',
+      leaseGeneration: generation,
+      proofDeadlineMonotonicMs: performance.now() + 30_000,
+    }));
+    const resume = vi
+      .spyOn(TournamentManager.prototype, 'resume')
+      .mockImplementation(async function (this: any) {
+        expect(nativeRow.time_bank_snapshot.players[id(11)]).toMatchObject({
+          remainingSeconds: 7,
+          usesRemaining: 1,
+          unlimitedActivations: true,
+        });
+        const next: any = new ServerTableEngine(id(3), {
+          scope: 'tournament',
+          verified: true,
+          tournamentId: id(1),
+          generation: transfer.successorGeneration,
+          proofDeadlineMonotonicMs: performance.now() + 30_000,
+        });
+        next.tableInfo = { tournament_id: id(1) };
+        next.handCount = 12;
+        next.running = true;
+        expect(next.claimProcessOwnership()).toBe(true);
+        mocks.from.mockReturnValue({
+          select: () => ({
+            eq: () => ({ maybeSingle: async () => ({ data: nativeRow, error: null }) }),
+          }),
+        });
+        await next.readParkedTimeBanks();
+        next.adoptSeatRoster([
+          { user_id: id(11), occupancy_id: id(31), seat_number: 1, stack: 1500 },
+        ]);
+        expect(next.timeBankEngine.getPlayerBank(id(3), id(11))).toMatchObject({
+          remainingSeconds: 7,
+          usesRemaining: 1,
+          unlimitedActivations: true,
+        });
+        await next.stop();
+      });
+    await s.performTournamentManagerAdmission(id(1), 'resume', 'bank-only successor', 1);
+    const successor = s.tournamentEngines.get(id(1));
+    managers.push(successor);
+    expect(successor.isF06RecoveryOwner()).toBe(false);
+    expect(resume).toHaveBeenCalledOnce();
+    expect(s.drainedF06TournamentCustody.has(id(1))).toBe(false);
+    expect(s.mixedF06PreparationBlockers()).toEqual([]);
+    expect([...s.enginesIncludingMixedF06Custody()]).toEqual([]);
+  }
+);
+
+it('receipt-only successor consumes separately absent original move before completion and later ordinary restart', async () => {
+  const { s, successor, transfer, winners, calls, resume } = await recoverableMixedScene(
+    undefined,
+    true
+  );
+  expect(winners.size).toBe(2);
+  expect(
+    calls.filter((c) => c.name === 'fn_move_tournament_player').map((c) => c.args.p_request_id)
+  ).toEqual([id(12), id(12), id(24)]);
+  expect(calls.some((c) => c.name === 'fn_f06_ack_cleanup')).toBe(true);
+  expect(calls.some((c) => c.name === 'fn_f06_complete_mixed_manager_custody')).toBe(true);
+  expect(successor.pendingTournamentSeatMoveOutcomes.size).toBe(0);
+  expect(s.mixedF06PreparationBlockers()).toEqual([]);
+  expect(resume).toHaveBeenCalledOnce();
+  const replacement = server();
+  await replacement.performTournamentManagerAdmission(id(1), 'resume', 'ordinary later restart', 1);
+  const ordinary = replacement.tournamentEngines.get(id(1));
+  managers.push(ordinary);
+  expect(ordinary.isF06RecoveryOwner()).toBe(false);
+  expect(ordinary.getTournamentLeaseGeneration()).not.toBe(transfer.successorGeneration);
 });

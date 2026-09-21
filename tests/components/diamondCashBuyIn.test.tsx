@@ -20,7 +20,9 @@ describe('Shared cash buy-in asset units', () => {
     fireEvent.change(screen.getByRole('slider'), { target: { value: '46.07' } });
     fireEvent.click(screen.getByRole('button', { name: 'Buy In With Diamonds' }));
     await waitFor(() => expect(confirm).toHaveBeenCalledWith(46, false));
-    expect(screen.getByText('( Available Diamonds:')).toBeTruthy();
+    // On the console the amount's stage label names the unit (the generic
+    // sheet printed "( Available Diamonds:" beside the balance instead).
+    expect(screen.getByText('Diamonds')).toBeTruthy();
   });
   it('does not round and replay an invalid fractional Diamond recovery intent', () => {
     render(

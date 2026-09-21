@@ -1,5 +1,16 @@
 /*
- * TableConnectionBanner — a status pill centred over the felt.
+ * TableConnectionBanner — #ClubArenaConsole (2026-09-14)
+ *
+ * A BANNER IS NOT A CARD. This used to be a drawn pill: `border-radius: 999px`,
+ * a slab of `rgba(14, 18, 28, 0.92)`, a 1px orange rim (#f97316 / #f87171) and
+ * a drop shadow — a control invented in CSS, in two colours the smarter.poker
+ * schema does not own, laid over the felt. It is INKED now: no fill, no rim, no
+ * radius, no gradient. One line of copy in the console's own grey between two
+ * engraved rules (a black cut with a hairline of light on it, the same rule the
+ * console body scores between rows), and a lit bullet in the master's own inks
+ * carrying the state — blue while something is still being attempted, red when
+ * the link is down. Nothing is drawn; the inks come from SpadeConsole.css,
+ * which the component imports itself.
  *
  * pointer-events: none is LOAD BEARING. This sits above the table surface, and
  * a banner that swallowed a tap on a card, a seat or the fold button would be
@@ -39,7 +50,7 @@
      count. */
   top: calc(var(--sp-brand-top, 58%) - 6%);
   left: 50%;
-  /* -100% on Y puts the pill's BOTTOM edge on that 52% line, so it grows
+  /* -100% on Y puts the line's BOTTOM edge on that 52% line, so it grows
      upward off the wordmark instead of down through it. */
   transform: translate(-50%, -100%);
   /* Above the pot (30) and the chip-flight layer (25). Still inside
@@ -48,56 +59,64 @@
 
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
 
   max-width: min(92%, 420px);
-  padding: 7px 14px;
-  border-radius: 999px;
+  padding: 8px 6px;
 
-  background: rgba(14, 18, 28, 0.92);
-  border: 1px solid rgba(249, 115, 22, 0.55);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  /* The engraved rule, above and below: a black cut with a hairline of light
+     on it. This is the ONLY edge the banner has. */
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    0 1px 0 rgb(255 255 255 / 8%);
 
-  color: #fff;
+  color: #d7dee7;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 13px;
-  font-weight: 600;
-  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* It prints over the felt, not over black glass, so the copy carries its own
+     ground: a tight black bevel plus a wide soft one. That is what replaces
+     the slab the pill used to sit on. */
+  text-shadow:
+    0 1px 2px rgb(0 0 0 / 90%),
+    0 0 10px rgb(0 0 0 / 80%);
 
   pointer-events: none;
   animation: table-conn-banner-in 180ms ease-out;
 }
 
-/* Lost and auth_failed are a harder failure than a routine reconnect. */
-.table-conn-banner--failed,
-.table-conn-banner--auth_failed {
-  border-color: rgba(248, 113, 113, 0.65);
-}
-
+/* The lit bullet: a typographic mark in the master's own ink, not a drawn
+   circle. `sc-ink--blue` / `sc-ink--red` come from SpadeConsole.css and carry
+   the colour; nothing here paints. */
 .table-conn-banner__dot {
   flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #f97316;
+  font-size: 18px;
+  line-height: 1;
   animation: table-conn-banner-pulse 1.1s ease-in-out infinite;
 }
 
-.table-conn-banner--failed .table-conn-banner__dot,
-.table-conn-banner--auth_failed .table-conn-banner__dot {
-  background: #f87171;
+.table-conn-banner__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* The Y term must carry the -100% base offset, or the pill would jump down
+/* The Y term must carry the -100% base offset, or the line would jump down
    onto the wordmark for the length of the animation and settle back up. */
 @keyframes table-conn-banner-in {
   from {
     opacity: 0;
     transform: translate(-50%, calc(-100% - 6px));
   }
+
   to {
     opacity: 1;
     transform: translate(-50%, -100%);
@@ -109,6 +128,7 @@
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.35;
   }
@@ -116,23 +136,24 @@
 
 /*
  * Reduced motion collapses the MOTION, never the MEANING: the banner and its
- * dot stay fully visible and legible, they simply stop moving.
+ * bullet stay fully visible and legible, they simply stop moving.
  */
 @media (prefers-reduced-motion: reduce) {
   .table-conn-banner {
     animation: none;
   }
+
   .table-conn-banner__dot {
     animation: none;
     opacity: 1;
   }
 }
 
-/* 375px is the design width. The felt is tighter here, so the pill shrinks
+/* 375px is the design width. The felt is tighter here, so the line shrinks
    rather than moving - the anchor to the wordmark is the whole point. */
 @media (max-width: 420px) {
   .table-conn-banner {
     font-size: 12px;
-    padding: 6px 12px;
+    padding: 7px 4px;
   }
 }

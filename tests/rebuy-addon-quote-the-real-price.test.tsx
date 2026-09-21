@@ -62,9 +62,10 @@ describe('RebuyModal charges what it advertises', () => {
         isProcessing
       />
     );
-    fireEvent.click(container.querySelector('.rebuyModalOverlay')!);
-    fireEvent.click(screen.getByRole('button', { name: 'Close Rebuy' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    /* On the spade console (2026-09-08) the sheet has no close cross: the two
+       painted plates are its only exits, and the backdrop. */
+    fireEvent.click(container.querySelector('.rebuy-modal__overlay')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Decline Rebuy' }));
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -81,8 +82,8 @@ describe('RebuyModal charges what it advertises', () => {
         purchaseUnconfirmed
       />
     );
-    fireEvent.click(container.querySelector('.rebuyModalOverlay')!);
-    fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    fireEvent.click(container.querySelector('.rebuy-modal__overlay')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Decline Rebuy' }));
     expect(onClose).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Retry Confirmation' }));
     expect(onConfirm).toHaveBeenCalledTimes(1);

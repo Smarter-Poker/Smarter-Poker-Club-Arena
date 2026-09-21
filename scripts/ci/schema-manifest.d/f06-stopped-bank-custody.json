@@ -1,0 +1,10 @@
+{
+  "_owner": "mtt-stop-bank-custody-20260919",
+  "_comment": "Actual captured banks through existing immutable manager custody and successor completion. No historical reconstruction.",
+  "functions": [
+    "fn_f06_prepare_mixed_manager_custody",
+    "smarter_private.f06_mixed_bank_proof",
+    "smarter_private.f06_mixed_custody_snapshot",
+    "smarter_private.f06_mixed_adopt_presence"
+  ]
+}

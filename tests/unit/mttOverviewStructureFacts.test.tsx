@@ -151,7 +151,10 @@ describe('live tournament tabs share the committed blind amounts', () => {
     if (name === 'Overview') {
       const hero = container.querySelector('.dov-hero')!;
       expect(within(hero as HTMLElement).getByText('Level 370 Ends In')).toBeInTheDocument();
-      expect(hero.querySelector('.dov-blind__value')?.textContent).toBe(known ? '53K / 105K' : '-');
+      /* 52,500 prints as 52.5K: chipsCompact is compactChips (src/utils/format.ts),
+         the one compact formatter, which never rounds a figure UP to a number
+         the player does not have (#ClubArenaConsole, 2026-09-04). */
+      expect(hero.querySelector('.dov-blind__value')?.textContent).toBe(known ? '52.5K / 105K' : '-');
       if (known) expect(within(hero as HTMLElement).getByText('Ante 105K')).toBeInTheDocument();
       else
         expect(
@@ -236,7 +239,7 @@ describe('live tournament tabs share the committed blind amounts', () => {
     expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('1:00');
     expect(blindClock().textContent).toContain('Paused');
     expect(rendered.container.querySelector('.dov-hero__meter')).toBeNull();
-    expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('53K / 105K');
+    expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('52.5K / 105K');
     await act(async () => {
       await vi.advanceTimersByTimeAsync(90_000);
     });
@@ -331,7 +334,7 @@ describe('live tournament tabs share the committed blind amounts', () => {
     await flush();
     expect(screen.getByText('Waiting For Resume')).toBeInTheDocument();
     expect(blindClock().textContent).toContain('Paused');
-    expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('53K / 105K');
+    expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('52.5K / 105K');
   });
 
   it.each([null, 'invalid-anchor'])(
@@ -359,7 +362,7 @@ describe('live tournament tabs share the committed blind amounts', () => {
       );
       expect(screen.getByText('Level 370 Ends In')).toBeInTheDocument();
       expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('7:00');
-      expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('53K / 105K');
+      expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('52.5K / 105K');
     }
   );
 

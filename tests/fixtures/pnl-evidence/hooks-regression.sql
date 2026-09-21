@@ -176,4 +176,122 @@ SELECT pg_temp.assert_pnl_hook((
   'public.fn_union_settle_player_pnl_weekly(uuid,numeric)']) f(signature)
  JOIN pg_proc p ON p.oid=to_regprocedure(f.signature)),
  'both wrappers preserve exact captured owner and ACL with service-only client execution; this is not live authorization proof');
+
+-- ===========================================================================
+-- THE SQUARE-UP QUOTES THE RECORDED ECO, AND THE RAKE LEG NAMES ITS CLUB
+-- (20260921023420)
+--
+-- fn_union_eco_adjustment is a VOLATILE recomputation of the whole week's
+-- P&L. fn_union_settlement_cascade runs it several times in one settlement -
+-- fn_union_eco_record WRITES union_eco_ledger from one call, and
+-- fn_union_club_invoice used to re-derive the ECO from ANOTHER. Under READ
+-- COMMITTED those are two snapshots and can be two answers: on 2026-09-14 the
+-- square-up for club a41434bb stated 11244.03 against a recorded -11242.82,
+-- overstating that club's debt by 1.21 while its other three figures matched
+-- the ledger exactly. A money document quotes the record.
+-- ===========================================================================
+DO $$DECLARE source text;
+BEGIN
+ SELECT pg_get_functiondef(oid) INTO source
+   FROM pg_proc WHERE oid='public.fn_union_club_invoice(uuid,timestamptz,timestamptz)'::regprocedure;
+ PERFORM pg_temp.assert_pnl_hook(strpos(source,'FROM union_eco_ledger l')>0
+  AND strpos(source,'COALESCE(rec.eco_amount, eco.eco_amount)')>0,
+  'the square-up reads the recorded union_eco_ledger row and prefers it over a second live recomputation');
+ SELECT prosrc INTO source FROM pg_proc
+   WHERE oid='public.fn_union_issue_weekly_invoices(uuid,timestamptz,timestamptz,boolean)'::regprocedure;
+ PERFORM pg_temp.assert_pnl_hook(strpos(source,'union_squareup_eco_not_recorded')>0
+  AND strpos(source,'union_squareup_eco_disagrees_with_record')>0
+  AND strpos(source,'union_squareup_eco_disagrees_with_record')<strpos(source,'INSERT INTO settlement_invoices'),
+  'an ECO-enabled square-up with no recorded ECO, and any square-up that disagrees with its record, is refused before the document is written');
+ SELECT prosrc INTO source FROM pg_proc
+   WHERE oid='public.atomic_distribute_rake(uuid,uuid,uuid,integer,numeric,numeric,numeric,integer,jsonb,uuid,jsonb,text)'::regprocedure;
+ PERFORM pg_temp.assert_pnl_hook(
+  (length(source)-length(replace(source,'app.ledger_autoledger_club_id','')))
+   /length('app.ledger_autoledger_club_id')=3
+  AND strpos(source,'set_config(''app.ledger_autoledger_club_id'', COALESCE(p_club_id::text')>0,
+  'the rake producer names the club it was earned in on the autoledger declaration, and clears it before every return so a later union leg cannot inherit it');
+END $$;
+
+-- Whatever ECO this fixture has recorded, no square-up may state a different
+-- one. Vacuously true for a period with no recorded ECO; never weakened to
+-- accept a disagreement.
+DO $$DECLARE bad int;
+BEGIN
+ SELECT count(*) INTO bad
+   FROM public.union_eco_ledger l
+   CROSS JOIN LATERAL public.fn_union_club_invoice(l.union_id,l.period_start,l.period_end) i
+  WHERE i.club_id=l.club_id AND i.eco_enabled
+    AND round(i.eco_amount,2) IS DISTINCT FROM round(l.eco_amount,2);
+ PERFORM pg_temp.assert_pnl_hook(bad=0,
+  format('every recorded ECO is the figure its square-up states (%s disagreeing)',bad));
+END $$;
+
+-- ===========================================================================
+-- THE TOURNAMENT RAKE LEG NAMES THE CLUB IT WAS EARNED IN (20260921065613)
+--
+-- 20260921040847 fixed the CASH rake payer and the union cash rake leg has
+-- named its club since ~04:08Z on 2026-09-21. One producer was left: union
+-- rake also arrives from a tournament fee. fn_settle_tournament_rake declares
+-- the ledger category, the counterparty 'prize_liability' and the
+-- counterparty entity for exactly those legs, then credits
+-- union_wallets.rake_wallet through increment_union_wallet - and never said
+-- which club. union_wallets has no club_id column, so fn_ca_autoledger took
+-- the ELSE branch of its club CASE and wrote the leg club-less. Measured on
+-- production 2026-09-21 06:50Z: of 436 union rake legs written after the cash
+-- fix, 435 came from_type='table_stack' and named their club; the 1 that did
+-- not was from_type='prize_liability' - chip_ledger
+-- 7c1236b3-5b71-4859-9c30-d0c5dd8bce15, 80.00, club_id NULL - while its
+-- sibling union_wallet_transactions row recorded the club perfectly well.
+-- from_type on a credit IS the payer's declared app.ledger_counterparty, so
+-- it names the producer; that is how the two were told apart.
+-- ===========================================================================
+DO $$DECLARE source text;
+BEGIN
+ SELECT prosrc INTO source FROM pg_proc
+   WHERE oid='public.fn_settle_tournament_rake(uuid,text)'::regprocedure;
+ PERFORM pg_temp.assert_pnl_hook(
+  (length(source)-length(replace(source,'app.ledger_autoledger_club_id','')))
+   /length('app.ledger_autoledger_club_id')=2
+  AND strpos(source,'set_config(''app.ledger_autoledger_club_id'',COALESCE(v_t.club_id::text')>0,
+  'the tournament rake payer names the club its fee was earned in on the autoledger declaration, and clears it once');
+ -- Order is the whole contract. A declaration made after the credit journals
+ -- nothing, and a clear made before it would journal nothing either. Match the
+ -- CALL and not the bare name: the declaration's own comment names the helper
+ -- too, and strpos would find that comment first.
+ PERFORM pg_temp.assert_pnl_hook(
+  strpos(source,'set_config(''app.ledger_autoledger_club_id'',COALESCE(v_t.club_id::text')
+    < strpos(source,'public.increment_union_wallet(')
+  AND strpos(source,'set_config(''app.ledger_autoledger_club_id'','''',true)')
+    > strpos(source,'public.increment_union_wallet('),
+  'the club declaration and its clear bracket the union credit, so the leg is journalled inside the declared window and no later leg inherits it');
+ -- The declaration can only be honest because a club-less tournament fee is
+ -- refused before any wallet is touched. If that refusal goes, the payer can
+ -- declare an empty club and this assertion must fail rather than pass quietly.
+ PERFORM pg_temp.assert_pnl_hook(
+  strpos(source,'IF v_t.club_id IS NULL THEN RAISE EXCEPTION ''tournament_fee_bank_club_required''')>0,
+  'a tournament fee with no bank club is still refused, so the declared club can never be empty');
+END $$;
+
+-- EVERY PRODUCER OF A UNION RAKE CREDIT NAMES THE CLUB IT WAS EARNED IN.
+-- Not a list of the two known payers: the rule is derived from the catalog,
+-- so a third door added later is caught the day it appears. A union rake
+-- credit is a function that increments union_wallets.rake_wallet, or that
+-- reaches it through increment_union_wallet. The rakeback payers that
+-- DECREMENT the same column (fn_union_weekly_rakeback_close,
+-- fn_union_send_to_member_zd3core) are not rake producers and are correctly
+-- outside this rule; increment_union_wallet itself holds no club of its own
+-- and is only ever reached through a caller this rule covers.
+DO $$DECLARE bad text;
+BEGIN
+ SELECT string_agg(p.proname,', ' ORDER BY p.proname) INTO bad
+   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+  WHERE n.nspname='public' AND p.prokind='f'
+    AND p.proname<>'increment_union_wallet'
+    AND (p.prosrc ~ 'rake_wallet\s*=\s*[a-zA-Z_.]*rake_wallet\s*\+'
+         OR strpos(p.prosrc,'public.increment_union_wallet(')>0)
+    AND strpos(p.prosrc,'app.ledger_autoledger_club_id')=0;
+ PERFORM pg_temp.assert_pnl_hook(bad IS NULL,
+  format('every union rake credit producer declares the club its leg was earned in (%s does not)',
+         COALESCE(bad,'none')));
+END $$;
 ROLLBACK;

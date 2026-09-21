@@ -37,9 +37,21 @@
  *
  * Source assertions rather than a driven fake, for the same reason
  * HorseFleetSeesEveryOpenTable pins a query shape: what is being protected is
- * an ARITHMETIC RELATIONSHIP between three constants in two files, and a fake
- * that could exercise it would have to reproduce the interval, the drop rule
- * and PostgREST's deadline to catch a regression at all.
+ * an ARITHMETIC RELATIONSHIP between three constants, and a fake that could
+ * exercise it would have to reproduce the interval, the drop rule and
+ * PostgREST's deadline to catch a regression at all.
+ *
+ * THE DEALING DEADLINE MOVED HOUSE ON 2026-09-20, AND THE PIN MOVED WITH IT.
+ * It was written in supabase/client.ts as `process.env.SUPABASE_TIMEOUT_MS ??
+ * 15_000`. It is now `resolveClientTimeoutMs()` in cashAccountingBatchBudget.ts,
+ * which client.ts calls - because the cash settler has to SIZE a batch against
+ * that budget, and four suites mock the client module, so a constant imported
+ * through the mock disappears. Same environment variable, same 15,000 ms
+ * default, one definition still. Nothing about this law's arithmetic changed;
+ * only the file the dealing bound is read out of, so the assertions below now
+ * read it there AND pin that client.ts is still the same number rather than a
+ * second one. A number that exists twice is the defect that module was written
+ * about.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -49,6 +61,7 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const fleet = readFileSync(resolve(here, 'HorseFleetManager.ts'), 'utf8');
 const client = readFileSync(resolve(here, 'supabase/client.ts'), 'utf8');
+const budget = readFileSync(resolve(here, 'cashAccountingBatchBudget.ts'), 'utf8');
 
 /** Comment-stripped, so prose about a number can never satisfy an assertion. */
 const code = (src: string): string =>
@@ -61,6 +74,19 @@ const flat = (src: string): string => code(src).replace(/\s+/g, ' ');
 const numberFor = (src: string, name: string): number => {
   const m = new RegExp(`${name}\\s*\\?\\?\\s*([0-9_]+)`).exec(code(src));
   expect(m, `${name} has no numeric default`).not.toBeNull();
+  return Number(m![1].replace(/_/g, ''));
+};
+
+/* A bound whose env fallback is a NAMED constant rather than a literal, read
+   from that constant's own declaration. Deliberately anchored on `const`:
+   `SUPABASE_TIMEOUT_MS` is a substring of `MAINTENANCE_SUPABASE_TIMEOUT_MS`
+   and of `SEEDING_SUPABASE_TIMEOUT_MS`, and an unanchored read of the dealing
+   bound silently returned the maintenance client's 50,000 the moment the
+   dealing literal left client.ts - a number that answered confidently for a
+   question it could no longer see (CLAUDE.md 10.86). */
+const constantFor = (src: string, name: string): number => {
+  const m = new RegExp(`\\bconst ${name}\\s*=\\s*([0-9_]+)`).exec(code(src));
+  expect(m, `${name} is not declared as a numeric constant`).not.toBeNull();
   return Number(m![1].replace(/_/g, ''));
 };
 
@@ -95,12 +121,26 @@ describe('a seeding cycle finishes inside its tick', () => {
 
   it('a seeding call is abandoned well before a dealing call would be', () => {
     const seeding = numberFor(client, 'SEEDING_SUPABASE_TIMEOUT_MS');
-    const dealing = numberFor(client, 'SUPABASE_TIMEOUT_MS');
+    const dealing = constantFor(budget, 'DEFAULT_CLIENT_TIMEOUT_MS');
     expect(seeding).toBe(5_000);
     expect(dealing).toBe(15_000);
     expect(seeding).toBeLessThan(dealing);
     // 38x the 132 ms an uncontended buy-in actually costs.
     expect(seeding / 132).toBeGreaterThan(20);
+  });
+
+  it('the dealing client is that one budget, not a second copy of the number', () => {
+    // The whole point of moving it: ONE definition. If client.ts ever writes
+    // its own literal again the two can drift, and the seeding bound would be
+    // compared against a number nothing else uses.
+    expect(flat(client)).toContain('const DB_TIMEOUT_MS = resolveClientTimeoutMs()');
+    expect(flat(client)).toContain(
+      "import { resolveClientTimeoutMs } from '../cashAccountingBatchBudget.js'"
+    );
+    expect(code(client)).not.toMatch(/\bconst DB_TIMEOUT_MS\s*=\s*[0-9_]/);
+    expect(code(client)).not.toMatch(/process\.env\.SUPABASE_TIMEOUT_MS/);
+    // and the budget resolves that same environment variable to that constant
+    expect(flat(budget)).toContain('env.SUPABASE_TIMEOUT_MS ?? DEFAULT_CLIENT_TIMEOUT_MS');
   });
 
   it('budget plus one abandoned call plus the state write fits inside the tick', () => {
@@ -140,5 +180,8 @@ describe('a seeding cycle finishes inside its tick', () => {
   it('both bounds are operator-overridable without a release', () => {
     expect(code(fleet)).toContain('process.env.HORSE_SEED_CYCLE_SEATING_BUDGET_MS');
     expect(code(client)).toContain('process.env.SEEDING_SUPABASE_TIMEOUT_MS');
+    // The dealing bound is overridable through the same variable it always
+    // was; the default parameter is what still binds it to the environment.
+    expect(flat(budget)).toContain('SUPABASE_TIMEOUT_MS?: string } = process.env');
   });
 });

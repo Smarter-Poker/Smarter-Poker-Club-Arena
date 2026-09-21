@@ -1,5 +1,10 @@
 import { supabase } from '../lib/supabase';
 import { captureWeeklyAccountingAccount } from './ClubWeeklyAccountingReader';
+import {
+  accountingDateOnly,
+  zonedAccountingDate,
+  zonedAccountingInstant,
+} from '../utils/pacificAccountingCalendar';
 
 export type AccountingScopeKind = 'union' | 'club';
 export interface AccountingWeek {
@@ -52,45 +57,25 @@ export const isAccountingUUID = (value: unknown): value is string =>
   value !== '00000000-0000-0000-0000-000000000000';
 const unavailable = () => new Error('Automatic Accounting Status Is Unavailable');
 
+// The Pacific calendar arithmetic lives in `utils/pacificAccountingCalendar`
+// so the rakeback readiness reader shares this exact implementation instead of
+// spelling a second one. These wrappers keep this service's error identity.
 function dateOnly(value: string): Date {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000')) throw unavailable();
-  const result = new Date(`${value}T00:00:00.000Z`);
-  if (!Number.isFinite(result.getTime()) || result.toISOString().slice(0, 10) !== value)
+  try {
+    return accountingDateOnly(value);
+  } catch {
     throw unavailable();
-  return result;
+  }
 }
 function zonedDate(value: Date, zone: string): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: zone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(value);
-  const part = (type: string) => parts.find((p) => p.type === type)?.value;
-  return `${part('year')?.padStart(4, '0')}-${part('month')}-${part('day')}`;
+  return zonedAccountingDate(value, zone);
 }
 function localInstant(day: string, hour: number, zone: string): string {
-  const desired = dateOnly(day).getTime() + hour * 3_600_000;
-  let instant = desired;
-  for (let i = 0; i < 3; i += 1) {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: zone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hourCycle: 'h23',
-    }).formatToParts(new Date(instant));
-    const part = (type: string) => parts.find((p) => p.type === type)?.value;
-    const local = Date.parse(
-      `${part('year')?.padStart(4, '0')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}:${part('second')}Z`
-    );
-    if (!Number.isFinite(local)) throw unavailable();
-    instant += desired - local;
+  try {
+    return zonedAccountingInstant(day, hour, zone);
+  } catch {
+    throw unavailable();
   }
-  return new Date(instant).toISOString();
 }
 /** Preserve the Pacific calendar week, including 167/169-hour DST weeks. */
 export function accountingWeekEndingOn(day: string): AccountingWeek {

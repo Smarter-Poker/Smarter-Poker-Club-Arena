@@ -101,6 +101,17 @@ export interface CashGameLobby {
     last_tick_at: string | null;
   };
   tables: LobbyTable[];
+  /**
+   * The one table that stands for this game: its live Main 1 when it has one,
+   * otherwise its oldest live table. LIGHTNING 2.0 PHASE 3 - a Lightning-capable
+   * Cluster is created as a single FEEDER and has no Main 1 at all until a
+   * second table opens beside it, so "which table is the main game" stopped
+   * being a question a single row can answer. fn_cash_cluster_front_table
+   * answers it once, server side, and every reader here asks that answer
+   * rather than re-deriving it. Optional because a lobby payload read before
+   * 20260921044045 does not carry it.
+   */
+  front_table_id?: string | null;
   must_move_list: LobbyListEntry[];
   waitlist: { waiting: number };
   seat_changes_requested: number;
@@ -129,15 +140,36 @@ export interface SeatChangeResult {
   used_at: string | null;
 }
 
-/** The name a table wears in the lobby: "Main 1", "Main 2", "Feeder". */
-export function lobbyTableLabel(t: Pick<LobbyTable, 'role' | 'main_index' | 'name'>): string {
+/**
+ * The name a table wears in the lobby: "Main 1", "Main 2", "Feeder" - except
+ * for a game whose front table is a feeder, where that feeder IS the game and
+ * calling it "Feeder" would name the game after one of its own parts. It reads
+ * "Main Game" there, which is what every other sentence in this modal calls it.
+ */
+export function lobbyTableLabel(
+  t: Pick<LobbyTable, 'id' | 'role' | 'main_index' | 'name'>,
+  frontTableId?: string | null
+): string {
   if (t.role === 'main' && t.main_index) return `Main ${t.main_index}`;
+  if (frontTableId != null && t.id === frontTableId) return 'Main Game';
   if (t.role === 'feeder') return 'Feeder';
   return t.name || 'Table';
 }
 
-/** Is this the main game - the one table a seat change never goes to or from. */
-export function isMainOne(t: Pick<LobbyTable, 'role' | 'main_index'>): boolean {
+/**
+ * Is this the main game - the one table a seat change never goes to or from.
+ *
+ * With a front table id (fn_cash_game_lobby supplies it) this is the server's
+ * own answer. Without one it falls back to the pre-Lightning rule, so a
+ * payload read before 20260921044045 keeps behaving exactly as it did; that
+ * fallback cannot recognise a feeder-first Cluster's one table, which is why
+ * the id exists.
+ */
+export function isMainOne(
+  t: Pick<LobbyTable, 'id' | 'role' | 'main_index'>,
+  frontTableId?: string | null
+): boolean {
+  if (frontTableId != null) return t.id === frontTableId;
   return t.role === 'main' && t.main_index === 1;
 }
 
@@ -202,7 +234,14 @@ export function mustMoveListRows(
       key: e.user_id,
       position: Number(e.position),
       name: (e.alias ?? '').trim() || 'Player',
-      tableLabel: lobbyTableLabel({ role: e.role, main_index: e.main_index, name: e.table_name }),
+      /* No front table id: fn_cash_game_must_move_list excludes the front
+         table by construction, so no row here can be it. */
+      tableLabel: lobbyTableLabel({
+        id: e.table_id,
+        role: e.role,
+        main_index: e.main_index,
+        name: e.table_name,
+      }),
       me: Boolean(viewerId && e.user_id === viewerId),
     }));
 }

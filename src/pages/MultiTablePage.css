@@ -25,24 +25,68 @@
   z-index: 1;
 }
 
+/* ON THE MASTER (#ClubArenaConsole, 2026-09-14). The `--empty button` rule
+   painted a 12px-radius blue gradient button - the one drawn control on this
+   surface, and a frame over a frame the moment the console arrived. The box
+   now only centres the picture and caps it at the sheet width a phone wants;
+   SpadeConsole paints everything inside it. */
 .multi-table-page--empty {
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 1rem;
+  padding: 20px;
 }
 
-.multi-table-page--empty button {
-  padding: 12px 28px;
-  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
-  border: none;
-  border-radius: 12px;
-  color: #ffffff;
-  font-size: 0.9375rem;
-  font-weight: 600;
+.multi-table-page--empty .sc {
+  --sc-max: 360px;
+}
+
+.multi-table-page__empty-body {
+  padding: 2cqw 1.5cqw 1cqw;
+  font-size: 3.7cqw;
+}
+
+/* ── ONE ACTION IS A LIT WORD ON THE GLASS (#ClubArenaConsole §5) ──────────
+   The plated foot paints BOTH plates, so a surface with a single way out
+   leaves the other painted and empty, which reads as broken rather than
+   spare. Those surfaces close with the flat cap and print their one action
+   as a lit word - the control Club Rules uses for Copy and Retry. Shared by
+   the empty state, the crashed tile and the quick-join sheet. */
+.multi-table-page__way-out {
+  appearance: none;
+  align-self: center;
+  margin: 0;
+  padding: 1cqw 3cqw 3cqw;
+  border: 0;
+  background: transparent;
+  font:
+    800 3.8cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   cursor: pointer;
-  transition: filter 0.15s ease;
+}
+
+/* Inside a dialog, metallic-popups.css bevels EVERY button with `!important`
+   (`:where([role='dialog'], …) button`), so the lit word arrived with a
+   machined rim and a drop shadow around it - a drawn control where the whole
+   point is that there is no control drawn. Switched off the same way
+   `.sc-plate` is (SpadeConsole.css), longhand by longhand. Quick Join is the
+   surface that needs it; the empty state and the crashed tile are `role`-less
+   and `role="alert"`, so they never matched. */
+[role='dialog'] .multi-table-page__way-out,
+[aria-modal='true'] .multi-table-page__way-out {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  color: inherit !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.multi-table-page__way-out:active {
+  filter: brightness(1.3);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -160,21 +204,39 @@
   text-align: center;
 }
 
+/* SCHEMA INK (#ClubArenaConsole, 2026-09-14): the kicker was cyan
+   rgba(0, 212, 255), which the smarter.poker scheme does not own. The
+   master's lit blue is #45adff, its titles are engraved silver and its meta
+   is #9aa5b3. The tile is a label on black, not a card - nothing is framed
+   here, because the tile's own cell is already the frame. */
 .multi-table-page__hub-tile-kicker {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 0.7rem;
-  letter-spacing: 0.12em;
+  font-weight: 800;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(0, 212, 255, 0.85);
+  color: #45adff;
 }
 
 .multi-table-page__hub-tile-title {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 1.1rem;
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #e4e7ec;
+  text-shadow:
+    0 -1px 0 rgb(255 255 255 / 45%),
+    0 2px 0 #050607,
+    0 3px 6px rgb(0 0 0 / 90%);
 }
 
 .multi-table-page__hub-tile-hint {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.5);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #9aa5b3;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -210,11 +272,16 @@
   background: #000;
 }
 
+/* SCHEMA INK (#ClubArenaConsole, 2026-09-14): the leading edge was #3b82f6,
+   one of four blues this file carried. The brand blue is --fb-blue. The
+   spinner itself is untouched - the rotation is an animation a player is owed
+   while a table loads, and it keeps its name, duration and timing function
+   (CLAUDE.md 10.6). */
 .multi-table-page__spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #3b82f6;
+  border: 3px solid rgb(255 255 255 / 10%);
+  border-top-color: var(--fb-blue, #1877f2);
   border-radius: 50%;
   animation: multiTableSpin 0.8s linear infinite;
 }
@@ -419,8 +486,14 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   height: 100%;
   /* One black with the shell above (2026-08-30). */
   background: #000;
-  color: rgba(255, 255, 255, 0.5);
+  /* SCHEMA INK: the master's muted meta, in its own condensed caps, rather
+     than a white at 50%. */
+  color: #9aa5b3;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -642,8 +715,14 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   align-items: center;
   gap: 12px;
   padding: 8px 12px;
-  background: linear-gradient(180deg, rgba(14, 20, 28, 0.97) 0%, rgba(10, 14, 20, 0.97) 100%);
-  border-bottom: 1px solid rgba(0, 212, 255, 0.28);
+  /* SCHEMA INK (#ClubArenaConsole, 2026-09-14). The ground was a slate ramp
+     under a cyan hairline; cyan is not a colour the smarter.poker scheme
+     owns. Black glass under a brand-blue hairline, which is what every other
+     console edge on the platform is. The bar keeps its shape: it is sticky
+     chrome over the in-tab lobby, and there is no master art for that - ink
+     is the change, not a frame. */
+  background: linear-gradient(180deg, rgb(14 18 26 / 97%) 0%, rgb(5 6 7 / 97%) 100%);
+  border-bottom: 1px solid rgba(24, 119, 242, 0.35);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
@@ -656,18 +735,24 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   flex: 1;
 }
 
+/* The house green is #3fb950 and its light stop is #4dc660 - the same three
+   greens the action bar's Raise and All In wear. #4ade80 was a fourth green
+   nobody else on the platform uses. */
 .multi-table-page__take-seat-label {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 0.62rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #4ade80;
+  color: #4dc660;
 }
 
 .multi-table-page__take-seat-name {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 0.78rem;
-  font-weight: 600;
-  color: #dfe6ef;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #e4e7ec;
   /* Table names run long ("Union Late Night Turbo (NLH)") and must not wrap
      this bar onto a second line — it is pinned above the lobby and every extra
      row is a row of games the player cannot see. */
@@ -685,48 +770,63 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   padding: 0 16px;
   border: none;
   border-radius: 18px;
-  background: linear-gradient(135deg, #10b981, #059669);
+  /* The house green family, top to bottom, exactly as the action bar's Raise
+     and All In wear it (#4dc660 -> #3fb950 -> #2ea043). This was an emerald
+     135deg ramp (#10b981 -> #059669) that appears nowhere else in the
+     product, on the control that takes a player back to a running hand. */
+  background: linear-gradient(180deg, #4dc660 0%, #3fb950 40%, #2ea043 100%);
   color: #fff;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 0.8rem;
   font-weight: 800;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   cursor: pointer;
-  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.4);
+  box-shadow: 0 2px 10px rgba(63, 185, 80, 0.4);
   transition:
     transform 0.15s ease,
     box-shadow 0.15s ease;
 }
 .multi-table-page__take-seat-btn:active {
   transform: translateY(0);
+  filter: brightness(1.25);
 }
 
 .multi-table-page__take-seat-btn:focus-visible {
-  outline: 2px solid rgba(16, 185, 129, 0.9);
+  outline: 2px solid rgba(63, 185, 80, 0.9);
   outline-offset: 2px;
 }
 
+/* `text-transform: none`: the button prints in caps, and the clock inherited
+   it, so a nine-second fold-out read "9S" - a letter nobody means, on the one
+   figure a player is racing (read in the 393px render, 2026-09-14). */
 .multi-table-page__take-seat-clock {
   padding: 1px 7px;
   border-radius: 9px;
   background: rgba(0, 0, 0, 0.32);
   font-variant-numeric: tabular-nums;
   font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
 }
 
 /* It is the player's turn somewhere: a fold-out clock is running, so this
    stops being a convenience and becomes the most important thing on screen. */
+/* The brand red is --accent-red (#f02849) and the console's red ink is
+   #ff5b6e; the bar wore #ef4444 / #b91c1c / #fca5a5, a third red. The URGENT
+   PULSE IS UNTOUCHED - same name, duration and easing (CLAUDE.md 10.6). */
 .multi-table-page__take-seat--urgent {
-  border-bottom-color: rgba(239, 68, 68, 0.55);
+  border-bottom-color: rgba(240, 40, 73, 0.6);
   animation: mtpTakeSeatUrgent 1.4s ease-in-out infinite;
 }
 
 .multi-table-page__take-seat--urgent .multi-table-page__take-seat-label {
-  color: #fca5a5;
+  color: #ff5b6e;
 }
 
 .multi-table-page__take-seat--urgent .multi-table-page__take-seat-btn {
-  background: linear-gradient(135deg, #ef4444, #b91c1c);
-  box-shadow: 0 2px 10px rgba(239, 68, 68, 0.5);
+  background: linear-gradient(180deg, #ff5b6e 0%, var(--accent-red, #f02849) 45%, #8e0f22 100%);
+  box-shadow: 0 2px 10px rgba(240, 40, 73, 0.5);
 }
 
 @keyframes mtpTakeSeatUrgent {
@@ -786,6 +886,10 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   background: rgba(0, 0, 0, 0.35);
 }
 
+/* ON THE MASTER (#ClubArenaConsole, 2026-09-14). The sheet drew itself in CSS;
+   it carries only its position, its width and its entrance now. The entrance
+   ANIMATION IS UNTOUCHED (CLAUDE.md 10.6) - same name, same duration, same
+   easing, same reduced-motion branch at the bottom of this block. */
 .multi-table-page__quickjoin {
   position: fixed;
   z-index: 391;
@@ -793,14 +897,15 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   left: 50%;
   transform: translateX(-50%);
   width: min(340px, calc(100vw - 24px));
-  padding: 10px;
-  border-radius: 14px;
-  background: rgba(16, 19, 28, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  /* metallic-popups.css names this class too - see the session ledger above
+     for why every longhand is restated at !important. */
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: none !important;
+  background-image: none !important;
+  box-shadow: none !important;
   animation: quickJoinIn 0.16s ease-out;
 }
 
@@ -815,158 +920,149 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   }
 }
 
-.multi-table-page__quickjoin-title {
-  padding: 2px 6px;
-  font-size: 0.7rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.5);
-}
-
+/* `__quickjoin-title` and `__quickjoin-lobby` are gone with the markup they
+   dressed: the sheet's name is a ZONE on the master's header well, and the one
+   way on is `__way-out`, the shared lit word declared at the top of this file.
+   The dashed 10px box the lobby link used to wear was the last drawn control
+   on this surface. */
 .multi-table-page__quickjoin-empty {
-  padding: 14px 6px;
-  text-align: center;
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 0.85rem;
+  padding: 4cqw 2cqw;
 }
 
+/* ENGRAVED ROWS, NOT DRAWN CARDS. Each row was a 10px-radius box with its own
+   rim and a white wash - a frame inside a frame, five of them stacked. A row
+   on the console is a rule cut into the glass; the row is still the button, so
+   it keeps its full width and its hit target. */
 .multi-table-page__quickjoin-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 3cqw;
   width: 100%;
-  padding: 10px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #fff;
+  padding: 2.6cqw 1cqw;
+  appearance: none;
+  border: 0;
+  border-top: 1px solid #000;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
   cursor: pointer;
   text-align: left;
 }
 
+/* metallic-popups.css bevels every `button` inside a dialog with `!important`,
+   and each row IS a button - so all five rows arrived with a machined rim.
+   The engraved rule is restated here so the row keeps its groove while the
+   bevel goes. */
+[role='dialog'] .multi-table-page__quickjoin-row,
+[aria-modal='true'] .multi-table-page__quickjoin-row {
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+  transform: none !important;
+}
+
+.multi-table-page__quickjoin-row:first-of-type,
+[role='dialog'] .multi-table-page__quickjoin-row:first-of-type {
+  border-top: 0 !important;
+  box-shadow: none !important;
+}
+
+.multi-table-page__quickjoin-row:active {
+  filter: brightness(1.25);
+}
+
+/* Dan 2026-08-23: holds the table name AND the ranking badge. flex, so the
+   badge keeps its full width and the NAME is what truncates - a badge reading
+   "Favou..." would be worse than a shortened table name.
+
+   AND IT DID NOT TRUNCATE (fixed 2026-09-14). `text-overflow: ellipsis` was
+   declared on THIS box, which is `display: flex`; the property applies to a
+   block container's own inline content, and the name was a bare text node in
+   a flex formatting context, so it was hard-clipped mid-word instead - and it
+   pushed the tag beside it out of the visible box, which is the "Favou" the
+   comment above says must never happen. Measured in the 393px render: the
+   longest fixture name lost its last six characters with no ellipsis and the
+   tag lost its last three. The name is its own span now (`__quickjoin-label`),
+   which is a box the ellipsis can apply to.
+
+   The duplicate `display/align-items/gap` block that used to follow this one
+   is gone with it; the rule was written out twice, verbatim. */
 .multi-table-page__quickjoin-name {
   flex: 1;
   min-width: 0;
-  /* Dan 2026-08-23: now holds the table name AND the ranking badge. flex, so
-     the badge keeps its full width and the NAME is what truncates — a badge
-     reading "Favou..." would be worse than a shortened table name. */
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2cqw;
+  overflow: hidden;
+  font-size: 2.9cqw;
+  font-weight: 700;
+}
+
+.multi-table-page__quickjoin-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.85rem;
-  font-weight: 700;
-  /* Holds the name and its reason tag on one line. The name still ellipsises;
-     the tag never shrinks, because a truncated "Favourite" is worse than a
-     truncated table name. */
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
-/* WHY this row is where it is. Dan 2026-08-23 asked for Quick Join to lead with
-   favourites and similar games; a list that is silently ranked just reads as a
-   list in a random order, so each row says what earned it its place. */
+/* WHY this row is where it is. Dan 2026-08-23 asked for Quick Join to lead
+   with favourites and similar games; a list that is silently ranked just reads
+   as a list in a random order, so each row says what earned it its place.
+
+   DECLARED ONCE (2026-09-14). This rule and its `--fav` partner were each
+   written THREE times in this file, with three different sets of values and
+   three different comments - so the colour a player saw was decided by which
+   copy the bundler emitted last, and editing either of the first two changed
+   nothing. "NOTHING CAN BE COPY PASTED." The surviving pair carries the
+   console's own inks, and the `--fav` gold is the brand's #ffd700, not the
+   #f0b90b / #ffd76a / rgb(255 199 60) the three copies disagreed over.
+
+   A TAG IS A LIT WORD, NOT A CAPSULE. Every one of the three copies drew a
+   999px pill with a rim and a wash, which on a row that IS a button reads as
+   a second button inside it (rendered and read at 393px, 2026-09-14). The
+   reason is now printed in ink, which is how the console says "this one is
+   different" everywhere else. */
 .multi-table-page__quickjoin-tag {
   flex: 0 0 auto;
-  padding: 1px 6px;
-  border-radius: 999px;
-  font-size: 0.5625rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 2.1cqw;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #9fb4cc;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 /* A favourite is the one tier the player chose themselves, so it is the one
-   that earns colour. Everything else stays neutral - if every tag is
-   highlighted, none of them is. */
+   that earns gold. Everything else stays the master's lit blue - if every tag
+   is highlighted, none of them is. The inks are `sc-ink--gold` and
+   `sc-ink--blue` on the element; this rule owns only the type. */
 .multi-table-page__quickjoin-tag--fav {
-  color: #ffd76a;
-  background: rgba(255, 199, 60, 0.14);
-  border-color: rgba(255, 199, 60, 0.4);
-}
-
-/* Why this row is where it is: "Favourite", "Similar Game", "Same Game". */
-.multi-table-page__quickjoin-tag {
-  flex-shrink: 0;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  font-size: 0.6rem;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.72);
-}
-
-/* A favourite is the strongest signal on the sheet, so it is the only badge
-   that gets colour. Gold rather than the blue CTA next to it: two blues on one
-   row would read as two buttons. */
-.multi-table-page__quickjoin-tag--fav {
-  background: rgba(240, 185, 11, 0.16);
-  border-color: rgba(240, 185, 11, 0.4);
-  color: #f0b90b;
-}
-
-/* Why this row is where it is: "Favourite", "Similar Game", "Same Game". */
-.multi-table-page__quickjoin-tag {
-  flex-shrink: 0;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  font-size: 0.6rem;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.72);
-}
-
-/* A favourite is the strongest signal on the sheet, so it is the only badge
-   that gets colour. Gold rather than the blue CTA next to it: two blues on one
-   row would read as two buttons. */
-.multi-table-page__quickjoin-tag--fav {
-  background: rgba(240, 185, 11, 0.16);
-  border-color: rgba(240, 185, 11, 0.4);
-  color: #f0b90b;
+  letter-spacing: 0.16em;
 }
 
 .multi-table-page__quickjoin-meta {
   display: flex;
-  gap: 8px;
-  font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.55);
+  gap: 2.4cqw;
   flex-shrink: 0;
+  font-size: 2.4cqw;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
 }
 
+/* The row IS the button, so its call to action is a lit word rather than a
+   second button drawn inside it. It was a blue gradient pill, which read as a
+   control inside a control. */
 .multi-table-page__quickjoin-cta {
   flex-shrink: 0;
-  padding: 5px 12px;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
-  font-size: 0.75rem;
+  font-size: 2.6cqw;
   font-weight: 800;
-  color: #fff;
-}
-
-.multi-table-page__quickjoin-lobby {
-  margin-top: 2px;
-  width: 100%;
-  padding: 9px;
-  border: 1px dashed rgba(255, 255, 255, 0.2);
-  border-radius: 10px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.65);
-  font-size: 0.8rem;
-  font-weight: 700;
-  cursor: pointer;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1048,13 +1144,19 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
    ROADMAP BATCH 5 — aggregated session chip + popover
    ───────────────────────────────────────────────────────────────────────────── */
 
+/* SCHEMA INK (#ClubArenaConsole, 2026-09-14). A white-wash ground with a
+   white rim, and a green/red pair (#4ade80 / #f87171) that matched nothing
+   else. Black glass with a hairline, and the house green / brand red - the
+   same pair the session ledger this chip opens now prints its rows in, so the
+   figure does not change colour when the sheet opens. */
 .multi-table-page__pnl-chip {
   flex-shrink: 0;
   padding: 5px 10px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgb(255 255 255 / 14%);
+  background: rgb(5 6 7 / 70%);
+  color: #9aa5b3;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 0.72rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
@@ -1062,15 +1164,26 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
 }
 
 .multi-table-page__pnl-chip--up {
-  color: #4ade80;
-  border-color: rgba(74, 222, 128, 0.4);
+  color: #4dc660;
+  border-color: rgba(63, 185, 80, 0.45);
 }
 
 .multi-table-page__pnl-chip--down {
-  color: #f87171;
-  border-color: rgba(248, 113, 113, 0.4);
+  color: #ff5b6e;
+  border-color: rgba(240, 40, 73, 0.45);
 }
 
+/* ON THE MASTER (#ClubArenaConsole, 2026-09-14). The popover drew itself: a
+   14px radius, a slate ground, a 1px rim and a drop shadow. It carries only
+   its position and its width now; SpadeConsole paints the head, the rails and
+   the closing cap, and the rows print on the black glass between them. */
+/* metallic-popups.css NAMES THIS CLASS (#ClubArenaConsole §3.5, trap 7.2).
+   The global popup chassis lists `.multi-table-page__session-agg` and paints a
+   16px-radius bevelled shell with `!important`, which would put a second
+   rounded frame around the console. Its selector is `:where(...)` - zero
+   specificity - so switching it off needs only `!important`, and it needs
+   every LONGHAND: a `background` shorthand alone leaves the border, the
+   radius, the outline and the shadow painting. */
 .multi-table-page__session-agg {
   position: fixed;
   z-index: 391;
@@ -1078,28 +1191,34 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   left: 50%;
   transform: translateX(-50%);
   width: min(360px, calc(100vw - 24px));
-  padding: 10px;
-  border-radius: 14px;
-  background: rgba(16, 19, 28, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: none !important;
+  background-image: none !important;
+  box-shadow: none !important;
 }
 
+/* ENGRAVED, NOT DRAWN. A rule between two rows is a hairline of black with a
+   highlight beneath it, cut into the glass - never a 1px grey line and never a
+   rounded pill behind the row. */
 .multi-table-page__session-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 6px;
-  border-radius: 8px;
+  align-items: baseline;
+  gap: 3cqw;
+  padding: 2.2cqw 1cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.multi-table-page__session-row:first-child {
+  border-top: 0;
+  box-shadow: none;
 }
 
 .multi-table-page__session-row--total {
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-  margin-top: 2px;
-  font-weight: 800;
+  margin-top: 1cqw;
 }
 
 .multi-table-page__session-name {
@@ -1108,33 +1227,31 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: #fff;
+  font-size: 2.8cqw;
 }
 
 .multi-table-page__session-hands {
   flex-shrink: 0;
-  font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: 2.5cqw;
+  letter-spacing: 0.1em;
 }
 
+/* The figure keeps its column and its tabular digits; its INK is the
+   console's own (`sc-ink--green` / `--red` / `--muted` on the element), so
+   the sign has exactly one owner. `--up` and `--down` stay as the semantic
+   hooks the markup has always carried, and declare no colour of their own -
+   two rules setting the same colour is how a scheme splits. */
 .multi-table-page__session-net {
   flex-shrink: 0;
-  min-width: 64px;
+  min-width: 16cqw;
   text-align: right;
-  font-size: 0.82rem;
-  font-weight: 800;
+  font-size: 2.8cqw;
   font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.7);
 }
 
-.multi-table-page__session-net--up {
-  color: #4ade80;
-}
-
+.multi-table-page__session-net--up,
 .multi-table-page__session-net--down {
-  color: #f87171;
+  font-weight: 800;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -1234,34 +1351,19 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   color: #e4e6eb;
 }
 
-.multi-table-page__crashed-title {
-  font-size: 1rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
+/* ON THE MASTER (#ClubArenaConsole, 2026-09-14). `__crashed-title`,
+   `__crashed-name` and `__crashed-btn` are gone with the markup they dressed:
+   the title is a ZONE on the master's header well, the table's name is the
+   eyebrow zone beside it, and Reload is a lit word on the glass (one action,
+   so the flat cap rather than two painted plates). Deliberately calm is still
+   the brief - the console's head says "Seat Safe" in its painted pill, which
+   is the sentence the player needs before they read anything else. */
+.multi-table-page__crashed .sc {
+  --sc-max: 360px;
 }
 
 .multi-table-page__crashed-body {
-  font-size: 0.8125rem;
-  line-height: 1.45;
-  color: rgba(228, 230, 235, 0.72);
-  max-width: 30ch;
-}
-
-.multi-table-page__crashed-name {
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(228, 230, 235, 0.45);
-}
-
-.multi-table-page__crashed-btn {
-  margin-top: 4px;
-  padding: 10px 22px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  font-size: 0.875rem;
-  font-weight: 700;
-  cursor: pointer;
+  padding: 2cqw 1.5cqw 1cqw;
+  font-size: 3.7cqw;
+  line-height: 1.5;
 }

@@ -166,3 +166,43 @@ a called function by name at run time. `20260921023309` is already applied and
 recorded byte-exactly, so it is not edited - this is the branch-scope
 declare-then-drop the checker documents, the same shape as its own cited 2026-09-07
 precedent.
+
+## 4. The hole my own fix opened, and closed
+
+`check-definer-authorization` then refused the push, and it was right - this
+one was **not** a naming quibble but a real widening that I introduced.
+
+`20260921023309` changed the escalator's return type, which `CREATE OR REPLACE`
+cannot do, so it dropped and recreated the function. **A DROP takes the ACL
+with it.** On recreate, this database's default privileges for functions in
+`public` grant EXECUTE to `anon` and `authenticated` _explicitly_ - and an
+explicit grant to a role is not removed by `REVOKE ALL ... FROM PUBLIC`, which
+drops only the PUBLIC grant. So the migration's REVOKE/GRANT block read as a
+lock and was not one.
+
+Measured on production at 03:07 UTC:
+
+| function                             | ACL after 023309                                    | before                 |
+| ------------------------------------ | --------------------------------------------------- | ---------------------- |
+| `fn_ca_escalate_reconcile_criticals` | postgres, **anon**, **authenticated**, service_role | postgres, service_role |
+| `fn_ca_remeasure_entity`             | postgres, **anon**, **authenticated**, service_role | (new)                  |
+| `fn_ca_treasury_positions`           | postgres, **authenticated**, service_role           | (new)                  |
+
+All three are SECURITY DEFINER and none asks who is calling. The escalator is
+VOLATILE and WRITES incident rows, so an unauthenticated caller could have
+driven the incident board through PostgREST; the other two would have handed
+every club's treasury balance and journal position to any caller.
+`reconcile_ledger_nightly` was only ever `CREATE OR REPLACE`d, which preserves
+the ACL, and was never widened.
+
+`20260921030817` closes all three - `REVOKE ALL ... FROM PUBLIC, anon,
+authenticated` naming the roles, then `GRANT EXECUTE ... TO postgres,
+service_role`, which is what pg_cron and the engine actually call as. Verified
+after apply: all four functions now read exactly `{postgres, service_role}`,
+`anon` and `authenticated` false on every one. None of the three is an RLS
+policy helper (checked `pg_policy` before revoking), so nothing loses a SELECT.
+
+**The lesson worth keeping: `REVOKE ... FROM PUBLIC` is not a lock on this
+database.** Any migration that DROPs and recreates a function in `public` must
+revoke from `PUBLIC, anon, authenticated` by name and re-grant deliberately, or
+it silently publishes whatever it just rebuilt.

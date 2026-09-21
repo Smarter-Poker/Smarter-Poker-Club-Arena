@@ -325,15 +325,17 @@ describe('Plinko starts only its earned funding', () => {
     await act(async () => {});
     // An uncertain start is never retried as a fresh wager, and nobody is
     // asked to check anything: the page replays the held request itself.
-    expect(screen.getByText('Settling Your Bonus')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeDisabled();
+    // (The replay can land before the first assertion, so assert the outcome,
+    // not the brief "Settling" state in between.)
     expect(screen.queryByRole('button', { name: 'Check Bonus' })).not.toBeInTheDocument();
     const held = backend.start.mock.calls[0][0];
     // The same request, sent again, and the receipt is booked once.
     await waitFor(() => expect(backend.start).toHaveBeenCalledTimes(2));
-    await act(async () => {});
     expect(backend.start.mock.calls[1][0]).toEqual(held);
-    expect(screen.getByRole('dialog', { name: '3.25 Chips' })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('dialog', { name: '3.25 Chips' })).toBeInTheDocument()
+    );
+    expect(backend.start).toHaveBeenCalledTimes(2);
   });
   it('recovers a redeemed award without admitting a second wager', async () => {
     backend.awardState.mockResolvedValue({

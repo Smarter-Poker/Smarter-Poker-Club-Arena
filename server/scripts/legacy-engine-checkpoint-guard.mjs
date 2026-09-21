@@ -384,14 +384,27 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         initialRemainingMs - (performance.now() - beganMonotonicMs)
       );
       require(Number.isFinite(remaining) && remaining >= reserveMs, 'insufficient_reserve');
-      // A live fleet that gains or loses a table mid-checkpoint refuses here.
-      // Name the first table that moved and which way, so the next refusal is
-      // readable without a deploy: an arrival shows in the size, a departure or
-      // a replacement shows as the offending id.
+      // The whole fleet is NOT pinned here. The live 8825 engine re-admits and
+      // kills a foreign cash table every ~5 s (it sits in `tableEngines` for
+      // 0.6-4 s per cycle), so a whole-fleet size/identity witness refused
+      // every checkpoint (`fleet_identity_changed`, `fleet.size`). A foreign
+      // table's arrival or departure cannot touch the custody this checkpoint
+      // retires. What IS pinned, by object identity, is every table the
+      // checkpoint touches: each captured engine, each retained original
+      // selected for retirement, and each original already retired - which
+      // must stay gone from the global map. A pinned table that is replaced
+      // or vanishes still refuses, naming the table and which way it moved.
+      const pinnedTables = () => [
+        ...captures.map(({ tableId, engine }) => [tableId, engine]),
+        ...retainedManagers.flatMap((capture) =>
+          capture.exactEngines.map(({ tableId, engine }) => [tableId, engine])
+        ),
+        ...[...retiredOriginals].map((id) => [id, null]),
+      ];
+      const pinnedIntact = ([id, engine]) =>
+        retiredOriginals.has(id) ? !tableMap.has(id) : tableMap.get(id) === engine;
       const movedTable = () => {
-        const found = entries.find(([id, engine]) =>
-          retiredOriginals.has(id) ? tableMap.has(id) : tableMap.get(id) !== engine
-        );
+        const found = pinnedTables().find((pinned) => !pinnedIntact(pinned));
         if (found === undefined) return 'none';
         return retiredOriginals.has(found[0])
           ? `retired_still_present:${found[0]}`
@@ -403,20 +416,17 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         'fleet_identity_changed',
         [
           [
-            'fleet.size',
-            () => tableMap.size === entries.length - retiredOriginals.size,
+            'fleet.retired',
+            () => [...retiredOriginals].every((id) => !tableMap.has(id)),
           ],
           [
-            'fleet.identity',
-            () =>
-              entries.every(([id, engine]) =>
-                retiredOriginals.has(id) ? !tableMap.has(id) : tableMap.get(id) === engine
-              ),
+            'fleet.pinned',
+            () => pinnedTables().every(pinnedIntact),
           ],
         ],
         () => ({
           observed: describe(tableMap.size),
-          expected: String(entries.length - retiredOriginals.size),
+          expected: `pinned:${pinnedTables().length}`,
           failedTable: movedTable(),
         })
       );
@@ -668,8 +678,30 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         );
         const exactRetirement = manager.pendingTableBreakRetirement;
         const captureMethod = manager.captureDrainedF06Originals;
-        const revision = manager.tournamentSeatMoveAuthorityRevision;
-        const serial = manager.tournamentSeatMoveSerialTail;
+        // The custody this checkpoint retires is named by the manager's
+        // tournament and lease generation (the RPC input and its receipt) and
+        // by the engines' identities. Those are what is pinned below. The seat
+        // move authority revision and serial tail are NOT: the live 8825
+        // lease-loss pass re-runs `stopTournamentManagerIfOwned` every ~5 s for
+        // the retained managers, and each retry bumps the revision, replaces
+        // the serial tail and rebuilds a frozen `drainedF06Originals` array
+        // with the same engines in it - none of which moves custody.
+        const capturedTournamentId = manager.tournamentId;
+        const capturedLeaseGeneration = manager.tournamentLeaseGeneration;
+        // A stop retry's `captureDrainedF06Originals()` returns null while its
+        // `teardownPromise` is set, then the same engines again. Custody rests
+        // on the engines' identities, so the witness compares contents, and a
+        // transient null is tolerated: the map/engine witnesses below still
+        // pin every original.
+        const sameOriginals = () => {
+          const now = manager.captureDrainedF06Originals();
+          return (
+            now === null ||
+            (Array.isArray(now) &&
+              now.length === originals.length &&
+              now.every(([id, e], i) => originals[i][0] === id && originals[i][1] === e))
+          );
+        };
         const exactEngines = originals.map(([tableId, engine]) => {
           require(uuid(tableId) &&
             !retained.has(engine) &&
@@ -1327,6 +1359,11 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             'mixed_owner_changed',
             [
               ['server.tournamentEngines', () => server.tournamentEngines === managerMap],
+              ['manager.tournamentId', () => manager.tournamentId === capturedTournamentId],
+              [
+                'manager.tournamentLeaseGeneration',
+                () => manager.tournamentLeaseGeneration === capturedLeaseGeneration,
+              ],
               [
                 'managerMap.get(tournamentId)',
                 () => managerMap.get(manager.tournamentId) === manager,
@@ -1345,21 +1382,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
                 'manager.captureDrainedF06Originals',
                 () => manager.captureDrainedF06Originals === captureMethod,
               ],
-              [
-                'manager.captureDrainedF06Originals()',
-                () => manager.captureDrainedF06Originals() === originals,
-              ],
+              ['manager.captureDrainedF06Originals()', sameOriginals],
               [
                 'manager.pendingTableBreakRetirement',
                 () => manager.pendingTableBreakRetirement === exactRetirement,
-              ],
-              [
-                'manager.tournamentSeatMoveAuthorityRevision',
-                () => manager.tournamentSeatMoveAuthorityRevision === revision,
-              ],
-              [
-                'manager.tournamentSeatMoveSerialTail',
-                () => manager.tournamentSeatMoveSerialTail === serial,
               ],
               [
                 'manager.activeStoppedOriginalCustody.size',
@@ -1395,25 +1421,28 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               ],
             ],
             () => ({
-              failedTournament: manager.tournamentId,
+              failedTournament: capturedTournamentId,
               failedMap: failedMap(),
               failedSet: failedSet(),
               failedTable: failedEngine(),
-              seatMoveRevision: describe(manager.tournamentSeatMoveAuthorityRevision),
-              capturedSeatMoveRevision: describe(revision),
+              observed: describe(manager.tournamentLeaseGeneration),
+              expected: describe(capturedLeaseGeneration),
             })
           );
           return vector();
         };
-        pending.push({ manager, proposal, exactEngines, vector, current, initial, serial });
+        pending.push({ manager, proposal, exactEngines, vector, current, initial });
       }
       checkRetained = () => {
         for (const capture of pending)
           require(canonical(capture.current()) === capture.initial, 'mixed_local_custody_changed');
       };
       checkMaintenance();
+      // Join the originals' own stop queues only. The manager's seat move
+      // serial tail is not awaited: on the live 8825 engine the stop-retry loop
+      // replaces it every ~5 s, so it never names a fixed piece of work.
       const joined = await Promise.allSettled(
-        pending.flatMap((m) => [m.serial, ...m.exactEngines.flatMap((e) => e.queues)])
+        pending.flatMap((m) => m.exactEngines.flatMap((e) => e.queues))
       );
       require(joined.every((v) => v.status === 'fulfilled'), 'mixed_original_stop_unconfirmed');
       checkMaintenance();

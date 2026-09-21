@@ -849,7 +849,15 @@ function mixedFixture() {
         move: { chips: 10 },
       });
     }
+    /* How the live 8825 manager answers under its stop-retry loop: `shared`
+       is the one frozen array; `fresh` is a NEW equal-content array per call
+       (each `stopTournamentManagerIfOwned` retry rebuilds it); `stopping` is
+       the null it returns while a retry's `teardownPromise` is set. */
+    captureMode: 'shared' | 'fresh' | 'stopping' = 'shared';
     captureDrainedF06Originals() {
+      if (this.captureMode === 'stopping') return null;
+      if (this.captureMode === 'fresh')
+        return Object.freeze(this.drainedF06Originals.map((pair) => [...pair]));
       return this.drainedF06Originals;
     }
   }
@@ -1046,6 +1054,7 @@ function mixedFixture() {
   };
   return {
     ...f,
+    Manager,
     intent,
     originals,
     abandonedOriginal,
@@ -1128,34 +1137,134 @@ describe('exact 8825 retained original custody retirement', () => {
     expect(f.server.tableEngines.size).toBe(3);
     expect(f.rpcCalls).toEqual([]);
   });
+  // The live 8825 lease-loss pass re-runs `stopTournamentManagerIfOwned` every
+  // ~5 s for the retained managers. Each retry bumps the seat move authority
+  // revision and replaces the serial tail without moving any custody, so
+  // neither is pinned any more: a bump during either RPC passes.
   it.each(['fn_f06_prepare_mixed_manager_custody', 'fn_f06_find_mixed_manager_custody'])(
-    'refuses changed local identity across %s',
+    'tolerates a seat move revision bump and a replaced serial tail across %s',
     async (name) => {
       const f = mixedFixture();
       f.onRpc((called) => {
-        if (called === name) f.originals[0].manager.tournamentSeatMoveAuthorityRevision++;
+        if (called !== name) return;
+        for (const { manager } of f.originals) {
+          manager.tournamentSeatMoveAuthorityRevision++;
+          manager.tournamentSeatMoveSerialTail = Promise.resolve();
+        }
       });
-      expect((await f.run()).ok).toBe(false);
-      expect(f.server.tableEngines.size).toBe(3);
+      expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+      expect(f.receipts.size).toBe(2);
+      expect(f.server.tableEngines.size).toBe(1);
     }
   );
   // A preflight refusal used to name only its code. These conjunctions are wide
   // and run against live state, so the code alone cost a deploy to interpret.
-  // Each sub-condition now reports itself, and the fixture proves it.
-  it('names the sub-condition when the manager vector moves', async () => {
+  // Each sub-condition now reports itself, and the fixture proves it. What is
+  // pinned is the custody the RPC names: the tournament, its lease generation
+  // and the manager that owns them.
+  it.each([
+    [
+      'lease generation',
+      (f: any) => (f.originals[0].manager.tournamentLeaseGeneration = uuid(99000)),
+      'manager.tournamentLeaseGeneration',
+    ],
+    [
+      'manager swap',
+      (f: any) =>
+        f.server.tournamentEngines.set(
+          f.originals[0].manager.tournamentId,
+          new f.Manager(f.originals[0].manager.tournamentId, 7, f.originals[0].engine)
+        ),
+      'managerMap.get(tournamentId)',
+    ],
+    [
+      'tournament id',
+      (f: any) => (f.originals[0].manager.tournamentId = uuid(99001)),
+      'manager.tournamentId',
+    ],
+  ])(
+    'names the sub-condition when the manager vector moves: %s',
+    async (_label, alter, failedCheck) => {
+      const f = mixedFixture();
+      const tournamentId = f.originals[0].manager.tournamentId;
+      // It has to move DURING the run: a change before `run()` is simply the
+      // baseline the capture takes.
+      f.onRpc(() => alter(f));
+      const result = await f.run();
+      expect(result).toMatchObject({
+        ok: false,
+        reason: 'mixed_owner_changed',
+        failedCheck,
+        failedTournament: tournamentId,
+      });
+      // Nothing was retired: the refusal precedes every irreversible step.
+      expect(f.server.tableEngines.size).toBe(3);
+    }
+  );
+  // The live 8825 engine re-admits and kills a foreign cash table every ~5 s.
+  // Its arrival or departure touches no custody this checkpoint retires, so
+  // the fleet witness pins the tables the checkpoint touches, not the fleet.
+  it('tolerates a foreign cash table arriving during an RPC', async () => {
     const f = mixedFixture();
-    // It has to move DURING the run: a bump before `run()` is simply the
-    // baseline the capture takes.
-    f.onRpc(() => f.originals[0].manager.tournamentSeatMoveAuthorityRevision++);
-    const result = await f.run();
-    expect(result).toMatchObject({
+    // A freshly admitted cash table has dealt nothing: no live bank, so the
+    // native readiness gate (which is NOT this guard's) is already durable.
+    const foreign = new f.Table(999);
+    foreign.timeBankEngine.playerBanks.clear();
+    f.onRpc(() => f.server.tableEngines.set(uuid(999), foreign));
+    expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+    expect(f.receipts.size).toBe(2);
+    expect(f.server.tableEngines.has(uuid(999))).toBe(true);
+    for (const { engine } of f.originals)
+      expect(f.server.tableEngines.has(engine.tableId)).toBe(false);
+  });
+  it('tolerates a foreign cash table arriving and then leaving during the RPCs', async () => {
+    const f = mixedFixture();
+    let calls = 0;
+    f.onRpc(() => {
+      if (calls++ === 0) f.server.tableEngines.set(uuid(999), new f.Table(999));
+      else f.server.tableEngines.delete(uuid(999));
+    });
+    expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+    expect(f.receipts.size).toBe(2);
+    expect(f.server.tableEngines.has(uuid(999))).toBe(false);
+    expect(f.server.tableEngines.size).toBe(1);
+  });
+  // Each stop retry rebuilds a NEW frozen `drainedF06Originals` array holding
+  // the same engines, and answers null while its teardown promise is set. The
+  // engines' identities are what custody retires, so both pass; a different
+  // engine behind the same table id still refuses.
+  it('tolerates a fresh equal-content originals array on every capture', async () => {
+    const f = mixedFixture();
+    for (const { manager } of f.originals) manager.captureMode = 'fresh';
+    expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+    expect(f.receipts.size).toBe(2);
+    expect(f.server.tableEngines.size).toBe(1);
+  });
+  it('tolerates a null originals capture while a stop retry is in flight', async () => {
+    const f = mixedFixture();
+    let calls = 0;
+    f.onRpc(() => {
+      const mode = calls++ === 0 ? 'stopping' : 'fresh';
+      for (const { manager } of f.originals) manager.captureMode = mode;
+    });
+    expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+    expect(f.receipts.size).toBe(2);
+    expect(f.server.tableEngines.size).toBe(1);
+  });
+  it('refuses a different engine identity behind a captured original', async () => {
+    const f = mixedFixture();
+    const { manager, engine } = f.originals[0];
+    f.onRpc(() => {
+      manager.drainedF06Originals = [[engine.tableId, new f.Table(600)]];
+    });
+    expect(await f.run()).toMatchObject({
       ok: false,
       reason: 'mixed_owner_changed',
-      failedCheck: 'manager.tournamentSeatMoveAuthorityRevision',
-      failedTournament: f.originals[0].manager.tournamentId,
+      failedCheck: 'manager.captureDrainedF06Originals()',
+      failedTournament: manager.tournamentId,
     });
-    // Nothing was retired: the refusal precedes every irreversible step.
     expect(f.server.tableEngines.size).toBe(3);
+    expect(f.server.tableEngines.get(engine.tableId)).toBe(engine);
   });
   it('names the table when one leaves the fleet mid-checkpoint', async () => {
     const f = mixedFixture();

@@ -1,0 +1,58 @@
+/* ========================================================================== */
+/* SMARTER CASINO REALISM - PRIVATE CHALLENGE VAULT                           */
+/* ========================================================================== */
+
+:root {
+  --mission-black: var(--realism-obsidian, #030504);
+  --mission-ink: var(--realism-carbon, #070a09);
+  --mission-panel: var(--realism-panel, #0b100f);
+  --mission-felt: #073d32;
+  --mission-felt-deep: #031d18;
+  --mission-gunmetal: var(--realism-gunmetal, #171c1f);
+  --mission-chrome: var(--realism-chrome, #b8c4c9);
+  --mission-white: var(--realism-chrome-hot, #f4f7f5);
+  --mission-blue: var(--realism-cyan, #55e8ff);
+  --mission-blue-deep: #087d91;
+  --mission-gold: var(--realism-gold, #ffc93c);
+  --mission-gold-deep: #ffa500;
+  --mission-danger: #f02849;
+}
+
+.container {
+  position: relative;
+  background:
+    radial-gradient(circle at 78% 8%, rgba(85, 232, 255, 0.07), transparent 28rem),
+    radial-gradient(circle at 17% 54%, rgba(214, 173, 82, 0.045), transparent 31rem),
+    linear-gradient(180deg, rgba(3, 5, 4, 0.98), rgba(2, 4, 3, 0.995));
+}
+
+.container::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 119px, rgba(184, 196, 201, 0.018) 120px),
+    linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.28),
+      transparent 20%,
+      transparent 80%,
+      rgba(0, 0, 0, 0.28)
+    );
+  content: '';
+  pointer-events: none;
+}
+
+.container > div,
+.page {
+  position: relative;
+  z-index: 1;
+}
+
+.container > div {
+  max-width: 1240px;
+}
+
+.page {
+  gap: 26px;
+}

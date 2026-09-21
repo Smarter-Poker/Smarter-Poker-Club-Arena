@@ -1,0 +1,231 @@
+/* --------------------------------------------------------------------------
+   Live Mission Instrument Icons
+
+   Every mission emblem now reports real progress through its outer energy
+   circuit, changes cadence with mission state, and responds as one physical
+   control assembly when its card receives pointer or keyboard intent.
+   -------------------------------------------------------------------------- */
+
+.iconAssembly {
+  --icon-phase: -0.4s;
+  width: 56px;
+  height: 56px;
+  isolation: isolate;
+  perspective: 180px;
+}
+
+.iconAssembly[data-mission-icon='hands_won'] {
+  --icon-phase: -0.8s;
+}
+
+.iconAssembly[data-mission-icon='showdowns'] {
+  --icon-phase: -1.2s;
+}
+
+.iconAssembly[data-mission-icon='showdowns_won'] {
+  --icon-phase: -1.6s;
+}
+
+.iconAssembly[data-mission-icon='hands_won_no_showdown'] {
+  --icon-phase: -2s;
+}
+
+.iconAssembly[data-mission-icon='tournaments_played'] {
+  --icon-phase: -2.4s;
+}
+
+.iconAssembly[data-mission-icon='big_pots'] {
+  --icon-phase: -2.8s;
+}
+
+.iconAssembly[data-mission-icon='strong_hands'] {
+  --icon-phase: -3.2s;
+}
+
+.iconAssembly[data-mission-icon='chips_won'] {
+  --icon-phase: -3.6s;
+}
+
+.iconAssembly[data-mission-icon='friends_added'] {
+  --icon-phase: -4s;
+}
+
+.iconOrbit,
+.iconPulse,
+.iconScanner {
+  position: absolute;
+  pointer-events: none;
+}
+
+.iconOrbit {
+  z-index: 1;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from -90deg,
+    var(--card-tier-color) 0 var(--mission-progress),
+    rgba(184, 196, 201, 0.12) var(--mission-progress) 100%
+  );
+  -webkit-mask: radial-gradient(circle, transparent 63%, #000 65% 72%, transparent 74%);
+  mask: radial-gradient(circle, transparent 63%, #000 65% 72%, transparent 74%);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--card-tier-color) 34%, transparent));
+  animation: missionCircuitSignal 3.8s ease-in-out infinite;
+  animation-delay: var(--icon-phase);
+}
+
+.iconBox {
+  z-index: 3;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border: 0;
+  background: linear-gradient(
+    145deg,
+    #f1f7f8,
+    color-mix(in srgb, var(--card-tier-color) 72%, #65737a) 32%,
+    #273136 68%,
+    #d9e3e6
+  );
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  transition:
+    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 220ms ease;
+  transform-style: preserve-3d;
+}
+
+.iconBox::before {
+  position: absolute;
+  z-index: 0;
+  inset: 1px;
+  background:
+    radial-gradient(
+      circle at 42% 34%,
+      color-mix(in srgb, var(--card-tier-color) 14%, #0b1715),
+      #030504 69%
+    ),
+    #030504;
+  clip-path: inherit;
+  content: '';
+}
+
+.iconBox::after {
+  position: absolute;
+  z-index: 1;
+  inset: -65% -35%;
+  background: linear-gradient(
+    110deg,
+    transparent 38%,
+    rgba(240, 252, 255, 0.04) 43%,
+    rgba(240, 252, 255, 0.7) 49%,
+    rgba(85, 232, 255, 0.12) 54%,
+    transparent 60%
+  );
+  content: '';
+  transform: translateX(-58%) rotate(8deg);
+  animation: missionFacetSweep 4.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  animation-delay: var(--icon-phase);
+}
+
+/* Mission instruments are non-text artwork. Keep their physical dial inside
+   the fixed 44px machined housing when browser text is enlarged. */
+.iconBox > [data-mission-instrument] {
+  --mission-size: 36px;
+
+  max-width: 36px;
+  max-height: 36px;
+}
+
+.iconGlyph {
+  position: relative;
+  z-index: 2;
+  color: var(--card-tier-color);
+  font-size: 1.18rem;
+  line-height: 1;
+  text-shadow:
+    0 0 5px color-mix(in srgb, var(--card-tier-color) 78%, transparent),
+    0 1px 1px #000;
+  transition: transform 220ms ease;
+}
+
+.iconPulse {
+  z-index: 0;
+  inset: 4px;
+  border: 1px solid color-mix(in srgb, var(--card-tier-color) 30%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--card-tier-color) 13%, transparent);
+  animation: missionPulseRing 3.8s ease-out infinite;
+  animation-delay: var(--icon-phase);
+}
+
+.iconScanner {
+  z-index: 4;
+  top: 1px;
+  left: calc(50% - 1px);
+  width: 2px;
+  height: 8px;
+  border-radius: 2px;
+  background: #ecfcff;
+  box-shadow: 0 0 7px var(--card-tier-color);
+  transform-origin: 1px 27px;
+  animation: missionScannerOrbit 5.4s linear infinite;
+  animation-delay: var(--icon-phase);
+}
+
+.challengeCard:focus-within .iconBox {
+  filter: brightness(1.18)
+    drop-shadow(0 0 7px color-mix(in srgb, var(--card-tier-color) 35%, transparent));
+  transform: translateZ(10px) rotateX(7deg) rotateY(-7deg) scale(1.06);
+}
+
+.challengeCard:focus-within .iconGlyph {
+  transform: scale(1.08);
+}
+
+.iconAssembly[data-icon-state='complete'] .iconOrbit,
+.iconAssembly[data-icon-state='complete'] .iconScanner {
+  animation-duration: 2.2s;
+}
+
+.iconAssembly[data-icon-state='complete'] .iconBox {
+  filter: brightness(1.14)
+    drop-shadow(0 0 7px color-mix(in srgb, var(--card-tier-color) 32%, transparent));
+}
+
+.iconAssembly[data-icon-state='claimed'] :is(.iconOrbit, .iconPulse, .iconScanner),
+.iconAssembly[data-icon-state='claimed'] .iconBox::after {
+  animation-play-state: paused;
+}
+
+.inlineDiamond,
+.rewardGem {
+  transform-origin: 50% 58%;
+  animation: missionDiamondSignal 4.6s ease-in-out infinite;
+}
+
+.rewardGem {
+  animation-duration: 3.9s;
+}
+
+.alertIcon {
+  position: relative;
+  overflow: hidden;
+}
+
+.alertIcon::before,
+.alertIcon::after {
+  position: absolute;
+  content: '';
+  pointer-events: none;
+}
+
+.alertIcon::before {
+  inset: 4px;
+  border: 1px solid rgba(85, 232, 255, 0.24);
+  animation: missionAlertCircuit 3.6s ease-in-out infinite;
+}
+
+.alertIcon::after {
+  inset: -45%;
+  background: linear-gradient(90deg, transparent 42%, rgba(231, 252, 255, 0.55), transparent 58%);
+  animation: missionAlertSweep 4.2s ease-in-out infinite;
+}

@@ -1,9 +1,10 @@
 import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readDailyChallengesStylesheet } from './helpers/dailyChallengesSources';
 
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
-const css = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'), 'utf8');
+const css = readDailyChallengesStylesheet();
 const routeFallback = readFileSync(
   resolve(__dirname, '../src/components/challenges/DailyChallengesRouteFallback.tsx'),
   'utf8'

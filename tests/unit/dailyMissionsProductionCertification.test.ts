@@ -3,6 +3,8 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { readDailyChallengesStylesheet } from '../helpers/dailyChallengesSources';
+
 const root = resolve(import.meta.dirname, '../..');
 
 function source(path: string) {
@@ -144,7 +146,7 @@ describe('Daily Missions production certification', () => {
   });
 
   it('keeps decorative card chrome out of every mission control hit target', () => {
-    const css = source('src/pages/DailyChallengesPage.module.css');
+    const css = readDailyChallengesStylesheet();
     const before = css.slice(
       css.indexOf('.challengeCard::before'),
       css.indexOf('.challengeCard::after')
@@ -191,13 +193,13 @@ describe('Daily Missions production certification', () => {
   });
 
   it('keeps every mission control above the fixed Club Arena footer', () => {
-    const css = source('src/pages/DailyChallengesPage.module.css');
+    const css = readDailyChallengesStylesheet();
     expect(css).toContain('padding: 24px 18px calc(var(--bottom-nav-clearance, 74px) + 24px)');
     expect(css).toContain('padding: 0 0 max(84px, calc(var(--bottom-nav-clearance, 74px) + 12px))');
   });
 
   it('keeps modal dialogs above inert toasts and contains backdrop scrolling', () => {
-    const pageCss = source('src/pages/DailyChallengesPage.module.css');
+    const pageCss = readDailyChallengesStylesheet();
     const toastCss = source('src/components/common/Toast.css');
     const overlay = pageCss.slice(
       pageCss.indexOf('.celebrateOverlay {'),

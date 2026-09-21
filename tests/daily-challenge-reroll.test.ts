@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
+import { readDailyChallengesStylesheet } from './helpers/dailyChallengesSources';
 
 const rpc = vi.fn();
 const emit = vi.fn();
@@ -280,7 +281,8 @@ describe('reroll integrity is enforced below the UI', () => {
 
 describe('the page ships the casino-realism surface without the old stubs', () => {
   const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
-  const css = readFileSync(
+  const css = readDailyChallengesStylesheet();
+  const manifest = readFileSync(
     resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'),
     'utf8'
   );
@@ -304,6 +306,10 @@ describe('the page ships the casino-realism surface without the old stubs', () =
     expect(page).toContain('daily-missions-casino-v2-mobile.webp');
     expect(page).toContain('fetchPriority="high"');
     expect(css).not.toContain('@import url(');
+    // The module sheet is a manifest of relative partials that Vite inlines at
+    // build time into one CSS-module scope; never a runtime import.
+    expect(manifest).toMatch(/^@import '\.\/daily-challenges\/[^']+\.css';$/m);
+    expect(manifest).not.toContain('url(');
     expect(css).toContain('@media (max-width: 680px)');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
     expect(css).toContain(':focus-visible');

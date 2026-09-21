@@ -144,3 +144,25 @@ The correct remaining fix is for the refusal path to record its bounded reason
 and for the successful retry to close what its own failures opened. That is
 engine-side; the engine is frozen on sha `8825af51`. **Suppressing the alerts
 would be the wrong fix and was not done.**
+
+## 3. A footnote on the two new function names
+
+`20260921023309` first called the two new measurement functions
+`fn_ca_reconcile_treasury_positions` and `fn_ca_reconcile_remeasure`, and
+`scripts/ci/check-no-new-band-aids.mjs` refused the branch. It was right to:
+`reconcile` is a band-aid word because a newly declared `_reconcile_` function
+in this estate has almost always been repair machinery.
+
+These two are not. Both are `STABLE` and neither writes anything - one measures
+a treasury position, the other asks whether a stored finding is still true.
+
+The guard was **not** weakened and nothing was added to
+`band-aid.allowlist.json`: that file is existing debt, it may only ever get
+shorter, and a read-only measurement is not debt. The names were simply wrong.
+`20260921024924` renames them to `fn_ca_treasury_positions` and
+`fn_ca_remeasure_entity`, which say what they do and carry no band-aid word,
+and recreates the two callers in the same transaction because plpgsql resolves
+a called function by name at run time. `20260921023309` is already applied and
+recorded byte-exactly, so it is not edited - this is the branch-scope
+declare-then-drop the checker documents, the same shape as its own cited 2026-09-07
+precedent.

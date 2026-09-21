@@ -295,7 +295,7 @@
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "f94ca2ae32d92fc4e5d981e8089d42d91f15a448c56483f7d3669d57942d4200",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "05c4f0889695b0153150bf0855f4c24280ac940006805bff6891e44d3118e65b",
     "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
@@ -485,7 +485,10 @@
     "tests/fixtures/earlybird-fee-custody/source-binding.json": "13c27ad79ba8b7f9b1b923a111bb173f03a2fdc5882ff5308adca230c56777a3",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
-    "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
+    "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
+    "tests/fixtures/messenger-private-accounting/payee-document-privacy-preimage.sql": "1f45bab2cf5905b7e3ba1000a60fc84b29201d977a77fd14c76239b40666d8dc",
+    "tests/fixtures/messenger-private-accounting/payee-document-privacy-regression.sql": "c06ddff8284d5d0e5f8d940edbdc99aafa34228104071061f7b48ae1009e8eac",
+    "supabase/migrations/20260921052548_payee_documents_are_private_to_their_payee_and_rosters_are_n.sql": "42a061f0c9101f11a847c415f7814dcd76a24a265a8525b32b23e2fd395c4b5e"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",

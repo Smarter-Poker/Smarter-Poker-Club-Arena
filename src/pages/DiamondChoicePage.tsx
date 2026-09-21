@@ -13,7 +13,7 @@ import TodayLine from '../components/games/TodayLine';
 import SealedPrize from '../components/games/SealedPrize';
 import { useGameCooldown } from '../hooks/useGameCooldown';
 import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
-import { useAwardAutoStart } from '../hooks/useAwardAutoStart';
+import { useAwardAutoStart, useRefusedAward } from '../hooks/useAwardAutoStart';
 import {
   bonusTotal,
   bonusWalletDebit,
@@ -21,7 +21,11 @@ import {
   gameChips,
   validBonusBudget,
 } from '../utils/bonusGameBudget';
-import { DiamondBonusService, BonusRefusal } from '../services/DiamondBonusService';
+import {
+  DiamondBonusService,
+  BonusRefusal,
+  type BonusStart,
+} from '../services/DiamondBonusService';
 import ChoiceScene from '../components/games/ChoiceScene';
 import {
   DiamondChoiceService,
@@ -126,7 +130,11 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const currentRound = useRef(round);
   currentRound.current = round;
   const uncertainTicket = useRef<string | null>(null);
-  const heldStart = useRef<Parameters<typeof DiamondBonusService.start>[0] | null>(null);
+  const heldStart = useRef<BonusStart | null>(null);
+  // The exact wager the server refused for its ticket alone. It goes again,
+  // unchanged but for the fresh ticket: never rebuilt from what the page
+  // happens to show by then (another award, another Double Down answer).
+  const owed = useRef<BonusStart | null>(null);
   const upgraded = round
     ? earnedReceiptBudget(round as unknown as Record<string, unknown>)?.award?.boostMultiplier === 2
     : budget.award?.boostMultiplier === 2;
@@ -192,6 +200,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           heldStart.current = pending;
           uncertainTicket.current = pending.commitId;
           setBudget(pending.budget);
+          setSeed(pending.seed);
           setUncertain(true);
         }
         await load(id);
@@ -296,13 +305,14 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       reportError(e, 'DiamondChoicePage.refresh');
       if (mounted.current) {
         if (e instanceof BonusRefusal) {
+          const refused = heldStart.current;
           heldStart.current = null;
           uncertainTicket.current = null;
           setUncertain(false);
           setSettleAttempts(0);
           setTicket(null);
           setError(e.message);
-          if (e.ticketGone) setRestartOwed(true);
+          settleRefusal(e, refused);
         } else {
           // Not an answer: the page tries again on its own schedule.
           setSettleAttempts((count) => count + 1);
@@ -316,10 +326,12 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     return true;
   };
   useAutoSettle(uncertain, settleAttempts, refresh);
-  const blocked =
+  // What the server's own state says about starting now. Deliberately without
+  // the entry quote, which blinks off during every start and must not count as
+  // the server changing its mind.
+  const stateBlocked =
     !earned.ready ||
     !validBonusBudget(budget) ||
-    quotedEntry !== `${uuid}:${game}:${mode}:${bet}` ||
     !state?.available ||
     state.frozen ||
     !state.is_member ||
@@ -327,7 +339,25 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     state.rounds_today >= state.daily_limit ||
     waitSeconds > 0 ||
     state.diamonds < bonusWalletDebit(budget);
-  const start = async () => {
+  const blocked = stateBlocked || quotedEntry !== `${uuid}:${game}:${mode}:${bet}`;
+  const refusal = useRefusedAward(earned.award?.id, stateBlocked);
+  /** One place decides what a refusal means; the start and the replay both land here. */
+  const settleRefusal = (e: BonusRefusal, refused: BonusStart | null) => {
+    if (e.ticketGone && refused) {
+      // Only the ticket was refused and nothing was charged: the same wager
+      // goes again on a fresh ticket, by itself.
+      owed.current = refused;
+      setRestartOwed(true);
+      return;
+    }
+    // Anything else: read the award again so the page shows why, and let go of
+    // the player until the server's reasons change.
+    refusal.refuse(refused?.budget.award?.id);
+    void earned.refresh();
+  };
+  /** Starts the round the page shows, or - given `resend` - re-sends exactly the
+   * wager the server refused for its ticket, on the ticket now in hand. */
+  const start = async (resend?: BonusStart) => {
     if (
       !uuid ||
       !ticket ||
@@ -335,7 +365,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       busyRef.current ||
       uncertain ||
       round?.status === 'open' ||
-      blocked
+      (!resend && blocked)
     )
       return;
     busyRef.current = true;
@@ -344,33 +374,22 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     setBusy(true);
     setError(null);
     setVerified(null);
-    uncertainTicket.current = ticket.id;
-    heldStart.current = {
-      clubId: uuid,
-      game,
-      mode,
-      budget,
-      commitId: ticket.id,
-      serverSeedHash: ticket.hash,
-      seed,
-      maxSteps: state.max_steps,
-    };
+    const request: BonusStart = resend
+      ? { ...resend, commitId: ticket.id, serverSeedHash: ticket.hash }
+      : {
+          clubId: uuid,
+          game,
+          mode,
+          budget,
+          commitId: ticket.id,
+          serverSeedHash: ticket.hash,
+          seed,
+          maxSteps: state.max_steps,
+        };
+    uncertainTicket.current = request.commitId;
+    heldStart.current = request;
     try {
-      const next = parseChoiceRound(
-        await DiamondBonusService.start(
-          {
-            clubId: uuid,
-            game,
-            mode,
-            budget,
-            commitId: ticket.id,
-            serverSeedHash: ticket.hash,
-            seed,
-            maxSteps: state.max_steps,
-          },
-          user?.id ?? ''
-        )
-      );
+      const next = parseChoiceRound(await DiamondBonusService.start(request, user?.id ?? ''));
       if (!mounted.current) return;
       earned.consume(next.award_id);
       currentRound.current = next;
@@ -397,12 +416,13 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           // Nothing was charged. The ticket is spent either way, so a fresh
           // one is dealt; when the ticket itself was the refusal the same
           // wager is sent again on it.
+          const refused = heldStart.current;
           heldStart.current = null;
           uncertainTicket.current = null;
           setUncertain(false);
           setTicket(null);
           setError(e.message);
-          if (e.ticketGone) setRestartOwed(true);
+          settleRefusal(e, refused);
           // This start cleared the entry quote. Read it again, so the next
           // start is not held on "Checking Your Entry" until someone refreshes.
           void load(uuid).catch((requoteError) => {
@@ -463,14 +483,16 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   startRef.current = start;
   const restarts = useRef(0);
   useEffect(() => {
-    // Start refuses silently while the entry is still being quoted, so the
-    // owed restart waits for it rather than being spent on a closed door.
-    if (!restartOwed || !ticket || uncertain || busy || blocked) return;
+    // The owed wager is re-sent as it was; only the server decides whether it
+    // can still start (a refusal now settles like any other).
+    if (!restartOwed || !ticket || uncertain || busy || round?.status === 'open') return;
     setRestartOwed(false);
-    if (restarts.current >= 2) return;
+    const wager = owed.current;
+    owed.current = null;
+    if (!wager || restarts.current >= 2) return;
     restarts.current += 1;
-    void startRef.current();
-  }, [restartOwed, ticket, uncertain, busy, blocked]);
+    void startRef.current(wager);
+  }, [restartOwed, ticket, uncertain, busy, round?.status]);
   // Games paused by the platform come back by themselves after the break.
   useStandingRefresh(Boolean(state?.frozen) && !busy && !uncertain && !sceneBusy, () => {
     void earned.refresh();
@@ -492,8 +514,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       !restartOwed &&
       !offerOpen &&
       !finishedOnScene &&
+      !refusal.refused &&
       seed.trim() !== '',
-    `${bet}:${seed}`,
+    `${bet}:${seed}:${refusal.opening}`,
     () => void startRef.current()
   );
   const picks = round?.picked.length ?? 0;
@@ -538,7 +561,11 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // it, and neither does the next award while a finished round's receipt is
   // waiting to take them back to the wheel.
   useLiveBonusGuard(
-    (Boolean(earned.award) && !blocked && Boolean(ticket) && !finishedOnScene) ||
+    (Boolean(earned.award) &&
+      !blocked &&
+      Boolean(ticket) &&
+      !finishedOnScene &&
+      !refusal.refused) ||
       busy ||
       uncertain ||
       open ||

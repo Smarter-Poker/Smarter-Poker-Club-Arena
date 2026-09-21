@@ -429,30 +429,20 @@ describe('a wager settles itself', () => {
     expect(backend.start).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps a refused ticket’s restart owed until Drop would be accepted', async () => {
+  it('re-sends the refused wager on its fresh ticket without waiting for the page to re-quote', async () => {
+    // Review 2026-09-21: the owed wager is the exact request the player sent.
+    // It goes again as it was, on the fresh ticket; the server is the only
+    // judge of whether it can still start, so a quote in flight on the page
+    // neither delays it nor changes it.
     fakeClock();
     direct();
-    let quoteAgain!: (value: unknown) => void;
-    backend.getState.mockResolvedValueOnce(DIRECT_STATE).mockReturnValueOnce(
-      new Promise((resolve) => {
-        quoteAgain = resolve;
-      })
-    );
+    backend.getState.mockResolvedValueOnce(DIRECT_STATE).mockReturnValueOnce(new Promise(() => {}));
     backend.start.mockRejectedValueOnce(new BonusRefusal(TICKET_REFUSED, true));
     render(<DiamondPlinkoPage />);
     await advance();
     fireEvent.click(drop());
     await advance();
-    // A fresh ticket is dealt and the entry quoted again; until that quote
-    // lands the page could not drop, so the restart is still owed, not spent.
     expect(backend.commit).toHaveBeenCalledTimes(2);
-    expect(backend.getState).toHaveBeenCalledTimes(2);
-    await advance(10000);
-    expect(backend.start).toHaveBeenCalledTimes(1);
-    await act(async () => {
-      quoteAgain(DIRECT_STATE);
-    });
-    await advance();
     const [first, second] = requests();
     expect(backend.start).toHaveBeenCalledTimes(2);
     expect(second).toEqual({
@@ -460,6 +450,8 @@ describe('a wager settles itself', () => {
       commitId: TICKETS[1].commit_id,
       serverSeedHash: TICKETS[1].server_seed_hash,
     });
+    await advance(10000);
+    expect(backend.start).toHaveBeenCalledTimes(2);
   });
 
   it('sends a refused ticket again at most twice, then leaves Drop to the player', async () => {
@@ -548,5 +540,42 @@ describe('a read that fails asks again by itself', () => {
     expect(drop()).toBeEnabled();
     await advance(60000);
     expect(backend.getState).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('a refused ticket re-sends the saved wager, never a rebuilt one', () => {
+  it('re-sends a saved Double Down once even when it can no longer be afforded, then hands the choice back', async () => {
+    // Review 2026-09-21: an owed restart the page could not afford used to wait
+    // forever, with the setup (and so Keep My Bonus) disabled underneath it.
+    fakeClock();
+    won({ ...state, player: { ...state.player, spendable: 0 } });
+    const saved = {
+      clubId: CLUB,
+      game: 'plinko',
+      budget: { ...AWARD_BUDGET, doubled: true, denomination: 30 },
+      commitId: '00000000-0000-0000-0000-0000000000aa',
+      serverSeedHash: 'f'.repeat(64),
+      seed: 'saved-seed',
+      tableVersion: 4,
+    };
+    sessionStorage.setItem(`diamond-spins-pending:player-a:${CLUB}:plinko`, JSON.stringify(saved));
+    backend.start
+      .mockRejectedValueOnce(new BonusRefusal(TICKET_REFUSED, true))
+      .mockRejectedValueOnce(new BonusRefusal('Buy More Diamonds To Double Down'));
+    render(<DiamondPlinkoPage />);
+    await advance();
+    await advance(1000);
+    const [replay, restart] = requests();
+    expect(replay).toEqual(saved);
+    expect(restart).toEqual({
+      ...saved,
+      commitId: TICKETS[0].commit_id,
+      serverSeedHash: TICKETS[0].server_seed_hash,
+    });
+    // The restart is spent: the setup is the player's again, offer included.
+    expect(screen.getByRole('dialog', { name: 'Double Down Your Bonus' })).toBeInTheDocument();
+    expect(holding()).toBe(false);
+    await advance(60000);
+    expect(backend.start).toHaveBeenCalledTimes(2);
   });
 });

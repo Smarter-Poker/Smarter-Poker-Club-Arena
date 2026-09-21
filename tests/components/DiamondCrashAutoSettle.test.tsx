@@ -503,3 +503,53 @@ describe('every read before Start is tried again by itself', () => {
     expect(backend.getState).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('a refused ticket re-sends the saved wager, never a rebuilt one', () => {
+  it('keeps the saved auto cash-out when a reloaded wager goes again on a fresh ticket', async () => {
+    // Review 2026-09-21: the restart used to rebuild the request from the page,
+    // whose Auto was back to Off after the reload, so the round ran with no exit.
+    const saved = {
+      clubId: CLUB,
+      game: 'crash',
+      budget: { base: 100, doubled: false, denomination: 10 },
+      commitId: '00000000-0000-0000-0000-000000000008',
+      serverSeedHash: 'c'.repeat(64),
+      seed: 'saved-seed',
+      autoCashoutCents: 200,
+    };
+    sessionStorage.setItem(`diamond-spins-pending:player-a:${CLUB}:crash`, JSON.stringify(saved));
+    backend.start
+      .mockRejectedValueOnce(new BonusRefusal('That Game Ticket Is No Longer Valid', true))
+      .mockResolvedValueOnce(open);
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    await elapse(0);
+    await act(async () => {});
+    expect(backend.start).toHaveBeenCalledTimes(2);
+    const [replay, restart] = backend.start.mock.calls.map(([request]) => request);
+    expect(replay).toEqual(saved);
+    expect(restart).toEqual({ ...saved, commitId: TICKET_A, serverSeedHash: 'a'.repeat(64) });
+    expect(screen.getByRole('button', { name: 'Book The Win' })).toBeEnabled();
+  });
+});
+
+describe('a refusal that is not about the ticket never traps the player', () => {
+  it('reads the award again and lets the player leave, without retrying on a timer', async () => {
+    quoteSuperAward();
+    backend.start.mockRejectedValueOnce(
+      new BonusRefusal('The Platform Is In Its Maintenance Break')
+    );
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    await answerOffer();
+    const reads = backend.awardState.mock.calls.length;
+    await elapse(5000);
+    await act(async () => {});
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    expect(backend.awardState.mock.calls.length).toBeGreaterThan(reads);
+    expect(guardHolds()).toBe(false);
+    await elapse(60000);
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    expect(guardHolds()).toBe(false);
+  });
+});

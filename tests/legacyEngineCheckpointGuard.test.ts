@@ -1229,6 +1229,221 @@ describe('exact 8825 retained original custody retirement', () => {
     expect(f.server.tableEngines.has(uuid(999))).toBe(false);
     expect(f.server.tableEngines.size).toBe(1);
   });
+  /* ═══ AN ENGINE THAT NEVER STARTED HOLDS NOTHING TO CHECKPOINT (2026-09-21) ═══
+     The live 8825 engine installs the cash table 3c00d4d0 in `tableEngines`
+     BEFORE `start()`, start() fails in `start_load_table`
+     (`retained_hand_submission_pending`), `killForRestart` fences it
+     (`terminal = true`, `running = false`), `recoverDirectTableEngine` stops
+     it and deletes it, and discovery re-admits it a second or two later. The
+     snapshot caught that object on most attempts and its scheduled departure
+     refused the checkpoint. This is exactly the shape the log shows: seeded
+     `handCount` (#13062928), "Dealt 0 hands", no seat, no bank. */
+  const unstartedCashEngine = (f: ReturnType<typeof mixedFixture>, n: number) => {
+    const e: any = new f.Table(n);
+    e.seatedPlayers = [];
+    e.timeBankEngine.playerBanks.clear();
+    e.timeBankMeta.clear();
+    e.parkedTimeBanks = {};
+    e.engineLeaseScope = 'cash';
+    e.engineLeaseVerified = true;
+    e.engineLeaseGeneration = uuid(70000 + n);
+    e.f06MovementAdmission = null;
+    e.loopPhase = 'start_load_table';
+    e.dealingLoopPromise = null;
+    e.handsDealtThisSession = 0;
+    e.handCount = 13062928;
+    e.running = true;
+    e.terminal = false;
+    e.teardownPromise = null;
+    return e;
+  };
+  // killForRestart('start_failed:start_load_table') then the recovery's stop()
+  // and map delete, in that order.
+  const killAndRemove = (f: ReturnType<typeof mixedFixture>, e: any) => {
+    e.terminal = true;
+    e.running = false;
+    e.handController = null;
+    e.teardownPromise = Promise.resolve();
+    f.server.tableEngines.delete(e.tableId);
+  };
+  it('does not checkpoint an unstarted cash engine and tolerates its kill and removal during an RPC', async () => {
+    const f = mixedFixture();
+    const churning = unstartedCashEngine(f, 999);
+    f.server.tableEngines.set(churning.tableId, churning);
+    let calls = 0;
+    f.onRpc(() => {
+      if (calls++ === 1) killAndRemove(f, churning);
+    });
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: true,
+      readyForRestart: true,
+      skippedUnstarted: 1,
+      unstartedDepartures: 1,
+      unstartedReplacements: 0,
+    });
+    expect(f.receipts.size).toBe(2);
+    expect(f.calls).not.toContain('parked_' + churning.tableId);
+    expect(f.rows.has(churning.tableId)).toBe(false);
+    expect(f.server.tableEngines.has(churning.tableId)).toBe(false);
+    expect(f.server.tableEngines.size).toBe(1);
+  });
+  it('does not checkpoint an unstarted cash engine that is still present at the end', async () => {
+    const f = mixedFixture();
+    const churning = unstartedCashEngine(f, 999);
+    f.server.tableEngines.set(churning.tableId, churning);
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: true,
+      readyForRestart: true,
+      skippedUnstarted: 1,
+      unstartedDepartures: 0,
+      unstartedReplacements: 0,
+    });
+    expect(f.receipts.size).toBe(2);
+    expect(f.rows.has(churning.tableId)).toBe(false);
+    expect(f.server.tableEngines.get(churning.tableId)).toBe(churning);
+    // The engine's own fields were only read.
+    expect(churning.running).toBe(true);
+    expect(churning.terminal).toBe(false);
+  });
+  it('follows the churn: a fenced unstarted engine replaced by another unstarted generation', async () => {
+    const f = mixedFixture();
+    const first = unstartedCashEngine(f, 999);
+    f.server.tableEngines.set(first.tableId, first);
+    const second = unstartedCashEngine(f, 999);
+    let calls = 0;
+    f.onRpc(() => {
+      const call = calls++;
+      if (call === 0) killAndRemove(f, first);
+      if (call === 1) f.server.tableEngines.set(second.tableId, second);
+      if (call === 2) killAndRemove(f, second);
+    });
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: true,
+      skippedUnstarted: 1,
+      unstartedReplacements: 1,
+      unstartedDepartures: 2,
+    });
+    expect(f.receipts.size).toBe(2);
+    expect(f.server.tableEngines.size).toBe(1);
+  });
+  it('refuses an unstarted engine that leaves the map without the fence and stop that precede the delete', async () => {
+    const f = mixedFixture();
+    const churning = unstartedCashEngine(f, 999);
+    f.server.tableEngines.set(churning.tableId, churning);
+    f.onRpc(() => f.server.tableEngines.delete(churning.tableId));
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'engine_identity_changed',
+      failedCheck: 'unstarted.departed_fenced',
+      failedTable: `unstarted_departed_unfenced:${churning.tableId}`,
+      skippedUnstarted: 1,
+    });
+    expect(f.receipts.size).toBe(0);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
+  it('refuses a skipped engine that acquires a seat and a bank during an RPC', async () => {
+    const f = mixedFixture();
+    const churning = unstartedCashEngine(f, 999);
+    f.server.tableEngines.set(churning.tableId, churning);
+    const started = new f.Table(999);
+    f.onRpc(() => {
+      churning.loopPhase = 'start_wait_for_players';
+      churning.seatedPlayers = started.seatedPlayers;
+      churning.timeBankMeta = started.timeBankMeta;
+      churning.timeBankEngine = started.timeBankEngine;
+    });
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'engine_state_changed',
+      failedCheck: 'unstarted.still_unstarted',
+      failedTable: `unstarted_acquired_custody:${churning.tableId}`,
+    });
+    expect(f.receipts.size).toBe(0);
+  });
+  it('refuses the successor when the churn re-admits a started engine behind a skipped table id', async () => {
+    const f = mixedFixture();
+    const first = unstartedCashEngine(f, 999);
+    f.server.tableEngines.set(first.tableId, first);
+    let calls = 0;
+    f.onRpc(() => {
+      const call = calls++;
+      if (call === 0) killAndRemove(f, first);
+      if (call === 1) f.server.tableEngines.set(first.tableId, new f.Table(999));
+    });
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'engine_identity_changed',
+      failedCheck: 'unstarted.successor_unstarted',
+      failedTable: `unstarted_replaced:${first.tableId}`,
+    });
+    // The refusal precedes every irreversible step: nothing was retired.
+    for (const { engine } of f.originals)
+      expect(f.server.tableEngines.get(engine.tableId)).toBe(engine);
+  });
+  it('still captures and refuses a STARTED cash engine that is removed during an RPC', async () => {
+    // Running, parked, holding a seat and a bank: the fixture default.
+    const f = mixedFixture();
+    const started = new f.Table(999);
+    f.server.tableEngines.set(started.tableId, started);
+    f.onRpc(() => killAndRemove(f, started));
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'fleet_identity_changed',
+      failedTable: `table_departed:${started.tableId}`,
+      skippedUnstarted: 0,
+    });
+    expect(f.receipts.size).toBe(0);
+  });
+  it('still captures and refuses an engine that dealt a hand this session, even with no seat left', async () => {
+    const f = mixedFixture();
+    const dealt = unstartedCashEngine(f, 999);
+    dealt.handsDealtThisSession = 1;
+    dealt.loopPhase = 'between_hands';
+    f.server.tableEngines.set(dealt.tableId, dealt);
+    f.onRpc(() => killAndRemove(f, dealt));
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'fleet_identity_changed',
+      failedTable: `table_departed:${dealt.tableId}`,
+      skippedUnstarted: 0,
+    });
+    expect(f.receipts.size).toBe(0);
+  });
+  it('never skips a retained original, even one carrying every unstarted flag', async () => {
+    const f = mixedFixture();
+    const { engine } = f.originals[0];
+    engine.loopPhase = 'start_load_table';
+    engine.handsDealtThisSession = 0;
+    engine.dealingLoopPromise = null;
+    engine.seatedPlayers = [];
+    engine.parkedTimeBanks = {};
+    engine.f06MovementAdmission = null;
+    f.onRpc(() => f.server.tableEngines.delete(engine.tableId));
+    const result = await f.run();
+    expect(result).toMatchObject({ ok: false, skippedUnstarted: 0 });
+    expect(String(result.failedTable ?? '')).toContain(engine.tableId);
+    expect(f.receipts.size).toBe(0);
+    expect(f.server.tableEngines.size).toBe(2);
+  });
+  it('never skips an unstarted-looking engine outside the direct cash lane', async () => {
+    const f = mixedFixture();
+    const owned = unstartedCashEngine(f, 999);
+    f.server.tableEngines.set(owned.tableId, owned);
+    f.server.tournamentOwnedTables.add(owned.tableId);
+    f.onRpc(() => killAndRemove(f, owned));
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'fleet_identity_changed',
+      failedTable: `table_departed:${owned.tableId}`,
+      skippedUnstarted: 0,
+    });
+  });
   // Each stop retry rebuilds a NEW frozen `drainedF06Originals` array holding
   // the same engines, and answers null while its teardown promise is set. The
   // engines' identities are what custody retires, so both pass; a different

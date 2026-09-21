@@ -155,6 +155,13 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   // Observability only: which tables were PROVED abandoned from rows, and how
   // many generations each carried. Never read by a decision.
   let abandonedBoundaries = null;
+  // Observability only: how many 8825 cash engines were in the map at the
+  // snapshot without ever having completed `start()` (never dealt, no seat, no
+  // bank), and how many times the churn replaced or removed one while the
+  // checkpoint ran. Never read by a decision.
+  let skippedUnstarted = 0;
+  let unstartedReplacements = 0;
+  let unstartedDepartures = 0;
   const refuse = (code) => {
     if (reason === null) reason = code;
     throw new Error('legacy_checkpoint_refused');
@@ -266,6 +273,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     // and position. `reason` above is untouched for existing parsers.
     ...(abandonedBoundaries === null ? {} : { abandonedBoundaries }),
     ...(refusalDetail === null ? {} : refusalDetail),
+    ...(retained8825 ? { skippedUnstarted, unstartedReplacements, unstartedDepartures } : {}),
   });
 
   try {
@@ -343,6 +351,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     const engines = new Set();
     const tableIds = new Set();
     const captures = [];
+    // 8825 cash engines observed at the snapshot before they ever completed
+    // `start()`. They are not captured; `checkUnstarted` follows them instead.
+    const unstartedTables = new Map();
+    let checkUnstarted = () => {};
     const base = modules.base.ServerTableEngineBase.prototype;
     const checkMaintenance = () => {
       // This bridge originates at process scope. Existing tournament-engine
@@ -431,6 +443,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         })
       );
       checkRetained();
+      checkUnstarted();
       return remaining;
     };
     checkMaintenance();
@@ -1961,12 +1974,141 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       };
     };
     const retainedEngines = retained8825 ? await captureMixedOriginals() : new Set();
+    /* ═══ AN ENGINE THAT NEVER STARTED HOLDS NOTHING TO CHECKPOINT (2026-09-21) ═══
+
+       The live 8825 engine re-admits the cash table 3c00d4d0 every few seconds:
+       `ensureCashTableEngineAdmission` does `this.tableEngines.set(tableId,
+       engine)` BEFORE `void engine.start()` (GameServer.ts:9665-9684), start()
+       sets `running = true` and `loopPhase = 'start_load_table'` before its
+       first await (ServerTableEngineBase.ts:2960-2965), `checkCrashRecovery`
+       throws `retained_hand_submission_pending`, and the catch runs
+       `killForRestart('start_failed:start_load_table')` (3387), which sets
+       `terminal = true; running = false; handController = null` (4711-4712,
+       4735). `recoverDirectTableEngine` then awaits `engine.stop()` (so
+       `teardownPromise` is a Promise) and only then `tableEngines.delete`
+       (GameServer.ts:1660-1706). The snapshot above caught that object in
+       the map on most attempts, `captureEngine` pinned it, and its scheduled
+       departure refused the whole checkpoint.
+
+       Such an object owns nothing this checkpoint persists. `seatedPlayers` is
+       filled only by `adoptSeatRoster` from the wait-for-players loop, which
+       runs after the `waiting` transition (3217, 4259); `handsDealtThisSession`
+       is incremented only when a hand is dealt (ServerTableEngineDealing.ts:
+       1833); the dealing loop is installed only at the end of start() (3355);
+       and `parkedTimeBanks`/presence are read only after crash recovery
+       (3130-3141). `handCount` is NOT a witness: `seedHandCountFromHistory`
+       (3093) restores the last persisted hand number before the failure.
+
+       The exclusion is the conjunction below and nothing wider: 8825 only,
+       the direct cash lane only (never a tournament-owned table, never a
+       retained original, never an F06 movement admission), loop phase still
+       `not_started`/`start_load_table`, no dealing loop, zero hands dealt this
+       session, no hand controller, no seat, no bank, no bank metadata, no
+       parked bank, no presence state, no in-flight settlement or boundary.
+       Anything else is captured and pinned exactly as before. */
+    const ownedTables = server.tournamentOwnedTables;
+    const neverStarted = (tableId, engine) => {
+      if (!retained8825) return false;
+      try {
+        return (
+          engine instanceof modules.base.ServerTableEngineBase &&
+          engine.tableId === tableId &&
+          !retainedEngines.has(engine) &&
+          ownedTables instanceof Set &&
+          !ownedTables.has(tableId) &&
+          engine.engineLeaseScope === 'cash' &&
+          engine.engineLeaseVerified === true &&
+          engine.f06MovementAdmission === null &&
+          engine.f06CurrentPermit === null &&
+          engine.f06RecoveryInFlight === false &&
+          (engine.loopPhase === 'start_load_table' || engine.loopPhase === 'not_started') &&
+          engine.dealingLoopPromise === null &&
+          engine.handsDealtThisSession === 0 &&
+          engine.handController === null &&
+          Array.isArray(engine.seatedPlayers) &&
+          engine.seatedPlayers.length === 0 &&
+          engine.timeBankMeta instanceof Map &&
+          engine.timeBankMeta.size === 0 &&
+          engine.timeBankEngine?.playerBanks instanceof Map &&
+          engine.timeBankEngine.playerBanks.size === 0 &&
+          record(engine.parkedTimeBanks) &&
+          Object.keys(engine.parkedTimeBanks).length === 0 &&
+          engine.timeBankAccountingPending instanceof Set &&
+          engine.timeBankAccountingPending.size === 0 &&
+          engine.timeBankAccountingUnconfirmed === false &&
+          engine.settlementInFlight instanceof Set &&
+          engine.settlementInFlight.size === 0 &&
+          engine.postHandTasksPromise === null &&
+          engine.tournamentMoveOperations instanceof Set &&
+          engine.tournamentMoveOperations.size === 0 &&
+          engine.terminalBoundaryPendingGenerations instanceof Set &&
+          engine.terminalBoundaryPendingGenerations.size === 0 &&
+          engine.terminalBoundaryPersistenceFailed === false &&
+          (() => {
+            const states = engine.disconnectEngine.getFsmStatesForTable(tableId);
+            return record(states) && Object.keys(states).length === 0;
+          })()
+        );
+      } catch {
+        return false;
+      }
+    };
+    // The watchdog kill and the stop that precede the map delete (8825
+    // ServerTableEngineBase.ts:4711-4712 and 3445, GameServer.ts:1660-1706).
+    const fencedNeverStarted = (tableId, engine) =>
+      neverStarted(tableId, engine) &&
+      engine.terminal === true &&
+      engine.running === false &&
+      engine.teardownPromise instanceof Promise;
+    checkUnstarted = () => {
+      for (const [tableId, tracked] of unstartedTables) {
+        const current = tableMap.get(tableId);
+        if (current === tracked.engine) {
+          // Still the same object, started or fenced: it must still own nothing.
+          witness(
+            'engine_state_changed',
+            [['unstarted.still_unstarted', () => neverStarted(tableId, current)]],
+            () => ({ failedTable: `unstarted_acquired_custody:${tableId}` })
+          );
+        } else if (current === undefined) {
+          // Departed: tolerated only for a fenced object that never dealt.
+          witness(
+            'engine_identity_changed',
+            [['unstarted.departed_fenced', () => fencedNeverStarted(tableId, tracked.engine)]],
+            () => ({ failedTable: `unstarted_departed_unfenced:${tableId}` })
+          );
+          if (!tracked.departed) {
+            tracked.departed = true;
+            unstartedDepartures++;
+          }
+        } else {
+          // Replaced: the old object must be fenced and never have dealt, and the
+          // successor must itself be an unstarted engine; then follow the successor.
+          witness(
+            'engine_identity_changed',
+            [
+              ['unstarted.replaced_fenced', () => fencedNeverStarted(tableId, tracked.engine)],
+              ['unstarted.successor_unstarted', () => neverStarted(tableId, current)],
+            ],
+            () => ({ failedTable: `unstarted_replaced:${tableId}` })
+          );
+          tracked.engine = current;
+          tracked.departed = false;
+          unstartedReplacements++;
+        }
+      }
+    };
     for (const [id, engine] of entries) {
       if (retainedEngines.has(engine)) continue;
       require(!engines.has(engine), 'engine_not_unique');
       require(uuid(id) && !tableIds.has(id.toLowerCase()), 'engine_identity_mismatch');
       tableIds.add(id.toLowerCase());
       engines.add(engine);
+      if (neverStarted(id, engine)) {
+        unstartedTables.set(id, { engine, departed: false });
+        skippedUnstarted++;
+        continue;
+      }
       captures.push(captureEngine(id, engine));
     }
     const checkEngine = (captured) => {

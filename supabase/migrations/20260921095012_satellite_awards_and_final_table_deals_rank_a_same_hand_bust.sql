@@ -2,6 +2,13 @@
 --
 -- Reserved by scripts/new-migration.mjs on 2026-09-21 09:50:12 UTC.
 -- Written and proved against bodies read from production 2026-09-21 (read-only).
+-- Amended (second pass, 2026-09-21 11:15 UTC, NOT yet applied) after the first
+-- pass was refused by its own post-image assertion in production: this database
+-- grants service_role EXECUTE on every new function by default privilege, so
+-- revoking only PUBLIC, anon and authenticated left the helper holding a grant
+-- the assertion did not expect. The grant is now restated explicitly and
+-- asserted, so the helper's authority is the same on a database with that
+-- default and on one without. Nothing was applied by the refused pass.
 --
 -- DO NOT APPLY INSIDE MINUTE :50-:03 UTC. That is the hourly break window: the
 -- database refuses DDL in it (ca_break_window_refuses_ddl). Apply once, after
@@ -221,6 +228,11 @@ ALTER FUNCTION public.fn_ca_tournament_bust_at(uuid, uuid) OWNER TO postgres;
 -- DEFINER ladder owned by postgres, which executes it as the owner.
 REVOKE ALL ON FUNCTION public.fn_ca_tournament_bust_at(uuid, uuid)
   FROM PUBLIC, anon, authenticated;
+-- This database grants service_role EXECUTE on every new function by default
+-- privilege. The grant is restated here so the helper's authority is written
+-- down and identical on a database that has no such default, rather than
+-- inherited silently from one that does.
+GRANT EXECUTE ON FUNCTION public.fn_ca_tournament_bust_at(uuid, uuid) TO service_role;
 
 COMMENT ON FUNCTION public.fn_ca_tournament_bust_at(uuid, uuid) IS
   'When a bust happened: the commit time of the accepted hand that took the '
@@ -5260,7 +5272,7 @@ BEGIN
        AND pg_get_function_result(p.oid) = 'timestamp with time zone'
        AND md5(p.prosrc) = 'c5b7ee34f9105658870eaa3c874c314d'
        AND pg_get_userbyid(p.proowner) = 'postgres'
-       AND p.proacl::text = '{postgres=X/postgres}'
+       AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
        AND p.proconfig::text = '{search_path=public}'
        AND p.prosecdef AND p.provolatile = 's'
   ) THEN

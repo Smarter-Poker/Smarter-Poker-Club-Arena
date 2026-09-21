@@ -225,4 +225,73 @@ BEGIN
  PERFORM pg_temp.assert_pnl_hook(bad=0,
   format('every recorded ECO is the figure its square-up states (%s disagreeing)',bad));
 END $$;
+
+-- ===========================================================================
+-- THE TOURNAMENT RAKE LEG NAMES THE CLUB IT WAS EARNED IN (20260921065613)
+--
+-- 20260921040847 fixed the CASH rake payer and the union cash rake leg has
+-- named its club since ~04:08Z on 2026-09-21. One producer was left: union
+-- rake also arrives from a tournament fee. fn_settle_tournament_rake declares
+-- the ledger category, the counterparty 'prize_liability' and the
+-- counterparty entity for exactly those legs, then credits
+-- union_wallets.rake_wallet through increment_union_wallet - and never said
+-- which club. union_wallets has no club_id column, so fn_ca_autoledger took
+-- the ELSE branch of its club CASE and wrote the leg club-less. Measured on
+-- production 2026-09-21 06:50Z: of 436 union rake legs written after the cash
+-- fix, 435 came from_type='table_stack' and named their club; the 1 that did
+-- not was from_type='prize_liability' - chip_ledger
+-- 7c1236b3-5b71-4859-9c30-d0c5dd8bce15, 80.00, club_id NULL - while its
+-- sibling union_wallet_transactions row recorded the club perfectly well.
+-- from_type on a credit IS the payer's declared app.ledger_counterparty, so
+-- it names the producer; that is how the two were told apart.
+-- ===========================================================================
+DO $$DECLARE source text;
+BEGIN
+ SELECT prosrc INTO source FROM pg_proc
+   WHERE oid='public.fn_settle_tournament_rake(uuid,text)'::regprocedure;
+ PERFORM pg_temp.assert_pnl_hook(
+  (length(source)-length(replace(source,'app.ledger_autoledger_club_id','')))
+   /length('app.ledger_autoledger_club_id')=2
+  AND strpos(source,'set_config(''app.ledger_autoledger_club_id'',COALESCE(v_t.club_id::text')>0,
+  'the tournament rake payer names the club its fee was earned in on the autoledger declaration, and clears it once');
+ -- Order is the whole contract. A declaration made after the credit journals
+ -- nothing, and a clear made before it would journal nothing either. Match the
+ -- CALL and not the bare name: the declaration's own comment names the helper
+ -- too, and strpos would find that comment first.
+ PERFORM pg_temp.assert_pnl_hook(
+  strpos(source,'set_config(''app.ledger_autoledger_club_id'',COALESCE(v_t.club_id::text')
+    < strpos(source,'public.increment_union_wallet(')
+  AND strpos(source,'set_config(''app.ledger_autoledger_club_id'','''',true)')
+    > strpos(source,'public.increment_union_wallet('),
+  'the club declaration and its clear bracket the union credit, so the leg is journalled inside the declared window and no later leg inherits it');
+ -- The declaration can only be honest because a club-less tournament fee is
+ -- refused before any wallet is touched. If that refusal goes, the payer can
+ -- declare an empty club and this assertion must fail rather than pass quietly.
+ PERFORM pg_temp.assert_pnl_hook(
+  strpos(source,'IF v_t.club_id IS NULL THEN RAISE EXCEPTION ''tournament_fee_bank_club_required''')>0,
+  'a tournament fee with no bank club is still refused, so the declared club can never be empty');
+END $$;
+
+-- EVERY PRODUCER OF A UNION RAKE CREDIT NAMES THE CLUB IT WAS EARNED IN.
+-- Not a list of the two known payers: the rule is derived from the catalog,
+-- so a third door added later is caught the day it appears. A union rake
+-- credit is a function that increments union_wallets.rake_wallet, or that
+-- reaches it through increment_union_wallet. The rakeback payers that
+-- DECREMENT the same column (fn_union_weekly_rakeback_close,
+-- fn_union_send_to_member_zd3core) are not rake producers and are correctly
+-- outside this rule; increment_union_wallet itself holds no club of its own
+-- and is only ever reached through a caller this rule covers.
+DO $$DECLARE bad text;
+BEGIN
+ SELECT string_agg(p.proname,', ' ORDER BY p.proname) INTO bad
+   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+  WHERE n.nspname='public' AND p.prokind='f'
+    AND p.proname<>'increment_union_wallet'
+    AND (p.prosrc ~ 'rake_wallet\s*=\s*[a-zA-Z_.]*rake_wallet\s*\+'
+         OR strpos(p.prosrc,'public.increment_union_wallet(')>0)
+    AND strpos(p.prosrc,'app.ledger_autoledger_club_id')=0;
+ PERFORM pg_temp.assert_pnl_hook(bad IS NULL,
+  format('every union rake credit producer declares the club its leg was earned in (%s does not)',
+         COALESCE(bad,'none')));
+END $$;
 ROLLBACK;

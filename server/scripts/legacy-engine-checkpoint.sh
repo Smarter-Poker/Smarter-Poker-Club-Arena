@@ -104,5 +104,7 @@ PY
   || die 'checkpoint or inspector cleanup refused; do not retry this operation'
 [ "$(timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")" = "$IDENTITY" ] \
   || die 'predecessor changed during checkpoint'
-# This helper cannot certify or start cutover. The caller must now pass the
-# original maintenance_certificate with the complete 285000ms reserve.
+# This helper cannot certify or start cutover. Entry above demanded the strict
+# 285000ms; the caller must now pass the original maintenance_certificate with
+# the 260000ms legacy reserve (285000ms entry minus the 25000ms checkpoint
+# budget, taken from candidate proof, never from the 135s rollback reserve).

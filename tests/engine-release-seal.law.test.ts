@@ -138,7 +138,7 @@ it('executes the actual bounded recovery request without duplicate pauses', () =
     { encoding: 'utf8' }
   );
   expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 8 tests');
+  expect(result.stderr).toContain('Ran 9 tests');
 });
 
 it('recovers only genuinely orphaned finalization through the current completion event', () => {
@@ -2593,6 +2593,16 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
     expect(transaction).toContain('m.get("unparkedTables")==0');
     expect(transaction).toContain('if remaining<int(__import__("os").environ["MIN_BREAK_MS"]):');
     expect(transaction).toContain('MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS"');
+    // The certificate's minimum is an explicit argument that defaults to the
+    // strict figure; the entry countdown always reads the strict figure.
+    expect(transaction).toContain('local minimum_ms="${1:-$MIN_BREAK_REMAINING_MS}"');
+    expect(transaction).toContain('MIN_BREAK_MS="$minimum_ms"');
+    const countdown = transaction.slice(
+      transaction.indexOf('legacy_checkpoint_countdown() {'),
+      transaction.indexOf('\npersist_break_deadline() {')
+    );
+    expect(countdown).toContain('MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS"');
+    expect(countdown).not.toContain('LEGACY_MIN_BREAK_REMAINING_MS');
   });
 
   it('executes short-window queue refusal, retry, deadline, supersession and cancellation cases', () => {
@@ -2606,7 +2616,7 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
       }
     );
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-    expect(result.stderr).toContain('Ran 10 tests');
+    expect(result.stderr).toContain('Ran 13 tests');
   });
 
   it('guarantee and rollback can only recover the durable desired image', () => {
@@ -2633,6 +2643,13 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
       'MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS) * 1000))'
     );
     expect((150 + 135) * 1000).toBeLessThan(5 * 60 * 1000);
+    // The legacy checkpoint's 25 seconds come out of candidate proof only.
+    expect(transaction).toContain('LEGACY_CHECKPOINT_BUDGET_SECONDS=25');
+    expect(transaction).toContain(
+      'LEGACY_MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS - LEGACY_CHECKPOINT_BUDGET_SECONDS) * 1000))'
+    );
+    expect((150 + 135 + 0 - 25) * 1000).toBe(260_000);
+    expect(150 - 25).toBeGreaterThan(112);
     expect(transaction).toContain('if [ "$CERTIFICATE_RC" -eq 2 ]');
     expect(transaction).toContain('refusing before mutation');
     const readiness = transaction.indexOf(

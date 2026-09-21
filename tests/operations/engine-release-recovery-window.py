@@ -56,13 +56,13 @@ request_recovery_window
         return result, events.read_text().splitlines() if events.exists() else []
 
 
-def certificate(maintenance, *, running=True, transport=True, http=200):
+def certificate(maintenance, *, running=True, transport=True, http=200, minimum=None):
     response = json.dumps({'running': running, 'maintenance': maintenance}) + f'\n{http}'
     script = f'''set -euo pipefail
 MIN_BREAK_REMAINING_MS=285000
 curl() {{ [ {int(transport)} = 1 ] || return 1; printf '%s' {shlex.quote(response)}; }}
 {CERTIFICATE}
-maintenance_certificate
+maintenance_certificate {'' if minimum is None else int(minimum)}
 '''
     return subprocess.run(['bash'], input=script, text=True, capture_output=True, timeout=5)
 
@@ -80,6 +80,25 @@ class RecoveryWindowTests(unittest.TestCase):
                 self.assertEqual(result.stdout.strip(), str(remaining))
         self.assertEqual(certificate({**window, 'readyForRestart': True,
                                       'unparkedTables': 0}).returncode, 0)
+
+    def test_legacy_reserve_is_only_accepted_when_the_caller_names_it(self):
+        # After the exact legacy checkpoint the transaction passes its 260000ms
+        # legacy reserve explicitly. Without that argument the strict 285000ms
+        # entry minimum still governs, so the same 270000ms window is a missed
+        # opportunity for an ordinary release and a complete certificate only
+        # for the caller that has just paid the checkpoint budget.
+        window = {'active': True, 'phase': 'counting_down', 'durableConfirmed': True,
+                  'remainingMs': 270000, 'readyForRestart': True, 'unparkedTables': 0}
+        self.assertEqual(certificate(window).returncode, 2)
+        self.assertEqual(certificate(window, minimum=285000).returncode, 2)
+        self.assertEqual(certificate(window, minimum=260000).returncode, 0)
+        self.assertEqual(certificate({**window, 'remainingMs': 260000}, minimum=260000).returncode, 0)
+        boundary = certificate({**window, 'remainingMs': 259999}, minimum=260000)
+        self.assertEqual(boundary.returncode, 2, boundary.stderr)
+        self.assertEqual(boundary.stdout.strip(), '259999')
+        # The smaller minimum relaxes nothing but time.
+        self.assertEqual(certificate({**window, 'readyForRestart': False, 'unparkedTables': 1},
+                                     minimum=260000).returncode, 1)
 
     def test_missing_or_unconfirmed_observation_never_qualifies_a_recovery(self):
         window = {'active': True, 'phase': 'counting_down', 'durableConfirmed': True,

@@ -43,12 +43,31 @@ CERTIFICATE_RESERVE_SECONDS=720
 BREAK_CUTOVER_PROOF_SECONDS=150
 BREAK_ROLLBACK_RESERVE_SECONDS=135
 BREAK_DEADLINE_SLACK_SECONDS=0
+# THE LEGACY CHECKPOINT GETS THE SECONDS IT NEEDS (2026-09-21)
+# ───────────────────────────────────────────────────────────
+# The engine's countdown is BREAK_DURATION_MS, 300000ms, every break. The
+# strict 285000ms certificate above leaves 15 seconds of entry slack, and the
+# legacy 8825 checkpoint has to fit inside it: countdown detection, the
+# rollback proof, the helper preamble AND the publisher's bounded work. In run
+# 35615604946 the sequence reached the guard's first check 15.2 seconds into
+# the countdown and it refused with insufficient_reserve, as the arithmetic
+# says it always must. So the publisher's own budget is now written down here
+# and taken out of the CANDIDATE PROOF budget, never the rollback reserve:
+# legacy-engine-checkpoint.mjs bounds its work at workBudgetMs 20000 and its
+# cleanup at cleanupBudgetMs 5000, 25 seconds together. The certificate read
+# after the checkpoint therefore accepts 285 - 25 = 260 seconds, which still
+# holds the full 135-second rollback reserve and leaves 125 seconds of
+# candidate proof against the 51-112 seconds sealed runs have measured. The
+# checkpoint may only START inside the 285000ms entry slack; that entry check,
+# and the ordinary certificate for every non-legacy release, do not move.
+LEGACY_CHECKPOINT_BUDGET_SECONDS=25
 NON_BREAK_RECOVERY_MAX_SECONDS=300
 # CLAUDE.md 13: the engine restarts inside the announced break that opens at
 # :55 of every hour. This is the same minute every other surface reads, and
 # tests/the-break-clocks-agree.law.test.ts pins them together.
 BREAK_START_MINUTE=55
 MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS) * 1000))
+LEGACY_MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS - LEGACY_CHECKPOINT_BUDGET_SECONDS) * 1000))
 
 die() {
   echo "[engine-release-transaction] FATAL: $*" >&2
@@ -425,6 +444,10 @@ health_instance() {
 # adds two independent witnesses to it - and weaker only for a preparation
 # that is provably not a hand. Unreadable is a refusal at every step.
 maintenance_certificate() {
+  # The minimum break remaining is the strict MIN_BREAK_REMAINING_MS unless the
+  # caller names another; the only caller that does is the read straight after
+  # a legacy checkpoint, which passes LEGACY_MIN_BREAK_REMAINING_MS.
+  local minimum_ms="${1:-$MIN_BREAK_REMAINING_MS}"
   local response http_code body verdict status
   # A degraded optional subsystem can correctly make /health return 503 while
   # the engine is still running and has durably parked every table for this
@@ -439,7 +462,7 @@ maintenance_certificate() {
     *) return 1 ;;
   esac
   set +e
-  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS" python3 -c '
+  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" python3 -c '
 import json, sys
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -461,8 +484,9 @@ if ok:
 # reason not to restart. See the block comment above this function.
 #
 # The window, durability and time-remaining predicates above have all already
-# passed, and this script demands 285000ms where the engine demands 180000ms,
-# so at this exact point the ONLY thing keeping readyForRestart shut is the
+# passed, and this script demands 285000ms (260000ms straight after a legacy
+# checkpoint) where the engine demands 180000ms, so at this exact point the
+# ONLY thing keeping readyForRestart shut is the
 # unparked count. Nothing else is being relaxed.
 PREPARATION_ONLY={"f06_preparation_unresolved","f06_preparation_stuck"}
 unparked=m.get("unparkedTables")
@@ -1151,8 +1175,9 @@ while :; do
     [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 0 ] \
       || die 'legacy checkpoint was already attempted; refusing a retry'
     # This provisional deadline bounds predecessor proof only. It is not
-    # persisted as a cutover certificate. Checkpoint cleanup may consume entry
-    # slack; it must complete before the strict 285000ms certificate is read.
+    # persisted as a cutover certificate. The checkpoint and its cleanup
+    # consume up to LEGACY_CHECKPOINT_BUDGET_SECONDS of the candidate-proof
+    # budget; the certificate read after them demands LEGACY_MIN_BREAK_REMAINING_MS.
     BREAK_END_EPOCH="$LEGACY_COUNTDOWN_END"
     prove_rollback_readiness
     LEGACY_CHECKPOINT_ATTEMPTED=1
@@ -1161,16 +1186,24 @@ while :; do
     BREAK_END_EPOCH=0
   fi
   set +e
-  BREAK_REMAINING_MS="$(maintenance_certificate)"
+  if [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ]; then
+    # Only a legacy checkpoint that actually ran is read against the smaller
+    # post-checkpoint minimum; every other locked read keeps the strict one.
+    CERTIFICATE_MIN_BREAK_MS="$LEGACY_MIN_BREAK_REMAINING_MS"
+    BREAK_REMAINING_MS="$(maintenance_certificate "$LEGACY_MIN_BREAK_REMAINING_MS")"
+  else
+    CERTIFICATE_MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS"
+    BREAK_REMAINING_MS="$(maintenance_certificate)"
+  fi
   CERTIFICATE_RC=$?
   set -e
   if [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ] && [ "$CERTIFICATE_RC" -ne 0 ]; then
-    die 'legacy checkpoint did not retain the full restart certificate and 285000ms reserve'
+    die "legacy checkpoint did not retain the full restart certificate and ${LEGACY_MIN_BREAK_REMAINING_MS}ms legacy reserve (${BREAK_REMAINING_MS:-0}ms remaining, certificate rc $CERTIFICATE_RC)"
   fi
   if [ "$CERTIFICATE_RC" -eq 2 ]; then
     RECOVERY_ADMISSION_MISSED=1
     release_engine_lock
-    echo "[engine-release-transaction] the locked table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; waiting for a later certificate"
+    echo "[engine-release-transaction] the locked table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${CERTIFICATE_MIN_BREAK_MS}ms candidate-and-recovery budget; waiting for a later certificate"
     bounded_sleep 15
     continue
   fi

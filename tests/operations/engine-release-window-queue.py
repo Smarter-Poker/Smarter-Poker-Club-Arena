@@ -17,7 +17,7 @@ RECOVERY = SOURCE[SOURCE.index('RECOVERY_REQUESTED=0'):SOURCE.index('persist_bre
 
 
 def run_queue(certificates, *, now=100, deadline=1000, certificate_deadline=900,
-              supersede_on=0, cancellation=False, already_released=False):
+              supersede_on=0, cancellation=False, already_released=False, legacy=False):
     with tempfile.TemporaryDirectory(prefix='engine-window-queue-') as temp:
         directory = Path(temp)
         sequence = directory / 'certificate-sequence'
@@ -35,8 +35,9 @@ CERTIFICATE_DEADLINE={certificate_deadline}
 NEXT_FRESHNESS_CHECK=0
 BREAK_END_EPOCH=0
 MIN_BREAK_REMAINING_MS=285000
+LEGACY_MIN_BREAK_REMAINING_MS=260000
 LOCK_HELD=0
-LEGACY_CHECKPOINT_REQUIRED=0
+LEGACY_CHECKPOINT_REQUIRED={int(legacy)}
 LEGACY_CHECKPOINT_ATTEMPTED=0
 FRESHNESS_CALLS=0
 EVENTS={shlex.quote(str(events))}
@@ -69,9 +70,24 @@ exact_runtime_instance() {{
   return 1
 }}
 emit_already_released() {{ event ALREADY_RELEASED; exit 0; }}
+# The exact legacy 8825 checkpoint path: entry countdown, seal read, rollback
+# proof and the one-shot helper are stubbed; the queue's own ordering and the
+# minimum it hands the post-checkpoint certificate are what is under test.
+RUN_ID=35615604946-1
+RELEASE_SEAL=engine-release-seal.py
+LEGACY_CHECKPOINT_SHA=2f4e33560bcd23bfb5cc731f31816b2c2e2847e5
+CHECKPOINT_758_SHA=758610f3f844406bbbaee2f5100ced36d84fb943
+CHECKPOINT_A0_SHA=a0ab287d902879280f0c915e44f5222c5db4d7df
+CHECKPOINT_8825_SHA=8825af51817f379c4261658ca29ecc9d8d81932d
+CHECKPOINT_PREDECESSOR_SHA="$CHECKPOINT_8825_SHA"
+legacy_checkpoint_countdown() {{ event "COUNTDOWN:$LOCK_HELD"; printf '%s\\n' $((NOW + 299)); }}
+timeout() {{ printf '%s\\n' "$CHECKPOINT_8825_SHA"; }}
+prove_rollback_readiness() {{ event "ROLLBACK_PROOF:$LOCK_HELD:$BREAK_END_EPOCH"; }}
+legacy_checkpoint_stub() {{ [ "$1" = "$RUN_ID" ]; event "LEGACY_CHECKPOINT:$LOCK_HELD"; NOW=$((NOW + 25)); }}
+LEGACY_CHECKPOINT=legacy_checkpoint_stub
 maintenance_certificate() {{
   n=$(cat "$SEQUENCE"); n=$((n + 1)); printf '%s\\n' "$n" > "$SEQUENCE"
-  event "CERTIFICATE:$n:$LOCK_HELD"
+  event "CERTIFICATE:$n:$LOCK_HELD:${{1:-$MIN_BREAK_REMAINING_MS}}"
   case "$n" in
     {branches}
     *) printf '0\\n'; return 1 ;;
@@ -81,7 +97,8 @@ maintenance_certificate() {{
 {RECOVERY}
 {QUEUE}
   [ "$LOCK_HELD" = 1 ] || exit 95
-  [ "$BREAK_REMAINING_MS" -ge "$MIN_BREAK_REMAINING_MS" ] || exit 94
+  [ "$BREAK_REMAINING_MS" -ge "$CERTIFICATE_MIN_BREAK_MS" ] || exit 94
+  [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ] || [ "$CERTIFICATE_MIN_BREAK_MS" = "$MIN_BREAK_REMAINING_MS" ] || exit 93
   event "PREPARE_ALLOWED:$DEADLINE:$CERTIFICATE_DEADLINE:$BREAK_END_EPOCH"
   break
 done
@@ -163,6 +180,37 @@ class WindowQueueTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assert_no_mutation(events)
         self.assertEqual(events[-1], 'ALREADY_RELEASED')
+
+    def test_ordinary_locked_certificate_keeps_the_strict_minimum(self):
+        result, events = run_queue([(0, 299999), (0, 299000)])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([e for e in events if e.startswith('CERTIFICATE:')],
+                         ['CERTIFICATE:1:0:285000', 'CERTIFICATE:2:1:285000'])
+        self.assertNotIn('LEGACY_CHECKPOINT:1', events)
+
+    def test_legacy_checkpoint_is_read_against_the_legacy_reserve_after_it_ran(self):
+        # Run 35615604946: the checkpoint enters inside the 285000ms slack and
+        # its 25-second budget comes out of candidate proof. 270000ms after it
+        # is a complete certificate at the 260000ms legacy minimum, never at the
+        # strict one, and only once the checkpoint has actually been attempted.
+        result, events = run_queue([(2, 275000), (0, 270000)], legacy=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        certificates = [e for e in events if e.startswith('CERTIFICATE:')]
+        self.assertEqual(certificates, ['CERTIFICATE:1:0:285000', 'CERTIFICATE:2:1:260000'])
+        checkpoint = events.index('LEGACY_CHECKPOINT:1')
+        self.assertLess(events.index('ROLLBACK_PROOF:1:399'), checkpoint)
+        self.assertLess(checkpoint, events.index('CERTIFICATE:2:1:260000'))
+        self.assertEqual(events[-1], 'PREPARE_ALLOWED:1000:900:0')
+        self.assertEqual(events.count('LOCK'), 1)
+
+    def test_legacy_checkpoint_that_breaks_the_legacy_reserve_dies_before_prepare(self):
+        result, events = run_queue([(2, 275000), (2, 259999)], legacy=True)
+        self.assertEqual(result.returncode, 1)
+        self.assert_no_mutation(events)
+        self.assertIn('LEGACY_CHECKPOINT:1', events)
+        self.assertIn('CERTIFICATE:2:1:260000', events)
+        self.assertIn('260000ms legacy reserve', events[-1])
+        self.assertIn('259999ms remaining', events[-1])
 
 
 if __name__ == '__main__':

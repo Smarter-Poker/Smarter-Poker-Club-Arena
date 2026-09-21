@@ -346,6 +346,33 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     expect(f.calls).toEqual([]);
   });
 
+  it('holds exactly the 260000ms legacy reserve the transaction accepts after a checkpoint', async () => {
+    // Entry demands 285000ms; the publisher's bounded work (20 s) and cleanup
+    // (5 s) are paid out of the candidate-proof budget, so the guard's own floor
+    // is 285000 - 25000 = 260000ms, the LEGACY_MIN_BREAK_REMAINING_MS figure
+    // engine-release-transaction.sh reads straight after the checkpoint. The
+    // 135-second rollback reserve inside it does not move.
+    const guard = readFileSync(
+      path.resolve(process.cwd(), 'server/scripts/legacy-engine-checkpoint-guard.mjs'),
+      'utf8'
+    );
+    expect(guard).toContain('const reserveMs = 260000;');
+    expect(guard).not.toContain('285000;');
+    // The guard also charges its own monotonic elapsed time against the
+    // reported remaining, so the admitted case sits two seconds above the
+    // floor; every value here was a refusal under the old 285000 pin.
+    const boundary = fixture(1, checkpointA0);
+    boundary.remaining(262000);
+    expect(await boundary.run()).toMatchObject({ ok: true, attemptedTables: 1, verifiedTables: 1 });
+    const below = fixture(1, checkpointA0);
+    below.remaining(259999);
+    expect(await below.run()).toMatchObject({ ok: false, reason: 'insufficient_reserve' });
+    expect(below.calls).toEqual([]);
+    const mixed = mixedFixture();
+    mixed.remaining(262000);
+    expect(await mixed.run()).toMatchObject({ ok: true, readyForRestart: true });
+  });
+
   it('retains the a0 original checkpoint generation through the announcement join', async () => {
     const f = fixture(1, checkpointA0);
     f.first.presenceSave = Promise.resolve().then(() => {
@@ -609,7 +636,7 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     [
       'insufficient reserve',
       (f: ReturnType<typeof fixture>) => {
-        f.remaining(284999);
+        f.remaining(259999);
       },
     ],
     [
@@ -710,7 +737,7 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     f.onWrite(async () => {
       await new Promise((resolve) => setTimeout(resolve, 1));
       finished++;
-      f.remaining(284999);
+      f.remaining(259999);
     });
     const result = await f.run();
     expect(result).toMatchObject({ ok: false, reason: 'insufficient_reserve' });
@@ -992,7 +1019,7 @@ describe('exact 8825 retained original custody retirement', () => {
       'missing pending map',
       (f: any) => (f.originals[0].manager.pendingTournamentParkRequests = undefined),
     ],
-    ['insufficient reserve', (f: any) => f.remaining(284999)],
+    ['insufficient reserve', (f: any) => f.remaining(259999)],
     [
       'unrestorable prior bank',
       (f: any) =>

@@ -41,10 +41,12 @@ function runCertificate({
   body = JSON.stringify(validCertificate),
   httpCode = '200',
   curlExit = 0,
+  minimum,
 }: {
   body?: string;
   httpCode?: string;
   curlExit?: number;
+  minimum?: number;
 } = {}) {
   return spawnSync(
     'bash',
@@ -57,7 +59,7 @@ curl() {
   return "$MOCK_CURL_EXIT"
 }
 ${helper}
-maintenance_certificate`,
+maintenance_certificate${minimum === undefined ? '' : ` ${minimum}`}`,
     ],
     {
       encoding: 'utf8',
@@ -177,6 +179,24 @@ describe('the release transaction can read only an explicit maintenance health r
     });
     expect(result.status).toBe(2);
     expect(result.stdout.trim()).toBe('284999');
+    // The strict 285000ms is the default; the same body passes only when the
+    // caller names the 260000ms legacy reserve, and 259999 refuses even then.
+    expect(helper).toContain('local minimum_ms="${1:-$MIN_BREAK_REMAINING_MS}"');
+    expect(helper).toContain('MIN_BREAK_MS="$minimum_ms"');
+    const shortBody = (remainingMs: number) =>
+      JSON.stringify({
+        ...validCertificate,
+        maintenance: { ...validCertificate.maintenance, remainingMs },
+      });
+    expect(runCertificate({ body: shortBody(284_999), minimum: 285_000 }).status).toBe(2);
+    const legacy = runCertificate({ body: shortBody(284_999), minimum: 260_000 });
+    expect(legacy.status).toBe(0);
+    expect(legacy.stdout.trim()).toBe('284999');
+    expect(runCertificate({ body: shortBody(260_000), minimum: 260_000 }).status).toBe(0);
+    const legacyBoundary = runCertificate({ body: shortBody(259_999), minimum: 260_000 });
+    expect(legacyBoundary.status).toBe(2);
+    expect(legacyBoundary.stdout.trim()).toBe('259999');
+    expect(runCertificate({ body: shortBody(270_000) }).status).toBe(2);
 
     expect(helper).toContain('case "$http_code" in\n    200|503)');
     expect(helper).not.toMatch(/curl\s+-[^\n]*f/);

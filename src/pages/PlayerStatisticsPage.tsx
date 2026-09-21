@@ -475,9 +475,7 @@ function HeroReadout({
 function EmptyStats({ heading, body }: { heading: string; body: string }) {
   return (
     <div className="ps-empty">
-      <span className="ps-empty__mark" aria-hidden="true">
-        ○
-      </span>
+      <span className="ps-empty__status">Awaiting Hand Ledger</span>
       <p className="ps-empty__heading">{heading}</p>
       <p className="ps-empty__body">{body}</p>
     </div>

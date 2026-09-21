@@ -35,7 +35,8 @@ import { useToast } from '../components/common/Toast';
 import { PlayerAvatar } from '../components/avatars/PlayerAvatar';
 import { LeaderboardPrizeWizard } from '../components/leaderboard/LeaderboardPrizeWizard';
 import { LeaderboardSettlementCard } from '../components/leaderboard/LeaderboardSettlementCard';
-import type { VipTier } from '../components/avatars/PlayerAvatar';
+import { SpadeConsole } from '../components/console/SpadeConsole';
+import { compactChips } from '../utils/format';
 import './LeaderboardPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
@@ -56,6 +57,21 @@ interface LeaderboardCacheRecord {
   version: 2;
   storedAt: number;
   entries: LeaderboardEntry[];
+}
+
+// Program history is stated in the calendar the rules run on (UTC), so the
+// published moment reads the same for every member wherever they sit.
+function formatUtcTimestamp(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return `${new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  }).format(parsed)} UTC`;
 }
 
 function isLeaderboardEntry(value: unknown): value is LeaderboardEntry {
@@ -150,60 +166,52 @@ interface UserClub {
   club_id?: string | number | null;
 }
 
-// Metric definitions. Unicode symbols only (no emoji: build rule).
+// Ranking controls are live text on the approved console, never glyph icons.
 const METRIC_OPTIONS: {
   value: LeaderboardMetric;
   label: string;
-  icon: string;
   description: string;
   globalSupported: boolean;
 }[] = [
   {
     value: 'profit',
     label: 'Profit',
-    icon: '◆',
     description: 'Net Chips Won (Winnings Minus Invested)',
     globalSupported: true,
   },
   {
     value: 'bb100',
     label: 'BB/100',
-    icon: '◈',
     description: 'Big Blinds Won Per 100 Hands - Comparable Across Stakes',
     globalSupported: true,
   },
   {
     value: 'hands_played',
     label: 'Hands Played',
-    icon: '♠',
     description: 'Total Hands Dealt In',
     globalSupported: true,
   },
   {
     value: 'tournaments_won',
     label: 'Tournaments Won',
-    icon: '★',
     description: 'Tournament Victories',
     globalSupported: true,
   },
   {
     value: 'vpip',
     label: 'VPIP',
-    icon: '▦',
     description: 'Voluntarily Put Chips In Pot %',
     globalSupported: false,
   },
   {
     value: 'pfr',
     label: 'PFR',
-    icon: '▤',
     description: 'Preflop Raise %',
     globalSupported: false,
   },
   {
     value: 'roi',
     label: 'ROI',
-    icon: '▲',
     description: 'Return On Invested Chips %',
     globalSupported: true,
   },
@@ -252,6 +260,7 @@ export default function LeaderboardPage() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsReloadKey, setSettingsReloadKey] = useState(0);
+  const settingsStaleRef = useRef(false);
   const [ownerToolsError, setOwnerToolsError] = useState<string | null>(null);
   const [rewardPlan, setRewardPlan] = useState<LeaderboardRewardPlan | null>(null);
   const [settlementStatus, setSettlementStatus] = useState<LeaderboardSettlementStatus | null>(
@@ -410,6 +419,10 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     const requestId = ++settingsRequestRef.current;
+    // Any fetch of the owner record (club switch, account switch, retry, a
+    // refused publish) replaces the snapshot, so a pending "stale" mark from a
+    // refused publish is satisfied here and must not fire again later.
+    settingsStaleRef.current = false;
     setSettings((current) => (current?.club_id === selectedClubId ? current : null));
     setSettingsError(null);
     if (!selectedClubId) {
@@ -927,14 +940,14 @@ export default function LeaderboardPage() {
   };
 
   const formatValue = (value: number, m: LeaderboardMetric): string => {
-    const precise = Math.trunc(value * 100) / 100;
+    const precise = Math.trunc(value * 10) / 10;
     if (m === 'vpip' || m === 'pfr' || m === 'roi') {
       return `${precise}%`;
     }
     if (m === 'bb100') {
-      return `${precise > 0 ? '+' : ''}${precise} bb/100`;
+      return `${precise > 0 ? '+' : ''}${precise} BB/100`;
     }
-    return precise.toLocaleString('en-US');
+    return compactChips(value);
   };
 
   const getRankLabel = (rank: number): string => {
@@ -972,13 +985,13 @@ export default function LeaderboardPage() {
   const renderRowContext = (entry: LeaderboardEntry) => {
     const bits: string[] = [];
     if (entry.hands != null && entry.hands > 0) {
-      bits.push(`${entry.hands.toLocaleString('en-US')} hands`);
+      bits.push(`${compactChips(entry.hands)} Hands`);
     }
     if ((metric === 'roi' || metric === 'bb100') && entry.qualified === false) {
       // The threshold itself lives only in SQL (v_min_hands). Restating it here
       // would be a second source of truth with nothing keeping the two in step,
       // so the row reports the RPC's `qualified` verdict rather than the number.
-      bits.push('too few hands - unranked');
+      bits.push('Too Few Hands - Unranked');
     }
     if (bits.length === 0) return null;
     return <span className="entry-subline">{bits.join(' \u00B7 ')}</span>;
@@ -996,7 +1009,7 @@ export default function LeaderboardPage() {
     if (!change) return null;
     return (
       <span className={`change rank-change-anim ${change > 0 ? 'up' : 'down'}`}>
-        {change > 0 ? '▲' : '▼'} {Math.abs(change)}
+        {change > 0 ? 'Up' : 'Down'} {Math.abs(change)}
       </span>
     );
   };
@@ -1004,9 +1017,7 @@ export default function LeaderboardPage() {
   const renderPrizeBadge = (entry: LeaderboardEntry) => {
     const payout = payoutsByUser.get(entry.userId);
     if (payout) {
-      return (
-        <span className="payout-badge">Paid {payout.payout_amount.toLocaleString()} Chips</span>
-      );
+      return <span className="payout-badge">Paid {compactChips(payout.payout_amount)} Chips</span>;
     }
     const planned = plannedPrizesByUser.get(entry.userId);
     if (!planned) return null;
@@ -1018,49 +1029,41 @@ export default function LeaderboardPage() {
           : 'Prize';
     return (
       <span className="payout-badge payout-badge-planned">
-        {prizeState} {planned.toLocaleString()} Chips
+        {prizeState} {compactChips(planned)} Chips
       </span>
     );
   };
 
-  const renderPodiumPlace = (entry: LeaderboardEntry, place: 1 | 2 | 3) => {
-    const awardRank = entry.rank <= 3 ? entry.rank : place;
-    const cls = awardRank === 1 ? 'podium-1st' : awardRank === 2 ? 'podium-2nd' : 'podium-3rd';
-    const barCls = awardRank === 1 ? 'gold-bar' : awardRank === 2 ? 'silver-bar' : 'bronze-bar';
-    const textCls = awardRank === 1 ? 'gold-text' : awardRank === 2 ? 'silver-text' : 'bronze-text';
-    const fallbackTier: VipTier = awardRank === 1 ? 'gold' : awardRank === 2 ? 'silver' : 'bronze';
+  const renderPodiumPlace = (entry: LeaderboardEntry) => {
     return (
       <div
-        className={`podium-place podium-position-${place} ${cls}`}
+        className={`podium-place ${entry.userId === user?.id ? 'current-user' : ''}`}
         onClick={() => navigate(`/profile/${entry.userId}`)}
         onKeyDown={rowKeyActivate(entry.userId)}
         role="button"
         tabIndex={0}
         aria-label={`${getRankLabel(entry.rank)}, ${entry.username}, ${formatValue(entry.value, metric)}`}
       >
-        {place === 1 && <div className="podium-crown">{'♛'}</div>}
+        <span className="entry-rank">{getRankLabel(entry.rank)}</span>
         <PlayerAvatar
           src={entry.avatar}
           name={entry.username}
-          size={place === 1 ? 'xl' : 'lg'}
-          vipTier={(entry.vipTier as VipTier) || fallbackTier}
+          size="sm"
           level={entry.level || 1}
           showPresence={false}
-          showLevelBadge={true}
-          showVipRing={true}
+          showLevelBadge={false}
+          showVipRing={false}
         />
-        {entry.isVIP && <span className="vip-badge">VIP</span>}
-        {(entry.change || 0) >= 3 && (
-          <span className="hot-streak-badge" title="Hot Streak: Climbing Fast">
-            {'↑'}
-          </span>
-        )}
-        <span className="podium-name">{entry.username}</span>
-        <span className={`podium-value ${textCls}`}>{formatValue(entry.value, metric)}</span>
-        {renderPrizeBadge(entry)}
-        {renderRowContext(entry)}
-        <span className="podium-rank-emoji">{getRankLabel(entry.rank)}</span>
-        <div className={`podium-bar ${barCls}`}></div>
+        <div className="entry-info">
+          <span className="entry-name">{entry.username}</span>
+          {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
+          {renderRowContext(entry)}
+        </div>
+        <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
+          {formatValue(entry.value, metric)}
+          {renderPrizeBadge(entry)}
+          {renderChangeBadge(entry.change)}
+        </div>
       </div>
     );
   };
@@ -1068,16 +1071,18 @@ export default function LeaderboardPage() {
   // Period deltas are measured from a daily snapshot. If that job missed a day
   // the baseline is older than the label implies, so show the real span.
   const windowLabel = (() => {
-    if (period === 'all_time') return 'since 2026-05-21';
+    if (period === 'all_time') return 'Since 2026-05-21';
     if (!baselineDate) return null;
     const days = Math.round(
       (Date.now() - new Date(`${baselineDate}T00:00:00Z`).getTime()) / 86400000
     );
     const expected = period === 'daily' ? 1 : period === 'weekly' ? 7 : 30;
-    return days > expected ? `${days}d window` : `since ${baselineDate}`;
+    return days > expected ? `${days} Day Window` : `Since ${baselineDate}`;
   })();
 
   const activeMetric = METRIC_OPTIONS.find((option) => option.value === metric);
+  const programMetricLabel =
+    METRIC_OPTIONS.find((option) => option.value === settings?.payout_metric)?.label || 'Profit';
   const selectedClubName = userClubs.find((club) => club.id === selectedClubId)?.name;
   const currentError = activeTab === 'rankings' ? loadError : tournamentError;
   const canExport =
@@ -1132,643 +1137,693 @@ export default function LeaderboardPage() {
           { key: 'userId', label: 'User ID' },
         ]);
       }
-      toast.success('Leaderboard exported');
+      toast.success('Leaderboard Exported');
     } catch (error) {
       reportError(error, 'LeaderboardPage.export');
-      toast.error('Export failed');
+      toast.error('Export Failed');
     }
   };
 
   return (
-    <div className="leaderboard-page" data-arena-surface="championship">
-      <section className="lb-hero" aria-labelledby="leaderboard-title">
-        <div className="lb-hero-art" aria-hidden="true" />
-        <div className="lb-hero-copy">
-          <span className="lb-eyebrow">Club Arena / Championship Deck</span>
-          <h1 id="leaderboard-title">Every Hand Leaves A Mark.</h1>
-          <p>
-            Measure The Run, Read The Field, And See Who Owns The Room Across Every Club And Every
-            Table.
-          </p>
-          <div className="lb-live-rail" aria-live="polite">
-            <span className="live-dot" />
-            <span>Live</span>
-            <span className="lb-rail-divider" />
-            <span>
-              {isRefreshing
-                ? 'Refreshing Board'
-                : currentError
-                  ? 'Update Delayed'
-                  : `Updated ${lastUpdated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}
-            </span>
-            {activeTab === 'rankings' && windowLabel && (
-              <span className="lb-window-label" title="The Snapshot This Period Is Measured From">
-                {windowLabel}
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="lb-hero-telemetry" aria-label="Current Leaderboard Summary">
-          <div>
-            <span className="lb-telemetry-label">Field</span>
-            <strong>{totalRanked != null ? totalRanked.toLocaleString('en-US') : '-'}</strong>
-            <span>Ranked Players</span>
-          </div>
-          <div>
-            <span className="lb-telemetry-label">Your Position</span>
-            <strong>{userRank ? getRankLabel(userRank.rank) : '-'}</strong>
-            <span>
-              {userRank ? `Of ${userRank.total.toLocaleString('en-US')}` : 'Enter The Field'}
-            </span>
-          </div>
-          <div>
-            <span className="lb-telemetry-label">Measured By</span>
-            <strong>{activeMetric?.icon || '◆'}</strong>
-            <span>{activeMetric?.label || 'Profit'}</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="lb-control-deck" aria-label="Leaderboard Controls">
-        <div className="lb-control-header">
-          <div className="leaderboard-tabs" role="tablist" aria-label="Leaderboard Views">
-            <button
-              id="leaderboard-rankings-tab"
-              className={`tab-btn ${activeTab === 'rankings' ? 'active' : ''}`}
-              onClick={() => setActiveTab('rankings')}
-              onKeyDown={handleTabKeyDown}
-              role="tab"
-              aria-selected={activeTab === 'rankings'}
-              aria-controls="leaderboard-content-panel"
-              tabIndex={activeTab === 'rankings' ? 0 : -1}
-            >
-              Rankings
-            </button>
-            {scope === 'my-clubs' && (
-              <button
-                id="leaderboard-tournaments-tab"
-                className={`tab-btn ${activeTab === 'tournaments' ? 'active' : ''}`}
-                onClick={() => setActiveTab('tournaments')}
-                onKeyDown={handleTabKeyDown}
-                role="tab"
-                aria-selected={activeTab === 'tournaments'}
-                aria-controls="leaderboard-content-panel"
-                tabIndex={activeTab === 'tournaments' ? 0 : -1}
-              >
-                Tournament Stats
-              </button>
-            )}
-          </div>
-          <div className="lb-control-actions">
-            {ownerToolsError && (
-              <button
-                className="lb-action-btn"
-                onClick={() => void loadUserClubs(() => isMountedRef.current)}
-                title={ownerToolsError}
-              >
-                Retry Owner Tools
-              </button>
-            )}
-            {settingsError && scope !== 'global' && activeTab === 'rankings' && (
-              <button
-                className="lb-action-btn lb-action-prize"
-                onClick={() => setSettingsReloadKey((value) => value + 1)}
-                title={settingsError}
-              >
-                Retry Prize Setup
-              </button>
-            )}
-            {canManagePrizes && scope !== 'global' && activeTab === 'rankings' && (
-              <button
-                className="lb-action-btn lb-action-prize"
-                onClick={() => {
-                  if (!settings) return;
-                  setEditingSettings(settings);
-                  setShowSettings(true);
-                }}
-                title="Set Up Leaderboard Prizes"
-                disabled={settingsLoading || !settings}
-              >
-                {settingsLoading
-                  ? 'Loading Prize Setup'
-                  : settings?.setup_complete
-                    ? 'Review Prize Setup'
-                    : 'Set Up Prizes'}
-              </button>
-            )}
-            {canExport && (
-              <button className="lb-action-btn" onClick={exportLeaderboard}>
-                Export CSV
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="leaderboard-filters">
-          <div className="lb-control-group lb-arena-group">
-            <span className="lb-control-label">Arena</span>
-            <div className="lb-arena-controls">
-              {/* Club Selector (club scope, multiple clubs) */}
-              {scope === 'my-clubs' && userClubs.length > 1 && (
-                <div className="filter-group">
-                  <select
-                    aria-label="Club"
-                    value={selectedClubId || ''}
-                    onChange={(e) => selectClub(e.target.value)}
-                  >
-                    {userClubs.map((club) => (
-                      <option key={club.id} value={club.id}>
-                        {club.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {scope === 'my-clubs' && userClubs.length <= 1 && (
-                <span className="lb-club-readout">{selectedClubName || 'My Club'}</span>
-              )}
-
-              {/* Scope Toggle */}
-              <div className="filter-group scope-toggle">
-                <button
-                  className={scope === 'my-clubs' ? 'active' : ''}
-                  onClick={() => setScope('my-clubs')}
-                  aria-pressed={scope === 'my-clubs'}
-                >
-                  My Clubs
-                </button>
-                <button
-                  className={scope === 'global' ? 'active' : ''}
-                  onClick={() => setScope('global')}
-                  aria-pressed={scope === 'global'}
-                >
-                  Global
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Period Selector */}
-          <div className="lb-control-group lb-period-group">
-            <span className="lb-control-label">Period</span>
-            <div className="filter-group lb-chip-bar">
-              {PERIOD_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  className={`lb-filter-chip ${period === opt.value ? 'active' : ''}`}
-                  onClick={() => {
-                    setPeriod(opt.value);
-                    setPeriodOffset(0);
-                  }}
-                  aria-pressed={period === opt.value}
-                >
-                  {opt.label}
-                </button>
-              ))}
-              {period !== 'all_time' && (
-                <div className="lb-period-stepper">
-                  <button
-                    className="lb-step-btn"
-                    onClick={() => setPeriodOffset((o) => o - 1)}
-                    title="Previous Period"
-                    aria-label="Previous Period"
-                  >
-                    {'‹'}
-                  </button>
-                  <span>
-                    {periodOffset === 0
-                      ? 'Current'
-                      : periodOffset === -1
-                        ? 'Last'
-                        : `${Math.abs(periodOffset)} Periods Ago`}
-                  </span>
-                  <button
-                    className="lb-step-btn"
-                    onClick={() => setPeriodOffset((o) => Math.min(0, o + 1))}
-                    disabled={periodOffset >= 0}
-                    title="Next Period"
-                    aria-label="Next Period"
-                  >
-                    {'›'}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Metric Selector */}
-          <div className="lb-control-group lb-metric-group">
-            <div className="lb-metric-heading">
-              <span className="lb-control-label">Ranking Signal</span>
-              <span>{activeMetric?.description}</span>
-            </div>
-            <div className="filter-group lb-chip-bar lb-chip-scroll">
-              {visibleMetricOptions.map((opt) => (
-                <button
-                  key={opt.value}
-                  className={`lb-filter-chip ${metric === opt.value ? 'active' : ''}`}
-                  title={opt.description}
-                  onClick={() => setMetric(opt.value)}
-                  aria-pressed={metric === opt.value}
-                >
-                  <span aria-hidden="true">{opt.icon}</span> {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {scope === 'my-clubs' && settings?.setup_complete && (
-        <section className="lb-prize-program" aria-label="Leaderboard Prize Program">
-          <div className="lb-prize-program-mark" aria-hidden="true">
-            ◆
-          </div>
-          <div className="lb-prize-program-copy">
-            <span className="lb-prize-program-kicker">Owner Prize Circuit</span>
-            <h2>
-              {settings.rewards_enabled && settings.funding_status === 'funded'
-                ? 'Prize Program Published And Funded'
-                : settings.rewards_enabled
-                  ? 'Prize Program Funding Required'
-                  : 'Prize Program Disabled'}
-            </h2>
-            <p>
-              {settings.rewards_enabled && settings.funding_status === 'funded'
-                ? `${settings.program_funding_label || settings.funding_label} Published A ${prizePlanLabel(settings.suggestion_key)} Plan Ranked By ${METRIC_OPTIONS.find((option) => option.value === settings.payout_metric)?.label || 'Profit'}.`
-                : settings.rewards_enabled
-                  ? `Planned Prizes Are Hidden Until ${settings.program_funding_label || settings.funding_label} Covers Every Published Commitment.`
-                  : `A Prize Plan Is Saved For ${settings.club_name}, But Rewards Are Not Published.`}
-            </p>
-          </div>
-          <dl className="lb-prize-program-totals">
-            <div>
-              <dt>Program Version</dt>
-              <dd>V{settings.program_version}</dd>
-            </div>
-            <div>
-              <dt>Weekly</dt>
-              <dd>{totalPrizePlan(settings.weekly_prizes).toLocaleString('en-US')} Chips</dd>
-              {settings.weekly_effective_from && (
-                <small>From {settings.weekly_effective_from}</small>
-              )}
-            </div>
-            <div>
-              <dt>Monthly</dt>
-              <dd>{totalPrizePlan(settings.monthly_prizes).toLocaleString('en-US')} Chips</dd>
-              {settings.monthly_effective_from && (
-                <small>From {settings.monthly_effective_from}</small>
-              )}
-            </div>
-          </dl>
-          {canManagePrizes && (
-            <button
-              type="button"
-              onClick={() => {
-                setEditingSettings(settings);
-                setShowSettings(true);
-              }}
-            >
-              Review Setup
-            </button>
-          )}
-          <span className="lb-prize-program-safety" role={settlementError ? 'status' : undefined}>
-            {settlementError ||
-              (settings.funding_status === 'underfunded'
-                ? 'Published Prizes Stay Visible. Settlement Waits For The Promo Wallet And Never Uses The Operating Wallet.'
-                : 'Published Rules Activate At The Dates Shown. Settlement Uses The Recorded Promo Wallet After The Period Closes.')}
+    <div className="leaderboard-page" data-arena-surface="leaderboard-console">
+      <h1 className="lb-sr-only">Leaderboards</h1>
+      <SpadeConsole
+        className="lb-console"
+        eyebrow="Club Arena"
+        title="Leaderboards"
+        titleId="leaderboard-title"
+        subtitle={
+          scope === 'global' ? 'Across Club Arena' : selectedClubName || 'Your Club Rankings'
+        }
+        pill={
+          currentError
+            ? 'Delayed'
+            : clubsLoading || (activeTab === 'rankings' ? loading : tournamentsLoading)
+              ? 'Loading'
+              : 'Live'
+        }
+        pillInk={currentError ? 'red' : 'green'}
+        aria-labelledby="leaderboard-title"
+      >
+        <div className="lb-live-rail" aria-live="polite">
+          <span>
+            {isRefreshing
+              ? 'Refreshing Board'
+              : currentError
+                ? 'Update Delayed'
+                : `Updated ${lastUpdated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}
           </span>
-        </section>
-      )}
-
-      {scope === 'my-clubs' && selectedClubId && (period === 'weekly' || period === 'monthly') && (
-        <LeaderboardSettlementCard
-          status={settlementStatus}
-          currentUserId={user?.id}
-          loading={settlementLoading}
-          error={settlementError}
-          onRetry={() => loadLeaderboardRef.current(false, () => isMountedRef.current)}
-          onReviewSetup={
-            canManagePrizes && settings
-              ? () => {
-                  setEditingSettings(settings);
-                  setShowSettings(true);
-                }
-              : undefined
-          }
-        />
-      )}
-
-      {currentError &&
-        ((activeTab === 'rankings' && entries.length > 0) ||
-          (activeTab === 'tournaments' && tournamentStats.length > 0)) && (
-          <div className="lb-refresh-warning" role="status">
+          {activeTab === 'rankings' && windowLabel && (
+            <span className="lb-window-label" title="The Snapshot This Period Is Measured From">
+              {windowLabel}
+            </span>
+          )}
+        </div>
+        {activeTab === 'rankings' && (
+          <div className="lb-telemetry" aria-label="Current Leaderboard Summary">
             <div>
-              <strong>Live Update Delayed</strong>
-              <span>Showing The Last Verified Board.</span>
+              <span className="lb-telemetry-label">Field</span>
+              <strong>{totalRanked != null ? compactChips(totalRanked) : '-'}</strong>
+              <span>Ranked Players</span>
             </div>
-            <button onClick={retryCurrentView}>Retry Now</button>
+            <div>
+              <span className="lb-telemetry-label">Your Position</span>
+              <strong>{userRank ? getRankLabel(userRank.rank) : '-'}</strong>
+              <span>
+                {userRank ? `Of ${userRank.total.toLocaleString('en-US')}` : 'Enter The Field'}
+              </span>
+            </div>
+            <div>
+              <span className="lb-telemetry-label">Measured By</span>
+              <strong>{activeMetric?.label || 'Profit'}</strong>
+              <span>Ranking Signal</span>
+            </div>
           </div>
         )}
 
-      {/* Leaderboard Content */}
-      <div
-        id="leaderboard-content-panel"
-        className="leaderboard-list"
-        role="tabpanel"
-        aria-labelledby={`leaderboard-${activeTab}-tab`}
-        aria-busy={
-          clubsLoading ||
-          (activeTab === 'rankings' ? loading || isRefreshing : tournamentsLoading || isRefreshing)
-        }
-      >
-        {clubsLoading && scope === 'my-clubs' ? (
-          <div className="lb-skeleton-wrapper">
-            <div className="lb-skeleton-podium">
-              <div className="lb-skel-pod" />
-              <div className="lb-skel-pod tall" />
-              <div className="lb-skel-pod" />
-            </div>
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="lb-skeleton-row" />
-            ))}
-          </div>
-        ) : scope === 'my-clubs' && userClubs.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-icon">{'♠'}</span>
-            <p>Join A Club To See Leaderboard Rankings, Or Switch To Global.</p>
-            <button className="join-club-btn" onClick={() => navigate('/clubs')}>
-              Browse Clubs
-            </button>
-          </div>
-        ) : activeTab === 'rankings' && loading ? (
-          <div className="lb-skeleton-wrapper">
-            <div className="lb-skeleton-podium">
-              <div className="lb-skel-pod" />
-              <div className="lb-skel-pod tall" />
-              <div className="lb-skel-pod" />
-            </div>
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="lb-skeleton-row" />
-            ))}
-          </div>
-        ) : activeTab === 'rankings' && loadError && entries.length === 0 ? (
-          <div className="empty-state lb-error-state" role="alert">
-            <span className="empty-icon">{'!'}</span>
-            <p>Rankings Could Not Be Loaded.</p>
-            <p className="empty-sub">Check Your Connection And Try Again.</p>
-            <button className="join-club-btn" onClick={retryCurrentView}>
-              Retry Rankings
-            </button>
-          </div>
-        ) : activeTab === 'rankings' && entries.length === 0 ? (
-          <div className="empty-state" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
-            <span
-              className="empty-icon"
-              style={{ fontSize: '3rem', display: 'block', marginBottom: '0.75rem' }}
-            >
-              {'★'}
-            </span>
-            <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
-              No Rankings Yet For This Period.
-            </p>
-            <p
-              className="empty-sub"
-              style={{
-                color: 'var(--soft-white, #B0B3B8)',
-                fontSize: '0.85rem',
-                margin: '0 0 1.5rem',
-              }}
-            >
-              Start Playing To Climb The Leaderboard.
-            </p>
-            <button className="join-club-btn" onClick={() => navigate('/')}>
-              Find A Table
-            </button>
-          </div>
-        ) : activeTab === 'tournaments' && tournamentsLoading ? (
-          <div className="lb-skeleton-wrapper">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="lb-skeleton-row" />
-            ))}
-          </div>
-        ) : activeTab === 'tournaments' && tournamentError && tournamentStats.length === 0 ? (
-          <div className="empty-state lb-error-state" role="alert">
-            <span className="empty-icon">{'!'}</span>
-            <p>Tournament Stats Could Not Be Loaded.</p>
-            <p className="empty-sub">Check Your Connection And Try Again.</p>
-            <button className="join-club-btn" onClick={retryCurrentView}>
-              Retry Tournament Stats
-            </button>
-          </div>
-        ) : activeTab === 'tournaments' && tournamentStats.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-icon">{'★'}</span>
-            <p>No Tournament Stats Yet.</p>
-            <p className="empty-sub">Register For A Tournament To See Your Stats.</p>
-          </div>
-        ) : activeTab === 'rankings' && entries.length > 0 ? (
-          <>
-            {/* ── TOP 3 PODIUM ── */}
-            {top3.length >= 3 && (
-              <div className="podium-section" style={podiumAnimationStyle}>
-                {renderPodiumPlace(top3[1], 2)}
-                {renderPodiumPlace(top3[0], 1)}
-                {renderPodiumPlace(top3[2], 3)}
-              </div>
-            )}
-
-            {/* Show top 3 as list rows if less than 3 total */}
-            {top3.length < 3 &&
-              top3.map((entry, index) => (
-                <div
-                  key={entry.userId}
-                  className={`leaderboard-entry ${entry.userId === user?.id ? 'current-user' : ''}`}
-                  onClick={() => navigate(`/profile/${entry.userId}`)}
-                  onKeyDown={rowKeyActivate(entry.userId)}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`${getRankLabel(entry.rank)} ${entry.username}, ${formatValue(entry.value, metric)}`}
-                  style={{ ...rankingRowAnimationStyle(index), cursor: 'pointer' }}
+        <section className="lb-control-deck" aria-label="Leaderboard Controls">
+          <div className="lb-control-header">
+            <div className="leaderboard-tabs" role="tablist" aria-label="Leaderboard Views">
+              <button
+                id="leaderboard-rankings-tab"
+                className={`tab-btn ${activeTab === 'rankings' ? 'active' : ''}`}
+                onClick={() => setActiveTab('rankings')}
+                onKeyDown={handleTabKeyDown}
+                role="tab"
+                aria-selected={activeTab === 'rankings'}
+                aria-controls="leaderboard-content-panel"
+                tabIndex={activeTab === 'rankings' ? 0 : -1}
+              >
+                Rankings
+              </button>
+              {scope === 'my-clubs' && (
+                <button
+                  id="leaderboard-tournaments-tab"
+                  className={`tab-btn ${activeTab === 'tournaments' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('tournaments')}
+                  onKeyDown={handleTabKeyDown}
+                  role="tab"
+                  aria-selected={activeTab === 'tournaments'}
+                  aria-controls="leaderboard-content-panel"
+                  tabIndex={activeTab === 'tournaments' ? 0 : -1}
                 >
-                  <span className={`entry-rank top-3`}>{getRankLabel(entry.rank)}</span>
-                  <div className="entry-avatar">
-                    {entry.avatar ? (
-                      <img src={entry.avatar} alt="" loading="lazy" />
-                    ) : (
-                      <span>{(entry.username || '?')[0]?.toUpperCase()}</span>
-                    )}
+                  Tournament Stats
+                </button>
+              )}
+            </div>
+            <div className="lb-control-actions">
+              {ownerToolsError && (
+                <button
+                  className="lb-action-btn"
+                  onClick={() => void loadUserClubs(() => isMountedRef.current)}
+                  title={ownerToolsError}
+                >
+                  Retry Owner Tools
+                </button>
+              )}
+              {settingsError && scope !== 'global' && activeTab === 'rankings' && (
+                <button
+                  className="lb-action-btn lb-action-prize"
+                  onClick={() => setSettingsReloadKey((value) => value + 1)}
+                  title={settingsError}
+                >
+                  Retry Prize Setup
+                </button>
+              )}
+              {canManagePrizes && scope !== 'global' && activeTab === 'rankings' && (
+                <button
+                  className="lb-action-btn lb-action-prize"
+                  onClick={() => {
+                    if (!settings) return;
+                    setEditingSettings(settings);
+                    setShowSettings(true);
+                  }}
+                  title="Set Up Leaderboard Prizes"
+                  disabled={settingsLoading || !settings}
+                >
+                  {settingsLoading
+                    ? 'Loading Prize Setup'
+                    : settings?.setup_complete
+                      ? 'Review Prize Setup'
+                      : 'Set Up Prizes'}
+                </button>
+              )}
+              {canExport && (
+                <button className="lb-action-btn" onClick={exportLeaderboard}>
+                  Export CSV
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="leaderboard-filters">
+            <div className="lb-control-group lb-arena-group">
+              <span className="lb-control-label">Arena</span>
+              <div className="lb-arena-controls">
+                {/* Club Selector (club scope, multiple clubs) */}
+                {scope === 'my-clubs' && userClubs.length > 1 && (
+                  <div className="filter-group">
+                    <select
+                      aria-label="Club"
+                      value={selectedClubId || ''}
+                      onChange={(e) => selectClub(e.target.value)}
+                    >
+                      {userClubs.map((club) => (
+                        <option key={club.id} value={club.id}>
+                          {club.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <div className="entry-info">
-                    <span className="entry-name">
-                      {entry.username}
-                      {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
-                    </span>
-                  </div>
-                  <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
-                    {renderPrizeBadge(entry)}
-                    {formatValue(entry.value, metric)}
-                    {renderChangeBadge(entry.change)}
-                  </div>
+                )}
+
+                {scope === 'my-clubs' && userClubs.length <= 1 && (
+                  <span className="lb-club-readout">{selectedClubName || 'My Club'}</span>
+                )}
+
+                {/* Scope Toggle */}
+                <div className="filter-group scope-toggle">
+                  <button
+                    className={scope === 'my-clubs' ? 'active' : ''}
+                    onClick={() => setScope('my-clubs')}
+                    aria-pressed={scope === 'my-clubs'}
+                  >
+                    My Clubs
+                  </button>
+                  <button
+                    className={scope === 'global' ? 'active' : ''}
+                    onClick={() => setScope('global')}
+                    aria-pressed={scope === 'global'}
+                  >
+                    Global
+                  </button>
                 </div>
-              ))}
+              </div>
+            </div>
 
-            {/* ── REMAINING RANKINGS (4th+) ── */}
-            {rest.length > 0 && (
-              <div className="rankings-divider">
-                <span>Rankings</span>
+            {/* Period Selector */}
+            {activeTab === 'rankings' && (
+              <div className="lb-control-group lb-period-group">
+                <span className="lb-control-label">Period</span>
+                <div className="filter-group lb-chip-bar">
+                  {PERIOD_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      className={`lb-filter-chip ${period === opt.value ? 'active' : ''}`}
+                      onClick={() => {
+                        setPeriod(opt.value);
+                        setPeriodOffset(0);
+                      }}
+                      aria-pressed={period === opt.value}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                  {period !== 'all_time' && (
+                    <div className="lb-period-stepper">
+                      <button
+                        className="lb-step-btn"
+                        onClick={() => setPeriodOffset((o) => o - 1)}
+                        title="Previous Period"
+                        aria-label="Previous Period"
+                      >
+                        Previous
+                      </button>
+                      <span>
+                        {periodOffset === 0
+                          ? 'Current'
+                          : periodOffset === -1
+                            ? 'Last'
+                            : `${Math.abs(periodOffset)} Periods Ago`}
+                      </span>
+                      <button
+                        className="lb-step-btn"
+                        onClick={() => setPeriodOffset((o) => Math.min(0, o + 1))}
+                        disabled={periodOffset >= 0}
+                        title="Next Period"
+                        aria-label="Next Period"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
-            <Virtuoso
-              useWindowScroll
-              data={rest}
-              computeItemKey={(index, item) => item.userId}
-              itemContent={(index: number, entry: LeaderboardEntry) => (
-                <div
-                  className={`leaderboard-entry ${entry.userId === user?.id ? 'current-user' : ''}`}
-                  onClick={() => navigate(`/profile/${entry.userId}`)}
-                  onKeyDown={rowKeyActivate(entry.userId)}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`${getRankLabel(entry.rank)} ${entry.username}, ${formatValue(entry.value, metric)}`}
-                  style={{ ...rankingRowAnimationStyle(index), cursor: 'pointer' }}
-                >
-                  <span className="entry-rank">{getRankLabel(entry.rank)}</span>
-                  <div className="entry-avatar">
-                    {entry.avatar ? (
-                      <img src={entry.avatar} alt="" loading="lazy" />
-                    ) : (
-                      <span>{(entry.username || '?')[0]?.toUpperCase()}</span>
-                    )}
-                  </div>
-                  <div className="entry-info">
-                    <span className="entry-name">
-                      {entry.username}
-                      {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
-                      {(entry.change || 0) >= 3 && (
-                        <span className="hot-streak-badge" title="Hot Streak: Climbing Fast">
-                          {'↑'}
-                        </span>
-                      )}
-                    </span>
-                    {renderRowContext(entry)}
-                  </div>
-                  <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
-                    {renderPrizeBadge(entry)}
-                    {formatValue(entry.value, metric)}
-                    {renderChangeBadge(entry.change)}
-                  </div>
+
+            {/* Metric Selector */}
+            {activeTab === 'rankings' && (
+              <div className="lb-control-group lb-metric-group">
+                <div className="lb-metric-heading">
+                  <span className="lb-control-label">Ranking Signal</span>
+                  <span>{activeMetric?.description}</span>
+                </div>
+                <div className="filter-group lb-chip-bar lb-chip-scroll">
+                  {visibleMetricOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      className={`lb-filter-chip ${metric === opt.value ? 'active' : ''}`}
+                      title={opt.description}
+                      onClick={() => setMetric(opt.value)}
+                      aria-pressed={metric === opt.value}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {activeTab === 'tournaments' && (
+              <p className="lb-period-note">All Recorded Tournaments</p>
+            )}
+          </div>
+        </section>
+
+        {currentError &&
+          ((activeTab === 'rankings' && entries.length > 0) ||
+            (activeTab === 'tournaments' && tournamentStats.length > 0)) && (
+            <div className="lb-refresh-warning" role="status">
+              <div>
+                <strong>Live Update Delayed</strong>
+                <span>Showing The Last Verified Board.</span>
+              </div>
+              <button onClick={retryCurrentView}>Retry Now</button>
+            </div>
+          )}
+
+        {/* Leaderboard Content */}
+        <div
+          id="leaderboard-content-panel"
+          className="leaderboard-list"
+          role="tabpanel"
+          aria-labelledby={`leaderboard-${activeTab}-tab`}
+          aria-busy={
+            clubsLoading ||
+            (activeTab === 'rankings'
+              ? loading || isRefreshing
+              : tournamentsLoading || isRefreshing)
+          }
+        >
+          {clubsLoading && scope === 'my-clubs' ? (
+            <p className="lb-loading" role="status">
+              Loading Your Clubs...
+            </p>
+          ) : scope === 'my-clubs' && userClubs.length === 0 ? (
+            <div className="empty-state">
+              <p>Join A Club To See Leaderboard Rankings, Or Switch To Global.</p>
+              <button className="join-club-btn" onClick={() => navigate('/clubs')}>
+                Browse Clubs
+              </button>
+            </div>
+          ) : activeTab === 'rankings' && loading ? (
+            <p className="lb-loading" role="status">
+              Loading Rankings...
+            </p>
+          ) : activeTab === 'rankings' && loadError && entries.length === 0 ? (
+            <div className="empty-state lb-error-state" role="alert">
+              <p>Rankings Could Not Be Loaded.</p>
+              <p className="empty-sub">Check Your Connection And Try Again.</p>
+              <button className="join-club-btn" onClick={retryCurrentView}>
+                Retry Rankings
+              </button>
+            </div>
+          ) : activeTab === 'rankings' && entries.length === 0 ? (
+            <div className="empty-state">
+              <p>No Rankings Yet For This Period.</p>
+              <p className="empty-sub">Start Playing To Climb The Leaderboard.</p>
+              <button className="join-club-btn" onClick={() => navigate('/')}>
+                Find A Table
+              </button>
+            </div>
+          ) : activeTab === 'tournaments' && tournamentsLoading ? (
+            <p className="lb-loading" role="status">
+              Loading Tournament Stats...
+            </p>
+          ) : activeTab === 'tournaments' && tournamentError && tournamentStats.length === 0 ? (
+            <div className="empty-state lb-error-state" role="alert">
+              <p>Tournament Stats Could Not Be Loaded.</p>
+              <p className="empty-sub">Check Your Connection And Try Again.</p>
+              <button className="join-club-btn" onClick={retryCurrentView}>
+                Retry Tournament Stats
+              </button>
+            </div>
+          ) : activeTab === 'tournaments' && tournamentStats.length === 0 ? (
+            <div className="empty-state">
+              <p>No Tournament Stats Yet.</p>
+              <p className="empty-sub">Register For A Tournament To See Your Stats.</p>
+            </div>
+          ) : activeTab === 'rankings' && entries.length > 0 ? (
+            <>
+              {/* ── TOP 3 PODIUM ── */}
+              {top3.length >= 3 && (
+                <div className="podium-section" style={podiumAnimationStyle}>
+                  {top3.map((entry) => (
+                    <div key={entry.userId}>{renderPodiumPlace(entry)}</div>
+                  ))}
                 </div>
               )}
-            />
 
-            {totalRanked != null && entries.length < totalRanked && (
-              <button
-                className="lb-load-more"
-                onClick={loadMore}
-                disabled={loadingMore}
-                aria-label={`Load More, Showing ${entries.length} Of ${totalRanked}`}
-              >
-                {loadingMore
-                  ? 'Loading...'
-                  : `Show More (${entries.length.toLocaleString('en-US')} Of ${totalRanked.toLocaleString('en-US')})`}
-              </button>
-            )}
-
-            {/* Ranked, but below the visible cut - pin their own row so the number
-                in the sticky card has something to sit against. */}
-            {userRank && !entries.some((e) => e.userId === user?.id) && (
-              <>
-                <div className="rankings-divider">
-                  <span>Your Position</span>
-                </div>
-                <div
-                  className="leaderboard-entry current-user pinned-self"
-                  onClick={() => user?.id && navigate(`/profile/${user.id}`)}
-                  onKeyDown={user?.id ? rowKeyActivate(user.id) : undefined}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Your Position, ${getRankLabel(userRank.rank)}, ${formatValue(userRank.value, metric)}`}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <span className="entry-rank">{getRankLabel(userRank.rank)}</span>
-                  <div className="entry-avatar">
-                    <span>{'\u2605'}</span>
-                  </div>
-                  <div className="entry-info">
-                    <span className="entry-name">You</span>
-                    <span className="entry-subline">
-                      Of {userRank.total.toLocaleString('en-US')} Ranked
-                    </span>
-                  </div>
-                  <div className={`entry-value ${userRank.value >= 0 ? 'positive' : 'negative'}`}>
-                    {formatValue(userRank.value, metric)}
-                  </div>
-                </div>
-              </>
-            )}
-          </>
-        ) : activeTab === 'tournaments' && tournamentStats.length > 0 ? (
-          <div className="tournament-stats-scroll">
-            {/* Tournament Stats Header */}
-            <div className="tournament-stats-header">
-              <div className="stats-column-header">Player</div>
-              <div className="stats-column-header">Tournaments</div>
-              <div className="stats-column-header">Wins</div>
-              <div className="stats-column-header">Final Tables</div>
-              <div className="stats-column-header">ITM</div>
-              <div className="stats-column-header">Total Prizes</div>
-              <div className="stats-column-header">ROI</div>
-              <div className="stats-column-header">Biggest Win</div>
-            </div>
-
-            {/* Tournament Stats Rows */}
-            <Virtuoso
-              useWindowScroll
-              data={tournamentStats}
-              computeItemKey={(index, item) => item.userId}
-              itemContent={(index: number, stat: TournamentStats) => (
-                <div
-                  className={`tournament-stats-entry ${index < 12 ? `animate-fade-in-up stagger-${Math.min(index + 1, 10)}` : ''} ${stat.userId === user?.id ? 'current-user' : ''}`}
-                  onClick={() => navigate(`/profile/${stat.userId}`)}
-                  onKeyDown={rowKeyActivate(stat.userId)}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Rank ${index + 1}, ${stat.username}, ${stat.totalPrizes.toLocaleString()} Total Prizes`}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <div className="stats-cell player-cell">
-                    <span className="rank-badge">#{index + 1}</span>
+              {/* Show top 3 as list rows if less than 3 total */}
+              {top3.length < 3 &&
+                top3.map((entry, index) => (
+                  <div
+                    key={entry.userId}
+                    className={`leaderboard-entry ${entry.userId === user?.id ? 'current-user' : ''}`}
+                    onClick={() => navigate(`/profile/${entry.userId}`)}
+                    onKeyDown={rowKeyActivate(entry.userId)}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${getRankLabel(entry.rank)} ${entry.username}, ${formatValue(entry.value, metric)}`}
+                    style={{ ...rankingRowAnimationStyle(index), cursor: 'pointer' }}
+                  >
+                    <span className={`entry-rank top-3`}>{getRankLabel(entry.rank)}</span>
                     <div className="entry-avatar">
-                      {stat.avatar ? (
-                        <img src={stat.avatar} alt="" loading="lazy" />
+                      {entry.avatar ? (
+                        <img src={entry.avatar} alt="" loading="lazy" />
                       ) : (
-                        <span>{(stat.username || '?')[0]?.toUpperCase()}</span>
+                        <span>{(entry.username || '?')[0]?.toUpperCase()}</span>
                       )}
                     </div>
-                    <span className="player-name">{stat.username}</span>
+                    <div className="entry-info">
+                      <span className="entry-name">
+                        {entry.username}
+                        {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
+                      </span>
+                    </div>
+                    <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
+                      {renderPrizeBadge(entry)}
+                      {formatValue(entry.value, metric)}
+                      {renderChangeBadge(entry.change)}
+                    </div>
                   </div>
-                  <div className="stats-cell">{stat.tournamentsPlayed}</div>
-                  <div className="stats-cell wins">{stat.wins}</div>
-                  <div className="stats-cell">{stat.finalTables}</div>
-                  <div className="stats-cell">{stat.itmFinishes}</div>
-                  <div className="stats-cell prizes">
-                    {(Math.trunc(stat.totalPrizes * 100) / 100).toLocaleString()}
-                  </div>
-                  <div className={`stats-cell roi ${stat.roi >= 0 ? 'positive' : 'negative'}`}>
-                    {Math.trunc(stat.roi * 100) / 100}%
-                  </div>
-                  <div className="stats-cell biggest">
-                    {(Math.trunc(stat.biggestWin * 100) / 100).toLocaleString()}
-                  </div>
+                ))}
+
+              {/* ── REMAINING RANKINGS (4th+) ── */}
+              {rest.length > 0 && (
+                <div className="rankings-divider">
+                  <span>Rankings</span>
                 </div>
               )}
-            />
-          </div>
-        ) : null}
-      </div>
+              <Virtuoso
+                useWindowScroll
+                data={rest}
+                computeItemKey={(index, item) => item.userId}
+                itemContent={(index: number, entry: LeaderboardEntry) => (
+                  <div
+                    className={`leaderboard-entry ${entry.userId === user?.id ? 'current-user' : ''}`}
+                    onClick={() => navigate(`/profile/${entry.userId}`)}
+                    onKeyDown={rowKeyActivate(entry.userId)}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${getRankLabel(entry.rank)} ${entry.username}, ${formatValue(entry.value, metric)}`}
+                    style={{ ...rankingRowAnimationStyle(index), cursor: 'pointer' }}
+                  >
+                    <span className="entry-rank">{getRankLabel(entry.rank)}</span>
+                    <div className="entry-avatar">
+                      {entry.avatar ? (
+                        <img src={entry.avatar} alt="" loading="lazy" />
+                      ) : (
+                        <span>{(entry.username || '?')[0]?.toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div className="entry-info">
+                      <span className="entry-name">
+                        {entry.username}
+                        {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
+                        {(entry.change || 0) >= 3 && (
+                          <span className="hot-streak-badge" title="Hot Streak: Climbing Fast">
+                            Rising
+                          </span>
+                        )}
+                      </span>
+                      {renderRowContext(entry)}
+                    </div>
+                    <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
+                      {renderPrizeBadge(entry)}
+                      {formatValue(entry.value, metric)}
+                      {renderChangeBadge(entry.change)}
+                    </div>
+                  </div>
+                )}
+              />
 
+              {totalRanked != null && entries.length < totalRanked && (
+                <button
+                  className="lb-load-more"
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  aria-label={`Load More, Showing ${entries.length} Of ${totalRanked}`}
+                >
+                  {loadingMore
+                    ? 'Loading...'
+                    : `Show More (${entries.length.toLocaleString('en-US')} Of ${totalRanked.toLocaleString('en-US')})`}
+                </button>
+              )}
+
+              {/* Ranked, but below the visible cut - pin their own row so the number
+                in the sticky card has something to sit against. */}
+              {userRank && !entries.some((e) => e.userId === user?.id) && (
+                <>
+                  <div className="rankings-divider">
+                    <span>Your Position</span>
+                  </div>
+                  <div
+                    className="leaderboard-entry current-user pinned-self"
+                    onClick={() => user?.id && navigate(`/profile/${user.id}`)}
+                    onKeyDown={user?.id ? rowKeyActivate(user.id) : undefined}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Your Position, ${getRankLabel(userRank.rank)}, ${formatValue(userRank.value, metric)}`}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <span className="entry-rank">{getRankLabel(userRank.rank)}</span>
+                    <div className="entry-avatar">
+                      <span>You</span>
+                    </div>
+                    <div className="entry-info">
+                      <span className="entry-name">You</span>
+                      <span className="entry-subline">
+                        Of {userRank.total.toLocaleString('en-US')} Ranked
+                      </span>
+                    </div>
+                    <div className={`entry-value ${userRank.value >= 0 ? 'positive' : 'negative'}`}>
+                      {formatValue(userRank.value, metric)}
+                    </div>
+                  </div>
+                </>
+              )}
+            </>
+          ) : activeTab === 'tournaments' && tournamentStats.length > 0 ? (
+            <div className="tournament-stats-scroll">
+              {/* Tournament Stats Header */}
+              <div className="tournament-stats-header">
+                <div className="stats-column-header">Player</div>
+                <div className="stats-column-header">Tournaments</div>
+                <div className="stats-column-header">Wins</div>
+                <div className="stats-column-header">Final Tables</div>
+                <div className="stats-column-header">ITM</div>
+                <div className="stats-column-header">Total Prizes</div>
+                <div className="stats-column-header">ROI</div>
+                <div className="stats-column-header">Biggest Win</div>
+              </div>
+
+              {/* Tournament Stats Rows */}
+              <Virtuoso
+                useWindowScroll
+                data={tournamentStats}
+                computeItemKey={(index, item) => item.userId}
+                itemContent={(index: number, stat: TournamentStats) => (
+                  <div
+                    className={`tournament-stats-entry ${index < 12 ? `animate-fade-in-up stagger-${Math.min(index + 1, 10)}` : ''} ${stat.userId === user?.id ? 'current-user' : ''}`}
+                    onClick={() => navigate(`/profile/${stat.userId}`)}
+                    onKeyDown={rowKeyActivate(stat.userId)}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Rank ${index + 1}, ${stat.username}, ${stat.totalPrizes.toLocaleString()} Total Prizes`}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <div className="stats-cell player-cell">
+                      <span className="rank-badge">#{index + 1}</span>
+                      <div className="entry-avatar">
+                        {stat.avatar ? (
+                          <img src={stat.avatar} alt="" loading="lazy" />
+                        ) : (
+                          <span>{(stat.username || '?')[0]?.toUpperCase()}</span>
+                        )}
+                      </div>
+                      <span className="player-name">{stat.username}</span>
+                    </div>
+                    <div className="stats-cell" data-label="Tournaments">
+                      {compactChips(stat.tournamentsPlayed)}
+                    </div>
+                    <div className="stats-cell wins" data-label="Wins">
+                      {compactChips(stat.wins)}
+                    </div>
+                    <div className="stats-cell" data-label="Final Tables">
+                      {compactChips(stat.finalTables)}
+                    </div>
+                    <div className="stats-cell" data-label="ITM">
+                      {compactChips(stat.itmFinishes)}
+                    </div>
+                    <div className="stats-cell prizes" data-label="Total Prizes">
+                      {compactChips(stat.totalPrizes)}
+                    </div>
+                    <div
+                      className={`stats-cell roi ${stat.roi >= 0 ? 'positive' : 'negative'}`}
+                      data-label="ROI"
+                    >
+                      {Math.trunc(stat.roi * 10) / 10}%
+                    </div>
+                    <div className="stats-cell biggest" data-label="Biggest Win">
+                      {compactChips(stat.biggestWin)}
+                    </div>
+                  </div>
+                )}
+              />
+            </div>
+          ) : null}
+        </div>
+        {activeTab === 'rankings' &&
+          scope === 'my-clubs' &&
+          canManagePrizes &&
+          settings &&
+          !settings.setup_complete && (
+            /* First eligible use: the owner of a club that has never published
+               a program sees the decision in front of them instead of having to
+               find the control in the deck or the hamburger. */
+            <section className="lb-prize-program" aria-label="Leaderboard Prize Program">
+              <div className="lb-prize-program-copy">
+                <span className="lb-prize-program-kicker">Prize Program</span>
+                <h2>No Prize Program Yet</h2>
+                <p>
+                  {`${settings.funding_label} Funds Leaderboard Prizes For ${settings.club_name}. Decide Whether To Reward Players, Then Publish A Plan.`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingSettings(settings);
+                  setShowSettings(true);
+                }}
+              >
+                Set Up Prizes
+              </button>
+              <span className="lb-prize-program-safety">
+                Nothing Is Paid Until A Plan Is Published And Its Period Closes.
+              </span>
+            </section>
+          )}
+        {activeTab === 'rankings' && scope === 'my-clubs' && settings?.setup_complete && (
+          <section className="lb-prize-program" aria-label="Leaderboard Prize Program">
+            <div className="lb-prize-program-copy">
+              <span className="lb-prize-program-kicker">Prize Program</span>
+              <h2>
+                {settings.rewards_enabled && settings.funding_status === 'funded'
+                  ? 'Prize Program Published And Funded'
+                  : settings.rewards_enabled
+                    ? 'Prize Program Funding Required'
+                    : 'Prize Program Disabled'}
+              </h2>
+              <p>
+                {settings.rewards_enabled
+                  ? `${settings.program_funding_label || settings.funding_label} Published A ${prizePlanLabel(settings.suggestion_key)} Plan Ranked By ${programMetricLabel}.`
+                  : `A Prize Plan Is Saved For ${settings.club_name}, But Rewards Are Not Published.`}
+              </p>
+              {settings.rewards_enabled && (
+                <ul className="lb-prize-rules" role="list" aria-label="Prize Rules">
+                  <li>{`Ranked By ${programMetricLabel} Across Each Weekly And Monthly Round.`}</li>
+                  <li>Weeks Start Sunday At 00:00 UTC. Months Start On The First At 00:00 UTC.</li>
+                  <li>Rule Changes Start At The Next Weekly Or Monthly UTC Boundary.</li>
+                  <li>Tied Places Share Their Occupied Prizes.</li>
+                  <li>
+                    {settings.funding_status === 'underfunded'
+                      ? `Paid From ${settings.program_funding_label || settings.funding_label} After The Period Closes, Once It Covers The Published Prizes.`
+                      : `Paid From ${settings.program_funding_label || settings.funding_label} After The Period Closes.`}
+                  </li>
+                  <li>
+                    {
+                      'Prize Marks A Planned Amount While A Round Is Live. Paid Marks A Verified Receipt.'
+                    }
+                  </li>
+                </ul>
+              )}
+            </div>
+            <dl className="lb-prize-program-totals">
+              <div>
+                <dt>Program Version</dt>
+                <dd>
+                  V{settings.program_version}
+                  {settings.published_at && (
+                    <small>Published {formatUtcTimestamp(settings.published_at)}</small>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>Weekly</dt>
+                <dd>
+                  {compactChips(totalPrizePlan(settings.weekly_prizes))} Chips
+                  {settings.weekly_effective_from && (
+                    <small>From {settings.weekly_effective_from}</small>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>Monthly</dt>
+                <dd>
+                  {compactChips(totalPrizePlan(settings.monthly_prizes))} Chips
+                  {settings.monthly_effective_from && (
+                    <small>From {settings.monthly_effective_from}</small>
+                  )}
+                </dd>
+              </div>
+            </dl>
+            {canManagePrizes && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingSettings(settings);
+                  setShowSettings(true);
+                }}
+              >
+                Review Setup
+              </button>
+            )}
+            <span className="lb-prize-program-safety" role={settlementError ? 'status' : undefined}>
+              {settlementError ||
+                (settings.funding_status === 'underfunded'
+                  ? 'Published Prizes Stay Visible. Settlement Waits For The Promo Wallet And Never Uses The Operating Wallet.'
+                  : 'Published Rules Activate At The Dates Shown. Settlement Uses The Recorded Promo Wallet After The Period Closes.')}
+            </span>
+          </section>
+        )}
+
+        {activeTab === 'rankings' &&
+          scope === 'my-clubs' &&
+          selectedClubId &&
+          (period === 'weekly' || period === 'monthly') &&
+          /* A club that has never completed setup has never had a program
+             (setup_complete is setup_completed_at IS NOT NULL, stamped on every
+             save), so no batch or receipt can exist and every round would read
+             "No Program". The owner already has the first-use section; the card
+             would only repeat it with a second setup button. */
+          (!settings || settings.setup_complete) && (
+            <LeaderboardSettlementCard
+              status={settlementStatus}
+              currentUserId={user?.id}
+              loading={settlementLoading}
+              error={settlementError}
+              onRetry={() => loadLeaderboardRef.current(false, () => isMountedRef.current)}
+              onReviewSetup={
+                canManagePrizes && settings
+                  ? () => {
+                      setEditingSettings(settings);
+                      setShowSettings(true);
+                    }
+                  : undefined
+              }
+            />
+          )}
+      </SpadeConsole>
       {showSettings && editingSettings?.can_manage && (
         <LeaderboardPrizeWizard
           isOpen={showSettings}
@@ -1776,8 +1831,22 @@ export default function LeaderboardPage() {
           onClose={() => {
             setShowSettings(false);
             setEditingSettings(null);
+            if (settingsStaleRef.current) {
+              /* A refused publish means the owner record we opened with may
+                 have been superseded (another session, a funding change).
+                 Refetch so the next Set Up starts from the current version
+                 instead of repeating the same conflict. */
+              settingsStaleRef.current = false;
+              setSettingsReloadKey((value) => value + 1);
+            }
+          }}
+          onSaveError={() => {
+            settingsStaleRef.current = true;
           }}
           onSaved={(savedSetup) => {
+            // A publish that succeeds after an earlier refusal in the same
+            // dialog leaves nothing stale: the saved record is authoritative.
+            settingsStaleRef.current = false;
             setSettings(savedSetup);
             setShowSettings(false);
             setEditingSettings(null);

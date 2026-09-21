@@ -1270,11 +1270,29 @@ it kept drifting for another 135 commits.
    `bash scripts/check-checkout-freshness.sh` reports every clone of this repo
    on the machine and its distance from `origin/main`. It is read-only: it
    never pulls, resets, prunes or deletes. `--quiet` speaks only when something
-   is wrong, and `.husky/pre-push` runs it that way on every push. It is
-   ADVISORY there and must stay advisory: a freshness guard that can wedge
-   every push in the estate is worse than the staleness it reports
-   (`tests/unit/doctrineIsReadFromMain.test.ts` says the same thing about
-   doctrine). Exit `3` means COULD NOT TELL, and is not `0`.
+   is wrong. It is ADVISORY in every caller and must stay advisory: a freshness
+   guard that can wedge every push in the estate is worse than the staleness it
+   reports (`tests/unit/doctrineIsReadFromMain.test.ts` says the same thing
+   about doctrine). Exit `3` means COULD NOT TELL, and is not `0`.
+
+   **THE READER IS `scripts/agent-workspace.sh` (named 2026-09-21).** For nine
+   days `.husky/pre-push` was its only caller anywhere in this repo, no workflow
+   referenced it, and `scripts/guard-shared-clone.sh` forbids pushing from
+   `~/Documents/club-arena` - so the one tree that rots was the one tree the
+   check could never run in, and it rotted again, to 258 commits. The workspace
+   script is where the sibling `check-unpushed-work.sh` has been wired since
+   2026-08-23, for the stated reason that an agent claiming a workspace is the
+   most frequent moment anybody looks at this machine. Both callers are pinned
+   by `tests/the-freshness-guard-has-a-reader.law.test.ts`. If you add another
+   caller, keep it advisory; if you remove this one, you have removed the only
+   reader (10.83).
+
+   **THE JAM IS NOT ALWAYS A COMMIT.** Rule 3 below describes a commit on local
+   `main`. On 2026-09-21 there was none - `origin/main...HEAD` was `258 0` and
+   HEAD was a clean ancestor. 1218 DIRTY TRACKED FILES were the blocker:
+   `merge --ff-only` refuses with "Your local changes to the following files
+   would be overwritten by merge", and `pull -q --ff-only` says that to nobody.
+   So check `git status` as well as `rev-list --left-right`.
 
 2. **Never `git reset --hard` a clone you have not inventoried.** Run
    `scripts/check-unpushed-work.sh` first. On 2026-09-12 the repair was only

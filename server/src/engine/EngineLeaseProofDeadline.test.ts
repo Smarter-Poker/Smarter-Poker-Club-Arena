@@ -185,4 +185,57 @@ describe('table-engine distributed lease proof deadline', () => {
     });
     engine.fenceForEngineLeaseLoss('test_cleanup', false);
   });
+
+  /* ═══ THE TWO FAILURE MODES ARE NOT THE SAME FAILURE (2026-09-21) ════════
+     `atomic hand commit refused (lease_proof_expired)` was raised for BOTH a
+     lease that was genuinely gone and a proof that had merely gone unrenewed.
+     Only the first may refuse a hand. The heartbeat client no longer reports
+     a loss it has no evidence for (services/aLeaseIsNotLostBecauseNobodyAsked
+     .law.test.ts), so a renewal that arrives late now arrives at all - and
+     these two cases pin that the engine still tells the modes apart. */
+
+  it('a GENUINELY lost lease still refuses the hand commit', () => {
+    vi.useFakeTimers();
+    let now = 0;
+    _setEngineLeaseMonotonicNowForTests(() => now);
+    const engine = new ServerTableEngine(TABLE, verifiedCash(20_000));
+    activate(engine);
+
+    // Well inside the proof window: authority is current and the write is
+    // authorised.
+    now = 1_000;
+    expect(engine.hasCurrentEngineLeaseAuthority()).toBe(true);
+
+    // The database said this generation is gone. This is the fence a real
+    // takeover takes, and it is synchronous.
+    engine.fenceForEngineLeaseLoss('tournament_lease_lost', false);
+
+    // The commit gate in ServerTableEngineSettlement is exactly this call.
+    expect(engine.hasCurrentEngineLeaseAuthority()).toBe(false);
+    // And no renewal may resurrect it, however fresh the offered deadline.
+    expect(engine.renewEngineLeaseProof(verifiedCash(60_000))).toBe(false);
+    expect(engine.hasCurrentEngineLeaseAuthority()).toBe(false);
+  });
+
+  it('a renewal that lands inside the window keeps the hand commit authorised', () => {
+    vi.useFakeTimers();
+    let now = 0;
+    _setEngineLeaseMonotonicNowForTests(() => now);
+    const engine = new ServerTableEngine(TABLE, verifiedCash(20_000));
+    activate(engine);
+
+    /* The seventh wave of a 13,000-tournament pass used to have its `kept`
+       answer discarded and its manager fenced. Delivered instead, it is an
+       ordinary renewal and the table keeps dealing - and keeps its history. */
+    now = 19_000;
+    expect(engine.renewEngineLeaseProof(verifiedCash(39_000))).toBe(true);
+
+    now = 21_000; // past the ORIGINAL window, inside the renewed one
+    expect(engine.hasCurrentEngineLeaseAuthority()).toBe(true);
+    expect(engine.getEngineLeaseAuthority()).toMatchObject({
+      verified: true,
+      proofDeadlineMonotonicMs: 39_000,
+    });
+    engine.fenceForEngineLeaseLoss('test_cleanup', false);
+  });
 });

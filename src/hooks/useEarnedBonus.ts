@@ -9,6 +9,7 @@ import {
 import type { BonusGame } from '../services/DiamondBonusService';
 import { defaultBonusBudget, type BonusBudget } from '../utils/bonusGameBudget';
 import { reportError } from '../utils/errorReporter';
+import { useAutoSettle } from './useAutoSettle';
 
 /** A server read owns entitlement discovery; a URL or saved preference never grants play. */
 export function useEarnedBonus(
@@ -25,6 +26,9 @@ export function useEarnedBonus(
   const [snapshot, setSnapshot] = useState<{ quote: string; state: WheelBonusState } | null>(null);
   const [failure, setFailure] = useState<{ quote: string; message: string } | null>(null);
   const [spent, setSpent] = useState<{ scope: string; id: string } | null>(null);
+  // Failed reads in a row. A read that fails is tried again on its own
+  // schedule (useAutoSettle); the player is never asked to press Refresh.
+  const [failures, setFailures] = useState(0);
   const generation = useRef(0);
   const refresh = useCallback(async () => {
     const current = ++generation.current;
@@ -40,11 +44,13 @@ export function useEarnedBonus(
       if (current !== generation.current) return;
       setSnapshot({ quote, state });
       setFailure(null);
+      setFailures(0);
     } catch (error) {
       reportError(error, 'useEarnedBonus.state');
       if (current === generation.current) {
         setSnapshot(null);
-        setFailure({ quote, message: 'Your Wheel Award Could Not Be Checked. Try Refresh.' });
+        setFailure({ quote, message: 'Reconnecting To Your Wheel Award' });
+        setFailures((count) => count + 1);
       }
     }
   }, [club, user?.id, game, preference.doubled, mode, requested, quote]);
@@ -54,6 +60,12 @@ export function useEarnedBonus(
       generation.current++;
     };
   }, [refresh]);
+  // The first read is the effect above; a failed one is retried after 1s, 2s,
+  // 4s, then every 8s until the award answers.
+  useAutoSettle(failure?.quote === quote && failures > 0, failures, async () => {
+    await refresh();
+    return true;
+  });
   const state = snapshot?.quote === quote ? snapshot.state : null;
   const award =
     state?.award?.status === 'pending' && !(spent?.scope === scope && spent.id === state.award.id)

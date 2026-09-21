@@ -2,7 +2,17 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Subprocess contract suite: these tests drive REAL child processes, so their
+// wall time scales with machine load, not with the code under test. vitest's
+// 5000ms default is a UNIT-test budget: the slowest test here measures 1589ms
+// solo, and the pre-push hook runs this file in a 90-file suite at full width,
+// where contention has been measured to stretch these runs by 7.1x and time
+// them out. 90s is 56x the measured solo runtime - past anything observed,
+// and still a real bound, so a genuinely hung child still fails the suite.
+// File-scoped on purpose: no global testTimeout, no --no-file-parallelism.
+vi.setConfig({ testTimeout: 90_000 });
 import { sliceBetween } from './helpers/sourceWindow';
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
@@ -86,6 +96,12 @@ describe('the exact legacy checkpoint enters the existing release transaction', 
             '-c',
             `set -euo pipefail
 die() { echo "$*" >&2; exit 1; }
+# The physical countdown probe below now DEFERS (75) rather than dying when the
+# break is too short to reach the guard, and demands the reserve plus the
+# measured node-boot budget derived above this slice. Both symbols are declared
+# outside the window this test cuts, so the harness supplies them.
+defer() { echo "$*" >&2; exit 75; }
+CHECKPOINT_GUARD_ENTRY_MS=1500
 timeout() { printf '%s\\n' "$*"; return "$PREREQUISITE_STATUS"; }
 curl() { printf '%s' "$PREREQUISITE_HEALTH"; }
 CONTROL_DIR=/immutable-reviewed-control
@@ -283,7 +299,13 @@ fi
   it('holds the engine lock and proves the actual predecessor before invoking exactly once', () => {
     const lock = transaction.indexOf("acquire_engine_lock 'maintenance cutover'");
     const freshness = transaction.indexOf('source_target_is_current', lock);
-    const entry = transaction.indexOf('legacy_checkpoint_countdown)', freshness);
+    // The post-lock admission now carries the measured entry budget it must
+    // still pay before the guard reads the same reserve - see
+    // tests/the-release-enters-the-break-with-time-to-finish.law.test.ts.
+    const entry = transaction.indexOf(
+      'legacy_checkpoint_countdown "$BREAK_ENTRY_BUDGET_MS")',
+      freshness
+    );
     const noReplay = transaction.indexOf('[ "$LEGACY_CHECKPOINT_ATTEMPTED" = 0 ]', entry);
     const readiness = transaction.indexOf('prove_rollback_readiness', noReplay);
     const attempted = transaction.indexOf('LEGACY_CHECKPOINT_ATTEMPTED=1', readiness);
@@ -358,7 +380,7 @@ fi
     expect(shellChecks).toContain('bash -n "$GENERATION_STAGE/$script"');
     const stage = read('.github/workflows/stage-engine-release.yml');
     expect(stage).toContain(
-      "'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**'"
+      "'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**' ':(exclude)server/qualification/**'"
     );
   });
 });

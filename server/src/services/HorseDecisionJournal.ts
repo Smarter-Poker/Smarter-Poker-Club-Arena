@@ -37,11 +37,70 @@ import {
 } from './horseDecisionJournal/lifecycle.js';
 
 export interface HorseJournalWorker {
-  postMessage(message: { type: 'APPEND'; records: HorseJournalRecord[] } | { type: 'STOP' }): void;
+  postMessage(
+    message:
+      | { type: 'APPEND'; records: HorseJournalRecord[] }
+      | { type: 'STATS' }
+      | { type: 'STOP' }
+  ): void;
   on(event: string, callback: (message: any) => void): unknown;
   terminate(): Promise<number>;
   unref?(): void;
 }
+
+/** Finite terminal reasons. Writer reasons are the store's named refusals;
+ * the rest name which publisher fence gave up. No paths, SQL or payloads. */
+export const HORSE_JOURNAL_WRITER_REASONS = [
+  'archive_bytes',
+  'archive_segments',
+  'archive_catalog_capacity',
+  'archive_storage_capacity',
+] as const;
+export type HorseJournalFailureReason =
+  | (typeof HORSE_JOURNAL_WRITER_REASONS)[number]
+  | 'writer_unavailable'
+  | 'ack_mismatch'
+  | 'retry_exhausted'
+  | 'restart_unavailable'
+  | 'restart_failed'
+  | 'termination_unverified'
+  | 'shutdown_timeout'
+  | 'start_failed';
+
+/** Aggregate-only /health section. Catalog figures are the writer's last STATS
+ * reply, never a wait on the worker; `statsAgeMs` says how old they are. */
+export interface HorseJournalHealth {
+  mode: 'starting' | 'ready' | 'recovering' | 'failed' | 'stopped' | 'unavailable';
+  lastFailureReason: HorseJournalFailureReason | null;
+  queued: number;
+  appliedMaxCatalogBytes: number | null;
+  maxCatalogBytes: number | null;
+  catalogBytes: number | null;
+  pendingSegments: number | null;
+  records: number | null;
+  maxRecords: number | null;
+  maxRowid: number | null;
+  statsAgeMs: number | null;
+}
+const EMPTY_HEALTH: Omit<HorseJournalHealth, 'mode' | 'lastFailureReason' | 'queued'> = {
+  appliedMaxCatalogBytes: null,
+  maxCatalogBytes: null,
+  catalogBytes: null,
+  pendingSegments: null,
+  records: null,
+  maxRecords: null,
+  maxRowid: null,
+  statsAgeMs: null,
+};
+const HEALTH_STATS_FIELDS = [
+  'appliedMaxCatalogBytes',
+  'maxCatalogBytes',
+  'catalogBytes',
+  'pendingSegments',
+  'records',
+  'maxRecords',
+  'maxRowid',
+] as const;
 
 /** Enqueue is not a durable acknowledgement. Only the private writer's exact
  * fsynced commit ACK retires a record. Missing ACK or capacity produces a gap;
@@ -68,6 +127,10 @@ export class HorseDecisionJournalPublisher {
   private readonly sourceRelease = resolveReleaseIdentity().releaseSha;
   private readonly watchdog: ReturnType<typeof setInterval>;
   private lastProgress: number;
+  private lastFailureReason: HorseJournalFailureReason | null = null;
+  private stats: Pick<HorseJournalHealth, (typeof HEALTH_STATS_FIELDS)[number]> | null = null;
+  private statsAt: number | null = null;
+  private statsRequestedAt: number | null = null;
   constructor(
     worker: HorseJournalWorker,
     private readonly note: (key: string) => void = noteFire,
@@ -145,10 +208,15 @@ export class HorseDecisionJournalPublisher {
       this.count('shutdown_unverified');
     }
   }
-  private fail(): void {
+  private fail(reason: HorseJournalFailureReason): void {
     if (this.mode === 'failed' || this.mode === 'stopped') return;
     this.mode = 'failed';
+    this.lastFailureReason = reason;
     this.count('unavailable');
+    // Exactly one line per publisher lifetime. Until now a terminal writer
+    // failure only bumped a counter, so capture stopped with nothing in the
+    // log to say why until the next restart. Reason and mode only.
+    console.warn(`[HorseDecisionJournal] capture stopped mode=failed reason=${reason}`);
     clearInterval(this.watchdog);
     clearTimeout(this.retryTimer);
     void this.retireWriter()
@@ -171,7 +239,7 @@ export class HorseDecisionJournalPublisher {
     if (this.mode === 'failed' || this.mode === 'stopped' || this.mode === 'recovering') return;
     if (!this.options.restart || this.retries >= 2) {
       if (this.options.restart) this.count('retry_exhausted');
-      this.fail();
+      this.fail(this.options.restart ? 'retry_exhausted' : 'restart_unavailable');
       return;
     }
     this.mode = 'recovering';
@@ -185,7 +253,7 @@ export class HorseDecisionJournalPublisher {
       .then((confirmed) => {
         if (this.mode !== 'recovering') return;
         if (!confirmed) {
-          this.fail();
+          this.fail('termination_unverified');
           return;
         }
         this.retryTimer = setTimeout(
@@ -196,14 +264,14 @@ export class HorseDecisionJournalPublisher {
               this.count('retry_started');
               this.attach(replacement);
             } catch {
-              this.fail();
+              this.fail('restart_failed');
             }
           },
           this.retries === 1 ? 250 : 1000
         );
         this.retryTimer.unref?.();
       })
-      .catch(() => this.fail());
+      .catch(() => this.fail('termination_unverified'));
   }
   record(kind: HorseJournalKind, handKey: string | null, turnKey: string, payload: unknown): void {
     if (this.mode === 'failed' || this.mode === 'stopped' || this.stopping || !handKey) {
@@ -289,12 +357,16 @@ export class HorseDecisionJournalPublisher {
       this.stopped?.();
       return;
     }
-    if (
-      message?.type === 'UNAVAILABLE' &&
-      typeof message.reason === 'string' &&
-      ['archive_bytes', 'archive_segments', 'archive_storage_capacity'].includes(message.reason)
+    if (message?.type === 'STATS') {
+      this.receiveStats(message.stats);
+      return;
+    }
+    const writerReason = (HORSE_JOURNAL_WRITER_REASONS as readonly string[]).includes(
+      message?.reason
     )
-      this.count(message.reason);
+      ? (message.reason as (typeof HORSE_JOURNAL_WRITER_REASONS)[number])
+      : undefined;
+    if (message?.type === 'UNAVAILABLE' && writerReason) this.count(writerReason);
     if (
       message?.type !== 'ACK' ||
       !this.inFlight ||
@@ -309,7 +381,13 @@ export class HorseDecisionJournalPublisher {
       )
     ) {
       // Conflicting ACK/schema/disk/capacity failure is not a transient retry.
-      this.fail();
+      this.fail(
+        message?.type === 'UNAVAILABLE'
+          ? (writerReason ?? 'writer_unavailable')
+          : message?.type === 'ACK'
+            ? 'ack_mismatch'
+            : 'writer_unavailable'
+      );
       return;
     }
     for (let i = 0; i < this.inFlight; i++) {
@@ -329,13 +407,61 @@ export class HorseDecisionJournalPublisher {
     this.lastProgress = this.now();
     this.dispatch();
   }
+  private receiveStats(stats: unknown): void {
+    this.statsRequestedAt = null;
+    const archive = (stats as { archive?: unknown } | null)?.archive as
+      | Record<string, unknown>
+      | null
+      | undefined;
+    if (!archive || typeof archive !== 'object') return;
+    const number = (key: string): number | null =>
+      typeof archive[key] === 'number' && Number.isSafeInteger(archive[key])
+        ? (archive[key] as number)
+        : null;
+    this.stats = {
+      appliedMaxCatalogBytes: number('appliedMaxCatalogBytes'),
+      maxCatalogBytes: number('maxCatalogBytes'),
+      catalogBytes: number('catalogBytes'),
+      pendingSegments: number('pendingSegments'),
+      records: number('records'),
+      maxRecords: number('maxRecords'),
+      maxRowid: number('maxRowid'),
+    };
+    this.statsAt = this.now();
+  }
+  /** Synchronous and never waits on the writer: answers the cached figures and
+   * asks a ready writer for fresh ones at most once a second, without a timer.
+   * A reply that never comes leaves the age growing, which is the evidence. */
+  health(): HorseJournalHealth {
+    const now = this.now();
+    if (
+      this.mode === 'ready' &&
+      this.worker &&
+      (this.statsRequestedAt === null || now - this.statsRequestedAt >= 1000)
+    ) {
+      this.statsRequestedAt = now;
+      try {
+        this.worker.postMessage({ type: 'STATS' });
+      } catch {
+        /* the watchdog and exit handler own a dead writer, not a probe */
+      }
+    }
+    return {
+      mode: this.mode,
+      lastFailureReason: this.lastFailureReason,
+      queued: this.queue.length,
+      ...EMPTY_HEALTH,
+      ...(this.stats ?? {}),
+      statsAgeMs: this.statsAt === null ? null : Math.max(0, Math.round(now - this.statsAt)),
+    };
+  }
   stop(): Promise<void> {
     if (this.stopPromise) return this.stopPromise;
     this.stopping = true;
     this.stopPromise = new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.noteShutdownGap();
-        this.fail();
+        this.fail('shutdown_timeout');
         finish();
       }, 5000);
       const finish = () => {
@@ -363,8 +489,26 @@ export class HorseDecisionJournalPublisher {
 }
 
 let publisher: HorseDecisionJournalPublisher | null = null;
+let lifecycle: 'unstarted' | 'started' | 'start_failed' | 'stopped' = 'unstarted';
 export const horseDecisionJournalConfigured = (): boolean =>
   Boolean(process.env.HORSE_DECISION_JOURNAL_DIR);
+/** The /health section: null when no journal is configured, otherwise the
+ * publisher's cached view. Never blocks and never touches the worker directly. */
+export function horseDecisionJournalHealth(): HorseJournalHealth | null {
+  if (!horseDecisionJournalConfigured()) return null;
+  if (publisher) return publisher.health();
+  return {
+    mode:
+      lifecycle === 'start_failed'
+        ? 'unavailable'
+        : lifecycle === 'stopped'
+          ? 'stopped'
+          : 'starting',
+    lastFailureReason: lifecycle === 'start_failed' ? 'start_failed' : null,
+    queued: 0,
+    ...EMPTY_HEALTH,
+  };
+}
 export function startHorseDecisionJournal(): void {
   if (publisher) return;
   const directory = process.env.HORSE_DECISION_JOURNAL_DIR;
@@ -382,13 +526,16 @@ export function startHorseDecisionJournal(): void {
     publisher = new HorseDecisionJournalPublisher(createWriter(), noteFire, {
       restart: createWriter,
     });
+    lifecycle = 'started';
   } catch {
+    lifecycle = 'start_failed';
     noteFire('phase15_journal_unavailable');
   }
 }
 export async function stopHorseDecisionJournal(): Promise<void> {
   const owned = publisher;
   publisher = null;
+  if (owned) lifecycle = 'stopped';
   await owned?.stop();
 }
 const turnKey = (x: {

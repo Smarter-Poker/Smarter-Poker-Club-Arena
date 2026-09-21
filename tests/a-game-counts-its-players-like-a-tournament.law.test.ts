@@ -17,9 +17,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   cashEntry,
+  clusterFronts,
   isClusterFront,
   isHiddenClusterMember,
   seatsTakenLabel,
+  withClusterFigures,
   type LobbyTableRow,
 } from '../src/components/lobby/lobbyEntries';
 
@@ -90,6 +92,68 @@ describe('the board shows the game, not the table', () => {
     // A fleet table is neither.
     expect(isClusterFront(base)).toBe(false);
     expect(isHiddenClusterMember(base)).toBe(false);
+  });
+
+  /* LIGHTNING 2.0 PHASE 3 (2026-09-21). R10 is unchanged - a game is still ONE
+     row - but WHICH row is no longer a property a single table can answer. A
+     Lightning-capable Cluster is created as a single FEEDER and has no Main 1
+     at all until a second table opens beside it, so under the old predicate
+     its only row was a hidden cluster member and the game did not appear on
+     the board. withClusterFigures now stamps the front, the same way
+     fn_cash_cluster_front_table answers it in the database. */
+  it('a feeder-first game is still a row: no Main 1, one table, one entry', () => {
+    const lone = cluster({ id: 't-feeder-1', role: 'feeder', main_index: null });
+    // Unstamped, the old rule hides it - which is the defect, stated.
+    expect(isClusterFront(lone)).toBe(false);
+    expect(isHiddenClusterMember(lone)).toBe(true);
+
+    const [stamped] = withClusterFigures([lone]);
+    expect(stamped.cluster_front).toBe(true);
+    expect(isClusterFront(stamped)).toBe(true);
+    expect(isHiddenClusterMember(stamped)).toBe(false);
+    expect(cashEntry(stamped).game?.tables).toBe(1);
+  });
+
+  it('and when its second table arrives, Main 1 is the row again', () => {
+    const board = withClusterFigures([
+      cluster({ id: 't-feeder-2', role: 'feeder', main_index: null }),
+      cluster({ id: 't-main-1', role: 'main', main_index: 1 }),
+    ]);
+    expect(board.filter((t) => isClusterFront(t)).map((t) => t.id)).toEqual(['t-main-1']);
+    expect(board.filter((t) => isHiddenClusterMember(t)).map((t) => t.id)).toEqual(['t-feeder-2']);
+  });
+
+  it('never two rows for one game, even when two tables both claim Main 1', () => {
+    const board = withClusterFigures([
+      cluster({ id: 't-b', role: 'main', main_index: 1 }),
+      cluster({ id: 't-a', role: 'main', main_index: 1 }),
+    ]);
+    expect(board.filter((t) => isClusterFront(t)).map((t) => t.id)).toEqual(['t-a']);
+  });
+
+  it('a live feeder outranks a closed Main 1, the way the database orders it', () => {
+    /* fn_cash_cluster_front_table filters lifecycle <> closed and NOT
+       is_deleted BEFORE it prefers Main 1, so the two answers cannot diverge
+       on a cluster whose Main 1 has gone. The board never shows this because
+       ClubHomePage drops non-census cluster rows before stamping; a realtime
+       payload can. */
+    const board = withClusterFigures([
+      cluster({ id: 't-dead-main', role: 'main', main_index: 1, status: 'closed' }),
+      cluster({ id: 't-live-feeder', role: 'feeder', main_index: null }),
+    ]);
+    expect(board.filter((t) => isClusterFront(t)).map((t) => t.id)).toEqual(['t-live-feeder']);
+  });
+
+  it('the front is picked per game, and a fleet table has none', () => {
+    const fronts = clusterFronts([
+      cluster({ id: 'g1-feeder', role: 'feeder', main_index: null }),
+      cluster({ id: 'g2-main', cluster_id: 'g2', role: 'main', main_index: 1 }),
+      cluster({ id: 'g2-feeder', cluster_id: 'g2', role: 'feeder', main_index: null }),
+      base,
+    ]);
+    expect(fronts.get('g1')).toBe('g1-feeder');
+    expect(fronts.get('g2')).toBe('g2-main');
+    expect(fronts.size).toBe(2);
   });
 
   it('a fleet table is unchanged: its own count, its own capacity, its own status', () => {

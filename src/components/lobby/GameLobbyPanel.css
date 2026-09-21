@@ -1,13 +1,22 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   GAME LOBBY PANEL — right-side drawer hosting the Casino Plaque and the
+   GAME LOBBY PANEL - right-side drawer hosting the Casino Plaque and the
    full pre-commit review of a selected game.
+
+   #ClubArenaConsole (2026-09-14). The cash variant (.glp--cash) is Dan's
+   approved shark console and lives in PremiumGameLobbyPanel.css. Everything
+   here is the tournament variant: the drawer is black glass, each section
+   under the plaque is a SpadeConsole (SpadeConsole.css paints the chassis and
+   the inks), figures are rows on the glass, tables carry engraved rules, and
+   the tabs, the full-lobby link and the back link are lit words. No border,
+   radius, gradient or fill is drawn here for anything a player reads as a
+   control.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .glp-backdrop {
   position: fixed;
   inset: 0;
   z-index: var(--z-modal, 500);
-  background: rgba(3, 4, 6, 0.6);
+  background: rgb(2 4 7 / 70%);
   backdrop-filter: blur(2px);
   display: flex;
   justify-content: flex-end;
@@ -24,9 +33,9 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--club-dark, #0a0b0f);
-  border-left: 1px solid var(--border-primary, rgba(65, 105, 225, 0.3));
-  box-shadow: -18px 0 48px rgba(0, 0, 0, 0.6);
+  background: #000;
+  color: #e6e9ee;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   animation: glp-slide 0.2s ease;
 }
 @keyframes glp-slide {
@@ -36,19 +45,42 @@
   }
 }
 
+/* metallic-popups.css bevels .glp as a drawer and plates its header, with
+   !important. The drawer is black glass and the sections bring their own
+   chassis, so both are switched off longhand by longhand at 0,2,0. */
+.glp.glp:not(.glp--cash) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: #000 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+.glp.glp:not(.glp--cash) > .glp__head {
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-bottom: 1px solid #000 !important;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%) !important;
+}
+
 .glp__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  background: linear-gradient(180deg, #14161c, #0e1014);
 }
 .glp__head-title {
-  font-size: 0.9375rem;
-  font-weight: 700;
-  color: var(--text-primary, #f3f4f6);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #e4e7ec;
+  text-shadow:
+    0 -1px 0 rgb(255 255 255 / 45%),
+    0 1px 0 #6d747c,
+    0 2px 0 #050607,
+    0 3px 4px rgb(0 0 0 / 90%);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -60,11 +92,11 @@
      touching the button. The minimum tap target is 44px at every width. */
   width: 44px;
   height: 44px;
-  border-radius: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-secondary, #c8ccd4);
-  font-size: 0.8125rem;
+  border: 0;
+  background: none;
+  color: #9aa5b3;
+  font-size: 1.25rem;
+  line-height: 1;
   cursor: pointer;
 }
 .glp__scroll {
@@ -77,44 +109,62 @@
   -webkit-overflow-scrolling: touch;
 }
 
-/* Sections under the plaque */
-.glp__section {
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 10px;
-  background: var(--club-surface, #111318);
-  padding: 12px 14px;
+/* ── Sections under the plaque: SpadeConsoles ─────────────────────────── */
+/* Doubled: the console's own .sc declares --sc-max too, and which sheet
+   loads later depends on who imported SpadeConsole first. */
+.glp__console.glp__console {
+  --sc-max: 560px;
 }
-.glp__h {
-  margin: 0 0 10px;
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--text-tertiary, #8b8f98);
+.glp__console:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
 }
+
+/* Figures as rows on the glass: label lit blue on the left, value in silver
+   on the right, an engraved rule between them. */
 .glp__grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 16px;
-  margin: 0;
-}
-.glp__grid > div {
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
-  padding-bottom: 4px;
-}
-.glp__grid dt {
-  font-size: 0.75rem;
-  color: var(--text-tertiary, #8b8f98);
-}
-.glp__grid dd {
+  flex-direction: column;
   margin: 0;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-primary, #f3f4f6);
+}
+.glp:not(.glp--cash) .glp__grid > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3cqw;
+  padding: 2.2cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+.glp:not(.glp--cash) .glp__grid > div:first-child {
+  border-top: 0;
+  box-shadow: none;
+}
+.glp:not(.glp--cash) .glp__grid dt {
+  flex: 0 0 auto;
+  color: #45adff;
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0 2cqw rgb(49 168 255 / 30%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+}
+.glp:not(.glp--cash) .glp__grid dd {
+  margin: 0;
+  color: #e4e7ec;
+  font-size: 4.2cqw;
+  font-weight: 700;
   text-align: right;
+  overflow-wrap: anywhere;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
 }
 .glp__mono {
   font-family: var(--font-sans, system-ui, sans-serif);
@@ -126,8 +176,6 @@
 .glp__tick {
   margin: 8px 0 0;
   padding: 6px 8px;
-  border-radius: 6px;
-  background: rgb(255 255 255 / 4%);
   color: #9aa6b4;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 0.68rem;
@@ -137,17 +185,16 @@
 }
 
 .glp__tick.is-stale {
-  color: #f0b429;
-  background: rgb(240 180 41 / 8%);
+  color: #ffd700;
 }
 
+/* Format: each tag under its lit label, an engraved rule between them. */
 .glp__rules {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 .glp__rules li {
   display: flex;
@@ -155,16 +202,34 @@
   gap: 1px;
 }
 .glp__rules b {
-  font-size: 0.6875rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--club-blue-light, #5b83e8);
 }
-.glp__rules span {
-  font-size: 0.75rem;
-  color: var(--text-secondary, #c8ccd4);
+.glp:not(.glp--cash) .glp__rules li {
+  gap: 0.6cqw;
+  padding: 2cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+.glp:not(.glp--cash) .glp__rules li:first-child {
+  border-top: 0;
+  box-shadow: none;
+}
+.glp:not(.glp--cash) .glp__rules b {
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.glp:not(.glp--cash) .glp__rules span {
+  color: #d7dee7;
+  font:
+    500 3.4cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
+/* Waiting list (cash): position as a lit numeral, not a drawn pip. */
 .glp__waitlist {
   list-style: none;
   margin: 0;
@@ -182,13 +247,12 @@
 }
 .glp__wl-pos {
   flex: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(65, 105, 225, 0.15);
+  min-width: 18px;
+  text-align: center;
+  color: #45adff;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 6px rgb(49 168 255 / 55%);
 }
 .glp__wl-name {
   color: var(--text-primary, #ffffff);
@@ -199,79 +263,115 @@
   font-size: 0.85em;
 }
 
-/* Tournament tabs */
+/* ── Tournament tabs: three lit words on one engraved rule ────────────── */
 .glp__tabs {
   display: flex;
-  gap: 6px;
+  justify-content: center;
+  gap: 4px;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
 }
 .glp__tab {
   flex: 1;
-  padding: 7px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text-secondary, #c8ccd4);
-  font-size: 0.75rem;
-  font-weight: 600;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
+  background: none;
+  color: #9aa5b3;
+  font:
+    800 0.8rem/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   cursor: pointer;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
 }
 .glp__tab.is-active {
-  border-color: var(--club-blue, #4169e1);
-  background: rgba(65, 105, 225, 0.14);
-  color: #fff;
+  color: #45adff;
+  text-shadow:
+    0 0 6px rgb(49 168 255 / 70%),
+    0 0 14px rgb(49 168 255 / 30%),
+    0 1px 2px rgb(0 0 0 / 85%);
 }
 
+/* ── Tables: engraved rules, lit headings ─────────────────────────────── */
 .glp__tablewrap {
+  width: 100%;
   overflow-x: auto;
 }
 .glp__table {
+  /* club-engine.css turns every table into display:block on a phone; this
+     one has five short columns and fills its console. */
+  display: table;
   width: 100%;
+  min-width: 100%;
+  table-layout: auto;
   border-collapse: collapse;
-  font-size: 0.75rem;
+  font-size: 3.4cqw;
 }
 .glp__table th {
   text-align: left;
-  padding: 4px 8px;
-  color: var(--text-tertiary, #8b8f98);
-  font-size: 0.625rem;
+  padding: 1.2cqw 1.6cqw;
+  color: #45adff;
+  font-size: 2.5cqw;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  letter-spacing: 0.14em;
+  text-shadow: 0 0 6px rgb(49 168 255 / 55%);
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 -1px 0 rgb(255 255 255 / 8%);
 }
 .glp__table td {
-  padding: 4px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 1.4cqw 1.6cqw;
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 -1px 0 rgb(255 255 255 / 6%);
   font-family: var(--font-sans, system-ui, sans-serif);
   font-variant-numeric: tabular-nums;
-  color: var(--text-primary, #f3f4f6);
+  font-weight: 600;
+  color: #e4e7ec;
 }
 .glp__break td {
   text-align: center;
-  color: var(--warning-gold, #ffd700);
-  font-family: var(--font-primary, 'Inter', sans-serif);
-  font-weight: 600;
-  letter-spacing: 0.1em;
+  color: #ffd700;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  font-size: 0.625rem;
+  font-size: 2.5cqw;
+  text-shadow: 0 0 6px rgb(255 215 0 / 50%);
 }
 
 .glp__note {
-  margin: 8px 0 0;
-  font-size: 0.6875rem;
-  color: var(--text-tertiary, #8b8f98);
+  margin: 2cqw 0 0;
+  color: #9aa5b3;
+  font:
+    500 3.2cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
+/* ── Lit words: the full-lobby link, the close-table action, the back link ── */
 .glp__fulllink {
   display: block;
   text-align: center;
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(65, 105, 225, 0.4);
-  color: var(--club-blue-light, #5b83e8);
-  font-size: 0.8125rem;
-  font-weight: 600;
+  min-height: 44px;
+  padding: 12px 10px;
+  color: #45adff;
+  font:
+    800 0.85rem/1.2 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   text-decoration: none;
-  background: rgba(65, 105, 225, 0.07);
+  text-shadow:
+    0 0 6px rgb(49 168 255 / 70%),
+    0 0 14px rgb(49 168 255 / 30%),
+    0 1px 2px rgb(0 0 0 / 85%);
 }
 .glp__foot {
   display: flex;
@@ -281,37 +381,78 @@
   padding-top: 4px;
 }
 .glp__deletebtn {
+  min-height: 44px;
   padding: 6px 12px;
-  border-radius: 7px;
-  border: 1px solid rgba(255, 71, 87, 0.35);
-  background: rgba(255, 71, 87, 0.07);
-  color: var(--danger-red, #ff4757);
-  font-size: 0.75rem;
-  font-weight: 600;
+  border: 0;
+  background: none;
+  color: #ff5b6e;
+  font:
+    800 0.8rem/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   cursor: pointer;
+  text-shadow: 0 0 6px rgb(240 40 73 / 60%);
 }
 .glp__backlink {
-  font-size: 0.75rem;
-  color: var(--text-tertiary, #8b8f98);
+  min-height: 44px;
+  color: #9aa5b3;
+  font:
+    800 0.8rem/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   text-decoration: none;
   /* Also rendered as a <button> in the MultiTablePage embed. */
   background: none;
-  border: none;
-  padding: 0;
+  border: 0;
+  padding: 0 8px;
   cursor: pointer;
-  font-family: inherit;
 }
+.glp__tab:active,
+.glp__close:active,
+.glp__fulllink:active,
+.glp__deletebtn:active,
+.glp__backlink:active {
+  filter: brightness(1.3);
+}
+.glp__tab:focus-visible,
+.glp__close:focus-visible,
+.glp__fulllink:focus-visible,
+.glp__deletebtn:focus-visible,
+.glp__backlink:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
+}
+
+/* metallic-popups.css bevels every button inside .glp with !important. The
+   lit words paint nothing; switch it off longhand by longhand. */
+.glp:not(.glp--cash) .glp__tab.glp__tab,
+.glp:not(.glp--cash) .glp__close.glp__close,
+.glp:not(.glp--cash) .glp__backlink.glp__backlink,
+.glp:not(.glp--cash) .glp__deletebtn.glp__deletebtn {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
 /* Small screens: full-width sheet */
 @media (max-width: 640px) {
   .glp {
     width: 100%;
-    border-left: none;
   }
 
   /* Dan 2026-08-24, from an iPhone: "there is no padding at the top, so you
      can't even X off the page." The sheet is position:fixed and fills the
-     viewport, which under viewport-fit=cover means its first row — the title
-     and the close button — renders under the status bar and the notch. The
+     viewport, which under viewport-fit=cover means its first row - the title
+     and the close button - renders under the status bar and the notch. The
      header pays the inset back, so the X is always reachable. */
   .glp__head {
     padding-top: calc(12px + env(safe-area-inset-top, 0px));
@@ -331,7 +472,8 @@
   }
 }
 
-/* ── Seat map (cash): numbered pips, occupancy at a glance ── */
+/* ── Seat map (cash): the premium sheet paints the plaques; these are the
+   layout facts the cash variant builds on. ── */
 .glp__seatmap {
   display: flex;
   flex-wrap: wrap;
@@ -344,9 +486,6 @@
   gap: 3px;
   min-width: 44px;
   padding: 7px 6px 6px;
-  border-radius: 8px;
-  border: 1px solid rgba(120, 140, 180, 0.25);
-  background: rgba(20, 26, 40, 0.55);
 }
 .glp__seat i {
   font-style: normal;
@@ -362,18 +501,10 @@
   text-transform: uppercase;
   color: rgba(160, 175, 205, 0.75);
 }
-.glp__seat.is-taken {
-  border-color: rgba(90, 100, 120, 0.5);
-  background: rgba(44, 50, 62, 0.8);
-}
 .glp__seat.is-taken i {
   color: rgba(170, 178, 192, 0.85);
 }
-.glp__seat.is-you {
-  border-color: rgba(212, 175, 55, 0.7);
-  background: rgba(212, 175, 55, 0.12);
-}
 .glp__seat.is-you i,
 .glp__seat.is-you em {
-  color: #d4af37;
+  color: #ffd700;
 }

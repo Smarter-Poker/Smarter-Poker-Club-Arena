@@ -8,14 +8,30 @@
     "tests/fixtures/earlybird-fee-custody/before.sql": "ec9c2a263cfa12a946a24501c2ba22890f0afe13a351453dba7d6009198c52d2",
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "40197721a91930668687751146dacd9ea59f68765633b402fb6ef08498e2852b",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "a74e9202e3ca78a4d665d24bd68f674339bf235390360ab4dbc877d80caab4fb",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
     ".prettierignore": "9786a63914be31e342f7bd030c7e31648d02d9c06b53636db5cf083494e08fd3",
-    "tests/unit/fixtureNativeCi.test.ts": "072cab77afdde70045ab72130997af4f74108a25a8f4a9a77391f1db80547b57",
+    "tests/unit/fixtureNativeCi.test.ts": "05915fc1366204c2f2f59c46bda2a4ee609c5675d8a142e0f9941d21eb58a6c9",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
-  }
+  },
+  "restamp_audit": [
+    {
+      "file": "scripts/dev/test-full-weekly-accounting-activation.sh",
+      "from": "f94ca2ae32d92fc4e5d981e8089d42d91f15a448c56483f7d3669d57942d4200",
+      "to": "05c4f0889695b0153150bf0855f4c24280ac940006805bff6891e44d3118e65b",
+      "on": "2026-09-21",
+      "why": "Restamped 2026-09-21 by migration 20260921052548 (installed 20260921060422). The only change to this runner is one added acceptance-phase step - the payee-document-privacy preimage, that migration and its regression - plus its log in the retained-artifact list. No existing phase, fixture, candidate or assertion in this file was altered."
+    },
+    {
+      "file": "scripts/dev/test-full-weekly-accounting-activation.sh",
+      "from": "2e7ed191fbf0b460be4b88109ca960ecf4bb523d23fd91980573a6c0caa2c694",
+      "to": "a74e9202e3ca78a4d665d24bd68f674339bf235390360ab4dbc877d80caab4fb",
+      "on": "2026-09-21",
+      "why": "Restamped 2026-09-21: the native accounting cluster now declares LC_ALL=C/LANG=C for its own initdb and pg_ctl lifecycle commands, because an inherited UTF-8 locale made the macOS postmaster refuse to start ('postmaster became multithreaded during startup') and the runner died before its first assertion. No financial function, fixture body, assertion or captured definition changed."
+    }
+  ]
 }

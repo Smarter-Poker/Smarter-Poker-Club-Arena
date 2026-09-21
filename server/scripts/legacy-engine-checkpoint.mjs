@@ -106,6 +106,30 @@ function checkpointSummary(value) {
                       : Number.isSafeInteger(item) && item >= 0;
     if (valid) result[key] = item;
   }
+  // Observability only. The guard names which sub-condition refused in
+  // these additional fields; they are carried verbatim when present and
+  // simply absent otherwise. No decision reads them: `ok` and `reason`
+  // above keep their exact prior meaning for every existing parser.
+  for (const key of [
+    'failedCheck',
+    'failedTable',
+    'failedField',
+    'observed',
+    'expected',
+    'observedDetail',
+    // Which tables were proved abandoned from rows, and how many unreachable
+    // boundary generations each carried. Carried verbatim; nothing reads it.
+    'abandonedBoundaries',
+  ]) {
+    const item = value?.[key];
+    if (
+      typeof item === 'string' &&
+      item.length > 0 &&
+      item.length <= 512 &&
+      /^[\w .,:/=()+-]+$/.test(item)
+    )
+      result[key] = item;
+  }
   return result;
 }
 

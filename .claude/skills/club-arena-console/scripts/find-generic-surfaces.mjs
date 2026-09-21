@@ -52,6 +52,95 @@ const VISUAL_TEST =
    the most generic surface in the app, behind a law that would have applied to
    its rebuild anyway. */
 
+/* INTERNAL ONLY: Dan, 2026-09-14 - "THESE POP UPS OR EVENT LOGS (IF INTERNAL
+   USE ONLY) DO NOT NEED DYNAMIC IMAGES AND POP UPS." A surface no player and
+   no club operator can reach - the QA scenario harness, the bus event log,
+   the platform's own engine/analytics/ads dashboards - is a tool for the
+   house. It is held to the copy laws and the colour schema, never to the
+   painted chassis, and it is off the sweep so nobody spends a round of art on
+   a page four people open. Anything a CLUB owner reaches is customer-facing
+   and stays in. */
+const INTERNAL_ONLY = [
+  'src/pages/SimPage.tsx',
+  'src/pages/BusDevToolsPage.tsx',
+  'src/pages/admin/EngineDashboard.tsx',
+  'src/pages/admin/AnalyticsDashboard.tsx',
+  'src/pages/admin/HouseAdsPage.tsx',
+  'src/pages/AdminDashboardPage.tsx',
+  'src/pages/DriftIncidentsPage.tsx',
+  'src/pages/ClubFooterShowcasePage.tsx',
+  'src/pages/CustomizationStudioShowcasePage.tsx',
+];
+/* Everything under src/pages/dev/ is a showcase harness by definition. */
+const isInternal = (rel) => INTERNAL_ONLY.includes(rel) || rel.startsWith('src/pages/dev/');
+
+/* RULED, WITH THE REASON (2026-09-15). A surface can be finished work without
+   a test whose TITLE says so: the artwork contract may be phrased as "the
+   three pieces of artwork ship with the bundle", or the decision may be Dan's
+   own, made in review. These were the last rows in this inventory, and every
+   wave re-derived them from scratch before deciding not to touch them. They
+   are written down here instead, each with the ruling that closed it, so the
+   count reaches zero and a later agent reads the answer rather than guessing
+   at it again. Deleting a line here re-opens that surface deliberately. */
+const RULED = {
+  'src/components/table/ActionPanel.tsx':
+    'Dan art-directed the three action buttons by screenshot (2026-08-26: FOLD = RED, CHECK = BLUE, BET = GREEN) and gameplay-wears-the-house-colours pins those exact gradients; the raise overlay geometry is pinned by actionBarSliderAndFooter. Repainting either deletes a written law s subject.',
+  'src/components/table/BombPotOverlay.tsx':
+    'Felt cinematics, not a card (Dan 2026-09-09): inked to the schema, never framed in a console.',
+  'src/components/table/TournamentAnnouncementOverlay.tsx':
+    'Felt cinematics, same ruling as BombPotOverlay; inked 2026-09-14.',
+  'src/components/vip/DiamondTopUpModal.tsx':
+    'On the #SmarterCasinoRealism master, and diamond-checkout-mobile.spec.ts is its visual contract.',
+  'src/components/cash/CashGameCard.tsx':
+    'On approved master art: Dan supplied the three cash-card frames and the component prints into zones measured in percent of them. cashGameCard.test.tsx is the contract.',
+  'src/components/lobby/game-cards/NlhPremiumCard.tsx':
+    'On the approved NLH chassis art; club-lobby-premium-machine.test.ts pins the zone maths and the asset pack.',
+  'src/components/lobby/game-cards/layeredCard.tsx':
+    'Same approved lobby card family as NlhPremiumCard.',
+  'src/components/table/PreviousHandCard.tsx':
+    'One of three interchangeable 66px HUD tiles on an approved button asset; all-in-cannot-leave-and-the-hud-slot pins their geometry as a set.',
+  'src/components/bbj/BBJBasicPanel.tsx':
+    'Already on this standard: it renders as rows on the Bad Beat Jackpot console glass, so it has no frame of its own to rebuild.',
+};
+
+/* UNREACHABLE IS NOT A SWEEP CANDIDATE (2026-09-21).
+ *
+ * This script used to print " DEAD? " beside any surface with no importer and
+ * leave the reader to work out what that meant. On 2026-09-21 the last twelve
+ * rows in this inventory were read as "twelve surfaces to go" when NINE of
+ * them - ClubDetailPage at score 137 among them, 1,986 lines - cannot be
+ * reached from the app entry at all. The repo already knows this and writes it
+ * down: tests/every-file-under-src-is-reachable.law.test.ts walks from
+ * index.html through every import, re-export and CSS reference, and its
+ * RETAINED map lists every file the walk does not reach together with the
+ * test, law or CI script that still reads it by path.
+ *
+ * So ask the law instead of guessing from importer counts. A retained file is
+ * off the sweep for the same reason an internal tool is: no player arrives at
+ * it, so a round of art spent on it is a round spent on nothing. It is not a
+ * deletion instruction either - the law is explicit that removing one means
+ * retargeting its reader in the same commit.
+ */
+const RETAINED_LAW = join(ROOT, 'tests', 'every-file-under-src-is-reachable.law.test.ts');
+/** null means COULD NOT TELL - never an empty map, which would read as
+ *  "nothing is retained" and put all nine back on the list (CLAUDE.md 10.86). */
+const readRetained = () => {
+  if (!existsSync(RETAINED_LAW)) return null;
+  let text;
+  try {
+    text = readFileSync(RETAINED_LAW, 'utf8');
+  } catch {
+    return null;
+  }
+  const open = text.indexOf('const RETAINED');
+  if (open < 0) return null;
+  const body = text.slice(open, text.indexOf('\n};', open));
+  const out = new Map();
+  for (const m of body.matchAll(/'(src\/[^']+)':\s*\n?\s*'([^']*)'/g)) out.set(m[1], m[2]);
+  return out.size ? out : null;
+};
+const retained = readRetained();
+
 const spokenFor = new Set();
 try {
   for (const t of walk(join(ROOT, 'tests'))) {
@@ -77,15 +166,25 @@ try {
   /* no tests dir: fall back to the markers below */
 }
 /* Read every file ONCE. Counting importers by re-reading the tree per surface
-   is O(n^2) and takes minutes on this repo. */
-const sources = new Map(files.map((f) => [f, readFileSync(f, 'utf8')]));
+   is O(n^2) and takes minutes on this repo.
+
+   `.ts` AS WELL AS `.tsx` (2026-09-21): this map is what the importer count
+   below walks, and it used to hold only the surfaces themselves. Every barrel
+   in this tree is a `.ts` - `src/components/common/index.ts`,
+   `src/components/stats/index.ts`, `src/components/feedback/index.ts` - so a
+   component re-exported by its barrel and by nothing else counted ZERO
+   importers and printed " DEAD? " next to a file the app renders. It is the
+   same mistake the flag is meant to catch, one level up. */
+const importScan = walk(SRC).filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f));
+const sources = new Map(importScan.map((f) => [f, readFileSync(f, 'utf8')]));
 const rows = [];
 for (const tsx of files) {
   const name = basename(tsx, '.tsx');
   const isSurface = /Page$|Modal$|Sheet$|Panel$|Overlay$|Dialog$|Banner$|Card$/.test(name);
   if (!isSurface) continue;
-  const css = [join(dirname(tsx), `${name}.css`), join(dirname(tsx), `${name}.module.css`)]
-    .find(existsSync);
+  const css = [join(dirname(tsx), `${name}.css`), join(dirname(tsx), `${name}.module.css`)].find(
+    existsSync
+  );
   const src = sources.get(tsx);
   const style = css ? readFileSync(css, 'utf8') : '';
   const both = src + style;
@@ -113,16 +212,22 @@ for (const tsx of files) {
        as generic sends an agent to rebuild a page that is pinned by contract
        to a different standard, which is how two pages were nominated at 193
        and 200 despite being finished work. */
-    master: count(both, /club-buttons\/|images\/challenges\/|images\/stats\/|--realism-|data-arena-surface|RewardsSurfaceHeader|CasinoSurfaceHeader/g),
+    master: count(
+      both,
+      /club-buttons\/|images\/challenges\/|images\/stats\/|--realism-|data-arena-surface|RewardsSurfaceHeader|CasinoSurfaceHeader/g
+    ),
     console: count(src, /SpadeConsole|PlateButton|ZoneText|sc-ink--/g),
     hover: count(style, /:hover/g),
     px: count(style, /font-size:\s*\d+(\.\d+)?px/g),
   };
-  row.spokenFor = spokenFor.has(rel);
+  row.internalOnly = isInternal(rel);
+  row.ruled = Object.prototype.hasOwnProperty.call(RULED, rel);
+  if (row.ruled) row.ruling = RULED[rel];
+  row.unreachable = retained ? retained.has(rel) : false;
+  if (row.unreachable) row.retainedFor = retained.get(rel);
+  row.spokenFor = spokenFor.has(rel) || row.internalOnly || row.ruled || row.unreachable;
   row.score =
-    row.master + row.console > 0 || row.spokenFor
-      ? 0
-      : row.radius * 2 + row.grad + row.hover * 5;
+    row.master + row.console > 0 || row.spokenFor ? 0 : row.radius * 2 + row.grad + row.hover * 5;
   rows.push(row);
 }
 rows.sort((a, b) => b.score - a.score || b.radius - a.radius);
@@ -149,4 +254,20 @@ if (process.argv.includes('--json')) {
     `\n${done.length} surface(s) already spoken for (${pinned} pinned by a visual test), ` +
       `${rows.length - done.length} to go.`
   );
+  if (retained === null) {
+    console.log(
+      '\nCOULD NOT TELL which surfaces are unreachable: tests/every-file-under-src-is-reachable' +
+        '.law.test.ts could not be read. Every row above may include a file no player can\n' +
+        'reach. Read that law before taking anything off this list.'
+    );
+  } else {
+    const off = rows.filter((r) => r.unreachable);
+    console.log(
+      `${off.length} unreachable surface(s) held off the sweep by ` +
+        'tests/every-file-under-src-is-reachable.law.test.ts (no player arrives at them; the\n' +
+        'law names the reader that still keeps each one, and deleting one means retargeting' +
+        ' that reader in the same commit):'
+    );
+    for (const r of off) console.log(`  ${r.file}  -  ${r.retainedFor}`);
+  }
 }

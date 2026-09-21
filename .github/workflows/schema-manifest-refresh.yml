@@ -45,6 +45,17 @@ on:
     - cron: '40 * * * *'
   repository_dispatch:
     types: [audit-schema-integrity]
+  # RUN IT NOW (2026-09-19). The definer-exposure job is the only thing on this
+  # estate that can see a hole applied straight to production, and waiting for
+  # the next :40 to confirm a fix is the wrong shape for that.
+  #
+  # Nothing about the schedule moves. The `refresh` job's
+  # `if: github.event.schedule != '40 * * * *'` is TRUE on a manual run, exactly
+  # as it already is on the repository_dispatch above, so a manual run does the
+  # full daily comparison. The concurrency key
+  # `${{ github.event.schedule || github.event_name }}` becomes its own group,
+  # so a manual run never cancels or queues behind a scheduled one.
+  workflow_dispatch:
 
 permissions:
   contents: read

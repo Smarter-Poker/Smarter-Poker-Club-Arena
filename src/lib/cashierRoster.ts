@@ -27,7 +27,6 @@ export interface DownlineRow {
   avatarUrl: string | null;
   role: string;
   chipBalance: number;
-  isHorse: boolean;
   /**
    * How many club_members.agent_id hops below the viewer this member sits, as
    * computed by fn_club_cashier_members. 1 is a direct assignee; 0 means the
@@ -73,7 +72,6 @@ export const mapCashierRoster = (rows: CashierRosterRpcRow[], viewerId: string):
       avatarUrl: (row.avatar_url as string) || null,
       role: (row.role as string) || 'player',
       chipBalance: Number(row.chip_balance) || 0,
-      isHorse: row.is_horse === true,
       depth,
       isMine: depth === 1,
       playerNumber: (row.player_number as string) || null,

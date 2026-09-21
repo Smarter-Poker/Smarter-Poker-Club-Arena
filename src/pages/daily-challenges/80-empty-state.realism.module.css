@@ -1,0 +1,28 @@
+.emptyState {
+  border-radius: 0;
+  border-style: solid;
+  border-color: rgba(184, 196, 201, 0.32);
+  background:
+    radial-gradient(circle at 50% 0, rgba(85, 232, 255, 0.07), transparent 20rem),
+    linear-gradient(180deg, #0b100f, #050807);
+  clip-path: polygon(
+    10px 0,
+    100% 0,
+    100% calc(100% - 10px),
+    calc(100% - 10px) 100%,
+    0 100%,
+    0 10px
+  );
+}
+
+.emptyActions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.emptyActions .retryButton,
+.emptyActions .playButton {
+  margin-top: 0;
+}

@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LeaderboardSettings } from '../../src/services/LeaderboardService';
 
 const { saveLeaderboardRewardSetup } = vi.hoisted(() => ({
@@ -57,9 +57,21 @@ const setup: LeaderboardSettings = {
   updated_at: null,
 };
 
+async function publishDefaultPlan(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /Yes, Show Prizes/i }));
+  await user.click(screen.getByRole('button', { name: 'Continue' }));
+  await user.click(screen.getByRole('button', { name: 'Continue' }));
+  await user.click(screen.getByRole('button', { name: 'Continue' }));
+  await user.click(screen.getByRole('button', { name: 'Publish Prize Program' }));
+}
+
 describe('LeaderboardPrizeWizard', () => {
   beforeEach(() => {
     saveLeaderboardRewardSetup.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('portals the modal above persistent shell navigation instead of trapping it in the page layer', () => {
@@ -83,7 +95,7 @@ describe('LeaderboardPrizeWizard', () => {
     await user.click(screen.getByRole('button', { name: /Yes, Show Prizes/i }));
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     expect(screen.getByText('North Circuit Promo Wallet')).toBeInTheDocument();
-    expect(screen.getByText('10,000')).toBeInTheDocument();
+    expect(screen.getByText('10K')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     expect(screen.getByRole('button', { name: /Balanced Podium/i })).toHaveAttribute(
@@ -111,6 +123,91 @@ describe('LeaderboardPrizeWizard', () => {
     ]);
     expect(submitted).not.toHaveProperty('funding_source');
     expect(onSaved).toHaveBeenCalledWith(saved);
+  });
+
+  it('reports a refused publish in plain words and tells the page its snapshot is stale', async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    const onSaveError = vi.fn();
+    saveLeaderboardRewardSetup.mockRejectedValue(
+      new Error('Leaderboard Prize Setup Changed In Another Session')
+    );
+
+    render(
+      <LeaderboardPrizeWizard
+        isOpen
+        setup={setup}
+        onClose={vi.fn()}
+        onSaved={onSaved}
+        onSaveError={onSaveError}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /Yes, Show Prizes/i }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.click(screen.getByRole('button', { name: 'Publish Prize Program' }));
+
+    await waitFor(() => expect(saveLeaderboardRewardSetup).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'This Prize Setup Changed In Another Session. Close And Reopen To Load The Current Version.'
+    );
+    expect(onSaveError).toHaveBeenCalledTimes(1);
+    expect(onSaved).not.toHaveBeenCalled();
+    /* The custom amount inputs keep their accessible period in Title Case. */
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    await user.click(screen.getByRole('button', { name: /Custom/i }));
+    expect(screen.getAllByLabelText(/^Weekly Prize For Rank 1$/)).toHaveLength(1);
+  });
+
+  it('keeps the funding refusal readable for a seven-figure club in a production build', async () => {
+    /* DEV is off so the house sanitiser runs as it does for players. Its
+       seven-digit marker used to swap this refusal for a generic line. */
+    vi.stubEnv('DEV', false);
+    const user = userEvent.setup();
+    const onSaveError = vi.fn();
+    saveLeaderboardRewardSetup.mockRejectedValue(
+      new Error(
+        'Leaderboard Prize Program Requires 1000000.00 Promo Chips But Only 250000.00 Are Available After Other Published Commitments'
+      )
+    );
+
+    render(
+      <LeaderboardPrizeWizard
+        isOpen
+        setup={setup}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        onSaveError={onSaveError}
+      />
+    );
+    await publishDefaultPlan(user);
+
+    await waitFor(() => expect(onSaveError).toHaveBeenCalledTimes(1));
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(
+      'North Circuit Promo Wallet No Longer Covers This Plan After Other Published Commitments. Close And Reopen To See The Current Capacity.'
+    );
+    expect(alert).not.toHaveTextContent(/\d\.\d/);
+  });
+
+  it('never shows an owner raw database text in a production build', async () => {
+    vi.stubEnv('DEV', false);
+    const user = userEvent.setup();
+    saveLeaderboardRewardSetup.mockRejectedValue(
+      new Error(
+        'column "p_expected_version" of relation "club_leaderboard_settings" does not exist'
+      )
+    );
+
+    render(<LeaderboardPrizeWizard isOpen setup={setup} onClose={vi.fn()} onSaved={vi.fn()} />);
+    await publishDefaultPlan(user);
+
+    await waitFor(() => expect(saveLeaderboardRewardSetup).toHaveBeenCalledTimes(1));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent?.trim()).not.toBe('');
+    expect(alert).not.toHaveTextContent(/relation|p_expected_version|does not exist/);
   });
 
   it('skips funding and plan steps when a first-time owner declines prizes', async () => {

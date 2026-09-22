@@ -110,7 +110,8 @@
   justify-content: center;
   flex-direction: column;
   padding: 4% 11%;
-  background: #03070b url('/assets/club-buttons/wallet-row-shell.webp') center / 100% 100% no-repeat;
+  background: #03070b url('/assets/club-buttons/wallet-row-shell-e7964bb1791f.webp') center / 100%
+    100% no-repeat;
 }
 
 .vmp__points dt {

@@ -39,6 +39,7 @@ const WEB_BASE = '/hub/club-arena';
 const SOURCES = {
   '/': ['src/pages/PokerArenaLandingPage.tsx', 'src/pages/PokerArenaLandingPage.module.css'],
   '/help': ['src/pages/helpContent.ts', 'src/prerender/HelpPrerender.tsx'],
+  '/legal': ['src/pages/legalCenterContent.ts', 'src/prerender/LegalPrerender.tsx'],
   '/legal/tos': ['src/pages/legal/TermsOfServicePage.tsx'],
   '/legal/privacy': ['src/pages/legal/PrivacyPolicyPage.tsx'],
   '/legal/fair-gaming': ['src/pages/legal/FairGamingPage.tsx'],
@@ -49,6 +50,7 @@ const SHARED_SOURCES = ['src/lib/seo.ts'];
 const PRIORITY = {
   '/': ['0.9', 'weekly'],
   '/help': ['0.6', 'monthly'],
+  '/legal': ['0.4', 'yearly'],
   '/legal/tos': ['0.3', 'yearly'],
   '/legal/privacy': ['0.3', 'yearly'],
   '/legal/fair-gaming': ['0.4', 'yearly'],

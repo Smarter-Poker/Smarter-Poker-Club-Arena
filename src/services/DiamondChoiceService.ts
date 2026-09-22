@@ -102,9 +102,8 @@ export function parseChoiceRound(value: unknown): ChoiceRound {
     Number(v.diamonds_per_chip) <= 0 ||
     Math.abs(Number(v.bet_diamonds) / Number(v.diamonds_per_chip) - v.bet_chips) > 1e-8 ||
     Math.abs(v.payout_chips * 100 - Math.round(v.payout_chips * 100)) > 1e-8 ||
-    !(v.game === 'mines'
-      ? MINE_COUNTS.map(String)
-      : (Object.keys(ROAD_LADDERS) as string[])
+    !(
+      v.game === 'mines' ? MINE_COUNTS.map(String) : (Object.keys(ROAD_LADDERS) as string[])
     ).includes(String(v.mode))
   ) {
     throw new Error('The Game Response Could Not Be Verified');
@@ -190,6 +189,46 @@ async function rpc(name: string, args: Record<string, unknown>) {
   return data;
 }
 
+/** What the player reads when the database raised an error on a move. */
+export const MOVE_NOT_TAKEN = 'The Game Could Not Take That Move';
+
+/**
+ * The server answered a move and did not make it (review 2026-09-22).
+ *
+ * fn_choice_act refuses with {ok:false,error} before it changes anything: the
+ * maintenance break, a tile already turned, a cash-out before the first move.
+ * The page read every such answer as a lost one, said "Confirming Your Move",
+ * read the unchanged round back and dropped the reason, so the break was never
+ * shown. A refusal is an answer: the page shows its reason and reads the game
+ * again. Only an answer that never arrived is confirmed by reading the round.
+ */
+export class ChoiceMoveRefused extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ChoiceMoveRefused';
+  }
+}
+
+/** SQLSTATEs that pass: that execution rolled back, but the next may not. */
+const PASSING_SQLSTATES = new Set(['40001', '40P01', '55P03', '57014']);
+/**
+ * Whether an error from fn_choice_act is the database's answer. It is the rule
+ * the start doors follow (DiamondBonusService.bonusErrorKind, pinned to agree
+ * by tests/unit/diamondChoiceMoveAnswers.test.ts): a SQLSTATE means the
+ * database ran the move and rolled it back, and PostgREST's own codes mean it
+ * never ran, so nothing moved and a resend gets the same answer. The passing
+ * SQLSTATEs, PGRST000-003 (the database was not reached) and an error with no
+ * code at all say nothing final, so the page reads the round back.
+ */
+export function moveRefusedByDatabase(error: unknown): boolean {
+  const code =
+    error && typeof error === 'object' && typeof (error as { code?: unknown }).code === 'string'
+      ? (error as { code: string }).code
+      : '';
+  if (code.startsWith('PGRST')) return !/^PGRST00[0-3]$/.test(code);
+  return /^[0-9A-Z]{5}$/.test(code) && !PASSING_SQLSTATES.has(code);
+}
+
 export const DiamondChoiceService = {
   async state(club: string, game: ChoiceGame, mode: string, bet: number): Promise<ChoiceState> {
     const v = object(
@@ -197,36 +236,25 @@ export const DiamondChoiceService = {
     );
     return parseChoiceState(v, club, game);
   },
-  async start(
-    club: string,
-    game: ChoiceGame,
-    mode: string,
-    bet: number,
-    commit: string,
-    seed: string,
-    maxSteps: number
-  ) {
-    return parseChoiceRound(
-      await rpc('fn_choice_start', {
-        p_club_id: club,
-        p_game: game,
-        p_mode: mode,
-        p_bet: bet,
-        p_commit_id: commit,
-        p_client_seed: seed,
-        p_max_steps: maxSteps,
-      })
-    );
-  },
+  /** One move on an open round. A round is only ever opened through
+   * DiamondBonusService.start, which saves the wager before it is sent. */
   async act(round: ChoiceRound, action: 'pick' | 'cashout', cell: number | null) {
-    const next = parseChoiceRound(
-      await rpc('fn_choice_act', {
+    let answer: unknown;
+    try {
+      answer = await rpc('fn_choice_act', {
         p_round_id: round.id,
         p_action: action,
         p_cell: cell,
         p_expected_step: round.picked.length,
-      })
-    );
+      });
+    } catch (error) {
+      if (moveRefusedByDatabase(error)) throw new ChoiceMoveRefused(MOVE_NOT_TAKEN);
+      throw error;
+    }
+    const refusal = answer as { ok?: unknown; error?: unknown } | null;
+    if (refusal?.ok === false && typeof refusal.error === 'string')
+      throw new ChoiceMoveRefused(refusal.error);
+    const next = parseChoiceRound(answer);
     const immutable = [
       'id',
       'award_id',

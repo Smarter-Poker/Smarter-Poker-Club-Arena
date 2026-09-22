@@ -186,7 +186,13 @@ function DiamondPlinkoGame() {
       !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(next.commit_id)
     )
       throw new Error(next.error ?? 'The Ticket Could Not Be Loaded');
-    if (live.current) setTicket({ id: next.commit_id, hash: next.server_seed_hash });
+    if (live.current) {
+      setTicket({ id: next.commit_id, hash: next.server_seed_hash });
+      // A fresh player seed for every ticket, chosen after its hash is on
+      // screen, so no dealt seed can have been picked knowing the player's
+      // (fairness audit 2026-09-21). An owed wager keeps its own seed.
+      if (!owed.current) setSeed(randomClientSeed());
+    }
   }, []);
   /** Reads the game and quotes the entry. Every read clears the quote before
    * it asks, so the latest read owns the quote, whoever made it (the quote's
@@ -540,7 +546,7 @@ function DiamondPlinkoGame() {
   // actually start: an award this page cannot start (daily limit, a closed or
   // paused game, a cooldown) never traps the player on it.
   // A wager kept for the next visit has nothing in flight: it holds nothing.
-  useLiveBonusGuard(
+  const releaseGuard = useLiveBonusGuard(
     !saved &&
       ((Boolean(earned.award) && !blocked && Boolean(ticket) && !result && !refusal.refused) ||
         busy ||
@@ -581,6 +587,11 @@ function DiamondPlinkoGame() {
               game="plinko"
               guarantee={earned.quote}
               clubId={clubId ?? ''}
+              leave={(to) => {
+                if (busyRef.current) return;
+                releaseGuard();
+                navigate(to);
+              }}
             />
           )
         }

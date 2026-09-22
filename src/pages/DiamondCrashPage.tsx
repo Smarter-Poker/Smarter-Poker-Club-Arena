@@ -270,6 +270,10 @@ function DiamondCrashGame() {
         )
           throw new Error('The Game Ticket Could Not Be Loaded');
         setCommit({ id: c.commit_id, hash: c.server_seed_hash });
+        // A fresh player seed for every ticket, chosen after its hash is on
+        // screen, so no dealt seed can have been picked knowing the player's
+        // (fairness audit 2026-09-21). An owed wager keeps its own seed.
+        if (!owed.current) setClientSeed(randomClientSeed());
         setTicketFailures(0);
       } catch (error) {
         if (live()) {
@@ -963,7 +967,7 @@ function DiamondCrashGame() {
   // error screen offer no way to finish a bonus, so they must not hold the
   // player on a page that cannot progress. The award stays pending server-side
   // and the wheel reopens it.
-  useLiveBonusGuard(
+  const releaseGuard = useLiveBonusGuard(
     !loading &&
       !loadError &&
       Boolean(state) &&
@@ -1111,6 +1115,11 @@ function DiamondCrashGame() {
               diamonds={player?.spendable ?? null}
               disabled={starting || cashing || running || uncertain || restartOwed}
               clubId={routeClubId ?? ''}
+              leave={(to) => {
+                if (busyRef.current) return;
+                releaseGuard();
+                navigate(to);
+              }}
             />
           )
         }

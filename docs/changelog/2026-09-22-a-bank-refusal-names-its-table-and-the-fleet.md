@@ -62,10 +62,13 @@ swallowed):
 - `failedTable`: the table id;
 - `observedDetail`: that engine's `stopped`, `terminal`, `scope`, `tournament`,
   `seats`, `banks`, `meta`, `metaUnseated`, `metaSeatedWithoutBank`,
-  `bankUnseated` and `parked`, then a census of every engine the capture walks
+  `bankUnseated` and `parked`; the other per-engine refusal inputs, `f06`
+  (permit/recovery), `settling`, `postTasks`, `moves`, `boundary`
+  (pending/failed) and `accounting`; then a census of every engine the capture walks
   (the same two exclusions the capture loop makes: retained originals and
   unstarted cash engines): `fleet`, `fleetStopped`, `fleetStoppedSeatedMeta`,
-  `fleetLiveSeatedMeta`, `fleetDepartedMeta`, `fleetOrphanBank`, and
+  `fleetLiveSeatedMeta`, `fleetDepartedMeta`, `fleetOrphanBank`, `fleetF06`,
+  `fleetBoundary`, and
   `stoppedEvents`, the 8-character prefixes of the tournaments whose stopped
   engines hold seated metadata. A census failure degrades to `fleet=unreadable`
   and never removes the per-table detail.
@@ -83,13 +86,15 @@ enough to write the disposition.
 
 ## Verification
 
-`tests/legacyEngineCheckpointGuard.test.ts`, five new tests. A stopped engine
+`tests/legacyEngineCheckpointGuard.test.ts`, six new tests. A stopped engine
 whose banks were disposed, a parked engine whose departed player left
 metadata, and a fleet holding all three shapes each still refuse
 `bank_metadata_without_bank` with no write, and now name the first refusing
 table, its shape and the census, with no player id anywhere in the result; the
 production 8825 profile leaves its two retained originals out of the census,
 exactly as the capture does; a refusal that is not per-engine
-(`insufficient_reserve`) carries no `captureEngine.` detail and no census.
+(`insufficient_reserve`) carries no `captureEngine.` detail and no census; an
+F06 permit held outside retained custody refuses `f06_custody_not_drained` as
+before and is now named and counted the same way.
 `npx vitest run` over the guard, admission, break-window law and source-window
-law suites: 186 passed. `cd server && npx tsc --noEmit`: clean.
+law suites: 187 passed. `cd server && npx tsc --noEmit`: clean.

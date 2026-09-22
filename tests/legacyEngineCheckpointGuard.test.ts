@@ -676,6 +676,13 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
         'fleetLiveSeatedMeta=0',
         'fleetDepartedMeta=2',
         'fleetOrphanBank=1',
+        'fleetF06=0',
+        'fleetBoundary=0',
+        'f06=false/false',
+        'settling=0',
+        'postTasks=false',
+        'moves=0',
+        'boundary=0/false',
         `stoppedEvents=${authority.tournamentId.slice(0, 8)}`,
       ])
     );
@@ -1901,6 +1908,25 @@ describe('an 8825 bank refusal names its table and counts the fleet the capture 
     expect(result.observedDetail).toMatch(/^[\w .,:/=()+-]+$/);
     expect(f.calls).toEqual([]);
     expect(f.server.tableEngines.size).toBe(4);
+  });
+
+  it('names a table that still holds an F06 permit outside retained custody, and counts it', async () => {
+    const f: any = mixedFixture();
+    const e: any = new f.Table(640);
+    e.f06CurrentPermit = { phase: 'reserved' };
+    f.server.tableEngines.set(e.tableId, e);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'f06_custody_not_drained',
+      failedCheck: 'captureEngine.f06_custody_not_drained',
+      failedTable: e.tableId,
+    });
+    expect(String(result.observedDetail).split(',')).toEqual(
+      expect.arrayContaining(['f06=true/false', 'fleet=2', 'fleetF06=1', 'fleetBoundary=0'])
+    );
+    expect(result.observedDetail.length).toBeLessThanOrEqual(512);
+    expect(f.calls).toEqual([]);
   });
 });
 

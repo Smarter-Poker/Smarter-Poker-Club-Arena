@@ -1872,6 +1872,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
        the lease scope and tournament ids only: no player id, bank value or
        seat leaves the guard, and the string stays inside the publisher's
        512-character carrier and its character class. */
+    const sizeOf = (value) => (value instanceof Set || value instanceof Map ? value.size : -1);
     const bankShape = (tableId, engine) => {
       const seats = new Set(
         Array.isArray(engine?.seatedPlayers) ? engine.seatedPlayers.map((seat) => seat?.user_id) : []
@@ -1898,6 +1899,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         let liveSeatedMeta = 0;
         let departedMeta = 0;
         let orphanBank = 0;
+        let permits = 0;
+        let boundaries = 0;
         const stoppedEvents = new Set();
         for (const [tableId, engine] of tableMap) {
           // The same two exclusions the capture loop makes, and no others.
@@ -1916,6 +1919,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           }
           if (shape.metaUnseated > 0) departedMeta++;
           if (shape.bankUnseated > 0) orphanBank++;
+          if (engine?.f06CurrentPermit != null || engine?.f06RecoveryInFlight === true) permits++;
+          if (sizeOf(engine?.terminalBoundaryPendingGenerations) !== 0) boundaries++;
         }
         return [
           `fleet=${walked}`,
@@ -1924,6 +1929,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           `fleetLiveSeatedMeta=${liveSeatedMeta}`,
           `fleetDepartedMeta=${departedMeta}`,
           `fleetOrphanBank=${orphanBank}`,
+          `fleetF06=${permits}`,
+          `fleetBoundary=${boundaries}`,
           `stoppedEvents=${[...stoppedEvents].sort().slice(0, 12).join('/') || 'none'}`,
         ];
       } catch {
@@ -1949,6 +1956,15 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           `metaSeatedWithoutBank=${shape.metaSeatedWithoutBank}`,
           `bankUnseated=${shape.bankUnseated}`,
           `parked=${record(parked) ? Object.keys(parked).length : -1}`,
+          // The other per-engine refusals in this capture, by the same rule:
+          // an F06 permit or recovery, work in flight, a boundary generation,
+          // and the accounting registry.
+          `f06=${engine?.f06CurrentPermit != null}/${engine?.f06RecoveryInFlight === true}`,
+          `settling=${sizeOf(engine?.settlementInFlight)}`,
+          `postTasks=${engine?.postHandTasksPromise != null}`,
+          `moves=${sizeOf(engine?.tournamentMoveOperations)}`,
+          `boundary=${sizeOf(engine?.terminalBoundaryPendingGenerations)}/${engine?.terminalBoundaryPersistenceFailed === true}`,
+          `accounting=${sizeOf(engine?.timeBankAccountingPending)}`,
           ...fleetBankCensus(),
         ]
           .join(',')

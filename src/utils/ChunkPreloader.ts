@@ -134,14 +134,22 @@ export function preloadCriticalChunks(): void {
  * 2026-08-24 (perf pass): was an exact-match lookup, so every parameterised
  * route — '/table/:id', '/clubs/:id/...', '/profile/:userId' — could NEVER
  * match and hovering a table row warmed nothing. Now longest-prefix matched.
- * Each import is the same dynamic import App.tsx hands to lazyWithRetry, so
- * Vite emits no extra chunks and the browser module cache is shared; warming
- * an already-loaded chunk resolves instantly from cache.
+ * Each import is the same dynamic import the app hands to lazyWithRetry,
+ * either in App.tsx or in the module App.tsx mounts that lazy-loads the rest
+ * (the Daily Challenges route shell, PersistentTableLayer), so Vite emits no
+ * extra chunks and the browser module cache is shared; warming an
+ * already-loaded chunk resolves instantly from cache.
  */
 const ROUTE_CHUNKS: Record<string, () => Promise<any>> = {
   '/': () => import('../pages/HomePage'),
   '/profile': () => import('../pages/ProfilePage'),
-  '/challenges': () => import('../pages/DailyChallengesPage'),
+  // App.tsx lazy-loads the route shell and the shell lazy-loads the page, so
+  // warming only the page left a cold shell and App's generic spinner as the
+  // first paint. The shell carries the painted loading master; warm both.
+  '/challenges': () => {
+    void import('../pages/DailyChallengesPage').catch(() => {});
+    return import('../components/challenges/DailyChallengesRoute');
+  },
   '/settings': () => import('../pages/SettingsPage'),
   '/wallet': () => import('../pages/PlayerWalletPage'),
   '/hand-history': () => import('../pages/HandHistoryPage'),

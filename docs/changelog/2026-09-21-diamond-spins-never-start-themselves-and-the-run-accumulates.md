@@ -92,6 +92,14 @@ Inside a run the ring waits for the gesture too, then the run resumes.
   Every Spin.") since a value that fails validation could never be
   resubmitted; a bonus win no longer ends the run silently.
 
+**R19 flash, follow-up.** The instruction alternates white and brand gold,
+readable in both frames, and follows the player's Animation Speed with a
+floor of one second per flash (`max(1s, 1.1s x speed)`), so the fastest
+Animation Speed never flashes more than once a second (WCAG 2.3.1 allows at
+most three). At 320 px the line wraps balanced (`text-wrap: balance`).
+Checked in Chromium at 320 px: 1 s period at speed 0.25, both frames
+screenshotted.
+
 ## Contract this client codes against (workstream D1)
 
 - `fn_wheel_run_begin(p_club_id uuid, p_spins integer)` -> jsonb
@@ -104,6 +112,13 @@ entry_diamonds, created_at}]`). The client also still reads the older
   `awards` name, and reads an absent or malformed `auto_run` as no run.
 - While a run is open the spin RPC accepts spins although the run's bonus
   awards are unfinished. The client sends no run id on the spin.
+- Fields a newer server adds (`pending_cards`, `vip`, `model_version` on
+  the state; extra keys on `auto_run`, on each award and on the run
+  replies; `vip`, `model_version`, `outcome.cards`, `fairness.previous` and
+  `fairness.weights` on a receipt) are ignored by these normalisers, never
+  a reason to refuse (`tests/unit/wheelRun.test.ts`, mutation-checked: a
+  normaliser made strict turns it red). Reading them is the job of the code
+  that owns them (the card pick, the v4 verifier).
 
 ## Moved pins (same commit, owner ruling 2026-09-21)
 
@@ -120,13 +135,22 @@ entry_diamonds, created_at}]`). The client also still reads the older
   refusal carries the server's reason, and the wheel offers 5/10/25 (R18).
 - `tests/components/DiamondWheelAutoRecovery.test.tsx`: the run declares and
   closes at the server, spins land on the tally without a reveal, and the
-  summary replaces the finished toast; plus new cases for every R18 path.
+  summary replaces the finished toast; plus new cases for every R18 path,
+  and a single-spin R8 case (no slide-in toast; the notice carries the
+  result).
+- The e2e check that the ring stays idle before the gesture reads the
+  fixture's recorded `upgradeStates` rather than the wheel frame's
+  `data-phase`, so it holds wherever the wheel carries that attribute.
 
 ## Proof
 
 - `npx tsc --noEmit -p tsconfig.app.json`: clean.
-- `npx vitest run` on every test naming the changed files (31 files, 1060
-  tests) plus `tests/unit/wheelRun.test.ts` (8): green.
+- `npx vitest run` on every test naming the changed files, plus the law
+  registry, reachability, band-aid, CSS-leak, animation and modal laws: 35
+  files, 1108 tests, green.
+- The e2e wheel spec, `tests/e2e/css/diamond-wheel-reveal.spec.ts`, in
+  Chromium with the repo's default config: 17 of 17 (the real components,
+  CSS and art at 320, 390 and 1280 px).
 - `npm run check:title-case`, `npm run check:painted-text`: OK.
 - `node scripts/ci/report-source-grep-tests.mjs --ratchet`: OK (5/5).
 

@@ -182,7 +182,20 @@ run_game_probe diamond-one-setting-super-guarantee 'NOTICE:  PASS One setting an
 # designed rate. Read only, fixed seeds, no money path: this is the check that
 # the twenty Plinko games Dan played could not have found, because a table's
 # 0.80 arithmetic being exact says nothing about how often 20x actually lands.
-run_game_probe diamond-bonus-fairness-audit 'NOTICE:  PASS Diamond fairness audit:'
+run_game_probe diamond-bonus-fairness-audit 'NOTICE:  PASS Diamond fairness audit (contract 3):'
+
+# --- D2 bonus rules 2026-09-21 ---
+# Owner rulings R3, R6, R10, R11 and R16 (Dan, 2026-09-21): the first step of a
+# bonus game never ruins it, the floor is half the stake or what a Super player
+# paid (add-on included), Plinko's drop value is the player's again and the
+# add-on debit names itself. Qualified on the exact production preimages of every
+# starter, actor, decider, quote and receipt the migration patches; then the
+# fairness audit is re-run so the sealed draws are held to the contract-4 forms.
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20260921203512_the_first_step_of_a_bonus_game_never_ruins_it_and_the_floor_.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-first-step-and-paid-floor 'NOTICE:  PASS First step and paid floor: floors exact for every stake 25..2500 on four stake kinds, crash never below 1.10x and every target 0.80B, street one certain and every street 0.80B, mines dealt around the first pick and fair, owner example 2500+2500 pays at least 50 on all four games, add-on debited once as itself with one custody movement and replay-safe, every payout journaled once from promo, ordinary half floor and 0.80x first steps, old round keeps 1.01x;'
+run_game_probe diamond-bonus-fairness-audit 'NOTICE:  PASS Diamond fairness audit (contract 4):'
+# --- end D2 bonus rules 2026-09-21 ---
 
 # --- D3 settlement burn and quiet ledger 2026-09-21 --- (burn half, owner rulings R14, R16, R17)
 # 1. The migration applies over a database that already holds a day settled

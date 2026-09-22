@@ -14,15 +14,35 @@
  *
  *   CRASH: the first six bytes as a 48-bit integer r, and the crash point in
  *   cents is floor(80 * 2^48 / (r + 1)), floored at 100 (1.00x). For any
- *   target x, P(X >= x) = 0.8 / x.
+ *   target x, P(X >= x) = 0.8 / x. With a guaranteed floor L the point is
+ *   floor(100 (L + (0.8B - L) 2^48 / (r + 1)) / B), so P(X >= x) = (0.8B - L)/(xB - L).
+ *   CONTRACT 4 (Dan, 2026-09-21, R3): the point is floored at 110 (1.10x) and
+ *   cash out opens at 1.11x. For any x above 1.10, max(raw, 110) >= x iff
+ *   raw >= x, so every cash-out target still returns exactly 0.80B; the ship
+ *   can never explode until after 1.10x. A receipt says which floor it was
+ *   sealed under through payout_version.
  *
- * Byte for byte the mapping of supabase/migrations/20260908010241. The unit
- * test pins this file to vectors computed by production Postgres.
+ * Byte for byte the mapping of supabase/migrations/20260908010241, 20260919034436
+ * and 20260921203512. The unit test pins this file to vectors computed by
+ * production Postgres.
  */
 
 import { hmacSha256Hex, rollFromHmacHex, sha256Hex } from './wheelFairness';
 
 const EIGHTY_TIMES_TWO_48 = 22517998136852480n; // 80 * 2^48
+
+/** The contract every crash round sealed since 2026-09-21 carries. */
+export const CRASH_PAYOUT_VERSION = 4;
+/** The lowest crash point a round of this contract can seal: 1.00x before
+ * contract 4, 1.10x from it. Mirrors GREATEST(100|110, ...) in fn_crash_point_cents. */
+export function crashPointFloorCents(payoutVersion?: number): number {
+  return (payoutVersion ?? 0) >= CRASH_PAYOUT_VERSION ? 110 : 100;
+}
+/** The first multiplier a round of this contract may cash out at: 1.01x before
+ * contract 4, 1.11x from it. Mirrors fn_crash_decide and fn_crash_cashout. */
+export function crashCashoutFloorCents(payoutVersion?: number): number {
+  return (payoutVersion ?? 0) >= CRASH_PAYOUT_VERSION ? 111 : 101;
+}
 
 export interface PlinkoPath {
   /** One entry per row, 0 = left, 1 = right, row 0 first. */
@@ -57,11 +77,13 @@ export function plinkoBitsFromPathBits(pathBits: number, rows = 16): number[] {
   return bits;
 }
 
-/** floor(80 * 2^48 / (roll + 1)) cents, floored at 1.00x. Exact BigInt arithmetic. */
+/** floor(80 * 2^48 / (roll + 1)) cents, floored at the contract's floor (1.00x,
+ * or 1.10x under contract 4). Exact BigInt arithmetic. */
 export function crashPointCentsFromRoll(
   roll: number | bigint,
   betChips = 1,
-  minimumPayoutChips = 0
+  minimumPayoutChips = 0,
+  pointFloorCents = 100
 ): number {
   const r = BigInt(roll);
   if (r < 0n || r >= 281474976710656n) throw new Error('Invalid Crash Outcome');
@@ -76,7 +98,9 @@ export function crashPointCentsFromRoll(
       : (100n *
           (5n * minimumCents * (r + 1n) + (4n * betCents - 5n * minimumCents) * 281474976710656n)) /
         (5n * betCents * (r + 1n));
-  return cents < 100n ? 100 : Number(cents);
+  if (!Number.isInteger(pointFloorCents) || pointFloorCents < 100)
+    throw new Error('Invalid Crash Outcome');
+  return cents < BigInt(pointFloorCents) ? pointFloorCents : Number(cents);
 }
 
 /** The curve: floor(e^(k t) * 100) cents, clamped at the cap. t in milliseconds. */
@@ -138,6 +162,8 @@ export interface CrashFairnessInput {
   crashCents: number;
   betChips?: number;
   minimumPayoutChips?: number;
+  /** The contract the round was sealed under; absent before 2026-09-19. */
+  payoutVersion?: number;
 }
 
 export interface CrashFairnessVerdict {
@@ -157,7 +183,8 @@ export async function verifyCrashRound(input: CrashFairnessInput): Promise<Crash
   const computedCrashCents = crashPointCentsFromRoll(
     computedRoll,
     input.betChips,
-    input.minimumPayoutChips
+    input.minimumPayoutChips,
+    crashPointFloorCents(input.payoutVersion)
   );
   const hashMatches = computedHash === input.serverSeedHash.toLowerCase();
   const rollMatches = computedRoll === input.roll;

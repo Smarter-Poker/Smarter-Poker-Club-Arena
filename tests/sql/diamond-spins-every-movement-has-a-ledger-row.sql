@@ -1,14 +1,21 @@
 -- Run only in the private Diamond fixture created by test-accounting-delivery.sh
 -- (owner ruling 2026-09-21 R16 audit). One paid spin per prize KIND the live
--- model can produce, on a standalone club and on a union host, each forced by
--- seed search over whatever fn_wheel_v3_model() returns today. For every spin:
--- the player wallet moves by exactly the entry (plus a diamond prize), and one
--- diamond_transactions row records it; a chip prize leaves the host PROMO
--- wallet first and the bank second, lands on the player exactly, and is
--- journaled in chip_ledger, chip_transactions and (union) union_wallet_
+-- wheel shows the player (the kinds are read from fn_wheel_state_v2's own
+-- segments, never from a hard-coded table), on a standalone club and on a
+-- union host. Each outcome is FORCED BY THE REAL SPIN: fixed seeds are tried in
+-- rolled-back subtransactions until the spin's own receipt shows the wanted
+-- kind, so the probe does not depend on the draw domain, the weights, a
+-- follow-up matrix or a VIP table (wheel v3 today, wheel v4 later). For every
+-- spin: the player wallet moves by exactly the entry (plus a diamond prize), and
+-- one diamond_transactions row records each movement; a chip prize leaves the
+-- host PROMO wallet first and the bank second, lands on the player exactly, and
+-- is journaled in chip_ledger, chip_transactions and (union) union_wallet_
 -- transactions summing to the prize; an item prize is a feature_purchases row
--- per grant; a bonus is an award row and nothing else; and the owner's custody
--- day equals the sum of its movements. Everything rolled back.
+-- per grant with its custody cost retired in the Mint register; a bonus is an
+-- award row and nothing else; a Diamonds prize is paid from custody either at
+-- the spin (v3) or at the card pick (v4, fn_wheel_diamond_cards_pick, exactly
+-- once); and the owner's custody day equals the sum of its movements. An
+-- unknown kind fails the probe by name. Everything rolled back.
 \set ON_ERROR_STOP on
 BEGIN;
 SET LOCAL "test.user"='d1000000-0000-4000-8000-000000000005';
@@ -23,39 +30,32 @@ CREATE FUNCTION pg_temp.diamond_identity() RETURNS numeric LANGUAGE sql AS $$
  SELECT (SELECT COALESCE(sum(diamonds),0) FROM public.profiles)+public.fn_ca_arena_diamonds()
   +COALESCE((SELECT balance FROM public.ca_diamond_house WHERE id=1),0)-public.fn_ca_mint_supply('diamonds');
 $$;
--- Force a primary outcome (and optionally a secondary kind) by searching seeds
--- against the live model, exactly as the spin draws: HMAC over 2^48.
-CREATE FUNCTION pg_temp.force_spin(p_player uuid,p_club uuid,p_ord integer,p_entry integer,p_secondary_kind text DEFAULT NULL) RETURNS jsonb
+-- Force an outcome of p_kind (and, for an Upgrade, a secondary of
+-- p_secondary_kind) through the real spin. Every attempt that misses is rolled
+-- back whole: its spin row, debit, custody movement, prize and award. Seeds are
+-- fixed, so a run is reproducible.
+CREATE FUNCTION pg_temp.force_spin(p_player uuid,p_club uuid,p_kind text,p_entry integer,p_secondary_kind text DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql AS $$
-DECLARE seed text;i integer;nonce bigint;point numeric;point2 numeric;commit uuid;outcome jsonb;total numeric;low numeric;high numeric;
- total2 numeric;secondary_low numeric;secondary_high numeric;found boolean:=false;
+DECLARE seed text;i integer;commit uuid;outcome jsonb;found jsonb;
 BEGIN
- SELECT sum(weight) INTO total FROM public.fn_wheel_v3_model();
- SELECT COALESCE(sum(weight) FILTER (WHERE ord<p_ord),0),sum(weight) FILTER (WHERE ord<=p_ord) INTO low,high FROM public.fn_wheel_v3_model();
- IF p_secondary_kind IS NOT NULL THEN
-  SELECT sum(weight) INTO total2 FROM public.fn_wheel_v3_upgrade_model();
-  SELECT COALESCE(sum(m2.weight) FILTER (WHERE m2.ord<m.ord),0),sum(m2.weight) FILTER (WHERE m2.ord<=m.ord) INTO secondary_low,secondary_high
-   FROM (SELECT ord FROM public.fn_wheel_v3_upgrade_model() WHERE kind=p_secondary_kind ORDER BY weight DESC,ord LIMIT 1) m,public.fn_wheel_v3_upgrade_model() m2;
- END IF;
- SELECT count(*)+1 INTO nonce FROM public.wheel_spins WHERE user_id=p_player;
- FOR i IN 1..200000 LOOP
-  seed:=encode(extensions.digest('ledger-audit-'||p_club||'-'||p_ord||'-'||COALESCE(p_secondary_kind,'')||'-'||i,'sha256'),'hex');
-  point:=floor((('x'||substr(encode(extensions.hmac('wheel-v3:audit:'||nonce,seed,'sha256'),'hex'),1,12))::bit(48)::bigint)::numeric*total/281474976710656);
-  IF point>=low AND point<high THEN
-   IF p_secondary_kind IS NULL THEN found:=true; EXIT; END IF;
-   point2:=floor((('x'||substr(encode(extensions.hmac('wheel-v3-upgrade:audit:'||nonce,seed,'sha256'),'hex'),1,12))::bit(48)::bigint)::numeric*total2/281474976710656);
-   IF point2>=secondary_low AND point2<secondary_high THEN found:=true; EXIT; END IF;
-  END IF;
+ FOR i IN 1..6000 LOOP
+  BEGIN
+   seed:=encode(extensions.digest('ledger-audit-'||p_club||'-'||p_kind||'-'||COALESCE(p_secondary_kind,'')||'-'||i,'sha256'),'hex');
+   commit:=gen_random_uuid();
+   INSERT INTO public.wheel_seed_commits(id,user_id,server_seed,server_seed_hash) VALUES(commit,p_player,seed,encode(extensions.digest(seed,'sha256'),'hex'));
+   SET LOCAL ROLE authenticated;
+   outcome:=public.fn_wheel_spin_v2(p_club,commit,'audit',p_entry,'paid',NULL);
+   RESET ROLE;
+   IF outcome->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'Audit spin refused while forcing %: %',p_kind,outcome; END IF;
+   IF outcome#>>'{outcome,kind}'=p_kind AND (p_secondary_kind IS NULL OR outcome#>>'{secondary,outcome,kind}'=p_secondary_kind) THEN
+    found:=outcome; EXIT;
+   END IF;
+   RAISE EXCEPTION USING ERRCODE='P0099',MESSAGE='ledger audit: roll this attempt back';
+  EXCEPTION WHEN SQLSTATE 'P0099' THEN NULL;
+  END;
  END LOOP;
- IF NOT found THEN RAISE EXCEPTION 'No seed reaches ord % (%)',p_ord,p_secondary_kind; END IF;
- commit:=gen_random_uuid();
- INSERT INTO public.wheel_seed_commits(id,user_id,server_seed,server_seed_hash) VALUES(commit,p_player,seed,encode(extensions.digest(seed,'sha256'),'hex'));
- SET LOCAL ROLE authenticated;
- outcome:=public.fn_wheel_spin_v2(p_club,commit,'audit',p_entry,'paid',NULL);
- RESET ROLE;
- IF outcome->>'ok' IS DISTINCT FROM 'true' OR (outcome#>>'{outcome,ord}')::integer IS DISTINCT FROM p_ord THEN
-  RAISE EXCEPTION 'Audit spin failed for ord %: %',p_ord,outcome; END IF;
- RETURN outcome;
+ IF found IS NULL THEN RAISE EXCEPTION 'No fixed seed in 6000 real spins reached % (%)',p_kind,p_secondary_kind; END IF;
+ RETURN found;
 END $$;
 DO $probe$
 DECLARE player uuid:='d1000000-0000-4000-8000-000000000005';owner uuid:='d1000000-0000-4000-8000-000000000002';
@@ -66,6 +66,7 @@ DECLARE player uuid:='d1000000-0000-4000-8000-000000000005';owner uuid:='d100000
  pending_before numeric;rows_before bigint;journal_before bigint;chip_rows bigint;chip_total numeric;prize_chips numeric;from_promo numeric;from_bank numeric;
  grant_rows bigint;grant_uses numeric;grant_cost numeric;item_cost numeric;burn_rows bigint;dia_prize integer;spins integer:=0;kinds text[]:='{}';
  day_row public.diamond_spin_days;movement_sum record;secondary_kind text;grants_before uuid[];uw_before numeric;
+ st jsonb;card_award uuid;risk integer;pick jsonb;repick jsonb;prize_moves bigint;prize_sum numeric;
 BEGIN
  initial_identity:=pg_temp.diamond_identity();
  UPDATE public.diamond_wheel_release SET enabled=true;
@@ -87,10 +88,16 @@ BEGIN
  PERFORM set_config('test.user',player::text,true);
  IF result->>'ok' IS DISTINCT FROM 'true' OR NOT public.fn_diamond_spins_owner_agreed(union_id,'union') THEN RAISE EXCEPTION 'Union agreement not recorded: %',result; END IF;
  FOR h IN SELECT * FROM (VALUES(club,'club'::text,club),(union_id,'union'::text,union_club)) x(host,kind,club_id) LOOP
-  -- One spin per prize kind in the live model. Kinds that end the player's
-  -- run (a bonus award blocks the next spin) come last; an Upgrade is forced
-  -- onto an instant-chip secondary so the run can continue.
-  FOR m IN SELECT DISTINCT ON (x.kind) x.ord,x.kind FROM public.fn_wheel_v3_model() x ORDER BY x.kind,x.weight DESC,x.ord LOOP
+  -- One spin per prize kind the wheel shows this player. A bonus award blocks
+  -- the next spin in its club, so the bonus kind comes last; an Upgrade is
+  -- forced onto an instant-chip secondary so the run can continue.
+  SET LOCAL ROLE authenticated;
+  st:=public.fn_wheel_state_v2(h.club_id,entry);
+  RESET ROLE;
+  IF st->>'ok' IS DISTINCT FROM 'true' OR jsonb_array_length(COALESCE(st->'segments','[]'))=0
+   OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(st->'upgrade_segments','[]')) u WHERE u->>'kind'='chips') THEN
+   RAISE EXCEPTION 'The wheel state for % shows no usable prize table: %',h.kind,st; END IF;
+  FOR m IN SELECT DISTINCT x->>'kind' AS kind FROM jsonb_array_elements(st->'segments') x ORDER BY 1 LOOP
    IF m.kind='bonus' THEN CONTINUE; END IF;
    v_kind:=m.kind;secondary_kind:=CASE WHEN v_kind='upgrade' THEN 'chips' END;
    -- The chip prize must cross from Promo into the bank: pay Promo down to half
@@ -107,7 +114,7 @@ BEGIN
    SELECT count(*) INTO journal_before FROM public.diamond_transactions WHERE user_id=player;
    SELECT COALESCE(array_agg(id),'{}') INTO grants_before FROM public.feature_purchases WHERE user_id=player;
    SELECT COALESCE(sum(uw.amount),0) INTO uw_before FROM public.union_wallet_transactions uw WHERE uw.union_id=h.host AND uw.club_id=h.club_id AND uw.tx_type='wheel_prize' AND uw.direction='debit';
-   result:=pg_temp.force_spin(player,h.club_id,m.ord,entry,secondary_kind);
+   result:=pg_temp.force_spin(player,h.club_id,v_kind,entry,secondary_kind);
    spin:=(result->>'spin_id')::uuid;prize:=result->'outcome';spins:=spins+1;kinds:=kinds||v_kind;
    IF v_kind='upgrade' THEN prize:=result#>'{secondary,outcome}'; IF prize->>'kind'<>'chips' THEN RAISE EXCEPTION 'Upgrade did not land chips: %',result; END IF; END IF;
    -- 1. The entry: exactly one player journal row, the wallet moved by exactly that.
@@ -118,7 +125,28 @@ BEGIN
    IF (SELECT count(*) FROM public.diamond_spin_movements WHERE operation_id='wheel:'||spin||':intake' AND owner_id=owner AND host_id=h.host AND host_kind=h.kind AND player_id=player AND kind='entry' AND amount=entry AND day=d)<>1 THEN
     RAISE EXCEPTION 'No custody intake movement for % spin %',v_kind,spin; END IF;
    dia_prize:=0;item_cost:=0;
-   IF v_kind='diamonds' THEN
+   IF v_kind='diamonds' AND prize->'cards' IS NOT NULL THEN
+    -- Wheel v4 (owner ruling 2026-09-21 R15): the spin creates a sealed card
+    -- award and pays nothing; the pick pays one card from custody, once.
+    card_award:=(prize#>>'{cards,award_id}')::uuid;risk:=(prize#>>'{cards,risk_diamonds}')::integer;
+    SELECT count(*),COALESCE(sum(amount),0) INTO prize_moves,prize_sum FROM public.diamond_spin_movements WHERE owner_id=owner AND day=d AND kind='diamond_prize';
+    IF card_award IS NULL OR risk IS DISTINCT FROM (result->>'entry_value_diamonds')::integer
+     OR (SELECT diamonds FROM public.profiles WHERE id=player)<>player_before-entry
+     OR EXISTS(SELECT 1 FROM public.diamond_transactions WHERE reference_id='wheel-cards:'||card_award) THEN
+     RAISE EXCEPTION 'The Diamonds card award paid before the pick or does not name its risk: %',prize; END IF;
+    SET LOCAL ROLE authenticated;
+    pick:=public.fn_wheel_diamond_cards_pick(card_award,1::smallint);
+    repick:=public.fn_wheel_diamond_cards_pick(card_award,1::smallint);
+    RESET ROLE;
+    dia_prize:=(pick->>'paid_diamonds')::integer;
+    IF pick->>'ok' IS DISTINCT FROM 'true' OR repick->>'ok' IS DISTINCT FROM 'true' OR (repick->>'paid_diamonds')::integer IS DISTINCT FROM dia_prize
+     OR dia_prize IS NULL OR dia_prize NOT IN (floor(risk*.5)::integer,ceil(risk*.5)::integer,2*risk,3*risk)
+     OR (SELECT count(*) FROM public.diamond_transactions WHERE user_id=player AND reference_id='wheel-cards:'||card_award AND amount=dia_prize)<>1
+     OR (SELECT count(*) FROM public.diamond_spin_movements WHERE owner_id=owner AND day=d AND kind='diamond_prize')<>prize_moves+1
+     OR (SELECT COALESCE(sum(amount),0) FROM public.diamond_spin_movements WHERE owner_id=owner AND day=d AND kind='diamond_prize')<>prize_sum-dia_prize THEN
+     RAISE EXCEPTION 'Diamonds card pick not paid and journaled exactly once for award %: % / %',card_award,pick,repick; END IF;
+   ELSIF v_kind='diamonds' THEN
+    -- Wheel v3: half the entry paid at the spin, custody and player both journaled.
     dia_prize:=(prize->>'amount')::integer;
     IF dia_prize<=0 OR (SELECT count(*) FROM public.diamond_transactions WHERE user_id=player AND reference_id='wheel:'||spin||':prize' AND amount=dia_prize AND transaction_type='transfer' AND issuance_class='transferred')<>1
      OR (SELECT count(*) FROM public.diamond_spin_movements WHERE operation_id='wheel:'||spin||':diamond-prize' AND kind='diamond_prize' AND amount=-dia_prize AND owner_id=owner)<>1 THEN
@@ -169,12 +197,11 @@ BEGIN
    IF pg_temp.diamond_identity()<>initial_identity THEN RAISE EXCEPTION 'Supply drifted on % spin %',v_kind,spin; END IF;
   END LOOP;
   -- 6. The bonus kind: an award row, nothing paid, nothing debited beyond the entry.
-  SELECT x.ord,x.kind INTO m FROM public.fn_wheel_v3_model() x WHERE x.kind='bonus' ORDER BY x.weight DESC,x.ord LIMIT 1;
-  IF FOUND THEN
+  IF EXISTS(SELECT 1 FROM jsonb_array_elements(st->'segments') x WHERE x->>'kind'='bonus') THEN
    SELECT diamonds INTO player_before FROM public.profiles WHERE id=player;
    SELECT chip_balance INTO member_before FROM public.club_members WHERE club_id=h.club_id AND user_id=player;
    SELECT COALESCE(pending_diamonds,0) INTO pending_before FROM public.diamond_spin_days WHERE owner_id=owner AND day=d;
-   result:=pg_temp.force_spin(player,h.club_id,m.ord,entry);spin:=(result->>'spin_id')::uuid;spins:=spins+1;kinds:=kinds||'bonus'::text;
+   result:=pg_temp.force_spin(player,h.club_id,'bonus',entry);spin:=(result->>'spin_id')::uuid;spins:=spins+1;kinds:=kinds||'bonus'::text;
    IF (SELECT count(*) FROM public.wheel_bonus_awards WHERE spin_id=spin AND user_id=player AND host_id=h.host AND entry_diamonds=entry AND status='pending')<>1
     OR (SELECT diamonds FROM public.profiles WHERE id=player)<>player_before-entry
     OR (SELECT count(*) FROM public.diamond_transactions WHERE user_id=player AND reference_id='wheel:'||spin AND amount=-entry)<>1

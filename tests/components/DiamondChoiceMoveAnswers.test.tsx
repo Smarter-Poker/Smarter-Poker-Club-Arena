@@ -123,15 +123,12 @@ const state = (game: Game, overrides: Record<string, unknown> = {}) => ({
   seconds_until_next: 0,
   ...overrides,
 });
-const PLAY_ON: Record<Game, string> = {
-  mines: 'Reveal A Tile Or Book The Win.',
-  crossing: 'Cross The Next Street Or Book The Win.',
-};
-/** The control that makes the next move in each game. */
+/** The control that makes the next move in each game. The crossing plate names
+ *  the street and the chips it would pay, so it is matched by how it begins. */
 const nextMove = (game: Game) =>
   game === 'mines'
     ? screen.getByRole('button', { name: 'Tile 9' })
-    : screen.getByRole('button', { name: 'Cross Street' });
+    : screen.getByRole('button', { name: /^Cross Street/ });
 const moveSent = (game: Game) => expect(nextMove(game)).toBeInTheDocument();
 const text = () => document.body.textContent ?? '';
 const settle = async () => {
@@ -181,7 +178,7 @@ describe.each(['mines', 'crossing'] as const)('%s: a move the server refused', (
     backend.state.mockResolvedValue(state(game));
     render(<DiamondChoicePage game={game} />);
     await settle();
-    expect(screen.getByText(PLAY_ON[game])).toBeInTheDocument();
+    moveSent(game);
     // The break begins; the server refuses the move and changes nothing.
     backend.state.mockResolvedValue(state(game, { frozen: true }));
     backend.move.mockResolvedValue({ error: null, data: { ok: false, error: BREAK } });
@@ -202,7 +199,7 @@ describe.each(['mines', 'crossing'] as const)('%s: a move the server refused', (
     backend.state.mockResolvedValue(state(game));
     await advance(15_000);
     expect(screen.queryByText(BREAK)).toBeNull();
-    expect(screen.getByText(PLAY_ON[game])).toBeInTheDocument();
+    moveSent(game);
     // The player's next move is taken.
     backend.move.mockResolvedValue({ error: null, data: moved(game) });
     backend.state.mockResolvedValue(state(game, { open_round: moved(game) }));
@@ -279,7 +276,9 @@ describe('the second plate books the win and nothing else', () => {
     backend.move.mockResolvedValueOnce({ error: null, data: moved('mines') });
     backend.state.mockResolvedValue(state('mines', { open_round: moved('mines') }));
     await press('mines');
-    expect(screen.getByRole('button', { name: 'Book The Win' })).toBeEnabled();
+    // Once there are chips to name it names them, and its accessible name
+    // still says what the press does.
+    expect(screen.getByRole('button', { name: /^Book The Win/ })).toBeEnabled();
     const booked = {
       ...fixtures.receipts.mines,
       picked: [FIRST.mines],
@@ -287,7 +286,7 @@ describe('the second plate books the win and nothing else', () => {
     };
     backend.move.mockResolvedValueOnce({ error: null, data: booked });
     backend.state.mockResolvedValue(state('mines', { open_round: null, history: [booked] }));
-    fireEvent.click(screen.getByRole('button', { name: 'Book The Win' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Book The Win/ }));
     await settle();
     expect(actions()).toEqual(['pick', 'cashout']);
     expect(screen.getByText(/Chips Booked/)).toBeInTheDocument();

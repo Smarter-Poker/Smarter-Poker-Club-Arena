@@ -126,12 +126,17 @@ vi.mock('../../src/components/wheel/WheelWinReveal', () => ({
     title,
     detail,
     onOpen,
+    eyebrow,
+    silent,
   }: {
     title: string;
     detail: string;
     onOpen: () => void;
+    eyebrow?: string;
+    silent?: boolean;
   }) => (
-    <div role="dialog" aria-label={title}>
+    <div role="dialog" aria-label={title} data-silent={String(Boolean(silent))}>
+      <span data-eyebrow>{eyebrow}</span>
       {detail}
       <button onClick={onOpen}>Finish Prize</button>
     </div>
@@ -281,6 +286,30 @@ describe('Crash settles one displayed round once', () => {
       '/clubs/00000000-0000-0000-0000-000000000003/wheel',
       { replace: true }
     );
+  });
+  /**
+   * A CRASH SAYS NOTHING (review 2026-09-22). The page deliberately keeps
+   * silent when a flight crashes, and then the receipt mounted over it and
+   * played a major arpeggio and a success buzz anyway. A cashed round is not
+   * sung twice either: the page already sang it at its own multiplier.
+   */
+  it('never lets the receipt celebrate a crash, or sing a cash-out twice', async () => {
+    backend.crashSettle.mockResolvedValueOnce({
+      ...settled,
+      status: 'crashed',
+      outcome: { ...settled.outcome, status: 'crashed', payout_chips: 0.1 },
+    });
+    await mountOpen();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Flight' }));
+    const receipt = screen.getByRole('dialog');
+    expect(receipt).toHaveAttribute('data-silent', 'true');
+    expect(receipt.querySelector('[data-eyebrow]')).toHaveTextContent('Guarantee Paid');
+    cleanup();
+    backend.crashSettle.mockResolvedValueOnce(settled);
+    await mountOpen();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Flight' }));
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-silent', 'true');
+    expect(screen.getByRole('dialog').querySelector('[data-eyebrow]')).toBeEmptyDOMElement();
   });
   it('sends both unfunded entry controls directly to the wheel without starting a game', async () => {
     backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });

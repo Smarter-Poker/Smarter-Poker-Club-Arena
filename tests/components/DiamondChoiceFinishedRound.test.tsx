@@ -187,8 +187,16 @@ const loseTheRound = async (game: Game) => {
   fireEvent.click(
     game === 'mines'
       ? screen.getByRole('button', { name: 'Tile 8' })
-      : screen.getByRole('button', { name: 'Cross Street' })
+      : screen.getByRole('button', { name: /^Cross Street/ })
   );
+  await settle();
+};
+/** The crossing's reveal belongs to the scene: the console prints the finished
+ *  round once the scene says it has landed and settled. Mines has no reveal to
+ *  wait on - its own board turns the tile over on the answer. */
+const revealEnds = async () => {
+  const finish = screen.queryByRole('button', { name: 'Finish Scene' });
+  if (finish) fireEvent.click(finish);
   await settle();
 };
 const setupOnScreen = () =>
@@ -248,7 +256,11 @@ describe.each(['mines', 'crossing'] as const)('%s: the round that just finished'
 
   it('keeps the setup off screen while it is revealed, and shows its own floor', async () => {
     await play(false);
-    expect(text()).toMatch(/0\.10 Chips Booked/);
+    // While the scene is still revealing the hit, the setup is off screen.
+    expect(setupOnScreen()).toEqual([]);
+    await revealEnds();
+    // Mines books the chips, the crossing books its guarantee; both say so.
+    expect(text()).toMatch(/0\.10 Chips (Are )?Booked/);
     expect(text()).not.toContain('Win This Game On Diamond Spins To Play.');
     expect(setupOnScreen()).toEqual([]);
     expect(bay('Guaranteed').textContent).toBe('0.10 Chips');

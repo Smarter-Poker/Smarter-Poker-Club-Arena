@@ -25,7 +25,7 @@ export async function diamondGamesFixture() {
  import ChoiceScene from './src/components/games/ChoiceScene';import CrashCurve from './src/components/crash/CrashCurve';
  import PlinkoBoard from './src/components/plinko/PlinkoBoard';import {useMeasuredWidth} from './src/hooks/useMeasuredWidth';
  import {diamondGameTitle,type DiamondBonusGame} from './src/utils/diamondGameTitles';
- import {PLINKO_DROPS,bonusTotal,gameChips,plinkoBudget,validBonusBudget,type BonusBudget} from './src/utils/bonusGameBudget';
+ import {bonusTotal,gameChips,plinkoBudget,plinkoDrops,validBonusBudget,type BonusBudget} from './src/utils/bonusGameBudget';
  import {PLINKO_TABLES,diamondBonusMinimum,plinkoTableVersion} from './src/utils/diamondBonusPayout';
  import {CHOICE_MODE,ROAD_LADDERS,minePrize} from './src/utils/diamondChoiceMath';
  import './src/pages/diamondGames.module.css';
@@ -52,7 +52,7 @@ export async function diamondGamesFixture() {
  <GameConsole title={diamondGameTitle(game)} pill="Preview"
  setup={<BonusSetup budget={budget} onChange={b=>setBudget(plinkoBudget(b))} diamonds={1000} disabled={false} game={game} clubId="preview"/>}
  bays={[{label:'Entry',value:'100'},
- {label:game==='plinko'?'Drops':'Choices',value:game==='plinko'?'0/'+PLINKO_DROPS:String(picked.length)},
+ {label:game==='plinko'?'Drops':'Choices',value:game==='plinko'?'0/'+(plinkoDrops(budget)??'?'):String(picked.length)},
  {label:'Guaranteed',value:guaranteed+' Chips'},
  {label:'Current Prize',value:phase==='lost'?guaranteed:'2.57',ink:'gold'},
  {label:'Next Prize',value:'3.15',ink:'blue'}]}

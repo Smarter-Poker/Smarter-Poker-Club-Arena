@@ -372,6 +372,46 @@ describe('a bucket reacts to the ball that lands in it', () => {
     expect(slotMesh(scene, 0).material.emissiveIntensity).toBeGreaterThan(1);
     expect(screen.getByRole('status')).toHaveTextContent('2 Of 2 Landed. Best 20x.');
   });
+  it('drops a ball released later from the top, and a released batch keeps its cadence', () => {
+    // THE PLAYER RELEASES THE BALLS (Dan 2026-09-21, R6): the page grows the
+    // batch as the player taps Drop or Drop All. A ball added six seconds in
+    // must fall from the top now, not be back-dated to the batch start and
+    // land without ever being seen.
+    const frame = frames();
+    const onProgress = vi.fn();
+    const onLanded = vi.fn();
+    const props = {
+      multipliersCents: DIAMOND,
+      path: null,
+      dropKey: 21,
+      restingSlot: null,
+      onProgress,
+      onLanded,
+    };
+    const view = render(<PlinkoBoard {...props} batchPathBits={[0xffff]} />);
+    frame(100);
+    frame(6000);
+    // The one released ball has landed and the board says so, once.
+    expect(onProgress).toHaveBeenLastCalledWith(1);
+    expect(onLanded).toHaveBeenCalledTimes(1);
+    expect(field.light).toHaveBeenLastCalledWith([]);
+    // The player releases a second ball: it starts at row zero, six seconds in.
+    view.rerender(<PlinkoBoard {...props} batchPathBits={[0xffff, 0]} />);
+    frame(6100);
+    expect(field.light).toHaveBeenLastCalledWith([pegIndexAt(0, 0)]);
+    frame(7000);
+    expect(field.light.mock.calls.at(-1)![0]).toHaveLength(1);
+    expect(onLanded).toHaveBeenCalledTimes(1);
+    // And two more at once come down one gap apart, so three are in flight together.
+    view.rerender(<PlinkoBoard {...props} batchPathBits={[0xffff, 0, 0xffff, 0]} />);
+    frame(7100);
+    frame(7500);
+    expect(field.light.mock.calls.at(-1)![0]).toHaveLength(3);
+    frame(12000);
+    expect(onProgress).toHaveBeenLastCalledWith(4);
+    expect(onLanded).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('status')).toHaveTextContent('4 Of 4 Landed.');
+  });
   it('collapses the motion under reduced motion and keeps the colour and the mark', () => {
     reduceMotion(true);
     const frame = frames();

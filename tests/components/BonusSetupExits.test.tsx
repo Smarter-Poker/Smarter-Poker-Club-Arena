@@ -14,6 +14,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { useState } from 'react';
 import BonusSetup from '../../src/components/games/BonusSetup';
 import DiamondPlinkoPage from '../../src/pages/DiamondPlinkoPage';
 import DiamondCrashPage from '../../src/pages/DiamondCrashPage';
@@ -128,7 +129,14 @@ const won = (page: Page) =>
     gameState: page === 'plinko' ? PLINKO_STATE : CRASH_STATE,
     quote: { guarantee: 'super', minimumPayoutChips: 1, mode: null, plinkoTable: 4 },
   }));
-const COUNTDOWN: Record<Page, RegExp> = { plinko: /^Dropping In \ds$/, crash: /^Starting In \ds$/ };
+/** The plate the player presses on screen two: nothing presses it for them (R1). */
+const PLATE: Record<Page, string> = { plinko: 'Drop Diamonds', crash: 'Start 200' };
+/** Plinko's screen two: the drop value is the player's choice (R6). */
+const chooseDrops = async (page: Page) => {
+  if (page !== 'plinko') return;
+  fireEvent.click(screen.getByRole('button', { name: '20 Diamonds Per Drop, 10 Drops' }));
+  await settle();
+};
 const settle = async () => {
   for (let i = 0; i < 6; i++)
     await act(async () => {
@@ -158,7 +166,7 @@ const mount = async (page: Page) => {
   );
   await settle();
 };
-const offer = () => screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
+const offer = () => screen.getByRole('dialog', { name: 'Double Your Diamonds' });
 const revealOffer = () => fireEvent.animationEnd(offer().querySelector('[data-motion="keep"]')!);
 const blocked = () =>
   screen.queryByText(BLOCKED) !== null ||
@@ -201,7 +209,7 @@ describe.each(['plinko', 'crash'] as const)(
       await mount(page);
       revealOffer();
       expect(
-        within(offer()).getByText(/You Need 100 More Diamonds To Double Down/)
+        within(offer()).getByText(/You Need 100 More Diamonds To Add Them/)
       ).toBeInTheDocument();
       fireEvent.click(within(offer()).getByRole('button', { name: 'Buy More' }));
       await settle();
@@ -210,13 +218,14 @@ describe.each(['plinko', 'crash'] as const)(
       expect(backend.start).not.toHaveBeenCalled();
     });
 
-    it('leaves by Earn Diamonds while the answered award counts down to its start', async () => {
+    it('leaves by Earn Diamonds while the answered award waits on its plate', async () => {
       won(page);
       await mount(page);
       revealOffer();
-      fireEvent.click(within(offer()).getByRole('button', { name: 'Keep My Bonus' }));
+      fireEvent.click(within(offer()).getByRole('button', { name: 'Play Without' }));
       await advance(1000);
-      expect(screen.getByRole('button', { name: COUNTDOWN[page] })).toBeInTheDocument();
+      await chooseDrops(page);
+      expect(screen.getByRole('button', { name: PLATE[page] })).toBeEnabled();
       fireEvent.click(screen.getByRole('button', { name: 'Earn Diamonds' }));
       await settle();
       expect(screen.getByRole('heading', { name: 'Earn Diamonds Page' })).toBeInTheDocument();
@@ -228,8 +237,11 @@ describe.each(['plinko', 'crash'] as const)(
       won(page);
       await mount(page);
       revealOffer();
-      fireEvent.click(within(offer()).getByRole('button', { name: 'Keep My Bonus' }));
-      await advance(5000);
+      fireEvent.click(within(offer()).getByRole('button', { name: 'Play Without' }));
+      await settle();
+      await chooseDrops(page);
+      fireEvent.click(screen.getByRole('button', { name: PLATE[page] }));
+      await settle();
       expect(backend.start).toHaveBeenCalledTimes(1);
       for (const exit of ['Buy More', 'Earn Diamonds'])
         expect(screen.getByRole('button', { name: exit })).toBeDisabled();
@@ -248,8 +260,14 @@ describe('BonusSetup leaves only through the page', () => {
     denomination: 20,
     award: { id: AWARD_ID, entryDiamonds: 100, boostMultiplier: 2 },
   };
-  const setup = (props: { disabled: boolean; entryReady?: boolean; leave: (to: string) => void }) =>
-    render(
+  /** The page owns the offer's answer, so this fixture holds it like a page does. */
+  function Fixture(props: {
+    disabled: boolean;
+    entryReady?: boolean;
+    leave: (to: string) => void;
+  }) {
+    const [answered, setAnswered] = useState(false);
+    return (
       <MemoryRouter>
         <BonusSetup
           budget={props.entryReady === false ? { ...budget, award: undefined } : budget}
@@ -260,17 +278,22 @@ describe('BonusSetup leaves only through the page', () => {
           entryReady={props.entryReady}
           disabled={props.disabled}
           leave={props.leave}
+          offerAnswered={answered}
+          onOfferAnswered={() => setAnswered(true)}
         />
       </MemoryRouter>
     );
+  }
+  const setup = (props: { disabled: boolean; entryReady?: boolean; leave: (to: string) => void }) =>
+    render(<Fixture {...props} />);
 
   it('sends each exit to its own page', () => {
     const leave = vi.fn();
     const view = setup({ disabled: false, leave });
-    const dialog = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
+    const dialog = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
     fireEvent.animationEnd(dialog.querySelector('[data-motion="keep"]')!);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Buy More' }));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Keep My Bonus' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Play Without' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Buy More' }));
     fireEvent.click(screen.getByRole('button', { name: 'Earn Diamonds' }));

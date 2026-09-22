@@ -239,9 +239,14 @@ for (const width of [320, 390, 1280])
       )
       .toEqual([]);
     await page.getByRole('button', { name: 'plinko', exact: true }).click();
-    // Ten drops of a tenth of the entry is the one setting, so there is no drop
-    // chooser to press: the total line is stated, never selected.
-    await expect(page.getByRole('button', { name: /Diamonds Per Drop/ })).toHaveCount(0);
+    // The player chooses the drop value (Dan 2026-09-21, R6): the selector
+    // offers every listed value that splits 100 diamonds into 1 to 100 drops,
+    // the preview's own choice of 10 is the one pressed, and the total line
+    // reads drops x value = entry.
+    await expect(page.getByRole('button', { name: /Diamonds? Per Drop/ })).toHaveCount(9);
+    await expect(
+      page.getByRole('button', { name: '10 Diamonds Per Drop, 10 Drops', pressed: true })
+    ).toBeVisible();
     await expect(page.getByText('10 Drops × 10 Diamonds = 100 Diamonds')).toBeVisible();
     const payoutLabels = page.getByRole('list', { name: 'Plinko Payout Slots' }).locator('strong');
     await expect(payoutLabels).toHaveCount(17);

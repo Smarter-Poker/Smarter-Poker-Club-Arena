@@ -46,7 +46,9 @@ export function parseBonusGuarantee(
   game: BonusGame
 ): BonusGuarantee {
   const boost = award.boost_multiplier === 2 ? 2 : 1;
-  const rate = Number(g.diamonds_per_chip ?? (g.config as Record<string, unknown>)?.diamonds_per_chip);
+  const rate = Number(
+    g.diamonds_per_chip ?? (g.config as Record<string, unknown>)?.diamonds_per_chip
+  );
   const expectedMode = game === 'crossing' || game === 'mines' ? CHOICE_MODE[game] : null;
   if (
     !Number.isSafeInteger(rate) ||
@@ -65,12 +67,30 @@ export function parseBonusGuarantee(
     plinkoTable: g.plinko_table,
   };
 }
-/** The award's funded entry with the player's Double Down answer. The Plinko drop value is derived, never chosen. */
+/**
+ * The award's funded entry with the player's own answers for THIS award: the
+ * Double Your Diamonds choice and, for Plinko, the drop value. An answer given
+ * for an earlier award never pre-answers a new one (Dan 2026-09-21, R9: the
+ * decision is its own step; R6: nothing is pre-selected).
+ */
 export function awardBudget(award: WheelBonusAward, preference: BonusBudget): BonusBudget {
+  const own = preference.award?.id === award.id;
+  return fundedBudget(
+    award,
+    own ? preference.doubled : false,
+    own ? preference.denomination : null
+  );
+}
+/** The award's funded entry at a stated Double Your Diamonds answer, as the server was asked to quote it. */
+function fundedBudget(
+  award: WheelBonusAward,
+  doubled: boolean,
+  denomination: number | null
+): BonusBudget {
   return plinkoBudget({
     base: award.base_diamonds,
-    doubled: preference.doubled,
-    denomination: preference.denomination,
+    doubled,
+    denomination,
     award: {
       id: award.id,
       entryDiamonds: award.entry_diamonds,
@@ -113,7 +133,7 @@ export const WheelBonusEntryService = {
         award.club_id !== club ||
         award.game !== game ||
         !['pending', 'redeemed'].includes(award.status) ||
-        !validBonusBudget(awardBudget(award, { base: 100, doubled: false, denomination: 1 }))
+        !validBonusBudget(fundedBudget(award, false, null))
       )
         throw new Error('The Wheel Award Does Not Match This Game');
     };
@@ -136,7 +156,7 @@ export const WheelBonusEntryService = {
     let gameState: GameState | ChoiceState | null = null;
     let quote: BonusGuarantee | null = null;
     if (award?.status === 'pending') {
-      const budget = awardBudget(award, { base: 100, doubled, denomination: 1 });
+      const budget = fundedBudget(award, doubled, null);
       const g = v.game_state as Record<string, unknown> | null;
       if (
         !g ||

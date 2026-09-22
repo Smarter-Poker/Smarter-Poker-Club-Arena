@@ -162,9 +162,11 @@ describe('a saved round settles itself', () => {
   });
 
   it('a saved wager is judged by its own game', () => {
+    // Only Plinko plays its entry in drops, and since R6 the player chooses the
+    // value, so only Plinko's saved wager is judged against it.
     const src = code('src/services/diamondBonusRecovery.ts');
     expect(src).toMatch(
-      /v\.game === 'plinko' && bonusTotal\(v\.budget\) % v\.budget\.denomination/
+      /v\.game === 'plinko'\s*\?[\s\S]*bonusTotal\(v\.budget\) % v\.budget\.denomination/
     );
   });
 

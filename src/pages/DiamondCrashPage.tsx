@@ -1,7 +1,7 @@
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
 import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
-import { useAwardAutoStart, useRefusedAward } from '../hooks/useAwardAutoStart';
+import { useRefusedAward } from '../hooks/useRefusedAward';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
@@ -812,21 +812,6 @@ function DiamondCrashGame() {
     restarts.current += 1;
     void handleStartRef.current(wager);
   }, [restartOwed, commit, uncertain, starting, open]);
-  // A won game starts itself: a short visible countdown, then the same Start
-  // the plate would have pressed. Changing the entry or the auto cash-out
-  // starts the window again. Auto Play stays off for an award, as before.
-  const autoStartIn = useAwardAutoStart(
-    earned.award?.id,
-    canStart &&
-      !restartOwed &&
-      !offerOpen &&
-      !loading &&
-      phase === 'idle' &&
-      !autoRun &&
-      !refusal.refused,
-    `${bet}:${autoChoice}:${clientSeed}:${refusal.opening}`,
-    () => void handleStartRef.current()
-  );
   // Games paused by the platform come back by themselves after the break.
   useStandingRefresh(Boolean(state?.frozen) && !open && !starting && !uncertain, () => {
     void earned.refresh();
@@ -1021,11 +1006,9 @@ function DiamondCrashGame() {
       ? `Round ${Math.min(autoRun.done + 1, autoRun.total)} Of ${autoRun.total}`
       : waitSeconds > 0
         ? `Ready In ${waitSeconds}s`
-        : autoStartIn !== null
-          ? `Starting In ${autoStartIn}s`
-          : runSize
-            ? `Auto Play ${runSize}`
-            : `Start ${bet.toLocaleString()}`;
+        : runSize
+          ? `Auto Play ${runSize}`
+          : `Start ${bet.toLocaleString()}`;
   const runLabel = running ? 'Stop' : runSize ? `Run ${runSize}` : 'Run Off';
   const boost = (round ? round.bonus?.boost_multiplier === 2 : budget.award?.boostMultiplier === 2)
     ? 2

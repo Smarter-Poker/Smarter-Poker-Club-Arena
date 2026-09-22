@@ -13,7 +13,7 @@ import TodayLine from '../components/games/TodayLine';
 import SealedPrize from '../components/games/SealedPrize';
 import { useGameCooldown } from '../hooks/useGameCooldown';
 import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
-import { useAwardAutoStart, useRefusedAward } from '../hooks/useAwardAutoStart';
+import { useRefusedAward } from '../hooks/useRefusedAward';
 import {
   bonusTotal,
   bonusWalletDebit,
@@ -598,22 +598,6 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // the button would have pressed. A finished round still on the scene keeps
   // the floor until its completion has taken the player back to the wheel.
   const finishedOnScene = Boolean(round && round.status !== 'open' && completionId === round.id);
-  const autoStartIn = useAwardAutoStart(
-    earned.award?.id,
-    !open &&
-      !uncertain &&
-      !busy &&
-      !sceneBusy &&
-      !blocked &&
-      Boolean(ticket) &&
-      !restartOwed &&
-      !offerOpen &&
-      !finishedOnScene &&
-      !refusal.refused &&
-      seed.trim() !== '',
-    `${bet}:${seed}:${refusal.opening}`,
-    () => void startRef.current()
-  );
   const picks = round?.picked.length ?? 0;
   const prizes = open ? round.prizes : (state?.prizes ?? []);
   const prize =
@@ -781,9 +765,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               : 'Choose A Tile'
             : waitSeconds > 0
               ? `Ready In ${waitSeconds}s`
-              : autoStartIn !== null
-                ? `Starting In ${autoStartIn}s`
-                : 'Start Round',
+              : 'Start Round',
           onClick: () => (open ? void act('pick', picks) : void start()),
           disabled:
             busy || sceneBusy || uncertain || (open ? game === 'mines' : blocked || !ticket),

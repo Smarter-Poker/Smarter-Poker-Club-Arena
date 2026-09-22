@@ -3,19 +3,14 @@ import { Modal } from '../common/Modal';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { WheelPrizeArt } from '../wheel/WheelPrizeArt';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
-import { useIdleSpinCountdown } from '../../hooks/useIdleSpinCountdown';
 import type { BonusBudget } from '../../utils/bonusGameBudget';
 import styles from '../wheel/WheelWinReveal.module.css';
 
-/** How long the offer waits for an answer before it keeps the bonus as it is. */
-export const DOUBLE_DOWN_OFFER_SECONDS = 8;
-
 /** Choosing an offer changes setup only. The existing game admission owns the debit.
  *
- * A won game starts itself (owner ruling, 2026-09-21), so the offer may not be
- * the one thing a player has to press. Left unanswered, it answers itself with
- * the choice that costs nothing: Keep My Bonus. Only a press ever adds the
- * player's own diamonds. */
+ * No game starts itself (owner ruling 2026-09-21, R1 and R9): the offer waits
+ * for the player's own answer, so the eight-second window that answered it with
+ * Keep My Bonus is gone. Only a press ever changes the bonus, either way. */
 export default function DoubleDownOffer({
   budget,
   diamonds,
@@ -44,13 +39,6 @@ export default function DoubleDownOffer({
     const timer = setTimeout(() => setReady(true), 1400 * getAnimationSpeed() + 600);
     return () => clearTimeout(timer);
   }, [ready, visible]);
-  const keepIn = useIdleSpinCountdown(
-    ready,
-    ready && visible,
-    budget.award?.id ?? '',
-    () => onChoose(false),
-    DOUBLE_DOWN_OFFER_SECONDS * 1000
-  );
   return (
     <Modal
       isOpen
@@ -75,7 +63,7 @@ export default function DoubleDownOffer({
         <SpadeConsole
           eyebrow="Your Bonus Game"
           title="Double Down"
-          pill={ready ? `Keeps In ${keepIn}s` : 'Optional'}
+          pill="Optional"
           plates={{
             secondary: { label: 'Keep My Bonus', disabled: !ready, onClick: () => onChoose(false) },
             primary: {

@@ -1,7 +1,7 @@
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
 import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
-import { useAwardAutoStart, useRefusedAward } from '../hooks/useAwardAutoStart';
+import { useRefusedAward } from '../hooks/useRefusedAward';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
@@ -448,23 +448,6 @@ function DiamondPlinkoGame() {
     restarts.current += 1;
     void playRef.current(wager);
   }, [restartOwed, ticket, uncertain, busy, animating]);
-  // A won game starts itself: a short visible countdown, then the same drop
-  // the button would have pressed.
-  const autoStartIn = useAwardAutoStart(
-    earned.award?.id,
-    !uncertain &&
-      !busy &&
-      !animating &&
-      !blocked &&
-      Boolean(ticket) &&
-      !restartOwed &&
-      !offerOpen &&
-      !result &&
-      !refusal.refused &&
-      seed.trim() !== '',
-    `${total}:${seed}:${refusal.opening}`,
-    () => void playRef.current()
-  );
   // Games paused by the platform come back by themselves after the break.
   useStandingRefresh(Boolean(state?.frozen) && !busy && !uncertain && !animating, () => {
     void earned.refresh();
@@ -632,12 +615,7 @@ function DiamondPlinkoGame() {
           disabled: busy || uncertain,
         }}
         primary={{
-          label:
-            waitSeconds > 0
-              ? `Ready In ${waitSeconds}s`
-              : autoStartIn !== null
-                ? `Dropping In ${autoStartIn}s`
-                : 'Drop Diamonds',
+          label: waitSeconds > 0 ? `Ready In ${waitSeconds}s` : 'Drop Diamonds',
           onClick: () => void play(),
           disabled: busy || uncertain || animating || blocked || !ticket,
         }}

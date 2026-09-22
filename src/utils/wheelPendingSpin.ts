@@ -43,13 +43,14 @@ function valid(a: WheelPendingSpin, userId: string, clubId: string): boolean {
 }
 
 /** A saved spin this client cannot read back is dropped and reported, never thrown. */
-function discard(key: string, error: unknown) {
+function discard(key: string, error: unknown, onDiscarded?: () => void) {
   reportError(error, 'wheelPendingSpin.unreadable');
   try {
     localStorage.removeItem(key);
   } catch {
     /* Storage that cannot be written cannot hold a spin either. */
   }
+  onDiscarded?.();
 }
 
 /** Persist before submitting money. An uncertain response keeps the exact request across reloads.
@@ -61,8 +62,18 @@ function discard(key: string, error: unknown) {
  * all that is lost is the reveal. Throwing here stranded the wheel on
  * "Reconnecting" for good: the save lives in localStorage, and every load retry
  * read it again. Owner ruling 2026-09-21: nothing may make a player check or
- * recover anything. */
-export function readWheelPending(userId: string, clubId: string): WheelPendingSpin | null {
+ * recover anything.
+ *
+ * Discarding it silently is not the same as saying so. `onDiscarded` is called
+ * once, after the value is gone, for the one caller that has somewhere to say
+ * it (the wheel page's load): the player is told the spin could not be read and
+ * that History still shows it, rather than finding their reveal simply absent.
+ * Callers with nowhere to say it pass nothing. */
+export function readWheelPending(
+  userId: string,
+  clubId: string,
+  onDiscarded?: () => void
+): WheelPendingSpin | null {
   const key = keyFor(userId, clubId);
   let raw: string | null;
   try {
@@ -75,11 +86,11 @@ export function readWheelPending(userId: string, clubId: string): WheelPendingSp
   try {
     a = JSON.parse(raw) as WheelPendingSpin;
   } catch (error) {
-    discard(key, error);
+    discard(key, error, onDiscarded);
     return null;
   }
   if (!valid(a, userId, clubId)) {
-    discard(key, new Error('The Saved Spin Could Not Be Replayed'));
+    discard(key, new Error('The Saved Spin Could Not Be Replayed'), onDiscarded);
     return null;
   }
   return a;

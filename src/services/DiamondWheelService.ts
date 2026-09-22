@@ -97,6 +97,36 @@ export interface WheelBonusAward {
   base_diamonds: number;
   boost_multiplier: number;
   entry_diamonds: number;
+  /** When the wheel awarded it; absent from a receipt's own `bonus` and from older servers. */
+  created_at?: string;
+}
+
+/**
+ * A MULTI-SPIN RUN THE PLAYER STARTED (owner ruling 2026-09-21, R18). The
+ * server keeps it, so a refresh mid-run comes back to "Resume Run" rather than
+ * to a wheel that forgot. `spins_done` counts spins the server executed, which
+ * is one ahead of the client's landed count while a wheel is still turning.
+ */
+export interface WheelAutoRun {
+  run_id: string;
+  spins: number;
+  spins_done: number;
+}
+
+export interface WheelRunBegin {
+  ok: boolean;
+  error?: string;
+  run_id: string;
+  spins: number;
+  spins_done: number;
+}
+
+export interface WheelRunEnd {
+  ok: boolean;
+  error?: string;
+  run_id: string;
+  spins_done: number;
+  pending_awards: WheelBonusAward[];
 }
 
 export interface WheelState {
@@ -106,7 +136,10 @@ export interface WheelState {
   max_entry?: number;
   max_funded_entry?: number;
   welcome?: { available: boolean; entry_diamonds: number };
+  /** Every bonus game won and not yet played, oldest first. Empty on an older server. */
   pending_awards?: WheelBonusAward[];
+  /** The open run, or null when none is open (and on an older server). */
+  auto_run?: WheelAutoRun | null;
   ok: boolean;
   error?: string;
   available: boolean;
@@ -383,7 +416,41 @@ function normaliseAward(raw: Record<string, unknown>): WheelBonusAward {
     base_diamonds: num(raw.base_diamonds),
     boost_multiplier: num(raw.boost_multiplier),
     entry_diamonds: num(raw.entry_diamonds),
+    ...(typeof raw.created_at === 'string' ? { created_at: raw.created_at } : {}),
   };
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The queue of unplayed bonus games. `pending_awards` is the R18 contract; `awards` the older name. */
+function normaliseAwards(raw: Record<string, unknown>): WheelBonusAward[] {
+  const list = Array.isArray(raw.pending_awards)
+    ? raw.pending_awards
+    : Array.isArray(raw.awards)
+      ? raw.awards
+      : [];
+  return list
+    .filter((a): a is Record<string, unknown> => Boolean(a) && typeof a === 'object')
+    .map(normaliseAward);
+}
+
+/** An open run, or null: an absent field (older server) and a malformed one both read as no run. */
+function normaliseAutoRun(raw: unknown): WheelAutoRun | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const run = raw as Record<string, unknown>;
+  const run_id = String(run.run_id ?? '');
+  const spins = num(run.spins);
+  const spins_done = num(run.spins_done);
+  if (
+    !UUID.test(run_id) ||
+    !Number.isSafeInteger(spins) ||
+    spins <= 0 ||
+    !Number.isSafeInteger(spins_done) ||
+    spins_done < 0 ||
+    spins_done > spins
+  )
+    return null;
+  return { run_id, spins, spins_done };
 }
 
 function normaliseState(raw: Record<string, unknown>): WheelState {
@@ -404,9 +471,8 @@ function normaliseState(raw: Record<string, unknown>): WheelState {
             entry_diamonds: num((raw.welcome as Record<string, unknown>).entry_diamonds),
           }
         : undefined,
-    pending_awards: Array.isArray(raw.awards)
-      ? raw.awards.map((a) => normaliseAward(a as Record<string, unknown>))
-      : [],
+    pending_awards: normaliseAwards(raw),
+    auto_run: normaliseAutoRun(raw.auto_run),
     ok: Boolean(raw.ok),
     error: raw.error ? String(raw.error) : undefined,
     available: Boolean(raw.available),
@@ -772,6 +838,58 @@ const DiamondWheelService = {
         throw new Error('The Diamond Spins Receipt Version Could Not Be Confirmed');
       return result;
     });
+  },
+
+  /**
+   * THE RUN IS THE SERVER'S (owner ruling 2026-09-21, R18). A run of 5, 10 or
+   * 25 paid spins is declared before its first spin so that the bonus games it
+   * wins can pile up unplayed until the end, and so that a refresh mid-run
+   * finds the run still open. A refusal comes back as `{ ok: false, error }`;
+   * a reply that is not a run at all is thrown, never guessed at.
+   */
+  async runBegin(clubId: string, spins: number): Promise<WheelRunBegin> {
+    const { data, error } = await supabase.rpc('fn_wheel_run_begin', {
+      p_club_id: clubId,
+      p_spins: spins,
+    });
+    if (error) throw error;
+    if (!data || typeof data !== 'object' || Array.isArray(data) || typeof data.ok !== 'boolean')
+      throw new Error('The Run Could Not Be Started');
+    const raw = data as Record<string, unknown>;
+    if (raw.ok === false) {
+      return {
+        ok: false,
+        error: typeof raw.error === 'string' ? raw.error : 'The Run Could Not Be Started',
+        run_id: '',
+        spins: 0,
+        spins_done: 0,
+      };
+    }
+    const run = normaliseAutoRun(raw);
+    if (!run || run.spins !== spins) throw new Error('The Run Could Not Be Confirmed');
+    return { ok: true, ...run };
+  },
+
+  /** Close a run. The queue of bonus games it left unplayed comes back with it. */
+  async runEnd(runId: string): Promise<WheelRunEnd> {
+    const { data, error } = await supabase.rpc('fn_wheel_run_end', { p_run_id: runId });
+    if (error) throw error;
+    if (!data || typeof data !== 'object' || Array.isArray(data) || typeof data.ok !== 'boolean')
+      throw new Error('The Run Could Not Be Closed');
+    const raw = data as Record<string, unknown>;
+    if (raw.ok === false) {
+      return {
+        ok: false,
+        error: typeof raw.error === 'string' ? raw.error : 'The Run Could Not Be Closed',
+        run_id: runId,
+        spins_done: 0,
+        pending_awards: [],
+      };
+    }
+    const spins_done = num(raw.spins_done);
+    if (String(raw.run_id ?? '') !== runId || !Number.isSafeInteger(spins_done) || spins_done < 0)
+      throw new Error('The Run Could Not Be Confirmed');
+    return { ok: true, run_id: runId, spins_done, pending_awards: normaliseAwards(raw) };
   },
 
   async dailyBonusState(clubId: string): Promise<WheelDailyBonusState> {

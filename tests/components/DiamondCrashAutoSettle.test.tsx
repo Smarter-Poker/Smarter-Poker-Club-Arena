@@ -505,6 +505,50 @@ describe('every read before Start is tried again by itself', () => {
     await elapse(30000);
     expect(backend.getState).toHaveBeenCalledTimes(3);
   });
+
+  it('quotes the entry again when the read that ends a break fails, and the won game starts itself', async () => {
+    // Review 2026-09-22: every read of the game clears the entry quote, but only
+    // the quote's own effect used to try again after a failure. The standing
+    // refresh that ends the hourly break is one of those reads: when its quote
+    // hit a dropped connection, the won game sat on Checking Your Entry, with
+    // nothing reading it again, until somebody reloaded the page.
+    quoteSuperAward({ frozen: true });
+    backend.getState.mockReset().mockResolvedValue(state);
+    backend.start.mockReturnValue(new Promise(() => {}));
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    expect(readout()).toHaveTextContent('The Platform Is In Its Maintenance Break');
+    await answerOffer();
+    // The break ends: the standing refresh's award read says so, and its entry
+    // quote is lost on the way.
+    quoteSuperAward();
+    backend.getState
+      .mockReset()
+      .mockRejectedValueOnce(new Error('Offline'))
+      .mockResolvedValue(state);
+    await elapse(15_000);
+    expect(backend.getState).toHaveBeenCalledTimes(1);
+    expect(readout()).toHaveTextContent('Checking Your Entry');
+    expect(screen.queryByRole('button', { name: /Retry|Refresh/ })).not.toBeInTheDocument();
+    // The page quotes again by itself, on the same schedule as every other read...
+    await elapse(999);
+    expect(backend.getState).toHaveBeenCalledTimes(1);
+    await elapse(1);
+    expect(backend.getState).toHaveBeenCalledTimes(2);
+    // ...and the won game counts down and starts itself.
+    expect(screen.getByRole('button', { name: 'Starting In 5s' })).toBeEnabled();
+    await elapse(5000);
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    expect(backend.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        budget: expect.objectContaining({ base: 200, doubled: false, award: awardBudget }),
+      }),
+      'player-a'
+    );
+    // One quote was enough: nothing keeps reading once the entry is quoted.
+    await elapse(30_000);
+    expect(backend.getState).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('a refused ticket re-sends the saved wager, never a rebuilt one', () => {

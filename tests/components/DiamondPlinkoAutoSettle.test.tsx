@@ -544,6 +544,39 @@ describe('a read that fails asks again by itself', () => {
     await advance(60000);
     expect(backend.getState).toHaveBeenCalledTimes(2);
   });
+
+  it('checks a direct entry again when the read after a drop fails, so the next drop is never held', async () => {
+    // Review 2026-09-22: every read clears the entry quote, but only the
+    // quote's own effect used to try again after a failure. The read that
+    // follows a booked drop is another one: when it was lost, Drop stayed
+    // disabled on Checking This Entry until somebody reloaded the page.
+    fakeClock();
+    direct();
+    backend.getState
+      .mockResolvedValueOnce(DIRECT_STATE)
+      .mockRejectedValueOnce(new Error('Offline'))
+      .mockResolvedValue(DIRECT_STATE);
+    backend.start.mockResolvedValueOnce(receipt(1.5));
+    render(<DiamondPlinkoPage />);
+    await advance();
+    fireEvent.click(drop());
+    await advance();
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    expect(backend.getState).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Drops' }));
+    await advance();
+    expect(
+      screen.getByText('Checking This Entry And The Available Prize Cover')
+    ).toBeInTheDocument();
+    expect(drop()).toBeDisabled();
+    // The page reads the entry again by itself, on the same schedule as every other read.
+    await advance(1000);
+    expect(backend.getState).toHaveBeenCalledTimes(3);
+    expect(drop()).toBeEnabled();
+    await advance(60000);
+    expect(backend.getState).toHaveBeenCalledTimes(3);
+    expect(backend.start).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('a refused ticket re-sends the saved wager, never a rebuilt one', () => {

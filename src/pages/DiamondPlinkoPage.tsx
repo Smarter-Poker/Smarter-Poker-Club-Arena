@@ -188,14 +188,26 @@ function DiamondPlinkoGame() {
       throw new Error(next.error ?? 'The Ticket Could Not Be Loaded');
     if (live.current) setTicket({ id: next.commit_id, hash: next.server_seed_hash });
   }, []);
+  /** Reads the game and quotes the entry. Every read clears the quote before
+   * it asks, so the latest read owns the quote, whoever made it (the quote's
+   * own effect, the read after a drop, a replay): its answer is the quote, and
+   * its failure is counted here and read again on the quote's schedule below.
+   * A read overtaken by a newer one counts for nothing. */
   const load = useCallback(
     async (id: string, amount: number) => {
       const g = ++generation.current;
       setQuotedAmount(null);
-      const next = await DiamondGamesService.getState(id, 'plinko', Math.min(amount, 5000));
+      let next: GameState;
+      try {
+        next = await DiamondGamesService.getState(id, 'plinko', Math.min(amount, 5000));
+      } catch (error) {
+        if (live.current && g === generation.current) setQuoteFailures((count) => count + 1);
+        throw error;
+      }
       if (live.current && g === generation.current) {
         setState(next);
         setQuotedAmount(amount);
+        setQuoteFailures(0);
         setWaitSeconds(next.player?.seconds_until_next ?? 0);
       }
     },
@@ -243,17 +255,16 @@ function DiamondPlinkoGame() {
   useEffect(() => {
     if (!uuid || !validBonusBudget(budget) || earned.loading || earned.required) return;
     let cancelled = false;
+    // A failure is counted by load itself, whichever read it was.
     load(uuid, total)
       .then(() => {
         if (cancelled || !live.current) return;
-        setQuoteFailures(0);
         setError((current) => (current === CHECKING_ENTRY ? null : current));
       })
       .catch((e) => {
         reportError(e, 'DiamondPlinkoPage.quote');
         if (cancelled || !live.current) return;
         setError(CHECKING_ENTRY);
-        setQuoteFailures((count) => count + 1);
       });
     return () => {
       cancelled = true;

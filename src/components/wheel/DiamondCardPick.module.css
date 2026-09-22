@@ -1,0 +1,169 @@
+/*
+ * The three cards of the Diamonds game (owner ruling 2026-09-21, R15).
+ *
+ * The frame, the head, the pill and the closing cap are the approved console's
+ * painted art; nothing here draws a frame, a plate or a rim. What IS drawn is
+ * the one thing no master paints - a face-down card - and it is drawn in the
+ * Diamond Games' own tile language (MinesGrid.module.css), so a hand of three
+ * reads as the same material as the board a player meets in Mines and as the
+ * console around it. Every size is in `cqw` against the console's own width,
+ * so a 320px phone and a 430px phone get the same picture.
+ */
+.hand {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3cqw;
+  align-items: stretch;
+  perspective: 900px;
+}
+.card {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 5 / 7;
+  padding: 0;
+  border: 0.3cqw solid #638ba5;
+  border-radius: 1.6cqw;
+  background: linear-gradient(
+    145deg,
+    #526b80 0%,
+    #213d57 9%,
+    #152c43 44%,
+    #0b182a 83%,
+    #37546c 100%
+  );
+  box-shadow:
+    inset 0 0.5cqw 0 #c5e7ff42,
+    inset 0 -1cqw 0 #02091299,
+    0.6cqw 0.6cqw 0 #152c43,
+    1.1cqw 1.1cqw 0 #617e96,
+    1.6cqw 1.6cqw 0 #071425;
+  color: #9fd4ee;
+  cursor: pointer;
+  overflow: hidden;
+  transform-style: preserve-3d;
+}
+.card:disabled {
+  cursor: default;
+}
+.card:enabled:active {
+  box-shadow:
+    inset 0 0 4cqw #73d6ff33,
+    0 0 0 0.3cqw #8de3ff;
+}
+.card:focus-visible {
+  outline: 0.5cqw solid #45adff;
+  outline-offset: 0.3cqw;
+}
+/* The card the player turned over, and the two the server turned over after it. */
+.card[data-revealed] {
+  background: radial-gradient(ellipse at 50% 35%, #123a5c, #06182a 68%);
+  animation-name: card-turn;
+  animation-duration: calc(520ms * var(--animation-speed, 1));
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+.card[data-picked] {
+  border-color: #45adff;
+}
+.card[data-picked][data-revealed] {
+  background: radial-gradient(ellipse at 50% 32%, #1e6f9c, #07233b 70%);
+  box-shadow:
+    inset 0 0 4cqw #73d6ff33,
+    0 0 0 0.3cqw #8de3ff,
+    0 0 4cqw #1877f2aa;
+}
+/* A card nobody picked reads dimmer than the pick, exactly as Mines dims the
+   tiles the player never touched. */
+.card[data-revealed]:not([data-picked]) .cardFace {
+  opacity: 0.74;
+}
+.cardFace {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  justify-items: center;
+  align-content: center;
+  gap: 0.4cqw;
+  padding: 1.2cqw 0.6cqw;
+}
+.cardArt {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  filter: drop-shadow(0 1cqw 0.6cqw #000);
+}
+/* The back of a card: the same painted diamond, held back to a watermark so
+   it reads as a card that is face down rather than as a prize on show. */
+.card:not([data-revealed]) .cardArt {
+  opacity: 0.5;
+  filter: brightness(0.7) saturate(0.85);
+}
+.cardIndex {
+  font:
+    800 5cqw/1 'Roboto Condensed',
+    sans-serif;
+  color: #45adff;
+  text-shadow: 0 0 1.4cqw #1877f2;
+}
+.cardMultiplier {
+  font:
+    800 4.6cqw/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.04em;
+  color: #e4e7ec;
+  text-shadow:
+    0 0.2cqw 0 #050607,
+    0 0 1.2cqw #000;
+}
+.cardValue {
+  font:
+    800 4.2cqw/1 'Roboto Condensed',
+    sans-serif;
+  color: #ffd700;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0.2cqw 0.3cqw #000;
+}
+/* The line the player is here for, held back until the three cards have
+   turned. It is in the DOM from the moment the reply lands, so a screen
+   reader announces it and a test can read it; the delay is the animation's. */
+.win {
+  margin: 0;
+  text-align: center;
+  font:
+    800 5.2cqw/1.2 'Roboto Condensed',
+    sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  animation-name: card-win;
+  animation-duration: calc(420ms * var(--animation-speed, 1));
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+@keyframes card-turn {
+  from {
+    transform: rotateY(-90deg);
+  }
+  to {
+    transform: rotateY(0);
+  }
+}
+@keyframes card-win {
+  from {
+    opacity: 0;
+    transform: translateY(1.6cqw);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* Motion collapses; every card, every value and the win line still read. */
+@media (prefers-reduced-motion: reduce) {
+  .card[data-revealed],
+  .win {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

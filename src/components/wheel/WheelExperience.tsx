@@ -100,6 +100,11 @@ export function WheelExperience({
   }, [awaiting]);
   const prize = secondary ? receipt?.secondary?.outcome : receipt?.outcome;
   const showPrize = (phase === 'prize' || phase === 'bonus') && prize && receipt;
+  /* A Diamonds spin pays nothing until its three cards are played (R15): the
+     reveal names the game and its plate opens it, exactly as a bonus game's
+     does. The upgrade ring has no Diamonds sector, so this is the main wheel's
+     outcome and only ever its own. */
+  const cardsAhead = !secondary && receipt?.outcome.cards?.status === 'pending';
   const finish = () => {
     setPhase('finished');
     onFinished();
@@ -209,20 +214,23 @@ export function WheelExperience({
         <WheelWinReveal
           key={secondary ? 'bonus-prize' : 'primary-prize'}
           prize={prize}
-          title={wheelPrizeTitle(prize)}
+          cardsAhead={cardsAhead}
+          title={cardsAhead ? 'Diamond Cards' : wheelPrizeTitle(prize)}
           detail={
-            prize.kind === 'upgrade'
-              ? 'Your Upgrade Wheel Opens With Super Games And Instant Chip Wins. You Spin It Yourself.'
-              : prize.kind === 'bonus'
-                ? 'Your Game Is Ready. Tap Play Game When You Are Ready To Play It.'
-                : prize.grants
-                  ? prize.grants
-                      .map(
-                        (g) =>
-                          `${g.uses.toLocaleString()} ${inventoryNames[g.feature] ?? 'Reward'}${g.uses === 1 ? '' : 's'}`
-                      )
-                      .join(' + ') + ' Added To Your Account.'
-                  : 'Your Prize Has Been Added To Your Account.'
+            cardsAhead
+              ? 'Three Cards, One Pick. One Pays Half Your Diamonds, One Pays 2x, One Pays 3x. Tap Pick A Card When You Are Ready.'
+              : prize.kind === 'upgrade'
+                ? 'Your Upgrade Wheel Opens With Super Games And Instant Chip Wins. You Spin It Yourself.'
+                : prize.kind === 'bonus'
+                  ? 'Your Game Is Ready. Tap Play Game When You Are Ready To Play It.'
+                  : prize.grants
+                    ? prize.grants
+                        .map(
+                          (g) =>
+                            `${g.uses.toLocaleString()} ${inventoryNames[g.feature] ?? 'Reward'}${g.uses === 1 ? '' : 's'}`
+                        )
+                        .join(' + ') + ' Added To Your Account.'
+                    : 'Your Prize Has Been Added To Your Account.'
           }
           onOpen={() => {
             if (prize.kind === 'upgrade') {

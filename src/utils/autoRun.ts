@@ -14,13 +14,17 @@
  *
  * THE WHEEL'S RUN ACCUMULATES (owner ruling 2026-09-21, R18). Its runner is
  * the same `autoRunVerdict`; what differs is what a landed spin does. It no
- * longer opens a reveal or a game: every instant prize and every bonus game
- * is added to the run's tally (`tallyWheelRun`) and shown once, together, when
- * the run ends. The tally is a record of receipts the server has already
- * settled; it never awards anything itself.
+ * longer opens a reveal or a game: every instant prize, every bonus game and
+ * every Diamonds card pick is added to the run's tally (`tallyWheelRun`) and
+ * shown once, together, when the run ends. The tally is a record of receipts
+ * the server has already settled; it never awards anything itself.
  */
 
-import type { WheelBonusAward, WheelSpinResult } from '../services/DiamondWheelService';
+import type {
+  WheelBonusAward,
+  WheelCardAward,
+  WheelSpinResult,
+} from '../services/DiamondWheelService';
 
 /** The runs on offer to Crash; 0 is Off. */
 export const AUTO_RUN_SIZES = [0, 5, 10, 25, 50] as const;
@@ -83,12 +87,20 @@ export interface WheelRun extends AutoRun {
   runId: string;
   prizes: WheelRunPrize[];
   games: WheelBonusAward[];
+  /** The Diamonds card picks it won and has not made yet (R15). */
+  cards: WheelCardAward[];
 }
 
 /**
- * Record a landed spin on the run: one more done, and its prize or bonus game
- * on the tally. The receipt is the server's; the tally only reads it. A spin
- * that won nothing still counts as done.
+ * Record a landed spin on the run: one more done, and its prize, its bonus
+ * game or its card pick on the tally. The receipt is the server's; the tally
+ * only reads it. A spin that won nothing still counts as done.
+ *
+ * A DIAMONDS SPIN IS NOT AN INSTANT PRIZE ANY MORE (owner ruling 2026-09-21,
+ * R15). When the receipt seals a three-card award nothing has been paid yet,
+ * so it joins the card queue exactly as a bonus game joins the game queue,
+ * and the summary offers it. A Diamonds receipt with no card award - an older
+ * server, or one already picked - is still the instant prize it used to be.
  */
 export function tallyWheelRun(
   run: WheelRun,
@@ -96,8 +108,10 @@ export function tallyWheelRun(
   title: (prize: WheelSpinResult['outcome']) => string
 ): WheelRun {
   const outcome = result.secondary?.outcome ?? result.outcome;
+  const sealed =
+    !result.secondary && result.outcome.cards?.status === 'pending' ? result.outcome.cards : null;
   const prizes =
-    outcome.kind === 'nothing' || outcome.kind === 'bonus' || outcome.kind === 'upgrade'
+    sealed || outcome.kind === 'nothing' || outcome.kind === 'bonus' || outcome.kind === 'upgrade'
       ? run.prizes
       : [
           ...run.prizes,
@@ -110,7 +124,13 @@ export function tallyWheelRun(
           },
         ];
   const games = result.bonus ? [...run.games, result.bonus] : run.games;
-  return { ...run, done: run.done + 1, prizes, games };
+  const cards = sealed
+    ? [
+        ...run.cards,
+        { id: sealed.award_id, spin_id: result.spin_id, risk_diamonds: sealed.risk_diamonds },
+      ]
+    : run.cards;
+  return { ...run, done: run.done + 1, prizes, games, cards };
 }
 
 /** The strip shown while a run turns: what it has won so far, in one line. */
@@ -126,6 +146,8 @@ export function wheelRunSoFar(run: WheelRun): string {
     );
   if (diamonds > 0) parts.push(`${diamonds} Diamond ${diamonds === 1 ? 'Prize' : 'Prizes'}`);
   if (rewards > 0) parts.push(`${rewards} ${rewards === 1 ? 'Reward' : 'Rewards'}`);
+  if (run.cards.length > 0)
+    parts.push(`${run.cards.length} Card ${run.cards.length === 1 ? 'Pick' : 'Picks'}`);
   if (run.games.length > 0)
     parts.push(`${run.games.length} Bonus ${run.games.length === 1 ? 'Game' : 'Games'}`);
   return parts.length ? parts.join(', ') : 'Nothing Yet';

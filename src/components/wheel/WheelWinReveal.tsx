@@ -9,9 +9,10 @@ import { WheelPrizeArt } from './WheelPrizeArt';
 import styles from './WheelWinReveal.module.css';
 
 /** What the one plate says, by what was won. A game is played when the player says so. */
-export function revealButtonLabel(kind: WheelSegment['kind']): string {
+export function revealButtonLabel(kind: WheelSegment['kind'], cardsAhead = false): string {
   if (kind === 'bonus') return 'Play Game';
   if (kind === 'upgrade') return 'Open Upgrade Wheel';
+  if (cardsAhead) return 'Pick A Card';
   return 'Continue';
 }
 
@@ -26,12 +27,17 @@ export function revealButtonLabel(kind: WheelSegment['kind']): string {
  * one timed continue left is the completion card a finished game shows on its
  * way back to the wheel (`autoContinue` with `autoContinueAfterMs`), which
  * starts nothing.
+ *
+ * A DIAMONDS SPIN THAT SEALED THREE CARDS IS A GAME TOO (owner ruling
+ * 2026-09-21, R15): nothing is paid until the player turns one over, so its
+ * reveal waits for Pick A Card exactly as a bonus game waits for Play Game.
  */
 export function WheelWinReveal({
   prize,
   title,
   detail,
   onOpen,
+  cardsAhead = false,
   autoContinue = false,
   autoContinueAfterMs = 0,
 }: {
@@ -39,6 +45,8 @@ export function WheelWinReveal({
   title: string;
   detail: string;
   onOpen: () => void;
+  /** This Diamonds prize sealed a three-card pick: the plate opens it (R15). */
+  cardsAhead?: boolean;
   /** A timed continue, honoured only with a positive `autoContinueAfterMs`. */
   autoContinue?: boolean;
   autoContinueAfterMs?: number;
@@ -64,7 +72,10 @@ export function WheelWinReveal({
   const continueButton = useRef<HTMLButtonElement>(null);
   const [ready, setReady] = useState(false);
   const gameAhead = prize.kind === 'bonus' || prize.kind === 'upgrade';
-  const timedPrize = autoContinue && autoContinueAfterMs > 0 && !gameAhead;
+  /* The plate is the only way on from anything with a game behind it, and a
+     sealed card pick is one of those. */
+  const playAhead = gameAhead || cardsAhead;
+  const timedPrize = autoContinue && autoContinueAfterMs > 0 && !gameAhead && !cardsAhead;
   useEffect(() => {
     if (ready && !timedPrize) continueButton.current?.focus();
   }, [ready, timedPrize]);
@@ -86,9 +97,9 @@ export function WheelWinReveal({
     <Modal
       isOpen
       ariaLabel={title}
-      onClose={() => !gameAhead && (ready || timedPrize) && finish()}
+      onClose={() => !playAhead && (ready || timedPrize) && finish()}
       closeOnOverlay={timedPrize}
-      closeOnEscape={!gameAhead && (ready || timedPrize)}
+      closeOnEscape={!playAhead && (ready || timedPrize)}
       showCloseButton={false}
       className={styles.dialog}
     >
@@ -108,7 +119,13 @@ export function WheelWinReveal({
           eyebrow={prize.kind === 'upgrade' ? 'Wheel Upgrade' : 'You Won'}
           title={title}
           pill={
-            prize.kind === 'bonus' ? 'Bonus Game' : prize.kind === 'upgrade' ? 'Super Spin' : 'Paid'
+            prize.kind === 'bonus'
+              ? 'Bonus Game'
+              : prize.kind === 'upgrade'
+                ? 'Super Spin'
+                : cardsAhead
+                  ? 'Three Cards'
+                  : 'Paid'
           }
           foot="foot"
         >
@@ -125,7 +142,7 @@ export function WheelWinReveal({
             disabled={!ready && !timedPrize}
             onClick={finish}
           >
-            {revealButtonLabel(prize.kind)}
+            {revealButtonLabel(prize.kind, cardsAhead)}
           </button>
         </SpadeConsole>
       </div>

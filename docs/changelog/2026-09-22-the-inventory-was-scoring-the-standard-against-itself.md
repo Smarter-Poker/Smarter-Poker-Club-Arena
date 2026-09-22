@@ -8,9 +8,11 @@ The #ClubArenaConsole sweep had four rows left. Two of them were mine to close:
 not exist, for two different reasons, and both reasons are now fixed where they
 were caused rather than worked around on the row.
 
-The sweep reads **zero to go** on the surfaces this task owned. Two rows remain
-in the list and both belong to other agents' live workstreams: `ClubAdvertisePage`
-(33) and `PokerArenaLandingPage` (16). Neither was touched.
+The sweep reads **zero to go** on the surfaces this task owned. `ClubAdvertisePage`
+closed under it while these checks ran - #5083 rebuilt it on the console - so
+after merging `origin/main` the inventory prints **233 spoken for, 1 to go**, and
+the one remaining row is `PokerArenaLandingPage` (16), another agent's
+workstream. Neither was touched here.
 
 ---
 
@@ -60,8 +62,9 @@ this fix did exactly that and changed nothing; read the declaration, then judge
 it.
 
 The fix does not blind the tool. `ClubAdvertisePage` went 34 to 33 (it has one
-`box-shadow: none`) and stays nominated on thirteen real corners and seven real
-gradients; `PokerArenaLandingPage` is unchanged at 16.
+`box-shadow: none`) and stayed nominated on thirteen real corners and seven real
+gradients until #5083 rebuilt it; `PokerArenaLandingPage` is unchanged at 16.
+97 surfaces still report a painted corner and 156 a painted shadow or gradient.
 
 ### No defects found in the card
 
@@ -158,8 +161,14 @@ own JSON rather than re-implementing it:
 - the settlement card's stylesheet still contains nothing but zeroing
   declarations, it still scores 0, and it is still mounted **inside**
   `LeaderboardPage`'s `<SpadeConsole>` - move it out and the row re-opens;
-- a genuinely painted surface is still nominated, so the fix cannot degrade into
-  a check that only ever says "fine";
+- real paint is still counted, so the fix cannot degrade into a check that only
+  ever says "fine" - measured on `AdminDashboardPage`, which the scanner's own
+  `INTERNAL_ONLY` list puts permanently off the sweep, plus a tree-wide floor so
+  the rule cannot survive by luck. **The control must never name a surface on
+  the sweep:** the first version used `ClubAdvertisePage`, the top row at the
+  time and therefore the file most likely in the whole repo to stop being
+  painted, and #5083 rebuilt it mid-run. A control has to be something nobody is
+  coming for;
 - no file mounts anything `common/Card` exports, resolved through the barrel and
   through import bindings rather than by name, so the `StatCard` collision cannot
   produce a false pass;
@@ -183,6 +192,10 @@ BEFORE                                                    AFTER
 
 230 spoken for, 4 to go.                                  232 spoken for, 2 to go.
 ```
+
+Then `#5083` rebuilt the Advertise page while these checks were running, so on
+the merged head the inventory prints **233 spoken for, 1 to go** -
+`PokerArenaLandingPage` at 16, and nothing else.
 
 ## Files
 

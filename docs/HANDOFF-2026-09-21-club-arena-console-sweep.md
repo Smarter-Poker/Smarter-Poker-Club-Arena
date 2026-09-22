@@ -22,7 +22,7 @@ file it finds). Dated claims; re-check each with one call before acting.
 
 `node .claude/skills/club-arena-console/scripts/find-generic-surfaces.mjs`
 (the path, because the last copy of this file said `kit/` and there is no
-`kit/`). Re-run 2026-09-22: **232 spoken for, 2 to go.**
+`kit/`). Re-run 2026-09-22: **233 spoken for, 1 to go.**
 
 It said twelve until the scanner was taught two things it had been guessing at
 (#5046). Nine of the twelve cannot be reached from the app entry at all, and
@@ -34,16 +34,17 @@ importer count only ever read `.tsx` and every barrel in this tree is a `.ts` -
 so a component re-exported by `components/common/index.ts` and by nothing else
 counted zero importers.
 
-**The last two rows closed on 2026-09-22, and neither was a rebuild.** Both were
-the inventory reporting work that did not exist; full account in
+**The bottom two rows closed on 2026-09-22, and neither was a rebuild.** Both
+were the inventory reporting work that did not exist; full account in
 [`changelog/2026-09-22-the-inventory-was-scoring-the-standard-against-itself.md`](./changelog/2026-09-22-the-inventory-was-scoring-the-standard-against-itself.md).
-**No source under `src/` changed.** What remains on the list belongs to two
-other agents' live workstreams.
+**No source under `src/` changed for either.** `ClubAdvertisePage` closed the
+same day under `#5083`, so **`PokerArenaLandingPage` is the only row left in the
+whole sweep.**
 
 | surface                              | score | state                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ------------------------------------ | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ClubAdvertisePage`                  | 33    | **UNBLOCKED as of 2026-09-21.** The previous copy of this file said it waits on the ads owner re-landing `AdCampaignService`; that landed, and `src/services/AdCampaignService.ts` is on `main` today. Rebuild it. (34 before the zeroing fix below; it has one `box-shadow: none`. Thirteen real corners and seven real gradients are untouched.)                                                                                                                      |
-| `PokerArenaLandingPage`              | 16    | the public landing page at `/`, lazy in `App.tsx` **and** in `entry-server.tsx`'s prerender map, so a rebuild has to be checked in the prerendered HTML as well as in the browser. Never rebuilt.                                                                                                                                                                                                                                                                       |
+| ~~`ClubAdvertisePage`~~              | 0     | **DONE 2026-09-22, `#5083`** - rebuilt on the console by the ads owner. (It read 33 here for a few hours: 34 before the zeroing fix below, less one `box-shadow: none`. Its thirteen real corners and seven real gradients were never hidden by that fix.)                                                                                                                                                                                                              |
+| `PokerArenaLandingPage`              | 16    | **THE LAST ROW IN THE SWEEP.** The public landing page at `/`, lazy in `App.tsx` **and** in `entry-server.tsx`'s prerender map, so a rebuild has to be checked in the prerendered HTML as well as in the browser. Never rebuilt.                                                                                                                                                                                                                                        |
 | ~~`src/components/common/Card.tsx`~~ | 0     | **RULED OFF, 2026-09-22.** Not a surface: nothing renders any of its six exports. The three `<StatCard` sites in the tree are three different components (`ProfilePage:197` and `ClubDetailPage:241` define their own; `components/stats/StatCard.tsx` is a separate file). Its only importer is the `components/common` barrel; the barrel's only importer is `main.tsx:55` taking `ErrorBoundary` alone. Retiring it is the right answer and is NOT free - see below. |
 | ~~`LeaderboardSettlementCard`~~      | 0     | **ALREADY ON THE STANDARD.** It renders inside `LeaderboardPage`'s `<SpadeConsole>` (`#4521`, `15477de6f1`) and owns no frame, like `BBJBasicPanel`. Its whole score of 3 was `border-radius: 0` plus `box-shadow: none` - the 3.5 idiom for refusing a chassis, counted as chrome. Scorer fixed at the root; it now judges declaration VALUES.                                                                                                                         |
 

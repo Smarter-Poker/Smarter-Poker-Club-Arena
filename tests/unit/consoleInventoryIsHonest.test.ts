@@ -40,7 +40,22 @@ const CARD = 'src/components/common/Card.tsx';
 const BARREL = 'src/components/common/index.ts';
 const SETTLEMENT = 'src/components/leaderboard/LeaderboardSettlementCard.tsx';
 const SETTLEMENT_CSS = 'src/components/leaderboard/LeaderboardSettlementCard.css';
-const ADVERTISE = 'src/pages/ClubAdvertisePage.tsx';
+/**
+ * The control for "the scorer can still say no".
+ *
+ * NEVER POINT THIS AT A SURFACE ON THE SWEEP. The first version of this test
+ * used `ClubAdvertisePage`, which was the top row of the inventory at the time
+ * and therefore the single most likely file in the repo to stop being painted:
+ * #5083 rebuilt it on the console while this PR's checks were running and the
+ * control went red for the best possible reason. A control has to be something
+ * nobody is coming for.
+ *
+ * `AdminDashboardPage` is that: it is in the scanner's own INTERNAL_ONLY list,
+ * which is Dan's 2026-09-14 ruling that a house tool no player and no club
+ * operator reaches never gets a round of art spent on it. Its fifteen painted
+ * corners and six gradients are permanent by decision, not by accident.
+ */
+const PAINTED_CONTROL = 'src/pages/AdminDashboardPage.tsx';
 
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
 
@@ -103,14 +118,22 @@ describe('a zeroing declaration is not chrome', () => {
     ).toBe(true);
   });
 
-  it('and a surface that really is painted is still nominated', () => {
+  it('and real paint is still counted, on a surface nobody is coming for', () => {
     /* The point of the fix is to stop counting refusals, not to stop counting.
        A guard that can only ever say "fine" is not a guard (CLAUDE.md 10.86). */
-    const r = row(ADVERTISE);
-    expect(r, `${ADVERTISE} fell out of the inventory`).toBeDefined();
-    expect(r!.radius).toBeGreaterThan(0);
-    expect(r!.grad).toBeGreaterThan(0);
-    expect(r!.score).toBeGreaterThan(0);
+    const r = row(PAINTED_CONTROL);
+    expect(r, `${PAINTED_CONTROL} fell out of the inventory`).toBeDefined();
+    expect(r!.radius, 'painted corners stopped counting').toBeGreaterThan(0);
+    expect(r!.grad, 'painted shadows and gradients stopped counting').toBeGreaterThan(0);
+  });
+
+  it('and the counters did not go quiet across the tree', () => {
+    /* The single control above proves the rule; this proves it did not survive
+       by luck. If a change to paintedDecls zeroed the counters wholesale, the
+       inventory would report every surface as finished and the sweep would end
+       by going blind rather than by running out of work. */
+    expect(inventory.filter((r) => r.radius > 0).length).toBeGreaterThan(20);
+    expect(inventory.filter((r) => r.grad > 0).length).toBeGreaterThan(20);
   });
 });
 

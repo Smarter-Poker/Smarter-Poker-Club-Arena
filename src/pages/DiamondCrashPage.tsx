@@ -71,6 +71,8 @@ import { diamondGameTitle } from '../utils/diamondGameTitles';
 import {
   DiamondBonusService,
   BonusRefusal,
+  BonusUnreadable,
+  BONUS_SAVED,
   type BonusStart,
 } from '../services/DiamondBonusService';
 import DiamondGamesService, {
@@ -164,6 +166,11 @@ function DiamondCrashGame() {
   // schedule (useAutoSettle); the player is never asked to check anything.
   const [uncertain, setUncertain] = useState(false);
   const [settleAttempts, setSettleAttempts] = useState(0);
+  // The server answered the saved wager BONUS_SENDS_PER_REQUEST times and this
+  // browser could verify none of the answers. It stays saved (money may have
+  // moved) and is sent again on the next visit; on this one nothing more is
+  // sent for it and nothing holds the player.
+  const [saved, setSaved] = useState(false);
   // The server refused a ticket that could no longer open a round and charged
   // nothing, so the same wager goes again on a fresh ticket - once per press.
   const [restartOwed, setRestartOwed] = useState(false);
@@ -470,6 +477,19 @@ function DiamondCrashGame() {
   };
   const settleRefusalRef = useRef(settleRefusal);
   settleRefusalRef.current = settleRefusal;
+  /** Stop sending a saved wager whose answers will not verify, let the player
+   * go, and read the game again. */
+  const keepForNextVisit = () => {
+    setSaved(true);
+    toast.info(BONUS_SAVED);
+    void earned.refresh();
+    if (clubUuid) {
+      void loadState(clubUuid).catch((error) => reportError(error, 'DiamondCrashPage.saved'));
+      void loadHistory(clubUuid);
+    }
+  };
+  const keepForNextVisitRef = useRef(keepForNextVisit);
+  keepForNextVisitRef.current = keepForNextVisit;
 
   const open = phase === 'open';
   const running = autoRun !== null;
@@ -656,6 +676,11 @@ function DiamondCrashGame() {
               reportError(error, 'DiamondCrashPage.refusedTicket')
             );
           }
+        } else if (err instanceof BonusUnreadable && err.final) {
+          if (live()) {
+            setUncertain(true);
+            keepForNextVisitRef.current();
+          }
         } else if (live()) {
           // The answer never arrived. The saved wager is replayed by
           // useAutoSettle until the server says what happened.
@@ -737,6 +762,8 @@ function DiamondCrashGame() {
             reportError(error, 'DiamondCrashPage.recoveryTicket')
           );
         }
+      } else if (err instanceof BonusUnreadable && err.final) {
+        if (live()) keepForNextVisit();
       } else if (live()) {
         // Not an answer: the page tries again on its own schedule.
         setSettleAttempts((count) => count + 1);
@@ -747,7 +774,13 @@ function DiamondCrashGame() {
     }
     return true;
   };
-  useAutoSettle(uncertain && !loading, settleAttempts, checkStart);
+  // Nothing is replayed behind the skeleton or the load-error screen, where the
+  // exit guard is off: the saved wager waits until the game itself is on screen.
+  useAutoSettle(
+    uncertain && !saved && !loading && !loadError && Boolean(state),
+    settleAttempts,
+    checkStart
+  );
   // A wager the server refused for its ticket alone is sent again on the
   // fresh ticket, once, without the player pressing Start twice.
   const handleStartRef = useRef(handleStart);
@@ -924,6 +957,8 @@ function DiamondCrashGame() {
     !loading &&
       !loadError &&
       Boolean(state) &&
+      // A wager kept for the next visit has nothing in flight: it holds nothing.
+      !saved &&
       // A won game holds the page only while it can actually start: an award
       // this page cannot start (daily limit, a closed or paused game, a
       // cooldown) never traps the player on it. Money in flight still holds.
@@ -1125,7 +1160,11 @@ function DiamondCrashGame() {
           // says: the money is already on the table and getting it back is not
           // something a shortage may stand in front of.
           uncertain
-            ? { label: 'Settling', onClick: () => undefined, disabled: true }
+            ? {
+                label: saved ? 'Round Saved' : 'Settling',
+                onClick: () => undefined,
+                disabled: true,
+              }
             : open
               ? {
                   label: cashing ? 'Booking Win' : 'Book The Win',
@@ -1183,23 +1222,25 @@ function DiamondCrashGame() {
             <span className={`sc-copy ${styles.readoutSub}`}>
               {open
                 ? `Worth ${chipsLabel(liveWorth)} Chips Right Now`
-                : settledRound
-                  ? settledRound.status === 'cashed'
-                    ? `${chipsLabel(settledRound.outcome?.payout_chips ?? 0)} Chips Paid${settledRound.outcome?.settled_by === 'time' ? ' By Your Auto Cash Out' : ''}`
-                    : `Crashed At ${multiplierLabel(settledRound.outcome?.crash_cents ?? 100)}. ${chipsLabel(settledRound.outcome?.payout_chips ?? 0)} Chips Paid`
-                  : blocker
-                    ? blocker
-                    : ticketError
-                      ? ticketError
-                      : !commit
-                        ? 'Preparing Your Game'
-                        : quotedAmount !== bet
-                          ? 'Checking Your Entry'
-                          : runSize
-                            ? autoTarget
-                              ? `${promise ? `${promise} ` : ''}Auto Play Runs ${runSize} Rounds At ${compactChips(bet)} Diamonds Each, Cashing Out At ${multiplierLabel(autoTarget)} Every Time, And Stops On Its Own If A Round Is Refused. Tap Run To Change It.`
-                              : 'Auto Play Needs An Auto Cash Out: Tap Auto To Set One, Or It Cannot Cash Out For You.'
-                            : `${promise ? `${promise} ` : ''}Up To ${multiplierLabel(capCents)} On This Bet. ${budget.award ? 'Your Wheel Award Is Ready.' : 'Choose Your Entry And Start.'} Auto Cash Out Is Optional.`}
+                : saved
+                  ? BONUS_SAVED
+                  : settledRound
+                    ? settledRound.status === 'cashed'
+                      ? `${chipsLabel(settledRound.outcome?.payout_chips ?? 0)} Chips Paid${settledRound.outcome?.settled_by === 'time' ? ' By Your Auto Cash Out' : ''}`
+                      : `Crashed At ${multiplierLabel(settledRound.outcome?.crash_cents ?? 100)}. ${chipsLabel(settledRound.outcome?.payout_chips ?? 0)} Chips Paid`
+                    : blocker
+                      ? blocker
+                      : ticketError
+                        ? ticketError
+                        : !commit
+                          ? 'Preparing Your Game'
+                          : quotedAmount !== bet
+                            ? 'Checking Your Entry'
+                            : runSize
+                              ? autoTarget
+                                ? `${promise ? `${promise} ` : ''}Auto Play Runs ${runSize} Rounds At ${compactChips(bet)} Diamonds Each, Cashing Out At ${multiplierLabel(autoTarget)} Every Time, And Stops On Its Own If A Round Is Refused. Tap Run To Change It.`
+                                : 'Auto Play Needs An Auto Cash Out: Tap Auto To Set One, Or It Cannot Cash Out For You.'
+                              : `${promise ? `${promise} ` : ''}Up To ${multiplierLabel(capCents)} On This Bet. ${budget.award ? 'Your Wheel Award Is Ready.' : 'Choose Your Entry And Start.'} Auto Cash Out Is Optional.`}
               {autoRun && !open ? ` Auto Play ${autoRun.done} Of ${autoRun.total}.` : ''}
             </span>
             {settledRound?.status === 'cashed' ? (

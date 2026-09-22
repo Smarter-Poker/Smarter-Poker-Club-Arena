@@ -14,15 +14,22 @@ import { settleDelay, useAutoSettle } from '../../src/hooks/useAutoSettle';
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
-function Harness({
-  settle,
-  pending,
-}: {
-  settle: () => Promise<boolean>;
-  pending: boolean;
-}) {
+/** The tab's visibility, as the hook reads it. */
+let hidden = false;
+const setHidden = (value: boolean) =>
+  act(async () => {
+    hidden = value;
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+const tick = (ms: number) =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+
+function Harness({ settle, pending }: { settle: () => Promise<boolean>; pending: boolean }) {
   const [attempts, setAttempts] = useState(0);
   useAutoSettle(pending, attempts, async () => {
     const ran = await settle();
@@ -99,6 +106,80 @@ describe('useAutoSettle', () => {
       await vi.advanceTimersByTimeAsync(1);
     });
     expect(settle).toHaveBeenCalledTimes(4);
+  });
+
+  it('replays nothing from a background tab, and finishes the held wait when it is visible', async () => {
+    vi.useFakeTimers();
+    hidden = false;
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    const settle = vi.fn(async () => true);
+    render(<Harness settle={settle} pending />);
+    await tick(0);
+    expect(settle).toHaveBeenCalledTimes(1);
+    // The next try is due in one second; the tab goes to the background first.
+    await tick(500);
+    await setHidden(true);
+    await tick(60_000);
+    expect(settle).toHaveBeenCalledTimes(1);
+    // Back in front: that wait fell due long ago, so it finishes at once...
+    await setHidden(false);
+    await tick(0);
+    expect(settle).toHaveBeenCalledTimes(2);
+    // ...and the schedule carries on from there: two seconds.
+    await tick(1999);
+    expect(settle).toHaveBeenCalledTimes(2);
+    await tick(1);
+    expect(settle).toHaveBeenCalledTimes(3);
+  });
+
+  it('cannot skip the backoff by switching tabs', async () => {
+    vi.useFakeTimers();
+    hidden = false;
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    const settle = vi.fn(async () => true);
+    render(<Harness settle={settle} pending />);
+    await tick(0);
+    expect(settle).toHaveBeenCalledTimes(1);
+    // A quick hide and show keeps the wait that was running, one second from
+    // the failure, rather than firing early or starting it over.
+    await tick(200);
+    await setHidden(true);
+    await tick(100);
+    await setHidden(false);
+    await tick(699);
+    expect(settle).toHaveBeenCalledTimes(1);
+    await tick(1);
+    expect(settle).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for a tab that is hidden when the wager is saved', async () => {
+    vi.useFakeTimers();
+    hidden = true;
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    const settle = vi.fn(async () => true);
+    render(<Harness settle={settle} pending />);
+    await tick(30_000);
+    expect(settle).not.toHaveBeenCalled();
+    await setHidden(false);
+    await tick(0);
+    expect(settle).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires each wait once, however often the tab is hidden and shown during the replay', async () => {
+    vi.useFakeTimers();
+    hidden = false;
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    // A replay whose answer has not come back yet.
+    const settle = vi.fn(() => new Promise<boolean>(() => {}));
+    render(<Harness settle={settle} pending />);
+    await tick(0);
+    expect(settle).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 3; i++) {
+      await setHidden(true);
+      await setHidden(false);
+      await tick(10_000);
+    }
+    expect(settle).toHaveBeenCalledTimes(1);
   });
 
   it('stops when the page unmounts', async () => {

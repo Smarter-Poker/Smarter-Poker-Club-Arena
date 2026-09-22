@@ -24,6 +24,8 @@ import {
 import {
   DiamondBonusService,
   BonusRefusal,
+  BonusUnreadable,
+  BONUS_SAVED,
   type BonusStart,
 } from '../services/DiamondBonusService';
 import ChoiceScene from '../components/games/ChoiceScene';
@@ -70,6 +72,7 @@ const CALM = new Set([
   'Settling Your Round',
   'Settling Your Previous Round First',
   'Confirming Your Move',
+  BONUS_SAVED,
 ]);
 /** What the rules say about the one setting, from the same constants the server mirrors. */
 const ONE_SETTING = {
@@ -109,6 +112,11 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // (useAutoSettle); the player is never asked to check anything.
   const [uncertain, setUncertain] = useState(false);
   const [settleAttempts, setSettleAttempts] = useState(0);
+  // The server answered the saved wager BONUS_SENDS_PER_REQUEST times and this
+  // browser could verify none of the answers. It stays saved (money may have
+  // moved) and is sent again on the next visit; on this one nothing more is
+  // sent for it and nothing holds the player.
+  const [saved, setSaved] = useState(false);
   // The server refused a ticket that could no longer open a round and charged
   // nothing, so the same wager goes again on a fresh ticket - once per press.
   const [restartOwed, setRestartOwed] = useState(false);
@@ -276,6 +284,14 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     return true;
   });
 
+  /** Stop sending a saved wager whose answers will not verify, let the player
+   * go, and read the game again: the read shows any round the wager opened. */
+  const keepForNextVisit = (id: string) => {
+    setSaved(true);
+    setError(BONUS_SAVED);
+    void earned.refresh();
+    void load(id).catch((readError) => reportError(readError, 'DiamondChoicePage.saved'));
+  };
   const refresh = async (): Promise<boolean> => {
     if (!uuid || busyRef.current) return false;
     busyRef.current = true;
@@ -313,6 +329,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           setTicket(null);
           setError(e.message);
           settleRefusal(e, refused);
+        } else if (e instanceof BonusUnreadable && e.final) {
+          keepForNextVisit(uuid);
         } else {
           // Not an answer: the page tries again on its own schedule.
           setSettleAttempts((count) => count + 1);
@@ -325,7 +343,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     }
     return true;
   };
-  useAutoSettle(uncertain, settleAttempts, refresh);
+  useAutoSettle(uncertain && !saved, settleAttempts, refresh);
   // What the server's own state says about starting now. Deliberately without
   // the entry quote, which blinks off during every start and must not count as
   // the server changing its mind.
@@ -429,6 +447,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             reportError(requoteError, 'DiamondChoicePage.requote');
             if (mounted.current) setLoadFailures((count) => count + 1);
           });
+        } else if (e instanceof BonusUnreadable && e.final) {
+          setUncertain(true);
+          keepForNextVisit(uuid);
         } else {
           // The answer never arrived. The saved wager is replayed by
           // useAutoSettle until the server says what happened.
@@ -544,32 +565,36 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       : null;
   const roadMultiplier = roadEnd !== null && roadEnd > 0 ? ladder[roadEnd - 1] : 0;
   const payableRoadEnd = Math.min(roadEnd ?? 0, round?.max_steps ?? 0);
-  const status = uncertain
-    ? 'Settling'
-    : busy
-      ? 'One Moment'
-      : open
-        ? 'In Play'
-        : round?.status === 'cashed'
-          ? 'Win Booked'
-          : round?.status === 'lost'
-            ? 'Round Over'
-            : 'Ready';
+  const status = saved
+    ? 'Saved'
+    : uncertain
+      ? 'Settling'
+      : busy
+        ? 'One Moment'
+        : open
+          ? 'In Play'
+          : round?.status === 'cashed'
+            ? 'Win Booked'
+            : round?.status === 'lost'
+              ? 'Round Over'
+              : 'Ready';
   // Money in flight holds the page. A won game holds it only while it can
   // actually start: an award this page cannot start (daily limit, a closed or
   // frozen game, a cooldown, no ticket dealt yet) never traps the player on
   // it, and neither does the next award while a finished round's receipt is
   // waiting to take them back to the wheel.
+  // A wager kept for the next visit has nothing in flight: it holds nothing.
   useLiveBonusGuard(
-    (Boolean(earned.award) &&
-      !blocked &&
-      Boolean(ticket) &&
-      !finishedOnScene &&
-      !refusal.refused) ||
-      busy ||
-      uncertain ||
-      open ||
-      sceneBusy,
+    !saved &&
+      ((Boolean(earned.award) &&
+        !blocked &&
+        Boolean(ticket) &&
+        !finishedOnScene &&
+        !refusal.refused) ||
+        busy ||
+        uncertain ||
+        open ||
+        sceneBusy),
     () => setError('Finish Your Bonus Game Before Leaving.')
   );
   const cashLabel = open && picks > 0 ? 'Book The Win' : 'Refresh';

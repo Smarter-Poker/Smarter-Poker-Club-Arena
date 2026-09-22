@@ -66,6 +66,9 @@ export function rememberBonus(user: string, input: BonusStart) {
   if (!prior && !/^[a-f0-9]{64}$/.test(input.serverSeedHash ?? ''))
     throw new Error('Prepare A Sealed Game Ticket Before Starting');
   // If the request cannot be retained, stop before sending any money request.
+  // DiamondBonusService.start answers any failure here other than
+  // PriorBonusPending with a refusal: nothing was sent, so nothing was charged,
+  // and the page never keeps resending a wager that never left the browser.
   sessionStorage.setItem(key(user, input.clubId, input.game), JSON.stringify(input));
 }
 export function clearPendingBonus(user: string, input: BonusStart) {

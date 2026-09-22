@@ -255,7 +255,13 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     )
       throw new Error(value?.error ?? 'The Game Ticket Could Not Be Loaded');
     const next = { id: value.commit_id, hash: value.server_seed_hash };
-    if (mounted.current) setTicket(next);
+    if (mounted.current) {
+      setTicket(next);
+      // A fresh player seed for every ticket, chosen after its hash is on
+      // screen, so no dealt seed can have been picked knowing the player's
+      // (fairness audit 2026-09-21). An owed wager keeps its own seed.
+      if (!owed.current) setSeed(randomClientSeed());
+    }
     return next;
   }, [game]);
 

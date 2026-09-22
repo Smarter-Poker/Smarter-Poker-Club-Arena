@@ -257,6 +257,10 @@ function DiamondCrashGame() {
         )
           throw new Error('The Game Ticket Could Not Be Loaded');
         setCommit({ id: c.commit_id, hash: c.server_seed_hash });
+        // A fresh player seed for every ticket, chosen after its hash is on
+        // screen, so no dealt seed can have been picked knowing the player's
+        // (fairness audit 2026-09-21). An owed wager keeps its own seed.
+        if (!owed.current) setClientSeed(randomClientSeed());
         setTicketFailures(0);
       } catch (error) {
         if (live()) {

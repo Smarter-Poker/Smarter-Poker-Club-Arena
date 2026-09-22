@@ -628,3 +628,26 @@ describe('a refusal that is not about the ticket never traps the player', () => 
     expect(screen.getByRole('button', { name: 'Cross Street' })).toBeInTheDocument();
   });
 });
+
+describe('every ticket brings a fresh player seed', () => {
+  it('draws a new seed for each ticket, after its hash is on screen, so no dealt seed can know it', async () => {
+    // Fairness audit 2026-09-21: one seed per page mount meant a server could
+    // deal the next ticket already knowing the player's seed.
+    backend.start.mockRejectedValueOnce(new backend.BonusRefusal('This Award Was Already Used'));
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    await answerOffer();
+    const seedField = () => (screen.getByLabelText('Your Seed') as HTMLInputElement).value;
+    expect(dealt).toHaveLength(1);
+    const first = seedField();
+    expect(first).toMatch(/^[a-f0-9]{32}$/);
+    await advance(5000);
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    expect(backend.start.mock.calls[0][0].seed).toBe(first);
+    // The refused ticket is spent; the next one arrives with its own seed.
+    await advance(1000);
+    expect(dealt).toHaveLength(2);
+    expect(seedField()).toMatch(/^[a-f0-9]{32}$/);
+    expect(seedField()).not.toBe(first);
+  });
+});

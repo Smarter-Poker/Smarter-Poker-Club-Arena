@@ -186,7 +186,13 @@ function DiamondPlinkoGame() {
       !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(next.commit_id)
     )
       throw new Error(next.error ?? 'The Ticket Could Not Be Loaded');
-    if (live.current) setTicket({ id: next.commit_id, hash: next.server_seed_hash });
+    if (live.current) {
+      setTicket({ id: next.commit_id, hash: next.server_seed_hash });
+      // A fresh player seed for every ticket, chosen after its hash is on
+      // screen, so no dealt seed can have been picked knowing the player's
+      // (fairness audit 2026-09-21). An owed wager keeps its own seed.
+      if (!owed.current) setSeed(randomClientSeed());
+    }
   }, []);
   const load = useCallback(
     async (id: string, amount: number) => {

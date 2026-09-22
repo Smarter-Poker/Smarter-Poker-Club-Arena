@@ -401,6 +401,14 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     setBusy(true);
     setError(null);
     setVerified(null);
+    // An emptied "Your Seed" is not a decision the player made about this
+    // round: the service refuses a blank seed before anything is sent, and
+    // that refusal reads to the page exactly like the server's own. The page
+    // deals itself a seed instead, and shows the one the round was sent with,
+    // so Round Proof still names what was actually used. A resend keeps its
+    // own seed, because it is the same wager going again.
+    const sent = seed.trim() ? seed : randomClientSeed();
+    if (sent !== seed) setSeed(sent);
     const request: BonusStart = resend
       ? { ...resend, commitId: ticket.id, serverSeedHash: ticket.hash }
       : {
@@ -410,7 +418,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           budget,
           commitId: ticket.id,
           serverSeedHash: ticket.hash,
-          seed,
+          seed: sent,
           maxSteps: state.max_steps,
         };
     uncertainTicket.current = request.commitId;
@@ -566,8 +574,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       !restartOwed &&
       !offerOpen &&
       !finishedOnScene &&
-      !refusal.refused &&
-      seed.trim() !== '',
+      !refusal.refused,
+    // Typing still restarts the five seconds; an empty field is typing too,
+    // and start() deals the seed it sends.
     `${bet}:${seed}:${refusal.opening}`,
     () => void startRef.current()
   );
@@ -907,6 +916,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             maxLength={64}
             disabled={busy || open || uncertain}
             onChange={(e) => setSeed(e.target.value)}
+            onBlur={(e) => {
+              if (!e.target.value.trim()) setSeed(randomClientSeed());
+            }}
             aria-label="Your Seed"
           />
         </label>

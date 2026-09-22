@@ -879,3 +879,72 @@ describe('each street settles on its own answer', () => {
     noCheckControl();
   });
 });
+
+/**
+ * A BLANK SEED IS NOT A REFUSAL (review 2026-09-22). "Your Seed" is a free text
+ * field inside Round Proof. Emptying it used to break two owner rules at once:
+ * the auto-start required seed.trim() !== '', so a won game never started
+ * itself and showed no countdown, while useLiveBonusGuard still held every
+ * exit for the award; and pressing Start made DiamondBonusService throw
+ * BonusRefusal('Enter A Seed With 1 To 64 Characters') before anything was
+ * sent, which start()'s catch treats exactly like a refusal from the server -
+ * the ticket dropped and the countdown off until the server's reasons change.
+ */
+describe('a blank seed never stalls a won game', () => {
+  const seedField = () => screen.getByLabelText('Your Seed') as HTMLInputElement;
+  /** The service's own pre-send check, which a blank seed used to trip. */
+  const checksTheSeed = async (input: typeof saved) => {
+    if (!input.seed.trim().length || input.seed.length > 64)
+      throw new backend.BonusRefusal('Enter A Seed With 1 To 64 Characters');
+    return settles(input);
+  };
+
+  it('counts the won game down with the field cleared, and sends a seed of its own', async () => {
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    await answerOffer();
+    fireEvent.change(seedField(), { target: { value: '' } });
+    // Typing restarts the five seconds; clearing the field is still typing.
+    expect(screen.getByRole('button', { name: 'Starting In 5s' })).toBeEnabled();
+    expect(guardHolds()).toBe(true);
+    await advance(5000);
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    const sent = backend.start.mock.calls[0][0].seed;
+    expect(sent).toMatch(/^[0-9a-f]{32}$/);
+    // The proof shows the seed the round was actually sent with.
+    expect(seedField().value).toBe(sent);
+  });
+
+  it('starts a pressed round on a fresh seed instead of being refused for it', async () => {
+    backend.start.mockImplementationOnce(checksTheSeed);
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    await answerOffer();
+    fireEvent.change(seedField(), { target: { value: '   ' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Starting In/ }));
+    await settle();
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    expect(backend.start.mock.calls[0][0].seed).toMatch(/^[0-9a-f]{32}$/);
+    // The ticket in hand is the one it was sent on: nothing was dropped.
+    expect(backend.start.mock.calls[0][0].commitId).toBe(dealt[0].commit_id);
+    expect(screen.getByRole('button', { name: 'Cross Street' })).toBeInTheDocument();
+    expect(guardHolds()).toBe(true);
+    noCheckControl();
+  });
+
+  it('refills the field when the player leaves it empty', async () => {
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    await answerOffer();
+    const dealtSeed = seedField().value;
+    fireEvent.change(seedField(), { target: { value: '  ' } });
+    expect(seedField().value).toBe('  ');
+    fireEvent.blur(seedField());
+    expect(seedField().value).toMatch(/^[0-9a-f]{32}$/);
+    expect(seedField().value).not.toBe(dealtSeed);
+    // A seed the player did write is left exactly as they wrote it.
+    fireEvent.change(seedField(), { target: { value: 'lucky donkey' } });
+    fireEvent.blur(seedField());
+    expect(seedField().value).toBe('lucky donkey');
+  });
+});

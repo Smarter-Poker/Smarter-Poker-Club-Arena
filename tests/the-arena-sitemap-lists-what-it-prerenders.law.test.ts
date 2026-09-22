@@ -26,7 +26,9 @@ describe('the arena sitemap', () => {
     expect(xml).toContain('<loc>https://smarter.poker/hub/club-arena</loc>');
     expect(xml).toContain('<loc>https://smarter.poker/hub/club-arena/help</loc>');
     expect(xml).not.toContain('<loc>https://smarter.poker/hub/club-arena/</loc>');
-    expect(xml).not.toContain('/legal</loc>');
+    // The Legal Center is prerendered since 2026-09-22 (it was the one
+    // exception, and Google filed it as an alternate of the arena root).
+    expect(xml).toContain('<loc>https://smarter.poker/hub/club-arena/legal</loc>');
     expect(urlFor('/legal/tos')).toBe('https://smarter.poker/hub/club-arena/legal/tos');
   });
 

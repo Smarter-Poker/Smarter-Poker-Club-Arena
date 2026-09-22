@@ -442,7 +442,8 @@ jobs:
             find . -type f ! -path './.release-manifest.sha256' -print0 \
               | LC_ALL=C sort -z \
               | xargs -0 sha256sum > .release-manifest.sha256
-            test -s .release-manifest.sha256
+            test -s .release-manifest.sha256 \
+              || { echo '::error::dist/.release-manifest.sha256 is empty; the seal recorded no files.'; exit 1; }
             sha256sum --strict -c .release-manifest.sha256
           )
 
@@ -489,13 +490,44 @@ jobs:
       # Prove the thing the next job depends on actually exists, rather than
       # discovering it is missing halfway through publication. Kept from the
       # branch version, which checked the same file for the same reason.
+      # WHAT THE ORIGIN REQUIRES IS CHECKED HERE, NOT ONLY index.html
+      # (2026-09-22). This step only ever looked at dist/index.html, so a
+      # bundle that the host transaction can never accept still went green
+      # here, uploaded, and was refused 4 minutes later on the origin. On
+      # 2026-09-22 `self-host-fonts` could not reach Google Fonts, exited 0,
+      # and produced a dist with no fonts/ at all; runs 35763554815 and
+      # 35764705782 then failed inside the host transaction on
+      # `test -d "$FINAL/fonts"` with an empty log. The origin serves
+      # /fonts/* out of the append-only pool, whose fonts.css is a symlink
+      # into current/fonts/fonts.css, so a release without fonts/ would
+      # dangle that pointer for every already-cached shell. The origin is
+      # right to refuse it; this job is where that refusal is cheap and
+      # legible.
       - name: Verify dist is complete
         run: |
-          if [ ! -f dist/index.html ]; then
-            echo "::error::dist/index.html is missing — refusing to continue."
+          set -uo pipefail
+          MISSING=0
+          require_directory() {
+            [ -d "$1" ] && [ ! -L "$1" ] && return 0
+            echo "::error::$1 is not a directory in the built bundle; found: $(ls -ld -- "$1" 2>&1 || true)"
+            MISSING=1
+          }
+          require_file() {
+            [ -f "$1" ] && [ ! -L "$1" ] && return 0
+            echo "::error::$1 is not a regular file in the built bundle; found: $(ls -ld -- "$1" 2>&1 || true)"
+            MISSING=1
+          }
+          require_file dist/index.html
+          require_file dist/build-info.json
+          require_file dist/ca-provenance.json
+          require_directory dist/assets
+          require_directory dist/fonts
+          require_file dist/fonts/fonts.css
+          if [ "$MISSING" != "0" ]; then
+            echo "::error::The built bundle is missing what the origin transaction requires, so publication would be refused on the host. dist contains: $(ls -A1 dist 2>&1 | tr '\n' ' ')"
             exit 1
           fi
-          echo "dist/index.html present ($(du -sh dist | cut -f1) total)"
+          echo "dist carries index.html, assets/, fonts/fonts.css and its provenance ($(du -sh dist | cut -f1) total)"
 
       - name: Build summary
         run: |
@@ -613,7 +645,8 @@ jobs:
           CHANNEL: ${{ vars.CAPGO_CHANNEL || 'production' }}
         run: |
           set -euo pipefail
-          test -f dist-native/index.html
+          test -f dist-native/index.html \
+            || { echo '::error::dist-native/index.html is missing; the native bundle did not build.'; exit 1; }
           NATIVE=$(tr -d '[:space:]' < native.version)
           VERSION="${NATIVE}.${{ github.run_number }}"
           echo "uploading bundle ${VERSION} (${SHA:0:7}) to channel ${CHANNEL}"
@@ -747,7 +780,10 @@ jobs:
             || { echo '::error::Built artifact has no valid full ca_sha.'; exit 1; }
           [ "$OURS_SHA" = "$EXPECTED_SHA" ] \
             || { echo '::error::Artifact provenance does not equal the protected-main publish target.'; exit 1; }
-          test -f dist/index.html && test -s dist/.release-manifest.sha256
+          test -f dist/index.html \
+            || { echo '::error::The downloaded release carries no dist/index.html; refusing to publish an incomplete bundle.'; exit 1; }
+          test -s dist/.release-manifest.sha256 \
+            || { echo '::error::The downloaded release carries no non-empty dist/.release-manifest.sha256; refusing to publish unsealed bytes.'; exit 1; }
           if find dist -type l -print -quit | grep -q .; then
             echo '::error::Downloaded release contains a symlink.'
             exit 1
@@ -788,8 +824,14 @@ jobs:
           set -euo pipefail
           SHA="${{ steps.verdict.outputs.ours }}"
           EXPECTED_SHA="${{ steps.verdict.outputs.theirs }}"
-          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] && [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]] && [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::The publish candidate is not one full lowercase SHA: '$SHA'."; exit 1; }
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::The release the origin serves is not one full lowercase SHA: '$EXPECTED_SHA'."; exit 1; }
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]] \
+            || { echo "::error::GITHUB_RUN_ID is not a run number: '$GITHUB_RUN_ID'; it names this run's staging path."; exit 1; }
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]] \
+            || { echo "::error::GITHUB_RUN_ATTEMPT is not an attempt number: '$GITHUB_RUN_ATTEMPT'; it names this run's staging path."; exit 1; }
           STAGE_NAME="${SHA}.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
 
           mkdir -p /tmp/cacm
@@ -817,13 +859,19 @@ jobs:
           set -euo pipefail
           ROOT="$1"
           STAGE_NAME="$2"
-          [ "$ROOT" = /srv/club-arena ]
-          [[ "$STAGE_NAME" =~ ^[0-9a-f]{40}\.[0-9]+\.[0-9]+$ ]]
+          [ "$ROOT" = /srv/club-arena ] \
+            || { echo "the origin root this transaction was handed is '$ROOT', not /srv/club-arena; refusing to touch it" >&2; exit 1; }
+          [[ "$STAGE_NAME" =~ ^[0-9a-f]{40}\.[0-9]+\.[0-9]+$ ]] \
+            || { echo "the staging name '$STAGE_NAME' is not <sha>.<run>.<attempt>; refusing to create it" >&2; exit 1; }
           install -d -m 0755 "$ROOT/incoming" "$ROOT/releases" "$ROOT/pool/assets" "$ROOT/pool/fonts"
           for DIRECTORY in "$ROOT" "$ROOT/incoming" "$ROOT/releases" "$ROOT/pool" "$ROOT/pool/assets" "$ROOT/pool/fonts"; do
-            [ -d "$DIRECTORY" ] && [ ! -L "$DIRECTORY" ]
+            [ -d "$DIRECTORY" ] \
+              || { echo "origin layout: $DIRECTORY is not a directory; found: $(ls -ld -- "$DIRECTORY" 2>&1 || true)" >&2; exit 1; }
+            [ ! -L "$DIRECTORY" ] \
+              || { echo "origin layout: $DIRECTORY is a symlink to $(readlink "$DIRECTORY"); refusing a root that can escape itself" >&2; exit 1; }
           done
-          [ ! -e "$ROOT/incoming/$STAGE_NAME" ] && [ ! -L "$ROOT/incoming/$STAGE_NAME" ]
+          [ ! -e "$ROOT/incoming/$STAGE_NAME" ] && [ ! -L "$ROOT/incoming/$STAGE_NAME" ] \
+            || { echo "this run already owns $ROOT/incoming/$STAGE_NAME; its bytes are from an incomplete invocation and are never reused. Found: $(ls -ld -- "$ROOT/incoming/$STAGE_NAME" 2>&1 || true)" >&2; exit 1; }
           install -d -m 0755 "$ROOT/incoming/$STAGE_NAME"
           REMOTE_STAGE
 
@@ -844,17 +892,22 @@ jobs:
           STAGE_NAME="$4"
           KEEP_RELEASES="$5"
           REPOSITORY="$6"
-          [ "$ROOT" = /srv/club-arena ]
-          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$STAGE_NAME" =~ ^${SHA}\.[0-9]+\.[0-9]+$ ]]
-          [[ "$KEEP_RELEASES" =~ ^[1-9][0-9]*$ ]]
-          [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
-          command -v flock >/dev/null
-          command -v python3 >/dev/null
-          command -v rsync >/dev/null
-          command -v sha256sum >/dev/null
-          command -v sync >/dev/null
+          [ "$ROOT" = /srv/club-arena ] \
+            || { echo "the origin root this transaction was handed is '$ROOT', not /srv/club-arena; refusing to touch it" >&2; exit 1; }
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "the candidate handed to the origin is not one full lowercase SHA: '$SHA'" >&2; exit 1; }
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "the release the origin was told it serves is not one full lowercase SHA: '$EXPECTED_SHA'" >&2; exit 1; }
+          [[ "$STAGE_NAME" =~ ^${SHA}\.[0-9]+\.[0-9]+$ ]] \
+            || { echo "the staging name '$STAGE_NAME' does not belong to candidate $SHA; refusing to activate another invocation's bytes" >&2; exit 1; }
+          [[ "$KEEP_RELEASES" =~ ^[1-9][0-9]*$ ]] \
+            || { echo "the retention count is '$KEEP_RELEASES', not a positive integer; refusing to prune releases by an unknown rule" >&2; exit 1; }
+          [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
+            || { echo "the repository name '$REPOSITORY' is not owner/name; release identity cannot be checked against it" >&2; exit 1; }
+          for REQUIRED_TOOL in flock python3 rsync sha256sum sync; do
+            command -v "$REQUIRED_TOOL" >/dev/null \
+              || { echo "the origin host has no $REQUIRED_TOOL on PATH; this transaction needs it to publish safely" >&2; exit 1; }
+          done
 
           STAGE="$ROOT/incoming/$STAGE_NAME"
           FINAL="$ROOT/releases/$SHA"
@@ -863,15 +916,21 @@ jobs:
           LEGACY_MANIFEST="$ROOT/incoming/.legacy-release-manifest.$STAGE_NAME"
           FONT_NEXT="$ROOT/pool/fonts/.fonts.css.$STAGE_NAME"
           for DIRECTORY in "$ROOT" "$ROOT/incoming" "$ROOT/releases" "$ROOT/pool" "$ROOT/pool/assets" "$ROOT/pool/fonts"; do
-            [ -d "$DIRECTORY" ] && [ ! -L "$DIRECTORY" ]
+            [ -d "$DIRECTORY" ] \
+              || { echo "origin layout: $DIRECTORY is not a directory; found: $(ls -ld -- "$DIRECTORY" 2>&1 || true)" >&2; exit 1; }
+            [ ! -L "$DIRECTORY" ] \
+              || { echo "origin layout: $DIRECTORY is a symlink to $(readlink "$DIRECTORY"); refusing a root that can escape itself" >&2; exit 1; }
           done
-          [ ! -L "$ROOT/.publish.lock" ]
+          [ ! -L "$ROOT/.publish.lock" ] \
+            || { echo "the publish lock $ROOT/.publish.lock is a symlink to $(readlink "$ROOT/.publish.lock"); refusing to serialize against a file somebody else chose" >&2; exit 1; }
           for TEMPORARY in "$NEXT" "$CHECK" "$LEGACY_MANIFEST" "$FONT_NEXT"; do
-            [ ! -e "$TEMPORARY" ] && [ ! -L "$TEMPORARY" ]
+            [ ! -e "$TEMPORARY" ] && [ ! -L "$TEMPORARY" ] \
+              || { echo "this transaction's scratch path $TEMPORARY already exists; found: $(ls -ld -- "$TEMPORARY" 2>&1 || true)" >&2; exit 1; }
           done
           trap 'rm -f -- "$NEXT" "$CHECK" "$LEGACY_MANIFEST" "$FONT_NEXT"' EXIT
           exec 9>"$ROOT/.publish.lock"
-          flock -w 45 9
+          flock -w 45 9 \
+            || { echo "another publish held $ROOT/.publish.lock for the whole 45s activation window; this candidate was not activated and nothing was changed" >&2; exit 1; }
 
           read_exact_build_info_sha() {
             local build_info_path="$1"
@@ -963,7 +1022,8 @@ jobs:
                 | LC_ALL=C sort -z \
                 | xargs -0 sha256sum > "$check_path"
             )
-            cmp -s "$check_path" "$release_dir/.release-manifest.sha256"
+            cmp -s "$check_path" "$release_dir/.release-manifest.sha256" \
+              || { echo "the files under $release_dir are not the files its .release-manifest.sha256 records: $(diff "$release_dir/.release-manifest.sha256" "$check_path" | head -20 | tr '\n' ' ')" >&2; rm -f -- "$check_path"; return 1; }
             rm -f -- "$check_path"
           }
 
@@ -976,8 +1036,14 @@ jobs:
             local check_path="$6"
             local manifest="$release_dir/.release-manifest.sha256"
 
-            [ -L "$current_pointer" ] && [ "$(readlink "$current_pointer")" = "$release_dir" ]
-            [ -d "$release_dir" ] && [ ! -L "$release_dir" ]
+            [ -L "$current_pointer" ] \
+              || { echo "$current_pointer is not a symlink, so there is no release to seal for rollback; found: $(ls -ld -- "$current_pointer" 2>&1 || true)" >&2; return 1; }
+            [ "$(readlink "$current_pointer")" = "$release_dir" ] \
+              || { echo "$current_pointer points at $(readlink "$current_pointer"), not the $release_dir this transaction read; the board moved underneath it" >&2; return 1; }
+            [ -d "$release_dir" ] \
+              || { echo "$release_dir is not a directory; found: $(ls -ld -- "$release_dir" 2>&1 || true)" >&2; return 1; }
+            [ ! -L "$release_dir" ] \
+              || { echo "$release_dir is a symlink to $(readlink "$release_dir"); a release directory is never a link" >&2; return 1; }
             if find "$release_dir" -type l -print -quit | grep -q .; then
               echo 'current rollback release contains a symlink' >&2
               return 1
@@ -992,7 +1058,8 @@ jobs:
               [ -f "$manifest" ] && [ ! -L "$manifest" ] && [ -s "$manifest" ] \
                 || { echo 'current rollback release manifest is malformed' >&2; return 1; }
             else
-              [ ! -e "$staged_manifest" ] && [ ! -L "$staged_manifest" ]
+              [ ! -e "$staged_manifest" ] && [ ! -L "$staged_manifest" ] \
+                || { echo "the legacy manifest staging path $staged_manifest already exists; found: $(ls -ld -- "$staged_manifest" 2>&1 || true)" >&2; return 1; }
               python3 - "$release_dir" "$staged_manifest" <<'PYTHON_SAME_FILESYSTEM'
           import os
           import sys
@@ -1005,16 +1072,19 @@ jobs:
                 find . -type f ! -path './.release-manifest.sha256' -print0 \
                   | LC_ALL=C sort -z \
                   | xargs -0 sha256sum > "$staged_manifest"
-                test -s "$staged_manifest"
+                test -s "$staged_manifest" \
+                  || { echo "sealing $release_dir produced an empty manifest at $staged_manifest; a release with no files is not a release" >&2; exit 1; }
                 sha256sum --strict -c "$staged_manifest" >/dev/null
                 find . -type f ! -path './.release-manifest.sha256' -print0 \
                   | LC_ALL=C sort -z \
                   | xargs -0 sha256sum > "$check_path"
               )
-              cmp -s "$staged_manifest" "$check_path"
+              cmp -s "$staged_manifest" "$check_path" \
+                || { echo "$release_dir changed while it was being sealed: the two passes over it disagree, so the rollback manifest is not written" >&2; return 1; }
               rm -f -- "$check_path"
               sync -f "$staged_manifest"
-              [ "$(readlink "$current_pointer")" = "$release_dir" ]
+              [ "$(readlink "$current_pointer")" = "$release_dir" ] \
+                || { echo "$current_pointer moved to $(readlink "$current_pointer") while $release_dir was being sealed; refusing to write a manifest into a release nobody serves" >&2; return 1; }
               mv -Tf "$staged_manifest" "$manifest"
               sync -f "$release_dir"
             fi
@@ -1024,8 +1094,10 @@ jobs:
           }
 
           CURRENT_SHA=$(read_exact_build_info_sha "$ROOT/current/build-info.json")
-          [ -L "$ROOT/current" ]
-          [ "$(readlink "$ROOT/current")" = "$ROOT/releases/$CURRENT_SHA" ]
+          [ -L "$ROOT/current" ] \
+            || { echo "$ROOT/current is not a symlink; found: $(ls -ld -- "$ROOT/current" 2>&1 || true)" >&2; exit 1; }
+          [ "$(readlink "$ROOT/current")" = "$ROOT/releases/$CURRENT_SHA" ] \
+            || { echo "$ROOT/current points at $(readlink "$ROOT/current") while its build-info names $CURRENT_SHA; the pointer and the bytes disagree" >&2; exit 1; }
           if [ "$CURRENT_SHA" != "$EXPECTED_SHA" ] && [ "$CURRENT_SHA" != "$SHA" ]; then
             echo "current changed from ${EXPECTED_SHA:0:7} to ${CURRENT_SHA:0:7}; refusing stale activation" >&2
             exit 75
@@ -1039,8 +1111,10 @@ jobs:
             "$LEGACY_MANIFEST" \
             "$CHECK"
 
-          test -d "$STAGE"
-          test -s "$STAGE/.release-manifest.sha256"
+          test -d "$STAGE" \
+            || { echo "the staging directory $STAGE this invocation transferred is gone; found: $(ls -ld -- "$STAGE" 2>&1 || true)" >&2; exit 1; }
+          test -s "$STAGE/.release-manifest.sha256" \
+            || { echo "$STAGE carries no non-empty .release-manifest.sha256, so its bytes cannot be authenticated" >&2; exit 1; }
           if find "$STAGE" -type l -print -quit | grep -q .; then
             echo 'incoming release contains a symlink' >&2
             exit 1
@@ -1051,13 +1125,18 @@ jobs:
           fi
           (cd "$STAGE" && sha256sum --strict -c .release-manifest.sha256 >/dev/null)
           STAGED_SHA=$(read_exact_build_info_sha "$STAGE/build-info.json")
-          [ "$STAGED_SHA" = "$SHA" ]
+          [ "$STAGED_SHA" = "$SHA" ] \
+            || { echo "the staged bundle's build-info names $STAGED_SHA but this transaction is publishing $SHA" >&2; exit 1; }
 
           verify_complete_manifest "$STAGE" "$CHECK"
 
           if [ -e "$FINAL" ] || [ -L "$FINAL" ]; then
-            [ -d "$FINAL" ] && [ ! -L "$FINAL" ]
-            test -s "$FINAL/.release-manifest.sha256"
+            [ -d "$FINAL" ] \
+              || { echo "$FINAL exists but is not a directory; found: $(ls -ld -- "$FINAL" 2>&1 || true)" >&2; exit 1; }
+            [ ! -L "$FINAL" ] \
+              || { echo "$FINAL is a symlink to $(readlink "$FINAL"); a sealed release is never a link" >&2; exit 1; }
+            test -s "$FINAL/.release-manifest.sha256" \
+              || { echo "the already sealed release $FINAL carries no non-empty .release-manifest.sha256, so it cannot be proved immutable" >&2; exit 1; }
             if find "$FINAL" -type l -print -quit | grep -q .; then
               echo 'sealed release contains a symlink' >&2
               exit 1
@@ -1087,8 +1166,19 @@ jobs:
           # so even a stable path can never be overwritten in place. The one
           # unhashed font stylesheet is a stable symlink through `current`, so it
           # changes in the same atomic rename as the release.
-          test -d "$FINAL/assets" && test -d "$FINAL/fonts"
-          test -f "$FINAL/fonts/fonts.css"
+          # These three refused runs 35763554815 and 35764705782 on
+          # 2026-09-22 without printing one character, because a bare `test`
+          # under `set -e` exits 1 and says nothing (CLAUDE.md 10.86 rule 1).
+          # They were right to refuse: `self-host-fonts` could not reach
+          # Google Fonts, exited 0 anyway, and the bundle had no fonts/ at
+          # all. Activating it would have dangled the pool's fonts.css
+          # symlink for every shell already cached on a player's device.
+          test -d "$FINAL/assets" \
+            || { echo "release $SHA has no assets directory at $FINAL/assets, so the append-only runtime pool cannot be filled from it; the release holds: $(ls -A1 -- "$FINAL" 2>&1 | tr '\n' ' ')" >&2; exit 1; }
+          test -d "$FINAL/fonts" \
+            || { echo "release $SHA has no fonts directory at $FINAL/fonts; the pool's fonts.css points into current/fonts/fonts.css, so activating this release would 404 the fonts of every already-cached shell. A build whose self-host-fonts step could not reach Google Fonts produces exactly this bundle. The release holds: $(ls -A1 -- "$FINAL" 2>&1 | tr '\n' ' ')" >&2; exit 1; }
+          test -f "$FINAL/fonts/fonts.css" \
+            || { echo "release $SHA has no regular file at $FINAL/fonts/fonts.css; found: $(ls -ld -- "$FINAL/fonts/fonts.css" 2>&1 || true). fonts holds: $(ls -A1 -- "$FINAL/fonts" 2>&1 | tr '\n' ' ')" >&2; exit 1; }
 
           adopt_legacy_font_stylesheet_pointer() {
             local pointer="$1"
@@ -1126,7 +1216,8 @@ jobs:
             local source_file relative_path pooled_file
             while IFS= read -r -d '' source_file; do
               relative_path="${source_file#"$source_root"/}"
-              [ -n "$relative_path" ]
+              [ -n "$relative_path" ] \
+                || { echo "the pool walker could not make $source_file relative to $source_root" >&2; return 1; }
               [ "$relative_path" = "$ignored_path" ] && continue
               pooled_file="$pool_root/$relative_path"
               if [ -e "$pooled_file" ] || [ -L "$pooled_file" ]; then
@@ -1145,7 +1236,8 @@ jobs:
             local source_file relative_path pooled_file
             while IFS= read -r -d '' source_file; do
               relative_path="${source_file#"$source_root"/}"
-              [ -n "$relative_path" ]
+              [ -n "$relative_path" ] \
+                || { echo "the pool walker could not make $source_file relative to $source_root" >&2; return 1; }
               [ "$relative_path" = "$ignored_path" ] && continue
               pooled_file="$pool_root/$relative_path"
               [ -f "$pooled_file" ] && [ ! -L "$pooled_file" ] \
@@ -1179,7 +1271,8 @@ jobs:
             find "$ROOT/releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\n'
           )
           for RELEASE_NAME in "${RELEASE_NAMES[@]}"; do
-            [[ "$RELEASE_NAME" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$RELEASE_NAME" =~ ^[0-9a-f]{40}$ ]] \
+              || { echo "$ROOT/releases holds '$RELEASE_NAME', which is not a 40 character lowercase SHA; refusing to hand an unknown name to a pruning command" >&2; exit 1; }
           done
           mapfile -t RELEASE_NAMES < <(
             find "$ROOT/releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %f\n' \
@@ -1197,12 +1290,15 @@ jobs:
           # pointer changes. Flush the atomic rename itself before success.
           sync -f "$ROOT"
           CURRENT_BEFORE_SWAP=$(read_exact_build_info_sha "$ROOT/current/build-info.json")
-          [ "$CURRENT_BEFORE_SWAP" = "$CURRENT_SHA" ] || [ "$CURRENT_BEFORE_SWAP" = "$SHA" ]
-          [ ! -e "$NEXT" ] && [ ! -L "$NEXT" ]
+          [ "$CURRENT_BEFORE_SWAP" = "$CURRENT_SHA" ] || [ "$CURRENT_BEFORE_SWAP" = "$SHA" ] \
+            || { echo "$ROOT/current now serves $CURRENT_BEFORE_SWAP; it was $CURRENT_SHA when this transaction read it and the candidate is $SHA. Another publish moved it, so this one stops before the swap" >&2; exit 1; }
+          [ ! -e "$NEXT" ] && [ ! -L "$NEXT" ] \
+            || { echo "the pointer staging path $NEXT already exists; found: $(ls -ld -- "$NEXT" 2>&1 || true)" >&2; exit 1; }
           ln -s "$FINAL" "$NEXT"
           mv -Tf "$NEXT" "$ROOT/current"
           sync -f "$ROOT"
-          [ "$(readlink "$ROOT/current")" = "$FINAL" ]
+          [ "$(readlink "$ROOT/current")" = "$FINAL" ] \
+            || { echo "the atomic swap left $ROOT/current pointing at $(readlink "$ROOT/current"), not $FINAL" >&2; exit 1; }
           REMOTE_ACTIVATE
 
       - name: Remove this invocation's remote staging path
@@ -1210,8 +1306,12 @@ jobs:
         run: |
           set -euo pipefail
           SHA="${{ steps.verdict.outputs.ours }}"
-          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]] && [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::The publish candidate is not one full lowercase SHA: '$SHA'."; exit 1; }
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]] \
+            || { echo "::error::GITHUB_RUN_ID is not a run number: '$GITHUB_RUN_ID'; it names this run's staging path."; exit 1; }
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]] \
+            || { echo "::error::GITHUB_RUN_ATTEMPT is not an attempt number: '$GITHUB_RUN_ATTEMPT'; it names this run's staging path."; exit 1; }
           STAGE_NAME="${SHA}.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
           timeout 35s ssh \
             -i "$HOME/.ssh/ca_origin" \
@@ -1225,10 +1325,14 @@ jobs:
           set -euo pipefail
           ROOT="$1"
           STAGE_NAME="$2"
-          [ "$ROOT" = /srv/club-arena ]
-          [[ "$STAGE_NAME" =~ ^[0-9a-f]{40}\.[0-9]+\.[0-9]+$ ]]
-          [ -d "$ROOT/incoming" ] && [ ! -L "$ROOT/incoming" ]
-          [ -d "$ROOT/pool/fonts" ] && [ ! -L "$ROOT/pool/fonts" ]
+          [ "$ROOT" = /srv/club-arena ] \
+            || { echo "the origin root this transaction was handed is '$ROOT', not /srv/club-arena; refusing to touch it" >&2; exit 1; }
+          [[ "$STAGE_NAME" =~ ^[0-9a-f]{40}\.[0-9]+\.[0-9]+$ ]] \
+            || { echo "the staging name '$STAGE_NAME' is not <sha>.<run>.<attempt>; refusing to remove a path named by it" >&2; exit 1; }
+          [ -d "$ROOT/incoming" ] && [ ! -L "$ROOT/incoming" ] \
+            || { echo "origin layout: $ROOT/incoming is not a plain directory; found: $(ls -ld -- "$ROOT/incoming" 2>&1 || true)" >&2; exit 1; }
+          [ -d "$ROOT/pool/fonts" ] && [ ! -L "$ROOT/pool/fonts" ] \
+            || { echo "origin layout: $ROOT/pool/fonts is not a plain directory; found: $(ls -ld -- "$ROOT/pool/fonts" 2>&1 || true)" >&2; exit 1; }
           rm -rf -- "$ROOT/incoming/$STAGE_NAME"
           rm -f -- "$ROOT/.current.$STAGE_NAME"
           rm -f -- "$ROOT/incoming/.manifest-check.$STAGE_NAME"
@@ -1278,8 +1382,14 @@ jobs:
           set -euo pipefail
           SHA="${{ steps.verdict.outputs.ours }}"
           EXPECTED_SHA="${{ steps.verdict.outputs.theirs }}"
-          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] && [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]] && [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::The publish candidate is not one full lowercase SHA: '$SHA'."; exit 1; }
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::The release the origin serves is not one full lowercase SHA: '$EXPECTED_SHA'."; exit 1; }
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]] \
+            || { echo "::error::GITHUB_RUN_ID is not a run number: '$GITHUB_RUN_ID'; it names this run's staging path."; exit 1; }
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]] \
+            || { echo "::error::GITHUB_RUN_ATTEMPT is not an attempt number: '$GITHUB_RUN_ATTEMPT'; it names this run's staging path."; exit 1; }
           if [ "$SHA" = "$EXPECTED_SHA" ]; then
             echo '::notice::The failed publish targeted the already-current release; no distinct pointer exists to restore.'
             exit 0
@@ -1304,31 +1414,42 @@ jobs:
           SHA="$2"
           EXPECTED_SHA="$3"
           STAGE_NAME="$4"
-          [ "$ROOT" = /srv/club-arena ]
-          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$STAGE_NAME" =~ ^${SHA}\.[0-9]+\.[0-9]+$ ]]
-          command -v flock >/dev/null
-          command -v python3 >/dev/null
-          command -v sha256sum >/dev/null
-          command -v sync >/dev/null
+          [ "$ROOT" = /srv/club-arena ] \
+            || { echo "the origin root this transaction was handed is '$ROOT', not /srv/club-arena; refusing to touch it" >&2; exit 1; }
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "the failed candidate handed to the rollback is not one full lowercase SHA: '$SHA'" >&2; exit 1; }
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "the release to restore is not one full lowercase SHA: '$EXPECTED_SHA'" >&2; exit 1; }
+          [[ "$STAGE_NAME" =~ ^${SHA}\.[0-9]+\.[0-9]+$ ]] \
+            || { echo "the staging name '$STAGE_NAME' does not belong to candidate $SHA; refusing to roll back on another invocation's behalf" >&2; exit 1; }
+          for REQUIRED_TOOL in flock python3 sha256sum sync; do
+            command -v "$REQUIRED_TOOL" >/dev/null \
+              || { echo "the origin host has no $REQUIRED_TOOL on PATH; this rollback needs it" >&2; exit 1; }
+          done
 
           CANDIDATE="$ROOT/releases/$SHA"
           PREVIOUS="$ROOT/releases/$EXPECTED_SHA"
           NEXT="$ROOT/.rollback.$STAGE_NAME"
           CHECK="$ROOT/incoming/.rollback-manifest-check.$STAGE_NAME"
           for DIRECTORY in "$ROOT" "$ROOT/incoming" "$ROOT/releases"; do
-            [ -d "$DIRECTORY" ] && [ ! -L "$DIRECTORY" ]
+            [ -d "$DIRECTORY" ] \
+              || { echo "origin layout: $DIRECTORY is not a directory; found: $(ls -ld -- "$DIRECTORY" 2>&1 || true)" >&2; exit 1; }
+            [ ! -L "$DIRECTORY" ] \
+              || { echo "origin layout: $DIRECTORY is a symlink to $(readlink "$DIRECTORY"); refusing a root that can escape itself" >&2; exit 1; }
           done
-          [ ! -L "$ROOT/.publish.lock" ]
+          [ ! -L "$ROOT/.publish.lock" ] \
+            || { echo "the publish lock $ROOT/.publish.lock is a symlink to $(readlink "$ROOT/.publish.lock"); refusing to serialize against a file somebody else chose" >&2; exit 1; }
           for TEMPORARY in "$NEXT" "$CHECK"; do
-            [ ! -e "$TEMPORARY" ] && [ ! -L "$TEMPORARY" ]
+            [ ! -e "$TEMPORARY" ] && [ ! -L "$TEMPORARY" ] \
+              || { echo "this transaction's scratch path $TEMPORARY already exists; found: $(ls -ld -- "$TEMPORARY" 2>&1 || true)" >&2; exit 1; }
           done
           trap 'rm -f -- "$NEXT" "$CHECK"' EXIT
           exec 9>"$ROOT/.publish.lock"
-          flock -w 45 9
+          flock -w 45 9 \
+            || { echo "another publish held $ROOT/.publish.lock for the whole 45s activation window; this candidate was not activated and nothing was changed" >&2; exit 1; }
 
-          [ -L "$ROOT/current" ]
+          [ -L "$ROOT/current" ] \
+            || { echo "$ROOT/current is not a symlink, so there is no pointer to restore; found: $(ls -ld -- "$ROOT/current" 2>&1 || true)" >&2; exit 1; }
           CURRENT_LINK="$(readlink "$ROOT/current")"
           if [ "$CURRENT_LINK" = "$PREVIOUS" ]; then
             printf '%s\n' already-restored
@@ -1339,8 +1460,10 @@ jobs:
             exit 75
           fi
 
-          [ -d "$PREVIOUS" ] && [ ! -L "$PREVIOUS" ]
-          test -s "$PREVIOUS/.release-manifest.sha256"
+          [ -d "$PREVIOUS" ] && [ ! -L "$PREVIOUS" ] \
+            || { echo "the release to restore, $PREVIOUS, is not a plain directory; found: $(ls -ld -- "$PREVIOUS" 2>&1 || true)" >&2; exit 1; }
+          test -s "$PREVIOUS/.release-manifest.sha256" \
+            || { echo "the release to restore, $PREVIOUS, carries no non-empty .release-manifest.sha256, so its bytes cannot be proved before it is served again" >&2; exit 1; }
           if find "$PREVIOUS" -type l -print -quit | grep -q .; then
             echo 'previous release contains a symlink' >&2
             exit 1
@@ -1356,7 +1479,8 @@ jobs:
               | LC_ALL=C sort -z \
               | xargs -0 sha256sum > "$CHECK"
           )
-          cmp -s "$CHECK" "$PREVIOUS/.release-manifest.sha256"
+          cmp -s "$CHECK" "$PREVIOUS/.release-manifest.sha256" \
+            || { echo "the files under $PREVIOUS are not the files its .release-manifest.sha256 records; refusing to restore a release that cannot be proved" >&2; exit 1; }
           rm -f -- "$CHECK"
           python3 - "$PREVIOUS/build-info.json" "$EXPECTED_SHA" <<'PYTHON_ROLLBACK_BUILD_INFO'
           import json
@@ -1372,11 +1496,13 @@ jobs:
           PYTHON_ROLLBACK_BUILD_INFO
 
           sync -f "$ROOT"
-          [ "$(readlink "$ROOT/current")" = "$CANDIDATE" ]
+          [ "$(readlink "$ROOT/current")" = "$CANDIDATE" ] \
+            || { echo "$ROOT/current moved to $(readlink "$ROOT/current") while the previous release was being proved; refusing to overwrite a pointer this rollback no longer owns" >&2; exit 1; }
           ln -s "$PREVIOUS" "$NEXT"
           mv -Tf "$NEXT" "$ROOT/current"
           sync -f "$ROOT"
-          [ "$(readlink "$ROOT/current")" = "$PREVIOUS" ]
+          [ "$(readlink "$ROOT/current")" = "$PREVIOUS" ] \
+            || { echo "the rollback swap left $ROOT/current pointing at $(readlink "$ROOT/current"), not $PREVIOUS" >&2; exit 1; }
           printf '%s\n' restored
           REMOTE_ROLLBACK
           )

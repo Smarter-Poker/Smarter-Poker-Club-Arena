@@ -21,8 +21,25 @@
  *      noscript fallback) point at /hub/club-arena/fonts/fonts.css, and the
  *      now-useless Google preconnect hints are dropped.
  *
- * Best-effort: ANY failure leaves dist/index.html untouched, so the page
- * falls back to loading from Google exactly as before. Exit code is always 0.
+ * THIS STEP IS NOT BEST EFFORT, AND SAYING IT WAS COST TWO PUBLISHES
+ * (2026-09-22). Until today any failure here warned and exited 0, on the
+ * reasoning that index.html would simply keep its Google Fonts links. That
+ * reasoning stopped being true when the origin moved to an append-only
+ * runtime pool: `publish-club-arena.yml` requires `<dist>/fonts/fonts.css`
+ * in every release, because the pool's fonts.css is a symlink into
+ * `current/fonts/fonts.css` and a release without fonts/ would dangle it
+ * for every shell already cached on a player's device. So a build that
+ * skipped this step could never be published at all - it could only be
+ * refused on the host, four minutes later, by a bare `test -d` that printed
+ * nothing. That is exactly what happened to 91bd8161 in runs 35763554815
+ * and 35764705782, whose only clue was one line in the build job:
+ *
+ *   [self-host-fonts] Failed (non-fatal, Google Fonts links remain): fetch failed
+ *
+ * A step whose output the publisher requires does not get to report success
+ * when it produced nothing (CLAUDE.md 10.86 rule 1). Every outcome below
+ * that does not write <dist>/fonts/fonts.css now names itself and exits
+ * non-zero, in the build job, where the cause is on screen.
  */
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -42,15 +59,21 @@ const UA =
 async function main() {
   const htmlPath = path.join(DIST, 'index.html');
   if (!existsSync(htmlPath)) {
-    console.warn('[self-host-fonts] dist/index.html missing — skipping');
-    return;
+    throw new Error(
+      `${htmlPath} does not exist, so there is no shell to read the font stylesheet out of; ` +
+        'the bundle did not build'
+    );
   }
   const html = readFileSync(htmlPath, 'utf8');
 
   const cssUrlMatch = html.match(/https:\/\/fonts\.googleapis\.com\/css2\?[^"']+/);
   if (!cssUrlMatch) {
-    console.warn('[self-host-fonts] no Google Fonts URL found — skipping');
-    return;
+    throw new Error(
+      `${htmlPath} names no fonts.googleapis.com/css2 stylesheet, so no woff2 files can be ` +
+        `self-hosted and ${path.join(DIST, 'fonts', 'fonts.css')} would never be written. ` +
+        'The origin requires that file in every release. If the Google Fonts link was ' +
+        'removed on purpose, remove this build step and the publisher guard together.'
+    );
   }
   const cssUrl = cssUrlMatch[0].replace(/&amp;/g, '&');
 
@@ -103,6 +126,23 @@ async function main() {
   );
 }
 
-main().catch((err) => {
-  console.warn('[self-host-fonts] Failed (non-fatal, Google Fonts links remain):', err?.message || err);
-});
+main()
+  .then(() => {
+    // The publisher will refuse a release without this file. Prove it exists
+    // here, where the failure is one line under the command that caused it,
+    // rather than on the origin four minutes later.
+    const stylesheet = path.join(DIST, 'fonts', 'fonts.css');
+    if (!existsSync(stylesheet)) {
+      throw new Error(`${stylesheet} was not written`);
+    }
+  })
+  .catch((err) => {
+    console.error(
+      `[self-host-fonts] FAILED: ${err?.message || err}\n` +
+        `[self-host-fonts] ${path.join(DIST, 'fonts', 'fonts.css')} is required in every ` +
+        'release: the origin serves /fonts/* from an append-only pool whose fonts.css is a ' +
+        'symlink into the live release, so a bundle without it cannot be published. This ' +
+        'build produced no publishable bundle.'
+    );
+    process.exitCode = 1;
+  });

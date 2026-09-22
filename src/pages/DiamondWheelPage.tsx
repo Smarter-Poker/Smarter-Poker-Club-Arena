@@ -1050,7 +1050,6 @@ export default function DiamondWheelPage() {
       >
         <div className={wheelStyles.stage} ref={stageRef}>
           <WheelExperience
-            key={spinKey}
             receipt={pending}
             segments={rim}
             upgradeSegments={state.upgrade_segments ?? []}

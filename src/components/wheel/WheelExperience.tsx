@@ -51,9 +51,16 @@ export function WheelExperience({
   autoContinue?: boolean;
   fitViewport?: boolean;
 }) {
-  const [phase, setPhase] = useState<'primary' | 'prize' | 'secondary' | 'bonus' | 'finished'>(
-    'primary'
-  );
+  // The wheels stay mounted across spins (owner ruling 2026-09-21, R7: the
+  // next spin leaves from the idle angle, never from zero), so a new spin key
+  // starts its own phase record instead of a remount resetting this one.
+  const [phaseRecord, setPhaseRecord] = useState<{
+    key: number;
+    phase: 'primary' | 'prize' | 'secondary' | 'bonus' | 'finished';
+  }>({ key: spinKey, phase: 'primary' });
+  const phase = phaseRecord.key === spinKey ? phaseRecord.phase : 'primary';
+  const setPhase = (next: typeof phaseRecord.phase) =>
+    setPhaseRecord({ key: spinKey, phase: next });
   const secondary = phase === 'secondary' || phase === 'bonus';
   const expanded = phase !== 'primary' && receipt?.outcome.kind === 'upgrade';
   const upperSegments = receipt?.secondary?.segments ?? upgradeSegments;
@@ -98,6 +105,7 @@ export function WheelExperience({
               fitViewport={fitViewport}
               size={size}
               presentation="assembly"
+              paused={Boolean(showPrize)}
               onLanded={() => setPhase('bonus')}
             />
           </div>
@@ -112,6 +120,7 @@ export function WheelExperience({
             spinning={spinning && phase === 'primary'}
             fitViewport={fitViewport}
             size={size}
+            paused={Boolean(showPrize)}
             onLanded={() => {
               if (receipt?.outcome.kind === 'nothing') finish();
               else setPhase('prize');

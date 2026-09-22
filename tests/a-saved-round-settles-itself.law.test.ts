@@ -178,6 +178,16 @@ describe('a saved round settles itself', () => {
     expect(src).toContain('class PriorBonusPending');
   });
 
+  it('a saved wheel spin that cannot be read is discarded, never thrown', () => {
+    // Thrown, it stranded the wheel on "Reconnecting" for good: the save lives in
+    // localStorage and every load retry read it again.
+    const src = read('src/utils/wheelPendingSpin.ts');
+    const reader = src.slice(src.indexOf('export function readWheelPending('));
+    const body = reader.slice(0, reader.indexOf('\n}\n'));
+    expect(body).not.toMatch(/\bthrow\b/);
+    expect(src).toContain('localStorage.removeItem(key)');
+  });
+
   it('a failed award read retries itself', () => {
     const src = read('src/hooks/useEarnedBonus.ts');
     expect(src).toMatch(/useAutoSettle\(/);

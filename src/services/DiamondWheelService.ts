@@ -584,6 +584,96 @@ function spinResponse(data: unknown): WheelSpinResult {
   return result;
 }
 
+/**
+ * AN ERROR THE DATABASE ANSWERED IS AN ANSWER (2026-09-22).
+ *
+ * Every spin door replays a spent commit before it can move anything, and again
+ * under the host lock that serialises spins, so a spin whose answer was lost is
+ * sent again safely: if the first send committed, the next one is answered by
+ * that spin's receipt, never by a second spin. An error carrying a SQLSTATE says
+ * what a lost answer cannot. The database ran THIS execution and rolled it
+ * back, and there was no committed spin behind it (an earlier committed send
+ * would have been answered by the replay, not by an error). Nothing was
+ * charged. The wheel used to treat it as unconfirmed and send it again every
+ * eight seconds for as long as the page stayed open, with the exit guard
+ * holding the player on it.
+ *
+ *  - A SQLSTATE that passes (a serialization failure, a deadlock, a lock not
+ *    available in time, a statement timeout), and PostgREST saying it could not
+ *    reach the database at all (PGRST000-003), may be sent again: the same saved
+ *    request, until one commit has met such an answer SPIN_SENDS_PER_COMMIT
+ *    times. That answer is a refusal.
+ *  - Any other SQLSTATE, and any other PostgREST code, is a refusal at once: it
+ *    is the answer every later send would get.
+ *  - No code at all (the network, a gateway page) says nothing about whether the
+ *    spin ran, so the page keeps sending the saved request until it hears back.
+ */
+const TRANSIENT_SQLSTATES = new Set(['40001', '40P01', '55P03', '57014']);
+export const SPIN_SENDS_PER_COMMIT = 3;
+/** What the player reads when the database answered a spin with an error. */
+export const SPIN_NOT_TAKEN = 'The Wheel Could Not Take That Spin';
+/** Sends of each commit that met a passing error, while it may still be sent. */
+const passingSends = new Map<string, number>();
+
+export type SpinErrorKind = 'refused' | 'transient' | 'unknown';
+
+/** What an error from a spin RPC says about the spin. */
+export function spinErrorKind(error: unknown): SpinErrorKind {
+  const code =
+    error && typeof error === 'object' && typeof (error as { code?: unknown }).code === 'string'
+      ? (error as { code: string }).code
+      : '';
+  if (code.startsWith('PGRST')) return /^PGRST00[0-3]$/.test(code) ? 'transient' : 'refused';
+  if (/^[0-9A-Z]{5}$/.test(code)) return TRANSIENT_SQLSTATES.has(code) ? 'transient' : 'refused';
+  return 'unknown';
+}
+
+/**
+ * The database answered the spin and this browser cannot verify what it said.
+ * Unlike a lost answer, money may have moved, so the page keeps the saved spin;
+ * unlike a lost answer, the same bytes will not verify on a later send, so the
+ * page stops sending it after a few of these (DiamondWheelPage).
+ */
+export class WheelReceiptUnverified extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : 'The Spin Receipt Could Not Be Confirmed');
+    this.name = 'WheelReceiptUnverified';
+  }
+}
+
+/** Read an answered spin. A body that does not verify is WheelReceiptUnverified. */
+function verifiedSpin(read: () => WheelSpinResult): WheelSpinResult {
+  try {
+    return read();
+  } catch (error) {
+    throw new WheelReceiptUnverified(error);
+  }
+}
+
+/**
+ * Send one spin. Resolves with the body the database answered, or with a
+ * refusal the page acts on (it clears the saved spin and deals the next
+ * ticket); throws when the same saved request should be sent again.
+ */
+async function sendSpin(fn: string, args: Record<string, unknown>, commitId: string) {
+  const { data, error } = await supabase.rpc(fn, args);
+  if (!error) {
+    passingSends.delete(commitId);
+    return data;
+  }
+  const kind = spinErrorKind(error);
+  if (kind === 'unknown') throw error;
+  if (kind === 'transient') {
+    const sends = (passingSends.get(commitId) ?? 0) + 1;
+    if (sends < SPIN_SENDS_PER_COMMIT) {
+      passingSends.set(commitId, sends);
+      throw error;
+    }
+  }
+  passingSends.delete(commitId);
+  return { ok: false, error: SPIN_NOT_TAKEN };
+}
+
 /** Paid and welcome spins in one list, newest first, for the player's own history. */
 
 function normaliseWelcomeState(raw: Record<string, unknown>): WheelWelcomeState {
@@ -664,19 +754,24 @@ const DiamondWheelService = {
     mode: 'paid' | 'welcome' | 'daily_bonus';
     ticketId: string | null;
   }): Promise<WheelSpinResult> {
-    const { data, error } = await supabase.rpc('fn_wheel_spin_v2', {
-      p_club_id: input.clubId,
-      p_commit_id: input.commitId,
-      p_client_seed: input.clientSeed,
-      p_entry_diamonds: input.entryDiamonds,
-      p_mode: input.mode === 'daily_bonus' ? 'daily' : input.mode,
-      p_bonus_ticket_id: input.ticketId,
+    const data = await sendSpin(
+      'fn_wheel_spin_v2',
+      {
+        p_club_id: input.clubId,
+        p_commit_id: input.commitId,
+        p_client_seed: input.clientSeed,
+        p_entry_diamonds: input.entryDiamonds,
+        p_mode: input.mode === 'daily_bonus' ? 'daily' : input.mode,
+        p_bonus_ticket_id: input.ticketId,
+      },
+      input.commitId
+    );
+    return verifiedSpin(() => {
+      const result = spinResponse(data);
+      if (result.ok && result.contract_version !== 2 && result.contract_version !== 3)
+        throw new Error('The Diamond Spins Receipt Version Could Not Be Confirmed');
+      return result;
     });
-    if (error) throw error;
-    const result = spinResponse(data);
-    if (result.ok && result.contract_version !== 2 && result.contract_version !== 3)
-      throw new Error('The Diamond Spins Receipt Version Could Not Be Confirmed');
-    return result;
   },
 
   async dailyBonusState(clubId: string): Promise<WheelDailyBonusState> {
@@ -712,32 +807,37 @@ const DiamondWheelService = {
     clientSeed: string,
     ticketId: string
   ): Promise<WheelSpinResult> {
-    const { data, error } = await supabase.rpc('fn_wheel_daily_bonus_spin', {
-      p_club_id: clubId,
-      p_commit_id: commitId,
-      p_client_seed: clientSeed,
-      p_ticket_id: ticketId,
-    });
-    if (error) throw error;
+    const data = await sendSpin(
+      'fn_wheel_daily_bonus_spin',
+      {
+        p_club_id: clubId,
+        p_commit_id: commitId,
+        p_client_seed: clientSeed,
+        p_ticket_id: ticketId,
+      },
+      commitId
+    );
     if (data?.ok === false && typeof data.error === 'string') return normaliseSpin(data);
-    if (
-      data?.ok !== true ||
-      data.daily_bonus !== true ||
-      data.welcome !== false ||
-      data.bonus_ticket_id !== ticketId ||
-      data.club_id !== clubId ||
-      data.fairness?.commit_id !== commitId ||
-      data.fairness?.client_seed !== clientSeed ||
-      data.player_cost_diamonds == null ||
-      Number(data.player_cost_diamonds) !== 0 ||
-      Number(data.entry_value_diamonds) !== 100 ||
-      data.entry_funded_by !== 'mint' ||
-      typeof data.spin_id !== 'string' ||
-      !data.outcome
-    ) {
-      throw new Error('Bonus Spin Receipt Could Not Be Confirmed. Retry The Same Spin');
-    }
-    return spinResponse(data);
+    return verifiedSpin(() => {
+      if (
+        data?.ok !== true ||
+        data.daily_bonus !== true ||
+        data.welcome !== false ||
+        data.bonus_ticket_id !== ticketId ||
+        data.club_id !== clubId ||
+        data.fairness?.commit_id !== commitId ||
+        data.fairness?.client_seed !== clientSeed ||
+        data.player_cost_diamonds == null ||
+        Number(data.player_cost_diamonds) !== 0 ||
+        Number(data.entry_value_diamonds) !== 100 ||
+        data.entry_funded_by !== 'mint' ||
+        typeof data.spin_id !== 'string' ||
+        !data.outcome
+      ) {
+        throw new Error('Bonus Spin Receipt Could Not Be Confirmed. Retry The Same Spin');
+      }
+      return spinResponse(data);
+    });
   },
 
   /** Everything the wheel screen shows: table, odds, locks, the player's limits. */
@@ -766,13 +866,12 @@ const DiamondWheelService = {
    * answer and moves nothing twice.
    */
   async spin(clubId: string, commitId: string, clientSeed: string): Promise<WheelSpinResult> {
-    const { data, error } = await supabase.rpc('fn_wheel_spin', {
-      p_club_id: clubId,
-      p_commit_id: commitId,
-      p_client_seed: clientSeed,
-    });
-    if (error) throw error;
-    return spinResponse(data);
+    const data = await sendSpin(
+      'fn_wheel_spin',
+      { p_club_id: clubId, p_commit_id: commitId, p_client_seed: clientSeed },
+      commitId
+    );
+    return verifiedSpin(() => spinResponse(data));
   },
 
   async history(clubId: string, limit = 25): Promise<WheelSpinResult[]> {
@@ -805,13 +904,12 @@ const DiamondWheelService = {
     commitId: string,
     clientSeed: string
   ): Promise<WheelSpinResult> {
-    const { data, error } = await supabase.rpc('fn_wheel_welcome_spin', {
-      p_club_id: clubId,
-      p_commit_id: commitId,
-      p_client_seed: clientSeed,
-    });
-    if (error) throw error;
-    return spinResponse(data);
+    const data = await sendSpin(
+      'fn_wheel_welcome_spin',
+      { p_club_id: clubId, p_commit_id: commitId, p_client_seed: clientSeed },
+      commitId
+    );
+    return verifiedSpin(() => spinResponse(data));
   },
 
   /** The operator's switch, budget and window for the welcome spin. The RPC decides who may. */

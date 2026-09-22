@@ -46,7 +46,9 @@ export function diamondWheelPageFixture() {
       useMasterBusSubscription: `export const useMasterBusSubscription=()=>{};`,
       MasterBus: `export const masterBus={emit:()=>{},on:()=>()=>{}};`,
       avatarGenerator: `export const sizedStorageUrl=(url)=>url;`,
-      DiamondWheelService: `const state=${JSON.stringify(state)};export default {
+      // The page reads the service's unverified-receipt error as well as its
+      // default export, so the stub carries both.
+      DiamondWheelService: `const state=${JSON.stringify(state)};export class WheelReceiptUnverified extends Error{};export default {
         getStateV2:async()=>({...state,available:!location.search.includes('paused'),reason:'Local Connection Is Paused'}),
         welcomeState:async()=>({available:true,enabled:true,price:100}),
         dailyBonusState:async()=>({available:true,ticket_count:2}), history:async()=>[],

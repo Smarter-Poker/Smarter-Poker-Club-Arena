@@ -192,7 +192,7 @@ describe('choice-game entry quotes belong to the selected settings', () => {
       render(<DiamondChoicePage game={game} />);
       await act(async () => {});
       fireEvent.click(
-        screen.getByRole('button', { name: game === 'mines' ? 'Pick Tile' : 'Cross Street' })
+        screen.getByRole('button', { name: game === 'mines' ? 'Pick Tile' : /^Cross Street/ })
       );
       await act(async () => {});
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -215,7 +215,7 @@ describe('choice-game entry quotes belong to the selected settings', () => {
     render(<DiamondChoicePage game="crossing" />);
     await act(async () => {});
     expect(screen.getByRole('region', { name: 'Scene idle' })).toBeInTheDocument();
-    expect(screen.queryByText(/The Donkey Did Not Make/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Your Guaranteed/)).not.toBeInTheDocument();
     expect(screen.getByText('Current Prize').nextElementSibling).toHaveTextContent('0.00');
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -312,7 +312,7 @@ describe('choice-game entry quotes belong to the selected settings', () => {
         screen.getByText(
           game === 'mines'
             ? /6 Mines Hide Among 25 Tiles\. .*A Mine Ends The Round And Pays The Guaranteed Minimum\./
-            : /12 Streets Pay 1\.10x Up To 20\.00x\. .*Book The Win After Any Street\. A Collision Ends The Round And Pays The Guaranteed Minimum\./
+            : /12 Streets Pay 1\.10x Up To 20\.00x\. .*Book The Win After Any Street\. A Hit Ends The Round And Pays The Guaranteed Minimum\./
         )
       ).toBeInTheDocument();
       expect(screen.getByText(/Nobody Picks A Difficulty/)).toBeInTheDocument();
@@ -580,7 +580,7 @@ describe('choice games consume wheel-funded entry', () => {
     });
     render(<DiamondChoicePage game="crossing" />);
     await act(async () => {});
-    expect(screen.getByRole('button', { name: 'Cross Street' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^Cross Street/ })).toBeEnabled();
     expect(backend.start).not.toHaveBeenCalled();
     // The saved round keeps its own road ('steady'); the lobby is still quoted the one setting.
     expect(backend.state.mock.calls.every((call) => call[2] === CHOICE_MODE.crossing)).toBe(true);

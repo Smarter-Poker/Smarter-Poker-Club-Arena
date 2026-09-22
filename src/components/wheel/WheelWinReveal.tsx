@@ -16,6 +16,7 @@ export function WheelWinReveal({
   onOpen,
   autoContinue = false,
   autoContinueAfterMs = 0,
+  eyebrow,
 }: {
   prize: Pick<WheelSegment, 'kind' | 'game' | 'multiplier'>;
   title: string;
@@ -23,6 +24,12 @@ export function WheelWinReveal({
   onOpen: () => void;
   autoContinue?: boolean;
   autoContinueAfterMs?: number;
+  /**
+   * What this receipt is, when it is not a win. The wheel's own prizes are
+   * always won, so they keep the default; a bonus game's receipt can be a
+   * guarantee paid after a hit or a crash, and "You Won" over that is a lie.
+   */
+  eyebrow?: string;
 }) {
   const opened = useRef(false);
   const onOpenRef = useRef(onOpen);
@@ -87,7 +94,7 @@ export function WheelWinReveal({
         }}
       >
         <SpadeConsole
-          eyebrow={prize.kind === 'upgrade' ? 'Wheel Upgrade' : 'You Won'}
+          eyebrow={eyebrow ?? (prize.kind === 'upgrade' ? 'Wheel Upgrade' : 'You Won')}
           title={title}
           pill={
             prize.kind === 'bonus' ? 'Bonus Game' : prize.kind === 'upgrade' ? 'Super Spin' : 'Paid'

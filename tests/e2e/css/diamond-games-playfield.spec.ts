@@ -253,7 +253,8 @@ for (const width of [320, 390, 1280])
     await page.getByRole('button', { name: 'Preview Safe Crossing', exact: true }).click();
     await expect(page.getByText('Safe On Street 1 · Your Move')).toBeVisible();
     await page.getByRole('button', { name: 'Preview Collision', exact: true }).click();
-    await expect(page.getByText('Collision · Round Over')).toBeVisible();
+    // One name for this outcome, on the scene as on the receipt and the row.
+    await expect(page.getByText(/^Hit At Street \d+ · Guarantee Paid$/)).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true
     );

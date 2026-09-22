@@ -53,6 +53,21 @@ describe('bonus completion presentation', () => {
     expect(navigate).toHaveBeenCalledTimes(1);
     visibility.mockRestore();
   });
+  it('carries what the round was onto the receipt, and heads a win the usual way', () => {
+    const { unmount } = render(
+      <BonusCompletion
+        clubId="shark-club"
+        chips={0.1}
+        detail="Hit At Street 3."
+        eyebrow="Guarantee Paid"
+      />
+    );
+    expect(screen.getByRole('dialog', { name: '0.10 Chips' })).toHaveTextContent('Guarantee Paid');
+    expect(screen.queryByText('You Won')).toBeNull();
+    unmount();
+    render(<BonusCompletion clubId="shark-club" chips={5} detail="Round Complete." />);
+    expect(screen.getByRole('dialog', { name: '5.00 Chips' })).toHaveTextContent('You Won');
+  });
   it('reveals all mines before signaling completion and ignores a child gem animation', () => {
     const onSettled = vi.fn();
     render(

@@ -1417,6 +1417,14 @@ function DiamondCrashGame() {
           <BonusCompletion
             key={settledRound.round_id}
             clubId={routeClubId ?? ''}
+            // A crash is not a win. The receipt says what it is.
+            eyebrow={
+              settledRound.status === 'cashed'
+                ? undefined
+                : settledRound.outcome.payout_chips > 0
+                  ? 'Guarantee Paid'
+                  : 'Round Over'
+            }
             chips={settledRound.outcome.payout_chips}
             detail={`The Flight Crashed At ${multiplierLabel(settledRound.outcome.crash_cents)}.`}
           />

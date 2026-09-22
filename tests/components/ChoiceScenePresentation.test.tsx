@@ -223,7 +223,7 @@ describe('the cash-out value is the loudest number', () => {
   it('shows the chips the player can book now and what the next street adds', () => {
     mountScene({ phase: 'open', picked: [0, 1] });
     expect(screen.getByText('Cash Out Value').nextElementSibling).toHaveTextContent('5.33 Chips');
-    expect(screen.getByText('Next Street Pays 1.85x For 15.20 Chips')).toBeInTheDocument();
+    expect(screen.getByText('Next Street 15.20 At 1.85x')).toBeInTheDocument();
   });
   it('shows what the first street pays and the reach of the road before Start', () => {
     mountScene();
@@ -237,7 +237,7 @@ describe('the cash-out value is the loudest number', () => {
     expect(screen.getByText('Booked At Street 2').nextElementSibling).toHaveTextContent(
       '5.33 Chips'
     );
-    expect(screen.getByText('The Donkey Would Have Reached Street 4')).toBeInTheDocument();
+    expect(screen.getByText('It Would Have Made It To Street 4')).toBeInTheDocument();
   });
 });
 
@@ -245,10 +245,10 @@ describe('a loss is a brief, clear bust', () => {
   it('stamps the bust, keeps the guaranteed chips on screen and settles within a second and a half', () => {
     const { onSettled } = mountScene({ phase: 'lost', picked: [0, 1, 2], payoutChips: 0.1 });
     expect(screen.getByText('Bust')).toBeInTheDocument();
-    expect(screen.getByText('Bust On Street 3').nextElementSibling).toHaveTextContent(
-      '0.10 Chips Kept'
+    expect(screen.getByText('Hit At Street 3').nextElementSibling).toHaveTextContent(
+      '0.10 Chips Paid'
     );
-    expect(screen.getByText('The Guaranteed Minimum Is Yours')).toBeInTheDocument();
+    expect(screen.getByText('Your Guarantee')).toBeInTheDocument();
     expect(screen.getAllByRole('listitem')[2]).toHaveAttribute('data-state', 'crash');
     tick(100);
     tick(1000);
@@ -292,14 +292,14 @@ describe('the scene owns the reveal', () => {
     // (collisionAt puts the strike at 745 ms).
     tick(600);
     expect(screen.queryByText('Bust')).toBeNull();
-    expect(screen.queryByText('Bust On Street 2')).toBeNull();
+    expect(screen.queryByText('Hit At Street 2')).toBeNull();
     expect(screen.getByText('Cash Out Value').nextElementSibling).toHaveTextContent('2.17 Chips');
     expect(screen.getAllByRole('listitem')[1]).toHaveAttribute('data-state', 'next');
     expect(scene.onMoment).not.toHaveBeenCalled();
     tick(1000);
     expect(screen.getByText('Bust')).toBeInTheDocument();
-    expect(screen.getByText('Bust On Street 2').nextElementSibling).toHaveTextContent(
-      '0.20 Chips Kept'
+    expect(screen.getByText('Hit At Street 2').nextElementSibling).toHaveTextContent(
+      '0.20 Chips Paid'
     );
     expect(screen.getAllByRole('listitem')[1]).toHaveAttribute('data-state', 'crash');
     expect(scene.onMoment.mock.calls).toEqual([['hit', 2]]);
@@ -334,7 +334,7 @@ describe('the scene owns the reveal', () => {
     const scene = mountScene({ phase: 'open', picked: [0] });
     scene.update({ phase: 'lost', picked: [0, 1], payoutChips: 0.2 });
     expect(scene.onMoment.mock.calls).toEqual([['hit', 2]]);
-    expect(screen.getByText('Bust On Street 2')).toBeInTheDocument();
+    expect(screen.getByText('Hit At Street 2')).toBeInTheDocument();
   });
 
   it('stands a resumed open round on its own street instead of walking it from the kerb', () => {
@@ -363,7 +363,7 @@ describe('the scene leaves the announcement to the page', () => {
     expect(scene.querySelectorAll('[role="status"]')).toHaveLength(0);
     expect(screen.getByText('Bust').closest('div')).toHaveAttribute('aria-hidden', 'true');
     // The words themselves stay on screen, where a sighted player reads them.
-    expect(screen.getByText('Bust On Street 3')).toBeInTheDocument();
+    expect(screen.getByText('Hit At Street 3')).toBeInTheDocument();
   });
 
   it('paints a street sign bust red only once the car has reached the donkey', () => {
@@ -674,5 +674,66 @@ describe('the road wears the Smarter.Poker palette', () => {
     expect(flash.slice(0, flash.indexOf('}\n}'))).toMatch(
       /0% \{\s*background: rgb\(240 40 73 \/ 30%\);/
     );
+  });
+});
+
+/**
+ * THE GUARANTEE SITS BESIDE THE NEXT PRIZE (review 2026-09-22). Ordinary rounds
+ * are hit on street 1 about 30% of the time and Super rounds about 50%, so the
+ * amount a hit still pays is half of the decision the player is making. It
+ * lived in a bay above the road and never appeared on the scene at all.
+ */
+describe('the guarantee sits beside the street being risked', () => {
+  it('names what a hit still pays beside the next street', () => {
+    mountScene({ phase: 'open', picked: [0, 1], floorChips: 0.2 });
+    expect(screen.getByText('Next Street 15.20 At 1.85x · A Hit Pays 0.20')).toBeInTheDocument();
+  });
+  it('calls a Super award floor by its own name', () => {
+    mountScene({ phase: 'open', picked: [0, 1], floorChips: 0.2, superFloor: true });
+    expect(
+      screen.getByText('Next Street 15.20 At 1.85x · Super Guarantee 0.20')
+    ).toBeInTheDocument();
+  });
+  it('states it before the first street, where the decision starts', () => {
+    mountScene({ floorChips: 0.2 });
+    expect(
+      screen.getByText('A Hit Still Pays 0.20 Chips · 12 Streets Up To 20.00x')
+    ).toBeInTheDocument();
+  });
+  it('says nothing about a floor it was not given', () => {
+    mountScene({ phase: 'open', picked: [0, 1] });
+    expect(screen.getByText('Next Street 15.20 At 1.85x')).toBeInTheDocument();
+    expect(screen.queryByText(/A Hit Pays/)).toBeNull();
+  });
+});
+
+/**
+ * ONE NAME PER OUTCOME. A hit answered to "Bust On Street 3", "Collision ·
+ * Round Over" and "The Guaranteed Minimum Is Yours" on this scene alone, and a
+ * booked round was told the donkey "would have reached" the street it did
+ * reach.
+ */
+describe('one name for what happened', () => {
+  it('names the street the hit happened on, and calls the payout the guarantee', () => {
+    mountScene({ phase: 'lost', picked: [0, 1, 2], payoutChips: 0.1 });
+    expect(screen.getByText('Hit At Street 3 · Guarantee Paid')).toBeInTheDocument();
+    expect(screen.getByText('Hit At Street 3').nextElementSibling).toHaveTextContent(
+      '0.10 Chips Paid'
+    );
+    expect(screen.getByText('Your Guarantee')).toBeInTheDocument();
+    // The stamp keeps its one word.
+    expect(screen.getByText('Bust')).toBeInTheDocument();
+  });
+  it('tells a round booked on the crash street exactly that', () => {
+    mountScene({ phase: 'cashed', picked: [0, 1], payoutChips: 5.33, roadEnd: 2 });
+    expect(screen.getByText('Street 3 Was The Crash')).toBeInTheDocument();
+  });
+  it('tells a round booked short of the end how far the road ran', () => {
+    mountScene({ phase: 'cashed', picked: [0, 1], payoutChips: 5.33, roadEnd: 5 });
+    expect(screen.getByText('It Would Have Made It To Street 5')).toBeInTheDocument();
+  });
+  it('tells a round whose road never crashed at all', () => {
+    mountScene({ phase: 'cashed', picked: [0, 1], payoutChips: 5.33, roadEnd: 12 });
+    expect(screen.getByText('It Would Have Crossed Every Street')).toBeInTheDocument();
   });
 });

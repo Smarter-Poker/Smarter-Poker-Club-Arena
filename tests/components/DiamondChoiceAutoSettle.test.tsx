@@ -79,13 +79,19 @@ vi.mock('../../src/components/games/ChoiceScene', () => ({
     paused,
     onSettled,
     onMoment,
+    floorChips,
   }: {
     phase: string;
     paused?: boolean;
     onSettled: () => void;
     onMoment?: (moment: string, street: number) => void;
+    floorChips?: number | null;
   }) => (
-    <section aria-label={`Scene ${phase}`} data-paused={String(paused)}>
+    <section
+      aria-label={`Scene ${phase}`}
+      data-paused={String(paused)}
+      data-floor={String(floorChips)}
+    >
       <button onClick={onSettled}>Finish Scene</button>
       {/* The beat the real scene reaches when the car gets to the donkey. */}
       <button onClick={() => onMoment?.('hit', 2)}>Present</button>
@@ -93,7 +99,20 @@ vi.mock('../../src/components/games/ChoiceScene', () => ({
   ),
 }));
 vi.mock('../../src/components/wheel/WheelWinReveal', () => ({
-  WheelWinReveal: ({ title }: { title: string }) => <div role="dialog" aria-label={title} />,
+  WheelWinReveal: ({
+    title,
+    detail,
+    eyebrow,
+  }: {
+    title: string;
+    detail: string;
+    eyebrow?: string;
+  }) => (
+    <div role="dialog" aria-label={title}>
+      <span data-eyebrow>{eyebrow}</span>
+      <span data-detail>{detail}</span>
+    </div>
+  ),
 }));
 vi.mock('../../src/components/games/SealedPrize', () => ({ default: () => null }));
 vi.mock('../../src/components/games/DiamondSpinsTabs', () => ({ default: () => null }));
@@ -189,6 +208,8 @@ const noCheckControl = () => {
   expect(screen.queryByRole('button', { name: /Check/ })).toBeNull();
   expect(screen.queryByRole('button', { name: /Retry|Try Again/ })).toBeNull();
 };
+/** The console's one status pill, which names what the console is doing. */
+const pill = () => document.querySelector('header span')?.textContent ?? '';
 /** Everything the page's one polite live region is saying. */
 const spoken = () => Array.from(document.querySelectorAll('[aria-live] p'));
 const statusLine = (text: string) => spoken().some((line) => line.textContent === text);
@@ -257,7 +278,7 @@ describe('a saved Donkey Cross wager settles itself', () => {
       answer(openRound);
     });
     await settle();
-    expect(screen.getByRole('button', { name: 'Cross Street' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Cross Street/ })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Scene open' })).toBeInTheDocument();
     expect(backend.start).toHaveBeenCalledTimes(1);
     noCheckControl();
@@ -283,7 +304,7 @@ describe('a saved Donkey Cross wager settles itself', () => {
     await advance(1);
     expect(backend.start).toHaveBeenCalledTimes(2);
     expect(backend.start.mock.calls[1][0]).toEqual(saved);
-    expect(screen.getByRole('button', { name: 'Cross Street' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Cross Street/ })).toBeInTheDocument();
     noCheckControl();
     await advance(60000);
     expect(backend.start).toHaveBeenCalledTimes(2);
@@ -322,7 +343,7 @@ describe('a refused ticket is re-dealt and the wager goes again', () => {
       serverSeedHash: first.serverSeedHash,
     }).toEqual(first);
     expect(first.budget).toMatchObject({ base: 200, doubled: false, award: { id: AWARD.id } });
-    expect(screen.getByRole('button', { name: 'Cross Street' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Cross Street/ })).toBeInTheDocument();
     noCheckControl();
     await advance(60000);
     expect(backend.start).toHaveBeenCalledTimes(2);
@@ -462,7 +483,7 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     await answerOffer();
     await advance(5000);
     expect(backend.start).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
     await settle();
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
@@ -497,18 +518,22 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     await settle();
     await answerOffer();
     await advance(5000);
-    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
     await settle();
-    // The server has answered. Nothing on the console says so yet.
-    expect(screen.getByText('In Play')).toBeInTheDocument();
-    expect(screen.queryByText('Round Over')).toBeNull();
-    expect(screen.queryByText(/The Donkey Did Not Make/)).toBeNull();
+    // The server has answered. Nothing on the console says so yet: the pill
+    // and the plate both name the move being played out, not its result.
+    expect(pill()).toBe('Crossing');
+    expect(screen.getByRole('button', { name: 'Crossing' })).toBeInTheDocument();
+    expect(screen.queryByText('Hit At Street 2')).toBeNull();
+    expect(screen.queryByText(/Your Guaranteed/)).toBeNull();
     expect(screen.getByText('Current Prize').nextElementSibling).toHaveTextContent('1.10');
     expect(screen.getByText('Street').nextElementSibling).toHaveTextContent('1');
     // The scene reaches the moment of impact: now the console prints it.
     fireEvent.click(screen.getByRole('button', { name: 'Present' }));
-    expect(screen.getByText('Round Over')).toBeInTheDocument();
-    expect(screen.getByText(/The Donkey Did Not Make/)).toBeInTheDocument();
+    expect(pill()).toBe('Hit At Street 2');
+    expect(
+      screen.getByText('Hit At Street 2. Your Guaranteed 0.10 Chips Are Booked.')
+    ).toBeInTheDocument();
     expect(screen.getByText('Current Prize').nextElementSibling).toHaveTextContent('0.10');
     expect(screen.getByText('Street').nextElementSibling).toHaveTextContent('2');
     // The receipt still waits for the scene's own terminal frame.
@@ -549,14 +574,14 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     expect(regions()[0].querySelectorAll('[role="status"]')).toHaveLength(0);
     const said = () => regions()[0].textContent ?? '';
     expect(said()).toContain('Street 1 Crossed. Book 1.10 Chips Now Or Cross For 1.35.');
-    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
     await settle();
     // The server has answered. The region has not changed what it says.
     expect(said()).toContain('Street 1 Crossed. Book 1.10 Chips Now Or Cross For 1.35.');
-    expect(said()).not.toContain('The Donkey Did Not Make');
+    expect(said()).not.toContain('Your Guaranteed');
     fireEvent.click(screen.getByRole('button', { name: 'Present' }));
     expect(said()).not.toContain('Street 1 Crossed');
-    expect(said()).toContain('The Donkey Did Not Make This Crossing.');
+    expect(said()).toContain('Hit At Street 2. Your Guaranteed 0.10 Chips Are Booked.');
   });
 
   /**
@@ -598,7 +623,7 @@ describe('the exit guard holds money in flight, not a won game that cannot start
       'data-paused',
       'false'
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
     await settle();
     fireEvent.click(screen.getByRole('button', { name: 'Present' }));
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
@@ -613,7 +638,7 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     backend.state.mockResolvedValue({ ...state, open_round: openRound });
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    expect(screen.getByRole('button', { name: 'Cross Street' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Cross Street/ })).toBeInTheDocument();
     expect(guardHolds()).toBe(true);
   });
 });
@@ -656,7 +681,7 @@ describe('nothing the page reads waits for a press', () => {
     backend.state.mockResolvedValue({ ...state, open_round: openRound });
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
     await settle();
-    expect(screen.getByRole('button', { name: 'Cross Street' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Cross Street/ })).toBeInTheDocument();
     await advance(60000);
     expect(backend.rpc).toHaveBeenCalledTimes(1);
   });
@@ -769,7 +794,7 @@ describe('a refusal that is not about the ticket never traps the player', () => 
     await advance(15000);
     await advance(6000);
     expect(backend.start).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole('button', { name: 'Cross Street' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Cross Street/ })).toBeInTheDocument();
   });
 });
 
@@ -805,18 +830,19 @@ describe('each street settles on its own answer', () => {
   it('never reads the whole game again for an open street, and the next press carries it', async () => {
     backend.act.mockResolvedValueOnce(street([0, 1])).mockResolvedValueOnce(street([0, 1, 2]));
     const reads = await inPlay();
-    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
     await settle();
     // One round trip for the street: the move answered, and nothing read the
     // game back to learn what the answer already said.
     expect(backend.act).toHaveBeenCalledTimes(1);
     expect(backend.state.mock.calls.length).toBe(reads);
-    // The controls still belong to the scene until it presents the street.
-    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    // The controls still belong to the scene until it presents the street,
+    // and the plate names the move that is out.
+    fireEvent.click(screen.getByRole('button', { name: 'Crossing' }));
     expect(backend.act).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
-    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
     await settle();
     expect(backend.act).toHaveBeenCalledTimes(2);
     // The second move is the next street, not a replay of the first.
@@ -836,7 +862,7 @@ describe('each street settles on its own answer', () => {
           confirm = resolve;
         })
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
     await settle();
     // Money may have moved: nothing is printed, the exit is held, the receipt
     // is withheld, and the page is already reading the confirmed round back.
@@ -863,12 +889,12 @@ describe('each street settles on its own answer', () => {
     backend.state
       .mockRejectedValueOnce(new Error('The Network Dropped'))
       .mockImplementation(() => new Promise(() => {}));
-    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
     await settle();
     // The move was answered. A lost background read is not an unconfirmed move.
     expect(screen.queryByText('Confirming Your Move')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Present' }));
-    expect(screen.getByText('Round Over')).toBeInTheDocument();
+    expect(screen.getByText('Hit At Street 2')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
     expect(screen.getByRole('dialog', { name: '0.10 Chips' })).toBeInTheDocument();
@@ -927,7 +953,7 @@ describe('a blank seed never stalls a won game', () => {
     expect(backend.start.mock.calls[0][0].seed).toMatch(/^[0-9a-f]{32}$/);
     // The ticket in hand is the one it was sent on: nothing was dropped.
     expect(backend.start.mock.calls[0][0].commitId).toBe(dealt[0].commit_id);
-    expect(screen.getByRole('button', { name: 'Cross Street' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Cross Street/ })).toBeInTheDocument();
     expect(guardHolds()).toBe(true);
     noCheckControl();
   });
@@ -974,7 +1000,7 @@ describe('focus stays on the plate from street to street', () => {
     await settle();
     await answerOffer();
     await advance(5000);
-    const plate = screen.getByRole('button', { name: 'Cross Street' });
+    const plate = screen.getByRole('button', { name: /^Cross Street/ });
     plate.focus();
     fireEvent.click(plate);
     await settle();
@@ -1019,5 +1045,203 @@ describe('focus stays on the plate from street to street', () => {
     const tile = screen.getByRole('button', { name: 'Choose A Tile' });
     expect(tile).toBeDisabled();
     expect(tile).not.toHaveAttribute('aria-disabled');
+  });
+});
+
+/**
+ * EVERY CHOICE NAMES ITS CHIPS, AND EVERY OUTCOME HAS ONE NAME (review
+ * 2026-09-22). Donkey Cross is one decision - take this amount or risk it for
+ * that one - and neither number was on the plate the player pressed ("Cross
+ * Street", "Book The Win"), while the guarantee sat in a bay above the road
+ * and never appeared on the scene. One hit answered to six names between the
+ * scene, the readout, the receipt, the history row and the rules, and a booked
+ * round's receipt told the player the donkey "would have reached" the street
+ * it did reach.
+ */
+describe('every choice names its chips, and every outcome has one name', () => {
+  /** The crossing ladder the server deals today, so a street reads 1.45x. */
+  const road = (round: Record<string, unknown>) => ({
+    ...opened('crossing'),
+    mode: 'road',
+    minimum_payout_chips: 0.2,
+    ...round,
+  });
+  /** A road roll that leaves the crossing ending exactly at this street. */
+  const ROLL = {
+    1: '140737488355327',
+    2: '105553116266495',
+    5: '52776558133247',
+    12: '4398046511103',
+  };
+  const alone = () =>
+    backend.awardState.mockResolvedValue({ enabled: false, award: null, gameState: null });
+
+  it('puts the chips at stake on both plates, and the guarantee on the scene', async () => {
+    alone();
+    backend.state.mockResolvedValue({
+      ...state,
+      open_round: road({ picked: [0, 1], prizes: [2.2, 2.9, 3.7] }),
+    });
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    // What the plate says, and what a screen reader hears from it.
+    const cross = screen.getByRole('button', { name: 'Cross Street 3 For 3.70 Chips' });
+    expect(cross).toHaveTextContent('Cross For 3.70');
+    const book = screen.getByRole('button', { name: 'Book The Win For 2.90 Chips' });
+    expect(book).toHaveTextContent('Book 2.90');
+    // The guarantee goes to the scene, beside the amount being risked.
+    expect(screen.getByRole('region', { name: 'Scene open' })).toHaveAttribute('data-floor', '0.2');
+  });
+
+  it('names the move that is out on the plate and in the pill', async () => {
+    alone();
+    backend.state.mockResolvedValue({
+      ...state,
+      open_round: road({ picked: [0], prizes: [2.2, 2.9, 3.7] }),
+    });
+    backend.act.mockReturnValue(new Promise(() => {}));
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
+    await settle();
+    expect(pill()).toBe('Crossing');
+    expect(screen.getByRole('button', { name: 'Crossing' })).toBeInTheDocument();
+    cleanup();
+    backend.state.mockResolvedValue({
+      ...state,
+      open_round: road({ picked: [0], prizes: [2.2, 2.9, 3.7] }),
+    });
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: /^Book The Win/ }));
+    await settle();
+    expect(pill()).toBe('Booking Win');
+    expect(screen.getByRole('button', { name: 'Booking Win' })).toBeInTheDocument();
+  });
+
+  /** Every sentence a finished crossing prints, read off one finished round. */
+  const ends = async (result: Record<string, unknown>) => {
+    alone();
+    // The round is open once; the read that follows the move is a finished
+    // game, exactly as the server answers a round that has just ended.
+    backend.state
+      .mockResolvedValueOnce({
+        ...state,
+        open_round: road({ picked: [0], prizes: [2.2, 2.9, 3.7] }),
+      })
+      .mockResolvedValue(state);
+    backend.act.mockResolvedValue(
+      road({ proof: { ...fixtures.receipts.crossing.proof }, ...result })
+    );
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Present' }));
+    const said = (spoken().at(-1)?.textContent ?? '').trim();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
+    await settle();
+    const receipt = screen.getByRole('dialog');
+    return {
+      pill: pill(),
+      said,
+      eyebrow: receipt.querySelector('[data-eyebrow]')?.textContent ?? '',
+      detail: receipt.querySelector('[data-detail]')?.textContent ?? '',
+    };
+  };
+
+  it('says the same thing about a hit wherever it says it', async () => {
+    expect(
+      await ends({
+        status: 'lost',
+        picked: [0, 1],
+        payout_chips: 0.2,
+        proof: { ...fixtures.receipts.crossing.proof, road_roll: ROLL[1] },
+      })
+    ).toEqual({
+      pill: 'Hit At Street 2',
+      said: 'Hit At Street 2. Your Guaranteed 0.20 Chips Are Booked.',
+      eyebrow: 'Guarantee Paid',
+      detail: 'Your Prize Is Booked. Hit At Street 2. Returning To Diamond Spins.',
+    });
+  });
+
+  it('reads Round Over, not a guarantee, when a hit paid nothing', async () => {
+    const { eyebrow, said } = await ends({
+      status: 'lost',
+      picked: [0, 1],
+      payout_chips: 0,
+      minimum_payout_chips: 0,
+    });
+    expect(eyebrow).toBe('Round Over');
+    expect(said).toBe('Hit At Street 2. Your Guaranteed 0.00 Chips Are Booked.');
+  });
+
+  it('tells a booked round the street after it was the crash', async () => {
+    const {
+      pill: status,
+      said,
+      eyebrow,
+      detail,
+    } = await ends({
+      status: 'cashed',
+      picked: [0, 1],
+      payout_chips: 1.45,
+      proof: { ...fixtures.receipts.crossing.proof, road_roll: ROLL[2] },
+    });
+    expect(status).toBe('Win Booked');
+    expect(said).toBe('Booked At Street 2 At 1.45x. Street 3 Was The Crash.');
+    expect(eyebrow).toBe('');
+    expect(detail).toBe(
+      'Your Prize Is Booked. Street 2 At 1.45x; Street 3 Was The Crash. Returning To Diamond Spins.'
+    );
+  });
+
+  it('tells a booked round how much further the road actually went', async () => {
+    const { said, detail } = await ends({
+      status: 'cashed',
+      picked: [0, 1],
+      payout_chips: 1.45,
+      proof: { ...fixtures.receipts.crossing.proof, road_roll: ROLL[5] },
+    });
+    expect(said).toBe(
+      'Booked At Street 2 At 1.45x. The Donkey Would Have Made It To Street 5 At 3.15x.'
+    );
+    expect(detail).toBe(
+      'Your Prize Is Booked. Street 2 At 1.45x; The Donkey Would Have Made It To Street 5 At 3.15x. Returning To Diamond Spins.'
+    );
+  });
+
+  it('never tells a round booked at the limit that it would have reached where it did', async () => {
+    const { said, detail } = await ends({
+      status: 'cashed',
+      picked: Array.from({ length: 12 }, (_, i) => i),
+      payout_chips: 20,
+      max_steps: 12,
+      proof: { ...fixtures.receipts.crossing.proof, road_roll: ROLL[12] },
+    });
+    expect(said).toBe(
+      'Booked At Street 12 At 20.00x. The Donkey Would Have Crossed Every Street, To 20.00x.'
+    );
+    expect(detail).toBe(
+      'Your Prize Is Booked. Street 12 At 20.00x; The Donkey Would Have Crossed Every Street, To 20.00x. Returning To Diamond Spins.'
+    );
+  });
+
+  it('names a finished round in Recent Rounds the way the scene named it', async () => {
+    alone();
+    backend.state.mockResolvedValue({
+      ...state,
+      history: [
+        road({ id: 'a', status: 'cashed', picked: [0, 1], payout_chips: 1.45 }),
+        road({ id: 'b', status: 'lost', picked: [0, 1, 2], payout_chips: 0.2 }),
+        road({ id: 'c', status: 'lost', picked: [0], payout_chips: 0, minimum_payout_chips: 0 }),
+      ],
+    });
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    expect(screen.getByText('Booked At Street 2 · 1.45x')).toBeInTheDocument();
+    expect(screen.getByText('Hit At Street 3 · Guarantee Paid')).toBeInTheDocument();
+    expect(screen.getByText('Hit At Street 1')).toBeInTheDocument();
   });
 });

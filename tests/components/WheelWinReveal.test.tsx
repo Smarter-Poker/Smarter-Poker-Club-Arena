@@ -6,7 +6,12 @@ vi.mock('../../src/components/common/Modal', () => ({
   Modal: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 vi.mock('../../src/components/console/SpadeConsole', () => ({
-  SpadeConsole: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  SpadeConsole: ({ children, eyebrow }: { children: React.ReactNode; eyebrow?: string }) => (
+    <div>
+      <p data-eyebrow>{eyebrow}</p>
+      {children}
+    </div>
+  ),
 }));
 vi.mock('../../src/utils/animationSpeed', () => ({ getAnimationSpeed: () => 1 }));
 
@@ -66,5 +71,47 @@ describe('the winning sector opens the awarded experience', () => {
     expect(screen.getByRole('button', { name: 'Continue' })).toHaveFocus();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(opened).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * A RECEIPT SAYS WHAT IT IS (2026-09-22). Every chips receipt was headed "You
+ * Won", including the one a Donkey Cross hit or a Crash crash pays out of the
+ * guaranteed minimum. The wheel's own prizes are always won and keep it.
+ */
+describe('a receipt that is not a win says so', () => {
+  const eyebrow = () => document.querySelector('[data-eyebrow]')?.textContent;
+  it('heads the receipt with what the round was, when it was not a win', () => {
+    render(
+      <WheelWinReveal
+        prize={{ kind: 'chips' }}
+        title="0.10 Chips"
+        detail="Hit At Street 3."
+        eyebrow="Guarantee Paid"
+        onOpen={vi.fn()}
+      />
+    );
+    expect(eyebrow()).toBe('Guarantee Paid');
+  });
+  it('keeps You Won, and the wheel upgrade, when nothing overrides it', () => {
+    const { unmount } = render(
+      <WheelWinReveal
+        prize={{ kind: 'chips' }}
+        title="3 Chips"
+        detail="Paid To Your Account"
+        onOpen={vi.fn()}
+      />
+    );
+    expect(eyebrow()).toBe('You Won');
+    unmount();
+    render(
+      <WheelWinReveal
+        prize={{ kind: 'upgrade' }}
+        title="Super Spin"
+        detail="Your Next Spin Is Doubled"
+        onOpen={vi.fn()}
+      />
+    );
+    expect(eyebrow()).toBe('Wheel Upgrade');
   });
 });

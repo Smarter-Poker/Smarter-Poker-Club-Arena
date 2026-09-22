@@ -52,6 +52,15 @@ interface Props {
   /** The settled chips of a finished round. */
   payoutChips?: number;
   /**
+   * What a hit pays: the round's own sealed floor while one is open, else the
+   * quote the award carries. This game is one decision - take this amount or
+   * risk it for that one - and the amount a hit still pays belongs beside the
+   * amount at risk, not in a bay above the road.
+   */
+  floorChips?: number | null;
+  /** That floor is a Super award's, which is worth saying by name. */
+  superFloor?: boolean;
+  /**
    * Nothing on screen is looking at the scene: an offer over an idle road, or
    * a receipt on top of it. The clock, the beats and completion carry on; only
    * the draw call is skipped.
@@ -1046,17 +1055,22 @@ function CrossingScene(props: Props) {
   const mult = (index: number) =>
     streetMultiplier(ladder[Math.min(Math.max(0, index), lastStreet - 1)]);
   const booked = props.payoutChips ?? reached;
+  const floor = props.floorChips ?? null;
+  /** The amount a hit still pays, said beside the amount being risked. */
+  const guarantee =
+    floor === null
+      ? null
+      : `${props.superFloor ? 'Super Guarantee' : 'A Hit Pays'} ${gameChips(floor)}`;
+  const reach = `${lastStreet} Streets Up To ${mult(lastStreet - 1)}`;
   const readout = lost
     ? {
-        label: `Bust On Street ${shownStep}`,
+        label: `Hit At Street ${shownStep}`,
         value:
           props.payoutChips === undefined
             ? 'Round Over'
-            : `${gameChips(props.payoutChips)} Chips Kept`,
+            : `${gameChips(props.payoutChips)} Chips Paid`,
         note:
-          props.payoutChips === undefined
-            ? 'The Donkey Did Not Make It Across'
-            : 'The Guaranteed Minimum Is Yours',
+          props.payoutChips === undefined ? 'The Donkey Did Not Make It Across' : 'Your Guarantee',
       }
     : shownPhase === 'cashed'
       ? {
@@ -1065,9 +1079,11 @@ function CrossingScene(props: Props) {
           note:
             props.roadEnd === null
               ? `${mult(shownStep - 1)} Reached`
-              : props.roadEnd === 0
-                ? 'The Donkey Would Have Stopped Before Street 1'
-                : `The Donkey Would Have Reached Street ${props.roadEnd}`,
+              : props.roadEnd >= lastStreet
+                ? 'It Would Have Crossed Every Street'
+                : props.roadEnd <= shownStep
+                  ? `Street ${props.roadEnd + 1} Was The Crash`
+                  : `It Would Have Made It To Street ${props.roadEnd}`,
         }
       : shownStep > 0
         ? {
@@ -1075,19 +1091,31 @@ function CrossingScene(props: Props) {
             value: reached === null ? mult(shownStep - 1) : `${gameChips(reached)} Chips`,
             note:
               shownStep < lastStreet
-                ? `Next Street Pays ${mult(shownStep)}${ahead === null ? '' : ` For ${gameChips(ahead)} Chips`}`
+                ? [
+                    ahead === null
+                      ? `Next Street At ${mult(shownStep)}`
+                      : `Next Street ${gameChips(ahead)} At ${mult(shownStep)}`,
+                    guarantee,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')
                 : 'The Final Street. Book The Win.',
           }
         : {
             label: 'First Street Pays',
             value: ahead === null ? mult(0) : `${gameChips(ahead)} Chips At ${mult(0)}`,
-            note: `${lastStreet} Streets Up To ${mult(lastStreet - 1)}`,
+            note:
+              floor === null
+                ? reach
+                : `${props.superFloor ? 'A Super Hit Still Pays' : 'A Hit Still Pays'} ${gameChips(floor)} Chips · ${reach}`,
           };
   return (
     <div className={styles.scene} ref={host} data-motion="keep" data-phase={shownPhase}>
       <div className={styles.caption}>
         {lost
-          ? 'Collision · Round Over'
+          ? // ONE NAME FOR THIS OUTCOME, in the caption's own two-part shape:
+            // the same words the readout, the receipt and the history row use.
+            `Hit At Street ${shownStep}${props.payoutChips ? ' · Guarantee Paid' : ''}`
           : shownPhase === 'cashed'
             ? 'Win Booked · Showing The Remaining Route'
             : shownPhase === 'idle'

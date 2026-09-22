@@ -98,6 +98,12 @@ the other. The first render of this page did exactly that. The shark consoles
 here pass a title and no subtitle; `WaitListModal`, the only other shark
 caller, never passed one.
 
+**Fixed the same day.** The shark and riveted heads now carry measured
+three-line bands and a shark console prints a title and a subtitle cleanly;
+`tests/painted-zones-never-overlap.law.test.ts` keeps them apart. Nothing on
+this page moved. See
+[`2026-09-22-the-console-zones-that-sat-on-each-other.md`](./2026-09-22-the-console-zones-that-sat-on-each-other.md).
+
 ## Verified
 
 `npx tsc --noEmit -p tsconfig.app.json` clean. `check-css-modules`,

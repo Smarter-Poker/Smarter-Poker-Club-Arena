@@ -95,22 +95,6 @@ fi
 cmp "$fixture/diamond-before.jsonl" "$fixture/diamond-after-daily.jsonl"
 echo 'PASS: both Diamond probes reached their complete terminal and all public/auth rows rolled back'
 
-# Promo-first and exact Main Bank shortfall for all four game payout categories.
-bank_status=0
-"${diamond_psql[@]}" -f "$root/tests/sql/diamond-games-bank-fallback.sql" \
-  > "$fixture/bank.stdout" 2> "$fixture/bank.stderr" || bank_status=$?
-cat "$fixture/bank.stdout" "$fixture/bank.stderr"
-expected_bank='NOTICE:  PASS Diamond Main Bank fallback: Union and Club, Promo first, exact shortfall, four game categories, balanced journals, actual invoices/messages/notifications, host isolation, atomic insufficient cover'
-if [ "$bank_status" -ne 0 ] ||
-   [ "$(grep -Fc "$expected_bank" "$fixture/bank.stderr")" -ne 1 ] ||
-   grep -Eq 'ERROR:|WARNING:|FATAL:|PANIC:' "$fixture/bank.stderr"; then
-  echo 'Diamond Main Bank probe did not reach its exact rollback terminal' >&2
-  exit 1
-fi
-"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-after-bank.jsonl"
-cmp "$fixture/diamond-before.jsonl" "$fixture/diamond-after-bank.jsonl"
-echo 'PASS: Diamond Main Bank payout, invoice and notification rows rolled back'
-
 # New game regressions require their exact success witness and all-row rollback.
 run_game_probe() {
   local name="$1" expected="$2"
@@ -124,6 +108,35 @@ run_game_probe() {
   cmp "$fixture/diamond-before.jsonl" "$fixture/$name-after.jsonl"
   echo "PASS: $name and all money legs rolled back"
 }
+
+# --- D3 settlement burn and quiet ledger 2026-09-21 --- (R17 half; the burn half is appended after the last Diamond entry)
+# The captured roster predates 20260921052548. Install that gate, reproduce the
+# latent refusal it causes for every authenticated Diamond Spins prize on a union
+# host (and what the per-prize documents looked like), then close both at the
+# root: the document trigger no longer fires for a Diamond Spins ledger category
+# (owner ruling 2026-09-21 R17). Every later probe runs on the quiet ledger.
+"${diamond_psql[@]}" -f "$diamond/quiet-ledger-dependencies.sql"
+run_game_probe diamond-spins-quiet-ledger-before 'NOTICE:  PASS Quiet ledger reproduction: the gated roster refuses every authenticated union prize (player and owner) with accounting_invoice_recipient_missing, and the engine-paid union prize still issues one document, two Messenger invoices, two notifications and two pushes'
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20260921202827_diamond_spins_prize_legs_keep_their_ledger_rows_and_issue_no.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-spins-quiet-ledger 'NOTICE:  PASS Quiet ledger: five Diamond Spins categories named once, union and club, promo and bank legs paid to an authenticated player and by the owner with exact chip_ledger, chip_transactions and union wallet rows and zero documents, messages, notifications or pushes; a non-Diamond leg still documents'
+
+# Promo-first and exact Main Bank shortfall for all four game payout categories.
+bank_status=0
+"${diamond_psql[@]}" -f "$root/tests/sql/diamond-games-bank-fallback.sql" \
+  > "$fixture/bank.stdout" 2> "$fixture/bank.stderr" || bank_status=$?
+cat "$fixture/bank.stdout" "$fixture/bank.stderr"
+expected_bank='NOTICE:  PASS Diamond Main Bank fallback: Union and Club, Promo first, exact shortfall, four game categories, balanced journals, no documents, messages or notifications (owner ruling 2026-09-21 R17), host isolation, atomic insufficient cover'
+if [ "$bank_status" -ne 0 ] ||
+   [ "$(grep -Fc "$expected_bank" "$fixture/bank.stderr")" -ne 1 ] ||
+   grep -Eq 'ERROR:|WARNING:|FATAL:|PANIC:' "$fixture/bank.stderr"; then
+  echo 'Diamond Main Bank probe did not reach its exact rollback terminal' >&2
+  exit 1
+fi
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-after-bank.jsonl"
+cmp "$fixture/diamond-before.jsonl" "$fixture/diamond-after-bank.jsonl"
+echo 'PASS: Diamond Main Bank payout rows rolled back'
+
 run_game_probe diamond-plinko-denominations 'NOTICE:  PASS Plinko denominations: nine choices, Double Down, exact drop budget, sealed outcomes, owner custody, Promo payout, replay and invalid allocation rollback'
 run_game_probe diamond-wheel-funded-awards 'NOTICE:  PASS Wheel v2: twelve fixed outcomes, exact model, sealed Upgrade, owner custody, inventory, prepaid four-game budgets, Double Down, replay identity, reserved cover, claimed Mint entry, independent welcome and private authority'
 
@@ -207,6 +220,31 @@ run_game_probe diamond-crash-clicked-multiplier 'NOTICE:  PASS Crash clicked mul
 run_game_probe diamond-first-step-and-paid-floor 'NOTICE:  PASS First step and paid floor: floors exact for every stake 25..2500 on four stake kinds, crash never below 1.10x and every target 0.80B, street one certain and every street 0.80B, mines dealt around the first pick and fair, owner example 2500+2500 pays at least 50 on all four games, add-on debited once as itself with one custody movement and replay-safe, every payout journaled once from promo, ordinary half floor and 0.80x first steps, old round keeps 1.01x;'
 run_game_probe diamond-crash-round-is-sealed 'NOTICE:  PASS Crash round sealed: cash-out, instant crash and time settlement through the lock with nothing sealed moved, 36 rewrites refused (21 sealed columns, 2 settlement columns on a round still open, the minimum, a smuggled crash point, a settled edit, 2 deletes, 8 ticket re-spends, un-spends, rewrites and deletes), expired ticket swept, live tickets kept, maintenance escape unchanged'
 
+# --- D3 settlement burn and quiet ledger 2026-09-21 --- (burn half, owner rulings R14, R16, R17)
+# 1. The migration applies over a database that already holds a day settled
+#    under the pre-burn contract and an older open day (production's shape on
+#    2026-09-21): the settled day is untouched, the open day burns when it settles.
+"${diamond_psql[@]}" -f "$diamond/daily-burn-dependencies.sql"
+"${diamond_psql[@]}" -c 'CREATE DATABASE diamond_custody_legacy TEMPLATE diamond_games_probe OWNER postgres'
+legacy_psql=("$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$fixture/socket" -p 55487 -U postgres -d diamond_custody_legacy)
+"${legacy_psql[@]}" -f "$diamond/daily-burn-legacy-seed.sql" > "$fixture/burn-legacy-seed.stdout"
+"${legacy_psql[@]}" -f "$root/supabase/migrations/20260921202834_diamond_spins_daily_settlement_burns_twenty_percent_of_a_pro.sql"
+"${legacy_psql[@]}" -f "$diamond/daily-burn-legacy-assert.sql" > "$fixture/burn-legacy.stdout" 2> "$fixture/burn-legacy.stderr"
+cat "$fixture/burn-legacy.stdout" "$fixture/burn-legacy.stderr"
+if [ "$(grep -Fc 'NOTICE:  PASS Daily burn installation:' "$fixture/burn-legacy.stderr")" -ne 1 ] || grep -Eq 'ERROR:|WARNING:|FATAL:|PANIC:' "$fixture/burn-legacy.stderr"; then
+  echo 'The burn migration did not install cleanly over a pre-burn settled day' >&2
+  exit 1
+fi
+# 2. The burn itself, the three statement lines, the addendum receipt, and the
+#    R16 audit that every spin movement has its ledger row, all rolled back.
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20260921202834_diamond_spins_daily_settlement_burns_twenty_percent_of_a_pro.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-spins-daily-profit-burn 'NOTICE:  PASS Daily profit burn: 210 net burns 42 and credits 168 in one transfer with one register burn row, negative, odd, tiny and zero days, exact rounding, supply and trial balance unchanged, replay writes nothing, burn failure rolls back, quiet statement notice with no push, three statement lines, base agreement keeps play open and the addendum receipt is separate'
+run_game_probe diamond-spins-every-movement-has-a-ledger-row 'NOTICE:  PASS Every movement has a ledger row: exact entry journal and custody intake per spin, Promo-first then bank chip prizes journaled in chip_ledger, chip_transactions and union wallet rows, diamond prizes both sides, item grants as feature_purchases with retired custody, bonus as an award only, day equals movements, wallets equal journals, no documents'
+
+# 3. The two-connection settlement race now runs on the burn contract (moved
+#    here from the pre-burn state; its assert expects one transfer of 80, one
+#    burn of 20 and no push).
 # Observe a genuine two-connection duplicate race in a SECOND disposable local
 # database. Its commits never touch production or the rollback-probe baseline.
 "${diamond_psql[@]}" -c 'CREATE DATABASE diamond_custody_race TEMPLATE diamond_games_probe OWNER postgres'

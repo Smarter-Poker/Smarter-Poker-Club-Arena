@@ -228,15 +228,28 @@ function DiamondCrashGame() {
     return () => cancelAnimationFrame(frame);
   }, [phase, round?.round_id, round?.growth_k, round?.cap_cents, startedAtLocal, cashing]);
 
+  /** Reads the game and quotes the entry. Every read clears the quote before
+   * it asks, so the latest read owns the quote, whoever made it (the quote's
+   * own effect, the end of a round, the refresh that ends a break): its answer
+   * is the quote, and its failure is counted here and read again on the
+   * quote's schedule below. A read overtaken by a newer one counts for nothing. */
   const loadState = useCallback(
     async (uuid: string) => {
       const generation = ++stateGeneration.current;
       setQuotedAmount(null);
       const amount = bonusTotal(budgetRef.current);
-      const next = await DiamondGamesService.getState(uuid, 'crash', Math.min(amount, 5000));
+      let next: GameState;
+      try {
+        next = await DiamondGamesService.getState(uuid, 'crash', Math.min(amount, 5000));
+      } catch (error) {
+        if (live() && generation === stateGeneration.current)
+          setQuoteFailures((count) => count + 1);
+        throw error;
+      }
       if (!live() || generation !== stateGeneration.current) return next;
       setState(next);
       setQuotedAmount(amount);
+      setQuoteFailures(0);
       setWaitSeconds(next.player?.seconds_until_next ?? 0);
       return next;
     },
@@ -551,28 +564,25 @@ function DiamondCrashGame() {
     waitSeconds <= 0
   );
 
-  // A failed entry quote is read again on the same widening schedule, so Start
-  // never sits on "Checking Your Entry" until somebody reloads the page.
+  // The entry is quoted whenever it changes and after every round. A failed
+  // quote, this read's or any other (loadState counts them), is read again on
+  // the same widening schedule, so Start never sits on "Checking Your Entry"
+  // until somebody reloads the page.
   useEffect(() => {
     if (!clubUuid || !validBonusBudget(budget) || open || starting) return;
-    let cancelled = false;
-    loadState(clubUuid)
-      .then(() => {
-        if (!cancelled && live()) setQuoteFailures(0);
-      })
-      .catch((e) => {
-        reportError(e, 'DiamondCrashPage.entryQuote');
-        if (!cancelled && live()) setQuoteFailures((count) => count + 1);
-      });
-    return () => {
-      cancelled = true;
-    };
+    loadState(clubUuid).catch((e) => reportError(e, 'DiamondCrashPage.entryQuote'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubUuid, budget.base, budget.doubled, open, starting, loadState, quoteTry]);
-  useAutoSettle(quoteFailures > 0 && !open && !starting, quoteFailures, async () => {
-    setQuoteTry((count) => count + 1);
-    return true;
-  });
+  // Behind the skeleton and the reconnect screen the load's own retry reads
+  // the game, so the quote does not read it a second time there.
+  useAutoSettle(
+    quoteFailures > 0 && !open && !starting && !loading && !loadError,
+    quoteFailures,
+    async () => {
+      setQuoteTry((count) => count + 1);
+      return true;
+    }
+  );
 
   const cycleAuto = useCallback(() => {
     if (open || starting || running) return;

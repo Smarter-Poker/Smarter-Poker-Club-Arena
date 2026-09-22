@@ -23,6 +23,13 @@ import { prefersReducedMotion, getAnimationSpeed } from '../../utils/animationSp
 import { reportError } from '../../utils/errorReporter';
 import styles from './ChoiceScene.module.css';
 
+/**
+ * A beat of the crossing: the donkey landed on a street, the car reached it,
+ * or the win was booked. The scene decides when each one happens, because the
+ * scene is the only thing that knows where the donkey is.
+ */
+export type CrossingMoment = 'landed' | 'hit' | 'booked';
+
 interface Props {
   game: ChoiceGame;
   picked: number[];
@@ -41,6 +48,8 @@ interface Props {
   betChips?: number;
   /** The settled chips of a finished round. */
   payoutChips?: number;
+  /** Fired once per beat, on the first frame that shows it, and never before. */
+  onMoment?: (moment: CrossingMoment, street: number) => void;
 }
 
 /** "1.10x" and "20.00x": a street's multiplier always reads with two decimals. */
@@ -169,6 +178,34 @@ const SIGN_INK = {
 } as const;
 const SIGN_SLOTS = 16;
 
+/** What the scene is showing, which trails the confirmed round it is playing out. */
+interface Shown {
+  roundId: string;
+  step: number;
+  phase: Props['phase'];
+}
+/** A beat the scene still owes the page, and the frame that earns it. */
+interface Pending {
+  moments: readonly CrossingMoment[];
+  next: Shown;
+  at: 'now' | 'walk' | 'hit';
+}
+/**
+ * The beats a confirmed advance owes, and when they are played: a crossing
+ * lands when the walk completes, a collision reads when the car reaches the
+ * donkey, and a win booked on the street the donkey already stands on has
+ * nothing left to walk for.
+ */
+function momentsFor(prev: Shown, next: Shown): Pick<Pending, 'moments' | 'at'> {
+  if (next.phase === 'lost') return { moments: ['hit'], at: 'hit' };
+  if (next.phase === 'open') return { moments: ['landed'], at: 'walk' };
+  if (next.phase === 'cashed')
+    return next.step > prev.step
+      ? { moments: ['landed', 'booked'], at: 'walk' }
+      : { moments: ['booked'], at: 'now' };
+  return { moments: [], at: 'now' };
+}
+
 function CrossingScene(props: Props) {
   const host = useRef<HTMLDivElement>(null),
     latest = useRef(props);
@@ -176,10 +213,44 @@ function CrossingScene(props: Props) {
   const [failed, setFailed] = useState(false);
   const ladder = props.ladder ?? ROAD_LADDERS[CHOICE_MODE.crossing];
   const step = props.picked.length;
-  const lost = props.phase === 'lost';
+  /**
+   * THE SCENE OWNS THE REVEAL. A confirmed answer lands on the page the moment
+   * the server speaks, half a second before the car reaches the donkey. Every
+   * surface the scene draws reads from what it is SHOWING instead: the
+   * caption, the readout, the bust stamp and the strip stay on the street the
+   * donkey is actually standing on until the beat arrives.
+   */
+  const [shown, setShown] = useState<Shown>(() => ({
+    roundId: props.roundId ?? '',
+    step,
+    phase: props.phase,
+  }));
+  const shownRef = useRef(shown);
+  const pending = useRef<Pending | null>(null);
+  // Held in a ref so the draw loop, which is mounted once, always calls the
+  // live one without listing it as a dependency it cannot have.
+  const commit = useRef((next: Shown, moments: readonly CrossingMoment[]) => {
+    pending.current = null;
+    shownRef.current = next;
+    setShown(next);
+    for (const moment of moments) latest.current.onMoment?.(moment, next.step);
+  });
+  const lost = shown.phase === 'lost';
+  const reducedMotion = prefersReducedMotion();
   useEffect(() => {
     if (failed) latest.current.onSettled?.();
   }, [failed, props.phase, props.picked.length]);
+  // A scene with no animation to time the reveal against gives it at once:
+  // reduced motion, and a scene whose animation has failed. The same rule as
+  // the failed -> onSettled effect above.
+  useEffect(() => {
+    if (!failed && !reducedMotion) return;
+    const was = shownRef.current;
+    const next: Shown = { roundId: props.roundId ?? '', step, phase: props.phase };
+    if (was.roundId === next.roundId && was.step === next.step && was.phase === next.phase) return;
+    const advanced = next.roundId !== '' && next.roundId === was.roundId && next.phase !== 'idle';
+    commit.current(next, advanced ? momentsFor(was, next).moments : []);
+  }, [failed, reducedMotion, props.roundId, props.phase, step]);
   useEffect(() => {
     const node = host.current;
     if (!node) return;
@@ -397,6 +468,7 @@ function CrossingScene(props: Props) {
       actual = 0,
       from = 0,
       to = 0,
+      stalled = 0,
       notified = false;
     let lastVisibleFrame: number | null = null;
     const visibilityChanged = () => {
@@ -446,10 +518,28 @@ function CrossingScene(props: Props) {
       }
       const roundChanged = newSignature !== signature;
       if (roundChanged) {
+        // A beat still owed is played out before the round moves on, so fast
+        // play never swallows the street the player just crossed.
+        if (pending.current) commit.current(pending.current.next, pending.current.moments);
+        const was = shownRef.current;
+        const id = p.roundId ?? '';
+        // Only a round that advanced under its own id has a beat to show. A
+        // first frame, a new round or an idle scene is placed where it stands,
+        // which also stops a resumed open round hopping across every lane.
+        const advanced = signature !== '' && id !== '' && id === was.roundId && p.phase !== 'idle';
+        const next: Shown = { roundId: id, step, phase: p.phase };
+        const owed = advanced ? momentsFor(was, next) : null;
         signature = newSignature;
-        from = p.phase === 'idle' ? 0 : actual;
         to = streetCenter(step);
+        if (owed && owed.moments.length) {
+          from = actual;
+          pending.current = { moments: owed.moments, next, at: owed.at };
+        } else {
+          from = to;
+          commit.current(next, []);
+        }
         sceneElapsed = 0;
+        stalled = 0;
         notified = false;
       } else sceneElapsed += visibleDelta;
       if (roadChanged || roundChanged) paintSigns(road, step, p.phase);
@@ -488,7 +578,8 @@ function CrossingScene(props: Props) {
       });
       impactCar.visible = p.phase === 'lost';
       flash.visible = false;
-      let finished = walk === 1;
+      let finished = walk === 1,
+        struck = false;
       if (p.phase === 'lost') {
         // Stretched with the walk, so the car never arrives before the donkey.
         const impact = collisionAt(elapsed, getAnimationSpeed(), reduced);
@@ -502,6 +593,7 @@ function CrossingScene(props: Props) {
           flash.visible = impact.fall < 0.5;
           flash.scale.setScalar(0.5 + impact.fall);
         }
+        struck = impact.hit;
         finished = impact.finished;
       }
       let focus = actual;
@@ -526,10 +618,26 @@ function CrossingScene(props: Props) {
       // The shadow box follows the view, so every street in frame keeps its shadows.
       key.position.x = view.x - 4;
       key.target.position.x = view.x;
-      if (frames.render() && finished && !notified) {
+      const owed = pending.current;
+      const ready =
+        owed !== null && (owed.at === 'now' || (owed.at === 'walk' ? walk === 1 : struck));
+      const submitted = frames.render();
+      // A beat belongs to the frame that shows it: the same terminal-frame
+      // rule completion follows, so neither ever runs ahead of the picture.
+      if (submitted && ready && owed) commit.current(owed.next, owed.moments);
+      if (submitted && finished && !notified) {
         notified = true;
         p.onSettled?.();
       }
+      // A beat nobody can see is not worth holding a round on. After eight
+      // seconds of visible time with no frame submitted, the reveal goes to
+      // the failed path, which settles it and prints the fallback line. This
+      // is the ONLY watchdog here: completion itself still waits for its
+      // terminal frame however long that takes.
+      if (pending.current) {
+        stalled = submitted ? 0 : stalled + visibleDelta;
+        if (stalled >= 8000) setFailed(true);
+      } else stalled = 0;
     };
     raf = requestAnimationFrame(draw);
     const lost = (e: Event) => {
@@ -580,70 +688,73 @@ function CrossingScene(props: Props) {
   }, []);
   // The strip keeps the street the donkey stands on in view without stealing the page scroll.
   const currentStreet = useRef<HTMLLIElement>(null);
+  // Everything below prints the street the scene is showing; the prizes, the
+  // ladder and the settled chips are the round's own numbers, printed as given.
+  const shownStep = shown.step,
+    shownPhase = shown.phase;
   useEffect(() => {
     const item = currentStreet.current;
     if (item && typeof item.scrollIntoView === 'function')
       item.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'auto' });
-  }, [step, props.phase, props.roundId]);
-  const reached = step > 0 ? (props.prizes?.[step - 1] ?? null) : null;
-  const ahead = props.prizes?.[step] ?? null;
+  }, [shownStep, shownPhase, shown.roundId]);
+  const reached = shownStep > 0 ? (props.prizes?.[shownStep - 1] ?? null) : null;
+  const ahead = props.prizes?.[shownStep] ?? null;
   const lastStreet = ladder.length;
   /** A street beyond the ladder (a saved round on another road) reads as its last street. */
   const mult = (index: number) =>
     streetMultiplier(ladder[Math.min(Math.max(0, index), lastStreet - 1)]);
   const booked = props.payoutChips ?? reached;
-  const readout =
-    props.phase === 'lost'
+  const readout = lost
+    ? {
+        label: `Bust On Street ${shownStep}`,
+        value:
+          props.payoutChips === undefined
+            ? 'Round Over'
+            : `${gameChips(props.payoutChips)} Chips Kept`,
+        note:
+          props.payoutChips === undefined
+            ? 'The Donkey Did Not Make It Across'
+            : 'The Guaranteed Minimum Is Yours',
+      }
+    : shownPhase === 'cashed'
       ? {
-          label: `Bust On Street ${step}`,
-          value:
-            props.payoutChips === undefined
-              ? 'Round Over'
-              : `${gameChips(props.payoutChips)} Chips Kept`,
+          label: `Booked At Street ${shownStep}`,
+          value: booked === null ? 'Win Booked' : `${gameChips(booked)} Chips`,
           note:
-            props.payoutChips === undefined
-              ? 'The Donkey Did Not Make It Across'
-              : 'The Guaranteed Minimum Is Yours',
+            props.roadEnd === null
+              ? `${mult(shownStep - 1)} Reached`
+              : props.roadEnd === 0
+                ? 'The Donkey Would Have Stopped Before Street 1'
+                : `The Donkey Would Have Reached Street ${props.roadEnd}`,
         }
-      : props.phase === 'cashed'
+      : shownStep > 0
         ? {
-            label: `Booked At Street ${step}`,
-            value: booked === null ? 'Win Booked' : `${gameChips(booked)} Chips`,
+            label: 'Cash Out Value',
+            value: reached === null ? mult(shownStep - 1) : `${gameChips(reached)} Chips`,
             note:
-              props.roadEnd === null
-                ? `${mult(step - 1)} Reached`
-                : props.roadEnd === 0
-                  ? 'The Donkey Would Have Stopped Before Street 1'
-                  : `The Donkey Would Have Reached Street ${props.roadEnd}`,
+              shownStep < lastStreet
+                ? `Next Street Pays ${mult(shownStep)}${ahead === null ? '' : ` For ${gameChips(ahead)} Chips`}`
+                : 'The Final Street. Book The Win.',
           }
-        : step > 0
-          ? {
-              label: 'Cash Out Value',
-              value: reached === null ? mult(step - 1) : `${gameChips(reached)} Chips`,
-              note:
-                step < lastStreet
-                  ? `Next Street Pays ${mult(step)}${ahead === null ? '' : ` For ${gameChips(ahead)} Chips`}`
-                  : 'The Final Street. Book The Win.',
-            }
-          : {
-              label: 'First Street Pays',
-              value: ahead === null ? mult(0) : `${gameChips(ahead)} Chips At ${mult(0)}`,
-              note: `${lastStreet} Streets Up To ${mult(lastStreet - 1)}`,
-            };
+        : {
+            label: 'First Street Pays',
+            value: ahead === null ? mult(0) : `${gameChips(ahead)} Chips At ${mult(0)}`,
+            note: `${lastStreet} Streets Up To ${mult(lastStreet - 1)}`,
+          };
   return (
-    <div className={styles.scene} ref={host} data-motion="keep" data-phase={props.phase}>
+    <div className={styles.scene} ref={host} data-motion="keep" data-phase={shownPhase}>
       <div className={styles.caption}>
         {lost
           ? 'Collision · Round Over'
-          : props.phase === 'cashed'
+          : shownPhase === 'cashed'
             ? 'Win Booked · Showing The Remaining Route'
-            : props.phase === 'idle'
+            : shownPhase === 'idle'
               ? 'Start · Highway Ahead'
               : // Never "Next Street Clear": the next street is sealed, and the
                 // traffic on screen does not decide it.
-                step === 0
+                shownStep === 0
                 ? 'Start · Your Move'
-                : `Safe On Street ${step} · Your Move`}
+                : `Safe On Street ${shownStep} · Your Move`}
       </div>
       <div className={styles.readout} aria-live="polite" data-tone={lost ? 'bust' : undefined}>
         <span className={styles.readoutLabel}>{readout.label}</span>
@@ -651,23 +762,23 @@ function CrossingScene(props: Props) {
         <span className={styles.readoutNote}>{readout.note}</span>
       </div>
       {lost && (
-        <div className={styles.bust} role="status" aria-label={`Bust On Street ${step}`}>
+        <div className={styles.bust} role="status" aria-label={`Bust On Street ${shownStep}`}>
           <span>Bust</span>
         </div>
       )}
       <ol className={styles.streets} aria-label="Streets And Their Multipliers">
         {ladder.map((cents, index) => {
           const street = index + 1;
-          const state = streetState(street, step, props.phase);
+          const state = streetState(street, shownStep, shownPhase);
           const prize = props.prizes?.[index];
           return (
             <li
               key={street}
-              ref={street === step ? currentStreet : undefined}
+              ref={street === shownStep ? currentStreet : undefined}
               className={styles.street}
               data-state={state}
               data-hazard={hazardBand(streetHazard(index, ladder.length))}
-              aria-current={street === step ? 'step' : undefined}
+              aria-current={street === shownStep ? 'step' : undefined}
               aria-label={`Street ${street} Pays ${streetMultiplier(cents)}${prize === undefined ? '' : `, ${gameChips(prize)} Chips`}`}
             >
               <span className={styles.streetNumber}>{street}</span>

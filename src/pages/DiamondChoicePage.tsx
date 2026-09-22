@@ -92,6 +92,11 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const [legacyState, setState] = useState<ChoiceState | null>(null);
   const [quotedEntry, setQuotedEntry] = useState<string | null>(null);
   const [round, setRound] = useState<ChoiceRound | null>(null);
+  // The round the console is still PRINTING while the scene plays the street
+  // out. The confirmed answer lands in `round` the moment the server speaks;
+  // the pill, the bays, the readout and the plate labels keep showing the
+  // round the player can still see until the scene says the donkey got there.
+  const [printed, setPrinted] = useState<ChoiceRound | null>(null);
   const [completionId, setCompletionId] = useState<string | null>(null);
   const [revealedId, setRevealedId] = useState<string | null>(null);
   // The one setting. Nobody picks a difficulty; the payout carries it, and the
@@ -480,8 +485,10 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         game === 'crossing' &&
         action === 'pick' &&
         (next.status !== round.status || next.picked.length !== round.picked.length)
-      )
+      ) {
+        setPrinted(round);
         setSceneBusy(true);
+      }
       setRound(next);
       triggerHaptic(next.status === 'lost' ? 'heavy' : 'light');
       await load(uuid);
@@ -540,17 +547,21 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     `${bet}:${seed}:${refusal.opening}`,
     () => void startRef.current()
   );
-  const picks = round?.picked.length ?? 0;
-  const prizes = open ? round.prizes : (state?.prizes ?? []);
+  // Presentation only. Every gate - the exit guard, the auto-start, the
+  // receipt, the round the scene is given - still reads `round` itself.
+  const view = printed ?? round;
+  const viewOpen = view?.status === 'open';
+  const picks = view?.picked.length ?? 0;
+  const prizes = viewOpen ? view.prizes : (state?.prizes ?? []);
   const prize =
-    round?.status === 'lost'
-      ? round.payout_chips
-      : round?.status === 'cashed'
-        ? round.payout_chips
-        : open && picks > 0
+    view?.status === 'lost'
+      ? view.payout_chips
+      : view?.status === 'cashed'
+        ? view.payout_chips
+        : viewOpen && picks > 0
           ? prizes[picks - 1]
           : 0;
-  const nextPrize = open ? prizes[picks] : round ? undefined : prizes[0];
+  const nextPrize = viewOpen ? prizes[picks] : view ? undefined : prizes[0];
   const ladder = ROAD_LADDERS[(round?.mode ?? mode) as RoadRisk];
   const roadEnd =
     game === 'crossing' && round?.proof && ladder
@@ -571,11 +582,11 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       ? 'Settling'
       : busy
         ? 'One Moment'
-        : open
+        : viewOpen
           ? 'In Play'
-          : round?.status === 'cashed'
+          : view?.status === 'cashed'
             ? 'Win Booked'
-            : round?.status === 'lost'
+            : view?.status === 'lost'
               ? 'Round Over'
               : 'Ready';
   // Money in flight holds the page. A won game holds it only while it can
@@ -597,7 +608,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         sceneBusy),
     () => setError('Finish Your Bonus Game Before Leaving.')
   );
-  const cashLabel = open && picks > 0 ? 'Book The Win' : 'Refresh';
+  const cashLabel = viewOpen && picks > 0 ? 'Book The Win' : 'Refresh';
   // History is available for proof, but must not replay an old collision on entry.
   const sceneRound = round?.id === completionId ? round : null;
   const phase = sceneRound?.status ?? 'idle';
@@ -615,14 +626,14 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       return null;
     }
   })();
-  const guaranteedChips = open
-    ? (round.minimum_payout_chips ?? 0)
+  const guaranteedChips = viewOpen
+    ? (view.minimum_payout_chips ?? 0)
     : earned.quote
       ? earned.quote.minimumPayoutChips
       : earned.ready && !earned.award
         ? standardFloor
         : null;
-  const guaranteedSuper = open ? upgraded : earned.quote?.guarantee === 'super';
+  const guaranteedSuper = viewOpen ? upgraded : earned.quote?.guarantee === 'super';
   const promise = earned.quote ? guaranteeCopy(game, earned.quote) : null;
   return (
     <div className={`${styles.page} ${styles.fullscreenPage}`}>
@@ -681,7 +692,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           disabled: busy || sceneBusy || uncertain,
         }}
         primary={{
-          label: open
+          label: viewOpen
             ? game === 'crossing'
               ? 'Cross Street'
               : 'Choose A Tile'
@@ -705,9 +716,13 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           game={game}
           roundId={sceneRound?.id}
           onSettled={() => {
+            setPrinted(null);
             setSceneBusy(false);
             if (sceneRound && sceneRound.status !== 'open') setRevealedId(sceneRound.id);
           }}
+          // The scene reached the beat it was holding: the console prints the
+          // confirmed round from here on.
+          onMoment={() => setPrinted(null)}
           phase={phase}
           picked={sceneRound?.picked ?? []}
           mines={sceneRound?.proof?.mine_cells ?? null}
@@ -733,37 +748,37 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               <p className="sc-copy sc-ink--red">{error}</p>
             )
           ) : null}
-          {round?.status === 'cashed' ? (
+          {view?.status === 'cashed' ? (
             <>
-              <strong className="sc-ink--gold">{gameChips(round.payout_chips)} Chips Booked</strong>
+              <strong className="sc-ink--gold">{gameChips(view.payout_chips)} Chips Booked</strong>
               <p className="sc-copy">
                 {game === 'mines'
                   ? 'All Remaining Mines Are Revealed. Your Win Is Saved.'
                   : roadEnd === 0
                     ? 'The Donkey Would Have Stopped Before Street 1.'
                     : `Would Have Reached Street ${roadEnd} At ${multiplierLabel(roadMultiplier)}.${roadEnd === ladder?.length ? ' The Final Street.' : ' The Next Street Was The Crash.'}${payableRoadEnd < (roadEnd ?? 0) ? ` Your Round Would Have Booked At Its Street ${payableRoadEnd} Limit First.` : ''}`}{' '}
-                {game === 'crossing' && payableRoadEnd > 0 && round.proof ? (
+                {game === 'crossing' && payableRoadEnd > 0 && view.proof ? (
                   <SealedPrize
-                    serverSeed={round.proof.server_seed}
-                    clientSeed={round.client_seed}
-                    nonce={round.nonce}
-                    betChips={round.bet_chips}
+                    serverSeed={view.proof.server_seed}
+                    clientSeed={view.client_seed}
+                    nonce={view.nonce}
+                    betChips={view.bet_chips}
                     multiplierCents={ladder[payableRoadEnd - 1]}
                     roundingStep={payableRoadEnd}
                   />
                 ) : null}
               </p>
             </>
-          ) : round?.status === 'lost' ? (
+          ) : view?.status === 'lost' ? (
             <p className="sc-copy">
               {game === 'mines'
                 ? 'A Mine Ended This Round. All Mines Are Revealed.'
                 : 'The Donkey Did Not Make This Crossing.'}{' '}
-              {gameChips(round.payout_chips)} Chips Booked.
+              {gameChips(view.payout_chips)} Chips Booked.
             </p>
           ) : (
             <p className="sc-copy" role="status">
-              {open
+              {viewOpen
                 ? game === 'mines'
                   ? 'Reveal A Tile Or Book The Win.'
                   : 'Cross The Next Street Or Book The Win.'

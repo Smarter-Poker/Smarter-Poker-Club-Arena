@@ -74,9 +74,19 @@ vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: s
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/services/HapticService', () => ({ triggerHaptic: vi.fn() }));
 vi.mock('../../src/components/games/ChoiceScene', () => ({
-  default: ({ phase, onSettled }: { phase: string; onSettled: () => void }) => (
+  default: ({
+    phase,
+    onSettled,
+    onMoment,
+  }: {
+    phase: string;
+    onSettled: () => void;
+    onMoment?: (moment: string, street: number) => void;
+  }) => (
     <section aria-label={`Scene ${phase}`}>
       <button onClick={onSettled}>Finish Scene</button>
+      {/* The beat the real scene reaches when the car gets to the donkey. */}
+      <button onClick={() => onMoment?.('hit', 2)}>Present</button>
     </section>
   ),
 }));
@@ -460,6 +470,49 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     // Nor does the next award start underneath the receipt.
     await advance(10000);
     expect(backend.start).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * THE CONSOLE NEVER OUTRUNS THE SCENE (review 2026-09-22). fn_choice_act
+   * answers while the donkey is still in the road, and the pill, the bays and
+   * the page readout used to print the outcome about three quarters of a
+   * second before the car reached it.
+   */
+  it('keeps the console on the crossing until the scene presents the result', async () => {
+    backend.start.mockImplementationOnce(async (input: { game: Game }) => ({
+      ...opened(input.game),
+      picked: [0],
+    }));
+    backend.act.mockResolvedValue({
+      ...fixtures.receipts.crossing,
+      status: 'lost',
+      picked: [0, 1],
+      payout_chips: 0.1,
+      award_id: AWARD.id,
+    });
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    await answerOffer();
+    await advance(5000);
+    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    await settle();
+    // The server has answered. Nothing on the console says so yet.
+    expect(screen.getByText('In Play')).toBeInTheDocument();
+    expect(screen.queryByText('Round Over')).toBeNull();
+    expect(screen.queryByText(/The Donkey Did Not Make/)).toBeNull();
+    expect(screen.getByText('Current Prize').nextElementSibling).toHaveTextContent('1.10');
+    expect(screen.getByText('Street').nextElementSibling).toHaveTextContent('1');
+    // The scene reaches the moment of impact: now the console prints it.
+    fireEvent.click(screen.getByRole('button', { name: 'Present' }));
+    expect(screen.getByText('Round Over')).toBeInTheDocument();
+    expect(screen.getByText(/The Donkey Did Not Make/)).toBeInTheDocument();
+    expect(screen.getByText('Current Prize').nextElementSibling).toHaveTextContent('0.10');
+    expect(screen.getByText('Street').nextElementSibling).toHaveTextContent('2');
+    // The receipt still waits for the scene's own terminal frame.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
+    await settle();
+    expect(screen.getByRole('dialog', { name: '0.10 Chips' })).toBeInTheDocument();
   });
 
   it('holds an open round, whatever the award says', async () => {

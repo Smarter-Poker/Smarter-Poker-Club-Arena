@@ -6,12 +6,25 @@
  * Reduced motion collapses the motion and keeps every one of those meanings.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const frames = vi.hoisted(() => ({ render: vi.fn(() => true), dispose: vi.fn() }));
-vi.mock('../../src/components/games/gpuFrameRenderer', () => ({ gpuFrameRenderer: () => frames }));
+/** The scene graph the component builds, captured as it hands it to the renderer. */
+type Graph = {
+  getObjectByName(name: string): { parent: { position: { x: number } } | null } | undefined;
+};
+const frames = vi.hoisted(() => ({
+  render: vi.fn(() => true),
+  dispose: vi.fn(),
+  scene: null as unknown,
+}));
+vi.mock('../../src/components/games/gpuFrameRenderer', () => ({
+  gpuFrameRenderer: (_renderer: unknown, scene: unknown) => {
+    frames.scene = scene;
+    return frames;
+  },
+}));
 vi.mock('three', async (original) => {
   const actual = await original<typeof import('three')>();
   return {
@@ -38,12 +51,34 @@ import ChoiceScene, {
   streetMultiplier,
 } from '../../src/components/games/ChoiceScene';
 import { CHOICE_MODE, ROAD_LADDERS } from '../../src/utils/diamondChoiceMath';
+import { streetCenter } from '../../src/utils/crossingScene';
 
 const ROAD = ROAD_LADDERS[CHOICE_MODE.crossing];
 const PRIZES = [2.17, 5.33, 15.2];
+type SceneProps = Parameters<typeof ChoiceScene>[0];
 let frame: FrameRequestCallback = () => {};
 const fillText = vi.fn();
-function mountScene(props: Partial<Parameters<typeof ChoiceScene>[0]> = {}) {
+/** One animation frame, flushed the way the browser flushes it: the scene may
+ *  advance its own presentation state on any frame it draws. */
+const tick = (at: number) => act(() => frame(at));
+/** What the OS says about reduced motion, stated by every test that depends on
+ *  it: the scene reads the preference once per mount, so a test that inherited
+ *  it from the test before would prove nothing. */
+const motion = (reduced: boolean) =>
+  vi.spyOn(window, 'matchMedia').mockImplementation(
+    (query: string) =>
+      ({
+        matches: reduced && query.includes('prefers-reduced-motion'),
+        media: query,
+        addEventListener() {},
+        removeEventListener() {},
+        addListener() {},
+        removeListener() {},
+        onchange: null,
+        dispatchEvent: () => false,
+      }) as MediaQueryList
+  );
+function mountScene(props: Partial<SceneProps> = {}) {
   vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
     frame = callback;
     return 1;
@@ -55,7 +90,8 @@ function mountScene(props: Partial<Parameters<typeof ChoiceScene>[0]> = {}) {
     fillText,
   } as unknown as CanvasRenderingContext2D);
   const onSettled = vi.fn();
-  const view = render(
+  const onMoment = vi.fn();
+  const scene = (extra: Partial<SceneProps>) => (
     <ChoiceScene
       game="crossing"
       roundId="round-1"
@@ -66,12 +102,20 @@ function mountScene(props: Partial<Parameters<typeof ChoiceScene>[0]> = {}) {
       busy={false}
       onPick={() => {}}
       onSettled={onSettled}
+      onMoment={onMoment}
       prizes={PRIZES}
       betChips={1}
       {...props}
+      {...extra}
     />
   );
-  return { view, onSettled };
+  const view = render(scene({}));
+  return {
+    view,
+    onSettled,
+    onMoment,
+    update: (next: Partial<SceneProps>) => view.rerender(scene(next)),
+  };
 }
 afterEach(() => {
   cleanup();
@@ -95,7 +139,7 @@ describe('every street prints what it pays', () => {
   });
   it('paints the multiplier on every three-dimensional street sign as well', () => {
     mountScene({ phase: 'open', picked: [0] });
-    frame(100);
+    tick(100);
     const printed = fillText.mock.calls.map((call) => call[0]);
     expect(printed).toContain('START');
     expect(printed).toContain('STREET 1');
@@ -167,28 +211,16 @@ describe('a loss is a brief, clear bust', () => {
     );
     expect(screen.getByText('The Guaranteed Minimum Is Yours')).toBeInTheDocument();
     expect(screen.getAllByRole('listitem')[2]).toHaveAttribute('data-state', 'crash');
-    frame(100);
-    frame(1000);
+    tick(100);
+    tick(1000);
     expect(onSettled).not.toHaveBeenCalled();
-    frame(1600);
+    tick(1600);
     expect(onSettled).toHaveBeenCalledTimes(1);
   });
   it('collapses the collision to its final frame under reduced motion and keeps the bust', () => {
-    vi.spyOn(window, 'matchMedia').mockImplementation(
-      (query: string) =>
-        ({
-          matches: query.includes('prefers-reduced-motion'),
-          media: query,
-          addEventListener() {},
-          removeEventListener() {},
-          addListener() {},
-          removeListener() {},
-          onchange: null,
-          dispatchEvent: () => false,
-        }) as MediaQueryList
-    );
+    motion(true);
     const { onSettled } = mountScene({ phase: 'lost', picked: [0, 1], payoutChips: 0.1 });
-    frame(100);
+    tick(100);
     expect(onSettled).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('status', { name: 'Bust On Street 2' })).toBeInTheDocument();
     expect(screen.getAllByRole('listitem')).toHaveLength(ROAD.length);
@@ -203,5 +235,73 @@ describe('a loss is a brief, clear bust', () => {
     expect(reduced).toContain('.street {');
     expect(css).not.toContain(':hover');
     expect(css).not.toContain('—');
+  });
+});
+
+/**
+ * THE SCENE OWNS THE REVEAL (review 2026-09-22). fn_choice_act answers about
+ * three quarters of a second before the car reaches the donkey. Every HTML
+ * surface used to flip on that answer, so the caption, the readout, the stamp
+ * and the strip all told the player the result while the donkey was still
+ * standing in the road. The scene now prints what it is SHOWING and hands the
+ * page one beat per street, on the frame that shows it.
+ */
+describe('the scene owns the reveal', () => {
+  it('keeps the readout and the strip on the open street until the car arrives', () => {
+    motion(false);
+    const scene = mountScene({ phase: 'open', picked: [0] });
+    tick(50);
+    scene.update({ phase: 'lost', picked: [0, 1], payoutChips: 0.2 });
+    tick(100);
+    // 500 ms of scene time: the donkey has walked, the car has not arrived
+    // (collisionAt puts the strike at 745 ms).
+    tick(600);
+    expect(screen.queryByText('Bust')).toBeNull();
+    expect(screen.queryByText('Bust On Street 2')).toBeNull();
+    expect(screen.getByText('Cash Out Value').nextElementSibling).toHaveTextContent('2.17 Chips');
+    expect(screen.getAllByRole('listitem')[1]).toHaveAttribute('data-state', 'next');
+    expect(scene.onMoment).not.toHaveBeenCalled();
+    tick(1000);
+    expect(screen.getByText('Bust')).toBeInTheDocument();
+    expect(screen.getByText('Bust On Street 2').nextElementSibling).toHaveTextContent(
+      '0.20 Chips Kept'
+    );
+    expect(screen.getAllByRole('listitem')[1]).toHaveAttribute('data-state', 'crash');
+    expect(scene.onMoment.mock.calls).toEqual([['hit', 2]]);
+    tick(1100);
+    expect(scene.onMoment).toHaveBeenCalledTimes(1);
+  });
+
+  it('raises the cash-out value on the frame the donkey lands, not when the answer arrives', () => {
+    motion(false);
+    const scene = mountScene({ phase: 'open', picked: [0] });
+    tick(50);
+    scene.update({ phase: 'open', picked: [0, 1] });
+    tick(100);
+    expect(screen.getByText('Cash Out Value').nextElementSibling).toHaveTextContent('2.17 Chips');
+    tick(300);
+    expect(screen.getByText('Cash Out Value').nextElementSibling).toHaveTextContent('2.17 Chips');
+    expect(scene.onMoment).not.toHaveBeenCalled();
+    // 500 ms: the 420 ms walk is done.
+    tick(600);
+    expect(screen.getByText('Cash Out Value').nextElementSibling).toHaveTextContent('5.33 Chips');
+    expect(screen.getByText('Safe On Street 2 · Your Move')).toBeInTheDocument();
+    expect(scene.onMoment.mock.calls).toEqual([['landed', 2]]);
+  });
+
+  it('gives the beat at once under reduced motion, with no frame to wait for', () => {
+    motion(true);
+    const scene = mountScene({ phase: 'open', picked: [0] });
+    scene.update({ phase: 'lost', picked: [0, 1], payoutChips: 0.2 });
+    expect(scene.onMoment.mock.calls).toEqual([['hit', 2]]);
+    expect(screen.getByText('Bust On Street 2')).toBeInTheDocument();
+  });
+
+  it('stands a resumed open round on its own street instead of walking it from the kerb', () => {
+    motion(false);
+    mountScene({ phase: 'open', picked: [0, 1, 2] });
+    tick(100);
+    const donkey = (frames.scene as Graph).getObjectByName('walking-leg-0');
+    expect(donkey?.parent?.position.x).toBeCloseTo(streetCenter(3) - 0.12, 5);
   });
 });

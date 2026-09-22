@@ -17,6 +17,16 @@ import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
  * guaranteed minimum shipped. A number written twice drifts; a number imported
  * cannot.
  *
+ * AND SO ARE THE CRASH ODDS (fairness audit, 2026-09-22). "Instant Crash
+ * 1 In 5" was typed here when a crash paid nothing. Every live round now funds
+ * a guaranteed minimum out of its own odds, so it crashes at 1.00x 1 in 4.2 to
+ * 4.3 of the time on an ordinary award and 1 in 2.4 on a Super one, and both
+ * figures are computed here from the server's own minimum rule
+ * (fn_diamond_bonus_minimum, mirrored by diamondBonusMinimum) across every
+ * stake an award can be played at. "Up To" is the largest multiplier the
+ * server is quoting for this game right now, not the configured ceiling: the
+ * cap a round gets is set by the award it starts from.
+ *
  * THE PICTURE (#ClubArenaConsole). A balances console that only closes, the
  * week's biggest wins, then one plated console per game: the figures on the
  * glass, the state in the pill, "How It Pays" on the steel plate, the game's
@@ -35,7 +45,11 @@ import DiamondWheelService, {
   type WheelState,
 } from '../services/DiamondWheelService';
 import DiamondGamesService, { type GameState } from '../services/DiamondGamesService';
-import { multiplierLabel } from '../utils/diamondGamesFairness';
+import {
+  awardInstantCrashChances,
+  multiplierLabel,
+  oneInRangeLabel,
+} from '../utils/diamondGamesFairness';
 import { compactChips } from '../utils/format';
 import FloorFeed, { BiggestWins } from '../components/games/FloorFeed';
 import { useGameFloor } from '../hooks/useGameFloor';
@@ -211,7 +225,23 @@ export default function DiamondGamesPage() {
   const plinkoTop = plinko?.tables?.length
     ? Math.max(...plinko.tables.map((t) => t.max_multiplier_cents))
     : 100000;
-  const crashTop = crash?.config?.max_multiplier_cents ?? 100000;
+  /**
+   * THE CRASH FIGURES ARE THE SERVER'S, OR THEY ARE NOT SHOWN (2026-09-22).
+   * The largest multiplier the server quotes on a playable bet right now, and
+   * the instant-crash odds of the minimum it would seal on an ordinary and on a
+   * Super award. The lobby holds no award of its own, so both odds are derived
+   * from the game's configured bridge rate and the server's minimum rule, and
+   * each is labelled for the award it belongs to.
+   */
+  const crashQuotes = (crash?.bets ?? []).filter((b) => b.playable).map((b) => b.cap_cents);
+  const crashTop = crashQuotes.length ? Math.max(...crashQuotes) : null;
+  const crashRate = crash?.config?.diamonds_per_chip ?? 0;
+  const crashOdds = crashRate
+    ? {
+        ordinary: oneInRangeLabel(awardInstantCrashChances(1, crashRate)),
+        super: oneInRangeLabel(awardInstantCrashChances(2, crashRate)),
+      }
+    : null;
   const welcomeReady = Boolean(wheel?.available && !wheel?.frozen && wheelWelcome?.available);
   const wheelPill = welcomeReady
     ? { pill: 'Welcome Spin', ink: 'gold' as ConsoleInk }
@@ -387,13 +417,30 @@ export default function DiamondGamesPage() {
             ink="white"
             meta="Diamonds"
           />
-          <Row label="Up To" value={multiplierLabel(crashTop)} ink="gold" meta="Per Round" />
-          <Row label="Instant Crash" value="1 In 5" ink="silver" />
+          {crashTop === null ? null : (
+            <Row
+              label="Up To"
+              value={multiplierLabel(crashTop)}
+              ink="gold"
+              meta="Your Award Sets Your Round"
+            />
+          )}
+          {crashOdds ? (
+            <Row
+              label="Instant Crash"
+              value={crashOdds.ordinary}
+              ink="silver"
+              meta="On An Ordinary Award"
+            />
+          ) : null}
         </div>
         {explained === 'crash' ? (
           <p className="sc-copy">
             The Multiplier Climbs Until It Crashes. Cash Out First, By Hand Or On Auto, And The
             Round Pays Exactly Where You Cashed Out. {GUARANTEE_COPY}
+            {crashOdds
+              ? ` That Minimum Is Paid For Out Of The Odds, So A Round Crashes At 1.00x ${crashOdds.ordinary} On An Ordinary Award And ${crashOdds.super} On A Super Award.`
+              : ''}
           </p>
         ) : null}
       </SpadeConsole>

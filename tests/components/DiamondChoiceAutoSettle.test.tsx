@@ -18,7 +18,7 @@
  * Every case runs on fake timers and advances them explicitly; nothing here
  * waits on real time, so a loaded runner cannot change an outcome.
  */
-vi.mock('../../src/hooks/useLiveBonusGuard', () => ({ useLiveBonusGuard: vi.fn() }));
+vi.mock('../../src/hooks/useLiveBonusGuard', () => ({ useLiveBonusGuard: vi.fn(() => () => {}) }));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import DiamondChoicePage from '../../src/pages/DiamondChoicePage';
@@ -46,7 +46,9 @@ const backend = vi.hoisted(() => {
     BonusRefusal,
   };
 });
-vi.mock('../../src/services/DiamondChoiceService', () => ({
+vi.mock('../../src/services/DiamondChoiceService', async (original) => ({
+  // The real module's other exports (the move refusal the page reads) stay.
+  ...(await original<typeof import('../../src/services/DiamondChoiceService')>()),
   DiamondChoiceService: { state: backend.state, act: backend.act },
   parseChoiceRound: (value: unknown) => value,
 }));
@@ -315,6 +317,28 @@ describe('a refused ticket is re-dealt and the wager goes again', () => {
     expect(backend.start).toHaveBeenCalledTimes(2);
   });
 
+  it('lets the player go once fresh tickets keep being refused, rather than hold a game that will not start', async () => {
+    // Review 2026-09-22: after its re-sends the page dropped the owed wager
+    // silently. The award stayed pending with its countdown spent, so nothing
+    // started it, and the exit guard held the player on it.
+    backend.start.mockRejectedValue(
+      new backend.BonusRefusal('That Ticket Expired. A New One Is Being Dealt', true)
+    );
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    await answerOffer();
+    await advance(5000);
+    // The first send and its re-sends on fresh tickets, then no more.
+    expect(backend.start).toHaveBeenCalledTimes(3);
+    expect(new Set(backend.start.mock.calls.map((call) => call[0].commitId)).size).toBe(3);
+    await advance(60000);
+    expect(backend.start).toHaveBeenCalledTimes(3);
+    // The page says why and lets go of the player; nothing asks them to retry.
+    expect(screen.getByText('That Ticket Expired. A New One Is Being Dealt')).toBeInTheDocument();
+    expect(guardHolds()).toBe(false);
+    noCheckControl();
+  });
+
   it('restarts a pressed start the same way, once the fresh quote and ticket are in', async () => {
     backend.awardState.mockResolvedValue({ enabled: false, award: null, gameState: null });
     backend.start
@@ -508,9 +532,10 @@ describe('nothing the page reads waits for a press', () => {
     render(<DiamondChoicePage game="crossing" />);
     await settle();
     expect(backend.rpc).toHaveBeenCalledTimes(1);
-    // Another tab opened a round; the next read brings it here.
+    // Another tab opened a round. There is no Refresh to press: the page's
+    // next read (here, the re-quote when the player changes the entry) brings it.
     backend.state.mockResolvedValue({ ...state, open_round: openRound });
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    fireEvent.change(screen.getByLabelText('Entry Diamonds'), { target: { value: '150' } });
     await settle();
     expect(screen.getByRole('button', { name: 'Cross Street' })).toBeInTheDocument();
     await advance(60000);

@@ -957,7 +957,7 @@ function DiamondCrashGame() {
   // error screen offer no way to finish a bonus, so they must not hold the
   // player on a page that cannot progress. The award stays pending server-side
   // and the wheel reopens it.
-  useLiveBonusGuard(
+  const releaseGuard = useLiveBonusGuard(
     !loading &&
       !loadError &&
       Boolean(state) &&
@@ -1105,6 +1105,11 @@ function DiamondCrashGame() {
               diamonds={player?.spendable ?? null}
               disabled={starting || cashing || running || uncertain || restartOwed}
               clubId={routeClubId ?? ''}
+              leave={(to) => {
+                if (busyRef.current) return;
+                releaseGuard();
+                navigate(to);
+              }}
             />
           )
         }

@@ -535,7 +535,7 @@ function DiamondPlinkoGame() {
   // actually start: an award this page cannot start (daily limit, a closed or
   // paused game, a cooldown) never traps the player on it.
   // A wager kept for the next visit has nothing in flight: it holds nothing.
-  useLiveBonusGuard(
+  const releaseGuard = useLiveBonusGuard(
     !saved &&
       ((Boolean(earned.award) && !blocked && Boolean(ticket) && !result && !refusal.refused) ||
         busy ||
@@ -576,6 +576,11 @@ function DiamondPlinkoGame() {
               game="plinko"
               guarantee={earned.quote}
               clubId={clubId ?? ''}
+              leave={(to) => {
+                if (busyRef.current) return;
+                releaseGuard();
+                navigate(to);
+              }}
             />
           )
         }

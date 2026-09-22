@@ -737,3 +737,61 @@ describe('one name for what happened', () => {
     expect(screen.getByText('It Would Have Crossed Every Street')).toBeInTheDocument();
   });
 });
+
+/**
+ * THE STRIP SCROLLS THE STRIP, NEVER THE PAGE (2026-09-22).
+ *
+ * Keeping the current street in view was item.scrollIntoView({block:'nearest',
+ * inline:'center'}), and scrollIntoView walks every scrollable ancestor up to
+ * the document. Whenever the strip itself was off screen - the player reading
+ * the rules or the round proof mid-round, or a phone in landscape - crossing a
+ * street pulled the WINDOW back to the scene and took Book and Cross out from
+ * under the player's thumb. The strip is its own scroll container, so it is the
+ * only box that has to move.
+ */
+describe('the strip scrolls itself, never the page', () => {
+  /** jsdom lays nothing out, so the strip's geometry is stated here. */
+  const layOut = (list: HTMLElement, at: { left: number; width: number; visible: number }) => {
+    Object.defineProperty(list, 'clientWidth', { configurable: true, value: at.visible });
+    for (const item of list.querySelectorAll('li')) {
+      Object.defineProperty(item, 'offsetLeft', { configurable: true, value: at.left });
+      Object.defineProperty(item, 'offsetWidth', { configurable: true, value: at.width });
+    }
+  };
+  it('centres the current street in the list and never asks the page to scroll', () => {
+    motion(true);
+    const scrollIntoView = vi.fn();
+    const scrollTo = vi.fn();
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    Object.defineProperty(Element.prototype, 'scrollTo', { configurable: true, value: scrollTo });
+    try {
+      const { update } = mountScene({ phase: 'open', picked: [0, 1] });
+      const list = screen.getByRole('list', { name: 'Streets And Their Multipliers' });
+      layOut(list, { left: 520, width: 60, visible: 300 });
+      scrollTo.mockClear();
+      update({ phase: 'open', picked: [0, 1, 2] });
+      // The chip's left edge, less half the room left over beside it.
+      expect(scrollTo).toHaveBeenCalledWith({ left: 400, behavior: 'auto' });
+      expect(scrollIntoView, 'nothing in the scene scrolls the page').not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+      Reflect.deleteProperty(Element.prototype, 'scrollTo');
+    }
+  });
+  it('starts a new round at the first street instead of the last one crossed', () => {
+    motion(true);
+    Object.defineProperty(Element.prototype, 'scrollTo', { configurable: true, value: vi.fn() });
+    try {
+      const { update } = mountScene({ roundId: 'round-1', phase: 'open', picked: [0, 1, 2] });
+      const list = screen.getByRole('list', { name: 'Streets And Their Multipliers' });
+      list.scrollLeft = 640;
+      update({ roundId: 'round-2', phase: 'idle', picked: [] });
+      expect(list.scrollLeft).toBe(0);
+    } finally {
+      Reflect.deleteProperty(Element.prototype, 'scrollTo');
+    }
+  });
+});

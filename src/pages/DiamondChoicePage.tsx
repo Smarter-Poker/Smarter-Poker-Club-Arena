@@ -903,13 +903,21 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           disabled: uncertain || (open ? game === 'mines' : blocked || !ticket),
           'aria-disabled': busy || sceneBusy || undefined,
         }}
+        // THE DAY BELONGS BESIDE THE CONTROLS, NOT OVER THE GAME. On a phone
+        // the console is one column, so this line sat between the header and
+        // the scene and pushed both plates down by its own height in every
+        // round. It renders at every count - "Today: 0 Of 200 Rounds" is still
+        // a count - so hiding it while a round is open would jump the scene the
+        // instant the auto-start fires. It moves instead.
+        footer={
+          <TodayLine
+            used={state?.rounds_today ?? 0}
+            cap={state?.daily_limit ?? 0}
+            spentDiamonds={state?.diamonds_today ?? 0}
+            noun="Rounds"
+          />
+        }
       >
-        <TodayLine
-          used={state?.rounds_today ?? 0}
-          cap={state?.daily_limit ?? 0}
-          spentDiamonds={state?.diamonds_today ?? 0}
-          noun="Rounds"
-        />
         <ChoiceScene
           game={game}
           roundId={sceneRound?.id}
@@ -1001,32 +1009,31 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                 ? `A Mine Ended This Round. All Mines Are Revealed. ${gameChips(view.payout_chips)} Chips Booked.`
                 : `Hit At Street ${picks}. Your Guaranteed ${gameChips(view.payout_chips)} Chips Are Booked.`}
             </p>
-          ) : (
+          ) : viewOpen ? // sentence repeating them without the amounts was a line of screen // move and what it pays ("Book 1.45", "Cross For 1.85"), so a // AN OPEN ROUND SAYS ITSELF ON THE PLATES. Both of them name the
+          // the decision itself needed on a 375px phone. The region stays for
+          // errors and for the result.
+          null : (
             <p className="sc-copy">
-              {viewOpen
-                ? game === 'mines'
-                  ? 'Reveal A Tile Or Book The Win.'
-                  : 'Cross The Next Street Or Book The Win.'
-                : !earned.ready
-                  ? (earned.error ??
-                    (earned.loading
-                      ? 'Checking Your Wheel Award'
-                      : 'Win This Game On Diamond Spins To Play.'))
-                  : !state
-                    ? 'Loading Your Game'
-                    : quotedEntry !== `${uuid}:${game}:${mode}:${bet}`
-                      ? 'Checking Your Entry'
-                      : blocked
-                        ? state.frozen
-                          ? 'Games Are Paused For Maintenance. Play Resumes By Itself After The Break.'
-                          : state.diamonds < bonusWalletDebit(budget)
-                            ? 'Not Enough Diamonds For This Bet'
-                            : !state.is_member
-                              ? 'Join The Club To Play'
-                              : !state.available
-                                ? 'This Game Is Not Open Here Yet'
-                                : 'This Bet Is Not Available Right Now'
-                        : `${promise ?? `${compactChips(bet)} Diamonds To Play.`} ${state.max_steps} ${game === 'mines' ? 'Safe Picks' : 'Streets'} In This Round.`}
+              {!earned.ready
+                ? (earned.error ??
+                  (earned.loading
+                    ? 'Checking Your Wheel Award'
+                    : 'Win This Game On Diamond Spins To Play.'))
+                : !state
+                  ? 'Loading Your Game'
+                  : quotedEntry !== `${uuid}:${game}:${mode}:${bet}`
+                    ? 'Checking Your Entry'
+                    : blocked
+                      ? state.frozen
+                        ? 'Games Are Paused For Maintenance. Play Resumes By Itself After The Break.'
+                        : state.diamonds < bonusWalletDebit(budget)
+                          ? 'Not Enough Diamonds For This Bet'
+                          : !state.is_member
+                            ? 'Join The Club To Play'
+                            : !state.available
+                              ? 'This Game Is Not Open Here Yet'
+                              : 'This Bet Is Not Available Right Now'
+                      : `${promise ?? `${compactChips(bet)} Diamonds To Play.`} ${state.max_steps} ${game === 'mines' ? 'Safe Picks' : 'Streets'} In This Round.`}
             </p>
           )}
         </div>

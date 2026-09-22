@@ -12,6 +12,7 @@ export function GameConsole({
   secondary,
   primary,
   setup,
+  footer,
   children,
 }: {
   title: string;
@@ -23,6 +24,15 @@ export function GameConsole({
   secondary?: PlateButtonProps;
   primary?: PlateButtonProps;
   setup?: ReactNode;
+  /**
+   * A quiet line that belongs WITH the controls rather than over the game: the
+   * day's count and spend. Named footer, never `foot`, which already means a
+   * SpadeConsole frame kind. On a phone the console is one column, so anything
+   * left in the playfield sits between the header and the board and pushes the
+   * plates down by its own height; here it sits under them, where a player
+   * reads it after the decision instead of before it.
+   */
+  footer?: ReactNode;
   children?: ReactNode;
 } & Record<string, unknown>) {
   /**
@@ -88,6 +98,7 @@ export function GameConsole({
           {action(secondary)}
           {action(primary, true)}
         </div>
+        {footer}
       </aside>
     </section>
   );

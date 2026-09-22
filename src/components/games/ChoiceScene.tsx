@@ -1042,17 +1042,38 @@ function CrossingScene(props: Props) {
       canvas.remove();
     };
   }, []);
-  // The strip keeps the street the donkey stands on in view without stealing the page scroll.
+  /**
+   * THE STRIP SCROLLS THE STRIP, NEVER THE PAGE.
+   *
+   * Keeping the current street in view used to be scrollIntoView on the chip,
+   * and scrollIntoView walks every scrollable ancestor up to the document: any
+   * street crossed while the strip itself was off screen - reading the rules or
+   * the round proof mid-round, a landscape phone - yanked the window to the
+   * scene and took the plates out from under the player's thumb. The strip is
+   * its own scroll container, so it is the only thing that has to move: the
+   * chip is centred in the LIST's own box, and a new round starts the list back
+   * at street one.
+   */
+  const streets = useRef<HTMLOListElement>(null);
   const currentStreet = useRef<HTMLLIElement>(null);
   // Everything below prints the street the scene is showing; the prizes, the
   // ladder and the settled chips are the round's own numbers, printed as given.
   const shownStep = shown.step,
     shownPhase = shown.phase;
+  const shownRound = shown.roundId;
   useEffect(() => {
-    const item = currentStreet.current;
-    if (item && typeof item.scrollIntoView === 'function')
-      item.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'auto' });
-  }, [shownStep, shownPhase, shown.roundId]);
+    const list = streets.current;
+    if (list) list.scrollLeft = 0;
+  }, [shownRound]);
+  useEffect(() => {
+    const list = streets.current,
+      item = currentStreet.current;
+    if (!list || !item || typeof list.scrollTo !== 'function') return;
+    list.scrollTo({
+      left: item.offsetLeft - (list.clientWidth - item.offsetWidth) / 2,
+      behavior: reducedRef.current ? 'auto' : 'smooth',
+    });
+  }, [shownStep, shownPhase, shownRound]);
   const reached = shownStep > 0 ? (props.prizes?.[shownStep - 1] ?? null) : null;
   const ahead = props.prizes?.[shownStep] ?? null;
   const lastStreet = ladder.length;
@@ -1147,7 +1168,7 @@ function CrossingScene(props: Props) {
           <span>Bust</span>
         </div>
       )}
-      <ol className={styles.streets} aria-label="Streets And Their Multipliers">
+      <ol className={styles.streets} ref={streets} aria-label="Streets And Their Multipliers">
         {ladder.map((cents, index) => {
           const street = index + 1;
           const state = streetState(street, shownStep, shownPhase);

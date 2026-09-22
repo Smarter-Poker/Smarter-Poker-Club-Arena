@@ -574,3 +574,109 @@ test('Donkey Cross crosses street after street on the keyboard alone', async ({ 
   const scan = await new AxeBuilder({ page }).include('[data-game-console] aside').analyze();
   expect(scan.violations.map((violation) => violation.id)).toEqual([]);
 });
+
+/**
+ * THE MONEY DECISION IS ON THE GLASS OF THE SMALLEST PHONE (2026-09-22).
+ *
+ * Donkey Cross and Diamond Mines are one page, and on a 375 x 667 phone that
+ * page stacked the back link, the console header, the daily line, a scene
+ * sized from the viewport, a sentence the plates already say, and only then
+ * the two plates - so in EVERY round the player had to scroll to find Book and
+ * Cross. The scene's street strip made it worse: it kept the current street in
+ * view with scrollIntoView, which moves the WINDOW when the strip is off
+ * screen, so arriving at an open round scrolled the page by itself.
+ *
+ * Both are measured here on the shipping page inside its real shell, with an
+ * open round two moves in, because that is the state a player is in when the
+ * decision matters. scrollY is read as well as the plate boxes: a page that
+ * only fits because something scrolled it is not a page that fits.
+ */
+const CHOICE_PHONE_WIDTHS = [320, 375, 390, 414];
+for (const game of ['crossing', 'mines'] as const)
+  test(`${game === 'mines' ? 'Diamond Mines' : 'Donkey Cross'} keeps both plates on a 375 x 667 phone`, async ({
+    page,
+  }) => {
+    const { diamondChoicePageFixture } = await import('../helpers/diamond-choice-page-fixture.mjs');
+    const bundle = await diamondChoicePageFixture();
+    const network: string[] = [];
+    await page.route('**/*', (route) => {
+      const url = new URL(route.request().url());
+      if (url.hostname !== 'diamond-choice.local') network.push(url.href);
+      return route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' });
+    });
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.goto(`http://diamond-choice.local/choice.html?game=${game}`);
+    await page.addStyleTag({ content: bundle.css });
+    await page.addScriptTag({ content: bundle.javascript });
+
+    // The round the fixture serves is open and two moves in, so both plates
+    // carry an amount and the scene is showing a street or a board.
+    const frame = page.locator('[data-game-console]');
+    await expect(frame).toBeVisible();
+    const plates = frame.locator('> aside button');
+    await expect(plates, 'the console offers exactly the two plates').toHaveCount(2);
+    // Donkey Cross paints a road and Diamond Mines a board; both are the thing
+    // the player must still be able to see while they decide.
+    const sceneSelector = game === 'mines' ? '[aria-label="Diamond Mines Board"]' : '[data-phase]';
+    await expect(frame.locator(sceneSelector).first()).toBeVisible();
+
+    // THE PAGE DID NOT MOVE ITSELF. The street strip centres its own current
+    // chip now; nothing in the scene may scroll the window.
+    await expect
+      .poll(() => page.evaluate(() => Math.round(scrollY)), {
+        message: 'nothing on the page scrolled the window on arrival',
+        timeout: 20_000,
+      })
+      .toBe(0);
+
+    // BOTH PLATES, WHOLE, ON THE 667px GLASS, WITH THE SCENE STILL ON IT.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const shell = document.querySelector('[data-game-console]');
+            if (!shell) return ['no console'];
+            const scene = shell.querySelector(
+              shell.querySelector('[aria-label="Diamond Mines Board"]')
+                ? '[aria-label="Diamond Mines Board"]'
+                : '[data-phase]'
+            );
+            const buttons = [...shell.querySelectorAll(':scope > aside button')];
+            const wrong: string[] = [];
+            if (scrollY !== 0) wrong.push(`the page is scrolled to ${Math.round(scrollY)}`);
+            buttons.forEach((button, index) => {
+              const box = button.getBoundingClientRect();
+              const name = button.textContent?.trim() || `plate ${index + 1}`;
+              if (box.width <= 0 || box.height <= 0) wrong.push(`${name} has no size`);
+              else if (box.top < -0.5 || box.bottom > innerHeight + 0.5)
+                wrong.push(
+                  `${name} sits ${Math.round(box.top)}..${Math.round(box.bottom)} of a ${innerHeight}px phone`
+                );
+            });
+            const box = scene?.getBoundingClientRect();
+            if (!box) wrong.push('the scene is not on the page');
+            else {
+              const shown = Math.min(box.bottom, innerHeight) - Math.max(box.top, 0);
+              if (shown < 240) wrong.push(`only ${Math.round(shown)}px of the scene is on screen`);
+            }
+            return wrong;
+          }),
+        {
+          message: 'both plates and the scene share the 375 x 667 phone without scrolling',
+          timeout: 20_000,
+        }
+      )
+      .toEqual([]);
+
+    // Sideways, on every phone this page is played on.
+    for (const width of CHOICE_PHONE_WIDTHS) {
+      await page.setViewportSize({ width, height: 667 });
+      await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth), {
+          message: `${game} adds no horizontal page scroll at ${width}px`,
+          timeout: 20_000,
+        })
+        .toBeLessThanOrEqual(0);
+    }
+    expect(network).toEqual([]);
+  });

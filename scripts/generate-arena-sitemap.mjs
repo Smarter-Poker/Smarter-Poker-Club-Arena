@@ -75,15 +75,36 @@ function gitDate(files) {
   }
 }
 
+/**
+ * ONE `git log` PER ROUTE, ASKED ONCE (2026-09-22).
+ *
+ * This used to spawn a git process PER FILE and then take the newest answer,
+ * which is what `git log -1 -- a b c` already returns: the newest commit
+ * touching any of the paths. Three spawns became one, for the same date.
+ *
+ * And the answer is memoised for the life of the process, because both
+ * callers ask twice: main() builds the sitemap and then logs every route's
+ * date again, and the law test derives the whole set in one case and again in
+ * the next. Roughly 30 git subprocesses per full sweep became 7, which is
+ * what took the law test over vitest's default 5s budget on a loaded machine
+ * and blocked a push with a timeout that named no cause (CLAUDE.md 10.86).
+ *
+ * Only the git answer is cached. The build-time fallback still reads the
+ * clock it was handed.
+ */
+const gitDateByRoute = new Map();
+
 /** ISO date (YYYY-MM-DD) of the newest commit touching any of the files, or null without history. */
 export function lastModFor(route, now = new Date()) {
-  const files = [...(SOURCES[route] || []), ...SHARED_SOURCES].filter((f) =>
-    existsSync(path.join(ROOT, f))
-  );
-  const dates = files.map((f) => gitDate([f])).filter(Boolean);
-  if (dates.length === 0) return { date: now.toISOString().slice(0, 10), evidence: 'build-time' };
-  const newest = dates.map((d) => new Date(d)).sort((a, b) => b - a)[0];
-  return { date: newest.toISOString().slice(0, 10), evidence: 'git' };
+  if (!gitDateByRoute.has(route)) {
+    const files = [...(SOURCES[route] || []), ...SHARED_SOURCES].filter((f) =>
+      existsSync(path.join(ROOT, f))
+    );
+    gitDateByRoute.set(route, files.length ? gitDate(files) : null);
+  }
+  const newest = gitDateByRoute.get(route);
+  if (!newest) return { date: now.toISOString().slice(0, 10), evidence: 'build-time' };
+  return { date: new Date(newest).toISOString().slice(0, 10), evidence: 'git' };
 }
 
 export function buildSitemap(routes, now = new Date()) {

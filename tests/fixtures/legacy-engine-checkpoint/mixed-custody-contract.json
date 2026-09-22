@@ -75,10 +75,10 @@
       "acl": "{postgres=X/postgres,service_role=X/postgres}",
       "owner": "postgres",
       "config": ["search_path=pg_catalog, public, smarter_private"],
-      "body_md5": "3f78b42bcc2455701322b172ab7d42ff",
+      "body_md5": "30ad38da71405fdc960599802310e662",
       "signature": "public.fn_f06_prepare_mixed_manager_custody(uuid,uuid,uuid,uuid,jsonb,jsonb)",
       "volatility": "v",
-      "definition_md5": "ca0446a62e08d49c2d318072cf465176",
+      "definition_md5": "4f20f5a2f6d7249578931bc877869981",
       "security_definer": true
     },
     {

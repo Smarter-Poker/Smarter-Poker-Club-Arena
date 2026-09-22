@@ -68,6 +68,10 @@ function fixture(count = 1, predecessor = release) {
   let onRead: ((data: any[]) => any[]) | undefined;
   const snapshotReads: { ids: string[]; since: string }[] = [];
   let onSnapshots: ((ids: string[], since: string) => { data: any; error: any }) | undefined;
+  const seatReads: { users: string[] }[] = [];
+  let onSeats: ((users: string[]) => { data: any; error: any }) | undefined;
+  const moveReads: { ids: string[] }[] = [];
+  let onMoves: ((ids: string[]) => { data: any; error: any }) | undefined;
   class Maintenance {
     phase = 'counting_down';
     announcedAt = Date.now() - 120000;
@@ -166,7 +170,15 @@ function fixture(count = 1, predecessor = release) {
       return saved;
     }
     isMaintenanceStateDurable() {
-      return this.timeBankEngine.playerBanks.size === 0 || this.parkedBankSaveComplete;
+      // 8825 `maintenanceDurabilityReason`: only a parked bank or a SEATED
+      // player's bank needs the park write (ServerTableEngineBase.ts:5575-5585);
+      // a bank a bust left behind for a player the roster no longer holds does not.
+      const hasBanks =
+        Object.keys(this.parkedTimeBanks ?? {}).length > 0 ||
+        this.seatedPlayers.some((seat) =>
+          this.timeBankEngine.playerBanks.has(`${this.tableId}:${seat.user_id}`)
+        );
+      return !hasBanks || this.parkedBankSaveComplete;
     }
     hasReleasedProcessOwnership() {
       return !this.running && this.terminal;
@@ -296,6 +308,54 @@ function fixture(count = 1, predecessor = release) {
             };
             return { select: () => filter };
           }
+          if (name === 'table_seats') {
+            // Every open seat the residue players hold, at any table.
+            const filter: any = {
+              users: [] as string[],
+              in: (key: string, values: string[]) => {
+                expect(key).toBe('user_id');
+                filter.users = values;
+                return filter;
+              },
+              is: (key: string, value: unknown) => {
+                expect([key, value]).toEqual(['left_at', null]);
+                return filter;
+              },
+              limit: async (bound: number) => {
+                expect(bound).toBe(901);
+                seatReads.push({ users: [...filter.users] });
+                return onSeats ? onSeats(filter.users) : { data: [], error: null };
+              },
+            };
+            return {
+              select: (columns: string) => {
+                expect(columns).toBe('table_id,user_id,occupancy_id');
+                return filter;
+              },
+            };
+          }
+          if (name === 'cash_seat_moves') {
+            // When each move out of a residue table executed.
+            const filter: any = {
+              ids: [] as string[],
+              in: (key: string, values: string[]) => {
+                expect(key).toBe('id');
+                filter.ids = values;
+                return filter;
+              },
+              limit: async (bound: number) => {
+                expect(bound).toBe(filter.ids.length + 1);
+                moveReads.push({ ids: [...filter.ids] });
+                return onMoves ? onMoves(filter.ids) : { data: [], error: null };
+              },
+            };
+            return {
+              select: (columns: string) => {
+                expect(columns).toBe('id,executed_at');
+                return filter;
+              },
+            };
+          }
           expect(name).toBe('engine_presence_parked');
           return {
             select: () => ({
@@ -326,6 +386,8 @@ function fixture(count = 1, predecessor = release) {
     calls,
     rows,
     snapshotReads,
+    seatReads,
+    moveReads,
     first: [...server.tableEngines.values()][0],
     run: (discovered = [server]) =>
       legacyEngineCheckpointGuard.call(server, options, discovered, modules),
@@ -337,6 +399,12 @@ function fixture(count = 1, predecessor = release) {
     },
     onSnapshots: (hook: typeof onSnapshots) => {
       onSnapshots = hook;
+    },
+    onSeats: (hook: typeof onSeats) => {
+      onSeats = hook;
+    },
+    onMoves: (hook: typeof onMoves) => {
+      onMoves = hook;
     },
     remaining: (value: number) => {
       remaining = value;
@@ -379,6 +447,35 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
       restartAuthorized: false,
     });
     expect(f.calls).toEqual([]);
+  });
+
+  it('holds exactly the 245000ms legacy reserve the transaction accepts after a checkpoint', async () => {
+    // Entry demands 285000ms; the ~15 s entry (run 35615604946), the
+    // publisher's bounded work (20 s) and cleanup (5 s) are paid out of the
+    // candidate-proof budget, so the guard's own floor is 285000 - 40000 =
+    // 245000ms, the LEGACY_MIN_BREAK_REMAINING_MS figure
+    // engine-release-transaction.sh reads straight after the checkpoint. The
+    // 135-second rollback reserve inside it does not move.
+    const guard = readFileSync(
+      path.resolve(process.cwd(), 'server/scripts/legacy-engine-checkpoint-guard.mjs'),
+      'utf8'
+    );
+    expect(guard).toContain('const reserveMs = 245000;');
+    expect(guard).not.toContain('285000;');
+    expect(guard).not.toContain('260000;');
+    // The guard also charges its own monotonic elapsed time against the
+    // reported remaining, so the admitted case sits two seconds above the
+    // floor; every value here was a refusal under the old 285000 pin.
+    const boundary = fixture(1, checkpointA0);
+    boundary.remaining(247000);
+    expect(await boundary.run()).toMatchObject({ ok: true, attemptedTables: 1, verifiedTables: 1 });
+    const below = fixture(1, checkpointA0);
+    below.remaining(244999);
+    expect(await below.run()).toMatchObject({ ok: false, reason: 'insufficient_reserve' });
+    expect(below.calls).toEqual([]);
+    const mixed = mixedFixture();
+    mixed.remaining(247000);
+    expect(await mixed.run()).toMatchObject({ ok: true, readyForRestart: true });
   });
 
   it('retains the a0 original checkpoint generation through the announcement join', async () => {
@@ -516,6 +613,163 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     expect(f.calls).toEqual([]);
   });
 
+  /* A BANK REFUSAL NAMES ITS TABLE, AND THE FLEET THAT HOLDS THE SAME SHAPE
+     (2026-09-22). Observability only: every test below pins that the refusal,
+     its code and its order are unchanged and nothing is written, and that the
+     refusal now names the table, a player-free shape of it, and a census of
+     every engine the capture walks. Production run 35620115786 refused
+     `bank_metadata_without_bank` at 15:43:34Z on 2026-09-21 naming nothing. */
+  const terms = (result: any) => String(result.observedDetail).split(',');
+  const carried = (result: any) => {
+    // It must survive the publisher's carrier: its character class and cap.
+    expect(result.observedDetail).toMatch(/^[\w .,:/=()+-]+$/);
+    expect(result.observedDetail.length).toBeLessThanOrEqual(512);
+  };
+
+  it('names the table when a stopped engine kept the metadata of the banks its stop disposed', async () => {
+    const f = fixture(2);
+    // 8825 `stop()` disposes every live bank (`timeBankEngine.disposeAll()`)
+    // and keeps `seatedPlayers` and `timeBankMeta`.
+    Object.assign(f.first, {
+      running: false,
+      terminal: true,
+      teardownPromise: Promise.resolve(),
+      dealingLoopPromise: null,
+      readContinuationTasks: new Set(),
+    });
+    const seated = f.first.seatedPlayers[0].user_id;
+    f.first.timeBankEngine.playerBanks.clear();
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_metadata_without_bank',
+      failedCheck: 'captureEngine.bank_metadata_without_bank',
+      failedTable: f.first.tableId,
+    });
+    expect(terms(result)).toEqual(
+      expect.arrayContaining([
+        'stopped=true',
+        'seats=1',
+        'banks=0',
+        'meta=1',
+        'metaUnseated=0',
+        'metaSeatedWithoutBank=1',
+        'bankUnseated=0',
+        'fleet=2',
+        'fleetStopped=1',
+        'fleetStoppedSeatedMeta=1',
+        'fleetDepartedMeta=0',
+      ])
+    );
+    carried(result);
+    // No player identity leaves the guard.
+    expect(JSON.stringify(result)).not.toContain(seated);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('names the table when a departed player left metadata behind on a parked engine', async () => {
+    const f = fixture(2);
+    // A voluntary cashout, a seat move or a sit-out eviction removes the seat
+    // and the bank and keeps the metadata: 8825 deletes it only in the cash
+    // branch of adoptSeatRoster, for a player that branch still sees.
+    const departed = f.first.seatedPlayers[0].user_id;
+    f.first.seatedPlayers = [];
+    f.first.timeBankEngine.playerBanks.clear();
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_metadata_without_bank',
+      failedCheck: 'captureEngine.bank_metadata_without_bank',
+      failedTable: f.first.tableId,
+    });
+    expect(terms(result)).toEqual(
+      expect.arrayContaining([
+        'stopped=false',
+        'seats=0',
+        'banks=0',
+        'metaUnseated=1',
+        'metaSeatedWithoutBank=0',
+        'fleet=2',
+        'fleetStopped=0',
+        'fleetDepartedMeta=1',
+        'fleetOrphanBank=0',
+        'stoppedEvents=none',
+      ])
+    );
+    carried(result);
+    expect(JSON.stringify(result)).not.toContain(departed);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('counts the whole fleet by shape from the first refusal, naming stopped tournaments by prefix only', async () => {
+    const f = fixture(3);
+    const [stopped, departedAt, bustedAt] = [...f.server.tableEngines.values()];
+    // A quarantined manager's stopped engine: its teardown never reached
+    // `unregisterTournamentTableEngine`, so it is still in the fleet map with
+    // its roster and metadata and none of the banks its stop disposed.
+    const authority = { tournamentId: uuid(71001), leaseGeneration: uuid(71002) };
+    Object.assign(stopped, {
+      running: false,
+      terminal: true,
+      teardownPromise: Promise.resolve(),
+      dealingLoopPromise: null,
+      readContinuationTasks: new Set(),
+      engineLeaseScope: 'tournament',
+      engineLeaseVerified: true,
+      engineLeaseTournamentId: authority.tournamentId,
+      engineLeaseGeneration: authority.leaseGeneration,
+    });
+    dataActorContext.bindTournamentDataAuthorityMethods(authority, stopped);
+    stopped.timeBankEngine.playerBanks.clear();
+    // A cashout: seat and bank gone, metadata kept.
+    departedAt.seatedPlayers = [];
+    departedAt.timeBankEngine.playerBanks.clear();
+    // A tournament bust: the seat is absent from the next roster, and the
+    // cash-only teardown never removed the bank or the metadata.
+    bustedAt.seatedPlayers = [];
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_metadata_without_bank',
+      failedCheck: 'captureEngine.bank_metadata_without_bank',
+      failedTable: stopped.tableId,
+    });
+    expect(terms(result)).toEqual(
+      expect.arrayContaining([
+        `tournament=${authority.tournamentId}`,
+        'scope=tournament',
+        'fleet=3',
+        'fleetStopped=1',
+        'fleetStoppedSeatedMeta=1',
+        'fleetLiveSeatedMeta=0',
+        'fleetDepartedMeta=2',
+        'fleetOrphanBank=1',
+        'fleetF06=0',
+        'fleetBoundary=0',
+        'f06=false/false',
+        'settling=0',
+        'postTasks=false',
+        'moves=0',
+        'boundary=0/false',
+        `stoppedEvents=${authority.tournamentId.slice(0, 8)}`,
+      ])
+    );
+    carried(result);
+    for (const engine of [stopped, departedAt, bustedAt])
+      for (const userId of engine.timeBankMeta.keys())
+        expect(JSON.stringify(result)).not.toContain(userId);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('names nothing extra on a refusal that is not a per-engine one', async () => {
+    const f = fixture(2);
+    f.remaining(1000);
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'insufficient_reserve' });
+    expect(String(result.failedCheck ?? '')).not.toMatch(/^captureEngine\./);
+    expect(result.observedDetail ?? '').not.toContain('fleet=');
+  });
+
   const bindTournament = (f: ReturnType<typeof fixture>) => {
     const authority = { tournamentId: uuid(70001), leaseGeneration: uuid(70002) };
     Object.assign(f.first, {
@@ -644,7 +898,7 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     [
       'insufficient reserve',
       (f: ReturnType<typeof fixture>) => {
-        f.remaining(284999);
+        f.remaining(244999);
       },
     ],
     [
@@ -745,7 +999,7 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     f.onWrite(async () => {
       await new Promise((resolve) => setTimeout(resolve, 1));
       finished++;
-      f.remaining(284999);
+      f.remaining(244999);
     });
     const result = await f.run();
     expect(result).toMatchObject({ ok: false, reason: 'insufficient_reserve' });
@@ -822,7 +1076,15 @@ function mixedFixture() {
         move: { chips: 10 },
       });
     }
+    /* How the live 8825 manager answers under its stop-retry loop: `shared`
+       is the one frozen array; `fresh` is a NEW equal-content array per call
+       (each `stopTournamentManagerIfOwned` retry rebuilds it); `stopping` is
+       the null it returns while a retry's `teardownPromise` is set. */
+    captureMode: 'shared' | 'fresh' | 'stopping' = 'shared';
     captureDrainedF06Originals() {
+      if (this.captureMode === 'stopping') return null;
+      if (this.captureMode === 'fresh')
+        return Object.freeze(this.drainedF06Originals.map((pair) => [...pair]));
       return this.drainedF06Originals;
     }
   }
@@ -900,8 +1162,17 @@ function mixedFixture() {
     })),
   };
   Object.assign(f.options, { custodyIntent: intent });
+  const arrivalReads: { table: string; occupancies: string[] }[] = [];
+  let onArrivals: ((table: string, occupancies: string[]) => { data: any; error: any }) | undefined;
   Object.assign(f.modules.client.supabase, {
     rpc: async (name: string, input: any) => {
+      if (name === 'fn_cash_seat_move_arrivals') {
+        expect(Object.keys(input).sort()).toEqual(['p_occupancy_ids', 'p_table_id']);
+        arrivalReads.push({ table: input.p_table_id, occupancies: [...input.p_occupancy_ids] });
+        return onArrivals
+          ? onArrivals(input.p_table_id, input.p_occupancy_ids)
+          : { data: [], error: null };
+      }
       rpcCalls.push(name);
       onRpc?.(name, input);
       let data: any;
@@ -1019,12 +1290,17 @@ function mixedFixture() {
   };
   return {
     ...f,
+    Manager,
     intent,
     originals,
     abandonedOriginal,
     clearInterruptedPermit,
     receipts,
     rpcCalls,
+    arrivalReads,
+    onArrivals: (cb: typeof onArrivals) => {
+      onArrivals = cb;
+    },
     onRpc: (cb: typeof onRpc) => {
       onRpc = cb;
     },
@@ -1083,7 +1359,7 @@ describe('exact 8825 retained original custody retirement', () => {
       'missing pending map',
       (f: any) => (f.originals[0].manager.pendingTournamentParkRequests = undefined),
     ],
-    ['insufficient reserve', (f: any) => f.remaining(284999)],
+    ['insufficient reserve', (f: any) => f.remaining(244999)],
     [
       'unrestorable prior bank',
       (f: any) =>
@@ -1101,40 +1377,361 @@ describe('exact 8825 retained original custody retirement', () => {
     expect(f.server.tableEngines.size).toBe(3);
     expect(f.rpcCalls).toEqual([]);
   });
+  // The live 8825 lease-loss pass re-runs `stopTournamentManagerIfOwned` every
+  // ~5 s for the retained managers. Each retry bumps the seat move authority
+  // revision and replaces the serial tail without moving any custody, so
+  // neither is pinned any more: a bump during either RPC passes.
   it.each(['fn_f06_prepare_mixed_manager_custody', 'fn_f06_find_mixed_manager_custody'])(
-    'refuses changed local identity across %s',
+    'tolerates a seat move revision bump and a replaced serial tail across %s',
     async (name) => {
       const f = mixedFixture();
       f.onRpc((called) => {
-        if (called === name) f.originals[0].manager.tournamentSeatMoveAuthorityRevision++;
+        if (called !== name) return;
+        for (const { manager } of f.originals) {
+          manager.tournamentSeatMoveAuthorityRevision++;
+          manager.tournamentSeatMoveSerialTail = Promise.resolve();
+        }
       });
-      expect((await f.run()).ok).toBe(false);
-      expect(f.server.tableEngines.size).toBe(3);
+      expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+      expect(f.receipts.size).toBe(2);
+      expect(f.server.tableEngines.size).toBe(1);
     }
   );
   // A preflight refusal used to name only its code. These conjunctions are wide
   // and run against live state, so the code alone cost a deploy to interpret.
-  // Each sub-condition now reports itself, and the fixture proves it.
-  it('names the sub-condition when the manager vector moves', async () => {
+  // Each sub-condition now reports itself, and the fixture proves it. What is
+  // pinned is the custody the RPC names: the tournament, its lease generation
+  // and the manager that owns them.
+  it.each([
+    [
+      'lease generation',
+      (f: any) => (f.originals[0].manager.tournamentLeaseGeneration = uuid(99000)),
+      'manager.tournamentLeaseGeneration',
+    ],
+    [
+      'manager swap',
+      (f: any) =>
+        f.server.tournamentEngines.set(
+          f.originals[0].manager.tournamentId,
+          new f.Manager(f.originals[0].manager.tournamentId, 7, f.originals[0].engine)
+        ),
+      'managerMap.get(tournamentId)',
+    ],
+    [
+      'tournament id',
+      (f: any) => (f.originals[0].manager.tournamentId = uuid(99001)),
+      'manager.tournamentId',
+    ],
+  ])(
+    'names the sub-condition when the manager vector moves: %s',
+    async (_label, alter, failedCheck) => {
+      const f = mixedFixture();
+      const tournamentId = f.originals[0].manager.tournamentId;
+      // It has to move DURING the run: a change before `run()` is simply the
+      // baseline the capture takes.
+      f.onRpc(() => alter(f));
+      const result = await f.run();
+      expect(result).toMatchObject({
+        ok: false,
+        reason: 'mixed_owner_changed',
+        failedCheck,
+      });
+      // The carried key names the captured tournament, the lease generation
+      // and every drain condition, because an unlisted key never survives
+      // `legacy-engine-checkpoint.mjs` (#5034).
+      expect(result.observedDetail).toContain(`capturedTournament=${tournamentId}`);
+      expect(result.observedDetail).toContain(`tournament=${f.originals[0].manager.tournamentId}`);
+      expect(result.observedDetail).toMatch(/lease=/);
+      expect(result.observedDetail).toMatch(/drain=/);
+      // And it must survive that carrier's own character class and length cap.
+      expect(result.observedDetail.length).toBeLessThanOrEqual(512);
+      expect(result.observedDetail).toMatch(/^[\w .,:/=()+-]+$/);
+      // Nothing was retired: the refusal precedes every irreversible step.
+      expect(f.server.tableEngines.size).toBe(3);
+    }
+  );
+  // The live 8825 engine re-admits and kills a foreign cash table every ~5 s.
+  // Its arrival or departure touches no custody this checkpoint retires, so
+  // the fleet witness pins the tables the checkpoint touches, not the fleet.
+  it('tolerates a foreign cash table arriving during an RPC', async () => {
     const f = mixedFixture();
-    // It has to move DURING the run: a bump before `run()` is simply the
-    // baseline the capture takes.
-    f.onRpc(() => f.originals[0].manager.tournamentSeatMoveAuthorityRevision++);
+    // A freshly admitted cash table has dealt nothing: no live bank, so the
+    // native readiness gate (which is NOT this guard's) is already durable.
+    const foreign = new f.Table(999);
+    foreign.timeBankEngine.playerBanks.clear();
+    f.onRpc(() => f.server.tableEngines.set(uuid(999), foreign));
+    expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+    expect(f.receipts.size).toBe(2);
+    expect(f.server.tableEngines.has(uuid(999))).toBe(true);
+    for (const { engine } of f.originals)
+      expect(f.server.tableEngines.has(engine.tableId)).toBe(false);
+  });
+  it('tolerates a foreign cash table arriving and then leaving during the RPCs', async () => {
+    const f = mixedFixture();
+    let calls = 0;
+    f.onRpc(() => {
+      if (calls++ === 0) f.server.tableEngines.set(uuid(999), new f.Table(999));
+      else f.server.tableEngines.delete(uuid(999));
+    });
+    expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+    expect(f.receipts.size).toBe(2);
+    expect(f.server.tableEngines.has(uuid(999))).toBe(false);
+    expect(f.server.tableEngines.size).toBe(1);
+  });
+  /* ═══ AN ENGINE THAT NEVER STARTED HOLDS NOTHING TO CHECKPOINT (2026-09-21) ═══
+     The live 8825 engine installs the cash table 3c00d4d0 in `tableEngines`
+     BEFORE `start()`, start() fails in `start_load_table`
+     (`retained_hand_submission_pending`), `killForRestart` fences it
+     (`terminal = true`, `running = false`), `recoverDirectTableEngine` stops
+     it and deletes it, and discovery re-admits it a second or two later. The
+     snapshot caught that object on most attempts and its scheduled departure
+     refused the checkpoint. This is exactly the shape the log shows: seeded
+     `handCount` (#13062928), "Dealt 0 hands", no seat, no bank. */
+  const unstartedCashEngine = (f: ReturnType<typeof mixedFixture>, n: number) => {
+    const e: any = new f.Table(n);
+    e.seatedPlayers = [];
+    e.timeBankEngine.playerBanks.clear();
+    e.timeBankMeta.clear();
+    e.parkedTimeBanks = {};
+    e.engineLeaseScope = 'cash';
+    e.engineLeaseVerified = true;
+    e.engineLeaseGeneration = uuid(70000 + n);
+    e.f06MovementAdmission = null;
+    e.loopPhase = 'start_load_table';
+    e.dealingLoopPromise = null;
+    e.handsDealtThisSession = 0;
+    e.handCount = 13062928;
+    e.running = true;
+    e.terminal = false;
+    e.teardownPromise = null;
+    return e;
+  };
+  // killForRestart('start_failed:start_load_table') then the recovery's stop()
+  // and map delete, in that order.
+  const killAndRemove = (f: ReturnType<typeof mixedFixture>, e: any) => {
+    e.terminal = true;
+    e.running = false;
+    e.handController = null;
+    e.teardownPromise = Promise.resolve();
+    f.server.tableEngines.delete(e.tableId);
+  };
+  it('does not checkpoint an unstarted cash engine and tolerates its kill and removal during an RPC', async () => {
+    const f = mixedFixture();
+    const churning = unstartedCashEngine(f, 999);
+    f.server.tableEngines.set(churning.tableId, churning);
+    let calls = 0;
+    f.onRpc(() => {
+      if (calls++ === 1) killAndRemove(f, churning);
+    });
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: true,
+      readyForRestart: true,
+      skippedUnstarted: 1,
+      unstartedDepartures: 1,
+      unstartedReplacements: 0,
+    });
+    expect(f.receipts.size).toBe(2);
+    expect(f.calls).not.toContain('parked_' + churning.tableId);
+    expect(f.rows.has(churning.tableId)).toBe(false);
+    expect(f.server.tableEngines.has(churning.tableId)).toBe(false);
+    expect(f.server.tableEngines.size).toBe(1);
+  });
+  it('does not checkpoint an unstarted cash engine that is still present at the end', async () => {
+    const f = mixedFixture();
+    const churning = unstartedCashEngine(f, 999);
+    f.server.tableEngines.set(churning.tableId, churning);
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: true,
+      readyForRestart: true,
+      skippedUnstarted: 1,
+      unstartedDepartures: 0,
+      unstartedReplacements: 0,
+    });
+    expect(f.receipts.size).toBe(2);
+    expect(f.rows.has(churning.tableId)).toBe(false);
+    expect(f.server.tableEngines.get(churning.tableId)).toBe(churning);
+    // The engine's own fields were only read.
+    expect(churning.running).toBe(true);
+    expect(churning.terminal).toBe(false);
+  });
+  it('follows the churn: a fenced unstarted engine replaced by another unstarted generation', async () => {
+    const f = mixedFixture();
+    const first = unstartedCashEngine(f, 999);
+    f.server.tableEngines.set(first.tableId, first);
+    const second = unstartedCashEngine(f, 999);
+    let calls = 0;
+    f.onRpc(() => {
+      const call = calls++;
+      if (call === 0) killAndRemove(f, first);
+      if (call === 1) f.server.tableEngines.set(second.tableId, second);
+      if (call === 2) killAndRemove(f, second);
+    });
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: true,
+      skippedUnstarted: 1,
+      unstartedReplacements: 1,
+      unstartedDepartures: 2,
+    });
+    expect(f.receipts.size).toBe(2);
+    expect(f.server.tableEngines.size).toBe(1);
+  });
+  it('refuses an unstarted engine that leaves the map without the fence and stop that precede the delete', async () => {
+    const f = mixedFixture();
+    const churning = unstartedCashEngine(f, 999);
+    f.server.tableEngines.set(churning.tableId, churning);
+    f.onRpc(() => f.server.tableEngines.delete(churning.tableId));
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'engine_identity_changed',
+      failedCheck: 'unstarted.departed_fenced',
+      failedTable: `unstarted_departed_unfenced:${churning.tableId}`,
+      skippedUnstarted: 1,
+    });
+    expect(f.receipts.size).toBe(0);
+    expect(f.server.tableEngines.size).toBe(3);
+  });
+  it('refuses a skipped engine that acquires a seat and a bank during an RPC', async () => {
+    const f = mixedFixture();
+    const churning = unstartedCashEngine(f, 999);
+    f.server.tableEngines.set(churning.tableId, churning);
+    const started = new f.Table(999);
+    f.onRpc(() => {
+      churning.loopPhase = 'start_wait_for_players';
+      churning.seatedPlayers = started.seatedPlayers;
+      churning.timeBankMeta = started.timeBankMeta;
+      churning.timeBankEngine = started.timeBankEngine;
+    });
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'engine_state_changed',
+      failedCheck: 'unstarted.still_unstarted',
+      failedTable: `unstarted_acquired_custody:${churning.tableId}`,
+    });
+    expect(f.receipts.size).toBe(0);
+  });
+  it('refuses the successor when the churn re-admits a started engine behind a skipped table id', async () => {
+    const f = mixedFixture();
+    const first = unstartedCashEngine(f, 999);
+    f.server.tableEngines.set(first.tableId, first);
+    let calls = 0;
+    f.onRpc(() => {
+      const call = calls++;
+      if (call === 0) killAndRemove(f, first);
+      if (call === 1) f.server.tableEngines.set(first.tableId, new f.Table(999));
+    });
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'engine_identity_changed',
+      failedCheck: 'unstarted.successor_unstarted',
+      failedTable: `unstarted_replaced:${first.tableId}`,
+    });
+    // The refusal precedes every irreversible step: nothing was retired.
+    for (const { engine } of f.originals)
+      expect(f.server.tableEngines.get(engine.tableId)).toBe(engine);
+  });
+  it('still captures and refuses a STARTED cash engine that is removed during an RPC', async () => {
+    // Running, parked, holding a seat and a bank: the fixture default.
+    const f = mixedFixture();
+    const started = new f.Table(999);
+    f.server.tableEngines.set(started.tableId, started);
+    f.onRpc(() => killAndRemove(f, started));
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'fleet_identity_changed',
+      failedTable: `table_departed:${started.tableId}`,
+      skippedUnstarted: 0,
+    });
+    expect(f.receipts.size).toBe(0);
+  });
+  it('still captures and refuses an engine that dealt a hand this session, even with no seat left', async () => {
+    const f = mixedFixture();
+    const dealt = unstartedCashEngine(f, 999);
+    dealt.handsDealtThisSession = 1;
+    dealt.loopPhase = 'between_hands';
+    f.server.tableEngines.set(dealt.tableId, dealt);
+    f.onRpc(() => killAndRemove(f, dealt));
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'fleet_identity_changed',
+      failedTable: `table_departed:${dealt.tableId}`,
+      skippedUnstarted: 0,
+    });
+    expect(f.receipts.size).toBe(0);
+  });
+  it('never skips a retained original, even one carrying every unstarted flag', async () => {
+    const f = mixedFixture();
+    const { engine } = f.originals[0];
+    engine.loopPhase = 'start_load_table';
+    engine.handsDealtThisSession = 0;
+    engine.dealingLoopPromise = null;
+    engine.seatedPlayers = [];
+    engine.parkedTimeBanks = {};
+    engine.f06MovementAdmission = null;
+    f.onRpc(() => f.server.tableEngines.delete(engine.tableId));
+    const result = await f.run();
+    expect(result).toMatchObject({ ok: false, skippedUnstarted: 0 });
+    expect(String(result.failedTable ?? '')).toContain(engine.tableId);
+    expect(f.receipts.size).toBe(0);
+    expect(f.server.tableEngines.size).toBe(2);
+  });
+  it('never skips an unstarted-looking engine outside the direct cash lane', async () => {
+    const f = mixedFixture();
+    const owned = unstartedCashEngine(f, 999);
+    f.server.tableEngines.set(owned.tableId, owned);
+    f.server.tournamentOwnedTables.add(owned.tableId);
+    f.onRpc(() => killAndRemove(f, owned));
+    const result = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'fleet_identity_changed',
+      failedTable: `table_departed:${owned.tableId}`,
+      skippedUnstarted: 0,
+    });
+  });
+  // Each stop retry rebuilds a NEW frozen `drainedF06Originals` array holding
+  // the same engines, and answers null while its teardown promise is set. The
+  // engines' identities are what custody retires, so both pass; a different
+  // engine behind the same table id still refuses.
+  it('tolerates a fresh equal-content originals array on every capture', async () => {
+    const f = mixedFixture();
+    for (const { manager } of f.originals) manager.captureMode = 'fresh';
+    expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+    expect(f.receipts.size).toBe(2);
+    expect(f.server.tableEngines.size).toBe(1);
+  });
+  it('tolerates a null originals capture while a stop retry is in flight', async () => {
+    const f = mixedFixture();
+    let calls = 0;
+    f.onRpc(() => {
+      const mode = calls++ === 0 ? 'stopping' : 'fresh';
+      for (const { manager } of f.originals) manager.captureMode = mode;
+    });
+    expect(await f.run()).toMatchObject({ ok: true, readyForRestart: true });
+    expect(f.receipts.size).toBe(2);
+    expect(f.server.tableEngines.size).toBe(1);
+  });
+  it('refuses a different engine identity behind a captured original', async () => {
+    const f = mixedFixture();
+    const { manager, engine } = f.originals[0];
+    f.onRpc(() => {
+      manager.drainedF06Originals = [[engine.tableId, new f.Table(600)]];
+    });
     const result = await f.run();
     expect(result).toMatchObject({
       ok: false,
       reason: 'mixed_owner_changed',
-      failedCheck: 'manager.tournamentSeatMoveAuthorityRevision',
+      failedCheck: 'manager.captureDrainedF06Originals()',
     });
-    // The carried key names the tournament and every drain condition, because
-    // an unlisted key never survives `legacy-engine-checkpoint.mjs`.
-    expect(result.observedDetail).toContain(`tournament=${f.originals[0].manager.tournamentId}`);
-    expect(result.observedDetail).toMatch(/drain=/);
-    // And it must survive that carrier's own character class and length cap.
-    expect(result.observedDetail.length).toBeLessThanOrEqual(512);
-    expect(result.observedDetail).toMatch(/^[\w .,:/=()+-]+$/);
-    // Nothing was retired: the refusal precedes every irreversible step.
+    // `failedTournament` is not a carried key; the tournament travels in
+    // `observedDetail` (#5034).
+    expect(result.observedDetail).toContain(`tournament=${manager.tournamentId}`);
     expect(f.server.tableEngines.size).toBe(3);
+    expect(f.server.tableEngines.get(engine.tableId)).toBe(engine);
   });
   it('names the drain condition that sent captureDrainedF06Originals to null', async () => {
     const f = mixedFixture();
@@ -1358,6 +1955,519 @@ describe('exact 8825 retained original custody retirement', () => {
     });
     expect(f.rpcCalls).toEqual([]);
     expect(f.server.tableEngines.size).toBe(3);
+  });
+});
+
+describe('an 8825 bank refusal names its table and counts the fleet the capture walked', () => {
+  // Observability only (2026-09-22): the production profile, with its two
+  // retained originals. The census walks exactly what the capture walks.
+  it('names a live table whose seated player kept metadata and no bank, and leaves the retained originals out', async () => {
+    const f: any = mixedFixture();
+    // A live, parked table whose seated player holds metadata but no bank (8825
+    // can leave it: a cashout and a re-seat at the same table before the next
+    // deal re-seeds the bank). It is not proved from rows, so it still refuses
+    // on this profile, unlike residue and disposed banks.
+    const e: any = new f.Table(600);
+    e.timeBankEngine.playerBanks.clear();
+    f.server.tableEngines.set(e.tableId, e);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_metadata_without_bank',
+      failedCheck: 'captureEngine.bank_metadata_without_bank',
+      failedTable: e.tableId,
+    });
+    // The fleet engine and this table: the two retained originals are never
+    // walked by the capture, so the census does not count them either.
+    expect(String(result.observedDetail).split(',')).toEqual(
+      expect.arrayContaining([
+        'metaSeatedWithoutBank=1',
+        'fleet=2',
+        'fleetStopped=0',
+        'fleetLiveSeatedMeta=1',
+        'fleetDepartedMeta=0',
+        'fleetOrphanBank=0',
+      ])
+    );
+    expect(result.observedDetail).toMatch(/^[\w .,:/=()+-]+$/);
+    expect(f.calls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(4);
+  });
+
+  it('names a table that still holds an F06 permit outside retained custody, and counts it', async () => {
+    const f: any = mixedFixture();
+    const e: any = new f.Table(640);
+    e.f06CurrentPermit = { phase: 'reserved' };
+    f.server.tableEngines.set(e.tableId, e);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'f06_custody_not_drained',
+      failedCheck: 'captureEngine.f06_custody_not_drained',
+      failedTable: e.tableId,
+    });
+    expect(String(result.observedDetail).split(',')).toEqual(
+      expect.arrayContaining(['f06=true/false', 'fleet=2', 'fleetF06=1', 'fleetBoundary=0'])
+    );
+    expect(result.observedDetail.length).toBeLessThanOrEqual(512);
+    expect(f.calls).toEqual([]);
+  });
+});
+
+describe('a bank the engine no longer holds is proved from rows, never assumed', () => {
+  // A parked cash table whose player cashed out: seat and bank gone, metadata
+  // kept (8825 ServerTableEngineBase.ts:3679).
+  const cashedOut = (f: any, n: number) => {
+    const e: any = new f.Table(n);
+    const departed = e.seatedPlayers[0].user_id;
+    e.seatedPlayers = [];
+    e.timeBankEngine.playerBanks.clear();
+    f.server.tableEngines.set(e.tableId, e);
+    return { e, departed };
+  };
+  // A tournament table after a bust: the seat is absent from the next roster
+  // and the cash-only teardown removed neither the bank nor the metadata.
+  const busted = (f: any, n: number) => {
+    const e: any = new f.Table(n);
+    const departed = e.seatedPlayers[0].user_id;
+    e.seatedPlayers = [];
+    f.server.tableEngines.set(e.tableId, e);
+    return { e, departed };
+  };
+  // A quarantined manager's stopped engine: its teardown throws before it
+  // unregisters, so it stays in the fleet map with its roster and metadata and
+  // none of the banks its stop() disposed.
+  const quarantined = (f: any, n: number) => {
+    const e: any = new f.Table(n);
+    const authority = { tournamentId: uuid(72000 + n), leaseGeneration: uuid(73000 + n) };
+    Object.assign(e, {
+      running: false,
+      terminal: true,
+      teardownPromise: Promise.resolve(),
+      dealingLoopPromise: null,
+      readContinuationTasks: new Set(),
+      engineLeaseScope: 'tournament',
+      engineLeaseVerified: true,
+      engineLeaseTournamentId: authority.tournamentId,
+      engineLeaseGeneration: authority.leaseGeneration,
+    });
+    dataActorContext.bindTournamentDataAuthorityMethods(authority, e);
+    e.timeBankEngine.playerBanks.clear();
+    f.server.tableEngines.set(e.tableId, e);
+    return { e, authority, seated: e.seatedPlayers[0].user_id };
+  };
+  // The destination of a cash seat move: a parked table that seats the mover
+  // under the move's destination occupancy, with or without the carried bank.
+  const destination = (
+    f: any,
+    n: number,
+    userId: string,
+    occupancyId: string,
+    adopted: boolean
+  ) => {
+    const e: any = new f.Table(n);
+    e.seatedPlayers = [{ user_id: userId, occupancy_id: occupancyId, seat_number: 1, stack: 100 }];
+    e.timeBankMeta.clear();
+    e.timeBankEngine.playerBanks.clear();
+    if (adopted) {
+      e.timeBankMeta.set(userId, { initialSeconds: 90, baseSeconds: 30, dbConsumedSeconds: 15 });
+      e.timeBankEngine.playerBanks.set(`${e.tableId}:${userId}`, {
+        tableId: e.tableId,
+        playerId: userId,
+        remainingSeconds: 60,
+        usesRemaining: 2,
+        isActive: false,
+        unlimitedActivations: false,
+      });
+    }
+    f.server.tableEngines.set(e.tableId, e);
+    return e;
+  };
+
+  it('reads no row at all when every bank is where its seat is', async () => {
+    const f: any = mixedFixture();
+    const result: any = await f.run();
+    expect(result.ok).toBe(true);
+    expect(f.seatReads).toEqual([]);
+    expect(f.moveReads).toEqual([]);
+    expect(f.snapshotReads).toEqual([]);
+    expect(result.bankDisposition).toBeUndefined();
+  });
+
+  it('proves a cashed-out player departed from rows, before any write, and writes nothing for it', async () => {
+    const f: any = mixedFixture();
+    const { e, departed } = cashedOut(f, 600);
+    let writesAtRead = -1;
+    f.onSeats((users: string[]) => {
+      writesAtRead = f.calls.length;
+      expect(users).toEqual([departed]);
+      return { data: [], error: null };
+    });
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true, readyForRestart: true });
+    // The proof ran first: not one presence or bank row had been written.
+    expect(writesAtRead).toBe(0);
+    expect(f.seatReads).toHaveLength(1);
+    // No open seat anywhere, so there is no move to follow.
+    expect(f.moveReads).toEqual([]);
+    expect(result.bankDisposition).toContain('residueTables=1');
+    expect(result.bankDisposition).toContain('residuePlayers=1');
+    expect(result.bankDisposition).not.toContain(departed);
+    // Nothing is written for the residue, and the metadata is left as found.
+    expect(f.rows.has(e.tableId)).toBe(false);
+    expect([...e.timeBankMeta.keys()]).toEqual([departed]);
+  });
+
+  it('refuses a residue player the database still seats at that table, names it, and writes nothing', async () => {
+    const f: any = mixedFixture();
+    const { e, departed } = cashedOut(f, 600);
+    f.onSeats(() => ({
+      data: [{ table_id: e.tableId, user_id: departed, occupancy_id: uuid(65000) }],
+      error: null,
+    }));
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_residue_unproven',
+      checkpointOutcome: 'not_started',
+      failedCheck: 'proveBanksHeldNothing.openSeatAtResidueTable',
+      failedTable: e.tableId,
+    });
+    expect(JSON.stringify(result)).not.toContain(departed);
+    expect(f.calls).toEqual([]);
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(4);
+  });
+
+  it.each([
+    ['an unreadable answer', () => ({ data: null, error: { message: 'PGRST002' } })],
+    ['a body that is not a list', () => ({ data: { table_id: 'x' }, error: null })],
+    [
+      'a page that filled',
+      () => ({
+        data: Array.from({ length: 901 }, (_, i) => ({
+          table_id: uuid(50000 + i),
+          user_id: uuid(52000 + i),
+          occupancy_id: uuid(54000 + i),
+        })),
+        error: null,
+      }),
+    ],
+    [
+      'a row it cannot read',
+      () => ({ data: [{ table_id: 'x', user_id: 'y', occupancy_id: 'z' }], error: null }),
+    ],
+  ])('refuses on %s, and writes nothing', async (_label, answer) => {
+    const f: any = mixedFixture();
+    cashedOut(f, 600);
+    f.onSeats(answer as any);
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'bank_residue_unproven' });
+    expect(f.calls).toEqual([]);
+    expect(f.rpcCalls).toEqual([]);
+  });
+
+  it('a residue player seated elsewhere with no move out of here is not in transit', async () => {
+    const f: any = mixedFixture();
+    const { departed } = cashedOut(f, 600);
+    // A horse that cashed out here and holds a frozen tournament seat elsewhere.
+    f.onSeats(() => ({
+      data: [{ table_id: uuid(66000), user_id: departed, occupancy_id: uuid(66001) }],
+      error: null,
+    }));
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    // No capture holds a bank for that seat, so the engine's arrivals function
+    // is asked, and it names no move into it.
+    expect(f.arrivalReads).toEqual([{ table: uuid(66000), occupancies: [uuid(66001)] }]);
+    expect(f.moveReads).toEqual([]);
+    expect(result.bankDisposition).toContain('residueOpenSeatsElsewhere=1');
+    expect(result.bankDisposition).toContain('arrivalTablesAsked=1');
+    expect(result.bankDisposition).toContain('arrivalsInWindowChecked=0');
+  });
+
+  it('accepts a player who moved away once the destination capture holds a bank for that occupancy', async () => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    const to = destination(f, 601, from.departed, uuid(68000), true);
+    f.onSeats(() => ({
+      data: [{ table_id: to.tableId, user_id: from.departed, occupancy_id: uuid(68000) }],
+      error: null,
+    }));
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    // Nothing to ask: the claim (or a first deal) already made that bank.
+    expect(f.arrivalReads).toEqual([]);
+    // The destination is ordinary custody and is written as such.
+    expect(f.rows.has(to.tableId)).toBe(true);
+  });
+
+  const landed = (f: any, from: any, toTable: string, executedAt: string | null) => {
+    f.onSeats(() => ({
+      data: [{ table_id: toTable, user_id: from.departed, occupancy_id: uuid(68000) }],
+      error: null,
+    }));
+    f.onArrivals(() => ({
+      data: [
+        {
+          move_id: uuid(69000),
+          player_id: from.departed,
+          from_table_id: from.e.tableId,
+          to_table_id: toTable,
+          source_occupancy_id: uuid(69001),
+          destination_occupancy_id: uuid(68000),
+        },
+      ],
+      error: null,
+    }));
+    f.onMoves(() => ({ data: [{ id: uuid(69000), executed_at: executedAt }], error: null }));
+  };
+
+  it.each([
+    ['the destination seats the player without the carried bank', true],
+    ['the destination engine is not in this process at all', false],
+  ])('refuses a cash seat move still in transit: %s', async (_label, present) => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    const toTable = present
+      ? destination(f, 601, from.departed, uuid(68000), false).tableId
+      : uuid(67000);
+    landed(f, from, toTable, new Date(Date.now() - 60000).toISOString());
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_residue_unproven',
+      failedCheck: 'proveBanksHeldNothing.seatMoveInTransit',
+      failedTable: toTable,
+    });
+    expect(f.arrivalReads).toEqual([{ table: toTable, occupancies: [uuid(68000)] }]);
+    expect(f.moveReads).toEqual([{ ids: [uuid(69000)] }]);
+    expect(f.calls).toEqual([]);
+    expect(f.rpcCalls).toEqual([]);
+  });
+
+  it('accepts a move out of a residue table that executed over an hour ago: its handoff can no longer be claimed', async () => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    landed(f, from, uuid(67000), new Date(Date.now() - 2 * 3600000).toISOString());
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(result.bankDisposition).toContain('arrivalsInWindowChecked=1');
+  });
+
+  it('refuses a recent arrival whose source shows no residue, such as a swap partner', async () => {
+    const f: any = mixedFixture();
+    const { departed } = cashedOut(f, 600);
+    f.onSeats(() => ({
+      data: [{ table_id: uuid(67000), user_id: departed, occupancy_id: uuid(68000) }],
+      error: null,
+    }));
+    f.onArrivals(() => ({
+      data: [
+        {
+          move_id: uuid(69000),
+          player_id: departed,
+          from_table_id: uuid(69500),
+          to_table_id: uuid(67000),
+          source_occupancy_id: uuid(69001),
+          destination_occupancy_id: uuid(68000),
+        },
+      ],
+      error: null,
+    }));
+    f.onMoves(() => ({
+      data: [{ id: uuid(69000), executed_at: new Date(Date.now() - 60000).toISOString() }],
+      error: null,
+    }));
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_residue_unproven',
+      failedCheck: 'proveBanksHeldNothing.seatMoveInTransit',
+      failedTable: uuid(67000),
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it.each([
+    [
+      'openSeatsRead',
+      'PGRST002',
+      (f: any) => f.onSeats(() => ({ data: null, error: { code: 'PGRST002' } })),
+    ],
+    [
+      'arrivalsRead',
+      '42501',
+      (f: any) => f.onArrivals(() => ({ data: null, error: { code: '42501' } })),
+    ],
+    ['movesRead', '57014', (f: any) => f.onMoves(() => ({ data: null, error: { code: '57014' } }))],
+  ])('names the read that failed: %s', async (check, code, fault) => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    landed(f, from, uuid(67000), new Date(Date.now() - 2 * 3600000).toISOString());
+    fault(f);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_residue_unproven',
+      failedCheck: `proveBanksHeldNothing.${check}`,
+    });
+    expect(result.observedDetail).toContain(`error=${code}`);
+    expect(result.observedDetail).toMatch(/^[\w .,:/=()+-]+$/);
+  });
+
+  it.each([
+    [
+      'an unreadable arrivals answer',
+      (f: any) => f.onArrivals(() => ({ data: null, error: { message: 'ENGINE_ONLY' } })),
+    ],
+    [
+      'an arrival it cannot read',
+      (f: any) => f.onArrivals(() => ({ data: [{ move_id: 'x' }], error: null })),
+    ],
+    [
+      'an unreadable move answer',
+      (f: any) => f.onMoves(() => ({ data: null, error: { message: 'PGRST002' } })),
+    ],
+    ['a move row that is missing', (f: any) => f.onMoves(() => ({ data: [], error: null }))],
+    [
+      'a move with no execution time',
+      (f: any) =>
+        f.onMoves(() => ({ data: [{ id: uuid(69000), executed_at: null }], error: null })),
+    ],
+  ])('refuses on %s', async (_label, fault) => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    landed(f, from, uuid(67000), new Date(Date.now() - 2 * 3600000).toISOString());
+    fault(f);
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'bank_residue_unproven' });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('proves a busted player departed, and never writes the bank the bust left behind', async () => {
+    const f: any = mixedFixture();
+    const { e, departed } = busted(f, 610);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(f.seatReads).toEqual([{ users: [departed] }]);
+    expect(f.rows.has(e.tableId)).toBe(false);
+    expect(e.timeBankEngine.playerBanks.size).toBe(1);
+  });
+
+  it('refuses an unseated bank whose timer is running', async () => {
+    const f: any = mixedFixture();
+    const { e } = busted(f, 610);
+    for (const bank of e.timeBankEngine.playerBanks.values()) bank.isActive = true;
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'bank_occupancy_mismatch' });
+    expect(f.seatReads).toEqual([]);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('proves a quarantined stopped engine quiet from rows, and writes nothing for its disposed banks', async () => {
+    const f: any = mixedFixture();
+    const { e, authority, seated } = quarantined(f, 620);
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true, readyForRestart: true });
+    expect(f.snapshotReads).toHaveLength(1);
+    expect(f.snapshotReads[0].ids).toEqual([e.tableId]);
+    expect(f.seatReads).toEqual([]);
+    expect(result.bankDisposition).toContain('disposedTables=1');
+    expect(result.bankDisposition).toContain('disposedSeats=1');
+    expect(result.bankDisposition).toContain(
+      `disposedEvents=${authority.tournamentId.slice(0, 8)}`
+    );
+    expect(result.bankDisposition).not.toContain(seated);
+    expect(f.rows.has(e.tableId)).toBe(false);
+    // The guard proves, it never edits: the roster and metadata are as found.
+    expect([...e.timeBankMeta.keys()]).toEqual([seated]);
+  });
+
+  it('refuses a quarantined stopped engine with a hand in the air, and names the table', async () => {
+    const f: any = mixedFixture();
+    const { e } = quarantined(f, 620);
+    f.onSnapshots(() => ({ data: [{ table_id: e.tableId, hand_number: 1 }], error: null }));
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'stopped_disposed_banks_unproven',
+      failedCheck: 'proveBanksHeldNothing.handInTheAir',
+      failedTable: e.tableId,
+    });
+    expect(f.calls).toEqual([]);
+    expect(f.rpcCalls).toEqual([]);
+  });
+
+  it('refuses a quarantined stopped engine on an unreadable snapshot, and writes nothing', async () => {
+    const f: any = mixedFixture();
+    quarantined(f, 620);
+    f.onSnapshots(() => ({ data: null, error: { message: 'PGRST002' } }) as any);
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'stopped_disposed_banks_unproven' });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('still refuses a stopped engine that holds a bank', async () => {
+    const f: any = mixedFixture();
+    const { e } = quarantined(f, 620);
+    const userId = e.seatedPlayers[0].user_id;
+    e.timeBankEngine.playerBanks.set(`${e.tableId}:${userId}`, {
+      tableId: e.tableId,
+      playerId: userId,
+      remainingSeconds: 75,
+      usesRemaining: 2,
+      isActive: false,
+      unlimitedActivations: false,
+    });
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'stopped_engine_retains_custody' });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('still refuses a live engine whose seated player has metadata and no bank', async () => {
+    // 8825 can leave this shape (a cashout and a re-seat at the same table
+    // before the next deal re-seeds the bank, ServerTableEngineDealing.ts:2955),
+    // and it is not proved from rows here: it still refuses.
+    const f: any = mixedFixture();
+    const e: any = new f.Table(630);
+    e.timeBankEngine.playerBanks.clear();
+    f.server.tableEngines.set(e.tableId, e);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_metadata_without_bank',
+      failedTable: e.tableId,
+    });
+    expect(f.seatReads).toEqual([]);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('refuses residue that moves between observations', async () => {
+    const f: any = mixedFixture();
+    const { e } = cashedOut(f, 600);
+    // The live fleet write happens after the proof; residue that grows there is
+    // not the residue the rows proved.
+    f.onWrite(() => {
+      e.timeBankMeta.set(uuid(64000), {
+        initialSeconds: 90,
+        baseSeconds: 30,
+        dbConsumedSeconds: 0,
+      });
+    });
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'engine_state_changed' });
+  });
+
+  it('leaves every other profile exactly as strict as before', async () => {
+    const f = fixture(2);
+    f.first.seatedPlayers = [];
+    f.first.timeBankEngine.playerBanks.clear();
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'bank_metadata_without_bank' });
+    expect(f.seatReads).toEqual([]);
+    expect(f.moveReads).toEqual([]);
+    expect(f.calls).toEqual([]);
   });
 });
 

@@ -99,6 +99,20 @@ def qualify(root,out,cmd,command,run,probe,require,results):
             run('historical-noon-only-cards-install','BEGIN;\n'+noon+'\nCOMMIT;')
             run('historical-noon-only-cards-identity',"SELECT string_agg(p.oid::regprocedure::text||' '||md5(prosrc)||' '||md5(pg_get_functiondef(p.oid)),E'\\n' ORDER BY p.oid::regprocedure::text) FROM pg_proc p WHERE p.oid IN (to_regprocedure('smarter_private.f06_retained_mtt_abort_snapshot(jsonb)'),to_regprocedure('smarter_private.f06_retired_origin_snapshot(jsonb)'));",
                 'smarter_private.f06_retained_mtt_abort_snapshot(jsonb) 1339225a48748a2e8cedd9ad882f35d9 269b7f20c326e04788c003f2a8b081ad\nsmarter_private.f06_retired_origin_snapshot(jsonb) af779e9bdaa72cefab1026b6fd236885 f1dc5d4b2a952ebb783e6ae66b844b94')
+            # Production then applies 20260921155216, which replaces the prepare RPC
+            # with the byte-exact 20260919033536 text carrying interval '245 seconds'
+            # in place of '285 seconds' (the 285 s entry threshold less the 40 s
+            # checkpoint budget: ~15 s of measured entry, 20 s of work, 5 s of
+            # cleanup; the guard and the post-checkpoint certificate hold the same
+            # figure). Its pre-image refuses unless the
+            # installed body is exactly 3f78b42b..., which this clone holds after
+            # the historical install and the noon edit, so the whole transaction is
+            # applied as written: pre-image, CREATE OR REPLACE, post-image.
+            reserve=(root/'supabase/migrations/20260921155216_the_mixed_custody_prepare_accepts_the_legacy_checkpoint_rese.sql').read_text()
+            reserve=reserve[reserve.index('DO $reserve_preimage$'):reserve.index('END $reserve_postimage$;')+len('END $reserve_postimage$;')]
+            run('historical-legacy-reserve-install','BEGIN;\n'+reserve+'\nCOMMIT;')
+            run('historical-legacy-reserve-identity',"SELECT p.oid::regprocedure::text||' '||md5(prosrc)||' '||md5(pg_get_functiondef(p.oid)) FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_f06_prepare_mixed_manager_custody(uuid,uuid,uuid,uuid,jsonb,jsonb)');",
+                'fn_f06_prepare_mixed_manager_custody(uuid,uuid,uuid,uuid,jsonb,jsonb) 30ad38da71405fdc960599802310e662 4f20f5a2f6d7249578931bc877869981')
         if name=='retired-origin-local-proof-store':
             run('historical-explicit-loss',"""UPDATE fixture_origin_inputs SET local_proof=jsonb_set(local_proof,'{engines}',(SELECT jsonb_agg(jsonb_set(e,'{bank_custody,historical_loss}',fixture_history_scope(i)-ARRAY['occupants','pending_arrivals']) ORDER BY e->>'table_id') FROM jsonb_array_elements(local_proof->'engines')e));""")
             run('historical-pending-physical-capture',"""UPDATE fixture_origin_inputs SET local_proof=local_proof||jsonb_build_object('historical_loss_pending_arrivals',(SELECT COALESCE(jsonb_agg(jsonb_build_object('original',e,'durable_presence',NULL,'absence',jsonb_build_object('kind','all_current_engine_maps_absent_v1','source',local_proof#>>'{release_checkpoint,source}','instance_id','1-3846b8bb','table_id',e->>'table_id','global_absent',true,'owned_absent',true,'retirement_absent',true,'managers',(SELECT jsonb_agg(jsonb_build_object('manager_id',fixture_origin_c(j)->>'manager_id','absent',true)) FROM generate_series(1401,1402)j)))),'[]') FROM jsonb_array_elements(fixture_history_scope(i)->'pending_arrivals')e));""")
@@ -127,6 +141,13 @@ def qualify(root,out,cmd,command,run,probe,require,results):
                 ('lost-financial-key',"DELETE FROM settlement_idempotency_keys WHERE table_id='"+pending['table_id']+"';",'BANK_WITNESS_CHANGED'),
                 ('arbitrary-cohort',"UPDATE fixture_origin_inputs SET local_proof=jsonb_set(local_proof,'{historical_loss_pending_arrivals,0,original,user_id}',to_jsonb(gen_random_uuid())) WHERE i=1401;",'PENDING_ABSENCE_UNPROVEN'),
             ]:probe('historical-refuses-'+label,service+change+prepare,error=reason)
+            # The installed reserve, at the RPC's own clock: 244 s remaining refuses,
+            # 245.5 s is admitted (half a second covers the statements between the
+            # UPDATE's clock_timestamp() and the RPC's), so the figure is 245 exactly.
+            def remaining(seconds):
+                return f"UPDATE engine_maintenance_break SET break_ends_at=clock_timestamp()+interval '{seconds} seconds';UPDATE fixture_origin_inputs SET local_proof=jsonb_set(local_proof,'{{release_checkpoint,break_ends_at}}',(SELECT to_jsonb(break_ends_at) FROM engine_maintenance_break)) WHERE i=1401;"
+            probe('historical-legacy-reserve-refuses-244',service+remaining(244)+prepare,error='F06_MIXED_FROZEN_CHECKPOINT_UNPROVEN')
+            probe('historical-legacy-reserve-admits-245',service+remaining('245.5')+'SELECT ('+prepare.rstrip(';')+")->'receipt';",'null')
             old=runpy.run_path(str(root/'scripts/ci/build-f06-historical-bank-loss.py'))['definitions'](root)[0]['smarter_private.f06_mixed_bank_proof']
             # An actually initialized old bank with no durable park is the red
             # preimage; the historical marker does not manufacture that witness.
@@ -146,8 +167,9 @@ def qualify(root,out,cmd,command,run,probe,require,results):
     ns['qualify'](root,out,cmd,command,adapted,probe,require,results)
     run('historical-no-usage-reversal',"SELECT bool_and(usage_count=1620) FROM vip_feature_usage_monthly;",'t')
     # The publisher's pre-intent read-only comparison pins this installed
-    # 29-function catalogue, the one production holds after this migration and
-    # the reviewed-noon-hand abort migration 20260921040823.
+    # 29-function catalogue, the one production holds after this migration, the
+    # reviewed-noon-hand abort migration 20260921040823 and the legacy checkpoint
+    # reserve migration 20260921155216.
     catalog=json.loads((out/'qualified-service-contract.json').read_text())
     fixture=json.loads((root/'tests/fixtures/legacy-engine-checkpoint/mixed-custody-contract.json').read_text())
     require(catalog==fixture,'Publisher fixture does not equal actual historical-loss catalogue')

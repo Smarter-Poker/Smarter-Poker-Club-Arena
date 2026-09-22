@@ -68,8 +68,10 @@ function fixture(count = 1, predecessor = release) {
   let onRead: ((data: any[]) => any[]) | undefined;
   const snapshotReads: { ids: string[]; since: string }[] = [];
   let onSnapshots: ((ids: string[], since: string) => { data: any; error: any }) | undefined;
-  const seatReads: { tables: string[]; users: string[] }[] = [];
-  let onSeats: ((tables: string[], users: string[]) => { data: any; error: any }) | undefined;
+  const seatReads: { users: string[] }[] = [];
+  let onSeats: ((users: string[]) => { data: any; error: any }) | undefined;
+  const moveReads: { ids: string[]; since: string }[] = [];
+  let onMoves: ((ids: string[], since: string) => { data: any; error: any }) | undefined;
   class Maintenance {
     phase = 'counting_down';
     announcedAt = Date.now() - 120000;
@@ -307,14 +309,12 @@ function fixture(count = 1, predecessor = release) {
             return { select: () => filter };
           }
           if (name === 'table_seats') {
-            // The residue read: open occupancies of residue players at residue tables.
+            // Every open seat the residue players hold, at any table.
             const filter: any = {
-              tables: [] as string[],
               users: [] as string[],
               in: (key: string, values: string[]) => {
-                expect(['table_id', 'user_id']).toContain(key);
-                if (key === 'table_id') filter.tables = values;
-                else filter.users = values;
+                expect(key).toBe('user_id');
+                filter.users = values;
                 return filter;
               },
               is: (key: string, value: unknown) => {
@@ -322,14 +322,44 @@ function fixture(count = 1, predecessor = release) {
                 return filter;
               },
               limit: async (bound: number) => {
-                expect(bound).toBe(101);
-                seatReads.push({ tables: [...filter.tables], users: [...filter.users] });
-                return onSeats ? onSeats(filter.tables, filter.users) : { data: [], error: null };
+                expect(bound).toBe(901);
+                seatReads.push({ users: [...filter.users] });
+                return onSeats ? onSeats(filter.users) : { data: [], error: null };
               },
             };
             return {
               select: (columns: string) => {
-                expect(columns).toBe('table_id,user_id');
+                expect(columns).toBe('table_id,user_id,occupancy_id');
+                return filter;
+              },
+            };
+          }
+          if (name === 'cash_seat_move_receipts') {
+            // Cash seat moves this process handled, into those open seats.
+            const filter: any = {
+              ids: [] as string[],
+              since: '',
+              in: (key: string, values: string[]) => {
+                expect(key).toBe('destination_occupancy_id');
+                filter.ids = values;
+                return filter;
+              },
+              gte: (key: string, value: string) => {
+                expect(key).toBe('created_at');
+                filter.since = value;
+                return filter;
+              },
+              limit: async (bound: number) => {
+                expect(bound).toBe(201);
+                moveReads.push({ ids: [...filter.ids], since: filter.since });
+                return onMoves ? onMoves(filter.ids, filter.since) : { data: [], error: null };
+              },
+            };
+            return {
+              select: (columns: string) => {
+                expect(columns).toBe(
+                  'player_id,from_table_id,to_table_id,destination_occupancy_id'
+                );
                 return filter;
               },
             };
@@ -365,6 +395,7 @@ function fixture(count = 1, predecessor = release) {
     rows,
     snapshotReads,
     seatReads,
+    moveReads,
     first: [...server.tableEngines.values()][0],
     run: (discovered = [server]) =>
       legacyEngineCheckpointGuard.call(server, options, discovered, modules),
@@ -379,6 +410,9 @@ function fixture(count = 1, predecessor = release) {
     },
     onSeats: (hook: typeof onSeats) => {
       onSeats = hook;
+    },
+    onMoves: (hook: typeof onMoves) => {
+      onMoves = hook;
     },
     remaining: (value: number) => {
       remaining = value;
@@ -1924,9 +1958,10 @@ describe('an 8825 bank refusal names its table and counts the fleet the capture 
   // retained originals. The census walks exactly what the capture walks.
   it('names a live table whose seated player kept metadata and no bank, and leaves the retained originals out', async () => {
     const f: any = mixedFixture();
-    // A live, parked table whose seated player holds metadata but no bank: a
-    // shape no 8825 path is known to leave, so it still refuses on this
-    // profile (residue and disposed banks are proved from rows instead).
+    // A live, parked table whose seated player holds metadata but no bank (8825
+    // can leave it: a cashout and a re-seat at the same table before the next
+    // deal re-seeds the bank). It is not proved from rows, so it still refuses
+    // on this profile, unlike residue and disposed banks.
     const e: any = new f.Table(600);
     e.timeBankEngine.playerBanks.clear();
     f.server.tableEngines.set(e.tableId, e);
@@ -2016,12 +2051,40 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     f.server.tableEngines.set(e.tableId, e);
     return { e, authority, seated: e.seatedPlayers[0].user_id };
   };
+  // The destination of a cash seat move: a parked table that seats the mover
+  // under the move's destination occupancy, with or without the carried bank.
+  const destination = (
+    f: any,
+    n: number,
+    userId: string,
+    occupancyId: string,
+    adopted: boolean
+  ) => {
+    const e: any = new f.Table(n);
+    e.seatedPlayers = [{ user_id: userId, occupancy_id: occupancyId, seat_number: 1, stack: 100 }];
+    e.timeBankMeta.clear();
+    e.timeBankEngine.playerBanks.clear();
+    if (adopted) {
+      e.timeBankMeta.set(userId, { initialSeconds: 90, baseSeconds: 30, dbConsumedSeconds: 15 });
+      e.timeBankEngine.playerBanks.set(`${e.tableId}:${userId}`, {
+        tableId: e.tableId,
+        playerId: userId,
+        remainingSeconds: 60,
+        usesRemaining: 2,
+        isActive: false,
+        unlimitedActivations: false,
+      });
+    }
+    f.server.tableEngines.set(e.tableId, e);
+    return e;
+  };
 
   it('reads no row at all when every bank is where its seat is', async () => {
     const f: any = mixedFixture();
     const result: any = await f.run();
     expect(result.ok).toBe(true);
     expect(f.seatReads).toEqual([]);
+    expect(f.moveReads).toEqual([]);
     expect(f.snapshotReads).toEqual([]);
     expect(result.bankDisposition).toBeUndefined();
   });
@@ -2030,9 +2093,8 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     const f: any = mixedFixture();
     const { e, departed } = cashedOut(f, 600);
     let writesAtRead = -1;
-    f.onSeats((tables: string[], users: string[]) => {
+    f.onSeats((users: string[]) => {
       writesAtRead = f.calls.length;
-      expect(tables).toEqual([e.tableId]);
       expect(users).toEqual([departed]);
       return { data: [], error: null };
     });
@@ -2041,6 +2103,8 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     // The proof ran first: not one presence or bank row had been written.
     expect(writesAtRead).toBe(0);
     expect(f.seatReads).toHaveLength(1);
+    // No open seat anywhere, so there is no move to follow.
+    expect(f.moveReads).toEqual([]);
     expect(result.bankDisposition).toContain('residueTables=1');
     expect(result.bankDisposition).toContain('residuePlayers=1');
     expect(result.bankDisposition).not.toContain(departed);
@@ -2049,16 +2113,22 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     expect([...e.timeBankMeta.keys()]).toEqual([departed]);
   });
 
-  it('refuses a residue player the database still seats at that table, and writes nothing', async () => {
+  it('refuses a residue player the database still seats at that table, names it, and writes nothing', async () => {
     const f: any = mixedFixture();
     const { e, departed } = cashedOut(f, 600);
-    f.onSeats(() => ({ data: [{ table_id: e.tableId, user_id: departed }], error: null }));
+    f.onSeats(() => ({
+      data: [{ table_id: e.tableId, user_id: departed, occupancy_id: uuid(65000) }],
+      error: null,
+    }));
     const result: any = await f.run();
     expect(result).toMatchObject({
       ok: false,
       reason: 'bank_residue_unproven',
       checkpointOutcome: 'not_started',
+      failedCheck: 'proveBanksHeldNothing.openSeatAtResidueTable',
+      failedTable: e.tableId,
     });
+    expect(JSON.stringify(result)).not.toContain(departed);
     expect(f.calls).toEqual([]);
     expect(f.rpcCalls).toEqual([]);
     expect(f.server.tableEngines.size).toBe(4);
@@ -2070,14 +2140,18 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     [
       'a page that filled',
       () => ({
-        data: Array.from({ length: 101 }, (_, i) => ({
+        data: Array.from({ length: 901 }, (_, i) => ({
           table_id: uuid(50000 + i),
-          user_id: uuid(51000 + i),
+          user_id: uuid(52000 + i),
+          occupancy_id: uuid(54000 + i),
         })),
         error: null,
       }),
     ],
-    ['a row it cannot read', () => ({ data: [{ table_id: 'x', user_id: 'y' }], error: null })],
+    [
+      'a row it cannot read',
+      () => ({ data: [{ table_id: 'x', user_id: 'y', occupancy_id: 'z' }], error: null }),
+    ],
   ])('refuses on %s, and writes nothing', async (_label, answer) => {
     const f: any = mixedFixture();
     cashedOut(f, 600);
@@ -2088,17 +2162,97 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     expect(f.rpcCalls).toEqual([]);
   });
 
-  it('an open seat at another table in the page is where a moved player sits now', async () => {
+  it('a residue player seated elsewhere with no move out of here is not in transit', async () => {
     const f: any = mixedFixture();
-    const from = cashedOut(f, 600);
-    const to = cashedOut(f, 601);
-    // The player who left table 600 now sits at 601, which holds its own residue.
-    f.onSeats(() => ({ data: [{ table_id: to.e.tableId, user_id: from.departed }], error: null }));
+    const { departed } = cashedOut(f, 600);
+    // A horse that cashed out here and holds a frozen tournament seat elsewhere.
+    f.onSeats(() => ({
+      data: [{ table_id: uuid(66000), user_id: departed, occupancy_id: uuid(66001) }],
+      error: null,
+    }));
     const result: any = await f.run();
     expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
-    expect(f.seatReads).toHaveLength(1);
-    expect(f.seatReads[0].tables.sort()).toEqual([from.e.tableId, to.e.tableId].sort());
-    expect(result.bankDisposition).toContain('residueTables=2');
+    expect(f.moveReads).toHaveLength(1);
+    expect(f.moveReads[0].ids).toEqual([uuid(66001)]);
+    // Only moves this process could have handled are read.
+    expect(Date.parse(f.moveReads[0].since)).toBeLessThanOrEqual(performance.timeOrigin);
+    expect(result.bankDisposition).toContain('residueOpenSeatsElsewhere=1');
+  });
+
+  it('accepts a player who moved away once the destination seats that occupancy with the carried bank', async () => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    const to = destination(f, 601, from.departed, uuid(68000), true);
+    f.onSeats(() => ({
+      data: [{ table_id: to.tableId, user_id: from.departed, occupancy_id: uuid(68000) }],
+      error: null,
+    }));
+    f.onMoves(() => ({
+      data: [
+        {
+          player_id: from.departed,
+          from_table_id: from.e.tableId,
+          to_table_id: to.tableId,
+          destination_occupancy_id: uuid(68000),
+        },
+      ],
+      error: null,
+    }));
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    // The destination is ordinary custody and is written as such.
+    expect(f.rows.has(to.tableId)).toBe(true);
+  });
+
+  it.each([
+    ['the destination seats the player without the carried bank', true],
+    ['the destination engine is not in this process at all', false],
+  ])('refuses a cash seat move still in transit: %s', async (_label, present) => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    const toTable = present
+      ? destination(f, 601, from.departed, uuid(68000), false).tableId
+      : uuid(67000);
+    f.onSeats(() => ({
+      data: [{ table_id: toTable, user_id: from.departed, occupancy_id: uuid(68000) }],
+      error: null,
+    }));
+    f.onMoves(() => ({
+      data: [
+        {
+          player_id: from.departed,
+          from_table_id: from.e.tableId,
+          to_table_id: toTable,
+          destination_occupancy_id: uuid(68000),
+        },
+      ],
+      error: null,
+    }));
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_residue_unproven',
+      failedCheck: 'proveBanksHeldNothing.seatMoveInTransit',
+      failedTable: toTable,
+    });
+    expect(f.calls).toEqual([]);
+    expect(f.rpcCalls).toEqual([]);
+  });
+
+  it.each([
+    ['an unreadable answer', () => ({ data: null, error: { message: 'PGRST002' } })],
+    ['a row it cannot read', () => ({ data: [{ player_id: 'x' }], error: null })],
+  ])('refuses a move read on %s', async (_label, answer) => {
+    const f: any = mixedFixture();
+    const { departed } = cashedOut(f, 600);
+    f.onSeats(() => ({
+      data: [{ table_id: uuid(66000), user_id: departed, occupancy_id: uuid(66001) }],
+      error: null,
+    }));
+    f.onMoves(answer as any);
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'bank_residue_unproven' });
+    expect(f.calls).toEqual([]);
   });
 
   it('proves a busted player departed, and never writes the bank the bust left behind', async () => {
@@ -2106,7 +2260,7 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     const { e, departed } = busted(f, 610);
     const result: any = await f.run();
     expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
-    expect(f.seatReads).toEqual([{ tables: [e.tableId], users: [departed] }]);
+    expect(f.seatReads).toEqual([{ users: [departed] }]);
     expect(f.rows.has(e.tableId)).toBe(false);
     expect(e.timeBankEngine.playerBanks.size).toBe(1);
   });
@@ -2140,17 +2294,28 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     expect([...e.timeBankMeta.keys()]).toEqual([seated]);
   });
 
-  it.each([
-    ['a hand in the air', () => ({ data: [{ table_id: 'x', hand_number: 1 }], error: null })],
-    ['an unreadable answer', () => ({ data: null, error: { message: 'PGRST002' } })],
-  ])('refuses a quarantined stopped engine on %s, and writes nothing', async (_label, answer) => {
+  it('refuses a quarantined stopped engine with a hand in the air, and names the table', async () => {
+    const f: any = mixedFixture();
+    const { e } = quarantined(f, 620);
+    f.onSnapshots(() => ({ data: [{ table_id: e.tableId, hand_number: 1 }], error: null }));
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'stopped_disposed_banks_unproven',
+      failedCheck: 'proveBanksHeldNothing.handInTheAir',
+      failedTable: e.tableId,
+    });
+    expect(f.calls).toEqual([]);
+    expect(f.rpcCalls).toEqual([]);
+  });
+
+  it('refuses a quarantined stopped engine on an unreadable snapshot, and writes nothing', async () => {
     const f: any = mixedFixture();
     quarantined(f, 620);
-    f.onSnapshots(answer as any);
+    f.onSnapshots(() => ({ data: null, error: { message: 'PGRST002' } }) as any);
     const result: any = await f.run();
     expect(result).toMatchObject({ ok: false, reason: 'stopped_disposed_banks_unproven' });
     expect(f.calls).toEqual([]);
-    expect(f.rpcCalls).toEqual([]);
   });
 
   it('still refuses a stopped engine that holds a bank', async () => {
@@ -2171,6 +2336,9 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
   });
 
   it('still refuses a live engine whose seated player has metadata and no bank', async () => {
+    // 8825 can leave this shape (a cashout and a re-seat at the same table
+    // before the next deal re-seeds the bank, ServerTableEngineDealing.ts:2955),
+    // and it is not proved from rows here: it still refuses.
     const f: any = mixedFixture();
     const e: any = new f.Table(630);
     e.timeBankEngine.playerBanks.clear();
@@ -2208,6 +2376,7 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     const result: any = await f.run();
     expect(result).toMatchObject({ ok: false, reason: 'bank_metadata_without_bank' });
     expect(f.seatReads).toEqual([]);
+    expect(f.moveReads).toEqual([]);
     expect(f.calls).toEqual([]);
   });
 });

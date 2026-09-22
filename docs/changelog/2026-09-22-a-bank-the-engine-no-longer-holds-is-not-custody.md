@@ -46,12 +46,19 @@ before anything is written:
 
 - **Residue**: a bank, or its metadata, for a player the engine no longer
   seats. 8825's own `captureParkedTimeBanks` walks the roster only, so nothing
-  here is written by the checkpoint or restored by its successor. The one way
-  it could still be custody is a roster that is merely stale, so every residue
-  pair must be CLOSED in `table_seats` (no row for that table and player with
-  `left_at IS NULL`). An open seat for that player at another table in the
-  same read is where a moved player sits now, and is not this table's residue.
-  An unseated bank whose timer is running is refused outright.
+  here is written by the checkpoint or restored by its successor. It could
+  still be custody two ways, and both are proved from rows:
+  - a roster that is merely stale: no residue pair may have an open
+    `table_seats` row (`left_at IS NULL`) at the residue table;
+  - a cash seat move still in transit. When a move lands, the source deposits
+    the carried presence and bank in the process-wide SeatMovePresence map
+    (`ServerTableEngineBase.ts:4059-4061`), and the destination claims it only
+    in its seat sweep, after `adoptSeatRoster`; a park, or a failed arrival
+    read retried every 5 s, can come between. So for every open seat a residue
+    player holds anywhere, the cash seat move receipts this process could have
+    handled are read, and for a move out of a residue table the destination
+    engine must already seat that exact occupancy AND hold the carried bank.
+    An unseated bank whose timer is running is refused outright.
 - **Disposed**: metadata for a seated player on a STOPPED engine that holds no
   bank at all. The live value was already cleared by `stop()` and no refusal
   can bring it back; the metadata is only its accounting mirror, and the
@@ -60,28 +67,42 @@ before anything is written:
   release gate's predicate) at every such table.
 
 `proveBanksHeldNothing` runs after the capture and before the first presence
-or bank write. It refuses (`bank_residue_unproven`,
-`stopped_disposed_banks_unproven`) on any row it cannot rule out, any error,
-any body that is not a list and any page that fills (ten tables, at most 100
-rows and 200 players per read). Both sets are part of each engine's
+or bank write, with its reads concurrent (at most eight at a time) between one
+pair of full re-verifications, so it costs one round of reads inside the
+publisher's 20 s work budget. It refuses (`bank_residue_unproven`,
+`stopped_disposed_banks_unproven`), naming the check and the table, on any row
+it cannot rule out, any error, any body that is not a list and any page that
+fills (100 players and 900 seat rows, 200 occupancies and 200 receipts, 100
+tables per read). Both sets are part of each engine's
 signature, so a set that moves between observations refuses as
 `engine_state_changed`. The result carries `bankDisposition`: residue tables
 and players, disposed tables and seats, and the 8-character prefixes of the
 stopped tournaments, with no player id.
 
 Still refused exactly as before: a stopped engine that holds any bank; a live
-engine whose seated player has metadata and no bank; every shape on every
-profile other than 8825.
+engine whose seated player has metadata and no bank (8825 can leave that too,
+by a cashout and a re-seat at the same table before the next deal re-seeds the
+bank, and it is not proved from rows here); every shape on every profile other
+than 8825. The residue still counts toward the 64-entry `bank_collection_shape`
+bound; since 8825 started, no table has seen more than nine departed players.
+
+An adversarial review of the first cut found the in-transit gap (it had
+accepted a mover's residue whenever the database held the seat elsewhere),
+the sequential reads, and the unnamed refusals; all three are fixed above.
 
 ## Verification
 
-`tests/legacyEngineCheckpointGuard.test.ts`, 17 new cases in "a bank the
+`tests/legacyEngineCheckpointGuard.test.ts`, 23 new cases in "a bank the
 engine no longer holds is proved from rows, never assumed", on the production
 8825 profile with its two retained originals: no read when nothing is
 residue; a cashed-out player proved departed before any write and never
-written; refusal, with no write and no custody RPC, when the database still
-seats that player, on an unreadable answer, a non-list body, a filled page and
-an unreadable row; a moved player's open seat elsewhere in the page accepted;
+written; refusal, named and with no write and no custody RPC, when the
+database still seats that player there, on an unreadable answer, a non-list
+body, a filled page and an unreadable row; a residue player seated elsewhere
+with no move out of here accepted; a mover accepted once the destination seats
+that occupancy with the carried bank, and refused while the destination seats
+it without the bank or is not in the process at all, and on an unreadable or
+malformed move read;
 a busted player's bank proved departed and never written; an unseated running
 timer refused; a quarantined stopped engine proved quiet and never written;
 refusal on a hand in the air and on an unreadable snapshot; a stopped engine
@@ -90,3 +111,8 @@ refused; residue that moves between observations refused; another profile
 exactly as strict as before. The test double's `isMaintenanceStateDurable`
 now follows 8825's `maintenanceDurabilityReason` (a parked bank or a seated
 player's bank), which the busted case needs and every existing case matches.
+
+Local: the guard, admission, break-window law, source-window law and transport
+suites (the transport suite under Node 20, which it requires), 221 pass;
+`cd server && npx tsc --noEmit` clean; `EngineLifecycleDiagnostics` and
+`anAbandonedGenerationIsNotAPendingOne.law`, 69 pass.

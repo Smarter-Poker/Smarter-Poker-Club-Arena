@@ -2115,11 +2115,16 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
          RESIDUE - a bank, or its metadata, for a player this engine no longer
          seats (a cashout, a move, an eviction, a tournament bust). 8825's own
          `captureParkedTimeBanks` walks the roster only, so nothing here is
-         written by the checkpoint or restored by its successor. The one way
-         it could still be custody is a roster that is merely stale, a live
-         occupancy the engine forgot; so every residue pair is proved CLOSED
-         from `table_seats` (no row with `left_at IS NULL`) before anything is
-         written, and an active timer is refused outright.
+         written by the checkpoint or restored by its successor. It could
+         still be custody two ways, and both are proved from rows before
+         anything is written: a roster that is merely stale (a live occupancy
+         the engine forgot), so no residue pair may have an open `table_seats`
+         row; and a CASH SEAT MOVE still in transit (the carried presence and
+         bank wait in the process-wide SeatMovePresence map until the
+         destination's seat sweep claims them), so the destination engine of
+         any such move out of a residue table must already seat that exact
+         occupancy and hold the carried bank. An active timer is refused
+         outright.
 
          DISPOSED - metadata for a seated player on a STOPPED engine whose
          `stop()` disposed every bank. The live value is already gone and no
@@ -2409,62 +2414,121 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     // out is PROVED; a row it cannot rule out refuses; an error, a body that is
     // not a list or a page that fills is COULD NOT TELL, and refuses. There is
     // no flag, option or argument that turns a refusal here into permission.
+    // The reads run concurrently (at most eight at a time) between ONE pair of
+    // full re-verifications, so the proof costs one round of reads, not one per
+    // page, inside the publisher's work budget.
     async function proveBanksHeldNothing(checkAll) {
       const residueTables = captures.filter((capture) => capture.residue.length > 0);
       const disposedTables = captures.filter((capture) => capture.disposed.length > 0);
       if (residueTables.length === 0 && disposedTables.length === 0) return;
-      // At most ten tables per read, so the open seats a page can return (ten
-      // chairs a table) stay inside the ceiling, and at most 200 players, so
-      // the request stays a short URL. One table always fits on its own.
-      const pages = [];
-      for (const capture of residueTables) {
-        const last = pages[pages.length - 1];
-        if (last && last.length < 10 &&
-          last.reduce((sum, c) => sum + c.residue.length, 0) + capture.residue.length <= 200) {
-          last.push(capture);
-        } else {
-          pages.push([capture]);
-        }
-      }
-      const rowCeiling = 100;
-      for (const page of pages) {
-        const held = new Set(page.flatMap(({ tableId, residue }) =>
-          residue.map((userId) => `${tableId.toLowerCase()}:${userId}`)));
-        const users = [...new Set(page.flatMap(({ residue }) => residue))].sort();
-        checkAll();
-        const { data, error } = await modules.client.supabase
+      const lower = (value) => String(value).toLowerCase();
+      const refuseAt = (check, table, code) => {
+        noteRefusal(() => ({ failedCheck: check, failedTable: uuid(table) ? table : describe(table) }));
+        refuse(code);
+      };
+      const chunks = (values, size) => {
+        const out = [];
+        for (let offset = 0; offset < values.length; offset += size) out.push(values.slice(offset, offset + size));
+        return out;
+      };
+      const readAll = async (reads) => {
+        const answers = new Array(reads.length);
+        let next = 0;
+        const worker = async () => {
+          while (next < reads.length) {
+            const index = next++;
+            answers[index] = await reads[index]();
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(8, reads.length) }, worker));
+        return answers;
+      };
+      const answered = (answer, ceiling, code) =>
+        require(record(answer) &&
+          !answer.error &&
+          Array.isArray(answer.data) &&
+          answer.data.length <= ceiling, code);
+      const held = new Set(residueTables.flatMap(({ tableId, residue }) =>
+        residue.map((userId) => `${lower(tableId)}:${userId}`)));
+      const residueUsers = [...new Set(residueTables.flatMap(({ residue }) => residue))].sort();
+      checkAll();
+      // 1. Every open seat each residue player holds, at ANY table. One HERE is
+      // a live occupancy the engine no longer holds, and it is never residue.
+      // A player holds at most a handful of seats, so a hundred players stay
+      // far inside the 900-row ceiling, and a page that fills refuses.
+      const open = [];
+      for (const answer of await readAll(chunks(residueUsers, 100).map((users) => () =>
+        modules.client.supabase
           .from('table_seats')
-          .select('table_id,user_id')
-          .in('table_id', page.map(({ tableId }) => tableId))
+          .select('table_id,user_id,occupancy_id')
           .in('user_id', users)
           .is('left_at', null)
-          .limit(rowCeiling + 1);
-        checkAll();
-        // `error` first, every time: a failed read is not an empty result.
-        require(!error && Array.isArray(data) && data.length <= rowCeiling, 'bank_residue_unproven');
-        for (const row of data) {
-          // An open seat at ANOTHER table in the page is where a moved player
-          // sits now, not this table's residue. One HERE is a live occupancy
-          // the engine no longer holds, and it is never residue.
+          .limit(901)))) {
+        answered(answer, 900, 'bank_residue_unproven');
+        for (const row of answer.data) {
           require(record(row) &&
             uuid(row.table_id) &&
             uuid(row.user_id) &&
-            !held.has(`${row.table_id.toLowerCase()}:${row.user_id.toLowerCase()}`), 'bank_residue_unproven');
+            uuid(row.occupancy_id), 'bank_residue_unproven');
+          if (held.has(`${lower(row.table_id)}:${lower(row.user_id)}`))
+            refuseAt('proveBanksHeldNothing.openSeatAtResidueTable', row.table_id, 'bank_residue_unproven');
+          open.push(row);
         }
       }
-      const since = new Date(Date.now() - inflightWindowMs).toISOString();
-      for (let offset = 0; offset < disposedTables.length; offset += readPageSize) {
-        const page = disposedTables.slice(offset, offset + readPageSize).map(({ tableId }) => tableId);
-        checkAll();
-        const { data, error } = await modules.client.supabase
+      // 2. A residue player who left a residue table by a CASH SEAT MOVE and
+      // still sits at that move's destination. The source deposited the carried
+      // presence and bank in the process-wide SeatMovePresence map when the
+      // move landed (8825 ServerTableEngineBase.ts:4059-4061); the destination
+      // claims it only in its seat sweep, after `adoptSeatRoster`, and a park
+      // (or a failed arrival read, retried every 5 s) can come between. Until
+      // then only this process holds that state, and a restart drops it. So the
+      // destination engine must already seat that exact occupancy AND hold the
+      // carried bank. Only moves this process could have handled are read.
+      const since = new Date(performance.timeOrigin - 60000).toISOString();
+      const byOccupancy = new Map(open.map((row) => [lower(row.occupancy_id), row]));
+      for (const answer of await readAll(chunks([...byOccupancy.keys()].sort(), 200).map((ids) => () =>
+        modules.client.supabase
+          .from('cash_seat_move_receipts')
+          .select('player_id,from_table_id,to_table_id,destination_occupancy_id')
+          .in('destination_occupancy_id', ids)
+          .gte('created_at', since)
+          .limit(201)))) {
+        answered(answer, 200, 'bank_residue_unproven');
+        for (const move of answer.data) {
+          require(record(move) &&
+            uuid(move.player_id) &&
+            uuid(move.from_table_id) &&
+            uuid(move.to_table_id) &&
+            uuid(move.destination_occupancy_id), 'bank_residue_unproven');
+          if (!held.has(`${lower(move.from_table_id)}:${lower(move.player_id)}`)) continue;
+          const seat = byOccupancy.get(lower(move.destination_occupancy_id));
+          const destination = seat === undefined ? undefined : tableMap.get(seat.table_id);
+          const seated = Array.isArray(destination?.seatedPlayers)
+            ? destination.seatedPlayers.find((entry) =>
+              record(entry) &&
+                lower(entry.user_id) === lower(move.player_id) &&
+                lower(entry.occupancy_id) === lower(move.destination_occupancy_id))
+            : undefined;
+          if (!(seated !== undefined &&
+            destination.timeBankEngine?.playerBanks instanceof Map &&
+            destination.timeBankEngine.playerBanks.has(`${destination.tableId}:${seated.user_id}`)))
+            refuseAt('proveBanksHeldNothing.seatMoveInTransit', seat?.table_id ?? move.to_table_id, 'bank_residue_unproven');
+        }
+      }
+      // 3. The felt is quiet at every stopped table whose metadata outlived the
+      // banks its stop disposed: the release gate's own predicate.
+      const quietSince = new Date(Date.now() - inflightWindowMs).toISOString();
+      for (const answer of await readAll(chunks(disposedTables.map(({ tableId }) => tableId), readPageSize).map((page) => () =>
+        modules.client.supabase
           .from('hand_state_snapshots')
           .select('table_id,hand_number,stage,updated_at')
           .in('table_id', page)
           .eq('is_complete', false)
-          .gte('updated_at', since)
-          .limit(page.length + 1);
-        checkAll();
-        require(!error && Array.isArray(data) && data.length === 0, 'stopped_disposed_banks_unproven');
+          .gte('updated_at', quietSince)
+          .limit(page.length + 1)))) {
+        answered(answer, readPageSize, 'stopped_disposed_banks_unproven');
+        if (answer.data.length > 0)
+          refuseAt('proveBanksHeldNothing.handInTheAir', answer.data[0]?.table_id, 'stopped_disposed_banks_unproven');
       }
       checkAll();
       const events = [...new Set(disposedTables.map(({ engine }) => {
@@ -2474,12 +2538,12 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       bankDisposition = [
         `residueTables=${residueTables.length}`,
         `residuePlayers=${residueTables.reduce((sum, { residue }) => sum + residue.length, 0)}`,
+        `residueOpenSeatsElsewhere=${open.length}`,
         `disposedTables=${disposedTables.length}`,
         `disposedSeats=${disposedTables.reduce((sum, { disposed }) => sum + disposed.length, 0)}`,
         `disposedEvents=${events.slice(0, 12).join('/') || 'none'}`,
       ].join(',').slice(0, 512);
     }
-
     // Join the existing announcement/native park writes before taking the final
     // baseline. Pointer equality refuses any newly admitted presence writer.
     const previousWork = await Promise.allSettled(

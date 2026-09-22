@@ -120,6 +120,10 @@ function checkpointSummary(value) {
     // Which tables were proved abandoned from rows, and how many unreachable
     // boundary generations each carried. Carried verbatim; nothing reads it.
     'abandonedBoundaries',
+    // How many residue players and disposed seats the rows proved held
+    // nothing, and on which stopped tournaments. Carried verbatim; nothing
+    // reads it.
+    'bankDisposition',
   ]) {
     const item = value?.[key];
     if (

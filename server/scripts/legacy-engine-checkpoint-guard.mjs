@@ -163,6 +163,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   // bank), and how many times the churn replaced or removed one while the
   // checkpoint ran. Never read by a decision.
   let skippedUnstarted = 0;
+  // Observability only: how many residue players and disposed seats the rows
+  // proved held nothing, on how many tables, and which stopped tournaments.
+  // Never read by a decision.
+  let bankDisposition = null;
   let unstartedReplacements = 0;
   let unstartedDepartures = 0;
   const refuse = (code) => {
@@ -277,6 +281,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     ...(abandonedBoundaries === null ? {} : { abandonedBoundaries }),
     ...(refusalDetail === null ? {} : refusalDetail),
     ...(retained8825 ? { skippedUnstarted, unstartedReplacements, unstartedDepartures } : {}),
+    ...(bankDisposition === null ? {} : { bankDisposition }),
   });
 
   try {
@@ -1865,8 +1870,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
          few seconds and never reaches `unregisterTournamentTableEngine`, so
          its stopped engines stay registered.
 
-       They need different dispositions and neither may be waved through. So a
-       refusal here names its table and a player-free shape of it, plus a
+       They need different dispositions and neither may be waved through (see
+       "A BANK THE ENGINE NO LONGER HOLDS IS NOT CUSTODY" below). A refusal
+       here names its table and a player-free shape of it, plus a
        census of every engine the capture walks, by the same shape, so ONE
        refused attempt is enough to design the disposition. Sizes, booleans,
        the lease scope and tournament ids only: no player id, bank value or
@@ -2100,18 +2106,52 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         seatIds.add(seat.user_id.toLowerCase());
         seats.set(seat.user_id, seat);
       }
+      /* ═══ A BANK THE ENGINE NO LONGER HOLDS IS NOT CUSTODY (2026-09-22) ═══
+
+         8825 only; every other profile refuses exactly as before. The note
+         above `bankShape` has the source lines. Two shapes the live 8825
+         fleet cannot avoid, and neither is waved through:
+
+         RESIDUE - a bank, or its metadata, for a player this engine no longer
+         seats (a cashout, a move, an eviction, a tournament bust). 8825's own
+         `captureParkedTimeBanks` walks the roster only, so nothing here is
+         written by the checkpoint or restored by its successor. The one way
+         it could still be custody is a roster that is merely stale, a live
+         occupancy the engine forgot; so every residue pair is proved CLOSED
+         from `table_seats` (no row with `left_at IS NULL`) before anything is
+         written, and an active timer is refused outright.
+
+         DISPOSED - metadata for a seated player on a STOPPED engine whose
+         `stop()` disposed every bank. The live value is already gone and no
+         refusal can bring it back; the metadata is only its accounting mirror
+         (`timeBankAccountingPending`/`Unconfirmed` were required drained
+         above). Only a stopped engine that holds no bank at all qualifies,
+         and its felt is proved quiet from `hand_state_snapshots` (the same
+         120 s predicate as the release gate) before anything is written.
+
+         Both sets are part of the signature, so a set that MOVES between
+         observations refuses as `engine_state_changed`; `proveBanksHeldNothing`
+         reads the rows, and refuses on any row it cannot rule out, any error
+         and any page that fills. */
+      const residue = new Set();
       for (const [key, bank] of engine.timeBankEngine.playerBanks) {
         require(record(bank) &&
           bank.tableId === tableId &&
           uuid(bank.playerId) &&
           key === `${tableId}:${bank.playerId}` &&
-          seats.has(bank.playerId), 'bank_occupancy_mismatch');
+          (seats.has(bank.playerId) ||
+            (retained8825 && bank.isActive === false)), 'bank_occupancy_mismatch');
+        if (!seats.has(bank.playerId)) residue.add(bank.playerId.toLowerCase());
       }
+      const disposed = new Set();
       for (const userId of engine.timeBankMeta.keys()) {
-        require(seats.has(userId) &&
-          engine.timeBankEngine.playerBanks.has(
-            `${tableId}:${userId}`
-          ), 'bank_metadata_without_bank');
+        const seated = seats.has(userId);
+        if (seated && engine.timeBankEngine.playerBanks.has(`${tableId}:${userId}`)) continue;
+        require(retained8825 &&
+          uuid(userId) &&
+          (!seated ||
+            (stopped && engine.timeBankEngine.playerBanks.size === 0)), 'bank_metadata_without_bank');
+        (seated ? disposed : residue).add(userId.toLowerCase());
       }
       const expectedBanks = {};
       for (const [userId, bank] of Object.entries(engine.parkedTimeBanks)) {
@@ -2129,6 +2169,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           if (!Object.hasOwn(expectedBanks, userId)) uninitialized++;
           continue;
         }
+        // DISPOSED above: a stop took the bank; there is nothing live to persist.
+        if (!bank && disposed.has(userId.toLowerCase())) continue;
         require(record(bank) &&
           record(meta) &&
           bank.isActive === false &&
@@ -2156,7 +2198,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         Object.keys(states).length <= maxEntriesPerTable &&
         JSON.stringify(states).length <= 65536, 'presence_bound_or_shape');
       if (stopped) {
-        require(engine.timeBankMeta.size === 0 &&
+        // On 8825 every metadata entry of a stopped engine was classified above
+        // as residue or disposed, and both are proved from rows before a write.
+        require((retained8825 || engine.timeBankMeta.size === 0) &&
           engine.timeBankEngine.playerBanks.size === 0 &&
           Object.keys(engine.parkedTimeBanks).length === 0 &&
           Object.keys(states).length === 0, 'stopped_engine_retains_custody');
@@ -2171,6 +2215,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         ]),
         banks: expectedBanks,
         states,
+        ...(retained8825 ? { residue: [...residue].sort(), disposed: [...disposed].sort() } : {}),
       });
       return {
         tableId,
@@ -2184,6 +2229,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         states,
         signature,
         uninitialized,
+        residue: [...residue].sort(),
+        disposed: [...disposed].sort(),
         pause: engine.handForHandResolve,
         timer: engine.pauseGateTimer,
         bankEngine: engine.timeBankEngine,
@@ -2358,6 +2405,80 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       for (const captured of captures) checkEngine(captured);
       return remaining;
     };
+    // THREE OUTCOMES, as in `proveAbandonedBoundaries`: no row it cannot rule
+    // out is PROVED; a row it cannot rule out refuses; an error, a body that is
+    // not a list or a page that fills is COULD NOT TELL, and refuses. There is
+    // no flag, option or argument that turns a refusal here into permission.
+    async function proveBanksHeldNothing(checkAll) {
+      const residueTables = captures.filter((capture) => capture.residue.length > 0);
+      const disposedTables = captures.filter((capture) => capture.disposed.length > 0);
+      if (residueTables.length === 0 && disposedTables.length === 0) return;
+      // At most ten tables per read, so the open seats a page can return (ten
+      // chairs a table) stay inside the ceiling, and at most 200 players, so
+      // the request stays a short URL. One table always fits on its own.
+      const pages = [];
+      for (const capture of residueTables) {
+        const last = pages[pages.length - 1];
+        if (last && last.length < 10 &&
+          last.reduce((sum, c) => sum + c.residue.length, 0) + capture.residue.length <= 200) {
+          last.push(capture);
+        } else {
+          pages.push([capture]);
+        }
+      }
+      const rowCeiling = 100;
+      for (const page of pages) {
+        const held = new Set(page.flatMap(({ tableId, residue }) =>
+          residue.map((userId) => `${tableId.toLowerCase()}:${userId}`)));
+        const users = [...new Set(page.flatMap(({ residue }) => residue))].sort();
+        checkAll();
+        const { data, error } = await modules.client.supabase
+          .from('table_seats')
+          .select('table_id,user_id')
+          .in('table_id', page.map(({ tableId }) => tableId))
+          .in('user_id', users)
+          .is('left_at', null)
+          .limit(rowCeiling + 1);
+        checkAll();
+        // `error` first, every time: a failed read is not an empty result.
+        require(!error && Array.isArray(data) && data.length <= rowCeiling, 'bank_residue_unproven');
+        for (const row of data) {
+          // An open seat at ANOTHER table in the page is where a moved player
+          // sits now, not this table's residue. One HERE is a live occupancy
+          // the engine no longer holds, and it is never residue.
+          require(record(row) &&
+            uuid(row.table_id) &&
+            uuid(row.user_id) &&
+            !held.has(`${row.table_id.toLowerCase()}:${row.user_id.toLowerCase()}`), 'bank_residue_unproven');
+        }
+      }
+      const since = new Date(Date.now() - inflightWindowMs).toISOString();
+      for (let offset = 0; offset < disposedTables.length; offset += readPageSize) {
+        const page = disposedTables.slice(offset, offset + readPageSize).map(({ tableId }) => tableId);
+        checkAll();
+        const { data, error } = await modules.client.supabase
+          .from('hand_state_snapshots')
+          .select('table_id,hand_number,stage,updated_at')
+          .in('table_id', page)
+          .eq('is_complete', false)
+          .gte('updated_at', since)
+          .limit(page.length + 1);
+        checkAll();
+        require(!error && Array.isArray(data) && data.length === 0, 'stopped_disposed_banks_unproven');
+      }
+      checkAll();
+      const events = [...new Set(disposedTables.map(({ engine }) => {
+        const event = engine?.engineLeaseTournamentId;
+        return uuid(event) ? event.slice(0, 8) : 'none';
+      }))].sort();
+      bankDisposition = [
+        `residueTables=${residueTables.length}`,
+        `residuePlayers=${residueTables.reduce((sum, { residue }) => sum + residue.length, 0)}`,
+        `disposedTables=${disposedTables.length}`,
+        `disposedSeats=${disposedTables.reduce((sum, { disposed }) => sum + disposed.length, 0)}`,
+        `disposedEvents=${events.slice(0, 12).join('/') || 'none'}`,
+      ].join(',').slice(0, 512);
+    }
 
     // Join the existing announcement/native park writes before taking the final
     // baseline. Pointer equality refuses any newly admitted presence writer.
@@ -2370,6 +2491,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       (entry) => entry.status === 'fulfilled'
     ), 'previous_native_work_unconfirmed');
     checkAll();
+    // Order is load-bearing: the rows prove that the residue and the disposed
+    // banks hold nothing BEFORE any presence or bank row is written.
+    if (retained8825) await proveBanksHeldNothing(checkAll);
     bankCount = captures.reduce((sum, capture) => sum + Object.keys(capture.banks).length, 0);
     uninitializedSeats = captures.reduce((sum, capture) => sum + capture.uninitialized, 0);
     stage = 'checkpoint';

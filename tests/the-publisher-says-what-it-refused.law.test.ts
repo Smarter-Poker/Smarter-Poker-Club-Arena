@@ -1,5 +1,6 @@
 /**
- * LAW: a guard in the Club Arena publisher may not refuse in silence.
+ * LAW: a guard in the Club Arena publisher may not refuse in silence, and no
+ * one step may grow until the workflow itself stops parsing.
  * ═══════════════════════════════════════════════════════════════════════════
  * CLAUDE.md 10.86 rule 1: "I could not tell" is a distinct outcome and must
  * have its own name. This law applies the same sentence to "I refused": a
@@ -14,8 +15,7 @@
  * characters. The second printed one line, "reusing the already sealed
  * immutable release for 91bd816", and exited 1 fifty-nine milliseconds
  * later. Fifty-eight guards in that file could do that: a bare `test -d X`
- * or `[ ... ]` used as a statement under `set -e` exits 1 and says nothing
- * at all.
+ * or `[ ... ]` used as a statement under `set -e` exits 1 and says nothing.
  *
  * The guard was RIGHT. `scripts/self-host-fonts.mjs` could not reach Google
  * Fonts, warned, and exited 0, so dist carried no fonts/ directory; the
@@ -24,6 +24,17 @@
  * the fonts of every shell already cached on a player's device. Refusing was
  * correct. Refusing without a word is what cost the afternoon.
  *
+ * AND THEN THE FIX HIT THE CEILING ABOVE IT (same day). Giving 58 guards a
+ * voice grew the origin transaction step from 17,304 to 24,626 characters,
+ * which is more than GitHub Actions accepts for a single `run`. The whole
+ * workflow stopped parsing: no job started, the run carried the file path
+ * instead of the workflow's name, and a branch push produced a run for a
+ * main-only workflow. Measured by experiment that day, on the known-good
+ * file plus padding alone: 17,304 accepted, 24,094 refused. The transaction
+ * is a tracked script now, piped to `bash -s` from the same protected-main
+ * checkout, and the budget below keeps every remaining step far from the
+ * edge rather than just under it (10.86 rule 4).
+ *
  * WHO READS THIS (CLAUDE.md 10.86 rule 3). `Client Unit Tests (vitest)`, one
  * of the six required contexts in the `main protection` ruleset, runs
  * `npx vitest run tests/` over four shards in ci.yml. The publisher's own
@@ -31,23 +42,25 @@
  * reintroduced silent guard cannot reach production through either door.
  *
  * WHAT THIS LAW DOES NOT DO. It never relaxes a refusal. Every condition the
- * publisher refused on before still refuses; the diff that this law protects
+ * publisher refused on before still refuses; the work this law protects
  * added voice, never permission.
  */
-import { describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { load } from 'js-yaml';
 import { sliceBetween } from './helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..');
 const PUBLISHER = '.github/workflows/publish-club-arena.yml';
+const ACTIVATION = '.github/scripts/publish-origin-activate.sh';
 const read = (file: string) => readFileSync(join(ROOT, file), 'utf8');
 
 /**
- * Every `run:` block scalar in a workflow, as line ranges. Nothing outside a
- * run block is shell, so nothing outside one is scanned.
+ * A step's `run:` is the only place a workflow holds shell, so it is the only
+ * place this scanner looks inside the YAML.
  */
 export function runBlockRanges(workflow: string): Array<[number, number]> {
   const lines = workflow.split('\n');
@@ -71,26 +84,15 @@ export function runBlockRanges(workflow: string): Array<[number, number]> {
   return ranges;
 }
 
-/** `test`, `[ ... ]` and `[[ ... ]]`: the three that exit 1 and print nothing. */
-const CONDITIONAL = /^(?:!\s*)?(?:test\s|\[\s|\[\[\s)/;
-
-/**
- * A logical shell line whose LAST command is one of those three can end the
- * step with an empty log. `if`/`while`/`until` conditions cannot (their
- * failure is a branch, not an exit), and neither can `... && continue` or any
- * list whose final command is a diagnostic, because the final command is what
- * `set -e` acts on. Checking the LAST command is what catches `A || B` where
- * B is a second silent test rather than a message.
- */
-export function logicalShellLines(workflow: string): Array<{ line: number; text: string }> {
-  const lines = workflow.split('\n');
-  const ranges = runBlockRanges(workflow);
-  const inRun = (n: number) => ranges.some(([a, b]) => n >= a && n < b);
+/** Backslash continuations joined, so a guard and its diagnostic read as one. */
+function joinContinuations(
+  lines: string[],
+  keep: (index: number) => boolean
+): Array<{ line: number; text: string }> {
   const logical: Array<{ line: number; text: string }> = [];
   let buffered: { line: number; text: string } | null = null;
-
   for (let i = 0; i < lines.length; i++) {
-    if (!inRun(i)) {
+    if (!keep(i)) {
       buffered = null;
       continue;
     }
@@ -109,8 +111,30 @@ export function logicalShellLines(workflow: string): Array<{ line: number; text:
   return logical;
 }
 
-export function silentGuards(workflow: string): Array<{ line: number; text: string }> {
-  return logicalShellLines(workflow).filter(({ text }) => {
+export function logicalShellLines(workflow: string): Array<{ line: number; text: string }> {
+  const ranges = runBlockRanges(workflow);
+  return joinContinuations(workflow.split('\n'), (n) => ranges.some(([a, b]) => n >= a && n < b));
+}
+
+export function logicalScriptLines(script: string): Array<{ line: number; text: string }> {
+  return joinContinuations(script.split('\n'), () => true);
+}
+
+/** `test`, `[ ... ]` and `[[ ... ]]`: the three that exit 1 and print nothing. */
+const CONDITIONAL = /^(?:!\s*)?(?:test\s|\[\s|\[\[\s)/;
+
+/**
+ * A logical shell line whose LAST command is one of those three can end the
+ * step with an empty log. `if`/`while`/`until` conditions cannot (their
+ * failure is a branch, not an exit), and neither can `... && continue` or any
+ * list whose final command is a diagnostic, because the final command is what
+ * `set -e` acts on. Checking the LAST command is what catches `A || B` where
+ * B is a second silent test rather than a message.
+ */
+export function silentGuards(
+  logical: Array<{ line: number; text: string }>
+): Array<{ line: number; text: string }> {
+  return logical.filter(({ text }) => {
     if (/^#/.test(text)) return false;
     if (/^(?:if|elif|while|until)\b/.test(text)) return false;
     if (!CONDITIONAL.test(text)) return false;
@@ -120,13 +144,27 @@ export function silentGuards(workflow: string): Array<{ line: number; text: stri
   });
 }
 
+/**
+ * The budget, and the two measurements it sits between. 17,304 characters was
+ * accepted on 2026-09-22 and 24,094 was refused; 12,000 leaves the largest
+ * remaining step (7,431) room to grow and still stops well short of the edge.
+ * If you need more than this in one step, move the script to a tracked file
+ * next to the activation transaction rather than raising the number.
+ */
+const MAX_RUN_CHARACTERS = 12_000;
+
 describe('the publisher says what it refused', () => {
   it('has no guard that can stop the release without printing anything', () => {
-    const workflow = read(PUBLISHER);
-    const silent = silentGuards(workflow);
-    const report = silent.map((g) => `  ${PUBLISHER}:${g.line}  ${g.text}`).join('\n');
+    const found = [
+      ...silentGuards(logicalShellLines(read(PUBLISHER))).map((g) => ({ ...g, file: PUBLISHER })),
+      ...silentGuards(logicalScriptLines(read(ACTIVATION))).map((g) => ({
+        ...g,
+        file: ACTIVATION,
+      })),
+    ];
+    const report = found.map((g) => `  ${g.file}:${g.line}  ${g.text}`).join('\n');
     expect(
-      silent,
+      found,
       [
         'These lines end in a bare test/[/[[ used as a statement. Under `set -e`',
         'that exits 1 and prints nothing at all, which is how two publishes on',
@@ -144,52 +182,59 @@ describe('the publisher says what it refused', () => {
     ).toEqual([]);
   });
 
+  it('keeps every run step far below the size that stopped the workflow parsing', () => {
+    const workflow = load(read(PUBLISHER)) as {
+      jobs: Record<string, { steps?: Array<{ name?: string; run?: string }> }>;
+    };
+    const oversized: string[] = [];
+    for (const [id, job] of Object.entries(workflow.jobs)) {
+      for (const step of job.steps ?? []) {
+        if (typeof step.run === 'string' && step.run.length > MAX_RUN_CHARACTERS) {
+          oversized.push(`${id} / ${step.name ?? '(unnamed)'}: ${step.run.length} characters`);
+        }
+      }
+    }
+    expect(
+      oversized,
+      [
+        `A run step is over ${MAX_RUN_CHARACTERS} characters. GitHub Actions refuses a`,
+        'workflow whose step is too large, and it refuses the WHOLE FILE: no job',
+        'starts, the run is named after the file instead of the workflow, and no',
+        'log says why. That happened on 2026-09-22 and nothing published until it',
+        'was found. Move the script into a tracked file and pipe it, the way',
+        `${ACTIVATION} is piped to the origin.`,
+        '',
+        ...oversized,
+      ].join('\n')
+    ).toEqual([]);
+  });
+
   it('proves the scanner still recognises the shape it was written for', () => {
-    // A guard with no diagnostic, and the same guard with one. If the first
-    // stops being reported this law has quietly stopped working.
-    const withoutVoice = [
-      'jobs:',
-      '  a:',
-      '    steps:',
-      '      - run: |',
-      '          test -d "$X"',
-    ].join('\n');
-    const withVoice = [
-      'jobs:',
-      '  a:',
-      '    steps:',
-      '      - run: |',
-      '          test -d "$X" \\',
-      '            || { echo "$X is not a directory" >&2; exit 1; }',
-    ].join('\n');
-    expect(silentGuards(withoutVoice).map((g) => g.text)).toEqual(['test -d "$X"']);
-    expect(silentGuards(withVoice)).toEqual([]);
+    const shell = (...body: string[]) =>
+      ['jobs:', '  a:', '    steps:', '      - run: |', ...body.map((l) => `          ${l}`)].join(
+        '\n'
+      );
+    const guards = (yaml: string) => silentGuards(logicalShellLines(yaml)).map((g) => g.text);
+    expect(guards(shell('test -d "$X"'))).toEqual(['test -d "$X"']);
+    expect(
+      guards(shell('test -d "$X" \\', '  || { echo "$X is not a directory" >&2; exit 1; }'))
+    ).toEqual([]);
     // `A || B` where B is a second silent test is still silent.
-    const orChain = [
-      'jobs:',
-      '  a:',
-      '    steps:',
-      '      - run: |',
-      '          [ "$A" = "$B" ] || [ "$A" = "$C" ]',
-    ].join('\n');
-    expect(silentGuards(orChain)).toHaveLength(1);
+    expect(guards(shell('[ "$A" = "$B" ] || [ "$A" = "$C" ]'))).toHaveLength(1);
     // A conditional branch is not a refusal, and neither is `&& continue`.
-    const branches = [
-      'jobs:',
-      '  a:',
-      '    steps:',
-      '      - run: |',
-      '          if [ -d "$X" ]; then echo yes; fi',
-      '          [ "$NAME" = "$KEEP" ] && continue',
-    ].join('\n');
-    expect(silentGuards(branches)).toEqual([]);
+    expect(
+      guards(shell('if [ -d "$X" ]; then echo yes; fi', '[ "$NAME" = "$KEEP" ] && continue'))
+    ).toEqual([]);
+    // The same scanner reads the activation script, which is shell end to end.
+    expect(silentGuards(logicalScriptLines('set -e\ntest -d "$X"\n')).map((g) => g.text)).toEqual([
+      'test -d "$X"',
+    ]);
   });
 
   it('names the release layout the origin transaction requires, and why', () => {
     // Shell only. The comment above those guards quotes them by name, and a
-    // quoted shape is not an executable one (CLAUDE.md 10.7 learned this the
-    // expensive way about prose that a checker greps).
-    const workflow = read(PUBLISHER)
+    // quoted shape is not an executable one.
+    const script = read(ACTIVATION)
       .split('\n')
       .filter((line) => !/^\s*#/.test(line))
       .join('\n');
@@ -198,25 +243,34 @@ describe('the publisher says what it refused', () => {
       ['test -d "$FINAL/fonts"', 'has no fonts directory'],
       ['test -f "$FINAL/fonts/fonts.css"', 'has no regular file at'],
     ];
-    const statements = logicalShellLines(workflow);
+    const statements = logicalScriptLines(script);
     for (const [guard, says] of required) {
       const refusal = statements.find((line) => line.text.startsWith(guard));
       expect(refusal, `${guard} must still refuse`).toBeDefined();
       expect(refusal!.text, `${guard} must say what it refused`).toContain('release $SHA ' + says);
     }
-    expect(workflow).toContain("the pool's fonts.css points into current/fonts/fonts.css");
-    // The build job refuses the same bundle earlier; the origin still refuses it.
-    expect(read(PUBLISHER)).toContain('require_directory dist/fonts');
+    expect(script).toContain("the pool's fonts.css points into current/fonts/fonts.css");
   });
 
   it('refuses a bundle the origin could never accept in the job that built it', () => {
-    const workflow = read(PUBLISHER);
-    const step = sliceBetween(workflow, '- name: Verify dist is complete', '- name: Build summary');
+    const step = sliceBetween(
+      read(PUBLISHER),
+      '- name: Verify dist is complete',
+      '- name: Build summary'
+    );
     expect(step).toContain('require_file dist/index.html');
     expect(step).toContain('require_directory dist/assets');
     expect(step).toContain('require_directory dist/fonts');
     expect(step).toContain('require_file dist/fonts/fonts.css');
     expect(step).toContain('publication would be refused on the host');
+  });
+
+  it('pipes the activation transaction from the protected checkout, not a second publisher', () => {
+    const workflow = read(PUBLISHER);
+    expect(workflow).toContain(`bash -s -- \\`);
+    expect(workflow).toContain(`< ${ACTIVATION}`);
+    expect(workflow).not.toContain("<<'REMOTE_ACTIVATE'");
+    expect(read(ACTIVATION)).toContain('set -euo pipefail');
   });
 
   /**

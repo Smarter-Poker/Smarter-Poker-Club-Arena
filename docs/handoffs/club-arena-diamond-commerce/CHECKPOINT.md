@@ -57,8 +57,9 @@ Published; Production-Verified; Unknown.
 | Migration        | `supabase/migrations/20260922143541_club_and_union_diamond_commerce.sql` (version reserved by `scripts/new-migration.mjs`)                                                                                                                                                                                                                                                                                                                |
 | Schema fragment  | `scripts/ci/schema-manifest.d/club-and-union-diamond-commerce.json` (14 tables, 35 functions)                                                                                                                                                                                                                                                                                                                                             |
 | Isolated runner  | `tests/sql/run-diamond-club-commerce.py` (private cluster; registered in `scripts/ci/run-diamond-sql-acceptance.py`, `tests/unit/diamondAcceptanceCi.test.ts`)                                                                                                                                                                                                                                                                            |
-| Client           | `src/services/ClubCommerceService.ts`, `src/pages/club/ClubDiamondCostsPage.tsx`, routes `clubs/:clubId/diamond-costs` and `unions/:unionId/diamond-costs`, operations registry item `diamond-costs` (finance)                                                                                                                                                                                                                            |
+| Client           | `src/services/ClubCommerceService.ts`, `src/pages/club/ClubDiamondCostsPage.tsx`, routes `clubs/:clubId/diamond-costs` and `unions/:unionId/diamond-costs`, operations registry item `diamond-costs` (finance, suffix in `OPERATION_SUFFIXES` and `FINANCE_SUFFIXES`), union rail entry `Diamond Costs` in `arenaSectionNavigation.ts`                                                                                                    |
 | Engine           | `server/src/services/CommerceRenewalConsumer.ts` (+ test), registered in `server/src/index.ts` leader-owned services                                                                                                                                                                                                                                                                                                                      |
+| Pull request     | #5077 `https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5077`; commits 947b64e23, 9b1927e58, e46819e96, 779e6ef81 (branch head 779e6ef8132dda41bd312e3fb0a6ac4d351f5278)                                                                                                                                                                                                                                                    |
 | Supabase project | kuklfnapbkmacvwxktbh (PokerIQ-Production)                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Live reads made  | 2026-09-22 14:17Z: `deduct_diamonds` definition (self-payer guard `auth.role() = 'service_role' OR auth.uid() = p_user_id`; FIFO lot consumption; journal spend to `revenue:<source>`); function signature list; extension list (btree_gist not installed, so interval identity is enforced by the scope advisory lock plus the period identity index rather than an EXCLUDE constraint). No customer balances or payment rows were read. |
 
@@ -191,9 +192,19 @@ wallet ceiling path (D64) rather than the reserve path itself.
 
 ## Next actions
 
-1. Push the owned branch, open the PR, read the required checks.
-2. Install the migration through the approved route outside the :50-:03 UTC
-   window, read back functions/grants/catalog, record the history row.
+1. Done: branch pushed, PR #5077 open, checks read (see Phase 10).
+2. BLOCKED, needs the owner: install the migration through an approved route
+   outside the :50-:03 UTC window. The Supabase MCP `apply_migration` call
+   from this session was refused by the action classifier. Options: the owner
+   permits that call in this session, or applies
+   `supabase/migrations/20260922143541_club_and_union_diamond_commerce.sql`
+   (sha256 595da91b3f5a58ced44735fdb7df439b9955c9212eecb6101768c5f28884c065)
+   through the CLI / dashboard SQL editor as ONE transaction, name
+   `club_and_union_diamond_commerce`. Then read back functions, grants and the
+   catalog and record the history row here. The migration must be installed
+   before the engine release is dispatched: `check-engine-doors-exist` reads
+   production `pg_proc` for `fn_ca_commerce_claim_due_renewals`,
+   `fn_ca_commerce_execute_renewal` and `fn_ca_commerce_deliver_due_notices`.
 3. Protected squash merge; verify `publish-club-arena` and both build-info
    endpoints; verify the page renders at `/hub/club-arena/clubs/<id>/diamond-costs`.
 4. Engine: `stage-engine-release.yml` -> certified `auto-deploy-hetzner.yml`;

@@ -82,7 +82,11 @@ volume and expected count. Bomb-pot volume is read only from days
 human seated after `horse_retention_days`, 8); on an older day those counters
 say `volume_today: null` instead of silent or healthy. Signature, owner,
 `SECURITY DEFINER`, `STABLE`, `search_path` and grants are unchanged. Section
-2, `layer_fire_collapse`, is unchanged.
+2, `layer_fire_collapse`, is unchanged. The replay of the new section 1 for
+2026-09-20 runs in 128.7 ms on production (`EXPLAIN ANALYZE`, read-only), with
+the bomb-pot scan read once (`MATERIALIZED`); inlined it re-ran per counter and
+day and took 963.2 ms. `fn_run_horse_daily_audit` runs under a 60 s
+`statement_timeout`.
 
 ## Why twelve
 

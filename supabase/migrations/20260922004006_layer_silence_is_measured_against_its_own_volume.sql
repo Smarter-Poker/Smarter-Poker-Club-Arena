@@ -297,7 +297,10 @@ begin
               or feature like 'phase13\_variant\_%')
        group by day
     ),
-    bomb as (
+    -- MATERIALIZED: read once. Inlined, this scan re-ran inside per_day's
+    -- scalar subquery for every bomb-pot counter and day (24 loops, 0.86 s of
+    -- a 0.96 s replay on 2026-09-20), and it grows with the counter count.
+    bomb as materialized (
       select (created_at at time zone 'UTC')::date as day, game_variant as variant, count(*) as hands
         from hand_history
        where bomb_pot is not null

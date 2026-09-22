@@ -772,3 +772,110 @@ describe('a refusal that is not about the ticket never traps the player', () => 
     expect(screen.getByRole('button', { name: 'Cross Street' })).toBeInTheDocument();
   });
 });
+
+/**
+ * EACH STREET SETTLES ON ITS OWN ANSWER (review 2026-09-22). fn_choice_act
+ * already answers with the whole round, and the page read the entire game back
+ * after every move: a second round trip whose largest part is a twenty-receipt
+ * history query, before the plates came back on a phone network. Worse, that
+ * background read shared the move's own catch, so losing it looked exactly
+ * like an unconfirmed money move, withheld the receipt and held the player on
+ * the page. The money safety below it is unchanged: a move the server never
+ * answered is still read back before anything is printed.
+ */
+describe('each street settles on its own answer', () => {
+  const street = (picked: number[]) => ({ ...opened('crossing'), picked });
+  const hit = {
+    ...fixtures.receipts.crossing,
+    status: 'lost',
+    picked: [0, 1],
+    payout_chips: 0.1,
+    award_id: AWARD.id,
+  };
+  /** A crossing already standing on street 1, so the next press is a street. */
+  const inPlay = async () => {
+    backend.start.mockImplementationOnce(async () => street([0]));
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    await answerOffer();
+    await advance(5000);
+    return backend.state.mock.calls.length;
+  };
+
+  it('never reads the whole game again for an open street, and the next press carries it', async () => {
+    backend.act.mockResolvedValueOnce(street([0, 1])).mockResolvedValueOnce(street([0, 1, 2]));
+    const reads = await inPlay();
+    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    await settle();
+    // One round trip for the street: the move answered, and nothing read the
+    // game back to learn what the answer already said.
+    expect(backend.act).toHaveBeenCalledTimes(1);
+    expect(backend.state.mock.calls.length).toBe(reads);
+    // The controls still belong to the scene until it presents the street.
+    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    expect(backend.act).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    await settle();
+    expect(backend.act).toHaveBeenCalledTimes(2);
+    // The second move is the next street, not a replay of the first.
+    expect(backend.act.mock.calls[1][2]).toBe(2);
+    expect(backend.state.mock.calls.length).toBe(reads);
+  });
+
+  it('still confirms a move the server never answered by reading the round back', async () => {
+    backend.act.mockRejectedValueOnce(new Error('The Network Dropped'));
+    const reads = await inPlay();
+    // The confirming read is held open, so what the player sees during it is
+    // observable here rather than gone by the next microtask.
+    let confirm!: (value: unknown) => void;
+    backend.state.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          confirm = resolve;
+        })
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    await settle();
+    // Money may have moved: nothing is printed, the exit is held, the receipt
+    // is withheld, and the page is already reading the confirmed round back.
+    expect(screen.getByText('Confirming Your Move')).toBeInTheDocument();
+    expect(guardHolds()).toBe(true);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(backend.state.mock.calls.length).toBe(reads + 1);
+    noCheckControl();
+    await act(async () => {
+      confirm({ ...state, history: [hit] });
+    });
+    await settle();
+    expect(screen.queryByText('Confirming Your Move')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
+    await settle();
+    expect(screen.getByRole('dialog', { name: '0.10 Chips' })).toBeInTheDocument();
+  });
+
+  it('shows a finished round even when the read that follows it fails', async () => {
+    backend.act.mockResolvedValue(hit);
+    const reads = await inPlay();
+    // The read that follows the move fails, and every read after it is left in
+    // flight: only the move's own answer can print this round.
+    backend.state
+      .mockRejectedValueOnce(new Error('The Network Dropped'))
+      .mockImplementation(() => new Promise(() => {}));
+    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    await settle();
+    // The move was answered. A lost background read is not an unconfirmed move.
+    expect(screen.queryByText('Confirming Your Move')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Present' }));
+    expect(screen.getByText('Round Over')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
+    await settle();
+    expect(screen.getByRole('dialog', { name: '0.10 Chips' })).toBeInTheDocument();
+    expect(backend.state.mock.calls.length).toBe(reads + 1);
+    // The read that failed is tried again by the page itself.
+    await advance(1000);
+    expect(backend.state.mock.calls.length).toBe(reads + 2);
+    noCheckControl();
+  });
+});

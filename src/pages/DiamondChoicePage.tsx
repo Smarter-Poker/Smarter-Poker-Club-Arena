@@ -477,8 +477,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       return;
     const stepping = game === 'crossing' && action === 'pick';
     busyRef.current = true;
+    // A stale read in flight must not rewind the donkey; the entry quote is
+    // left alone, because a move never changes what a new round would cost.
     generation.current++;
-    setQuotedEntry(null);
     setBusy(true);
     if (stepping) setMoving(true);
     setError(null);
@@ -497,11 +498,25 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       }
       setRound(next);
       triggerHaptic(next.status === 'lost' ? 'heavy' : 'light');
-      await load(uuid);
+      // THE ANSWER IS THE ROUND. fn_choice_act returns the whole round, and an
+      // open street needs nothing else: the budget, the ticket, the completion
+      // id and the entry quote the page holds are the ones this move was made
+      // on. Only a round that has ENDED reads the game again - for today's
+      // count, the cooldown and the receipt list - and that read is background
+      // work on the retry path start() already uses, never this move's
+      // confirmation. Losing it used to withhold the receipt and hold the
+      // player on an unconfirmed money move that the server had in fact
+      // answered.
+      if (next.status !== 'open')
+        void load(uuid).catch((readError) => {
+          reportError(readError, 'DiamondChoicePage.afterMove');
+          if (mounted.current) setLoadFailures((count) => count + 1);
+        });
     } catch (e) {
+      // Only the move itself can land here now. Money may have moved, so
+      // nothing is printed: the confirmed result is read back by useAutoSettle.
       reportError(e, 'DiamondChoicePage.act');
       if (mounted.current) {
-        // The confirmed result is read back by useAutoSettle.
         setUncertain(true);
         setSettleAttempts(0);
         setError('Confirming Your Move');

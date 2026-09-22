@@ -39,6 +39,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { sliceBetween } from './helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..');
 const PUBLISHER = '.github/workflows/publish-club-arena.yml';
@@ -81,11 +82,11 @@ const CONDITIONAL = /^(?:!\s*)?(?:test\s|\[\s|\[\[\s)/;
  * `set -e` acts on. Checking the LAST command is what catches `A || B` where
  * B is a second silent test rather than a message.
  */
-export function silentGuards(workflow: string): Array<{ line: number; text: string }> {
+export function logicalShellLines(workflow: string): Array<{ line: number; text: string }> {
   const lines = workflow.split('\n');
   const ranges = runBlockRanges(workflow);
   const inRun = (n: number) => ranges.some(([a, b]) => n >= a && n < b);
-  const silent: Array<{ line: number; text: string }> = [];
+  const logical: Array<{ line: number; text: string }> = [];
   let buffered: { line: number; text: string } | null = null;
 
   for (let i = 0; i < lines.length; i++) {
@@ -102,16 +103,21 @@ export function silentGuards(workflow: string): Array<{ line: number; text: stri
       buffered.text = buffered.text.replace(/\\$/, '');
       continue;
     }
-    const logical = buffered;
+    logical.push(buffered);
     buffered = null;
-    if (/^#/.test(logical.text)) continue;
-    if (/^(?:if|elif|while|until)\b/.test(logical.text)) continue;
-    if (!CONDITIONAL.test(logical.text)) continue;
-    const commands = logical.text.split(/\s+(?:&&|\|\|)\s+/);
-    const last = commands[commands.length - 1].replace(/;\s*$/, '').trim();
-    if (CONDITIONAL.test(last)) silent.push(logical);
   }
-  return silent;
+  return logical;
+}
+
+export function silentGuards(workflow: string): Array<{ line: number; text: string }> {
+  return logicalShellLines(workflow).filter(({ text }) => {
+    if (/^#/.test(text)) return false;
+    if (/^(?:if|elif|while|until)\b/.test(text)) return false;
+    if (!CONDITIONAL.test(text)) return false;
+    const commands = text.split(/\s+(?:&&|\|\|)\s+/);
+    const last = commands[commands.length - 1].replace(/;\s*$/, '').trim();
+    return CONDITIONAL.test(last);
+  });
 }
 
 describe('the publisher says what it refused', () => {
@@ -192,11 +198,11 @@ describe('the publisher says what it refused', () => {
       ['test -d "$FINAL/fonts"', 'has no fonts directory'],
       ['test -f "$FINAL/fonts/fonts.css"', 'has no regular file at'],
     ];
+    const statements = logicalShellLines(workflow);
     for (const [guard, says] of required) {
-      const at = workflow.indexOf(guard);
-      expect(at, `${guard} must still refuse`).toBeGreaterThan(-1);
-      const refusal = workflow.slice(at, at + 1200);
-      expect(refusal, `${guard} must say what it refused`).toContain('release $SHA ' + says);
+      const refusal = statements.find((line) => line.text.startsWith(guard));
+      expect(refusal, `${guard} must still refuse`).toBeDefined();
+      expect(refusal!.text, `${guard} must say what it refused`).toContain('release $SHA ' + says);
     }
     expect(workflow).toContain("the pool's fonts.css points into current/fonts/fonts.css");
     // The build job refuses the same bundle earlier; the origin still refuses it.
@@ -205,10 +211,7 @@ describe('the publisher says what it refused', () => {
 
   it('refuses a bundle the origin could never accept in the job that built it', () => {
     const workflow = read(PUBLISHER);
-    const step = workflow.slice(
-      workflow.indexOf('- name: Verify dist is complete'),
-      workflow.indexOf('- name: Build summary')
-    );
+    const step = sliceBetween(workflow, '- name: Verify dist is complete', '- name: Build summary');
     expect(step).toContain('require_file dist/index.html');
     expect(step).toContain('require_directory dist/assets');
     expect(step).toContain('require_directory dist/fonts');

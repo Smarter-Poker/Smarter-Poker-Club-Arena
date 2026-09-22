@@ -283,12 +283,24 @@ const DASHES_PER_STREET = 9;
 /**
  * The eight paints on the road: the first four are the near lane, the last
  * four the far one. One material per colour is shared by every car wearing it.
+ * #SMARTERCASINOREALISM - black first, blue only as energy, gold only for
+ * value: graphite, gunmetal, chrome, midnight and obsidian, never a candy
+ * colour and never a brown (Dan: "ALWAYS USE SMARTER.POKER COLOR SCHEMA
+ * COLORS, NO BROWNS OR PINKS").
  */
 const CAR_PAINTS = [
-  0x246bad, 0xc3d4df, 0x8b3441, 0x49655f, 0x9a4a1f, 0x5b6f86, 0xb7a23a, 0x7a2e2e,
+  0x2a2e33, 0x27313c, 0x3a4756, 0xb8c3cd, 0xe6edf3, 0x7f8c9b, 0x18212e, 0x0f1114,
 ] as const;
-/** The paint of the car that comes to every street, braking or not. */
-const IMPACT_PAINT = 0xe4a233;
+/**
+ * The car that comes to every street is obsidian, so its lit headlamps are the
+ * threat rather than its paint. Gold on this road belongs to the prizes.
+ */
+const IMPACT_PAINT = 0x0f1114;
+/** The sky, the haze and the ground bounce: one obsidian, and the blue rim
+ *  light is the only coloured light on the road. */
+const NIGHT = 0x05070a;
+/** The impact glint, in milliseconds, against the 525 ms fall it is timed on. */
+const GLINT = 120 / 525;
 /** What the device says about itself, safely: jsdom and old browsers say nothing. */
 function matches(query: string) {
   if (typeof window === 'undefined' || !window.matchMedia) return false;
@@ -424,8 +436,8 @@ function CrossingScene(props: Props) {
     renderer.toneMappingExposure = 1.05;
     const kit = sceneParts();
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a1424);
-    const fog = new THREE.Fog(0x0a1424, 22, 65);
+    scene.background = new THREE.Color(NIGHT);
+    const fog = new THREE.Fog(NIGHT, 22, 65);
     scene.fog = fog;
     const camera = new THREE.PerspectiveCamera(CROSSING_CAMERA.fov, 1, 0.1, 100);
     const pmrem = new THREE.PMREMGenerator(renderer),
@@ -435,7 +447,7 @@ function CrossingScene(props: Props) {
     scene.environmentIntensity = 0.22;
     room.dispose();
     pmrem.dispose();
-    scene.add(new THREE.HemisphereLight(0xc9e9ff, 0x080f20, 0.8));
+    scene.add(new THREE.HemisphereLight(0xc9e9ff, NIGHT, 0.8));
     const key = new THREE.DirectionalLight(0xffe9ca, 2.4);
     key.position.set(-5, 12, 8);
     key.castShadow = true;
@@ -451,7 +463,8 @@ function CrossingScene(props: Props) {
     scene.add(rim);
     const asphalt = kit.material(0x172536, 0.06, 0.95),
       steel = kit.material(0x6a8097, 0.8, 0.3),
-      paint = kit.material(0xc7d9db, 0.1, 0.75);
+      // Worn silver, not fresh white: paint on a road this dark reads as used.
+      paint = kit.material(0x9aa3ab, 0.1, 0.85);
     box(kit, scene, asphalt, 18, -0.28, 0, 62, 0.5, 20, 0.1);
     // Two cars per street: the second one joins the traffic on the more dangerous streets.
     const traffic: THREE.Group[][] = [];
@@ -668,7 +681,7 @@ function CrossingScene(props: Props) {
     });
     const flash = new THREE.Mesh(
       kit.own(new THREE.SphereGeometry(0.8, 20, 12)),
-      kit.keep(new THREE.MeshBasicMaterial({ color: 0xffe2a3, transparent: true, opacity: 0.75 }))
+      kit.keep(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75 }))
     );
     flash.visible = false;
     scene.add(flash);
@@ -833,7 +846,7 @@ function CrossingScene(props: Props) {
         0.05 + (walk < 1 ? Math.sin(walk * Math.PI) * 0.28 : 0),
         0
       );
-      animal.animal.rotation.z = 0;
+      animal.animal.rotation.set(0, 0, 0);
       animal.animal.scale.setScalar(DONKEY_SCALE);
       animal.legs.forEach((leg, i) => {
         leg.rotation.z = walk < 1 ? Math.sin(walk * Math.PI * 4 + (i % 2) * Math.PI) * 0.5 : 0;
@@ -882,11 +895,15 @@ function CrossingScene(props: Props) {
         // Only the car that is stopping shows a brake light.
         approachTail[turn].emissiveIntensity = impact.brake * 2.4;
         if (impact.hit) {
-          animal.animal.rotation.z = (-Math.PI / 2) * impact.fall;
-          animal.animal.position.y = 0.1;
-          animal.animal.scale.y = DONKEY_SCALE * (1 - 0.8 * impact.fall);
+          // Struck and carried: the donkey turns over along the line the car
+          // was driving and slides with it. No squash - this is not a cartoon.
+          animal.animal.rotation.x = -Math.PI * 1.15 * impact.fall;
+          animal.animal.rotation.z = (-Math.PI / 3) * impact.fall;
+          animal.animal.position.y = 0.1 + Math.sin(impact.fall * Math.PI) * 0.34;
+          animal.animal.position.z = -1.7 * impact.fall;
+          // One short white glint, not a gold flare: gold is for value alone.
           flash.position.set(to, 0.7, 0);
-          flash.visible = impact.fall < 0.5;
+          flash.visible = impact.fall < GLINT;
           flash.scale.setScalar(0.5 + impact.fall);
         }
         struck = impact.hit;

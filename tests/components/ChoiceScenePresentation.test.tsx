@@ -56,9 +56,30 @@ import ChoiceScene, {
   streetMultiplier,
 } from '../../src/components/games/ChoiceScene';
 import { CHOICE_MODE, ROAD_LADDERS } from '../../src/utils/diamondChoiceMath';
-import { streetCenter, STREET_WIDTH } from '../../src/utils/crossingScene';
+import { DONKEY_SCALE, streetCenter, STREET_WIDTH } from '../../src/utils/crossingScene';
 
 const ROAD = ROAD_LADDERS[CHOICE_MODE.crossing];
+const sheet = readFileSync(
+  join(__dirname, '../../src/components/games/ChoiceScene.module.css'),
+  'utf8'
+);
+/** One rule's declarations, by selector. */
+const rule = (selector: string) => {
+  const at = sheet.indexOf(`${selector} {`);
+  return at < 0 ? '' : sheet.slice(at, sheet.indexOf('}', at));
+};
+/** WCAG relative luminance, and the contrast between two opaque colours. */
+const luminance = (hex: string) => {
+  const channel = (from: number) => {
+    const v = parseInt(hex.slice(from, from + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+};
+const contrast = (ink: string, plate: string) => {
+  const [a, b] = [luminance(ink), luminance(plate)].sort((x, y) => y - x);
+  return (a + 0.05) / (b + 0.05);
+};
 const PRIZES = [2.17, 5.33, 15.2];
 type SceneProps = Parameters<typeof ChoiceScene>[0];
 let frame: FrameRequestCallback = () => {};
@@ -235,15 +256,11 @@ describe('a loss is a brief, clear bust', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(ROAD.length);
   });
   it('keeps the bust flash and the street tints under reduced motion in the stylesheet', () => {
-    const css = readFileSync(
-      join(__dirname, '../../src/components/games/ChoiceScene.module.css'),
-      'utf8'
-    );
-    const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
+    const reduced = sheet.slice(sheet.indexOf('@media (prefers-reduced-motion: reduce)'));
     expect(reduced).toMatch(/\.bust,\s*\.bust span \{\s*animation: none;/);
     expect(reduced).toContain('.street {');
-    expect(css).not.toContain(':hover');
-    expect(css).not.toContain('—');
+    expect(sheet).not.toContain(':hover');
+    expect(sheet).not.toContain('—');
   });
 });
 
@@ -555,5 +572,83 @@ describe('every street gets a beat', () => {
     expect(paintOf(onHit)).toEqual(safePaint);
     expect(onHit.position!.z).toBeCloseTo(onSafe.position!.z, 10);
     expect(onHit.position!.x).toBeCloseTo(onSafe.position!.x, 10);
+  });
+});
+
+/**
+ * #SMARTERCASINOREALISM FOR WHAT THE ROAD ITSELF SHOWS (review 2026-09-22).
+ * The straight-road pass restyled the street tints, the strip and the bust
+ * type. Outside that the scene still had a navy sky, candy-coloured traffic, a
+ * gold car, a gold flash and a cartoon squash on every hit, and its two
+ * overlays were glass pills on navy. The standard is black first, blue only as
+ * energy, gold only for value. Nothing is added here; the same geometry and
+ * the same two plates are restyled.
+ */
+describe('the road wears the Smarter.Poker palette', () => {
+  it('drives obsidian traffic on an obsidian road under one blue rim light', () => {
+    motion(false);
+    mountScene({ phase: 'open', picked: [0] });
+    tick(16);
+    const scene = frames.scene as Node & { background?: { getHex(): number }; children: Node[] };
+    expect(scene.background?.getHex()).toBe(0x05070a);
+    const paints = new Set<number>();
+    scene.children
+      .map((child) => child as Node & { children?: Node[] })
+      .forEach((node) =>
+        node.children?.forEach((part) => {
+          const hex = part.material?.color?.getHex();
+          if (hex !== undefined) paints.add(hex);
+        })
+      );
+    // No candy blue, no maroon, no amber, and nothing gold on the road.
+    for (const banished of [0x246bad, 0x8b3441, 0xb7a23a, 0x9a4a1f, 0xe4a233])
+      expect(paints.has(banished)).toBe(false);
+    expect(paints.has(0x0f1114)).toBe(true);
+  });
+
+  it('turns the donkey over instead of squashing it flat', () => {
+    motion(false);
+    const scene = mountScene({ phase: 'open', picked: [0] });
+    tick(16);
+    scene.update({ phase: 'lost', picked: [0, 1], payoutChips: 0.2 });
+    tick(100);
+    // Well past the strike, and halfway through the fall.
+    tick(1100);
+    const donkey = (
+      frames.scene as Node & {
+        getObjectByName(name: string): {
+          parent: { rotation: { x: number }; scale: { y: number }; position: { z: number } };
+        };
+      }
+    ).getObjectByName('walking-leg-0').parent;
+    expect(Math.abs(donkey.rotation.x)).toBeGreaterThan(0.5);
+    expect(donkey.position.z).toBeLessThan(-0.2);
+    // The sculpt keeps its own proportions all the way down.
+    expect(donkey.scale.y).toBeCloseTo(DONKEY_SCALE, 10);
+  });
+
+  it('plates the caption and the readout in obsidian, with gold on the value alone', () => {
+    for (const plate of ['.caption', '.readout']) {
+      expect(rule(plate)).toContain('background: rgb(5 7 10 / 90%)');
+      expect(rule(plate)).toContain('border-radius: 4px');
+      expect(rule(plate)).toContain('var(--realism-gunmetal-lit, #3a4756)');
+      expect(rule(plate)).toContain('var(--realism-bevel');
+    }
+    expect(rule('.readoutValue')).toContain('var(--realism-gold, #ffc93c)');
+    expect(rule('.caption')).not.toContain('gold');
+    expect(rule('.readoutLabel,\n.readoutNote')).toContain('var(--realism-muted, #7f8c9b)');
+    // Every word on a plate is readable on it.
+    for (const ink of ['#b8c3cd', '#7f8c9b', '#ffc93c', '#e4e7ec'])
+      expect(contrast(ink, '#05070a')).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('stamps the bust without a spin, and flashes on the frame of the hit', () => {
+    expect(rule('.bust span')).toContain('animation: bust-stamp 0.15s ease-out both');
+    expect(rule('.bust span')).not.toContain('rotate(');
+    expect(rule('.bust span')).not.toContain('animation-delay');
+    const flash = sheet.slice(sheet.indexOf('@keyframes bust-flash'));
+    expect(flash.slice(0, flash.indexOf('}\n}'))).toMatch(
+      /0% \{\s*background: rgb\(240 40 73 \/ 30%\);/
+    );
   });
 });

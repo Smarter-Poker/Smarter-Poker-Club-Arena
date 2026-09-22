@@ -3,9 +3,11 @@
   font-family: 'Rajdhani', 'Roboto Condensed', 'Arial Narrow', system-ui, sans-serif;
 }
 
+/* Daily and monthly resolve through the live schema tokens the page itself
+   uses (club-engine.css), so the shell hands over without an accent swap. */
 .page {
-  --cycle-color: #55e8ff;
-  --cycle-glow: rgba(85, 232, 255, 0.2);
+  --cycle-color: var(--realism-cyan, #55e8ff);
+  --cycle-glow: color-mix(in srgb, var(--cycle-color) 20%, transparent);
   display: grid;
   min-height: calc(100dvh - 82px);
   gap: 18px;
@@ -24,8 +26,8 @@
 }
 
 .page[data-mission-cycle='monthly'] {
-  --cycle-color: #ffc93c;
-  --cycle-glow: rgba(214, 173, 82, 0.24);
+  --cycle-color: var(--realism-gold, #ffc93c);
+  --cycle-glow: color-mix(in srgb, var(--cycle-color) 24%, transparent);
 }
 
 .hero,

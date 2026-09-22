@@ -11,6 +11,7 @@ import {
   useClubOperationsOverview,
   type ClubOperationsAlert,
 } from '../../hooks/useClubOperationsOverview';
+import { withClubContext } from '../../utils/clubScopedPath';
 import { formatChips, formatInt } from '../../utils/clubDashboard';
 import { mediaUrl } from '../../utils/mediaBase';
 import styles from './ArenaWorkspacePages.module.css';
@@ -50,6 +51,11 @@ function WorkspacePage({
   alerts?: WorkspaceAlert[];
   liveLine?: string;
 }) {
+  /* The club source the section rail beside this grid reads, so a card and
+     the rail tab for the same page carry the same club. Paths that are not
+     about one club (legal, help, friends, a /clubs/... tool) come back from
+     withClubContext untouched. */
+  const { routeClubId } = useClubWorkspace();
   /* A <section>, not a <main>. AppLayout already renders <main
      id="main-content"> around the router outlet, so every one of these pages
      was shipping two main landmarks and an ambiguous skip link. */
@@ -113,7 +119,11 @@ function WorkspacePage({
 
       <section className={styles.grid} aria-label={`${title} Tools`}>
         {links.map((item, index) => (
-          <Link to={item.path} className={styles.card} key={item.path}>
+          <Link
+            to={withClubContext(item.path, routeClubId)}
+            className={styles.card}
+            key={item.path}
+          >
             <span className={styles.index}>{String(index + 1).padStart(2, '0')}</span>
             <span className={styles.cardCopy}>
               <strong>{item.label}</strong>

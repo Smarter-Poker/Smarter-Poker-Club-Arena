@@ -545,6 +545,156 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     expect(f.calls).toEqual([]);
   });
 
+  /* A BANK REFUSAL NAMES ITS TABLE, AND THE FLEET THAT HOLDS THE SAME SHAPE
+     (2026-09-22). Observability only: every test below pins that the refusal,
+     its code and its order are unchanged and nothing is written, and that the
+     refusal now names the table, a player-free shape of it, and a census of
+     every engine the capture walks. Production run 35620115786 refused
+     `bank_metadata_without_bank` at 15:43:34Z on 2026-09-21 naming nothing. */
+  const terms = (result: any) => String(result.observedDetail).split(',');
+  const carried = (result: any) => {
+    // It must survive the publisher's carrier: its character class and cap.
+    expect(result.observedDetail).toMatch(/^[\w .,:/=()+-]+$/);
+    expect(result.observedDetail.length).toBeLessThanOrEqual(512);
+  };
+
+  it('names the table when a stopped engine kept the metadata of the banks its stop disposed', async () => {
+    const f = fixture(2);
+    // 8825 `stop()` disposes every live bank (`timeBankEngine.disposeAll()`)
+    // and keeps `seatedPlayers` and `timeBankMeta`.
+    Object.assign(f.first, {
+      running: false,
+      terminal: true,
+      teardownPromise: Promise.resolve(),
+      dealingLoopPromise: null,
+      readContinuationTasks: new Set(),
+    });
+    const seated = f.first.seatedPlayers[0].user_id;
+    f.first.timeBankEngine.playerBanks.clear();
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_metadata_without_bank',
+      failedCheck: 'captureEngine.bank_metadata_without_bank',
+      failedTable: f.first.tableId,
+    });
+    expect(terms(result)).toEqual(
+      expect.arrayContaining([
+        'stopped=true',
+        'seats=1',
+        'banks=0',
+        'meta=1',
+        'metaUnseated=0',
+        'metaSeatedWithoutBank=1',
+        'bankUnseated=0',
+        'fleet=2',
+        'fleetStopped=1',
+        'fleetStoppedSeatedMeta=1',
+        'fleetDepartedMeta=0',
+      ])
+    );
+    carried(result);
+    // No player identity leaves the guard.
+    expect(JSON.stringify(result)).not.toContain(seated);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('names the table when a departed player left metadata behind on a parked engine', async () => {
+    const f = fixture(2);
+    // A voluntary cashout, a seat move or a sit-out eviction removes the seat
+    // and the bank and keeps the metadata: 8825 deletes it only in the cash
+    // branch of adoptSeatRoster, for a player that branch still sees.
+    const departed = f.first.seatedPlayers[0].user_id;
+    f.first.seatedPlayers = [];
+    f.first.timeBankEngine.playerBanks.clear();
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_metadata_without_bank',
+      failedCheck: 'captureEngine.bank_metadata_without_bank',
+      failedTable: f.first.tableId,
+    });
+    expect(terms(result)).toEqual(
+      expect.arrayContaining([
+        'stopped=false',
+        'seats=0',
+        'banks=0',
+        'metaUnseated=1',
+        'metaSeatedWithoutBank=0',
+        'fleet=2',
+        'fleetStopped=0',
+        'fleetDepartedMeta=1',
+        'fleetOrphanBank=0',
+        'stoppedEvents=none',
+      ])
+    );
+    carried(result);
+    expect(JSON.stringify(result)).not.toContain(departed);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('counts the whole fleet by shape from the first refusal, naming stopped tournaments by prefix only', async () => {
+    const f = fixture(3);
+    const [stopped, departedAt, bustedAt] = [...f.server.tableEngines.values()];
+    // A quarantined manager's stopped engine: its teardown never reached
+    // `unregisterTournamentTableEngine`, so it is still in the fleet map with
+    // its roster and metadata and none of the banks its stop disposed.
+    const authority = { tournamentId: uuid(71001), leaseGeneration: uuid(71002) };
+    Object.assign(stopped, {
+      running: false,
+      terminal: true,
+      teardownPromise: Promise.resolve(),
+      dealingLoopPromise: null,
+      readContinuationTasks: new Set(),
+      engineLeaseScope: 'tournament',
+      engineLeaseVerified: true,
+      engineLeaseTournamentId: authority.tournamentId,
+      engineLeaseGeneration: authority.leaseGeneration,
+    });
+    dataActorContext.bindTournamentDataAuthorityMethods(authority, stopped);
+    stopped.timeBankEngine.playerBanks.clear();
+    // A cashout: seat and bank gone, metadata kept.
+    departedAt.seatedPlayers = [];
+    departedAt.timeBankEngine.playerBanks.clear();
+    // A tournament bust: the seat is absent from the next roster, and the
+    // cash-only teardown never removed the bank or the metadata.
+    bustedAt.seatedPlayers = [];
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_metadata_without_bank',
+      failedCheck: 'captureEngine.bank_metadata_without_bank',
+      failedTable: stopped.tableId,
+    });
+    expect(terms(result)).toEqual(
+      expect.arrayContaining([
+        `tournament=${authority.tournamentId}`,
+        'scope=tournament',
+        'fleet=3',
+        'fleetStopped=1',
+        'fleetStoppedSeatedMeta=1',
+        'fleetLiveSeatedMeta=0',
+        'fleetDepartedMeta=2',
+        'fleetOrphanBank=1',
+        `stoppedEvents=${authority.tournamentId.slice(0, 8)}`,
+      ])
+    );
+    carried(result);
+    for (const engine of [stopped, departedAt, bustedAt])
+      for (const userId of engine.timeBankMeta.keys())
+        expect(JSON.stringify(result)).not.toContain(userId);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('names nothing extra on a refusal that is not a per-engine one', async () => {
+    const f = fixture(2);
+    f.remaining(1000);
+    const result: any = await f.run();
+    expect(result).toMatchObject({ ok: false, reason: 'insufficient_reserve' });
+    expect(String(result.failedCheck ?? '')).not.toMatch(/^captureEngine\./);
+    expect(result.observedDetail ?? '').not.toContain('fleet=');
+  });
+
   const bindTournament = (f: ReturnType<typeof fixture>) => {
     const authority = { tournamentId: uuid(70001), leaseGeneration: uuid(70002) };
     Object.assign(f.first, {
@@ -1202,9 +1352,7 @@ describe('exact 8825 retained original custody retirement', () => {
       // and every drain condition, because an unlisted key never survives
       // `legacy-engine-checkpoint.mjs` (#5034).
       expect(result.observedDetail).toContain(`capturedTournament=${tournamentId}`);
-      expect(result.observedDetail).toContain(
-        `tournament=${f.originals[0].manager.tournamentId}`
-      );
+      expect(result.observedDetail).toContain(`tournament=${f.originals[0].manager.tournamentId}`);
       expect(result.observedDetail).toMatch(/lease=/);
       expect(result.observedDetail).toMatch(/drain=/);
       // And it must survive that carrier's own character class and length cap.
@@ -1719,6 +1867,40 @@ describe('exact 8825 retained original custody retirement', () => {
     });
     expect(f.rpcCalls).toEqual([]);
     expect(f.server.tableEngines.size).toBe(3);
+  });
+});
+
+describe('an 8825 bank refusal names its table and counts the fleet the capture walked', () => {
+  // Observability only (2026-09-22): the production profile, with its two
+  // retained originals. The census walks exactly what the capture walks.
+  it('names a cashed-out table and leaves the retained originals out of the census', async () => {
+    const f: any = mixedFixture();
+    // A parked cash table whose player cashed out: seat and bank gone, the
+    // metadata kept (8825 ServerTableEngineBase.ts:3679).
+    const cashedOut: any = new f.Table(600);
+    cashedOut.seatedPlayers = [];
+    cashedOut.timeBankEngine.playerBanks.clear();
+    f.server.tableEngines.set(cashedOut.tableId, cashedOut);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_metadata_without_bank',
+      failedCheck: 'captureEngine.bank_metadata_without_bank',
+      failedTable: cashedOut.tableId,
+    });
+    // The fleet engine and the cash table: the two retained originals are
+    // never walked by the capture, so the census does not count them either.
+    expect(String(result.observedDetail).split(',')).toEqual(
+      expect.arrayContaining([
+        'fleet=2',
+        'fleetStopped=0',
+        'fleetDepartedMeta=1',
+        'fleetOrphanBank=0',
+      ])
+    );
+    expect(result.observedDetail).toMatch(/^[\w .,:/=()+-]+$/);
+    expect(f.calls).toEqual([]);
+    expect(f.server.tableEngines.size).toBe(4);
   });
 });
 

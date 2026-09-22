@@ -1836,7 +1836,135 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       }
     }
 
+    /* ═══ A BANK REFUSAL NAMES ITS TABLE, AND THE FLEET THAT HOLDS THE SAME SHAPE (2026-09-22) ═══
+
+       Observability only. Never read by a decision; evaluated only on a
+       refusal path that is already throwing, through `noteRefusal`, which
+       keeps the FIRST refusal's detail and swallows any error of its own. No
+       condition, code, order or threshold below moves.
+
+       Production run 35620115786 is the only 8825 checkpoint so far whose
+       preflight got past the mixed-custody capture and the drain witnesses.
+       It refused `bank_metadata_without_bank` at 15:43:34Z on 2026-09-21 and
+       named nothing: `captureEngine` refused through the process-wide
+       `require`, which carries no detail, so nobody could say which of ~150
+       tables held it. The 8825 source has two ways to produce it:
+
+       - a DEPARTED player's metadata. 8825 deletes `timeBankMeta` in exactly
+         one place, the cash branch of `adoptSeatRoster`
+         (ServerTableEngineBase.ts:4283). A voluntary cashout (:3679), a seat
+         move (:4061), a busted release (:7508), a sit-out eviction (:7691)
+         and `tearDownDepartedSeats` (ServerTableEngineSettlement.ts:3738)
+         remove the bank and the seat and keep the metadata; the tournament
+         branch of `adoptSeatRoster` deletes nothing, and a tournament bust
+         removes no bank at all (ServerTableEngineDealing.ts:448 is cash-only).
+       - a STOPPED engine still in the fleet map. 8825 `stop()` disposes every
+         live bank (`timeBankEngine.disposeAll()`, :3579) and keeps
+         `seatedPlayers` and `timeBankMeta`. A tournament manager whose
+         teardown throws "retained an unresolved seat-move UUID" retries every
+         few seconds and never reaches `unregisterTournamentTableEngine`, so
+         its stopped engines stay registered.
+
+       They need different dispositions and neither may be waved through. So a
+       refusal here names its table and a player-free shape of it, plus a
+       census of every engine the capture walks, by the same shape, so ONE
+       refused attempt is enough to design the disposition. Sizes, booleans,
+       the lease scope and tournament ids only: no player id, bank value or
+       seat leaves the guard, and the string stays inside the publisher's
+       512-character carrier and its character class. */
+    const bankShape = (tableId, engine) => {
+      const seats = new Set(
+        Array.isArray(engine?.seatedPlayers) ? engine.seatedPlayers.map((seat) => seat?.user_id) : []
+      );
+      const banks = engine?.timeBankEngine?.playerBanks;
+      const bankOf = (userId) => banks instanceof Map && banks.has(`${tableId}:${userId}`);
+      const meta = engine?.timeBankMeta instanceof Map ? [...engine.timeBankMeta.keys()] : [];
+      const bankUsers = banks instanceof Map ? [...banks.values()].map((bank) => bank?.playerId) : [];
+      return {
+        stopped: engine?.running === false,
+        seats: seats.size,
+        banks: banks instanceof Map ? banks.size : -1,
+        meta: meta.length,
+        metaUnseated: meta.filter((userId) => !seats.has(userId)).length,
+        metaSeatedWithoutBank: meta.filter((userId) => seats.has(userId) && !bankOf(userId)).length,
+        bankUnseated: bankUsers.filter((userId) => !seats.has(userId)).length,
+      };
+    };
+    const fleetBankCensus = () => {
+      try {
+        let walked = 0;
+        let stopped = 0;
+        let stoppedSeatedMeta = 0;
+        let liveSeatedMeta = 0;
+        let departedMeta = 0;
+        let orphanBank = 0;
+        const stoppedEvents = new Set();
+        for (const [tableId, engine] of tableMap) {
+          // The same two exclusions the capture loop makes, and no others.
+          if (retainedEngines.has(engine) || neverStarted(tableId, engine)) continue;
+          walked++;
+          const shape = bankShape(tableId, engine);
+          if (shape.stopped) stopped++;
+          if (shape.metaSeatedWithoutBank > 0) {
+            if (shape.stopped) {
+              stoppedSeatedMeta++;
+              const event = engine?.engineLeaseTournamentId;
+              stoppedEvents.add(uuid(event) ? event.slice(0, 8) : 'none');
+            } else {
+              liveSeatedMeta++;
+            }
+          }
+          if (shape.metaUnseated > 0) departedMeta++;
+          if (shape.bankUnseated > 0) orphanBank++;
+        }
+        return [
+          `fleet=${walked}`,
+          `fleetStopped=${stopped}`,
+          `fleetStoppedSeatedMeta=${stoppedSeatedMeta}`,
+          `fleetLiveSeatedMeta=${liveSeatedMeta}`,
+          `fleetDepartedMeta=${departedMeta}`,
+          `fleetOrphanBank=${orphanBank}`,
+          `stoppedEvents=${[...stoppedEvents].sort().slice(0, 12).join('/') || 'none'}`,
+        ];
+      } catch {
+        return ['fleet=unreadable'];
+      }
+    };
+    const engineRefusalDetail = (tableId, engine, code) => {
+      const shape = bankShape(tableId, engine);
+      const tournament = engine?.engineLeaseTournamentId;
+      const parked = engine?.parkedTimeBanks;
+      return {
+        failedCheck: `captureEngine.${code}`,
+        failedTable: uuid(tableId) ? tableId : describe(tableId),
+        observedDetail: [
+          `stopped=${shape.stopped}`,
+          `terminal=${engine?.terminal === true}`,
+          `scope=${describe(engine?.engineLeaseScope)}`,
+          `tournament=${uuid(tournament) ? tournament : 'none'}`,
+          `seats=${shape.seats}`,
+          `banks=${shape.banks}`,
+          `meta=${shape.meta}`,
+          `metaUnseated=${shape.metaUnseated}`,
+          `metaSeatedWithoutBank=${shape.metaSeatedWithoutBank}`,
+          `bankUnseated=${shape.bankUnseated}`,
+          `parked=${record(parked) ? Object.keys(parked).length : -1}`,
+          ...fleetBankCensus(),
+        ]
+          .join(',')
+          .slice(0, 512),
+      };
+    };
     const captureEngine = (tableId, engine) => {
+      // The same condition, the same code and the same order as the
+      // process-wide `require` it shadows at every call below; this one only
+      // notes which table refused, and its shape, before refusing (see the
+      // observability note above). No outcome can move.
+      const require = (condition, code) => {
+        if (condition) return;
+        noteRefusal(() => engineRefusalDetail(tableId, engine, code));
+        refuse(code);
+      };
       require(uuid(tableId) &&
         engine instanceof modules.base.ServerTableEngineBase &&
         engine.tableId === tableId, 'engine_identity_mismatch');

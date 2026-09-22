@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { gpuFrameRenderer } from './gpuFrameRenderer';
 import MinesGrid from './MinesGrid';
 import {
@@ -48,6 +49,12 @@ interface Props {
   betChips?: number;
   /** The settled chips of a finished round. */
   payoutChips?: number;
+  /**
+   * Nothing on screen is looking at the scene: an offer over an idle road, or
+   * a receipt on top of it. The clock, the beats and completion carry on; only
+   * the draw call is skipped.
+   */
+  paused?: boolean;
   /** Fired once per beat, on the first frame that shows it, and never before. */
   onMoment?: (moment: CrossingMoment, street: number) => void;
 }
@@ -60,16 +67,65 @@ export const streetHazard = (index: number, count: number) =>
 /** Four hazard bands: the tint, the traffic and the strip all read from the same one. */
 export const hazardBand = (hazard: number) => Math.min(3, Math.floor(hazard * 4));
 
-function material(color: number, metalness = 0.7, roughness = 0.24) {
-  return new THREE.MeshPhysicalMaterial({
-    color,
-    metalness,
-    roughness,
-    clearcoat: 0.85,
-    clearcoatRoughness: 0.2,
-  });
+/**
+ * ONE SCENE'S GEOMETRY AND MATERIALS, ALLOCATED ONCE. Every box of the same
+ * shape is one BufferGeometry and every sphere is the same unit sphere, so
+ * hundreds of parts no longer mean hundreds of allocations; every paint, and
+ * the one glass, rubber, steel, headlamp and taillight, is shared by every car
+ * that wears it. The kit owns what it made, and the scene disposes the kit.
+ */
+function sceneParts() {
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  const boxes = new Map<string, THREE.BufferGeometry>();
+  const paints = new Map<number, THREE.MeshPhysicalMaterial>();
+  const own = <T extends THREE.BufferGeometry>(geometry: T) => {
+    geometries.add(geometry);
+    return geometry;
+  };
+  const kit = {
+    geometries,
+    materials,
+    /** The unit sphere every sculpted part is scaled from. */
+    ball: own(new THREE.SphereGeometry(1, 24, 16)),
+    material(color: number, metalness = 0.7, roughness = 0.24) {
+      return kit.keep(
+        new THREE.MeshPhysicalMaterial({
+          color,
+          metalness,
+          roughness,
+          clearcoat: 0.85,
+          clearcoatRoughness: 0.2,
+        })
+      );
+    },
+    keep<T extends THREE.Material>(material: T) {
+      materials.add(material);
+      return material;
+    },
+    /** The paint a car wears: one material per colour on the whole road. */
+    paint(color: number) {
+      const made = paints.get(color) ?? kit.material(color, 0.65, 0.18);
+      paints.set(color, made);
+      return made;
+    },
+    boxGeometry(w: number, h: number, d: number, radius: number) {
+      const key = `${w}:${h}:${d}:${radius}`;
+      const made = boxes.get(key) ?? own(new RoundedBoxGeometry(w, h, d, 3, radius));
+      boxes.set(key, made);
+      return made;
+    },
+    own,
+    dispose() {
+      geometries.forEach((geometry) => geometry.dispose());
+      materials.forEach((material) => material.dispose());
+    },
+  };
+  return kit;
 }
+type SceneParts = ReturnType<typeof sceneParts>;
 function box(
+  kit: SceneParts,
   parent: THREE.Object3D,
   mat: THREE.Material,
   x: number,
@@ -80,14 +136,14 @@ function box(
   d: number,
   radius = 0.08
 ) {
-  const mesh = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 3, radius), mat);
+  const mesh = new THREE.Mesh(kit.boxGeometry(w, h, d, radius), mat);
   mesh.position.set(x, y, z);
-  mesh.castShadow = true;
   mesh.receiveShadow = true;
   parent.add(mesh);
   return mesh;
 }
 function sphere(
+  kit: SceneParts,
   parent: THREE.Object3D,
   mat: THREE.Material,
   x: number,
@@ -97,52 +153,89 @@ function sphere(
   sy: number,
   sz: number
 ) {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), mat);
+  const mesh = new THREE.Mesh(kit.ball, mat);
   mesh.position.set(x, y, z);
   mesh.scale.set(sx, sy, sz);
-  mesh.castShadow = true;
   parent.add(mesh);
   return mesh;
 }
+/**
+ * ONE MESH PER MATERIAL INSTEAD OF ONE PER PART. Each part's transform is
+ * baked into a copy of its shared geometry and the copies are merged, so a car
+ * draws about six meshes where it drew seventeen and a donkey a dozen where it
+ * drew thirty two. Nothing here moves relative to its parent - the donkey's
+ * legs are groups, not meshes, and are left exactly as they are.
+ */
+function mergeParts(kit: SceneParts, parent: THREE.Object3D) {
+  const parts = parent.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh);
+  const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  for (const part of parts) {
+    part.updateMatrix();
+    const material = part.material as THREE.Material;
+    // Spheres and cylinders are indexed and rounded boxes are not; one merge
+    // takes either, never a mix of the two.
+    const baked = part.geometry.index ? part.geometry.toNonIndexed() : part.geometry.clone();
+    baked.applyMatrix4(part.matrix);
+    buckets.set(material, [...(buckets.get(material) ?? []), baked]);
+  }
+  const merged = [...buckets].map(([material, list]) => {
+    // Every part above carries position, normal and uv and none is indexed,
+    // which is the whole of what three refuses a merge for.
+    const geometry = list.length === 1 ? list[0] : mergeGeometries(list, false)!;
+    list.forEach((one) => one !== geometry && one.dispose());
+    const mesh = new THREE.Mesh(kit.own(geometry), material);
+    mesh.receiveShadow = true;
+    return mesh;
+  });
+  parts.forEach((part) => parent.remove(part));
+  parent.add(...merged);
+  return merged;
+}
 
 /** Original sculpted donkey, with separate ears, muzzle, mane, tail and walking legs. */
-function donkey() {
+function donkey(kit: SceneParts) {
   const animal = new THREE.Group();
-  const coat = material(0x786c5d, 0, 0.94),
-    pale = material(0xd7cbbb, 0, 0.9);
-  const dark = material(0x20252b, 0.05, 0.5),
-    eye = material(0x080b0d, 0.1, 0.05);
+  const coat = kit.material(0x786c5d, 0, 0.94),
+    pale = kit.material(0xd7cbbb, 0, 0.9);
+  const dark = kit.material(0x20252b, 0.05, 0.5),
+    eye = kit.material(0x080b0d, 0.1, 0.05);
   coat.clearcoat = 0.03;
   pale.clearcoat = 0.02;
-  sphere(animal, coat, 0, 0.95, 0, 0.65, 0.43, 0.35);
-  sphere(animal, pale, 0, 0.8, 0, 0.49, 0.28, 0.32);
+  sphere(kit, animal, coat, 0, 0.95, 0, 0.65, 0.43, 0.35);
+  sphere(kit, animal, pale, 0, 0.8, 0, 0.49, 0.28, 0.32);
   const legs: THREE.Group[] = [];
   for (const x of [-0.38, 0.4])
     for (const z of [-0.23, 0.23]) {
       const leg = new THREE.Group();
       leg.position.set(x, 0.82, z);
       leg.name = `walking-leg-${legs.length}`;
-      sphere(leg, coat, 0, -0.25, 0, 0.1, 0.34, 0.105);
-      box(leg, dark, 0.035, -0.61, 0, 0.22, 0.17, 0.21, 0.06);
+      sphere(kit, leg, coat, 0, -0.25, 0, 0.1, 0.34, 0.105);
+      box(kit, leg, dark, 0.035, -0.61, 0, 0.22, 0.17, 0.21, 0.06);
       animal.add(leg);
       legs.push(leg);
     }
-  sphere(animal, coat, 0.49, 1.27, 0, 0.25, 0.51, 0.26).rotation.z = -0.35;
-  sphere(animal, coat, 0.68, 1.66, 0, 0.35, 0.3, 0.28);
-  sphere(animal, pale, 0.96, 1.52, 0, 0.28, 0.21, 0.255);
+  sphere(kit, animal, coat, 0.49, 1.27, 0, 0.25, 0.51, 0.26).rotation.z = -0.35;
+  sphere(kit, animal, coat, 0.68, 1.66, 0, 0.35, 0.3, 0.28);
+  sphere(kit, animal, pale, 0.96, 1.52, 0, 0.28, 0.21, 0.255);
   for (const z of [-0.215, 0.215]) {
-    sphere(animal, eye, 0.83, 1.74, z, 0.064, 0.076, 0.034);
-    sphere(animal, pale, 0.84, 1.77, z * 1.1, 0.018, 0.019, 0.014);
-    sphere(animal, dark, 1.16, 1.55, z * 0.75, 0.035, 0.023, 0.03);
-    const ear = sphere(animal, coat, 0.53, 2.05, z * 0.65, 0.095, 0.4, 0.105);
+    sphere(kit, animal, eye, 0.83, 1.74, z, 0.064, 0.076, 0.034);
+    sphere(kit, animal, pale, 0.84, 1.77, z * 1.1, 0.018, 0.019, 0.014);
+    sphere(kit, animal, dark, 1.16, 1.55, z * 0.75, 0.035, 0.023, 0.03);
+    const ear = sphere(kit, animal, coat, 0.53, 2.05, z * 0.65, 0.095, 0.4, 0.105);
     ear.rotation.z = 0.13;
-    sphere(animal, pale, 0.56, 2.09, z * 0.65, 0.045, 0.26, 0.108).rotation.z = 0.13;
+    sphere(kit, animal, pale, 0.56, 2.09, z * 0.65, 0.045, 0.26, 0.108).rotation.z = 0.13;
   }
   for (let i = 0; i < 7; i++)
-    sphere(animal, dark, 0.3 + i * 0.045, 1.33 + i * 0.078, 0, 0.07, 0.095, 0.14);
-  const tail = sphere(animal, coat, -0.72, 0.9, 0, 0.055, 0.38, 0.055);
+    sphere(kit, animal, dark, 0.3 + i * 0.045, 1.33 + i * 0.078, 0, 0.07, 0.095, 0.14);
+  const tail = sphere(kit, animal, coat, -0.72, 0.9, 0, 0.055, 0.38, 0.055);
   tail.rotation.z = -0.7;
-  sphere(animal, dark, -0.94, 0.66, 0, 0.11, 0.17, 0.11);
+  sphere(kit, animal, dark, -0.94, 0.66, 0, 0.11, 0.17, 0.11);
+  // The donkey is the shadow of this scene: it and the cars beside it are the
+  // only things that cast one, and its sculpt draws as four meshes, not thirty.
+  mergeParts(kit, animal);
+  animal.traverse((obj) => {
+    if (obj instanceof THREE.Mesh) obj.castShadow = true;
+  });
   return { animal, legs };
 }
 
@@ -177,6 +270,24 @@ const SIGN_INK = {
   edge: ['#7f8c9b', '#b8c3cd', '#d6ad52', '#ffd700'],
 } as const;
 const SIGN_SLOTS = 16;
+/** Dashes painted down one lane line, every two units across nine of them. */
+const DASHES_PER_STREET = 9;
+/**
+ * The eight paints on the road: the first four are the near lane, the last
+ * four the far one. One material per colour is shared by every car wearing it.
+ */
+const CAR_PAINTS = [
+  0x246bad, 0xc3d4df, 0x8b3441, 0x49655f, 0x9a4a1f, 0x5b6f86, 0xb7a23a, 0x7a2e2e,
+] as const;
+/** What the device says about itself, safely: jsdom and old browsers say nothing. */
+function matches(query: string) {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  try {
+    return window.matchMedia(query).matches;
+  } catch {
+    return false;
+  }
+}
 /**
  * What a street's state adds to its spoken name, so a screen-reader player
  * hears the road the way it is painted. 'current' says nothing: aria-current
@@ -248,7 +359,24 @@ function CrossingScene(props: Props) {
     for (const moment of moments) latest.current.onMoment?.(moment, next.step);
   });
   const lost = shown.phase === 'lost';
-  const reducedMotion = prefersReducedMotion();
+  // Read as a subscription, not once at mount: a player who turns the setting
+  // on mid-round gets it on the next frame, and the scene stops redrawing.
+  const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion);
+  const reducedRef = useRef(reducedMotion);
+  reducedRef.current = reducedMotion;
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    let query: MediaQueryList;
+    try {
+      query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    } catch {
+      return;
+    }
+    const changed = () => setReducedMotion(query.matches);
+    changed();
+    query.addEventListener?.('change', changed);
+    return () => query.removeEventListener?.('change', changed);
+  }, []);
   useEffect(() => {
     if (failed) latest.current.onSettled?.();
   }, [failed, props.phase, props.picked.length]);
@@ -284,6 +412,7 @@ function CrossingScene(props: Props) {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
+    const kit = sceneParts();
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0a1424);
     const fog = new THREE.Fog(0x0a1424, 22, 65);
@@ -300,49 +429,88 @@ function CrossingScene(props: Props) {
     const key = new THREE.DirectionalLight(0xffe9ca, 2.4);
     key.position.set(-5, 12, 8);
     key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
+    // A phone pays for the shadow map in heat and battery, and at this size on
+    // this screen nobody can tell the two apart.
+    const touch = matches('(pointer: coarse)');
+    key.shadow.mapSize.set(touch ? 1024 : 2048, touch ? 1024 : 2048);
     Object.assign(key.shadow.camera, { left: -12, right: 12, top: 14, bottom: -14 });
     key.shadow.bias = -0.001;
     scene.add(key, key.target);
     const rim = new THREE.DirectionalLight(0x4dbdff, 3.2);
     rim.position.set(5, 7, -6);
     scene.add(rim);
-    const asphalt = material(0x172536, 0.06, 0.95),
-      steel = material(0x6a8097, 0.8, 0.3),
-      paint = material(0xc7d9db, 0.1, 0.75);
-    box(scene, asphalt, 18, -0.28, 0, 62, 0.5, 20, 0.1);
+    const asphalt = kit.material(0x172536, 0.06, 0.95),
+      steel = kit.material(0x6a8097, 0.8, 0.3),
+      paint = kit.material(0xc7d9db, 0.1, 0.75);
+    box(kit, scene, asphalt, 18, -0.28, 0, 62, 0.5, 20, 0.1);
     // Two cars per street: the second one joins the traffic on the more dangerous streets.
     const traffic: THREE.Group[][] = [];
-    const buildCar = (color: number) => {
+    const glass = kit.material(0x071b2e, 0.4, 0.08),
+      rubber = kit.material(0x080d16, 0.05, 0.85),
+      lamp = kit.keep(
+        new THREE.MeshStandardMaterial({
+          color: 0xe3f8ff,
+          emissive: 0x9bdfff,
+          emissiveIntensity: 3,
+        })
+      ),
+      taillight = kit.material(0xf74932, 0.1, 0.2);
+    const wheel = kit.own(new THREE.CylinderGeometry(0.26, 0.26, 0.2, 24));
+    /**
+     * THE CAR, BUILT ONCE. Every car on this road is the same seventeen parts,
+     * so they are merged into one mesh per material here and every car after
+     * this one is six meshes over those same six geometries. Only the paint
+     * differs, and only the paint and the glass cast a shadow: a wheel's
+     * shadow falls under the car that already casts one.
+     */
+    const template = (() => {
       const car = new THREE.Group(),
-        body = material(color, 0.65, 0.18),
-        glass = material(0x071b2e, 0.4, 0.08),
-        rubber = material(0x080d16, 0.05, 0.85);
-      box(car, body, 0, 0.49, 0, 1.35, 0.46, 2.7, 0.19);
-      box(car, glass, 0, 0.84, -0.15, 1.08, 0.54, 1.5, 0.16);
-      box(car, body, 0, 1.12, -0.23, 1, 0.1, 0.9, 0.08);
-      box(car, steel, 0, 0.34, 1.32, 1.15, 0.1, 0.08, 0.02);
-      box(car, steel, 0, 0.33, -1.32, 1.15, 0.1, 0.08, 0.02);
+        body = kit.paint(CAR_PAINTS[0]);
+      box(kit, car, body, 0, 0.49, 0, 1.35, 0.46, 2.7, 0.19);
+      box(kit, car, glass, 0, 0.84, -0.15, 1.08, 0.54, 1.5, 0.16);
+      box(kit, car, body, 0, 1.12, -0.23, 1, 0.1, 0.9, 0.08);
+      box(kit, car, steel, 0, 0.34, 1.32, 1.15, 0.1, 0.08, 0.02);
+      box(kit, car, steel, 0, 0.33, -1.32, 1.15, 0.1, 0.08, 0.02);
       for (const side of [-1, 1])
         for (const end of [-1, 1]) {
-          const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.2, 24), rubber);
-          wheel.rotation.z = Math.PI / 2;
-          wheel.position.set(side * 0.66, 0.3, end * 0.86);
-          car.add(wheel);
-          sphere(car, steel, side * 0.77, 0.3, end * 0.86, 0.024, 0.15, 0.15);
+          const tyre = new THREE.Mesh(wheel, rubber);
+          tyre.rotation.z = Math.PI / 2;
+          tyre.position.set(side * 0.66, 0.3, end * 0.86);
+          car.add(tyre);
+          sphere(kit, car, steel, side * 0.77, 0.3, end * 0.86, 0.024, 0.15, 0.15);
         }
-      const lamp = new THREE.MeshStandardMaterial({
-        color: 0xe3f8ff,
-        emissive: 0x9bdfff,
-        emissiveIntensity: 3,
-      });
       for (const side of [-1, 1]) {
-        box(car, lamp, side * 0.46, 0.55, 1.35, 0.25, 0.13, 0.04, 0.03);
-        box(car, material(0xf74932, 0.1, 0.2), side * 0.46, 0.52, -1.35, 0.26, 0.13, 0.04, 0.03);
+        box(kit, car, lamp, side * 0.46, 0.55, 1.35, 0.25, 0.13, 0.04, 0.03);
+        box(kit, car, taillight, side * 0.46, 0.52, -1.35, 0.26, 0.13, 0.04, 0.03);
+      }
+      return mergeParts(kit, car).map((mesh) => ({
+        geometry: mesh.geometry,
+        material: mesh.material as THREE.Material,
+        casts: mesh.material === body || mesh.material === glass,
+        painted: mesh.material === body,
+      }));
+    })();
+    const buildCar = (color: number) => {
+      const car = new THREE.Group();
+      for (const slot of template) {
+        const mesh = new THREE.Mesh(slot.geometry, slot.painted ? kit.paint(color) : slot.material);
+        mesh.castShadow = slot.casts;
+        mesh.receiveShadow = true;
+        car.add(mesh);
       }
       return car;
     };
     const laneSlabs: THREE.Mesh[] = [];
+    // The 144 lane dashes are one shape in one place: one draw, not 144.
+    const dashes = new THREE.InstancedMesh(
+      kit.boxGeometry(0.035, 0.01, 0.9, 0.002),
+      paint,
+      SIGN_SLOTS * DASHES_PER_STREET
+    );
+    dashes.receiveShadow = true;
+    const dashAt = new THREE.Matrix4();
+    let dash = 0;
+    const signGeometry = kit.own(new THREE.PlaneGeometry(1.6, 0.8));
     const signCanvases: HTMLCanvasElement[] = [];
     const textures: THREE.CanvasTexture[] = [];
     /**
@@ -414,19 +582,27 @@ function CrossingScene(props: Props) {
     };
     for (let i = 0; i < SIGN_SLOTS; i++) {
       const x = streetCenter(i);
-      const slab = box(scene, asphalt.clone(), x, -0.03, 0, STREET_WIDTH - 0.12, 0.12, 19, 0.025);
+      const slab = box(
+        kit,
+        scene,
+        kit.keep(asphalt.clone()),
+        x,
+        -0.03,
+        0,
+        STREET_WIDTH - 0.12,
+        0.12,
+        19,
+        0.025
+      );
       laneSlabs.push(slab);
       for (let z = -8; z <= 8; z += 2)
-        box(scene, paint, x - STREET_WIDTH / 2, 0.04, z, 0.035, 0.01, 0.9, 0.002);
-      const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), streetSign(i));
+        dashes.setMatrixAt(dash++, dashAt.makeTranslation(x - STREET_WIDTH / 2, 0.04, z));
+      const sign = new THREE.Mesh(signGeometry, streetSign(i));
       sign.rotation.x = -Math.PI / 2;
       sign.position.set(x, 0.07, 2.25);
       scene.add(sign);
       if (i > 0) {
-        const lane = [
-          buildCar([0x246bad, 0xc3d4df, 0x8b3441, 0x49655f][i % 4]),
-          buildCar([0x9a4a1f, 0x5b6f86, 0xb7a23a, 0x7a2e2e][i % 4]),
-        ];
+        const lane = [buildCar(CAR_PAINTS[i % 4]), buildCar(CAR_PAINTS[4 + (i % 4)])];
         lane.forEach((car) => {
           car.position.x = x;
           scene.add(car);
@@ -434,10 +610,12 @@ function CrossingScene(props: Props) {
         traffic[i] = lane;
       }
     }
+    dashes.instanceMatrix.needsUpdate = true;
+    scene.add(dashes);
     // One continuous highway. The starting shoulder is outside every traffic lane.
-    box(scene, paint, STREET_WIDTH / 2, 0.05, 0, 0.08, 0.02, 19, 0.005);
-    box(scene, paint, -STREET_WIDTH / 2, 0.05, 0, 0.08, 0.02, 19, 0.005);
-    const animal = donkey();
+    box(kit, scene, paint, STREET_WIDTH / 2, 0.05, 0, 0.08, 0.02, 19, 0.005);
+    box(kit, scene, paint, -STREET_WIDTH / 2, 0.05, 0, 0.08, 0.02, 19, 0.005);
+    const animal = donkey(kit);
     animal.animal.scale.setScalar(DONKEY_SCALE);
     scene.add(animal.animal);
     const ghost = animal.animal.clone(true);
@@ -454,22 +632,35 @@ function CrossingScene(props: Props) {
     impactCar.visible = false;
     scene.add(impactCar);
     const flash = new THREE.Mesh(
-      new THREE.SphereGeometry(0.8, 20, 12),
-      new THREE.MeshBasicMaterial({ color: 0xffe2a3, transparent: true, opacity: 0.75 })
+      kit.own(new THREE.SphereGeometry(0.8, 20, 12)),
+      kit.keep(new THREE.MeshBasicMaterial({ color: 0xffe2a3, transparent: true, opacity: 0.75 }))
     );
     flash.visible = false;
     scene.add(flash);
+    // Nothing behind a modal, nothing scrolled past and nothing standing still
+    // is worth 60 draws a second; the clock behind it never stops.
+    let animating = true,
+      needsDraw = true,
+      onScreen = true;
+    const watcher =
+      typeof IntersectionObserver === 'function'
+        ? new IntersectionObserver((entries) => {
+            onScreen = entries.some((entry) => entry.isIntersecting);
+            needsDraw = true;
+          })
+        : null;
+    watcher?.observe(node);
     const resize = () => {
       const w = node.clientWidth,
         h = node.clientHeight;
       renderer.setSize(w, h, false);
       camera.aspect = w / Math.max(1, h);
       camera.updateProjectionMatrix();
+      needsDraw = true;
     };
     const observer = new ResizeObserver(resize);
     observer.observe(node);
     resize();
-    const reduced = prefersReducedMotion();
     const frames = gpuFrameRenderer(renderer, scene, camera);
     let raf = 0,
       last = 0,
@@ -514,7 +705,8 @@ function CrossingScene(props: Props) {
     };
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
-      if (document.hidden || now - last < (reduced ? 100 : 16)) return;
+      const reduced = reducedRef.current;
+      if (document.hidden || now - last < (reduced ? 100 : animating ? 16 : 33)) return;
       last = now;
       const visibleDelta = lastVisibleFrame === null ? 0 : now - lastVisibleFrame;
       lastVisibleFrame = now;
@@ -527,6 +719,7 @@ function CrossingScene(props: Props) {
       if (roadChanged) {
         roadSignature = newRoad;
         paintRoad(road);
+        needsDraw = true;
       }
       const roundChanged = newSignature !== signature;
       if (roundChanged) {
@@ -553,6 +746,7 @@ function CrossingScene(props: Props) {
         sceneElapsed = 0;
         stalled = 0;
         notified = false;
+        needsDraw = true;
       } else sceneElapsed += visibleDelta;
       if (roadChanged || roundChanged) paintSigns(road, step, p.phase);
       const elapsed = sceneElapsed,
@@ -633,7 +827,14 @@ function CrossingScene(props: Props) {
       const owed = pending.current;
       const ready =
         owed !== null && (owed.at === 'now' || (owed.at === 'walk' ? walk === 1 : struck));
-      const submitted = frames.render();
+      // Paused (an offer over an idle road, a receipt on top of it) or scrolled
+      // off screen: the clock, the beats and completion all carry on, and only
+      // the draw call is skipped. No reveal ever waits on scroll position.
+      // Under reduced motion there is nothing to redraw between changes.
+      const drawing = !p.paused && onScreen && (!reduced || needsDraw);
+      const submitted = drawing ? frames.render() : true;
+      if (drawing) needsDraw = false;
+      animating = !finished;
       // A beat belongs to the frame that shows it: the same terminal-frame
       // rule completion follows, so neither ever runs ahead of the picture.
       if (submitted && ready && owed) commit.current(owed.next, owed.moments);
@@ -668,6 +869,7 @@ function CrossingScene(props: Props) {
       textures.forEach((texture) => {
         texture.needsUpdate = true;
       });
+      needsDraw = true;
       setFailed(false);
     };
     canvas.addEventListener('webglcontextlost', lost);
@@ -677,24 +879,26 @@ function CrossingScene(props: Props) {
       document.removeEventListener('visibilitychange', visibilityChanged);
       frames.dispose();
       observer.disconnect();
+      watcher?.disconnect();
       canvas.removeEventListener('webglcontextlost', lost);
       canvas.removeEventListener('webglcontextrestored', restored);
-      const geometries = new Set<THREE.BufferGeometry>(),
-        materials = new Set<THREE.Material>();
+      // The kit owns every shape and finish the scene was built from; the
+      // traversal catches what the scene cloned for itself (the ghost's coats).
       scene.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          geometries.add(obj.geometry);
+        if (obj instanceof THREE.InstancedMesh) obj.dispose();
+        if (obj instanceof THREE.Mesh)
           (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach((m) =>
-            materials.add(m)
+            kit.materials.add(m)
           );
-        }
       });
-      geometries.forEach((g) => g.dispose());
+      kit.dispose();
       textures.forEach((t) => t.dispose());
-      materials.forEach((m) => m.dispose());
       environment.dispose();
       key.shadow.map?.dispose();
       renderer.dispose();
+      // The page mounts this scene again for every round. Without this the tab
+      // keeps one live WebGL context per round it has played.
+      renderer.forceContextLoss();
       canvas.remove();
     };
   }, []);

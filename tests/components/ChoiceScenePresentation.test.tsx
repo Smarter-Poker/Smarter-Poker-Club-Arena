@@ -14,6 +14,8 @@ import { join } from 'node:path';
 type Graph = {
   getObjectByName(name: string): { parent: { position: { x: number } } | null } | undefined;
 };
+/** Contexts this scene has handed back, counted across every mount. */
+const gpu = vi.hoisted(() => ({ contextLosses: 0 }));
 const frames = vi.hoisted(() => ({
   render: vi.fn(() => true),
   dispose: vi.fn(),
@@ -36,6 +38,9 @@ vi.mock('three', async (original) => {
       setSize() {}
       render() {}
       dispose() {}
+      forceContextLoss() {
+        gpu.contextLosses++;
+      }
     },
     PMREMGenerator: class {
       fromScene() {
@@ -120,6 +125,7 @@ function mountScene(props: Partial<SceneProps> = {}) {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
@@ -344,5 +350,121 @@ describe('the scene leaves the announcement to the page', () => {
     expect(screen.getAllByRole('listitem')[1]).toHaveAccessibleName(
       'Street 2 Pays 1.45x, 5.33 Chips, Hit Here'
     );
+  });
+});
+
+/**
+ * WHAT A PHONE PAYS FOR EVERY FRAME (review 2026-09-22). This is the heaviest
+ * of the four scenes: it built 771 meshes over 775 geometries, allocated a
+ * fresh RoundedBoxGeometry or SphereGeometry for every one of them, gave every
+ * car six materials of its own, cast nearly all of it into a 2048 shadow map,
+ * drew every 16 ms behind modals and off screen alike, and left a live WebGL
+ * context behind on every unmount - and the page mounts it again for every
+ * round.
+ */
+type Node = {
+  geometry?: object;
+  castShadow?: boolean;
+  traverse(visit: (node: Node) => void): void;
+};
+/** The scene as it was, counted off these same mocks on the commit before this
+ *  one: 739 distinct geometries, 771 meshes, 630 of them casting a shadow. */
+const BEFORE = { geometries: 739, meshes: 771, casters: 630 };
+const built = () => {
+  const geometries = new Set<object>();
+  let meshes = 0,
+    casters = 0;
+  (frames.scene as Node).traverse((node) => {
+    if (!node.geometry) return;
+    meshes++;
+    geometries.add(node.geometry);
+    if (node.castShadow) casters++;
+  });
+  return { geometries: geometries.size, meshes, casters };
+};
+
+describe('the crossing scene costs a phone less every frame', () => {
+  it('builds the same road out of a fraction of the geometry, meshes and casters', () => {
+    motion(false);
+    mountScene({ phase: 'open', picked: [0] });
+    tick(16);
+    const now = built();
+    expect(BEFORE.geometries / now.geometries).toBeGreaterThanOrEqual(5);
+    expect(BEFORE.meshes / now.meshes).toBeGreaterThanOrEqual(3);
+    expect(BEFORE.casters / now.casters).toBeGreaterThanOrEqual(3);
+  });
+
+  it('draws at thirty a second once the road has stopped moving', () => {
+    motion(false);
+    mountScene();
+    // The opening walk, at sixty.
+    for (let t = 16; t <= 1000; t += 8) tick(t);
+    frames.render.mockClear();
+    for (let t = 1008; t <= 2000; t += 8) tick(t);
+    expect(frames.render.mock.calls.length).toBeLessThanOrEqual(34);
+  });
+
+  it('draws at sixty a second while the collision is playing', () => {
+    motion(false);
+    const scene = mountScene({ phase: 'open', picked: [0] });
+    tick(16);
+    scene.update({ phase: 'lost', picked: [0, 1], payoutChips: 0.2 });
+    frames.render.mockClear();
+    for (let t = 24; t <= 1016; t += 8) tick(t);
+    expect(frames.render.mock.calls.length).toBeGreaterThanOrEqual(55);
+  });
+
+  it('draws nothing while it is paused, and still settles on its own schedule', () => {
+    motion(false);
+    const scene = mountScene({ phase: 'lost', picked: [0, 1], payoutChips: 0.1, paused: true });
+    tick(16);
+    tick(1600);
+    expect(frames.render).not.toHaveBeenCalled();
+    expect(scene.onSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('draws nothing while it is scrolled off screen, and still settles', () => {
+    motion(false);
+    let watch: ((entries: { isIntersecting: boolean }[]) => void) | null = null;
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+          watch = callback;
+        }
+        observe() {}
+        disconnect() {}
+      }
+    );
+    const scene = mountScene({ phase: 'lost', picked: [0, 1], payoutChips: 0.1 });
+    watch!([{ isIntersecting: false }]);
+    frames.render.mockClear();
+    tick(16);
+    tick(1600);
+    expect(frames.render).not.toHaveBeenCalled();
+    expect(scene.onSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands the WebGL context back when the round leaves the screen', () => {
+    motion(false);
+    const before = gpu.contextLosses;
+    const scene = mountScene({ phase: 'open', picked: [0] });
+    tick(16);
+    scene.view.unmount();
+    expect(gpu.contextLosses).toBe(before + 1);
+  });
+
+  it('redraws only when something changes under reduced motion', () => {
+    motion(true);
+    const scene = mountScene({ phase: 'open', picked: [0] });
+    // Reduced motion already slows the loop to ten frames a second; now it
+    // draws on none of them until the round, the road or the size changes.
+    tick(120);
+    expect(frames.render).toHaveBeenCalledTimes(1);
+    for (let t = 220; t <= 1100; t += 100) tick(t);
+    expect(frames.render).toHaveBeenCalledTimes(1);
+    scene.update({ phase: 'open', picked: [0, 1] });
+    tick(1200);
+    expect(frames.render).toHaveBeenCalledTimes(2);
   });
 });

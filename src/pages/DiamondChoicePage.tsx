@@ -635,6 +635,16 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         : null;
   const guaranteedSuper = viewOpen ? upgraded : earned.quote?.guarantee === 'super';
   const promise = earned.quote ? guaranteeCopy(game, earned.quote) : null;
+  // The finished round's receipt is on screen, taking the player back to the
+  // wheel. One condition, read by the receipt itself and by the scene behind it.
+  const receiptShowing = Boolean(
+    round &&
+    round.status !== 'open' &&
+    completionId === round.id &&
+    revealedId === round.id &&
+    !uncertain &&
+    !busy
+  );
   /**
    * ONE SPOKEN LINE PER STREET. The scene's readout, its bust stamp and the
    * paragraphs below were four live regions between them, so a hit was read
@@ -747,6 +757,11 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           // The scene reached the beat it was holding: the console prints the
           // confirmed round from here on.
           onMoment={() => setPrinted(null)}
+          // Nothing is looking at the road: the Double Down offer stands over
+          // an idle scene, or the receipt stands over a finished one. Never on
+          // offerOpen alone, which starts true and stays true for a resumed
+          // open round, and would freeze that round's reveal for good.
+          paused={(phase === 'idle' && offerOpen && Boolean(earned.award)) || receiptShowing}
           phase={phase}
           picked={sceneRound?.picked ?? []}
           mines={sceneRound?.proof?.mine_cells ?? null}
@@ -914,25 +929,20 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           ))
         )}
       </GamePanel>
-      {round &&
-        round.status !== 'open' &&
-        completionId === round.id &&
-        revealedId === round.id &&
-        !uncertain &&
-        !busy && (
-          <BonusCompletion
-            key={round.id}
-            clubId={clubId ?? ''}
-            chips={round.payout_chips}
-            detail={
-              game === 'mines'
-                ? 'All Remaining Mines Have Been Revealed.'
-                : round.status === 'lost'
-                  ? `The Donkey Was Hit At Street ${round.picked.length}.`
-                  : `The Donkey Would Have Reached Street ${roadEnd ?? 0}.`
-            }
-          />
-        )}
+      {receiptShowing && round && (
+        <BonusCompletion
+          key={round.id}
+          clubId={clubId ?? ''}
+          chips={round.payout_chips}
+          detail={
+            game === 'mines'
+              ? 'All Remaining Mines Have Been Revealed.'
+              : round.status === 'lost'
+                ? `The Donkey Was Hit At Street ${round.picked.length}.`
+                : `The Donkey Would Have Reached Street ${roadEnd ?? 0}.`
+          }
+        />
+      )}
     </div>
   );
 }

@@ -76,14 +76,16 @@ vi.mock('../../src/services/HapticService', () => ({ triggerHaptic: vi.fn() }));
 vi.mock('../../src/components/games/ChoiceScene', () => ({
   default: ({
     phase,
+    paused,
     onSettled,
     onMoment,
   }: {
     phase: string;
+    paused?: boolean;
     onSettled: () => void;
     onMoment?: (moment: string, street: number) => void;
   }) => (
-    <section aria-label={`Scene ${phase}`}>
+    <section aria-label={`Scene ${phase}`} data-paused={String(paused)}>
       <button onClick={onSettled}>Finish Scene</button>
       {/* The beat the real scene reaches when the car gets to the donkey. */}
       <button onClick={() => onMoment?.('hit', 2)}>Present</button>
@@ -555,6 +557,53 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     fireEvent.click(screen.getByRole('button', { name: 'Present' }));
     expect(said()).not.toContain('Street 1 Crossed');
     expect(said()).toContain('The Donkey Did Not Make This Crossing.');
+  });
+
+  /**
+   * WHAT THE SCENE IS FOR. Nothing is looking at the road behind the Double
+   * Down offer or under the receipt, and 60 frames a second of traffic there
+   * is heat and battery for nobody. Pausing on offerOpen alone would be worse
+   * than not pausing at all: it starts true and stays true whenever BonusSetup
+   * is not mounted, which is exactly a resumed open round, and that round's
+   * reveal would never draw and never settle.
+   */
+  it('pauses the road behind the Double Down offer, and lets it go on the answer', async () => {
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    expect(screen.getByRole('region', { name: 'Scene idle' })).toHaveAttribute(
+      'data-paused',
+      'true'
+    );
+    await answerOffer();
+    expect(screen.getByRole('region', { name: 'Scene idle' })).toHaveAttribute(
+      'data-paused',
+      'false'
+    );
+  });
+
+  it('never pauses a resumed open round, whose offer was never answered', async () => {
+    // The saved round is read back once; the read after the move no longer
+    // carries it, exactly as the server answers a round that has just ended.
+    backend.state.mockResolvedValueOnce({ ...state, open_round: { ...openRound, picked: [0] } });
+    backend.act.mockResolvedValue({
+      ...fixtures.receipts.crossing,
+      status: 'lost',
+      picked: [0, 1],
+      payout_chips: 0.1,
+      award_id: AWARD.id,
+    });
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    expect(screen.getByRole('region', { name: 'Scene open' })).toHaveAttribute(
+      'data-paused',
+      'false'
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Present' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
+    await settle();
+    expect(screen.getByRole('dialog', { name: '0.10 Chips' })).toBeInTheDocument();
   });
 
   it('holds an open round, whatever the award says', async () => {

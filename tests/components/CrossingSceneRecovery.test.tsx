@@ -25,6 +25,7 @@ vi.mock('three', async (original) => {
       setSize() {}
       render() {}
       dispose() {}
+      forceContextLoss() {}
     },
     PMREMGenerator: class {
       fromScene() {

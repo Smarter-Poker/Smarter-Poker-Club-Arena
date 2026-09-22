@@ -134,6 +134,6 @@ describe('the lobby prints the crash odds the server plays', () => {
     expect(screen.queryByText(/^1 In /)).toBeNull();
     // Plinko keeps its own "Up To"; the crash console has none to print.
     expect(screen.getAllByText('Up To')).toHaveLength(1);
-    expect(screen.queryByText('Your Award Sets Your Round')).toBeNull();
+    expect(screen.queryByText('Set By Your Award')).toBeNull();
   });
 });

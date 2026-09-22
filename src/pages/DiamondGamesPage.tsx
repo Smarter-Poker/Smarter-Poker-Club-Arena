@@ -422,7 +422,7 @@ export default function DiamondGamesPage() {
               label="Up To"
               value={multiplierLabel(crashTop)}
               ink="gold"
-              meta="Your Award Sets Your Round"
+              meta="Set By Your Award"
             />
           )}
           {crashOdds ? (

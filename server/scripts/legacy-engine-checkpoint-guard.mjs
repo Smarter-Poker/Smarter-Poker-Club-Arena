@@ -2121,9 +2121,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
          the engine forgot), so no residue pair may have an open `table_seats`
          row; and a CASH SEAT MOVE still in transit (the carried presence and
          bank wait in the process-wide SeatMovePresence map until the
-         destination's seat sweep claims them), so the destination engine of
-         any such move out of a residue table must already seat that exact
-         occupancy and hold the carried bank. An active timer is refused
+         destination's seat sweep claims them), so a move out of a residue
+         table into a seat whose capture holds no bank for that occupancy, and
+         executed within the last hour, refuses. An active timer is refused
          outright.
 
          DISPOSED - metadata for a seated player on a STOPPED engine whose
@@ -2477,43 +2477,68 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       }
       // 2. A residue player who left a residue table by a CASH SEAT MOVE and
       // still sits at that move's destination. The source deposited the carried
-      // presence and bank in the process-wide SeatMovePresence map when the
-      // move landed (8825 ServerTableEngineBase.ts:4059-4061); the destination
+      // presence and bank in the process-wide SeatMovePresence map when it ran
+      // the move (8825 ServerTableEngineBase.ts:4059-4061); the destination
       // claims it only in its seat sweep, after `adoptSeatRoster`, and a park
-      // (or a failed arrival read, retried every 5 s) can come between. Until
-      // then only this process holds that state, and a restart drops it. So the
-      // destination engine must already seat that exact occupancy AND hold the
-      // carried bank. Only moves this process could have handled are read.
-      const since = new Date(performance.timeOrigin - 60000).toISOString();
-      const byOccupancy = new Map(open.map((row) => [lower(row.occupancy_id), row]));
-      for (const answer of await readAll(chunks([...byOccupancy.keys()].sort(), 200).map((ids) => () =>
+      // (or a failed arrival read, retried every 5 s) can come between. A
+      // deposit is claimable for MOVED_PRESENCE_FRESH_MS (10 min,
+      // SeatMovePresence.ts:94, :168) and only this process holds it.
+      //
+      // A destination whose CAPTURE holds a bank for that exact occupancy is
+      // done: the claim made that bank, or a first deal did, and 8825 never
+      // applies a carried bank or presence over a live one (:4233). Every other
+      // open seat of a residue player is asked, through the engine's own
+      // arrivals function (the service role cannot read the receipts table),
+      // whether a cash seat move out of a residue table landed in it; one that
+      // executed within the last hour, three times the claim window plus the
+      // source's own processing, refuses. Older ones can no longer be claimed.
+      const captureOf = new Map(captures.map((capture) => [lower(capture.tableId), capture]));
+      const pending = new Map();
+      for (const row of open) {
+        const bank = captureOf.get(lower(row.table_id))?.banks?.[row.user_id];
+        if (record(bank) && lower(bank.occupancyId) === lower(row.occupancy_id)) continue;
+        const table = lower(row.table_id);
+        if (!pending.has(table)) pending.set(table, { tableId: row.table_id, occupancies: [] });
+        pending.get(table).occupancies.push(row.occupancy_id);
+      }
+      const arrivals = [];
+      const asked = [...pending.values()].sort((a, b) => (lower(a.tableId) < lower(b.tableId) ? -1 : 1));
+      for (const [index, answer] of (await readAll(asked.map(({ tableId, occupancies }) => () =>
+        modules.client.supabase.rpc('fn_cash_seat_move_arrivals', {
+          p_table_id: tableId,
+          p_occupancy_ids: [...occupancies].sort(),
+        })))).entries()) {
+        require(asked[index].occupancies.length <= 64, 'bank_residue_unproven');
+        answered(answer, 64, 'bank_residue_unproven');
+        for (const arrival of answer.data) {
+          require(record(arrival) &&
+            uuid(arrival.move_id) &&
+            uuid(arrival.player_id) &&
+            uuid(arrival.from_table_id) &&
+            uuid(arrival.to_table_id) &&
+            uuid(arrival.destination_occupancy_id), 'bank_residue_unproven');
+          if (held.has(`${lower(arrival.from_table_id)}:${lower(arrival.player_id)}`)) arrivals.push(arrival);
+        }
+      }
+      const moveIds = [...new Set(arrivals.map(({ move_id }) => lower(move_id)))].sort();
+      const executedAt = new Map();
+      for (const answer of await readAll(chunks(moveIds, 200).map((ids) => () =>
         modules.client.supabase
-          .from('cash_seat_move_receipts')
-          .select('player_id,from_table_id,to_table_id,destination_occupancy_id')
-          .in('destination_occupancy_id', ids)
-          .gte('created_at', since)
-          .limit(201)))) {
+          .from('cash_seat_moves')
+          .select('id,executed_at')
+          .in('id', ids)
+          .limit(ids.length + 1)))) {
         answered(answer, 200, 'bank_residue_unproven');
         for (const move of answer.data) {
-          require(record(move) &&
-            uuid(move.player_id) &&
-            uuid(move.from_table_id) &&
-            uuid(move.to_table_id) &&
-            uuid(move.destination_occupancy_id), 'bank_residue_unproven');
-          if (!held.has(`${lower(move.from_table_id)}:${lower(move.player_id)}`)) continue;
-          const seat = byOccupancy.get(lower(move.destination_occupancy_id));
-          const destination = seat === undefined ? undefined : tableMap.get(seat.table_id);
-          const seated = Array.isArray(destination?.seatedPlayers)
-            ? destination.seatedPlayers.find((entry) =>
-              record(entry) &&
-                lower(entry.user_id) === lower(move.player_id) &&
-                lower(entry.occupancy_id) === lower(move.destination_occupancy_id))
-            : undefined;
-          if (!(seated !== undefined &&
-            destination.timeBankEngine?.playerBanks instanceof Map &&
-            destination.timeBankEngine.playerBanks.has(`${destination.tableId}:${seated.user_id}`)))
-            refuseAt('proveBanksHeldNothing.seatMoveInTransit', seat?.table_id ?? move.to_table_id, 'bank_residue_unproven');
+          require(record(move) && uuid(move.id), 'bank_residue_unproven');
+          executedAt.set(lower(move.id), move.executed_at);
         }
+      }
+      const claimableSince = Date.now() - 3600000;
+      for (const arrival of arrivals) {
+        const executed = Date.parse(executedAt.get(lower(arrival.move_id)));
+        if (!(Number.isFinite(executed) && executed < claimableSince))
+          refuseAt('proveBanksHeldNothing.seatMoveInTransit', arrival.to_table_id, 'bank_residue_unproven');
       }
       // 3. The felt is quiet at every stopped table whose metadata outlived the
       // banks its stop disposed: the release gate's own predicate.
@@ -2539,6 +2564,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         `residueTables=${residueTables.length}`,
         `residuePlayers=${residueTables.reduce((sum, { residue }) => sum + residue.length, 0)}`,
         `residueOpenSeatsElsewhere=${open.length}`,
+        `arrivalTablesAsked=${asked.length}`,
+        `movesOutOfResidue=${arrivals.length}`,
         `disposedTables=${disposedTables.length}`,
         `disposedSeats=${disposedTables.reduce((sum, { disposed }) => sum + disposed.length, 0)}`,
         `disposedEvents=${events.slice(0, 12).join('/') || 'none'}`,

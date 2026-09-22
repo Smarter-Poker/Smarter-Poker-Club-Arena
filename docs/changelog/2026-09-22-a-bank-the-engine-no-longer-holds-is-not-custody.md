@@ -54,10 +54,15 @@ before anything is written:
     the carried presence and bank in the process-wide SeatMovePresence map
     (`ServerTableEngineBase.ts:4059-4061`), and the destination claims it only
     in its seat sweep, after `adoptSeatRoster`; a park, or a failed arrival
-    read retried every 5 s, can come between. So for every open seat a residue
-    player holds anywhere, the cash seat move receipts this process could have
-    handled are read, and for a move out of a residue table the destination
-    engine must already seat that exact occupancy AND hold the carried bank.
+    read retried every 5 s, can come between, and a deposit is claimable for
+    ten minutes (`SeatMovePresence.ts:94`, `:168`). So every open seat a
+    residue player holds anywhere is read; a seat whose capture already holds
+    a bank for that exact occupancy is done (the claim or a first deal made
+    it, and 8825 never applies a carried bank over a live one); every other
+    one is asked, through the engine's own `fn_cash_seat_move_arrivals` (the
+    service role cannot read `cash_seat_move_receipts`), whether a cash seat
+    move out of a residue table landed in it, and one that executed within the
+    last hour refuses.
     An unseated bank whose timer is running is refused outright.
 - **Disposed**: metadata for a seated player on a STOPPED engine that holds no
   bank at all. The live value was already cleared by `stop()` and no refusal
@@ -72,8 +77,8 @@ pair of full re-verifications, so it costs one round of reads inside the
 publisher's 20 s work budget. It refuses (`bank_residue_unproven`,
 `stopped_disposed_banks_unproven`), naming the check and the table, on any row
 it cannot rule out, any error, any body that is not a list and any page that
-fills (100 players and 900 seat rows, 200 occupancies and 200 receipts, 100
-tables per read). Both sets are part of each engine's
+fills (100 players and 900 seat rows per read, 64 occupancies per arrivals
+call, 200 moves and 100 tables per read). Both sets are part of each engine's
 signature, so a set that moves between observations refuses as
 `engine_state_changed`. The result carries `bankDisposition`: residue tables
 and players, disposed tables and seats, and the 8-character prefixes of the
@@ -88,21 +93,29 @@ bound; since 8825 started, no table has seen more than nine departed players.
 
 An adversarial review of the first cut found the in-transit gap (it had
 accepted a mover's residue whenever the database held the seat elsewhere),
-the sequential reads, and the unnamed refusals; all three are fixed above.
+the sequential reads, and the unnamed refusals; a second review found that the
+service role cannot read `cash_seat_move_receipts` (verified:
+`has_table_privilege('service_role', ..., 'SELECT')` is false), so the move
+check now goes through the engine's arrivals function and `cash_seat_moves`,
+both readable by the engine. A swap partner, or a source engine replaced after
+running its move, leaves no residue and was not caught before this change
+either; that remains a known gap.
 
 ## Verification
 
-`tests/legacyEngineCheckpointGuard.test.ts`, 23 new cases in "a bank the
+`tests/legacyEngineCheckpointGuard.test.ts`, 27 new cases in "a bank the
 engine no longer holds is proved from rows, never assumed", on the production
 8825 profile with its two retained originals: no read when nothing is
 residue; a cashed-out player proved departed before any write and never
 written; refusal, named and with no write and no custody RPC, when the
 database still seats that player there, on an unreadable answer, a non-list
 body, a filled page and an unreadable row; a residue player seated elsewhere
-with no move out of here accepted; a mover accepted once the destination seats
-that occupancy with the carried bank, and refused while the destination seats
-it without the bank or is not in the process at all, and on an unreadable or
-malformed move read;
+with no move out of here accepted after the arrivals function is asked; a
+mover accepted once the destination capture holds a bank for that occupancy,
+refused while the destination seats it without the bank or is not in the
+process at all, accepted when the move executed over an hour ago, and refused
+on an unreadable or malformed arrivals answer, an unreadable move answer, a
+missing move row and a move with no execution time;
 a busted player's bank proved departed and never written; an unseated running
 timer refused; a quarantined stopped engine proved quiet and never written;
 refusal on a hand in the air and on an unreadable snapshot; a stopped engine
@@ -113,6 +126,6 @@ now follows 8825's `maintenanceDurabilityReason` (a parked bank or a seated
 player's bank), which the busted case needs and every existing case matches.
 
 Local: the guard, admission, break-window law, source-window law and transport
-suites (the transport suite under Node 20, which it requires), 221 pass;
+suites (the transport suite under Node 20, which it requires), 225 pass;
 `cd server && npx tsc --noEmit` clean; `EngineLifecycleDiagnostics` and
 `anAbandonedGenerationIsNotAPendingOne.law`, 69 pass.

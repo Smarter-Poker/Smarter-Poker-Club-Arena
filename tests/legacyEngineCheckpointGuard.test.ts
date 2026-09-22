@@ -70,8 +70,8 @@ function fixture(count = 1, predecessor = release) {
   let onSnapshots: ((ids: string[], since: string) => { data: any; error: any }) | undefined;
   const seatReads: { users: string[] }[] = [];
   let onSeats: ((users: string[]) => { data: any; error: any }) | undefined;
-  const moveReads: { ids: string[]; since: string }[] = [];
-  let onMoves: ((ids: string[], since: string) => { data: any; error: any }) | undefined;
+  const moveReads: { ids: string[] }[] = [];
+  let onMoves: ((ids: string[]) => { data: any; error: any }) | undefined;
   class Maintenance {
     phase = 'counting_down';
     announcedAt = Date.now() - 120000;
@@ -334,32 +334,24 @@ function fixture(count = 1, predecessor = release) {
               },
             };
           }
-          if (name === 'cash_seat_move_receipts') {
-            // Cash seat moves this process handled, into those open seats.
+          if (name === 'cash_seat_moves') {
+            // When each move out of a residue table executed.
             const filter: any = {
               ids: [] as string[],
-              since: '',
               in: (key: string, values: string[]) => {
-                expect(key).toBe('destination_occupancy_id');
+                expect(key).toBe('id');
                 filter.ids = values;
                 return filter;
               },
-              gte: (key: string, value: string) => {
-                expect(key).toBe('created_at');
-                filter.since = value;
-                return filter;
-              },
               limit: async (bound: number) => {
-                expect(bound).toBe(201);
-                moveReads.push({ ids: [...filter.ids], since: filter.since });
-                return onMoves ? onMoves(filter.ids, filter.since) : { data: [], error: null };
+                expect(bound).toBe(filter.ids.length + 1);
+                moveReads.push({ ids: [...filter.ids] });
+                return onMoves ? onMoves(filter.ids) : { data: [], error: null };
               },
             };
             return {
               select: (columns: string) => {
-                expect(columns).toBe(
-                  'player_id,from_table_id,to_table_id,destination_occupancy_id'
-                );
+                expect(columns).toBe('id,executed_at');
                 return filter;
               },
             };
@@ -1170,8 +1162,17 @@ function mixedFixture() {
     })),
   };
   Object.assign(f.options, { custodyIntent: intent });
+  const arrivalReads: { table: string; occupancies: string[] }[] = [];
+  let onArrivals: ((table: string, occupancies: string[]) => { data: any; error: any }) | undefined;
   Object.assign(f.modules.client.supabase, {
     rpc: async (name: string, input: any) => {
+      if (name === 'fn_cash_seat_move_arrivals') {
+        expect(Object.keys(input).sort()).toEqual(['p_occupancy_ids', 'p_table_id']);
+        arrivalReads.push({ table: input.p_table_id, occupancies: [...input.p_occupancy_ids] });
+        return onArrivals
+          ? onArrivals(input.p_table_id, input.p_occupancy_ids)
+          : { data: [], error: null };
+      }
       rpcCalls.push(name);
       onRpc?.(name, input);
       let data: any;
@@ -1296,6 +1297,10 @@ function mixedFixture() {
     clearInterruptedPermit,
     receipts,
     rpcCalls,
+    arrivalReads,
+    onArrivals: (cb: typeof onArrivals) => {
+      onArrivals = cb;
+    },
     onRpc: (cb: typeof onRpc) => {
       onRpc = cb;
     },
@@ -2172,14 +2177,16 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     }));
     const result: any = await f.run();
     expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
-    expect(f.moveReads).toHaveLength(1);
-    expect(f.moveReads[0].ids).toEqual([uuid(66001)]);
-    // Only moves this process could have handled are read.
-    expect(Date.parse(f.moveReads[0].since)).toBeLessThanOrEqual(performance.timeOrigin);
+    // No capture holds a bank for that seat, so the engine's arrivals function
+    // is asked, and it names no move into it.
+    expect(f.arrivalReads).toEqual([{ table: uuid(66000), occupancies: [uuid(66001)] }]);
+    expect(f.moveReads).toEqual([]);
     expect(result.bankDisposition).toContain('residueOpenSeatsElsewhere=1');
+    expect(result.bankDisposition).toContain('arrivalTablesAsked=1');
+    expect(result.bankDisposition).toContain('movesOutOfResidue=0');
   });
 
-  it('accepts a player who moved away once the destination seats that occupancy with the carried bank', async () => {
+  it('accepts a player who moved away once the destination capture holds a bank for that occupancy', async () => {
     const f: any = mixedFixture();
     const from = cashedOut(f, 600);
     const to = destination(f, 601, from.departed, uuid(68000), true);
@@ -2187,22 +2194,34 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
       data: [{ table_id: to.tableId, user_id: from.departed, occupancy_id: uuid(68000) }],
       error: null,
     }));
-    f.onMoves(() => ({
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    // Nothing to ask: the claim (or a first deal) already made that bank.
+    expect(f.arrivalReads).toEqual([]);
+    // The destination is ordinary custody and is written as such.
+    expect(f.rows.has(to.tableId)).toBe(true);
+  });
+
+  const landed = (f: any, from: any, toTable: string, executedAt: string | null) => {
+    f.onSeats(() => ({
+      data: [{ table_id: toTable, user_id: from.departed, occupancy_id: uuid(68000) }],
+      error: null,
+    }));
+    f.onArrivals(() => ({
       data: [
         {
+          move_id: uuid(69000),
           player_id: from.departed,
           from_table_id: from.e.tableId,
-          to_table_id: to.tableId,
+          to_table_id: toTable,
+          source_occupancy_id: uuid(69001),
           destination_occupancy_id: uuid(68000),
         },
       ],
       error: null,
     }));
-    const result: any = await f.run();
-    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
-    // The destination is ordinary custody and is written as such.
-    expect(f.rows.has(to.tableId)).toBe(true);
-  });
+    f.onMoves(() => ({ data: [{ id: uuid(69000), executed_at: executedAt }], error: null }));
+  };
 
   it.each([
     ['the destination seats the player without the carried bank', true],
@@ -2213,21 +2232,7 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     const toTable = present
       ? destination(f, 601, from.departed, uuid(68000), false).tableId
       : uuid(67000);
-    f.onSeats(() => ({
-      data: [{ table_id: toTable, user_id: from.departed, occupancy_id: uuid(68000) }],
-      error: null,
-    }));
-    f.onMoves(() => ({
-      data: [
-        {
-          player_id: from.departed,
-          from_table_id: from.e.tableId,
-          to_table_id: toTable,
-          destination_occupancy_id: uuid(68000),
-        },
-      ],
-      error: null,
-    }));
+    landed(f, from, toTable, new Date(Date.now() - 60000).toISOString());
     const result: any = await f.run();
     expect(result).toMatchObject({
       ok: false,
@@ -2235,21 +2240,45 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
       failedCheck: 'proveBanksHeldNothing.seatMoveInTransit',
       failedTable: toTable,
     });
+    expect(f.arrivalReads).toEqual([{ table: toTable, occupancies: [uuid(68000)] }]);
+    expect(f.moveReads).toEqual([{ ids: [uuid(69000)] }]);
     expect(f.calls).toEqual([]);
     expect(f.rpcCalls).toEqual([]);
   });
 
-  it.each([
-    ['an unreadable answer', () => ({ data: null, error: { message: 'PGRST002' } })],
-    ['a row it cannot read', () => ({ data: [{ player_id: 'x' }], error: null })],
-  ])('refuses a move read on %s', async (_label, answer) => {
+  it('accepts a move out of a residue table that executed over an hour ago: its handoff can no longer be claimed', async () => {
     const f: any = mixedFixture();
-    const { departed } = cashedOut(f, 600);
-    f.onSeats(() => ({
-      data: [{ table_id: uuid(66000), user_id: departed, occupancy_id: uuid(66001) }],
-      error: null,
-    }));
-    f.onMoves(answer as any);
+    const from = cashedOut(f, 600);
+    landed(f, from, uuid(67000), new Date(Date.now() - 2 * 3600000).toISOString());
+    const result: any = await f.run();
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
+    expect(result.bankDisposition).toContain('movesOutOfResidue=1');
+  });
+
+  it.each([
+    [
+      'an unreadable arrivals answer',
+      (f: any) => f.onArrivals(() => ({ data: null, error: { message: 'ENGINE_ONLY' } })),
+    ],
+    [
+      'an arrival it cannot read',
+      (f: any) => f.onArrivals(() => ({ data: [{ move_id: 'x' }], error: null })),
+    ],
+    [
+      'an unreadable move answer',
+      (f: any) => f.onMoves(() => ({ data: null, error: { message: 'PGRST002' } })),
+    ],
+    ['a move row that is missing', (f: any) => f.onMoves(() => ({ data: [], error: null }))],
+    [
+      'a move with no execution time',
+      (f: any) =>
+        f.onMoves(() => ({ data: [{ id: uuid(69000), executed_at: null }], error: null })),
+    ],
+  ])('refuses on %s', async (_label, fault) => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    landed(f, from, uuid(67000), new Date(Date.now() - 2 * 3600000).toISOString());
+    fault(f);
     const result: any = await f.run();
     expect(result).toMatchObject({ ok: false, reason: 'bank_residue_unproven' });
     expect(f.calls).toEqual([]);

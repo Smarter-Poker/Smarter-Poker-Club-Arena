@@ -66,12 +66,6 @@
 }
 
 .heroCopy {
-  /* The copy column is the title's container: every title size below is capped
-     at 18cqi, because the longest title word, CHALLENGES, measures 5.446em in
-     the hero face (Rajdhani 600, 0.025em tracking). The cap only engages when
-     that word would not fit the column; before it, 200% text set the title at
-     64px in a 307px phone column and overflow-wrap split it mid-word. */
-  container-type: inline-size;
   position: relative;
   z-index: 4;
   display: flex;
@@ -113,12 +107,20 @@
   content: '';
 }
 
+/* The title scales with the reader's text size; never cap it by the column.
+   WCAG 1.4.4, and the post-deploy accessibility certification, require it to
+   grow at least 1.5x at 200% text. A column cap (18cqi, #5065) held it to
+   1.12x at 320px and failed that certification on production. At 200% text on
+   a phone CHALLENGES cannot fit the column at a size that honours that, so
+   overflow-wrap breaks it where the column ends. Nothing gentler is possible
+   without harming the heading: browsers do not hyphenate capitalised words,
+   and a <wbr> makes Chrome announce it as "Chal lenges". */
 .heroCopy h1 {
   width: 100%;
   max-width: 600px;
   margin: 14px 0 12px;
   color: var(--mission-white);
-  font-size: min(clamp(3.2rem, 6vw, 5.25rem), 18cqi);
+  font-size: clamp(3.2rem, 6vw, 5.25rem);
   font-weight: 500;
   line-height: 0.86;
   letter-spacing: 0.04em;

@@ -463,6 +463,7 @@ const OPERATION_SUFFIXES = new Set([
   'settlement',
   'wheel-operations',
   'diamond-games-operations',
+  'diamond-costs',
   'insurance-report',
   'bomb-pot-report',
   'table-management',
@@ -480,6 +481,7 @@ const FINANCE_SUFFIXES = new Set([
   'settlement',
   'wheel-operations',
   'diamond-games-operations',
+  'diamond-costs',
   'insurance-report',
 ]);
 

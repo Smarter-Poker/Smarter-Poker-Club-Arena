@@ -636,4 +636,19 @@ describe('automatic spins and player-owned recovery', () => {
     expect(backend.spin).toHaveBeenCalledTimes(1);
     expect(backend.runEnd).not.toHaveBeenCalled();
   });
+  /* Owner ruling 2026-09-21, R8: no slide-in toast repeats a spin's result.
+     The reveal and the control panel notice carry it; errors still toast. */
+  it('a single spin shows its result in the reveal and the notice, with no slide-in toast', async () => {
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Spin 100', exact: true }));
+    await waitFor(() => expect(backend.spin).toHaveBeenCalledTimes(1));
+    fireEvent.click(await screen.findByRole('button', { name: 'Land Wheel' }));
+    const reveal = screen.getByRole('dialog');
+    fireEvent.animationEnd(reveal.querySelector('[data-motion="keep"]')!);
+    fireEvent.click(within(reveal).getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByText(/^You Won \S+ Chips?$/)).toBeInTheDocument();
+    expect(backend.toast.success).not.toHaveBeenCalled();
+    expect(backend.toast.info).not.toHaveBeenCalled();
+  });
 });

@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const rpc = vi.hoisted(() => vi.fn());
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc } }));
 import service from '../../src/services/DiamondWheelService';
+import v3 from '../fixtures/diamond-spins/wheel-v3-postgres-receipts.json';
 
 const CLUB = '10000000-0000-0000-0000-000000000002';
 const RUN = '10000000-0000-0000-0000-000000000009';
@@ -142,7 +143,7 @@ describe('fn_wheel_state_v2 carries the open run and the queue, or neither', () 
   });
 
   it('reads the older server, which names the queue `awards` and has no run', async () => {
-    const { created_at: _dropped, ...older } = award;
+    const older = Object.fromEntries(Object.entries(award).filter(([k]) => k !== 'created_at'));
     rpc.mockResolvedValueOnce({ data: { ...baseState, awards: [older] }, error: null });
     const state = await service.getStateV2(CLUB, 100);
     expect(state.auto_run).toBeNull();
@@ -165,5 +166,117 @@ describe('fn_wheel_state_v2 carries the open run and the queue, or neither', () 
       const state = await service.getStateV2(CLUB, 100);
       expect(state.auto_run, JSON.stringify(auto_run)).toBeNull();
     }
+  });
+});
+
+/**
+ * WHAT THE v4 SERVER ADDS IS TOLERATED, NEVER A REASON TO REFUSE
+ * (WHEEL-V4-SPEC sections 5 and 6, 2026-09-21). fn_wheel_state_v2 gains
+ * `pending_cards`, `vip` and `model_version` beside the run fields, the run
+ * replies may carry more than the contract names, and receipts gain `vip`,
+ * `model_version`, `outcome.cards` and `fairness.previous` / `weights`. None
+ * of that may fail a parse here: the card pick and the v4 verifier read those
+ * fields where they are built, and these normalisers simply leave them.
+ */
+describe('fields a newer server adds are tolerated', () => {
+  const card = {
+    id: '10000000-0000-0000-0000-000000000041',
+    spin_id: '10000000-0000-0000-0000-000000000042',
+    risk_diamonds: 100,
+    created_at: '2026-09-21T15:01:00Z',
+  };
+
+  it('a state carrying pending_cards, vip and model_version still yields its run and its queue', async () => {
+    rpc.mockResolvedValueOnce({
+      data: {
+        ...baseState,
+        vip: true,
+        model_version: 'wheel-v4',
+        pending_cards: [card],
+        auto_run: { run_id: RUN, spins: 10, spins_done: 2, started_at: '2026-09-21T15:00:00Z' },
+        pending_awards: [{ ...award, spin_id: card.spin_id, run_id: RUN, status: 'pending' }],
+        a_field_from_the_future: { nested: [1, 2, 3] },
+      },
+      error: null,
+    });
+    const state = await service.getStateV2(CLUB, 100);
+    expect(state.ok).toBe(true);
+    expect(state.available).toBe(true);
+    expect(state.segments).toHaveLength(12);
+    expect(state.auto_run).toEqual({ run_id: RUN, spins: 10, spins_done: 2 });
+    expect(state.pending_awards).toEqual([award]);
+  });
+
+  it('run replies carrying more than the contract names still confirm the run', async () => {
+    rpc.mockResolvedValueOnce({
+      data: {
+        ok: true,
+        run_id: RUN,
+        spins: 25,
+        spins_done: 0,
+        model_version: 'wheel-v4',
+        started_at: '2026-09-21T15:00:00Z',
+      },
+      error: null,
+    });
+    await expect(service.runBegin(CLUB, 25)).resolves.toEqual({
+      ok: true,
+      run_id: RUN,
+      spins: 25,
+      spins_done: 0,
+    });
+    rpc.mockResolvedValueOnce({
+      data: {
+        ok: true,
+        run_id: RUN,
+        spins_done: 25,
+        pending_awards: [award],
+        pending_cards: [card],
+        closed_at: '2026-09-21T15:09:00Z',
+      },
+      error: null,
+    });
+    await expect(service.runEnd(RUN)).resolves.toEqual({
+      ok: true,
+      run_id: RUN,
+      spins_done: 25,
+      pending_awards: [award],
+    });
+  });
+
+  it('a receipt carrying vip, model_version, outcome.cards and fairness.previous and weights still parses', async () => {
+    const base = v3.records
+      .filter((r) => r.kind === 'wheel')
+      .map((r) => r.value as any)
+      .find((r) => r.outcome.kind === 'diamonds');
+    rpc.mockResolvedValueOnce({
+      data: {
+        ...base,
+        vip: false,
+        model_version: 'wheel-v3',
+        outcome: {
+          ...base.outcome,
+          cards: { award_id: card.id, risk_diamonds: base.entry_value_diamonds, status: 'pending' },
+        },
+        fairness: {
+          ...base.fairness,
+          previous: null,
+          weights: base.segments.map((s: { weight: number }) => s.weight),
+        },
+      },
+      error: null,
+    });
+    const result = await service.spinV2({
+      clubId: base.club_id,
+      commitId: base.fairness.commit_id,
+      clientSeed: base.fairness.client_seed,
+      entryDiamonds: base.entry_value_diamonds,
+      mode: 'paid',
+      ticketId: null,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.spin_id).toBe(base.spin_id);
+    expect(result.outcome).toMatchObject({ kind: 'diamonds', ord: 5, amount: base.outcome.amount });
+    expect(result.fairness.weight_total).toBe(base.fairness.weight_total);
   });
 });

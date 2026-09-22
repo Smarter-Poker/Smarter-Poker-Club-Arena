@@ -130,9 +130,14 @@ for (const width of [320, 390, 1280]) {
         await expect(page.locator('[data-awaiting-upgrade] [role="status"]')).toHaveText(
           'Swipe Or Tap The Wheel To Spin'
         );
-        await expect(secondary.locator('..')).toHaveAttribute('data-phase', 'idle');
+        // The ring has not turned by itself: no spinning upgrade state was
+        // recorded, now or after a further wait. Read from the fixture's own
+        // record, which follows the wheel wherever it carries its data-phase.
+        const ringTurned = () =>
+          page.evaluate(() => window.wheelProof.upgradeStates.some((s) => s.phase === 'spinning'));
+        expect(await ringTurned()).toBe(false);
         await page.waitForTimeout(600);
-        await expect(secondary.locator('..')).toHaveAttribute('data-phase', 'idle');
+        expect(await ringTurned()).toBe(false);
         await page.screenshot({ path: testInfo.outputPath(`wheel-awaiting-${width}.png`) });
         const box = (await ring.boundingBox())!;
         await page.mouse.move(box.x + box.width / 2 - 40, box.y + box.height / 2);

@@ -120,6 +120,36 @@ Its reader is `Client Unit Tests (vitest)`, one of the six required contexts in
 the `main protection` ruleset, and the publisher's own `client-tests` job runs
 the same suite before the bundle ships (CLAUDE.md 10.86 rule 3).
 
+## And then the fix hit the ceiling above it
+
+Giving 58 guards a voice grew the origin transaction step from 17,304 to
+24,626 characters. That is more than GitHub Actions accepts for a single
+`run`, and it does not refuse the step: **it refuses the whole workflow**.
+Runs 35773582571 (the squash) and 35773709689 created zero jobs, carried
+`.github/workflows/publish-club-arena.yml` as their name instead of
+`Publish Club Arena`, produced no annotation and no log, and
+`GET /actions/workflows` started listing the file path where the workflow's
+name had been. A push to a feature branch produced a run for a workflow whose
+only trigger is `push: branches: [main]`, which is what GitHub does when it
+cannot read the file at all. Nothing published between 19:24 and the repair.
+
+The cause was measured, not guessed. A diagnostic branch carried the
+**known-good** workflow with nothing added but 70 padding comment lines inside
+that one step, taking it to 24,094 characters: run 35774904430, same empty
+failure. So 17,304 characters is accepted and 24,094 is refused, on otherwise
+identical bytes.
+
+The transaction is now `.github/scripts/publish-origin-activate.sh`, piped to
+`bash -s` on the origin from the same protected-main checkout the step already
+makes. Same bytes, same review, same single publisher - the heredoc was never
+the security boundary, the checkout is. The largest `run:` step in the
+publisher is 7,431 characters again, and
+`tests/the-publisher-says-what-it-refused.law.test.ts` refuses any step over
+12,000 with both measurements written beside the number, so the next person to
+add a diagnostic is told to move the script rather than discovering this the
+way I did (10.86 rule 4: a fix that leaves the same trap one level up has not
+landed).
+
 ## What is fixed and what is not
 
 Fixed at the root: a build step reporting success for work it did not do, and
@@ -136,3 +166,11 @@ policy) and it is deliberately not made here.
 Left alone on purpose: the append-only asset pool, the atomic `current` swap,
 the publisher's concurrency controls, `KEEP_RELEASES` pruning and the rollback
 step's behaviour. There is still exactly one publisher.
+
+## Honest accounting of the delivery
+
+The first PR (#5090) merged green and broke the publisher, because nothing in
+this repo could see that limit and no local check models GitHub's own parser.
+That is the same failure this changelog is about, one level up, and it is
+recorded here rather than tidied away. The follow-up carries the script move
+and the step budget.

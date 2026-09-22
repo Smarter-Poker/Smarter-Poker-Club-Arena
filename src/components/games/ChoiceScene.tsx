@@ -61,6 +61,11 @@ interface Props {
   /** That floor is a Super award's, which is worth saying by name. */
   superFloor?: boolean;
   /**
+   * The first eight characters of the hash this round was sealed with, shown
+   * on the idle caption. Proving a round should not need a collapsed panel.
+   */
+  sealed?: string;
+  /**
    * Nothing on screen is looking at the scene: an offer over an idle road, or
    * a receipt on top of it. The clock, the beats and completion carry on; only
    * the draw call is skipped.
@@ -1119,7 +1124,9 @@ function CrossingScene(props: Props) {
           : shownPhase === 'cashed'
             ? 'Win Booked · Showing The Remaining Route'
             : shownPhase === 'idle'
-              ? 'Start · Highway Ahead'
+              ? props.sealed
+                ? `Round Sealed · ${props.sealed}`
+                : 'Start · Highway Ahead'
               : // Never "Next Street Clear": the next street is sealed, and the
                 // traffic on screen does not decide it.
                 shownStep === 0

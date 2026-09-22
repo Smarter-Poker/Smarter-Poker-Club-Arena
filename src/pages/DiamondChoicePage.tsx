@@ -40,8 +40,10 @@ import {
   CHOICE_MODE,
   ROAD_LADDERS,
   roadSurvives,
-  verifyChoiceRound,
+  choiceRoundVerified,
+  verifyChoiceRoundDetailed,
   type ChoiceGame,
+  type ChoiceVerdict,
   type RoadRisk,
 } from '../utils/diamondChoiceMath';
 import { diamondBonusMinimum } from '../utils/diamondBonusPayout';
@@ -144,7 +146,15 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const [loadTry, setLoadTry] = useState(0);
   const [ticketFailures, setTicketFailures] = useState(0);
   const [ticketTry, setTicketTry] = useState(0);
-  const [verified, setVerified] = useState<boolean | null>(null);
+  const [verified, setVerified] = useState<ChoiceVerdict | null>(null);
+  // What this browser made of the sealed round it has just been shown. The
+  // page runs the check itself, once, in the background: proving a round used
+  // to mean opening a collapsed panel and pressing a button inside the five
+  // seconds before the receipt left for the wheel.
+  const [autoVerdict, setAutoVerdict] = useState<{ id: string; verdict: ChoiceVerdict } | null>(
+    null
+  );
+  const autoVerified = useRef<string | null>(null);
   const [waitSeconds, setWaitSeconds] = useGameCooldown();
   const mounted = useRef(true),
     busyRef = useRef(false),
@@ -550,6 +560,26 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       }
     }
   };
+  // EVERY FINISHED ROUND CHECKS ITSELF. Nothing blocks on this and nobody is
+  // asked to press anything; a round that does not verify is reported, and the
+  // sentence the player is already reading says so.
+  useEffect(() => {
+    if (!round || round.status === 'open' || !round.proof || autoVerified.current === round.id)
+      return;
+    const id = round.id;
+    autoVerified.current = id;
+    void verifyChoiceRoundDetailed(round)
+      .then((verdict) => {
+        if (!mounted.current) return;
+        setAutoVerdict({ id, verdict });
+        if (!choiceRoundVerified(verdict))
+          reportError(
+            new Error(`autoVerify ${JSON.stringify(verdict)}`),
+            'DiamondChoicePage.autoVerify'
+          );
+      })
+      .catch((e) => reportError(e, 'DiamondChoicePage.autoVerify'));
+  }, [round]);
   // A wager the server refused for its ticket alone is sent again on the
   // fresh ticket, once, without the player pressing Start twice.
   const startRef = useRef(start);
@@ -634,6 +664,24 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           : `The Donkey Would Have Made It To Street ${roadEnd} At ${multiplierCopy(roadMultiplier)}`;
   const bookedAt =
     picks > 0 && ladder ? multiplierCopy(ladder[Math.min(picks, ladder.length) - 1]) : null;
+  // WHERE THE PROOF IS SAID. This round's own verdict, the hash it was sealed
+  // with, and the fingerprint of the round being sealed for next time: all of
+  // it goes into text that already exists.
+  const verdict = autoVerdict && autoVerdict.id === round?.id ? autoVerdict.verdict : null;
+  const roundVerified = verdict === null ? null : choiceRoundVerified(verdict);
+  const finished = Boolean(round && round.status !== 'open');
+  const sealedNow = open ? round.server_seed_hash : (ticket?.hash ?? null);
+  const proofTitle =
+    roundVerified === true
+      ? 'Round Proof · Verified'
+      : sealedNow
+        ? `Round Proof · Sealed ${sealedNow.slice(0, 8)}`
+        : 'Round Proof';
+  /** The one sentence a verdict is ever said in, wherever it is said. */
+  const checkNames = (result: ChoiceVerdict) =>
+    `Seal ${result.seal ? 'Ok' : 'Differs'}, Draw ${result.draw ? 'Ok' : 'Differs'}, Ladder ${
+      result.prizes ? 'Ok' : 'Differs'
+    }, Chips ${result.payout ? 'Ok' : 'Differs'}`;
   /** A finished round in Recent Rounds, named the way the scene named it. */
   const historyRow = (item: ChoiceRound) => {
     const upgrade =
@@ -914,6 +962,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           betChips={stakeChips}
           floorChips={guaranteedChips}
           superFloor={guaranteedSuper}
+          sealed={ticket?.hash.slice(0, 8)}
           payoutChips={
             sceneRound && sceneRound.status !== 'open' ? sceneRound.payout_chips : undefined
           }
@@ -1012,8 +1061,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           The Win Is Booked.
         </p>
       </GamePanel>
-      <GamePanel title="Round Proof" pill="Sealed" eyebrow="Sealed Before Play" foot="foot">
+      <GamePanel title={proofTitle} pill="Sealed" eyebrow="Sealed Before Play" foot="foot">
         <p className={`sc-copy ${styles.proofHash}`}>
+          {finished ? 'Next Round Sealed: ' : 'Sealed Before Play: '}
           {open ? round.server_seed_hash : (ticket?.hash ?? 'Preparing Your Ticket')}
         </p>
         <label className={styles.seedField}>
@@ -1031,7 +1081,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           />
         </label>
         {round?.proof ? (
-          <p className={`sc-copy ${styles.proofHash}`}>Completed Round: {round.server_seed_hash}</p>
+          <p className={`sc-copy ${styles.proofHash}`}>
+            This Round Was Sealed As: {round.server_seed_hash}
+          </p>
         ) : null}
         {round?.proof ? (
           <button
@@ -1039,13 +1091,13 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             className={styles.back}
             onClick={async () => {
               try {
-                const result = await verifyChoiceRound(round);
+                const result = await verifyChoiceRoundDetailed(round);
                 if (mounted.current && !busyRef.current && currentRound.current?.id === round.id)
                   setVerified(result);
               } catch (e) {
                 reportError(e, 'DiamondChoicePage.verify');
                 if (mounted.current && !busyRef.current && currentRound.current?.id === round.id)
-                  setVerified(false);
+                  setVerified({ seal: false, draw: false, prizes: false, payout: false });
               }
             }}
           >
@@ -1054,9 +1106,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         ) : null}
         {verified !== null ? (
           <p className="sc-copy">
-            {verified
+            {choiceRoundVerified(verified)
               ? 'The Revealed Outcome And Chip Prize Match The Sealed Round.'
-              : 'The Outcome Could Not Be Verified.'}
+              : `The Outcome Could Not Be Verified. ${checkNames(verified)}.`}
           </p>
         ) : null}
       </GamePanel>
@@ -1093,6 +1145,13 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               : round.status === 'lost'
                 ? `Hit At Street ${round.picked.length}.`
                 : `${bookedAt === null ? 'Your Win Is Booked.' : `Street ${picks} At ${bookedAt}`}${roadEnded === null ? '' : `; ${roadEnded}`}.`
+          }
+          proof={
+            roundVerified === null
+              ? undefined
+              : roundVerified
+                ? `Sealed Before Play (${round.server_seed_hash.slice(0, 8)}) And Verified On This Device.`
+                : 'This Round Did Not Verify On This Device And Has Been Reported.'
           }
         />
       )}

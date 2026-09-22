@@ -25,6 +25,7 @@ import DiamondChoicePage from '../../src/pages/DiamondChoicePage';
 import { useLiveBonusGuard } from '../../src/hooks/useLiveBonusGuard';
 import { triggerHaptic } from '../../src/services/HapticService';
 import { soundService } from '../../src/services/SoundService';
+import { reportError } from '../../src/utils/errorReporter';
 import { CHOICE_MODE } from '../../src/utils/diamondChoiceMath';
 import fixtures from '../fixtures/diamond-spins/local-postgres-receipts.json';
 
@@ -91,6 +92,7 @@ vi.mock('../../src/components/games/ChoiceScene', () => ({
     onMoment,
     onPick,
     floorChips,
+    sealed,
   }: {
     phase: string;
     paused?: boolean;
@@ -98,11 +100,13 @@ vi.mock('../../src/components/games/ChoiceScene', () => ({
     onMoment?: (moment: string, street: number) => void;
     onPick?: (cell: number) => void;
     floorChips?: number | null;
+    sealed?: string;
   }) => (
     <section
       aria-label={`Scene ${phase}`}
       data-paused={String(paused)}
       data-floor={String(floorChips)}
+      data-sealed={String(sealed)}
     >
       <button onClick={onSettled}>Finish Scene</button>
       {/* The beats the real scene reaches: the car arriving at the donkey, the
@@ -1077,6 +1081,9 @@ describe('focus stays on the plate from street to street', () => {
  * round's receipt told the player the donkey "would have reached" the street
  * it did reach.
  */
+/** What the page adds to a receipt once it has checked the round itself. */
+const VERDICT_SENTENCE =
+  / (Sealed Before Play \([0-9a-f]{8}\) And Verified On This Device\.|This Round Did Not Verify On This Device And Has Been Reported\.)/;
 describe('every choice names its chips, and every outcome has one name', () => {
   /** The crossing ladder the server deals today, so a street reads 1.45x. */
   const road = (round: Record<string, unknown>) => ({
@@ -1161,11 +1168,14 @@ describe('every choice names its chips, and every outcome has one name', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
     const receipt = screen.getByRole('dialog');
+    const printed = receipt.querySelector('[data-detail]')?.textContent ?? '';
     return {
       pill: pill(),
       said,
       eyebrow: receipt.querySelector('[data-eyebrow]')?.textContent ?? '',
-      detail: receipt.querySelector('[data-detail]')?.textContent ?? '',
+      // The verdict sentence is this receipt's too, and has its own tests.
+      detail: printed.replace(VERDICT_SENTENCE, ''),
+      proof: printed.match(VERDICT_SENTENCE)?.[1] ?? '',
     };
   };
 
@@ -1182,6 +1192,7 @@ describe('every choice names its chips, and every outcome has one name', () => {
       said: 'Hit At Street 2. Your Guaranteed 0.20 Chips Are Booked.',
       eyebrow: 'Guarantee Paid',
       detail: 'Your Prize Is Booked. Hit At Street 2. Returning To Diamond Spins.',
+      proof: 'This Round Did Not Verify On This Device And Has Been Reported.',
     });
   });
 
@@ -1368,5 +1379,115 @@ describe('the scene owns the sound and the buzz', () => {
     await settle();
     // A lost Mines round is not sung over either.
     expect(screen.getByRole('dialog')).toHaveAttribute('data-silent', 'true');
+  });
+});
+
+/**
+ * EVERY FINISHED ROUND VERIFIES ITSELF (review 2026-09-22). "Sealed before
+ * play" is this game's strongest claim, and proving it meant opening a
+ * collapsed Round Proof panel, decoding an unlabelled 64-character hash that
+ * silently switched to the NEXT ticket's the moment the round ended, and
+ * pressing a button inside the five seconds before the receipt left for the
+ * wheel. The page runs the same four checks itself now, in the background, and
+ * says the answer in the sentence the player is already reading. Nothing
+ * blocks on it and nobody is asked to check anything.
+ */
+describe('every finished round verifies itself', () => {
+  /** The real receipt from local Postgres: it verifies on all four checks. */
+  const sealed = fixtures.receipts.crossing;
+  const panelTitle = () =>
+    Array.from(document.querySelectorAll('summary')).map((node) => node.textContent);
+  const proofLines = () =>
+    Array.from(document.querySelectorAll('details p')).map((node) => node.textContent);
+  const plays = async (result: Record<string, unknown>) => {
+    backend.awardState.mockResolvedValue({ enabled: false, award: null, gameState: null });
+    backend.state
+      .mockResolvedValueOnce({ ...state, open_round: opened('crossing') })
+      .mockResolvedValue(state);
+    backend.act.mockResolvedValue({ ...sealed, ...result });
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+  };
+  const toTheReceipt = async () => {
+    fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Present' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
+    await settle();
+    return screen.getByRole('dialog').querySelector('[data-detail]')?.textContent ?? '';
+  };
+
+  it('checks the round and says so on the receipt, with nothing pressed', async () => {
+    await plays({});
+    const detail = await toTheReceipt();
+    expect(detail).toContain('Sealed Before Play (f6c584df) And Verified On This Device.');
+    expect(vi.mocked(reportError)).not.toHaveBeenCalled();
+    noCheckControl();
+    // The panel says it too, without being opened.
+    expect(panelTitle()).toContain('Round Proof · Verified');
+  });
+
+  it('reports a round that does not verify, and never calls it verified', async () => {
+    await plays({ payout_chips: 99 });
+    const detail = await toTheReceipt();
+    expect(detail).toContain('This Round Did Not Verify On This Device And Has Been Reported.');
+    expect(detail).not.toContain('Verified On This Device');
+    expect(
+      vi
+        .mocked(reportError)
+        .mock.calls.some(
+          ([error, where]) =>
+            where === 'DiamondChoicePage.autoVerify' &&
+            String((error as Error).message).includes('"payout":false')
+        )
+    ).toBe(true);
+    expect(panelTitle()).not.toContain('Round Proof · Verified');
+  });
+
+  it('never claims a verdict for a round whose seed is not published yet', async () => {
+    backend.awardState.mockResolvedValue({ enabled: false, award: null, gameState: null });
+    backend.state.mockResolvedValue({ ...state, open_round: opened('crossing') });
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    // An open round has no revealed seed: nothing is checked and nothing is said.
+    expect(panelTitle().some((title) => title?.includes('Verified'))).toBe(false);
+    expect(
+      vi
+        .mocked(reportError)
+        .mock.calls.some(([, where]) => where === 'DiamondChoicePage.autoVerify')
+    ).toBe(false);
+  });
+
+  it('labels the hash it is showing, and never lets one silently become another', async () => {
+    await plays({});
+    // Before the round ends, the hash on the panel is this round's own.
+    expect(proofLines().some((line) => line?.startsWith('Sealed Before Play: '))).toBe(true);
+    await toTheReceipt();
+    // Once it has ended, the same line is the NEXT round's ticket, and this
+    // round's own sealed hash is named as such.
+    expect(proofLines().some((line) => line?.startsWith('Next Round Sealed: '))).toBe(true);
+    expect(proofLines()).toContain(`This Round Was Sealed As: ${sealed.server_seed_hash}`);
+  });
+
+  it('puts the fingerprint on the scene, where the player is already looking', async () => {
+    backend.awardState.mockResolvedValue({ enabled: false, award: null, gameState: null });
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    expect(screen.getByRole('region', { name: 'Scene idle' })).toHaveAttribute(
+      'data-sealed',
+      dealt[0].server_seed_hash.slice(0, 8)
+    );
+  });
+
+  it('names the check that failed when the player runs it again', async () => {
+    await plays({ payout_chips: 99 });
+    await toTheReceipt();
+    fireEvent.click(screen.getByRole('button', { name: 'Verify Revealed Outcome' }));
+    await settle();
+    expect(
+      screen.getByText(
+        'The Outcome Could Not Be Verified. Seal Ok, Draw Ok, Ladder Ok, Chips Differs.'
+      )
+    ).toBeInTheDocument();
   });
 });

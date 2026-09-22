@@ -18,7 +18,7 @@ const backend = vi.hoisted(() => ({
 }));
 vi.mock('../../src/utils/diamondChoiceMath', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/utils/diamondChoiceMath')>()),
-  verifyChoiceRound: backend.verify,
+  verifyChoiceRoundDetailed: backend.verify,
 }));
 vi.mock('../../src/services/DiamondChoiceService', () => ({
   DiamondChoiceService: { state: backend.state, act: backend.act },
@@ -155,7 +155,14 @@ beforeEach(() => {
     .mockResolvedValue({ enabled: false, award: null, gameState: null });
   backend.state.mockReset().mockResolvedValue(state);
   backend.start.mockReset().mockReturnValue(new Promise(() => {}));
-  backend.verify.mockReset();
+  // The page checks every finished round by itself now, so the verifier always
+  // answers unless a test deliberately holds its answer open.
+  backend.verify.mockReset().mockResolvedValue({
+    seal: true,
+    draw: true,
+    prizes: true,
+    payout: true,
+  });
   backend.rpc.mockResolvedValue({
     error: null,
     data: {
@@ -254,7 +261,7 @@ describe('choice-game entry quotes belong to the selected settings', () => {
   );
 
   it('does not show a previous proof verdict while starting another round', async () => {
-    const proof = deferred<boolean>();
+    const proof = deferred<Record<string, boolean>>();
     backend.verify.mockReturnValue(proof.promise);
     backend.state
       .mockResolvedValueOnce({
@@ -268,11 +275,13 @@ describe('choice-game entry quotes belong to the selected settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Pick Tile' }));
     await act(async () => {});
     fireEvent.click(screen.getByRole('button', { name: 'Verify Revealed Outcome' }));
-    expect(backend.verify).toHaveBeenCalledTimes(1);
+    // Twice: the page checks a finished round by itself, and the player can
+    // still press to run the same check again.
+    expect(backend.verify).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     expect(backend.start).toHaveBeenCalledTimes(1);
     await act(async () => {
-      proof.resolve(true);
+      proof.resolve({ seal: true, draw: true, prizes: true, payout: true });
     });
     expect(
       screen.queryByText('The Revealed Outcome And Chip Prize Match The Sealed Round.')

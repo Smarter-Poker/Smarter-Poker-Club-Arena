@@ -568,6 +568,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'diagnostic telemetry for ignored historical review fields; never authorizes policy or sampling changes',
     'V41'
   ),
+  flag(
+    'v51CommitCap',
+    'DEFAULT OFF: the commitment cap (20bb+ pots; one pair no better than top pair with a kicker of nine or worse, or trips with a kicker of nine or worse): no raise, re-raise or jam facing a bet, equity capped facing a raise or an all-in at the class showdown win rate (0.20 one pair, 0.55 trips); promoted only by three significant-positive v51_commitment_cap nights',
+    'V51'
+  ),
 
   // ─────────────────────────────────────────────────────────────────────────
   // STYLE PARAMS. base style x profile dials x variant overlay x persona.
@@ -1590,6 +1595,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V40',
     'decide_omaha',
     0.0001
+  ),
+  // No firing floor: v51CommitCap is DEFAULT OFF, so the live fleet fires
+  // none of these until the league promotes it.
+  receipt(
+    'v51_commit_cap_*',
+    'HorseLogic (V51)',
+    'commitment cap, one fire per changed decision: no_raise (a raise that won its roll was withheld), no_jam (the committed branch called instead of jamming), fold (the equity ceiling folded a hand the same gate would have continued with at its uncapped equity)',
+    'V51'
   ),
 
   receipt(

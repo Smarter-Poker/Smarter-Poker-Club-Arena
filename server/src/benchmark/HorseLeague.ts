@@ -954,6 +954,11 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       handReading: false,
     },
   },
+  // ── V51 (2026-09-21, audit P2.2) ── the commitment cap is DEFAULT OFF, so the
+  // flag-on arm is the candidate and the default brain is the control. Dealt
+  // on the standard NLH card at 100bb, where the leak was measured. Promotion
+  // needs three separate significant-positive nightly runs.
+  { name: 'v51_commitment_cap', pairs: 6000, a: { v51CommitCap: true }, b: {} },
 ];
 
 // V12.3: the old comment here claimed hour 4 was "the quietest hour on the

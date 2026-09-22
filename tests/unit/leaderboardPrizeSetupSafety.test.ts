@@ -100,7 +100,7 @@ describe('leaderboard prize setup safety contract', () => {
       /const requestId = \+\+settingsRequestRef\.current;[\s\S]{0,400}settingsStaleRef\.current = false;/
     );
     expect(page).toMatch(
-      /onSaved=\{\(savedSetup\) => \{[\s\S]{0,300}settingsStaleRef\.current = false;/
+      /onSaved=\{\(savedSetup(?:, templateResults)?\) => \{[\s\S]{0,300}settingsStaleRef\.current = false;/
     );
   });
 
@@ -125,5 +125,38 @@ describe('leaderboard prize setup safety contract', () => {
   it('finds the owner tools through the shared search helper', () => {
     expect(menu).toContain("from './rewardToolSearch'");
     expect(menu).not.toContain('REWARD_TOOL_SEARCH_VOCABULARY');
+  });
+
+  it('shows program history only to a prize manager of a published club', () => {
+    /* Phase 4 history: who changed what and when. The versions table is
+       readable to every signed-in user once published, so the gate that keeps
+       it an owner surface is here, on the page. */
+    expect(page).toMatch(
+      /programHistoryClubId =\s*activeTab === 'rankings' &&\s*scope === 'my-clubs' &&\s*settings\?\.can_manage &&\s*settings\.setup_complete/
+    );
+    expect(page).toContain('LeaderboardService.getRewardProgramHistory(programHistoryClubId');
+    expect(page).toContain('<section className="lb-program-history" aria-label="Program History">');
+    // Only the message is announced, not the Retry button beside it.
+    expect(page).toContain('<span role="status">{programHistoryError}</span>');
+  });
+
+  it('never puts an aria-label on a role-less div', () => {
+    /* axe aria-prohibited-attr: a label on a generic div is not announced.
+       Every labelled div on these surfaces carries a role. */
+    for (const source of [page, wizard]) {
+      expect(source).not.toMatch(/<div(?![^>]*\brole=)[^>]*\baria-label=/);
+    }
+  });
+
+  it("offers only the same union's managed clubs as template targets", () => {
+    expect(page).toContain("editingSettings.funding_owner_type !== 'union'");
+    expect(page).toContain('context.union_id === editingSettings.union_id');
+    expect(page).toContain('context.club_id !== editingSettings.club_id');
+    expect(page).toContain('templateClubs={templateClubs}');
+    /* Each target is re-read and must still be funded by the same union. */
+    expect(wizard).toContain(
+      "current.funding_owner_type !== 'union' || current.union_id !== setup.union_id"
+    );
+    expect(wizard).toContain('program_version: current.program_version');
   });
 });

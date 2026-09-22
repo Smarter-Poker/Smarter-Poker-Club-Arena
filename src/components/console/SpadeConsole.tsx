@@ -79,11 +79,48 @@ export const SPADE_CONSOLE_ZONES = {
 export const SHARK_CONSOLE_W = 733;
 export const SHARK_CONSOLE_TOP_H = 154;
 export const SHARK_CONSOLE_FOOT_H = 172;
+/**
+ * THE SHARK HEAD IS SHORT, AND A THIRD LINE RE-MEASURES ALL THREE
+ * (2026-09-22).
+ *
+ * Measured off top.png: the header glass runs y 47 to y 149, closed by the
+ * hairline at y 150, so this head has 102 rows to print in. The spade head
+ * has 219 on a wider master, and both print at the same cqw type, so the
+ * shark spends 1.66x as much of its head on every line. `title` at height 66
+ * plus `subtitle` at y 126 therefore claimed y 76-142 and y 126-148 of those
+ * 102 rows: the two rectangles INTERSECTED over 16 rows, and a shark console
+ * given both printed the second through the bottom of the first. The
+ * subtitle band was also shorter than the line box it holds, so what did
+ * print was cut off below the letters. Neither was ever seen by a player,
+ * because neither live caller on this family passes a subtitle.
+ *
+ * TWO HEADS, NOT ONE. Without a subtitle the head is unchanged, down to the
+ * pixel: `eyebrow` and `title` keep the bands every live surface renders in
+ * today. With a subtitle all three lines move to the `WithSubtitle` bands,
+ * the same way the title already steps aside for a pill, and the stack is
+ * centred on the glass: ink at y 53-66, y 78-117 and y 128-144, with 12 rows
+ * of leading between them and about 6 rows of air top and bottom.
+ *
+ * THE BAND IS SIZED TO THE INK, AND THE INK IS NOT THE BAND. A zone clips
+ * what it holds and the text sits from the TOP of the zone once the line box
+ * is taller than it, so a band has to reach the bottom of the ink or it cuts
+ * the letters. Measured at 393px on the rendered page: the ink of a line
+ * ends 0.97 of its font size below the band top for the title (line-height
+ * 1.2) and 1.10 for the eyebrow, subtitle and pill (line-height 1.6).
+ * `tests/painted-zones-never-overlap.law.test.ts` reads those font sizes out
+ * of SpadeConsole.css and holds every band to them.
+ */
 export const SHARK_CONSOLE_ZONES = {
+  /* The two-line head: an eyebrow over a title. Unchanged, and live. */
   eyebrow: { x: 70, y: 50, width: 440, height: 26 },
   title: { x: 70, y: 76, width: 590, height: 66 },
   titleBesidePill: { x: 70, y: 76, width: 440, height: 66 },
-  subtitle: { x: 70, y: 126, width: 440, height: 22 },
+  /* The three-line head: the same lines, re-measured to make room below. */
+  eyebrowWithSubtitle: { x: 70, y: 46, width: 440, height: 21 },
+  titleWithSubtitle: { x: 70, y: 67, width: 590, height: 51 },
+  titleBesidePillWithSubtitle: { x: 70, y: 67, width: 440, height: 51 },
+  /** The glass under the title, stopping clear of the hairline at y 150. */
+  subtitle: { x: 70, y: 118, width: 440, height: 31 },
   /** The rounded slot at the right of the well, x 527-642 y 70-122. */
   pill: { x: 537, y: 79, width: 96, height: 36 },
   /** The one blue plate's face, inside its chamfered rim. */
@@ -102,10 +139,23 @@ export const RIVETED_CONSOLE_W = 729;
 export const RIVETED_CONSOLE_TOP_H = 209;
 export const RIVETED_CONSOLE_FOOT_H = 333;
 export const RIVETED_CONSOLE_ZONES = {
+  /* The two-line head: an eyebrow over a title. Unchanged, and live. */
   eyebrow: { x: 88, y: 72, width: 350, height: 26 },
   title: { x: 88, y: 100, width: 555, height: 72 },
   titleBesidePill: { x: 88, y: 100, width: 350, height: 72 },
-  subtitle: { x: 88, y: 168, width: 350, height: 24 },
+  /* The three-line head, re-measured 2026-09-22. This head's glass runs y 67
+     to y 190 on top.png, which is room for all three lines, but the bands as
+     drawn were wrong in the same two ways the shark's were: `title` claimed
+     72 rows to y 172 while `subtitle` began at y 168, so the rectangles
+     intersected over four rows, and the 24-row subtitle band was one row
+     shorter than the ink it holds, which cut the bottom off the letters
+     (measured: 13.9 rows of ink printed where the line is 15.7). All three
+     lines now sit on measured bands, centred on the glass: ink at y 83-96,
+     y 108-147 and y 158-174. */
+  eyebrowWithSubtitle: { x: 88, y: 76, width: 350, height: 21 },
+  titleWithSubtitle: { x: 88, y: 97, width: 555, height: 51 },
+  titleBesidePillWithSubtitle: { x: 88, y: 97, width: 350, height: 51 },
+  subtitle: { x: 88, y: 148, width: 350, height: 31 },
   /** The chrome capsule at the right of the well, x 455-645 y 85-145. */
   pill: { x: 472, y: 97, width: 156, height: 38 },
   /** The two bolted plates' faces, inside their rims. */
@@ -140,6 +190,69 @@ const FAMILY = {
     plates: 2,
   },
 } as const;
+
+/** What the head is being asked to print. The zones follow from it. */
+export interface ConsoleHeadContent {
+  eyebrow: boolean;
+  subtitle: boolean;
+  pill: boolean;
+}
+
+/** Only the head zones this content actually paints, keyed by what they hold. */
+export type ConsoleHeadLayout = Partial<Record<'eyebrow' | 'title' | 'subtitle' | 'pill', Zone>> & {
+  title: Zone;
+};
+
+interface HeadZoneTable {
+  eyebrow: Zone;
+  title: Zone;
+  titleBesidePill: Zone;
+  subtitle: Zone;
+  pill: Zone;
+  /** Only where a head has to re-measure its lines to fit a third one. */
+  eyebrowWithSubtitle?: Zone;
+  titleWithSubtitle?: Zone;
+  titleBesidePillWithSubtitle?: Zone;
+}
+
+/**
+ * ONE PLACE DECIDES WHICH RECTANGLES A HEAD PAINTS (2026-09-22).
+ *
+ * A zone table is a set of rectangles on one piece of art, and most of them
+ * are alternatives: `title` and `titleBesidePill` are the same line, and the
+ * wide one deliberately runs under the pill slot because it is only ever used
+ * when there is no pill. So "do these two rectangles overlap" is not a
+ * question you can ask the table. It can only be asked of the SET a given
+ * head really paints, which is what this returns.
+ *
+ * The component prints exactly what comes back from here, and
+ * `tests/painted-zones-never-overlap.law.test.ts` reads the same function for
+ * every combination of head content. That is the point of routing the
+ * component through it: a selector the test derives for itself would have
+ * gone on agreeing with the old, overlapping table for as long as nobody
+ * looked, which is how the shark's title and subtitle sat on top of one
+ * another from the day the family was cut.
+ */
+export function consoleHeadZones(
+  family: ConsoleFamily,
+  content: ConsoleHeadContent
+): ConsoleHeadLayout {
+  const zones = FAMILY[family].zones as HeadZoneTable;
+  const title = content.subtitle
+    ? content.pill
+      ? (zones.titleBesidePillWithSubtitle ?? zones.titleBesidePill)
+      : (zones.titleWithSubtitle ?? zones.title)
+    : content.pill
+      ? zones.titleBesidePill
+      : zones.title;
+  const eyebrow = content.subtitle ? (zones.eyebrowWithSubtitle ?? zones.eyebrow) : zones.eyebrow;
+  return {
+    title,
+    ...(content.eyebrow ? { eyebrow } : {}),
+    ...(content.subtitle ? { subtitle: zones.subtitle } : {}),
+    ...(content.pill ? { pill: zones.pill } : {}),
+  };
+}
 
 export function zonePct(zone: Zone, canvasW: number, canvasH: number): CSSProperties {
   return {
@@ -280,6 +393,11 @@ export function SpadeConsole({
   const W = F.W;
   const TOP_H = F.TOP_H;
   const Z = F.zones;
+  const head = consoleHeadZones(family, {
+    eyebrow: Boolean(eyebrow),
+    subtitle: Boolean(subtitle),
+    pill: Boolean(pill),
+  });
   const onePlate = F.plates === 1;
   return (
     <Tag
@@ -287,11 +405,11 @@ export function SpadeConsole({
       {...rest}
     >
       <div className="sc__head">
-        {eyebrow && (
+        {eyebrow && head.eyebrow && (
           <ZoneText
             text={eyebrow}
             className="sc__eyebrow sc-ink--blue"
-            style={zonePct(Z.eyebrow, W, TOP_H)}
+            style={zonePct(head.eyebrow, W, TOP_H)}
           />
         )}
         <ZoneText
@@ -306,20 +424,20 @@ export function SpadeConsole({
              thing the fit exists to prevent. The floor drops for titles only;
              every other zone keeps the default. */
           minRatio={0.44}
-          style={zonePct(pill ? Z.titleBesidePill : Z.title, W, TOP_H)}
+          style={zonePct(head.title, W, TOP_H)}
         />
-        {subtitle && (
+        {subtitle && head.subtitle && (
           <ZoneText
             text={subtitle}
             className="sc__subtitle sc-ink--muted"
-            style={zonePct(Z.subtitle, W, TOP_H)}
+            style={zonePct(head.subtitle, W, TOP_H)}
           />
         )}
-        {pill && (
+        {pill && head.pill && (
           <ZoneText
             text={pill}
             className={`sc__pill sc-ink--${pillInk}`}
-            style={zonePct(Z.pill, W, TOP_H)}
+            style={zonePct(head.pill, W, TOP_H)}
           />
         )}
       </div>

@@ -14,7 +14,9 @@ import {
   streetCenter,
   streetState,
   crossingTrafficVisible,
-  collisionAt,
+  anticipationFrame,
+  approachFrame,
+  APPROACH_REST_Z,
   WALK_MS,
   type StreetState,
 } from '../../utils/crossingScene';
@@ -55,6 +57,12 @@ interface Props {
    * the draw call is skipped.
    */
   paused?: boolean;
+  /**
+   * The player has committed to the next street and the server has not
+   * answered yet. The donkey steps to the kerb and holds there, instead of
+   * standing still through the wait.
+   */
+  moving?: boolean;
   /** Fired once per beat, on the first frame that shows it, and never before. */
   onMoment?: (moment: CrossingMoment, street: number) => void;
 }
@@ -279,6 +287,8 @@ const DASHES_PER_STREET = 9;
 const CAR_PAINTS = [
   0x246bad, 0xc3d4df, 0x8b3441, 0x49655f, 0x9a4a1f, 0x5b6f86, 0xb7a23a, 0x7a2e2e,
 ] as const;
+/** The paint of the car that comes to every street, braking or not. */
+const IMPACT_PAINT = 0xe4a233;
 /** What the device says about itself, safely: jsdom and old browsers say nothing. */
 function matches(query: string) {
   if (typeof window === 'undefined' || !window.matchMedia) return false;
@@ -488,12 +498,15 @@ function CrossingScene(props: Props) {
         material: mesh.material as THREE.Material,
         casts: mesh.material === body || mesh.material === glass,
         painted: mesh.material === body,
+        /** The taillight, which only an approaching car lights up. */
+        lit: mesh.material === taillight,
       }));
     })();
-    const buildCar = (color: number) => {
+    const buildCar = (color: number, tail?: THREE.Material) => {
       const car = new THREE.Group();
       for (const slot of template) {
-        const mesh = new THREE.Mesh(slot.geometry, slot.painted ? kit.paint(color) : slot.material);
+        const worn = slot.painted ? kit.paint(color) : slot.lit && tail ? tail : slot.material;
+        const mesh = new THREE.Mesh(slot.geometry, worn);
         mesh.castShadow = slot.casts;
         mesh.receiveShadow = true;
         car.add(mesh);
@@ -628,9 +641,31 @@ function CrossingScene(props: Props) {
     });
     ghost.visible = false;
     scene.add(ghost);
-    const impactCar = buildCar(0xe4a233);
-    impactCar.visible = false;
-    scene.add(impactCar);
+    /**
+     * THE CAR THAT COMES TO EVERY STREET. Two copies of the same car in the
+     * same paint, used turn and turn about: the one that braked holds its lane
+     * until the donkey has left it and then drives on, while the other is
+     * already coming to the next street. They are the same car either way, so
+     * its first frames never say which street this is going to be.
+     */
+    const approachTail = [0, 1].map(() =>
+      kit.keep(
+        new THREE.MeshStandardMaterial({
+          color: 0xf74932,
+          emissive: 0xff2a3c,
+          emissiveIntensity: 0,
+          metalness: 0.1,
+          roughness: 0.2,
+        })
+      )
+    );
+    const approachCars = approachTail.map((tail) => {
+      const car = buildCar(IMPACT_PAINT, tail);
+      car.visible = false;
+      car.rotation.y = Math.PI;
+      scene.add(car);
+      return car;
+    });
     const flash = new THREE.Mesh(
       kit.own(new THREE.SphereGeometry(0.8, 20, 12)),
       kit.keep(new THREE.MeshBasicMaterial({ color: 0xffe2a3, transparent: true, opacity: 0.75 }))
@@ -672,7 +707,17 @@ function CrossingScene(props: Props) {
       from = 0,
       to = 0,
       stalled = 0,
+      lean = 0,
+      leanFrom = 0,
+      leanClock = 0,
+      leaned = false,
+      answered = false,
+      carried = 0,
+      turn = 0,
+      departX = 0,
       notified = false;
+    let approaching: 'safe' | 'hit' | null = null,
+      departing: THREE.Group | null = null;
     let lastVisibleFrame: number | null = null;
     const visibilityChanged = () => {
       lastVisibleFrame = null;
@@ -739,9 +784,26 @@ function CrossingScene(props: Props) {
         if (owed && owed.moments.length) {
           from = actual;
           pending.current = { moments: owed.moments, next, at: owed.at };
+          // The street the player just committed to gets its own car. The one
+          // that braked on the street behind holds its lane, then drives on.
+          if (approaching) {
+            departing = approachCars[turn];
+            departX = streetCenter(was.step);
+            turn = 1 - turn;
+          }
+          approaching = p.phase === 'lost' ? 'hit' : 'safe';
+          // The lean the walk now absorbs: the donkey carries on from the kerb
+          // it stepped to, it does not snap back to the middle of its street.
+          carried = lean;
+          lean = 0;
+          leanFrom = 0;
+          leaned = false;
+          answered = true;
         } else {
           from = to;
           commit.current(next, []);
+          approaching = null;
+          carried = 0;
         }
         sceneElapsed = 0;
         stalled = 0;
@@ -750,10 +812,24 @@ function CrossingScene(props: Props) {
       } else sceneElapsed += visibleDelta;
       if (roadChanged || roundChanged) paintSigns(road, step, p.phase);
       const elapsed = sceneElapsed,
-        walk = reduced ? 1 : Math.min(1, elapsed / (WALK_MS * getAnimationSpeed()));
+        speed = getAnimationSpeed(),
+        walk = reduced ? 1 : Math.min(1, elapsed / (WALK_MS * speed));
       actual = THREE.MathUtils.lerp(from, to, walk * walk * (3 - 2 * walk));
+      // The step to the kerb: taken the moment the player commits, held until
+      // the answer lands, and eased back over 200 ms if the move is refused or
+      // never answered at all.
+      if (!p.moving) answered = false;
+      const stepping = Boolean(p.moving) && !answered && p.phase === 'open';
+      if (stepping !== leaned) {
+        leaned = stepping;
+        leanFrom = lean;
+        leanClock = 0;
+      } else leanClock += visibleDelta;
+      lean = stepping
+        ? anticipationFrame(leanClock, speed, reduced)
+        : Math.max(0, leanFrom * (1 - leanClock / (200 * speed)));
       animal.animal.position.set(
-        actual - 0.12,
+        actual - 0.12 + lean + (walk < 1 ? carried * (1 - walk) : 0),
         0.05 + (walk < 1 ? Math.sin(walk * Math.PI) * 0.28 : 0),
         0
       );
@@ -782,15 +858,29 @@ function CrossingScene(props: Props) {
           car.rotation.y = i % 2 ? 0 : Math.PI;
         });
       });
-      impactCar.visible = p.phase === 'lost';
       flash.visible = false;
       let finished = walk === 1,
-        struck = false;
-      if (p.phase === 'lost') {
+        struck = false,
+        arrived = true;
+      approachCars.forEach((car) => {
+        car.visible = false;
+      });
+      // The braked car holds its lane until the donkey is across, then leaves.
+      if (departing) {
+        const gone = Math.min(1, Math.max(0, elapsed - WALK_MS * speed) / (1050 * speed));
+        departing.position.set(departX, 0, APPROACH_REST_Z - 18 * gone);
+        departing.visible = gone < 1;
+        if (gone >= 1) departing = null;
+      }
+      const outcome = p.phase === 'lost' ? 'hit' : approaching;
+      if (outcome) {
         // Stretched with the walk, so the car never arrives before the donkey.
-        const impact = collisionAt(elapsed, getAnimationSpeed(), reduced);
-        impactCar.position.set(to, 0, impact.carZ);
-        impactCar.rotation.y = Math.PI;
+        const impact = approachFrame(elapsed, speed, outcome, reduced);
+        const car = approachCars[turn];
+        car.position.set(to, 0, impact.carZ);
+        car.visible = true;
+        // Only the car that is stopping shows a brake light.
+        approachTail[turn].emissiveIntensity = impact.brake * 2.4;
         if (impact.hit) {
           animal.animal.rotation.z = (-Math.PI / 2) * impact.fall;
           animal.animal.position.y = 0.1;
@@ -800,7 +890,10 @@ function CrossingScene(props: Props) {
           flash.scale.setScalar(0.5 + impact.fall);
         }
         struck = impact.hit;
-        finished = impact.finished;
+        // A street ends when its car has settled, braked or driven through, so
+        // a safe crossing and a hit resolve on the very same beat.
+        arrived = impact.resting;
+        finished = outcome === 'hit' ? impact.finished : finished && impact.resting;
       }
       let focus = actual;
       ghost.visible = p.phase === 'cashed' && p.roadEnd !== null;
@@ -826,7 +919,8 @@ function CrossingScene(props: Props) {
       key.target.position.x = view.x;
       const owed = pending.current;
       const ready =
-        owed !== null && (owed.at === 'now' || (owed.at === 'walk' ? walk === 1 : struck));
+        owed !== null &&
+        (owed.at === 'now' || (owed.at === 'walk' ? walk === 1 && arrived : struck));
       // Paused (an offer over an idle road, a receipt on top of it) or scrolled
       // off screen: the clock, the beats and completion all carry on, and only
       // the draw call is skipped. No reveal ever waits on scroll position.
@@ -834,7 +928,7 @@ function CrossingScene(props: Props) {
       const drawing = !p.paused && onScreen && (!reduced || needsDraw);
       const submitted = drawing ? frames.render() : true;
       if (drawing) needsDraw = false;
-      animating = !finished;
+      animating = !finished || lean > 0 || stepping;
       // A beat belongs to the frame that shows it: the same terminal-frame
       // rule completion follows, so neither ever runs ahead of the picture.
       if (submitted && ready && owed) commit.current(owed.next, owed.moments);

@@ -38,10 +38,67 @@ export function collisionAt(elapsedMs: number, speed: number, reduced = false) {
 export function collisionFrame(elapsedMs: number, reduced = false) {
   const t = reduced ? 1 : Math.max(0, Math.min(1, elapsedMs / 1050));
   return {
+    /** How far through the strike this frame is, 0 to 1. */
+    t,
     carZ: 9 - 18 * t,
     hit: t >= 0.5,
     finished: t >= 1,
     fall: Math.max(0, Math.min(1, (t - 0.5) * 2)),
+  };
+}
+
+/**
+ * HOW FAR THE DONKEY LEANS INTO THE ROAD WHILE THE SERVER ANSWERS. The player
+ * commits and the donkey steps to the kerb at once, instead of standing still
+ * through the network wait. It never reaches the lane it is about to cross:
+ * the step is a fifth of a street, and the walk that follows starts from where
+ * the donkey actually is, so the two run into one another.
+ */
+export const ANTICIPATION_STEP = 0.45;
+export const ANTICIPATION_MS = 260;
+export function anticipationFrame(elapsedMs: number, speed: number, reduced = false) {
+  if (reduced) return 0;
+  const s = Number.isFinite(speed) && speed > 0 ? speed : 1;
+  const t = Math.max(0, Math.min(1, Math.max(0, elapsedMs) / (ANTICIPATION_MS * s)));
+  return ANTICIPATION_STEP * t * t * (3 - 2 * t);
+}
+
+/**
+ * THE CAR THAT COMES TO EVERY STREET, AND EITHER BRAKES OR DOES NOT.
+ *
+ * A road-crossing game lives in the moment between committing and knowing, and
+ * a safe street used to be a hop across an empty lane. The same car now comes
+ * on every street. It drives the confirmed collision's own line until it is
+ * too late to tell the two apart - one quarter through, at z = 4.5, when it is
+ * still a street and a half away - and only then does a safe crossing brake,
+ * coming to rest at z = 2.4 just as a hit would have reached the donkey. The
+ * first frames of a safe street and of a hit are the same frames, so nothing
+ * on screen leaks the answer before the scene means to give it.
+ */
+export const APPROACH_COMMITTED = 0.25;
+export const APPROACH_STOPPED = 0.47;
+export const APPROACH_REST_Z = 2.4;
+export function approachFrame(
+  elapsedMs: number,
+  speed: number,
+  outcome: 'safe' | 'hit',
+  reduced = false
+) {
+  const run = collisionAt(elapsedMs, speed, reduced);
+  if (outcome === 'hit') return { ...run, brake: 0, resting: run.finished };
+  const brake = Math.max(
+    0,
+    Math.min(1, (run.t - APPROACH_COMMITTED) / (APPROACH_STOPPED - APPROACH_COMMITTED))
+  );
+  const line = 9 - 18 * Math.min(run.t, APPROACH_COMMITTED);
+  return {
+    ...run,
+    // Nothing is ever struck on a safe street, and nothing falls.
+    hit: false,
+    fall: 0,
+    carZ: line - (line - APPROACH_REST_Z) * brake * (2 - brake),
+    brake,
+    resting: brake >= 1,
   };
 }
 

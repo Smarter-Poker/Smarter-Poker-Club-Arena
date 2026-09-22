@@ -111,6 +111,10 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [busy, setBusy] = useState(false);
   const [sceneBusy, setSceneBusy] = useState(false);
+  // The player has committed to the next street and the server has not
+  // answered. Only a crossing pick: a start, a settle and an uncertain round
+  // are all `busy`, and none of them is the donkey stepping to the kerb.
+  const [moving, setMoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // A wager whose answer never arrived, or a move whose confirmed result the
   // page has not read yet. The page settles it on its own schedule
@@ -471,10 +475,12 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const act = async (action: 'pick' | 'cashout', cell: number | null) => {
     if (!uuid || !round || round.status !== 'open' || busyRef.current || uncertain || sceneBusy)
       return;
+    const stepping = game === 'crossing' && action === 'pick';
     busyRef.current = true;
     generation.current++;
     setQuotedEntry(null);
     setBusy(true);
+    if (stepping) setMoving(true);
     setError(null);
     setVerified(null);
     try {
@@ -502,7 +508,10 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       }
     } finally {
       busyRef.current = false;
-      if (mounted.current) setBusy(false);
+      if (mounted.current) {
+        setBusy(false);
+        if (stepping) setMoving(false);
+      }
     }
   };
   // A wager the server refused for its ticket alone is sent again on the
@@ -762,6 +771,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           // offerOpen alone, which starts true and stays true for a resumed
           // open round, and would freeze that round's reveal for good.
           paused={(phase === 'idle' && offerOpen && Boolean(earned.award)) || receiptShowing}
+          moving={moving}
           phase={phase}
           picked={sceneRound?.picked ?? []}
           mines={sceneRound?.proof?.mine_cells ?? null}

@@ -56,7 +56,7 @@ import ChoiceScene, {
   streetMultiplier,
 } from '../../src/components/games/ChoiceScene';
 import { CHOICE_MODE, ROAD_LADDERS } from '../../src/utils/diamondChoiceMath';
-import { streetCenter } from '../../src/utils/crossingScene';
+import { streetCenter, STREET_WIDTH } from '../../src/utils/crossingScene';
 
 const ROAD = ROAD_LADDERS[CHOICE_MODE.crossing];
 const PRIZES = [2.17, 5.33, 15.2];
@@ -291,8 +291,13 @@ describe('the scene owns the reveal', () => {
     tick(300);
     expect(screen.getByText('Cash Out Value').nextElementSibling).toHaveTextContent('2.17 Chips');
     expect(scene.onMoment).not.toHaveBeenCalled();
-    // 500 ms: the 420 ms walk is done.
+    // 500 ms: the 420 ms walk is done, but the car beside it is still braking.
     tick(600);
+    expect(screen.getByText('Cash Out Value').nextElementSibling).toHaveTextContent('2.17 Chips');
+    expect(scene.onMoment).not.toHaveBeenCalled();
+    // 715 ms: the car has come to rest on the line, level with where a hit
+    // would have landed. The street is crossed.
+    tick(820);
     expect(screen.getByText('Cash Out Value').nextElementSibling).toHaveTextContent('5.33 Chips');
     expect(screen.getByText('Safe On Street 2 · Your Move')).toBeInTheDocument();
     expect(scene.onMoment.mock.calls).toEqual([['landed', 2]]);
@@ -362,7 +367,12 @@ describe('the scene leaves the announcement to the page', () => {
  * context behind on every unmount - and the page mounts it again for every
  * round.
  */
+/** One object in the scene graph, read the way the renderer reads it. */
 type Node = {
+  name?: string;
+  visible?: boolean;
+  material?: { color?: { getHex(): number } };
+  position?: { x: number; z: number };
   geometry?: object;
   castShadow?: boolean;
   traverse(visit: (node: Node) => void): void;
@@ -466,5 +476,84 @@ describe('the crossing scene costs a phone less every frame', () => {
     scene.update({ phase: 'open', picked: [0, 1] });
     tick(1200);
     expect(frames.render).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * A ROAD-CROSSING GAME LIVES IN THE MOMENT BETWEEN COMMITTING AND KNOWING
+ * (review 2026-09-22). The loop never read props.busy, so the donkey stood
+ * still through every network wait; and crossingTrafficVisible clears the
+ * current lane and the next one, so a safe street was a hop across an empty
+ * street. There was never a car to time a crossing against.
+ */
+/**
+ * Every car standing on one street this frame. The scene keeps the street the
+ * donkey is crossing clear of traffic, so a visible car on it is the one that
+ * came for this crossing and nothing else.
+ */
+const onStreet = (street: number) =>
+  (frames.scene as Node & { children: Node[] }).children
+    .map((child) => child as Node & { children?: Node[] })
+    .filter(
+      (node) =>
+        node.visible &&
+        node.position &&
+        Math.abs(node.position.x - streetCenter(street)) < 0.01 &&
+        node.children?.some((part) => part.material?.color)
+    );
+/** Every colour a car is painted, in the order its parts were merged. */
+const paintOf = (car: Node & { children?: Node[] }) =>
+  car.children?.map((part) => part.material?.color?.getHex()).filter((hex) => hex !== undefined);
+const donkeyX = () =>
+  (
+    frames.scene as Node & {
+      getObjectByName(name: string): { parent: { position: { x: number } } };
+    }
+  ).getObjectByName('walking-leg-0').parent.position.x;
+
+describe('every street gets a beat', () => {
+  it('steps the donkey to the kerb while the answer is in flight, and no further', () => {
+    motion(false);
+    const scene = mountScene({ phase: 'open', picked: [0] });
+    tick(16);
+    const standing = donkeyX();
+    scene.update({ phase: 'open', picked: [0], moving: true });
+    tick(150);
+    tick(300);
+    const leaning = donkeyX();
+    expect(leaning).toBeGreaterThan(standing);
+    // Never into the lane it is about to cross.
+    expect(leaning - standing).toBeLessThanOrEqual(STREET_WIDTH / 2 - 0.2);
+    // A move the server never answers eases the donkey back to where it stood.
+    scene.update({ phase: 'open', picked: [0], moving: false });
+    tick(400);
+    tick(700);
+    expect(donkeyX()).toBeCloseTo(standing, 5);
+  });
+
+  it('sends the same car, in the same paint, on a safe street and on a hit', () => {
+    motion(false);
+    const safe = mountScene({ phase: 'open', picked: [0] });
+    tick(16);
+    safe.update({ phase: 'open', picked: [0, 1] });
+    tick(100);
+    tick(400);
+    const [onSafe, ...alsoSafe] = onStreet(2);
+    expect(onSafe).toBeDefined();
+    expect(alsoSafe).toHaveLength(0);
+    const safePaint = paintOf(onSafe);
+    cleanup();
+    const lost = mountScene({ phase: 'open', picked: [0] });
+    tick(16);
+    lost.update({ phase: 'lost', picked: [0, 1], payoutChips: 0.2 });
+    tick(100);
+    tick(400);
+    const [onHit, ...alsoHit] = onStreet(2);
+    expect(onHit).toBeDefined();
+    expect(alsoHit).toHaveLength(0);
+    // The same paint, on the same line, at the same moment of the crossing.
+    expect(paintOf(onHit)).toEqual(safePaint);
+    expect(onHit.position!.z).toBeCloseTo(onSafe.position!.z, 10);
+    expect(onHit.position!.x).toBeCloseTo(onSafe.position!.x, 10);
   });
 });

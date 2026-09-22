@@ -6,11 +6,17 @@
  * Reduced motion collapses the motion and keeps every one of those meanings.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const frames = vi.hoisted(() => ({ render: vi.fn(() => true), dispose: vi.fn() }));
+/** Set by a case that wants a renderer able to compile its programs off the
+ *  main thread. Left undefined, the mock is a renderer WITHOUT compileAsync -
+ *  which is the guard every other case in this file exercises. */
+const gpu = vi.hoisted(() => ({
+  compileAsync: undefined as undefined | ((scene: unknown, camera: unknown) => Promise<unknown>),
+}));
 vi.mock('../../src/components/games/gpuFrameRenderer', () => ({ gpuFrameRenderer: () => frames }));
 vi.mock('three', async (original) => {
   const actual = await original<typeof import('three')>();
@@ -23,6 +29,9 @@ vi.mock('three', async (original) => {
       setSize() {}
       render() {}
       dispose() {}
+      get compileAsync() {
+        return gpu.compileAsync;
+      }
     },
     PMREMGenerator: class {
       fromScene() {
@@ -77,6 +86,71 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.clearAllMocks();
+  vi.useRealTimers();
+  gpu.compileAsync = undefined;
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE FIRST FRAME IS NOT A SHADER COMPILE (2026-09-22)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Every material here is a MeshPhysicalMaterial under a shadow-casting light,
+ * so the first renderer.render() compiles and links the whole program set on
+ * the main thread - inside the first animation frame, which lands while the
+ * Double Down offer is animating in. compileAsync hands that work to the
+ * driver, and the scene simply submits no frame until it is done.
+ */
+describe('the scene waits for its programs instead of compiling them in frame one', () => {
+  it('submits no frame until the compile answers, and keeps its clock running', async () => {
+    let ready!: () => void;
+    gpu.compileAsync = vi.fn(
+      () =>
+        new Promise((done) => {
+          ready = () => done(null);
+        })
+    );
+    const { onSettled } = mountScene({ phase: 'lost', picked: [0, 1, 2], payoutChips: 0.1 });
+    expect(gpu.compileAsync).toHaveBeenCalledTimes(1);
+    frame(100);
+    frame(1000);
+    frame(1600);
+    expect(frames.render).not.toHaveBeenCalled();
+    expect(onSettled).not.toHaveBeenCalled();
+    await act(async () => ready());
+    // The bust ran to its end while nothing was submitted, so the very first
+    // frame that IS submitted is already the settled one.
+    frame(1700);
+    expect(frames.render).toHaveBeenCalledTimes(1);
+    expect(onSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('draws anyway when the compile never answers', () => {
+    vi.useFakeTimers();
+    gpu.compileAsync = vi.fn(() => new Promise(() => {}));
+    mountScene();
+    frame(100);
+    expect(frames.render).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    frame(1600);
+    expect(frames.render).toHaveBeenCalled();
+  });
+
+  it('draws when the driver refuses the compile', async () => {
+    gpu.compileAsync = vi.fn(() => Promise.reject(new Error('no parallel shader compile')));
+    mountScene();
+    await act(async () => {});
+    frame(100);
+    expect(frames.render).toHaveBeenCalled();
+  });
+
+  it('draws immediately on a renderer with no compileAsync at all', () => {
+    mountScene();
+    frame(100);
+    expect(frames.render).toHaveBeenCalled();
+  });
 });
 
 describe('every street prints what it pays', () => {

@@ -38,6 +38,7 @@ import { compactChips } from '../utils/format';
 import TodayLine from '../components/games/TodayLine';
 import { autoRunVerdict, cycleRunSize, type AutoRun } from '../utils/autoRun';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { preloadDiamondGame } from '../utils/diamondGamePreload';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
 import FloorFeed from '../components/games/FloorFeed';
@@ -662,6 +663,17 @@ export default function DiamondWheelPage() {
       // Keep the exact request durable until the whole prize reveal is complete.
       // A reload during either wheel replays its receipt without another debit.
       setFace(attempt.mode);
+      /* THE WON GAME LOADS WHILE THE WHEEL IS STILL TURNING (2026-09-22). The
+         reveal navigates the moment it finishes, so without this the game's
+         chunk was fetched with the player already told what they had won.
+         Starting the fetch here costs the spin nothing - the request leaves on
+         the network and the wheel keeps its frames - and by the time the
+         reveal ends the page is usually already in the module cache.
+         The AWARD names the game, and nothing else does: handleLanded opens
+         result.bonus, and assertWheelAward refuses any bonus or upgrade
+         receipt that arrives without one, so a fallback to outcome.game or to
+         the secondary wheel's outcome could never run. */
+      preloadDiamondGame(result.bonus?.game);
       setPending(result);
       setSpinKey((k) => k + 1);
       setSpinning(true);
@@ -785,7 +797,11 @@ export default function DiamondWheelPage() {
   // An unfinished entitlement is resumed immediately, never offered as a banked game.
   useEffect(() => {
     const award = state?.pending_awards?.[0];
-    if (award && !spinning && !pending && !recovery && !loading) openBonus(award);
+    if (!award) return;
+    // Warm it whether or not this render may open it yet: the wait it is held
+    // behind - a spin, a reveal, a receipt being recovered - is the fetch.
+    preloadDiamondGame(award.game);
+    if (!spinning && !pending && !recovery && !loading) openBonus(award);
   }, [state?.pending_awards, spinning, pending, recovery, loading, openBonus]);
 
   // Money in flight holds the page. A saved spin the page has stopped sending

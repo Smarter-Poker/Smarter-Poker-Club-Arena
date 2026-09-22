@@ -75,10 +75,10 @@ for (const width of [320, 390, 1280]) {
       // Both independent rotors share one centre and one uninterrupted aperture.
       expect(upperBox).toEqual(lowerBox);
       await expect(page.locator('[data-wheel-assembly="concentric"]')).toHaveCount(1);
-      await expect(secondary).toHaveAttribute('viewBox', '320 0 360 415');
-      await expect(wheel).toHaveAttribute('viewBox', '320 0 360 415');
-      await expect(secondary.locator('..')).toHaveAttribute('data-idle-direction', '-1');
-      await expect(wheel.locator('..')).toHaveAttribute('data-idle-direction', '1');
+      await expect(secondary).toHaveAttribute('data-presentation', 'assembly');
+      await expect(wheel).toHaveAttribute('data-presentation', 'assembly');
+      await expect(secondary).toHaveAttribute('data-idle-direction', '-1');
+      await expect(wheel).toHaveAttribute('data-idle-direction', '1');
       await expect(wheel.locator('[data-slot]')).toHaveCount(12);
       await expect(
         page.getByRole('region', { name: 'Wheel Prizes' }).getByRole('listitem')
@@ -98,10 +98,17 @@ for (const width of [320, 390, 1280]) {
         path: testInfo.outputPath(`wheel-idle-${width}.png`),
         fullPage: true,
       });
-      const idleRotation = await wheel.locator('[data-wheel-rotor]').getAttribute('transform');
-      await expect
-        .poll(() => wheel.locator('[data-wheel-rotor]').getAttribute('transform'))
-        .not.toBe(idleRotation);
+      // The rotor is a compositor layer: its idle drift is a Web Animation on
+      // the transform, with no frame callback and no attribute behind it.
+      const rotorRotation = () =>
+        wheel.locator('[data-wheel-rotor]').evaluate((rotor) => getComputedStyle(rotor).transform);
+      const idleRotation = await rotorRotation();
+      expect(idleRotation).toMatch(/^matrix\(/);
+      await expect.poll(rotorRotation).not.toBe(idleRotation);
+      expect(
+        await wheel.locator('[data-wheel-rotor]').evaluate((rotor) => rotor.getAnimations().length)
+      ).toBe(1);
+      await expect(wheel.locator('[data-wheel-rotor] svg [data-slot]')).toHaveCount(12);
       await page.getByRole('button', { name: 'Preview Spin', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Preview Spin', exact: true })).toBeDisabled();
       await expect(page.getByLabel('Diamonds To Spin')).toBeDisabled();

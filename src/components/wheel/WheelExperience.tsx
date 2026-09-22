@@ -76,7 +76,10 @@ export function WheelExperience({
   fitViewport?: boolean;
 }) {
   /* The phase belongs to one spin. A new spinKey starts at 'primary' in the
-     same render, whether or not the page remounts this component per spin. */
+     same render, whether or not the page remounts this component per spin -
+     and it no longer does: the wheels stay mounted across spins (owner ruling
+     2026-09-21, R7), so the next spin leaves from the idle angle, never from
+     zero, and this record is what resets instead. */
   const [phaseFor, setPhaseFor] = useState<{ key: number; phase: Phase }>({
     key: spinKey,
     phase: 'primary',
@@ -171,6 +174,7 @@ export function WheelExperience({
               fitViewport={fitViewport}
               size={size}
               presentation="assembly"
+              paused={Boolean(showPrize)}
               onLanded={() => {
                 if (runMode) finish();
                 else setPhase('bonus');
@@ -188,6 +192,7 @@ export function WheelExperience({
             spinning={spinning && phase === 'primary'}
             fitViewport={fitViewport}
             size={size}
+            paused={Boolean(showPrize)}
             onLanded={() => {
               if (receipt?.outcome.kind === 'nothing') finish();
               else if (receipt?.outcome.kind === 'upgrade' && receipt.secondary && runMode)

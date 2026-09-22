@@ -13,6 +13,22 @@ export const ROAD_LADDERS = {
   extreme: [200, 400, 800, 1600, 3200, 6400, 12800, 25600],
 } as const;
 export type RoadRisk = keyof typeof ROAD_LADDERS;
+/** CONTRACT 4 (Dan, 2026-09-21, R3): the first street is always successful. It
+ * pays 0.80x, so the survival identity P(reach) = (0.8B - L)/(prize - L) makes it
+ * certain with no special case: (roll + 1)(0.8B - L) <= (0.8B - L) 2^48 for every
+ * roll. The player still chooses at street one (bank 0.80x or cross street two)
+ * and every street is worth exactly 0.80B. Mirrors public.fn_choice_ladder_v4. */
+export const ROAD_LADDERS_V4 = {
+  road: [80, 145, 185, 245, 315, 410, 535, 700, 910, 1180, 1540, 2000],
+} as const;
+/** The contract every choice round sealed since 2026-09-21 carries. */
+export const CHOICE_PAYOUT_VERSION = 4;
+/** The ladder a round's mode names under its sealed contract. */
+export function roadLadder(mode: string, payoutVersion?: number): readonly number[] | undefined {
+  if ((payoutVersion ?? 0) >= CHOICE_PAYOUT_VERSION)
+    return ROAD_LADDERS_V4[mode as keyof typeof ROAD_LADDERS_V4];
+  return ROAD_LADDERS[mode as RoadRisk];
+}
 /** Six mines are dealt today; five, ten and fifteen remain readable for sealed boards. */
 export const MINE_COUNTS = [5, 6, 10, 15] as const;
 /** The one setting per game. Nobody chooses a difficulty: the payout carries it.
@@ -52,6 +68,39 @@ export function minePrize(betChips: number, mines: number, picks: number, minimu
   };
 }
 
+/** CONTRACT 4 (Dan, 2026-09-21, R3): the first tile is always a diamond. The
+ * board is dealt at the first pick, around it: P(survive k) = C(24-m,k-1)/C(24,k-1),
+ * so prize_k = L + (0.8B - L) C(24,k-1)/C(24-m,k-1) and the first gem pays 0.80B.
+ * Exact rational chip cents. Mirrors public.fn_choice_prizes_v4 for mines. */
+export function minePrizeV4(
+  betChips: number,
+  mines: number,
+  picks: number,
+  minimumPayoutChips: number
+) {
+  if (
+    !Number.isFinite(betChips) ||
+    betChips < 0.01 ||
+    Math.abs(betChips * 100 - Math.round(betChips * 100)) > 1e-8 ||
+    !MINE_COUNTS.includes(mines as (typeof MINE_COUNTS)[number]) ||
+    !Number.isInteger(picks) ||
+    picks < 1 ||
+    picks > 25 - mines
+  ) {
+    throw new Error('Invalid Mines Prize');
+  }
+  const betCents = BigInt(Math.round(betChips * 100));
+  const minimumCents = BigInt(Math.round(minimumPayoutChips * 100));
+  if (minimumCents < 0n || minimumCents * 5n >= betCents * 4n)
+    throw new Error('Invalid Mines Prize');
+  const surviving = choose(24 - mines, picks - 1);
+  return {
+    numerator:
+      minimumCents * 5n * surviving + (betCents * 4n - minimumCents * 5n) * choose(24, picks - 1),
+    denominator: 5n * surviving,
+  };
+}
+
 /** Uniform values use rejection sampling, so a board has no modulo bias. */
 export async function mineBoard(
   serverSeed: string,
@@ -77,6 +126,40 @@ export async function mineBoard(
   return cells.slice(0, mines).sort((a, b) => a - b);
 }
 
+/** CONTRACT 4: the twenty-four cells other than the first pick, shuffled by the
+ * same Fisher-Yates with rejection sampling, on a domain that names the first
+ * pick, so the board could not have been known before it and a receipt can
+ * reproduce it. Mirrors public.fn_choice_board_v4. */
+export async function mineBoardV4(
+  serverSeed: string,
+  clientSeed: string,
+  nonce: number,
+  mines: number,
+  firstPick: number
+) {
+  if (!MINE_COUNTS.includes(mines as (typeof MINE_COUNTS)[number]))
+    throw new Error('Invalid Mine Count');
+  if (!Number.isInteger(firstPick) || firstPick < 0 || firstPick > 24)
+    throw new Error('Invalid First Pick');
+  const cells = Array.from({ length: 25 }, (_, i) => i).filter((c) => c !== firstPick);
+  let cursor = 0;
+  for (let i = 23; i > 0; i--) {
+    const range = i + 1;
+    const limit = Math.floor(4294967296 / range) * range;
+    let value: number;
+    do {
+      const hash = await hmacSha256Hex(
+        serverSeed,
+        `${clientSeed}:${nonce}:board:${firstPick}:${cursor++}`
+      );
+      value = Number.parseInt(hash.slice(0, 8), 16);
+    } while (value >= limit);
+    const j = value % range;
+    [cells[i], cells[j]] = [cells[j], cells[i]];
+  }
+  return cells.slice(0, mines).sort((a, b) => a - b);
+}
+
 /** The edge is charged once. Every selectable crossing target has the same expectation. */
 export function roadSurvives(
   roll: bigint,
@@ -84,7 +167,8 @@ export function roadSurvives(
   betChips = 1,
   minimumPayoutChips = 0
 ) {
-  if (roll < 0n || roll >= RANDOM_SPACE || !Number.isInteger(targetCents) || targetCents < 101) {
+  // A target of 80 is contract 4's certain first street; nothing under it exists.
+  if (roll < 0n || roll >= RANDOM_SPACE || !Number.isInteger(targetCents) || targetCents < 80) {
     throw new Error('Invalid Crossing Outcome');
   }
   const betCents = BigInt(Math.round(betChips * 100));
@@ -116,13 +200,28 @@ export interface ChoiceProof {
   mines: number;
   mine_cells: number[];
   road_roll: string;
+  /** Contract 4 mines: the tile the board was dealt around. */
+  first_pick?: number | null;
+  /** The contract the round was sealed under; absent before 2026-09-21. */
+  payout_version?: number;
 }
 
 export async function verifyChoiceProof(proof: ChoiceProof) {
   if ((await sha256Hex(proof.server_seed)) !== proof.server_seed_hash) return false;
   if (proof.game === 'mines') {
-    const board = await mineBoard(proof.server_seed, proof.client_seed, proof.nonce, proof.mines);
-    return JSON.stringify(board) === JSON.stringify(proof.mine_cells);
+    const board =
+      (proof.payout_version ?? 0) >= CHOICE_PAYOUT_VERSION
+        ? typeof proof.first_pick === 'number'
+          ? await mineBoardV4(
+              proof.server_seed,
+              proof.client_seed,
+              proof.nonce,
+              proof.mines,
+              proof.first_pick
+            )
+          : null
+        : await mineBoard(proof.server_seed, proof.client_seed, proof.nonce, proof.mines);
+    return board !== null && JSON.stringify(board) === JSON.stringify(proof.mine_cells);
   }
   const hash = await hmacSha256Hex(proof.server_seed, `${proof.client_seed}:${proof.nonce}:road`);
   return BigInt(`0x${hash.slice(0, 12)}`).toString() === proof.road_roll;
@@ -130,15 +229,27 @@ export async function verifyChoiceProof(proof: ChoiceProof) {
 
 /** Checks the selected cells, the complete prize ladder, and the settled chip cents. */
 export async function verifyChoiceRound(
-  round: import('../services/DiamondChoiceService').ChoiceRound
+  round: Omit<import('../services/DiamondChoiceService').ChoiceRound, 'payout_version'> & {
+    payout_version?: number;
+  }
 ) {
   const proof = round.proof;
+  const version = round.payout_version ?? 0;
+  const sealedV4 = version >= CHOICE_PAYOUT_VERSION;
   if (!proof || !(await verifyChoiceProof(proof)) || !round.picked.length) return false;
-  const ladder = ROAD_LADDERS[round.mode as RoadRisk];
+  // A contract-4 board was dealt around the first pick, and says so.
+  if (sealedV4 && round.game === 'mines' && proof.first_pick !== round.picked[0]) return false;
+  if (sealedV4 !== (proof.payout_version ?? 0) >= CHOICE_PAYOUT_VERSION) return false;
+  const ladder = roadLadder(round.mode, version) as readonly number[];
+  if (round.game === 'crossing' && !ladder) return false;
+  const prize = (picks: number) =>
+    sealedV4
+      ? minePrizeV4(round.bet_chips, Number(round.mode), picks, round.minimum_payout_chips ?? 0)
+      : minePrize(round.bet_chips, Number(round.mode), picks, round.minimum_payout_chips ?? 0);
   for (let i = 0; i < round.prizes.length; i++) {
     const exact =
       round.game === 'mines'
-        ? minePrize(round.bet_chips, Number(round.mode), i + 1, round.minimum_payout_chips ?? 0)
+        ? prize(i + 1)
         : {
             numerator: BigInt(Math.round(round.bet_chips * 100)) * BigInt(ladder[i]),
             denominator: 100n,
@@ -164,7 +275,7 @@ export async function verifyChoiceRound(
   const n = round.picked.length;
   const rational =
     round.game === 'mines'
-      ? minePrize(round.bet_chips, Number(round.mode), n, round.minimum_payout_chips ?? 0)
+      ? prize(n)
       : {
           numerator: BigInt(Math.round(round.bet_chips * 100)) * BigInt(ladder[n - 1]),
           denominator: 100n,

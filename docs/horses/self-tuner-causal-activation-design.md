@@ -14,9 +14,10 @@ were read from production and origin/main `0a1c74ea5e` on 2026-09-22, 00:30 UTC.
   leak-tag counts are correlations, not counterfactual evidence, so they may
   not rewrite `profiles.horse_profile`.
 - The database is the second key. The installed `fn_record_horse_tuner_update`
-  refuses every new profile change (`causal_permission_missing`) whatever intent
-  the caller sends, and contains no profile UPDATE at all, so changing
-  TypeScript alone cannot activate the tuner.
+  refuses every new profile change whatever intent the caller sends
+  (`causal_permission_missing`, or `invalid_request` for an unknown intent) and
+  contains no profile UPDATE at all, so changing TypeScript alone cannot
+  activate the tuner.
 - `horse_self_tune_log`: 09-10 to 09-13 wrote 650 to 706 rows a night with 639
   to 688 changed dials and no `causal_permission` key. 09-14 to 09-21 wrote 565
   to 705 rows a night, 0 changed, `causal_permission = 0` on all 5,059 rows,
@@ -60,8 +61,8 @@ that meets all five:
 
 ## League gate before anything goes beyond a canary
 
-`server/src/benchmark/HorseLeague.ts` is the only instrument that resolves a
-single-digit edge: duplicate deals with seats swapped, a run is significant when
+`server/src/benchmark/HorseLeague.ts` is built to resolve the single-digit edge
+live play cannot: duplicate deals with seats swapped, a run is significant when
 |bb100| > 2 x stderr, `fn_league_pooled` pools 7 days by inverse variance
 against the same bar, and the card's promotion rule is three significant
 positive runs. Since 09-14 it wrote 320 rows over 40 matchups, median stderr

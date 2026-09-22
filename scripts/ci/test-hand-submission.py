@@ -258,7 +258,7 @@ def qualify_superseded(e,root,db):
     if before!=e.snapshot(db,"superseded-after-data") or catalog!=e.catalog_snapshot(db,"superseded-after-catalog") or private!=private_snapshot(e,db,"superseded-after-private"):raise RuntimeError("superseded rollback differs")
     count=len(re.findall(r"HAND SUBMISSION PASS: superseded: ",stderr))
     e.report.update(superseded_assertions=count)
-    if count!=14:raise RuntimeError("superseded assertion count differs: "+str(count))
+    if count!=16:raise RuntimeError("superseded assertion count differs: "+str(count))
 
 def qualify_superseded_race(e,root,db,native):
     # The original's settlement is in flight holding the lease KEY SHARE and

@@ -82,14 +82,16 @@ The handoff result records which proof admitted it:
 `scripts/ci/test-hand-submission.py` (Accounting transactions, PostgreSQL 17)
 now installs the migration over the qualified journal, proves a replay is
 refused, and runs `scripts/ci/probes/hand-submission-superseded.sql` in a
-rolled-back transaction (14 assertions): the original generation is refused;
+rolled-back transaction (16 assertions): the original generation is refused;
 after a real `claim_tournament_lease_v2` takeover and a NULL-lifecycle
 tournament table the successor continues the hand once, seats move once from
 the recorded before-stacks to the retained result, one receipt, one hand row,
 one spent claim, no invented failure row, the permit finishes accepted; a
 repeat start has no effect; the fenced original gets `hand_lease_lost`; an
 original that held the lease again only replays; a changed seat and a
-breaking table still refuse before any claim. Two isolation races
+breaking table still refuse before any claim; a cash table superseded through
+the real `claim_table_lease_v2` continues once and a restart spends no
+second claim. Two isolation races
 (`superseded-original-in-flight-commit` and `-rollback`) prove the
 successor's real claim waits for an in-flight original, acknowledges it when
 it landed and hands off once when it rolled back. The existing owner and

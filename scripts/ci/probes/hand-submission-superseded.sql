@@ -129,4 +129,55 @@ BEGIN
   RAISE EXCEPTION 'restore changed seat fixture' USING ERRCODE='P9001';
  EXCEPTION WHEN SQLSTATE 'P9001' THEN NULL; END;
 END $superseded_changed_seat$;
+DO $superseded_cash$
+DECLARE q jsonb; r jsonb; c record;
+BEGIN
+ BEGIN
+  PERFORM set_config('request.jwt.claim.role','service_role',true);
+  INSERT INTO public.cash_games(id,club_id,name,template_name,variant,sb,bb,handedness,ruleset_snapshot)
+   VALUES('86900000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','Superseded Cash Probe','classic','nlh',1,2,6,'{}');
+  PERFORM set_config('session_replication_role','replica',true);
+  INSERT INTO public.tables(id,name,tournament_id,game_type,game_variant,status,lifecycle,club_id,small_blind,big_blind,cluster_id,seat_game_scope,seat_admission_key)
+   VALUES('87100000-0000-0000-0000-000000000001','Superseded cash',NULL,'cash','nlh','running','live',
+    '20000000-0000-0000-0000-000000000001',1,2,'86900000-0000-0000-0000-000000000001',
+    'cluster:86900000-0000-0000-0000-000000000001','cash');
+  INSERT INTO public.table_seats SELECT (jsonb_populate_record(NULL::public.table_seats,to_jsonb(t)||jsonb_build_object(
+   'id',replace(t.id::text,'86300000','87300000'),'occupancy_id',gen_random_uuid(),'table_id','87100000-0000-0000-0000-000000000001',
+   'active_game_scope','cluster:86900000-0000-0000-0000-000000000001','active_parent_key','cash'))).*
+   FROM public.table_seats t WHERE table_id='86100000-0000-0000-0000-000000000001';
+  PERFORM set_config('session_replication_role','origin',true);
+  INSERT INTO public.engine_table_leases(table_id,instance_id,lease_generation,protocol_version,heartbeat_at)
+   VALUES('87100000-0000-0000-0000-000000000001','atomic-hand-boundary-probe','86500000-0000-0000-0000-000000000001',2,clock_timestamp());
+  INSERT INTO public.hand_state_snapshots(table_id,hand_number,state_json,config_json,dealer_seat,players_json,stage)
+   VALUES('87100000-0000-0000-0000-000000000001',8700001,'{"stage":"river"}','{}',1,'[]','river');
+  q:=replace(replace(replace(replace(pg_temp.submission_request()::text,'86100000','87100000'),'86300000','87300000'),'86400000','87400000'),'8600001','8700001')::jsonb;
+  q:=jsonb_set(q,'{p_hand_row,tournament_id}','null');
+  q:=jsonb_set(q,'{p_post_commit_obligations,pending_addons}','{"enabled":true,"max_buy_in":200}');
+  q:=jsonb_set(q,'{p_post_commit_obligations,promo_playthrough}',
+   (SELECT jsonb_agg(jsonb_build_object('club_id','20000000-0000-0000-0000-000000000001',
+     'user_id',key,'wagered',value) ORDER BY key)
+    FROM jsonb_each(q->'p_hand_row'->'_accepted_post_commit_facts'->'contributions') WHERE value::text::numeric>0));
+  r:=public.fn_ca_retain_hand_submission(q);
+  -- The original never dispatches. Its heartbeats stop and the real cash claim
+  -- door installs the successor generation.
+  UPDATE public.engine_table_leases SET heartbeat_at=clock_timestamp()-interval '1 hour'
+   WHERE table_id='87100000-0000-0000-0000-000000000001';
+  SELECT * INTO c FROM public.claim_table_lease_v2('87100000-0000-0000-0000-000000000001','successor-one',NULL,'86500000-0000-0000-0000-000000000002',30);
+  r:=public.fn_ca_resume_hand_submission('87100000-0000-0000-0000-000000000001','successor-one','86500000-0000-0000-0000-000000000002');
+  RAISE NOTICE 'superseded cash successor outcome: %',r;
+  PERFORM pg_temp.submission_assert(c.granted AND r->>'completed'='true' AND r->>'financial_handoff'='true' AND r->>'post_commit_completed'='true'
+   AND r->'permit_id'='null'::jsonb
+   AND (SELECT count(*)=1 FROM public.hand_atomic_commits WHERE table_id='87100000-0000-0000-0000-000000000001' AND post_commit_result->>'ok'='true')
+   AND (SELECT sum(stack)=20 FROM public.table_seats WHERE table_id='87100000-0000-0000-0000-000000000001')
+   AND (SELECT result->>'handoff_evidence'='superseded_generation' FROM smarter_private.hand_submission_handoff_results
+     WHERE submission_id='87400000-0000-0000-0000-000000000001')
+   AND NOT EXISTS(SELECT 1 FROM smarter_private.hand_submission_failures)
+   AND NOT EXISTS(SELECT 1 FROM smarter_private.hand_submission_dispatch),
+   'superseded: a cash successor continues an undispatched original once');
+  r:=public.fn_ca_resume_hand_submission('87100000-0000-0000-0000-000000000001','successor-one','86500000-0000-0000-0000-000000000002');
+  PERFORM pg_temp.submission_assert(r->>'found'='false' AND (SELECT count(*)=1 FROM smarter_private.hand_submission_handoffs),
+   'superseded: a cash restart spends no second claim');
+  RAISE EXCEPTION 'restore superseded cash fixture' USING ERRCODE='P9001';
+ EXCEPTION WHEN SQLSTATE 'P9001' THEN NULL; END;
+END $superseded_cash$;
 SELECT 'HAND_SUBMISSION_SUPERSEDED_PASS';

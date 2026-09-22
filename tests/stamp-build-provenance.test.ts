@@ -6,9 +6,33 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 const sourceRoot = process.env.PROVENANCE_REVIEW_ROOT || process.cwd();
 const source = readFileSync(path.join(sourceRoot, 'scripts/stamp-build-provenance.mjs'), 'utf8');
-const workflow = readFileSync(
-  path.join(sourceRoot, '.github/workflows/publish-club-arena.yml'),
-  'utf8'
+/**
+ * The publisher as the origin runs it. The host-owned activation transaction
+ * moved into `.github/scripts/publish-origin-activate.sh` on 2026-09-22,
+ * because `jobs.<job_id>.steps[*].run` may not exceed 21,000 characters and
+ * the inlined heredoc took that step to 24,626, at which point GitHub stops
+ * LOADING the workflow instead of failing the step. The publishing job checks
+ * the repository out at the SHA it publishes and pipes the file to `bash -s`,
+ * byte for byte what the heredoc fed it, so splicing it back in at the pipe
+ * reads the publisher exactly as before.
+ */
+const spliceActivationTransaction = (workflow: string, root: string) => {
+  const pipe = '            < "$GITHUB_WORKSPACE/.github/scripts/publish-origin-activate.sh"';
+  if (!workflow.includes(pipe)) {
+    throw new Error('the publisher no longer pipes .github/scripts/publish-origin-activate.sh');
+  }
+  const transaction = readFileSync(
+    path.join(root, '.github/scripts/publish-origin-activate.sh'),
+    'utf8'
+  )
+    .split('\n')
+    .map((line) => (line === '' ? line : `          ${line}`))
+    .join('\n');
+  return workflow.replace(pipe, transaction);
+};
+const workflow = spliceActivationTransaction(
+  readFileSync(path.join(sourceRoot, '.github/workflows/publish-club-arena.yml'), 'utf8'),
+  sourceRoot
 );
 const owned: string[] = [];
 afterEach(() => {

@@ -18,7 +18,29 @@ const job = (yaml: string, name: string) => {
 };
 
 const deploy = read('.github/workflows/auto-deploy-hetzner.yml');
-const publish = read('.github/workflows/publish-club-arena.yml');
+/**
+ * THE PUBLISHER AS THE ORIGIN EXPERIENCES IT (2026-09-22). The host-owned
+ * activation transaction moved out of the workflow into a file, because
+ * `jobs.<job_id>.steps[*].run` may not exceed 21,000 characters and the
+ * inlined heredoc took that step to 24,626. Past the limit GitHub does not
+ * fail the step, it stops LOADING the workflow: no jobs, no name, no
+ * publish. The publishing job checks the repository out at the SHA it is
+ * publishing and pipes the file to `bash -s`, byte for byte what the heredoc
+ * fed it. Splicing it back in at the pipe keeps this file reading the
+ * publisher in the order the origin runs it.
+ */
+const ACTIVATION_SCRIPT = '.github/scripts/publish-origin-activate.sh';
+const withPipedTransaction = (workflow: string) => {
+  const pipe = '            < "$GITHUB_WORKSPACE/.github/scripts/publish-origin-activate.sh"';
+  if (!workflow.includes(pipe))
+    throw new Error('the publisher no longer pipes ' + ACTIVATION_SCRIPT);
+  const transaction = read(ACTIVATION_SCRIPT)
+    .split('\n')
+    .map((line) => (line === '' ? line : `          ${line}`))
+    .join('\n');
+  return workflow.replace(pipe, transaction);
+};
+const publish = withPipedTransaction(read('.github/workflows/publish-club-arena.yml'));
 const publishCode = uncommented(publish);
 const buildProvenance = read('scripts/stamp-build-provenance.mjs');
 const ci = read('.github/workflows/ci.yml');

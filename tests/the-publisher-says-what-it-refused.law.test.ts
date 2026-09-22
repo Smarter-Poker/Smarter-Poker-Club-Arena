@@ -43,7 +43,30 @@ import { sliceBetween } from './helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..');
 const PUBLISHER = '.github/workflows/publish-club-arena.yml';
+/**
+ * THE TRANSACTION MOVED INTO A FILE, SO THE LAW FOLLOWS IT (2026-09-22).
+ * `jobs.<job_id>.steps[*].run` may not exceed 21,000 characters, and this
+ * law's own diff took that step to 24,626 by giving every guard a voice.
+ * Over the limit GitHub stops LOADING the workflow: the publisher went
+ * nameless, ran for pushes its triggers exclude, answered a
+ * repository_dispatch with no run at all, and nothing reached production for
+ * over an hour. The origin transaction is now a file the publishing job
+ * checks out at the exact SHA it publishes, byte for byte what the heredoc
+ * fed to `bash -s` before, and this law reads it with the workflow. The
+ * limit itself is pinned by
+ * `tests/a-workflow-step-fits-what-github-will-run.law.test.ts`.
+ */
+const ACTIVATE = '.github/scripts/publish-origin-activate.sh';
 const read = (file: string) => readFileSync(join(ROOT, file), 'utf8');
+/** A shell file is shell all the way down; a workflow is shell only inside `run:`. */
+const asRunBlock = (shell: string) =>
+  [
+    'jobs:',
+    '  origin:',
+    '    steps:',
+    '      - run: |',
+    ...shell.split('\n').map((l) => `          ${l}`),
+  ].join('\n');
 
 /**
  * Every `run:` block scalar in a workflow, as line ranges. Nothing outside a
@@ -123,8 +146,16 @@ export function silentGuards(workflow: string): Array<{ line: number; text: stri
 describe('the publisher says what it refused', () => {
   it('has no guard that can stop the release without printing anything', () => {
     const workflow = read(PUBLISHER);
-    const silent = silentGuards(workflow);
-    const report = silent.map((g) => `  ${PUBLISHER}:${g.line}  ${g.text}`).join('\n');
+    const silent = [
+      ...silentGuards(workflow).map((g) => ({ ...g, file: PUBLISHER })),
+      ...silentGuards(asRunBlock(read(ACTIVATE))).map((g) => ({
+        ...g,
+        /* four wrapper lines are prepended to make the file one run block */
+        line: g.line - 4,
+        file: ACTIVATE,
+      })),
+    ];
+    const report = silent.map((g) => `  ${g.file}:${g.line}  ${g.text}`).join('\n');
     expect(
       silent,
       [
@@ -189,7 +220,7 @@ describe('the publisher says what it refused', () => {
     // Shell only. The comment above those guards quotes them by name, and a
     // quoted shape is not an executable one (CLAUDE.md 10.7 learned this the
     // expensive way about prose that a checker greps).
-    const workflow = read(PUBLISHER)
+    const workflow = asRunBlock(read(ACTIVATE))
       .split('\n')
       .filter((line) => !/^\s*#/.test(line))
       .join('\n');

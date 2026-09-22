@@ -12,18 +12,32 @@ import {
 } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const read = (file: string) => readFile(path.join(process.cwd(), file), 'utf8');
 
+const ACTIVATION_SCRIPT = '.github/scripts/publish-origin-activate.sh';
+
+/**
+ * THE TRANSACTION IS A FILE NOW (2026-09-22). `jobs.<job_id>.steps[*].run`
+ * may not exceed 21,000 characters and the inlined heredoc took the
+ * publisher's step to 24,626, at which point GitHub stopped LOADING the
+ * workflow at all: no jobs, no name, no publish, for over an hour. The
+ * publishing job checks the repository out at the exact SHA it is publishing
+ * and pipes this file to the origin, byte for byte what the heredoc fed to
+ * `bash -s`. It comes back carrying the ten spaces the heredoc gave it, so
+ * every window below reads exactly as it always did.
+ */
 const activationTransaction = (workflow: string) => {
-  const startMarker = "<<'REMOTE_ACTIVATE'";
-  const start = workflow.indexOf(startMarker);
-  expect(start, 'missing host-owned activation transaction').toBeGreaterThan(-1);
-  const bodyStart = start + startMarker.length;
-  const end = workflow.indexOf('\n          REMOTE_ACTIVATE', bodyStart);
-  expect(end, 'unterminated host-owned activation transaction').toBeGreaterThan(bodyStart);
-  return workflow.slice(bodyStart, end);
+  expect(
+    workflow.includes(ACTIVATION_SCRIPT),
+    'the publisher no longer pipes the host-owned activation transaction'
+  ).toBe(true);
+  return readFileSync(path.join(process.cwd(), ACTIVATION_SCRIPT), 'utf8')
+    .split('\n')
+    .map((line) => (line === '' ? line : `          ${line}`))
+    .join('\n');
 };
 
 const shellFunction = (transaction: string, name: string) => {

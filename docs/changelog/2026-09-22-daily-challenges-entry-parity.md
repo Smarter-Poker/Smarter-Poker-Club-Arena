@@ -14,7 +14,9 @@ and its Back To Arena door resolved to Home. It now calls
 `navigate(withClubContext('/challenges', clubId))` with the route id the page's
 other club links already use (`/clubs/${clubId}/...`), so a player who came from
 Deep Stack Society goes back to Deep Stack Society. The card's copy moved from
-the off-schema grey `#8a9aaa` to the schema muted ink `#9aa5b3`.
+the off-schema grey `#8a9aaa` to the schema muted ink `#9aa5b3`. Correction:
+`ClubDetailPage.tsx` is routed nowhere, so no player reaches this card; see
+`2026-09-22-daily-challenges-certification-follow-up.md`.
 
 **Wallet.** The More Ways To Earn Daily Challenges door in
 `src/pages/PlayerWalletPage.tsx` now navigates to
@@ -22,7 +24,9 @@ the off-schema grey `#8a9aaa` to the schema muted ink `#9aa5b3`.
 `?club=` value exactly as the URL spelled it, else the club the store
 remembers. Only this door changed. The Rakeback, Bonuses, Promotions,
 Achievements and VIP Bonuses doors still navigate without the club and are left
-for their own pass.
+for their own pass. The store fallback was later removed: the door now carries
+only the club the URL names, like the Rewards rail on the same page
+(`2026-09-22-daily-challenges-certification-follow-up.md`).
 
 **Chunk preload.** `src/App.tsx` lazy-loads the route shell
 `components/challenges/DailyChallengesRoute`, and the shell lazy-loads the
@@ -50,7 +54,9 @@ so the default duration stands and a tap navigates to
 `withClubContext('/challenges', readClubContextParam(location.search))`. The
 club is read at the tap, because a toast can outlive the page it arrived on. The
 listener is mounted in `App.tsx`, which `main.tsx` renders inside
-`BrowserRouter`, so the router hooks are in scope.
+`BrowserRouter`, so the router hooks are in scope. The follow-up also reads
+the club from a club page's path and gives the toast no tap action at a live
+table (`2026-09-22-daily-challenges-certification-follow-up.md`).
 
 **Route shell accent.** `src/components/challenges/DailyChallengesRouteFallback.module.css`
 hard-coded the daily cyan `#55e8ff` and the monthly gold `#ffc93c`, while the
@@ -99,3 +105,9 @@ the hero face, so every title size is now capped at 18cqi of the copy column,
 which is its container. The cap only engages when that word would not fit: at
 normal text sizes the title is unchanged, and at 200% it measured 55.26px with
 the word 301px wide in the 307px column.
+
+**Reverted.** The cap also stopped the title growing with the reader's text
+size: at 320px it rose only 1.12x, where WCAG 1.4.4 and the post-deploy
+accessibility certification require at least 1.5x, and that certification
+failed on production `deec04a67`. The title sizes are back to their parents;
+see `2026-09-22-daily-challenges-certification-follow-up.md`.

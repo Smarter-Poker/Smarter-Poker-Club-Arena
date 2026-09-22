@@ -158,4 +158,55 @@ describe('ChallengeToastListener', () => {
 
     expect(screen.getByTestId('location').textContent).toBe('/challenges?club=deep-stack-society');
   });
+
+  it('opens Daily Challenges inside the club a club page names in its path', () => {
+    for (const at of ['/clubs/deep-stack-society', '/clubs/deep-stack-society/lobby']) {
+      mocks.success.mockReset();
+      const view = renderListener(at);
+
+      act(() => {
+        mocks.subscription?.onPayload({
+          id: `row-${at}`,
+          name: 'play ten hands',
+          diamondReward: 10,
+        });
+      });
+      tapToast();
+
+      expect(screen.getByTestId('location').textContent, at).toBe(
+        '/challenges?club=deep-stack-society'
+      );
+      view.unmount();
+    }
+  });
+
+  it('never carries a player off a live table: there the toast only informs', () => {
+    renderListener('/table/11111111-2222-4333-8444-555555555555');
+
+    act(() => {
+      mocks.subscription?.onPayload({ id: 'row-5', name: 'win a showdown', diamondReward: 25 });
+    });
+
+    expect(mocks.success).toHaveBeenCalledWith(
+      'Challenge Complete: Win A Showdown. Claim 25 Diamonds In Daily Challenges.',
+      undefined,
+      undefined
+    );
+  });
+
+  it('a tap that lands after the player sat down at a table leaves them on the table', () => {
+    renderListener('/profile');
+
+    act(() => {
+      mocks.subscription?.onPayload({ id: 'row-6', name: 'play ten hands', diamondReward: 10 });
+    });
+    act(() => {
+      router.navigate('/table/11111111-2222-4333-8444-555555555555');
+    });
+    tapToast();
+
+    expect(screen.getByTestId('location').textContent).toBe(
+      '/table/11111111-2222-4333-8444-555555555555'
+    );
+  });
 });

@@ -556,10 +556,15 @@ export default function PlayerWalletPage() {
     };
   }, [location.search]);
   const currentClubId = urlClubId ?? lastEnteredClubId;
-  /* The Daily Challenges door carries the club on: the slug exactly as the URL
-     spelled it, else the club the store remembers, so the challenges page
-     opens inside that club and its Back To Arena door returns to that club. */
-  const linkClubId = readClubContextParam(location.search) ?? currentClubId;
+  /* The Daily Challenges door carries on the club the URL names, spelled
+     exactly as the URL spelled it - the same club, and the same rule, as the
+     Rewards rail on this page - so Daily Challenges opens inside that club and
+     its Back To Arena door returns there. The store's remembered club is right
+     for Add Chips and Cash Out, which need some club; it is wrong here: a
+     wallet opened at arena level opens Daily Challenges at arena level, not
+     scoped to a club the player did not come from, under a UUID in the
+     address bar. */
+  const linkClubId = readClubContextParam(location.search);
   const playerNumber = useUserStore((s) => s.user?.player_number ?? null);
   // force: the tab has been hidden and is now back. The freshness window exists
   // to make navigation free, not to serve a number that may be minutes old to

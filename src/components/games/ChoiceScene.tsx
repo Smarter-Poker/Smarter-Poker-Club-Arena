@@ -8,9 +8,14 @@ import MinesGrid from './MinesGrid';
 import {
   STREET_WIDTH,
   DONKEY_SCALE,
+  CROSSING_CAMERA,
+  aimCrossingCamera,
   streetCenter,
+  streetState,
   crossingTrafficVisible,
-  collisionFrame,
+  collisionAt,
+  WALK_MS,
+  type StreetState,
 } from '../../utils/crossingScene';
 import { CHOICE_MODE, ROAD_LADDERS, type ChoiceGame } from '../../utils/diamondChoiceMath';
 import { gameChips } from '../../utils/bonusGameBudget';
@@ -137,8 +142,31 @@ export default function ChoiceScene(props: Props) {
   return <CrossingScene {...props} />;
 }
 
-/** The four street tints, safe to dangerous, on the asphalt itself. */
-const STREET_TINTS = [0x172536, 0x23283a, 0x322838, 0x442532];
+/**
+ * The four street tints, safe to dangerous, on the asphalt itself. The road
+ * deepens toward black as the streets pay more (the #SmarterCasinoRealism
+ * panel, carbon and obsidian tones), so the gold-edged signs of the big streets
+ * read on black. It no longer warms toward maroon (Dan: "ALWAYS USE
+ * SMARTER.POKER COLOR SCHEMA COLORS, NO BROWNS OR PINKS").
+ */
+const STREET_TINTS = [0x172536, 0x111925, 0x0d1218, 0x0b1017];
+/**
+ * The painted sign inks are the strip's own (ChoiceScene.module.css), so a
+ * street reads the same on the road as in the strip: a black plate, the
+ * multiplier in silver, and an edge that carries the rise toward the big
+ * streets, dim chrome to chrome to brass to gold. The street underfoot and the
+ * next one light an electric-blue LED edge; red is the bust alone.
+ */
+const SIGN_INK = {
+  plate: '#05070a',
+  label: '#9aa5b3',
+  figure: '#e4e7ec',
+  led: '#45adff',
+  bust: '#ff5b6e',
+  spentEdge: '#3a4756',
+  spentInk: '#7f8c9b',
+  edge: ['#7f8c9b', '#b8c3cd', '#d6ad52', '#ffd700'],
+} as const;
 const SIGN_SLOTS = 16;
 
 function CrossingScene(props: Props) {
@@ -175,8 +203,9 @@ function CrossingScene(props: Props) {
     renderer.toneMappingExposure = 1.05;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0a1424);
-    scene.fog = new THREE.Fog(0x0a1424, 22, 65);
-    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+    const fog = new THREE.Fog(0x0a1424, 22, 65);
+    scene.fog = fog;
+    const camera = new THREE.PerspectiveCamera(CROSSING_CAMERA.fov, 1, 0.1, 100);
     const pmrem = new THREE.PMREMGenerator(renderer),
       room = new RoomEnvironment(),
       environment = pmrem.fromScene(room, 0.04);
@@ -230,21 +259,45 @@ function CrossingScene(props: Props) {
       }
       return car;
     };
-    const laneSigns: THREE.Mesh[] = [];
     const laneSlabs: THREE.Mesh[] = [];
     const signCanvases: HTMLCanvasElement[] = [];
     const textures: THREE.CanvasTexture[] = [];
-    /** A street sign prints the multiplier the street pays; the start prints START. */
-    const paintSign = (canvas: HTMLCanvasElement, street: number, multiplier: string | null) => {
+    /**
+     * A street sign prints the multiplier the street pays; the start prints
+     * START. A black plate with the strip's edge for the street's band and state.
+     */
+    const paintSign = (
+      canvas: HTMLCanvasElement,
+      street: number,
+      multiplier: string | null,
+      band: number,
+      state: StreetState
+    ) => {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      ctx.fillStyle = '#091722';
+      const blank = multiplier === null && street > 0;
+      const lit = !blank && (state === 'current' || state === 'next');
+      const bust = !blank && state === 'crash';
+      const spent = blank || state === 'crossed';
+      const edge = bust
+        ? SIGN_INK.bust
+        : lit
+          ? SIGN_INK.led
+          : spent
+            ? SIGN_INK.spentEdge
+            : SIGN_INK.edge[band];
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = SIGN_INK.plate;
       ctx.fillRect(0, 0, 256, 128);
-      ctx.strokeStyle = multiplier === null && street > 0 ? '#2c4658' : '#85cfff';
+      // A lit edge blooms like an LED seam; a resting edge is one crisp line.
+      ctx.shadowColor = edge;
+      ctx.shadowBlur = lit || bust ? 16 : 0;
+      ctx.strokeStyle = edge;
       ctx.lineWidth = 3;
       ctx.strokeRect(6, 6, 244, 116);
+      ctx.shadowBlur = 0;
       ctx.textAlign = 'center';
-      ctx.fillStyle = '#def5ff';
+      ctx.fillStyle = spent ? SIGN_INK.spentInk : SIGN_INK.figure;
       if (street === 0) {
         ctx.font = '700 48px sans-serif';
         ctx.fillText('START', 128, 82);
@@ -252,9 +305,10 @@ function CrossingScene(props: Props) {
       }
       if (multiplier === null) return;
       ctx.font = '600 24px sans-serif';
+      ctx.fillStyle = spent ? SIGN_INK.spentInk : SIGN_INK.label;
       ctx.fillText(`STREET ${street}`, 128, 38);
       ctx.font = '700 58px sans-serif';
-      ctx.fillStyle = '#ffe9a8';
+      ctx.fillStyle = spent ? SIGN_INK.spentInk : SIGN_INK.figure;
       ctx.fillText(multiplier, 128, 100);
     };
     const streetSign = (street: number) => {
@@ -269,9 +323,10 @@ function CrossingScene(props: Props) {
         map: texture,
         metalness: 0.2,
         roughness: 0.6,
-        emissive: 0x326b8e,
+        // A neutral glow off the painted inks, so the silver reads as silver.
+        emissive: 0xffffff,
         emissiveMap: texture,
-        emissiveIntensity: 0.25,
+        emissiveIntensity: 0.3,
       });
     };
     for (let i = 0; i < SIGN_SLOTS; i++) {
@@ -284,7 +339,6 @@ function CrossingScene(props: Props) {
       sign.rotation.x = -Math.PI / 2;
       sign.position.set(x, 0.07, 2.25);
       scene.add(sign);
-      laneSigns.push(sign);
       if (i > 0) {
         const lane = [
           buildCar([0x246bad, 0xc3d4df, 0x8b3441, 0x49655f][i % 4]),
@@ -349,22 +403,29 @@ function CrossingScene(props: Props) {
       lastVisibleFrame = null;
     };
     document.addEventListener('visibilitychange', visibilityChanged);
-    /** The road is repainted only when its ladder changes: signs, tints and traffic density. */
+    /** The road is repainted only when its ladder changes: tints and traffic density. */
     const paintRoad = (road: readonly number[]) => {
       hazards = Array.from({ length: SIGN_SLOTS }, (_, i) =>
         i === 0 || i > road.length ? 0 : streetHazard(i - 1, road.length)
       );
-      for (let i = 0; i < SIGN_SLOTS; i++) {
-        const cents = road[i - 1];
-        paintSign(
-          signCanvases[i],
-          i,
-          i > 0 && cents !== undefined ? streetMultiplier(cents) : null
-        );
-        textures[i].needsUpdate = true;
+      for (let i = 0; i < SIGN_SLOTS; i++)
         (laneSlabs[i].material as THREE.MeshPhysicalMaterial).color.setHex(
           i === 0 || i > road.length ? STREET_TINTS[0] : STREET_TINTS[hazardBand(hazards[i])]
         );
+    };
+    /** A sign is repainted only when its figure, band or state changes. */
+    const signPainted: string[] = [];
+    const paintSigns = (road: readonly number[], step: number, phase: Props['phase']) => {
+      for (let i = 0; i < SIGN_SLOTS; i++) {
+        const cents = road[i - 1];
+        const multiplier = i > 0 && cents !== undefined ? streetMultiplier(cents) : null;
+        const band = hazardBand(hazards[i] ?? 0);
+        const state = streetState(i, step, phase);
+        const key = `${multiplier}|${band}|${state}`;
+        if (signPainted[i] === key) continue;
+        signPainted[i] = key;
+        paintSign(signCanvases[i], i, multiplier, band, state);
+        textures[i].needsUpdate = true;
       }
     };
     const draw = (now: number) => {
@@ -378,19 +439,22 @@ function CrossingScene(props: Props) {
         step = p.picked.length,
         newSignature = `${p.roundId}:${step}:${p.phase}`;
       const newRoad = road.join(',');
-      if (newRoad !== roadSignature) {
+      const roadChanged = newRoad !== roadSignature;
+      if (roadChanged) {
         roadSignature = newRoad;
         paintRoad(road);
       }
-      if (newSignature !== signature) {
+      const roundChanged = newSignature !== signature;
+      if (roundChanged) {
         signature = newSignature;
         from = p.phase === 'idle' ? 0 : actual;
         to = streetCenter(step);
         sceneElapsed = 0;
         notified = false;
       } else sceneElapsed += visibleDelta;
+      if (roadChanged || roundChanged) paintSigns(road, step, p.phase);
       const elapsed = sceneElapsed,
-        walk = reduced ? 1 : Math.min(1, elapsed / (420 * getAnimationSpeed()));
+        walk = reduced ? 1 : Math.min(1, elapsed / (WALK_MS * getAnimationSpeed()));
       actual = THREE.MathUtils.lerp(from, to, walk * walk * (3 - 2 * walk));
       animal.animal.position.set(
         actual - 0.12,
@@ -406,7 +470,12 @@ function CrossingScene(props: Props) {
         if (!lane) return;
         const hazard = hazards[i] ?? 0;
         const open =
-          crossingTrafficVisible(i, step, p.phase === 'lost') && !(walk < 1 && i === step - 1);
+          crossingTrafficVisible(
+            i,
+            step,
+            p.phase === 'lost',
+            p.phase === 'cashed' ? (p.roadEnd ?? null) : null
+          ) && !(walk < 1 && i === step - 1);
         // Traffic runs faster and thicker the further down the road it is.
         const period = 530 - 210 * hazard;
         lane.forEach((car, n) => {
@@ -421,7 +490,8 @@ function CrossingScene(props: Props) {
       flash.visible = false;
       let finished = walk === 1;
       if (p.phase === 'lost') {
-        const impact = collisionFrame(Math.max(0, elapsed - 220), reduced);
+        // Stretched with the walk, so the car never arrives before the donkey.
+        const impact = collisionAt(elapsed, getAnimationSpeed(), reduced);
         impactCar.position.set(to, 0, impact.carZ);
         impactCar.rotation.y = Math.PI;
         if (impact.hit) {
@@ -437,7 +507,10 @@ function CrossingScene(props: Props) {
       let focus = actual;
       ghost.visible = p.phase === 'cashed' && p.roadEnd !== null;
       if (ghost.visible) {
-        const progress = reduced ? 1 : Math.max(0, Math.min(1, (elapsed - 800) / 2400));
+        const speed = getAnimationSpeed();
+        const progress = reduced
+          ? 1
+          : Math.max(0, Math.min(1, (elapsed - 800 * speed) / (2400 * speed)));
         ghost.position.set(
           THREE.MathUtils.lerp(to, streetCenter(p.roadEnd ?? step), progress),
           0.05,
@@ -446,21 +519,13 @@ function CrossingScene(props: Props) {
         focus = THREE.MathUtils.lerp(actual, ghost.position.x, 0.65);
         finished = finished && progress === 1;
       }
-      laneSigns.forEach((sign, i) => {
-        (sign.material as THREE.MeshPhysicalMaterial).color.setHex(
-          i === step
-            ? p.phase === 'lost'
-              ? 0xff745b
-              : 0x64cbb0
-            : i === step + 1
-              ? 0x65cfff
-              : 0x294966
-        );
-      });
-      camera.position.set(focus + 2.6, 8.5, 10.8);
-      camera.lookAt(focus + 0.6, 0.1, 0);
-      key.position.x = focus - 4;
-      key.target.position.x = focus;
+      // Straight down the road: the camera stands over the x it looks at.
+      const view = aimCrossingCamera(camera, focus);
+      fog.near = view.fogNear;
+      fog.far = view.fogFar;
+      // The shadow box follows the view, so every street in frame keeps its shadows.
+      key.position.x = view.x - 4;
+      key.target.position.x = view.x;
       if (frames.render() && finished && !notified) {
         notified = true;
         p.onSettled?.();
@@ -472,13 +537,28 @@ function CrossingScene(props: Props) {
       setFailed(true);
       latest.current.onSettled?.();
     };
+    // A context the browser gives back is drawn on again: every sign is
+    // repainted onto the fresh context and the reveal waits for its animation
+    // once more, instead of the scene staying "unavailable" for good.
+    const restored = () => {
+      signPainted.length = 0;
+      // Repaint the road and every sign on the next frame; the round itself
+      // carries on where it was (no replayed walk or strike).
+      roadSignature = '';
+      textures.forEach((texture) => {
+        texture.needsUpdate = true;
+      });
+      setFailed(false);
+    };
     canvas.addEventListener('webglcontextlost', lost);
+    canvas.addEventListener('webglcontextrestored', restored);
     return () => {
       cancelAnimationFrame(raf);
       document.removeEventListener('visibilitychange', visibilityChanged);
       frames.dispose();
       observer.disconnect();
       canvas.removeEventListener('webglcontextlost', lost);
+      canvas.removeEventListener('webglcontextrestored', restored);
       const geometries = new Set<THREE.BufferGeometry>(),
         materials = new Set<THREE.Material>();
       scene.traverse((obj) => {
@@ -559,7 +639,11 @@ function CrossingScene(props: Props) {
             ? 'Win Booked · Showing The Remaining Route'
             : props.phase === 'idle'
               ? 'Start · Highway Ahead'
-              : `Street ${step} · Next Street Clear`}
+              : // Never "Next Street Clear": the next street is sealed, and the
+                // traffic on screen does not decide it.
+                step === 0
+                ? 'Start · Your Move'
+                : `Safe On Street ${step} · Your Move`}
       </div>
       <div className={styles.readout} aria-live="polite" data-tone={lost ? 'bust' : undefined}>
         <span className={styles.readoutLabel}>{readout.label}</span>
@@ -574,16 +658,7 @@ function CrossingScene(props: Props) {
       <ol className={styles.streets} aria-label="Streets And Their Multipliers">
         {ladder.map((cents, index) => {
           const street = index + 1;
-          const state =
-            lost && street === step
-              ? 'crash'
-              : street < step || (street === step && props.phase === 'cashed')
-                ? 'crossed'
-                : street === step
-                  ? 'current'
-                  : street === step + 1 && !lost
-                    ? 'next'
-                    : 'ahead';
+          const state = streetState(street, step, props.phase);
           const prize = props.prizes?.[index];
           return (
             <li

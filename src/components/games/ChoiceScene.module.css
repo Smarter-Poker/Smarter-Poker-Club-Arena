@@ -27,12 +27,17 @@
     500 12px/1.3 Inter,
     sans-serif;
   text-align: center;
+  /* Centred from the middle, the caption only has half the scene before it
+     would wrap; it is one short line and stays one line on a phone. */
+  white-space: nowrap;
   pointer-events: none;
 }
+/* The bust keeps the strip's language: a black plate, silver type, and the
+   bust red as its edge alone (never brown, salmon or pink). */
 .scene[data-phase='lost'] .caption {
-  background: #552c29;
-  color: #ffe6dd;
-  border-color: #eaa081;
+  background: rgb(5 7 10 / 92%);
+  color: #e4e7ec;
+  border-color: #ff5b6e;
 }
 .fallback {
   position: absolute;
@@ -74,11 +79,12 @@
   text-shadow: 0 0 14px #ffc85766;
 }
 .readout[data-tone='bust'] {
-  background: #4a1f1ce6;
-  border-color: #eaa081;
+  background: rgb(5 7 10 / 90%);
+  border-color: #ff5b6e;
+  box-shadow: inset 0 0 12px rgb(240 40 73 / 22%);
 }
 .readout[data-tone='bust'] .readoutValue {
-  color: #ffd9cc;
+  color: #e4e7ec;
   text-shadow: none;
 }
 
@@ -89,16 +95,19 @@
   inset: 0;
   display: grid;
   place-items: center;
-  background: #ff5a3c00;
+  background: rgb(240 40 73 / 0%);
   pointer-events: none;
   animation: bust-flash 0.7s ease-out both;
 }
 .bust span {
   padding: 6px 22px;
-  border: 3px solid #ffb09a;
-  border-radius: 8px;
-  background: #4a1f1cf0;
-  color: #fff1ea;
+  border: 3px solid #ff5b6e;
+  border-radius: 4px;
+  background: rgb(5 7 10 / 94%);
+  box-shadow:
+    inset 0 0 14px rgb(240 40 73 / 35%),
+    0 0 18px rgb(240 40 73 / 30%);
+  color: #f2f4f7;
   font:
     900 34px/1 'Roboto Condensed',
     Inter,
@@ -111,16 +120,16 @@
 }
 @keyframes bust-flash {
   0% {
-    background: #ff5a3c00;
+    background: rgb(240 40 73 / 0%);
   }
   45% {
-    background: #ff5a3c00;
+    background: rgb(240 40 73 / 0%);
   }
   55% {
-    background: #ff5a3c66;
+    background: rgb(240 40 73 / 30%);
   }
   100% {
-    background: #ff5a3c00;
+    background: rgb(240 40 73 / 0%);
   }
 }
 @keyframes bust-stamp {
@@ -134,7 +143,15 @@
   }
 }
 
-/* Every street and what it pays, in one strip; the tint rises with the danger. */
+/* Every street and what it pays, in one strip. #SMARTERCASINOREALISM (Dan
+   2026-09-21: "THE MULTIPLIERS NEED TO BE SMARTER.POKER COLOR SCHEMA"): each
+   street is a machined black tile with a thin crisp edge, its multiplier in
+   engraved silver and the chips it pays in gold. The rise toward the big
+   streets is the edge itself, dim chrome to chrome to brass to gold, never
+   brown, maroon or red; red is the bust alone. The street underfoot and the
+   next one light an electric-blue LED edge. The glows are inset because the
+   strip scrolls and clips anything drawn outside a tile. The signs painted on
+   the road (ChoiceScene.tsx, SIGN_INK) wear the same edges. */
 .streets {
   position: absolute;
   z-index: 1;
@@ -160,63 +177,83 @@
   gap: 1px;
   min-width: 54px;
   padding: 5px 6px;
-  border: 1px solid #7da1b844;
-  border-radius: 8px;
-  background: #0b1b2de0;
-  color: #dcefff;
+  border: 1px solid var(--realism-muted, #7f8c9b);
+  border-radius: 4px;
+  background: linear-gradient(
+    180deg,
+    var(--realism-panel-raised, #111925) 0%,
+    var(--realism-obsidian, #05070a) 100%
+  );
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    var(--realism-cavity, inset 0 -1px 0 rgba(0, 0, 0, 0.6));
+  color: #e4e7ec;
   scroll-snap-align: center;
   font-variant-numeric: tabular-nums;
   transition:
     background 0.25s,
-    border-color 0.25s;
+    border-color 0.25s,
+    box-shadow 0.25s;
 }
 .street[data-hazard='1'] {
-  background: #221c2ae0;
-  border-color: #9b7a8a55;
+  border-color: var(--realism-chrome, #b8c3cd);
 }
 .street[data-hazard='2'] {
-  background: #34202ae0;
-  border-color: #c4837b66;
+  border-color: rgb(214 173 82 / 72%);
 }
 .street[data-hazard='3'] {
-  background: #4a1f1ce0;
-  border-color: #eaa08188;
+  border-color: #ffd700;
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    var(--realism-cavity, inset 0 -1px 0 rgba(0, 0, 0, 0.6)),
+    inset 0 0 8px rgb(255 215 0 / 16%);
 }
 .streetNumber {
   font:
     600 10px/1.2 Inter,
     sans-serif;
-  color: #a9cbe3;
+  color: #9aa5b3;
 }
 .streetMultiplier {
   font:
     800 14px/1.1 'Roboto Condensed',
     Inter,
     sans-serif;
-  color: #ffe9a8;
+  color: #e4e7ec;
+  text-shadow:
+    0 1px 0 #050607,
+    0 1px 3px rgb(0 0 0 / 80%);
 }
 .streetPrize {
   font:
     500 10px/1.2 Inter,
     sans-serif;
-  color: #cfe6f5;
+  color: #ffd700;
+  text-shadow: 0 1px 0 #050607;
 }
 .street[data-state='crossed'] {
   opacity: 0.55;
 }
 .street[data-state='current'] {
-  border-color: #64cbb0;
-  background: #143b39e8;
-  box-shadow: 0 0 0 1px #64cbb0;
+  border-color: #45adff;
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    inset 0 0 0 1px rgb(69 173 255 / 55%),
+    inset 0 0 14px rgb(69 173 255 / 38%);
 }
 .street[data-state='next'] {
-  border-color: #65cfff;
-  box-shadow: 0 0 0 1px #65cfff;
+  border-color: #45adff;
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    inset 0 0 0 1px rgb(69 173 255 / 35%),
+    inset 0 0 9px rgb(69 173 255 / 26%);
 }
 .street[data-state='crash'] {
-  border-color: #ff745b;
-  background: #552c29f0;
-  box-shadow: 0 0 0 1px #ff745b;
+  border-color: #ff5b6e;
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    inset 0 0 0 1px rgb(255 91 110 / 45%),
+    inset 0 0 12px rgb(240 40 73 / 35%);
 }
 @media (max-width: 760px) {
   .scene {
@@ -237,7 +274,7 @@
     animation: none;
   }
   .bust {
-    background: #ff5a3c33;
+    background: rgb(240 40 73 / 20%);
   }
   .street {
     transition: none;

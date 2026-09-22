@@ -250,7 +250,7 @@ for (const width of [320, 390, 1280])
     await page.getByRole('button', { name: 'crossing', exact: true }).click();
     await streetStripReads(page.getByRole('list', { name: 'Streets And Their Multipliers' }));
     await page.getByRole('button', { name: 'Preview Safe Crossing', exact: true }).click();
-    await expect(page.getByText('Street 1 · Next Street Clear')).toBeVisible();
+    await expect(page.getByText('Safe On Street 1 · Your Move')).toBeVisible();
     await page.getByRole('button', { name: 'Preview Collision', exact: true }).click();
     await expect(page.getByText('Collision · Round Over')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(

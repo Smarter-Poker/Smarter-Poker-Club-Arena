@@ -252,6 +252,17 @@ const DEFINITIONS: OperationDefinition[] = [
     access: 'finance',
   },
   {
+    /* CLUB AND UNION DIAMOND COSTS (2026-09-22): the operating trial, paid
+       capacity and services, renewals and receipts. Finance access: the owner
+       is the payer; admins read. */
+    id: 'diamond-costs',
+    label: 'Diamond Costs',
+    description: 'Your Free Month, Capacity, Renewals And Receipts',
+    suffix: 'diamond-costs',
+    group: 'finance',
+    access: 'finance',
+  },
+  {
     id: 'settlement',
     label: 'Settlement',
     description: 'Square Up Club Balances And Settlement Records',

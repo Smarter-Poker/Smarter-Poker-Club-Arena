@@ -209,6 +209,8 @@ def scenarios():
           'D26 every supported product has a published price and no comparison claim')
     check(all(p['price'] is None for p in cat['products'] if not p['supported']), 'D80 unsupported offerings carry no published price')
     check(int(sql("SELECT count(*) FROM public.ca_commerce_price_versions WHERE status='published'")) == 9, 'catalog v1 publishes nine prices')
+    check(count("public.feature_pricing f JOIN public.ca_commerce_products p ON p.sku = f.feature") == 0,
+          'D67 no operator product is reachable through the personal feature door')
 
     # ---- D74 immutability -------------------------------------------------
     r = sql("UPDATE public.ca_commerce_price_versions SET diamonds=1 WHERE sku='capacity_100' AND status='published'", ok=False)

@@ -164,6 +164,7 @@ const DiamondEarnPage = lazyWithRetry(() => import('./pages/DiamondEarnPage'));
 const ClubDiamondGamesOperationsPage = lazyWithRetry(
   () => import('./pages/club/ClubDiamondGamesOperationsPage')
 );
+const ClubDiamondCostsPage = lazyWithRetry(() => import('./pages/club/ClubDiamondCostsPage'));
 const FriendsPage = lazyWithRetry(() => import('./pages/FriendsPage'));
 const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
 const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
@@ -1084,6 +1085,18 @@ function FullApp() {
                   }
                 />
                 <Route
+                  path="unions/:unionId/diamond-costs"
+                  element={
+                    <AuthGuard>
+                      <UnionOverseerGuard>
+                        <PageErrorBoundary pageName="Club And Union Diamond Costs">
+                          <ClubDiamondCostsPage scopeKind="union" />
+                        </PageErrorBoundary>
+                      </UnionOverseerGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
                   path="unions/:unionId/table-management"
                   element={
                     <AuthGuard>
@@ -1584,6 +1597,18 @@ function FullApp() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Diamond Games Operations">
                           <ClubDiamondGamesOperationsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/diamond-costs"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club And Union Diamond Costs">
+                          <ClubDiamondCostsPage scopeKind="club" />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>

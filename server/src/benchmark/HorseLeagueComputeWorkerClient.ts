@@ -444,22 +444,41 @@ function isLeagueBenchmarkComponent(value: unknown): boolean {
   );
 }
 
+const LEAGUE_RESULT_KEYS = [
+  'matchup',
+  'hands',
+  'bb100',
+  'stderr',
+  'durationMs',
+  'illegalActions',
+  'truncatedStreets',
+  'candidatePolicyHits',
+  'candidateExecutionMismatches',
+  'candidateNodeRoles',
+  'benchmarkComponents',
+] as const;
+
 function isLeagueResult(value: unknown): value is LeagueResult {
+  if (!isRecord(value)) return false;
+  /* A result straight from runMatchup carries its divergence evidence
+     (2026-09-21, "a league matchup that measures nothing says so"); a result
+     assembled from components (GtoV31CandidateEvaluation) does not. Both
+     shapes are exact, and the evidence must agree with itself: `inert` is
+     exactly "played at least one pair, and either no pair diverged or the
+     variance is zero", and no more pairs can diverge than were played. A
+     worker that sent anything else is refused as malformed, the same as any
+     other shape this boundary does not know. */
+  const measured = hasExactKeys(value, [...LEAGUE_RESULT_KEYS, 'divergentPairs', 'inert']);
+  if (!measured && !hasExactKeys(value, LEAGUE_RESULT_KEYS)) return false;
   if (
-    !isRecord(value) ||
-    !hasExactKeys(value, [
-      'matchup',
-      'hands',
-      'bb100',
-      'stderr',
-      'durationMs',
-      'illegalActions',
-      'truncatedStreets',
-      'candidatePolicyHits',
-      'candidateExecutionMismatches',
-      'candidateNodeRoles',
-      'benchmarkComponents',
-    ])
+    measured &&
+    !(
+      isNonnegativeSafeInteger(value.divergentPairs) &&
+      isNonnegativeSafeInteger(value.hands) &&
+      value.divergentPairs * 2 <= value.hands &&
+      typeof value.inert === 'boolean' &&
+      value.inert === (value.hands > 0 && (value.divergentPairs === 0 || value.stderr === 0))
+    )
   )
     return false;
   return (

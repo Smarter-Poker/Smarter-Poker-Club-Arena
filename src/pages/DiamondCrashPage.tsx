@@ -1417,6 +1417,9 @@ function DiamondCrashGame() {
           <BonusCompletion
             key={settledRound.round_id}
             clubId={routeClubId ?? ''}
+            // The page already sang the cash-out at its own multiplier, and a
+            // crash says nothing. Either way the receipt adds no chord.
+            silent
             // A crash is not a win. The receipt says what it is.
             eyebrow={
               settledRound.status === 'cashed'

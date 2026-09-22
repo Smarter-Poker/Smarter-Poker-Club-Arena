@@ -1,6 +1,14 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WheelWinReveal } from '../../src/components/wheel/WheelWinReveal';
+import { soundService } from '../../src/services/SoundService';
+import { triggerHaptic } from '../../src/services/HapticService';
+
+vi.mock('../../src/services/SoundService', () => ({
+  soundService: { playWin: vi.fn(), playBigWin: vi.fn() },
+}));
+vi.mock('../../src/services/HapticService', () => ({ triggerHaptic: vi.fn() }));
+afterEach(() => vi.clearAllMocks());
 
 vi.mock('../../src/components/common/Modal', () => ({
   Modal: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -113,5 +121,41 @@ describe('a receipt that is not a win says so', () => {
       />
     );
     expect(eyebrow()).toBe('Wheel Upgrade');
+  });
+});
+
+/**
+ * A RECEIPT NEVER CELEBRATES A LOSS (2026-09-22). This modal played a major
+ * arpeggio and a 'success' haptic on mount for every chips receipt, which
+ * includes a Donkey Cross hit, a Diamond Mines mine and a Crash crash - each
+ * of which pays only the guaranteed minimum. The page that knows what the
+ * round was says so.
+ */
+describe('a receipt that is not a win makes no sound', () => {
+  it('plays nothing and buzzes nothing when the page asks for silence', () => {
+    render(
+      <WheelWinReveal
+        prize={{ kind: 'chips' }}
+        title="0.10 Chips"
+        detail="Hit At Street 3."
+        silent
+        onOpen={vi.fn()}
+      />
+    );
+    expect(soundService.playWin).not.toHaveBeenCalled();
+    expect(soundService.playBigWin).not.toHaveBeenCalled();
+    expect(triggerHaptic).not.toHaveBeenCalled();
+  });
+  it('still sings a win that nobody silenced', () => {
+    render(
+      <WheelWinReveal
+        prize={{ kind: 'chips' }}
+        title="3 Chips"
+        detail="Paid To Your Account"
+        onOpen={vi.fn()}
+      />
+    );
+    expect(soundService.playWin).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(triggerHaptic).mock.calls).toEqual([['success']]);
   });
 });

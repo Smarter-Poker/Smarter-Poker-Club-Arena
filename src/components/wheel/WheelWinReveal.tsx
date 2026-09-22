@@ -17,6 +17,7 @@ export function WheelWinReveal({
   autoContinue = false,
   autoContinueAfterMs = 0,
   eyebrow,
+  silent = false,
 }: {
   prize: Pick<WheelSegment, 'kind' | 'game' | 'multiplier'>;
   title: string;
@@ -30,6 +31,12 @@ export function WheelWinReveal({
    * guarantee paid after a hit or a crash, and "You Won" over that is a lie.
    */
   eyebrow?: string;
+  /**
+   * The round this receipt belongs to was not a win, or its own scene already
+   * sang it. A major arpeggio and a success buzz over a hit or a crash teach
+   * players that the sounds mean nothing.
+   */
+  silent?: boolean;
 }) {
   const opened = useRef(false);
   const onOpenRef = useRef(onOpen);
@@ -43,12 +50,12 @@ export function WheelWinReveal({
     return () => document.removeEventListener('visibilitychange', update);
   }, []);
   useEffect(() => {
-    if (!visible || sounded.current) return;
+    if (silent || !visible || sounded.current) return;
     sounded.current = true;
     if (prize.kind === 'upgrade' || prize.kind === 'bonus') soundService.playBigWin();
     else soundService.playWin();
     triggerHaptic('success');
-  }, [prize.kind, visible]);
+  }, [prize.kind, visible, silent]);
   const continueButton = useRef<HTMLButtonElement>(null);
   const [ready, setReady] = useState(false);
   const automatic = autoContinue || prize.kind === 'bonus' || prize.kind === 'upgrade';

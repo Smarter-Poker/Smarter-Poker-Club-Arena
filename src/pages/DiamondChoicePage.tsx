@@ -51,6 +51,7 @@ import { compactChips } from '../utils/format';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
+import { soundService } from '../services/SoundService';
 import '../components/console/SpadeConsole.css';
 import styles from './diamondGames.module.css';
 
@@ -512,7 +513,11 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         handedToScene = true;
       }
       setRound(next);
-      triggerHaptic(next.status === 'lost' ? 'heavy' : 'light');
+      // Mines turns its tile over on this answer, so its buzz belongs here. A
+      // crossing's does not: the donkey is still in the road, and a buzz now
+      // would give the result away three quarters of a second before the car
+      // reaches it. The scene fires the crossing's beats instead.
+      if (game !== 'crossing') triggerHaptic(next.status === 'lost' ? 'heavy' : 'light');
       // THE ANSWER IS THE ROUND. fn_choice_act returns the whole round, and an
       // open street needs nothing else: the budget, the ticket, the completion
       // id and the entry quote the page holds are the ones this move was made
@@ -808,8 +813,13 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             pendingAction === 'book' || bookable === null
               ? undefined
               : `Book The Win For ${bookable} Chips`,
-          onClick: () =>
-            open && picks > 0 && !uncertain ? void act('cashout', null) : void refresh(),
+          // Inside the tap: the one place an iOS switch haptic is granted.
+          onClick: () => {
+            if (open && picks > 0 && !uncertain) {
+              triggerHaptic('selection');
+              void act('cashout', null);
+            } else void refresh();
+          },
           // In flight: the plate keeps the player's focus. Unavailable: it does
           // not. A wager the page is still settling is unavailable.
           disabled: uncertain,
@@ -834,7 +844,14 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             pendingAction === 'cross' || crossable === null
               ? undefined
               : `Cross Street ${picks + 1} For ${gameChips(crossable)} Chips`,
-          onClick: () => (open ? void act('pick', picks) : void start()),
+          onClick: () => {
+            if (!open) {
+              void start();
+              return;
+            }
+            triggerHaptic('selection');
+            void act('pick', picks);
+          },
           disabled: uncertain || (open ? game === 'mines' : blocked || !ticket),
           'aria-disabled': busy || sceneBusy || undefined,
         }}
@@ -856,9 +873,27 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           }}
           // The scene reached the beat it was holding: the console prints the
           // confirmed round from here on.
-          onMoment={() => {
+          onMoment={(moment, street) => {
             setPrinted(null);
             setPendingAction(null);
+            // THE BEATS ARE THE SCENE'S. It is the only thing that knows where
+            // the donkey is, so what the player hears and feels lands with
+            // what they see. Both services honour the player's own sound and
+            // vibration switches; the explicit buzz keeps the street's beat
+            // when the sound is muted, and vibrationGate coalesces it with the
+            // tick's own within 60 ms.
+            if (moment === 'landed') {
+              soundService.playSpinTick();
+              triggerHaptic('light');
+            } else if (moment === 'hit') {
+              // Crash's rule, which this game now shares: a loss says nothing.
+              triggerHaptic('heavy');
+            } else {
+              soundService.playSpinMultiplierResult(
+                (ladder?.[Math.min(Math.max(street, 1), ladder.length) - 1] ?? 100) / 100
+              );
+              triggerHaptic('success');
+            }
           }}
           // Nothing is looking at the road: the Double Down offer stands over
           // an idle scene, or the receipt stands over a finished one. Never on
@@ -1042,6 +1077,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           key={round.id}
           clubId={clubId ?? ''}
           chips={round.payout_chips}
+          // A crossing receipt never sings: the scene has already said what
+          // happened, in its own beat. A lost Mines round is not a win either.
+          silent={game === 'crossing' || round.status === 'lost'}
           eyebrow={
             round.status === 'lost'
               ? round.payout_chips > 0

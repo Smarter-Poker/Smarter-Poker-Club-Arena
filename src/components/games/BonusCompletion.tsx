@@ -7,17 +7,21 @@ export default function BonusCompletion({
   chips,
   detail,
   eyebrow,
+  silent,
 }: {
   clubId: string;
   chips: number;
   detail: string;
   /** What this receipt is, when the round was not won. */
   eyebrow?: string;
+  /** The round was not a win, or its own scene already sang it. */
+  silent?: boolean;
 }) {
   const navigate = useNavigate();
   return (
     <WheelWinReveal
       eyebrow={eyebrow}
+      silent={silent}
       prize={{ kind: 'chips' }}
       title={`${chips.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Chips`}
       detail={`${chips > 0 ? 'Your Prize Is Booked.' : 'No Chips Won This Round.'} ${detail} Returning To Diamond Spins.`}

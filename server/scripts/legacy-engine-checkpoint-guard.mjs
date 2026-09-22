@@ -18,8 +18,17 @@
  * A disconnected/expired caller must retain an UNKNOWN operation, never retry it.
  * Started native writes are joined even after refusal; an RPC timeout remains an
  * ambiguous remote outcome. The existing publisher must freshly verify its native
- * certificate and >=285000ms reserve before stopping the process. Success below is
- * a checked instant, not a new lock, a freeze extension, or a substitute certificate.
+ * certificate and >=245000ms reserve before stopping the process: the transaction
+ * admits the checkpoint only while >=285000ms remain (its entry threshold), and
+ * the whole 40 s the checkpoint then pays - ~15 s of entry (countdown detection,
+ * the rollback proof, the helper preamble, the intent write and this module's
+ * own boot, measured on run 35615604946) plus the publisher's bounded work
+ * (workBudgetMs 20000 + cleanupBudgetMs 5000) - is paid out of the
+ * candidate-proof budget, so 285 - 40 = 245 seconds is the exact figure
+ * engine-release-transaction.sh accepts on the certificate it reads after a
+ * legacy checkpoint (LEGACY_MIN_BREAK_REMAINING_MS). The 135-second rollback
+ * reserve inside it is untouched. Success below is a checked instant, not a new
+ * lock, a freeze extension, or a substitute certificate.
  */
 export async function legacyEngineCheckpointGuard(options, discoveredServers, modules) {
   const release = options?.expectedReleaseSha;
@@ -30,7 +39,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     release === 'a0ab287d902879280f0c915e44f5222c5db4d7df';
   // Fixed historical-loss disposition. It never asserts a native old bank.
   const historicalBankLoss = {"5a387a75-754a-416e-8fee-b85b15fc2702":{"kind":"historical_loss_normal_session_v1","receipt_id":"7d0f56e9-10ce-4c2f-b337-101b75924257","generation":"66291622-e7d1-4816-8c33-26ff1f092446","bank_witness_sha256":"31d0faaf9c8513f306160f0b7729d6e19dd8284677506d926805dbf9cb801af3","occupants":[{"table_id":"09f5e9eb-df66-4e55-a3c8-4385d27631e2","seat_id":"5cff5b9c-d48d-4391-8ec9-7cae469f57fe","occupancy_id":"164f4293-d57e-42c6-bbad-242f3d11e1cd","joined_at":"2026-09-17T17:06:16.817557+00:00","user_id":"046718c5-474f-4108-a15c-c3a1ce1f8d61","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"2c621856-e728-4e8b-bf08-4c56746a8649","seat_id":"df3e8f01-27ab-4973-bb90-792f82fac562","occupancy_id":"093709bf-995f-4848-bdda-da4f254a0cc9","joined_at":"2026-09-18T22:09:41.227524+00:00","user_id":"23e84589-611a-44ea-99e1-c51ae7ada6c5","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"2c621856-e728-4e8b-bf08-4c56746a8649","seat_id":"f6564dc7-d0ec-46f9-be3d-0ededac28fe3","occupancy_id":"f959c4dc-7b3d-4135-b160-c2fb11014196","joined_at":"2026-09-17T17:06:50.374103+00:00","user_id":"c1b575fb-3efd-43b6-b314-353e1d300aaa","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"49a444ac-553a-4f44-a36f-92781d10a646","seat_id":"7bbe071c-6253-4d65-bb87-8ce8103b1ce0","occupancy_id":"358500d2-527c-4026-81d4-fc8c908b9272","joined_at":"2026-09-17T17:07:48.373927+00:00","user_id":"a23ca5c9-b748-482f-9b59-9db35f7aa996","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"623b526d-0901-4c59-aec5-f8e459af7a6c","seat_id":"96e5f8fa-c883-4107-b469-4d89eb050eb0","occupancy_id":"d767fa91-e33b-446f-8867-30eaab0c2990","joined_at":"2026-09-17T17:08:04.809856+00:00","user_id":"00000000-0000-0000-0000-000000000038","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"6d8512e3-899d-442b-8d6c-7c57a5f4a1f1","seat_id":"933d6d7b-7d2e-455b-84f5-59432760ed9b","occupancy_id":"daf13850-0e47-4dfd-adc0-da5ac09f12dc","joined_at":"2026-09-17T17:07:31.133198+00:00","user_id":"302ba66b-3b1e-4747-9458-84695c70f396","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"815d35dd-a6d5-4469-b0aa-e386cc2145b9","seat_id":"1be3101b-5c33-4561-b64e-138d80609519","occupancy_id":"31c012fd-4f6e-4386-a62a-e44e1ad878a7","joined_at":"2026-09-17T21:38:20.734335+00:00","user_id":"c82e74af-4101-49b0-bd0f-93755f7bb13b","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9bf11d84-684d-4069-916c-c7b5bb397d21","seat_id":"f2169a73-3148-4f14-b438-4fe6e5b40a0c","occupancy_id":"76c77980-c9b3-41ad-9200-896435d29e5c","joined_at":"2026-09-17T23:26:34.171939+00:00","user_id":"92ecbaed-bdec-49ae-96db-90e3d61a8f7b","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"dbd8b7ea-1a99-494f-b564-f86d412dc764","seat_id":"a87d1719-c2e1-4142-98e9-0b246ed249c0","occupancy_id":"c322a02b-5d56-4c0a-adab-8c00cda69381","joined_at":"2026-09-18T22:08:29.04283+00:00","user_id":"00000000-0000-0000-0000-000000000023","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"dbd8b7ea-1a99-494f-b564-f86d412dc764","seat_id":"c8296047-8c8b-458b-8695-e3990e920edb","occupancy_id":"0ebe3f87-4988-45b6-a5a4-b026326bb608","joined_at":"2026-09-18T22:06:46.596949+00:00","user_id":"38563ca3-66a9-40bb-8053-7a698887ec93","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"fcbbd2ea-6fc2-47df-8b61-b9997fcd7b16","seat_id":"4276abea-759f-48e6-ac59-c8a41e8d78b7","occupancy_id":"a94b8085-95f2-4e11-8f62-18d95ba47cb2","joined_at":"2026-09-18T22:10:08.554647+00:00","user_id":"c7a783ee-ac19-4a86-8e26-422666281805","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"fcbbd2ea-6fc2-47df-8b61-b9997fcd7b16","seat_id":"e8ef0440-81c7-4d6d-8c25-d9e1951456c1","occupancy_id":"78e9cbed-1128-439e-8336-349b19237c1a","joined_at":"2026-09-18T19:34:43.230547+00:00","user_id":"cb50fee0-a87b-4ac8-a6fe-8e665c5ddd8c","last_durable_seconds":40,"last_durable_uses":2}],"pending_arrivals":[{"kind":"pending_arrival_historical_loss_v1","table_id":"66b1cb1d-5056-41c1-a951-1bd078f8276f","lifecycle":283892,"seat_id":"093766ff-7108-4a69-a36f-189039af1a93","user_id":"6688345d-e7be-49bd-a318-4ee1e6b10253","occupancy_id":"f45e6d45-f041-4318-bd78-e5e066a77e17","joined_at":"2026-09-17T17:07:20.624929+00:00","seat_number":4,"stack":45000,"break_id":"3ebe59ce-4a7c-4290-960f-2843d7aebd71","origin_generation":"14e79c70-5590-47a4-bb9e-928bb8bd123a","request_id":"48b9a0f7-e40e-4163-845e-1a5244a2dac2","predecessor":"04a81643-7124-41e9-9a76-6111e627c288","amendment_id":"770b2444-2b8d-4f66-8138-d76adeed833f","destination_table_id":"09f5e9eb-df66-4e55-a3c8-4385d27631e2","destination_seat_number":2,"atomic_hand_id":"e18787c7-10a9-4435-85f3-31eaf95526d0","hand_number":12114088,"last_durable_seconds":40,"last_durable_uses":2,"payload_hash":"0af5bc2c83acb25b7c36054b30f6bd0a9af3db6c6bbbc8da8f45a415c29f430b","post_commit_request_hash":"b297208a812da14e5791a8fc5a45ee34b7235fd7acf1fb1e9366bbb3f1d1ebf8","post_commit_payload_hash":"8469adc20e2069d06dde4f35624461f88aa829cde49773ab8ee58791c94329ba","stack_hand_id":"911ceac9-72ab-68bb-405a-82f0e523fc1a","settlement_id":"8b4e4676-e9b2-44c1-8c35-8aa87be96308"}]},"615783bf-15e3-40b7-9368-75f21b6ac53b":{"kind":"historical_loss_normal_session_v1","receipt_id":"16268739-c7c3-4d38-8a8f-e8f08ac0591b","generation":"b3d06bad-c464-4be8-9e1b-66f7191375ff","bank_witness_sha256":"31d0faaf9c8513f306160f0b7729d6e19dd8284677506d926805dbf9cb801af3","occupants":[{"table_id":"383aa2c7-79f1-4937-9d7e-8c49126fce8b","seat_id":"19e141a8-bbc4-4864-a1e7-d5e46a66723c","occupancy_id":"61f4d574-eed6-4487-a4c8-a771ca326eb2","joined_at":"2026-09-17T22:06:23.33465+00:00","user_id":"46887b99-8cd6-45db-861c-ad24232efbfe","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"5973d7f6-5a52-4d78-aa92-cba86e19d4ea","seat_id":"e52388d6-d007-4e31-bafe-aefbe3bf3e40","occupancy_id":"f7056064-b637-47a1-8386-1da512a7d1f0","joined_at":"2026-09-17T22:06:22.513736+00:00","user_id":"374d0e7a-aef5-4d09-a2f2-5d4a18568d97","last_durable_seconds":20,"last_durable_uses":1},{"table_id":"737b1a84-da46-459c-b0e3-bba5b23171c0","seat_id":"0180cd98-024b-4406-8529-2ef52fc3c217","occupancy_id":"a08137de-c7b2-4268-b3ca-7f1720bca0a5","joined_at":"2026-09-17T22:06:36.220363+00:00","user_id":"1d81eaa9-42bc-4815-9616-01ad6e6d5800","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9e18dc43-a81a-4a4f-a360-4f624c60699b","seat_id":"4a597dfc-98a2-4503-9913-c10f9349aa33","occupancy_id":"0eba0337-1825-4969-95ca-ff2260319e5a","joined_at":"2026-09-17T22:06:38.780641+00:00","user_id":"3a94c68d-2dd2-40b0-afea-96a238b505f2","last_durable_seconds":20,"last_durable_uses":1},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"0d1d3c90-5b3d-4f48-9b45-6e4881a4d359","occupancy_id":"a0f25a76-732c-42d5-ab0c-f96d404428dc","joined_at":"2026-09-18T19:48:57.356759+00:00","user_id":"44f1ff92-b5de-44c5-9f7b-319318ff2a74","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"fd4646b0-d531-424c-85ac-f34baae5ac90","occupancy_id":"9eab6eee-7abb-404a-8b22-2747896c3123","joined_at":"2026-09-18T22:12:31.939388+00:00","user_id":"ae0bc48d-f98c-4b25-a9fa-e3522f986173","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"a77f5c0e-36c2-4d5e-9078-32350e36652c","occupancy_id":"292af3a4-995f-4fc9-8852-55d340cdddbe","joined_at":"2026-09-18T22:12:19.599699+00:00","user_id":"c49b2414-97ff-461c-8c20-3c05fe09809b","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"17f5edbc-6f65-4a92-87d9-994096f38a3a","occupancy_id":"af606bd2-8d9d-4692-8e61-ed3b2f1b8bf1","joined_at":"2026-09-18T22:10:36.076555+00:00","user_id":"cb35cc6f-3150-48ce-b7dc-887b6aca8327","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"535d19b3-b732-4d32-b614-f0f4bca07965","occupancy_id":"f137a187-d1c6-41ec-bbe1-8518e702a5ca","joined_at":"2026-09-18T22:10:36.511105+00:00","user_id":"f8c8eb13-14a0-4478-8771-7d29e71036ca","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9fdd5393-6fd9-4497-85b2-f98b89cf168d","seat_id":"f24cd458-be8d-43a6-9375-926524072f5f","occupancy_id":"dcc84998-a924-4bd7-89f0-f9359caba8d1","joined_at":"2026-09-17T22:07:06.763072+00:00","user_id":"f740e628-9097-47cf-91fc-95bbee245792","last_durable_seconds":120,"last_durable_uses":6},{"table_id":"d6199e5e-7c40-4560-afd9-f1a135031097","seat_id":"afb40353-6310-4f3e-8275-754bc26439e5","occupancy_id":"14955bd2-a8e9-4425-8b15-cb9829f48d11","joined_at":"2026-09-17T22:07:07.255289+00:00","user_id":"fdf075f5-e450-4099-a043-691377b0ae64","last_durable_seconds":20,"last_durable_uses":1}],"pending_arrivals":[]}};
-  const reserveMs = 285000;
+  const reserveMs = 245000;
   // Refusal ceilings, not truncation or latency promises. The observed fleet has
   // 1379 tables, so the ordinary PostgREST 1000-row cap cannot bound the fleet.
   const maxTables = 2000;
@@ -149,6 +158,17 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   // Observability only: which tables were PROVED abandoned from rows, and how
   // many generations each carried. Never read by a decision.
   let abandonedBoundaries = null;
+  // Observability only: how many 8825 cash engines were in the map at the
+  // snapshot without ever having completed `start()` (never dealt, no seat, no
+  // bank), and how many times the churn replaced or removed one while the
+  // checkpoint ran. Never read by a decision.
+  let skippedUnstarted = 0;
+  // Observability only: how many residue players and disposed seats the rows
+  // proved held nothing, on how many tables, and which stopped tournaments.
+  // Never read by a decision.
+  let bankDisposition = null;
+  let unstartedReplacements = 0;
+  let unstartedDepartures = 0;
   const refuse = (code) => {
     if (reason === null) reason = code;
     throw new Error('legacy_checkpoint_refused');
@@ -260,6 +280,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     // and position. `reason` above is untouched for existing parsers.
     ...(abandonedBoundaries === null ? {} : { abandonedBoundaries }),
     ...(refusalDetail === null ? {} : refusalDetail),
+    ...(retained8825 ? { skippedUnstarted, unstartedReplacements, unstartedDepartures } : {}),
+    ...(bankDisposition === null ? {} : { bankDisposition }),
   });
 
   try {
@@ -337,6 +359,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     const engines = new Set();
     const tableIds = new Set();
     const captures = [];
+    // 8825 cash engines observed at the snapshot before they ever completed
+    // `start()`. They are not captured; `checkUnstarted` follows them instead.
+    const unstartedTables = new Map();
+    let checkUnstarted = () => {};
     const base = modules.base.ServerTableEngineBase.prototype;
     const checkMaintenance = () => {
       // This bridge originates at process scope. Existing tournament-engine
@@ -378,14 +404,27 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         initialRemainingMs - (performance.now() - beganMonotonicMs)
       );
       require(Number.isFinite(remaining) && remaining >= reserveMs, 'insufficient_reserve');
-      // A live fleet that gains or loses a table mid-checkpoint refuses here.
-      // Name the first table that moved and which way, so the next refusal is
-      // readable without a deploy: an arrival shows in the size, a departure or
-      // a replacement shows as the offending id.
+      // The whole fleet is NOT pinned here. The live 8825 engine re-admits and
+      // kills a foreign cash table every ~5 s (it sits in `tableEngines` for
+      // 0.6-4 s per cycle), so a whole-fleet size/identity witness refused
+      // every checkpoint (`fleet_identity_changed`, `fleet.size`). A foreign
+      // table's arrival or departure cannot touch the custody this checkpoint
+      // retires. What IS pinned, by object identity, is every table the
+      // checkpoint touches: each captured engine, each retained original
+      // selected for retirement, and each original already retired - which
+      // must stay gone from the global map. A pinned table that is replaced
+      // or vanishes still refuses, naming the table and which way it moved.
+      const pinnedTables = () => [
+        ...captures.map(({ tableId, engine }) => [tableId, engine]),
+        ...retainedManagers.flatMap((capture) =>
+          capture.exactEngines.map(({ tableId, engine }) => [tableId, engine])
+        ),
+        ...[...retiredOriginals].map((id) => [id, null]),
+      ];
+      const pinnedIntact = ([id, engine]) =>
+        retiredOriginals.has(id) ? !tableMap.has(id) : tableMap.get(id) === engine;
       const movedTable = () => {
-        const found = entries.find(([id, engine]) =>
-          retiredOriginals.has(id) ? tableMap.has(id) : tableMap.get(id) !== engine
-        );
+        const found = pinnedTables().find((pinned) => !pinnedIntact(pinned));
         if (found === undefined) return 'none';
         return retiredOriginals.has(found[0])
           ? `retired_still_present:${found[0]}`
@@ -397,24 +436,22 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         'fleet_identity_changed',
         [
           [
-            'fleet.size',
-            () => tableMap.size === entries.length - retiredOriginals.size,
+            'fleet.retired',
+            () => [...retiredOriginals].every((id) => !tableMap.has(id)),
           ],
           [
-            'fleet.identity',
-            () =>
-              entries.every(([id, engine]) =>
-                retiredOriginals.has(id) ? !tableMap.has(id) : tableMap.get(id) === engine
-              ),
+            'fleet.pinned',
+            () => pinnedTables().every(pinnedIntact),
           ],
         ],
         () => ({
           observed: describe(tableMap.size),
-          expected: String(entries.length - retiredOriginals.size),
+          expected: `pinned:${pinnedTables().length}`,
           failedTable: movedTable(),
         })
       );
       checkRetained();
+      checkUnstarted();
       return remaining;
     };
     checkMaintenance();
@@ -662,8 +699,30 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         );
         const exactRetirement = manager.pendingTableBreakRetirement;
         const captureMethod = manager.captureDrainedF06Originals;
-        const revision = manager.tournamentSeatMoveAuthorityRevision;
-        const serial = manager.tournamentSeatMoveSerialTail;
+        // The custody this checkpoint retires is named by the manager's
+        // tournament and lease generation (the RPC input and its receipt) and
+        // by the engines' identities. Those are what is pinned below. The seat
+        // move authority revision and serial tail are NOT: the live 8825
+        // lease-loss pass re-runs `stopTournamentManagerIfOwned` every ~5 s for
+        // the retained managers, and each retry bumps the revision, replaces
+        // the serial tail and rebuilds a frozen `drainedF06Originals` array
+        // with the same engines in it - none of which moves custody.
+        const capturedTournamentId = manager.tournamentId;
+        const capturedLeaseGeneration = manager.tournamentLeaseGeneration;
+        // A stop retry's `captureDrainedF06Originals()` returns null while its
+        // `teardownPromise` is set, then the same engines again. Custody rests
+        // on the engines' identities, so the witness compares contents, and a
+        // transient null is tolerated: the map/engine witnesses below still
+        // pin every original.
+        const sameOriginals = () => {
+          const now = manager.captureDrainedF06Originals();
+          return (
+            now === null ||
+            (Array.isArray(now) &&
+              now.length === originals.length &&
+              now.every(([id, e], i) => originals[i][0] === id && originals[i][1] === e))
+          );
+        };
         const exactEngines = originals.map(([tableId, engine]) => {
           require(uuid(tableId) &&
             !retained.has(engine) &&
@@ -1379,6 +1438,11 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             'mixed_owner_changed',
             [
               ['server.tournamentEngines', () => server.tournamentEngines === managerMap],
+              ['manager.tournamentId', () => manager.tournamentId === capturedTournamentId],
+              [
+                'manager.tournamentLeaseGeneration',
+                () => manager.tournamentLeaseGeneration === capturedLeaseGeneration,
+              ],
               [
                 'managerMap.get(tournamentId)',
                 () => managerMap.get(manager.tournamentId) === manager,
@@ -1397,21 +1461,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
                 'manager.captureDrainedF06Originals',
                 () => manager.captureDrainedF06Originals === captureMethod,
               ],
-              [
-                'manager.captureDrainedF06Originals()',
-                () => manager.captureDrainedF06Originals() === originals,
-              ],
+              ['manager.captureDrainedF06Originals()', sameOriginals],
               [
                 'manager.pendingTableBreakRetirement',
                 () => manager.pendingTableBreakRetirement === exactRetirement,
-              ],
-              [
-                'manager.tournamentSeatMoveAuthorityRevision',
-                () => manager.tournamentSeatMoveAuthorityRevision === revision,
-              ],
-              [
-                'manager.tournamentSeatMoveSerialTail',
-                () => manager.tournamentSeatMoveSerialTail === serial,
               ],
               [
                 'manager.activeStoppedOriginalCustody.size',
@@ -1455,12 +1508,19 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               failedTable: failedEngine(),
               observed: describe(manager.captureDrainedF06Originals()),
               expected: describe(originals),
+              // The lease generation travels here too: it and the tournament
+              // id name the custody this checkpoint retires, and the seat move
+              // authority revision is deliberately NOT a witness (the live 8825
+              // stop-retry loop bumps it every ~5 s without moving custody).
               observedDetail: [
                 `tournament=${manager.tournamentId}`,
+                `capturedTournament=${capturedTournamentId}`,
+                `lease=${describe(manager.tournamentLeaseGeneration)}/${describe(
+                  capturedLeaseGeneration
+                )}`,
                 `drain=${drainWitness()}`,
                 `map=${failedMap()}`,
                 `set=${failedSet()}`,
-                `rev=${describe(manager.tournamentSeatMoveAuthorityRevision)}/${describe(revision)}`,
               ]
                 .join(',')
                 .slice(0, 512),
@@ -1468,15 +1528,18 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           );
           return vector();
         };
-        pending.push({ manager, proposal, exactEngines, vector, current, initial, serial });
+        pending.push({ manager, proposal, exactEngines, vector, current, initial });
       }
       checkRetained = () => {
         for (const capture of pending)
           require(canonical(capture.current()) === capture.initial, 'mixed_local_custody_changed');
       };
       checkMaintenance();
+      // Join the originals' own stop queues only. The manager's seat move
+      // serial tail is not awaited: on the live 8825 engine the stop-retry loop
+      // replaces it every ~5 s, so it never names a fixed piece of work.
       const joined = await Promise.allSettled(
-        pending.flatMap((m) => [m.serial, ...m.exactEngines.flatMap((e) => e.queues)])
+        pending.flatMap((m) => m.exactEngines.flatMap((e) => e.queues))
       );
       require(joined.every((v) => v.status === 'fulfilled'), 'mixed_original_stop_unconfirmed');
       checkMaintenance();
@@ -1778,7 +1841,152 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       }
     }
 
+    /* ═══ A BANK REFUSAL NAMES ITS TABLE, AND THE FLEET THAT HOLDS THE SAME SHAPE (2026-09-22) ═══
+
+       Observability only. Never read by a decision; evaluated only on a
+       refusal path that is already throwing, through `noteRefusal`, which
+       keeps the FIRST refusal's detail and swallows any error of its own. No
+       condition, code, order or threshold below moves.
+
+       Production run 35620115786 is the only 8825 checkpoint so far whose
+       preflight got past the mixed-custody capture and the drain witnesses.
+       It refused `bank_metadata_without_bank` at 15:43:34Z on 2026-09-21 and
+       named nothing: `captureEngine` refused through the process-wide
+       `require`, which carries no detail, so nobody could say which of ~150
+       tables held it. The 8825 source has two ways to produce it:
+
+       - a DEPARTED player's metadata. 8825 deletes `timeBankMeta` in exactly
+         one place, the cash branch of `adoptSeatRoster`
+         (ServerTableEngineBase.ts:4283). A voluntary cashout (:3679), a seat
+         move (:4061), a busted release (:7508), a sit-out eviction (:7691)
+         and `tearDownDepartedSeats` (ServerTableEngineSettlement.ts:3738)
+         remove the bank and the seat and keep the metadata; the tournament
+         branch of `adoptSeatRoster` deletes nothing, and a tournament bust
+         removes no bank at all (ServerTableEngineDealing.ts:448 is cash-only).
+       - a STOPPED engine still in the fleet map. 8825 `stop()` disposes every
+         live bank (`timeBankEngine.disposeAll()`, :3579) and keeps
+         `seatedPlayers` and `timeBankMeta`. A tournament manager whose
+         teardown throws "retained an unresolved seat-move UUID" retries every
+         few seconds and never reaches `unregisterTournamentTableEngine`, so
+         its stopped engines stay registered.
+
+       They need different dispositions and neither may be waved through (see
+       "A BANK THE ENGINE NO LONGER HOLDS IS NOT CUSTODY" below). A refusal
+       here names its table and a player-free shape of it, plus a
+       census of every engine the capture walks, by the same shape, so ONE
+       refused attempt is enough to design the disposition. Sizes, booleans,
+       the lease scope and tournament ids only: no player id, bank value or
+       seat leaves the guard, and the string stays inside the publisher's
+       512-character carrier and its character class. */
+    const sizeOf = (value) => (value instanceof Set || value instanceof Map ? value.size : -1);
+    const bankShape = (tableId, engine) => {
+      const seats = new Set(
+        Array.isArray(engine?.seatedPlayers) ? engine.seatedPlayers.map((seat) => seat?.user_id) : []
+      );
+      const banks = engine?.timeBankEngine?.playerBanks;
+      const bankOf = (userId) => banks instanceof Map && banks.has(`${tableId}:${userId}`);
+      const meta = engine?.timeBankMeta instanceof Map ? [...engine.timeBankMeta.keys()] : [];
+      const bankUsers = banks instanceof Map ? [...banks.values()].map((bank) => bank?.playerId) : [];
+      return {
+        stopped: engine?.running === false,
+        seats: seats.size,
+        banks: banks instanceof Map ? banks.size : -1,
+        meta: meta.length,
+        metaUnseated: meta.filter((userId) => !seats.has(userId)).length,
+        metaSeatedWithoutBank: meta.filter((userId) => seats.has(userId) && !bankOf(userId)).length,
+        bankUnseated: bankUsers.filter((userId) => !seats.has(userId)).length,
+      };
+    };
+    const fleetBankCensus = () => {
+      try {
+        let walked = 0;
+        let stopped = 0;
+        let stoppedSeatedMeta = 0;
+        let liveSeatedMeta = 0;
+        let departedMeta = 0;
+        let orphanBank = 0;
+        let permits = 0;
+        let boundaries = 0;
+        const stoppedEvents = new Set();
+        for (const [tableId, engine] of tableMap) {
+          // The same two exclusions the capture loop makes, and no others.
+          if (retainedEngines.has(engine) || neverStarted(tableId, engine)) continue;
+          walked++;
+          const shape = bankShape(tableId, engine);
+          if (shape.stopped) stopped++;
+          if (shape.metaSeatedWithoutBank > 0) {
+            if (shape.stopped) {
+              stoppedSeatedMeta++;
+              const event = engine?.engineLeaseTournamentId;
+              stoppedEvents.add(uuid(event) ? event.slice(0, 8) : 'none');
+            } else {
+              liveSeatedMeta++;
+            }
+          }
+          if (shape.metaUnseated > 0) departedMeta++;
+          if (shape.bankUnseated > 0) orphanBank++;
+          if (engine?.f06CurrentPermit != null || engine?.f06RecoveryInFlight === true) permits++;
+          if (sizeOf(engine?.terminalBoundaryPendingGenerations) !== 0) boundaries++;
+        }
+        return [
+          `fleet=${walked}`,
+          `fleetStopped=${stopped}`,
+          `fleetStoppedSeatedMeta=${stoppedSeatedMeta}`,
+          `fleetLiveSeatedMeta=${liveSeatedMeta}`,
+          `fleetDepartedMeta=${departedMeta}`,
+          `fleetOrphanBank=${orphanBank}`,
+          `fleetF06=${permits}`,
+          `fleetBoundary=${boundaries}`,
+          `stoppedEvents=${[...stoppedEvents].sort().slice(0, 12).join('/') || 'none'}`,
+        ];
+      } catch {
+        return ['fleet=unreadable'];
+      }
+    };
+    const engineRefusalDetail = (tableId, engine, code) => {
+      const shape = bankShape(tableId, engine);
+      const tournament = engine?.engineLeaseTournamentId;
+      const parked = engine?.parkedTimeBanks;
+      return {
+        failedCheck: `captureEngine.${code}`,
+        failedTable: uuid(tableId) ? tableId : describe(tableId),
+        observedDetail: [
+          `stopped=${shape.stopped}`,
+          `terminal=${engine?.terminal === true}`,
+          `scope=${describe(engine?.engineLeaseScope)}`,
+          `tournament=${uuid(tournament) ? tournament : 'none'}`,
+          `seats=${shape.seats}`,
+          `banks=${shape.banks}`,
+          `meta=${shape.meta}`,
+          `metaUnseated=${shape.metaUnseated}`,
+          `metaSeatedWithoutBank=${shape.metaSeatedWithoutBank}`,
+          `bankUnseated=${shape.bankUnseated}`,
+          `parked=${record(parked) ? Object.keys(parked).length : -1}`,
+          // The other per-engine refusals in this capture, by the same rule:
+          // an F06 permit or recovery, work in flight, a boundary generation,
+          // and the accounting registry.
+          `f06=${engine?.f06CurrentPermit != null}/${engine?.f06RecoveryInFlight === true}`,
+          `settling=${sizeOf(engine?.settlementInFlight)}`,
+          `postTasks=${engine?.postHandTasksPromise != null}`,
+          `moves=${sizeOf(engine?.tournamentMoveOperations)}`,
+          `boundary=${sizeOf(engine?.terminalBoundaryPendingGenerations)}/${engine?.terminalBoundaryPersistenceFailed === true}`,
+          `accounting=${sizeOf(engine?.timeBankAccountingPending)}`,
+          ...fleetBankCensus(),
+        ]
+          .join(',')
+          .slice(0, 512),
+      };
+    };
     const captureEngine = (tableId, engine) => {
+      // The same condition, the same code and the same order as the
+      // process-wide `require` it shadows at every call below; this one only
+      // notes which table refused, and its shape, before refusing (see the
+      // observability note above). No outcome can move.
+      const require = (condition, code) => {
+        if (condition) return;
+        noteRefusal(() => engineRefusalDetail(tableId, engine, code));
+        refuse(code);
+      };
       require(uuid(tableId) &&
         engine instanceof modules.base.ServerTableEngineBase &&
         engine.tableId === tableId, 'engine_identity_mismatch');
@@ -1898,18 +2106,57 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         seatIds.add(seat.user_id.toLowerCase());
         seats.set(seat.user_id, seat);
       }
+      /* ═══ A BANK THE ENGINE NO LONGER HOLDS IS NOT CUSTODY (2026-09-22) ═══
+
+         8825 only; every other profile refuses exactly as before. The note
+         above `bankShape` has the source lines. Two shapes the live 8825
+         fleet cannot avoid, and neither is waved through:
+
+         RESIDUE - a bank, or its metadata, for a player this engine no longer
+         seats (a cashout, a move, an eviction, a tournament bust). 8825's own
+         `captureParkedTimeBanks` walks the roster only, so nothing here is
+         written by the checkpoint or restored by its successor. It could
+         still be custody two ways, and both are proved from rows before
+         anything is written: a roster that is merely stale (a live occupancy
+         the engine forgot), so no residue pair may have an open `table_seats`
+         row; and a CASH SEAT MOVE still in transit (the carried presence and
+         bank wait in the process-wide SeatMovePresence map until the
+         destination's seat sweep claims them), so a move out of a residue
+         table into a seat whose capture holds no bank for that occupancy, and
+         executed within the last hour, refuses. An active timer is refused
+         outright.
+
+         DISPOSED - metadata for a seated player on a STOPPED engine whose
+         `stop()` disposed every bank. The live value is already gone and no
+         refusal can bring it back; the metadata is only its accounting mirror
+         (`timeBankAccountingPending`/`Unconfirmed` were required drained
+         above). Only a stopped engine that holds no bank at all qualifies,
+         and its felt is proved quiet from `hand_state_snapshots` (the same
+         120 s predicate as the release gate) before anything is written.
+
+         Both sets are part of the signature, so a set that MOVES between
+         observations refuses as `engine_state_changed`; `proveBanksHeldNothing`
+         reads the rows, and refuses on any row it cannot rule out, any error
+         and any page that fills. */
+      const residue = new Set();
       for (const [key, bank] of engine.timeBankEngine.playerBanks) {
         require(record(bank) &&
           bank.tableId === tableId &&
           uuid(bank.playerId) &&
           key === `${tableId}:${bank.playerId}` &&
-          seats.has(bank.playerId), 'bank_occupancy_mismatch');
+          (seats.has(bank.playerId) ||
+            (retained8825 && bank.isActive === false)), 'bank_occupancy_mismatch');
+        if (!seats.has(bank.playerId)) residue.add(bank.playerId.toLowerCase());
       }
+      const disposed = new Set();
       for (const userId of engine.timeBankMeta.keys()) {
-        require(seats.has(userId) &&
-          engine.timeBankEngine.playerBanks.has(
-            `${tableId}:${userId}`
-          ), 'bank_metadata_without_bank');
+        const seated = seats.has(userId);
+        if (seated && engine.timeBankEngine.playerBanks.has(`${tableId}:${userId}`)) continue;
+        require(retained8825 &&
+          uuid(userId) &&
+          (!seated ||
+            (stopped && engine.timeBankEngine.playerBanks.size === 0)), 'bank_metadata_without_bank');
+        (seated ? disposed : residue).add(userId.toLowerCase());
       }
       const expectedBanks = {};
       for (const [userId, bank] of Object.entries(engine.parkedTimeBanks)) {
@@ -1927,6 +2174,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           if (!Object.hasOwn(expectedBanks, userId)) uninitialized++;
           continue;
         }
+        // DISPOSED above: a stop took the bank; there is nothing live to persist.
+        if (!bank && disposed.has(userId.toLowerCase())) continue;
         require(record(bank) &&
           record(meta) &&
           bank.isActive === false &&
@@ -1954,7 +2203,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         Object.keys(states).length <= maxEntriesPerTable &&
         JSON.stringify(states).length <= 65536, 'presence_bound_or_shape');
       if (stopped) {
-        require(engine.timeBankMeta.size === 0 &&
+        // On 8825 every metadata entry of a stopped engine was classified above
+        // as residue or disposed, and both are proved from rows before a write.
+        require((retained8825 || engine.timeBankMeta.size === 0) &&
           engine.timeBankEngine.playerBanks.size === 0 &&
           Object.keys(engine.parkedTimeBanks).length === 0 &&
           Object.keys(states).length === 0, 'stopped_engine_retains_custody');
@@ -1969,6 +2220,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         ]),
         banks: expectedBanks,
         states,
+        ...(retained8825 ? { residue: [...residue].sort(), disposed: [...disposed].sort() } : {}),
       });
       return {
         tableId,
@@ -1982,6 +2234,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         states,
         signature,
         uninitialized,
+        residue: [...residue].sort(),
+        disposed: [...disposed].sort(),
         pause: engine.handForHandResolve,
         timer: engine.pauseGateTimer,
         bankEngine: engine.timeBankEngine,
@@ -1995,12 +2249,141 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       };
     };
     const retainedEngines = retained8825 ? await captureMixedOriginals() : new Set();
+    /* ═══ AN ENGINE THAT NEVER STARTED HOLDS NOTHING TO CHECKPOINT (2026-09-21) ═══
+
+       The live 8825 engine re-admits the cash table 3c00d4d0 every few seconds:
+       `ensureCashTableEngineAdmission` does `this.tableEngines.set(tableId,
+       engine)` BEFORE `void engine.start()` (GameServer.ts:9665-9684), start()
+       sets `running = true` and `loopPhase = 'start_load_table'` before its
+       first await (ServerTableEngineBase.ts:2960-2965), `checkCrashRecovery`
+       throws `retained_hand_submission_pending`, and the catch runs
+       `killForRestart('start_failed:start_load_table')` (3387), which sets
+       `terminal = true; running = false; handController = null` (4711-4712,
+       4735). `recoverDirectTableEngine` then awaits `engine.stop()` (so
+       `teardownPromise` is a Promise) and only then `tableEngines.delete`
+       (GameServer.ts:1660-1706). The snapshot above caught that object in
+       the map on most attempts, `captureEngine` pinned it, and its scheduled
+       departure refused the whole checkpoint.
+
+       Such an object owns nothing this checkpoint persists. `seatedPlayers` is
+       filled only by `adoptSeatRoster` from the wait-for-players loop, which
+       runs after the `waiting` transition (3217, 4259); `handsDealtThisSession`
+       is incremented only when a hand is dealt (ServerTableEngineDealing.ts:
+       1833); the dealing loop is installed only at the end of start() (3355);
+       and `parkedTimeBanks`/presence are read only after crash recovery
+       (3130-3141). `handCount` is NOT a witness: `seedHandCountFromHistory`
+       (3093) restores the last persisted hand number before the failure.
+
+       The exclusion is the conjunction below and nothing wider: 8825 only,
+       the direct cash lane only (never a tournament-owned table, never a
+       retained original, never an F06 movement admission), loop phase still
+       `not_started`/`start_load_table`, no dealing loop, zero hands dealt this
+       session, no hand controller, no seat, no bank, no bank metadata, no
+       parked bank, no presence state, no in-flight settlement or boundary.
+       Anything else is captured and pinned exactly as before. */
+    const ownedTables = server.tournamentOwnedTables;
+    const neverStarted = (tableId, engine) => {
+      if (!retained8825) return false;
+      try {
+        return (
+          engine instanceof modules.base.ServerTableEngineBase &&
+          engine.tableId === tableId &&
+          !retainedEngines.has(engine) &&
+          ownedTables instanceof Set &&
+          !ownedTables.has(tableId) &&
+          engine.engineLeaseScope === 'cash' &&
+          engine.engineLeaseVerified === true &&
+          engine.f06MovementAdmission === null &&
+          engine.f06CurrentPermit === null &&
+          engine.f06RecoveryInFlight === false &&
+          (engine.loopPhase === 'start_load_table' || engine.loopPhase === 'not_started') &&
+          engine.dealingLoopPromise === null &&
+          engine.handsDealtThisSession === 0 &&
+          engine.handController === null &&
+          Array.isArray(engine.seatedPlayers) &&
+          engine.seatedPlayers.length === 0 &&
+          engine.timeBankMeta instanceof Map &&
+          engine.timeBankMeta.size === 0 &&
+          engine.timeBankEngine?.playerBanks instanceof Map &&
+          engine.timeBankEngine.playerBanks.size === 0 &&
+          record(engine.parkedTimeBanks) &&
+          Object.keys(engine.parkedTimeBanks).length === 0 &&
+          engine.timeBankAccountingPending instanceof Set &&
+          engine.timeBankAccountingPending.size === 0 &&
+          engine.timeBankAccountingUnconfirmed === false &&
+          engine.settlementInFlight instanceof Set &&
+          engine.settlementInFlight.size === 0 &&
+          engine.postHandTasksPromise === null &&
+          engine.tournamentMoveOperations instanceof Set &&
+          engine.tournamentMoveOperations.size === 0 &&
+          engine.terminalBoundaryPendingGenerations instanceof Set &&
+          engine.terminalBoundaryPendingGenerations.size === 0 &&
+          engine.terminalBoundaryPersistenceFailed === false &&
+          (() => {
+            const states = engine.disconnectEngine.getFsmStatesForTable(tableId);
+            return record(states) && Object.keys(states).length === 0;
+          })()
+        );
+      } catch {
+        return false;
+      }
+    };
+    // The watchdog kill and the stop that precede the map delete (8825
+    // ServerTableEngineBase.ts:4711-4712 and 3445, GameServer.ts:1660-1706).
+    const fencedNeverStarted = (tableId, engine) =>
+      neverStarted(tableId, engine) &&
+      engine.terminal === true &&
+      engine.running === false &&
+      engine.teardownPromise instanceof Promise;
+    checkUnstarted = () => {
+      for (const [tableId, tracked] of unstartedTables) {
+        const current = tableMap.get(tableId);
+        if (current === tracked.engine) {
+          // Still the same object, started or fenced: it must still own nothing.
+          witness(
+            'engine_state_changed',
+            [['unstarted.still_unstarted', () => neverStarted(tableId, current)]],
+            () => ({ failedTable: `unstarted_acquired_custody:${tableId}` })
+          );
+        } else if (current === undefined) {
+          // Departed: tolerated only for a fenced object that never dealt.
+          witness(
+            'engine_identity_changed',
+            [['unstarted.departed_fenced', () => fencedNeverStarted(tableId, tracked.engine)]],
+            () => ({ failedTable: `unstarted_departed_unfenced:${tableId}` })
+          );
+          if (!tracked.departed) {
+            tracked.departed = true;
+            unstartedDepartures++;
+          }
+        } else {
+          // Replaced: the old object must be fenced and never have dealt, and the
+          // successor must itself be an unstarted engine; then follow the successor.
+          witness(
+            'engine_identity_changed',
+            [
+              ['unstarted.replaced_fenced', () => fencedNeverStarted(tableId, tracked.engine)],
+              ['unstarted.successor_unstarted', () => neverStarted(tableId, current)],
+            ],
+            () => ({ failedTable: `unstarted_replaced:${tableId}` })
+          );
+          tracked.engine = current;
+          tracked.departed = false;
+          unstartedReplacements++;
+        }
+      }
+    };
     for (const [id, engine] of entries) {
       if (retainedEngines.has(engine)) continue;
       require(!engines.has(engine), 'engine_not_unique');
       require(uuid(id) && !tableIds.has(id.toLowerCase()), 'engine_identity_mismatch');
       tableIds.add(id.toLowerCase());
       engines.add(engine);
+      if (neverStarted(id, engine)) {
+        unstartedTables.set(id, { engine, departed: false });
+        skippedUnstarted++;
+        continue;
+      }
       captures.push(captureEngine(id, engine));
     }
     const checkEngine = (captured) => {
@@ -2027,7 +2410,181 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       for (const captured of captures) checkEngine(captured);
       return remaining;
     };
-
+    // THREE OUTCOMES, as in `proveAbandonedBoundaries`: no row it cannot rule
+    // out is PROVED; a row it cannot rule out refuses; an error, a body that is
+    // not a list or a page that fills is COULD NOT TELL, and refuses. There is
+    // no flag, option or argument that turns a refusal here into permission.
+    // The reads run concurrently (at most eight at a time) between ONE pair of
+    // full re-verifications, so the proof costs one round of reads, not one per
+    // page, inside the publisher's work budget.
+    async function proveBanksHeldNothing(checkAll) {
+      const residueTables = captures.filter((capture) => capture.residue.length > 0);
+      const disposedTables = captures.filter((capture) => capture.disposed.length > 0);
+      if (residueTables.length === 0 && disposedTables.length === 0) return;
+      const lower = (value) => String(value).toLowerCase();
+      const refuseAt = (check, table, code) => {
+        noteRefusal(() => ({ failedCheck: check, failedTable: uuid(table) ? table : describe(table) }));
+        refuse(code);
+      };
+      const chunks = (values, size) => {
+        const out = [];
+        for (let offset = 0; offset < values.length; offset += size) out.push(values.slice(offset, offset + size));
+        return out;
+      };
+      const readAll = async (reads) => {
+        const answers = new Array(reads.length);
+        let next = 0;
+        const worker = async () => {
+          while (next < reads.length) {
+            const index = next++;
+            answers[index] = await reads[index]();
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(8, reads.length) }, worker));
+        return answers;
+      };
+      // A read that fails names which read it was and the error code it got.
+      const answered = (answer, ceiling, code, check) => {
+        if (record(answer) && !answer.error && Array.isArray(answer.data) && answer.data.length <= ceiling)
+          return;
+        const errorCode = answer?.error?.code;
+        noteRefusal(() => ({
+          failedCheck: `proveBanksHeldNothing.${check}`,
+          observedDetail: [
+            `error=${typeof errorCode === 'string' && /^[A-Za-z0-9_]{1,16}$/.test(errorCode) ? errorCode : describe(errorCode)}`,
+            `rows=${Array.isArray(answer?.data) ? answer.data.length : describe(answer?.data)}`,
+            `ceiling=${ceiling}`,
+          ].join(','),
+        }));
+        refuse(code);
+      };
+      const held = new Set(residueTables.flatMap(({ tableId, residue }) =>
+        residue.map((userId) => `${lower(tableId)}:${userId}`)));
+      const residueUsers = [...new Set(residueTables.flatMap(({ residue }) => residue))].sort();
+      checkAll();
+      // 1. Every open seat each residue player holds, at ANY table. One HERE is
+      // a live occupancy the engine no longer holds, and it is never residue.
+      // A player holds at most a handful of seats, so a hundred players stay
+      // far inside the 900-row ceiling, and a page that fills refuses.
+      const open = [];
+      for (const answer of await readAll(chunks(residueUsers, 100).map((users) => () =>
+        modules.client.supabase
+          .from('table_seats')
+          .select('table_id,user_id,occupancy_id')
+          .in('user_id', users)
+          .is('left_at', null)
+          .limit(901)))) {
+        answered(answer, 900, 'bank_residue_unproven', 'openSeatsRead');
+        for (const row of answer.data) {
+          require(record(row) &&
+            uuid(row.table_id) &&
+            uuid(row.user_id) &&
+            uuid(row.occupancy_id), 'bank_residue_unproven');
+          if (held.has(`${lower(row.table_id)}:${lower(row.user_id)}`))
+            refuseAt('proveBanksHeldNothing.openSeatAtResidueTable', row.table_id, 'bank_residue_unproven');
+          open.push(row);
+        }
+      }
+      // 2. A residue player who left a residue table by a CASH SEAT MOVE and
+      // still sits at that move's destination. The source deposited the carried
+      // presence and bank in the process-wide SeatMovePresence map when it ran
+      // the move (8825 ServerTableEngineBase.ts:4059-4061); the destination
+      // claims it only in its seat sweep, after `adoptSeatRoster`, and a park
+      // (or a failed arrival read, retried every 5 s) can come between. A
+      // deposit is claimable for MOVED_PRESENCE_FRESH_MS (10 min,
+      // SeatMovePresence.ts:94, :168) and only this process holds it.
+      //
+      // A destination whose CAPTURE holds a bank for that exact occupancy is
+      // done: the claim made that bank, or a first deal did, and 8825 never
+      // applies a carried bank or presence over a live one (:4233). Every other
+      // open seat of a residue player is asked, through the engine's own
+      // arrivals function (the service role cannot read the receipts table),
+      // whether a cash seat move landed in it; one that executed within the
+      // last hour refuses. A handoff is stamped at most ~16 min after the move
+      // executes (ten moves a table, two attempts, three 15 s fetches each)
+      // and claimable for ten more, so older ones can no longer be claimed.
+      const captureOf = new Map(captures.map((capture) => [lower(capture.tableId), capture]));
+      const pending = new Map();
+      for (const row of open) {
+        const bank = captureOf.get(lower(row.table_id))?.banks?.[row.user_id];
+        if (record(bank) && lower(bank.occupancyId) === lower(row.occupancy_id)) continue;
+        const table = lower(row.table_id);
+        if (!pending.has(table)) pending.set(table, { tableId: row.table_id, occupancies: [] });
+        pending.get(table).occupancies.push(row.occupancy_id);
+      }
+      const arrivals = [];
+      const asked = [...pending.values()].sort((a, b) => (lower(a.tableId) < lower(b.tableId) ? -1 : 1));
+      for (const [index, answer] of (await readAll(asked.map(({ tableId, occupancies }) => () =>
+        modules.client.supabase.rpc('fn_cash_seat_move_arrivals', {
+          p_table_id: tableId,
+          p_occupancy_ids: [...occupancies].sort(),
+        })))).entries()) {
+        require(asked[index].occupancies.length <= 64, 'bank_residue_unproven');
+        answered(answer, 64, 'bank_residue_unproven', 'arrivalsRead');
+        for (const arrival of answer.data) {
+          require(record(arrival) &&
+            uuid(arrival.move_id) &&
+            uuid(arrival.player_id) &&
+            uuid(arrival.from_table_id) &&
+            uuid(arrival.to_table_id) &&
+            uuid(arrival.destination_occupancy_id), 'bank_residue_unproven');
+          // Every arrival in hand counts, whatever its source still shows: a
+          // swap partner, or a source engine replaced after running its move,
+          // leaves no residue there, and its handoff is in transit all the same.
+          arrivals.push(arrival);
+        }
+      }
+      const moveIds = [...new Set(arrivals.map(({ move_id }) => lower(move_id)))].sort();
+      const executedAt = new Map();
+      for (const answer of await readAll(chunks(moveIds, 200).map((ids) => () =>
+        modules.client.supabase
+          .from('cash_seat_moves')
+          .select('id,executed_at')
+          .in('id', ids)
+          .limit(ids.length + 1)))) {
+        answered(answer, 200, 'bank_residue_unproven', 'movesRead');
+        for (const move of answer.data) {
+          require(record(move) && uuid(move.id), 'bank_residue_unproven');
+          executedAt.set(lower(move.id), move.executed_at);
+        }
+      }
+      const claimableSince = Date.now() - 3600000;
+      for (const arrival of arrivals) {
+        const executed = Date.parse(executedAt.get(lower(arrival.move_id)));
+        if (!(Number.isFinite(executed) && executed < claimableSince))
+          refuseAt('proveBanksHeldNothing.seatMoveInTransit', arrival.to_table_id, 'bank_residue_unproven');
+      }
+      // 3. The felt is quiet at every stopped table whose metadata outlived the
+      // banks its stop disposed: the release gate's own predicate.
+      const quietSince = new Date(Date.now() - inflightWindowMs).toISOString();
+      for (const answer of await readAll(chunks(disposedTables.map(({ tableId }) => tableId), readPageSize).map((page) => () =>
+        modules.client.supabase
+          .from('hand_state_snapshots')
+          .select('table_id,hand_number,stage,updated_at')
+          .in('table_id', page)
+          .eq('is_complete', false)
+          .gte('updated_at', quietSince)
+          .limit(page.length + 1)))) {
+        answered(answer, readPageSize, 'stopped_disposed_banks_unproven', 'snapshotsRead');
+        if (answer.data.length > 0)
+          refuseAt('proveBanksHeldNothing.handInTheAir', answer.data[0]?.table_id, 'stopped_disposed_banks_unproven');
+      }
+      checkAll();
+      const events = [...new Set(disposedTables.map(({ engine }) => {
+        const event = engine?.engineLeaseTournamentId;
+        return uuid(event) ? event.slice(0, 8) : 'none';
+      }))].sort();
+      bankDisposition = [
+        `residueTables=${residueTables.length}`,
+        `residuePlayers=${residueTables.reduce((sum, { residue }) => sum + residue.length, 0)}`,
+        `residueOpenSeatsElsewhere=${open.length}`,
+        `arrivalTablesAsked=${asked.length}`,
+        `arrivalsInWindowChecked=${arrivals.length}`,
+        `disposedTables=${disposedTables.length}`,
+        `disposedSeats=${disposedTables.reduce((sum, { disposed }) => sum + disposed.length, 0)}`,
+        `disposedEvents=${events.slice(0, 12).join('/') || 'none'}`,
+      ].join(',').slice(0, 512);
+    }
     // Join the existing announcement/native park writes before taking the final
     // baseline. Pointer equality refuses any newly admitted presence writer.
     const previousWork = await Promise.allSettled(
@@ -2039,6 +2596,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       (entry) => entry.status === 'fulfilled'
     ), 'previous_native_work_unconfirmed');
     checkAll();
+    // Order is load-bearing: the rows prove that the residue and the disposed
+    // banks hold nothing BEFORE any presence or bank row is written.
+    if (retained8825) await proveBanksHeldNothing(checkAll);
     bankCount = captures.reduce((sum, capture) => sum + Object.keys(capture.banks).length, 0);
     uninitializedSeats = captures.reduce((sum, capture) => sum + capture.uninitialized, 0);
     stage = 'checkpoint';

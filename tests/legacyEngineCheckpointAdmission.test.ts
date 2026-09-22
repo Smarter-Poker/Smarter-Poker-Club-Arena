@@ -96,12 +96,11 @@ describe('the exact legacy checkpoint enters the existing release transaction', 
             '-c',
             `set -euo pipefail
 die() { echo "$*" >&2; exit 1; }
-# The physical countdown probe below now DEFERS (75) rather than dying when the
-# break is too short to reach the guard, and demands the reserve plus the
-# measured node-boot budget derived above this slice. Both symbols are declared
-# outside the window this test cuts, so the harness supplies them.
+# The physical countdown probe below DEFERS (75) rather than dying when the
+# break is too short to fit the guard's reserve plus the checkpoint budget.
+# defer is declared outside the window this test cuts, so the harness
+# supplies it.
 defer() { echo "$*" >&2; exit 75; }
-CHECKPOINT_GUARD_ENTRY_MS=1500
 timeout() { printf '%s\\n' "$*"; return "$PREREQUISITE_STATUS"; }
 curl() { printf '%s' "$PREREQUISITE_HEALTH"; }
 CONTROL_DIR=/immutable-reviewed-control
@@ -329,13 +328,65 @@ fi
     ).toContain("die 'legacy checkpoint or cleanup refused; release cannot continue'");
   });
 
-  it('requires the unchanged strict certificate and full reserve after cleanup before prepare', () => {
+  it('requires the unchanged strict certificate at the legacy reserve after cleanup before prepare', () => {
     const invoke = transaction.indexOf('"$LEGACY_CHECKPOINT" "$RUN_ID"');
-    const certificate = transaction.indexOf('maintenance_certificate)', invoke);
+    const certificate = transaction.indexOf(
+      'BREAK_REMAINING_MS="$(maintenance_certificate "$LEGACY_MIN_BREAK_REMAINING_MS")"',
+      invoke
+    );
+    const strictRead = transaction.indexOf(
+      'BREAK_REMAINING_MS="$(maintenance_certificate)"',
+      invoke
+    );
     const refusal = transaction.indexOf(
       '[ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ] && [ "$CERTIFICATE_RC" -ne 0 ]',
       certificate
     );
+    // The legacy reserve is handed over ONLY once the checkpoint was attempted;
+    // the other branch of the same read keeps the strict default.
+    const gate = transaction.lastIndexOf(
+      'if [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ]; then',
+      certificate
+    );
+    expect(gate).toBeGreaterThan(invoke);
+    expect(gate).toBeLessThan(certificate);
+    expect(strictRead).toBeGreaterThan(certificate);
+    expect(strictRead).toBeLessThan(refusal);
+    expect(transaction.slice(gate, strictRead)).toContain('\n  else\n');
+    // The refusal branch, bounded by its own closing `fi` rather than a byte
+    // count (tests/unit/noFixedSizeSourceWindows.test.ts): the anchor is unique
+    // in the transaction, and the branch ends where the shell says it does.
+    expect(
+      sliceBetween(
+        transaction,
+        '[ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ] && [ "$CERTIFICATE_RC" -ne 0 ]',
+        '\n  fi'
+      )
+    ).toContain(
+      'die "legacy checkpoint did not retain the full restart certificate and ${LEGACY_MIN_BREAK_REMAINING_MS}ms legacy reserve'
+    );
+    expect(transaction).toContain('LEGACY_CHECKPOINT_BUDGET_SECONDS=40');
+    expect(transaction).toContain(
+      'LEGACY_MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS - LEGACY_CHECKPOINT_BUDGET_SECONDS) * 1000))'
+    );
+    expect((150 + 135 + 0 - 40) * 1000).toBe(245_000);
+    // The helper's own entry pre-check demands the guard's reserve plus the
+    // whole budget (245000 + 40000 = 285000, the same entry figure the
+    // transaction admitted on), and its hand-off comment names the legacy
+    // figure the caller reads next.
+    expect(checkpointShell).toContain('reserve=245000+40000');
+    expect(245_000 + 40_000).toBe(285_000);
+    expect(checkpointShell).toContain('m.get("remainingMs",0)>=reserve');
+    expect(checkpointShell).toContain('the 245000ms legacy reserve');
+    // 25 of those 40 seconds are exactly the publisher's bounded work and
+    // cleanup; the other 15 are the entry allowance.
+    expect(transaction).toContain('LEGACY_CHECKPOINT_WORK_MS=25000');
+    expect(transaction).toContain(
+      'LEGACY_ENTRY_ALLOWANCE_MS=$((LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000 - LEGACY_CHECKPOINT_WORK_MS))'
+    );
+    expect(40_000 - 25_000).toBe(15_000);
+    expect(checkpointTransport).toContain('workBudgetMs = 20000');
+    expect(checkpointTransport).toContain('cleanupBudgetMs = 5000');
     const persist = transaction.indexOf('\n  persist_break_deadline', refusal);
     const prepare = transaction.indexOf('PREPARE_OUTPUT="$(bounded_break_command', persist);
     expect(certificate).toBeGreaterThan(invoke);

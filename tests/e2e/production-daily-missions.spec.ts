@@ -1611,11 +1611,21 @@ test.describe('production Daily Missions certification', () => {
           // dropped link and own the reconnect: a new routed socket proves the
           // reconnect happened, and the rejoin's SUBSCRIBED status is the only
           // thing allowed to read the cursor.
+          //
+          // The close code must be one a browser script may send: 1000 or
+          // 3000-4999. Playwright performs the server-side close with the page's
+          // own WebSocket, and a reserved code such as 1012 ("service restart")
+          // is refused there without an error reaching this step: neither the
+          // page nor the real server ever saw a close, supabase-js had nothing
+          // to reconnect from, and every post-deploy run from b293beb4e onward
+          // timed out below with the routed socket count unchanged. 4000 is an
+          // application code, the realtime client reconnects after any close it
+          // did not request, and the close is forwarded to the page.
           const socketsBeforeInterruption = interceptedRealtimeSockets;
           const cursorReadsBeforeInterruption = cursorReads;
           for (const server of routedRealtimeServers.splice(0)) {
             try {
-              await server.close({ code: 1012, reason: 'Certification Realtime Interruption' });
+              await server.close({ code: 4000, reason: 'Certification Realtime Interruption' });
             } catch {
               // A side the client already closed is not an interruption failure.
               // The reconnect proof below is what decides that.

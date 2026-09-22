@@ -353,7 +353,16 @@ fi
     expect(strictRead).toBeGreaterThan(certificate);
     expect(strictRead).toBeLessThan(refusal);
     expect(transaction.slice(gate, strictRead)).toContain('\n  else\n');
-    expect(transaction.slice(refusal, refusal + 400)).toContain(
+    // The refusal branch, bounded by its own closing `fi` rather than a byte
+    // count (tests/unit/noFixedSizeSourceWindows.test.ts): the anchor is unique
+    // in the transaction, and the branch ends where the shell says it does.
+    expect(
+      sliceBetween(
+        transaction,
+        '[ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ] && [ "$CERTIFICATE_RC" -ne 0 ]',
+        '\n  fi'
+      )
+    ).toContain(
       'die "legacy checkpoint did not retain the full restart certificate and ${LEGACY_MIN_BREAK_REMAINING_MS}ms legacy reserve'
     );
     expect(transaction).toContain('LEGACY_CHECKPOINT_BUDGET_SECONDS=40');

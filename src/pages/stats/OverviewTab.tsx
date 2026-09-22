@@ -13,6 +13,7 @@ import PanelBoundary from '../../components/stats/PanelBoundary';
 import { playerDisplayName } from '../../utils/playerDisplayName';
 import type { playerStyleFromStats } from '../../components/stats/playerStyleFromStats';
 import { StatRow } from './StatRow';
+import { SCOPE_ALL_GAMES, SCOPE_CASH, ratioOrUnmeasured } from './format';
 import { RANGES, type FullStats, type OverallStats, type HandEvidenceFilter } from './types';
 
 const NemesisPanel = lazy(() => import('../../components/stats/NemesisPanel'));
@@ -24,6 +25,7 @@ export interface OverviewTabProps {
   full: FullStats | null;
   rangeKey: string;
   rangeLabel: string;
+  /** Display-ready, including the `%`, or Not Yet Measured (the page formats it). */
   showdownWinRate: string;
   handsWonPct: number;
   isOwnProfile: boolean;
@@ -63,21 +65,56 @@ export default function OverviewTab({
         </div>
         <span>{RANGES.find((r) => r.key === rangeKey)?.label ?? 'All'} Window</span>
       </div>
+      {/* STATS CONTRACT TRUTH (2026-09-20). One grid, two populations: the
+          scope tag says which hands each row counts (see StatRow `scope`),
+          and a rate over an empty sample says Not Yet Measured instead of a
+          confident zero (see ratioOrUnmeasured). Rows whose label already
+          names the population ("Cash Hands") are not tagged twice. */}
       <div className="stats-grid stats-overview-grid">
-        <StatRow label="VPIP" value={`${(overall.vpip * 100).toFixed(1)}%`} color="#00d4ff" />
-        <StatRow label="PFR" value={`${(overall.pfr * 100).toFixed(1)}%`} color="#8b5cf6" />
+        <StatRow
+          label="VPIP"
+          value={`${(overall.vpip * 100).toFixed(1)}%`}
+          color="#00d4ff"
+          scope={SCOPE_ALL_GAMES}
+        />
+        <StatRow
+          label="PFR"
+          value={`${(overall.pfr * 100).toFixed(1)}%`}
+          color="#8b5cf6"
+          scope={SCOPE_ALL_GAMES}
+        />
+        {/* Aggressive actions over CALL actions. The payload does not carry
+            call_actions, and with none the SQL returns the raw aggressive
+            count, which is not a ratio; the empty sample the client can prove
+            is "no hands scored", so that is the one that stops printing a
+            number here. */}
         <StatRow
           label="Aggression Factor"
-          value={overall.aggression_factor.toFixed(2)}
+          value={ratioOrUnmeasured(overall.aggression_factor, overall.total_hands, (v) =>
+            v.toFixed(2)
+          )}
           color="#f59e0b"
+          scope={SCOPE_ALL_GAMES}
         />
         <StatRow
           label="Hours Played"
           value={`${overall.hours_played.toFixed(1)}h`}
           color="#06b6d4"
+          scope={SCOPE_ALL_GAMES}
         />
-        <StatRow label="Showdown Win %" value={`${showdownWinRate}%`} color="#22c55e" />
-        <StatRow label="BB/100" value={overall.bb_per_100.toFixed(2)} color="#4169E1" highlight />
+        <StatRow
+          label="Showdown Win %"
+          value={showdownWinRate}
+          color="#22c55e"
+          scope={SCOPE_ALL_GAMES}
+        />
+        <StatRow
+          label="BB/100"
+          value={ratioOrUnmeasured(overall.bb_per_100, overall.cash_hands, (v) => v.toFixed(2))}
+          color="#4169E1"
+          highlight
+          scope={SCOPE_CASH}
+        />
         <StatRow label="Cash Hands" value={overall.cash_hands.toLocaleString()} color="#00d4ff" />
         <StatRow
           label="Tournament Hands"

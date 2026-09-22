@@ -9,6 +9,7 @@
  * the page, where `printing` can override them for the dossier.
  */
 import { StatRow } from './StatRow';
+import { ratioOrUnmeasured } from './format';
 import { num, type FullStats, type OverallStats, type TournamentSummary } from './types';
 
 export interface TournamentsTabProps {
@@ -27,9 +28,17 @@ export default function TournamentsTab({ tourn, overall, full }: TournamentsTabP
         <div className="stats-grid">
           <StatRow label="Entries" value={tourn.entries.toLocaleString()} color="#00d4ff" />
           <StatRow label="Cashes" value={tourn.cashes.toLocaleString()} color="#22c55e" />
+          {/* STATS CONTRACT TRUTH (2026-09-20). ITM is cashes over ENTRIES and
+              ROI is net over BUY-INS; the SQL writes 0 for both when the
+              denominator is empty, and "0.0%" read as a run of bad results
+              rather than an empty record. */}
           <StatRow
             label="ITM %"
-            value={`${(tourn.itm_percent * 100).toFixed(1)}%`}
+            value={ratioOrUnmeasured(
+              tourn.itm_percent * 100,
+              tourn.entries,
+              (v) => `${v.toFixed(1)}%`
+            )}
             color="#10b981"
           />
           <StatRow label="Wins" value={tourn.wins.toLocaleString()} color="#f59e0b" />
@@ -56,8 +65,13 @@ export default function TournamentsTab({ tourn, overall, full }: TournamentsTabP
           />
           <StatRow
             label="ROI"
-            value={`${(tourn.roi * 100).toFixed(1)}%`}
-            color={tourn.roi >= 0 ? '#22c55e' : '#ef4444'}
+            value={ratioOrUnmeasured(
+              tourn.roi * 100,
+              tourn.total_buyins,
+              (v) => `${v.toFixed(1)}%`
+            )}
+            // An unmeasured return has no sign, so it gets no win or loss colour.
+            color={tourn.total_buyins > 0 ? (tourn.roi >= 0 ? '#22c55e' : '#ef4444') : '#94a3b8'}
           />
           <StatRow
             label="Tournament Hands"

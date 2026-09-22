@@ -66,6 +66,12 @@
 }
 
 .heroCopy {
+  /* The copy column is the title's container: every title size below is capped
+     at 18cqi, because the longest title word, CHALLENGES, measures 5.446em in
+     the hero face (Rajdhani 600, 0.025em tracking). The cap only engages when
+     that word would not fit the column; before it, 200% text set the title at
+     64px in a 307px phone column and overflow-wrap split it mid-word. */
+  container-type: inline-size;
   position: relative;
   z-index: 4;
   display: flex;
@@ -112,7 +118,7 @@
   max-width: 600px;
   margin: 14px 0 12px;
   color: var(--mission-white);
-  font-size: clamp(3.2rem, 6vw, 5.25rem);
+  font-size: min(clamp(3.2rem, 6vw, 5.25rem), 18cqi);
   font-weight: 500;
   line-height: 0.86;
   letter-spacing: 0.04em;

@@ -72,3 +72,30 @@ navigates to the club home, ``routeClubId ? `/clubs/${routeClubId}` : '/'``,
 with `routeClubId` from `useClubWorkspace()`, the page's own source.
 `ClubWorkspaceContext` is already in the entry bundle through `AppLayout`, so
 the route shell chunk gains no module.
+
+## The lobby tile label prints inside the art's title plate
+
+Rendered on the published bundle at a 393px phone, the Challenge Vault tile's
+live label wrapped "Daily Challenges" to two lines and "Open Challenge Vault"
+to three, covering the lower 40% of the art; at 1440px the status line sat on
+the frame's bottom rail. Two causes. First, the lobby tile images were inline,
+so each wrapper's line box added a ~7.7px descender gap: the wrapper measured
+64.2x104 instead of the 64.2x96.3 its 2:3 aspect ratio asks for, the four fill
+tiles were stretched about 8%, and the native vault render was letterboxed, so
+no percentage in the label mapped onto the art. The tile image is now a block,
+which makes every wrapper exactly 2:3 (measured 64.2x96.3 at 393px, 160x240 at
+1440px). Second, the label was sized by the viewport and allowed to wrap. It
+now prints inside the dark leather plate the art paints across its foot (88.5%
+to 95.5% of the art's height), sized by the tile's own width through a
+container on the wrapper, always on one line; the status joins the title only
+where the plate is tall enough for both lines (tiles 140px and wider).
+
+## 200% text no longer splits the page title mid-word
+
+At 200% root text on a 393px phone the hero title rendered at 64px (the mobile
+rule's 2rem floor) in a 307px column, and `overflow-wrap: anywhere` broke
+"CHALLENGES" into "CHALLENG / ES". The longest title word measures 5.446em in
+the hero face, so every title size is now capped at 18cqi of the copy column,
+which is its container. The cap only engages when that word would not fit: at
+normal text sizes the title is unchanged, and at 200% it measured 55.26px with
+the word 301px wide in the 307px column.

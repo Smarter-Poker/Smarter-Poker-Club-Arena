@@ -4,8 +4,10 @@
  * Every door into /challenges keeps the club the player is standing in, the
  * tile intent warms the lazy route shell App.tsx actually mounts, the
  * completion toast is itself a door, the painted route shell paints the
- * accent of the page that replaces it, and Go Back on a cold deep link has
- * somewhere to go. One `it` per fix; the reasons are in
+ * accent of the page that replaces it, Go Back on a cold deep link has
+ * somewhere to go, the lobby tile's live label prints inside the art's title
+ * plate, and 200% text never splits the page title mid-word. One `it` per
+ * fix; the reasons are in
  * docs/changelog/2026-09-22-daily-challenges-entry-parity.md.
  */
 import { readFileSync } from 'node:fs';
@@ -183,5 +185,59 @@ describe('every Daily Challenges entry keeps the club and the shell paints the p
     expect(crash).toContain("navigate(routeClubId ? `/clubs/${routeClubId}` : '/');");
     expect(crash).toContain('onClick={goBack}');
     expect(fallback).not.toContain('onClick={() => window.history.back()}');
+  });
+
+  it('the lobby tile image is a block, so its wrapper is the exact 2:3 box the art needs', () => {
+    // An inline <img> left a ~7.7px descender gap under every lobby tile: the
+    // wrapper measured 64.2x104 at a 393px phone instead of 64.2x96.3, the
+    // fill tiles stretched about 8% and the native vault render letterboxed.
+    const homeCss = read('src/pages/HomePage.module.css');
+    const tileImage = between(homeCss, '.tileImage {', '}');
+    expect(tileImage).toContain('display: block;');
+    expect(tileImage).toContain('height: 100%;');
+    expect(homeCss).toMatch(/\.tileImageWrapper\s*\{[^}]*aspect-ratio:\s*2 \/ 3/s);
+  });
+
+  it('the Challenge Vault label prints on one line inside the art title plate, sized by the tile', () => {
+    const homeCss = read('src/pages/HomePage.module.css');
+    // The wrapper holding the native render is the label's container.
+    expect(homeCss).toContain(
+      '.tileImageWrapper:has(> .tileImageNative) {\n  container-type: inline-size;'
+    );
+    // The plate runs from 88.5% to 95.5% of the art's height.
+    const label = between(homeCss, '.tileLabel {', '}');
+    expect(label).toContain('top: 88.5%;');
+    expect(label).toContain('bottom: 4.5%;');
+    expect(label).not.toContain('bottom: 3.8%;');
+    const title = between(homeCss, '.tileLabel strong {', '}');
+    expect(title).toContain('white-space: nowrap;');
+    expect(title).toMatch(/font-size:\s*min\([\d.]+cqi,/);
+    expect(title).not.toContain('vw');
+    // The status only prints where the plate is tall enough for two lines.
+    const status = between(homeCss, '.tileLabel small {', '}');
+    expect(status).toContain('display: none;');
+    expect(status).toContain('white-space: nowrap;');
+    const wide = between(homeCss, '@container (min-width: 140px) {', '\n}\n');
+    expect(wide).toContain('.tileLabel small {\n    display: block;');
+  });
+
+  it('200% text shrinks the page title to fit its column instead of splitting CHALLENGES', () => {
+    const base = read('src/pages/daily-challenges/10-hero.base.module.css');
+    expect(between(base, '.heroCopy {', '}')).toContain('container-type: inline-size;');
+    const partials = [
+      '10-hero.base.module.css',
+      '10-hero.realism.module.css',
+      '99-media.base.module.css',
+      '99-media.command.module.css',
+      '99-media.realism.module.css',
+    ];
+    for (const partial of partials) {
+      const css = read(`src/pages/daily-challenges/${partial}`);
+      const title = between(css, '.heroCopy h1 {', '}');
+      const size = title.match(/font-size:\s*([^;]+);/);
+      expect(size, `${partial} sets the title size`).not.toBeNull();
+      // Every title size is capped by the column: CHALLENGES is 5.446em wide.
+      expect(size![1], partial).toMatch(/^min\(.*,\s*18cqi\)$/);
+    }
   });
 });

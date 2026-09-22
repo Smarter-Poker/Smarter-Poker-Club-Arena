@@ -63,7 +63,7 @@
 
   .heroCopy h1 {
     margin-top: 12px;
-    font-size: clamp(2.9rem, 16vw, 4.25rem);
+    font-size: min(clamp(2.9rem, 16vw, 4.25rem), 18cqi);
   }
 
   .heroCopy > p {

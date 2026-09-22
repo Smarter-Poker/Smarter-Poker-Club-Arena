@@ -61,7 +61,7 @@
 
   .heroCopy h1 {
     margin-block: 9px 7px;
-    font-size: min(12vw, 3.75rem);
+    font-size: min(12vw, 3.75rem, 18cqi);
   }
 
   .heroCopy > p {

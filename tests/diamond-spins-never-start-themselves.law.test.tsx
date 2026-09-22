@@ -30,7 +30,7 @@
  * exist, and the page does not import one.
  */
 vi.mock('../src/hooks/useLiveBonusGuard', () => ({ useLiveBonusGuard: () => () => {} }));
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -42,6 +42,7 @@ const backend = vi.hoisted(() => ({
   spin: vi.fn(),
   runBegin: vi.fn(),
   runEnd: vi.fn(),
+  pick: vi.fn(),
   navigate: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
@@ -52,6 +53,7 @@ vi.mock('../src/services/DiamondWheelService', () => ({
     spinV2: backend.spin,
     runBegin: backend.runBegin,
     runEnd: backend.runEnd,
+    pickDiamondCard: backend.pick,
     welcomeState: async () => ({ available: false, enabled: false }),
     dailyBonusState: async () => ({ available: false, ticket_count: 0 }),
     history: async () => [],
@@ -91,6 +93,24 @@ const wheel = receipts.filter((r) => r.kind === 'wheel').map((r) => r.value as a
 const chips = wheel.find((r) => r.outcome.kind === 'chips' && r.entry_value_diamonds === 100)!;
 const bonus = wheel.find((r) => r.outcome.kind === 'bonus' && !r.welcome && !r.daily_bonus)!;
 const upgrade = wheel.find((r) => r.outcome.kind === 'upgrade')!;
+/* R15: a Diamonds spin seals three cards and pays nothing until one is
+   turned over, so it is one more thing that must never happen by itself. */
+const CARD_AWARD = 'd1000000-0000-4000-8000-0000000000c1';
+const diamonds = wheel.find((r) => r.outcome.kind === 'diamonds')!;
+const withCards = (attempt: any) => {
+  const base = sealed(diamonds, attempt);
+  return {
+    ...base,
+    outcome: {
+      ...base.outcome,
+      cards: {
+        award_id: CARD_AWARD,
+        risk_diamonds: attempt.entryDiamonds,
+        status: 'pending',
+      },
+    },
+  };
+};
 const state = {
   ok: true,
   contract_version: 2,
@@ -171,6 +191,7 @@ const nothingHappened = () => {
   expect(backend.spin).not.toHaveBeenCalled();
   expect(backend.runBegin).not.toHaveBeenCalled();
   expect(backend.navigate).not.toHaveBeenCalled();
+  expect(backend.pick).not.toHaveBeenCalled();
 };
 
 describe('the wheel page never presses Spin or opens a game without a tap', () => {
@@ -273,6 +294,33 @@ describe('the wheel page never presses Spin or opens a game without a tap', () =
     fireEvent.click(screen.getByRole('button', { name: 'Play Game' }));
     expect(backend.navigate).toHaveBeenCalledTimes(1);
     expect(backend.spin).toHaveBeenCalledTimes(1);
+  });
+
+  it('a won diamonds game waits for Pick A Card, and then for a card', async () => {
+    await ready();
+    backend.spin.mockImplementation(async (attempt) => withCards(attempt));
+    fireEvent.click(screen.getByRole('button', { name: 'Spin 100', exact: true }));
+    await wait(0);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Land Wheel' }));
+    });
+    await act(async () => {
+      fireEvent.animationEnd(screen.getByRole('dialog').querySelector('[data-motion="keep"]')!);
+    });
+    // The reveal stays, and nothing turns a card over while it does.
+    await wait(TWO_MINUTES);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(backend.pick).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Pick A Card' }));
+    await wait(0);
+    const cards = screen.getByRole('dialog', { name: 'Diamond Card Pick' });
+    // Three face-down cards, and two minutes in which none of them turns over.
+    expect(within(cards).getByRole('button', { name: 'Card One' })).toBeEnabled();
+    await wait(TWO_MINUTES);
+    expect(backend.pick).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Diamond Card Pick' })).toBeInTheDocument();
+    expect(backend.spin).toHaveBeenCalledTimes(1);
+    expect(backend.navigate).not.toHaveBeenCalled();
   });
 
   it('a run found open at the server on load waits for Resume Run', async () => {

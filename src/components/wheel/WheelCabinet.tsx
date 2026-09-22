@@ -3,7 +3,7 @@ import type { DeckBay } from '../console/DeckConsole';
 import { type PlateButtonProps, type ConsoleInk } from '../console/SpadeConsole';
 import { WheelPrizeArt } from './WheelPrizeArt';
 import { wheelPrizeTitle } from './WheelExperience';
-import type { WheelSegment } from '../../services/DiamondWheelService';
+import type { WheelSegment, WheelSegmentKind } from '../../services/DiamondWheelService';
 import styles from './WheelCabinet.module.css';
 
 /** The wheel and its attached controls share one available play viewport. */
@@ -80,10 +80,78 @@ export function WheelCabinet({
   );
 }
 
-export function WheelPrizeGallery({ segments }: { segments: WheelSegment[] }) {
+/**
+ * THE MIX THE PLAYER ACTUALLY FACES (owner ruling 2026-09-21, R13, and the
+ * wheel v4 contract, section 1). Three buckets, read off the table the server
+ * sent and never written down here: GAMES is the four bonus games, the
+ * Diamonds cards and the Upgrade that opens the Super games; CHIPS is the
+ * instant chip wins; ITEMS is Throwables, Time Bank and Rabbit Hunt.
+ *
+ * It is computed from the segments because that is the only honest source: a
+ * VIP is served a table with no items on it at all (R2), a host may lock a
+ * tier, and a number typed into this file would keep saying 20% after the
+ * server had stopped sending any.
+ */
+const MIX_BUCKETS: Record<'games' | 'chips' | 'items', WheelSegmentKind[]> = {
+  games: ['bonus', 'diamonds', 'upgrade'],
+  chips: ['chips'],
+  items: ['throwables', 'time_bank', 'rabbit_hunt'],
+};
+
+export function wheelPrizeMix(segments: WheelSegment[]): {
+  games: number;
+  chips: number;
+  items: number;
+} {
+  const weigh = (list: WheelSegment[]) =>
+    list.reduce((sum, s) => sum + (s.weight > 0 ? s.weight : 0), 0);
+  const total = weigh(segments);
+  const share = (kinds: WheelSegmentKind[]) =>
+    total > 0 ? weigh(segments.filter((s) => kinds.includes(s.kind))) / total : 0;
+  return {
+    games: share(MIX_BUCKETS.games),
+    chips: share(MIX_BUCKETS.chips),
+    items: share(MIX_BUCKETS.items),
+  };
+}
+
+/**
+ * A share as the player reads it: one decimal, ALWAYS ROUNDED DOWN so a
+ * figure is never overstated, and a trailing .0 dropped - the same rule
+ * compactChips follows for money (Dan 2026-09-09).
+ */
+export function sharePercent(fraction: number): string {
+  const tenths = Math.floor(Math.max(0, fraction) * 1000) / 10;
+  return `${Number.isInteger(tenths) ? tenths : tenths.toFixed(1)}%`;
+}
+
+export function WheelPrizeGallery({
+  segments,
+  vip = false,
+}: {
+  segments: WheelSegment[];
+  /** This player holds an active or lifetime VIP card (`state.vip`, R2). */
+  vip?: boolean;
+}) {
+  const mix = wheelPrizeMix(segments);
   return (
     <section className={styles.prizes} aria-label="Wheel Prizes">
       <h2>{segments.length === 12 ? 'The Twelve Prizes' : 'The Prizes'}</h2>
+      {mix.games > 0 && (
+        <p>
+          A Bonus Game Or The Diamond Cards {sharePercent(mix.games)} Of The Time. Instant Chip Wins{' '}
+          {sharePercent(mix.chips)}.
+          {mix.items > 0
+            ? ` Throwables, Time Banks And Rabbit Hunts ${sharePercent(mix.items)}.`
+            : ''}
+        </p>
+      )}
+      {vip && (
+        <p>
+          Your VIP Card Pays Throwables, Time Banks And Rabbit Hunts As Instant Chip Wins Instead.
+        </p>
+      )}
+      {mix.games > 0 && <p>Never The Same Prize Twice In A Row.</p>}
       {segments.some((s) => s.kind === 'upgrade') && (
         <p>Land On A Bonus Game To Play. Upgrade Opens Super Games And Instant Chip Wins.</p>
       )}

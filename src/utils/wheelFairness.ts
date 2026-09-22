@@ -1,5 +1,5 @@
 import type {
-  WheelCardPick,
+  WheelCardPickConfirmed,
   WheelDrawDomain,
   WheelPreviousOutcome,
   WheelSpinResult,
@@ -320,7 +320,7 @@ const CARD_ORDERS: ReadonlyArray<readonly [number, number, number]> = [
   [2, 1, 0],
 ];
 
-export async function verifyWheelCardPick(pick: WheelCardPick): Promise<WheelCardVerdict> {
+export async function verifyWheelCardPick(pick: WheelCardPickConfirmed): Promise<WheelCardVerdict> {
   const { fairness, risk_diamonds: risk } = pick;
   const computedHash = await sha256Hex(fairness.server_seed);
   const hmac = await hmacSha256Hex(

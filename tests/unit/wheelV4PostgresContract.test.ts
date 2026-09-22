@@ -13,7 +13,7 @@ import v3fixture from '../fixtures/diamond-spins/wheel-v3-postgres-receipts.json
 const rpc = vi.hoisted(() => vi.fn());
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc } }));
 import service, {
-  type WheelCardPick,
+  type WheelCardPickConfirmed,
   type WheelSpinResult,
 } from '../../src/services/DiamondWheelService';
 import {
@@ -150,14 +150,41 @@ describe('real PostgreSQL wheel v4 receipts', () => {
 
   it('Diamonds seals three cards, pays one on the pick and reveals all three', async () => {
     const spin = by('wheel-v4-cards') as WheelSpinResult;
-    const pick = by('wheel-v4-card-pick') as WheelCardPick;
-    const replay = by('wheel-v4-card-pick-replay') as WheelCardPick;
+    const pick = by('wheel-v4-card-pick') as WheelCardPickConfirmed;
+    const replay = by('wheel-v4-card-pick-replay') as WheelCardPickConfirmed;
     expect(spin.outcome.kind).toBe('diamonds');
     expect(spin.outcome.cards).toEqual({
       award_id: pick.award_id,
       risk_diamonds: spin.entry_value_diamonds,
       status: 'pending',
     });
+    /* WHAT `amount` MEANS ON A PENDING DIAMONDS OUTCOME. Every other outcome
+       carries what it PAID there; this one has paid nothing yet and carries
+       what is RISKED, which is the spin's own entry. The two rules in
+       wheelAward - a non-bonus outcome's amount is above zero, and a v4
+       Diamonds amount equals cards.risk_diamonds - only agree because the
+       server writes exactly that, so the server's own bytes pin it here: the
+       amount is the risk, it is the entry, it is positive, and value_chips is
+       that risk at the bridge rate rather than any of the three prizes. */
+    expect(spin.outcome.amount).toBe(spin.outcome.cards!.risk_diamonds);
+    expect(spin.outcome.amount).toBe(spin.entry_value_diamonds);
+    expect(spin.outcome.amount).toBeGreaterThan(0);
+    expect(spin.outcome.value_chips).toBeCloseTo(
+      spin.entry_value_diamonds! / spin.diamonds_per_chip!,
+      9
+    );
+    // Nothing is paid at the spin: the three values are worth 11/6 of the risk
+    // and none of them is on the receipt.
+    expect(spin.outcome.value_chips).toBeLessThan(
+      (3 * spin.entry_value_diamonds!) / spin.diamonds_per_chip!
+    );
+    expect(() => assertWheelAward(spin)).not.toThrow();
+    // The validator holds the server to it, both ways.
+    for (const broken of [
+      { ...spin, outcome: { ...spin.outcome, amount: 0 } },
+      { ...spin, outcome: { ...spin.outcome, amount: spin.outcome.amount + 1 } },
+    ])
+      expect(() => assertWheelAward(broken as WheelSpinResult)).toThrow();
     // The spin never carries the values.
     expect(JSON.stringify(spin.outcome.cards)).not.toContain('values');
     expect(pick.spin_id).toBe(spin.spin_id);

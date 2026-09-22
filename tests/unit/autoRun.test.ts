@@ -79,7 +79,7 @@ describe('the plate cycles Off, 5, 10, 25, 50, Off', () => {
  * the receipt already carries the server's settlement.
  */
 describe('the wheel run tallies what each spin landed on', () => {
-  const run: WheelRun = { runId: 'run', total: 5, done: 0, prizes: [], games: [] };
+  const run: WheelRun = { runId: 'run', total: 5, done: 0, prizes: [], games: [], cards: [] };
   const title = (o: WheelSpinResult['outcome']) => `${o.amount} ${o.kind}`;
   const spin = (over: Record<string, unknown>) =>
     ({

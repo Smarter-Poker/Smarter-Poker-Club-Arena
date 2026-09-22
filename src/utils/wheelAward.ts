@@ -147,6 +147,11 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
           s.multiplier === outcome.multiplier
       ) ||
       outcome.kind === 'nothing' ||
+      /* Every prize that is not a game names something above zero. A pending
+         Diamonds outcome (contract 4, R15) is the one that names a RISK rather
+         than a payment: it has paid nothing yet, and its amount is the spin's
+         own entry, which the block below holds to cards.risk_diamonds. Both
+         readings are positive, so this guard is the same guard for it. */
       (!['bonus', 'upgrade'].includes(outcome.kind) && outcome.amount <= 0)
     )
       fail();

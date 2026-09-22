@@ -116,6 +116,76 @@ export interface WheelBonusAward {
 }
 
 /**
+ * THE DIAMONDS THREE-CARD GAME (owner ruling 2026-09-21, R15). Landing on
+ * Diamonds pays nothing at the spin: it seals three cards worth half, double
+ * and triple the diamonds risked, in an order only the server knows, and the
+ * player turns one over. This is the unpicked award as the wheel state and the
+ * run summary carry it; the values stay sealed until the pick.
+ */
+export interface WheelCardAward {
+  id: string;
+  spin_id: string;
+  /** The diamonds this spin risked: the half, double and triple are of this. */
+  risk_diamonds: number;
+  /** When the wheel sealed it; absent from a receipt's own `cards`. */
+  created_at?: string;
+}
+
+/** The same award as the spin receipt carries it, before any pick is made. */
+export interface WheelSpinCards {
+  award_id: string;
+  risk_diamonds: number;
+  status: 'pending' | 'picked';
+}
+
+/** The sealed order, revealed with the pick and checkable against the draw. */
+export interface WheelCardFairness {
+  domain?: 'wheel-v4-cards';
+  roll: number;
+  permutation: number;
+  server_seed: string;
+  server_seed_hash: string;
+  client_seed: string;
+  nonce: number;
+}
+
+/**
+ * What the pick returns: the three values BY CARD POSITION, which card was
+ * turned over and what it paid. Picking the same award again returns the same
+ * answer and moves nothing twice, so `picked` is the server's record of the
+ * first pick and not necessarily the card just tapped.
+ */
+export interface WheelCardPick {
+  ok: boolean;
+  error?: string;
+  /** The server answered a pick it had already made: nothing moved twice. */
+  replayed?: boolean;
+  award_id: string;
+  /** The spin that sealed the award; absent from a refusal. */
+  spin_id?: string;
+  picked: number;
+  cards: number[];
+  paid_diamonds: number;
+  /** The diamonds risked, which the three values are half, double and triple of. */
+  risk_diamonds?: number;
+  value_chips?: number;
+  balances: { diamonds: number };
+  fairness?: WheelCardFairness;
+}
+
+/**
+ * A pick the server confirmed. Only a confirmed pick can be checked, so this is
+ * what the fairness verifier takes: a refusal has no seed, no risk and no
+ * order behind it, and there is nothing in it to recompute.
+ */
+export type WheelCardPickConfirmed = WheelCardPick & {
+  ok: true;
+  spin_id: string;
+  risk_diamonds: number;
+  fairness: WheelCardFairness;
+};
+
+/**
  * A MULTI-SPIN RUN THE PLAYER STARTED (owner ruling 2026-09-21, R18). The
  * server keeps it, so a refresh mid-run comes back to "Resume Run" rather than
  * to a wheel that forgot. `spins_done` counts spins the server executed, which
@@ -152,6 +222,12 @@ export interface WheelState {
   welcome?: { available: boolean; entry_diamonds: number };
   /** Every bonus game won and not yet played, oldest first. Empty on an older server. */
   pending_awards?: WheelBonusAward[];
+  /** Every Diamonds card award still unpicked, oldest first (R15). Empty on an older server. */
+  pending_cards?: WheelCardAward[];
+  /** This player holds an active or lifetime VIP card, so items are chip wins (R2). */
+  vip?: boolean;
+  /** The server's prize model, 'wheel-v4' from the R13 mix onward. */
+  model_version?: string;
   /** The open run, or null when none is open (and on an older server). */
   auto_run?: WheelAutoRun | null;
   ok: boolean;
@@ -284,41 +360,6 @@ export interface WheelFairness {
   weights?: number[];
 }
 
-/**
- * THE THREE-CARD GAME (owner ruling 2026-09-21, R15). A Diamonds outcome pays
- * nothing at the spin: it seals three cards worth half, double and triple the
- * diamonds risked. The values stay sealed until the player picks.
- */
-export interface WheelCardAward {
-  award_id: string;
-  risk_diamonds: number;
-  status: 'pending';
-}
-
-export interface WheelCardPick {
-  ok: boolean;
-  error?: string;
-  replayed?: boolean;
-  award_id: string;
-  spin_id: string;
-  picked: number;
-  /** All three prizes, by card position, revealed once the pick is made. */
-  cards: number[];
-  paid_diamonds: number;
-  risk_diamonds: number;
-  value_chips?: number;
-  balances: { diamonds: number };
-  fairness: {
-    domain: 'wheel-v4-cards';
-    roll: number;
-    permutation: number;
-    server_seed: string;
-    server_seed_hash: string;
-    client_seed: string;
-    nonce: number;
-  };
-}
-
 export interface WheelSpinResult {
   contract_version?: WheelContractVersion;
   /** The draw model this receipt was produced by, from contract 4 on. */
@@ -352,8 +393,8 @@ export interface WheelSpinResult {
     game?: WheelBonusGame;
     multiplier?: number;
     grants?: WheelInventoryGrant[];
-    /** A Diamonds outcome from contract 4: the sealed three-card game it opened. */
-    cards?: WheelCardAward;
+    /** A Diamonds outcome's sealed three-card award (R15); absent before v4. */
+    cards?: WheelSpinCards;
   };
   bonus?: WheelBonusAward;
   /** The open run this spin belonged to, when one was open (owner ruling R18). */
@@ -500,6 +541,50 @@ function normaliseAward(raw: Record<string, unknown>): WheelBonusAward {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * An unpicked card award, or nothing (R15). A row without a real award id, or
+ * without the diamonds it risked, is not an award the player can be sent to
+ * pick: the card popup would have nothing to pay and nothing to name, so it is
+ * dropped here rather than shown as a pick that cannot be made.
+ */
+function normaliseCardAward(raw: unknown): WheelCardAward | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const card = raw as Record<string, unknown>;
+  const id = String(card.id ?? '');
+  const spin_id = String(card.spin_id ?? '');
+  const risk_diamonds = num(card.risk_diamonds);
+  if (!UUID.test(id) || !Number.isFinite(risk_diamonds) || risk_diamonds <= 0) return null;
+  return {
+    id,
+    spin_id,
+    risk_diamonds,
+    ...(typeof card.created_at === 'string' ? { created_at: card.created_at } : {}),
+  };
+}
+
+/** The queue of unmade card picks. Absent (older server) and malformed both read as none. */
+function normaliseCardAwards(raw: Record<string, unknown>): WheelCardAward[] {
+  if (!Array.isArray(raw.pending_cards)) return [];
+  return raw.pending_cards
+    .map(normaliseCardAward)
+    .filter((card): card is WheelCardAward => card !== null);
+}
+
+/** The receipt's own sealed award. Only a PENDING award opens the card game. */
+function normaliseSpinCards(raw: unknown): WheelSpinCards | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const cards = raw as Record<string, unknown>;
+  const award_id = String(cards.award_id ?? '');
+  const risk_diamonds = num(cards.risk_diamonds);
+  if (!UUID.test(award_id) || !Number.isFinite(risk_diamonds) || risk_diamonds <= 0)
+    return undefined;
+  return {
+    award_id,
+    risk_diamonds,
+    status: cards.status === 'picked' ? 'picked' : 'pending',
+  };
+}
+
 /** The queue of unplayed bonus games. `pending_awards` is the R18 contract; `awards` the older name. */
 function normaliseAwards(raw: Record<string, unknown>): WheelBonusAward[] {
   const list = Array.isArray(raw.pending_awards)
@@ -554,6 +639,9 @@ function normaliseState(raw: Record<string, unknown>): WheelState {
           }
         : undefined,
     pending_awards: normaliseAwards(raw),
+    pending_cards: normaliseCardAwards(raw),
+    vip: raw.vip === true,
+    model_version: typeof raw.model_version === 'string' ? raw.model_version : undefined,
     auto_run: normaliseAutoRun(raw.auto_run),
     ok: Boolean(raw.ok),
     error: raw.error ? String(raw.error) : undefined,
@@ -703,14 +791,7 @@ function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
             uses: num(grant.uses),
           }))
         : undefined,
-      cards:
-        outcome.cards && typeof outcome.cards === 'object'
-          ? {
-              award_id: String((outcome.cards as Record<string, unknown>).award_id ?? ''),
-              risk_diamonds: num((outcome.cards as Record<string, unknown>).risk_diamonds),
-              status: 'pending' as const,
-            }
-          : undefined,
+      cards: normaliseSpinCards(outcome.cards),
     },
     ...(typeof raw.model === 'string' ? { model: raw.model } : {}),
     ...(typeof raw.vip === 'boolean' ? { vip: raw.vip } : {}),
@@ -999,6 +1080,92 @@ const DiamondWheelService = {
     if (String(raw.run_id ?? '') !== runId || !Number.isSafeInteger(spins_done) || spins_done < 0)
       throw new Error('The Run Could Not Be Confirmed');
     return { ok: true, run_id: runId, spins_done, pending_awards: normaliseAwards(raw) };
+  },
+
+  /**
+   * TURN ONE OF THE THREE CARDS OVER (owner ruling 2026-09-21, R15). The
+   * server pays the card it names and reveals all three. It is idempotent on
+   * the award, so a second call - a double tap, a retry, a reload - returns
+   * the first pick's answer and pays nothing again; that is why `picked` is
+   * read back from the reply rather than assumed to be the card just tapped.
+   *
+   * A refusal comes back as `{ ok: false, error }` for the player to read and
+   * try again. A reply that does not add up - a card outside 1..3, fewer or
+   * more than three values, or a paid amount that is not the picked card's
+   * value - is thrown, never shown as a prize.
+   */
+  async pickDiamondCard(awardId: string, card: number): Promise<WheelCardPick> {
+    if (!UUID.test(awardId) || !Number.isSafeInteger(card) || card < 1 || card > 3)
+      throw new Error('The Card Pick Could Not Be Sent');
+    const { data, error } = await supabase.rpc('fn_wheel_diamond_cards_pick', {
+      p_award_id: awardId,
+      p_card: card,
+    });
+    if (error) throw error;
+    if (!data || typeof data !== 'object' || Array.isArray(data) || typeof data.ok !== 'boolean')
+      throw new Error('The Card Pick Could Not Be Confirmed');
+    const raw = data as Record<string, unknown>;
+    if (raw.ok === false) {
+      return {
+        ok: false,
+        error: typeof raw.error === 'string' ? raw.error : 'The Card Pick Was Refused',
+        award_id: awardId,
+        picked: 0,
+        cards: [],
+        paid_diamonds: 0,
+        balances: { diamonds: 0 },
+      };
+    }
+    const picked = num(raw.picked);
+    const cards = Array.isArray(raw.cards) ? raw.cards.map(num) : [];
+    const paid_diamonds = num(raw.paid_diamonds);
+    const balances = (raw.balances ?? {}) as Record<string, unknown>;
+    if (
+      String(raw.award_id ?? '') !== awardId ||
+      !Number.isSafeInteger(picked) ||
+      picked < 1 ||
+      picked > 3 ||
+      cards.length !== 3 ||
+      cards.some((value) => !Number.isFinite(value) || value < 0) ||
+      Math.abs(cards[picked - 1] - paid_diamonds) > 1e-6 ||
+      balances.diamonds == null
+    )
+      throw new Error('The Card Pick Could Not Be Confirmed');
+    const fairness = (raw.fairness ?? null) as Record<string, unknown> | null;
+    return {
+      ok: true,
+      award_id: awardId,
+      picked,
+      cards,
+      paid_diamonds,
+      balances: { diamonds: num(balances.diamonds) },
+      // What the server also says about the pick, kept so the receipt can be
+      // checked: the spin it came from, the diamonds risked, whether this was
+      // the answer to a pick already made, and the chips the risk is worth.
+      ...(typeof raw.spin_id === 'string' && UUID.test(raw.spin_id)
+        ? { spin_id: raw.spin_id }
+        : {}),
+      ...(raw.risk_diamonds != null && Number.isFinite(num(raw.risk_diamonds))
+        ? { risk_diamonds: num(raw.risk_diamonds) }
+        : {}),
+      ...(raw.replayed === true ? { replayed: true } : {}),
+      ...(raw.value_chips != null && Number.isFinite(num(raw.value_chips))
+        ? { value_chips: num(raw.value_chips) }
+        : {}),
+      ...(fairness && typeof fairness === 'object' && !Array.isArray(fairness)
+        ? {
+            fairness: {
+              ...(fairness.domain === 'wheel-v4-cards' ? { domain: fairness.domain } : {}),
+              roll: num(fairness.roll),
+              permutation: num(fairness.permutation),
+              server_seed: String(fairness.server_seed ?? ''),
+              server_seed_hash: String(fairness.server_seed_hash ?? ''),
+              client_seed: String(fairness.client_seed ?? ''),
+              nonce: num(fairness.nonce),
+            },
+          }
+        : {}),
+    };
   },
 
   async dailyBonusState(clubId: string): Promise<WheelDailyBonusState> {

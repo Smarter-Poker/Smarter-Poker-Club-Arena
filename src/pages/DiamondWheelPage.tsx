@@ -16,10 +16,12 @@ import { LoadingState } from '../components/common/EmptyState';
 import { wheelPrizeTitle, WheelExperience } from '../components/wheel/WheelExperience';
 import {
   WheelBonusQueue,
+  WheelCardQueue,
   WheelRunResume,
   WheelRunSummary,
   type WheelRunSummaryData,
 } from '../components/wheel/WheelRunPanels';
+import { DiamondCardPick } from '../components/wheel/DiamondCardPick';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { WheelCabinet, WheelEntry, WheelPrizeGallery } from '../components/wheel/WheelCabinet';
 import { validSpinAmount } from '../utils/bonusGameBudget';
@@ -32,6 +34,7 @@ import DiamondWheelService, {
   type WheelSpinResult,
   type WheelState,
   type WheelBonusAward,
+  type WheelCardAward,
 } from '../services/DiamondWheelService';
 import {
   randomClientSeed,
@@ -73,6 +76,9 @@ function prizeLabel(seg: WheelSpinResult['outcome']): string {
 function outcomeHeadline(result: WheelSpinResult): string {
   const o = result.secondary?.outcome ?? result.outcome;
   if (o.kind === 'nothing') return 'No Prize This Spin';
+  /* A Diamonds spin with a sealed award has paid nothing yet, so the line
+     names the game rather than a figure (owner ruling 2026-09-21, R15). */
+  if (result.outcome.cards?.status === 'pending') return 'You Won A Diamond Card Pick';
   return result.welcome ? `Welcome Spin: You Won ${prizeLabel(o)}` : `You Won ${prizeLabel(o)}`;
 }
 
@@ -228,6 +234,8 @@ export default function DiamondWheelPage() {
      End Run plate is on screen. */
   const [closeOwed, setCloseOwed] = useState<string | null>(null);
   const [closeFailures, setCloseFailures] = useState(0);
+  /** The Diamonds award whose three cards are open, or null (R15). */
+  const [cardPick, setCardPick] = useState<WheelCardAward | null>(null);
   const [pending, setPending] = useState<WheelSpinResult | null>(null);
   const [lastResult, setLastResult] = useState<WheelSpinResult | null>(null);
   const [spinKey, setSpinKey] = useState(0);
@@ -386,6 +394,7 @@ export default function DiamondWheelPage() {
         setEntryDiamonds(saved?.entryDiamonds ?? 100);
         setAutoRun(null);
         setAutoSize(0);
+        setCardPick(null);
         setPending(null);
         setSpinning(false);
         setLastResult(null);
@@ -541,6 +550,10 @@ export default function DiamondWheelPage() {
        or end, and a game won by hand is played before another spin. */
     if (!running && state.auto_run) return 'Resume Or End Your Run Below';
     if (!running && state.pending_awards?.length) return 'Play Your Bonus Game Before Another Spin';
+    /* A sealed card award has not been paid yet, so it blocks the next spin
+       the way an unplayed bonus game does (owner ruling 2026-09-21, R15). */
+    if (!running && state.pending_cards?.length)
+      return 'Pick Your Diamond Card Before Another Spin';
     if (preparationError) return preparationError;
     if (!validSpinAmount(price)) return 'Choose 25 To 2,500 Whole Diamonds';
     if (
@@ -616,6 +629,7 @@ export default function DiamondWheelPage() {
       runBusyRef.current = true;
       setRunBusy('end');
       let games = run.games;
+      let cards = run.cards;
       try {
         const closed = await DiamondWheelService.runEnd(run.runId);
         if (!live() || scopeRef.current !== scope) return;
@@ -634,7 +648,11 @@ export default function DiamondWheelPage() {
       if (!live() || scopeRef.current !== scope) return;
       if (clubUuid) {
         try {
-          await loadState(clubUuid);
+          /* The server's own queue of unmade picks, which also holds the ones
+             a run won before it was resumed; the tally is the fallback for a
+             server that does not publish `pending_cards` yet. */
+          const next = await loadState(clubUuid);
+          if (next.pending_cards?.length) cards = next.pending_cards;
         } catch (err) {
           reportError(err, 'DiamondWheelPage.runState');
         }
@@ -642,8 +660,8 @@ export default function DiamondWheelPage() {
       if (!live() || scopeRef.current !== scope) return;
       runBusyRef.current = false;
       setRunBusy(false);
-      if (why || run.prizes.length || games.length || run.done > 0)
-        setRunSummary({ total: run.total, done: run.done, why, prizes: run.prizes, games });
+      if (why || run.prizes.length || games.length || cards.length || run.done > 0)
+        setRunSummary({ total: run.total, done: run.done, why, prizes: run.prizes, games, cards });
       else if (why === null) toast.info('Auto Spin Stopped');
     },
     [clubUuid, live, loadState, toast]
@@ -681,6 +699,7 @@ export default function DiamondWheelPage() {
         done: begun.spins_done,
         prizes: [],
         games: [],
+        cards: [],
       });
     } catch (err) {
       reportError(err, 'DiamondWheelPage.runBegin');
@@ -705,6 +724,7 @@ export default function DiamondWheelPage() {
       done: open.spins_done,
       prizes: [],
       games: [],
+      cards: [],
     });
   }, [state?.auto_run, running, spinning, recovery, freeMode]);
 
@@ -712,7 +732,14 @@ export default function DiamondWheelPage() {
     const open = state?.auto_run;
     if (!open || running || spinning || recovery || runBusyRef.current) return;
     void closeRun(
-      { runId: open.run_id, total: open.spins, done: open.spins_done, prizes: [], games: [] },
+      {
+        runId: open.run_id,
+        total: open.spins,
+        done: open.spins_done,
+        prizes: [],
+        games: [],
+        cards: [],
+      },
       null
     );
   }, [state?.auto_run, running, spinning, recovery, closeRun]);
@@ -938,6 +965,34 @@ export default function DiamondWheelPage() {
 
   // Money in flight holds the page. A saved spin the page has stopped sending
   // does not: it waits for the next visit, and the player is free to go.
+  /**
+   * Pick A Card on the reveal, the queue card or the run summary (R15). The
+   * three cards open over this page rather than on another one, so a run's
+   * summary is held rather than thrown away: it comes back, one pick shorter,
+   * when the cards close.
+   */
+  const playCard = useCallback(
+    (award: WheelCardAward) => {
+      if (spinning || pending || recovery || runBusyRef.current) return;
+      setCardPick(award);
+    },
+    [spinning, pending, recovery]
+  );
+
+  /**
+   * The cards are done with, picked or not. The award is the server's, so what
+   * is left to do is read the wheel again: the wallet has moved if a card was
+   * turned over, and `pending_cards` says what is still waiting.
+   */
+  const closeCardPick = useCallback(() => {
+    const award = cardPick;
+    setCardPick(null);
+    if (award)
+      setRunSummary((s) => (s ? { ...s, cards: s.cards.filter((c) => c.id !== award.id) } : s));
+    if (clubUuid)
+      void loadState(clubUuid).catch((err) => reportError(err, 'DiamondWheelPage.cardState'));
+  }, [cardPick, clubUuid, loadState]);
+
   const releaseNavigation = useLiveBonusGuard(
     spinning || Boolean(pending) || (Boolean(recovery) && !recoveryStopped),
     () => toast.error('Wait For Your Spin To Finish.')
@@ -985,6 +1040,16 @@ export default function DiamondWheelPage() {
       releaseNavigation();
       openBonus(result.bonus);
     }
+    /* The same rule for a Diamonds spin: the player just tapped Pick A Card on
+       its reveal, so the three cards open here (R15). Inside a run the pick
+       joins the tally and waits for the summary. */
+    const sealed = result.outcome.cards;
+    if (sealed?.status === 'pending' && !autoRunRef.current)
+      setCardPick({
+        id: sealed.award_id,
+        spin_id: result.spin_id,
+        risk_diamonds: sealed.risk_diamonds,
+      });
   }, [
     releaseNavigation,
     openBonus,
@@ -1216,11 +1281,13 @@ export default function DiamondWheelPage() {
       ? 'This Previous Spin Had No Prize'
       : lastResult.bonus
         ? 'Your Awarded Game Is Ready'
-        : finalOutcome?.kind === 'chips'
-          ? 'Paid Into Your Club Chips'
-          : finalOutcome?.kind === 'diamonds'
-            ? 'Paid Into Your Diamonds'
-            : 'Added To Your Account';
+        : lastResult.outcome.cards?.status === 'pending'
+          ? 'Your Three Cards Are Waiting. One Pick Pays You.'
+          : finalOutcome?.kind === 'chips'
+            ? 'Paid Into Your Club Chips'
+            : finalOutcome?.kind === 'diamonds'
+              ? 'Paid Into Your Diamonds'
+              : 'Added To Your Account';
 
   return (
     <div className={`${styles.page} ${styles.fullscreenPage} ${wheelStyles.page}`}>
@@ -1273,6 +1340,13 @@ export default function DiamondWheelPage() {
                 busy={spinning || preparing}
                 onResume={resumeRun}
                 onEnd={endOpenRun}
+              />
+            )}
+            {!running && !runSummary && !cardPick && (state.pending_cards?.length ?? 0) > 0 && (
+              <WheelCardQueue
+                awards={state.pending_cards ?? []}
+                disabled={spinning || Boolean(pending) || Boolean(recovery) || Boolean(runBusy)}
+                onPick={playCard}
               />
             )}
             {!running && !runSummary && (state.pending_awards?.length ?? 0) > 0 && (
@@ -1400,11 +1474,20 @@ export default function DiamondWheelPage() {
         </div>
       </WheelCabinet>
 
-      {runSummary && (
+      {runSummary && !cardPick && (
         <WheelRunSummary
           summary={runSummary}
           onPlay={playAward}
+          onPickCard={playCard}
           onClose={() => setRunSummary(null)}
+        />
+      )}
+
+      {cardPick && (
+        <DiamondCardPick
+          award={cardPick}
+          onPick={(awardId, card) => DiamondWheelService.pickDiamondCard(awardId, card)}
+          onClose={closeCardPick}
         />
       )}
 
@@ -1434,7 +1517,9 @@ export default function DiamondWheelPage() {
             >
               {finalOutcome?.kind === 'nothing'
                 ? 'Nothing'
-                : prizeLabel(lastResult.secondary?.outcome ?? lastResult.outcome)}
+                : lastResult.outcome.cards?.status === 'pending'
+                  ? 'A Diamond Card Pick'
+                  : prizeLabel(lastResult.secondary?.outcome ?? lastResult.outcome)}
             </span>
             <span className={`sc-copy ${styles.readoutSub}`}>{readoutSubCopy}</span>
           </div>
@@ -1461,7 +1546,7 @@ export default function DiamondWheelPage() {
           showCount={false}
         />
         <div>
-          <WheelPrizeGallery segments={table} />
+          <WheelPrizeGallery segments={table} vip={state.vip ?? false} />
         </div>
 
         <SpadeConsole

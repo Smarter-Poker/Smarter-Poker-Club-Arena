@@ -284,6 +284,33 @@ describe('Crash settles one displayed round once', () => {
       { replace: true }
     );
   });
+  it('never starts a round by itself: two idle minutes on the entry screen start nothing (R1)', async () => {
+    // Dan 2026-09-21, R1: "Games can NEVER auto start." The ordinary entry
+    // screen sits with a ready Start plate; nothing but a thumb may press it.
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Start 100' })).toBeEnabled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    expect(backend.start).not.toHaveBeenCalled();
+    expect(backend.navigate).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Start 100' })).toBeEnabled();
+  });
+  it('holds a funded award on its offer for two idle minutes without starting or leaving', async () => {
+    quoteSuperAward();
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    // Still asking, and nothing was answered, started or navigated for the player.
+    expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
+    expect(backend.start).not.toHaveBeenCalled();
+    expect(backend.navigate).not.toHaveBeenCalled();
+  });
   it('sends both unfunded entry controls directly to the wheel without starting a game', async () => {
     backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });
     render(<DiamondCrashPage />);

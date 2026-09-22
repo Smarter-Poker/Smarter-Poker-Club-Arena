@@ -171,7 +171,10 @@ beforeEach(() => {
   });
   sessionStorage.clear();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('choice-game entry quotes belong to the selected settings', () => {
   it.each([
@@ -516,6 +519,50 @@ describe('choice games consume wheel-funded entry', () => {
               line.textContent?.includes('Pays At Least 0.10 Chips On Any Loss.')
           )
       ).toBe(true);
+    }
+  );
+  it.each(['mines', 'crossing'] as const)(
+    'never starts a %s round by itself: two idle minutes on each entry screen start nothing (R1)',
+    async (game) => {
+      // Dan 2026-09-21, R1: "Games can NEVER auto start." Screen one is the
+      // offer and screen two is the Start plate; neither moves on a clock.
+      vi.useFakeTimers();
+      backend.awardState.mockResolvedValue({
+        enabled: true,
+        award: {
+          id: '00000000-0000-0000-0000-000000000077',
+          game,
+          base_diamonds: 200,
+          entry_diamonds: 100,
+          boost_multiplier: 2,
+          status: 'pending',
+        },
+        gameState: { ...state, diamonds: 10000, max_steps: 3, prizes: [2.2, 2.7, 3.4] },
+        quote: {
+          guarantee: 'super',
+          minimumPayoutChips: 1,
+          mode: CHOICE_MODE[game],
+          plinkoTable: 4,
+        },
+      });
+      render(<DiamondChoicePage game={game} />);
+      await act(async () => {});
+      expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000);
+      });
+      expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
+      expect(backend.start).not.toHaveBeenCalled();
+      expect(backend.navigate).not.toHaveBeenCalled();
+      answerOffer();
+      await act(async () => {});
+      expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000);
+      });
+      expect(backend.start).not.toHaveBeenCalled();
+      expect(backend.navigate).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
     }
   );
   it.each(['mines', 'crossing'] as const)(

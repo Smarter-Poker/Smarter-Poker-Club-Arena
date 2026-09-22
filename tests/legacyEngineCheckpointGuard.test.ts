@@ -2183,7 +2183,7 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     expect(f.moveReads).toEqual([]);
     expect(result.bankDisposition).toContain('residueOpenSeatsElsewhere=1');
     expect(result.bankDisposition).toContain('arrivalTablesAsked=1');
-    expect(result.bankDisposition).toContain('movesOutOfResidue=0');
+    expect(result.bankDisposition).toContain('arrivalsInWindowChecked=0');
   });
 
   it('accepts a player who moved away once the destination capture holds a bank for that occupancy', async () => {
@@ -2252,7 +2252,68 @@ describe('a bank the engine no longer holds is proved from rows, never assumed',
     landed(f, from, uuid(67000), new Date(Date.now() - 2 * 3600000).toISOString());
     const result: any = await f.run();
     expect(result, JSON.stringify(result)).toMatchObject({ ok: true });
-    expect(result.bankDisposition).toContain('movesOutOfResidue=1');
+    expect(result.bankDisposition).toContain('arrivalsInWindowChecked=1');
+  });
+
+  it('refuses a recent arrival whose source shows no residue, such as a swap partner', async () => {
+    const f: any = mixedFixture();
+    const { departed } = cashedOut(f, 600);
+    f.onSeats(() => ({
+      data: [{ table_id: uuid(67000), user_id: departed, occupancy_id: uuid(68000) }],
+      error: null,
+    }));
+    f.onArrivals(() => ({
+      data: [
+        {
+          move_id: uuid(69000),
+          player_id: departed,
+          from_table_id: uuid(69500),
+          to_table_id: uuid(67000),
+          source_occupancy_id: uuid(69001),
+          destination_occupancy_id: uuid(68000),
+        },
+      ],
+      error: null,
+    }));
+    f.onMoves(() => ({
+      data: [{ id: uuid(69000), executed_at: new Date(Date.now() - 60000).toISOString() }],
+      error: null,
+    }));
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_residue_unproven',
+      failedCheck: 'proveBanksHeldNothing.seatMoveInTransit',
+      failedTable: uuid(67000),
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it.each([
+    [
+      'openSeatsRead',
+      'PGRST002',
+      (f: any) => f.onSeats(() => ({ data: null, error: { code: 'PGRST002' } })),
+    ],
+    [
+      'arrivalsRead',
+      '42501',
+      (f: any) => f.onArrivals(() => ({ data: null, error: { code: '42501' } })),
+    ],
+    ['movesRead', '57014', (f: any) => f.onMoves(() => ({ data: null, error: { code: '57014' } }))],
+  ])('names the read that failed: %s', async (check, code, fault) => {
+    const f: any = mixedFixture();
+    const from = cashedOut(f, 600);
+    landed(f, from, uuid(67000), new Date(Date.now() - 2 * 3600000).toISOString());
+    fault(f);
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'bank_residue_unproven',
+      failedCheck: `proveBanksHeldNothing.${check}`,
+    });
+    expect(result.observedDetail).toContain(`error=${code}`);
+    expect(result.observedDetail).toMatch(/^[\w .,:/=()+-]+$/);
   });
 
   it.each([

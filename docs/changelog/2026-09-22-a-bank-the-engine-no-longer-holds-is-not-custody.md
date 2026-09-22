@@ -61,8 +61,11 @@ before anything is written:
     it, and 8825 never applies a carried bank over a live one); every other
     one is asked, through the engine's own `fn_cash_seat_move_arrivals` (the
     service role cannot read `cash_seat_move_receipts`), whether a cash seat
-    move out of a residue table landed in it, and one that executed within the
-    last hour refuses.
+    move landed in it, and one that executed within the last hour refuses,
+    whatever its source table still shows (a swap partner, or a source engine
+    replaced after running its move, leaves no residue there). A handoff is
+    stamped at most about 16 minutes after the move executes and is claimable
+    for ten more, so older moves cannot lose anything.
     An unseated bank whose timer is running is refused outright.
 - **Disposed**: metadata for a seated player on a STOPPED engine that holds no
   bank at all. The live value was already cleared by `stop()` and no refusal
@@ -99,11 +102,13 @@ service role cannot read `cash_seat_move_receipts` (verified:
 check now goes through the engine's arrivals function and `cash_seat_moves`,
 both readable by the engine. A swap partner, or a source engine replaced after
 running its move, leaves no residue and was not caught before this change
-either; that remains a known gap.
+either; for a residue player's seats it is now caught, and for everyone
+else it remains a known gap (a destination-side read of every captured cash
+table would close it).
 
 ## Verification
 
-`tests/legacyEngineCheckpointGuard.test.ts`, 27 new cases in "a bank the
+`tests/legacyEngineCheckpointGuard.test.ts`, 31 new cases in "a bank the
 engine no longer holds is proved from rows, never assumed", on the production
 8825 profile with its two retained originals: no read when nothing is
 residue; a cashed-out player proved departed before any write and never
@@ -115,7 +120,8 @@ mover accepted once the destination capture holds a bank for that occupancy,
 refused while the destination seats it without the bank or is not in the
 process at all, accepted when the move executed over an hour ago, and refused
 on an unreadable or malformed arrivals answer, an unreadable move answer, a
-missing move row and a move with no execution time;
+missing move row and a move with no execution time; a recent arrival whose
+source shows no residue refused; each failed read named with its error code;
 a busted player's bank proved departed and never written; an unseated running
 timer refused; a quarantined stopped engine proved quiet and never written;
 refusal on a hand in the air and on an unreadable snapshot; a stopped engine
@@ -126,6 +132,6 @@ now follows 8825's `maintenanceDurabilityReason` (a parked bank or a seated
 player's bank), which the busted case needs and every existing case matches.
 
 Local: the guard, admission, break-window law, source-window law and transport
-suites (the transport suite under Node 20, which it requires), 225 pass;
+suites (the transport suite under Node 20, which it requires), 229 pass;
 `cd server && npx tsc --noEmit` clean; `EngineLifecycleDiagnostics` and
 `anAbandonedGenerationIsNotAPendingOne.law`, 69 pass.

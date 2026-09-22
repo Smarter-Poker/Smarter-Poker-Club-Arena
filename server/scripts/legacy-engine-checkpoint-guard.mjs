@@ -2443,11 +2443,21 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         await Promise.all(Array.from({ length: Math.min(8, reads.length) }, worker));
         return answers;
       };
-      const answered = (answer, ceiling, code) =>
-        require(record(answer) &&
-          !answer.error &&
-          Array.isArray(answer.data) &&
-          answer.data.length <= ceiling, code);
+      // A read that fails names which read it was and the error code it got.
+      const answered = (answer, ceiling, code, check) => {
+        if (record(answer) && !answer.error && Array.isArray(answer.data) && answer.data.length <= ceiling)
+          return;
+        const errorCode = answer?.error?.code;
+        noteRefusal(() => ({
+          failedCheck: `proveBanksHeldNothing.${check}`,
+          observedDetail: [
+            `error=${typeof errorCode === 'string' && /^[A-Za-z0-9_]{1,16}$/.test(errorCode) ? errorCode : describe(errorCode)}`,
+            `rows=${Array.isArray(answer?.data) ? answer.data.length : describe(answer?.data)}`,
+            `ceiling=${ceiling}`,
+          ].join(','),
+        }));
+        refuse(code);
+      };
       const held = new Set(residueTables.flatMap(({ tableId, residue }) =>
         residue.map((userId) => `${lower(tableId)}:${userId}`)));
       const residueUsers = [...new Set(residueTables.flatMap(({ residue }) => residue))].sort();
@@ -2464,7 +2474,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           .in('user_id', users)
           .is('left_at', null)
           .limit(901)))) {
-        answered(answer, 900, 'bank_residue_unproven');
+        answered(answer, 900, 'bank_residue_unproven', 'openSeatsRead');
         for (const row of answer.data) {
           require(record(row) &&
             uuid(row.table_id) &&
@@ -2489,9 +2499,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       // applies a carried bank or presence over a live one (:4233). Every other
       // open seat of a residue player is asked, through the engine's own
       // arrivals function (the service role cannot read the receipts table),
-      // whether a cash seat move out of a residue table landed in it; one that
-      // executed within the last hour, three times the claim window plus the
-      // source's own processing, refuses. Older ones can no longer be claimed.
+      // whether a cash seat move landed in it; one that executed within the
+      // last hour refuses. A handoff is stamped at most ~16 min after the move
+      // executes (ten moves a table, two attempts, three 15 s fetches each)
+      // and claimable for ten more, so older ones can no longer be claimed.
       const captureOf = new Map(captures.map((capture) => [lower(capture.tableId), capture]));
       const pending = new Map();
       for (const row of open) {
@@ -2509,7 +2520,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           p_occupancy_ids: [...occupancies].sort(),
         })))).entries()) {
         require(asked[index].occupancies.length <= 64, 'bank_residue_unproven');
-        answered(answer, 64, 'bank_residue_unproven');
+        answered(answer, 64, 'bank_residue_unproven', 'arrivalsRead');
         for (const arrival of answer.data) {
           require(record(arrival) &&
             uuid(arrival.move_id) &&
@@ -2517,7 +2528,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             uuid(arrival.from_table_id) &&
             uuid(arrival.to_table_id) &&
             uuid(arrival.destination_occupancy_id), 'bank_residue_unproven');
-          if (held.has(`${lower(arrival.from_table_id)}:${lower(arrival.player_id)}`)) arrivals.push(arrival);
+          // Every arrival in hand counts, whatever its source still shows: a
+          // swap partner, or a source engine replaced after running its move,
+          // leaves no residue there, and its handoff is in transit all the same.
+          arrivals.push(arrival);
         }
       }
       const moveIds = [...new Set(arrivals.map(({ move_id }) => lower(move_id)))].sort();
@@ -2528,7 +2542,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           .select('id,executed_at')
           .in('id', ids)
           .limit(ids.length + 1)))) {
-        answered(answer, 200, 'bank_residue_unproven');
+        answered(answer, 200, 'bank_residue_unproven', 'movesRead');
         for (const move of answer.data) {
           require(record(move) && uuid(move.id), 'bank_residue_unproven');
           executedAt.set(lower(move.id), move.executed_at);
@@ -2551,7 +2565,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           .eq('is_complete', false)
           .gte('updated_at', quietSince)
           .limit(page.length + 1)))) {
-        answered(answer, readPageSize, 'stopped_disposed_banks_unproven');
+        answered(answer, readPageSize, 'stopped_disposed_banks_unproven', 'snapshotsRead');
         if (answer.data.length > 0)
           refuseAt('proveBanksHeldNothing.handInTheAir', answer.data[0]?.table_id, 'stopped_disposed_banks_unproven');
       }
@@ -2565,7 +2579,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         `residuePlayers=${residueTables.reduce((sum, { residue }) => sum + residue.length, 0)}`,
         `residueOpenSeatsElsewhere=${open.length}`,
         `arrivalTablesAsked=${asked.length}`,
-        `movesOutOfResidue=${arrivals.length}`,
+        `arrivalsInWindowChecked=${arrivals.length}`,
         `disposedTables=${disposedTables.length}`,
         `disposedSeats=${disposedTables.reduce((sum, { disposed }) => sum + disposed.length, 0)}`,
         `disposedEvents=${events.slice(0, 12).join('/') || 'none'}`,

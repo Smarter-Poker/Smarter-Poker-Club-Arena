@@ -1,11 +1,33 @@
+/* #SMARTERCASINOREALISM FOR THE ONE PANEL ALL FOUR GAMES SHARE (2026-09-22).
+   Donkey Cross, Diamond Mines, Diamond Crash and Diamond Plinko are the same
+   console with a different board in it, and on a phone that console is half the
+   screen. It was built from navy gradients with a full electric-blue plate on
+   top, which is blue as PAINT and reads as a SaaS button bar - exactly what the
+   standard rules out. Black first: the chassis is obsidian, the controls are a
+   panel raised out of it, and the plates are black glass with a machined edge.
+   Blue is energy, so it is a seam under the title and a ring of light around
+   the one plate that starts the move. Gold stays for value: the prize bays, and
+   the plate that books the win.
+
+   Every colour here is a --realism-* token from src/styles/club-engine.css.
+   There is no second palette, and the two literals below say why they are
+   literals. */
 .console {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
   grid-template-rows: auto 1fr;
   min-width: 0;
   min-height: calc(100dvh - 100px);
-  background: #060d18;
-  color: #ecf4ff;
+  background: var(--realism-obsidian);
+  color: var(--realism-chrome-hot);
+
+  /* The one electric blue the plates light with. It is a literal because it is
+     neither of the palette's blues: --realism-blue is the house colour and
+     --realism-cyan is live data, and this is the glow on a control. Named once
+     so the ring, the inner light and the seam cannot drift apart. */
+  --plate-energy: #2fa8ff;
+  /* The bays' own gold, already in this sheet: Book reads as the prize it books. */
+  --plate-gold: #ffd992;
 }
 .header {
   grid-column: 1/-1;
@@ -14,8 +36,8 @@
   justify-content: space-between;
   gap: 16px;
   padding: 15px 24px;
-  border-bottom: 1px solid #26364c;
-  background: linear-gradient(110deg, #111f31, #080e18);
+  border-bottom: 1px solid var(--realism-gunmetal);
+  background: var(--realism-obsidian);
 }
 .header h1 {
   margin: 0;
@@ -23,6 +45,10 @@
     700 clamp(22px, 3vw, 34px)/1.15 'Roboto Condensed',
     sans-serif;
   letter-spacing: -0.02em;
+  /* The seam: one lit line under the name of the game. An inset shadow rather
+     than a border or a pseudo-element, so it costs the header no height - the
+     phone budget in MinesGrid.module.css is measured against this header. */
+  box-shadow: inset 0 -1px 0 var(--plate-energy);
 }
 .status {
   color: #8dddff;
@@ -34,7 +60,13 @@
   flex-direction: column;
   justify-content: center;
   padding: 12px 20px;
-  background: radial-gradient(ellipse at 50% 40%, #132c48 0, #090f1c 58%, #050a12 100%);
+  /* A faint lift under the middle of the board, so the game still reads as lit
+     from within rather than sitting on a flat black sheet. */
+  background: radial-gradient(
+    ellipse at 50% 40%,
+    var(--realism-carbon) 0,
+    var(--realism-obsidian) 62%
+  );
 }
 .controls {
   position: sticky;
@@ -47,9 +79,9 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-  background: linear-gradient(135deg, #152132, #0b121e 65%);
-  border-left: 1px solid #304156;
-  box-shadow: inset 1px 0 #ffffff08;
+  background: var(--realism-panel);
+  border-left: 1px solid var(--realism-gunmetal);
+  box-shadow: var(--realism-bevel);
 }
 .metrics {
   display: grid;
@@ -59,12 +91,18 @@
 }
 .metrics > div {
   min-width: 0;
-  border-bottom: 1px solid #304156;
+  border-bottom: 1px solid var(--realism-gunmetal);
   padding-bottom: 10px;
 }
+/* Instrument labels, not headings: compact, tracked, and quieter than the
+   figure they name. The figures keep their gold and their red. */
 .metrics dt {
-  color: #99acc3;
-  font-size: 12px;
+  color: var(--realism-muted);
+  font:
+    500 11px/1.3 var(--realism-font-label),
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   margin-bottom: 6px;
 }
 .metrics dd {
@@ -77,9 +115,10 @@
 }
 .metrics button {
   color: inherit;
-  background: #203650;
-  border: 1px solid #486581;
-  border-radius: 7px;
+  background: var(--realism-panel-raised);
+  border: 1px solid var(--realism-gunmetal-lit);
+  border-radius: 4px;
+  box-shadow: var(--realism-bevel);
   padding: 9px 10px;
   min-height: 44px;
   width: 100%;
@@ -87,7 +126,7 @@
   cursor: pointer;
 }
 .metrics [data-ink='gold'] {
-  color: #ffd992;
+  color: var(--plate-gold);
 }
 .metrics [data-ink='red'] {
   color: #ff8d80;
@@ -98,50 +137,68 @@
   gap: 10px;
   margin-top: auto;
 }
+/* BOTH PLATES ARE THE SAME PIECE OF HARDWARE. A black-glass face, a machined
+   edge lit from above, a 4px corner and no drop shadow: the panel is where the
+   player's hands are, so it should feel milled rather than printed. */
 .primary,
 .secondary {
   min-height: 52px;
-  border-radius: 8px;
+  border-radius: 4px;
   font:
     700 18px 'Roboto Condensed',
     sans-serif;
-  border: 1px solid #6588a9;
-  color: #e7f4ff;
+  background: var(--realism-panel);
+  border: 1px solid var(--realism-gunmetal-lit);
+  border-top-color: var(--realism-chrome);
+  color: var(--realism-chrome-hot);
   cursor: pointer;
   padding: 12px 16px;
-  box-shadow:
-    inset 0 1px #ffffff35,
-    0 4px 10px #0005;
+  box-shadow: var(--realism-bevel);
 }
+/* The move the plate starts is the only thing on the panel that is lit. */
 .primary {
-  background: linear-gradient(#32b4f5, #0973c3);
-  border-color: #64cdff;
-  color: #031525;
+  box-shadow:
+    var(--realism-bevel),
+    0 0 0 1px var(--plate-energy),
+    inset 0 0 14px rgb(47 168 255 / 20%);
 }
-.secondary {
-  background: linear-gradient(#2b4057, #162638);
+/* Gold is value, so the plate that books a win is inked like the prize bays. */
+.primary[data-ink='gold'],
+.secondary[data-ink='gold'] {
+  color: var(--plate-gold);
 }
-.primary[data-ink='green'] {
-  background: linear-gradient(#80eac2, #28b881);
-  border-color: #aafadb;
-}
-/* A plate waiting on its own move keeps its focus (aria-disabled) and a plate
-   with nothing to press does not (disabled). They read the same. */
-.controls button:disabled,
-.controls button[aria-disabled='true'] {
+/* Anything the setup panel puts in the controls is not this console's plate and
+   keeps the plain dim it has always had. */
+.controls button:not(.primary, .secondary):disabled,
+.controls button:not(.primary, .secondary)[aria-disabled='true'] {
   opacity: 0.45;
   cursor: default;
 }
+/* A plate waiting on its own move keeps its focus (aria-disabled) and a plate
+   with nothing to press does not (disabled). They read the same, and what goes
+   out is the EDGE AND THE LIGHT, never the label: dimming the whole plate took
+   its words down with it at opacity 0.45, and a player has to be able to read
+   the thing they cannot press. */
+.primary:disabled,
+.secondary:disabled,
+.primary[aria-disabled='true'],
+.secondary[aria-disabled='true'] {
+  cursor: default;
+  background: var(--realism-obsidian);
+  border-color: var(--realism-gunmetal);
+  border-top-color: var(--realism-gunmetal);
+  box-shadow: var(--realism-cavity);
+}
 .console button:focus-visible,
 .panel summary:focus-visible {
-  outline: 3px solid #e4f6ff;
+  outline: 3px solid var(--realism-chrome-hot);
   outline-offset: 3px;
 }
 .panel {
   padding: 16px 24px;
-  border-top: 1px solid #26364c;
-  background: #0a111c;
-  color: #d0dced;
+  border-top: 1px solid var(--realism-gunmetal);
+  background: var(--realism-carbon);
+  color: var(--realism-chrome);
 }
 .panel summary {
   cursor: pointer;
@@ -168,7 +225,7 @@
     max-height: none;
     overflow: visible;
     border-left: 0;
-    border-top: 1px solid #304156;
+    border-top: 1px solid var(--realism-gunmetal);
     padding: 14px;
     gap: 14px;
   }

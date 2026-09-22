@@ -857,6 +857,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         ]}
         secondary={{
           label: pendingAction === 'book' ? 'Booking Win' : cashLabel,
+          // Gold is value on this panel: the prize bays and the plate that books it.
+          ink: 'gold',
           'aria-label':
             pendingAction === 'book' || bookable === null
               ? undefined
@@ -1009,9 +1011,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                 ? `A Mine Ended This Round. All Mines Are Revealed. ${gameChips(view.payout_chips)} Chips Booked.`
                 : `Hit At Street ${picks}. Your Guaranteed ${gameChips(view.payout_chips)} Chips Are Booked.`}
             </p>
-          ) : viewOpen ? // sentence repeating them without the amounts was a line of screen // move and what it pays ("Book 1.45", "Cross For 1.85"), so a // AN OPEN ROUND SAYS ITSELF ON THE PLATES. Both of them name the
-          // the decision itself needed on a 375px phone. The region stays for
-          // errors and for the result.
+          ) : viewOpen ? // errors and for the result. // the decision itself needed on a 375px phone. The region stays for // sentence repeating them without the amounts was a line of screen // move and what it pays ("Book 1.45", "Cross For 1.85"), so a // AN OPEN ROUND SAYS ITSELF ON THE PLATES. Both of them name the
           null : (
             <p className="sc-copy">
               {!earned.ready

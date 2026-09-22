@@ -680,3 +680,147 @@ for (const game of ['crossing', 'mines'] as const)
     }
     expect(network).toEqual([]);
   });
+
+/**
+ * EVERY INK ON THE SHARED PANEL, AGAINST THE SURFACE IT IS PRINTED ON.
+ *
+ * The console was repainted in #SmarterCasinoRealism (black glass, a machined
+ * chrome edge, blue as energy, gold on Book), and a black-first panel is
+ * exactly where contrast quietly goes. It is also where the old plate hid a
+ * different failure: a plate whose move was in flight dropped to opacity 0.45,
+ * which took its LABEL down with it - a player has to be able to read the thing
+ * they cannot press. So every label on the panel is measured here against its
+ * own composited background, in every state a plate can be in, on all four
+ * games that share it.
+ */
+/** WCAG relative luminance of one opaque sRGB colour. */
+const PANEL_INK_FLOOR = 4.5;
+for (const game of GAMES)
+  test(`Every ink on the ${TITLES[game]} control panel clears 4.5:1`, async ({ page }) => {
+    const { diamondTestFixture } = await import('../helpers/diamond-test-fixture.mjs');
+    const bundle = await diamondTestFixture();
+    await page.setViewportSize({ width: 393, height: 852 });
+    await page.route('**/*', (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' })
+    );
+    await page.goto(`http://diamond-test.local/diamond-test.html?game=${game}`);
+    await page.addStyleTag({ content: bundle.css });
+    await page.addScriptTag({ content: bundle.javascript });
+    await expect(page.locator('[data-game-console]')).toBeVisible();
+
+    /**
+     * Measured in the page: the ink as painted, over the first opaque surface
+     * under it, with every translucent layer in between composited in order.
+     * A colour read off one element alone would pass on a plate whose own
+     * background is see-through.
+     */
+    const readContrast = () =>
+      page.evaluate(() => {
+        type Paint = { r: number; g: number; b: number; a: number };
+        const parse = (value: string): Paint | null => {
+          const n = value.match(/[\d.]+/g)?.map(Number) ?? [];
+          return n.length >= 3 ? { r: n[0], g: n[1], b: n[2], a: n.length > 3 ? n[3] : 1 } : null;
+        };
+        const over = (top: Paint, under: number[]) => [
+          top.r * top.a + under[0] * (1 - top.a),
+          top.g * top.a + under[1] * (1 - top.a),
+          top.b * top.a + under[2] * (1 - top.a),
+        ];
+        /** The opaque colour behind this element, every translucent layer composited. */
+        const backdrop = (from: Element | null) => {
+          const stack: Paint[] = [];
+          for (let node = from; node; node = node.parentElement) {
+            const paint = parse(getComputedStyle(node).backgroundColor);
+            if (!paint || paint.a === 0) continue;
+            stack.push(paint);
+            if (paint.a === 1) break;
+          }
+          let under = [0, 0, 0];
+          for (let i = stack.length - 1; i >= 0; i -= 1) under = over(stack[i], under);
+          return under;
+        };
+        /**
+         * Every opaque colour a label can find itself sitting on. A flat plate
+         * gives one. A plate painted with a gradient gives its colour stops
+         * instead, since the gradient covers the padding box: a blend of two
+         * colours has a luminance between theirs, so a label that clears the
+         * floor on every stop clears it everywhere on that plate. That is how
+         * the OLD electric-blue plate is measured honestly, rather than through
+         * a background-color it never had.
+         */
+        const surfaces = (element: Element) => {
+          const flat = backdrop(element);
+          const image = getComputedStyle(element).backgroundImage;
+          if (!image || image === 'none') return [flat];
+          const stops = (image.match(/rgba?\([^)]*\)/g) ?? [])
+            .map(parse)
+            .filter((paint): paint is Paint => !!paint && paint.a > 0)
+            .map((paint) => over(paint, flat));
+          return stops.length ? stops : [flat];
+        };
+        const luminance = (rgb: number[]) =>
+          rgb
+            .map((v) => {
+              const c = v / 255;
+              return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+            })
+            .reduce((total, c, i) => total + [0.2126, 0.7152, 0.0722][i] * c, 0);
+        const ratio = (ink: number[], plate: number[]) => {
+          const [a, b] = [luminance(ink), luminance(plate)].sort((x, y) => y - x);
+          return Math.round(((a + 0.05) / (b + 0.05)) * 100) / 100;
+        };
+        const shell = document.querySelector('[data-game-console]')!;
+        const of = (element: Element, what: string) => {
+          const style = getComputedStyle(element);
+          const ink = parse(style.color)!;
+          // A label the browser is fading is measured faded: opacity is what
+          // the player's eye gets, whatever the colour says. The plate fades
+          // with it, so the ink is composited onto each surface at that alpha.
+          const faded = Number(style.opacity);
+          const worst = surfaces(element)
+            .map((plate) => ratio(over({ ...ink, a: ink.a * faded }, plate), plate))
+            .sort((a, b) => a - b)[0];
+          return { what, ratio: worst };
+        };
+        const readings: { what: string; ratio: number }[] = [];
+        const title = shell.querySelector('header h1');
+        if (title) readings.push(of(title, 'the game name'));
+        const status = shell.querySelector('header span');
+        if (status?.textContent) readings.push(of(status, 'the status pill'));
+        shell.querySelectorAll(':scope > aside > dl dt').forEach((label, i) => {
+          readings.push(of(label, `bay ${i + 1} label "${label.textContent}"`));
+        });
+        shell.querySelectorAll(':scope > aside > dl dd').forEach((value, i) => {
+          readings.push(of(value, `bay ${i + 1} value "${value.textContent?.trim()}"`));
+        });
+        // The console's own two plates, in every state it can put them in. The
+        // attributes toggled below are the ones the component itself sets.
+        const plates = [...shell.querySelectorAll('[data-plate]')];
+        for (const plate of plates) {
+          const name = plate.textContent?.trim() || 'a plate';
+          const button = plate as HTMLButtonElement;
+          const wasDisabled = button.disabled;
+          button.disabled = false;
+          button.removeAttribute('aria-disabled');
+          readings.push(of(plate, `the "${name}" plate, ready`));
+          button.setAttribute('aria-disabled', 'true');
+          readings.push(of(plate, `the "${name}" plate, its move in flight`));
+          button.removeAttribute('aria-disabled');
+          button.disabled = true;
+          readings.push(of(plate, `the "${name}" plate, nothing to press`));
+          button.disabled = wasDisabled;
+        }
+        return { readings, plates: plates.length };
+      });
+
+    const { readings, plates } = await readContrast();
+    // Without this the spec could pass by measuring nothing.
+    expect(plates, 'both of the console plates were found and measured').toBe(2);
+    expect(readings.length, 'the panel has its bays and its header to measure too').toBeGreaterThan(
+      8
+    );
+    expect(
+      readings.filter((reading) => reading.ratio < PANEL_INK_FLOOR),
+      'every ink on the panel is legible on the surface it is printed on'
+    ).toEqual([]);
+  });

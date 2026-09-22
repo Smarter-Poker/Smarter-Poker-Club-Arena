@@ -58,6 +58,10 @@ export function GameConsole({
         className={main ? styles.primary : styles.secondary}
         onClick={pending ? undefined : onClick}
         data-ink={ink}
+        // Which of the console's own two plates this is, beside whatever the
+        // setup panel puts in the same aside. The stylesheet and the contrast
+        // spec both need to name them without reaching for a hashed class.
+        data-plate={main ? 'primary' : 'secondary'}
       >
         {label}
       </button>

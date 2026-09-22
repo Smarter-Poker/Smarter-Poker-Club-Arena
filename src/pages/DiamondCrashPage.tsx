@@ -1168,7 +1168,10 @@ function DiamondCrashGame() {
             : open
               ? {
                   label: cashing ? 'Booking Win' : 'Book The Win',
-                  ink: 'green',
+                  // Gold is value on this panel: Get Diamonds already reads that
+                  // way, and booking a win is the same kind of act. Green was the
+                  // last plate painted a colour of its own.
+                  ink: 'gold',
                   onClick: handleCashOut,
                   disabled: cashing || liveCents < 101,
                 }

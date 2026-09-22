@@ -18,8 +18,17 @@
  * A disconnected/expired caller must retain an UNKNOWN operation, never retry it.
  * Started native writes are joined even after refusal; an RPC timeout remains an
  * ambiguous remote outcome. The existing publisher must freshly verify its native
- * certificate and >=285000ms reserve before stopping the process. Success below is
- * a checked instant, not a new lock, a freeze extension, or a substitute certificate.
+ * certificate and >=245000ms reserve before stopping the process: the transaction
+ * admits the checkpoint only while >=285000ms remain (its entry threshold), and
+ * the whole 40 s the checkpoint then pays - ~15 s of entry (countdown detection,
+ * the rollback proof, the helper preamble, the intent write and this module's
+ * own boot, measured on run 35615604946) plus the publisher's bounded work
+ * (workBudgetMs 20000 + cleanupBudgetMs 5000) - is paid out of the
+ * candidate-proof budget, so 285 - 40 = 245 seconds is the exact figure
+ * engine-release-transaction.sh accepts on the certificate it reads after a
+ * legacy checkpoint (LEGACY_MIN_BREAK_REMAINING_MS). The 135-second rollback
+ * reserve inside it is untouched. Success below is a checked instant, not a new
+ * lock, a freeze extension, or a substitute certificate.
  */
 export async function legacyEngineCheckpointGuard(options, discoveredServers, modules) {
   const release = options?.expectedReleaseSha;
@@ -30,7 +39,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     release === 'a0ab287d902879280f0c915e44f5222c5db4d7df';
   // Fixed historical-loss disposition. It never asserts a native old bank.
   const historicalBankLoss = {"5a387a75-754a-416e-8fee-b85b15fc2702":{"kind":"historical_loss_normal_session_v1","receipt_id":"7d0f56e9-10ce-4c2f-b337-101b75924257","generation":"66291622-e7d1-4816-8c33-26ff1f092446","bank_witness_sha256":"31d0faaf9c8513f306160f0b7729d6e19dd8284677506d926805dbf9cb801af3","occupants":[{"table_id":"09f5e9eb-df66-4e55-a3c8-4385d27631e2","seat_id":"5cff5b9c-d48d-4391-8ec9-7cae469f57fe","occupancy_id":"164f4293-d57e-42c6-bbad-242f3d11e1cd","joined_at":"2026-09-17T17:06:16.817557+00:00","user_id":"046718c5-474f-4108-a15c-c3a1ce1f8d61","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"2c621856-e728-4e8b-bf08-4c56746a8649","seat_id":"df3e8f01-27ab-4973-bb90-792f82fac562","occupancy_id":"093709bf-995f-4848-bdda-da4f254a0cc9","joined_at":"2026-09-18T22:09:41.227524+00:00","user_id":"23e84589-611a-44ea-99e1-c51ae7ada6c5","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"2c621856-e728-4e8b-bf08-4c56746a8649","seat_id":"f6564dc7-d0ec-46f9-be3d-0ededac28fe3","occupancy_id":"f959c4dc-7b3d-4135-b160-c2fb11014196","joined_at":"2026-09-17T17:06:50.374103+00:00","user_id":"c1b575fb-3efd-43b6-b314-353e1d300aaa","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"49a444ac-553a-4f44-a36f-92781d10a646","seat_id":"7bbe071c-6253-4d65-bb87-8ce8103b1ce0","occupancy_id":"358500d2-527c-4026-81d4-fc8c908b9272","joined_at":"2026-09-17T17:07:48.373927+00:00","user_id":"a23ca5c9-b748-482f-9b59-9db35f7aa996","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"623b526d-0901-4c59-aec5-f8e459af7a6c","seat_id":"96e5f8fa-c883-4107-b469-4d89eb050eb0","occupancy_id":"d767fa91-e33b-446f-8867-30eaab0c2990","joined_at":"2026-09-17T17:08:04.809856+00:00","user_id":"00000000-0000-0000-0000-000000000038","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"6d8512e3-899d-442b-8d6c-7c57a5f4a1f1","seat_id":"933d6d7b-7d2e-455b-84f5-59432760ed9b","occupancy_id":"daf13850-0e47-4dfd-adc0-da5ac09f12dc","joined_at":"2026-09-17T17:07:31.133198+00:00","user_id":"302ba66b-3b1e-4747-9458-84695c70f396","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"815d35dd-a6d5-4469-b0aa-e386cc2145b9","seat_id":"1be3101b-5c33-4561-b64e-138d80609519","occupancy_id":"31c012fd-4f6e-4386-a62a-e44e1ad878a7","joined_at":"2026-09-17T21:38:20.734335+00:00","user_id":"c82e74af-4101-49b0-bd0f-93755f7bb13b","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9bf11d84-684d-4069-916c-c7b5bb397d21","seat_id":"f2169a73-3148-4f14-b438-4fe6e5b40a0c","occupancy_id":"76c77980-c9b3-41ad-9200-896435d29e5c","joined_at":"2026-09-17T23:26:34.171939+00:00","user_id":"92ecbaed-bdec-49ae-96db-90e3d61a8f7b","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"dbd8b7ea-1a99-494f-b564-f86d412dc764","seat_id":"a87d1719-c2e1-4142-98e9-0b246ed249c0","occupancy_id":"c322a02b-5d56-4c0a-adab-8c00cda69381","joined_at":"2026-09-18T22:08:29.04283+00:00","user_id":"00000000-0000-0000-0000-000000000023","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"dbd8b7ea-1a99-494f-b564-f86d412dc764","seat_id":"c8296047-8c8b-458b-8695-e3990e920edb","occupancy_id":"0ebe3f87-4988-45b6-a5a4-b026326bb608","joined_at":"2026-09-18T22:06:46.596949+00:00","user_id":"38563ca3-66a9-40bb-8053-7a698887ec93","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"fcbbd2ea-6fc2-47df-8b61-b9997fcd7b16","seat_id":"4276abea-759f-48e6-ac59-c8a41e8d78b7","occupancy_id":"a94b8085-95f2-4e11-8f62-18d95ba47cb2","joined_at":"2026-09-18T22:10:08.554647+00:00","user_id":"c7a783ee-ac19-4a86-8e26-422666281805","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"fcbbd2ea-6fc2-47df-8b61-b9997fcd7b16","seat_id":"e8ef0440-81c7-4d6d-8c25-d9e1951456c1","occupancy_id":"78e9cbed-1128-439e-8336-349b19237c1a","joined_at":"2026-09-18T19:34:43.230547+00:00","user_id":"cb50fee0-a87b-4ac8-a6fe-8e665c5ddd8c","last_durable_seconds":40,"last_durable_uses":2}],"pending_arrivals":[{"kind":"pending_arrival_historical_loss_v1","table_id":"66b1cb1d-5056-41c1-a951-1bd078f8276f","lifecycle":283892,"seat_id":"093766ff-7108-4a69-a36f-189039af1a93","user_id":"6688345d-e7be-49bd-a318-4ee1e6b10253","occupancy_id":"f45e6d45-f041-4318-bd78-e5e066a77e17","joined_at":"2026-09-17T17:07:20.624929+00:00","seat_number":4,"stack":45000,"break_id":"3ebe59ce-4a7c-4290-960f-2843d7aebd71","origin_generation":"14e79c70-5590-47a4-bb9e-928bb8bd123a","request_id":"48b9a0f7-e40e-4163-845e-1a5244a2dac2","predecessor":"04a81643-7124-41e9-9a76-6111e627c288","amendment_id":"770b2444-2b8d-4f66-8138-d76adeed833f","destination_table_id":"09f5e9eb-df66-4e55-a3c8-4385d27631e2","destination_seat_number":2,"atomic_hand_id":"e18787c7-10a9-4435-85f3-31eaf95526d0","hand_number":12114088,"last_durable_seconds":40,"last_durable_uses":2,"payload_hash":"0af5bc2c83acb25b7c36054b30f6bd0a9af3db6c6bbbc8da8f45a415c29f430b","post_commit_request_hash":"b297208a812da14e5791a8fc5a45ee34b7235fd7acf1fb1e9366bbb3f1d1ebf8","post_commit_payload_hash":"8469adc20e2069d06dde4f35624461f88aa829cde49773ab8ee58791c94329ba","stack_hand_id":"911ceac9-72ab-68bb-405a-82f0e523fc1a","settlement_id":"8b4e4676-e9b2-44c1-8c35-8aa87be96308"}]},"615783bf-15e3-40b7-9368-75f21b6ac53b":{"kind":"historical_loss_normal_session_v1","receipt_id":"16268739-c7c3-4d38-8a8f-e8f08ac0591b","generation":"b3d06bad-c464-4be8-9e1b-66f7191375ff","bank_witness_sha256":"31d0faaf9c8513f306160f0b7729d6e19dd8284677506d926805dbf9cb801af3","occupants":[{"table_id":"383aa2c7-79f1-4937-9d7e-8c49126fce8b","seat_id":"19e141a8-bbc4-4864-a1e7-d5e46a66723c","occupancy_id":"61f4d574-eed6-4487-a4c8-a771ca326eb2","joined_at":"2026-09-17T22:06:23.33465+00:00","user_id":"46887b99-8cd6-45db-861c-ad24232efbfe","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"5973d7f6-5a52-4d78-aa92-cba86e19d4ea","seat_id":"e52388d6-d007-4e31-bafe-aefbe3bf3e40","occupancy_id":"f7056064-b637-47a1-8386-1da512a7d1f0","joined_at":"2026-09-17T22:06:22.513736+00:00","user_id":"374d0e7a-aef5-4d09-a2f2-5d4a18568d97","last_durable_seconds":20,"last_durable_uses":1},{"table_id":"737b1a84-da46-459c-b0e3-bba5b23171c0","seat_id":"0180cd98-024b-4406-8529-2ef52fc3c217","occupancy_id":"a08137de-c7b2-4268-b3ca-7f1720bca0a5","joined_at":"2026-09-17T22:06:36.220363+00:00","user_id":"1d81eaa9-42bc-4815-9616-01ad6e6d5800","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9e18dc43-a81a-4a4f-a360-4f624c60699b","seat_id":"4a597dfc-98a2-4503-9913-c10f9349aa33","occupancy_id":"0eba0337-1825-4969-95ca-ff2260319e5a","joined_at":"2026-09-17T22:06:38.780641+00:00","user_id":"3a94c68d-2dd2-40b0-afea-96a238b505f2","last_durable_seconds":20,"last_durable_uses":1},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"0d1d3c90-5b3d-4f48-9b45-6e4881a4d359","occupancy_id":"a0f25a76-732c-42d5-ab0c-f96d404428dc","joined_at":"2026-09-18T19:48:57.356759+00:00","user_id":"44f1ff92-b5de-44c5-9f7b-319318ff2a74","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"fd4646b0-d531-424c-85ac-f34baae5ac90","occupancy_id":"9eab6eee-7abb-404a-8b22-2747896c3123","joined_at":"2026-09-18T22:12:31.939388+00:00","user_id":"ae0bc48d-f98c-4b25-a9fa-e3522f986173","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"a77f5c0e-36c2-4d5e-9078-32350e36652c","occupancy_id":"292af3a4-995f-4fc9-8852-55d340cdddbe","joined_at":"2026-09-18T22:12:19.599699+00:00","user_id":"c49b2414-97ff-461c-8c20-3c05fe09809b","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"17f5edbc-6f65-4a92-87d9-994096f38a3a","occupancy_id":"af606bd2-8d9d-4692-8e61-ed3b2f1b8bf1","joined_at":"2026-09-18T22:10:36.076555+00:00","user_id":"cb35cc6f-3150-48ce-b7dc-887b6aca8327","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9f30d335-8262-4872-8926-3ddf1fefe75c","seat_id":"535d19b3-b732-4d32-b614-f0f4bca07965","occupancy_id":"f137a187-d1c6-41ec-bbe1-8518e702a5ca","joined_at":"2026-09-18T22:10:36.511105+00:00","user_id":"f8c8eb13-14a0-4478-8771-7d29e71036ca","last_durable_seconds":40,"last_durable_uses":2},{"table_id":"9fdd5393-6fd9-4497-85b2-f98b89cf168d","seat_id":"f24cd458-be8d-43a6-9375-926524072f5f","occupancy_id":"dcc84998-a924-4bd7-89f0-f9359caba8d1","joined_at":"2026-09-17T22:07:06.763072+00:00","user_id":"f740e628-9097-47cf-91fc-95bbee245792","last_durable_seconds":120,"last_durable_uses":6},{"table_id":"d6199e5e-7c40-4560-afd9-f1a135031097","seat_id":"afb40353-6310-4f3e-8275-754bc26439e5","occupancy_id":"14955bd2-a8e9-4425-8b15-cb9829f48d11","joined_at":"2026-09-17T22:07:07.255289+00:00","user_id":"fdf075f5-e450-4099-a043-691377b0ae64","last_durable_seconds":20,"last_durable_uses":1}],"pending_arrivals":[]}};
-  const reserveMs = 285000;
+  const reserveMs = 245000;
   // Refusal ceilings, not truncation or latency promises. The observed fleet has
   // 1379 tables, so the ordinary PostgREST 1000-row cap cannot bound the fleet.
   const maxTables = 2000;
@@ -149,6 +158,13 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   // Observability only: which tables were PROVED abandoned from rows, and how
   // many generations each carried. Never read by a decision.
   let abandonedBoundaries = null;
+  // Observability only: how many 8825 cash engines were in the map at the
+  // snapshot without ever having completed `start()` (never dealt, no seat, no
+  // bank), and how many times the churn replaced or removed one while the
+  // checkpoint ran. Never read by a decision.
+  let skippedUnstarted = 0;
+  let unstartedReplacements = 0;
+  let unstartedDepartures = 0;
   const refuse = (code) => {
     if (reason === null) reason = code;
     throw new Error('legacy_checkpoint_refused');
@@ -260,6 +276,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     // and position. `reason` above is untouched for existing parsers.
     ...(abandonedBoundaries === null ? {} : { abandonedBoundaries }),
     ...(refusalDetail === null ? {} : refusalDetail),
+    ...(retained8825 ? { skippedUnstarted, unstartedReplacements, unstartedDepartures } : {}),
   });
 
   try {
@@ -337,6 +354,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     const engines = new Set();
     const tableIds = new Set();
     const captures = [];
+    // 8825 cash engines observed at the snapshot before they ever completed
+    // `start()`. They are not captured; `checkUnstarted` follows them instead.
+    const unstartedTables = new Map();
+    let checkUnstarted = () => {};
     const base = modules.base.ServerTableEngineBase.prototype;
     const checkMaintenance = () => {
       // This bridge originates at process scope. Existing tournament-engine
@@ -378,14 +399,27 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         initialRemainingMs - (performance.now() - beganMonotonicMs)
       );
       require(Number.isFinite(remaining) && remaining >= reserveMs, 'insufficient_reserve');
-      // A live fleet that gains or loses a table mid-checkpoint refuses here.
-      // Name the first table that moved and which way, so the next refusal is
-      // readable without a deploy: an arrival shows in the size, a departure or
-      // a replacement shows as the offending id.
+      // The whole fleet is NOT pinned here. The live 8825 engine re-admits and
+      // kills a foreign cash table every ~5 s (it sits in `tableEngines` for
+      // 0.6-4 s per cycle), so a whole-fleet size/identity witness refused
+      // every checkpoint (`fleet_identity_changed`, `fleet.size`). A foreign
+      // table's arrival or departure cannot touch the custody this checkpoint
+      // retires. What IS pinned, by object identity, is every table the
+      // checkpoint touches: each captured engine, each retained original
+      // selected for retirement, and each original already retired - which
+      // must stay gone from the global map. A pinned table that is replaced
+      // or vanishes still refuses, naming the table and which way it moved.
+      const pinnedTables = () => [
+        ...captures.map(({ tableId, engine }) => [tableId, engine]),
+        ...retainedManagers.flatMap((capture) =>
+          capture.exactEngines.map(({ tableId, engine }) => [tableId, engine])
+        ),
+        ...[...retiredOriginals].map((id) => [id, null]),
+      ];
+      const pinnedIntact = ([id, engine]) =>
+        retiredOriginals.has(id) ? !tableMap.has(id) : tableMap.get(id) === engine;
       const movedTable = () => {
-        const found = entries.find(([id, engine]) =>
-          retiredOriginals.has(id) ? tableMap.has(id) : tableMap.get(id) !== engine
-        );
+        const found = pinnedTables().find((pinned) => !pinnedIntact(pinned));
         if (found === undefined) return 'none';
         return retiredOriginals.has(found[0])
           ? `retired_still_present:${found[0]}`
@@ -397,24 +431,22 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         'fleet_identity_changed',
         [
           [
-            'fleet.size',
-            () => tableMap.size === entries.length - retiredOriginals.size,
+            'fleet.retired',
+            () => [...retiredOriginals].every((id) => !tableMap.has(id)),
           ],
           [
-            'fleet.identity',
-            () =>
-              entries.every(([id, engine]) =>
-                retiredOriginals.has(id) ? !tableMap.has(id) : tableMap.get(id) === engine
-              ),
+            'fleet.pinned',
+            () => pinnedTables().every(pinnedIntact),
           ],
         ],
         () => ({
           observed: describe(tableMap.size),
-          expected: String(entries.length - retiredOriginals.size),
+          expected: `pinned:${pinnedTables().length}`,
           failedTable: movedTable(),
         })
       );
       checkRetained();
+      checkUnstarted();
       return remaining;
     };
     checkMaintenance();
@@ -662,8 +694,30 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         );
         const exactRetirement = manager.pendingTableBreakRetirement;
         const captureMethod = manager.captureDrainedF06Originals;
-        const revision = manager.tournamentSeatMoveAuthorityRevision;
-        const serial = manager.tournamentSeatMoveSerialTail;
+        // The custody this checkpoint retires is named by the manager's
+        // tournament and lease generation (the RPC input and its receipt) and
+        // by the engines' identities. Those are what is pinned below. The seat
+        // move authority revision and serial tail are NOT: the live 8825
+        // lease-loss pass re-runs `stopTournamentManagerIfOwned` every ~5 s for
+        // the retained managers, and each retry bumps the revision, replaces
+        // the serial tail and rebuilds a frozen `drainedF06Originals` array
+        // with the same engines in it - none of which moves custody.
+        const capturedTournamentId = manager.tournamentId;
+        const capturedLeaseGeneration = manager.tournamentLeaseGeneration;
+        // A stop retry's `captureDrainedF06Originals()` returns null while its
+        // `teardownPromise` is set, then the same engines again. Custody rests
+        // on the engines' identities, so the witness compares contents, and a
+        // transient null is tolerated: the map/engine witnesses below still
+        // pin every original.
+        const sameOriginals = () => {
+          const now = manager.captureDrainedF06Originals();
+          return (
+            now === null ||
+            (Array.isArray(now) &&
+              now.length === originals.length &&
+              now.every(([id, e], i) => originals[i][0] === id && originals[i][1] === e))
+          );
+        };
         const exactEngines = originals.map(([tableId, engine]) => {
           require(uuid(tableId) &&
             !retained.has(engine) &&
@@ -1379,6 +1433,11 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
             'mixed_owner_changed',
             [
               ['server.tournamentEngines', () => server.tournamentEngines === managerMap],
+              ['manager.tournamentId', () => manager.tournamentId === capturedTournamentId],
+              [
+                'manager.tournamentLeaseGeneration',
+                () => manager.tournamentLeaseGeneration === capturedLeaseGeneration,
+              ],
               [
                 'managerMap.get(tournamentId)',
                 () => managerMap.get(manager.tournamentId) === manager,
@@ -1397,21 +1456,10 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
                 'manager.captureDrainedF06Originals',
                 () => manager.captureDrainedF06Originals === captureMethod,
               ],
-              [
-                'manager.captureDrainedF06Originals()',
-                () => manager.captureDrainedF06Originals() === originals,
-              ],
+              ['manager.captureDrainedF06Originals()', sameOriginals],
               [
                 'manager.pendingTableBreakRetirement',
                 () => manager.pendingTableBreakRetirement === exactRetirement,
-              ],
-              [
-                'manager.tournamentSeatMoveAuthorityRevision',
-                () => manager.tournamentSeatMoveAuthorityRevision === revision,
-              ],
-              [
-                'manager.tournamentSeatMoveSerialTail',
-                () => manager.tournamentSeatMoveSerialTail === serial,
               ],
               [
                 'manager.activeStoppedOriginalCustody.size',
@@ -1455,12 +1503,19 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
               failedTable: failedEngine(),
               observed: describe(manager.captureDrainedF06Originals()),
               expected: describe(originals),
+              // The lease generation travels here too: it and the tournament
+              // id name the custody this checkpoint retires, and the seat move
+              // authority revision is deliberately NOT a witness (the live 8825
+              // stop-retry loop bumps it every ~5 s without moving custody).
               observedDetail: [
                 `tournament=${manager.tournamentId}`,
+                `capturedTournament=${capturedTournamentId}`,
+                `lease=${describe(manager.tournamentLeaseGeneration)}/${describe(
+                  capturedLeaseGeneration
+                )}`,
                 `drain=${drainWitness()}`,
                 `map=${failedMap()}`,
                 `set=${failedSet()}`,
-                `rev=${describe(manager.tournamentSeatMoveAuthorityRevision)}/${describe(revision)}`,
               ]
                 .join(',')
                 .slice(0, 512),
@@ -1468,15 +1523,18 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           );
           return vector();
         };
-        pending.push({ manager, proposal, exactEngines, vector, current, initial, serial });
+        pending.push({ manager, proposal, exactEngines, vector, current, initial });
       }
       checkRetained = () => {
         for (const capture of pending)
           require(canonical(capture.current()) === capture.initial, 'mixed_local_custody_changed');
       };
       checkMaintenance();
+      // Join the originals' own stop queues only. The manager's seat move
+      // serial tail is not awaited: on the live 8825 engine the stop-retry loop
+      // replaces it every ~5 s, so it never names a fixed piece of work.
       const joined = await Promise.allSettled(
-        pending.flatMap((m) => [m.serial, ...m.exactEngines.flatMap((e) => e.queues)])
+        pending.flatMap((m) => m.exactEngines.flatMap((e) => e.queues))
       );
       require(joined.every((v) => v.status === 'fulfilled'), 'mixed_original_stop_unconfirmed');
       checkMaintenance();
@@ -1995,12 +2053,141 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       };
     };
     const retainedEngines = retained8825 ? await captureMixedOriginals() : new Set();
+    /* ═══ AN ENGINE THAT NEVER STARTED HOLDS NOTHING TO CHECKPOINT (2026-09-21) ═══
+
+       The live 8825 engine re-admits the cash table 3c00d4d0 every few seconds:
+       `ensureCashTableEngineAdmission` does `this.tableEngines.set(tableId,
+       engine)` BEFORE `void engine.start()` (GameServer.ts:9665-9684), start()
+       sets `running = true` and `loopPhase = 'start_load_table'` before its
+       first await (ServerTableEngineBase.ts:2960-2965), `checkCrashRecovery`
+       throws `retained_hand_submission_pending`, and the catch runs
+       `killForRestart('start_failed:start_load_table')` (3387), which sets
+       `terminal = true; running = false; handController = null` (4711-4712,
+       4735). `recoverDirectTableEngine` then awaits `engine.stop()` (so
+       `teardownPromise` is a Promise) and only then `tableEngines.delete`
+       (GameServer.ts:1660-1706). The snapshot above caught that object in
+       the map on most attempts, `captureEngine` pinned it, and its scheduled
+       departure refused the whole checkpoint.
+
+       Such an object owns nothing this checkpoint persists. `seatedPlayers` is
+       filled only by `adoptSeatRoster` from the wait-for-players loop, which
+       runs after the `waiting` transition (3217, 4259); `handsDealtThisSession`
+       is incremented only when a hand is dealt (ServerTableEngineDealing.ts:
+       1833); the dealing loop is installed only at the end of start() (3355);
+       and `parkedTimeBanks`/presence are read only after crash recovery
+       (3130-3141). `handCount` is NOT a witness: `seedHandCountFromHistory`
+       (3093) restores the last persisted hand number before the failure.
+
+       The exclusion is the conjunction below and nothing wider: 8825 only,
+       the direct cash lane only (never a tournament-owned table, never a
+       retained original, never an F06 movement admission), loop phase still
+       `not_started`/`start_load_table`, no dealing loop, zero hands dealt this
+       session, no hand controller, no seat, no bank, no bank metadata, no
+       parked bank, no presence state, no in-flight settlement or boundary.
+       Anything else is captured and pinned exactly as before. */
+    const ownedTables = server.tournamentOwnedTables;
+    const neverStarted = (tableId, engine) => {
+      if (!retained8825) return false;
+      try {
+        return (
+          engine instanceof modules.base.ServerTableEngineBase &&
+          engine.tableId === tableId &&
+          !retainedEngines.has(engine) &&
+          ownedTables instanceof Set &&
+          !ownedTables.has(tableId) &&
+          engine.engineLeaseScope === 'cash' &&
+          engine.engineLeaseVerified === true &&
+          engine.f06MovementAdmission === null &&
+          engine.f06CurrentPermit === null &&
+          engine.f06RecoveryInFlight === false &&
+          (engine.loopPhase === 'start_load_table' || engine.loopPhase === 'not_started') &&
+          engine.dealingLoopPromise === null &&
+          engine.handsDealtThisSession === 0 &&
+          engine.handController === null &&
+          Array.isArray(engine.seatedPlayers) &&
+          engine.seatedPlayers.length === 0 &&
+          engine.timeBankMeta instanceof Map &&
+          engine.timeBankMeta.size === 0 &&
+          engine.timeBankEngine?.playerBanks instanceof Map &&
+          engine.timeBankEngine.playerBanks.size === 0 &&
+          record(engine.parkedTimeBanks) &&
+          Object.keys(engine.parkedTimeBanks).length === 0 &&
+          engine.timeBankAccountingPending instanceof Set &&
+          engine.timeBankAccountingPending.size === 0 &&
+          engine.timeBankAccountingUnconfirmed === false &&
+          engine.settlementInFlight instanceof Set &&
+          engine.settlementInFlight.size === 0 &&
+          engine.postHandTasksPromise === null &&
+          engine.tournamentMoveOperations instanceof Set &&
+          engine.tournamentMoveOperations.size === 0 &&
+          engine.terminalBoundaryPendingGenerations instanceof Set &&
+          engine.terminalBoundaryPendingGenerations.size === 0 &&
+          engine.terminalBoundaryPersistenceFailed === false &&
+          (() => {
+            const states = engine.disconnectEngine.getFsmStatesForTable(tableId);
+            return record(states) && Object.keys(states).length === 0;
+          })()
+        );
+      } catch {
+        return false;
+      }
+    };
+    // The watchdog kill and the stop that precede the map delete (8825
+    // ServerTableEngineBase.ts:4711-4712 and 3445, GameServer.ts:1660-1706).
+    const fencedNeverStarted = (tableId, engine) =>
+      neverStarted(tableId, engine) &&
+      engine.terminal === true &&
+      engine.running === false &&
+      engine.teardownPromise instanceof Promise;
+    checkUnstarted = () => {
+      for (const [tableId, tracked] of unstartedTables) {
+        const current = tableMap.get(tableId);
+        if (current === tracked.engine) {
+          // Still the same object, started or fenced: it must still own nothing.
+          witness(
+            'engine_state_changed',
+            [['unstarted.still_unstarted', () => neverStarted(tableId, current)]],
+            () => ({ failedTable: `unstarted_acquired_custody:${tableId}` })
+          );
+        } else if (current === undefined) {
+          // Departed: tolerated only for a fenced object that never dealt.
+          witness(
+            'engine_identity_changed',
+            [['unstarted.departed_fenced', () => fencedNeverStarted(tableId, tracked.engine)]],
+            () => ({ failedTable: `unstarted_departed_unfenced:${tableId}` })
+          );
+          if (!tracked.departed) {
+            tracked.departed = true;
+            unstartedDepartures++;
+          }
+        } else {
+          // Replaced: the old object must be fenced and never have dealt, and the
+          // successor must itself be an unstarted engine; then follow the successor.
+          witness(
+            'engine_identity_changed',
+            [
+              ['unstarted.replaced_fenced', () => fencedNeverStarted(tableId, tracked.engine)],
+              ['unstarted.successor_unstarted', () => neverStarted(tableId, current)],
+            ],
+            () => ({ failedTable: `unstarted_replaced:${tableId}` })
+          );
+          tracked.engine = current;
+          tracked.departed = false;
+          unstartedReplacements++;
+        }
+      }
+    };
     for (const [id, engine] of entries) {
       if (retainedEngines.has(engine)) continue;
       require(!engines.has(engine), 'engine_not_unique');
       require(uuid(id) && !tableIds.has(id.toLowerCase()), 'engine_identity_mismatch');
       tableIds.add(id.toLowerCase());
       engines.add(engine);
+      if (neverStarted(id, engine)) {
+        unstartedTables.set(id, { engine, departed: false });
+        skippedUnstarted++;
+        continue;
+      }
       captures.push(captureEngine(id, engine));
     }
     const checkEngine = (captured) => {

@@ -635,6 +635,30 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         : null;
   const guaranteedSuper = viewOpen ? upgraded : earned.quote?.guarantee === 'super';
   const promise = earned.quote ? guaranteeCopy(game, earned.quote) : null;
+  /**
+   * ONE SPOKEN LINE PER STREET. The scene's readout, its bust stamp and the
+   * paragraphs below were four live regions between them, so a hit was read
+   * out three or four times over, all of it before the car had moved, and a
+   * safe street announced a new cash-out value without ever saying which
+   * street had been crossed. The page keeps the one polite region now, and a
+   * crossing in play carries this sentence in it: built from `view`, so it
+   * changes when the scene says the donkey landed, in the words the sighted
+   * player reads.
+   */
+  const crossingSpoken =
+    game === 'crossing' && viewOpen
+      ? [
+          picks === 0 ? 'The Crossing Is Open.' : `Street ${picks} Crossed.`,
+          nextPrize === undefined
+            ? `The Final Street. Book ${gameChips(prize ?? 0)} Chips Now.`
+            : picks === 0
+              ? `The First Street Pays ${gameChips(nextPrize)} Chips.`
+              : `Book ${gameChips(prize ?? 0)} Chips Now Or Cross For ${gameChips(nextPrize)}.`,
+          guaranteedChips === null ? '' : `A Hit Pays ${gameChips(guaranteedChips)}.`,
+        ]
+          .filter(Boolean)
+          .join(' ')
+      : null;
   return (
     <div className={`${styles.page} ${styles.fullscreenPage}`}>
       <button
@@ -738,12 +762,11 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             sceneRound && sceneRound.status !== 'open' ? sceneRound.payout_chips : undefined
           }
         />
-        <div className={styles.readout} aria-live="polite">
+        <div className={styles.readout} aria-live="polite" aria-atomic="true">
+          {crossingSpoken ? <p className="sr-only">{crossingSpoken}</p> : null}
           {error ? (
             CALM.has(error) ? (
-              <p className="sc-copy" role="status">
-                {error}
-              </p>
+              <p className="sc-copy">{error}</p>
             ) : (
               <p className="sc-copy sc-ink--red">{error}</p>
             )
@@ -777,7 +800,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               {gameChips(view.payout_chips)} Chips Booked.
             </p>
           ) : (
-            <p className="sc-copy" role="status">
+            <p className="sc-copy">
               {viewOpen
                 ? game === 'mines'
                   ? 'Reveal A Tile Or Book The Win.'

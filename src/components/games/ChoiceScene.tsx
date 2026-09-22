@@ -177,6 +177,18 @@ const SIGN_INK = {
   edge: ['#7f8c9b', '#b8c3cd', '#d6ad52', '#ffd700'],
 } as const;
 const SIGN_SLOTS = 16;
+/**
+ * What a street's state adds to its spoken name, so a screen-reader player
+ * hears the road the way it is painted. 'current' says nothing: aria-current
+ * already names the street the donkey stands on.
+ */
+const STREET_SPOKEN: Record<StreetState, string> = {
+  crash: ', Hit Here',
+  crossed: ', Crossed',
+  current: '',
+  next: ', Next',
+  ahead: '',
+};
 
 /** What the scene is showing, which trails the confirmed round it is playing out. */
 interface Shown {
@@ -756,13 +768,17 @@ function CrossingScene(props: Props) {
                 ? 'Start · Your Move'
                 : `Safe On Street ${shownStep} · Your Move`}
       </div>
-      <div className={styles.readout} aria-live="polite" data-tone={lost ? 'bust' : undefined}>
+      {/* Not a live region. The page has the one polite region for both games,
+          and it speaks each street once, when the scene reaches it. */}
+      <div className={styles.readout} data-tone={lost ? 'bust' : undefined}>
         <span className={styles.readoutLabel}>{readout.label}</span>
         <strong className={styles.readoutValue}>{readout.value}</strong>
         <span className={styles.readoutNote}>{readout.note}</span>
       </div>
+      {/* The stamp decorates a fact the page states in words; reading it again
+          would announce the same hit twice. */}
       {lost && (
-        <div className={styles.bust} role="status" aria-label={`Bust On Street ${shownStep}`}>
+        <div className={styles.bust} aria-hidden="true">
           <span>Bust</span>
         </div>
       )}
@@ -779,7 +795,7 @@ function CrossingScene(props: Props) {
               data-state={state}
               data-hazard={hazardBand(streetHazard(index, ladder.length))}
               aria-current={street === shownStep ? 'step' : undefined}
-              aria-label={`Street ${street} Pays ${streetMultiplier(cents)}${prize === undefined ? '' : `, ${gameChips(prize)} Chips`}`}
+              aria-label={`Street ${street} Pays ${streetMultiplier(cents)}${prize === undefined ? '' : `, ${gameChips(prize)} Chips`}${STREET_SPOKEN[state]}`}
             >
               <span className={styles.streetNumber}>{street}</span>
               <strong className={styles.streetMultiplier}>{streetMultiplier(cents)}</strong>

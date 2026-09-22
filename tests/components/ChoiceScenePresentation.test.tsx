@@ -134,8 +134,11 @@ describe('every street prints what it pays', () => {
     expect(streets[0]).toHaveTextContent('1.10x');
     expect(streets[ROAD.length - 1]).toHaveTextContent('20.00x');
     // The prize for reaching a street is on the street too, in chips.
-    expect(streets[0]).toHaveAccessibleName('Street 1 Pays 1.10x, 2.17 Chips');
-    expect(streets[2]).toHaveAccessibleName('Street 3 Pays 1.85x, 15.20 Chips');
+    // ...and the state the scene is showing, so the strip reads aloud the way
+    // it is painted.
+    expect(streets[0]).toHaveAccessibleName('Street 1 Pays 1.10x, 2.17 Chips, Crossed');
+    expect(streets[1]).toHaveAccessibleName('Street 2 Pays 1.45x, 5.33 Chips');
+    expect(streets[2]).toHaveAccessibleName('Street 3 Pays 1.85x, 15.20 Chips, Next');
   });
   it('paints the multiplier on every three-dimensional street sign as well', () => {
     mountScene({ phase: 'open', picked: [0] });
@@ -205,7 +208,7 @@ describe('the cash-out value is the loudest number', () => {
 describe('a loss is a brief, clear bust', () => {
   it('stamps the bust, keeps the guaranteed chips on screen and settles within a second and a half', () => {
     const { onSettled } = mountScene({ phase: 'lost', picked: [0, 1, 2], payoutChips: 0.1 });
-    expect(screen.getByRole('status', { name: 'Bust On Street 3' })).toBeInTheDocument();
+    expect(screen.getByText('Bust')).toBeInTheDocument();
     expect(screen.getByText('Bust On Street 3').nextElementSibling).toHaveTextContent(
       '0.10 Chips Kept'
     );
@@ -222,7 +225,7 @@ describe('a loss is a brief, clear bust', () => {
     const { onSettled } = mountScene({ phase: 'lost', picked: [0, 1], payoutChips: 0.1 });
     tick(100);
     expect(onSettled).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('status', { name: 'Bust On Street 2' })).toBeInTheDocument();
+    expect(screen.getByText('Bust')).toBeInTheDocument();
     expect(screen.getAllByRole('listitem')).toHaveLength(ROAD.length);
   });
   it('keeps the bust flash and the street tints under reduced motion in the stylesheet', () => {
@@ -303,5 +306,43 @@ describe('the scene owns the reveal', () => {
     tick(100);
     const donkey = (frames.scene as Graph).getObjectByName('walking-leg-0');
     expect(donkey?.parent?.position.x).toBeCloseTo(streetCenter(3) - 0.12, 5);
+  });
+});
+
+/**
+ * ONE ANNOUNCEMENT PER STREET (review 2026-09-22). The scene's readout was a
+ * live region and its bust stamp a status with its own label, so between them
+ * and the page's two nested status paragraphs a single hit was read out three
+ * or four times, all of it before the car had moved. The scene announces
+ * nothing now; the page has the one region, and it speaks each street when the
+ * scene reaches it.
+ */
+describe('the scene leaves the announcement to the page', () => {
+  it('carries no live region and no status role of its own', () => {
+    motion(false);
+    const { view } = mountScene({ phase: 'lost', picked: [0, 1, 2], payoutChips: 0.1 });
+    const scene = view.container.querySelector('[data-phase]')!;
+    expect(scene.querySelectorAll('[aria-live]')).toHaveLength(0);
+    expect(scene.querySelectorAll('[role="status"]')).toHaveLength(0);
+    expect(screen.getByText('Bust').closest('div')).toHaveAttribute('aria-hidden', 'true');
+    // The words themselves stay on screen, where a sighted player reads them.
+    expect(screen.getByText('Bust On Street 3')).toBeInTheDocument();
+  });
+
+  it('names a street as the hit only once the car has reached the donkey', () => {
+    motion(false);
+    const scene = mountScene({ phase: 'open', picked: [0] });
+    tick(50);
+    scene.update({ phase: 'lost', picked: [0, 1], payoutChips: 0.2 });
+    tick(100);
+    tick(600);
+    // Still the street ahead: the donkey is on it, the car has not arrived.
+    expect(screen.getAllByRole('listitem')[1]).toHaveAccessibleName(
+      'Street 2 Pays 1.45x, 5.33 Chips, Next'
+    );
+    tick(1000);
+    expect(screen.getAllByRole('listitem')[1]).toHaveAccessibleName(
+      'Street 2 Pays 1.45x, 5.33 Chips, Hit Here'
+    );
   });
 });

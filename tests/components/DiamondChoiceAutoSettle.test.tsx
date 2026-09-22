@@ -187,8 +187,9 @@ const noCheckControl = () => {
   expect(screen.queryByRole('button', { name: /Check/ })).toBeNull();
   expect(screen.queryByRole('button', { name: /Retry|Try Again/ })).toBeNull();
 };
-const statusLine = (text: string) =>
-  screen.getAllByRole('status').some((line) => line.textContent === text);
+/** Everything the page's one polite live region is saying. */
+const spoken = () => Array.from(document.querySelectorAll('[aria-live] p'));
+const statusLine = (text: string) => spoken().some((line) => line.textContent === text);
 /** Let every answered request land, without moving the clock. */
 const settle = async () => {
   for (let i = 0; i < 5; i++)
@@ -513,6 +514,47 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
     await settle();
     expect(screen.getByRole('dialog', { name: '0.10 Chips' })).toBeInTheDocument();
+  });
+
+  /**
+   * ONE ANNOUNCEMENT PER STREET. The page's readout carried two nested status
+   * paragraphs inside its own live region, and the scene added two more, so a
+   * hit was announced three or four times before the car moved, and a safe
+   * street announced a new cash-out value without saying which street had been
+   * crossed.
+   */
+  it('speaks each street once, in one region, when the scene presents it', async () => {
+    backend.start.mockImplementationOnce(async (input: { game: Game }) => ({
+      ...opened(input.game),
+      picked: [0],
+    }));
+    backend.act.mockResolvedValue({
+      ...fixtures.receipts.crossing,
+      status: 'lost',
+      picked: [0, 1],
+      payout_chips: 0.1,
+      award_id: AWARD.id,
+    });
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    await answerOffer();
+    await advance(5000);
+    // One region for the whole console (the scene, mocked here, adds none),
+    // read as a whole, with nothing nested inside it claiming its own turn.
+    const regions = () => Array.from(document.querySelectorAll('[aria-live]'));
+    expect(regions()).toHaveLength(1);
+    expect(regions()[0]).toHaveAttribute('aria-atomic', 'true');
+    expect(regions()[0].querySelectorAll('[role="status"]')).toHaveLength(0);
+    const said = () => regions()[0].textContent ?? '';
+    expect(said()).toContain('Street 1 Crossed. Book 1.10 Chips Now Or Cross For 1.35.');
+    fireEvent.click(screen.getByRole('button', { name: 'Cross Street' }));
+    await settle();
+    // The server has answered. The region has not changed what it says.
+    expect(said()).toContain('Street 1 Crossed. Book 1.10 Chips Now Or Cross For 1.35.');
+    expect(said()).not.toContain('The Donkey Did Not Make');
+    fireEvent.click(screen.getByRole('button', { name: 'Present' }));
+    expect(said()).not.toContain('Street 1 Crossed');
+    expect(said()).toContain('The Donkey Did Not Make This Crossing.');
   });
 
   it('holds an open round, whatever the award says', async () => {

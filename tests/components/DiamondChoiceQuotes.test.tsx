@@ -441,10 +441,12 @@ describe('choice games consume wheel-funded entry', () => {
         game === 'mines'
           ? 'Super Diamond Mines Pays At Least 1.00 Chips, Even If You Hit A Mine.'
           : 'Super Donkey Cross Pays At Least 1.00 Chips, Even If You Do Not Make It Across.';
-      const statusLines = screen
-        .getAllByRole('status')
-        .filter((line) => line.textContent?.includes(sentence));
-      expect(statusLines.some((line) => line.tagName === 'P')).toBe(true);
+      // The page says it in its one live region, not in a nested status.
+      expect(
+        Array.from(document.querySelectorAll('[aria-live] p')).some((line) =>
+          line.textContent?.includes(sentence)
+        )
+      ).toBe(true);
       expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
       expect(screen.queryByLabelText('Entry Diamonds')).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
@@ -545,13 +547,9 @@ describe('choice games consume wheel-funded entry', () => {
       expect(guaranteed).toHaveTextContent('0.10 Chips');
       expect(guaranteed).not.toHaveAttribute('data-ink', 'gold');
       expect(
-        screen
-          .getAllByRole('status')
-          .some(
-            (line) =>
-              line.tagName === 'P' &&
-              line.textContent?.includes('Pays At Least 0.10 Chips On Any Loss.')
-          )
+        Array.from(document.querySelectorAll('[aria-live] p')).some((line) =>
+          line.textContent?.includes('Pays At Least 0.10 Chips On Any Loss.')
+        )
       ).toBe(true);
     }
   );

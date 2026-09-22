@@ -171,6 +171,7 @@ export function WheelExperience({
               fitViewport={fitViewport}
               size={size}
               presentation="assembly"
+              paused={Boolean(showPrize)}
               onLanded={() => {
                 if (runMode) finish();
                 else setPhase('bonus');
@@ -188,6 +189,7 @@ export function WheelExperience({
             spinning={spinning && phase === 'primary'}
             fitViewport={fitViewport}
             size={size}
+            paused={Boolean(showPrize)}
             onLanded={() => {
               if (receipt?.outcome.kind === 'nothing') finish();
               else if (receipt?.outcome.kind === 'upgrade' && receipt.secondary && runMode)

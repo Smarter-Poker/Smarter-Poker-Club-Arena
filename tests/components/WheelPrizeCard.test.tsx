@@ -75,7 +75,7 @@ describe('approved wheel prize cards', () => {
         expect(element).toHaveAttribute('data-card-index', String(index));
         expect(element.querySelector('image')).toHaveAttribute(
           'href',
-          `/assets/diamond-spins/${upgraded ? (titleOnly ? 'wheel-upgrade-titles-v1.png' : 'wheel-upgrade-cards-v1.png') : 'wheel-main-cards-v1.png'}`
+          `/assets/diamond-spins/${upgraded ? (titleOnly ? 'wheel-upgrade-titles-v1.webp' : 'wheel-upgrade-cards-v1.webp') : 'wheel-main-cards-v1.webp'}`
         );
         expect(element.querySelector('g[clip-path]')).toBeTruthy();
       }

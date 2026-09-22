@@ -1,4 +1,11 @@
-import type { ButtonHTMLAttributes, CSSProperties, HTMLAttributes, ReactNode, Ref } from 'react';
+import type {
+  AnchorHTMLAttributes,
+  ButtonHTMLAttributes,
+  CSSProperties,
+  HTMLAttributes,
+  ReactNode,
+  Ref,
+} from 'react';
 import { useFitText } from '../lobby/game-cards/useFitText';
 import './SpadeConsole.css';
 
@@ -187,7 +194,15 @@ export function ZoneText({
 }: {
   text: string;
   className?: string;
-  as?: 'span' | 'h2' | 'h3' | 'strong';
+  /**
+   * The element the zone prints into. 'h1' exists for ONE case: the public
+   * landing page at the arena root, where the console's painted title zone is
+   * the document's only top level heading and the prerendered HTML a crawler
+   * reads has to carry it (scripts/prerender-public-routes.mjs refuses to
+   * publish a page with no h1). Everywhere else a console lives inside a page
+   * that already owns its h1, so the default stays h2.
+   */
+  as?: 'span' | 'h1' | 'h2' | 'h3' | 'strong';
   id?: string;
   minRatio?: number;
   /**
@@ -214,6 +229,7 @@ export function ZoneText({
 export function SpadeConsole({
   eyebrow,
   title,
+  titleAs = 'h2',
   titleId,
   subtitle,
   pill,
@@ -229,6 +245,8 @@ export function SpadeConsole({
 }: {
   eyebrow?: string;
   title: string;
+  /** See ZoneText's `as`. Only the public landing page asks for 'h1'. */
+  titleAs?: 'h1' | 'h2';
   titleId?: string;
   subtitle?: string;
   /** The word printed in the header's painted pill slot. */
@@ -277,7 +295,7 @@ export function SpadeConsole({
           />
         )}
         <ZoneText
-          as="h2"
+          as={titleAs}
           id={titleId}
           text={title}
           className="sc__title sc-ink--silver"
@@ -345,6 +363,25 @@ export type PlateButtonProps = {
   ink?: ConsoleInk;
   /** The button element, for callers that manage focus (ConfirmModal). */
   buttonRef?: Ref<HTMLButtonElement>;
+  /**
+   * THE SAME PLATE, AS A LINK (2026-09-22).
+   *
+   * A plate that NAVIGATES is an anchor, not a button that calls location.
+   * The public landing page at the arena root is the case that forced it:
+   * both its ways in leave this app (the World Hub sign up form and the
+   * shared sign in route), it is prerendered for crawlers that never run the
+   * bundle, and a button is not a link to any of them. It also has to survive
+   * a middle click and a long press, which only an href does.
+   *
+   * The art, the zone and the fit are identical; only the element changes.
+   * This is one optional field rather than a second props type in a union,
+   * because a union costs every existing caller its contextual typing: the
+   * moment `plates` accepted two shapes, TypeScript could no longer infer the
+   * event parameter of an inline `onClick` and TournamentLobbyCard went red
+   * on an implicit any. Pass `href` only with anchor-shaped props; `disabled`
+   * and `type` have no meaning on a link.
+   */
+  href?: string;
 } & ButtonHTMLAttributes<HTMLButtonElement>;
 
 export function PlateButton({
@@ -354,6 +391,7 @@ export function PlateButton({
   label,
   ink = 'silver',
   buttonRef,
+  href,
   className = '',
   style,
   ...rest
@@ -363,19 +401,42 @@ export function PlateButton({
   canvasH: number;
 } & PlateButtonProps) {
   const ref = useFitText<HTMLSpanElement>(label, 1, 0.5);
+  const plateStyle = { ...zonePct(zone, canvasW, canvasH), ...style };
+  const face = (
+    <span className="sc-plate__well">
+      <span className={`sc-plate__text sc-ink--${ink}`} ref={ref}>
+        {label}
+      </span>
+    </span>
+  );
+
+  if (href !== undefined) {
+    /* The passthrough was declared against a button because that is what a
+       plate almost always is. An anchor takes the same global and event
+       attributes; the handful that differ (type, disabled, form*) are
+       meaningless on a link and documented as not-for-links above. */
+    const anchorRest = rest as AnchorHTMLAttributes<HTMLAnchorElement>;
+    return (
+      <a
+        className={`sc-plate sc-plate--link ${className}`.trim()}
+        href={href}
+        style={plateStyle}
+        {...anchorRest}
+      >
+        {face}
+      </a>
+    );
+  }
+
   return (
     <button
       type="button"
       ref={buttonRef}
       className={`sc-plate ${className}`.trim()}
-      style={{ ...zonePct(zone, canvasW, canvasH), ...style }}
+      style={plateStyle}
       {...rest}
     >
-      <span className="sc-plate__well">
-        <span className={`sc-plate__text sc-ink--${ink}`} ref={ref}>
-          {label}
-        </span>
-      </span>
+      {face}
     </button>
   );
 }

@@ -169,21 +169,42 @@ run_game_probe diamond-one-setting-super-guarantee 'NOTICE:  PASS One setting an
 # designed rate. Read only, fixed seeds, no money path: this is the check that
 # the twenty Plinko games Dan played could not have found, because a table's
 # 0.80 arithmetic being exact says nothing about how often 20x actually lands.
-run_game_probe diamond-bonus-fairness-audit 'NOTICE:  PASS Diamond fairness audit:'
+run_game_probe diamond-bonus-fairness-audit 'NOTICE:  PASS Diamond fairness audit (contract 3):'
 
-# A live Crash round is sealed like every other round (fairness audit,
-# 2026-09-22). The installed ticket sweep (20260921185541) is loaded first, on
-# its exact production preimage: its expired-unused DELETE is the one the new
-# ticket lock admits. Then the lock, and the latest-contract probes run again on
-# top of it - the player cash-out, auto, cap and tick settlements, and the
-# Plinko, Crash, road and Mines award starts that spend a ticket - before the
-# new probe proves every rewrite the lock refuses.
+# The installed ticket sweep (20260921185541) comes first: it is the earliest of
+# the three migrations left, its expired-unused DELETE is the one the new ticket
+# lock admits, and the contract-3 probes are re-run on top of it while contract
+# 3 is still what is installed.
 "${diamond_psql[@]}" -f "$diamond/crash-lock-dependencies.sql" \
-  -f "$root/supabase/migrations/20260921185541_a_saved_round_settles_itself_and_a_ticket_is_never_pulled_from_under_a_live_page.sql" \
-  -f "$root/supabase/migrations/20260922173914_a_live_crash_round_is_sealed_like_every_other_round.sql"
+  -f "$root/supabase/migrations/20260921185541_a_saved_round_settles_itself_and_a_ticket_is_never_pulled_from_under_a_live_page.sql"
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
 run_game_probe diamond-crash-clicked-multiplier 'NOTICE:  PASS Crash clicked multiplier: exact 2.57x, no late rescue, auto and cap preserved, future and foreign requests refused, one payout on replay'
 run_game_probe diamond-one-setting-super-guarantee 'NOTICE:  PASS One setting and Super guarantee: Diamond and Super tables, ten drops a game, twelve-street road, six mines, exact quotes before Start, old settings and other drop counts refused without a debit, Super Plinko batch and Crash, road and Mines losses pay the entry, ordinary floor kept, sealed history readable'
+
+# --- D2 bonus rules 2026-09-21 ---
+# Owner rulings R3, R6, R10, R11 and R16 (Dan, 2026-09-21): the first step of a
+# bonus game never ruins it, the floor is half the stake or what a Super player
+# paid (add-on included), Plinko's drop value is the player's again and the
+# add-on debit names itself. Qualified on the exact production preimages of every
+# starter, actor, decider, quote and receipt the migration patches; then the
+# fairness audit is re-run so the sealed draws are held to the contract-4 forms.
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20260921203512_the_first_step_of_a_bonus_game_never_ruins_it_and_the_floor_.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-first-step-and-paid-floor 'NOTICE:  PASS First step and paid floor: floors exact for every stake 25..2500 on four stake kinds, crash never below 1.10x and every target 0.80B, street one certain and every street 0.80B, mines dealt around the first pick and fair, owner example 2500+2500 pays at least 50 on all four games, add-on debited once as itself with one custody movement and replay-safe, every payout journaled once from promo, ordinary half floor and 0.80x first steps, old round keeps 1.01x;'
+run_game_probe diamond-bonus-fairness-audit 'NOTICE:  PASS Diamond fairness audit (contract 4):'
+# --- end D2 bonus rules 2026-09-21 ---
+
+# A live Crash round is sealed like every other round (fairness audit,
+# 2026-09-22). The lock is the LAST of the three by version, so it lands on top
+# of contract 4, and the probe that proves the games still play through it is
+# the contract-4 one: diamond-one-setting-super-guarantee described contract 3's
+# Diamond table and ten-drop rule, which 20260921203512 legitimately replaced,
+# so re-running it here would be asserting a contract that is no longer
+# installed rather than testing the lock.
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20260922173914_a_live_crash_round_is_sealed_like_every_other_round.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-crash-clicked-multiplier 'NOTICE:  PASS Crash clicked multiplier: exact 2.57x, no late rescue, auto and cap preserved, future and foreign requests refused, one payout on replay'
+run_game_probe diamond-first-step-and-paid-floor 'NOTICE:  PASS First step and paid floor: floors exact for every stake 25..2500 on four stake kinds, crash never below 1.10x and every target 0.80B, street one certain and every street 0.80B, mines dealt around the first pick and fair, owner example 2500+2500 pays at least 50 on all four games, add-on debited once as itself with one custody movement and replay-safe, every payout journaled once from promo, ordinary half floor and 0.80x first steps, old round keeps 1.01x;'
 run_game_probe diamond-crash-round-is-sealed 'NOTICE:  PASS Crash round sealed: cash-out, instant crash and time settlement through the lock with nothing sealed moved, 36 rewrites refused (21 sealed columns, 2 settlement columns on a round still open, the minimum, a smuggled crash point, a settled edit, 2 deletes, 8 ticket re-spends, un-spends, rewrites and deletes), expired ticket swept, live tickets kept, maintenance escape unchanged'
 
 # Observe a genuine two-connection duplicate race in a SECOND disposable local

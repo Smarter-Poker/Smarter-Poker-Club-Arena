@@ -1,18 +1,31 @@
+import {
+  PLINKO_DENOMINATIONS,
+  plinkoDropChoices,
+  validPlinkoDenomination as validPlinkoDrop,
+} from './diamondBonusPayout';
+
 /** Spin pricing and Plinko drops are amounts of diamonds, not prize multipliers. */
 export const MIN_DIAMOND_SPIN = 25;
 export const MAX_DIAMOND_SPIN = 2500;
 /**
  * THE PLAYER CHOOSES THE DROP (Dan, 2026-09-21, R6: "On Plinko the player must
  * choose how many diamonds to drop and the value of each drop. Today it is just
- * defaulted at 10 diamonds"). The value of one drop comes from this list, it
- * must divide the stake exactly, and the stake split by it is the number of
- * drops, which the server keeps between PLINKO_MIN_DROPS and PLINKO_MAX_DROPS.
- * Nothing is pre-selected: a budget whose `denomination` is null has not been
- * chosen yet and cannot start.
+ * defaulted at 10 diamonds"). The value of one drop comes from the listed
+ * values, or is the whole stake as a single drop; it must divide the stake
+ * exactly, and the stake split by it is the number of drops, which the server
+ * keeps between PLINKO_MIN_DROPS and PLINKO_MAX_DROPS. Nothing is pre-selected:
+ * a budget whose `denomination` is null has not been chosen yet and cannot
+ * start.
+ *
+ * ONE MIRROR OF ONE SERVER RULE. The rule itself lives in
+ * utils/diamondBonusPayout (plinkoDropChoices), which mirrors migration
+ * 20260921203512 byte for byte; this module only dresses it for the setup
+ * panel. Written twice they disagreed: a stake with no listed divisor inside
+ * the drop ceiling (2,497 diamonds, say) offered the player nothing to choose
+ * and could never be played, while the server would have taken it as one drop.
  */
-export const PLINKO_DIAMONDS_PER_DROP = [1, 2, 4, 5, 10, 20, 25, 50, 100, 250, 500] as const;
-export const PLINKO_MIN_DROPS = 1;
-export const PLINKO_MAX_DROPS = 100;
+export { PLINKO_MIN_DROPS, PLINKO_MAX_DROPS } from './diamondBonusPayout';
+export const PLINKO_DIAMONDS_PER_DROP = PLINKO_DENOMINATIONS;
 
 export function validSpinAmount(amount: number): boolean {
   return Number.isSafeInteger(amount) && amount >= MIN_DIAMOND_SPIN && amount <= MAX_DIAMOND_SPIN;
@@ -28,20 +41,13 @@ export function validPlinkoDenomination(
   totalDiamonds: number,
   value: number | null
 ): value is number {
-  if (!Number.isSafeInteger(totalDiamonds) || totalDiamonds <= 0) return false;
-  if (typeof value !== 'number' || !(PLINKO_DIAMONDS_PER_DROP as readonly number[]).includes(value))
-    return false;
-  if (totalDiamonds % value !== 0) return false;
-  const drops = totalDiamonds / value;
-  return drops >= PLINKO_MIN_DROPS && drops <= PLINKO_MAX_DROPS;
+  return typeof value === 'number' && validPlinkoDrop(totalDiamonds, value);
 }
 /** Every drop value the player may choose for this stake, smallest value (most drops) first. */
 export function plinkoAllocations(totalDiamonds: number): PlinkoAllocation[] {
-  return PLINKO_DIAMONDS_PER_DROP.filter((value) =>
-    validPlinkoDenomination(totalDiamonds, value)
-  ).map((value) => ({
-    diamondsPerDrop: value,
-    drops: totalDiamonds / value,
+  return plinkoDropChoices(totalDiamonds).map((choice) => ({
+    diamondsPerDrop: choice.denomination,
+    drops: choice.drops,
     totalDiamonds,
   }));
 }

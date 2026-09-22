@@ -1,0 +1,1366 @@
+[
+  {
+    "game": "plinko",
+    "kind": "super-add-on",
+    "value": {
+      "id": "56edb008-0f1c-48b4-b3a4-dd371d24bd0a",
+      "ok": true,
+      "game": "plinko",
+      "bonus": {
+        "id": "56edb008-0f1c-48b4-b3a4-dd371d24bd0a",
+        "game": "plinko",
+        "award_id": "b9333671-9c69-4e94-b6ca-c3da02394ca7",
+        "base_diamonds": 5000,
+        "added_diamonds": 2500,
+        "entry_diamonds": 2500,
+        "total_diamonds": 7500,
+        "boost_multiplier": 2
+      },
+      "drops": [
+        {
+          "slot": 8,
+          "index": 0,
+          "path_bits": 63108,
+          "payout_chips": 1.8,
+          "multiplier_cents": 72
+        },
+        {
+          "slot": 7,
+          "index": 1,
+          "path_bits": 5244,
+          "payout_chips": 1.82,
+          "multiplier_cents": 73
+        },
+        {
+          "slot": 11,
+          "index": 2,
+          "path_bits": 53174,
+          "payout_chips": 1.88,
+          "multiplier_cents": 75
+        },
+        {
+          "slot": 9,
+          "index": 3,
+          "path_bits": 19261,
+          "payout_chips": 1.82,
+          "multiplier_cents": 73
+        },
+        {
+          "slot": 7,
+          "index": 4,
+          "path_bits": 37318,
+          "payout_chips": 1.82,
+          "multiplier_cents": 73
+        },
+        {
+          "slot": 6,
+          "index": 5,
+          "path_bits": 9305,
+          "payout_chips": 1.88,
+          "multiplier_cents": 75
+        },
+        {
+          "slot": 5,
+          "index": 6,
+          "path_bits": 38946,
+          "payout_chips": 1.87,
+          "multiplier_cents": 75
+        },
+        {
+          "slot": 9,
+          "index": 7,
+          "path_bits": 23461,
+          "payout_chips": 1.83,
+          "multiplier_cents": 73
+        },
+        {
+          "slot": 6,
+          "index": 8,
+          "path_bits": 28818,
+          "payout_chips": 1.87,
+          "multiplier_cents": 75
+        },
+        {
+          "slot": 8,
+          "index": 9,
+          "path_bits": 38061,
+          "payout_chips": 1.8,
+          "multiplier_cents": 72
+        },
+        {
+          "slot": 6,
+          "index": 10,
+          "path_bits": 60032,
+          "payout_chips": 1.87,
+          "multiplier_cents": 75
+        },
+        {
+          "slot": 8,
+          "index": 11,
+          "path_bits": 17846,
+          "payout_chips": 1.8,
+          "multiplier_cents": 72
+        },
+        {
+          "slot": 9,
+          "index": 12,
+          "path_bits": 28386,
+          "payout_chips": 1.82,
+          "multiplier_cents": 73
+        },
+        {
+          "slot": 9,
+          "index": 13,
+          "path_bits": 54855,
+          "payout_chips": 1.82,
+          "multiplier_cents": 73
+        },
+        {
+          "slot": 10,
+          "index": 14,
+          "path_bits": 23918,
+          "payout_chips": 1.87,
+          "multiplier_cents": 75
+        },
+        {
+          "slot": 12,
+          "index": 15,
+          "path_bits": 53242,
+          "payout_chips": 2.0,
+          "multiplier_cents": 80
+        },
+        {
+          "slot": 9,
+          "index": 16,
+          "path_bits": 30177,
+          "payout_chips": 1.83,
+          "multiplier_cents": 73
+        },
+        {
+          "slot": 6,
+          "index": 17,
+          "path_bits": 20627,
+          "payout_chips": 1.88,
+          "multiplier_cents": 75
+        },
+        {
+          "slot": 7,
+          "index": 18,
+          "path_bits": 43212,
+          "payout_chips": 1.83,
+          "multiplier_cents": 73
+        },
+        {
+          "slot": 11,
+          "index": 19,
+          "path_bits": 15311,
+          "payout_chips": 1.88,
+          "multiplier_cents": 75
+        },
+        {
+          "slot": 10,
+          "index": 20,
+          "path_bits": 44347,
+          "payout_chips": 1.88,
+          "multiplier_cents": 75
+        },
+        {
+          "slot": 10,
+          "index": 21,
+          "path_bits": 59035,
+          "payout_chips": 1.87,
+          "multiplier_cents": 75
+        },
+        {
+          "slot": 7,
+          "index": 22,
+          "path_bits": 11570,
+          "payout_chips": 1.83,
+          "multiplier_cents": 73
+        },
+        {
+          "slot": 5,
+          "index": 23,
+          "path_bits": 18848,
+          "payout_chips": 1.87,
+          "multiplier_cents": 75
+        },
+        {
+          "slot": 8,
+          "index": 24,
+          "path_bits": 3514,
+          "payout_chips": 1.8,
+          "multiplier_cents": 72
+        },
+        {
+          "slot": 8,
+          "index": 25,
+          "path_bits": 22346,
+          "payout_chips": 1.8,
+          "multiplier_cents": 72
+        },
+        {
+          "slot": 7,
+          "index": 26,
+          "path_bits": 21706,
+          "payout_chips": 1.82,
+          "multiplier_cents": 73
+        },
+        {
+          "slot": 7,
+          "index": 27,
+          "path_bits": 37592,
+          "payout_chips": 1.83,
+          "multiplier_cents": 73
+        },
+        {
+          "slot": 8,
+          "index": 28,
+          "path_bits": 50642,
+          "payout_chips": 1.8,
+          "multiplier_cents": 72
+        },
+        {
+          "slot": 8,
+          "index": 29,
+          "path_bits": 59048,
+          "payout_chips": 1.8,
+          "multiplier_cents": 72
+        }
+      ],
+      "nonce": 1,
+      "club_id": "d1000000-0000-4000-8000-000000000003",
+      "award_id": "b9333671-9c69-4e94-b6ca-c3da02394ca7",
+      "commit_id": "c63ab209-09a7-47e9-8524-4f2b04d7adbb",
+      "drop_count": 30,
+      "table_name": "Super Double",
+      "client_seed": "first-game",
+      "server_seed": "52338e46fb7cadccfcb1613ee4746c801afd1088d8e9bf45dde18f57330bf215",
+      "bet_diamonds": 7500,
+      "payout_chips": 55.29,
+      "paid_diamonds": 5000,
+      "table_version": 6,
+      "payout_version": 4,
+      "server_seed_hash": "a34d2bec3acb30f379c57c4e575c6214e2b33c85a5aadc04b35fb66aef3a94be",
+      "diamonds_per_chip": 100,
+      "diamonds_per_drop": 250,
+      "multipliers_cents": [
+        2000, 2000, 1000, 170, 80, 75, 75, 73, 72, 73, 75, 75, 80, 170, 1000, 2000, 2000
+      ],
+      "minimum_payout_chips": 50.0
+    }
+  },
+  {
+    "game": "crash",
+    "kind": "super-add-on",
+    "value": {
+      "ok": true,
+      "game": "crash",
+      "pool": {
+        "chips_paid": 50.0
+      },
+      "bonus": {
+        "id": "4ac4b453-d8fc-4117-8f48-94d4237e8077",
+        "game": "crash",
+        "award_id": "06cfcf8e-ad32-4e32-8ec8-572366829c59",
+        "base_diamonds": 5000,
+        "added_diamonds": 2500,
+        "entry_diamonds": 2500,
+        "total_diamonds": 7500,
+        "boost_multiplier": 2
+      },
+      "status": "crashed",
+      "club_id": "d1000000-0000-4000-8000-000000000003",
+      "host_id": "d1000000-0000-4000-8000-000000000003",
+      "outcome": {
+        "status": "crashed",
+        "settled_at": "2026-09-21T16:06:46.093835-05:00",
+        "settled_by": "player",
+        "crash_cents": 110,
+        "payout_chips": 50.0,
+        "cashout_cents": null
+      },
+      "award_id": "06cfcf8e-ad32-4e32-8ec8-572366829c59",
+      "balances": {
+        "diamonds": 90000,
+        "member_chips": 105.29
+      },
+      "fairness": {
+        "roll": 98868532512599,
+        "nonce": 1,
+        "commit_id": "89105fd7-36f1-405f-89af-2c5bcd2f27e6",
+        "client_seed": "first-game",
+        "crash_cents": 110,
+        "server_seed": "1e36b58847c8c20c305b8baa9aeec78002d3d42d70530094daf9a48649eede9c",
+        "server_seed_hash": "1586d11dda610bb18223f85b83decfb35e911d5d02e0a437bd2f098bc367c572"
+      },
+      "growth_k": 0.04,
+      "round_id": "59b2a65d-f588-4556-a03e-b0c69c40db59",
+      "bet_chips": 75.0,
+      "cap_cents": 6666,
+      "created_at": "2026-09-21T16:06:41.423205-05:00",
+      "elapsed_ms": 10000,
+      "server_now": "2026-09-21T16:06:46.096394-05:00",
+      "started_at": "2026-09-21T16:06:36.050995-05:00",
+      "bet_diamonds": 7500,
+      "payout_version": 4,
+      "crash_floor_cents": 110,
+      "diamonds_per_chip": 100,
+      "auto_cashout_cents": null,
+      "cashout_floor_cents": 111,
+      "minimum_payout_chips": 50.0,
+      "multiplier_now_cents": null
+    }
+  },
+  {
+    "game": "crossing",
+    "kind": "super-add-on",
+    "value": {
+      "id": "c691ffce-5dc0-409d-ba0b-207c7e4c3674",
+      "ok": true,
+      "game": "crossing",
+      "mode": "road",
+      "bonus": {
+        "id": "8dbc76ab-ae82-4675-85b5-834017c9592c",
+        "game": "crossing",
+        "award_id": "525da4fe-d0e5-456b-8a5a-3ae4239acb98",
+        "base_diamonds": 5000,
+        "added_diamonds": 2500,
+        "entry_diamonds": 2500,
+        "total_diamonds": 7500,
+        "boost_multiplier": 2
+      },
+      "nonce": 1,
+      "proof": {
+        "game": "crossing",
+        "mines": 0,
+        "nonce": 1,
+        "road_roll": "179586117126739",
+        "first_pick": null,
+        "mine_cells": [],
+        "client_seed": "first-game",
+        "server_seed": "893bd93facb845b6c57551b8001a71d162e9972c4f6ef8c647486a07fc78354b",
+        "payout_version": 4,
+        "server_seed_hash": "b1bbca0bc47bb048215137b8f17e484b45eb626b0045c1efb021fc92a91d7d29"
+      },
+      "picked": [0, 1],
+      "prizes": [
+        60.0, 108.75, 138.75, 183.75, 236.25, 307.5, 401.25, 525.0, 682.5, 885.0, 1155.0, 1500.0
+      ],
+      "status": "lost",
+      "club_id": "d1000000-0000-4000-8000-000000000003",
+      "award_id": "525da4fe-d0e5-456b-8a5a-3ae4239acb98",
+      "bet_chips": 75.0,
+      "commit_id": "ea87daae-f0ec-4075-87df-1dfe1292b1da",
+      "max_steps": 12,
+      "client_seed": "first-game",
+      "bet_diamonds": 7500,
+      "payout_chips": 50.0,
+      "payout_version": 4,
+      "server_seed_hash": "b1bbca0bc47bb048215137b8f17e484b45eb626b0045c1efb021fc92a91d7d29",
+      "diamonds_per_chip": 100,
+      "minimum_payout_chips": 50.0
+    }
+  },
+  {
+    "game": "mines",
+    "kind": "super-add-on",
+    "value": {
+      "id": "1dd49959-a0b8-4fc7-a4eb-b65bac7f5b34",
+      "ok": true,
+      "game": "mines",
+      "mode": "6",
+      "bonus": {
+        "id": "085386c4-9e4c-4e0c-bd9e-c5f95002abee",
+        "game": "mines",
+        "award_id": "f3243635-691d-4837-99da-f7743840aac8",
+        "base_diamonds": 5000,
+        "added_diamonds": 2500,
+        "entry_diamonds": 2500,
+        "total_diamonds": 7500,
+        "boost_multiplier": 2
+      },
+      "nonce": 1,
+      "proof": {
+        "game": "mines",
+        "mines": 6,
+        "nonce": 1,
+        "road_roll": "0",
+        "first_pick": 7,
+        "mine_cells": [0, 4, 8, 9, 10, 17],
+        "client_seed": "first-game",
+        "server_seed": "2d8d127007733b4a416c95ec36fe1fadf7596a2d01cc99eca32f7a5d25e9150a",
+        "payout_version": 4,
+        "server_seed_hash": "9afacb934441dc238fd0b720e9d60b87617ec61aa3a0603a7e243fbcf5da17be"
+      },
+      "picked": [7, 0],
+      "prizes": [
+        60.0, 63.333333333333336, 68.03921568627452, 74.80392156862744, 84.72549019607843,
+        99.6078431372549, 122.50377073906486, 158.7556561085973
+      ],
+      "status": "lost",
+      "club_id": "d1000000-0000-4000-8000-000000000003",
+      "award_id": "f3243635-691d-4837-99da-f7743840aac8",
+      "bet_chips": 75.0,
+      "commit_id": "df064389-e5eb-4595-a171-bd0f6e496806",
+      "max_steps": 8,
+      "client_seed": "first-game",
+      "bet_diamonds": 7500,
+      "payout_chips": 50.0,
+      "payout_version": 4,
+      "server_seed_hash": "9afacb934441dc238fd0b720e9d60b87617ec61aa3a0603a7e243fbcf5da17be",
+      "diamonds_per_chip": 100,
+      "minimum_payout_chips": 50.0
+    }
+  },
+  {
+    "game": "plinko",
+    "kind": "super-add-on-odd-stake",
+    "value": {
+      "id": "22ac94c7-914f-4bd6-b076-42ba9fb868a0",
+      "ok": true,
+      "game": "plinko",
+      "bonus": {
+        "id": "22ac94c7-914f-4bd6-b076-42ba9fb868a0",
+        "game": "plinko",
+        "award_id": "2121b9f8-e9cf-4194-9c1f-a9bbd1838934",
+        "base_diamonds": 4978,
+        "added_diamonds": 2489,
+        "entry_diamonds": 2489,
+        "total_diamonds": 7467,
+        "boost_multiplier": 2
+      },
+      "drops": [
+        {
+          "slot": 12,
+          "index": 0,
+          "path_bits": 57306,
+          "payout_chips": 59.73,
+          "multiplier_cents": 80
+        }
+      ],
+      "nonce": 2,
+      "club_id": "d1000000-0000-4000-8000-000000000003",
+      "award_id": "2121b9f8-e9cf-4194-9c1f-a9bbd1838934",
+      "commit_id": "bc0b32ab-9211-449d-8ed6-eb6292048bdb",
+      "drop_count": 1,
+      "table_name": "Super Double",
+      "client_seed": "odd-game",
+      "server_seed": "b93752291f2e94f11b279bbe756f4239e9b28fa155c484d8c1b771ed5c48c035",
+      "bet_diamonds": 7467,
+      "payout_chips": 59.73,
+      "paid_diamonds": 4978,
+      "table_version": 6,
+      "payout_version": 4,
+      "server_seed_hash": "12d5bb4d1acebb49edff21f376bacadeb60b988ec23949f115c39c753d45b7c0",
+      "diamonds_per_chip": 100,
+      "diamonds_per_drop": 7467,
+      "multipliers_cents": [
+        2000, 2000, 1000, 170, 80, 75, 75, 73, 72, 73, 75, 75, 80, 170, 1000, 2000, 2000
+      ],
+      "minimum_payout_chips": 49.78
+    }
+  },
+  {
+    "game": "plinko",
+    "kind": "ordinary",
+    "value": {
+      "id": "32d86031-d2e0-4475-abe6-dc902df12a5e",
+      "ok": true,
+      "game": "plinko",
+      "bonus": {
+        "id": "32d86031-d2e0-4475-abe6-dc902df12a5e",
+        "game": "plinko",
+        "award_id": "6b1c52fc-40bd-4630-b193-209b57cb9f26",
+        "base_diamonds": 100,
+        "added_diamonds": 0,
+        "entry_diamonds": 100,
+        "total_diamonds": 100,
+        "boost_multiplier": 1
+      },
+      "drops": [
+        {
+          "slot": 8,
+          "index": 0,
+          "path_bits": 3389,
+          "payout_chips": 0.01,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 9,
+          "index": 1,
+          "path_bits": 12959,
+          "payout_chips": 0.0,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 5,
+          "index": 2,
+          "path_bits": 43328,
+          "payout_chips": 0.01,
+          "multiplier_cents": 64
+        },
+        {
+          "slot": 6,
+          "index": 3,
+          "path_bits": 12551,
+          "payout_chips": 0.01,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 5,
+          "index": 4,
+          "path_bits": 9328,
+          "payout_chips": 0.01,
+          "multiplier_cents": 64
+        },
+        {
+          "slot": 8,
+          "index": 5,
+          "path_bits": 11100,
+          "payout_chips": 0.0,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 7,
+          "index": 6,
+          "path_bits": 27025,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 10,
+          "index": 7,
+          "path_bits": 62377,
+          "payout_chips": 0.0,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 7,
+          "index": 8,
+          "path_bits": 38545,
+          "payout_chips": 0.0,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 6,
+          "index": 9,
+          "path_bits": 35148,
+          "payout_chips": 0.0,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 11,
+          "index": 10,
+          "path_bits": 40819,
+          "payout_chips": 0.0,
+          "multiplier_cents": 64
+        },
+        {
+          "slot": 6,
+          "index": 11,
+          "path_bits": 41328,
+          "payout_chips": 0.01,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 7,
+          "index": 12,
+          "path_bits": 50776,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 11,
+          "index": 13,
+          "path_bits": 58799,
+          "payout_chips": 0.01,
+          "multiplier_cents": 64
+        },
+        {
+          "slot": 8,
+          "index": 14,
+          "path_bits": 40137,
+          "payout_chips": 0.0,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 5,
+          "index": 15,
+          "path_bits": 2202,
+          "payout_chips": 0.01,
+          "multiplier_cents": 64
+        },
+        {
+          "slot": 6,
+          "index": 16,
+          "path_bits": 13350,
+          "payout_chips": 0.0,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 8,
+          "index": 17,
+          "path_bits": 17881,
+          "payout_chips": 0.01,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 9,
+          "index": 18,
+          "path_bits": 31850,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 5,
+          "index": 19,
+          "path_bits": 41136,
+          "payout_chips": 0.0,
+          "multiplier_cents": 64
+        },
+        {
+          "slot": 7,
+          "index": 20,
+          "path_bits": 27076,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 8,
+          "index": 21,
+          "path_bits": 22179,
+          "payout_chips": 0.0,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 10,
+          "index": 22,
+          "path_bits": 60026,
+          "payout_chips": 0.0,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 9,
+          "index": 23,
+          "path_bits": 58067,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 8,
+          "index": 24,
+          "path_bits": 21803,
+          "payout_chips": 0.0,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 8,
+          "index": 25,
+          "path_bits": 11819,
+          "payout_chips": 0.0,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 10,
+          "index": 26,
+          "path_bits": 61281,
+          "payout_chips": 0.0,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 9,
+          "index": 27,
+          "path_bits": 52627,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 7,
+          "index": 28,
+          "path_bits": 50221,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 8,
+          "index": 29,
+          "path_bits": 22950,
+          "payout_chips": 0.01,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 10,
+          "index": 30,
+          "path_bits": 40551,
+          "payout_chips": 0.01,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 9,
+          "index": 31,
+          "path_bits": 50873,
+          "payout_chips": 0.0,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 10,
+          "index": 32,
+          "path_bits": 60358,
+          "payout_chips": 0.0,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 10,
+          "index": 33,
+          "path_bits": 47821,
+          "payout_chips": 0.0,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 8,
+          "index": 34,
+          "path_bits": 33982,
+          "payout_chips": 0.01,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 9,
+          "index": 35,
+          "path_bits": 24211,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 9,
+          "index": 36,
+          "path_bits": 64674,
+          "payout_chips": 0.0,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 8,
+          "index": 37,
+          "path_bits": 54610,
+          "payout_chips": 0.01,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 12,
+          "index": 38,
+          "path_bits": 48735,
+          "payout_chips": 0.01,
+          "multiplier_cents": 175
+        },
+        {
+          "slot": 9,
+          "index": 39,
+          "path_bits": 36254,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 5,
+          "index": 40,
+          "path_bits": 34065,
+          "payout_chips": 0.01,
+          "multiplier_cents": 64
+        },
+        {
+          "slot": 8,
+          "index": 41,
+          "path_bits": 19909,
+          "payout_chips": 0.0,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 12,
+          "index": 42,
+          "path_bits": 45045,
+          "payout_chips": 0.02,
+          "multiplier_cents": 175
+        },
+        {
+          "slot": 9,
+          "index": 43,
+          "path_bits": 52457,
+          "payout_chips": 0.0,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 10,
+          "index": 44,
+          "path_bits": 28089,
+          "payout_chips": 0.01,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 8,
+          "index": 45,
+          "path_bits": 28727,
+          "payout_chips": 0.01,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 9,
+          "index": 46,
+          "path_bits": 55853,
+          "payout_chips": 0.0,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 6,
+          "index": 47,
+          "path_bits": 8758,
+          "payout_chips": 0.0,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 9,
+          "index": 48,
+          "path_bits": 54919,
+          "payout_chips": 0.0,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 7,
+          "index": 49,
+          "path_bits": 48642,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 7,
+          "index": 50,
+          "path_bits": 35463,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 7,
+          "index": 51,
+          "path_bits": 33579,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 7,
+          "index": 52,
+          "path_bits": 49955,
+          "payout_chips": 0.0,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 9,
+          "index": 53,
+          "path_bits": 25588,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 8,
+          "index": 54,
+          "path_bits": 7652,
+          "payout_chips": 0.0,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 6,
+          "index": 55,
+          "path_bits": 23200,
+          "payout_chips": 0.01,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 7,
+          "index": 56,
+          "path_bits": 48148,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 11,
+          "index": 57,
+          "path_bits": 61631,
+          "payout_chips": 0.0,
+          "multiplier_cents": 64
+        },
+        {
+          "slot": 10,
+          "index": 58,
+          "path_bits": 32553,
+          "payout_chips": 0.0,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 9,
+          "index": 59,
+          "path_bits": 52534,
+          "payout_chips": 0.0,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 9,
+          "index": 60,
+          "path_bits": 50078,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 6,
+          "index": 61,
+          "path_bits": 37544,
+          "payout_chips": 0.01,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 4,
+          "index": 62,
+          "path_bits": 6168,
+          "payout_chips": 0.01,
+          "multiplier_cents": 175
+        },
+        {
+          "slot": 10,
+          "index": 63,
+          "path_bits": 62014,
+          "payout_chips": 0.01,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 7,
+          "index": 64,
+          "path_bits": 19640,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 8,
+          "index": 65,
+          "path_bits": 52434,
+          "payout_chips": 0.0,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 8,
+          "index": 66,
+          "path_bits": 13071,
+          "payout_chips": 0.0,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 7,
+          "index": 67,
+          "path_bits": 7780,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 9,
+          "index": 68,
+          "path_bits": 58523,
+          "payout_chips": 0.0,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 9,
+          "index": 69,
+          "path_bits": 50867,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 7,
+          "index": 70,
+          "path_bits": 20931,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 7,
+          "index": 71,
+          "path_bits": 6686,
+          "payout_chips": 0.0,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 4,
+          "index": 72,
+          "path_bits": 12804,
+          "payout_chips": 0.02,
+          "multiplier_cents": 175
+        },
+        {
+          "slot": 4,
+          "index": 73,
+          "path_bits": 8468,
+          "payout_chips": 0.02,
+          "multiplier_cents": 175
+        },
+        {
+          "slot": 8,
+          "index": 74,
+          "path_bits": 46229,
+          "payout_chips": 0.0,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 7,
+          "index": 75,
+          "path_bits": 33625,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 11,
+          "index": 76,
+          "path_bits": 62814,
+          "payout_chips": 0.01,
+          "multiplier_cents": 64
+        },
+        {
+          "slot": 9,
+          "index": 77,
+          "path_bits": 47322,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 6,
+          "index": 78,
+          "path_bits": 7686,
+          "payout_chips": 0.01,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 8,
+          "index": 79,
+          "path_bits": 39608,
+          "payout_chips": 0.0,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 6,
+          "index": 80,
+          "path_bits": 37641,
+          "payout_chips": 0.0,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 9,
+          "index": 81,
+          "path_bits": 42651,
+          "payout_chips": 0.0,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 7,
+          "index": 82,
+          "path_bits": 11570,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 8,
+          "index": 83,
+          "path_bits": 47505,
+          "payout_chips": 0.01,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 9,
+          "index": 84,
+          "path_bits": 15147,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 10,
+          "index": 85,
+          "path_bits": 46332,
+          "payout_chips": 0.01,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 10,
+          "index": 86,
+          "path_bits": 29945,
+          "payout_chips": 0.0,
+          "multiplier_cents": 56
+        },
+        {
+          "slot": 11,
+          "index": 87,
+          "path_bits": 62710,
+          "payout_chips": 0.0,
+          "multiplier_cents": 64
+        },
+        {
+          "slot": 5,
+          "index": 88,
+          "path_bits": 2385,
+          "payout_chips": 0.01,
+          "multiplier_cents": 64
+        },
+        {
+          "slot": 8,
+          "index": 89,
+          "path_bits": 4795,
+          "payout_chips": 0.01,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 7,
+          "index": 90,
+          "path_bits": 6259,
+          "payout_chips": 0.0,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 7,
+          "index": 91,
+          "path_bits": 28320,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 4,
+          "index": 92,
+          "path_bits": 33984,
+          "payout_chips": 0.02,
+          "multiplier_cents": 175
+        },
+        {
+          "slot": 8,
+          "index": 93,
+          "path_bits": 21147,
+          "payout_chips": 0.01,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 5,
+          "index": 94,
+          "path_bits": 10313,
+          "payout_chips": 0.01,
+          "multiplier_cents": 64
+        },
+        {
+          "slot": 11,
+          "index": 95,
+          "path_bits": 18303,
+          "payout_chips": 0.0,
+          "multiplier_cents": 64
+        },
+        {
+          "slot": 8,
+          "index": 96,
+          "path_bits": 18543,
+          "payout_chips": 0.0,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 9,
+          "index": 97,
+          "path_bits": 20239,
+          "payout_chips": 0.01,
+          "multiplier_cents": 53
+        },
+        {
+          "slot": 8,
+          "index": 98,
+          "path_bits": 14460,
+          "payout_chips": 0.0,
+          "multiplier_cents": 52
+        },
+        {
+          "slot": 8,
+          "index": 99,
+          "path_bits": 45490,
+          "payout_chips": 0.01,
+          "multiplier_cents": 52
+        }
+      ],
+      "nonce": 3,
+      "club_id": "d1000000-0000-4000-8000-000000000003",
+      "award_id": "6b1c52fc-40bd-4630-b193-209b57cb9f26",
+      "commit_id": "0f18675d-6413-4fce-b2be-10a106e4a328",
+      "drop_count": 100,
+      "table_name": "Super",
+      "client_seed": "plain-game",
+      "server_seed": "96abee8356f886bef614b67fd6e00aa8109be9ee5339643330c4b62a563cee12",
+      "bet_diamonds": 100,
+      "payout_chips": 0.62,
+      "paid_diamonds": 100,
+      "table_version": 4,
+      "payout_version": 4,
+      "server_seed_hash": "56314ab0844504b2c16db7300e8cc053fb4c8c692e5b857c0dbc10eaadf1411a",
+      "diamonds_per_chip": 100,
+      "diamonds_per_drop": 1,
+      "multipliers_cents": [
+        2000, 2000, 1500, 750, 175, 64, 56, 53, 52, 53, 56, 64, 175, 750, 1500, 2000, 2000
+      ],
+      "minimum_payout_chips": 0.5
+    }
+  },
+  {
+    "game": "crash",
+    "kind": "ordinary",
+    "value": {
+      "ok": true,
+      "game": "crash",
+      "pool": {
+        "chips_paid": 50.5
+      },
+      "bonus": {
+        "id": "04be0419-e6cf-46a5-8055-4720e3ee7d27",
+        "game": "crash",
+        "award_id": "b09c89e2-7782-4b3f-80f0-d043ebbf39aa",
+        "base_diamonds": 100,
+        "added_diamonds": 0,
+        "entry_diamonds": 100,
+        "total_diamonds": 100,
+        "boost_multiplier": 1
+      },
+      "status": "crashed",
+      "club_id": "d1000000-0000-4000-8000-000000000003",
+      "host_id": "d1000000-0000-4000-8000-000000000003",
+      "outcome": {
+        "status": "crashed",
+        "settled_at": "2026-09-21T16:06:46.462501-05:00",
+        "settled_by": "player",
+        "crash_cents": 110,
+        "payout_chips": 0.5,
+        "cashout_cents": null
+      },
+      "award_id": "b09c89e2-7782-4b3f-80f0-d043ebbf39aa",
+      "balances": {
+        "diamonds": 74822,
+        "member_chips": 266.14
+      },
+      "fairness": {
+        "roll": 250081502759182,
+        "nonce": 2,
+        "commit_id": "bdc3da3a-4e43-40be-b285-d094469a7db0",
+        "client_seed": "plain-game",
+        "crash_cents": 110,
+        "server_seed": "d5a73b78eca8d4fb9e8634f6727f28d1cac31351becb89f96d9e4cb1d7bfff4d",
+        "server_seed_hash": "07c79b8dd362aac0cea8cebc00a42cd677748298ff4f32cd042a69c8872dfdd9"
+      },
+      "growth_k": 0.04,
+      "round_id": "62131ced-fdf3-4497-9083-180782e0341b",
+      "bet_chips": 1.0,
+      "cap_cents": 10000,
+      "created_at": "2026-09-21T16:06:41.423205-05:00",
+      "elapsed_ms": 10000,
+      "server_now": "2026-09-21T16:06:46.462757-05:00",
+      "started_at": "2026-09-21T16:06:36.449908-05:00",
+      "bet_diamonds": 100,
+      "payout_version": 4,
+      "crash_floor_cents": 110,
+      "diamonds_per_chip": 100,
+      "auto_cashout_cents": null,
+      "cashout_floor_cents": 111,
+      "minimum_payout_chips": 0.5,
+      "multiplier_now_cents": null
+    }
+  },
+  {
+    "game": "crossing",
+    "kind": "ordinary",
+    "value": {
+      "id": "7cb01daf-ba59-4604-8bea-b0ce6b63ca8b",
+      "ok": true,
+      "game": "crossing",
+      "mode": "road",
+      "bonus": {
+        "id": "10b7a7bb-a398-492f-801c-d4413f5c1443",
+        "game": "crossing",
+        "award_id": "21bca79f-c0d7-4833-b38d-d6f3c27a78c2",
+        "base_diamonds": 100,
+        "added_diamonds": 0,
+        "entry_diamonds": 100,
+        "total_diamonds": 100,
+        "boost_multiplier": 1
+      },
+      "nonce": 2,
+      "proof": {
+        "game": "crossing",
+        "mines": 0,
+        "nonce": 2,
+        "road_roll": "251794204953604",
+        "first_pick": null,
+        "mine_cells": [],
+        "client_seed": "plain-game",
+        "server_seed": "f9c0ecd4991e0994a9da74360ef6f69010b4550ef2ded06c5586c4fac3560cc6",
+        "payout_version": 4,
+        "server_seed_hash": "99049cc41d236c47c17fffe366c127f900ffe1674fad8f5b00410e304197808f"
+      },
+      "picked": [0],
+      "prizes": [0.8, 1.45, 1.85, 2.45, 3.15, 4.1, 5.35, 7.0, 9.1, 11.8, 15.4, 20.0],
+      "status": "cashed",
+      "club_id": "d1000000-0000-4000-8000-000000000003",
+      "award_id": "21bca79f-c0d7-4833-b38d-d6f3c27a78c2",
+      "bet_chips": 1.0,
+      "commit_id": "4d1d66d3-5ae4-44eb-b651-05b9d4f63a58",
+      "max_steps": 12,
+      "client_seed": "plain-game",
+      "bet_diamonds": 100,
+      "payout_chips": 0.8,
+      "payout_version": 4,
+      "server_seed_hash": "99049cc41d236c47c17fffe366c127f900ffe1674fad8f5b00410e304197808f",
+      "diamonds_per_chip": 100,
+      "minimum_payout_chips": 0.5
+    }
+  },
+  {
+    "game": "mines",
+    "kind": "ordinary",
+    "value": {
+      "id": "6945438f-0d58-41c1-9248-5d143344c242",
+      "ok": true,
+      "game": "mines",
+      "mode": "6",
+      "bonus": {
+        "id": "23abbf1c-24f0-4c2e-8f78-3cbd131a3899",
+        "game": "mines",
+        "award_id": "b7fd35c6-f76f-4e42-81d6-338fbadcf771",
+        "base_diamonds": 100,
+        "added_diamonds": 0,
+        "entry_diamonds": 100,
+        "total_diamonds": 100,
+        "boost_multiplier": 1
+      },
+      "nonce": 2,
+      "proof": {
+        "game": "mines",
+        "mines": 6,
+        "nonce": 2,
+        "road_roll": "0",
+        "first_pick": 12,
+        "mine_cells": [0, 7, 9, 14, 22, 24],
+        "client_seed": "plain-game",
+        "server_seed": "2bd1a92baa25e2b5e9ffae9a1618a577cf72baae63f6f2274c18831cf63457a7",
+        "payout_version": 4,
+        "server_seed_hash": "387c18674d4814fa4ebb0d0180b1bbead128631218253373f977182358bd3ec9"
+      },
+      "picked": [12],
+      "prizes": [
+        0.8, 0.9, 1.0411764705882354, 1.2441176470588236, 1.541764705882353, 1.988235294117647,
+        2.6751131221719455, 3.7626696832579185
+      ],
+      "status": "cashed",
+      "club_id": "d1000000-0000-4000-8000-000000000003",
+      "award_id": "b7fd35c6-f76f-4e42-81d6-338fbadcf771",
+      "bet_chips": 1.0,
+      "commit_id": "e01340e1-dc54-40bc-9b77-eff0cbf063d9",
+      "max_steps": 8,
+      "client_seed": "plain-game",
+      "bet_diamonds": 100,
+      "payout_chips": 0.8,
+      "payout_version": 4,
+      "server_seed_hash": "387c18674d4814fa4ebb0d0180b1bbead128631218253373f977182358bd3ec9",
+      "diamonds_per_chip": 100,
+      "minimum_payout_chips": 0.5
+    }
+  }
+]

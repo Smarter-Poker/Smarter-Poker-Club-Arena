@@ -299,13 +299,15 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
     await act(async () => {});
     expect(screen.getByRole('heading', { name: 'Diamond Plinko' })).toBeVisible();
     await answerOffer('Add The Diamonds');
-    // 5,000 diamonds: 1 to 25 a drop would be more than 100 drops, so they are not offered.
+    // 5,000 diamonds: 1 to 25 a drop would be more than 100 drops, so they are
+    // not offered; the whole stake as one drop always is (the server's rule).
     expect(choiceLabels()).toEqual(expectedChoices(5000));
     expect(choiceLabels()).toEqual([
       '50 Diamonds Per Drop, 100 Drops',
       '100 Diamonds Per Drop, 50 Drops',
       '250 Diamonds Per Drop, 20 Drops',
       '500 Diamonds Per Drop, 10 Drops',
+      '5,000 Diamonds Per Drop, 1 Drop',
     ]);
     expect(bay('Guaranteed')).toHaveTextContent('50.00 Chips');
     expect(bay('Guaranteed')).not.toHaveAttribute('data-ink', 'gold');

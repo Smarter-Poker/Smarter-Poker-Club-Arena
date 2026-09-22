@@ -40,17 +40,23 @@ describe('the player chooses the Plinko drop value', () => {
       [50, 2],
       [100, 1],
     ]);
-    // 2,500 diamonds: 1 to 20 a drop would be more than 100 drops, so they are not offered.
-    expect(plinkoAllocations(2500).map((a) => a.diamondsPerDrop)).toEqual([25, 50, 100, 250, 500]);
+    // 2,500 diamonds: 1 to 20 a drop would be more than 100 drops, so they are
+    // not offered; the whole stake as ONE drop always is (the server's rule,
+    // mirrored from diamondBonusPayout.plinkoDropChoices).
+    expect(plinkoAllocations(2500).map((a) => a.diamondsPerDrop)).toEqual([
+      25, 50, 100, 250, 500, 2500,
+    ]);
     expect(plinkoAllocations(2500).find((a) => a.diamondsPerDrop === 25)?.drops).toBe(100);
+    expect(plinkoAllocations(2500).find((a) => a.diamondsPerDrop === 2500)?.drops).toBe(1);
     // 7,500 diamonds (a Super award with the addition): 750 is not on the list.
-    expect(plinkoAllocations(7500).map((a) => a.diamondsPerDrop)).toEqual([100, 250, 500]);
-    // 25 diamonds: only 1, 5 and 25 divide it.
+    expect(plinkoAllocations(7500).map((a) => a.diamondsPerDrop)).toEqual([100, 250, 500, 7500]);
+    // 25 diamonds: only 1, 5 and 25 divide it, and 25 is already the whole stake.
     expect(plinkoAllocations(25).map((a) => a.diamondsPerDrop)).toEqual([1, 5, 25]);
-    // A stake no listed value splits into at most 100 drops offers nothing rather
-    // than inventing a value: 101 diamonds would be 101 single-diamond drops.
-    expect(plinkoAllocations(37).map((a) => a.diamondsPerDrop)).toEqual([1]);
-    expect(plinkoAllocations(101)).toEqual([]);
+    // A stake no listed value splits into at most 100 drops is still playable:
+    // it is one drop of the whole stake, which is what the server accepts. An
+    // empty menu would be a stake the player could never start.
+    expect(plinkoAllocations(37).map((a) => a.diamondsPerDrop)).toEqual([1, 37]);
+    expect(plinkoAllocations(101).map((a) => [a.diamondsPerDrop, a.drops])).toEqual([[101, 1]]);
     for (const n of [0, -10, 2.5, NaN, Infinity]) expect(plinkoAllocations(n)).toEqual([]);
   });
   it('validates a chosen value against the list, the stake and the drop range', () => {

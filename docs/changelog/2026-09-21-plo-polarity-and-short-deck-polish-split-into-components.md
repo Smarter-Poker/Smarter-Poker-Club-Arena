@@ -7,7 +7,7 @@ plo4_v16_polarity properly before tuning either further."
 
 No strategy moves in this change. Production play is unchanged: the new flags
 are ablation controls that default to the current behavior, and a pinned
-scenario set proves the default decisions are the pre-split decisions.
+scenario set holds the default decisions to the pre-split decisions.
 
 ## plo_set_stackoff: what it counts
 
@@ -36,10 +36,10 @@ same counts):
 | 09-20     | 20   | 5   | -3,057 | -122.3  |
 | 09-21     | 12   | 8   | -374   | -18.7   |
 
-09-14 to 09-20: 275 hands, -13,320bb, -48.4bb per hand, 33% won (the audit's
-276 and -48.99 is a seven-day window one hand wider). Every voluntary action in
-those 275 hands is `horse_policy` or `horse_fallback`: this is horse against
-horse, so the loss is another horse's win.
+09-14 to 09-20: 275 hands, -13,320bb, -48.4bb per hand, 33% won. (The audit
+reported 276 hands at -48.99 and does not record its window.) Every voluntary
+action in those 275 hands is `horse_policy` or `horse_fallback`: this is horse
+against horse, so the loss is another horse's win.
 
 By variant: plo4 104 hands, -63.6bb per hand; plo5 102, -22.9; plo6 52, -77.1;
 plo8 17, -21.2.
@@ -65,7 +65,8 @@ needed), plo5 27 (15%, 26%), plo6 19 (21%, 30%), plo8 3.
 
 The layers a set meets on an Omaha river (`HorseLogic.decidePostflop`):
 
-- The V15 equity cap caps only straights and flushes (`cat === 5 || cat === 6`).
+- The V15 equity cap and the V15 Omaha domination penalty cover only
+  straights and flushes (`cat === 5 || cat === 6`).
 - The V20 pressure cap, the V21 dominated cap and the V21 scare-runout cap are
   all `!vi.isOmaha`.
 - The V40 Omaha pressure cap is the only cap on a set: `omahaMadeClass`

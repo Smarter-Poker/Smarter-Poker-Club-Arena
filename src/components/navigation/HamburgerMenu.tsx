@@ -56,6 +56,7 @@ import styles from './HamburgerMenu.module.css';
 import { useCanCreateUnion, useCanOperateUnionNetwork } from '../../hooks/useCanCreateUnion';
 import { mediaUrl } from '../../utils/mediaBase';
 import { signInUrl } from '../../lib/signIn';
+import { rewardToolMatchesSearch as matchesRewardToolSearch } from './rewardToolSearch';
 
 /* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
    MUST BE CAPITALIZED. AS WELL AS EVERY CLICKABLE PAGE AND SUBPAGE."
@@ -64,11 +65,6 @@ import { signInUrl } from '../../lib/signIn';
    a style that lives in a convention drifts by the next commit. Every label
    and description this drawer renders passes through here. */
 const tc = formatPopupText;
-
-/* The words an owner reaches for when looking for the prize tools. Lower case
-   on purpose: the query is lower-cased before matching. */
-const REWARD_TOOL_SEARCH_VOCABULARY =
-  'leaderboard leaderboards prize prizes setup set up owner rewards reward promo wallet program plan';
 
 interface HamburgerMenuProps {
   isOpen: boolean;
@@ -292,16 +288,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const pinnedItems = pinnedPaths
     .map((path) => allNavigationItems.find((item) => item.path === path))
     .filter((item): item is (typeof allNavigationItems)[number] => Boolean(item));
-  // Every typed word has to land somewhere in the vocabulary, in any order,
-  // so "prizes", "leaderboard setup" and "setup prize" all find the tools
-  // instead of only an exact substring of one fixed phrase.
-  const rewardToolMatchesSearch =
-    !searchQuery.trim() ||
-    searchQuery
-      .trim()
-      .toLowerCase()
-      .split(/\s+/)
-      .every((word) => REWARD_TOOL_SEARCH_VOCABULARY.includes(word));
+  const rewardToolMatchesSearch = matchesRewardToolSearch(searchQuery);
 
   useEffect(() => {
     try {

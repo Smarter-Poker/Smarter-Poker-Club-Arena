@@ -51,3 +51,26 @@ export function arenaAssetUnitCents(asset: 'chips' | 'diamonds' | undefined | nu
   if (asset === 'chips') return CHIP_UNIT_CENTS;
   return UNIT_CENTS_ASSET_NOT_READ;
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE SAME UNIT, OR NO ANSWER WHILE THE ARENA IS UNREAD (2026-09-21)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `arenaAssetUnitCents` answers an unread arena with `UNIT_CENTS_ASSET_NOT_READ`,
+ * the greppable cent, and the seat's bounty badge and the knockout float keep
+ * that answer. A surface that prints a tournament PRIZE, a CHEST or a POOL at a
+ * moment of its own asks this instead, because for it "not read yet" and
+ * "chips" must not look the same: until the table's arena has been read it gets
+ * `null`, and it shows its own waiting state rather than a figure in a
+ * currency nobody looked up (CLAUDE.md 10.86 rule 1).
+ *
+ * Still an adapter and not a second copy of the rule: every number it returns
+ * comes from `arenaAssetUnitCents`, which imports its constants from the one
+ * rule in `server/src/tournament/tournamentUnit.ts`.
+ */
+export function arenaAssetUnitCentsIfRead(
+  asset: 'chips' | 'diamonds' | undefined | null
+): number | null {
+  return asset === 'chips' || asset === 'diamonds' ? arenaAssetUnitCents(asset) : null;
+}

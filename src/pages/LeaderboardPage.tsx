@@ -419,6 +419,10 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     const requestId = ++settingsRequestRef.current;
+    // Any fetch of the owner record (club switch, account switch, retry, a
+    // refused publish) replaces the snapshot, so a pending "stale" mark from a
+    // refused publish is satisfied here and must not fire again later.
+    settingsStaleRef.current = false;
     setSettings((current) => (current?.club_id === selectedClubId ? current : null));
     setSettingsError(null);
     if (!selectedClubId) {
@@ -1726,12 +1730,16 @@ export default function LeaderboardPage() {
                   : `A Prize Plan Is Saved For ${settings.club_name}, But Rewards Are Not Published.`}
               </p>
               {settings.rewards_enabled && (
-                <ul className="lb-prize-rules" aria-label="Prize Rules">
+                <ul className="lb-prize-rules" role="list" aria-label="Prize Rules">
                   <li>{`Ranked By ${programMetricLabel} Across Each Weekly And Monthly Round.`}</li>
                   <li>Weeks Start Sunday At 00:00 UTC. Months Start On The First At 00:00 UTC.</li>
                   <li>Rule Changes Start At The Next Weekly Or Monthly UTC Boundary.</li>
                   <li>Tied Places Share Their Occupied Prizes.</li>
-                  <li>{`Paid From ${settings.program_funding_label || settings.funding_label} After The Period Closes.`}</li>
+                  <li>
+                    {settings.funding_status === 'underfunded'
+                      ? `Paid From ${settings.program_funding_label || settings.funding_label} After The Period Closes, Once It Covers The Published Prizes.`
+                      : `Paid From ${settings.program_funding_label || settings.funding_label} After The Period Closes.`}
+                  </li>
                   <li>
                     {
                       'Prize Marks A Planned Amount While A Round Is Live. Paid Marks A Verified Receipt.'
@@ -1743,24 +1751,30 @@ export default function LeaderboardPage() {
             <dl className="lb-prize-program-totals">
               <div>
                 <dt>Program Version</dt>
-                <dd>V{settings.program_version}</dd>
-                {settings.published_at && (
-                  <small>Published {formatUtcTimestamp(settings.published_at)}</small>
-                )}
+                <dd>
+                  V{settings.program_version}
+                  {settings.published_at && (
+                    <small>Published {formatUtcTimestamp(settings.published_at)}</small>
+                  )}
+                </dd>
               </div>
               <div>
                 <dt>Weekly</dt>
-                <dd>{compactChips(totalPrizePlan(settings.weekly_prizes))} Chips</dd>
-                {settings.weekly_effective_from && (
-                  <small>From {settings.weekly_effective_from}</small>
-                )}
+                <dd>
+                  {compactChips(totalPrizePlan(settings.weekly_prizes))} Chips
+                  {settings.weekly_effective_from && (
+                    <small>From {settings.weekly_effective_from}</small>
+                  )}
+                </dd>
               </div>
               <div>
                 <dt>Monthly</dt>
-                <dd>{compactChips(totalPrizePlan(settings.monthly_prizes))} Chips</dd>
-                {settings.monthly_effective_from && (
-                  <small>From {settings.monthly_effective_from}</small>
-                )}
+                <dd>
+                  {compactChips(totalPrizePlan(settings.monthly_prizes))} Chips
+                  {settings.monthly_effective_from && (
+                    <small>From {settings.monthly_effective_from}</small>
+                  )}
+                </dd>
               </div>
             </dl>
             {canManagePrizes && (
@@ -1786,7 +1800,13 @@ export default function LeaderboardPage() {
         {activeTab === 'rankings' &&
           scope === 'my-clubs' &&
           selectedClubId &&
-          (period === 'weekly' || period === 'monthly') && (
+          (period === 'weekly' || period === 'monthly') &&
+          /* A club that has never completed setup has never had a program
+             (setup_complete is setup_completed_at IS NOT NULL, stamped on every
+             save), so no batch or receipt can exist and every round would read
+             "No Program". The owner already has the first-use section; the card
+             would only repeat it with a second setup button. */
+          (!settings || settings.setup_complete) && (
             <LeaderboardSettlementCard
               status={settlementStatus}
               currentUserId={user?.id}
@@ -1824,6 +1844,9 @@ export default function LeaderboardPage() {
             settingsStaleRef.current = true;
           }}
           onSaved={(savedSetup) => {
+            // A publish that succeeds after an earlier refusal in the same
+            // dialog leaves nothing stale: the saved record is authoritative.
+            settingsStaleRef.current = false;
             setSettings(savedSetup);
             setShowSettings(false);
             setEditingSettings(null);

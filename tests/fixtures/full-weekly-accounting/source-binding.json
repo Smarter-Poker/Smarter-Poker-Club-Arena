@@ -178,11 +178,11 @@
     "tests/components/UnionAccountingRunStatus.test.tsx": "182307e73a0f0f09e44c20a88b3e8a5c40b67f070126514f01e5b5b3bd5f7aa9",
     "tests/components/WeeklyAccountingWorkspace.test.tsx": "c4f202839c25787b837e24a4f625f79769e1b08eb9e309da260612f614003289",
     "tests/helpers/accountingObservation.ts": "9dba06d97c2f9cce2356fa8c6800ff9a07e4618ea2028370a278b4820b6199f6",
-    "tests/components/FinancialAlertsExport.test.tsx": "f2338b7d2e32c7a4a771d997743a52f9c4fc73a75bb5d399de4be0e0fba2e421",
+    "tests/components/FinancialAlertsExport.test.tsx": "b90cb1f4f102279d48b5b757b27cdee1c8eafa43756d96d6144c41e9380fb780",
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "fe9542d1ba09b0d3fe9f474b4948768595cac66c2163d4b24ff77b465e82a6b2",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "d7451a806a7151f17994ed5a8ab3544dee5011701bb0af6fb2ae214d50e7297c",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -1744,6 +1744,13 @@
       "to": "2e7226d731652f73f59568f2f59e8c5101e884b261b5eb2d26d8573831226914",
       "on": "2026-09-21",
       "why": "Cascade of the 2026-09-21 restamp of scripts/dev/test-full-weekly-accounting-activation.sh for migration 20260921052548 (installed 20260921060422). The only substantive change is one added acceptance-phase step - the payee-document-privacy preimage, that migration and its regression - plus its log in the retained-artifact list; every other pinned byte in the chain is unchanged."
+    },
+    {
+      "file": "tests/unit/discardedErrorReadRatchet.test.ts",
+      "from": "0b132d5221458c0977be321c7547c4520206ff21f01e7089390575b24f3c64cf",
+      "to": "d7451a806a7151f17994ed5a8ab3544dee5011701bb0af6fb2ae214d50e7297c",
+      "on": "2026-09-21",
+      "why": "PR #5046: the TournamentLobbyPage.tsx baseline goes 3 -> 0. The ratchet only turns one way and this turn tightens it; the test requires the lower number in the same commit."
     }
   ],
   "tournament_rake_club_successor_20260921": {
@@ -1784,5 +1791,41 @@
     "added_repository_inputs": ["tests/fixtures/union-weekly-basis/period-coverage-regression.sql"],
     "reason": "The rakeback settler is page-scoped: RakebackSettlerService passes p_user_ids from the rake_records page it just drained and then advances daemon_state.rakeback_settler.high_water_mark past the whole page with a strict >, so mid-week the certificate set is a subset of the week's payees and fn_settle_accounting_rakeback_stage refuses that book with routed_rakeback_player_period_missing. Measured in production on 2026-09-21 for Deep Stack Society and the week 2026-09-21T07:00Z..2026-09-28T07:00Z, with the guard's own predicate: 154 source pairs, 77 certificates, 77 uncovered, 943.27 of uncovered rake_credit. The weekly close does not settle from that subset - fn_prepare_accounting_week re-runs fn_rakeback_recompute_periods(club, from_date, to_date, NULL) for every club of the week before any payer stage, and with a NULL user list fn_calculate_cash_rakeback_periods draws its player set from accounting_payable_earning_sources for the whole period - but nothing in the repository pinned that, and reusing the settler's already-computed page inside the close is exactly the optimisation that would bring the stall back. No migration, schema object, captured catalog, component, money function or existing assertion is changed. The only change to scripts/dev/test-union-weekly-basis.py is one added run() step, placed after every pre-existing fixture on that cluster because the new regression adds a hand to the raked table and closes a later week; tests/fixtures/union-weekly-basis/source-binding.json gains that one input.",
     "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py: exit 0, 77 PASS steps, 0 failures, including period-coverage-regression (29 assertions): round 3 refuses the page-scoped book by exact SQLSTATE 55000 and name; the period-complete call and the NULL branch are pinned in source; a club scope prepares its own week leaving no source pair uncovered; the page-scoped negative control makes the close refuse with weekly_calculation_receipt_not_confirmed instead of paying an incomplete book; the real due coordinator at a simulated 2026-09-28T09:00Z closes the week with all four rounds successful, both routed stages at shortfalls 0, round 3 routing both certified periods, every ordinary source pair certificated, the zero-entitlement payee closed at zero and the retained union-house source still without a player period; and a replay leaves chip_ledger, settlement_invoices, accounting_invoice_deliveries and rakeback_periods byte-identical. Red control on the same stack, mutating only fn_prepare_accounting_week to a page-scoped recompute: the fixture fails."
+  },
+  "console_reland_rebinding_20260920": {
+    "base_commit": "83b6af3b5ec45e31087dc84379065bb450bde047",
+    "prior_binding_sha256": "423b54ca22a5a28d3829f9b6e193fd146985958039a7515a381cde64eece73f9",
+    "supersedes": "period_coverage_successor_20260921",
+    "source_pull_request": 4696,
+    "source_commit": "83b6af3b5e",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/components/FinancialAlertsExport.test.tsx",
+        "previous_sha256": "f2338b7d2e32c7a4a771d997743a52f9c4fc73a75bb5d399de4be0e0fba2e421",
+        "sha256": "b90cb1f4f102279d48b5b757b27cdee1c8eafa43756d96d6144c41e9380fb780"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "fe9542d1ba09b0d3fe9f474b4948768595cac66c2163d4b24ff77b465e82a6b2",
+        "sha256": "0b132d5221458c0977be321c7547c4520206ff21f01e7089390575b24f3c64cf"
+      }
+    ],
+    "reason": "#4711 (Restore September 13 GitHub/Hetzner delivery and application baseline) took every surface the #ClubArenaConsole sweep had rebuilt off main; PR #4696 re-lands them as a three-way merge with the restore commit as the base, so every post-restore change on main stays on the console render. Two pinned test files move with it, both by label only. tests/unit/discardedErrorReadRatchet.test.ts drops three baseline rows (src/pages/HomePage.tsx 1, src/components/agent/AgentScoreCard.tsx 4, src/components/table/RealTimeResultPanel.tsx 1) because the console versions of those files read every error they used to discard; the ratchet tightens, it does not relax, and every other row is byte-identical to main. tests/components/FinancialAlertsExport.test.tsx keeps every assertion about export scope, identity refusal, account ABA fencing and Blob URL cleanup; only its selectors move to the console's print: alert messages print through titleCase() (Dan 2026-09-14, the first letter of every word is capitalised, data included) so the fixture messages are Title Case, the empty pill reads No Loaded Alerts, the Warning filter is a lit word whose accessible name is Warning followed by its count, and the per-alert control is named Mark Resolved because the foot's Resolve All plate is always painted (two actions or none). No financial behaviour, component, captured fixture or accounting assertion changes.",
+    "verification": "Each new sha256 is the sha256 of the bytes of the named file at this base commit, read from disk in the worktree that produced the commit. All other repository bindings and every captured fixture are untouched and re-verified with python3 scripts/ci/verify-source-bindings.py, which reports every pinned source file hashing to its recorded bytes."
+  },
+  "lobby_read_ratchet_rebinding_20260921": {
+    "base_commit": "be423c8b72b04677a4ed76a1439b2e2b02fc021b",
+    "prior_binding_sha256": "f4ad867536d2f597ad0f5168c81b0b19c58eac8cda72b4ad836cf5263842b959",
+    "supersedes": "console_reland_rebinding_20260920",
+    "source_pull_request": 5046,
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "0b132d5221458c0977be321c7547c4520206ff21f01e7089390575b24f3c64cf",
+        "sha256": "d7451a806a7151f17994ed5a8ab3544dee5011701bb0af6fb2ae214d50e7297c"
+      }
+    ],
+    "reason": "PR #5046 lowers this file's baseline for src/pages/tournament/TournamentLobbyPage.tsx from 3 to 0. That is the ratchet TIGHTENING - it now permits fewer discarded error reads for that file than before, never more - and the test itself asks for the lower number in the same commit, which is what turned it red here. All three reads were the shape this ratchet exists to kill: a PostgREST call that RESOLVES with { error } read as an empty result. The player's own registration list became \"registered for nothing\", so a board of live Register (buy-in) buttons was shown to a player already entered in every event and pressing one is a second entry attempt against real money; union membership became \"standalone\"; and the union scope read became \"no union\", silently dropping every union game off the board. The two union reads keep the outcome they always had (fail open on the Create Tournament affordance, fail closed on scope) and now report instead of guessing. No assertion is removed or weakened by this rebinding, no other baseline row moves, and no financial component, captured catalog fixture or accounting assertion is touched.",
+    "verification": "The new sha256 is the sha256 of the bytes of tests/unit/discardedErrorReadRatchet.test.ts at this base commit, read from disk in the worktree that produced the commit. Every other repository binding and every captured fixture was re-verified against the tree with the runner's own computation - hashlib.sha256(path.read_bytes()).hexdigest(), repository_fixtures resolved against the repository root and fixtures against tests/fixtures/full-weekly-accounting, no normalisation - and every one agrees. component_count, both assertion counts, the captured fixtures map, limits and supplemental captures are byte-identical to the previous binding. The diff is exactly this one hash plus this block."
   }
 }

@@ -234,7 +234,9 @@
 }
 .leaderboard-page .lb-prize-program-totals small {
   display: block;
+  margin-top: 0.3em;
   font-size: 0.72em;
+  font-weight: 400;
   color: #9aa5b3;
   overflow-wrap: anywhere;
 }

@@ -5,6 +5,7 @@ import {
   pendingBonus,
   rememberBonus,
   clearPendingBonus,
+  PriorBonusPending,
 } from '../../src/services/diamondBonusRecovery';
 import { DiamondBonusService, BonusRefusal } from '../../src/services/DiamondBonusService';
 const rpc = vi.hoisted(() => vi.fn());
@@ -135,5 +136,75 @@ describe('a saved bonus remains one wager', () => {
     );
     expect(rpc).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
+  });
+});
+describe('a saved bonus settles itself (owner ruling 2026-09-21: no game asks for a check)', () => {
+  it('a conflicting saved wager is handed to the page, which settles it first', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: Error('Connection lost') });
+    await expect(DiamondBonusService.start(request, 'alice')).rejects.toThrow('Connection lost');
+    const replacement = { ...request, commitId: '00000000-0000-0000-0000-000000000005' };
+    const refusal = await DiamondBonusService.start(replacement, 'alice').catch((e) => e);
+    expect(refusal).toBeInstanceOf(PriorBonusPending);
+    expect((refusal as PriorBonusPending).prior).toEqual(request);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+  it('a saved wager that cannot be replayed is discarded, not thrown, so the page loads', () => {
+    const key = `diamond-spins-pending:alice:${request.clubId}:mines`;
+    sessionStorage.setItem(key, '{not json');
+    expect(pendingBonus('alice', request.clubId, 'mines')).toBeNull();
+    expect(sessionStorage.getItem(key)).toBeNull();
+    sessionStorage.setItem(key, JSON.stringify({ ...request, commitId: 'not-a-ticket' }));
+    expect(pendingBonus('alice', request.clubId, 'mines')).toBeNull();
+    expect(sessionStorage.getItem(key)).toBeNull();
+  });
+  it('a ticket the server no longer holds is a refusal the page re-deals by itself', async () => {
+    rpc.mockResolvedValueOnce({
+      data: { ok: false, ticket: 'gone', error: 'That Ticket Expired. A New One Is Being Dealt' },
+      error: null,
+    });
+    const refusal = await DiamondBonusService.start(request, 'alice').catch((e) => e);
+    expect(refusal).toBeInstanceOf(BonusRefusal);
+    expect((refusal as BonusRefusal).ticketGone).toBe(true);
+    // Nothing was charged, so nothing is saved.
+    expect(pendingBonus('alice', request.clubId, 'mines')).toBeNull();
+    rpc.mockResolvedValueOnce({ data: { ok: false, error: 'Not Enough Diamonds' }, error: null });
+    const ordinary = await DiamondBonusService.start(request, 'alice').catch((e) => e);
+    expect((ordinary as BonusRefusal).ticketGone).toBe(false);
+  });
+});
+
+describe('a saved wager is judged by its own game', () => {
+  it('keeps a 25-diamond Donkey Cross award wager whose drop value does not divide it', () => {
+    // Review 2026-09-21: the drop value only matters to Plinko, but every read
+    // used to require it to divide the total, deleting this live wager.
+    const small = {
+      ...request,
+      game: 'crossing' as const,
+      budget: {
+        base: 25,
+        doubled: false,
+        denomination: 10,
+        award: {
+          id: '00000000-0000-0000-0000-000000000077',
+          entryDiamonds: 25,
+          boostMultiplier: 1,
+        },
+      },
+    };
+    rememberBonus('alice', small);
+    expect(pendingBonus('alice', small.clubId, 'crossing')).toEqual(small);
+    expect(pendingBonus('alice', small.clubId, 'crossing')).toEqual(small);
+  });
+  it('still discards a Plinko wager its drop value cannot split', () => {
+    const uneven = {
+      ...request,
+      game: 'plinko' as const,
+      budget: { base: 25, doubled: false, denomination: 10 },
+    };
+    sessionStorage.setItem(
+      `diamond-spins-pending:alice:${request.clubId}:plinko`,
+      JSON.stringify(uneven)
+    );
+    expect(pendingBonus('alice', request.clubId, 'plinko')).toBeNull();
   });
 });

@@ -106,7 +106,7 @@ import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { readLocalSession } from '../lib/authUtils';
 import { reportError } from '../utils/errorReporter';
 import { DIAMOND_ARENA_CLUB_ID, SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
-import { matchesVariant } from '../utils/tournamentFilters';
+import { matchesAllTabTournamentStatus, matchesVariant } from '../utils/tournamentFilters';
 import { isWithinLobbyWindow, lobbyQueryHorizonIso } from '../utils/tournamentScheduleWindow';
 import {
   loadViewPrefs,
@@ -2852,10 +2852,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       // returns ONLY the club's own PRIVATE tournaments; every union-visible
       // tournament comes from the union-scoped query below. Standalone clubs
       // keep the original club_id scoping.
+      //
+      // The tail from is_rebuy on (2026-09-22) feeds the tournament trait chips
+      // and medallions (the trait predicates in utils/tournamentFilters): the
+      // chip-purchase RPC gates on is_rebuy, is_reentry and add_on_available.
+      // rebuy_cost and addon_cost are deliberately not here: they are prices,
+      // not evidence of either trait, and nothing on the board reads them. This
+      // read REPLACES the fast path's rows, so is_xmtt and union_id, which only
+      // get_club_home carried, vanished from the board here until now.
       const clubTournamentQuery = supabase
         .from('tournaments')
         .select(
-          'format_contract, id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, tournament_type, satellite_target_id, satellite_target, variant, table_size, late_reg_mins, late_reg_levels, rebuy_levels, prize_pool_finalized, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name'
+          'format_contract, id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, tournament_type, satellite_target_id, satellite_target, variant, table_size, late_reg_mins, late_reg_levels, rebuy_levels, prize_pool_finalized, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name, is_rebuy, is_reentry, add_on_available, is_private, is_xmtt, union_id, blind_speed'
         )
         // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
         // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
@@ -3031,7 +3039,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           setTournaments(allTournaments);
         }
       }
-      setCountsCapped(tableCapped || (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.LIST);
+      /* Each list against ITS OWN cap: the tournament query stops at
+         MODERATE (500), not LIST (200), so comparing it to LIST printed "+"
+         beside counts that had not been cut short at all. */
+      setCountsCapped(
+        tableCapped || (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.MODERATE
+      );
 
       // BBJ jackpot. Number() is load-bearing, not cosmetic: main_balance is
       // numeric(14,2) and arrives as the STRING "10500.67". Assigning it raw
@@ -3385,14 +3398,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (!isWithinLobbyWindow(t, windowNow)) return false;
       if (!matchesVariant(t, variant)) return false;
 
-      if (gameType === 'ALL' && allStatusFilter !== 'ALL') {
-        const status = String(t.status).toUpperCase();
-        const matchesAllStatus =
-          (allStatusFilter === 'RUNNING' && ['RUNNING', 'IN_PROGRESS'].includes(status)) ||
-          (allStatusFilter === 'OPEN_REGISTRATION' && status === 'REGISTERING') ||
-          (allStatusFilter === 'LATE_REG' && ['LATE_REG', 'LATE_REGISTRATION'].includes(status)) ||
-          (allStatusFilter === 'STARTING_SOON' && status === 'STARTING_SOON');
-        if (!matchesAllStatus) return false;
+      /* Late Reg and Starting Soon used to compare the status to 'LATE_REG'
+         and 'STARTING_SOON', which nothing writes, so both chips listed no
+         tournament. matchesTournamentSubFilter derives them from the
+         late-registration window and the start time. */
+      if (gameType === 'ALL' && !matchesAllTabTournamentStatus(t, allStatusFilter, windowNow)) {
+        return false;
       }
 
       if (advSpec && advValue) {

@@ -708,10 +708,32 @@ node .claude/skills/club-arena-console/scripts/find-generic-surfaces.mjs
 ```
 
 Scores every page, modal, sheet, panel and card in `src/` by how far it is from
-the standard - CSS corner radii and gradients count against it, references to
+the standard - PAINTED corner radii and gradients count against it, references to
 `club-buttons/` or the console kit zero it out, a `:hover` rule is weighted five
 times because it is forbidden outright. A surface already on a master scores 0.
 `--json` gives the machine-readable list.
+
+**Painted, not merely present (2026-09-22).** `border-radius: 0` and
+`box-shadow: none` do not draw a frame, they refuse one, and they are the exact
+pair 3.5 tells you to write to switch the `metallic-popups` chassis off. The
+scorer used to count them, so the more correctly a surface obeyed 3.5 the more
+generic this said it was: `LeaderboardSettlementCard` prints as rows on
+`LeaderboardPage`'s console glass and owns no frame at all, and it was nominated
+for a rebuild on one zeroed corner and one refused shadow, its only two matching
+lines. Values are read and judged now. If you ever re-touch that counter, judge
+the DECLARATION - a negative lookahead behind `\s*` backtracks to zero width and
+matches `border-radius:` inside `border-radius: 0;`.
+
+**Two rows are ruled off by hand, and both maps say why.** `RULED` carries a
+surface that is finished work without a test whose title says so; it also
+carries `src/components/common/Card.tsx`, which is not a surface at all -
+nothing in `src/` renders any of its six exports, its only importer is the
+`components/common` barrel, and the barrel's only importer takes `ErrorBoundary`
+alone. A primitive several surfaces compose is not a thing a player looks at:
+move its callers onto `SpadeConsole` or retire it, never paint chrome onto a
+generic box to take a count to zero. Both rulings are pinned by
+`tests/unit/consoleInventoryIsHonest.test.ts`, so they re-open on their own if
+the tree stops matching them.
 
 Work the list in **traffic order, not score order**. What a seated player meets
 every hand beats an admin page nobody opens twice a week:

@@ -26,7 +26,10 @@ const backend = vi.hoisted(() => ({
   resolve: vi.fn(),
 }));
 vi.mock('../../src/services/DiamondGamesService', () => ({ default: backend }));
-vi.mock('../../src/services/DiamondBonusService', () => ({
+vi.mock('../../src/services/DiamondBonusService', async (original) => ({
+  // The real module's other exports (BonusUnreadable and the copy the page
+  // prints) stay, so every catch path the page takes can read them.
+  ...(await original<typeof import('../../src/services/DiamondBonusService')>()),
   DiamondBonusService: backend,
   // The real refusal's shape: why, and whether the sealed ticket was the reason.
   BonusRefusal: class extends Error {

@@ -19,6 +19,8 @@ import DiamondGamesService, { type GameState } from '../services/DiamondGamesSer
 import {
   DiamondBonusService,
   BonusRefusal,
+  BonusUnreadable,
+  BONUS_SAVED,
   parsePlinkoBonus,
   type BonusStart,
   type PlinkoBonus,
@@ -77,6 +79,11 @@ function DiamondPlinkoGame() {
   // schedule (useAutoSettle); the player is never asked to check anything.
   const [uncertain, setUncertain] = useState(false);
   const [settleAttempts, setSettleAttempts] = useState(0);
+  // The server answered the saved wager BONUS_SENDS_PER_REQUEST times and this
+  // browser could verify none of the answers. It stays saved (money may have
+  // moved) and is sent again on the next visit; on this one nothing more is
+  // sent for it and nothing holds the player.
+  const [saved, setSaved] = useState(false);
   // The server refused a ticket that could no longer open a batch and charged
   // nothing, so the same wager goes again on a fresh ticket - once per press.
   const [restartOwed, setRestartOwed] = useState(false);
@@ -287,6 +294,17 @@ function DiamondPlinkoGame() {
     if (uuid && !earned.required)
       void load(uuid, total).catch((e) => reportError(e, 'DiamondPlinkoPage.after'));
   };
+  /** Stop sending a saved wager whose answers will not verify, let the player
+   * go, and read the game again. */
+  const keepForNextVisit = (id: string) => {
+    setSaved(true);
+    setError(BONUS_SAVED);
+    void earned.refresh();
+    if (!earned.required)
+      void load(id, validBonusBudget(budget) ? total : 100).catch((readError) =>
+        reportError(readError, 'DiamondPlinkoPage.saved')
+      );
+  };
   /** Drops the batch the page shows, or - given `resend` - re-sends exactly the
    * wager the server refused for its ticket, on the ticket now in hand. */
   const play = async (resend?: BonusStart) => {
@@ -336,6 +354,9 @@ function DiamondPlinkoGame() {
           // This start cleared the entry quote. Read it again, so the next
           // drop is not held on it until someone refreshes.
           if (!earned.required) setQuoteTry((count) => count + 1);
+        } else if (e instanceof BonusUnreadable && e.final) {
+          setUncertain(true);
+          keepForNextVisit(uuid);
         } else {
           // The answer never arrived. The saved wager is replayed by
           // useAutoSettle until the server says what happened.
@@ -379,6 +400,8 @@ function DiamondPlinkoGame() {
           setTicket(null);
           setError(e.message);
           settleRefusal(e, refused);
+        } else if (e instanceof BonusUnreadable && e.final) {
+          keepForNextVisit(uuid);
         } else {
           // Not an answer: the page tries again on its own schedule.
           setSettleAttempts((count) => count + 1);
@@ -391,7 +414,7 @@ function DiamondPlinkoGame() {
     }
     return true;
   };
-  useAutoSettle(uncertain, settleAttempts, check);
+  useAutoSettle(uncertain && !saved, settleAttempts, check);
   // A wager the server refused for its ticket alone is sent again on the
   // fresh ticket, once, without the player pressing Drop twice.
   const playRef = useRef(play);
@@ -505,11 +528,13 @@ function DiamondPlinkoGame() {
   // Money in flight holds the page. A won game holds it only while it can
   // actually start: an award this page cannot start (daily limit, a closed or
   // paused game, a cooldown) never traps the player on it.
+  // A wager kept for the next visit has nothing in flight: it holds nothing.
   useLiveBonusGuard(
-    (Boolean(earned.award) && !blocked && Boolean(ticket) && !result && !refusal.refused) ||
-      busy ||
-      uncertain ||
-      animating,
+    !saved &&
+      ((Boolean(earned.award) && !blocked && Boolean(ticket) && !result && !refusal.refused) ||
+        busy ||
+        uncertain ||
+        animating),
     () => setError('Finish Your Bonus Game Before Leaving.')
   );
   const droppedChips = result
@@ -551,7 +576,15 @@ function DiamondPlinkoGame() {
         title={diamondGameTitle('plinko', boost)}
         eyebrow="Diamond Spins"
         pill={
-          uncertain ? 'Settling' : animating ? 'Dropping' : completionId ? 'Completed' : 'Ready'
+          saved
+            ? 'Saved'
+            : uncertain
+              ? 'Settling'
+              : animating
+                ? 'Dropping'
+                : completionId
+                  ? 'Completed'
+                  : 'Ready'
         }
         bays={[
           {

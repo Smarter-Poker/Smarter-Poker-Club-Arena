@@ -1545,6 +1545,14 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
 
+      # The daily horse audit's layer_went_silent rule, replayed on production's
+      # 2026-09-20 rows: a counter is silent only when its own volume made zero
+      # improbable. See docs/changelog/2026-09-21-layer-silence-is-measured-against-its-own-volume.md.
+      - name: A layer is silent only when its own volume made zero improbable
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-layer-silence-volume-pg17.py
+
       - name: Hand index writers retain canonical order and exact coverage
         id: hand_index_writer_order
         env:

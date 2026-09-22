@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import BonusSetup from '../../src/components/games/BonusSetup';
 import { bonusTotal, type BonusBudget } from '../../src/utils/bonusGameBudget';
@@ -15,6 +15,7 @@ const initial: BonusBudget = {
 function Entry({ diamonds, change }: { diamonds: number; change: (budget: BonusBudget) => void }) {
   const [budget, setBudget] = useState(initial);
   const location = useLocation();
+  const navigate = useNavigate();
   return (
     <>
       <output aria-label="Selected Entry">{bonusTotal(budget)}</output>
@@ -30,6 +31,8 @@ function Entry({ diamonds, change }: { diamonds: number; change: (budget: BonusB
         diamonds={diamonds}
         disabled={false}
         clubId="shark-club"
+        // A page leaves through its own hold; this fixture has none to let go of.
+        leave={navigate}
         onChange={(next) => {
           change(next);
           setBudget(next);

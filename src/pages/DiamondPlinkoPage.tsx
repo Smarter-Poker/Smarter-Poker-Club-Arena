@@ -186,16 +186,34 @@ function DiamondPlinkoGame() {
       !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(next.commit_id)
     )
       throw new Error(next.error ?? 'The Ticket Could Not Be Loaded');
-    if (live.current) setTicket({ id: next.commit_id, hash: next.server_seed_hash });
+    if (live.current) {
+      setTicket({ id: next.commit_id, hash: next.server_seed_hash });
+      // A fresh player seed for every ticket, chosen after its hash is on
+      // screen, so no dealt seed can have been picked knowing the player's
+      // (fairness audit 2026-09-21). An owed wager keeps its own seed.
+      if (!owed.current) setSeed(randomClientSeed());
+    }
   }, []);
+  /** Reads the game and quotes the entry. Every read clears the quote before
+   * it asks, so the latest read owns the quote, whoever made it (the quote's
+   * own effect, the read after a drop, a replay): its answer is the quote, and
+   * its failure is counted here and read again on the quote's schedule below.
+   * A read overtaken by a newer one counts for nothing. */
   const load = useCallback(
     async (id: string, amount: number) => {
       const g = ++generation.current;
       setQuotedAmount(null);
-      const next = await DiamondGamesService.getState(id, 'plinko', Math.min(amount, 5000));
+      let next: GameState;
+      try {
+        next = await DiamondGamesService.getState(id, 'plinko', Math.min(amount, 5000));
+      } catch (error) {
+        if (live.current && g === generation.current) setQuoteFailures((count) => count + 1);
+        throw error;
+      }
       if (live.current && g === generation.current) {
         setState(next);
         setQuotedAmount(amount);
+        setQuoteFailures(0);
         setWaitSeconds(next.player?.seconds_until_next ?? 0);
       }
     },
@@ -243,17 +261,16 @@ function DiamondPlinkoGame() {
   useEffect(() => {
     if (!uuid || !validBonusBudget(budget) || earned.loading || earned.required) return;
     let cancelled = false;
+    // A failure is counted by load itself, whichever read it was.
     load(uuid, total)
       .then(() => {
         if (cancelled || !live.current) return;
-        setQuoteFailures(0);
         setError((current) => (current === CHECKING_ENTRY ? null : current));
       })
       .catch((e) => {
         reportError(e, 'DiamondPlinkoPage.quote');
         if (cancelled || !live.current) return;
         setError(CHECKING_ENTRY);
-        setQuoteFailures((count) => count + 1);
       });
     return () => {
       cancelled = true;
@@ -529,7 +546,7 @@ function DiamondPlinkoGame() {
   // actually start: an award this page cannot start (daily limit, a closed or
   // paused game, a cooldown) never traps the player on it.
   // A wager kept for the next visit has nothing in flight: it holds nothing.
-  useLiveBonusGuard(
+  const releaseGuard = useLiveBonusGuard(
     !saved &&
       ((Boolean(earned.award) && !blocked && Boolean(ticket) && !result && !refusal.refused) ||
         busy ||
@@ -570,6 +587,11 @@ function DiamondPlinkoGame() {
               game="plinko"
               guarantee={earned.quote}
               clubId={clubId ?? ''}
+              leave={(to) => {
+                if (busyRef.current) return;
+                releaseGuard();
+                navigate(to);
+              }}
             />
           )
         }

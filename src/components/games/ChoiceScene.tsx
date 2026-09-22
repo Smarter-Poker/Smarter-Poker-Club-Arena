@@ -724,6 +724,28 @@ function CrossingScene(props: Props) {
     observer.observe(node);
     resize();
     const frames = gpuFrameRenderer(renderer, scene, camera);
+    /* THE PROGRAMS ARE COMPILED BEFORE THE FIRST FRAME, NOT INSIDE IT
+       (2026-09-22). Every material here is a MeshPhysicalMaterial lit by a
+       shadow-casting key light, so the first renderer.render() compiles and
+       links the whole program set on the main thread - and that first frame
+       lands while the page is still animating the Double Down offer in.
+       compileAsync gives the work to the driver instead, and the scene simply
+       submits no frame until it answers. The clock below keeps running while
+       it waits, so the walk is not delayed, only unshown.
+       A renderer without compileAsync - an older three, a test double - draws
+       immediately, exactly as it did before. */
+    let compiled = typeof renderer.compileAsync !== 'function';
+    let compileTimer = 0;
+    if (!compiled) {
+      const ready = () => {
+        compiled = true;
+        clearTimeout(compileTimer);
+      };
+      // Either answer releases the scene: a driver that refuses to compile
+      // ahead of time still renders, it just pays for it in the first frame.
+      void renderer.compileAsync(scene, camera).then(ready, ready);
+      compileTimer = window.setTimeout(ready, 1500);
+    }
     let raf = 0,
       last = 0,
       signature = '',
@@ -971,8 +993,10 @@ function CrossingScene(props: Props) {
       // off screen: the clock, the beats and completion all carry on, and only
       // the draw call is skipped. No reveal ever waits on scroll position.
       // Under reduced motion there is nothing to redraw between changes.
-      const drawing = !p.paused && onScreen && (!reduced || needsDraw);
-      const submitted = drawing ? frames.render() : true;
+      // Nothing is drawn before compileAsync answers, so no beat and no
+      // completion lands on a frame the driver has not linked yet.
+      const drawing = compiled && !p.paused && onScreen && (!reduced || needsDraw);
+      const submitted = compiled && (drawing ? frames.render() : true);
       if (drawing) needsDraw = false;
       animating = !finished || lean > 0 || stepping;
       // A beat belongs to the frame that shows it: the same terminal-frame
@@ -1016,6 +1040,7 @@ function CrossingScene(props: Props) {
     canvas.addEventListener('webglcontextrestored', restored);
     return () => {
       cancelAnimationFrame(raf);
+      clearTimeout(compileTimer);
       document.removeEventListener('visibilitychange', visibilityChanged);
       frames.dispose();
       observer.disconnect();

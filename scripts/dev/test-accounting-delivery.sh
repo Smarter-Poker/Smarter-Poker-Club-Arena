@@ -171,6 +171,21 @@ run_game_probe diamond-one-setting-super-guarantee 'NOTICE:  PASS One setting an
 # 0.80 arithmetic being exact says nothing about how often 20x actually lands.
 run_game_probe diamond-bonus-fairness-audit 'NOTICE:  PASS Diamond fairness audit:'
 
+# A live Crash round is sealed like every other round (fairness audit,
+# 2026-09-22). The installed ticket sweep (20260921185541) is loaded first, on
+# its exact production preimage: its expired-unused DELETE is the one the new
+# ticket lock admits. Then the lock, and the latest-contract probes run again on
+# top of it - the player cash-out, auto, cap and tick settlements, and the
+# Plinko, Crash, road and Mines award starts that spend a ticket - before the
+# new probe proves every rewrite the lock refuses.
+"${diamond_psql[@]}" -f "$diamond/crash-lock-dependencies.sql" \
+  -f "$root/supabase/migrations/20260921185541_a_saved_round_settles_itself_and_a_ticket_is_never_pulled_from_under_a_live_page.sql" \
+  -f "$root/supabase/migrations/20260922173914_a_live_crash_round_is_sealed_like_every_other_round.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-crash-clicked-multiplier 'NOTICE:  PASS Crash clicked multiplier: exact 2.57x, no late rescue, auto and cap preserved, future and foreign requests refused, one payout on replay'
+run_game_probe diamond-one-setting-super-guarantee 'NOTICE:  PASS One setting and Super guarantee: Diamond and Super tables, ten drops a game, twelve-street road, six mines, exact quotes before Start, old settings and other drop counts refused without a debit, Super Plinko batch and Crash, road and Mines losses pay the entry, ordinary floor kept, sealed history readable'
+run_game_probe diamond-crash-round-is-sealed 'NOTICE:  PASS Crash round sealed: cash-out, instant crash and time settlement through the lock with nothing sealed moved, 36 rewrites refused (21 sealed columns, 2 settlement columns on a round still open, the minimum, a smuggled crash point, a settled edit, 2 deletes, 8 ticket re-spends, un-spends, rewrites and deletes), expired ticket swept, live tickets kept, maintenance escape unchanged'
+
 # Observe a genuine two-connection duplicate race in a SECOND disposable local
 # database. Its commits never touch production or the rollback-probe baseline.
 "${diamond_psql[@]}" -c 'CREATE DATABASE diamond_custody_race TEMPLATE diamond_games_probe OWNER postgres'

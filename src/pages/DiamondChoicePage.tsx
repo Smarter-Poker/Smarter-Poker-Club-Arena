@@ -5,7 +5,7 @@ import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
 import BonusCompletion from '../components/games/BonusCompletion';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { GameConsole, GamePanel } from '../components/games/GameConsole';
 import BonusSetup, { guaranteeCopy } from '../components/games/BonusSetup';
@@ -30,6 +30,7 @@ import {
 } from '../services/DiamondBonusService';
 import ChoiceScene from '../components/games/ChoiceScene';
 import {
+  ChoiceMoveRefused,
   DiamondChoiceService,
   parseChoiceRound,
   type ChoiceRound,
@@ -90,6 +91,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const { clubId } = useParams();
   const { user } = useAuthUser();
   const navigate = useNavigate();
+  const { search } = useLocation();
+  // The award the wheel sent the player here to play, when it did.
+  const linkedAward = new URLSearchParams(search).get('wheelAward');
   const [uuid, setUuid] = useState<string | null>(null);
   const [legacyState, setState] = useState<ChoiceState | null>(null);
   const [quotedEntry, setQuotedEntry] = useState<string | null>(null);
@@ -167,6 +171,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // unchanged but for the fresh ticket: never rebuilt from what the page
   // happens to show by then (another award, another Double Down answer).
   const owed = useRef<BonusStart | null>(null);
+  // The reason the server gave for the last move it refused, while it is on screen.
+  const refusedMove = useRef<string | null>(null);
   const upgraded = round
     ? earnedReceiptBudget(round as unknown as Record<string, unknown>)?.award?.boostMultiplier === 2
     : budget.award?.boostMultiplier === 2;
@@ -279,7 +285,13 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     )
       throw new Error(value?.error ?? 'The Game Ticket Could Not Be Loaded');
     const next = { id: value.commit_id, hash: value.server_seed_hash };
-    if (mounted.current) setTicket(next);
+    if (mounted.current) {
+      setTicket(next);
+      // A fresh player seed for every ticket, chosen after its hash is on
+      // screen, so no dealt seed can have been picked knowing the player's
+      // (fairness audit 2026-09-21). An owed wager keeps its own seed.
+      if (!owed.current) setSeed(randomClientSeed());
+    }
     return next;
   }, [game]);
 
@@ -509,6 +521,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     if (stepping) setMoving(true);
     setError(null);
     setVerified(null);
+    refusedMove.current = null;
     try {
       const next = await DiamondChoiceService.act(round, action, cell);
       if (!mounted.current) return;
@@ -547,9 +560,24 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       // nothing is printed: the confirmed result is read back by useAutoSettle.
       reportError(e, 'DiamondChoicePage.act');
       if (mounted.current) {
-        setUncertain(true);
-        setSettleAttempts(0);
-        setError('Confirming Your Move');
+        if (e instanceof ChoiceMoveRefused) {
+          // The server answered, and nothing on the round moved: its reason is
+          // shown as it is. The game is read again, so a break shows and the
+          // page's own break reads run; they take the reason down when play
+          // resumes (below). There is nothing to confirm.
+          refusedMove.current = e.message;
+          setError(e.message);
+          void load(uuid).catch((readError) => {
+            reportError(readError, 'DiamondChoicePage.moveRefused');
+            if (mounted.current) setLoadFailures((count) => count + 1);
+          });
+        } else {
+          // The answer never arrived: the confirmed result is read back by
+          // useAutoSettle.
+          setUncertain(true);
+          setSettleAttempts(0);
+          setError('Confirming Your Move');
+        }
       }
     } finally {
       busyRef.current = false;
@@ -585,6 +613,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const startRef = useRef(start);
   startRef.current = start;
   const restarts = useRef(0);
+  const refuseAward = refusal.refuse;
   useEffect(() => {
     // The owed wager is re-sent as it was; only the server decides whether it
     // can still start (a refusal now settles like any other).
@@ -592,15 +621,61 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     setRestartOwed(false);
     const wager = owed.current;
     owed.current = null;
-    if (!wager || restarts.current >= 2) return;
+    if (!wager) return;
+    if (restarts.current >= 2) {
+      // Fresh tickets keep being refused. The wager is not sent again, and its
+      // award is let go like any other refusal: the page says why and never
+      // holds the player on a game that will not start by itself.
+      refuseAward(wager.budget.award?.id);
+      return;
+    }
     restarts.current += 1;
     void startRef.current(wager);
-  }, [restartOwed, ticket, uncertain, busy, round?.status]);
+  }, [restartOwed, ticket, uncertain, busy, round?.status, refuseAward]);
   // Games paused by the platform come back by themselves after the break.
   useStandingRefresh(Boolean(state?.frozen) && !busy && !uncertain && !sceneBusy, () => {
     void earned.refresh();
     setLoadTry((count) => count + 1);
   });
+  // A move the server refused stays on screen until it no longer applies: the
+  // next move takes it down, and so does the end of the break, which the reads
+  // above see without anyone pressing anything.
+  const frozen = Boolean(state?.frozen);
+  const wasFrozen = useRef(frozen);
+  useEffect(() => {
+    const resumed = wasFrozen.current && !frozen;
+    wasFrozen.current = frozen;
+    const reason = refusedMove.current;
+    if (!resumed || !reason) return;
+    refusedMove.current = null;
+    setError((current) => (current === reason ? null : current));
+  }, [frozen]);
+  // A round that finished for the award the wheel link names, reopened from
+  // that link (a reload during its reveal, a revisit): the server hands the
+  // finished round back with the award. It is shown as it ended, and its
+  // receipt takes the player back to the wheel. A visit without the link never
+  // replays an old round on entry, and an open round is the game read's.
+  const recovered = earned.recoveredResult;
+  useEffect(() => {
+    if (!recovered || !uuid || !linkedAward || currentRound.current || uncertain) return;
+    let finished: ChoiceRound;
+    try {
+      finished = parseChoiceRound(recovered);
+    } catch (e) {
+      reportError(e, 'DiamondChoicePage.awardRecovery');
+      return;
+    }
+    if (
+      finished.status === 'open' ||
+      finished.award_id !== linkedAward ||
+      finished.game !== game ||
+      finished.club_id !== uuid
+    )
+      return;
+    currentRound.current = finished;
+    setRound(finished);
+    setCompletionId(finished.id);
+  }, [recovered, uuid, linkedAward, uncertain, game]);
   const open = round?.status === 'open';
   // A won game starts itself: a short visible countdown, then the same Start
   // the button would have pressed. A finished round still on the scene keeps
@@ -725,7 +800,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // it, and neither does the next award while a finished round's receipt is
   // waiting to take them back to the wheel.
   // A wager kept for the next visit has nothing in flight: it holds nothing.
-  useLiveBonusGuard(
+  const releaseGuard = useLiveBonusGuard(
     !saved &&
       ((Boolean(earned.award) &&
         !blocked &&
@@ -738,12 +813,26 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         sceneBusy),
     () => setError('Finish Your Bonus Game Before Leaving.')
   );
+  /** The setup's own exits (the wheel, the marketplace, Earn Diamonds) let go of
+   * the hold and leave. The setup is disabled while a start, a replay or a
+   * re-send is out and is off screen while a round is on the board, so no exit
+   * is ever taken with money in flight; the ref covers a press that lands in
+   * the moment between a start going out and the page drawing it. */
+  const leave = (to: string) => {
+    if (busyRef.current) return;
+    releaseGuard();
+    navigate(to);
+  };
   // EVERY CHOICE NAMES ITS CHIPS. The game is one decision - take this amount
   // or risk it for that one - and until now neither number was on the plate the
   // player pressed. Both read from `view`, so they change on the landing the
   // scene shows, never on the answer the server gave before it.
   const bookable = viewOpen && picks > 0 ? gameChips(prize ?? 0) : null;
-  const cashLabel = bookable === null ? 'Refresh' : `Book ${bookable}`;
+  // The second plate books the win and does nothing else: it never refreshes,
+  // it names the chips that press would book, and it is live only once a safe
+  // move has been made. Every read the page needs, it makes by itself.
+  const cashLabel = bookable === null ? 'Book The Win' : `Book ${bookable}`;
+  const canBook = open && picks > 0 && !busy && !sceneBusy && !uncertain;
   const crossable = game === 'crossing' && viewOpen && nextPrize !== undefined ? nextPrize : null;
   // History is available for proof, but must not replay an old collision on entry.
   const sceneRound = round?.id === completionId ? round : null;
@@ -752,8 +841,10 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const entryChips = state && validBonusBudget(budget) ? bet / state.diamonds_per_chip : undefined;
   const stakeChips = sceneRound?.bet_chips ?? entryChips;
   // What any loss or un-cashed round pays, shown before Start. The server's own
-  // quote speaks for an award; an open round carries its sealed floor; ordinary
-  // play keeps the tenth the server enforces and every receipt verifies.
+  // quote speaks for an award; the round on the board, open or finished,
+  // carries its own sealed floor (a booked loss reads beside the floor it was
+  // paid); ordinary play keeps the tenth the server enforces and every receipt
+  // verifies.
   const standardFloor = (() => {
     if (entryChips === undefined) return null;
     try {
@@ -762,14 +853,18 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       return null;
     }
   })();
-  const guaranteedChips = viewOpen
-    ? (view.minimum_payout_chips ?? 0)
+  // The round on the board, open or finished. An open round reads off the
+  // landing the scene is showing; a finished one keeps its floor and its chips
+  // on screen until its receipt has taken the player back to the wheel.
+  const boardRound = viewOpen ? view : sceneRound;
+  const guaranteedChips = boardRound
+    ? (boardRound.minimum_payout_chips ?? 0)
     : earned.quote
       ? earned.quote.minimumPayoutChips
       : earned.ready && !earned.award
         ? standardFloor
         : null;
-  const guaranteedSuper = viewOpen ? upgraded : earned.quote?.guarantee === 'super';
+  const guaranteedSuper = boardRound ? upgraded : earned.quote?.guarantee === 'super';
   const promise = earned.quote ? guaranteeCopy(game, earned.quote) : null;
   // The finished round's receipt is on screen, taking the player back to the
   // wheel. One condition, read by the receipt itself and by the scene behind it.
@@ -817,7 +912,12 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       <DiamondSpinsTabs clubId={clubId ?? ''} />
       <GameConsole
         setup={
-          !open && (
+          // The setup describes the next entry. A round on the board, open or
+          // finished, is the only game this page plays until its receipt has
+          // taken the player back, so the setup waits off screen: it never says
+          // "Win This Game" over a reveal, nor opens a next award's offer on it.
+          !open &&
+          !finishedOnScene && (
             <BonusSetup
               game={game}
               guarantee={earned.quote}
@@ -830,6 +930,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               diamonds={state?.diamonds ?? null}
               disabled={busy || uncertain || restartOwed}
               clubId={clubId ?? ''}
+              leave={leave}
             />
           )
         }
@@ -865,14 +966,14 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               : `Book The Win For ${bookable} Chips`,
           // Inside the tap: the one place an iOS switch haptic is granted.
           onClick: () => {
-            if (open && picks > 0 && !uncertain) {
-              triggerHaptic('selection');
-              void act('cashout', null);
-            } else void refresh();
+            if (!canBook) return;
+            triggerHaptic('selection');
+            void act('cashout', null);
           },
           // In flight: the plate keeps the player's focus. Unavailable: it does
-          // not. A wager the page is still settling is unavailable.
-          disabled: uncertain,
+          // not. A wager the page is still settling, and a board with no win on
+          // it to book, are both unavailable.
+          disabled: uncertain || bookable === null,
           'aria-disabled': busy || sceneBusy || undefined,
         }}
         primary={{
@@ -1011,8 +1112,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                 ? `A Mine Ended This Round. All Mines Are Revealed. ${gameChips(view.payout_chips)} Chips Booked.`
                 : `Hit At Street ${picks}. Your Guaranteed ${gameChips(view.payout_chips)} Chips Are Booked.`}
             </p>
-          ) : viewOpen ? // errors and for the result. // the decision itself needed on a 375px phone. The region stays for // sentence repeating them without the amounts was a line of screen // move and what it pays ("Book 1.45", "Cross For 1.85"), so a // AN OPEN ROUND SAYS ITSELF ON THE PLATES. Both of them name the
-          null : (
+          ) : viewOpen ? null : ( // errors and for the result. // the decision itself needed on a 375px phone. The region stays for // sentence repeating them without the amounts was a line of screen // move and what it pays ("Book 1.45", "Cross For 1.85"), so a // AN OPEN ROUND SAYS ITSELF ON THE PLATES. Both of them name the
             <p className="sc-copy">
               {!earned.ready
                 ? (earned.error ??
@@ -1077,7 +1177,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           Your Seed
           <input
             className={styles.seedInput}
-            value={seed}
+            // An open round shows the seed it was sealed with, even one read back
+            // from the server; before a round, the seed the next one will use.
+            value={open ? round.client_seed : seed}
             maxLength={64}
             disabled={busy || open || uncertain}
             onChange={(e) => setSeed(e.target.value)}

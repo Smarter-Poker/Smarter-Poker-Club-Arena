@@ -16,23 +16,23 @@ import path from 'node:path';
 
 const read = (file: string) => readFile(path.join(process.cwd(), file), 'utf8');
 
-const activationTransaction = (workflow: string) => {
-  const startMarker = "<<'REMOTE_ACTIVATE'";
-  const start = workflow.indexOf(startMarker);
-  expect(start, 'missing host-owned activation transaction').toBeGreaterThan(-1);
-  const bodyStart = start + startMarker.length;
-  const end = workflow.indexOf('\n          REMOTE_ACTIVATE', bodyStart);
-  expect(end, 'unterminated host-owned activation transaction').toBeGreaterThan(bodyStart);
-  return workflow.slice(bodyStart, end);
-};
+/**
+ * The activation transaction moved out of the workflow on 2026-09-22. It was a
+ * heredoc inside one `run:` step until that step grew past the size GitHub
+ * Actions accepts for a single `run`, at which point the whole workflow stopped
+ * parsing, no job started, and nothing published. It is a tracked script now,
+ * piped to `bash -s` on the origin from the same protected-main checkout: the
+ * same bytes under the same review, with no ceiling over them.
+ */
+const activationTransaction = async () => read('.github/scripts/publish-origin-activate.sh');
 
 const shellFunction = (transaction: string, name: string) => {
   const start = transaction.indexOf(`${name}() {`);
   expect(start, `missing ${name}`).toBeGreaterThan(-1);
-  const endMarker = '\n          }\n\n';
+  const endMarker = '\n}\n\n';
   const end = transaction.indexOf(endMarker, start);
   expect(end, `unterminated ${name}`).toBeGreaterThan(start);
-  return transaction.slice(start, end + '\n          }'.length).replace(/^ {10}/gm, '');
+  return transaction.slice(start, end + '\n}'.length);
 };
 
 const writeAdoptionProbe = async (sandbox: string, transaction: string) => {
@@ -127,8 +127,7 @@ describe('Club Arena runtime asset retention', () => {
   });
 
   it('fills and flushes the additive pool before atomically exposing a release', async () => {
-    const workflow = await read('.github/workflows/publish-club-arena.yml');
-    const transaction = activationTransaction(workflow);
+    const transaction = await activationTransaction();
     const lock = transaction.indexOf('flock -w 45 9');
     const verifiedRelease = transaction.indexOf('verify_complete_manifest "$FINAL"');
     const collisionGuard = transaction.indexOf(
@@ -159,8 +158,7 @@ describe('Club Arena runtime asset retention', () => {
   });
 
   it('never delete-syncs the pool and has no bundle-membership prune', async () => {
-    const workflow = await read('.github/workflows/publish-club-arena.yml');
-    const transaction = activationTransaction(workflow);
+    const transaction = await activationTransaction();
     const poolSyncs = transaction
       .split('\n')
       .map((line) => line.trim())
@@ -189,12 +187,13 @@ describe('Club Arena runtime asset retention', () => {
           !line.includes("'*.map'")
       );
     expect(runtimePrunes).toEqual([]);
-    expect(workflow).not.toContain('sync-club-arena-dist.mjs');
+    expect(await read('.github/workflows/publish-club-arena.yml')).not.toContain(
+      'sync-club-arena-dist.mjs'
+    );
   });
 
   it('atomically adopts the legacy regular fonts.css only when its bytes exactly match current', async () => {
-    const workflow = await read('.github/workflows/publish-club-arena.yml');
-    const transaction = activationTransaction(workflow);
+    const transaction = await activationTransaction();
     const sandbox = await mkdtemp(path.join(tmpdir(), 'club-arena-font-adoption-'));
     try {
       const currentDir = path.join(sandbox, 'current', 'fonts');
@@ -230,8 +229,7 @@ describe('Club Arena runtime asset retention', () => {
   });
 
   it('accepts the canonical pointer and rejects directories, special files, and wrong symlinks', async () => {
-    const workflow = await read('.github/workflows/publish-club-arena.yml');
-    const transaction = activationTransaction(workflow);
+    const transaction = await activationTransaction();
     const sandbox = await mkdtemp(path.join(tmpdir(), 'club-arena-font-shapes-'));
     try {
       const currentDir = path.join(sandbox, 'current', 'fonts');
@@ -274,8 +272,7 @@ describe('Club Arena runtime asset retention', () => {
   });
 
   it('seals the exact legacy current release once so first-adoption rollback is verifiable', async () => {
-    const workflow = await read('.github/workflows/publish-club-arena.yml');
-    const transaction = activationTransaction(workflow);
+    const transaction = await activationTransaction();
     const sandbox = await mkdtemp(path.join(tmpdir(), 'club-arena-rollback-seal-'));
     try {
       const sha = 'a'.repeat(40);
@@ -316,8 +313,7 @@ describe('Club Arena runtime asset retention', () => {
   });
 
   it('refuses to seal an untrusted, incomplete, linked, or special legacy release', async () => {
-    const workflow = await read('.github/workflows/publish-club-arena.yml');
-    const transaction = activationTransaction(workflow);
+    const transaction = await activationTransaction();
     const repository = 'Smarter-Poker/Smarter-Poker-Club-Arena';
     const sha = 'b'.repeat(40);
 
@@ -389,14 +385,13 @@ describe('Club Arena runtime asset retention', () => {
   });
 
   it('executes the production collision guard and rejects a reused URL with changed bytes', async () => {
-    const workflow = await read('.github/workflows/publish-club-arena.yml');
-    const transaction = activationTransaction(workflow);
+    const transaction = await activationTransaction();
     const functionStart = transaction.indexOf('assert_additive_pool_has_no_collision() {');
-    const functionEndMarker = '\n          }\n\n          prove_additive_pool_contains_release() {';
+    const functionEndMarker = '\n}\n\nprove_additive_pool_contains_release() {';
     const functionEnd = transaction.indexOf(functionEndMarker, functionStart);
     expect(functionStart).toBeGreaterThan(-1);
     expect(functionEnd).toBeGreaterThan(functionStart);
-    const functionSource = transaction.slice(functionStart, functionEnd + '\n          }'.length);
+    const functionSource = transaction.slice(functionStart, functionEnd + '\n}'.length);
 
     const sandbox = await mkdtemp(path.join(tmpdir(), 'club-arena-pool-collision-'));
     try {

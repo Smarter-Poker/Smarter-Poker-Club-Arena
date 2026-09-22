@@ -74,6 +74,9 @@ export function diamondChoicePageFixture() {
           rounds_today:3,daily_limit:200,diamonds_today:300,seconds_until_next:0};
         export const parseChoiceRound=(value)=>value;
         export const parseChoiceState=(value)=>value;
+        export const MOVE_NOT_TAKEN='The Game Could Not Take That Move';
+        export class ChoiceMoveRefused extends Error{};
+        export const moveRefusedByDatabase=()=>false;
         export const DiamondChoiceService={
           state:async()=>state,
           act:async()=>{throw new Error('This Layout Fixture Cannot Wager')}};`,

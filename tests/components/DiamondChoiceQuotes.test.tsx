@@ -24,7 +24,10 @@ vi.mock('../../src/services/DiamondChoiceService', () => ({
   DiamondChoiceService: { state: backend.state, act: backend.act },
   parseChoiceRound: (value: unknown) => value,
 }));
-vi.mock('../../src/services/DiamondBonusService', () => ({
+vi.mock('../../src/services/DiamondBonusService', async (original) => ({
+  // The real module's other exports (BonusUnreadable and the copy the page
+  // prints) stay, so every catch path the page takes can read them.
+  ...(await original<typeof import('../../src/services/DiamondBonusService')>()),
   DiamondBonusService: { start: backend.start },
   BonusRefusal: class extends Error {},
 }));
@@ -77,6 +80,15 @@ vi.mock('../../src/components/wheel/WheelWinReveal', () => ({
   ),
 }));
 vi.mock('../../src/components/games/SealedPrize', () => ({ default: () => null }));
+// The console the offer is built on is mocked away in this file, so the offer
+// is reduced to the one thing these tests need from it: the player's answer.
+vi.mock('../../src/components/games/DoubleDownOffer', () => ({
+  default: ({ onChoose }: { onChoose: (doubled: boolean) => void }) => (
+    <div role="dialog" aria-label="Double Down Your Bonus">
+      <button onClick={() => onChoose(false)}>Keep My Bonus</button>
+    </div>
+  ),
+}));
 vi.mock('../../src/components/games/DiamondSpinsTabs', () => ({ default: () => null }));
 vi.mock('../../src/components/games/TodayLine', () => ({ default: () => null }));
 vi.mock('../../src/components/console/SpadeConsole', () => ({
@@ -449,6 +461,56 @@ describe('choice games consume wheel-funded entry', () => {
         }),
         'player-a'
       );
+    }
+  );
+  it.each(['mines', 'crossing'] as const)(
+    'starts a won %s round by itself five seconds after the Double Down answer',
+    async (game) => {
+      vi.useFakeTimers();
+      try {
+        const award = {
+          id: '00000000-0000-0000-0000-000000000079',
+          game,
+          base_diamonds: 200,
+          entry_diamonds: 100,
+          boost_multiplier: 2,
+          status: 'pending',
+        };
+        backend.state.mockResolvedValue({ ...state, diamonds: 0, max_steps: 0, prizes: [] });
+        backend.awardState.mockResolvedValue({
+          enabled: true,
+          award,
+          gameState: { ...state, diamonds: 0, max_steps: 3, prizes: [2.2, 2.7, 3.4] },
+          quote: {
+            guarantee: 'super',
+            minimumPayoutChips: 1,
+            mode: CHOICE_MODE[game],
+            plinkoTable: 4,
+          },
+        });
+        backend.start.mockReturnValue(new Promise(() => {}));
+        render(<DiamondChoicePage game={game} />);
+        await act(async () => {});
+        // The offer spends the player's own diamonds, so nothing starts over it.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(20_000);
+        });
+        expect(backend.start).not.toHaveBeenCalled();
+        expect(screen.getByRole('dialog', { name: 'Double Down Your Bonus' })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Keep My Bonus' }));
+        await act(async () => {});
+        expect(screen.getByRole('button', { name: 'Starting In 5s' })).toBeEnabled();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(4_500);
+        });
+        expect(backend.start).not.toHaveBeenCalled();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(600);
+        });
+        expect(backend.start).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
     }
   );
   it.each(['mines', 'crossing'] as const)(

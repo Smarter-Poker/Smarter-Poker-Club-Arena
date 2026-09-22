@@ -84,7 +84,6 @@ const BASELINE = new Map<string, number>([
   ['src/services/FriendSuggestionService.ts', 1],
   ['src/services/CreditRequestService.ts', 1],
   ['src/services/ChipFlowService.ts', 4],
-  ['src/pages/HomePage.tsx', 1],
   /* 4 -> 2 on 2026-09-11: removing the promo-rain control took two discarded
      reads with it (the owner probe and the rain handler's catch). The ratchet
      asked for this in the same commit, which is the point of it. */
@@ -98,7 +97,6 @@ const BASELINE = new Map<string, number>([
   ['src/pages/BadBeatJackpotPage.tsx', 0],
   ['src/components/social/PlayerActivityFeed.tsx', 4],
   ['src/components/agent/ChipTransferModal.tsx', 2],
-  ['src/components/agent/AgentScoreCard.tsx', 4],
   ['src/services/VoiceSignalService.ts', 3],
   // 3 -> 1 on 2026-09-20: submitDispute and withdrawDispute stopped doing raw
   // table writes and now call fn_dispute_submit / fn_dispute_withdraw, which
@@ -111,7 +109,17 @@ const BASELINE = new Map<string, number>([
   // TournamentResultsPage was cleared to 0 in round 10 (the deep-link work
   // touched the file, so its three reads were fixed under the ratchet's own
   // rule: shrink what you touch).
-  ['src/pages/tournament/TournamentLobbyPage.tsx', 3],
+  /* ZERO SINCE 2026-09-21 (was 3). All three turned "the read did not answer"
+     into a confident wrong answer, which is CLAUDE.md 10.86 rule 1 in one
+     file: the player's registration list became "registered for nothing", so
+     a board of live Register (buy-in) buttons was shown to a player already
+     in every event; union membership became "standalone"; and the union scope
+     read became "no union", quietly dropping every union game off the board.
+     The two union reads keep the outcome they always had (fail open on the
+     affordance, fail closed on scope) - what they no longer do is reach it by
+     accident. Kept at 0 rather than deleted so a reintroduction is a diff on
+     this line. */
+  ['src/pages/tournament/TournamentLobbyPage.tsx', 0],
   ['src/pages/VIPPage.tsx', 2],
   ['src/pages/NotificationsPage.tsx', 0],
   ['src/pages/ClubRulesPage.tsx', 0],
@@ -193,7 +201,6 @@ const BASELINE = new Map<string, number>([
   ['src/components/tournament/TournamentRankingCard.tsx', 1],
   ['src/components/tournament/MysteryBountyPanel.tsx', 1],
   ['src/components/tournament/MysteryBountyCelebration.tsx', 1],
-  ['src/components/table/RealTimeResultPanel.tsx', 1],
   ['src/components/social/PresenceIndicator.tsx', 1],
   ['src/components/session/SessionSummaryHost.tsx', 1],
   ['src/components/navigation/NotificationDropdown.tsx', 1],

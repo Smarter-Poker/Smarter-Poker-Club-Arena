@@ -1,0 +1,63 @@
+.freezeDialogCard {
+  width: min(100%, 510px);
+}
+
+.freezeDialogCard > .celebrateCardScroll {
+  padding-top: 24px;
+}
+
+.freezeDialogDescription {
+  max-width: 410px;
+  margin: 11px auto 21px;
+  color: #aab5b1;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.freezePurchaseLedger {
+  display: grid;
+  border-block: 1px solid rgba(214, 173, 82, 0.26);
+  background: linear-gradient(90deg, transparent, rgba(7, 61, 50, 0.23), transparent);
+}
+
+.freezePurchaseLedger > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 7px;
+  text-align: left;
+}
+
+.freezePurchaseLedger > div + div {
+  border-top: 1px solid rgba(184, 196, 201, 0.13);
+}
+
+.freezePurchaseLedger span {
+  color: #84908c;
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.freezePurchaseLedger strong {
+  justify-content: flex-end;
+  color: #e9f5f2;
+  font-size: 0.82rem;
+  text-align: right;
+}
+
+.freezeDialogActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.freezeDialogActions .cancelButton,
+.freezeDialogActions .confirmButton {
+  width: 100%;
+  min-height: 48px;
+}

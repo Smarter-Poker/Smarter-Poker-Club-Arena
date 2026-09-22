@@ -30,6 +30,7 @@ import ConfirmModal from '../components/common/ConfirmModal';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
+import { withClubContext } from '../utils/clubScopedPath';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import { retryFetch } from '../utils/retryFetch';
 import { sanitizeInput } from '../utils/sanitizeInput';
@@ -1344,11 +1345,11 @@ export default function ClubDetailPage() {
                 on ProfilePage. One surface owns claiming now; this is a way in. */}
             <div className={styles.card}>
               <h3 style={{ margin: '0 0 8px', fontSize: '0.95rem' }}>Daily Challenges</h3>
-              <p style={{ margin: '0 0 12px', fontSize: '0.8rem', color: '#8a9aaa' }}>
+              <p style={{ margin: '0 0 12px', fontSize: '0.8rem', color: '#9aa5b3' }}>
                 A Fresh Set Of Challenges Every Day, Plus Weekly And Monthly Goals.
               </p>
               <button
-                onClick={() => navigate('/challenges')}
+                onClick={() => navigate(withClubContext('/challenges', clubId))}
                 style={{
                   padding: '8px 16px',
                   borderRadius: 8,

@@ -15,6 +15,7 @@
  * so they cannot drift into fiction again.
  */
 
+import { titleCase } from '../../utils/titleCase';
 import { useState } from 'react';
 import {
   BBJ_QUALIFYING_HANDS,
@@ -29,6 +30,8 @@ import {
 } from '../../config/bbjMini';
 import { BBJ_MAIN_SPLIT } from '../../config/RakeConfig';
 import type { BbjMiniSnapshot } from '../../lib/bbjMiniFeed';
+import { SpadeConsole } from '../console/SpadeConsole';
+import { compactChips } from '../../utils/format';
 import './BBJRulesPanel.css';
 
 /** Stakes tiers as the SERVER pays them (server/src/config/RakeConfig.ts). */
@@ -94,7 +97,14 @@ export function BBJRulesPanel({ poolAmount = 0, mini = null }: BBJRulesPanelProp
   const miniTiers = mini ? [...mini.tiers].sort((a, b) => a.maxBB - b.maxBB) : [];
 
   return (
-    <div className="bbj-rules">
+    <SpadeConsole
+      className="bbj-rules"
+      eyebrow="How It Pays"
+      title="Jackpot Rules"
+      pill={poolAmount > 0 ? compactChips(poolAmount) : 'Rules'}
+      pillInk={poolAmount > 0 ? 'gold' : 'blue'}
+      foot="foot"
+    >
       {
         <div
           className="bbj-rules__tabs"
@@ -193,7 +203,7 @@ export function BBJRulesPanel({ poolAmount = 0, mini = null }: BBJRulesPanelProp
                 return (
                   <tr key={row.key} className={info.eligible ? '' : 'is-ineligible'}>
                     <td>{row.games}</td>
-                    <td>{info.eligible ? info.shortLabel : 'Mini Not Available'}</td>
+                    <td>{info.eligible ? titleCase(info.shortLabel) : 'Mini Not Available'}</td>
                   </tr>
                 );
               })}
@@ -279,7 +289,7 @@ export function BBJRulesPanel({ poolAmount = 0, mini = null }: BBJRulesPanelProp
                 return (
                   <tr key={row.key} className={eligible ? '' : 'is-ineligible'}>
                     <td>{row.games}</td>
-                    <td>{eligible ? info.shortLabel : 'Jackpot Not Available'}</td>
+                    <td>{eligible ? titleCase(info.shortLabel) : 'Jackpot Not Available'}</td>
                   </tr>
                 );
               })}
@@ -362,7 +372,7 @@ export function BBJRulesPanel({ poolAmount = 0, mini = null }: BBJRulesPanelProp
           </table>
         </div>
       )}
-    </div>
+    </SpadeConsole>
   );
 }
 

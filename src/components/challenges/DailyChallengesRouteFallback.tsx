@@ -1,4 +1,5 @@
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
 import type { Tier } from '../../services/DailyChallengeService';
 import { mediaUrl } from '../../utils/mediaBase';
 import StandardContentLayout from '../layouts/StandardContentLayout';
@@ -119,6 +120,19 @@ export function DailyChallengesCrashFallback({
   onRetry: () => void;
 }) {
   const tier = useFallbackTier();
+  const navigate = useNavigate();
+  const { routeClubId } = useClubWorkspace();
+  /* A shared link opens this route with nothing behind it, and history.back()
+     from the first entry does nothing. Then Go Back opens the club home the
+     link named, the same place the page's Back To Arena door goes, or the
+     arena when it named no club. */
+  const goBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    navigate(routeClubId ? `/clubs/${routeClubId}` : '/');
+  };
   return (
     <StandardContentLayout className={styles.container}>
       <div
@@ -147,11 +161,7 @@ export function DailyChallengesCrashFallback({
               <CasinoControlIcon variant="retry" state="attention" size="sm" />
               Retry Challenge Display
             </button>
-            <button
-              type="button"
-              className={styles.backButton}
-              onClick={() => window.history.back()}
-            >
+            <button type="button" className={styles.backButton} onClick={goBack}>
               <CasinoControlIcon variant="back" state="idle" size="sm" />
               Go Back
             </button>

@@ -1,0 +1,14 @@
+.rerollConfirm {
+  display: grid;
+  width: min(100%, 430px);
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.rerollConfirm > .rerollPrompt {
+  max-width: none;
+  padding-right: 6px;
+  line-height: 1.35;
+  text-align: left;
+}

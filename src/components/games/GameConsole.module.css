@@ -125,7 +125,10 @@
   background: linear-gradient(#80eac2, #28b881);
   border-color: #aafadb;
 }
-.controls button:disabled {
+/* A plate waiting on its own move keeps its focus (aria-disabled) and a plate
+   with nothing to press does not (disabled). They read the same. */
+.controls button:disabled,
+.controls button[aria-disabled='true'] {
   opacity: 0.45;
   cursor: default;
 }

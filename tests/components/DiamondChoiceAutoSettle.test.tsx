@@ -948,3 +948,76 @@ describe('a blank seed never stalls a won game', () => {
     expect(seedField().value).toBe('lucky donkey');
   });
 });
+
+/**
+ * FOCUS STAYS ON THE PLATE FROM STREET TO STREET (review 2026-09-22). Both
+ * plates took the NATIVE disabled attribute for busy || sceneBusy on every
+ * street. A focused control that becomes disabled loses focus to <body> under
+ * the HTML focus-fixup rule, so a keyboard or switch-control player pressed
+ * Cross, lost the plate, and Tabbed back past the back link, the tab strip and
+ * the header to reach it again - twelve times in a round - hearing it
+ * announced as dimmed mid-move. aria-disabled says the same thing to assistive
+ * technology and keeps the focus where the player put it; act()'s own
+ * double-press guard still refuses the second press.
+ */
+describe('focus stays on the plate from street to street', () => {
+  it('holds a street in flight with aria-disabled, and still refuses a second press', async () => {
+    let answer!: (value: unknown) => void;
+    backend.start.mockImplementationOnce(async () => ({ ...opened('crossing'), picked: [0] }));
+    backend.act.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    await answerOffer();
+    await advance(5000);
+    const plate = screen.getByRole('button', { name: 'Cross Street' });
+    plate.focus();
+    fireEvent.click(plate);
+    await settle();
+    // jsdom does not run the browser's focus fixup, so the attributes are what
+    // is asserted here; the browser pass lives in the Playwright spec.
+    expect(plate).toHaveAttribute('aria-disabled', 'true');
+    expect(plate).not.toBeDisabled();
+    expect(document.activeElement).toBe(plate);
+    fireEvent.click(plate);
+    expect(backend.act).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      answer({ ...opened('crossing'), picked: [0, 1] });
+    });
+    await settle();
+    // Still the scene's street, so still the plate's own focus.
+    expect(plate).toHaveAttribute('aria-disabled', 'true');
+    expect(plate).not.toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Scene' }));
+    expect(plate).not.toHaveAttribute('aria-disabled');
+    expect(plate).toBeEnabled();
+  });
+
+  it('keeps the native attribute where the plate really has nothing to do', async () => {
+    backend.awardState.mockResolvedValue({ enabled: false, award: null, gameState: null });
+    backend.rpc.mockRejectedValue(new Error('The Network Dropped'));
+    render(<DiamondChoicePage game="crossing" />);
+    await settle();
+    // No ticket dealt yet: not a move in flight, and no focus worth keeping.
+    const start = screen.getByRole('button', { name: 'Start Round' });
+    expect(start).toBeDisabled();
+    expect(start).not.toHaveAttribute('aria-disabled');
+  });
+
+  it('leaves the Mines primary natively disabled: its board owns the move', async () => {
+    backend.awardState.mockResolvedValue({ enabled: false, award: null, gameState: null });
+    backend.state.mockResolvedValue({
+      ...state,
+      open_round: { ...opened('mines'), game: 'mines' },
+    });
+    render(<DiamondChoicePage game="mines" />);
+    await settle();
+    const tile = screen.getByRole('button', { name: 'Choose A Tile' });
+    expect(tile).toBeDisabled();
+    expect(tile).not.toHaveAttribute('aria-disabled');
+  });
+});

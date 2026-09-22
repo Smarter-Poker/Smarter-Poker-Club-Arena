@@ -1,4 +1,5 @@
 import { test, expect, type Locator } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import { diamondGamesFixture } from '../helpers/diamond-games-fixture.mjs';
 // Each case switches through the real playfields. The hosted software WebGL
 // trace in run35285753046 spent 19.5s opening Plinko and a further 30.7s on it
@@ -493,3 +494,82 @@ for (const game of ['plinko', 'crash', 'crossing', 'mines'])
       );
     });
   }
+
+/**
+ * THE PLATE IS STILL THERE ON THE NEXT STREET (2026-09-22).
+ *
+ * Both plates took the NATIVE disabled attribute while a move was in flight,
+ * and the HTML focus-fixup rule moves focus off an element that becomes
+ * disabled: it lands on <body>. A keyboard or switch-control player pressed
+ * Cross, lost the plate, and had to Tab back past the back link, the tab strip
+ * and the header - on every one of twelve streets. This plays a crossing with
+ * the Tab key used ONCE, to arrive; everything after it is Enter on whatever
+ * the browser says has focus, so the spec fails the moment the plate stops
+ * being that thing.
+ */
+test('Donkey Cross crosses street after street on the keyboard alone', async ({ page }) => {
+  const { diamondTestFixture } = await import('../helpers/diamond-test-fixture.mjs');
+  const bundle = await diamondTestFixture();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/*', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' })
+  );
+  // A sealed road of zero survives every street, so the round reaches street
+  // three however the scene is compiled on this host.
+  await page.addInitScript(() => {
+    Object.defineProperty(window.crypto, 'getRandomValues', {
+      value: (a: Uint32Array | Uint16Array) => {
+        a.fill(0);
+        return a;
+      },
+    });
+  });
+  await page.goto('http://diamond-test.local/diamond-test.html?game=crossing');
+  await page.addStyleTag({ content: bundle.css });
+  await page.addScriptTag({ content: bundle.javascript });
+  await expect(page.getByRole('button', { name: 'Start Test', exact: true })).toBeVisible();
+  /** What the browser says the player is on, and whether it is taking presses. */
+  const under = () =>
+    page.evaluate(() => {
+      const element = document.activeElement as HTMLButtonElement | null;
+      return {
+        label: element?.textContent?.trim() ?? '',
+        pending: element?.getAttribute('aria-disabled'),
+        dimmed: element?.disabled ?? null,
+      };
+    });
+  let tabs = 0;
+  while ((await under()).label !== 'Start Test' && tabs < 30) {
+    await page.keyboard.press('Tab');
+    tabs += 1;
+  }
+  expect((await under()).label, 'the primary plate is reachable by Tab').toBe('Start Test');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: 'Cross Next Road', exact: true })).toBeVisible();
+  const arrived = tabs;
+  for (const street of [1, 2, 3]) {
+    await page.keyboard.press('Enter');
+    // While the donkey is in the road the plate is aria-disabled, never
+    // disabled, so it is still what the browser calls the active element.
+    await expect
+      .poll(async () => (await under()).pending, {
+        message: `street ${street} finishes and gives the plate back`,
+        timeout: 40_000,
+      })
+      .toBe(null);
+    const plate = await under();
+    expect(plate.label, `the plate is still under the player on street ${street}`).toBe(
+      'Cross Next Road'
+    );
+    expect(plate.dimmed).toBe(false);
+    await expect(page.getByText(`Safe On Street ${street} · Your Move`)).toBeVisible();
+  }
+  // Street three, and the Tab key was pressed only to arrive at the plate.
+  expect(tabs).toBe(arrived);
+  // The controls, which is what aria-disabled changed. (The scene's street
+  // strip beside them scrolls horizontally without a tab stop, which axe calls
+  // scrollable-region-focusable; that is the strip's own, older, business and
+  // adding a tab stop there would sit between the player and this plate.)
+  const scan = await new AxeBuilder({ page }).include('[data-game-console] aside').analyze();
+  expect(scan.violations.map((violation) => violation.id)).toEqual([]);
+});

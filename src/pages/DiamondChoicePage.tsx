@@ -756,7 +756,10 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           label: cashLabel,
           onClick: () =>
             open && picks > 0 && !uncertain ? void act('cashout', null) : void refresh(),
-          disabled: busy || sceneBusy || uncertain,
+          // In flight: the plate keeps the player's focus. Unavailable: it does
+          // not. A wager the page is still settling is unavailable.
+          disabled: uncertain,
+          'aria-disabled': busy || sceneBusy || undefined,
         }}
         primary={{
           label: viewOpen
@@ -769,8 +772,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                 ? `Starting In ${autoStartIn}s`
                 : 'Start Round',
           onClick: () => (open ? void act('pick', picks) : void start()),
-          disabled:
-            busy || sceneBusy || uncertain || (open ? game === 'mines' : blocked || !ticket),
+          disabled: uncertain || (open ? game === 'mines' : blocked || !ticket),
+          'aria-disabled': busy || sceneBusy || undefined,
         }}
       >
         <TodayLine

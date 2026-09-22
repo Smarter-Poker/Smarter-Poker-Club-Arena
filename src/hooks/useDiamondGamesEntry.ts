@@ -3,6 +3,7 @@ import DiamondGamesService, { type DiamondGamesEntry } from '../services/Diamond
 import { reportError } from '../utils/errorReporter';
 import { useAuthUser } from './useAuthUser';
 import { masterBus } from '../core/MasterBus';
+import { resolveClubUUID } from '../utils/clubIdResolver';
 
 /** Account-scoped, event-driven eligibility. Unknown balances never mean bust. */
 export function useDiamondGamesEntry(clubId: string | null | undefined, enabled = true) {
@@ -17,12 +18,20 @@ export function useDiamondGamesEntry(clubId: string | null | undefined, enabled 
   const [loading, setLoading] = useState(false);
   const alive = useRef(true),
     generation = useRef(0);
+  // The club this hook last read, as the server knows it (its UUID).
+  const resolved = useRef<string | null>(null);
   const refresh = useCallback(async () => {
     if (!clubId || !user?.id || !enabled) return;
     const g = ++generation.current;
     setLoading(true);
     try {
-      const next = await DiamondGamesService.entry(clubId);
+      // Callers pass whatever their route carries: a UUID, a club code or a
+      // slug ("shark-club"). The server takes the UUID; a slug sent as-is was
+      // refused with 22P02 on every read, so the Diamonds-to-Chips door and the
+      // bust prompt never learned the player's balance.
+      const club = await resolveClubUUID(clubId);
+      resolved.current = club;
+      const next = await DiamondGamesService.entry(club);
       if (alive.current && currentScope.current === scope && generation.current === g)
         setSnapshot({ scope, entry: next.ok ? next : null });
     } catch (err) {
@@ -46,7 +55,8 @@ export function useDiamondGamesEntry(clubId: string | null | undefined, enabled 
     const off = [
       masterBus.subscribe('BALANCE_UPDATED', (event) => {
         if (typeof event.payload.userId === 'string' && event.payload.userId !== user?.id) return;
-        if (typeof event.payload.clubId === 'string' && event.payload.clubId !== clubId) return;
+        const club = event.payload.clubId;
+        if (typeof club === 'string' && club !== clubId && club !== resolved.current) return;
         read();
       }),
       masterBus.subscribe('DIAMOND_BALANCE_CHANGED', read),

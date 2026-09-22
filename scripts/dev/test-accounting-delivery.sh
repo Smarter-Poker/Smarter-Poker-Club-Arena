@@ -267,3 +267,20 @@ if [ "$blocked" != 1 ] || ! grep -Fq '"replayed": true' "$fixture/custody-race-b
   exit 1
 fi
 "${race_psql[@]}" -f "$diamond/daily-custody-concurrency-assert.sql"
+
+# --- D1 wheel v4 2026-09-21 ---
+# Owner rulings R2, R12, R13, R15 and the server half of R18 (Dan, 2026-09-21):
+# the wheel pays a game half the time, instant chips three tenths and an item a
+# fifth; a VIP never wins an item; no prize or game ever repeats back to back;
+# Diamonds deals three cards; and a run may leave the prizes it wins unplayed.
+# Qualified last, on the exact installed preimages of the spin, the state and
+# the profile guard, then the whole maths, four hundred real spins, the VIP
+# wheel, the card game and the run. The R16 ledger audit is re-run afterwards so
+# that its wheel-v4 branch (fn_wheel_diamond_cards_pick, paid exactly once) runs
+# against the contract it was written for.
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20260922194123_diamond_wheel_v4_draws_a_different_prize_every_time_and_diam.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-wheel-v4-model-and-matrix 'NOTICE:  PASS Wheel v4 model and matrix: twelve ords and 0.8 exactly for every entry 25..2500 standard and VIP, a VIP table with no items and the same 5000 on ords 3/6/9, a symmetric zero-diagonal matrix whose rows and columns both sum to the base law, the mix exactly 50/30/20, every conditional expectation at most 0.862037 of the entry, the cross-tier rule value neutral on both wheels and six distinct card orders each worth 11/6'
+run_game_probe diamond-wheel-v4-draw-and-cards 'NOTICE:  PASS Wheel v4 draw and cards: 400 real spins with no repeated prize or game, the mix'
+run_game_probe diamond-spins-every-movement-has-a-ledger-row 'NOTICE:  PASS Every movement has a ledger row: exact entry journal and custody intake per spin, Promo-first then bank chip prizes journaled in chip_ledger, chip_transactions and union wallet rows, diamond prizes both sides, item grants as feature_purchases with retired custody, bonus as an award only, day equals movements, wallets equal journals, no documents'
+# --- end D1 wheel v4 2026-09-21 ---

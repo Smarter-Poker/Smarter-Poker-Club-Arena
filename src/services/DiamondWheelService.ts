@@ -5,8 +5,22 @@
 import { supabase } from '../lib/supabase';
 import { assertWheelAward, assertWheelUpgradeTable } from '../utils/wheelAward';
 
-export type WheelContractVersion = 2 | 3;
-export type WheelDrawDomain = 'wheel-v2' | 'wheel-v2-upgrade' | 'wheel-v3' | 'wheel-v3-upgrade';
+export type WheelContractVersion = 2 | 3 | 4;
+export type WheelDrawDomain =
+  | 'wheel-v2'
+  | 'wheel-v2-upgrade'
+  | 'wheel-v3'
+  | 'wheel-v3-upgrade'
+  | 'wheel-v4'
+  | 'wheel-v4-upgrade';
+export const WHEEL_DRAW_DOMAINS: readonly WheelDrawDomain[] = [
+  'wheel-v2',
+  'wheel-v2-upgrade',
+  'wheel-v3',
+  'wheel-v3-upgrade',
+  'wheel-v4',
+  'wheel-v4-upgrade',
+];
 
 /** Legacy receipts retain their original kind; new tables never include an empty prize. */
 export type WheelSegmentKind =
@@ -236,6 +250,19 @@ export interface WheelDailyBonusState {
   segments: WheelSegment[];
 }
 
+/**
+ * WHAT THE PREVIOUS SPIN WAS, so this one could not repeat it (owner ruling
+ * 2026-09-21, R12). `tier` is 'super' when the previous final outcome came off
+ * the Upgrade wheel, which is what excludes the ordinary game of the same name
+ * as well. Null on a player's very first spin, and absent before contract 4.
+ */
+export interface WheelPreviousOutcome {
+  spin_id: string;
+  ord: number;
+  game: WheelBonusGame | null;
+  tier: 'main' | 'super';
+}
+
 export interface WheelFairness {
   domain?: WheelDrawDomain;
   commit_id: string;
@@ -247,10 +274,57 @@ export interface WheelFairness {
   weight_total: number;
   eligible_ords: number[];
   locked: Array<{ ord: number; reason: string; unlocks_at: number }>;
+  /** Contract 4: the previous final outcome this draw had to avoid, or null. */
+  previous?: WheelPreviousOutcome | null;
+  /**
+   * Contract 4: the weights this draw ACTUALLY used, one per ord, zero where
+   * the follow-up law excluded a segment. The published table in `segments`
+   * keeps the base weights, so the odds a player is shown never move.
+   */
+  weights?: number[];
+}
+
+/**
+ * THE THREE-CARD GAME (owner ruling 2026-09-21, R15). A Diamonds outcome pays
+ * nothing at the spin: it seals three cards worth half, double and triple the
+ * diamonds risked. The values stay sealed until the player picks.
+ */
+export interface WheelCardAward {
+  award_id: string;
+  risk_diamonds: number;
+  status: 'pending';
+}
+
+export interface WheelCardPick {
+  ok: boolean;
+  error?: string;
+  replayed?: boolean;
+  award_id: string;
+  spin_id: string;
+  picked: number;
+  /** All three prizes, by card position, revealed once the pick is made. */
+  cards: number[];
+  paid_diamonds: number;
+  risk_diamonds: number;
+  value_chips?: number;
+  balances: { diamonds: number };
+  fairness: {
+    domain: 'wheel-v4-cards';
+    roll: number;
+    permutation: number;
+    server_seed: string;
+    server_seed_hash: string;
+    client_seed: string;
+    nonce: number;
+  };
 }
 
 export interface WheelSpinResult {
   contract_version?: WheelContractVersion;
+  /** The draw model this receipt was produced by, from contract 4 on. */
+  model?: string;
+  /** Whether the server drew this spin from the VIP table (owner ruling R2). */
+  vip?: boolean;
   segments?: WheelSegment[];
   ok: boolean;
   error?: string;
@@ -278,8 +352,12 @@ export interface WheelSpinResult {
     game?: WheelBonusGame;
     multiplier?: number;
     grants?: WheelInventoryGrant[];
+    /** A Diamonds outcome from contract 4: the sealed three-card game it opened. */
+    cards?: WheelCardAward;
   };
   bonus?: WheelBonusAward;
+  /** The open run this spin belonged to, when one was open (owner ruling R18). */
+  auto_run?: WheelAutoRun;
   secondary?: { segments: WheelSegment[]; outcome: WheelSegment; fairness: WheelFairness };
   fairness: WheelFairness;
   balances: { diamonds: number; member_chips: number | null };
@@ -453,13 +531,17 @@ function normaliseAutoRun(raw: unknown): WheelAutoRun | null {
   return { run_id, spins, spins_done };
 }
 
+/** 2, 3 or 4, and nothing else: an unreadable contract is never guessed at. */
+function contractVersion(raw: unknown): WheelContractVersion | undefined {
+  return raw === 2 || raw === 3 || raw === 4 ? raw : undefined;
+}
+
 function normaliseState(raw: Record<string, unknown>): WheelState {
   const config = raw.config as Record<string, unknown> | undefined;
   const pool = raw.pool as Record<string, unknown> | undefined;
   const player = raw.player as Record<string, unknown> | undefined;
   return {
-    contract_version:
-      raw.contract_version === 2 || raw.contract_version === 3 ? raw.contract_version : undefined,
+    contract_version: contractVersion(raw.contract_version),
     enabled: raw.enabled === true,
     min_entry: num(raw.min_entry),
     max_entry: num(raw.max_entry),
@@ -538,11 +620,8 @@ function normaliseState(raw: Record<string, unknown>): WheelState {
 
 function normaliseFairness(fairness: Record<string, unknown>): WheelFairness {
   return {
-    ...(fairness.domain === 'wheel-v2' ||
-    fairness.domain === 'wheel-v2-upgrade' ||
-    fairness.domain === 'wheel-v3' ||
-    fairness.domain === 'wheel-v3-upgrade'
-      ? { domain: fairness.domain }
+    ...(WHEEL_DRAW_DOMAINS.includes(fairness.domain as WheelDrawDomain)
+      ? { domain: fairness.domain as WheelDrawDomain }
       : {}),
     commit_id: String(fairness.commit_id ?? ''),
     server_seed_hash: String(fairness.server_seed_hash ?? ''),
@@ -561,10 +640,30 @@ function normaliseFairness(fairness: Record<string, unknown>): WheelFairness {
           unlocks_at: num(l.unlocks_at),
         }))
       : [],
+    // Contract 4 only. `previous` is deliberately null on a first spin, which is
+    // not the same as an older server never having sent the field at all.
+    ...(Array.isArray(fairness.weights)
+      ? { weights: (fairness.weights as unknown[]).map(num) }
+      : {}),
+    ...(fairness.previous === null
+      ? { previous: null }
+      : fairness.previous && typeof fairness.previous === 'object'
+        ? { previous: normalisePrevious(fairness.previous as Record<string, unknown>) }
+        : {}),
+  };
+}
+
+function normalisePrevious(raw: Record<string, unknown>): WheelPreviousOutcome {
+  return {
+    spin_id: String(raw.spin_id ?? ''),
+    ord: num(raw.ord),
+    game: typeof raw.game === 'string' ? (raw.game as WheelBonusGame) : null,
+    tier: raw.tier === 'super' ? 'super' : 'main',
   };
 }
 
 function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
+  const run = normaliseAutoRun(raw.auto_run);
   const outcome = (raw.outcome ?? {}) as Record<string, unknown>;
   const fairness = (raw.fairness ?? {}) as Record<string, unknown>;
   const balances = (raw.balances ?? {}) as Record<string, unknown>;
@@ -573,8 +672,7 @@ function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
     ok: Boolean(raw.ok),
     error: raw.error ? String(raw.error) : undefined,
     detail: raw.detail ? String(raw.detail) : undefined,
-    contract_version:
-      raw.contract_version === 2 || raw.contract_version === 3 ? raw.contract_version : undefined,
+    contract_version: contractVersion(raw.contract_version),
     segments: Array.isArray(raw.segments)
       ? (raw.segments as Record<string, unknown>[]).map(normaliseSegment)
       : undefined,
@@ -605,7 +703,18 @@ function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
             uses: num(grant.uses),
           }))
         : undefined,
+      cards:
+        outcome.cards && typeof outcome.cards === 'object'
+          ? {
+              award_id: String((outcome.cards as Record<string, unknown>).award_id ?? ''),
+              risk_diamonds: num((outcome.cards as Record<string, unknown>).risk_diamonds),
+              status: 'pending' as const,
+            }
+          : undefined,
     },
+    ...(typeof raw.model === 'string' ? { model: raw.model } : {}),
+    ...(typeof raw.vip === 'boolean' ? { vip: raw.vip } : {}),
+    ...(run ? { auto_run: run } : {}),
     bonus: raw.bonus ? normaliseAward(raw.bonus as Record<string, unknown>) : undefined,
     secondary: raw.secondary
       ? {
@@ -639,7 +748,7 @@ function spinResponse(data: unknown): WheelSpinResult {
   const raw = data as Record<string, unknown>;
   if (
     typeof raw.ok !== 'boolean' ||
-    (raw.contract_version != null && raw.contract_version !== 2 && raw.contract_version !== 3) ||
+    (raw.contract_version != null && contractVersion(raw.contract_version) === undefined) ||
     (raw.ok === false && typeof raw.error !== 'string') ||
     (raw.ok === true && (!raw.spin_id || !raw.fairness || !raw.outcome))
   ) {
@@ -694,7 +803,7 @@ const DiamondWheelService = {
     if (error) throw error;
     if (
       !data ||
-      (data.contract_version !== 2 && data.contract_version !== 3) ||
+      contractVersion(data.contract_version) === undefined ||
       typeof data.enabled !== 'boolean'
     )
       throw new Error('Diamond Spins Availability Could Not Be Confirmed');
@@ -710,7 +819,7 @@ const DiamondWheelService = {
       state.segments.some((s) => s.kind === 'nothing')
     )
       throw new Error('The Diamond Spins Prize Table Could Not Be Confirmed');
-    if (state.contract_version === 3) {
+    if (state.contract_version !== undefined && state.contract_version >= 3) {
       if (state.config?.spin_price_diamonds !== entryDiamonds)
         throw new Error('The Diamond Spins Prize Table Could Not Be Confirmed');
       assertWheelUpgradeTable(
@@ -740,7 +849,7 @@ const DiamondWheelService = {
     });
     if (error) throw error;
     const result = spinResponse(data);
-    if (result.ok && result.contract_version !== 2 && result.contract_version !== 3)
+    if (result.ok && contractVersion(result.contract_version) === undefined)
       throw new Error('The Diamond Spins Receipt Version Could Not Be Confirmed');
     return result;
   },

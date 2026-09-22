@@ -84,6 +84,8 @@ const PRIZES = [2.17, 5.33, 15.2];
 type SceneProps = Parameters<typeof ChoiceScene>[0];
 let frame: FrameRequestCallback = () => {};
 const fillText = vi.fn();
+/** Every edge colour the scene has painted onto a street sign this test. */
+const signInks: string[] = [];
 /** One animation frame, flushed the way the browser flushes it: the scene may
  *  advance its own presentation state on any frame it draws. */
 const tick = (at: number) => act(() => frame(at));
@@ -110,10 +112,17 @@ function mountScene(props: Partial<SceneProps> = {}) {
     return 1;
   });
   vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => {});
+  signInks.length = 0;
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
     fillRect() {},
     strokeRect() {},
     fillText,
+    set strokeStyle(ink: string) {
+      signInks.push(ink);
+    },
+    get strokeStyle() {
+      return '';
+    },
   } as unknown as CanvasRenderingContext2D);
   const onSettled = vi.fn();
   const onMoment = vi.fn();
@@ -355,6 +364,21 @@ describe('the scene leaves the announcement to the page', () => {
     expect(screen.getByText('Bust').closest('div')).toHaveAttribute('aria-hidden', 'true');
     // The words themselves stay on screen, where a sighted player reads them.
     expect(screen.getByText('Bust On Street 3')).toBeInTheDocument();
+  });
+
+  it('paints a street sign bust red only once the car has reached the donkey', () => {
+    motion(false);
+    const scene = mountScene({ phase: 'open', picked: [0] });
+    tick(16);
+    scene.update({ phase: 'lost', picked: [0, 1], payoutChips: 0.2 });
+    tick(100);
+    tick(600);
+    // The sign painted on the road carries the same streetState the strip
+    // does; neither may say it before the scene has got there.
+    expect(signInks).not.toContain('#ff5b6e');
+    tick(1000);
+    tick(1100);
+    expect(signInks).toContain('#ff5b6e');
   });
 
   it('names a street as the hit only once the car has reached the donkey', () => {

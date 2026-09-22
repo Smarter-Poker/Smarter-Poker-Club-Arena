@@ -714,6 +714,7 @@ function CrossingScene(props: Props) {
       last = 0,
       signature = '',
       roadSignature = '',
+      signsPainted = '',
       hazards: number[] = [],
       sceneElapsed = 0,
       actual = 0,
@@ -823,7 +824,18 @@ function CrossingScene(props: Props) {
         notified = false;
         needsDraw = true;
       } else sceneElapsed += visibleDelta;
-      if (roadChanged || roundChanged) paintSigns(road, step, p.phase);
+      // THE ROAD AGREES WITH THE STRIP. The sign painted on a street and the
+      // street's chip in the strip read one streetState between them, so both
+      // wait for the scene to reach the street: a sign that went bust red the
+      // moment the server answered would give the collision away while the
+      // donkey was still standing in the road.
+      const seen = shownRef.current;
+      const seenSignature = `${seen.step}:${seen.phase}`;
+      if (roadChanged || seenSignature !== signsPainted) {
+        signsPainted = seenSignature;
+        paintSigns(road, seen.step, seen.phase);
+        needsDraw = true;
+      }
       const elapsed = sceneElapsed,
         speed = getAnimationSpeed(),
         walk = reduced ? 1 : Math.min(1, elapsed / (WALK_MS * speed));
@@ -859,7 +871,9 @@ function CrossingScene(props: Props) {
             i,
             step,
             p.phase === 'lost',
-            p.phase === 'cashed' ? (p.roadEnd ?? null) : null
+            // The route a booked win sealed is cleared when the scene says the
+            // win is booked, not when the answer lands.
+            seen.phase === 'cashed' ? (p.roadEnd ?? null) : null
           ) && !(walk < 1 && i === step - 1);
         // Traffic runs faster and thicker the further down the road it is.
         const period = 530 - 210 * hazard;
@@ -913,7 +927,8 @@ function CrossingScene(props: Props) {
         finished = outcome === 'hit' ? impact.finished : finished && impact.resting;
       }
       let focus = actual;
-      ghost.visible = p.phase === 'cashed' && p.roadEnd !== null;
+      // The ghost walks the rest of the route once the win is shown as booked.
+      ghost.visible = seen.phase === 'cashed' && p.roadEnd !== null;
       if (ghost.visible) {
         const speed = getAnimationSpeed();
         const progress = reduced

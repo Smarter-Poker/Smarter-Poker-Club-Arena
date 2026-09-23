@@ -77,6 +77,22 @@
       "liveVerdict": "fn_cash_pot_conservation_check is CREATE OR REPLACE of a function first declared on 2026-09-01 (20260901190656). Read live 2026-09-23: proacl {postgres=X/postgres,service_role=X/postgres}; no browser role holds EXECUTE. The three functions this file does create new - fn_ca_cash_pot_evidence_append_only, fn_ca_cash_failed_run_outcome_immutable, fn_ca_cash_failed_run_intake - each carry their own REVOKE ALL FROM PUBLIC,anon,authenticated,service_role in the same file."
     },
     {
+      "version": "20260917060339",
+      "name": "spin_expiry_lock_order",
+      "file": "supabase/migrations/20260917060339_spin_expiry_lock_order.sql",
+      "md5": "0892a3fa158d856a729eb8a31e3fc8d5",
+      "appliedToProductionAt": "2026-09-17T06:03:39Z",
+      "recoveredOn": "2026-09-23",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [
+        "check-definer-authorization: writer rule",
+        "check-definer-authorization: anon rule",
+        "check-money-trigger-declared"
+      ],
+      "liveVerdict": "Two findings, both false about production. (1) fn_spin_expire_unfilled is CREATE OR REPLACE of a function first declared on 2026-08-28; read live 2026-09-23 its proacl is {postgres=X/postgres,service_role=X/postgres} and no browser role holds EXECUTE. (2) The eight 'undeclared money triggers' are not triggers this file creates: it contains NO CREATE TRIGGER statement at all. All eight are text inside one $trigger_pins$[...]$trigger_pins$ JSON literal handed to jsonb_array_elements(), which the migration reads to ASSERT that those triggers are present and unchanged. All eight are live and all eight already hold a row in public.ca_declared_money_triggers; fn_undeclared_money_triggers() returns zero rows platform-wide. The gate could not see dollar-quoted data; that was fixed at the root in PR #5122, and with that fix on main this file produces zero findings."
+    },
+    {
       "version": "20260917062322",
       "name": "direct_operational_source_intake",
       "file": "supabase/migrations/20260917062322_direct_operational_source_intake.sql",

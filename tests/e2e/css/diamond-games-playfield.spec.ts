@@ -23,25 +23,8 @@ test.describe.configure({ mode: 'default', timeout: 180_000 });
  * mirror on purpose: a spec that recomputes the labels with the same function
  * the page prints them with cannot notice the two disagreeing.
  */
-const DIAMOND_SLOTS = [
-  '20x',
-  '20x',
-  '20x',
-  '12x',
-  '5x',
-  '0.6x',
-  '0.35x',
-  '0.15x',
-  '0.08x',
-  '0.15x',
-  '0.35x',
-  '0.6x',
-  '5x',
-  '12x',
-  '20x',
-  '20x',
-  '20x',
-];
+/** Super (4), the board every half-the-stake floor is carried by: an ordinary
+ *  entry and a Super award that did not take the add-on are both dealt here. */
 const SUPER_SLOTS = [
   '20x',
   '20x',
@@ -61,17 +44,39 @@ const SUPER_SLOTS = [
   '20x',
   '20x',
 ];
+/** Super Double (6), the only board whose lowest slot carries the two thirds a
+ *  Super award with the Double Diamonds add-on paid. */
+const SUPER_DOUBLE_SLOTS = [
+  '20x',
+  '20x',
+  '10x',
+  '1.7x',
+  '0.8x',
+  '0.75x',
+  '0.75x',
+  '0.73x',
+  '0.72x',
+  '0.73x',
+  '0.75x',
+  '0.75x',
+  '0.8x',
+  '1.7x',
+  '10x',
+  '20x',
+  '20x',
+];
 
 /**
- * THE ONE ROAD, BY STREET (2026-09-19). Donkey Cross deals the twelve-street
- * `road` ladder, 1.10x to 20.00x, so every street sits inside every award's
- * cover. The old risk ladders stay readable for sealed rounds and can no
- * longer be dealt, and there is no difficulty to choose. Read from
- * fn_choice_ladder and printed by streetMultiplier, which always gives two
- * decimals so the strip's digits hold still.
+ * THE ONE ROAD, BY STREET (contract 4, 2026-09-21). Donkey Cross deals the
+ * twelve-street `road` ladder, 0.80x to 20.00x, so every street sits inside
+ * every award's cover and the first street is certain. The old risk ladders,
+ * and the 1.10x first street this list used to begin with, stay readable for
+ * sealed rounds and can no longer be dealt, and there is no difficulty to
+ * choose. Read from fn_choice_ladder_v4 and printed by streetMultiplier, which
+ * always gives two decimals so the strip's digits hold still.
  */
 const ROAD_STREETS = [
-  '1.10x',
+  '0.80x',
   '1.45x',
   '1.85x',
   '2.45x',
@@ -240,14 +245,19 @@ for (const width of [320, 390, 1280])
       )
       .toEqual([]);
     await page.getByRole('button', { name: 'plinko', exact: true }).click();
-    // Ten drops of a tenth of the entry is the one setting, so there is no drop
-    // chooser to press: the total line is stated, never selected.
-    await expect(page.getByRole('button', { name: /Diamonds Per Drop/ })).toHaveCount(0);
+    // The player chooses the drop value (Dan 2026-09-21, R6): the selector
+    // offers every listed value that splits 100 diamonds into 1 to 100 drops,
+    // the preview's own choice of 10 is the one pressed, and the total line
+    // reads drops x value = entry.
+    await expect(page.getByRole('button', { name: /Diamonds? Per Drop/ })).toHaveCount(9);
+    await expect(
+      page.getByRole('button', { name: '10 Diamonds Per Drop, 10 Drops', pressed: true })
+    ).toBeVisible();
     await expect(page.getByText('10 Drops × 10 Diamonds = 100 Diamonds')).toBeVisible();
     const payoutLabels = page.getByRole('list', { name: 'Plinko Payout Slots' }).locator('strong');
     await expect(payoutLabels).toHaveCount(17);
-    await expect(payoutLabels).toHaveText(DIAMOND_SLOTS);
-    await bucketLegendReads(page.getByRole('list', { name: 'Plinko Payout Slots' }), DIAMOND_SLOTS);
+    await expect(payoutLabels).toHaveText(SUPER_SLOTS);
+    await bucketLegendReads(page.getByRole('list', { name: 'Plinko Payout Slots' }), SUPER_SLOTS);
     await page.getByRole('button', { name: 'crossing', exact: true }).click();
     await streetStripReads(page.getByRole('list', { name: 'Streets And Their Multipliers' }));
     await page.getByRole('button', { name: 'Preview Safe Crossing', exact: true }).click();
@@ -274,7 +284,7 @@ for (const width of [320, 390, 1280])
  * of whether the host can compile a WebGL scene at all.
  */
 for (const superGame of [false, true])
-  test(`Every Diamond surface fits a 375px phone on the ${superGame ? 'Super' : 'Diamond'} table`, async ({
+  test(`Every Diamond surface fits a 375px phone on the ${superGame ? 'Super Double' : 'Super'} table`, async ({
     page,
   }) => {
     const { diamondTestFixture } = await import('../helpers/diamond-test-fixture.mjs');
@@ -286,13 +296,15 @@ for (const superGame of [false, true])
       if (url.hostname !== 'diamond-test.local') network.push(url.href);
       return route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' });
     });
-    // 100 simulated diamonds is one chip. An ordinary game keeps a tenth of its
-    // stake; a Super award is that spin DOUBLED and keeps half, which is the
-    // player's whole original spin back whatever the game does.
-    const guaranteed = superGame ? '1.00 Chips' : '0.10 Chips';
+    // CONTRACT 4. 100 simulated diamonds is one chip. An ordinary game pays for
+    // its whole stake and keeps HALF of it. A Super award with the Double
+    // Diamonds add-on is a 300 diamond stake the player paid 200 for, and keeps
+    // those 200 - two thirds - which is why it is dealt the only board whose
+    // lowest slot carries them.
+    const guaranteed = superGame ? '2.00 Chips' : '0.50 Chips';
     for (const game of GAMES) {
       await page.goto(
-        `http://diamond-test.local/diamond-test.html?game=${game}${superGame ? '&super=1' : ''}`
+        `http://diamond-test.local/diamond-test.html?game=${game}${superGame ? '&super=1&double=1' : ''}`
       );
       await page.addStyleTag({ content: bundle.css });
       await page.addScriptTag({ content: bundle.javascript });
@@ -318,7 +330,7 @@ for (const superGame of [false, true])
       await expect(
         page.getByText(
           superGame
-            ? `${SUPER_TITLES[game]} Pays At Least ${guaranteed}, Your Original Spin, Whatever Happens.`
+            ? `${SUPER_TITLES[game]} Pays At Least ${guaranteed}, What You Paid For It, Whatever Happens.`
             : `Pays At Least ${guaranteed} On Any Loss.`,
           { exact: true }
         )
@@ -331,12 +343,16 @@ for (const superGame of [false, true])
         // their own colours before the first diamond falls.
         await expect(page.getByLabel('Payout Range')).toHaveCount(0);
         await expect(page.getByRole('button', { name: /Diamonds Per Drop/ })).toHaveCount(0);
+        // THE BOARD FOLLOWS THE FLOOR, NOT THE BOOST (contract 4). Every
+        // half-the-stake floor is carried by Super (4); only the two thirds a
+        // Super award with the add-on paid needs Super Double (6). The Diamond
+        // board (5) closed on 2026-09-21 and no stake reaches it any more.
         await expect(
-          page.getByText(superGame ? 'On The Super Table' : 'On The Diamond Table')
+          page.getByText(superGame ? 'On The Super Double Table' : 'On The Super Table')
         ).toBeVisible();
         const legend = page.getByRole('list', { name: 'Plinko Payout Slots' });
         await sits(legend, 'the Plinko bucket legend');
-        await bucketLegendReads(legend, superGame ? SUPER_SLOTS : DIAMOND_SLOTS);
+        await bucketLegendReads(legend, superGame ? SUPER_DOUBLE_SLOTS : SUPER_SLOTS);
       }
 
       if (game === 'crossing') {
@@ -351,22 +367,21 @@ for (const superGame of [false, true])
         // Before the first tile the board is worth exactly the stake, so the
         // profit starts at nothing and the next tile's figure is what it adds.
         //
-        // THE FIRST RUNG IS NOT ALWAYS A GAIN, AND ON A SUPER AWARD IT CANNOT
-        // BE. The edge is charged once, so every rung of the nineteen-pick
-        // ladder returns four fifths of the stake in expectation, and the
-        // guarantee is funded inside that: prize(p) = minimum + (4·bet -
-        // 5·minimum)/5 · C(25,p)/C(19,p). An ordinary award guarantees a tenth
-        // of its 1.00 stake, and 19 of 25 tiles are safe, so the first tile
-        // pays 1.021053 - two cents up. A Super award guarantees HALF of its
-        // doubled 2.00 stake, which is the whole original spin back on any
-        // loss, and paying for that cover leaves the first rung at 1.789474 -
-        // twenty one cents SHORT of the stake, and not level with it again
-        // until the second tile (2.052632). A readout that printed a plus
-        // there would be lying to the player about a tile that loses ground,
-        // which is exactly why signedChips carries a minus and the stylesheet
-        // inks data-sign="loss". Both figures are transcribed from the rule
-        // above rather than recomputed with minePrize, so the two disagreeing
-        // is something this spec can still see.
+        // THE FIRST RUNG IS NEVER A GAIN UNDER CONTRACT 4, AND THAT IS THE
+        // POINT OF IT. The first tile is dealt around the player's own pick, so
+        // it is always a gem - and a certain rung is worth exactly the edge:
+        // prize(1) = 0.80 of the stake, whatever the floor. The edge is charged
+        // once, so every later rung of the nineteen-pick ladder returns four
+        // fifths in expectation with the guarantee funded inside it:
+        // prize(p) = floor + (4·bet - 5·floor)/5 · C(24,p-1)/C(18,p-1).
+        // An ordinary 1.00 stake therefore opens at 0.80 - twenty cents SHORT -
+        // and a Super award with the add-on, a 3.00 stake it paid 2.00 for,
+        // opens at 2.40, sixty cents short. A readout that printed a plus there
+        // would be lying to the player about a tile that loses ground, which is
+        // exactly why signedChips carries a minus and the stylesheet inks
+        // data-sign="loss". Both figures are transcribed from the rule above
+        // rather than recomputed with minePrizeV4, so the two disagreeing is
+        // something this spec can still see.
         const readouts = page
           .locator('[data-game-console] dl')
           .filter({ has: page.locator('dt', { hasText: 'Profit On Next Tile' }) });
@@ -377,7 +392,7 @@ for (const superGame of [false, true])
         await expect(readouts.locator('dd').first()).toHaveText('0.00 Chips');
         await expect(readouts.locator('dd').first()).toHaveAttribute('data-sign', 'gain');
         await expect(readouts.locator('dd').last()).toHaveText(
-          superGame ? '-0.21 Chips' : '+0.02 Chips'
+          superGame ? '-0.60 Chips' : '-0.20 Chips'
         );
         await sits(readouts, 'the Mines profit readouts');
         await expect(page.getByRole('button', { name: /^Tile / })).toHaveCount(25);
@@ -446,16 +461,16 @@ for (const game of ['plinko', 'crash', 'crossing', 'mines'])
         )
       ).toBeVisible();
       if (game === 'plinko') {
-        // One board per stake kind and nobody chooses it, so there is no payout
-        // range to select. The board the award owns is named on the glass, and
-        // its seventeen slots are that board's, printed before the first drop.
+        // Nobody chooses a board, so there is no payout range to select: the
+        // stake's FLOOR chooses it, and without the Double Diamonds add-on both
+        // an ordinary stake and a Super one keep half, so both are dealt Super
+        // (4). The board is named on the glass, and its seventeen slots are
+        // that board's, printed before the first drop.
         await expect(page.getByLabel('Payout Range')).toHaveCount(0);
-        await expect(
-          page.getByText(superGame ? 'On The Super Table' : 'On The Diamond Table')
-        ).toBeVisible();
+        await expect(page.getByText('On The Super Table')).toBeVisible();
         await expect(
           page.getByRole('list', { name: 'Plinko Payout Slots' }).locator('strong')
-        ).toHaveText(superGame ? SUPER_SLOTS : DIAMOND_SLOTS);
+        ).toHaveText(SUPER_SLOTS);
         // TEN DROPS ARE OVER IN ABOUT FIVE SECONDS, AND THE HOLD BELOW IS OWED
         // ONLY WHILE THEY ARE IN THE AIR. Plinko is the one game that ends
         // itself: the batch runs on the scene clock with nothing left to press,

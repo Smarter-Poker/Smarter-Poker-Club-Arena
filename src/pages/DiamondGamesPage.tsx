@@ -11,7 +11,7 @@ import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
  * than it has taken in.
  *
  * THE RULES COPY IS DERIVED, NOT TYPED (2026-09-19). Every figure in a "How It
- * Pays" panel comes from the constant the game actually plays: PLINKO_DROPS,
+ * Pays" panel comes from the constant the game actually plays: PLINKO_MAX_DROPS,
  * PLINKO_TABLES, ROAD_LADDERS and CHOICE_MODE. The page used to claim the
  * Plinko centre and a crash "pay nothing", and both were false the day the
  * guaranteed minimum shipped. A number written twice drifts; a number imported
@@ -19,7 +19,7 @@ import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
  *
  * AND SO ARE THE CRASH ODDS (fairness audit, 2026-09-22). "Instant Crash
  * 1 In 5" was typed here when a crash paid nothing. Every live round now funds
- * a guaranteed minimum out of its own odds, so it crashes at 1.00x 1 in 4.2 to
+ * a guaranteed minimum out of its own odds, so it ends before cash out opens 1 in 1.9 to
  * 4.3 of the time on an ordinary award and 1 in 2.4 on a Super one, and both
  * figures are computed here from the server's own minimum rule
  * (fn_diamond_bonus_minimum, mirrored by diamondBonusMinimum) across every
@@ -56,9 +56,9 @@ import { useGameFloor } from '../hooks/useGameFloor';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { DiamondChoiceService, type ChoiceState } from '../services/DiamondChoiceService';
-import { PLINKO_DROPS } from '../utils/bonusGameBudget';
-import { CHOICE_MODE, ROAD_LADDERS } from '../utils/diamondChoiceMath';
-import { PLINKO_TABLES, plinkoTableVersion } from '../utils/diamondBonusPayout';
+import { PLINKO_MAX_DROPS, PLINKO_MIN_DROPS } from '../utils/bonusGameBudget';
+import { CHOICE_MODE, CHOICE_PAYOUT_VERSION, roadLadder } from '../utils/diamondChoiceMath';
+import { PLINKO_TABLES, diamondBonusFloor, plinkoTableForFloor } from '../utils/diamondBonusPayout';
 import { DIAMOND_GAME_TITLES } from '../utils/diamondGameTitles';
 import styles from './diamondGames.module.css';
 
@@ -66,11 +66,23 @@ type GameKey = 'wheel' | 'plinko' | 'crash' | 'crossing' | 'mines';
 
 /** "1.10x" and "20.00x": every multiplier in the rules copy reads with two decimals. */
 const multiplierCopy = (cents: number) => `${(cents / 100).toFixed(2)}x`;
-/** The one ladder the road deals: twelve streets, its first rung to its last. */
-const ROAD = ROAD_LADDERS[CHOICE_MODE.crossing];
-/** The two live boards. Nobody chooses one: the stake kind owns it. */
-const ORDINARY_TABLE = PLINKO_TABLES[plinkoTableVersion(1)];
-const SUPER_TABLE = PLINKO_TABLES[plinkoTableVersion(2)];
+/** The one ladder the road deals, under the contract every new round is sealed
+ * with: twelve streets, its first rung to its last. Contract 4 made the first
+ * street certain at 0.80x, where it used to be 1.10x. */
+const ROAD = roadLadder(CHOICE_MODE.crossing, CHOICE_PAYOUT_VERSION) as readonly number[];
+/**
+ * THE TWO LIVE BOARDS, NAMED BY THE RULE THAT CHOOSES THEM. Nobody picks a
+ * board: the stake's FLOOR does, through fn_plinko_table_for_floor, which takes
+ * the open board whose lowest slot still carries that floor. A half-the-stake
+ * floor is carried by Super (4); the two thirds a Super award with the Double
+ * Diamonds add-on paid needs Super Double (6). Derived from the same two
+ * functions the server runs, so this lobby cannot describe a board a player
+ * will never be dealt - which is what it did while it named the boost's old
+ * table and sent every ordinary player to the Diamond board, closed since
+ * 2026-09-21.
+ */
+const ORDINARY_TABLE = PLINKO_TABLES[plinkoTableForFloor(1, diamondBonusFloor(1, 1, 100, 100))!];
+const SUPER_TABLE = PLINKO_TABLES[plinkoTableForFloor(0.75, diamondBonusFloor(0.75, 2, 50, 100))!];
 const TABLE_SLOTS = ORDINARY_TABLE.multipliersCents;
 /** Seventeen slots need sixteen rows of pegs above them, so the board says both. */
 const TABLE_ROWS = TABLE_SLOTS.length - 1;
@@ -377,19 +389,20 @@ export default function DiamondGamesPage() {
           />
           <Row
             label="Drops"
-            value={String(PLINKO_DROPS)}
+            value={`${PLINKO_MIN_DROPS} To ${PLINKO_MAX_DROPS}`}
             ink="silver"
-            meta="Your Entry Split Equally"
+            meta="You Choose The Value Of Each"
           />
         </div>
         {explained === 'plinko' ? (
           <p className="sc-copy">
-            Your Entry Plays As {PLINKO_DROPS} Drops, Each An Equal Share Of It, On One Board. That
-            Board Is The {ORDINARY_TABLE.name} Board, {TABLE_ROWS} Rows Of Pegs Above{' '}
-            {TABLE_SLOTS.length} Slots, And The Ball Goes Left Or Right At Every Peg With Equal
-            Odds. Every Slot Pays Something, From {multiplierCopy(Math.min(...TABLE_SLOTS))} In The
-            Middle Up To {multiplierCopy(Math.max(...TABLE_SLOTS))} Per Drop On The Outer Slots. A
-            Super Award Plays The {SUPER_TABLE.name} Board, Where The Middle Slot Pays{' '}
+            You Choose How Many Diamonds Each Drop Plays, So Your Entry Becomes {PLINKO_MIN_DROPS}{' '}
+            To {PLINKO_MAX_DROPS} Equal Drops On One Board. That Board Is The {ORDINARY_TABLE.name}{' '}
+            Board, {TABLE_ROWS} Rows Of Pegs Above {TABLE_SLOTS.length} Slots, And The Ball Goes
+            Left Or Right At Every Peg With Equal Odds. Every Slot Pays Something, From{' '}
+            {multiplierCopy(Math.min(...TABLE_SLOTS))} In The Middle Up To{' '}
+            {multiplierCopy(Math.max(...TABLE_SLOTS))} Per Drop On The Outer Slots. A Super Award
+            With Double Diamonds Plays The {SUPER_TABLE.name} Board, Where The Middle Slot Pays{' '}
             {multiplierCopy(Math.min(...SUPER_TABLE.multipliersCents))}. {GUARANTEE_COPY}
           </p>
         ) : null}
@@ -439,7 +452,7 @@ export default function DiamondGamesPage() {
             The Multiplier Climbs Until It Crashes. Cash Out First, By Hand Or On Auto, And The
             Round Pays Exactly Where You Cashed Out. {GUARANTEE_COPY}
             {crashOdds
-              ? ` That Minimum Is Paid For Out Of The Odds, So A Round Crashes At 1.00x ${crashOdds.ordinary} On An Ordinary Award And ${crashOdds.super} On A Super Award.`
+              ? ` That Minimum Is Paid For Out Of The Odds, So A Round Ends Before Cash Out Opens ${crashOdds.ordinary} On An Ordinary Award And ${crashOdds.super} On A Super Award.`
               : ''}
           </p>
         ) : null}

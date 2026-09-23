@@ -1,11 +1,13 @@
 // The real hook returns the release a page's exits call before they leave.
 vi.mock('../../src/hooks/useLiveBonusGuard', () => ({ useLiveBonusGuard: vi.fn(() => () => {}) }));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import DiamondCrashPage from '../../src/pages/DiamondCrashPage';
 import { useLiveBonusGuard } from '../../src/hooks/useLiveBonusGuard';
 import { BonusRefusal } from '../../src/services/DiamondBonusService';
+import { soundService } from '../../src/services/SoundService';
+import { triggerHaptic } from '../../src/services/HapticService';
 import fixtures from '../fixtures/diamond-spins/local-postgres-receipts.json';
 
 const backend = vi.hoisted(() => ({
@@ -67,6 +69,7 @@ vi.mock('../../src/services/SoundService', () => ({
   soundService: {
     playSpinStart: vi.fn(),
     playSpinMultiplierResult: vi.fn(),
+    playWin: vi.fn(),
   },
 }));
 vi.mock('../../src/components/console/DeckConsole', () => ({
@@ -93,14 +96,17 @@ vi.mock('../../src/components/console/SpadeConsole', () => ({
   SpadeConsole: ({
     children,
     plates,
+    eyebrow,
   }: {
     children?: ReactNode;
+    eyebrow?: string;
     plates?: {
       primary?: { label: string; disabled?: boolean; onClick?: () => void };
       secondary?: { label: string; disabled?: boolean; onClick?: () => void };
     };
   }) => (
     <section>
+      <span data-eyebrow>{eyebrow}</span>
       {children}
       {plates?.secondary && (
         <button disabled={plates.secondary.disabled} onClick={plates.secondary.onClick}>
@@ -118,30 +124,25 @@ vi.mock('../../src/components/console/SpadeConsole', () => ({
 vi.mock('../../src/components/common/PageSkeleton', () => ({ default: () => null }));
 vi.mock('../../src/components/common/EmptyState', () => ({ ErrorState: () => null }));
 vi.mock('../../src/components/crash/CrashCurve', () => ({
-  default: ({ onSettled }: { onSettled: () => void }) => (
-    <button onClick={onSettled}>Finish Flight</button>
+  default: ({
+    onSettled,
+    onTick,
+    tickerCents,
+  }: {
+    onSettled: () => void;
+    onTick?: (cents: number) => void;
+    tickerCents?: number | null;
+  }) => (
+    <>
+      <button onClick={onSettled}>Finish Flight</button>
+      <button onClick={() => onTick?.(333)}>Tick 3.33x</button>
+      <button onClick={() => onTick?.(444)}>Tick 4.44x</button>
+      <output aria-label="Frozen Figure">{tickerCents ?? ''}</output>
+    </>
   ),
 }));
-vi.mock('../../src/components/wheel/WheelWinReveal', () => ({
-  WheelWinReveal: ({
-    title,
-    detail,
-    onOpen,
-    eyebrow,
-    silent,
-  }: {
-    title: string;
-    detail: string;
-    onOpen: () => void;
-    eyebrow?: string;
-    silent?: boolean;
-  }) => (
-    <div role="dialog" aria-label={title} data-silent={String(Boolean(silent))}>
-      <span data-eyebrow>{eyebrow}</span>
-      {detail}
-      <button onClick={onOpen}>Finish Prize</button>
-    </div>
-  ),
+vi.mock('../../src/services/DiamondWheelService', () => ({
+  default: { getStateV2: () => Promise.resolve({ pending_awards: [] }) },
 }));
 vi.mock('../../src/components/games/DiamondSpinsTabs', () => ({ default: () => null }));
 vi.mock('../../src/components/games/TodayLine', () => ({ default: () => null }));
@@ -269,7 +270,7 @@ afterEach(() => {
 });
 
 describe('Crash settles one displayed round once', () => {
-  it('shows exact booked chips only after the flight reveal and returns to its wheel', async () => {
+  it('shows exact booked chips only after the flight reveal, and stays until Back To The Wheel', async () => {
     backend.crashSettle.mockResolvedValueOnce(settled);
     await mountOpen();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -278,15 +279,47 @@ describe('Crash settles one displayed round once', () => {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-    expect(screen.getByRole('dialog', { name: `${amount} Chips` })).toHaveTextContent(
-      'The Flight Crashed At'
-    );
+    const receipt = screen.getByRole('dialog', { name: `${amount} Chips` });
+    expect(receipt).toHaveTextContent('The Flight Crashed At');
+    fireEvent.animationEnd(receipt.querySelector('[data-motion="keep"]')!);
+    // Games can never auto start (R1): two idle minutes and the receipt is still up.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
     expect(backend.navigate).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Finish Prize' }));
+    expect(backend.start).not.toHaveBeenCalled();
+    fireEvent.click(within(receipt).getByRole('button', { name: 'Back To The Wheel' }));
     expect(backend.navigate).toHaveBeenCalledWith(
       '/clubs/00000000-0000-0000-0000-000000000003/wheel',
       { replace: true }
     );
+  });
+  it('never starts a round by itself: two idle minutes on the entry screen start nothing (R1)', async () => {
+    // Dan 2026-09-21, R1: "Games can NEVER auto start." The ordinary entry
+    // screen sits with a ready Start plate; nothing but a thumb may press it.
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Start 100' })).toBeEnabled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    expect(backend.start).not.toHaveBeenCalled();
+    expect(backend.navigate).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Start 100' })).toBeEnabled();
+  });
+  it('holds a funded award on its offer for two idle minutes without starting or leaving', async () => {
+    quoteSuperAward();
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    // Still asking, and nothing was answered, started or navigated for the player.
+    expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
+    expect(backend.start).not.toHaveBeenCalled();
+    expect(backend.navigate).not.toHaveBeenCalled();
   });
   /**
    * A CRASH SAYS NOTHING (review 2026-09-22). The page deliberately keeps
@@ -302,15 +335,19 @@ describe('Crash settles one displayed round once', () => {
     });
     await mountOpen();
     fireEvent.click(screen.getByRole('button', { name: 'Finish Flight' }));
-    const receipt = screen.getByRole('dialog');
-    expect(receipt).toHaveAttribute('data-silent', 'true');
-    expect(receipt.querySelector('[data-eyebrow]')).toHaveTextContent('Guarantee Paid');
+    const receipt = screen.getByRole('dialog', { name: '0.10 Chips' });
+    expect(receipt).toHaveTextContent('Guarantee Paid');
+    expect(receipt).not.toHaveTextContent('You Won');
+    expect(soundService.playWin).not.toHaveBeenCalled();
+    // The page's own light taps stay; the receipt's success buzz never lands.
+    expect(triggerHaptic).not.toHaveBeenCalledWith('success');
     cleanup();
+    vi.clearAllMocks();
     backend.crashSettle.mockResolvedValueOnce(settled);
     await mountOpen();
     fireEvent.click(screen.getByRole('button', { name: 'Finish Flight' }));
-    expect(screen.getByRole('dialog')).toHaveAttribute('data-silent', 'true');
-    expect(screen.getByRole('dialog').querySelector('[data-eyebrow]')).toBeEmptyDOMElement();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(soundService.playWin).not.toHaveBeenCalled();
   });
   it('sends both unfunded entry controls directly to the wheel without starting a game', async () => {
     backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });
@@ -343,6 +380,42 @@ describe('Crash settles one displayed round once', () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
     expect(screen.getByText('Climbing').nextElementSibling!.textContent).toBe(shown);
+  });
+  it('prints each frame into the readout without a render, and books exactly the printed figure (R20)', async () => {
+    backend.crashSettle.mockResolvedValueOnce(open);
+    await mountOpen();
+    // The curve's clock hands the page a figure; the readout's text node takes
+    // it directly. The hero is handed nothing to freeze on while the climb runs.
+    fireEvent.click(screen.getByRole('button', { name: 'Tick 3.33x' }));
+    expect(screen.getByText('Climbing').nextElementSibling!.textContent).toBe('3.33x');
+    expect(readout()).toHaveTextContent('Worth 3.33 Chips Right Now');
+    expect(screen.getByLabelText('Frozen Figure')).toHaveTextContent('');
+    backend.crashSettle.mockReturnValue(new Promise(() => {}));
+    fireEvent.click(screen.getByRole('button', { name: 'Book The Win' }));
+    expect(backend.crashSettle).toHaveBeenLastCalledWith(
+      open.round_id,
+      true,
+      expect.objectContaining({ round_id: open.round_id }),
+      333
+    );
+    // While the request is pending the figure is frozen: the hero is handed
+    // 333 to hold and a later frame changes nothing.
+    expect(screen.getByLabelText('Frozen Figure')).toHaveTextContent('333');
+    fireEvent.click(screen.getByRole('button', { name: 'Tick 4.44x' }));
+    expect(screen.getByText('Climbing').nextElementSibling!.textContent).toBe('3.33x');
+    expect(screen.getByLabelText('Frozen Figure')).toHaveTextContent('333');
+  });
+  it('opens Book The Win only once the figure reaches the cash-out floor, by one state change', async () => {
+    backend.getState.mockResolvedValueOnce({
+      ...state,
+      open_round: { ...open, elapsed_ms: 0, multiplier_now_cents: 100 },
+    });
+    backend.crashSettle.mockResolvedValue({ ...open, elapsed_ms: 0, multiplier_now_cents: 100 });
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Book The Win' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Tick 3.33x' }));
+    expect(screen.getByRole('button', { name: 'Book The Win' })).toBeEnabled();
   });
   it('does not apply a previous proof verdict while the next entry is pending', async () => {
     const proof = deferred<{
@@ -470,9 +543,11 @@ describe('Crash uses its earned entry without blocking existing cashouts', () =>
     backend.start.mockReturnValue(new Promise(() => {}));
     render(<DiamondCrashPage />);
     await act(async () => {});
-    const dialog = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
+    // Screen one (R9): the offer holds Start until it is answered by a tap.
+    expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
+    const dialog = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
     fireEvent.animationEnd(dialog.querySelector('[data-motion="keep"]')!);
-    fireEvent.click(screen.getByRole('button', { name: 'Add Diamonds' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add The Diamonds' }));
     await act(async () => {});
     expect(screen.getByRole('heading', { name: 'Super Crash' })).toBeInTheDocument();
     // The doubled stake is quoted again by the server: half of 3 chips.
@@ -481,17 +556,17 @@ describe('Crash uses its earned entry without blocking existing cashouts', () =>
     expect(readout()).toHaveTextContent(
       'Super Crash Pays At Least 1.50 Chips, Even If It Crashes Before You Cash Out.'
     );
-    // A won game counts down to its own start; pressing sooner still works.
-    fireEvent.click(screen.getByRole('button', { name: /^Starting In \ds$/ }));
+    // Screen two (R1): the player presses Start themselves; nothing counts down.
+    fireEvent.click(screen.getByRole('button', { name: 'Start 300' }));
     expect(backend.start).toHaveBeenCalledWith(
       expect.objectContaining({
-        // Crash plays one round on the whole entry; the drop value the shared
-        // budget derives for Plinko (a tenth of 300) rides along unused.
-        budget: expect.objectContaining({
+        // Crash plays one round on the whole entry; it carries no drop value.
+        budget: {
           base: 200,
           doubled: true,
+          denomination: null,
           award: { id: award.id, entryDiamonds: 100, boostMultiplier: 2 },
-        }),
+        },
       }),
       'player-a'
     );
@@ -570,43 +645,18 @@ describe('Crash shows its guarantee before the round starts', () => {
     // Before Double Down is answered: the 200-diamond stake is 2 chips, half of it 1.00.
     expect(guaranteedBay()).toHaveTextContent('1.00 Chips');
     expect(guaranteedBay()).toHaveAttribute('data-ink', 'gold');
-    const dialog = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
+    const dialog = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
     fireEvent.animationEnd(dialog.querySelector('[data-motion="keep"]')!);
-    fireEvent.click(screen.getByRole('button', { name: 'Keep My Bonus' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Play Without' }));
     await act(async () => {});
     const sentence =
       'Super Crash Pays At Least 1.00 Chips, Even If It Crashes Before You Cash Out.';
     expect(readout()).toHaveTextContent(sentence);
     // The award panel says it too, in the same words, before the plate is pressed.
     expect(screen.getAllByText(sentence).length).toBeGreaterThan(0);
-    // The offer is answered, so the won game is counting down to its own start.
-    expect(screen.getByRole('button', { name: /^Starting In \ds$/ })).toBeEnabled();
+    // The offer is answered, so Start is the player's to press (R1): no clock.
+    expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
     expect(backend.start).not.toHaveBeenCalled();
-  });
-
-  it('starts a won round by itself five seconds after the Double Down answer, never over the offer', async () => {
-    quoteSuperAward();
-    backend.start.mockReturnValue(new Promise(() => {}));
-    render(<DiamondCrashPage />);
-    await act(async () => {});
-    // The offer spends the player's own diamonds, so nothing starts over it.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1_000);
-    });
-    expect(backend.start).not.toHaveBeenCalled();
-    const dialog = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
-    fireEvent.animationEnd(dialog.querySelector('[data-motion="keep"]')!);
-    fireEvent.click(screen.getByRole('button', { name: 'Keep My Bonus' }));
-    await act(async () => {});
-    expect(screen.getByRole('button', { name: 'Starting In 5s' })).toBeEnabled();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(4_500);
-    });
-    expect(backend.start).not.toHaveBeenCalled();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(600);
-    });
-    expect(backend.start).toHaveBeenCalledTimes(1);
   });
 
   it('says Pending while the wheel award is still being checked', async () => {
@@ -618,18 +668,19 @@ describe('Crash shows its guarantee before the round starts', () => {
     expect(readout()).toHaveTextContent('Checking Your Wheel Award');
   });
 
-  it('prints the tenth an ordinary entry keeps, and says so, before Start', async () => {
+  it('prints the half an ordinary entry keeps, and says so, before Start', async () => {
     render(<DiamondCrashPage />);
     await act(async () => {});
     expect(screen.getByRole('heading', { name: 'Diamond Crash' })).toBeInTheDocument();
-    // 100 diamonds at 100 per chip is 1 chip; an ordinary round keeps a tenth.
-    expect(guaranteedBay()).toHaveTextContent('0.10 Chips');
+    // 100 diamonds at 100 per chip is 1 chip, and ordinary play pays for the
+    // whole stake, so contract 4 keeps HALF of it. It kept a tenth before.
+    expect(guaranteedBay()).toHaveTextContent('0.50 Chips');
     expect(guaranteedBay()).not.toHaveAttribute('data-ink', 'gold');
-    expect(readout()).toHaveTextContent('Pays At Least 0.10 Chips On Any Loss.');
+    expect(readout()).toHaveTextContent('Pays At Least 0.50 Chips On Any Loss.');
     expect(readout()).toHaveTextContent('Up To 1000x On This Bet.');
     fireEvent.change(screen.getByLabelText('Entry Diamonds'), { target: { value: '250' } });
     await act(async () => {});
-    expect(guaranteedBay()).toHaveTextContent('0.25 Chips');
+    expect(guaranteedBay()).toHaveTextContent('1.25 Chips');
   });
 
   it('keeps the recent crash points above the curve, coloured by band', async () => {

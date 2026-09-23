@@ -65,7 +65,21 @@ import {
   sliceStatement,
 } from './helpers/sourceWindow';
 
-/** SQL with every comment removed, nested block comments included. */
+/**
+ * SQL with every comment removed, nested block comments included.
+ *
+ * AND WITH DOLLAR-QUOTED DATA REMOVED (2026-09-23, issue #5008). A dollar-quoted
+ * block that is NOT a function body, an anonymous block or plpgsql dynamic SQL
+ * is a value being passed to something, and a value is not a statement.
+ * 20260917060339_spin_expiry_lock_order.sql pins the expected definition of
+ * every spin trigger inside one `$trigger_pins$[...]$trigger_pins$` JSON
+ * literal it hands to `jsonb_array_elements()` - so that it can ASSERT those
+ * triggers are present and unchanged. Reading that blob as code made
+ * `lastTriggerStatement` return a JSON-escaped copy of the definition rather
+ * than the last real CREATE TRIGGER, and this law went red at a migration that
+ * agrees with it. A block after AS, DO or EXECUTE is still scanned in full, so
+ * a real CREATE TRIGGER still has nowhere to hide.
+ */
 function sqlCode(sql: string): string {
   let out = '';
   let depth = 0;
@@ -89,6 +103,21 @@ function sqlCode(sql: string): string {
       if (eol < 0) break;
       i = eol - 1;
       continue;
+    }
+    if (c === '$' && !/[\w$]/.test(sql[i - 1] ?? '')) {
+      const tag = /^\$(?:[A-Za-z_]\w*)?\$/.exec(sql.slice(i))?.[0];
+      const end = tag ? sql.indexOf(tag, i + tag.length) : -1;
+      if (tag && end >= 0) {
+        // The whole block is consumed in ONE step, opening tag to closing tag.
+        // Stepping into it character by character would meet the CLOSING tag as
+        // if it were an opening one and swallow everything up to the next
+        // function's body.
+        const body = sql.slice(i + tag.length, end);
+        const executable = /\b(?:AS|EXECUTE|DO(?:\s+LANGUAGE\s+\w+)?)\s*$/i.test(out);
+        out += executable ? tag + sqlCode(body) + tag : ' ';
+        i = end + tag.length - 1;
+        continue;
+      }
     }
     out += c;
   }

@@ -148,6 +148,7 @@ const SearchPage = lazyWithRetry(() => import('./pages/SearchPage'));
 const HelpPage = lazyWithRetry(() => import('./pages/HelpPage'));
 const CashierPage = lazyWithRetry(() => import('./pages/CashierPage'));
 const CashierTradePage = lazyWithRetry(() => import('./pages/CashierTradePage'));
+const CashierStatementsPage = lazyWithRetry(() => import('./pages/CashierStatementsPage'));
 const SuperAgentDashboard = lazyWithRetry(() => import('./pages/SuperAgentDashboard'));
 const AchievementsPage = lazyWithRetry(() => import('./pages/AchievementsPage'));
 const ClubMembersPage = lazyWithRetry(() => import('./pages/ClubMembersPage'));
@@ -1436,6 +1437,21 @@ function FullApp() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Cashier">
                           <CashierTradePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                {/* Cashier Phase 5: the full cross-wallet statement and its
+                    export. Member-reachable like the Cashier itself; what it
+                    may show is decided by fn_cashier_statement_page. */}
+                <Route
+                  path="clubs/:clubId/cashier/statements"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Cashier">
+                          <CashierStatementsPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>

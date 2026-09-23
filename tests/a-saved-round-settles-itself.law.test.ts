@@ -20,10 +20,14 @@
  *  2. Every page that saves a wager replays it on its own schedule
  *     (useAutoSettle) and reads the ticket-gone refusal, so a refused ticket is
  *     re-dealt and the wager sent again without a press.
- *  3. A won game starts itself (useAwardAutoStart): a short visible countdown,
- *     then the same Start the button would have pressed. The bonus guard holds
- *     a page for money in flight, and for a won game only while that game can
- *     actually start - never on an award the page cannot start.
+ *  3. A won game waits for the player (owner ruling 2026-09-21, R1 and R9,
+ *     which supersedes the auto-start clause this law carried: "Games can
+ *     NEVER auto start. Remove the countdown clock that triggers an auto
+ *     start", and "the won game must stay on screen until the user selects
+ *     Play Game"). No countdown presses Start; no page imports a hook that
+ *     would. The bonus guard still holds a page for money in flight, and for a
+ *     won game only while that game can actually start - never on an award the
+ *     page cannot start, so waiting is never being trapped.
  *  4. The server never deletes a player's live ticket when dealing another,
  *     and both start functions refuse a dead ticket before the entry whose
  *     foreign key would turn it into an exception. Pinned by the installed
@@ -121,10 +125,14 @@ describe('a saved round settles itself', () => {
     expect(src).toContain('PriorBonusPending');
   });
 
-  it.each(AWARD_PAGES)('%s starts a won game by itself', (file) => {
+  it.each(AWARD_PAGES)('%s never starts a won game by itself', (file) => {
     const src = read(file);
-    expect(src).toContain("from '../hooks/useAwardAutoStart'");
-    expect(src).toMatch(/useAwardAutoStart\(/);
+    // Owner ruling 2026-09-21, R1: the countdown that pressed Start is gone,
+    // and nothing may put one back. Pinned on the source because a clock the
+    // player never sees is exactly what a rendered test misses.
+    expect(src).not.toContain('useAwardAutoStart');
+    expect(src).not.toContain('useIdleSpinCountdown');
+    expect(src).not.toMatch(/Starting In \$\{|Dropping In \$\{/);
   });
 
   it.each(AWARD_PAGES)('%s does not hold a player on a won game that cannot start', (file) => {
@@ -154,9 +162,11 @@ describe('a saved round settles itself', () => {
   });
 
   it('a saved wager is judged by its own game', () => {
+    // Only Plinko plays its entry in drops, and since R6 the player chooses the
+    // value, so only Plinko's saved wager is judged against it.
     const src = code('src/services/diamondBonusRecovery.ts');
     expect(src).toMatch(
-      /v\.game === 'plinko' && bonusTotal\(v\.budget\) % v\.budget\.denomination/
+      /v\.game === 'plinko'\s*\?[\s\S]*bonusTotal\(v\.budget\) % v\.budget\.denomination/
     );
   });
 

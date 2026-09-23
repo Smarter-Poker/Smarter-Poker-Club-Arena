@@ -208,16 +208,30 @@ describe('crash odds: the guaranteed minimum is paid for out of them', () => {
   });
 
   it('covers every stake a wheel award can be played at, and refuses an impossible one', () => {
+    // CONTRACT 4 is what a new award is sealed with, so it is what the lobby
+    // prices: the floor is half the stake, or for a Super award what the player
+    // PAID, and the round has to reach 1.11x before a cash-out can bind.
     const ordinary = awardInstantCrashChances(1, 100);
     const superAward = awardInstantCrashChances(2, 100);
-    // An ordinary award keeps a tenth of its stake, rounded up to the cent, so a
-    // small odd entry (31 diamonds keeps 4) crashes at 1.00x a shade more often.
-    expect(1 / ordinary.least).toBeCloseTo(4.3333, 4);
-    expect(1 / ordinary.most).toBeCloseTo(4.1953, 3);
-    expect(oneInRangeLabel(ordinary)).toBe('1 In 4.2 To 4.3');
-    // A Super award's half is exact on every stake it can be dealt.
-    expect(1 / superAward.least).toBeCloseTo(2.4286, 4);
-    expect(oneInRangeLabel(superAward)).toBe('1 In 2.4');
+    // An ordinary award keeps half its stake, rounded up to the cent, so a small
+    // odd entry (25 diamonds keeps 13) dies before 1.11x a shade more often.
+    expect(1 / ordinary.least).toBeCloseTo(1.9677, 4);
+    expect(1 / ordinary.most).toBeCloseTo(1.9032, 4);
+    expect(oneInRangeLabel(ordinary)).toBe('1 In 1.9 To 2');
+    // A Super award keeps the entry without the add-on and the two thirds it
+    // paid with it, and the two thirds ends sooner than any other stake.
+    expect(1 / superAward.least).toBeCloseTo(1.9677, 4);
+    expect(1 / superAward.most).toBeCloseTo(1.4301, 4);
+    expect(oneInRangeLabel(superAward)).toBe('1 In 1.4 To 2');
+    // HISTORY IS NOT RE-PRICED. An award quoted under contract 3 keeps the tenth
+    // it was sealed with, the Super half, and the 1.01x open.
+    const wasOrdinary = awardInstantCrashChances(1, 100, 3);
+    const wasSuper = awardInstantCrashChances(2, 100, 3);
+    expect(1 / wasOrdinary.least).toBeCloseTo(4.3333, 4);
+    expect(1 / wasOrdinary.most).toBeCloseTo(4.1953, 3);
+    expect(oneInRangeLabel(wasOrdinary)).toBe('1 In 4.2 To 4.3');
+    expect(1 / wasSuper.least).toBeCloseTo(2.4286, 4);
+    expect(oneInRangeLabel(wasSuper)).toBe('1 In 2.4');
     expect(oneInRangeLabel({ most: 0.5, least: 0.5 })).toBe('1 In 2');
     // A minimum of four fifths of the stake leaves no odds to pay it with.
     expect(() => crashInstantChance(1, 0.8)).toThrow('Invalid Crash Outcome');

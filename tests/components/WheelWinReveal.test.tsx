@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WheelWinReveal } from '../../src/components/wheel/WheelWinReveal';
 import { soundService } from '../../src/services/SoundService';
@@ -46,7 +46,11 @@ describe('the winning sector opens the awarded experience', () => {
     unmount();
     visibility.mockRestore();
   });
-  it('opens a bonus exactly once when its complete reveal finishes', () => {
+  /* Owner ruling 2026-09-21, R1 and R9: a won game is opened by Play Game and
+     by nothing else. The reveal used to open it at the end of its own pop
+     animation; that pin moved here with the ruling. */
+  it('keeps a won bonus game on screen until Play Game is tapped, then opens it once', () => {
+    vi.useFakeTimers();
     const opened = vi.fn();
     const { container } = render(
       <WheelWinReveal
@@ -57,11 +61,69 @@ describe('the winning sector opens the awarded experience', () => {
       />
     );
     const opening = container.querySelector('[data-motion="keep"]')!;
+    const play = screen.getByRole('button', { name: 'Play Game' });
+    expect(play).toBeDisabled();
     fireEvent.animationEnd(screen.getByRole('status'));
     expect(opened).not.toHaveBeenCalled();
     fireEvent.animationEnd(opening);
     fireEvent.animationEnd(opening);
+    expect(play).toBeEnabled();
+    expect(play).toHaveFocus();
+    act(() => {
+      vi.advanceTimersByTime(120_000);
+    });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(opened).not.toHaveBeenCalled();
+    fireEvent.click(play);
+    fireEvent.click(play);
     expect(opened).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+  it('labels an upgrade Open Upgrade Wheel and waits for that tap as well', () => {
+    const opened = vi.fn();
+    const { container } = render(
+      <WheelWinReveal
+        prize={{ kind: 'upgrade' }}
+        title="Bonus Upgrade"
+        detail="Your Upgrade"
+        onOpen={opened}
+      />
+    );
+    fireEvent.animationEnd(container.querySelector('[data-motion="keep"]')!);
+    expect(opened).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Upgrade Wheel' }));
+    expect(opened).toHaveBeenCalledTimes(1);
+  });
+  it('a timed continue is honoured only for an instant prize, never for a game', () => {
+    vi.useFakeTimers();
+    const chips = vi.fn();
+    const game = vi.fn();
+    render(
+      <WheelWinReveal
+        prize={{ kind: 'chips' }}
+        title="12 Chips"
+        detail="Returning"
+        autoContinue
+        autoContinueAfterMs={5000}
+        onOpen={chips}
+      />
+    );
+    render(
+      <WheelWinReveal
+        prize={{ kind: 'bonus', game: 'plinko' }}
+        title="Diamond Plinko"
+        detail="Your Bonus"
+        autoContinue
+        autoContinueAfterMs={5000}
+        onOpen={game}
+      />
+    );
+    act(() => {
+      vi.advanceTimersByTime(120_000);
+    });
+    expect(chips).toHaveBeenCalledTimes(1);
+    expect(game).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
   it('keeps an instant prize open for the player to read before continuing', () => {
     const opened = vi.fn();

@@ -821,6 +821,39 @@ jobs:
             exit 1
           fi
 
+      # BLOCKING: a migration here that moves a Diamond Spins contract cannot
+      # merge while the client in the same branch cannot read it, and a client
+      # here cannot drop a contract without the migration that retires it.
+      #
+      # 2026-09-23: four Diamond Spins migrations were applied straight to
+      # production - the estate's documented way of shipping schema - and the
+      # session ended without merging the client. fn_wheel_state_v2 began
+      # returning contract_version 4; the deployed client accepts 2 or 3 and
+      # throws on every load. The wheel was dead for about nine hours and
+      # nothing went red, because every gate here compares the repo against the
+      # repo or against a snapshot of the schema. Nothing compared what the
+      # DATABASE says against what the CLIENT can hear.
+      #
+      # This half needs no credential, so a pull request never depends on
+      # production being reachable - the same ruling production-integrity-audit
+      # already makes for its live readers. The live comparison runs hourly
+      # there, and is the only half that can see a migration with no pull
+      # request behind it.
+      - name: Supabase Invariants — The Diamond Spins Contract The Client Can Read
+        run: |
+          set -o pipefail
+          echo "## Diamond Spins Contract Parity" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-diamond-contract-parity.mjs --source 2>&1 | tee /tmp/diamondcontract.log; then
+            echo "OK — nothing here moves a Diamond Spins contract past the client that reads it." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "A migration in this branch moves the wheel contract, the prize vocabulary, the" >> $GITHUB_STEP_SUMMARY
+            echo "segment count or the bonus floor, and the client in this branch cannot read it —" >> $GITHUB_STEP_SUMMARY
+            echo "or the client drops a contract with no migration retiring it. Land both halves" >> $GITHUB_STEP_SUMMARY
+            echo "together. See the log for the exact declaration to widen." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       # BLOCKING: Supabase identifies migrations by the filename version. A
       # duplicate version makes two different files compete for one ledger row.
 
@@ -1339,6 +1372,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-agent-accounting-statements.sh
+      - name: Cashier statements follow the trade ledger scope and export what is on screen
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-cashier-statements.sh
       - name: Accounting agreement changes preserve immutable observed history
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

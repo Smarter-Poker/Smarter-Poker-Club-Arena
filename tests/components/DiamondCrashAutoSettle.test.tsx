@@ -195,11 +195,11 @@ const readout = () =>
   screen.getAllByRole('status').find((node) => node.querySelector('.sc-label'))!;
 /** What the page last asked the exit guard: true holds the player on the page. */
 const guardHolds = () => vi.mocked(useLiveBonusGuard).mock.calls.at(-1)?.[0];
-/** Answer the Double Down offer. A won game never starts over it: it spends
- * the player's own diamonds, so the countdown waits for the answer (or for the
- * offer to keep the bonus by itself). */
-const answerOffer = async (name: 'Keep My Bonus' | 'Add Diamonds' = 'Keep My Bonus') => {
-  const dialog = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
+/** Answer screen one, the Double Your Diamonds offer (R9). Nothing starts
+ * until it is answered, and nothing starts after it either: the Start plate is
+ * the player's (R1). */
+const answerOffer = async (name: 'Play Without' | 'Add The Diamonds' = 'Play Without') => {
+  const dialog = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
   fireEvent.animationEnd(dialog.querySelector('[data-motion="keep"]')!);
   fireEvent.click(screen.getByRole('button', { name }));
   await act(async () => {});
@@ -293,8 +293,9 @@ describe('a ticket the server calls gone is dealt again', () => {
     render(<DiamondCrashPage />);
     await act(async () => {});
     await answerOffer();
-    // Nobody presses Start: the won game starts itself after its window...
-    await elapse(5000);
+    // The player presses Start once...
+    fireEvent.click(screen.getByRole('button', { name: 'Start 200' }));
+    await act(async () => {});
     expect(backend.start).toHaveBeenCalledTimes(1);
     // ...the server refuses its ticket, charging nothing, and the same wager
     // goes again on a fresh ticket.
@@ -350,19 +351,19 @@ describe('a ticket the server calls gone is dealt again', () => {
   });
 });
 
-describe('a won game starts itself', () => {
-  it('counts five seconds on the plate and then starts the award, not before', async () => {
+describe('a won game waits for the player, and starts on the entry they answered for', () => {
+  it('waits on its plate for the player, then starts the award once, on one press', async () => {
     quoteSuperAward();
     backend.start.mockReturnValue(new Promise(() => {}));
     render(<DiamondCrashPage />);
     await act(async () => {});
     await answerOffer();
-    expect(screen.getByRole('button', { name: 'Starting In 5s' })).toBeEnabled();
-    await elapse(4000);
-    expect(screen.getByRole('button', { name: 'Starting In 1s' })).toBeEnabled();
-    await elapse(999);
+    // R1: the offer is answered, the plate is ready, and no clock presses it.
+    expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
+    await elapse(30000);
     expect(backend.start).not.toHaveBeenCalled();
-    await elapse(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Start 200' }));
+    await act(async () => {});
     expect(backend.start).toHaveBeenCalledTimes(1);
     expect(backend.start).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -372,27 +373,24 @@ describe('a won game starts itself', () => {
       'player-a'
     );
     expect(screen.getByRole('button', { name: 'Starting' })).toBeDisabled();
-    // One window, one start: a start still waiting on its answer is not sent again.
+    // One press, one start: a start still waiting on its answer is not sent again.
     await elapse(30000);
     expect(backend.start).toHaveBeenCalledTimes(1);
   });
 
-  it('opens a fresh window for a Double Down, and starts the doubled entry', async () => {
+  it('starts the doubled entry after the player changes their Double Down answer', async () => {
     quoteSuperAward();
     backend.start.mockReturnValue(new Promise(() => {}));
     render(<DiamondCrashPage />);
     await act(async () => {});
     await answerOffer();
-    await elapse(3000);
-    expect(screen.getByRole('button', { name: 'Starting In 2s' })).toBeEnabled();
-    // Reopening the offer stops the clock; the new answer is a new entry.
-    fireEvent.click(screen.getByRole('button', { name: 'Double Down Your Bonus' }));
+    expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
+    // Reopening the offer takes the plate back until the new answer is given.
+    fireEvent.click(screen.getByRole('button', { name: 'Playing Without Extra Diamonds: Change' }));
     await act(async () => {});
-    await answerOffer('Add Diamonds');
-    expect(screen.getByRole('button', { name: 'Starting In 5s' })).toBeEnabled();
-    await elapse(4999);
-    expect(backend.start).not.toHaveBeenCalled();
-    await elapse(1);
+    await answerOffer('Add The Diamonds');
+    fireEvent.click(screen.getByRole('button', { name: 'Start 300' }));
+    await act(async () => {});
     expect(backend.start).toHaveBeenCalledTimes(1);
     expect(backend.start).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -402,7 +400,7 @@ describe('a won game starts itself', () => {
     );
   });
 
-  it('never counts down an ordinary entry', async () => {
+  it('never starts an ordinary entry by itself either', async () => {
     render(<DiamondCrashPage />);
     await act(async () => {});
     await elapse(30000);
@@ -433,7 +431,7 @@ describe('the exit guard never traps a player on a won game that cannot start', 
     render(<DiamondCrashPage />);
     await act(async () => {});
     await answerOffer();
-    expect(screen.getByRole('button', { name: 'Starting In 5s' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
     expect(guardHolds()).toBe(true);
   });
 
@@ -535,9 +533,12 @@ describe('every read before Start is tried again by itself', () => {
     expect(backend.getState).toHaveBeenCalledTimes(1);
     await elapse(1);
     expect(backend.getState).toHaveBeenCalledTimes(2);
-    // ...and the won game counts down and starts itself.
-    expect(screen.getByRole('button', { name: 'Starting In 5s' })).toBeEnabled();
+    // ...and the won game's plate is pressable again, on the player's word (R1).
+    expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
     await elapse(5000);
+    expect(backend.start).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Start 200' }));
+    await act(async () => {});
     expect(backend.start).toHaveBeenCalledTimes(1);
     expect(backend.start).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -590,7 +591,7 @@ describe('a refusal that is not about the ticket never traps the player', () => 
     await act(async () => {});
     await answerOffer();
     const reads = backend.awardState.mock.calls.length;
-    await elapse(5000);
+    fireEvent.click(screen.getByRole('button', { name: 'Start 200' }));
     await act(async () => {});
     expect(backend.start).toHaveBeenCalledTimes(1);
     expect(backend.awardState.mock.calls.length).toBeGreaterThan(reads);

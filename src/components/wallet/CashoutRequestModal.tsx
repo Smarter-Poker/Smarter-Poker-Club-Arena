@@ -573,13 +573,23 @@ function CashoutRequestContent({
               ? `${heldCount} Held`
               : success
                 ? 'Submitted'
-                : isSubmitting
-                  ? 'Checking'
-                  : balanceAvailable
-                    ? 'Ready'
-                    : 'Attention'
+                : combinedError || !balanceAvailable
+                  ? 'Attention'
+                  : isSubmitting || loadingPending
+                    ? 'Checking'
+                    : 'Ready'
           }
-          pillInk={heldCount > 0 ? 'gold' : success ? 'green' : balanceAvailable ? 'green' : 'red'}
+          pillInk={
+            heldCount > 0
+              ? 'gold'
+              : success
+                ? 'green'
+                : combinedError || !balanceAvailable
+                  ? 'red'
+                  : isSubmitting || loadingPending
+                    ? 'gold'
+                    : 'green'
+          }
           plates={{
             secondary: {
               label: 'Close',
@@ -590,7 +600,11 @@ function CashoutRequestContent({
             primary: success
               ? { label: 'Submitted', ink: 'green', disabled: true }
               : {
-                  label: isSubmitting ? 'Checking...' : 'Check Or Request Cashout',
+                  // The painted face holds twelve characters at its smallest
+                  // fit; the full instruction stays the accessible name and
+                  // the copy under the form says what the check is.
+                  label: isSubmitting ? 'Checking...' : 'Request Cashout',
+                  'aria-label': isSubmitting ? 'Checking...' : 'Check Or Request Cashout',
                   ink: canRequest ? 'white' : 'muted',
                   onClick: handleSubmit,
                   disabled: !canRequest,

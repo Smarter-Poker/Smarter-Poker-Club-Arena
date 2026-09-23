@@ -869,7 +869,7 @@ export default function CashierTradePage() {
       if (isMounted.current && !stale()) {
         setDownline([]);
         setRosterLoadingMore(false);
-        setLoadError('Could not load this club. Check your connection and try again.');
+        setLoadError('Could Not Load This Club. Check Your Connection And Try Again.');
       }
       return false;
     } finally {

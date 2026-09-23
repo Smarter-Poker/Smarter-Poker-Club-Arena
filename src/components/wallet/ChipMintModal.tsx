@@ -317,12 +317,18 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
               ? 'Checking'
               : busy
                 ? 'Minting'
-                : canMintHere
-                  ? 'Ready'
-                  : 'Refused'
+                : !canMintHere
+                  ? 'Refused'
+                  : balanceFailed || overBalance
+                    ? 'Attention'
+                    : 'Ready'
           }
           pillInk={
-            target.state === 'loading' ? 'gold' : busy ? 'gold' : canMintHere ? 'green' : 'red'
+            target.state === 'loading' || busy
+              ? 'gold'
+              : !canMintHere || balanceFailed || overBalance
+                ? 'red'
+                : 'green'
           }
           {...(canMintHere
             ? {

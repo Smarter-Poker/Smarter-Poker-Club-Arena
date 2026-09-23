@@ -118,6 +118,7 @@ import {
 } from './cashierModes';
 import { cashierRecipientBlock } from '../../lib/cashierRoster';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import ChipMintModal from './ChipMintModal';
 import './WalletCashierModal.css';
 import { downloadBlob } from '../../utils/downloadCsv';
@@ -234,25 +235,31 @@ interface WalletCashierModalProps {
   walletType?: CashierWalletType;
 }
 
+/**
+ * A chip figure on the glass. Dan: "NEVER USE DECIMAL POINTS ON ANY FORWARD
+ * FACING PAGE", so a whole balance prints 12,500 and not 12,500.00 (the
+ * render showed ".00" on the Club Bank and on every member row). A cashier
+ * never misstates the ledger, so a figure that really carries cents keeps
+ * them. No test pins two-decimal DISPLAY on this surface: the two-decimal law
+ * is about what is stored and sent, and every amount this cashier sends is a
+ * whole chip already (amountIsWhole).
+ *
+ * Unknown is "...", and a value that is not a number is "Unavailable" - it
+ * used to print a confident 0.00, which is an invented balance.
+ */
 const fmt = (n?: number | null) =>
   n === undefined || n === null
     ? '...'
-    : (Number.isFinite(n) ? n : 0).toLocaleString('en-US', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      });
+    : Number.isFinite(n)
+      ? n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+      : 'Unavailable';
 
 const fmtWhole = (n: number) => Math.round(n).toLocaleString('en-US');
 
-/** "Club Bank Send" from "club_bank_send". Popup and label casing law. */
-function titleCase(raw: string): string {
-  return raw
-    .replace(/[_-]+/g, ' ')
-    .split(' ')
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(' ');
-}
+/* "Club Bank Send" from "club_bank_send" is `enumToTitleCase`, the house
+   transform in src/utils/titleCase.ts. A local copy lived here and lower-cased
+   the tail of every word, so an initialism printed as "Bbj Promo Sweep". Names
+   and notes that come out of a row go through `titleCase` where they print. */
 
 /** crypto.randomUUID is not in every embedded webview; fall back rather than throw. */
 function newOpId(): string {
@@ -457,7 +464,8 @@ export default function WalletCashierModal({
        to be `Number(undefined) || 0`, so an RLS refusal or a dropped
        connection printed a confident 0.00 as the Club Bank - and `cap` became
        0, so every send was refused with "The Wallet Only Holds 0 Chips". Left
-       null, the header renders "..." and the note says it could not be read. */
+       null, the header says Unavailable once the read has finished (and "..."
+       only while it is still running), never a number. */
     if (clubReadError) {
       reportError(clubReadError, 'WalletCashierModal.loadClub');
       setBank(null);
@@ -1373,10 +1381,7 @@ export default function WalletCashierModal({
         aria-label="Club Bank Cashier"
         onClick={onClose}
       >
-        <div
-          className="cbc-panel cbc-panel--denied wcm ac-popup"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
           <SpadeConsole
             as="div"
             eyebrow={clubName || 'Club Arena'}
@@ -1465,7 +1470,9 @@ export default function WalletCashierModal({
                     ? 'Agent Wallet Balance'
                     : 'Club Bank Balance'}
               </span>
-              <strong aria-live="polite">{bank === null ? '...' : fmt(bank)}</strong>
+              <strong aria-live="polite">
+                {bank === null ? (clubLoading ? '...' : 'Unavailable') : fmt(bank)}
+              </strong>
               {walletType === 'promo_wallet' && clubName && (
                 <em className="cbc-bank-sub">
                   {promoSource === 'club_pot' ? clubName : `${clubName} Agent Float`}
@@ -1492,7 +1499,9 @@ export default function WalletCashierModal({
                     }}
                   >
                     <span>Club Promo Wallet</span>
-                    <strong>{promoPot === null ? '...' : fmt(promoPot)}</strong>
+                    <strong>
+                      {promoPot === null ? (clubLoading ? '...' : 'Unavailable') : fmt(promoPot)}
+                    </strong>
                   </button>
                   <button
                     role="radio"
@@ -1565,11 +1574,11 @@ export default function WalletCashierModal({
                     return (
                       <div key={row.transaction_id} className="cbc-tx">
                         <div className="cbc-tx-top">
-                          <span className="cbc-tx-type">{row.to_name}</span>
+                          <span className="cbc-tx-type">{titleCase(row.to_name)}</span>
                           <span className="cbc-tx-amount">{fmt(row.remaining)}</span>
                         </div>
                         <div className="cbc-tx-mid">
-                          <span>Into {titleCase(row.destination)}</span>
+                          <span>Into {enumToTitleCase(row.destination)}</span>
                           <span className="cbc-tx-when">
                             {Math.floor(left / 60)}m {left % 60}s Left
                           </span>
@@ -1669,13 +1678,20 @@ export default function WalletCashierModal({
                             aria-disabled={block ? true : undefined}
                             title={block ? block.reason : undefined}
                           >
-                            <div
-                              className="cbc-member-avatar"
-                              style={{ backgroundImage: `url(${m.avatar_url || ''})` }}
-                            />
+                            {/* A photograph when there is one; no grey placeholder
+                                square when there is not - the name identifies
+                                the member. */}
+                            {m.avatar_url && (
+                              <img
+                                className="cbc-member-avatar"
+                                src={m.avatar_url}
+                                alt=""
+                                loading="lazy"
+                              />
+                            )}
                             <div className="cbc-member-info">
                               <span className="cbc-member-name">
-                                {m.name}
+                                {titleCase(m.name)}
                                 {m.user_id === user?.id && ' (You)'}
                               </span>
                               <span className="cbc-member-id">#{m.short_id}</span>
@@ -1721,7 +1737,7 @@ export default function WalletCashierModal({
                       <div className="cbc-blurb">
                         {holderHeld === null
                           ? 'Reading That Wallet...'
-                          : `${recipient.name} Holds ${fmt(holderHeld)} In That Wallet.`}
+                          : `${titleCase(recipient.name)} Holds ${fmt(holderHeld)} In That Wallet.`}
                       </div>
                     )}
                     {/* A BALANCE WE COULD NOT READ CANNOT PROJECT AN AFTER
@@ -1765,8 +1781,8 @@ export default function WalletCashierModal({
                   {confirming && recipient && (
                     <div className="cbc-confirmbox" role="alert">
                       {tab === 'claim'
-                        ? `Claim ${fmt(amt)} Chips From ${recipient.name} Back Into The Club Bank?`
-                        : `That Is ${Math.round((amt / (bank || 1)) * 100)} Percent Of The Club Bank. Send ${fmt(amt)} Chips To ${recipient.name}?`}
+                        ? `Claim ${fmt(amt)} Chips From ${titleCase(recipient.name)} Back Into The Club Bank?`
+                        : `That Is ${Math.round((amt / (bank || 1)) * 100)} Percent Of The Club Bank. Send ${fmt(amt)} Chips To ${titleCase(recipient.name)}?`}
                     </div>
                   )}
 
@@ -1823,14 +1839,14 @@ export default function WalletCashierModal({
                     promoLedger.map((row) => {
                       const inbound = row.direction === 'in';
                       const other =
-                        row.counterparty_name ||
-                        (row.counterparty_type ? titleCase(row.counterparty_type) : 'Ledger');
+                        titleCase(row.counterparty_name) ||
+                        (row.counterparty_type ? enumToTitleCase(row.counterparty_type) : 'Ledger');
                       const note =
                         row.notes && !row.notes.startsWith('auto-ledgered') ? row.notes : null;
                       return (
-                        <div key={row.id} className={inbound ? 'cbc-tx cbc-tx--in' : 'cbc-tx'}>
+                        <div key={row.id} className="cbc-tx">
                           <div className="cbc-tx-top">
-                            <span className="cbc-tx-type">{titleCase(row.category)}</span>
+                            <span className="cbc-tx-type">{enumToTitleCase(row.category)}</span>
                             <span
                               className={inbound ? 'cbc-tx-amount cbc-in' : 'cbc-tx-amount cbc-out'}
                             >
@@ -1850,8 +1866,8 @@ export default function WalletCashierModal({
                             </span>
                           </div>
                           <div className="cbc-tx-foot">
-                            {note && <span>{note}</span>}
-                            {row.actor_name && <span>By {row.actor_name}</span>}
+                            {note && <span>{titleCase(note)}</span>}
+                            {row.actor_name && <span>By {titleCase(row.actor_name)}</span>}
                             {row.balance_after !== null && row.balance_after !== undefined && (
                               <span>Wallet After {fmt(Number(row.balance_after))}</span>
                             )}
@@ -1908,7 +1924,7 @@ export default function WalletCashierModal({
                     <div className="cbc-ledger-head">
                       <span>
                         {ledgerTotal.toLocaleString('en-US')}{' '}
-                        {typeFilter ? `${titleCase(typeFilter)} Entries` : 'Entries'}
+                        {typeFilter ? `${enumToTitleCase(typeFilter)} Entries` : 'Entries'}
                       </span>
                       <button
                         className="cbc-export"
@@ -1934,7 +1950,7 @@ export default function WalletCashierModal({
                           className={typeFilter === t ? 'cbc-chip cbc-chip--on' : 'cbc-chip'}
                           onClick={() => setTypeFilter(t)}
                         >
-                          {titleCase(t)}
+                          {enumToTitleCase(t)}
                         </button>
                       ))}
                     </div>
@@ -1950,16 +1966,19 @@ export default function WalletCashierModal({
                           className={row.is_reversed ? 'cbc-tx cbc-tx--reversed' : 'cbc-tx'}
                         >
                           <div className="cbc-tx-top">
-                            <span className="cbc-tx-type">{titleCase(row.transaction_type)}</span>
+                            <span className="cbc-tx-type">
+                              {enumToTitleCase(row.transaction_type)}
+                            </span>
                             <span className="cbc-tx-amount">{fmt(row.amount)}</span>
                           </div>
                           <div className="cbc-tx-mid">
                             <span>
-                              {row.from_name || 'Club Bank'}
+                              {titleCase(row.from_name) || 'Club Bank'}
                               {' → '}
                               {row.transaction_type === 'club_bank_claim'
                                 ? 'Club Bank'
-                                : row.to_name || (dest ? titleCase(dest) : 'Club Bank')}
+                                : titleCase(row.to_name) ||
+                                  (dest ? enumToTitleCase(dest) : 'Club Bank')}
                             </span>
                             <span className="cbc-tx-when">
                               {new Date(row.created_at).toLocaleString('en-US', {
@@ -1971,10 +1990,10 @@ export default function WalletCashierModal({
                             </span>
                           </div>
                           <div className="cbc-tx-foot">
-                            {row.notes && <span>{row.notes}</span>}
-                            {dest && <span>Into {titleCase(dest)}</span>}
+                            {row.notes && <span>{titleCase(row.notes)}</span>}
+                            {dest && <span>Into {enumToTitleCase(dest)}</span>}
                             {src && row.transaction_type === 'club_bank_claim' && (
-                              <span>From {titleCase(src)}</span>
+                              <span>From {enumToTitleCase(src)}</span>
                             )}
                             {row.balance_after !== null && (
                               <span>Bank After {fmt(Number(row.balance_after))}</span>

@@ -37,7 +37,11 @@
 import React, { useMemo, memo, useState, useEffect, useRef } from 'react';
 import { AnimatedNumber } from '../common/AnimatedNumber';
 import { soundService } from '../../services/SoundService';
-import { visualChipStacks } from '../../lib/chipDenominations';
+import {
+  visualChipStacks,
+  CHIP_DENOMINATIONS,
+  type ChipDenomination,
+} from '../../lib/chipDenominations';
 import { formatTableChips } from '../../utils/format';
 import './PotDisplay.css';
 
@@ -167,6 +171,31 @@ function SidePotBadge({
 }
 
 /**
+ * A settled 0..1 for one disc, from its denomination and its ordinal within
+ * that denomination.
+ *
+ * Dan 2026-09-14: chips in the pot "SHOULDN'T ALWAYS APPEAR IN NUMBER ORDER
+ * HIGH TO LOW OR LOW TO HIGH... THEY SHOULD APPEAR 'IN A POT' MIXED TOGETHER."
+ *
+ * Keyed on (denomination, ordinal) rather than on a position in the finished
+ * pile, which is the whole point: the third red 5 gets the same key whatever
+ * else is in the pot, so a pot that grows does not re-deal the chips already
+ * lying in it - the new ones slot in among them and everything else stays
+ * where the player last saw it. Math.random() would reshuffle the entire pot
+ * on every render, including the ones React does for an unrelated prop.
+ *
+ * `salt` gives one chip several independent draws (order, and how far it
+ * lies off the centre line) without a second hash function.
+ */
+function chipJitter(denomValue: number, ordinal: number, salt: number): number {
+  let h = Math.imul(denomValue ^ 0x9e3779b1, 0x85ebca6b);
+  h = Math.imul(h ^ (ordinal + 0x165667b1), 0xc2b2ae35);
+  h = Math.imul(h ^ (salt * 0x27d4eb2f), 0x2545f491);
+  h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+
+/**
  * The pot, drawn as actual chips.
  *
  * Replaces MiniChipIcon, which drew three identical teal circles no matter
@@ -191,42 +220,114 @@ function PotChipPile({ amount, size }: { amount: number; size: 'pot' | 'street' 
       visualChipStacks(
         amount,
         size === 'pot'
-          ? { maxStacks: 6, maxPerStack: 10, maxTotal: 10 }
+          ? // EVERY denomination, always - see "THE PILE HAS TO ADD UP" below.
+            // `maxTotal` is what bounds the width; `maxStacks` must never be
+            // the thing that bounds it, because dropping a group drops its
+            // VALUE off the felt.
+            { maxStacks: CHIP_DENOMINATIONS.length, maxPerStack: 10, maxTotal: 10 }
           : { maxStacks: 3, maxPerStack: 4, maxTotal: 4 }
       ),
     [amount, size]
   );
 
-  if (stacks.length === 0) return null;
+  // One horizontal spread, denominations MIXED - Dan 2026-09-14, "they should
+  // appear 'in a pot' mixed together". Every disc visualChipStacks returned is
+  // drawn; only the ORDER is re-dealt, by a key settled per (denomination,
+  // ordinal), so the pile is stable across renders and stable as the pot grows.
+  //
+  // `truncated` / `count` ride along per disc for the same reason they do on
+  // the seat chips: a denomination clamped for width prints its REAL number
+  // above the spread, so a pot of 60,000 (twelve orange 5,000s, because Dan's
+  // ladder has nothing between 5,000 and 100,000) still adds up to 60,000.
+  const flattenedChips = useMemo(() => {
+    const flat: {
+      denom: ChipDenomination;
+      partial: boolean;
+      /**
+       * Which disc of its denomination this is. Carried so the React key can
+       * be the SAME (denomination, ordinal) tuple the jitter is keyed on -
+       * otherwise a chip slotting into the middle of a growing pot shifts
+       * every later array index, React rebinds a different chip's colour and
+       * lift onto each of those nodes, and the pile silently re-deals itself.
+       * The comment on chipJitter promises it does not; this is what keeps it.
+       */
+      ordinal: number;
+      /** Where it lies, and how far off the centre line. */
+      order: number;
+      lift: number;
+    }[] = [];
+    stacks.forEach((stack) => {
+      for (let i = 0; i < stack.drawn; i++) {
+        flat.push({
+          denom: stack.denom,
+          partial: stack.partial,
+          ordinal: i,
+          order: chipJitter(stack.denom.value, i, 1),
+          // +/- 12% of a chip. Enough that the row reads as chips pushed into
+          // a pot rather than as a dealt-out fan; small enough that the spread
+          // still sits on one line under the pill.
+          lift: (chipJitter(stack.denom.value, i, 2) - 0.5) * 0.24,
+        });
+      }
+    });
+    flat.sort((a, b) => a.order - b.order);
+    return flat;
+  }, [stacks]);
 
-  // Flatten the stacks to render multiple chips in one column, highest denom on bottom
-  const flattenedChips: { denom: any; partial: boolean }[] = [];
-  stacks.forEach((stack) => {
-    for (let i = 0; i < stack.drawn; i++) {
-      flattenedChips.push({
-        denom: stack.denom,
-        partial: stack.partial,
-      });
-    }
-  });
+  // After the hooks, never before them: an early return above a useMemo is a
+  // conditional hook call (react-hooks/rules-of-hooks), and the flatten above
+  // already yields [] for a pot with no chips on the ladder.
+  if (flattenedChips.length === 0) return null;
+
+  // ── THE PILE HAS TO ADD UP, AND YOU HAVE TO BE ABLE TO READ IT ───────────
+  // Every denomination the pot holds is drawn (see `maxStacks` above), and
+  // `maxTotal` then clamps the DISCS, so on a mixed pot several denominations
+  // are clamped at once - a 131,313 pot clamps four of them. Each one used to
+  // hang its own count badge under its own disc, absolutely positioned and
+  // centred; single-disc groups sit half a chip apart, so four badges landed
+  // on top of each other and the pot's true total became unreadable exactly
+  // when it mattered most.
+  //
+  // One row instead, under the spread, in ladder order, each tinted to the
+  // chip it counts. Colour is a better pointer than position here anyway: the
+  // disc a badge belonged to was half-covered by the next one lying over it.
+  const clamped = stacks.filter((stack) => stack.truncated);
 
   return (
     /* aria-hidden: the amount is already announced by the pill's aria-label. */
     <div className={`pot-display__pile pot-display__pile--${size}`} aria-hidden="true">
       <div className="pot-display__pile-stack" style={{ '--pile-group': 0 } as React.CSSProperties}>
-        {flattenedChips.map((chip, index) => (
+        {flattenedChips.map((chip) => (
           <span
-            key={index}
+            key={`${chip.denom.value}-${chip.ordinal}`}
             className={`pot-display__pile-chip${chip.partial ? ' pot-display__pile-chip--partial' : ''}`}
             style={
               {
                 '--pile-chip-color': chip.denom.color,
                 '--pile-chip-accent': chip.denom.accent,
-                transform: `translateX(${Math.sin(index * 23.45) * 1.5}px)`,
+                // In a chip size, so the scatter holds at every table width.
+                transform: `translateY(calc(var(--cp-chip-size, 24px) * ${chip.lift.toFixed(3)}))`,
               } as React.CSSProperties
             }
           />
         ))}
+        {clamped.length > 0 && (
+          <span className="pot-display__pile-counts">
+            {clamped.map((stack) => (
+              /* Multiplication sign, not a lowercase 'x' - check-title-case.mjs
+                 rejects the letter on a forward-facing surface, and "twelve of
+                 these" was never the letter anyway. */
+              <span
+                key={stack.denom.value}
+                className="pot-display__pile-multi"
+                style={{ '--pile-chip-color': stack.denom.color } as React.CSSProperties}
+              >
+                {'\u00d7'}
+                {stack.count.toLocaleString()}
+              </span>
+            ))}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -407,6 +508,24 @@ export const PotDisplay = memo(PotDisplayComponent, (prev, next) => {
   // to change in the same commit.
   if (prev.collectTo?.dx !== next.collectTo?.dx || prev.collectTo?.dy !== next.collectTo?.dy)
     return false;
+  // The same omission as collectTo above, twice more, and both of them defeat
+  // a fix that lives in this file:
+  //
+  //  - `handNumber` is what expires the carried-over pot (carriedHandRef). A
+  //    hand can begin on a snapshot whose mainPot/streetBets/sidePots match
+  //    the previous hand's last one; the comparator then reported "equal",
+  //    the reset never ran that commit, and the PREVIOUS hand's amount was
+  //    still the one the pill and the pile were holding.
+  //  - `awardedPot` is the last-resort push amount for a fold-around. It goes
+  //    from 0 to the won amount the instant the winner band opens, which is
+  //    frequently the ONLY prop that changes in that commit - so the push it
+  //    exists to fix was skipped and the pill slid a zero anyway.
+  //
+  // `showChipAnimation` gates the pile itself; without it the pile could not
+  // be turned off or on without an unrelated prop moving at the same time.
+  if (prev.handNumber !== next.handNumber) return false;
+  if (prev.awardedPot !== next.awardedPot) return false;
+  if (prev.showChipAnimation !== next.showChipAnimation) return false;
   return true;
 });
 

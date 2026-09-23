@@ -1,4 +1,0 @@
-{
-  "_owner": "Home Screen shell recovery: this 28-line dependency-free deadline runs at startup. Keeping it in the entry avoids an unbounded dynamic-import network wait before the shell-read timeout can start. Initial and total gzip budgets remain unchanged.",
-  "modules": ["src/lib/readDeployedShell.ts"]
-}

@@ -331,7 +331,7 @@ describe('CashierTradePage club load ordering', () => {
     await waitFor(() => expect(screen.getByText('Balances synchronized')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('tab', { name: 'Trade Record' }));
     expect(await screen.findByText('Transfer Alice Agent To Bob Player')).toBeInTheDocument();
-    expect(screen.getAllByText('50.00')).toHaveLength(2);
+    expect(screen.getAllByText('50')).toHaveLength(2);
     expect(supabase.rpc).toHaveBeenCalledWith('fn_club_trade_ledger', {
       p_club_id: CLUB_ID,
       p_limit: 51,

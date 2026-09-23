@@ -4369,6 +4369,10 @@ export class GameServer {
       quarantinedTournamentManagers:
         this.tournamentManagerQuarantine?.snapshot(Date.now()).slice(0, 20) ?? [],
       tournamentLease: tournamentLeaseDiagnostics(),
+      /* What the hourly reaper deliberately KEPT because its event still holds
+         unresolved F06 custody. Null means the reaper did not publish the
+         counts, which is UNKNOWN and not zero (CLAUDE.md 10.86 rule 1). */
+      leaseCustodyRetained: this.leaseCustodyRetention,
       leadership: leadershipDiagnostics(),
       stalledTableCount: stalledTables.length,
       // A retrying settlement can keep process liveness fresh forever. Publish
@@ -5420,7 +5424,13 @@ export class GameServer {
         return;
       }
       const row = (Array.isArray(data) ? data[0] : data) as
-        | { table_leases_deleted?: number; tournament_leases_deleted?: number }
+        | {
+            table_leases_deleted?: number;
+            tournament_leases_deleted?: number;
+            table_leases_retained?: number;
+            tournament_leases_retained?: number;
+            oldest_retained_seconds?: number;
+          }
         | undefined;
       const tables = row?.table_leases_deleted ?? 0;
       const tourneys = row?.tournament_leases_deleted ?? 0;
@@ -5429,10 +5439,56 @@ export class GameServer {
           `[GameServer] Reaped dead leases: ${tables} table, ${tourneys} tournament (unrenewed for ${LEASE_REAP_STALE_SECONDS}s)`
         );
       }
+      /* A LEASE KEPT ON PURPOSE IS NOT AN EMPTY SWEEP (2026-09-23).
+         The reaper preserves a dead holder's lease while its event still has
+         unresolved F06 custody (migration 20260919024039), which is correct.
+         Until today it had no way to say so: both outcomes returned two zeroes
+         and this method logs only a non-zero deletion, so 48 leases held for up
+         to 47.6 hours looked exactly like a sweep with nothing to do. That is
+         the conflation CLAUDE.md 10.86 rule 1 forbids, and it is why nobody
+         noticed for two days. A predecessor reaper that does not publish the
+         counts leaves this UNKNOWN, which is not zero and says so. */
+      const retainedTables = row?.table_leases_retained;
+      const retainedTournaments = row?.tournament_leases_retained;
+      const oldestSeconds = row?.oldest_retained_seconds;
+      this.leaseCustodyRetention =
+        Number.isSafeInteger(retainedTables) &&
+        Number.isSafeInteger(retainedTournaments) &&
+        Number.isSafeInteger(oldestSeconds)
+          ? Object.freeze({
+              tables: retainedTables as number,
+              tournaments: retainedTournaments as number,
+              oldestSeconds: oldestSeconds as number,
+              readAtMs: Date.now(),
+            })
+          : null;
+      const retained = (retainedTables ?? 0) + (retainedTournaments ?? 0);
+      if (this.leaseCustodyRetention && retained > 0) {
+        console.log(
+          `[GameServer] Retained ${retainedTournaments} tournament and ${retainedTables} table lease(s) ` +
+            `whose event still holds unresolved F06 custody; oldest unrenewed for ${oldestSeconds}s. ` +
+            `Expiry revokes authority, it does not certify retirement: a successor reclaims each one ` +
+            `through claim_tournament_lease_v2's stale-takeover clause.`
+        );
+      }
     } catch (err) {
       console.warn('[GameServer] lease reap threw:', (err as Error)?.message);
     }
   }
+
+  /**
+   * What the last reaper pass deliberately KEPT, or null for "not published".
+   *
+   * Null is UNKNOWN and never zero: a reaper that does not return the counts
+   * has not told this process that nothing was retained, and reporting that
+   * silence as a clean board is the whole defect this field exists to end.
+   */
+  private leaseCustodyRetention: Readonly<{
+    tables: number;
+    tournaments: number;
+    oldestSeconds: number;
+    readAtMs: number;
+  }> | null = null;
 
   /** Hourly reaper. Paired with the boot-time sweep, not a replacement for it. */
   /**

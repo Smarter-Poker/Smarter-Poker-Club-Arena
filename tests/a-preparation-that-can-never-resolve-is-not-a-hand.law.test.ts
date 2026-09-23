@@ -375,8 +375,68 @@ describe('4. the legacy checkpoint bounds the same condition, the same way', () 
     expect(readiness).not.toContain('deferredUnresolvableCustody');
   });
 
+  /* The same three outcomes, in the other capture. `physical()` has carried
+     this rule since #5020 and #5021; `captureEngine`, which walks every table
+     `physical()` does not, demanded a flat zero, so the release cleared the
+     permit refusal and stopped one require later on the same table with
+     `boundary=1/false, permitPhase=attempted` (run 35927313976). */
+  const boundary = GUARD.slice(
+    GUARD.indexOf('const boundaryGenerationsAllowed = ('),
+    GUARD.indexOf('const captureEngine = (')
+  );
+
+  it('the other capture no longer demands a flat zero boundary count', () => {
+    const drain = GUARD.slice(
+      GUARD.indexOf('require(engine.settlementInFlight instanceof Set &&'),
+      GUARD.indexOf("'engine_work_not_drained');")
+    );
+    // The regression, in the exact form that stopped run 35927313976 one
+    // require after the permit refusal it had just cleared. (`neverStarted`
+    // keeps its own flat zero and is a different, narrower predicate, so this
+    // is scoped to the drain require rather than to the whole file.)
+    expect(drain).not.toContain('engine.terminalBoundaryPendingGenerations.size === 0');
+    expect(drain).toContain(
+      'engine.terminalBoundaryPendingGenerations.size <=\n          boundaryGenerationsAllowed(tableId, engine)'
+    );
+    // Every other conjunct of the drain proof is untouched.
+    for (const conjunct of [
+      'engine.settlementInFlight.size === 0 &&',
+      'engine.postHandTasksPromise === null &&',
+      'engine.actionLock === false &&',
+      'engine.tournamentMoveOperations.size === 0 &&',
+      'engine.terminalBoundaryPersistenceFailed === false',
+    ])
+      expect(drain).toContain(conjunct);
+  });
+
+  it('an attempted permit admits exactly one, and any other phase admits none', () => {
+    expect(boundary).toContain("if (phase === 'attempted') return 1;");
+    expect(boundary).toContain("if (phase !== 'none') return 0;");
+  });
+
+  it('with no permit it is deferred to the same row proof, never waved through', () => {
+    expect(boundary).toContain('deferredUnresolvableCustody.set(tableId,');
+  });
+
+  it('the shape is proved before the count, and a live engine keeps its zero', () => {
+    for (const conjunct of [
+      'collection.size > maxEntriesPerTable ||',
+      'Number.isSafeInteger(value) && value > 0',
+      'engine.terminalBoundaryPersistenceFailed !== false ||',
+      'engine.running !== false ||',
+      'engine.terminal !== true ||',
+      'engine.handController !== null ||',
+      'engine.f06RecoveryInFlight !== false ||',
+      'engine.timeBankEngine.playerBanks.size !== 0',
+    ])
+      expect(boundary).toContain(conjunct);
+    // Unreadable is never an allowance.
+    expect(boundary).toContain('catch {');
+    expect(boundary).toContain('return 0;');
+  });
+
   it('has no bypass, and names what it stepped over', () => {
-    const region = deferral + proof + readiness;
+    const region = deferral + proof + readiness + boundary;
     expect(region).not.toMatch(/FORCE|SKIP|BYPASS|OVERRIDE|allowUnresolved/);
     // The record of a refusal that did not happen still has to reach a reader.
     expect(GUARD).toContain('unresolvableCustody = `tables=${ids.length} ');

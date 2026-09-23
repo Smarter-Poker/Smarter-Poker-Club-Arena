@@ -62,6 +62,8 @@ vi.mock('../../src/hooks/useGameFloor', () => ({
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/services/HapticService', () => ({ triggerHaptic: vi.fn() }));
+// The receipt's own chord: a crash never sings it (review 2026-09-22).
+import * as sound from '../../src/services/SoundService';
 vi.mock('../../src/services/SoundService', () => ({
   soundService: {
     playSpinStart: vi.fn(),
@@ -93,14 +95,17 @@ vi.mock('../../src/components/console/SpadeConsole', () => ({
   SpadeConsole: ({
     children,
     plates,
+    eyebrow,
   }: {
     children?: ReactNode;
+    eyebrow?: string;
     plates?: {
       primary?: { label: string; disabled?: boolean; onClick?: () => void };
       secondary?: { label: string; disabled?: boolean; onClick?: () => void };
     };
   }) => (
     <section>
+      <span data-eyebrow>{eyebrow}</span>
       {children}
       {plates?.secondary && (
         <button disabled={plates.secondary.disabled} onClick={plates.secondary.onClick}>
@@ -133,6 +138,8 @@ vi.mock('../../src/components/crash/CrashCurve', () => ({
       <button onClick={() => onTick?.(444)}>Tick 4.44x</button>
       <output aria-label="Frozen Figure">{tickerCents ?? ''}</output>
     </>
+  ),
+}));
 vi.mock('../../src/components/wheel/WheelWinReveal', () => ({
   WheelWinReveal: ({
     title,
@@ -333,6 +340,7 @@ describe('Crash settles one displayed round once', () => {
     expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
     expect(backend.start).not.toHaveBeenCalled();
     expect(backend.navigate).not.toHaveBeenCalled();
+  });
   /**
    * A CRASH SAYS NOTHING (review 2026-09-22). The page deliberately keeps
    * silent when a flight crashes, and then the receipt mounted over it and
@@ -351,14 +359,14 @@ describe('Crash settles one displayed round once', () => {
     // The receipt is the painted console (owner ruling 2026-09-21, R1: it waits
     // for a tap instead of returning by itself), so "silent" is the absence of
     // the win chord rather than an attribute on a reveal.
-    expect(receipt).toHaveTextContent('Guarantee Paid');
-    expect(soundService.playWin).not.toHaveBeenCalled();
+    expect(receipt.querySelector('[data-eyebrow]')).toHaveTextContent('Guarantee Paid');
+    expect(sound.soundService.playWin).not.toHaveBeenCalled();
     cleanup();
     backend.crashSettle.mockResolvedValueOnce(settled);
     await mountOpen();
     fireEvent.click(screen.getByRole('button', { name: 'Finish Flight' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('You Won');
-    expect(soundService.playWin).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog').querySelector('[data-eyebrow]')).toHaveTextContent('You Won');
+    expect(sound.soundService.playWin).not.toHaveBeenCalled();
   });
   it('sends both unfunded entry controls directly to the wheel without starting a game', async () => {
     backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });

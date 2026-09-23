@@ -214,6 +214,31 @@ jobs:
           node scripts/ci/check-cosmetic-catalog-drift.mjs 2>&1 | tee /tmp/drift-cosmetics.log
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
+      # ── THE CONTRACT PRODUCTION SPEAKS vs THE ONE MAIN CAN READ (2026-09-23) ──
+      #
+      # Four Diamond Spins migrations were applied straight to production and
+      # the client that matched them was never merged. fn_wheel_state_v2 began
+      # returning contract_version 4 and model_version 'wheel-v4'; the deployed
+      # client accepts 2 or 3 and throws on every load. Nine hours, no alarm.
+      #
+      # ci.yml carries the half a pull request can decide. It cannot help here,
+      # because this failure HAD NO PULL REQUEST - which is the normal shape of
+      # a schema change in this estate. Only a live reader can see it, so this
+      # is where it lives, next to the other detectors that ask production
+      # directly. Read-only: pg_get_functiondef, pg_get_constraintdef,
+      # pg_proc.prosrc, and the live STABLE segments function executed as a
+      # SELECT. No DDL, no writes, no cache, no fixture.
+      #
+      # Exit 2 is COULD NOT TELL and is never folded into "they agree".
+      - name: Production and the client on main speak the same Diamond Spins contract
+        id: diamondcontract
+        env:
+          SUPABASE_DB_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set +e
+          node scripts/ci/check-diamond-contract-parity.mjs --live 2>&1 | tee /tmp/drift-diamond-contract.log
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
       - name: Only the functions anon is meant to reach are reachable
         id: anondefiners
         env:
@@ -230,19 +255,20 @@ jobs:
           BBJ: ${{ steps.bbj.outputs.code }}
           COS: ${{ steps.cosmetics.outputs.code }}
           ANON: ${{ steps.anondefiners.outputs.code }}
+          DIAMOND: ${{ steps.diamondcontract.outputs.code }}
         run: |
           set -euo pipefail
-          for code in "$RT" "$BBJ" "$COS" "$ANON"; do
+          for code in "$RT" "$BBJ" "$COS" "$ANON" "$DIAMOND"; do
             [[ "$code" =~ ^[0-9]+$ ]] || {
               echo "::error::A live-drift detector produced no trustworthy verdict."
               exit 1
             }
           done
-          if [ "$RT" = 0 ] && [ "$BBJ" = 0 ] && [ "$COS" = 0 ] && [ "$ANON" = 0 ]; then
+          if [ "$RT" = 0 ] && [ "$BBJ" = 0 ] && [ "$COS" = 0 ] && [ "$ANON" = 0 ] && [ "$DIAMOND" = 0 ]; then
             echo 'All live-drift readers and repository rebuild guards returned clean evidence.'
             exit 0
           fi
-          echo "::error title=INTEGRITY DRIFT OR UNKNOWN::realtime=$RT bbj_rebuild=$BBJ cosmetics=$COS anon_definers=$ANON. Read the detector logs; no repair was attempted."
+          echo "::error title=INTEGRITY DRIFT OR UNKNOWN::realtime=$RT bbj_rebuild=$BBJ cosmetics=$COS anon_definers=$ANON diamond_contract=$DIAMOND. Read the detector logs; no repair was attempted."
           exit 1
 
   # ─────────────────────────────────────────────────────────────────────────────

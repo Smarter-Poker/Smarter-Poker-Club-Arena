@@ -203,11 +203,15 @@ function chipJitter(denomValue: number, ordinal: number, salt: number): number {
  * that add up to `amount` on Dan's ladder, so a 21 pot is four red and one
  * white and it is readable at a glance without reading the number.
  *
- * `size` is the only difference between the two places it appears: `pot` is
- * the collected pot floating above the POT pill, `street` is the inline icon
- * in the live-bets pill under it, which has one line of pill height to live in.
+ * It had a second `size: 'street'` form for a live-bets pill under the POT
+ * pill. Nothing has rendered that pill since 2026-08-20, so nothing could ever
+ * reach the branch - and it asked visualChipStacks for THREE denominations
+ * against an eleven-denomination ladder, which drew chips that did not add up
+ * on 97.5% of amounts. Unreachable code that is also wrong is a trap for
+ * whoever wires it up next, so it is gone; `tests/chips-on-the-felt.test.tsx`
+ * still pins the absence of a street pile on the felt.
  */
-function PotChipPile({ amount, size }: { amount: number; size: 'pot' | 'street' }) {
+function PotChipPile({ amount }: { amount: number }) {
   // The pot can hold far more denominations than a single bet, and it has the
   // middle of the felt to spread across, so it gets more room than a seat.
   // Dan 2026-08-24: one tower, highest denomination on the bottom, chips
@@ -217,17 +221,16 @@ function PotChipPile({ amount, size }: { amount: number; size: 'pot' | 'street' 
   // pill height, so it gets four.
   const stacks = useMemo(
     () =>
-      visualChipStacks(
-        amount,
-        size === 'pot'
-          ? // EVERY denomination, always - see "THE PILE HAS TO ADD UP" below.
-            // `maxTotal` is what bounds the width; `maxStacks` must never be
-            // the thing that bounds it, because dropping a group drops its
-            // VALUE off the felt.
-            { maxStacks: CHIP_DENOMINATIONS.length, maxPerStack: 10, maxTotal: 10 }
-          : { maxStacks: 3, maxPerStack: 4, maxTotal: 4 }
-      ),
-    [amount, size]
+      visualChipStacks(amount, {
+        // EVERY denomination, always - see "THE PILE HAS TO ADD UP" below.
+        // `maxTotal` is what bounds the width; `maxStacks` must never be the
+        // thing that bounds it, because dropping a group drops its VALUE off
+        // the felt.
+        maxStacks: CHIP_DENOMINATIONS.length,
+        maxPerStack: 10,
+        maxTotal: 10,
+      }),
+    [amount]
   );
 
   // One horizontal spread, denominations MIXED - Dan 2026-09-14, "they should
@@ -295,7 +298,7 @@ function PotChipPile({ amount, size }: { amount: number; size: 'pot' | 'street' 
 
   return (
     /* aria-hidden: the amount is already announced by the pill's aria-label. */
-    <div className={`pot-display__pile pot-display__pile--${size}`} aria-hidden="true">
+    <div className="pot-display__pile pot-display__pile--pot" aria-hidden="true">
       <div className="pot-display__pile-stack" style={{ '--pile-group': 0 } as React.CSSProperties}>
         {flattenedChips.map((chip) => (
           <span
@@ -463,7 +466,7 @@ function PotDisplayComponent({
       </div>
 
       {/* ── CHIP PILE ── */}
-      {showChipAnimation && displayPot > 0 && <PotChipPile amount={displayPot} size="pot" />}
+      {showChipAnimation && displayPot > 0 && <PotChipPile amount={displayPot} />}
 
       {/* Side Pots */}
       {sidePots.length > 0 && (

@@ -568,3 +568,128 @@ describe('the pot re-renders for every prop it is drawn from', () => {
     expect(container.querySelectorAll(POT_CHIP).length).toBe(0);
   });
 });
+
+// ============================================================================
+// THE CHIPS IN FRONT OF A SEAT ADD UP TOO
+// ============================================================================
+
+/**
+ * The pot's pile was fixed on 2026-09-20 by handing `visualChipStacks` the whole
+ * ladder. The SEAT was still asking for four denominations (compact) and five
+ * (full), and `maxStacks` is a slice - `chips.slice(0, maxStacks)` - so a group
+ * it removes takes its VALUE with it, reports no `truncated`, and prints no
+ * badge. Swept through the shipped functions over every integer amount:
+ *
+ *     range          maxStacks: 4      maxStacks: 5
+ *     1 - 200          0.0%              0.0%
+ *     1 - 2,000       39.2%              9.6%
+ *     1 - 20,000      74.7%             42.2%
+ *     1 - 200,000     88.3%             65.2%
+ *
+ * A 7,432 bet drew 7,425 in chips. `maxTotal` is the cap that belongs here: it
+ * clamps the DISCS and the group it shortens keeps its true count with a badge.
+ */
+
+/** What the chips in front of a seat are worth, read the way a player reads them. */
+function seatChipValue(container: HTMLElement): number {
+  const byValue = new Map<number, number>();
+  for (const chip of Array.from(container.querySelectorAll<HTMLElement>('.cp-chip'))) {
+    const color = chip.style.getPropertyValue('--chip-color').trim();
+    const denom = CHIP_DENOMINATIONS.find((d) => d.color === color);
+    if (!denom)
+      throw new Error(`a seat disc was painted an off-ladder colour: ${color || '(none)'}`);
+    const badge = chip.querySelector('.cp-stack__multi');
+    if (badge) {
+      // A clamped denomination prints its TRUE count; that number is the truth
+      // and the discs drawn for it are only a token.
+      byValue.set(denom.value, Number((badge.textContent ?? '').replace(/[^0-9]/g, '')));
+    } else if (!byValue.has(denom.value) || !chip.querySelector('.cp-stack__multi')) {
+      byValue.set(denom.value, (byValue.get(denom.value) ?? 0) + 1);
+    }
+  }
+  // A badge overrides the disc tally for its denomination.
+  for (const chip of Array.from(container.querySelectorAll<HTMLElement>('.cp-chip'))) {
+    const badge = chip.querySelector('.cp-stack__multi');
+    if (!badge) continue;
+    const color = chip.style.getPropertyValue('--chip-color').trim();
+    const denom = CHIP_DENOMINATIONS.find((d) => d.color === color)!;
+    byValue.set(denom.value, Number((badge.textContent ?? '').replace(/[^0-9]/g, '')));
+  }
+  return Array.from(byValue).reduce((sum, [value, n]) => sum + value * n, 0);
+}
+
+describe('a bet in front of a seat draws every denomination it holds', () => {
+  // Drawn from the failure class above: each of these needs more than five
+  // denominations, which is exactly where the slice used to bite.
+  const BETS = [7432, 1626, 3777, 8888, 2468, 18888, 76543, 131313, 26631, 1131];
+
+  it.each(BETS)('a compact bet of %i is drawn as chips that add up to it', (bet) => {
+    const { container } = render(<ChipPhysics amount={bet} compact />);
+    expect(seatChipValue(container)).toBe(bet);
+  });
+
+  it.each(BETS)('a full-size bet of %i is drawn as chips that add up to it', (bet) => {
+    const { container } = render(<ChipPhysics amount={bet} />);
+    expect(seatChipValue(container)).toBe(bet);
+  });
+
+  it('still leads with the same chip the pot would, and still prints the amount', () => {
+    const { container } = render(<ChipPhysics amount={7432} compact />);
+    const colors = chipColors(container, '.cp-chip', '--chip-color');
+    expect(colors[0]).toBe(byValue(5000).color);
+    expect(container.querySelector('.cp-amount')?.textContent).toBeTruthy();
+  });
+
+  it('keeps the tower inside its disc budget while it does it', () => {
+    // maxTotal is what bounds the height, and it is unchanged. Every group
+    // keeps at least one disc, so the ceiling is the ladder itself.
+    for (const bet of BETS) {
+      const { container } = render(<ChipPhysics amount={bet} compact />);
+      expect(container.querySelectorAll('.cp-chip').length).toBeLessThanOrEqual(
+        CHIP_DENOMINATIONS.length
+      );
+      cleanup();
+    }
+  });
+});
+
+// ============================================================================
+// NOTHING ON THE FELT MAY SLICE THE LADDER AGAIN
+// ============================================================================
+
+describe('the ladder is never sliced', () => {
+  it('no chip surface hard-codes a maxStacks smaller than the ladder', () => {
+    // This is the guard that matters. Every past instance of this bug was a
+    // literal: { maxStacks: 3 }, { maxStacks: 4 }, { maxStacks: 5 }. The cap
+    // that belongs in these layouts is maxTotal, which clamps discs and keeps
+    // the value; maxStacks must always be the whole ladder.
+    const offenders: string[] = [];
+    for (const file of [
+      'src/components/table/ChipPhysics.tsx',
+      'src/components/table/PotDisplay.tsx',
+    ]) {
+      const src = readSrc(file);
+      for (const m of src.matchAll(/maxStacks:\s*([^,\n]+)/g)) {
+        const value = m[1].trim();
+        if (/^\d+$/.test(value)) offenders.push(`${file} -> maxStacks: ${value}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('has retired the street pile, which asked for three of eleven', () => {
+    // Unreachable since 2026-08-20 and wrong on 97.5% of amounts - a trap for
+    // whoever wired it up next.
+    // Asserted on the CODE, not the prose - the comment above PotChipPile
+    // still names the variant it retired, and should.
+    const tsx = readSrc('src/components/table/PotDisplay.tsx').replace(
+      /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+      ''
+    );
+    expect(tsx).not.toContain('pile--street');
+    expect(tsx).not.toMatch(/size:\s*'pot'\s*\|\s*'street'/);
+    expect(readSrc('src/components/table/PotDisplay.css')).not.toContain('pile--street');
+    const { container } = render(<PotDisplay mainPot={144} />);
+    expect(container.querySelectorAll(STREET_CHIP).length).toBe(0);
+  });
+});

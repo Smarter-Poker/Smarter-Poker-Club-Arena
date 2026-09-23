@@ -111,7 +111,12 @@ const TournamentResultsPage = lazyWithRetry(
 );
 const TablePage = lazyWithRetry(() => import('./pages/TablePage'));
 const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'));
-const DailyChallengesPage = lazyWithRetry(() => import('./pages/DailyChallengesPage'));
+// Keep the complete Daily Challenges presentation graph behind its route.
+// Auth/loading/crash paint is deliberately owned by the lazy route module so
+// players who never open Challenges do not pay for its artwork or instruments.
+const DailyChallengesRoute = lazyWithRetry(
+  () => import('./components/challenges/DailyChallengesRoute')
+);
 const SettingsPage = lazyWithRetry(() => import('./pages/SettingsPage'));
 const UnionsPage = lazyWithRetry(() => import('./pages/UnionsPage'));
 const UnionDetailPage = lazyWithRetry(() => import('./pages/UnionDetailPage'));
@@ -159,6 +164,7 @@ const DiamondEarnPage = lazyWithRetry(() => import('./pages/DiamondEarnPage'));
 const ClubDiamondGamesOperationsPage = lazyWithRetry(
   () => import('./pages/club/ClubDiamondGamesOperationsPage')
 );
+const ClubDiamondCostsPage = lazyWithRetry(() => import('./pages/club/ClubDiamondCostsPage'));
 const FriendsPage = lazyWithRetry(() => import('./pages/FriendsPage'));
 const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
 const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
@@ -219,6 +225,9 @@ const SessionHistoryPage = lazyWithRetry(() => import('./pages/SessionHistoryPag
 const AntiCheatPage = lazyWithRetry(() => import('./pages/AntiCheatPage'));
 const XMTTPage = lazyWithRetry(() => import('./pages/XMTTPage'));
 const MarketplacePage = lazyWithRetry(() => import('./pages/MarketplacePage'));
+// One marketplace (Dan, 2026-09-21): the route hands the web to the World Hub
+// marketplace and keeps MarketplacePage for the native app and checkout returns.
+const MarketplaceRoute = lazyWithRetry(() => import('./pages/MarketplaceRoute'));
 const UnionGamesPage = lazyWithRetry(() => import('./pages/UnionGamesPage'));
 const AdminDashboardPage = lazyWithRetry(() => import('./pages/AdminDashboardPage'));
 const AgentDashboardPage = lazyWithRetry(() => import('./pages/AgentDashboardPage'));
@@ -1079,6 +1088,18 @@ function FullApp() {
                   }
                 />
                 <Route
+                  path="unions/:unionId/diamond-costs"
+                  element={
+                    <AuthGuard>
+                      <UnionOverseerGuard>
+                        <PageErrorBoundary pageName="Club And Union Diamond Costs">
+                          <ClubDiamondCostsPage scopeKind="union" />
+                        </PageErrorBoundary>
+                      </UnionOverseerGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
                   path="unions/:unionId/table-management"
                   element={
                     <AuthGuard>
@@ -1158,16 +1179,7 @@ function FullApp() {
                 />
 
                 {/* User */}
-                <Route
-                  path="challenges/:cycle?"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Daily Challenges">
-                        <DailyChallengesPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
+                <Route path="challenges/:cycle?" element={<DailyChallengesRoute />} />
                 <Route
                   path="profile"
                   element={
@@ -1588,6 +1600,18 @@ function FullApp() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Diamond Games Operations">
                           <ClubDiamondGamesOperationsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/diamond-costs"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club And Union Diamond Costs">
+                          <ClubDiamondCostsPage scopeKind="club" />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>
@@ -2137,11 +2161,23 @@ function FullApp() {
                 <Route
                   path="marketplace"
                   element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Marketplace">
-                        <MarketplacePage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
+                    <PageErrorBoundary pageName="Marketplace">
+                      {/* THE SAME PAGES AS THE WORLD HUB MARKETPLACE (Dan,
+                          2026-09-21). On the web this opens the matching
+                          /hub/diamond-store, /hub/vip-membership or
+                          /hub/club-shop page, which a signed-out visitor may
+                          read as well - so the guard belongs on the in-app
+                          storefront, which is rendered in the native app and
+                          for the two addresses only it can finish (a card
+                          checkout return, and a top-up carrying ?next=). */}
+                      <MarketplaceRoute
+                        storefront={
+                          <AuthGuard>
+                            <MarketplacePage />
+                          </AuthGuard>
+                        }
+                      />
+                    </PageErrorBoundary>
                   }
                 />
                 <Route

@@ -205,6 +205,22 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
   const height = Math.round(width * 1.13);
   const initialSize = useRef({ width, height });
   const sceneRef = useRef<ReturnType<typeof gameRenderer> | null>(null);
+  /** The last drop reported landed, by its dropKey, whichever path reported it. */
+  const landedKey = useRef<number | null>(null);
+  // A drop the scene cannot draw lands at once (2026-09-22). Its result is
+  // already booked; only the picture is missing. Without this a renderer that
+  // could not start, or a context lost mid-drop, never drew the frame that
+  // reports the landing, and the page waiting on it held every exit until the
+  // player pressed Show Results. CrashCurve settles an undrawable round the
+  // same way.
+  useEffect(() => {
+    const p = latest.current;
+    const count = p.batchPathBits?.length ?? 0;
+    if (!failed || (!count && !p.path) || landedKey.current === p.dropKey) return;
+    landedKey.current = p.dropKey;
+    if (count) p.onProgress?.(count);
+    p.onLanded?.();
+  }, [failed, props.batchPathBits, props.path, props.dropKey]);
   useEffect(() => {
     if (!canvas.current) return;
     let kit: ReturnType<typeof gameRenderer>;
@@ -382,6 +398,13 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         writeTally(0, 0);
         pegs.reveal([], -1);
       }
+      if (landedKey.current === key) {
+        // Landed already, without the scene: a context that comes back never
+        // flies or reports the same drop a second time.
+        landed = true;
+        pendingLanding = false;
+        pendingProgress = null;
+      }
       ball.visible = !p.batchPathBits?.length;
       batchBalls.forEach((mesh) => {
         mesh.visible = false;
@@ -499,6 +522,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         }
         if (pendingLanding) {
           pendingLanding = false;
+          landedKey.current = key;
           p.onLanded?.();
         }
       }
@@ -528,7 +552,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     <div className={styles.board} data-motion="keep">
       {failed ? (
         <p className="sc-copy">
-          The 3D Scene Is Unavailable. Use Show Results To See Your Saved Bonus.
+          The 3D Scene Is Unavailable. Your Saved Results Are Shown Without It.
         </p>
       ) : null}
       <canvas

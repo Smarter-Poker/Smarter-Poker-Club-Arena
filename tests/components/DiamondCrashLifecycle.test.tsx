@@ -1,4 +1,5 @@
-vi.mock('../../src/hooks/useLiveBonusGuard', () => ({ useLiveBonusGuard: vi.fn() }));
+// The real hook returns the release a page's exits call before they leave.
+vi.mock('../../src/hooks/useLiveBonusGuard', () => ({ useLiveBonusGuard: vi.fn(() => () => {}) }));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
@@ -34,7 +35,10 @@ vi.mock('../../src/services/DiamondGamesService', () => ({
   default: backend,
   normaliseCrash: (raw: unknown) => raw,
 }));
-vi.mock('../../src/services/DiamondBonusService', () => ({
+vi.mock('../../src/services/DiamondBonusService', async (original) => ({
+  // The real module's other exports (BonusUnreadable and the copy the page
+  // prints) stay, so every catch path the page takes can read them.
+  ...(await original<typeof import('../../src/services/DiamondBonusService')>()),
   DiamondBonusService: { start: backend.start },
   BonusRefusal: class extends Error {},
 }));
@@ -122,12 +126,17 @@ vi.mock('../../src/components/wheel/WheelWinReveal', () => ({
     title,
     detail,
     onOpen,
+    eyebrow,
+    silent,
   }: {
     title: string;
     detail: string;
     onOpen: () => void;
+    eyebrow?: string;
+    silent?: boolean;
   }) => (
-    <div role="dialog" aria-label={title}>
+    <div role="dialog" aria-label={title} data-silent={String(Boolean(silent))}>
+      <span data-eyebrow>{eyebrow}</span>
       {detail}
       <button onClick={onOpen}>Finish Prize</button>
     </div>
@@ -222,7 +231,8 @@ function quoteSuperAward() {
 }
 const guaranteedBay = () => screen.getByText('Guaranteed').nextElementSibling!;
 /** The console readout under the curve: the one status region that carries a printed label. */
-const readout = () => screen.getAllByRole('status').find((node) => node.querySelector('.sc-label'))!;
+const readout = () =>
+  screen.getAllByRole('status').find((node) => node.querySelector('.sc-label'))!;
 async function mountOpen() {
   backend.getState.mockResolvedValueOnce({ ...state, open_round: open });
   const view = render(<DiamondCrashPage />);
@@ -276,6 +286,30 @@ describe('Crash settles one displayed round once', () => {
       '/clubs/00000000-0000-0000-0000-000000000003/wheel',
       { replace: true }
     );
+  });
+  /**
+   * A CRASH SAYS NOTHING (review 2026-09-22). The page deliberately keeps
+   * silent when a flight crashes, and then the receipt mounted over it and
+   * played a major arpeggio and a success buzz anyway. A cashed round is not
+   * sung twice either: the page already sang it at its own multiplier.
+   */
+  it('never lets the receipt celebrate a crash, or sing a cash-out twice', async () => {
+    backend.crashSettle.mockResolvedValueOnce({
+      ...settled,
+      status: 'crashed',
+      outcome: { ...settled.outcome, status: 'crashed', payout_chips: 0.1 },
+    });
+    await mountOpen();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Flight' }));
+    const receipt = screen.getByRole('dialog');
+    expect(receipt).toHaveAttribute('data-silent', 'true');
+    expect(receipt.querySelector('[data-eyebrow]')).toHaveTextContent('Guarantee Paid');
+    cleanup();
+    backend.crashSettle.mockResolvedValueOnce(settled);
+    await mountOpen();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Flight' }));
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-silent', 'true');
+    expect(screen.getByRole('dialog').querySelector('[data-eyebrow]')).toBeEmptyDOMElement();
   });
   it('sends both unfunded entry controls directly to the wheel without starting a game', async () => {
     backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });
@@ -446,7 +480,8 @@ describe('Crash uses its earned entry without blocking existing cashouts', () =>
     expect(readout()).toHaveTextContent(
       'Super Crash Pays At Least 1.50 Chips, Even If It Crashes Before You Cash Out.'
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Start 300' }));
+    // A won game counts down to its own start; pressing sooner still works.
+    fireEvent.click(screen.getByRole('button', { name: /^Starting In \ds$/ }));
     expect(backend.start).toHaveBeenCalledWith(
       expect.objectContaining({
         // Crash plays one round on the whole entry; the drop value the shared
@@ -489,21 +524,23 @@ describe('Crash uses its earned entry without blocking existing cashouts', () =>
     expect(guaranteedBay()).toHaveAttribute('data-ink', 'gold');
     expect(backend.start).not.toHaveBeenCalled();
   });
-  it('provides explicit retry after ticket preparation fails without submitting a round', async () => {
+  it('prepares the game again by itself after a failed ticket, without submitting a round', async () => {
     backend.commit.mockRejectedValueOnce(new Error('Connection Lost'));
     render(<DiamondCrashPage />);
     await act(async () => {});
-    expect(screen.getByText('Your Game Could Not Be Prepared. Tap Retry Game.')).toBeVisible();
+    expect(screen.getByText('Preparing Your Game')).toBeVisible();
+    // Nobody is asked to retry: the page does it, a second later, not in a loop.
+    expect(screen.queryByRole('button', { name: /Retry/ })).toBeNull();
     expect(backend.commit).toHaveBeenCalledTimes(1);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1500);
+      await vi.advanceTimersByTimeAsync(900);
     });
     expect(backend.commit).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Retry Game' }));
-    await act(async () => {});
-    expect(screen.getByRole('button', { name: 'Start 100' })).toBeEnabled();
-    expect(backend.start).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
     expect(backend.commit).toHaveBeenCalledTimes(2);
+    expect(backend.start).not.toHaveBeenCalled();
   });
   it('keeps the existing open round cashout plate usable when no new award exists', async () => {
     backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });
@@ -541,8 +578,34 @@ describe('Crash shows its guarantee before the round starts', () => {
     expect(readout()).toHaveTextContent(sentence);
     // The award panel says it too, in the same words, before the plate is pressed.
     expect(screen.getAllByText(sentence).length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
+    // The offer is answered, so the won game is counting down to its own start.
+    expect(screen.getByRole('button', { name: /^Starting In \ds$/ })).toBeEnabled();
     expect(backend.start).not.toHaveBeenCalled();
+  });
+
+  it('starts a won round by itself five seconds after the Double Down answer, never over the offer', async () => {
+    quoteSuperAward();
+    backend.start.mockReturnValue(new Promise(() => {}));
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    // The offer spends the player's own diamonds, so nothing starts over it.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(backend.start).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog', { name: 'Double Down Your Bonus' });
+    fireEvent.animationEnd(dialog.querySelector('[data-motion="keep"]')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Keep My Bonus' }));
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Starting In 5s' })).toBeEnabled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_500);
+    });
+    expect(backend.start).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+    expect(backend.start).toHaveBeenCalledTimes(1);
   });
 
   it('says Pending while the wheel award is still being checked', async () => {

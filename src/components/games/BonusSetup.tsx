@@ -8,8 +8,7 @@ import {
 } from '../../utils/bonusGameBudget';
 import { diamondGameTitle, type DiamondBonusGame } from '../../utils/diamondGameTitles';
 import type { BonusGuarantee } from '../../services/WheelBonusEntryService';
-import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import DoubleDownOffer from './DoubleDownOffer';
 import styles from './BonusSetup.module.css';
 
@@ -43,7 +42,8 @@ export default function BonusSetup({
   entryReady = true,
   awardLoading = false,
   awardError,
-  onRefresh,
+  onOffer,
+  leave,
 }: {
   budget: BonusBudget;
   onChange: (value: BonusBudget) => void;
@@ -56,45 +56,58 @@ export default function BonusSetup({
   entryReady?: boolean;
   awardLoading?: boolean;
   awardError?: string | null;
-  onRefresh?: () => void;
+  /** Told whether the Double Down offer is on screen. A won game starts itself,
+   * but never over a question about the player's own diamonds that is still
+   * waiting for an answer. */
+  onOffer?: (open: boolean) => void;
+  /** How the page lets the player leave for another page: it lets go of its
+   * bonus hold, then navigates. The hold keeps a won game on screen so it can
+   * start itself, and a plain navigate from here ran straight into it, so Buy
+   * More, Earn Diamonds and Spin The Wheel went nowhere (review 2026-09-22).
+   * Called only while the setup is enabled: every page disables it while money
+   * is in flight and takes it off screen while a round is open. */
+  leave: (to: string) => void;
 }) {
-  const navigate = useNavigate();
   const [answeredAward, setAnsweredAward] = useState<string | null>(null);
   const valid = validBonusBudget(budget),
     total = bonusTotal(budget);
   const plinko = game === 'plinko';
   const change = (next: BonusBudget) => onChange(next);
+  const exit = (to: string) => {
+    if (!disabled) leave(to);
+  };
   const debit = bonusWalletDebit(budget);
   const promise = guarantee ? guaranteeCopy(game, guarantee) : null;
+  const offering = Boolean(
+    entryReady && budget.award && valid && !disabled && answeredAward !== budget.award.id
+  );
+  const tellOffer = useRef(onOffer);
+  tellOffer.current = onOffer;
+  useEffect(() => {
+    tellOffer.current?.(offering);
+  }, [offering]);
   if (!entryReady)
     return (
       <section className={styles.setup} aria-label="Your Bonus Setup">
-        <p className={styles.total} role={awardError ? 'alert' : 'status'}>
+        {/* A failed award read retries itself (useEarnedBonus), so there is
+            nothing here for the player to press. */}
+        <p className={styles.total} role="status">
           {awardError ??
             (awardLoading
               ? 'Checking Your Wheel Award'
               : 'Win This Game On Diamond Spins To Play.')}
         </p>
         <div className={styles.links}>
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => navigate(`/clubs/${clubId}/wheel`)}
-          >
+          <button type="button" disabled={disabled} onClick={() => exit(`/clubs/${clubId}/wheel`)}>
             Spin The Wheel
           </button>
           <button
             type="button"
             disabled={disabled}
-            onClick={() => navigate('/marketplace?tab=diamonds')}
+            onClick={() => exit('/marketplace?tab=diamonds')}
           >
             Buy More
           </button>
-          {awardError && onRefresh && (
-            <button type="button" disabled={disabled} onClick={onRefresh}>
-              Refresh
-            </button>
-          )}
         </div>
       </section>
     );
@@ -162,22 +175,18 @@ export default function BonusSetup({
         </p>
       )}
       <div className={styles.links}>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => navigate('/marketplace?tab=diamonds')}
-        >
+        <button type="button" disabled={disabled} onClick={() => exit('/marketplace?tab=diamonds')}>
           Buy More
         </button>
         <button
           type="button"
           disabled={disabled}
-          onClick={() => navigate(`/clubs/${clubId}/earn-diamonds`)}
+          onClick={() => exit(`/clubs/${clubId}/earn-diamonds`)}
         >
           Earn Diamonds
         </button>
       </div>
-      {budget.award && valid && !disabled && answeredAward !== budget.award.id && (
+      {offering && budget.award && (
         <DoubleDownOffer
           key={budget.award.id}
           budget={budget}
@@ -186,7 +195,7 @@ export default function BonusSetup({
             setAnsweredAward(budget.award!.id);
             change({ ...budget, doubled });
           }}
-          onBuyMore={() => navigate('/marketplace?tab=diamonds')}
+          onBuyMore={() => exit('/marketplace?tab=diamonds')}
         />
       )}
     </section>

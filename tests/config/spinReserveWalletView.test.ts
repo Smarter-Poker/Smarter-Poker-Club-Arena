@@ -87,17 +87,37 @@ describe('the reserve offers no way to move money out', () => {
 
   it('hides the kind selector, the member picker and the send button', () => {
     // Two guards: one over the kind selector, one over the whole outbound flow
-    // (picker + amount + send). If either escapes, an operator can spend the
-    // pool that pays Spin prizes.
+    // (picker + amount). If either escapes, an operator can spend the pool that
+    // pays Spin prizes.
     const guards = modal.match(/\{!readOnly && \(/g) || [];
     expect(guards.length).toBeGreaterThanOrEqual(2);
 
-    // The money action now lives in the painted console foot, so it is hoisted
-    // above the body in JSX. Pin the guard on that action authority directly:
-    // a reserve or ledger view receives no action plates at all.
-    expect(modal).toContain("!readOnly && mode !== 'ledger'");
-    expect(modal).toContain('disabled: sendDisabled');
-    expect(modal).toContain('onClick: () => void send()');
+    // The picker must sit AFTER the first guard - i.e. inside a guarded region
+    // - and never before one.
+    const firstGuard = modal.indexOf('{!readOnly && (');
+    expect(firstGuard).toBeGreaterThan(-1);
+    expect(modal.indexOf('Search Clubs Or Members')).toBeGreaterThan(firstGuard);
+
+    /* THE SEND BUTTON IS THE FOOT'S PAINTED PRIMARY PLATE since this modal moved
+       onto the console (#ClubArenaConsole, 2026-09-14). A plate is a prop on
+       <SpadeConsole>, so its label is computed above the JSX and it cannot sit
+       inside a `{!readOnly && (` wrapper the way a nested element could - the
+       guard is a ternary instead. This case used to prove "the string 'Pick A
+       Member' appears after the first guard", which is the same protection
+       written against the old markup; it is pinned here against the new one.
+
+       The riveted master's base always paints both plates, so the reserve does
+       not get a plate-less foot - it gets a DISABLED one that says READ ONLY,
+       and `send` is reachable only through the `showSend` branch. */
+    expect(modal).toMatch(/const showSend = !readOnly && mode !== 'ledger';/);
+    const primaryAt = modal.indexOf('primary: showSend');
+    expect(primaryAt).toBeGreaterThan(-1);
+    // The ONLY call to send() is the one inside that branch.
+    const sends = modal.match(/void send\(\)/g) || [];
+    expect(sends.length).toBe(1);
+    expect(modal.indexOf('void send()')).toBeGreaterThan(primaryAt);
+    expect(modal).toMatch(/Pick A Member Or Club/);
+    expect(modal).toMatch(/label: 'Read Only'/);
   });
 
   it('does not fetch the roster it would never show', () => {

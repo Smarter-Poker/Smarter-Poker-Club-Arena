@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type {
   LeaderboardPrize,
@@ -7,6 +7,9 @@ import type {
 } from '../../services/LeaderboardService';
 import { LeaderboardService } from '../../services/LeaderboardService';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { SpadeConsole } from '../console/SpadeConsole';
+import { compactChips } from '../../utils/format';
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import {
   MAX_PRIZE_PLAN_BUDGET,
   clampPrizeBudget,
@@ -19,11 +22,66 @@ import {
 } from '../../utils/leaderboardPrizePlans';
 import './LeaderboardPrizeWizard.css';
 
+/** Another club of the same union whose prizes this owner manages. */
+export interface LeaderboardTemplateClub {
+  club_id: string;
+  club_name: string;
+}
+
+/** What happened when the plan was sent to one template club. */
+export interface LeaderboardTemplateResult extends LeaderboardTemplateClub {
+  ok: boolean;
+  message: string;
+}
+
 interface LeaderboardPrizeWizardProps {
   isOpen: boolean;
   setup: LeaderboardSettings;
   onClose: () => void;
-  onSaved: (setup: LeaderboardSettings) => void;
+  /* templateResults is present only when the plan was also sent to other
+     union clubs, so a single-club publish keeps its original call shape. */
+  onSaved: (setup: LeaderboardSettings, templateResults?: LeaderboardTemplateResult[]) => void;
+  /* Union template targets: the other clubs of this union the owner manages.
+     Empty for a standalone club. */
+  templateClubs?: LeaderboardTemplateClub[];
+  /* A refused publish (a version conflict, a funding refusal, a lost
+     response) means the snapshot the wizard was opened with may no longer be
+     the club's current program. The page uses this to refetch the owner
+     record when the dialog closes, so the next attempt starts from truth. */
+  onSaveError?: (error: Error) => void;
+}
+
+/* The two refusals the publish RPC raises on purpose, restated for the owner.
+   The funding refusal carries both amounts with two decimals ("Requires
+   1000000.00 Promo Chips But Only 250000.00 Are Available ..."): a seven-digit
+   figure trips the house sanitiser, which would swap the reason for a generic
+   line exactly for the largest clubs, and forward-facing copy never prints
+   decimals. Neither restatement re-prices anything: closing the wizard
+   refetches the owner record, and the reopened plan step shows the current
+   capacity and version. Everything else goes through the house sanitiser. */
+const FUNDING_REFUSAL =
+  /Leaderboard Prize Program Requires .+ Promo Chips But Only .+ Are Available/i;
+const VERSION_REFUSAL = /Leaderboard Prize Setup Changed In Another Session/i;
+
+function describeSaveError(
+  error: Error,
+  fundingLabel: string,
+  context: 'setup' | 'template' = 'setup'
+): string {
+  // In the template results the next step is Retry Refused, which re-reads
+  // that club's current version and capacity first; in the setup itself it is
+  // reopening the setup, which refetches the owner record.
+  if (FUNDING_REFUSAL.test(error.message)) {
+    return context === 'template'
+      ? `${fundingLabel} Cannot Cover This Club's Plan After Other Published Commitments.`
+      : `${fundingLabel} No Longer Covers This Plan After Other Published Commitments. Close And Reopen To See The Current Capacity.`;
+  }
+  if (VERSION_REFUSAL.test(error.message)) {
+    return context === 'template'
+      ? "This Club's Prize Setup Changed In Another Session."
+      : 'This Prize Setup Changed In Another Session. Close And Reopen To Load The Current Version.';
+  }
+  return safeErrorMessage(error, 'Prize Setup Could Not Be Saved');
 }
 
 const METRICS: Array<{ value: LeaderboardSettings['payout_metric']; label: string }> = [
@@ -39,6 +97,8 @@ const PLAN_KEYS: Array<Exclude<LeaderboardPrizePlanKey, 'custom'>> = [
   'even',
 ];
 
+const NO_TEMPLATE_CLUBS: LeaderboardTemplateClub[] = [];
+
 function editableRows(prizes: LeaderboardPrize[]): LeaderboardPrize[] {
   return Array.from({ length: 5 }, (_, index) => ({
     rank: index + 1,
@@ -51,6 +111,8 @@ export function LeaderboardPrizeWizard({
   setup,
   onClose,
   onSaved,
+  onSaveError,
+  templateClubs = NO_TEMPLATE_CLUBS,
 }: LeaderboardPrizeWizardProps) {
   const dialogRef = useFocusTrap(isOpen);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -64,6 +126,12 @@ export function LeaderboardPrizeWizard({
   const [monthlyBudget, setMonthlyBudget] = useState(totalPrizePlan(setup.monthly_prizes));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [templateTargets, setTemplateTargets] = useState<string[]>([]);
+  const [templateResults, setTemplateResults] = useState<LeaderboardTemplateResult[] | null>(null);
+  // The edited club's saved record while template results are on screen: the
+  // page receives it when the owner is done reading them.
+  const [publishedSetup, setPublishedSetup] = useState<LeaderboardSettings | null>(null);
+  const showingResults = templateResults !== null;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -85,22 +153,32 @@ export function LeaderboardPrizeWizard({
     setMonthlyBudget(totalPrizePlan(initialMonthly));
     setSaving(false);
     setError(null);
+    setTemplateTargets([]);
+    setTemplateResults(null);
+    setPublishedSetup(null);
   }, [isOpen, setup]);
+
+  // Once the edited club is published, leaving the dialog by any route hands
+  // the page that saved record; plain Close would drop it.
+  const finish = useCallback(() => {
+    if (publishedSetup) onSaved(publishedSetup, templateResults ?? []);
+  }, [onSaved, publishedSetup, templateResults]);
+  const dismiss = publishedSetup ? finish : onClose;
 
   useEffect(() => {
     if (!isOpen) return;
     const close = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !saving) onClose();
+      if (event.key === 'Escape' && !saving) dismiss();
     };
     document.addEventListener('keydown', close);
     return () => document.removeEventListener('keydown', close);
-  }, [isOpen, onClose, saving]);
+  }, [isOpen, dismiss, saving]);
 
   useEffect(() => {
     if (!isOpen) return;
     const frame = requestAnimationFrame(() => stepHeadingRef.current?.focus());
     return () => cancelAnimationFrame(frame);
-  }, [isOpen, step]);
+  }, [isOpen, step, showingResults]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -172,27 +250,103 @@ export function LeaderboardPrizeWizard({
     else setMonthlyBudget(total);
   };
 
+  const planPayload = () => ({
+    rewards_enabled: enabled,
+    payout_metric: metric,
+    weekly_prizes: normalizeCustomPrizes(weeklyPrizes),
+    monthly_prizes: normalizeCustomPrizes(monthlyPrizes),
+    suggestion_key: planKey,
+  });
+
+  /* Sends the plan to one union sibling as that club's own next version. Its
+     current record is read first: the expected version must be ITS version,
+     the owner must still manage it, and it must still be funded by the same
+     union (a club that left would otherwise receive a plan funded from its
+     own wallet, which is not what the owner chose). The server remains the
+     authority on funding, version and permission; a refusal is reported, not
+     retried here. */
+  const publishToTemplateClub = async (
+    club: LeaderboardTemplateClub
+  ): Promise<LeaderboardTemplateResult> => {
+    const target = { club_id: club.club_id, club_name: club.club_name };
+    try {
+      const current = await LeaderboardService.getLeaderboardRewardSetup(club.club_id);
+      if (!current.can_manage) {
+        return { ...target, ok: false, message: 'You No Longer Manage Prizes For This Club.' };
+      }
+      if (current.funding_owner_type !== 'union' || current.union_id !== setup.union_id) {
+        return { ...target, ok: false, message: 'This Club Is No Longer Funded By This Union.' };
+      }
+      const saved = await LeaderboardService.saveLeaderboardRewardSetup(club.club_id, {
+        ...planPayload(),
+        program_version: current.program_version,
+      });
+      return { ...target, ok: true, message: `Program V${saved.program_version} Published.` };
+    } catch (targetError) {
+      const failure =
+        targetError instanceof Error ? targetError : new Error('Prize Setup Could Not Be Saved');
+      return {
+        ...target,
+        ok: false,
+        message: describeSaveError(failure, setup.funding_label, 'template'),
+      };
+    }
+  };
+
+  /* One club at a time, in the owner's order: each publication claims union
+     wallet capacity, so the next club is checked against what is left. */
+  const publishToTemplateClubs = async (
+    clubs: LeaderboardTemplateClub[]
+  ): Promise<LeaderboardTemplateResult[]> => {
+    const results: LeaderboardTemplateResult[] = [];
+    for (const club of clubs) {
+      results.push(await publishToTemplateClub(club));
+    }
+    return results;
+  };
+
   const save = async () => {
     if (saving || (enabled && (!hasPrizes || exceedsAvailable))) return;
     setSaving(true);
     setError(null);
+    let saved: LeaderboardSettings;
     try {
-      const saved = await LeaderboardService.saveLeaderboardRewardSetup(setup.club_id, {
-        rewards_enabled: enabled,
-        payout_metric: metric,
-        weekly_prizes: normalizeCustomPrizes(weeklyPrizes),
-        monthly_prizes: normalizeCustomPrizes(monthlyPrizes),
-        suggestion_key: planKey,
+      saved = await LeaderboardService.saveLeaderboardRewardSetup(setup.club_id, {
+        ...planPayload(),
         program_version: setup.program_version,
       });
-      onSaved(saved);
     } catch (saveError) {
-      const message =
-        saveError instanceof Error ? saveError.message : 'Prize Setup Could Not Be Saved';
-      setError(message);
-    } finally {
+      const failure =
+        saveError instanceof Error ? saveError : new Error('Prize Setup Could Not Be Saved');
+      setError(describeSaveError(failure, setup.funding_label));
+      onSaveError?.(failure);
       setSaving(false);
+      return;
     }
+
+    const targets = templateClubs.filter((club) => templateTargets.includes(club.club_id));
+    if (targets.length === 0) {
+      setSaving(false);
+      onSaved(saved);
+      return;
+    }
+    const results = await publishToTemplateClubs(targets);
+    setSaving(false);
+    if (results.every((result) => result.ok)) {
+      onSaved(saved, results);
+      return;
+    }
+    setPublishedSetup(saved);
+    setTemplateResults(results);
+  };
+
+  const retryRefused = async () => {
+    if (saving || !templateResults) return;
+    setSaving(true);
+    const retried = await publishToTemplateClubs(templateResults.filter((result) => !result.ok));
+    const byClub = new Map(retried.map((result) => [result.club_id, result]));
+    setTemplateResults(templateResults.map((result) => byClub.get(result.club_id) ?? result));
+    setSaving(false);
   };
 
   const steps = useMemo(() => ['Reward Decision', 'Funding Source', 'Prize Plan', 'Review'], []);
@@ -203,7 +357,7 @@ export function LeaderboardPrizeWizard({
     <div
       className="lb-prize-wizard-backdrop"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !saving) onClose();
+        if (event.target === event.currentTarget && !saving) dismiss();
       }}
     >
       <section
@@ -213,329 +367,430 @@ export function LeaderboardPrizeWizard({
         aria-modal="true"
         aria-labelledby="lb-prize-wizard-title"
       >
-        <header className="lb-prize-wizard-header">
-          <div>
-            <span className="lb-prize-kicker">Owner Prize Circuit</span>
-            <h2 id="lb-prize-wizard-title">Leaderboard Prize Setup</h2>
-            <p>{setup.club_name}</p>
-          </div>
-          <button type="button" onClick={onClose} disabled={saving} aria-label="Close Prize Setup">
-            Close
-          </button>
-        </header>
-
-        <ol className="lb-prize-progress" aria-label="Setup Progress">
-          {steps.map((label, index) => (
-            <li
-              key={label}
-              className={index === step ? 'active' : index < step ? 'complete' : ''}
-              aria-current={index === step ? 'step' : undefined}
+        <SpadeConsole
+          crest="flat"
+          eyebrow="Prize Program"
+          title="Leaderboard Prize Setup"
+          titleId="lb-prize-wizard-title"
+          subtitle={setup.club_name}
+          pill={showingResults ? 'Results' : `${step + 1} Of 4`}
+          plates={{
+            // Always exactly two painted plates: the results view swaps what
+            // they do, never how many there are.
+            secondary: templateResults
+              ? {
+                  label: saving ? 'Retrying...' : 'Retry Refused',
+                  'aria-label': 'Retry Refused Clubs',
+                  onClick: retryRefused,
+                  disabled: saving || templateResults.every((result) => result.ok),
+                }
+              : {
+                  label: step === 0 ? 'Cancel' : 'Back',
+                  onClick:
+                    step === 0 ? onClose : () => setStep(step === 3 && !enabled ? 0 : step - 1),
+                  disabled: saving,
+                },
+            primary: templateResults
+              ? {
+                  label: 'Done',
+                  'aria-label': 'Done With Template Results',
+                  onClick: finish,
+                  disabled: saving,
+                }
+              : step < 3
+                ? {
+                    label: step === 0 && !enabled ? 'Review Plan' : 'Continue',
+                    'aria-label': step === 0 && !enabled ? 'Review Disabled Plan' : 'Continue',
+                    onClick: () => setStep(step === 0 && !enabled ? 3 : step + 1),
+                    disabled: step === 2 && enabled && (!hasPrizes || exceedsAvailable),
+                  }
+                : {
+                    label: saving ? 'Publishing...' : 'Publish Plan',
+                    'aria-label': saving ? 'Publishing Prize Program' : 'Publish Prize Program',
+                    onClick: save,
+                    disabled: saving || (enabled && (!hasPrizes || exceedsAvailable)),
+                  },
+          }}
+        >
+          <div className="lb-prize-close">
+            <button
+              type="button"
+              onClick={dismiss}
+              disabled={saving}
+              aria-label="Close Prize Setup"
             >
-              <span>{index + 1}</span>
-              <strong>{label}</strong>
-            </li>
-          ))}
-        </ol>
+              Close
+            </button>
+          </div>
 
-        <div className="lb-prize-wizard-body">
-          {step === 0 && (
-            <div className="lb-prize-step">
-              <span className="lb-prize-step-number">Step One</span>
-              <h3 ref={stepHeadingRef} tabIndex={-1}>
-                Do You Want To Reward Leaderboard Prizes?
-              </h3>
-              <p>
-                The Plan Appears On The Live Board. Saving This Setup Never Moves Chips Or Pays A
-                Player.
-              </p>
-              <div className="lb-prize-choice-grid">
-                <button
-                  type="button"
-                  className={enabled ? 'selected' : ''}
-                  onClick={() => setEnabled(true)}
-                  aria-pressed={enabled}
-                >
-                  <strong>Yes, Show Prizes</strong>
-                  <span>Publish Weekly Or Monthly Prize Rows.</span>
-                </button>
-                <button
-                  type="button"
-                  className={!enabled ? 'selected' : ''}
-                  onClick={disableRewards}
-                  aria-pressed={!enabled}
-                >
-                  <strong>No Prizes Right Now</strong>
-                  <span>Keep The Rankings Competitive Without A Reward Plan.</span>
-                </button>
-              </div>
-            </div>
-          )}
+          <ol className="lb-prize-progress" aria-label="Setup Progress">
+            {steps.map((label, index) => (
+              <li
+                key={label}
+                className={
+                  showingResults
+                    ? 'complete'
+                    : index === step
+                      ? 'active'
+                      : index < step
+                        ? 'complete'
+                        : ''
+                }
+                aria-current={!showingResults && index === step ? 'step' : undefined}
+              >
+                <span>{index + 1}</span>
+                <strong>{label}</strong>
+              </li>
+            ))}
+          </ol>
 
-          {step === 1 && (
-            <div className="lb-prize-step">
-              <span className="lb-prize-step-number">Step Two</span>
-              <h3 ref={stepHeadingRef} tabIndex={-1}>
-                Funding Source Confirmed
-              </h3>
-              <div className="lb-prize-source-card">
-                <span className="lb-prize-source-mark" aria-hidden="true">
-                  ◆
-                </span>
-                <div>
-                  <span>Prize Source</span>
-                  <strong>{setup.funding_label}</strong>
-                  <p>{sourceDescription}</p>
-                </div>
-                <div className="lb-prize-balance">
-                  <span>Publication Capacity</span>
-                  <strong>
-                    {publicationCapacity == null
-                      ? 'Protected'
-                      : publicationCapacity.toLocaleString('en-US', {
-                          maximumFractionDigits: 2,
-                        })}
-                  </strong>
-                  <small>Promo Chips</small>
+          <div className="lb-prize-wizard-body">
+            {step === 0 && (
+              <div className="lb-prize-step">
+                <span className="lb-prize-step-number">Step One</span>
+                <h3 ref={stepHeadingRef} tabIndex={-1}>
+                  Do You Want To Reward Leaderboard Prizes?
+                </h3>
+                <p>
+                  The Plan Appears On The Live Board. Saving This Setup Never Moves Chips Or Pays A
+                  Player.
+                </p>
+                <div className="lb-prize-choice-grid">
+                  <button
+                    type="button"
+                    className={enabled ? 'selected' : ''}
+                    onClick={() => setEnabled(true)}
+                    aria-pressed={enabled}
+                  >
+                    <strong>Yes, Show Prizes</strong>
+                    <span>Publish Weekly Or Monthly Prize Rows.</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={!enabled ? 'selected' : ''}
+                    onClick={disableRewards}
+                    aria-pressed={!enabled}
+                  >
+                    <strong>No Prizes Right Now</strong>
+                    <span>Keep The Rankings Competitive Without A Reward Plan.</span>
+                  </button>
                 </div>
               </div>
-              {setup.can_manage && (
-                <dl className="lb-prize-funding-grid" aria-label="Funding Commitment Summary">
+            )}
+
+            {step === 1 && (
+              <div className="lb-prize-step">
+                <span className="lb-prize-step-number">Step Two</span>
+                <h3 ref={stepHeadingRef} tabIndex={-1}>
+                  Funding Source Confirmed
+                </h3>
+                <div className="lb-prize-source-card">
                   <div>
-                    <dt>Promo Wallet</dt>
-                    <dd>{(setup.wallet_balance ?? 0).toLocaleString('en-US')} Chips</dd>
+                    <span>Prize Source</span>
+                    <strong>{setup.funding_label}</strong>
+                    <p>{sourceDescription}</p>
+                  </div>
+                  <div className="lb-prize-balance">
+                    <span>Publication Capacity</span>
+                    <strong>
+                      {publicationCapacity == null
+                        ? 'Protected'
+                        : compactChips(publicationCapacity)}
+                    </strong>
+                    <small>Promo Chips</small>
+                  </div>
+                </div>
+                {setup.can_manage && (
+                  <dl className="lb-prize-funding-grid" aria-label="Funding Commitment Summary">
+                    <div>
+                      <dt>Promo Wallet</dt>
+                      <dd>{compactChips(setup.wallet_balance)} Chips</dd>
+                    </div>
+                    <div>
+                      <dt>Published Commitments</dt>
+                      <dd>{compactChips(setup.committed_balance)} Chips</dd>
+                    </div>
+                    <div>
+                      <dt>Other Club Commitments</dt>
+                      <dd>{compactChips(setup.other_program_commitments)} Chips</dd>
+                    </div>
+                    <div>
+                      <dt>Committed Clubs</dt>
+                      <dd>{(setup.committed_club_count ?? 0).toLocaleString('en-US')}</dd>
+                    </div>
+                  </dl>
+                )}
+                <div className="lb-prize-safety-note" role="note">
+                  <strong>Source Is Automatic.</strong>
+                  <span>
+                    An Affiliated Club Cannot Select Its Own Wallet. A Standalone Club Cannot Select
+                    A Union Wallet.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {step === 2 && (
+              <div className="lb-prize-step">
+                <span className="lb-prize-step-number">Step Three</span>
+                <h3 ref={stepHeadingRef} tabIndex={-1}>
+                  Build The Prize Board
+                </h3>
+                <label className="lb-prize-field">
+                  <span>Ranking Signal</span>
+                  <select
+                    value={metric}
+                    onChange={(event) => setMetric(event.target.value as typeof metric)}
+                  >
+                    {METRICS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div
+                  className="lb-prize-plan-buttons"
+                  role="group"
+                  aria-label="Suggested Prize Splits"
+                >
+                  {PLAN_KEYS.map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={planKey === key ? 'selected' : ''}
+                      onClick={() => applyPlan(key)}
+                      aria-pressed={planKey === key}
+                    >
+                      <strong>{prizePlanLabel(key)}</strong>
+                      <span>
+                        {key === 'balanced'
+                          ? '50 / 30 / 20'
+                          : key === 'top_heavy'
+                            ? '65 / 25 / 10'
+                            : 'Equal Top Three'}
+                      </span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className={planKey === 'custom' ? 'selected' : ''}
+                    onClick={() => setPlanKey('custom')}
+                    aria-pressed={planKey === 'custom'}
+                  >
+                    <strong>Custom</strong>
+                    <span>Edit Up To Five Places.</span>
+                  </button>
+                </div>
+
+                <div className="lb-prize-period-grid">
+                  {(['weekly', 'monthly'] as const).map((rewardPeriod) => {
+                    const prizes = rewardPeriod === 'weekly' ? weeklyPrizes : monthlyPrizes;
+                    const budget = rewardPeriod === 'weekly' ? weeklyBudget : monthlyBudget;
+                    return (
+                      <fieldset key={rewardPeriod}>
+                        <legend>
+                          {rewardPeriod === 'weekly' ? 'Weekly Prizes' : 'Monthly Prizes'}
+                        </legend>
+                        <label className="lb-prize-field">
+                          <span>Prize Budget</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max={MAX_PRIZE_PLAN_BUDGET}
+                            step="0.01"
+                            inputMode="decimal"
+                            value={budget || ''}
+                            onChange={(event) => updateBudget(rewardPeriod, event.target.value)}
+                          />
+                        </label>
+                        <div className="lb-prize-rank-list">
+                          {editableRows(prizes).map((row) => (
+                            <label key={row.rank}>
+                              <span>Rank {row.rank}</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max={MAX_PRIZE_PLAN_BUDGET}
+                                step="0.01"
+                                inputMode="decimal"
+                                value={row.amount || ''}
+                                onChange={(event) =>
+                                  updateCustomPrize(rewardPeriod, row.rank, event.target.value)
+                                }
+                                aria-label={`${rewardPeriod === 'weekly' ? 'Weekly' : 'Monthly'} Prize For Rank ${row.rank}`}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                        <div className="lb-prize-total">
+                          <span>Total Planned</span>
+                          <strong>{compactChips(totalPrizePlan(prizes))}</strong>
+                        </div>
+                      </fieldset>
+                    );
+                  })}
+                </div>
+                {enabled && !hasPrizes && (
+                  <div className="lb-prize-inline-error" role="alert">
+                    Add A Weekly Or Monthly Prize Before Continuing.
+                  </div>
+                )}
+                {exceedsAvailable && (
+                  <div className="lb-prize-inline-error" role="alert">
+                    This Plan Cannot Be Published. Reduce The Combined Weekly And Monthly Commitment
+                    To {compactChips(publicationCapacity)} Promo Chips Or Less.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {templateResults && publishedSetup && (
+              <div className="lb-prize-step">
+                <span className="lb-prize-step-number">Union Template</span>
+                <h3 ref={stepHeadingRef} tabIndex={-1}>
+                  Template Results
+                </h3>
+                <p>
+                  {`${setup.club_name} Published Program V${publishedSetup.program_version}. Each Other Club Is Listed With What Happened.`}
+                </p>
+                <ul className="lb-prize-template-results" role="list" aria-live="polite">
+                  {templateResults.map((result) => (
+                    <li key={result.club_id} className={result.ok ? 'is-published' : 'is-refused'}>
+                      <strong>{result.club_name}</strong>
+                      <span>{result.message}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="lb-prize-safety-note" role="note">
+                  <strong>Nothing Was Rolled Back.</strong>
+                  <span>
+                    Every Published Club Keeps Its New Version. Retry Sends The Plan Again Only To
+                    The Refused Clubs, Each Checked Against Its Current Version.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {step === 3 && !templateResults && (
+              <div className="lb-prize-step">
+                <span className="lb-prize-step-number">Step Four</span>
+                <h3 ref={stepHeadingRef} tabIndex={-1}>
+                  Review The Published Plan
+                </h3>
+                <dl className="lb-prize-review">
+                  <div>
+                    <dt>Status</dt>
+                    <dd>{enabled ? 'Prizes Enabled' : 'Prizes Disabled'}</dd>
                   </div>
                   <div>
-                    <dt>Published Commitments</dt>
-                    <dd>{(setup.committed_balance ?? 0).toLocaleString('en-US')} Chips</dd>
+                    <dt>Funding Source</dt>
+                    <dd>{setup.funding_label}</dd>
                   </div>
                   <div>
-                    <dt>Other Club Commitments</dt>
-                    <dd>{(setup.other_program_commitments ?? 0).toLocaleString('en-US')} Chips</dd>
+                    <dt>Ranking Signal</dt>
+                    <dd>{METRICS.find((option) => option.value === metric)?.label}</dd>
                   </div>
                   <div>
-                    <dt>Committed Clubs</dt>
-                    <dd>{(setup.committed_club_count ?? 0).toLocaleString('en-US')}</dd>
+                    <dt>Prize Split</dt>
+                    <dd>{prizePlanLabel(planKey)}</dd>
+                  </div>
+                  <div>
+                    <dt>Weekly Total</dt>
+                    <dd>{compactChips(weeklyTotal)} Chips</dd>
+                  </div>
+                  <div>
+                    <dt>Monthly Total</dt>
+                    <dd>{compactChips(monthlyTotal)} Chips</dd>
+                  </div>
+                  <div>
+                    <dt>Combined Commitment</dt>
+                    <dd>{compactChips(proposedCommitment)} Chips</dd>
+                  </div>
+                  <div>
+                    {/* With template clubs chosen, each of them also commits
+                        from the same union wallet, and each replaces its own
+                        current commitment, so the union-wide figure is not
+                        knowable here: the label says whose it is. */}
+                    <dt>
+                      {templateTargets.length > 0
+                        ? 'Uncommitted After This Club'
+                        : 'Uncommitted After Publication'}
+                    </dt>
+                    <dd>
+                      {projectedUncommitted == null
+                        ? 'Protected'
+                        : `${compactChips(projectedUncommitted)} Chips`}
+                    </dd>
                   </div>
                 </dl>
-              )}
-              <div className="lb-prize-safety-note" role="note">
-                <strong>Source Is Automatic.</strong>
-                <span>
-                  An Affiliated Club Cannot Select Its Own Wallet. A Standalone Club Cannot Select A
-                  Union Wallet.
-                </span>
+                {templateClubs.length > 0 && (
+                  <fieldset className="lb-prize-template">
+                    <legend>Use As A Union Template</legend>
+                    <p>
+                      {`Also Publish This Plan To Other ${setup.union_name || 'Union'} Clubs You Manage. Each Club Gets It As Its Own Next Version And Can Still Be Edited On Its Own.`}
+                    </p>
+                    <div
+                      className="lb-prize-template-clubs"
+                      role="group"
+                      aria-label="Other Union Clubs"
+                    >
+                      {templateClubs.map((club) => {
+                        const selected = templateTargets.includes(club.club_id);
+                        return (
+                          <button
+                            key={club.club_id}
+                            type="button"
+                            className={selected ? 'selected' : ''}
+                            aria-pressed={selected}
+                            disabled={saving}
+                            onClick={() =>
+                              setTemplateTargets((current) =>
+                                selected
+                                  ? current.filter((id) => id !== club.club_id)
+                                  : [...current, club.club_id]
+                              )
+                            }
+                          >
+                            <strong>{club.club_name}</strong>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {templateTargets.length > 0 && (
+                      <span className="lb-prize-template-note">
+                        {enabled
+                          ? `Publishing To ${templateTargets.length + 1} Clubs. Each Commits ${compactChips(proposedCommitment)} Chips From The Union Promo Wallet, Checked In Turn; A Club It Cannot Cover Is Refused And Listed.`
+                          : `Publishing To ${templateTargets.length + 1} Clubs. Prizes Will Be Disabled For Each Of Them.`}
+                      </span>
+                    )}
+                  </fieldset>
+                )}
+                <div className="lb-prize-safety-note" role="note">
+                  <strong>Starts Next Period</strong>
+                  <span>
+                    Current Standings Keep Their Published Rules. This Becomes Program Version{' '}
+                    {setup.program_version + 1} At The Next Weekly And Monthly UTC Boundaries.
+                  </span>
+                </div>
+                <div className="lb-prize-safety-note" role="note">
+                  <strong>Publication Claims Funding Capacity.</strong>
+                  <span>
+                    Publishing Does Not Move Chips. The Service-Only Settlement Process Debits The
+                    Recorded Promo Wallet And Writes Immutable Payout Evidence After The Period
+                    Closes.
+                  </span>
+                </div>
+                {error && (
+                  <div className="lb-prize-inline-error" role="alert">
+                    {error}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="lb-prize-step">
-              <span className="lb-prize-step-number">Step Three</span>
-              <h3 ref={stepHeadingRef} tabIndex={-1}>
-                Build The Prize Board
-              </h3>
-              <label className="lb-prize-field">
-                <span>Ranking Signal</span>
-                <select
-                  value={metric}
-                  onChange={(event) => setMetric(event.target.value as typeof metric)}
-                >
-                  {METRICS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="lb-prize-plan-buttons" aria-label="Suggested Prize Splits">
-                {PLAN_KEYS.map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={planKey === key ? 'selected' : ''}
-                    onClick={() => applyPlan(key)}
-                    aria-pressed={planKey === key}
-                  >
-                    <strong>{prizePlanLabel(key)}</strong>
-                    <span>
-                      {key === 'balanced'
-                        ? '50 / 30 / 20'
-                        : key === 'top_heavy'
-                          ? '65 / 25 / 10'
-                          : 'Equal Top Three'}
-                    </span>
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className={planKey === 'custom' ? 'selected' : ''}
-                  onClick={() => setPlanKey('custom')}
-                  aria-pressed={planKey === 'custom'}
-                >
-                  <strong>Custom</strong>
-                  <span>Edit Up To Five Places.</span>
-                </button>
-              </div>
-
-              <div className="lb-prize-period-grid">
-                {(['weekly', 'monthly'] as const).map((rewardPeriod) => {
-                  const prizes = rewardPeriod === 'weekly' ? weeklyPrizes : monthlyPrizes;
-                  const budget = rewardPeriod === 'weekly' ? weeklyBudget : monthlyBudget;
-                  return (
-                    <fieldset key={rewardPeriod}>
-                      <legend>
-                        {rewardPeriod === 'weekly' ? 'Weekly Prizes' : 'Monthly Prizes'}
-                      </legend>
-                      <label className="lb-prize-field">
-                        <span>Prize Budget</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max={MAX_PRIZE_PLAN_BUDGET}
-                          step="0.01"
-                          inputMode="decimal"
-                          value={budget || ''}
-                          onChange={(event) => updateBudget(rewardPeriod, event.target.value)}
-                        />
-                      </label>
-                      <div className="lb-prize-rank-list">
-                        {editableRows(prizes).map((row) => (
-                          <label key={row.rank}>
-                            <span>Rank {row.rank}</span>
-                            <input
-                              type="number"
-                              min="0"
-                              max={MAX_PRIZE_PLAN_BUDGET}
-                              step="0.01"
-                              inputMode="decimal"
-                              value={row.amount || ''}
-                              onChange={(event) =>
-                                updateCustomPrize(rewardPeriod, row.rank, event.target.value)
-                              }
-                              aria-label={`${rewardPeriod} Prize For Rank ${row.rank}`}
-                            />
-                          </label>
-                        ))}
-                      </div>
-                      <div className="lb-prize-total">
-                        <span>Total Planned</span>
-                        <strong>{totalPrizePlan(prizes).toLocaleString('en-US')}</strong>
-                      </div>
-                    </fieldset>
-                  );
-                })}
-              </div>
-              {enabled && !hasPrizes && (
-                <div className="lb-prize-inline-error" role="alert">
-                  Add A Weekly Or Monthly Prize Before Continuing.
-                </div>
-              )}
-              {exceedsAvailable && (
-                <div className="lb-prize-inline-error" role="alert">
-                  This Plan Cannot Be Published. Reduce The Combined Weekly And Monthly Commitment
-                  To {publicationCapacity?.toLocaleString('en-US')} Promo Chips Or Less.
-                </div>
-              )}
-            </div>
-          )}
-
-          {step === 3 && (
-            <div className="lb-prize-step">
-              <span className="lb-prize-step-number">Step Four</span>
-              <h3 ref={stepHeadingRef} tabIndex={-1}>
-                Review The Published Plan
-              </h3>
-              <dl className="lb-prize-review">
-                <div>
-                  <dt>Status</dt>
-                  <dd>{enabled ? 'Prizes Enabled' : 'Prizes Disabled'}</dd>
-                </div>
-                <div>
-                  <dt>Funding Source</dt>
-                  <dd>{setup.funding_label}</dd>
-                </div>
-                <div>
-                  <dt>Ranking Signal</dt>
-                  <dd>{METRICS.find((option) => option.value === metric)?.label}</dd>
-                </div>
-                <div>
-                  <dt>Prize Split</dt>
-                  <dd>{prizePlanLabel(planKey)}</dd>
-                </div>
-                <div>
-                  <dt>Weekly Total</dt>
-                  <dd>{weeklyTotal.toLocaleString('en-US')} Chips</dd>
-                </div>
-                <div>
-                  <dt>Monthly Total</dt>
-                  <dd>{monthlyTotal.toLocaleString('en-US')} Chips</dd>
-                </div>
-                <div>
-                  <dt>Combined Commitment</dt>
-                  <dd>{proposedCommitment.toLocaleString('en-US')} Chips</dd>
-                </div>
-                <div>
-                  <dt>Uncommitted After Publication</dt>
-                  <dd>
-                    {projectedUncommitted == null
-                      ? 'Protected'
-                      : `${projectedUncommitted.toLocaleString('en-US')} Chips`}
-                  </dd>
-                </div>
-              </dl>
-              <div className="lb-prize-safety-note" role="note">
-                <strong>Starts Next Period</strong>
-                <span>
-                  Current Standings Keep Their Published Rules. This Becomes Program Version{' '}
-                  {setup.program_version + 1} At The Next Weekly And Monthly UTC Boundaries.
-                </span>
-              </div>
-              <div className="lb-prize-safety-note" role="note">
-                <strong>Publication Claims Funding Capacity.</strong>
-                <span>
-                  Publishing Does Not Move Chips. The Service-Only Settlement Process Debits The
-                  Recorded Promo Wallet And Writes Immutable Payout Evidence After The Period
-                  Closes.
-                </span>
-              </div>
-              {error && (
-                <div className="lb-prize-inline-error" role="alert">
-                  {error}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <footer className="lb-prize-wizard-footer">
-          <button
-            type="button"
-            onClick={step === 0 ? onClose : () => setStep(step === 3 && !enabled ? 0 : step - 1)}
-            disabled={saving}
-          >
-            {step === 0 ? 'Cancel' : 'Back'}
-          </button>
-          {step < 3 ? (
-            <button
-              type="button"
-              className="primary"
-              onClick={() => setStep(step === 0 && !enabled ? 3 : step + 1)}
-              disabled={step === 2 && enabled && (!hasPrizes || exceedsAvailable)}
-            >
-              {step === 0 && !enabled ? 'Review Disabled Plan' : 'Continue'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="primary"
-              onClick={save}
-              disabled={saving || (enabled && (!hasPrizes || exceedsAvailable))}
-            >
-              {saving ? 'Publishing Prize Program' : 'Publish Prize Program'}
-            </button>
-          )}
-        </footer>
+            )}
+          </div>
+        </SpadeConsole>
       </section>
     </div>,
     document.body

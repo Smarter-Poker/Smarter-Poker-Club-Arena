@@ -1,0 +1,9 @@
+{
+  "_owner": "agent/claude-lightning-p1/lightning/phase1-cluster-session - migration 20260920172736_lightning_phase_1_the_cash_session_knows_its_cluster",
+  "_comment": "Lightning 2.0 Phase 1, cash session / cluster integration, no matcher. cash_games gains cluster_mode (CHECK cash_games_cluster_mode_check over the ten Cluster states, default must_move), lightning_enabled (default false) and cluster_epoch (default 0, CHECK >= 0). cash_player_session gains a nullable cluster_id, backfilled from tables.cluster_id, with partial index cash_player_session_open_by_cluster. fn_cash_session_open is re-created with cluster_id in its INSERT column list; body and three-argument signature otherwise unchanged. New reader fn_cash_cluster_lightning_state(uuid) RETURNS jsonb, STABLE SECURITY DEFINER, service_role only. No runtime behaviour changes: every default is what every existing cluster already is.",
+  "functions": ["fn_cash_cluster_lightning_state"],
+  "columns": {
+    "cash_games": ["cluster_mode", "lightning_enabled", "cluster_epoch"],
+    "cash_player_session": ["cluster_id"]
+  }
+}

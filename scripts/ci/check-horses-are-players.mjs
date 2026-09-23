@@ -82,22 +82,6 @@ const EXCLUDE = [
  * identification or an equal outcome - and to say so here.
  */
 const REGISTER = {
-  'src/pages/club/ClubDataPage.tsx': {
-    allowed: 1,
-    kind: 'IDENTIFICATION',
-    why: [
-      'An operator-controlled "Hide Horses" chip on the club data page\'s Players tab. Same shape as the leaderboard toggle below, and it passes the same test: it defaults to SHOWING horses (useState(false)), which is what the law requires of anything opt-in.',
-      '',
-      'It changes what an operator is LOOKING AT and nothing about what a horse receives. Nothing downstream reads it - not the rake, not an agent\'s commission, not a settlement. The horse is neither paid less nor seated differently because somebody unticked a box on a reporting page.',
-      '',
-      'And the page refuses to let the filter lie about the total. With the chip on, the summary beside the list is recomputed from the filtered rows and RELABELS itself from "Players" to "People", so a scoped figure can never be read as the club\'s. Leaving the unfiltered total under a filtered list would have been the actual bug here.',
-    ].join('\n'),
-  },
-  'src/utils/clubDashboard.ts': {
-    allowed: 1,
-    kind: 'IDENTIFICATION',
-    why: 'A player-controlled "hide horses" toggle on the club leaderboard. It defaults to SHOWING horses (ClubDashboard reads ca_dashboard_hide_horses with a false default), which is what the law requires of anything opt-in, and the leaderboard itself is fed by ca_club_top_players, which counts horses in full (286,589 horse rows in club_member_daily_stats against 60 human ones).',
-  },
   'server/src/engine/ServerTableEngineBase.ts': {
     allowed: 1,
     kind: 'EQUAL OUTCOME',
@@ -107,9 +91,9 @@ const REGISTER = {
     allowed: 3,
     kind: 'IDENTIFICATION',
     why: [
-      'ALL THREE are the horse INPUT DEVICE, which is the law\'s second sanctioned exemption, and in each the horse ends up BETTER served than a human rather than worse.',
+      "ALL THREE are the horse INPUT DEVICE, which is the law's second sanctioned exemption, and in each the horse ends up BETTER served than a human rather than worse.",
       '',
-      '(0) the V48 voluntary straddle round - `if (!seated?.is_horse) continue`. A human enrolls in the voluntary straddle by clicking the table setting, which reaches toggleAutoStraddle through the seating route. A horse has no browser, so the engine supplies the same click from its persona before the straddle round. The loop only ever calls toggleAutoStraddle FOR A HORSE; a human\'s own enrollment is never read, written or overridden by it. Removing the guard would have the engine overwriting every human\'s straddle setting every hand, which is the actual bug this line prevents.',
+      "(0) the V48 voluntary straddle round - `if (!seated?.is_horse) continue`. A human enrolls in the voluntary straddle by clicking the table setting, which reaches toggleAutoStraddle through the seating route. A horse has no browser, so the engine supplies the same click from its persona before the straddle round. The loop only ever calls toggleAutoStraddle FOR A HORSE; a human's own enrollment is never read, written or overridden by it. Removing the guard would have the engine overwriting every human's straddle setting every hand, which is the actual bug this line prevents.",
       '',
       '(1) anyBustedPlayerCanAffordARebuy - `const humans = busted.filter(p => !p.is_horse)`. This decides whether the felt holds five seconds for a bust, and it decides it by reading club_members.chip_balance. A horse HAS no member wallet: it is funded from the club treasury through autoRebuyHorse/fn_horse_fund_from_treasury. Asking the wrong ledger about a horse would answer "cannot afford" and DENY it the pause. So the horse is asked its own question first, immediately above, and any horse below its two-rebuy stop-loss returns true - the pause is granted before a single wallet is read. A horse can therefore only ever gain a pause from this branch, never lose one.',
       '',
@@ -136,7 +120,7 @@ const REGISTER = {
   'server/src/services/supabase/handFacts.ts': {
     allowed: 1,
     kind: 'EQUAL OUTCOME',
-    why: 'Fact rows are written for humans everywhere, and for horses at NIT tables - so the VPIP rule and the evidence it is judged on cover the same seats (fixed 2026-08-27; before that the rule could not bite a horse at all). Not switched on for horses platform-wide because that is ~1.3M rows a day, which is the same storage decision as retention and is Dan\'s to make.',
+    why: "Fact rows are written for humans everywhere, and for horses at NIT tables - so the VPIP rule and the evidence it is judged on cover the same seats (fixed 2026-08-27; before that the rule could not bite a horse at all). Not switched on for horses platform-wide because that is ~1.3M rows a day, which is the same storage decision as retention and is Dan's to make.",
   },
   'server/src/engine/ServerTableEngineRunout.ts': {
     allowed: 3,

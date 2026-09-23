@@ -27,7 +27,22 @@ import {
 } from '../../../server/src/tournament/mttStructureDescription';
 import { FREE_BUY_HELPER, FREE_BUY_LABEL } from '../../utils/freeBuy';
 import { formatGameTitle } from '../../utils/formatGameTitle';
-import { isInLateRegistration, STARTING_SOON_WINDOW_MINUTES } from '../../utils/tournamentFilters';
+import {
+  isGuaranteedTournament,
+  isInLateRegistration,
+  isMysteryBountyTournament,
+  isPkoTournament,
+  isSatelliteTournament,
+  offersLateRegistration,
+  paysBounties,
+  sellsAddOn,
+  sellsRebuys,
+  sellsReentry,
+  STARTING_SOON_WINDOW_MINUTES,
+  tournamentClockSpeed,
+  tournamentNameConvention,
+  type TournamentTraitRow,
+} from '../../utils/tournamentFilters';
 import { stakesLabel as stakesLabelFor } from '../../lib/bettingStructure';
 import {
   blindLevelAt,
@@ -80,6 +95,13 @@ export interface LobbyTableRow extends CashFeatureSource {
   cluster_state?: string | null;
   cluster_players?: number | null;
   cluster_tables?: number | null;
+  /**
+   * Stamped by withClusterFigures: this is the one table of its game that
+   * stands for the game on the board. It is NOT a database column - no read
+   * carries it - because the answer is a property of the whole cluster and a
+   * single row cannot hold it. See clusterFronts.
+   */
+  cluster_front?: boolean | null;
   /**
    * `cash_games.enabled`, when the read carried it (the club-home chain embeds
    * the game row). A disabled game is not taking players: its door,
@@ -790,27 +812,18 @@ export function cashRuleMedallions(row: CashFeatureSource): RuleMedallion[] {
 }
 
 // ─── Tournament trait medallions — from real columns + house name convention ─
-function detectTourneyType(name: string): string {
-  const l = (name || '').toLowerCase();
-  /* SATELLITE IS DECIDED FIRST (2026-09-03). First match wins here, and
-     'satellite' used to be tested LAST - which was harmless while every
-     satellite was named "Satellite to X", and wrong the moment a feeder
-     carried its TARGET's name. The satellite heads-ups added today are named
-     "<target> Satellite Heads-Up", so a feeder into "Saturday Mystery"
-     resolved to 'mystery' and into "Friday Fight Night PKO" to 'pko': the
-     SATELLITE badge - the one fact that makes the prize a SEAT rather than
-     chips - was dropped, and a bounty medallion the row's own is_bounty and
-     is_pko columns say is false was pushed in its place.
+/* The house naming convention (it was `detectTourneyType` here) moved to
+   utils/tournamentFilters on 2026-09-22 with its history, beside the trait
+   predicates, so the medallions and the Advanced Filters chips read one
+   convention and one set of trait rules. */
 
-     A satellite that also carries a real bounty flag still shows the bounty
-     medallion: those come from the COLUMNS below, which outrank this. */
-  if (l.includes('satellite')) return 'satellite';
-  if (l.includes('freeroll') || l.includes('free roll')) return 'freeroll';
-  if (l.includes('mystery')) return 'mystery';
-  if (l.includes('pko') || l.includes('progressive')) return 'pko';
-  if (l.includes('bounty') || l.includes('ko ')) return 'ko';
-  return 'freezeout';
-}
+/** The clock-speed words the MTT medallions have always printed. */
+const MTT_SPEED_LABEL: Partial<Record<string, string>> = {
+  hyper_turbo: 'Hyper Turbo',
+  turbo: 'Turbo',
+  slow: 'Slow',
+  standard: 'Regular',
+};
 
 /** Legacy seat-first naming convention only; MTTs use their recorded clock. */
 export function tournamentSpeed(name: string): string | null {
@@ -835,18 +848,28 @@ export function tournamentMedallions(
   structureFacts?: MttStructureDescription
 ): RuleMedallion[] {
   const rules: RuleMedallion[] = [];
-  const type = detectTourneyType(t.name);
+  const type = tournamentNameConvention(t.name);
   const l = (t.name || '').toLowerCase();
   /* THE COLUMNS OUTRANK THE NAME (2026-08-26). is_pko, is_bounty and
      is_mystery_bounty are selected and were declared on the row type, and this
      function read none of them - it substring-matched the title instead. A PKO
      called "Sunday Special" therefore carried a FREEZEOUT medallion, which is
      the opposite of the truth, and with the Rules column gone from the board
-     the game panel is the only place that says so at all. The name convention
-     stays as a fallback for a tournament whose flags were never set. */
-  const isPko = t.is_pko === true || type === 'pko';
-  const isMystery = t.is_mystery_bounty === true || type === 'mystery';
-  const isBounty = t.is_bounty === true || Number(t.bounty_amount) > 0 || type === 'ko';
+     the game panel is the only place that says so at all.
+
+     ONE ANSWER WITH THE FILTER (2026-09-22). Every trait below is decided by
+     the trait predicates in utils/tournamentFilters, the functions the
+     Advanced Filters chips call, so a PKO chip and a PKO medallion cannot
+     disagree. The name convention is the fallback only for a row that does not
+     carry the columns, and a trait medallion is shown only on a definite yes. */
+  const traits = t as unknown as TournamentTraitRow;
+  const isPko = isPkoTournament(traits) === true;
+  const isMystery = isMysteryBountyTournament(traits) === true;
+  /* The family, named by its most specific known member below. When the PKO
+     and mystery flags are carried this is exactly the Bounty chip's answer
+     (isOrdinaryBountyTournament); a row carrying is_bounty alone still says
+     BOUNTY, which is true of every member. */
+  const anyBounty = paysBounties(traits) === true;
 
   /* FREEROLLS ARE FREE BUY (Dan 2026-09-02): the medallion names the deal a
      freeroll always carries - free to enter, 1-chip rebuys and add-ons. */
@@ -867,17 +890,20 @@ export function tournamentMedallions(
       label: 'MYSTERY BOUNTY',
       tip: 'Knockouts award a mystery bounty draw',
     });
-  else if (isBounty)
+  else if (anyBounty)
     rules.push({ key: 'bounty', label: 'BOUNTY', tip: 'A bounty is paid for every knockout' });
-  if (type === 'satellite')
+  if (isSatelliteTournament(traits) === true)
     rules.push({ key: 'satellite', label: 'SATELLITE', tip: 'Wins seats into a larger event' });
 
-  // Rows fetched by the lobby query do not select these columns; rows fetched
-  // by the panel's full-tournament read do. Read them loosely either way.
-  const extra = t as unknown as Record<string, unknown>;
-  const reentry = extra.is_reentry === true || l.includes('re-entry') || l.includes('reentry');
-  const rebuy = Number(extra.rebuy_cost) > 0 || l.includes('rebuy');
-  const addon = Number(extra.addon_cost) > 0;
+  /* The lobby query selects is_reentry, is_rebuy and add_on_available since
+     2026-09-22 - the flags the chip-purchase RPC itself checks - so these read the
+     event's terms rather than the words in its title. Before that the fetched
+     rows carried none of them, so these came from the name or not at all; and
+     the costs they used to read are not evidence (a re-entry is priced from
+     rebuy_cost, and a zero cost falls back to the buy-in). */
+  const reentry = sellsReentry(traits) === true;
+  const rebuy = sellsRebuys(traits) === true;
+  const addon = sellsAddOn(traits) === true;
   if (reentry)
     rules.push({ key: 'reentry', label: 'RE-ENTRY', tip: 'Eliminated players may re-enter' });
   if (rebuy) rules.push({ key: 'rebuy', label: 'REBUY', tip: 'Rebuys are available' });
@@ -887,7 +913,7 @@ export function tournamentMedallions(
     !rebuy &&
     !isPko &&
     !isMystery &&
-    !isBounty &&
+    !anyBounty &&
     type === 'freezeout' &&
     !l.includes('spin')
   )
@@ -898,10 +924,7 @@ export function tournamentMedallions(
     formatKind === 'unknown'
       ? null
       : formatKind === 'mtt'
-        ? (
-            structureFacts ??
-            describeStoredMttStructure(parseBlindStructure(t.blind_structure), t.starting_chips)
-          ).speedLabel
+        ? (MTT_SPEED_LABEL[tournamentClockSpeed(traits, structureFacts) ?? ''] ?? null)
         : tournamentSpeed(t.name);
   if (speed === 'Turbo') rules.push({ key: 'turbo', label: 'TURBO', tip: 'Fast blind levels' });
   if (speed === 'Hyper' || speed === 'Hyper Turbo')
@@ -910,7 +933,7 @@ export function tournamentMedallions(
   if (speed === 'Deepstack')
     rules.push({ key: 'deepstack', label: 'DEEPSTACK', tip: 'Deep starting stacks' });
 
-  if ((Number(t.guaranteed_prize) || 0) > 0)
+  if (isGuaranteedTournament(traits) === true)
     rules.push({
       key: 'gtd',
       label: 'GUARANTEED',
@@ -918,9 +941,14 @@ export function tournamentMedallions(
       tip: `The prize pool is guaranteed at ${Number(t.guaranteed_prize).toLocaleString()}`,
     });
 
+  /* The same window the Late Registration chip reads: a finalised prize pool
+     has closed it. A row that cannot say whether it was finalised (the fast
+     path does not select that column) keeps showing its configured window, as
+     it always has, rather than the card changing height when the chain lands.
+     The chip treats that row as unknown and hides nothing for it. */
   const lateMins = Number(t.late_reg_mins) || 0;
   const lateLevels = Number(t.late_reg_levels ?? t.rebuy_levels) || 0;
-  if (lateMins > 0 || lateLevels > 0)
+  if (offersLateRegistration(traits) !== false && (lateMins > 0 || lateLevels > 0))
     rules.push({
       key: 'latereg',
       label: 'LATE REG',
@@ -1068,16 +1096,31 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
    question the lobby actually asks. */
 
 // ─── Adapters ──────────────────────────────────────────────────────────────
-/** The one table of a cluster that stands for the whole game on the board. */
+/**
+ * The one table of a cluster that stands for the whole game on the board.
+ *
+ * A row that withClusterFigures has stamped answers from the stamp, which is
+ * the only answer that has seen the whole cluster. A row that has NOT been
+ * stamped - a bare realtime payload, a fixture, a caller that skipped the
+ * stamp - falls back to the pre-Lightning rule, so nothing that used to work
+ * stops working. The fallback cannot recognise a feeder-first cluster's one
+ * table, which is exactly why the stamp exists.
+ */
 export function isClusterFront(
-  t: Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'>
+  t: Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'> & {
+    cluster_front?: boolean | null;
+  }
 ): boolean {
-  return !!t.cluster_id && t.role === 'main' && Number(t.main_index) === 1;
+  if (!t.cluster_id) return false;
+  if (t.cluster_front != null) return t.cluster_front === true;
+  return t.role === 'main' && Number(t.main_index) === 1;
 }
 
 /** A cluster table that is NOT the front is never its own row (R10). */
 export function isHiddenClusterMember(
-  t: Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'>
+  t: Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'> & {
+    cluster_front?: boolean | null;
+  }
 ): boolean {
   return !!t.cluster_id && !isClusterFront(t);
 }
@@ -1156,24 +1199,104 @@ export function clusterFigures(
   return out;
 }
 
+export type ClusterFrontSource = Pick<
+  LobbyTableRow,
+  'id' | 'cluster_id' | 'role' | 'main_index' | 'status' | 'lifecycle'
+> & { is_deleted?: boolean | null };
+
+/* LIGHTNING 2.0 PHASE 3. R10 says a game is ONE row on the board, and that row
+   used to be identified by a property of the row alone: role = main AND
+   main_index = 1. A Lightning-capable Cluster begins life as a single FEEDER
+   (the specification's hard requirement; supabase/migrations/20260921025523),
+   so it HAS no Main 1 for as long as it has one table, and under the old
+   predicate every one of its rows was a hidden cluster member - the game
+   simply did not appear.
+
+   Which table stands for a game is therefore a property of the CLUSTER, not
+   of a row, and it is answered here the same way fn_cash_cluster_front_table
+   answers it in the database: its Main 1 when it has one, otherwise its one
+   live table. R10 is unchanged - still exactly one row per game, and for
+   every cluster that has a Main 1 row on the board this returns that same
+   row, so nothing that looks right today starts looking different.
+
+   The tie-break is the table id rather than age because LobbyTableRow carries
+   no created_at, and it does not need one: a cluster with no Main 1 has one
+   table, and the tick names a Main 1 within five seconds of it having two.
+   What the id guarantees is that the answer is never ambiguous - including
+   for the duplicate-main_index case, where two rows claim to be Main 1 and
+   the board would otherwise paint the game twice. */
+function frontRank(t: ClusterFrontSource): number {
+  const main1 = t.role === 'main' && Number(t.main_index) === 1;
+  /* A LIVE TABLE OUTRANKS A CLOSED MAIN 1, because fn_cash_cluster_front_table
+     says so: it filters `lifecycle <> 'closed' AND NOT is_deleted` before it
+     prefers Main 1, so a cluster whose Main 1 has closed fronts on whatever is
+     still open. The board cannot reach this - ClubHomePage drops non-census
+     cluster rows before stamping - but a realtime payload can.
+
+     THE TWO PREDICATES ARE NOT IDENTICAL, AND THAT IS DELIBERATE. isCensusTable
+     also requires a non-terminal `status`; the SQL function asks only about
+     `lifecycle`. That gap is not an oversight in either place. The tick's
+     worklist must still see a table stranded at lifecycle 'live' with status
+     'closed', because repairing exactly that stranding is what the tick is
+     for; the board must not, because a game painted on a table nobody can sit
+     at is an offer that cannot be taken. They answer the same question for
+     two different consumers and they agree wherever a table is not stranded,
+     which live is all of them. */
+  if (isCensusTable(t)) return main1 ? 0 : 1;
+  return main1 ? 2 : 3;
+}
+
+/** The one table of each game on the board that stands for that game. */
+export function clusterFronts(rows: ReadonlyArray<ClusterFrontSource>): Map<string, string> {
+  const best = new Map<string, ClusterFrontSource>();
+  for (const r of rows) {
+    if (!r.cluster_id) continue;
+    const key = String(r.cluster_id);
+    const cur = best.get(key);
+    if (cur === undefined) {
+      best.set(key, r);
+      continue;
+    }
+    const a = frontRank(r);
+    const b = frontRank(cur);
+    if (a < b || (a === b && String(r.id) < String(cur.id))) best.set(key, r);
+  }
+  const out = new Map<string, string>();
+  for (const [key, row] of best) out.set(key, String(row.id));
+  return out;
+}
+
 /**
  * Stamp every cluster row with its game's figures, derived from the whole
  * board. The stamp overwrites whatever a read painted: the read's number was
  * true when it was taken, and this one is true now.
+ *
+ * The same pass stamps cluster_front, for the same reason: it is an answer
+ * about the whole cluster and only this function sees the whole board.
  */
 export function withClusterFigures<
-  T extends ClusterFigureSource & {
-    cluster_players?: number | null;
-    cluster_tables?: number | null;
-  },
+  T extends ClusterFigureSource &
+    ClusterFrontSource & {
+      cluster_players?: number | null;
+      cluster_tables?: number | null;
+      cluster_front?: boolean | null;
+    },
 >(rows: ReadonlyArray<T>): T[] {
   const figures = clusterFigures(rows);
+  const fronts = clusterFronts(rows);
   return rows.map((r) => {
     if (!r.cluster_id) return r;
     const fig = figures.get(String(r.cluster_id));
     if (!fig) return r;
-    if (r.cluster_players === fig.players && r.cluster_tables === fig.tables) return r;
-    return { ...r, cluster_players: fig.players, cluster_tables: fig.tables };
+    const front = fronts.get(String(r.cluster_id)) === String(r.id);
+    if (
+      r.cluster_players === fig.players &&
+      r.cluster_tables === fig.tables &&
+      r.cluster_front === front
+    ) {
+      return r;
+    }
+    return { ...r, cluster_players: fig.players, cluster_tables: fig.tables, cluster_front: front };
   });
 }
 

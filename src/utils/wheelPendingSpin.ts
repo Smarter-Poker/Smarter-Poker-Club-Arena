@@ -1,5 +1,6 @@
 import type { WheelContractVersion, WheelSpinResult } from '../services/DiamondWheelService';
 import { assertWheelAward } from './wheelAward';
+import { reportError } from './errorReporter';
 
 export type WheelSpinMode = 'paid' | 'welcome' | 'daily_bonus';
 export interface WheelPendingSpin {
@@ -41,12 +42,46 @@ function valid(a: WheelPendingSpin, userId: string, clubId: string): boolean {
   );
 }
 
-/** Persist before submitting money. An uncertain response keeps the exact request across reloads. */
+/** A saved spin this client cannot read back is dropped and reported, never thrown. */
+function discard(key: string, error: unknown) {
+  reportError(error, 'wheelPendingSpin.unreadable');
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* Storage that cannot be written cannot hold a spin either. */
+  }
+}
+
+/** Persist before submitting money. An uncertain response keeps the exact request across reloads.
+ *
+ * A saved spin that cannot be read back (corrupt JSON, a shape this client does
+ * not send, or storage that refuses to be read) is discarded, never thrown. A
+ * wheel spin settles atomically on the server - the debit and the prize in one
+ * transaction, and a won game becomes a pending award the wheel reopens - so
+ * all that is lost is the reveal. Throwing here stranded the wheel on
+ * "Reconnecting" for good: the save lives in localStorage, and every load retry
+ * read it again. Owner ruling 2026-09-21: nothing may make a player check or
+ * recover anything. */
 export function readWheelPending(userId: string, clubId: string): WheelPendingSpin | null {
-  const raw = localStorage.getItem(keyFor(userId, clubId));
+  const key = keyFor(userId, clubId);
+  let raw: string | null;
+  try {
+    raw = localStorage.getItem(key);
+  } catch {
+    return null;
+  }
   if (!raw) return null;
-  const a = JSON.parse(raw) as WheelPendingSpin;
-  if (!valid(a, userId, clubId)) throw new Error('The Saved Spin Needs Recovery. Contact Support');
+  let a: WheelPendingSpin;
+  try {
+    a = JSON.parse(raw) as WheelPendingSpin;
+  } catch (error) {
+    discard(key, error);
+    return null;
+  }
+  if (!valid(a, userId, clubId)) {
+    discard(key, new Error('The Saved Spin Could Not Be Replayed'));
+    return null;
+  }
   return a;
 }
 

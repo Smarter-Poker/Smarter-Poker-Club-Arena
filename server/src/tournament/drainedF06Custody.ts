@@ -5,6 +5,7 @@ import {
   runWithTournamentDataAuthority,
 } from '../services/supabase/dataActorContext.js';
 import { reportError } from '../services/errorReporter.js';
+import { f06DrainedCustodyOutcomesTotal } from '../observability/engineInstruments.js';
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import type { TournamentManager } from './TournamentManager.js';
 
@@ -22,6 +23,61 @@ export interface DrainedF06Custody {
   readonly sources: readonly DrainedF06Source[];
   readonly current: () => boolean;
   readonly proof: unknown;
+}
+
+/**
+ * WHY A DRAINED-CUSTODY READ WAS NOT PROVEN.
+ *
+ * `refused`   - the database answered, and its own refusal is named in `code`
+ *               (F06_DRAINED_CUSTODY_NOT_PREMANIFEST, _LEASE_CHANGED,
+ *               _SOURCE_CHANGED, _EVENT_CHANGED, _ORIGINAL_REQUIRED, ...).
+ *               This is a DEFINITE answer about custody, not an outage.
+ * `unreadable` - the call did not produce an answer (transport, timeout,
+ *               permission, a 5xx). "I could not tell" - never silence.
+ * `malformed` - a reply arrived that cannot be read as a verdict.
+ */
+export type F06DrainedCustodyOutcome = 'refused' | 'unreadable' | 'malformed';
+
+export class F06DrainedCustodyUnprovenError extends Error {
+  readonly outcome: F06DrainedCustodyOutcome;
+  /** The database's own refusal token, or the transport's status. */
+  readonly code: string;
+  constructor(outcome: F06DrainedCustodyOutcome, code: string, detail: string) {
+    // The legacy token stays at the head of the message: it is what existing
+    // readers and guards match on, and only the missing half is added after it.
+    super(`f06_drained_custody_unproven [${outcome}:${code}] ${detail}`.trimEnd());
+    this.name = 'F06DrainedCustodyUnprovenError';
+    this.outcome = outcome;
+    this.code = code;
+  }
+}
+
+/** Every refusal this function raises is spelled F06_..._... in its message. */
+const F06_NAMED_REFUSAL = /F06_[A-Z0-9_]+/;
+
+export function classifyF06CustodyError(error: unknown): {
+  outcome: F06DrainedCustodyOutcome;
+  code: string;
+  detail: string;
+} {
+  const row = (error ?? {}) as { message?: unknown; code?: unknown; details?: unknown };
+  const message = typeof row.message === 'string' ? row.message : '';
+  const sqlstate = typeof row.code === 'string' && row.code ? row.code : 'no_sqlstate';
+  const named = F06_NAMED_REFUSAL.exec(message);
+  if (named) return { outcome: 'refused', code: named[0], detail: `sqlstate=${sqlstate}` };
+  return {
+    outcome: 'unreadable',
+    code: sqlstate,
+    detail: message.slice(0, 200) || 'the custody read produced no answer',
+  };
+}
+
+function countF06CustodyOutcome(outcome: F06DrainedCustodyOutcome): void {
+  try {
+    f06DrainedCustodyOutcomesTotal.inc(1, { outcome });
+  } catch {
+    /* metrics must never affect a custody decision */
+  }
 }
 
 /** An observation, never a lease, park mutation or financial disposition. */
@@ -44,8 +100,26 @@ export const readF06RecoveryAdmission = bindToProcessRoot(
         p_sources: original?.sources ?? [],
         p_expected: original?.proof ?? null,
       });
+      /* THREE OUTCOMES, NOT ONE TOKEN (2026-09-21, CLAUDE.md 10.86 rules 1+2).
+         This condition used to be one `if` ending in one bare
+         `f06_drained_custody_unproven`, so a definite refusal from the
+         database, a transport failure and a reply that could not be read all
+         arrived as the same nine words with the database's own message thrown
+         away. Production logged it 1,551 times in ninety minutes while six
+         tournaments sat unadopted for days, and no reader could tell which of
+         the six named SQL refusals was firing, or whether the database had
+         even been reached. A refusal is an ANSWER and names itself; a
+         transport failure is UNKNOWN; a malformed payload is neither. */
+      if (error) {
+        const classified = classifyF06CustodyError(error);
+        countF06CustodyOutcome(classified.outcome);
+        throw new F06DrainedCustodyUnprovenError(
+          classified.outcome,
+          classified.code,
+          classified.detail
+        );
+      }
       if (
-        error ||
         !data ||
         data.ok !== true ||
         data.tournament_id !== tournamentId ||
@@ -61,8 +135,14 @@ export const readF06RecoveryAdmission = bindToProcessRoot(
         new Set(data.pending_tables).size !== data.pending_tables.length ||
         !Array.isArray(data.terminal_proof) ||
         data.recovery_required !== data.pending_tables.length > 0
-      )
-        throw new Error('f06_drained_custody_unproven');
+      ) {
+        countF06CustodyOutcome('malformed');
+        throw new F06DrainedCustodyUnprovenError(
+          'malformed',
+          'payload_is_not_an_answer',
+          'the response did not carry one readable custody verdict'
+        );
+      }
       return {
         recoveryRequired: data.recovery_required,
         proof: data.proof,

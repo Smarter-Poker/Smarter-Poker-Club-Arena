@@ -1,6 +1,7 @@
-vi.mock('../../src/hooks/useLiveBonusGuard', () => ({ useLiveBonusGuard: vi.fn() }));
+// The real hook returns the release a page's exits call before they leave.
+vi.mock('../../src/hooks/useLiveBonusGuard', () => ({ useLiveBonusGuard: vi.fn(() => () => {}) }));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import DiamondPlinkoPage from '../../src/pages/DiamondPlinkoPage';
 import { PLINKO_TABLES } from '../../src/utils/diamondBonusPayout';
 import { PLINKO_DROPS } from '../../src/utils/bonusGameBudget';
@@ -14,7 +15,10 @@ const backend = vi.hoisted(() => ({
   navigate: vi.fn(),
 }));
 vi.mock('../../src/services/DiamondGamesService', () => ({ default: backend }));
-vi.mock('../../src/services/DiamondBonusService', () => ({
+vi.mock('../../src/services/DiamondBonusService', async (original) => ({
+  // The real module's other exports (BonusUnreadable and the copy the page
+  // prints) stay, so every catch path the page takes can read them.
+  ...(await original<typeof import('../../src/services/DiamondBonusService')>()),
   DiamondBonusService: backend,
   BonusRefusal: class extends Error {},
   parsePlinkoBonus: (v: unknown) => v,
@@ -249,8 +253,10 @@ describe('Plinko starts only its earned funding', () => {
     expectNoChoiceControls();
     expect(screen.getByText(`10 Drops × 500 Diamonds = 5,000 Diamonds`)).toBeVisible();
     expect(screen.queryByText(/Chips Booked From/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
+    // The offer is answered, so the won game is counting down to its own drop;
+    // pressing sooner still works.
+    expect(screen.getByRole('button', { name: /^Dropping In \ds$/ })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: /^Dropping In \ds$/ }));
     expect(backend.start).toHaveBeenCalledTimes(1);
     expect(backend.start).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -314,25 +320,28 @@ describe('Plinko starts only its earned funding', () => {
       quote: quoteFor(2, 10),
     });
     backend.start.mockRejectedValueOnce(new Error('The Network Dropped'));
-    render(<DiamondPlinkoPage />);
-    await act(async () => {});
-    fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
-    await act(async () => {});
-    // An uncertain start is never retried as a fresh wager.
-    expect(screen.getByText('Check Your Bonus Before Starting Another.')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeDisabled();
-    const held = backend.start.mock.calls[0][0];
     backend.start.mockResolvedValue({
       ...fixtures.receipts.plinko,
       table_version: 4,
       payout_chips: 3.25,
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Check Bonus' }));
+    render(<DiamondPlinkoPage />);
     await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
+    await act(async () => {});
+    // An uncertain start is never retried as a fresh wager, and nobody is
+    // asked to check anything: the page replays the held request itself.
+    // (The replay can land before the first assertion, so assert the outcome,
+    // not the brief "Settling" state in between.)
+    expect(screen.queryByRole('button', { name: 'Check Bonus' })).not.toBeInTheDocument();
+    const held = backend.start.mock.calls[0][0];
     // The same request, sent again, and the receipt is booked once.
-    expect(backend.start).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(backend.start).toHaveBeenCalledTimes(2));
     expect(backend.start.mock.calls[1][0]).toEqual(held);
-    expect(screen.getByRole('dialog', { name: '3.25 Chips' })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('dialog', { name: '3.25 Chips' })).toBeInTheDocument()
+    );
+    expect(backend.start).toHaveBeenCalledTimes(2);
   });
   it('recovers a redeemed award without admitting a second wager', async () => {
     backend.awardState.mockResolvedValue({

@@ -3,20 +3,35 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { gpuFrameRenderer } from './gpuFrameRenderer';
 import MinesGrid from './MinesGrid';
 import {
   STREET_WIDTH,
   DONKEY_SCALE,
+  CROSSING_CAMERA,
+  aimCrossingCamera,
   streetCenter,
+  streetState,
   crossingTrafficVisible,
-  collisionFrame,
+  anticipationFrame,
+  approachFrame,
+  APPROACH_REST_Z,
+  WALK_MS,
+  type StreetState,
 } from '../../utils/crossingScene';
 import { CHOICE_MODE, ROAD_LADDERS, type ChoiceGame } from '../../utils/diamondChoiceMath';
 import { gameChips } from '../../utils/bonusGameBudget';
 import { prefersReducedMotion, getAnimationSpeed } from '../../utils/animationSpeed';
 import { reportError } from '../../utils/errorReporter';
 import styles from './ChoiceScene.module.css';
+
+/**
+ * A beat of the crossing: the donkey landed on a street, the car reached it,
+ * or the win was booked. The scene decides when each one happens, because the
+ * scene is the only thing that knows where the donkey is.
+ */
+export type CrossingMoment = 'landed' | 'hit' | 'booked';
 
 interface Props {
   game: ChoiceGame;
@@ -36,6 +51,34 @@ interface Props {
   betChips?: number;
   /** The settled chips of a finished round. */
   payoutChips?: number;
+  /**
+   * What a hit pays: the round's own sealed floor while one is open, else the
+   * quote the award carries. This game is one decision - take this amount or
+   * risk it for that one - and the amount a hit still pays belongs beside the
+   * amount at risk, not in a bay above the road.
+   */
+  floorChips?: number | null;
+  /** That floor is a Super award's, which is worth saying by name. */
+  superFloor?: boolean;
+  /**
+   * The first eight characters of the hash this round was sealed with, shown
+   * on the idle caption. Proving a round should not need a collapsed panel.
+   */
+  sealed?: string;
+  /**
+   * Nothing on screen is looking at the scene: an offer over an idle road, or
+   * a receipt on top of it. The clock, the beats and completion carry on; only
+   * the draw call is skipped.
+   */
+  paused?: boolean;
+  /**
+   * The player has committed to the next street and the server has not
+   * answered yet. The donkey steps to the kerb and holds there, instead of
+   * standing still through the wait.
+   */
+  moving?: boolean;
+  /** Fired once per beat, on the first frame that shows it, and never before. */
+  onMoment?: (moment: CrossingMoment, street: number) => void;
 }
 
 /** "1.10x" and "20.00x": a street's multiplier always reads with two decimals. */
@@ -46,16 +89,65 @@ export const streetHazard = (index: number, count: number) =>
 /** Four hazard bands: the tint, the traffic and the strip all read from the same one. */
 export const hazardBand = (hazard: number) => Math.min(3, Math.floor(hazard * 4));
 
-function material(color: number, metalness = 0.7, roughness = 0.24) {
-  return new THREE.MeshPhysicalMaterial({
-    color,
-    metalness,
-    roughness,
-    clearcoat: 0.85,
-    clearcoatRoughness: 0.2,
-  });
+/**
+ * ONE SCENE'S GEOMETRY AND MATERIALS, ALLOCATED ONCE. Every box of the same
+ * shape is one BufferGeometry and every sphere is the same unit sphere, so
+ * hundreds of parts no longer mean hundreds of allocations; every paint, and
+ * the one glass, rubber, steel, headlamp and taillight, is shared by every car
+ * that wears it. The kit owns what it made, and the scene disposes the kit.
+ */
+function sceneParts() {
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  const boxes = new Map<string, THREE.BufferGeometry>();
+  const paints = new Map<number, THREE.MeshPhysicalMaterial>();
+  const own = <T extends THREE.BufferGeometry>(geometry: T) => {
+    geometries.add(geometry);
+    return geometry;
+  };
+  const kit = {
+    geometries,
+    materials,
+    /** The unit sphere every sculpted part is scaled from. */
+    ball: own(new THREE.SphereGeometry(1, 24, 16)),
+    material(color: number, metalness = 0.7, roughness = 0.24) {
+      return kit.keep(
+        new THREE.MeshPhysicalMaterial({
+          color,
+          metalness,
+          roughness,
+          clearcoat: 0.85,
+          clearcoatRoughness: 0.2,
+        })
+      );
+    },
+    keep<T extends THREE.Material>(material: T) {
+      materials.add(material);
+      return material;
+    },
+    /** The paint a car wears: one material per colour on the whole road. */
+    paint(color: number) {
+      const made = paints.get(color) ?? kit.material(color, 0.65, 0.18);
+      paints.set(color, made);
+      return made;
+    },
+    boxGeometry(w: number, h: number, d: number, radius: number) {
+      const key = `${w}:${h}:${d}:${radius}`;
+      const made = boxes.get(key) ?? own(new RoundedBoxGeometry(w, h, d, 3, radius));
+      boxes.set(key, made);
+      return made;
+    },
+    own,
+    dispose() {
+      geometries.forEach((geometry) => geometry.dispose());
+      materials.forEach((material) => material.dispose());
+    },
+  };
+  return kit;
 }
+type SceneParts = ReturnType<typeof sceneParts>;
 function box(
+  kit: SceneParts,
   parent: THREE.Object3D,
   mat: THREE.Material,
   x: number,
@@ -66,14 +158,14 @@ function box(
   d: number,
   radius = 0.08
 ) {
-  const mesh = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 3, radius), mat);
+  const mesh = new THREE.Mesh(kit.boxGeometry(w, h, d, radius), mat);
   mesh.position.set(x, y, z);
-  mesh.castShadow = true;
   mesh.receiveShadow = true;
   parent.add(mesh);
   return mesh;
 }
 function sphere(
+  kit: SceneParts,
   parent: THREE.Object3D,
   mat: THREE.Material,
   x: number,
@@ -83,52 +175,89 @@ function sphere(
   sy: number,
   sz: number
 ) {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), mat);
+  const mesh = new THREE.Mesh(kit.ball, mat);
   mesh.position.set(x, y, z);
   mesh.scale.set(sx, sy, sz);
-  mesh.castShadow = true;
   parent.add(mesh);
   return mesh;
 }
+/**
+ * ONE MESH PER MATERIAL INSTEAD OF ONE PER PART. Each part's transform is
+ * baked into a copy of its shared geometry and the copies are merged, so a car
+ * draws about six meshes where it drew seventeen and a donkey a dozen where it
+ * drew thirty two. Nothing here moves relative to its parent - the donkey's
+ * legs are groups, not meshes, and are left exactly as they are.
+ */
+function mergeParts(kit: SceneParts, parent: THREE.Object3D) {
+  const parts = parent.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh);
+  const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  for (const part of parts) {
+    part.updateMatrix();
+    const material = part.material as THREE.Material;
+    // Spheres and cylinders are indexed and rounded boxes are not; one merge
+    // takes either, never a mix of the two.
+    const baked = part.geometry.index ? part.geometry.toNonIndexed() : part.geometry.clone();
+    baked.applyMatrix4(part.matrix);
+    buckets.set(material, [...(buckets.get(material) ?? []), baked]);
+  }
+  const merged = [...buckets].map(([material, list]) => {
+    // Every part above carries position, normal and uv and none is indexed,
+    // which is the whole of what three refuses a merge for.
+    const geometry = list.length === 1 ? list[0] : mergeGeometries(list, false)!;
+    list.forEach((one) => one !== geometry && one.dispose());
+    const mesh = new THREE.Mesh(kit.own(geometry), material);
+    mesh.receiveShadow = true;
+    return mesh;
+  });
+  parts.forEach((part) => parent.remove(part));
+  parent.add(...merged);
+  return merged;
+}
 
 /** Original sculpted donkey, with separate ears, muzzle, mane, tail and walking legs. */
-function donkey() {
+function donkey(kit: SceneParts) {
   const animal = new THREE.Group();
-  const coat = material(0x786c5d, 0, 0.94),
-    pale = material(0xd7cbbb, 0, 0.9);
-  const dark = material(0x20252b, 0.05, 0.5),
-    eye = material(0x080b0d, 0.1, 0.05);
+  const coat = kit.material(0x786c5d, 0, 0.94),
+    pale = kit.material(0xd7cbbb, 0, 0.9);
+  const dark = kit.material(0x20252b, 0.05, 0.5),
+    eye = kit.material(0x080b0d, 0.1, 0.05);
   coat.clearcoat = 0.03;
   pale.clearcoat = 0.02;
-  sphere(animal, coat, 0, 0.95, 0, 0.65, 0.43, 0.35);
-  sphere(animal, pale, 0, 0.8, 0, 0.49, 0.28, 0.32);
+  sphere(kit, animal, coat, 0, 0.95, 0, 0.65, 0.43, 0.35);
+  sphere(kit, animal, pale, 0, 0.8, 0, 0.49, 0.28, 0.32);
   const legs: THREE.Group[] = [];
   for (const x of [-0.38, 0.4])
     for (const z of [-0.23, 0.23]) {
       const leg = new THREE.Group();
       leg.position.set(x, 0.82, z);
       leg.name = `walking-leg-${legs.length}`;
-      sphere(leg, coat, 0, -0.25, 0, 0.1, 0.34, 0.105);
-      box(leg, dark, 0.035, -0.61, 0, 0.22, 0.17, 0.21, 0.06);
+      sphere(kit, leg, coat, 0, -0.25, 0, 0.1, 0.34, 0.105);
+      box(kit, leg, dark, 0.035, -0.61, 0, 0.22, 0.17, 0.21, 0.06);
       animal.add(leg);
       legs.push(leg);
     }
-  sphere(animal, coat, 0.49, 1.27, 0, 0.25, 0.51, 0.26).rotation.z = -0.35;
-  sphere(animal, coat, 0.68, 1.66, 0, 0.35, 0.3, 0.28);
-  sphere(animal, pale, 0.96, 1.52, 0, 0.28, 0.21, 0.255);
+  sphere(kit, animal, coat, 0.49, 1.27, 0, 0.25, 0.51, 0.26).rotation.z = -0.35;
+  sphere(kit, animal, coat, 0.68, 1.66, 0, 0.35, 0.3, 0.28);
+  sphere(kit, animal, pale, 0.96, 1.52, 0, 0.28, 0.21, 0.255);
   for (const z of [-0.215, 0.215]) {
-    sphere(animal, eye, 0.83, 1.74, z, 0.064, 0.076, 0.034);
-    sphere(animal, pale, 0.84, 1.77, z * 1.1, 0.018, 0.019, 0.014);
-    sphere(animal, dark, 1.16, 1.55, z * 0.75, 0.035, 0.023, 0.03);
-    const ear = sphere(animal, coat, 0.53, 2.05, z * 0.65, 0.095, 0.4, 0.105);
+    sphere(kit, animal, eye, 0.83, 1.74, z, 0.064, 0.076, 0.034);
+    sphere(kit, animal, pale, 0.84, 1.77, z * 1.1, 0.018, 0.019, 0.014);
+    sphere(kit, animal, dark, 1.16, 1.55, z * 0.75, 0.035, 0.023, 0.03);
+    const ear = sphere(kit, animal, coat, 0.53, 2.05, z * 0.65, 0.095, 0.4, 0.105);
     ear.rotation.z = 0.13;
-    sphere(animal, pale, 0.56, 2.09, z * 0.65, 0.045, 0.26, 0.108).rotation.z = 0.13;
+    sphere(kit, animal, pale, 0.56, 2.09, z * 0.65, 0.045, 0.26, 0.108).rotation.z = 0.13;
   }
   for (let i = 0; i < 7; i++)
-    sphere(animal, dark, 0.3 + i * 0.045, 1.33 + i * 0.078, 0, 0.07, 0.095, 0.14);
-  const tail = sphere(animal, coat, -0.72, 0.9, 0, 0.055, 0.38, 0.055);
+    sphere(kit, animal, dark, 0.3 + i * 0.045, 1.33 + i * 0.078, 0, 0.07, 0.095, 0.14);
+  const tail = sphere(kit, animal, coat, -0.72, 0.9, 0, 0.055, 0.38, 0.055);
   tail.rotation.z = -0.7;
-  sphere(animal, dark, -0.94, 0.66, 0, 0.11, 0.17, 0.11);
+  sphere(kit, animal, dark, -0.94, 0.66, 0, 0.11, 0.17, 0.11);
+  // The donkey is the shadow of this scene: it and the cars beside it are the
+  // only things that cast one, and its sculpt draws as four meshes, not thirty.
+  mergeParts(kit, animal);
+  animal.traverse((obj) => {
+    if (obj instanceof THREE.Mesh) obj.castShadow = true;
+  });
   return { animal, legs };
 }
 
@@ -137,9 +266,104 @@ export default function ChoiceScene(props: Props) {
   return <CrossingScene {...props} />;
 }
 
-/** The four street tints, safe to dangerous, on the asphalt itself. */
-const STREET_TINTS = [0x172536, 0x23283a, 0x322838, 0x442532];
+/**
+ * The four street tints, safe to dangerous, on the asphalt itself. The road
+ * deepens toward black as the streets pay more (the #SmarterCasinoRealism
+ * panel, carbon and obsidian tones), so the gold-edged signs of the big streets
+ * read on black. It no longer warms toward maroon (Dan: "ALWAYS USE
+ * SMARTER.POKER COLOR SCHEMA COLORS, NO BROWNS OR PINKS").
+ */
+const STREET_TINTS = [0x172536, 0x111925, 0x0d1218, 0x0b1017];
+/**
+ * The painted sign inks are the strip's own (ChoiceScene.module.css), so a
+ * street reads the same on the road as in the strip: a black plate, the
+ * multiplier in silver, and an edge that carries the rise toward the big
+ * streets, dim chrome to chrome to brass to gold. The street underfoot and the
+ * next one light an electric-blue LED edge; red is the bust alone.
+ */
+const SIGN_INK = {
+  plate: '#05070a',
+  label: '#9aa5b3',
+  figure: '#e4e7ec',
+  led: '#45adff',
+  bust: '#ff5b6e',
+  spentEdge: '#3a4756',
+  spentInk: '#7f8c9b',
+  edge: ['#7f8c9b', '#b8c3cd', '#d6ad52', '#ffd700'],
+} as const;
 const SIGN_SLOTS = 16;
+/** Dashes painted down one lane line, every two units across nine of them. */
+const DASHES_PER_STREET = 9;
+/**
+ * The eight paints on the road: the first four are the near lane, the last
+ * four the far one. One material per colour is shared by every car wearing it.
+ * #SMARTERCASINOREALISM - black first, blue only as energy, gold only for
+ * value: graphite, gunmetal, chrome, midnight and obsidian, never a candy
+ * colour and never a brown (Dan: "ALWAYS USE SMARTER.POKER COLOR SCHEMA
+ * COLORS, NO BROWNS OR PINKS").
+ */
+const CAR_PAINTS = [
+  0x2a2e33, 0x27313c, 0x3a4756, 0xb8c3cd, 0xe6edf3, 0x7f8c9b, 0x18212e, 0x0f1114,
+] as const;
+/**
+ * The car that comes to every street is obsidian, so its lit headlamps are the
+ * threat rather than its paint. Gold on this road belongs to the prizes.
+ */
+const IMPACT_PAINT = 0x0f1114;
+/** The sky, the haze and the ground bounce: one obsidian, and the blue rim
+ *  light is the only coloured light on the road. */
+const NIGHT = 0x05070a;
+/** The impact glint, in milliseconds, against the 525 ms fall it is timed on. */
+const GLINT = 120 / 525;
+/** What the device says about itself, safely: jsdom and old browsers say nothing. */
+function matches(query: string) {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  try {
+    return window.matchMedia(query).matches;
+  } catch {
+    return false;
+  }
+}
+/**
+ * What a street's state adds to its spoken name, so a screen-reader player
+ * hears the road the way it is painted. 'current' says nothing: aria-current
+ * already names the street the donkey stands on.
+ */
+const STREET_SPOKEN: Record<StreetState, string> = {
+  crash: ', Hit Here',
+  crossed: ', Crossed',
+  current: '',
+  next: ', Next',
+  ahead: '',
+};
+
+/** What the scene is showing, which trails the confirmed round it is playing out. */
+interface Shown {
+  roundId: string;
+  step: number;
+  phase: Props['phase'];
+}
+/** A beat the scene still owes the page, and the frame that earns it. */
+interface Pending {
+  moments: readonly CrossingMoment[];
+  next: Shown;
+  at: 'now' | 'walk' | 'hit';
+}
+/**
+ * The beats a confirmed advance owes, and when they are played: a crossing
+ * lands when the walk completes, a collision reads when the car reaches the
+ * donkey, and a win booked on the street the donkey already stands on has
+ * nothing left to walk for.
+ */
+function momentsFor(prev: Shown, next: Shown): Pick<Pending, 'moments' | 'at'> {
+  if (next.phase === 'lost') return { moments: ['hit'], at: 'hit' };
+  if (next.phase === 'open') return { moments: ['landed'], at: 'walk' };
+  if (next.phase === 'cashed')
+    return next.step > prev.step
+      ? { moments: ['landed', 'booked'], at: 'walk' }
+      : { moments: ['booked'], at: 'now' };
+  return { moments: [], at: 'now' };
+}
 
 function CrossingScene(props: Props) {
   const host = useRef<HTMLDivElement>(null),
@@ -148,10 +372,61 @@ function CrossingScene(props: Props) {
   const [failed, setFailed] = useState(false);
   const ladder = props.ladder ?? ROAD_LADDERS[CHOICE_MODE.crossing];
   const step = props.picked.length;
-  const lost = props.phase === 'lost';
+  /**
+   * THE SCENE OWNS THE REVEAL. A confirmed answer lands on the page the moment
+   * the server speaks, half a second before the car reaches the donkey. Every
+   * surface the scene draws reads from what it is SHOWING instead: the
+   * caption, the readout, the bust stamp and the strip stay on the street the
+   * donkey is actually standing on until the beat arrives.
+   */
+  const [shown, setShown] = useState<Shown>(() => ({
+    roundId: props.roundId ?? '',
+    step,
+    phase: props.phase,
+  }));
+  const shownRef = useRef(shown);
+  const pending = useRef<Pending | null>(null);
+  // Held in a ref so the draw loop, which is mounted once, always calls the
+  // live one without listing it as a dependency it cannot have.
+  const commit = useRef((next: Shown, moments: readonly CrossingMoment[]) => {
+    pending.current = null;
+    shownRef.current = next;
+    setShown(next);
+    for (const moment of moments) latest.current.onMoment?.(moment, next.step);
+  });
+  const lost = shown.phase === 'lost';
+  // Read as a subscription, not once at mount: a player who turns the setting
+  // on mid-round gets it on the next frame, and the scene stops redrawing.
+  const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion);
+  const reducedRef = useRef(reducedMotion);
+  reducedRef.current = reducedMotion;
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    let query: MediaQueryList;
+    try {
+      query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    } catch {
+      return;
+    }
+    const changed = () => setReducedMotion(query.matches);
+    changed();
+    query.addEventListener?.('change', changed);
+    return () => query.removeEventListener?.('change', changed);
+  }, []);
   useEffect(() => {
     if (failed) latest.current.onSettled?.();
   }, [failed, props.phase, props.picked.length]);
+  // A scene with no animation to time the reveal against gives it at once:
+  // reduced motion, and a scene whose animation has failed. The same rule as
+  // the failed -> onSettled effect above.
+  useEffect(() => {
+    if (!failed && !reducedMotion) return;
+    const was = shownRef.current;
+    const next: Shown = { roundId: props.roundId ?? '', step, phase: props.phase };
+    if (was.roundId === next.roundId && was.step === next.step && was.phase === next.phase) return;
+    const advanced = next.roundId !== '' && next.roundId === was.roundId && next.phase !== 'idle';
+    commit.current(next, advanced ? momentsFor(was, next).moments : []);
+  }, [failed, reducedMotion, props.roundId, props.phase, step]);
   useEffect(() => {
     const node = host.current;
     if (!node) return;
@@ -173,10 +448,12 @@ function CrossingScene(props: Props) {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
+    const kit = sceneParts();
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a1424);
-    scene.fog = new THREE.Fog(0x0a1424, 22, 65);
-    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+    scene.background = new THREE.Color(NIGHT);
+    const fog = new THREE.Fog(NIGHT, 22, 65);
+    scene.fog = fog;
+    const camera = new THREE.PerspectiveCamera(CROSSING_CAMERA.fov, 1, 0.1, 100);
     const pmrem = new THREE.PMREMGenerator(renderer),
       room = new RoomEnvironment(),
       environment = pmrem.fromScene(room, 0.04);
@@ -184,67 +461,134 @@ function CrossingScene(props: Props) {
     scene.environmentIntensity = 0.22;
     room.dispose();
     pmrem.dispose();
-    scene.add(new THREE.HemisphereLight(0xc9e9ff, 0x080f20, 0.8));
+    scene.add(new THREE.HemisphereLight(0xc9e9ff, NIGHT, 0.8));
     const key = new THREE.DirectionalLight(0xffe9ca, 2.4);
     key.position.set(-5, 12, 8);
     key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
+    // A phone pays for the shadow map in heat and battery, and at this size on
+    // this screen nobody can tell the two apart.
+    const touch = matches('(pointer: coarse)');
+    key.shadow.mapSize.set(touch ? 1024 : 2048, touch ? 1024 : 2048);
     Object.assign(key.shadow.camera, { left: -12, right: 12, top: 14, bottom: -14 });
     key.shadow.bias = -0.001;
     scene.add(key, key.target);
     const rim = new THREE.DirectionalLight(0x4dbdff, 3.2);
     rim.position.set(5, 7, -6);
     scene.add(rim);
-    const asphalt = material(0x172536, 0.06, 0.95),
-      steel = material(0x6a8097, 0.8, 0.3),
-      paint = material(0xc7d9db, 0.1, 0.75);
-    box(scene, asphalt, 18, -0.28, 0, 62, 0.5, 20, 0.1);
+    const asphalt = kit.material(0x172536, 0.06, 0.95),
+      steel = kit.material(0x6a8097, 0.8, 0.3),
+      // Worn silver, not fresh white: paint on a road this dark reads as used.
+      paint = kit.material(0x9aa3ab, 0.1, 0.85);
+    box(kit, scene, asphalt, 18, -0.28, 0, 62, 0.5, 20, 0.1);
     // Two cars per street: the second one joins the traffic on the more dangerous streets.
     const traffic: THREE.Group[][] = [];
-    const buildCar = (color: number) => {
+    const glass = kit.material(0x071b2e, 0.4, 0.08),
+      rubber = kit.material(0x080d16, 0.05, 0.85),
+      lamp = kit.keep(
+        new THREE.MeshStandardMaterial({
+          color: 0xe3f8ff,
+          emissive: 0x9bdfff,
+          emissiveIntensity: 3,
+        })
+      ),
+      taillight = kit.material(0xf74932, 0.1, 0.2);
+    const wheel = kit.own(new THREE.CylinderGeometry(0.26, 0.26, 0.2, 24));
+    /**
+     * THE CAR, BUILT ONCE. Every car on this road is the same seventeen parts,
+     * so they are merged into one mesh per material here and every car after
+     * this one is six meshes over those same six geometries. Only the paint
+     * differs, and only the paint and the glass cast a shadow: a wheel's
+     * shadow falls under the car that already casts one.
+     */
+    const template = (() => {
       const car = new THREE.Group(),
-        body = material(color, 0.65, 0.18),
-        glass = material(0x071b2e, 0.4, 0.08),
-        rubber = material(0x080d16, 0.05, 0.85);
-      box(car, body, 0, 0.49, 0, 1.35, 0.46, 2.7, 0.19);
-      box(car, glass, 0, 0.84, -0.15, 1.08, 0.54, 1.5, 0.16);
-      box(car, body, 0, 1.12, -0.23, 1, 0.1, 0.9, 0.08);
-      box(car, steel, 0, 0.34, 1.32, 1.15, 0.1, 0.08, 0.02);
-      box(car, steel, 0, 0.33, -1.32, 1.15, 0.1, 0.08, 0.02);
+        body = kit.paint(CAR_PAINTS[0]);
+      box(kit, car, body, 0, 0.49, 0, 1.35, 0.46, 2.7, 0.19);
+      box(kit, car, glass, 0, 0.84, -0.15, 1.08, 0.54, 1.5, 0.16);
+      box(kit, car, body, 0, 1.12, -0.23, 1, 0.1, 0.9, 0.08);
+      box(kit, car, steel, 0, 0.34, 1.32, 1.15, 0.1, 0.08, 0.02);
+      box(kit, car, steel, 0, 0.33, -1.32, 1.15, 0.1, 0.08, 0.02);
       for (const side of [-1, 1])
         for (const end of [-1, 1]) {
-          const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.2, 24), rubber);
-          wheel.rotation.z = Math.PI / 2;
-          wheel.position.set(side * 0.66, 0.3, end * 0.86);
-          car.add(wheel);
-          sphere(car, steel, side * 0.77, 0.3, end * 0.86, 0.024, 0.15, 0.15);
+          const tyre = new THREE.Mesh(wheel, rubber);
+          tyre.rotation.z = Math.PI / 2;
+          tyre.position.set(side * 0.66, 0.3, end * 0.86);
+          car.add(tyre);
+          sphere(kit, car, steel, side * 0.77, 0.3, end * 0.86, 0.024, 0.15, 0.15);
         }
-      const lamp = new THREE.MeshStandardMaterial({
-        color: 0xe3f8ff,
-        emissive: 0x9bdfff,
-        emissiveIntensity: 3,
-      });
       for (const side of [-1, 1]) {
-        box(car, lamp, side * 0.46, 0.55, 1.35, 0.25, 0.13, 0.04, 0.03);
-        box(car, material(0xf74932, 0.1, 0.2), side * 0.46, 0.52, -1.35, 0.26, 0.13, 0.04, 0.03);
+        box(kit, car, lamp, side * 0.46, 0.55, 1.35, 0.25, 0.13, 0.04, 0.03);
+        box(kit, car, taillight, side * 0.46, 0.52, -1.35, 0.26, 0.13, 0.04, 0.03);
+      }
+      return mergeParts(kit, car).map((mesh) => ({
+        geometry: mesh.geometry,
+        material: mesh.material as THREE.Material,
+        casts: mesh.material === body || mesh.material === glass,
+        painted: mesh.material === body,
+        /** The taillight, which only an approaching car lights up. */
+        lit: mesh.material === taillight,
+      }));
+    })();
+    const buildCar = (color: number, tail?: THREE.Material) => {
+      const car = new THREE.Group();
+      for (const slot of template) {
+        const worn = slot.painted ? kit.paint(color) : slot.lit && tail ? tail : slot.material;
+        const mesh = new THREE.Mesh(slot.geometry, worn);
+        mesh.castShadow = slot.casts;
+        mesh.receiveShadow = true;
+        car.add(mesh);
       }
       return car;
     };
-    const laneSigns: THREE.Mesh[] = [];
     const laneSlabs: THREE.Mesh[] = [];
+    // The 144 lane dashes are one shape in one place: one draw, not 144.
+    const dashes = new THREE.InstancedMesh(
+      kit.boxGeometry(0.035, 0.01, 0.9, 0.002),
+      paint,
+      SIGN_SLOTS * DASHES_PER_STREET
+    );
+    dashes.receiveShadow = true;
+    const dashAt = new THREE.Matrix4();
+    let dash = 0;
+    const signGeometry = kit.own(new THREE.PlaneGeometry(1.6, 0.8));
     const signCanvases: HTMLCanvasElement[] = [];
     const textures: THREE.CanvasTexture[] = [];
-    /** A street sign prints the multiplier the street pays; the start prints START. */
-    const paintSign = (canvas: HTMLCanvasElement, street: number, multiplier: string | null) => {
+    /**
+     * A street sign prints the multiplier the street pays; the start prints
+     * START. A black plate with the strip's edge for the street's band and state.
+     */
+    const paintSign = (
+      canvas: HTMLCanvasElement,
+      street: number,
+      multiplier: string | null,
+      band: number,
+      state: StreetState
+    ) => {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      ctx.fillStyle = '#091722';
+      const blank = multiplier === null && street > 0;
+      const lit = !blank && (state === 'current' || state === 'next');
+      const bust = !blank && state === 'crash';
+      const spent = blank || state === 'crossed';
+      const edge = bust
+        ? SIGN_INK.bust
+        : lit
+          ? SIGN_INK.led
+          : spent
+            ? SIGN_INK.spentEdge
+            : SIGN_INK.edge[band];
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = SIGN_INK.plate;
       ctx.fillRect(0, 0, 256, 128);
-      ctx.strokeStyle = multiplier === null && street > 0 ? '#2c4658' : '#85cfff';
+      // A lit edge blooms like an LED seam; a resting edge is one crisp line.
+      ctx.shadowColor = edge;
+      ctx.shadowBlur = lit || bust ? 16 : 0;
+      ctx.strokeStyle = edge;
       ctx.lineWidth = 3;
       ctx.strokeRect(6, 6, 244, 116);
+      ctx.shadowBlur = 0;
       ctx.textAlign = 'center';
-      ctx.fillStyle = '#def5ff';
+      ctx.fillStyle = spent ? SIGN_INK.spentInk : SIGN_INK.figure;
       if (street === 0) {
         ctx.font = '700 48px sans-serif';
         ctx.fillText('START', 128, 82);
@@ -252,9 +596,10 @@ function CrossingScene(props: Props) {
       }
       if (multiplier === null) return;
       ctx.font = '600 24px sans-serif';
+      ctx.fillStyle = spent ? SIGN_INK.spentInk : SIGN_INK.label;
       ctx.fillText(`STREET ${street}`, 128, 38);
       ctx.font = '700 58px sans-serif';
-      ctx.fillStyle = '#ffe9a8';
+      ctx.fillStyle = spent ? SIGN_INK.spentInk : SIGN_INK.figure;
       ctx.fillText(multiplier, 128, 100);
     };
     const streetSign = (street: number) => {
@@ -269,27 +614,35 @@ function CrossingScene(props: Props) {
         map: texture,
         metalness: 0.2,
         roughness: 0.6,
-        emissive: 0x326b8e,
+        // A neutral glow off the painted inks, so the silver reads as silver.
+        emissive: 0xffffff,
         emissiveMap: texture,
-        emissiveIntensity: 0.25,
+        emissiveIntensity: 0.3,
       });
     };
     for (let i = 0; i < SIGN_SLOTS; i++) {
       const x = streetCenter(i);
-      const slab = box(scene, asphalt.clone(), x, -0.03, 0, STREET_WIDTH - 0.12, 0.12, 19, 0.025);
+      const slab = box(
+        kit,
+        scene,
+        kit.keep(asphalt.clone()),
+        x,
+        -0.03,
+        0,
+        STREET_WIDTH - 0.12,
+        0.12,
+        19,
+        0.025
+      );
       laneSlabs.push(slab);
       for (let z = -8; z <= 8; z += 2)
-        box(scene, paint, x - STREET_WIDTH / 2, 0.04, z, 0.035, 0.01, 0.9, 0.002);
-      const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), streetSign(i));
+        dashes.setMatrixAt(dash++, dashAt.makeTranslation(x - STREET_WIDTH / 2, 0.04, z));
+      const sign = new THREE.Mesh(signGeometry, streetSign(i));
       sign.rotation.x = -Math.PI / 2;
       sign.position.set(x, 0.07, 2.25);
       scene.add(sign);
-      laneSigns.push(sign);
       if (i > 0) {
-        const lane = [
-          buildCar([0x246bad, 0xc3d4df, 0x8b3441, 0x49655f][i % 4]),
-          buildCar([0x9a4a1f, 0x5b6f86, 0xb7a23a, 0x7a2e2e][i % 4]),
-        ];
+        const lane = [buildCar(CAR_PAINTS[i % 4]), buildCar(CAR_PAINTS[4 + (i % 4)])];
         lane.forEach((car) => {
           car.position.x = x;
           scene.add(car);
@@ -297,10 +650,12 @@ function CrossingScene(props: Props) {
         traffic[i] = lane;
       }
     }
+    dashes.instanceMatrix.needsUpdate = true;
+    scene.add(dashes);
     // One continuous highway. The starting shoulder is outside every traffic lane.
-    box(scene, paint, STREET_WIDTH / 2, 0.05, 0, 0.08, 0.02, 19, 0.005);
-    box(scene, paint, -STREET_WIDTH / 2, 0.05, 0, 0.08, 0.02, 19, 0.005);
-    const animal = donkey();
+    box(kit, scene, paint, STREET_WIDTH / 2, 0.05, 0, 0.08, 0.02, 19, 0.005);
+    box(kit, scene, paint, -STREET_WIDTH / 2, 0.05, 0, 0.08, 0.02, 19, 0.005);
+    const animal = donkey(kit);
     animal.animal.scale.setScalar(DONKEY_SCALE);
     scene.add(animal.animal);
     const ghost = animal.animal.clone(true);
@@ -313,63 +668,140 @@ function CrossingScene(props: Props) {
     });
     ghost.visible = false;
     scene.add(ghost);
-    const impactCar = buildCar(0xe4a233);
-    impactCar.visible = false;
-    scene.add(impactCar);
+    /**
+     * THE CAR THAT COMES TO EVERY STREET. Two copies of the same car in the
+     * same paint, used turn and turn about: the one that braked holds its lane
+     * until the donkey has left it and then drives on, while the other is
+     * already coming to the next street. They are the same car either way, so
+     * its first frames never say which street this is going to be.
+     */
+    const approachTail = [0, 1].map(() =>
+      kit.keep(
+        new THREE.MeshStandardMaterial({
+          color: 0xf74932,
+          emissive: 0xff2a3c,
+          emissiveIntensity: 0,
+          metalness: 0.1,
+          roughness: 0.2,
+        })
+      )
+    );
+    const approachCars = approachTail.map((tail) => {
+      const car = buildCar(IMPACT_PAINT, tail);
+      car.visible = false;
+      car.rotation.y = Math.PI;
+      scene.add(car);
+      return car;
+    });
     const flash = new THREE.Mesh(
-      new THREE.SphereGeometry(0.8, 20, 12),
-      new THREE.MeshBasicMaterial({ color: 0xffe2a3, transparent: true, opacity: 0.75 })
+      kit.own(new THREE.SphereGeometry(0.8, 20, 12)),
+      kit.keep(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75 }))
     );
     flash.visible = false;
     scene.add(flash);
+    // Nothing behind a modal, nothing scrolled past and nothing standing still
+    // is worth 60 draws a second; the clock behind it never stops.
+    let animating = true,
+      needsDraw = true,
+      onScreen = true;
+    const watcher =
+      typeof IntersectionObserver === 'function'
+        ? new IntersectionObserver((entries) => {
+            onScreen = entries.some((entry) => entry.isIntersecting);
+            needsDraw = true;
+          })
+        : null;
+    watcher?.observe(node);
     const resize = () => {
       const w = node.clientWidth,
         h = node.clientHeight;
       renderer.setSize(w, h, false);
       camera.aspect = w / Math.max(1, h);
       camera.updateProjectionMatrix();
+      needsDraw = true;
     };
     const observer = new ResizeObserver(resize);
     observer.observe(node);
     resize();
-    const reduced = prefersReducedMotion();
     const frames = gpuFrameRenderer(renderer, scene, camera);
+    /* THE PROGRAMS ARE COMPILED BEFORE THE FIRST FRAME, NOT INSIDE IT
+       (2026-09-22). Every material here is a MeshPhysicalMaterial lit by a
+       shadow-casting key light, so the first renderer.render() compiles and
+       links the whole program set on the main thread - and that first frame
+       lands while the page is still animating the Double Down offer in.
+       compileAsync gives the work to the driver instead, and the scene simply
+       submits no frame until it answers. The clock below keeps running while
+       it waits, so the walk is not delayed, only unshown.
+       A renderer without compileAsync - an older three, a test double - draws
+       immediately, exactly as it did before. */
+    let compiled = typeof renderer.compileAsync !== 'function';
+    let compileTimer = 0;
+    if (!compiled) {
+      const ready = () => {
+        compiled = true;
+        clearTimeout(compileTimer);
+      };
+      // Either answer releases the scene: a driver that refuses to compile
+      // ahead of time still renders, it just pays for it in the first frame.
+      void renderer.compileAsync(scene, camera).then(ready, ready);
+      compileTimer = window.setTimeout(ready, 1500);
+    }
     let raf = 0,
       last = 0,
       signature = '',
       roadSignature = '',
+      signsPainted = '',
       hazards: number[] = [],
       sceneElapsed = 0,
       actual = 0,
       from = 0,
       to = 0,
+      stalled = 0,
+      lean = 0,
+      leanFrom = 0,
+      leanClock = 0,
+      leaned = false,
+      answered = false,
+      carried = 0,
+      turn = 0,
+      departX = 0,
       notified = false;
+    let approaching: 'safe' | 'hit' | null = null,
+      departing: THREE.Group | null = null;
     let lastVisibleFrame: number | null = null;
     const visibilityChanged = () => {
       lastVisibleFrame = null;
     };
     document.addEventListener('visibilitychange', visibilityChanged);
-    /** The road is repainted only when its ladder changes: signs, tints and traffic density. */
+    /** The road is repainted only when its ladder changes: tints and traffic density. */
     const paintRoad = (road: readonly number[]) => {
       hazards = Array.from({ length: SIGN_SLOTS }, (_, i) =>
         i === 0 || i > road.length ? 0 : streetHazard(i - 1, road.length)
       );
-      for (let i = 0; i < SIGN_SLOTS; i++) {
-        const cents = road[i - 1];
-        paintSign(
-          signCanvases[i],
-          i,
-          i > 0 && cents !== undefined ? streetMultiplier(cents) : null
-        );
-        textures[i].needsUpdate = true;
+      for (let i = 0; i < SIGN_SLOTS; i++)
         (laneSlabs[i].material as THREE.MeshPhysicalMaterial).color.setHex(
           i === 0 || i > road.length ? STREET_TINTS[0] : STREET_TINTS[hazardBand(hazards[i])]
         );
+    };
+    /** A sign is repainted only when its figure, band or state changes. */
+    const signPainted: string[] = [];
+    const paintSigns = (road: readonly number[], step: number, phase: Props['phase']) => {
+      for (let i = 0; i < SIGN_SLOTS; i++) {
+        const cents = road[i - 1];
+        const multiplier = i > 0 && cents !== undefined ? streetMultiplier(cents) : null;
+        const band = hazardBand(hazards[i] ?? 0);
+        const state = streetState(i, step, phase);
+        const key = `${multiplier}|${band}|${state}`;
+        if (signPainted[i] === key) continue;
+        signPainted[i] = key;
+        paintSign(signCanvases[i], i, multiplier, band, state);
+        textures[i].needsUpdate = true;
       }
     };
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
-      if (document.hidden || now - last < (reduced ? 100 : 16)) return;
+      const reduced = reducedRef.current;
+      if (document.hidden || now - last < (reduced ? 100 : animating ? 16 : 33)) return;
       last = now;
       const visibleDelta = lastVisibleFrame === null ? 0 : now - lastVisibleFrame;
       lastVisibleFrame = now;
@@ -378,26 +810,91 @@ function CrossingScene(props: Props) {
         step = p.picked.length,
         newSignature = `${p.roundId}:${step}:${p.phase}`;
       const newRoad = road.join(',');
-      if (newRoad !== roadSignature) {
+      const roadChanged = newRoad !== roadSignature;
+      if (roadChanged) {
         roadSignature = newRoad;
         paintRoad(road);
+        needsDraw = true;
       }
-      if (newSignature !== signature) {
+      const roundChanged = newSignature !== signature;
+      if (roundChanged) {
+        // A beat still owed is played out before the round moves on, so fast
+        // play never swallows the street the player just crossed.
+        if (pending.current) commit.current(pending.current.next, pending.current.moments);
+        const was = shownRef.current;
+        const id = p.roundId ?? '';
+        // Only a round that advanced under its own id has a beat to show. A
+        // first frame, a new round or an idle scene is placed where it stands,
+        // which also stops a resumed open round hopping across every lane.
+        const advanced = signature !== '' && id !== '' && id === was.roundId && p.phase !== 'idle';
+        const next: Shown = { roundId: id, step, phase: p.phase };
+        const owed = advanced ? momentsFor(was, next) : null;
         signature = newSignature;
-        from = p.phase === 'idle' ? 0 : actual;
         to = streetCenter(step);
+        if (owed && owed.moments.length) {
+          from = actual;
+          pending.current = { moments: owed.moments, next, at: owed.at };
+          // The street the player just committed to gets its own car. The one
+          // that braked on the street behind holds its lane, then drives on.
+          if (approaching) {
+            departing = approachCars[turn];
+            departX = streetCenter(was.step);
+            turn = 1 - turn;
+          }
+          approaching = p.phase === 'lost' ? 'hit' : 'safe';
+          // The lean the walk now absorbs: the donkey carries on from the kerb
+          // it stepped to, it does not snap back to the middle of its street.
+          carried = lean;
+          lean = 0;
+          leanFrom = 0;
+          leaned = false;
+          answered = true;
+        } else {
+          from = to;
+          commit.current(next, []);
+          approaching = null;
+          carried = 0;
+        }
         sceneElapsed = 0;
+        stalled = 0;
         notified = false;
+        needsDraw = true;
       } else sceneElapsed += visibleDelta;
+      // THE ROAD AGREES WITH THE STRIP. The sign painted on a street and the
+      // street's chip in the strip read one streetState between them, so both
+      // wait for the scene to reach the street: a sign that went bust red the
+      // moment the server answered would give the collision away while the
+      // donkey was still standing in the road.
+      const seen = shownRef.current;
+      const seenSignature = `${seen.step}:${seen.phase}`;
+      if (roadChanged || seenSignature !== signsPainted) {
+        signsPainted = seenSignature;
+        paintSigns(road, seen.step, seen.phase);
+        needsDraw = true;
+      }
       const elapsed = sceneElapsed,
-        walk = reduced ? 1 : Math.min(1, elapsed / (420 * getAnimationSpeed()));
+        speed = getAnimationSpeed(),
+        walk = reduced ? 1 : Math.min(1, elapsed / (WALK_MS * speed));
       actual = THREE.MathUtils.lerp(from, to, walk * walk * (3 - 2 * walk));
+      // The step to the kerb: taken the moment the player commits, held until
+      // the answer lands, and eased back over 200 ms if the move is refused or
+      // never answered at all.
+      if (!p.moving) answered = false;
+      const stepping = Boolean(p.moving) && !answered && p.phase === 'open';
+      if (stepping !== leaned) {
+        leaned = stepping;
+        leanFrom = lean;
+        leanClock = 0;
+      } else leanClock += visibleDelta;
+      lean = stepping
+        ? anticipationFrame(leanClock, speed, reduced)
+        : Math.max(0, leanFrom * (1 - leanClock / (200 * speed)));
       animal.animal.position.set(
-        actual - 0.12,
+        actual - 0.12 + lean + (walk < 1 ? carried * (1 - walk) : 0),
         0.05 + (walk < 1 ? Math.sin(walk * Math.PI) * 0.28 : 0),
         0
       );
-      animal.animal.rotation.z = 0;
+      animal.animal.rotation.set(0, 0, 0);
       animal.animal.scale.setScalar(DONKEY_SCALE);
       animal.legs.forEach((leg, i) => {
         leg.rotation.z = walk < 1 ? Math.sin(walk * Math.PI * 4 + (i % 2) * Math.PI) * 0.5 : 0;
@@ -406,7 +903,14 @@ function CrossingScene(props: Props) {
         if (!lane) return;
         const hazard = hazards[i] ?? 0;
         const open =
-          crossingTrafficVisible(i, step, p.phase === 'lost') && !(walk < 1 && i === step - 1);
+          crossingTrafficVisible(
+            i,
+            step,
+            p.phase === 'lost',
+            // The route a booked win sealed is cleared when the scene says the
+            // win is booked, not when the answer lands.
+            seen.phase === 'cashed' ? (p.roadEnd ?? null) : null
+          ) && !(walk < 1 && i === step - 1);
         // Traffic runs faster and thicker the further down the road it is.
         const period = 530 - 210 * hazard;
         lane.forEach((car, n) => {
@@ -417,27 +921,55 @@ function CrossingScene(props: Props) {
           car.rotation.y = i % 2 ? 0 : Math.PI;
         });
       });
-      impactCar.visible = p.phase === 'lost';
       flash.visible = false;
-      let finished = walk === 1;
-      if (p.phase === 'lost') {
-        const impact = collisionFrame(Math.max(0, elapsed - 220), reduced);
-        impactCar.position.set(to, 0, impact.carZ);
-        impactCar.rotation.y = Math.PI;
+      let finished = walk === 1,
+        struck = false,
+        arrived = true;
+      approachCars.forEach((car) => {
+        car.visible = false;
+      });
+      // The braked car holds its lane until the donkey is across, then leaves.
+      if (departing) {
+        const gone = Math.min(1, Math.max(0, elapsed - WALK_MS * speed) / (1050 * speed));
+        departing.position.set(departX, 0, APPROACH_REST_Z - 18 * gone);
+        departing.visible = gone < 1;
+        if (gone >= 1) departing = null;
+      }
+      const outcome = p.phase === 'lost' ? 'hit' : approaching;
+      if (outcome) {
+        // Stretched with the walk, so the car never arrives before the donkey.
+        const impact = approachFrame(elapsed, speed, outcome, reduced);
+        const car = approachCars[turn];
+        car.position.set(to, 0, impact.carZ);
+        car.visible = true;
+        // Only the car that is stopping shows a brake light.
+        approachTail[turn].emissiveIntensity = impact.brake * 2.4;
         if (impact.hit) {
-          animal.animal.rotation.z = (-Math.PI / 2) * impact.fall;
-          animal.animal.position.y = 0.1;
-          animal.animal.scale.y = DONKEY_SCALE * (1 - 0.8 * impact.fall);
+          // Struck and carried: the donkey turns over along the line the car
+          // was driving and slides with it. No squash - this is not a cartoon.
+          animal.animal.rotation.x = -Math.PI * 1.15 * impact.fall;
+          animal.animal.rotation.z = (-Math.PI / 3) * impact.fall;
+          animal.animal.position.y = 0.1 + Math.sin(impact.fall * Math.PI) * 0.34;
+          animal.animal.position.z = -1.7 * impact.fall;
+          // One short white glint, not a gold flare: gold is for value alone.
           flash.position.set(to, 0.7, 0);
-          flash.visible = impact.fall < 0.5;
+          flash.visible = impact.fall < GLINT;
           flash.scale.setScalar(0.5 + impact.fall);
         }
-        finished = impact.finished;
+        struck = impact.hit;
+        // A street ends when its car has settled, braked or driven through, so
+        // a safe crossing and a hit resolve on the very same beat.
+        arrived = impact.resting;
+        finished = outcome === 'hit' ? impact.finished : finished && impact.resting;
       }
       let focus = actual;
-      ghost.visible = p.phase === 'cashed' && p.roadEnd !== null;
+      // The ghost walks the rest of the route once the win is shown as booked.
+      ghost.visible = seen.phase === 'cashed' && p.roadEnd !== null;
       if (ghost.visible) {
-        const progress = reduced ? 1 : Math.max(0, Math.min(1, (elapsed - 800) / 2400));
+        const speed = getAnimationSpeed();
+        const progress = reduced
+          ? 1
+          : Math.max(0, Math.min(1, (elapsed - 800 * speed) / (2400 * speed)));
         ghost.position.set(
           THREE.MathUtils.lerp(to, streetCenter(p.roadEnd ?? step), progress),
           0.05,
@@ -446,25 +978,43 @@ function CrossingScene(props: Props) {
         focus = THREE.MathUtils.lerp(actual, ghost.position.x, 0.65);
         finished = finished && progress === 1;
       }
-      laneSigns.forEach((sign, i) => {
-        (sign.material as THREE.MeshPhysicalMaterial).color.setHex(
-          i === step
-            ? p.phase === 'lost'
-              ? 0xff745b
-              : 0x64cbb0
-            : i === step + 1
-              ? 0x65cfff
-              : 0x294966
-        );
-      });
-      camera.position.set(focus + 2.6, 8.5, 10.8);
-      camera.lookAt(focus + 0.6, 0.1, 0);
-      key.position.x = focus - 4;
-      key.target.position.x = focus;
-      if (frames.render() && finished && !notified) {
+      // Straight down the road: the camera stands over the x it looks at.
+      const view = aimCrossingCamera(camera, focus);
+      fog.near = view.fogNear;
+      fog.far = view.fogFar;
+      // The shadow box follows the view, so every street in frame keeps its shadows.
+      key.position.x = view.x - 4;
+      key.target.position.x = view.x;
+      const owed = pending.current;
+      const ready =
+        owed !== null &&
+        (owed.at === 'now' || (owed.at === 'walk' ? walk === 1 && arrived : struck));
+      // Paused (an offer over an idle road, a receipt on top of it) or scrolled
+      // off screen: the clock, the beats and completion all carry on, and only
+      // the draw call is skipped. No reveal ever waits on scroll position.
+      // Under reduced motion there is nothing to redraw between changes.
+      // Nothing is drawn before compileAsync answers, so no beat and no
+      // completion lands on a frame the driver has not linked yet.
+      const drawing = compiled && !p.paused && onScreen && (!reduced || needsDraw);
+      const submitted = compiled && (drawing ? frames.render() : true);
+      if (drawing) needsDraw = false;
+      animating = !finished || lean > 0 || stepping;
+      // A beat belongs to the frame that shows it: the same terminal-frame
+      // rule completion follows, so neither ever runs ahead of the picture.
+      if (submitted && ready && owed) commit.current(owed.next, owed.moments);
+      if (submitted && finished && !notified) {
         notified = true;
         p.onSettled?.();
       }
+      // A beat nobody can see is not worth holding a round on. After eight
+      // seconds of visible time with no frame submitted, the reveal goes to
+      // the failed path, which settles it and prints the fallback line. This
+      // is the ONLY watchdog here: completion itself still waits for its
+      // terminal frame however long that takes.
+      if (pending.current) {
+        stalled = submitted ? 0 : stalled + visibleDelta;
+        if (stalled >= 8000) setFailed(true);
+      } else stalled = 0;
     };
     raf = requestAnimationFrame(draw);
     const lost = (e: Event) => {
@@ -472,128 +1022,191 @@ function CrossingScene(props: Props) {
       setFailed(true);
       latest.current.onSettled?.();
     };
+    // A context the browser gives back is drawn on again: every sign is
+    // repainted onto the fresh context and the reveal waits for its animation
+    // once more, instead of the scene staying "unavailable" for good.
+    const restored = () => {
+      signPainted.length = 0;
+      // Repaint the road and every sign on the next frame; the round itself
+      // carries on where it was (no replayed walk or strike).
+      roadSignature = '';
+      textures.forEach((texture) => {
+        texture.needsUpdate = true;
+      });
+      needsDraw = true;
+      setFailed(false);
+    };
     canvas.addEventListener('webglcontextlost', lost);
+    canvas.addEventListener('webglcontextrestored', restored);
     return () => {
       cancelAnimationFrame(raf);
+      clearTimeout(compileTimer);
       document.removeEventListener('visibilitychange', visibilityChanged);
       frames.dispose();
       observer.disconnect();
+      watcher?.disconnect();
       canvas.removeEventListener('webglcontextlost', lost);
-      const geometries = new Set<THREE.BufferGeometry>(),
-        materials = new Set<THREE.Material>();
+      canvas.removeEventListener('webglcontextrestored', restored);
+      // The kit owns every shape and finish the scene was built from; the
+      // traversal catches what the scene cloned for itself (the ghost's coats).
       scene.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          geometries.add(obj.geometry);
+        if (obj instanceof THREE.InstancedMesh) obj.dispose();
+        if (obj instanceof THREE.Mesh)
           (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach((m) =>
-            materials.add(m)
+            kit.materials.add(m)
           );
-        }
       });
-      geometries.forEach((g) => g.dispose());
+      kit.dispose();
       textures.forEach((t) => t.dispose());
-      materials.forEach((m) => m.dispose());
       environment.dispose();
       key.shadow.map?.dispose();
       renderer.dispose();
+      // The page mounts this scene again for every round. Without this the tab
+      // keeps one live WebGL context per round it has played.
+      renderer.forceContextLoss();
       canvas.remove();
     };
   }, []);
-  // The strip keeps the street the donkey stands on in view without stealing the page scroll.
+  /**
+   * THE STRIP SCROLLS THE STRIP, NEVER THE PAGE.
+   *
+   * Keeping the current street in view used to be scrollIntoView on the chip,
+   * and scrollIntoView walks every scrollable ancestor up to the document: any
+   * street crossed while the strip itself was off screen - reading the rules or
+   * the round proof mid-round, a landscape phone - yanked the window to the
+   * scene and took the plates out from under the player's thumb. The strip is
+   * its own scroll container, so it is the only thing that has to move: the
+   * chip is centred in the LIST's own box, and a new round starts the list back
+   * at street one.
+   */
+  const streets = useRef<HTMLOListElement>(null);
   const currentStreet = useRef<HTMLLIElement>(null);
+  // Everything below prints the street the scene is showing; the prizes, the
+  // ladder and the settled chips are the round's own numbers, printed as given.
+  const shownStep = shown.step,
+    shownPhase = shown.phase;
+  const shownRound = shown.roundId;
   useEffect(() => {
-    const item = currentStreet.current;
-    if (item && typeof item.scrollIntoView === 'function')
-      item.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'auto' });
-  }, [step, props.phase, props.roundId]);
-  const reached = step > 0 ? (props.prizes?.[step - 1] ?? null) : null;
-  const ahead = props.prizes?.[step] ?? null;
+    const list = streets.current;
+    if (list) list.scrollLeft = 0;
+  }, [shownRound]);
+  useEffect(() => {
+    const list = streets.current,
+      item = currentStreet.current;
+    if (!list || !item || typeof list.scrollTo !== 'function') return;
+    list.scrollTo({
+      left: item.offsetLeft - (list.clientWidth - item.offsetWidth) / 2,
+      behavior: reducedRef.current ? 'auto' : 'smooth',
+    });
+  }, [shownStep, shownPhase, shownRound]);
+  const reached = shownStep > 0 ? (props.prizes?.[shownStep - 1] ?? null) : null;
+  const ahead = props.prizes?.[shownStep] ?? null;
   const lastStreet = ladder.length;
   /** A street beyond the ladder (a saved round on another road) reads as its last street. */
   const mult = (index: number) =>
     streetMultiplier(ladder[Math.min(Math.max(0, index), lastStreet - 1)]);
   const booked = props.payoutChips ?? reached;
-  const readout =
-    props.phase === 'lost'
+  const floor = props.floorChips ?? null;
+  /** The amount a hit still pays, said beside the amount being risked. */
+  const guarantee =
+    floor === null
+      ? null
+      : `${props.superFloor ? 'Super Guarantee' : 'A Hit Pays'} ${gameChips(floor)}`;
+  const reach = `${lastStreet} Streets Up To ${mult(lastStreet - 1)}`;
+  const readout = lost
+    ? {
+        label: `Hit At Street ${shownStep}`,
+        value:
+          props.payoutChips === undefined
+            ? 'Round Over'
+            : `${gameChips(props.payoutChips)} Chips Paid`,
+        note:
+          props.payoutChips === undefined ? 'The Donkey Did Not Make It Across' : 'Your Guarantee',
+      }
+    : shownPhase === 'cashed'
       ? {
-          label: `Bust On Street ${step}`,
-          value:
-            props.payoutChips === undefined
-              ? 'Round Over'
-              : `${gameChips(props.payoutChips)} Chips Kept`,
+          label: `Booked At Street ${shownStep}`,
+          value: booked === null ? 'Win Booked' : `${gameChips(booked)} Chips`,
           note:
-            props.payoutChips === undefined
-              ? 'The Donkey Did Not Make It Across'
-              : 'The Guaranteed Minimum Is Yours',
+            props.roadEnd === null
+              ? `${mult(shownStep - 1)} Reached`
+              : props.roadEnd >= lastStreet
+                ? 'It Would Have Crossed Every Street'
+                : props.roadEnd <= shownStep
+                  ? `Street ${props.roadEnd + 1} Was The Crash`
+                  : `It Would Have Made It To Street ${props.roadEnd}`,
         }
-      : props.phase === 'cashed'
+      : shownStep > 0
         ? {
-            label: `Booked At Street ${step}`,
-            value: booked === null ? 'Win Booked' : `${gameChips(booked)} Chips`,
+            label: 'Cash Out Value',
+            value: reached === null ? mult(shownStep - 1) : `${gameChips(reached)} Chips`,
             note:
-              props.roadEnd === null
-                ? `${mult(step - 1)} Reached`
-                : props.roadEnd === 0
-                  ? 'The Donkey Would Have Stopped Before Street 1'
-                  : `The Donkey Would Have Reached Street ${props.roadEnd}`,
+              shownStep < lastStreet
+                ? [
+                    ahead === null
+                      ? `Next Street At ${mult(shownStep)}`
+                      : `Next Street ${gameChips(ahead)} At ${mult(shownStep)}`,
+                    guarantee,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')
+                : 'The Final Street. Book The Win.',
           }
-        : step > 0
-          ? {
-              label: 'Cash Out Value',
-              value: reached === null ? mult(step - 1) : `${gameChips(reached)} Chips`,
-              note:
-                step < lastStreet
-                  ? `Next Street Pays ${mult(step)}${ahead === null ? '' : ` For ${gameChips(ahead)} Chips`}`
-                  : 'The Final Street. Book The Win.',
-            }
-          : {
-              label: 'First Street Pays',
-              value: ahead === null ? mult(0) : `${gameChips(ahead)} Chips At ${mult(0)}`,
-              note: `${lastStreet} Streets Up To ${mult(lastStreet - 1)}`,
-            };
+        : {
+            label: 'First Street Pays',
+            value: ahead === null ? mult(0) : `${gameChips(ahead)} Chips At ${mult(0)}`,
+            note:
+              floor === null
+                ? reach
+                : `${props.superFloor ? 'A Super Hit Still Pays' : 'A Hit Still Pays'} ${gameChips(floor)} Chips · ${reach}`,
+          };
   return (
-    <div className={styles.scene} ref={host} data-motion="keep" data-phase={props.phase}>
+    <div className={styles.scene} ref={host} data-motion="keep" data-phase={shownPhase}>
       <div className={styles.caption}>
         {lost
-          ? 'Collision · Round Over'
-          : props.phase === 'cashed'
+          ? // ONE NAME FOR THIS OUTCOME, in the caption's own two-part shape:
+            // the same words the readout, the receipt and the history row use.
+            `Hit At Street ${shownStep}${props.payoutChips ? ' · Guarantee Paid' : ''}`
+          : shownPhase === 'cashed'
             ? 'Win Booked · Showing The Remaining Route'
-            : props.phase === 'idle'
-              ? 'Start · Highway Ahead'
-              : `Street ${step} · Next Street Clear`}
+            : shownPhase === 'idle'
+              ? props.sealed
+                ? `Round Sealed · ${props.sealed}`
+                : 'Start · Highway Ahead'
+              : // Never "Next Street Clear": the next street is sealed, and the
+                // traffic on screen does not decide it.
+                shownStep === 0
+                ? 'Start · Your Move'
+                : `Safe On Street ${shownStep} · Your Move`}
       </div>
-      <div className={styles.readout} aria-live="polite" data-tone={lost ? 'bust' : undefined}>
+      {/* Not a live region. The page has the one polite region for both games,
+          and it speaks each street once, when the scene reaches it. */}
+      <div className={styles.readout} data-tone={lost ? 'bust' : undefined}>
         <span className={styles.readoutLabel}>{readout.label}</span>
         <strong className={styles.readoutValue}>{readout.value}</strong>
         <span className={styles.readoutNote}>{readout.note}</span>
       </div>
+      {/* The stamp decorates a fact the page states in words; reading it again
+          would announce the same hit twice. */}
       {lost && (
-        <div className={styles.bust} role="status" aria-label={`Bust On Street ${step}`}>
+        <div className={styles.bust} aria-hidden="true">
           <span>Bust</span>
         </div>
       )}
-      <ol className={styles.streets} aria-label="Streets And Their Multipliers">
+      <ol className={styles.streets} ref={streets} aria-label="Streets And Their Multipliers">
         {ladder.map((cents, index) => {
           const street = index + 1;
-          const state =
-            lost && street === step
-              ? 'crash'
-              : street < step || (street === step && props.phase === 'cashed')
-                ? 'crossed'
-                : street === step
-                  ? 'current'
-                  : street === step + 1 && !lost
-                    ? 'next'
-                    : 'ahead';
+          const state = streetState(street, shownStep, shownPhase);
           const prize = props.prizes?.[index];
           return (
             <li
               key={street}
-              ref={street === step ? currentStreet : undefined}
+              ref={street === shownStep ? currentStreet : undefined}
               className={styles.street}
               data-state={state}
               data-hazard={hazardBand(streetHazard(index, ladder.length))}
-              aria-current={street === step ? 'step' : undefined}
-              aria-label={`Street ${street} Pays ${streetMultiplier(cents)}${prize === undefined ? '' : `, ${gameChips(prize)} Chips`}`}
+              aria-current={street === shownStep ? 'step' : undefined}
+              aria-label={`Street ${street} Pays ${streetMultiplier(cents)}${prize === undefined ? '' : `, ${gameChips(prize)} Chips`}${STREET_SPOKEN[state]}`}
             >
               <span className={styles.streetNumber}>{street}</span>
               <strong className={styles.streetMultiplier}>{streetMultiplier(cents)}</strong>

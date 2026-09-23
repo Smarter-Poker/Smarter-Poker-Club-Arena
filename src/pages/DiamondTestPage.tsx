@@ -138,8 +138,7 @@ export default function DiamondTestPage() {
       const dropped = next.reduce(
         (sum, path) =>
           sum +
-          (drop *
-            table.multipliersCents[plinkoBitsFromPathBits(path).reduce((a, b) => a + b, 0)]) /
+          (drop * table.multipliersCents[plinkoBitsFromPathBits(path).reduce((a, b) => a + b, 0)]) /
             10000,
         0
       );
@@ -226,7 +225,11 @@ export default function DiamondTestPage() {
           <section className={setup.setup} aria-label="Test Setup">
             <label className={setup.entry}>
               Simulated Spin Diamonds
-              <select value={entry} disabled={active} onChange={(e) => setEntry(Number(e.target.value))}>
+              <select
+                value={entry}
+                disabled={active}
+                onChange={(e) => setEntry(Number(e.target.value))}
+              >
                 {[100, 500, 1000, 2500].map((n) => (
                   <option key={n} value={n}>
                     {n.toLocaleString()}
@@ -294,7 +297,9 @@ export default function DiamondTestPage() {
             : phase === 'idle'
               ? 'Start Test'
               : 'Play Again',
-          disabled: sceneBusy || (open ? game === 'mines' || game === 'plinko' : active),
+          // The scene is still playing the move out: the plate keeps its focus.
+          disabled: open ? game === 'mines' || game === 'plinko' : active,
+          'aria-disabled': sceneBusy || undefined,
           onClick: () =>
             open
               ? game === 'crash'
@@ -306,7 +311,8 @@ export default function DiamondTestPage() {
         }}
         secondary={{
           label: 'Book The Win',
-          disabled: sceneBusy || !open || game === 'plinko' || (!picked.length && game !== 'crash'),
+          disabled: !open || game === 'plinko' || (!picked.length && game !== 'crash'),
+          'aria-disabled': sceneBusy || undefined,
           onClick: cash,
         }}
       >

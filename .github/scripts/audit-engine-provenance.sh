@@ -13,10 +13,11 @@ summary() {
   printf '%s\n' "$*" >> "$GITHUB_STEP_SUMMARY"
 }
 
-# Test-only and simulation-only changes do not alter production behavior, so
-# the required identity is the newest protected-main runtime-affecting commit.
+# Test-only, simulation-only and local-qualification changes do not alter
+# production behavior, so the required identity is the newest protected-main
+# runtime-affecting commit.
 REQ_SHA=$(git log origin/main -1 --format=%H -- \
-  'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')
+  'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**' ':(exclude)server/qualification/**')
 
 if ! [[ "$REQ_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   say '::error title=ENGINE PROVENANCE UNKNOWN::Could not resolve one full engine-affecting SHA from protected main.'

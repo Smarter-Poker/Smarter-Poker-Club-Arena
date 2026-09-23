@@ -1162,8 +1162,8 @@ function CashierContent() {
   // wallet_transactions is being dropped from supabase_realtime to save egress.
   // The page already refreshes on the canonical balance events via
   // useMasterBusSubscriptions below (BALANCE_UPDATED, CHIPS_ADDED,
-  // CHIPS_WITHDRAWN, CASHIER_BALANCE_CHANGED, RAKEBACK_CLAIMED,
-  // DAILY_REWARD_CLAIMED). The `cashout_requests` subscription still covers
+  // CHIPS_WITHDRAWN, CASHIER_BALANCE_CHANGED, DAILY_REWARD_CLAIMED). The
+  // `cashout_requests` subscription still covers
   // pending-cashout state which is the cashier's primary action surface.
 
   // Cashout requests channel
@@ -1190,13 +1190,7 @@ function CashierContent() {
   // ── Bus Listeners: instant balance refresh from engine events ──
   // Load balances only
   useMasterBusSubscriptions(
-    [
-      'BALANCE_UPDATED',
-      'CHIPS_ADDED',
-      'CASHIER_BALANCE_CHANGED',
-      'RAKEBACK_CLAIMED',
-      'DAILY_REWARD_CLAIMED',
-    ],
+    ['BALANCE_UPDATED', 'CHIPS_ADDED', 'CASHIER_BALANCE_CHANGED', 'DAILY_REWARD_CLAIMED'],
     () => {
       if (user?.id) loadBalances(user.id, { force: true });
     },
@@ -1210,7 +1204,6 @@ function CashierContent() {
       'BALANCE_UPDATED',
       'CHIPS_ADDED',
       'CASHIER_BALANCE_CHANGED',
-      'RAKEBACK_CLAIMED',
       'DAILY_REWARD_CLAIMED',
       'WALLET_REFRESHED',
       'CHIPS_DISTRIBUTED',

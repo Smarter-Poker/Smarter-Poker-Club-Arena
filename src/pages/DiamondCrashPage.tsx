@@ -1,5 +1,7 @@
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
-import { pendingBonus } from '../services/diamondBonusRecovery';
+import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
+import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
+import { useAwardAutoStart, useRefusedAward } from '../hooks/useAwardAutoStart';
 import { useBonusBudget } from '../hooks/useBonusBudget';
 import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
@@ -53,7 +55,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useIsMounted } from '../hooks/useIsMounted';
 import PageSkeleton from '../components/common/PageSkeleton';
-import { ErrorState } from '../components/common/EmptyState';
+import { LoadingState } from '../components/common/EmptyState';
 import CrashCurve, { type CrashPhase } from '../components/crash/CrashCurve';
 import { GameConsole, GamePanel } from '../components/games/GameConsole';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
@@ -66,7 +68,13 @@ import {
 } from '../utils/bonusGameBudget';
 import { diamondBonusMinimum } from '../utils/diamondBonusPayout';
 import { diamondGameTitle } from '../utils/diamondGameTitles';
-import { DiamondBonusService, BonusRefusal } from '../services/DiamondBonusService';
+import {
+  DiamondBonusService,
+  BonusRefusal,
+  BonusUnreadable,
+  BONUS_SAVED,
+  type BonusStart,
+} from '../services/DiamondBonusService';
 import DiamondGamesService, {
   normaliseCrash,
   type CrashRound,
@@ -138,6 +146,13 @@ function DiamondCrashGame() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [commit, setCommit] = useState<{ id: string; hash: string } | null>(null);
   const [ticketError, setTicketError] = useState<string | null>(null);
+  // A load or a ticket deal that failed is tried again by the page itself, on
+  // the same schedule as a saved wager. Nobody is told to retry or refresh.
+  const [ticketFailures, setTicketFailures] = useState(0);
+  const [loadFailures, setLoadFailures] = useState(0);
+  const [loadTry, setLoadTry] = useState(0);
+  const [quoteFailures, setQuoteFailures] = useState(0);
+  const [quoteTry, setQuoteTry] = useState(0);
   const ticketInFlight = useRef<Promise<void> | null>(null);
   const [clientSeed, setClientSeed] = useState<string>(() => randomClientSeed());
   const [selectedBudget, setBudget] = useBonusBudget(routeClubId, 'crash');
@@ -147,8 +162,27 @@ function DiamondCrashGame() {
   const bet = bonusTotal(budget);
   const budgetRef = useRef(budget);
   budgetRef.current = budget;
+  // A wager whose answer never arrived. The page settles it on its own
+  // schedule (useAutoSettle); the player is never asked to check anything.
   const [uncertain, setUncertain] = useState(false);
-  const heldStart = useRef<Parameters<typeof DiamondBonusService.start>[0] | null>(null);
+  const [settleAttempts, setSettleAttempts] = useState(0);
+  // The server answered the saved wager BONUS_SENDS_PER_REQUEST times and this
+  // browser could verify none of the answers. It stays saved (money may have
+  // moved) and is sent again on the next visit; on this one nothing more is
+  // sent for it and nothing holds the player.
+  const [saved, setSaved] = useState(false);
+  // The server refused a ticket that could no longer open a round and charged
+  // nothing, so the same wager goes again on a fresh ticket - once per press.
+  const [restartOwed, setRestartOwed] = useState(false);
+  // The Double Down offer is a question about the player's own diamonds. A won
+  // game never starts itself over it; it is treated as open until the setup
+  // panel says otherwise.
+  const [offerOpen, setOfferOpen] = useState(true);
+  const heldStart = useRef<BonusStart | null>(null);
+  // The exact wager the server refused for its ticket alone, auto cash-out
+  // included. It goes again, unchanged but for the fresh ticket: never rebuilt
+  // from what the page happens to show by then.
+  const owed = useRef<BonusStart | null>(null);
   const [autoCents, setAutoCents] = useState<number>(0);
   const [round, setRound] = useState<CrashRound | null>(null);
   const [revealedRoundId, setRevealedRoundId] = useState<string | null>(null);
@@ -194,15 +228,28 @@ function DiamondCrashGame() {
     return () => cancelAnimationFrame(frame);
   }, [phase, round?.round_id, round?.growth_k, round?.cap_cents, startedAtLocal, cashing]);
 
+  /** Reads the game and quotes the entry. Every read clears the quote before
+   * it asks, so the latest read owns the quote, whoever made it (the quote's
+   * own effect, the end of a round, the refresh that ends a break): its answer
+   * is the quote, and its failure is counted here and read again on the
+   * quote's schedule below. A read overtaken by a newer one counts for nothing. */
   const loadState = useCallback(
     async (uuid: string) => {
       const generation = ++stateGeneration.current;
       setQuotedAmount(null);
       const amount = bonusTotal(budgetRef.current);
-      const next = await DiamondGamesService.getState(uuid, 'crash', Math.min(amount, 5000));
+      let next: GameState;
+      try {
+        next = await DiamondGamesService.getState(uuid, 'crash', Math.min(amount, 5000));
+      } catch (error) {
+        if (live() && generation === stateGeneration.current)
+          setQuoteFailures((count) => count + 1);
+        throw error;
+      }
       if (!live() || generation !== stateGeneration.current) return next;
       setState(next);
       setQuotedAmount(amount);
+      setQuoteFailures(0);
       setWaitSeconds(next.player?.seconds_until_next ?? 0);
       return next;
     },
@@ -223,10 +270,16 @@ function DiamondCrashGame() {
         )
           throw new Error('The Game Ticket Could Not Be Loaded');
         setCommit({ id: c.commit_id, hash: c.server_seed_hash });
+        // A fresh player seed for every ticket, chosen after its hash is on
+        // screen, so no dealt seed can have been picked knowing the player's
+        // (fairness audit 2026-09-21). An owed wager keeps its own seed.
+        if (!owed.current) setClientSeed(randomClientSeed());
+        setTicketFailures(0);
       } catch (error) {
         if (live()) {
           setCommit(null);
-          setTicketError('Your Game Could Not Be Prepared. Tap Retry Game.');
+          setTicketError('Preparing Your Game');
+          setTicketFailures((count) => count + 1);
         }
         throw error;
       } finally {
@@ -347,6 +400,10 @@ function DiamondCrashGame() {
         if (pending) {
           heldStart.current = pending;
           setBudget(pending.budget);
+          // The page shows the wager it is settling: its seed and its exit.
+          setClientSeed(pending.seed);
+          if (typeof pending.autoCashoutCents === 'number' && pending.autoCashoutCents > 0)
+            setAutoCents(pending.autoCashoutCents);
           setUncertain(true);
         }
         const next = await loadState(uuid);
@@ -354,9 +411,13 @@ function DiamondCrashGame() {
         void loadHistory(uuid);
         if (!pending && next.open_round && next.open_round.status === 'open')
           adopt(next.open_round);
+        setLoadFailures(0);
       } catch (err) {
         reportError(err, 'DiamondCrashPage.load');
-        if (!cancelled && live()) setLoadError('Crash Could Not Be Loaded');
+        if (!cancelled && live()) {
+          setLoadError('Reconnecting To Crash');
+          setLoadFailures((count) => count + 1);
+        }
       } finally {
         if (!cancelled && live()) setLoading(false);
       }
@@ -366,7 +427,11 @@ function DiamondCrashGame() {
       stopPolling();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeClubId]);
+  }, [routeClubId, loadTry]);
+  useAutoSettle(loadFailures > 0, loadFailures, async () => {
+    setLoadTry((count) => count + 1);
+    return true;
+  });
 
   useEffect(() => {
     if (waitSeconds <= 0) return;
@@ -410,11 +475,44 @@ function DiamondCrashGame() {
     }
     return null;
   }, [state, player, cfg, bet, betOption, earned.ready, earned.error, earned.loading, budget]);
+  // The blocker is the server's own state (a closed or paused game, the day's
+  // limit, the wallet), never a transient flag such as a start in flight.
+  const refusal = useRefusedAward(earned.award?.id, blocker !== null);
+  /** One place decides what a refusal means; the start and the replay both land here. */
+  const settleRefusal = (e: BonusRefusal, refused: BonusStart | null) => {
+    if (e.ticketGone && refused) {
+      // Only the ticket was refused and nothing was charged: the same wager
+      // goes again on a fresh ticket, by itself.
+      owed.current = refused;
+      setRestartOwed(true);
+      return;
+    }
+    // Anything else: read the award again so the page shows why, and let go of
+    // the player until the server's reasons change.
+    refusal.refuse(refused?.budget.award?.id);
+    void earned.refresh();
+  };
+  const settleRefusalRef = useRef(settleRefusal);
+  settleRefusalRef.current = settleRefusal;
+  /** Stop sending a saved wager whose answers will not verify, let the player
+   * go, and read the game again. */
+  const keepForNextVisit = () => {
+    setSaved(true);
+    toast.info(BONUS_SAVED);
+    void earned.refresh();
+    if (clubUuid) {
+      void loadState(clubUuid).catch((error) => reportError(error, 'DiamondCrashPage.saved'));
+      void loadHistory(clubUuid);
+    }
+  };
+  const keepForNextVisitRef = useRef(keepForNextVisit);
+  keepForNextVisitRef.current = keepForNextVisit;
 
   const open = phase === 'open';
   const running = autoRun !== null;
   // An earned wheel award owns admission, even when direct-entry quoting is closed.
-  // A failed preparation waits for the player's explicit retry, never a retry loop.
+  // A failed preparation is tried again below on a widening schedule, never in
+  // a tight loop and never by asking the player to press Retry.
   useEffect(() => {
     if (
       !loading &&
@@ -443,6 +541,14 @@ function DiamondCrashGame() {
     phase,
     freshCommit,
   ]);
+  useAutoSettle(
+    Boolean(ticketError) && !commit && !uncertain && !open && !loading,
+    ticketFailures,
+    async () => {
+      await freshCommit().catch((error) => reportError(error, 'DiamondCrashPage.retryTicket'));
+      return true;
+    }
+  );
   /** The only blocker a player can do something about, so the plate becomes the door. */
   const shortOfDiamonds = blocker === SHORT_OF_DIAMONDS;
   const canStart = Boolean(
@@ -462,10 +568,25 @@ function DiamondCrashGame() {
     waitSeconds <= 0
   );
 
+  // The entry is quoted whenever it changes and after every round. A failed
+  // quote, this read's or any other (loadState counts them), is read again on
+  // the same widening schedule, so Start never sits on "Checking Your Entry"
+  // until somebody reloads the page.
   useEffect(() => {
-    if (clubUuid && validBonusBudget(budget) && !open && !starting)
-      void loadState(clubUuid).catch((e) => reportError(e, 'DiamondCrashPage.entryQuote'));
-  }, [clubUuid, budget.base, budget.doubled, open, starting, loadState]);
+    if (!clubUuid || !validBonusBudget(budget) || open || starting) return;
+    loadState(clubUuid).catch((e) => reportError(e, 'DiamondCrashPage.entryQuote'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clubUuid, budget.base, budget.doubled, open, starting, loadState, quoteTry]);
+  // Behind the skeleton and the reconnect screen the load's own retry reads
+  // the game, so the quote does not read it a second time there.
+  useAutoSettle(
+    quoteFailures > 0 && !open && !starting && !loading && !loadError,
+    quoteFailures,
+    async () => {
+      setQuoteTry((count) => count + 1);
+      return true;
+    }
+  );
 
   const cycleAuto = useCallback(() => {
     if (open || starting || running) return;
@@ -490,98 +611,140 @@ function DiamondCrashGame() {
     [toast]
   );
 
-  const handleStart = useCallback(async () => {
-    if (
-      !clubUuid ||
-      !commit ||
-      !canStart ||
-      busyRef.current ||
-      open ||
-      uncertain ||
-      !validBonusBudget(budget)
-    )
-      return;
-    busyRef.current = true;
-    stateGeneration.current++;
-    setQuotedAmount(null);
-    setStarting(true);
-    setVerdict(null);
-    soundService.playSpinStart();
-    triggerHaptic('medium');
-    try {
-      const seed = clientSeed.trim().slice(0, MAX_CLIENT_SEED) || randomClientSeed();
-      const request = {
-        clubId: clubUuid,
-        game: 'crash' as const,
-        budget: { ...budget },
-        commitId: commit.id,
-        serverSeedHash: commit.hash,
-        seed,
-        autoCashoutCents: autoTarget,
-      };
-      heldStart.current = request;
-      const result = normaliseCrash(
-        (await DiamondBonusService.start(request, user?.id ?? '')) as Record<string, unknown>
-      );
-      if (!live()) return;
-      earned.consume(heldStart.current?.budget.award?.id);
-      heldStart.current = null;
-      setUncertain(false);
-      if (!result.ok) {
-        toast.error(result.error || 'The Round Was Refused');
-        endRun(autoRunRef.current ? 'Auto Play Stopped' : null);
-        await freshCommit();
-        void loadState(clubUuid).catch(() => undefined);
+  /** Starts the round the plate shows, or - given `resend` - re-sends exactly the
+   * wager the server refused for its ticket, on the ticket now in hand. */
+  const handleStart = useCallback(
+    async (resend?: BonusStart) => {
+      if (
+        !clubUuid ||
+        !commit ||
+        busyRef.current ||
+        open ||
+        uncertain ||
+        (!resend && (!canStart || !validBonusBudget(budget)))
+      )
         return;
-      }
-      if (result.status !== 'open') {
-        finish(result);
-        return;
-      }
-      adopt(result);
-    } catch (err) {
-      reportError(err, 'DiamondCrashPage.start');
-      if (live()) {
-        setUncertain(!(err instanceof BonusRefusal));
-        toast.error(
-          err instanceof BonusRefusal ? err.message : 'Check Your Round Before Starting Another.'
+      busyRef.current = true;
+      stateGeneration.current++;
+      setQuotedAmount(null);
+      setStarting(true);
+      setVerdict(null);
+      soundService.playSpinStart();
+      triggerHaptic('medium');
+      try {
+        const seed = clientSeed.trim().slice(0, MAX_CLIENT_SEED) || randomClientSeed();
+        const request: BonusStart = resend
+          ? { ...resend, commitId: commit.id, serverSeedHash: commit.hash }
+          : {
+              clubId: clubUuid,
+              game: 'crash' as const,
+              budget: { ...budget },
+              commitId: commit.id,
+              serverSeedHash: commit.hash,
+              seed,
+              autoCashoutCents: autoTarget,
+            };
+        heldStart.current = request;
+        const result = normaliseCrash(
+          (await DiamondBonusService.start(request, user?.id ?? '')) as Record<string, unknown>
         );
-      }
-      if (err instanceof BonusRefusal) {
+        if (!live()) return;
+        earned.consume(heldStart.current?.budget.award?.id);
         heldStart.current = null;
-        setCommit(null);
-        if (live()) {
-          await freshCommit().catch((error) =>
-            reportError(error, 'DiamondCrashPage.refusedTicket')
-          );
+        setUncertain(false);
+        if (!result.ok) {
+          toast.error(result.error || 'The Round Was Refused');
+          endRun(autoRunRef.current ? 'Auto Play Stopped' : null);
+          await freshCommit();
+          void loadState(clubUuid).catch(() => undefined);
+          return;
+        }
+        if (result.status !== 'open') {
+          finish(result);
+          return;
+        }
+        adopt(result);
+      } catch (err) {
+        reportError(err, 'DiamondCrashPage.start');
+        if (err instanceof PriorBonusPending) {
+          // Another tab's wager is still saved: it settles first, by itself.
+          heldStart.current = err.prior;
+          if (live()) {
+            setBudget(err.prior.budget);
+            setUncertain(true);
+            setSettleAttempts(0);
+            toast.info('Settling Your Previous Round First');
+          }
+        } else if (err instanceof BonusRefusal) {
+          // Nothing was charged. The ticket is spent either way, so a fresh one
+          // is dealt; when the ticket itself was the refusal the same wager is
+          // sent again on it.
+          const refused = heldStart.current;
+          heldStart.current = null;
+          setCommit(null);
+          if (live()) {
+            setUncertain(false);
+            toast.error(err.message);
+            settleRefusalRef.current(err, refused);
+            await freshCommit().catch((error) =>
+              reportError(error, 'DiamondCrashPage.refusedTicket')
+            );
+          }
+        } else if (err instanceof BonusUnreadable && err.final) {
+          if (live()) {
+            setUncertain(true);
+            keepForNextVisitRef.current();
+          }
+        } else if (live()) {
+          // The answer never arrived. The saved wager is replayed by
+          // useAutoSettle until the server says what happened.
+          setUncertain(true);
+          setSettleAttempts(0);
+          toast.info('Settling Your Round');
+        }
+        endRun(autoRunRef.current ? 'Auto Play Stopped' : null);
+      } finally {
+        busyRef.current = false;
+        if (live()) setStarting(false);
+      }
+    },
+    [
+      clubUuid,
+      user?.id,
+      commit,
+      canStart,
+      open,
+      clientSeed,
+      budget,
+      uncertain,
+      autoTarget,
+      live,
+      toast,
+      freshCommit,
+      loadState,
+      finish,
+      adopt,
+      endRun,
+      setBudget,
+    ]
+  );
+
+  const checkStart = async (): Promise<boolean> => {
+    if (busyRef.current) return false;
+    if (!heldStart.current) {
+      // Nothing saved to replay: the round, if one opened, is on the server.
+      if (clubUuid) {
+        try {
+          const next = await loadState(clubUuid);
+          if (live() && next.open_round?.status === 'open') adopt(next.open_round);
+          if (live()) setUncertain(false);
+        } catch (err) {
+          reportError(err, 'DiamondCrashPage.reread');
+          if (live()) setSettleAttempts((count) => count + 1);
         }
       }
-      endRun(autoRunRef.current ? 'Auto Play Stopped' : null);
-    } finally {
-      busyRef.current = false;
-      if (live()) setStarting(false);
+      return true;
     }
-  }, [
-    clubUuid,
-    user?.id,
-    commit,
-    canStart,
-    open,
-    clientSeed,
-    budget,
-    uncertain,
-    autoTarget,
-    live,
-    toast,
-    freshCommit,
-    loadState,
-    finish,
-    adopt,
-    endRun,
-  ]);
-
-  const checkStart = async () => {
-    if (!heldStart.current || busyRef.current) return;
     busyRef.current = true;
     setStarting(true);
     try {
@@ -591,33 +754,85 @@ function DiamondCrashGame() {
           unknown
         >
       );
-      if (!live()) return;
+      if (!live()) return true;
       earned.consume(heldStart.current?.budget.award?.id);
       heldStart.current = null;
       setUncertain(false);
       if (result.status === 'open') adopt(result);
       else finish(result);
+      setSettleAttempts(0);
     } catch (err) {
       reportError(err, 'DiamondCrashPage.checkStart');
-      if (live())
-        toast.error(
-          err instanceof BonusRefusal ? err.message : 'Your Round Could Not Be Checked. Try Again.'
-        );
       if (err instanceof BonusRefusal) {
+        const refused = heldStart.current;
         heldStart.current = null;
-        setUncertain(false);
         setCommit(null);
         if (live()) {
+          setUncertain(false);
+          setSettleAttempts(0);
+          toast.error(err.message);
+          settleRefusalRef.current(err, refused);
           await freshCommit().catch((error) =>
             reportError(error, 'DiamondCrashPage.recoveryTicket')
           );
         }
+      } else if (err instanceof BonusUnreadable && err.final) {
+        if (live()) keepForNextVisit();
+      } else if (live()) {
+        // Not an answer: the page tries again on its own schedule.
+        setSettleAttempts((count) => count + 1);
       }
     } finally {
       busyRef.current = false;
       if (live()) setStarting(false);
     }
+    return true;
   };
+  // Nothing is replayed behind the skeleton or the load-error screen, where the
+  // exit guard is off: the saved wager waits until the game itself is on screen.
+  useAutoSettle(
+    uncertain && !saved && !loading && !loadError && Boolean(state),
+    settleAttempts,
+    checkStart
+  );
+  // A wager the server refused for its ticket alone is sent again on the
+  // fresh ticket, once, without the player pressing Start twice.
+  const handleStartRef = useRef(handleStart);
+  handleStartRef.current = handleStart;
+  const restarts = useRef(0);
+  useEffect(() => {
+    // The owed wager is re-sent as it was, auto cash-out included; only the
+    // server decides whether it can still start (a refusal now settles like
+    // any other).
+    if (!restartOwed || !commit || uncertain || starting || open) return;
+    setRestartOwed(false);
+    const wager = owed.current;
+    owed.current = null;
+    if (!wager || restarts.current >= 2) return;
+    restarts.current += 1;
+    void handleStartRef.current(wager);
+  }, [restartOwed, commit, uncertain, starting, open]);
+  // A won game starts itself: a short visible countdown, then the same Start
+  // the plate would have pressed. Changing the entry or the auto cash-out
+  // starts the window again. Auto Play stays off for an award, as before.
+  const autoStartIn = useAwardAutoStart(
+    earned.award?.id,
+    canStart &&
+      !restartOwed &&
+      !offerOpen &&
+      !loading &&
+      phase === 'idle' &&
+      !autoRun &&
+      !refusal.refused,
+    `${bet}:${autoChoice}:${clientSeed}:${refusal.opening}`,
+    () => void handleStartRef.current()
+  );
+  // Games paused by the platform come back by themselves after the break.
+  useStandingRefresh(Boolean(state?.frozen) && !open && !starting && !uncertain, () => {
+    void earned.refresh();
+    if (clubUuid)
+      void loadState(clubUuid).catch((error) => reportError(error, 'DiamondCrashPage.break'));
+  });
 
   const startRun = useCallback(() => {
     if (!autoSize || running || open || starting || earned.required || budget.award) return;
@@ -752,21 +967,27 @@ function DiamondCrashGame() {
   // error screen offer no way to finish a bonus, so they must not hold the
   // player on a page that cannot progress. The award stays pending server-side
   // and the wheel reopens it.
-  useLiveBonusGuard(
+  const releaseGuard = useLiveBonusGuard(
     !loading &&
       !loadError &&
       Boolean(state) &&
-      (Boolean(earned.award) || starting || open || cashing || uncertain),
+      // A wager kept for the next visit has nothing in flight: it holds nothing.
+      !saved &&
+      // A won game holds the page only while it can actually start: an award
+      // this page cannot start (daily limit, a closed or paused game, a
+      // cooldown) never traps the player on it. Money in flight still holds.
+      ((Boolean(earned.award) && canStart && phase === 'idle' && !refusal.refused) ||
+        starting ||
+        open ||
+        cashing ||
+        uncertain),
     () => toast.error('Finish Your Bonus Game Before Leaving.')
   );
   if (loading) return <PageSkeleton />;
   if (loadError || !state) {
     return (
       <div className={`${styles.page} ${styles.fullscreenPage}`}>
-        <ErrorState
-          message={loadError || 'Crash Could Not Be Loaded'}
-          onRetry={() => window.location.reload()}
-        />
+        <LoadingState message={loadError || 'Reconnecting To Crash'} />
       </div>
     );
   }
@@ -800,12 +1021,15 @@ function DiamondCrashGame() {
       ? `Round ${Math.min(autoRun.done + 1, autoRun.total)} Of ${autoRun.total}`
       : waitSeconds > 0
         ? `Ready In ${waitSeconds}s`
-        : runSize
-          ? `Auto Play ${runSize}`
-          : `Start ${bet.toLocaleString()}`;
+        : autoStartIn !== null
+          ? `Starting In ${autoStartIn}s`
+          : runSize
+            ? `Auto Play ${runSize}`
+            : `Start ${bet.toLocaleString()}`;
   const runLabel = running ? 'Stop' : runSize ? `Run ${runSize}` : 'Run Off';
-  const boost =
-    (round ? round.bonus?.boost_multiplier === 2 : budget.award?.boostMultiplier === 2) ? 2 : 1;
+  const boost = (round ? round.bonus?.boost_multiplier === 2 : budget.award?.boostMultiplier === 2)
+    ? 2
+    : 1;
   const title = diamondGameTitle('crash', boost);
   /** The tenth an ordinary entry keeps, from the client mirror of the server's rule. */
   const standardFloor = (() => {
@@ -886,11 +1110,16 @@ function DiamondCrashGame() {
               entryReady={earned.ready}
               awardLoading={earned.loading}
               awardError={earned.error}
-              onRefresh={() => void earned.refresh()}
               onChange={setBudget}
+              onOffer={setOfferOpen}
               diamonds={player?.spendable ?? null}
-              disabled={starting || cashing || running || uncertain}
+              disabled={starting || cashing || running || uncertain || restartOwed}
               clubId={routeClubId ?? ''}
+              leave={(to) => {
+                if (busyRef.current) return;
+                releaseGuard();
+                navigate(to);
+              }}
             />
           )
         }
@@ -950,35 +1179,33 @@ function DiamondCrashGame() {
           // says: the money is already on the table and getting it back is not
           // something a shortage may stand in front of.
           uncertain
-            ? { label: 'Check Round', onClick: () => void checkStart(), disabled: starting }
+            ? {
+                label: saved ? 'Round Saved' : 'Settling',
+                onClick: () => undefined,
+                disabled: true,
+              }
             : open
               ? {
                   label: cashing ? 'Booking Win' : 'Book The Win',
-                  ink: 'green',
+                  // Gold is value on this panel: Get Diamonds already reads that
+                  // way, and booking a win is the same kind of act. Green was the
+                  // last plate painted a colour of its own.
+                  ink: 'gold',
                   onClick: handleCashOut,
                   disabled: cashing || liveCents < 101,
                 }
               : shortOfDiamonds
                 ? { label: 'Get Diamonds', ink: 'gold', onClick: () => navigate(BUY_DIAMONDS) }
-                : ticketError
-                  ? {
-                      label: 'Retry Game',
-                      onClick: () =>
-                        void freshCommit().catch((error) =>
-                          reportError(error, 'DiamondCrashPage.retryTicket')
-                        ),
-                      disabled: starting,
-                    }
-                  : running
-                    ? { label: startLabel, ink: 'gold', disabled: true }
-                    : runSize
-                      ? { label: startLabel, ink: 'gold', onClick: startRun, disabled: !canStart }
-                      : {
-                          label: startLabel,
-                          ink: 'white',
-                          onClick: handleStart,
-                          disabled: !canStart,
-                        }
+                : running
+                  ? { label: startLabel, ink: 'gold', disabled: true }
+                  : runSize
+                    ? { label: startLabel, ink: 'gold', onClick: startRun, disabled: !canStart }
+                    : {
+                        label: startLabel,
+                        ink: 'white',
+                        onClick: () => void handleStart(),
+                        disabled: !canStart,
+                      }
         }
       >
         <TodayLine
@@ -1017,23 +1244,25 @@ function DiamondCrashGame() {
             <span className={`sc-copy ${styles.readoutSub}`}>
               {open
                 ? `Worth ${chipsLabel(liveWorth)} Chips Right Now`
-                : settledRound
-                  ? settledRound.status === 'cashed'
-                    ? `${chipsLabel(settledRound.outcome?.payout_chips ?? 0)} Chips Paid${settledRound.outcome?.settled_by === 'time' ? ' By Your Auto Cash Out' : ''}`
-                    : `Crashed At ${multiplierLabel(settledRound.outcome?.crash_cents ?? 100)}. ${chipsLabel(settledRound.outcome?.payout_chips ?? 0)} Chips Paid`
-                  : blocker
-                    ? blocker
-                    : ticketError
-                      ? ticketError
-                      : !commit
-                        ? 'Preparing Your Game'
-                        : quotedAmount !== bet
-                          ? 'Checking Your Entry'
-                          : runSize
-                            ? autoTarget
-                              ? `${promise ? `${promise} ` : ''}Auto Play Runs ${runSize} Rounds At ${compactChips(bet)} Diamonds Each, Cashing Out At ${multiplierLabel(autoTarget)} Every Time, And Stops On Its Own If A Round Is Refused. Tap Run To Change It.`
-                              : 'Auto Play Needs An Auto Cash Out: Tap Auto To Set One, Or It Cannot Cash Out For You.'
-                            : `${promise ? `${promise} ` : ''}Up To ${multiplierLabel(capCents)} On This Bet. ${budget.award ? 'Your Wheel Award Is Ready.' : 'Choose Your Entry And Start.'} Auto Cash Out Is Optional.`}
+                : saved
+                  ? BONUS_SAVED
+                  : settledRound
+                    ? settledRound.status === 'cashed'
+                      ? `${chipsLabel(settledRound.outcome?.payout_chips ?? 0)} Chips Paid${settledRound.outcome?.settled_by === 'time' ? ' By Your Auto Cash Out' : ''}`
+                      : `Crashed At ${multiplierLabel(settledRound.outcome?.crash_cents ?? 100)}. ${chipsLabel(settledRound.outcome?.payout_chips ?? 0)} Chips Paid`
+                    : blocker
+                      ? blocker
+                      : ticketError
+                        ? ticketError
+                        : !commit
+                          ? 'Preparing Your Game'
+                          : quotedAmount !== bet
+                            ? 'Checking Your Entry'
+                            : runSize
+                              ? autoTarget
+                                ? `${promise ? `${promise} ` : ''}Auto Play Runs ${runSize} Rounds At ${compactChips(bet)} Diamonds Each, Cashing Out At ${multiplierLabel(autoTarget)} Every Time, And Stops On Its Own If A Round Is Refused. Tap Run To Change It.`
+                                : 'Auto Play Needs An Auto Cash Out: Tap Auto To Set One, Or It Cannot Cash Out For You.'
+                              : `${promise ? `${promise} ` : ''}Up To ${multiplierLabel(capCents)} On This Bet. ${budget.award ? 'Your Wheel Award Is Ready.' : 'Choose Your Entry And Start.'} Auto Cash Out Is Optional.`}
               {autoRun && !open ? ` Auto Play ${autoRun.done} Of ${autoRun.total}.` : ''}
             </span>
             {settledRound?.status === 'cashed' ? (
@@ -1210,6 +1439,17 @@ function DiamondCrashGame() {
           <BonusCompletion
             key={settledRound.round_id}
             clubId={routeClubId ?? ''}
+            // The page already sang the cash-out at its own multiplier, and a
+            // crash says nothing. Either way the receipt adds no chord.
+            silent
+            // A crash is not a win. The receipt says what it is.
+            eyebrow={
+              settledRound.status === 'cashed'
+                ? undefined
+                : settledRound.outcome.payout_chips > 0
+                  ? 'Guarantee Paid'
+                  : 'Round Over'
+            }
             chips={settledRound.outcome.payout_chips}
             detail={`The Flight Crashed At ${multiplierLabel(settledRound.outcome.crash_cents)}.`}
           />

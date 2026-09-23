@@ -7,7 +7,9 @@ const backend = vi.hoisted(() => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
   refresh: vi.fn(),
 }));
-vi.mock('../../src/services/DiamondWheelService', () => ({
+vi.mock('../../src/services/DiamondWheelService', async (importOriginal) => ({
+  // The page reads the service's named exports (the unverified-receipt error).
+  ...(await importOriginal<typeof import('../../src/services/DiamondWheelService')>()),
   default: {
     getStateV2: backend.state,
     welcomeState: async () => ({ available: false, enabled: false }),

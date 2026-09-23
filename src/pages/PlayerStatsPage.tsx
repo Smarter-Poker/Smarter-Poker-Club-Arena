@@ -60,6 +60,7 @@ const TrophiesTab = lazy(() => import('./stats/TrophiesTab'));
 const TournamentsTab = lazy(() => import('./stats/TournamentsTab'));
 const AnalysisTab = lazy(() => import('./stats/AnalysisTab'));
 import { playerStyleFromStats } from '../components/stats/playerStyleFromStats';
+import { NOT_YET_MEASURED, ratioOrUnmeasured } from './stats/format';
 import {
   RANGES,
   num,
@@ -409,18 +410,21 @@ function useCountUpNumber(target: number, duration: number = 400) {
 // produce a readable sweep instead of a sliver.
 const HANDS_WON_ARC_CEILING = 40;
 
-function HandsWonGauge({ handsWonPct }: { handsWonPct: number }) {
+/** `null` = no hand scored in this window: not 0%, and not the losing red (2026-09-20). */
+function HandsWonGauge({ handsWonPct }: { handsWonPct: number | null }) {
+  const measured = handsWonPct !== null;
   const radius = 42;
   const circumference = 2 * Math.PI * radius;
   // Math.min(100, Math.max(0, NaN)) is NaN, and NaN reaches strokeDashoffset
   // (silently dropped by the browser, so the arc renders FULL) and the label
   // (rendered as "NaN%"). A non-finite input is a bug upstream; refuse it here
   // rather than drawing a confident 100% ring.
-  const value = Number.isFinite(handsWonPct) ? Math.min(100, Math.max(0, handsWonPct)) : 0;
+  const value = Number.isFinite(handsWonPct) ? Math.min(100, Math.max(0, handsWonPct ?? 0)) : 0;
   const arcPercent = Math.min(100, (value / HANDS_WON_ARC_CEILING) * 100);
   const dashOffset = circumference - (arcPercent / 100) * circumference;
 
   const getColor = () => {
+    if (!measured) return 'rgba(138, 154, 170, 0.8)';
     if (value >= 22) return '#10b981';
     if (value >= 15) return '#00d4ff';
     if (value >= 10) return '#f59e0b';
@@ -445,9 +449,13 @@ function HandsWonGauge({ handsWonPct }: { handsWonPct: number }) {
         />
       </svg>
       <div className="gauge-center">
-        <span className="gauge-value" style={{ color: getColor() }}>
-          {countedRate}%
-        </span>
+        {measured ? (
+          <span className="gauge-value" style={{ color: getColor() }}>
+            {countedRate}%
+          </span>
+        ) : (
+          <span className="gauge-label">{NOT_YET_MEASURED}</span>
+        )}
         <span className="gauge-label">Hands Won</span>
       </div>
     </div>
@@ -648,27 +656,44 @@ export default function PlayerStatsPage() {
   // the tab from appearing. It is also hidden when looking at someone else's
   // stats page — an agent's book is theirs, not a public profile field.
   const [agentRoles, setAgentRoles] = useState<AgentRoleRow[] | null>(null);
+  // A FAILED roles read is not "no roles" (2026-09-20): agentRoles stays null
+  // (unknown) and the Rake tab keeps the Downline section, as unavailable.
+  const [agentRolesError, setAgentRolesError] = useState(false);
+  const [agentRolesReload, setAgentRolesReload] = useState(0);
 
   useEffect(() => {
+    setAgentRolesError(false);
     if (!isOwnProfile || !user?.id) {
       setAgentRoles([]);
       return;
     }
     let cancelled = false;
+    const fail = (err: unknown) => {
+      if (cancelled) return;
+      reportError(err, 'PlayerStatsPage.rpc_fn_my_agent_roles');
+      setAgentRoles(null);
+      setAgentRolesError(true);
+    };
     void AgentRakeService.getMyAgentRoles().then((r) => {
-      if (!cancelled) setAgentRoles(r);
-    });
+      if (r?.error || !Array.isArray(r?.roles)) fail(r?.error ?? 'roles_unreadable');
+      else if (!cancelled) setAgentRoles(r.roles);
+    }, fail);
     return () => {
       cancelled = true;
     };
-  }, [isOwnProfile, user?.id]);
+  }, [isOwnProfile, user?.id, agentRolesReload]);
 
   // POLISH 1 (Dan 2026-08-30): the player's OWN weighted rake. Cent-exact,
   // from the same allocator the money pipeline uses. Own profile only — the
   // RPC derives identity from auth.uid() and would refuse anyone else anyway.
   const [rakeStats, setRakeStats] = useState<PlayerRakeStats | null>(null);
   const [rakeLoading, setRakeLoading] = useState(false);
+  // A FAILED rake read is not an empty ledger (2026-09-20): ScopedRead.error
+  // was never read here, so a fault rendered as "Rake Ledger Empty".
+  const [rakeError, setRakeError] = useState(false);
+  const [rakeReload, setRakeReload] = useState(0);
   useEffect(() => {
+    setRakeError(false);
     if (!isOwnProfile || !user?.id) {
       setRakeStats(null);
       setRakeLoading(false);
@@ -686,21 +711,26 @@ export default function PlayerStatsPage() {
     }
     setRakeLoading(true);
     setRakeStats(null);
+    const fail = (err: unknown) => {
+      if (cancelled) return;
+      reportError(err, 'PlayerStatsPage.rpc_ca_player_rake_stats', { days: windowDays });
+      setRakeError(true);
+    };
     void load
       .call(StatsFactsService, CHIP_STATS, windowDays)
       .then((r) => {
-        if (!cancelled) setRakeStats(r);
+        // `error` is set only when the read FAILED; an empty ledger has none.
+        if (r?.error) fail(r.error);
+        else if (!cancelled) setRakeStats(r);
       })
-      .catch(() => {
-        if (!cancelled) setRakeStats(null);
-      })
+      .catch(fail)
       .finally(() => {
         if (!cancelled) setRakeLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [isOwnProfile, user?.id, windowDays]);
+  }, [isOwnProfile, user?.id, windowDays, rakeReload]);
 
   const canSeeRake = (agentRoles?.length ?? 0) > 0;
   const TABS = useMemo<StatCategory[]>(() => {
@@ -1259,11 +1289,14 @@ export default function PlayerStatsPage() {
     [overall]
   );
 
+  // Display-ready: no showdowns is Not Yet Measured, never "0%" (2026-09-20).
   const showdownWinRate = useMemo(
     () =>
-      overall.showdowns_total > 0
-        ? ((overall.showdowns_won / overall.showdowns_total) * 100).toFixed(1)
-        : '0',
+      ratioOrUnmeasured(
+        (overall.showdowns_won / overall.showdowns_total) * 100,
+        overall.showdowns_total,
+        (v) => `${v.toFixed(1)}%`
+      ),
     [overall]
   );
 
@@ -1451,9 +1484,7 @@ export default function PlayerStatsPage() {
     return (
       <div className="stats-page">
         <div className="stats-empty-state" role="status">
-          <span className="empty-icon" aria-hidden="true">
-            {'!'}
-          </span>
+          <span className="empty-status">Private Data Boundary</span>
           <span className="empty-title">Player Stats Are Private</span>
           <span className="empty-description">
             Cross-Player Statistics Require An Authorized Shared-Club View. No All-Club Financial
@@ -1504,7 +1535,7 @@ export default function PlayerStatsPage() {
     return (
       <div className="stats-page">
         <div className="stats-empty-state">
-          <span className="empty-icon">{'!'}</span>
+          <span className="empty-status">Readout Unavailable</span>
           <span className="empty-title">Couldn't Load Your Stats</span>
           <span className="empty-description">
             Your Statistics Are Still There - We Just Could Not Reach Them Right Now.
@@ -1528,7 +1559,7 @@ export default function PlayerStatsPage() {
 
   const emptyState = (
     <div className="stats-empty-state">
-      <span className="empty-icon">{'♠'}</span>
+      <span className="empty-status">Awaiting Hand Ledger</span>
       <span className="empty-title">No Stats Yet</span>
       <span className="empty-description">
         Play Some Hands At The Tables And Your Statistics Will Appear Here Automatically.
@@ -1602,11 +1633,13 @@ export default function PlayerStatsPage() {
         </div>
 
         <div className="stats-hero" role="group" aria-label="Headline Performance">
-          <HandsWonGauge handsWonPct={handsWonPct} />
+          <HandsWonGauge handsWonPct={overall.total_hands > 0 ? handsWonPct : null} />
           <div className="hero-stats">
             <div className="hero-stat">
+              {/* max() prints the ALL-TIME count when it is larger, on a range-scoped
+                  page: say so (2026-09-20). */}
               <span className="hero-stat-label">
-                {lifetime.hands > overall.total_hands ? 'Hands Played' : 'Total Hands'}
+                {lifetime.hands > overall.total_hands ? 'Lifetime Hands' : 'Total Hands'}
               </span>
               <span className="hero-stat-value cyan">
                 {Math.max(lifetime.hands, overall.total_hands).toLocaleString()}
@@ -1629,9 +1662,12 @@ export default function PlayerStatsPage() {
             <div className="hero-stat">
               <span className="hero-stat-label">BB/100</span>
               <span
-                className={`hero-stat-value ${overall.bb_per_100 >= 0 ? 'positive' : 'negative'}`}
+                className={
+                  'hero-stat-value' +
+                  (!overall.cash_hands ? '' : overall.bb_per_100 >= 0 ? ' positive' : ' negative')
+                }
               >
-                {overall.bb_per_100.toFixed(2)}
+                {ratioOrUnmeasured(overall.bb_per_100, overall.cash_hands, (v) => v.toFixed(2))}
               </span>
             </div>
           </div>
@@ -1843,7 +1879,11 @@ export default function PlayerStatsPage() {
               <RakeTab
                 rakeLoading={rakeLoading}
                 rakeStats={rakeStats}
+                rakeError={rakeError}
+                onRetryRake={() => setRakeReload((n) => n + 1)}
                 agentRoles={agentRoles}
+                agentRolesError={agentRolesError}
+                onRetryAgentRoles={() => setAgentRolesReload((n) => n + 1)}
                 isOwnProfile={isOwnProfile}
                 panelResetKey={panelResetKey}
               />

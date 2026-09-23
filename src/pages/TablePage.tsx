@@ -6,6 +6,9 @@ import {
 import { uuid } from '../utils/uuid';
 import { isUUID } from '../utils/clubIdResolver';
 import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOverlay';
+/* #ClubArenaConsole: the felt's own dialogs print into Dan's approved master
+   rather than drawing a card in CSS. See .claude/skills/club-arena-console. */
+import { SpadeConsole } from '../components/console/SpadeConsole';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -107,6 +110,7 @@ import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { TableRouteBoundary } from '../components/table/TableRouteBoundary';
 import { withClubContext } from '../utils/clubScopedPath';
+import { hubMarketplaceDestination } from '../utils/hubMarketplace';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
 import { shouldRecoverMissedHandStartPresentation } from '../services/EngineStateClient';
@@ -219,7 +223,6 @@ import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
 import { useTableEnvironment } from '../hooks/useTableEnvironment';
 import { useTabKeepAlive, workerTimeout, cancelWorkerTimeout } from '../hooks/useTabKeepAlive';
 import { STORAGE_KEYS } from '../lib/storage';
-import StraddleToggle from '../components/table/StraddleToggle';
 /* TimeBank (the floating countdown panel) is no longer mounted - see the note
    at the Player Seats block. The hero's own seat ring carries the countdown;
    the panel sat on top of the hole cards. TimeBankStoreModal is a different
@@ -235,7 +238,7 @@ import TimebankCounter from '../components/table/TimebankCounter';
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
 import { parseTableArenaIdentity, seatCanAddFunds } from '../../server/src/domain/ArenaContext';
-import { arenaAssetUnitCents } from '../lib/arenaUnitCents';
+import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
 import { bootExplanation, seatCopy } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
 import { soundService, haptic } from '../services/SoundService';
@@ -3896,7 +3899,6 @@ function LiveTablePage({
      EngineStateClient, reached only when the server explicitly closes with
      CLOSE_UPGRADE_REQUIRED because the bytes really are incompatible. */
 
-  const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   // Guards the entry-post overlay against a double tap billing two big blinds.
   const [isPostingBB, setIsPostingBB] = useState(false);
   /* Dan 2026-08-29, binding: "that shouldn't happen because you already
@@ -7471,7 +7473,7 @@ function LiveTablePage({
             new Error(res?.error || 'toggleStraddle rejected by engine'),
             'TablePage.Toggle_failed'
           );
-          toast?.error?.(res?.error || 'Could not change your straddle setting');
+          toast?.error?.(res?.error || 'Could Not Change Your Straddle Setting.');
         }
       } finally {
         setStraddleBusy(false);
@@ -21997,8 +21999,7 @@ function LiveTablePage({
       showBuyInModal ||
       showHandHistory ||
       showPlayerNotes ||
-      showWaitList ||
-      isSideMenuOpen,
+      showWaitList,
     /* Every action key runs the SAME function the on-screen button runs.
        2026-08-28: these pointed at `handleFold` / `handleCall`, a parallel pair
        that skipped the VPIP/PFR counting inside handleActionPanelAction — so a
@@ -22048,7 +22049,6 @@ function LiveTablePage({
       setShowWaitList(false);
       closeRaisePanel();
       setShowBuyInModal(false);
-      setIsSideMenuOpen(false);
       /* AUDIT 2026-08-25: the comment said ALL and the list was nine of
          nineteen. Every overlay below is opened from the table and had no
          keyboard dismissal at all — several, like the hand-detail sheet and
@@ -22074,13 +22074,6 @@ function LiveTablePage({
       if (!seatFirstPending) setSeatFirstConfirm(null);
     },
   });
-
-  // Side menu toggle — wrapped in startTransition to avoid INP
-  const toggleSideMenu = () => {
-    startTransition(() => {
-      setIsSideMenuOpen(!isSideMenuOpen);
-    });
-  };
 
   // IMPROVEMENT PASS 2026-08-19: triggerChipAnimation + its ref were dead —
   // every call site was rewritten to push ChipAnimationEvents inline
@@ -22744,7 +22737,6 @@ function LiveTablePage({
           exitDestination={exitDestination}
         />
       )}
-
       {/* Phase 1.2 PR-F: hero disconnect banner. Only renders when the
           engine FSM reports MISSING or DISCONNECTED for this user. */}
       {/* ── Bounty knockout ────────────────────────────────────────────────
@@ -22753,12 +22745,15 @@ function LiveTablePage({
           drawn on the busted player's own chair by SeatKnockoutLayer, which
           mounts inside .table-scaler with the seat ring — see the note there.
           Nothing takes the felt over for it any more. */}
-
       {/* ── Mystery bounty chest (2026-08-20) ──────────────────────────────
           The opposite case: a takeover, because it is ASKING the winner to
           tap it. Their tap is broadcast so every other seat opens in step. */}
       <MysteryBountyChest
         data={mysteryChest}
+        /* THE GRID THE CHEST WAS DRAWN ON (2026-09-21): whole Diamonds at a
+           Diamond table, the chest's own chip figure at a chip one, and no
+           figure at all while this table's arena is still unread. */
+        unitCents={arenaAssetUnitCentsIfRead(tableState.arenaAsset)}
         viewerUserId={userId}
         remoteOpened={chestRemoteOpened}
         onBroadcastOpen={broadcastChestOpen}
@@ -22774,7 +22769,6 @@ function LiveTablePage({
         }}
         playSounds={ambientSoundsAllowed}
       />
-
       {/* ── Spin multiplier draw (2026-08-20) ───────────────────────────────
           A takeover, like the chest: it happens before the cards and it is the
           reason the player opened a Spin. Server-decided, identical on every
@@ -22807,7 +22801,6 @@ function LiveTablePage({
           Heads Up · Playing For {Math.round(tableState.spinPrizePool ?? 0).toLocaleString()}
         </div>
       )}
-
       {/* Dan 2026-08-19, bug list item 2: "no winner banner at showdown - just
           ship the pot." The centre banner that used to live here (YOU WIN /
           <Name> wins, hand name, amount, ~2s) is gone. `winnerInfo` is still
@@ -22924,7 +22917,6 @@ function LiveTablePage({
         </div>
         <div className="header-right" />
       </div>
-
       {/* ═══════════════════════════════════════════════════════════════════════
           4-CORNER TABLE HUD — Bible V8 §11
           Upper-left: Hamburger menu | Upper-right: Mini stats card
@@ -22956,6 +22948,28 @@ function LiveTablePage({
                         badge: standUpNextBB ? 'ON' : undefined,
                         onClick: () => setStandUpNextBB(!standUpNextBB),
                       },
+                      /* STRADDLE LIVES HERE NOW (2026-09-15). `StraddleToggle`
+                         was rendered only inside the old side menu, and that
+                         menu had lost its opener - the only reference to
+                         `toggleSideMenu` was the overlay's own close handler -
+                         so switching straddling on has been unreachable for as
+                         long as that was true. The control is the menu the
+                         player can actually open, on the same shape as Stand Up
+                         beside it, calling the same `handleToggleStraddle`.
+                         Only offered when the host enabled straddles: the
+                         engine refuses the toggle outright otherwise. */
+                      ...(isStraddleAvailable
+                        ? [
+                            {
+                              id: 'straddle',
+                              label: 'Straddle',
+                              icon: <AddOnIcon />,
+                              badge: isStraddleEnabled ? 'ON' : undefined,
+                              disabled: straddleBusy,
+                              onClick: () => void handleToggleStraddle(!isStraddleEnabled),
+                            },
+                          ]
+                        : []),
                       /* A Diamond cash seat tops up; a Diamond tournament does
                          not, because tournament funding is a later phase and
                          the custody door refuses a tournament table outright.
@@ -23015,9 +23029,18 @@ function LiveTablePage({
                         // Dan 2026-09-04: a hub tab beside this table, not a
                         // separate browser tab the felt cannot see (the
                         // strip, the swipe and every other table stay put).
+                        //
+                        // 2026-09-21: the exact Hub page, not the alias. The
+                        // menu said '/hub/marketplace', which 308s to
+                        // /hub/diamond-store inside the frame - so the tab's
+                        // own address no longer matched what opened it, and
+                        // pressing the item again opened a SECOND tab (or hit
+                        // the cap) instead of focusing the one already there.
+                        // It also names this table's club, so "Club
+                        // Marketplace" opens that club's shop.
                         onClick: () =>
                           masterBus.emit('OPEN_HUB_TAB', {
-                            path: '/hub/marketplace',
+                            path: hubMarketplaceDestination('', actualClubIdRef.current),
                             requestedBy: userId,
                           }),
                       },
@@ -23341,7 +23364,6 @@ function LiveTablePage({
         }
         centerTop={null /* Game info moved to on-felt strip below community cards */}
       />
-
       {/* ═══════════════════════════════════════════════════════════════════════
           TABLE AREA
           ═══════════════════════════════════════════════════════════════════════ */}
@@ -24972,7 +24994,6 @@ function LiveTablePage({
           onAnimationComplete={handleAnimationComplete}
         />
       </div>
-
       {/* ═══════════════════════════════════════════════════════════════════════
           SEAT-FIRST BUY-IN CONFIRMATION (Dan 2026-08-23)
           "you should sit down, then confirm 'buy in amount'. once the user
@@ -24992,43 +25013,103 @@ function LiveTablePage({
             className="seat-buyin-confirm__backdrop"
             onClick={() => !seatFirstPending && setSeatFirstConfirm(null)}
           />
+          {/* ON THE MASTER (#ClubArenaConsole, 2026-09-14). This card was an
+              18px radius, its own two-stop gradient and two drawn buttons - the
+              exact shape the standard forbids, on the sheet that stands between
+              a tap and a debit. It is the spade console now: the seat and the
+              game are the eyebrow, the countdown is the painted pill, the
+              figures print as rows on the black glass with an engraved rule
+              between them, and Cancel / Buy In are the two plates the foot
+              already paints. Every guard, every disabled branch and every
+              literal below is unchanged. */}
           <div className="seat-buyin-confirm__card">
-            <div className="seat-buyin-confirm__eyebrow">
-              Seat {seatFirstConfirm} · {seatFirstBuyIn.label}
-            </div>
-            <div id="seat-buyin-confirm-title" className="seat-buyin-confirm__title">
-              Buy In
-            </div>
-            <div className="seat-buyin-confirm__amount">{seatFirstBuyIn.cost.toLocaleString()}</div>
-            <div className="seat-buyin-confirm__meta">
-              {/* An unknown balance prints as "—", never as a confident 0
-                  (2026-08-28 audit). `accountBalance` is deliberately left
-                  null when the wallet read fails, and the Buy In button 25
-                  lines below already respects that — so this line was the one
-                  place still telling a funded player "Your Balance 0" beside
-                  an enabled spend button. */}
-              Your Balance{' '}
-              {accountBalance === null ? 'Unknown' : Number(accountBalance).toLocaleString()}
-            </div>
-            <div className="seat-buyin-confirm__note">
-              This {seatFirstBuyIn.label} Starts When All {seatFirstBuyIn.seats} Seats Are Bought
-            </div>
-            {/* ROUND 14: the 60-second window, made VISIBLE. It has always
-                applied to this sheet, but nothing on it said so - the player
-                simply vanished to the lobby mid-decision, which is precisely
-                the "it never works" surprise. Counting down is the honest
-                version, and it matters more now that the odds ladder below
-                gives a player something to read. Last ten seconds go amber. */}
-            {buyInSecondsLeft !== null && (
-              <div
-                className="seat-buyin-confirm__meta"
-                style={buyInSecondsLeft <= 10 ? { color: '#fbbf24' } : undefined}
-                aria-live="polite"
-              >
-                Seat Held For {buyInSecondsLeft}s
+            <SpadeConsole
+              as="div"
+              eyebrow={`Seat ${seatFirstConfirm} · ${seatFirstBuyIn.label}`}
+              title="Buy In"
+              titleId="seat-buyin-confirm-title"
+              /* ROUND 14: the 60-second window, made VISIBLE. It has always
+                 applied to this sheet, but nothing on it said so - the player
+                 simply vanished to the lobby mid-decision, which is precisely
+                 the "it never works" surprise. Counting down is the honest
+                 version. Last ten seconds go red. It prints in the header's
+                 PAINTED pill slot now rather than as a coloured line of meta,
+                 and the row below repeats it for a screen reader.
+
+                 "SEC", NOT "S". The pill slot prints in the master's own
+                 condensed CAPS, so a bare unit came out as "8S" - a letter
+                 nobody means, on the one figure the player is racing. The pill
+                 never sits empty either: before the clock is known it names
+                 the state instead, because the slot is PAINTED whether or not
+                 anything is printed into it and an empty one reads as a
+                 control that failed to load. */
+              pill={buyInSecondsLeft !== null ? `${buyInSecondsLeft} Sec` : 'Seat Held'}
+              pillInk={buyInSecondsLeft !== null && buyInSecondsLeft <= 10 ? 'red' : 'gold'}
+              plates={{
+                secondary: {
+                  label: 'Cancel',
+                  disabled: seatFirstPending,
+                  onClick: () => setSeatFirstConfirm(null),
+                },
+                primary: {
+                  ink: 'white',
+                  /* AN UNKNOWN BALANCE IS NOT AN EMPTY ONE (2026-08-28).
+                     `accountBalance` starts at 0 and is only ever written when
+                     the wallet read SUCCEEDS ("keep the last known figure on
+                     unknown") - but on first load the last known figure IS
+                     zero, so one transient read failure left a funded player
+                     staring at a permanently disabled button reading "Not
+                     Enough Chips", on a page with no refresh path. The RPC is
+                     the real authority and refuses an underfunded entry with a
+                     toast, so a known-short balance still blocks the tap while
+                     an unknown one lets them try. */
+                  disabled:
+                    seatFirstPending ||
+                    (accountBalance !== null && Number(accountBalance) < seatFirstBuyIn.cost),
+                  onClick: () => void commitSeatFirstBuyIn(seatFirstConfirm),
+                  label: seatFirstPending
+                    ? seatCopy(tableState.arenaAsset).takingYourFunds
+                    : accountBalance !== null && Number(accountBalance) < seatFirstBuyIn.cost
+                      ? seatCopy(tableState.arenaAsset).notEnoughFunds
+                      : `Buy In ${seatFirstBuyIn.cost.toLocaleString()}`,
+                },
+              }}
+            >
+              <div className="seat-buyin-confirm__row">
+                <span className="sc-label sc-ink--blue">Buy In</span>
+                <span className="seat-buyin-confirm__amount sc-ink--silver">
+                  {seatFirstBuyIn.cost.toLocaleString()}
+                </span>
               </div>
-            )}
-            {/* ── NOBODY EVER SEES THE ODDS (Dan 2026-09-05, binding) ──────
+              <div className="seat-buyin-confirm__row">
+                <span className="sc-label sc-ink--blue">Your Balance</span>
+                {/* An unknown balance prints as "Unknown", never as a confident
+                    0 (2026-08-28 audit). `accountBalance` is deliberately left
+                    null when the wallet read fails, and the Buy In plate above
+                    already respects that - so this line was the one place still
+                    telling a funded player "Your Balance 0" beside an enabled
+                    spend button. */}
+                <span className="sc-label sc-ink--silver">
+                  {accountBalance === null ? 'Unknown' : Number(accountBalance).toLocaleString()}
+                </span>
+              </div>
+              {buyInSecondsLeft !== null && (
+                <div className="seat-buyin-confirm__row" aria-live="polite">
+                  <span className="sc-label sc-ink--blue">Seat Held For</span>
+                  {/* "Sec" rather than "s": every label on the glass prints in
+                      the master's condensed caps, and a bare unit rendered as
+                      "8S". */}
+                  <span
+                    className={`sc-label ${buyInSecondsLeft <= 10 ? 'sc-ink--red' : 'sc-ink--gold'}`}
+                  >
+                    {buyInSecondsLeft} Sec
+                  </span>
+                </div>
+              )}
+              <p className="sc-copy sc-copy--center seat-buyin-confirm__note">
+                This {seatFirstBuyIn.label} Starts When All {seatFirstBuyIn.seats} Seats Are Bought
+              </p>
+              {/* ── NOBODY EVER SEES THE ODDS (Dan 2026-09-05, binding) ──────
                 Dan, verbatim: "HIDE THE MULTIPLIER ODDS, GET RIDE OF THAT ALL
                 TOGETHER, NOBODY SHOULD EVER VISIBLY SEE THAT."
 
@@ -25045,45 +25126,10 @@ function LiveTablePage({
                 how the platform checks ITSELF. What it no longer has is a
                 render path, and tests/unit/spinOddsOnBuyInSheet.test.ts is
                 what stops it getting one back. */}
-            <div className="seat-buyin-confirm__actions">
-              <button
-                type="button"
-                className="seat-buyin-confirm__btn seat-buyin-confirm__btn--ghost"
-                disabled={seatFirstPending}
-                onClick={() => setSeatFirstConfirm(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="seat-buyin-confirm__btn seat-buyin-confirm__btn--go"
-                /* AN UNKNOWN BALANCE IS NOT AN EMPTY ONE (2026-08-28).
-                   `accountBalance` starts at 0 and is only ever written when
-                   the wallet read SUCCEEDS ("keep the last known figure on
-                   unknown") — but on first load the last known figure IS
-                   zero, so one transient read failure left a funded player
-                   staring at a permanently disabled button reading "Not
-                   Enough Chips", on a page with no refresh path. The RPC is
-                   the real authority and refuses an underfunded entry with a
-                   toast, so a known-short balance still blocks the tap while
-                   an unknown one lets them try. */
-                disabled={
-                  seatFirstPending ||
-                  (accountBalance !== null && Number(accountBalance) < seatFirstBuyIn.cost)
-                }
-                onClick={() => void commitSeatFirstBuyIn(seatFirstConfirm)}
-              >
-                {seatFirstPending
-                  ? seatCopy(tableState.arenaAsset).takingYourFunds
-                  : accountBalance !== null && Number(accountBalance) < seatFirstBuyIn.cost
-                    ? seatCopy(tableState.arenaAsset).notEnoughFunds
-                    : `Buy In ${seatFirstBuyIn.cost.toLocaleString()}`}
-              </button>
-            </div>
+            </SpadeConsole>
           </div>
         </div>
       )}
-
       {/* ═══════════════════════════════════════════════════════════════════════
           BOTTOM CONTROLS + ACTION PANEL
           ═══════════════════════════════════════════════════════════════════════ */}
@@ -25767,7 +25813,6 @@ function LiveTablePage({
           </>
         )}
       </div>
-
       {/* ═══════════════════════════════════════════════════════════════════════
           POST-BB-TO-ENTER OVERLAY (Bible V8 §4.2)
           Walkthrough Step 4 fix 2026-04-29 — engine has tracked waiting-for-BB
@@ -25788,22 +25833,40 @@ function LiveTablePage({
           ═══════════════════════════════════════════════════════════════════════ */}
       {postOrWaitOpen && userId && tableId && !tableState.isTournament && (
         <div className="post-or-wait__backdrop">
-          <div className="post-or-wait" role="dialog" aria-modal="true">
-            <h3 className="post-or-wait__title">Post Or Wait For The Big Blind?</h3>
-            <p className="post-or-wait__body">
-              Post The Big Blind Now And You Are Dealt Into The Next Hand. Or Wait, And You Are
-              Dealt In When The Big Blind Reaches Your Seat.
-            </p>
-            <div className="post-or-wait__actions">
-              <button
-                type="button"
-                className="post-or-wait__post"
-                disabled={isPostingBB}
-                onClick={async () => {
-                  if (isPostingBB || !tableId) return;
-                  setIsPostingBB(true);
-                  try {
-                    /* POST-TO-ENTER RACE FIX 2026-08-27 (Dan: "the post to
+          {/* ON THE MASTER (#ClubArenaConsole, 2026-09-14). This was a 14px
+              rounded card with its own cyan border and a teal gradient button -
+              a second frame drawn in CSS over a live felt. It is the spade
+              console now: the question is the title, the explanation prints on
+              the black glass between the rails, and the two ways out are the
+              two plates the foot already paints. Every branch of the post
+              handler below is unchanged. */}
+          <div
+            className="post-or-wait"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="post-or-wait-title"
+          >
+            <SpadeConsole
+              as="div"
+              eyebrow="Your Entry"
+              title="Post Or Wait"
+              titleId="post-or-wait-title"
+              pill="Big Blind"
+              pillInk="blue"
+              plates={{
+                secondary: {
+                  label: 'Wait For BB',
+                  onClick: () => setPostOrWaitOpen(false),
+                },
+                primary: {
+                  label: isPostingBB ? 'Posting' : 'Post Big Blind',
+                  ink: 'white',
+                  disabled: isPostingBB,
+                  onClick: async () => {
+                    if (isPostingBB || !tableId) return;
+                    setIsPostingBB(true);
+                    try {
+                      /* POST-TO-ENTER RACE FIX 2026-08-27 (Dan: "the post to
                        get dealt in feature isn't working... you also get a
                        pop up that says you're being dealt in for free...
                        that must be removed. all players must post or wait
@@ -25816,52 +25879,49 @@ function LiveTablePage({
                        over: nobody is ever dealt in free, and the failed
                        post left the player waiting. One call, three honest
                        outcomes. */
-                    const res = await serverPostBBToEnter(tableId);
-                    if (res?.deferred) {
-                      /* Dan 2026-08-29: HELD, NOT REFUSED. They are in
+                      const res = await serverPostBBToEnter(tableId);
+                      if (res?.deferred) {
+                        /* Dan 2026-08-29: HELD, NOT REFUSED. They are in
                          between the blinds. The agreement is kept by the
                          engine and posted for them the moment the button is
                          past, so this says what happens next and never asks
                          again. */
-                      setBBPostAgreed(true);
-                      toast.info(
-                        res?.error ||
-                          'You Are In Between The Blinds, And Will Be Dealt In When The Button Passes.'
-                      );
-                    } else if (res?.success) {
-                      toast.success('Posting The Big Blind. You Are Dealt Into The Next Hand.');
-                    } else if (res?.error === 'Player is not waiting for BB') {
-                      // Already known to the engine and not held out: they
-                      // are in the rotation and post blinds like everyone.
-                      toast.info('You Are Already In The Hand Rotation.');
-                    } else {
-                      toast.info(
-                        res?.error || 'Could Not Post The Big Blind. You Will Wait For It Instead.'
-                      );
+                        setBBPostAgreed(true);
+                        toast.info(
+                          res?.error ||
+                            'You Are In Between The Blinds, And Will Be Dealt In When The Button Passes.'
+                        );
+                      } else if (res?.success) {
+                        toast.success('Posting The Big Blind. You Are Dealt Into The Next Hand.');
+                      } else if (res?.error === 'Player is not waiting for BB') {
+                        // Already known to the engine and not held out: they
+                        // are in the rotation and post blinds like everyone.
+                        toast.info('You Are Already In The Hand Rotation.');
+                      } else {
+                        toast.info(
+                          res?.error ||
+                            'Could Not Post The Big Blind. You Will Wait For It Instead.'
+                        );
+                      }
+                      setPostOrWaitOpen(false);
+                    } catch (e) {
+                      reportError(e, 'TablePage.postOrWaitPostBB');
+                      toast.error('Could Not Post The Big Blind.');
+                    } finally {
+                      setIsPostingBB(false);
                     }
-                    setPostOrWaitOpen(false);
-                  } catch (e) {
-                    reportError(e, 'TablePage.postOrWaitPostBB');
-                    toast.error('Could Not Post The Big Blind.');
-                  } finally {
-                    setIsPostingBB(false);
-                  }
-                }}
-              >
-                {isPostingBB ? 'Posting...' : 'Post Big Blind'}
-              </button>
-              <button
-                type="button"
-                className="post-or-wait__wait"
-                onClick={() => setPostOrWaitOpen(false)}
-              >
-                Wait For Big Blind
-              </button>
-            </div>
+                  },
+                },
+              }}
+            >
+              <p className="sc-copy sc-copy--center post-or-wait__body">
+                Post The Big Blind Now And You Are Dealt Into The Next Hand. Or Wait, And You Are
+                Dealt In When The Big Blind Reaches Your Seat.
+              </p>
+            </SpadeConsole>
           </div>
         </div>
       )}
-
       {!postOrWaitOpen &&
         userId &&
         tableId &&
@@ -25927,254 +25987,16 @@ function LiveTablePage({
             </span>
           </button>
         )}
-
       {/* ═══════════════════════════════════════════════════════════════════════
           SIDE MENU (Slide-in)
           ═══════════════════════════════════════════════════════════════════════ */}
-      {isSideMenuOpen && (
-        <>
-          <div className="menu-overlay" onClick={toggleSideMenu} />
-          <nav className="side-menu">
-            {tableState.arenaAsset === 'chips' && (
-              <button
-                className="menu-item"
-                onClick={() => navigate(withClubContext('/cashier', lobbyClubIdRef.current))}
-              >
-                <span className="menu-item-icon">◉</span>
-                <span className="menu-item-label">Cashier</span>
-                <span className="menu-item-arrow">›</span>
-              </button>
-            )}
-            {canTopUpSeat && (
-              <button
-                className="menu-item"
-                onClick={() => {
-                  if (tableState.heroSeat > 0) setShowCashier(true);
-                  setIsSideMenuOpen(false);
-                }}
-              >
-                <span className="menu-item-icon">+</span>
-                <span className="menu-item-label">Top Up</span>
-                <span className="menu-item-arrow">›</span>
-              </button>
-            )}
-            {/* 2026-08-20: DiamondWalletModal was mounted in TableModalsLayer and
-                `setShowDiamondWallet(true)` was never called anywhere, so the
-                wallet was unreachable from the table — while diamonds are spent
-                AT the table for throwables, emoji and rabbit hunts, each of which
-                can fail with "Insufficient diamonds". Players could spend the
-                currency but not check or top up the balance. */}
-            <button
-              className="menu-item"
-              onClick={() => {
-                setShowDiamondWallet(true);
-                setIsSideMenuOpen(false);
-              }}
-            >
-              <span className="menu-item-icon">◆</span>
-              <span className="menu-item-label">Diamonds</span>
-              <span className="menu-item-arrow">›</span>
-            </button>
-            {/* 2026-08-20: TableReactions was mounted and gated on
-                v8Settings.emoji_enabled, but setIsReactionPickerOpen(true) was
-                never called anywhere — the picker itself is `{isOpen && ...}`.
-                So a club owner could switch reactions ON in table settings and
-                players still had no way to send one, while INCOMING reactions
-                kept animating: it looked like everyone else had a button you
-                did not. */}
-            {v8Settings.emoji_enabled && (
-              <button
-                className="menu-item"
-                disabled={tableState.heroSeat <= 0}
-                onClick={() => {
-                  if (tableState.heroSeat <= 0) return;
-                  setIsReactionPickerOpen(true);
-                  setIsSideMenuOpen(false);
-                }}
-              >
-                <span className="menu-item-icon">☺</span>
-                <span className="menu-item-label">Reactions</span>
-                <span className="menu-item-arrow">›</span>
-              </button>
-            )}
-            <button
-              className="menu-item"
-              onClick={() => {
-                setShowGameRules(true);
-                setIsSideMenuOpen(false);
-              }}
-            >
-              <span className="menu-item-icon">☰</span>
-              <span className="menu-item-label">Table Rules</span>
-              <span className="menu-item-arrow">›</span>
-            </button>
-            <button
-              className="menu-item"
-              /* The raw `localStorage.setItem('ca_sound_enabled', ...)` that
-                 was here is gone (2026-08-29): a second writer of a key
-                 `soundGate` owns, which `setIsSoundEnabled` already writes
-                 through `persistSoundPreference` — along with the gate's OTHER
-                 key, which this one never touched. */
-              onClick={() => setIsSoundEnabled(!isSoundEnabled)}
-            >
-              <span className="menu-item-icon">♪</span>
-              <span className="menu-item-label">Sounds</span>
-              <span className={`menu-item-toggle ${isSoundEnabled ? 'on' : ''}`}>
-                {isSoundEnabled ? 'ON' : 'OFF'}
-              </span>
-            </button>
-            <button
-              className="menu-item"
-              /* Same: `setIsVibrationEnabled` persists through
-                 `vibrationGate`, which writes both of its keys as a pair. */
-              onClick={() => setIsVibrationEnabled(!isVibrationEnabled)}
-            >
-              <span className="menu-item-icon">⋆</span>
-              <span className="menu-item-label">Vibrations</span>
-              <span className={`menu-item-toggle ${isVibrationEnabled ? 'on' : ''}`}>
-                {isVibrationEnabled ? 'ON' : 'OFF'}
-              </span>
-            </button>
-            <button className="menu-item" onClick={() => setIsChatMuted(!isChatMuted)}>
-              <span className="menu-item-icon">C</span>
-              <span className="menu-item-label">Chat</span>
-              <span className={`menu-item-toggle ${isChatMuted ? '' : 'on'}`}>
-                {isChatMuted ? 'MUTED' : 'ON'}
-              </span>
-            </button>
-            <button
-              className="menu-item"
-              onClick={() => {
-                const shareUrl = `${publicOrigin()}/hub/club-arena/table/${tableId}`;
-                navigator.clipboard
-                  ?.writeText(shareUrl)
-                  .then(() => {
-                    toast.success('Table link copied to clipboard!');
-                  })
-                  .catch((e) => {
-                    console.warn('[TablePage] Failed to copy share URL to clipboard:', e);
-                    toast.info('Share: ' + shareUrl);
-                  });
-                setIsSideMenuOpen(false);
-              }}
-            >
-              <span className="menu-item-icon">↗</span>
-              <span className="menu-item-label">Share</span>
-              <span className="menu-item-arrow">›</span>
-            </button>
-            <button
-              className="menu-item"
-              onClick={() => {
-                setIsSideMenuOpen(false);
-                navigate(withClubContext('/vip', lobbyClubIdRef.current));
-              }}
-            >
-              <span className="menu-item-icon">★</span>
-              <span className="menu-item-label">VIP</span>
-              <span className="menu-item-arrow">›</span>
-            </button>
-            {/* StraddleToggle was imported by this file and never rendered, so
-                `setIsStraddleEnabled` had exactly one caller — the STRADDLE_TOGGLED
-                bus echo — and a player had no way to switch straddling on. Only
-                shown when the host enabled straddles for this table; the engine
-                rejects the toggle outright otherwise. */}
-            {isStraddleAvailable && (
-              <div className="menu-item menu-item--embed">
-                <StraddleToggle
-                  tableId={tableId || ''}
-                  playerId={userId}
-                  isEnabled={isStraddleEnabled}
-                  onToggle={(enabled) => void handleToggleStraddle(enabled)}
-                  amount={straddleAmount}
-                  isAvailable
-                />
-              </div>
-            )}
-            <button
-              className="menu-item"
-              onClick={() => {
-                setShowPlayerNotes(true);
-                setIsSideMenuOpen(false);
-              }}
-            >
-              <span className="menu-item-icon">✎</span>
-              <span className="menu-item-label">Player Notes</span>
-              <span className="menu-item-arrow">›</span>
-            </button>
-            <button
-              className="menu-item"
-              onClick={() => {
-                setShowHandHistory(true);
-                setIsSideMenuOpen(false);
-              }}
-            >
-              <span className="menu-item-icon">♠</span>
-              <span className="menu-item-label">Hand History</span>
-              <span className="menu-item-arrow">›</span>
-            </button>
-            <button
-              className="menu-item"
-              onClick={() => {
-                setShowSessionHUD(true);
-                setIsSideMenuOpen(false);
-              }}
-            >
-              <span className="menu-item-icon">--</span>
-              <span className="menu-item-label">Live Stats</span>
-              <span className="menu-item-arrow">›</span>
-            </button>
-            <button
-              className="menu-item"
-              onClick={() => {
-                void handleSitOut();
-                setIsSideMenuOpen(false);
-              }}
-            >
-              <span className="menu-item-icon">▮</span>
-              <span className="menu-item-label">Sit Out</span>
-              <span className="menu-item-arrow">›</span>
-            </button>
-            <button
-              className="menu-item"
-              onClick={() => {
-                handleOpenWaitlist();
-                setIsSideMenuOpen(false);
-              }}
-            >
-              <span className="menu-item-icon">⌂</span>
-              <span className="menu-item-label">Wait List</span>
-              <span className="menu-item-arrow">›</span>
-            </button>
-            {/* Bible V8 §11.1 — Table Settings accessible from hamburger menu */}
-            <button
-              className="menu-item"
-              onClick={() => {
-                setShowSettings(true);
-                setIsSideMenuOpen(false);
-              }}
-            >
-              <span className="menu-item-icon">⚙</span>
-              <span className="menu-item-label">Table Settings</span>
-              <span className="menu-item-arrow">›</span>
-            </button>
-            <button
-              className="menu-item exit"
-              onClick={() => {
-                setIsSideMenuOpen(false);
-                setShowLeaveConfirm(true);
-              }}
-            >
-              <span className="menu-item-icon">←</span>
-              <span className="menu-item-label">Leave Table</span>
-              <span className="menu-item-arrow">›</span>
-            </button>
-            <div className="menu-footer">Version: 1.0.0 (Club Arena)</div>
-          </nav>
-        </>
-      )}
-
+      /* THE SIDE MENU IS GONE (2026-09-15). It could not be opened: the only reference to
+      `toggleSideMenu` was the overlay's own close handler, inside the block the overlay itself
+      rendered, so nothing anywhere could set `isSideMenuOpen` true. The felt's menu is `TableMenu`
+      in the HUD - the trigger `approvedHamburgerGearGuard` pins - and this was its superseded
+      predecessor left behind with 241 lines of JSX and its own stylesheet. The hamburger is
+      untouched (CLAUDE.md 10.7): what went is a menu no player could reach. */
       {/* Observing / Join indicators REMOVED — empty seats already show "+ SIT" */}
-
       {/* THE FLOATING "I'M BACK" IS GONE (Dan 2026-09-04: "there shouldn't be
           two 'im back' buttons"). It hung bottom-right over the hero's cards
           while the footer bar directly under it said "You Are Sitting Out"
@@ -26183,7 +26005,6 @@ function LiveTablePage({
           `sitOutRequestInFlightRef` and `clearLocalSitOutState`, so it
           re-opened the out -> in -> out race the footer's handleSitBackIn
           was built to close. One button, one implementation: the bar. */}
-
       {/*
         Bible V8 §11.1: text_message toggle — hide chat entirely when off.
         The underlying messages keep streaming into chatMessages so when the
@@ -26224,7 +26045,6 @@ function LiveTablePage({
           unreadCount={unreadCount}
         />
       )}
-
       {/* Bible V8 §11.1: emoji_enabled gate — skips reactions overlay entirely. */}
       {v8Settings.emoji_enabled && (
         <TableReactions
@@ -26236,10 +26056,8 @@ function LiveTablePage({
           activeReactions={activeReactions}
         />
       )}
-
       {/* Performance Monitor — dev-only */}
       <TablePerfMonitor />
-
       {/* Player Notes, Hand Replay, Settings, Insurance, RIT, BBJ, Throwables,
           Confetti, Leave Notice, Cashier, Buy-In, Rabbit Hunt,
           Leaderboard, Session Summary, Tournament Screens — all modals/overlays.
@@ -26260,7 +26078,6 @@ function LiveTablePage({
         durationMs={tableState.discardDurationMs}
         deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
       />
-
       {/* Dan 2026-08-21: PokerBros-style hand breakdown. Replay + Share are
           buttons in its header, driving the existing HandReplayPlayer and
           ShareHand modals. */}
@@ -27013,7 +26830,6 @@ function LiveTablePage({
         safeBB={safeBB}
         getPlayerHUDStats={getPlayerHUDStats}
       />
-
       {/* Dan 2026-08-23: "when players are seated at the table, or are on
           break, there should be a countdown clock."
 
@@ -27039,7 +26855,6 @@ function LiveTablePage({
           onClose={() => setShowTournamentInfo(false)}
         />
       )}
-
       {/* THE MUST MOVE LOBBY, ON THE FELT (Dan 2026-09-05). Opened by the
           LOBBY button in the action pill row (over the bus, above) and by the
           SEAT CHANGE / listed / waitlist buttons in the corner. Always mounted;
@@ -27071,7 +26886,6 @@ function LiveTablePage({
         tournamentId={tableState.tournamentId}
         onClose={() => setShowTournamentLobby(false)}
       />
-
       {/* Dan 2026-08-28: the tabbed HERO HUB behind the hero's own avatar —
           Throwables / Stats / Profile / Table Settings. Replaces the removed
           upper-left cash stats button as the primary stats entry point. */}
@@ -27106,7 +26920,6 @@ function LiveTablePage({
           }}
         />
       )}
-
       {/* AUDIT 2026-08-25 — A MENU ITEM THAT DID NOTHING.
           The tab-bar menu emits TABLE_MENU_ACTION / 'TOGGLE_ALIAS'
           (TableTabBar.tsx). TablePage's handler answered it with
@@ -27134,7 +26947,6 @@ function LiveTablePage({
           }}
         />
       )}
-
       {/* THE ACTION-CLOCK WARNING WINDOW — sound + haptic in the final three
           seconds of hero's own turn.
 
@@ -27149,7 +26961,6 @@ function LiveTablePage({
         armed={isHeroOnTheClock}
         soundEnabled={isSoundEnabled && ambientSoundsAllowed}
       />
-
       {/* BAD BEAT JACKPOT HIT (bottom-right, three seconds, Dan 2026-08-26) is
           rendered ONCE by BBJHitAnnouncer in PersistentTableLayer, never per
           table - a card drawn inside a display:none slot is a card nobody

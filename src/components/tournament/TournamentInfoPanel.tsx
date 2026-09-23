@@ -1,8 +1,3 @@
-import {
-  tournamentEntryWindow,
-  tournamentEntryWindowOpen,
-  type TournamentEntryWindowRow,
-} from '../../utils/tournamentEntryWindow';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT INFO PANEL (2026-08-23)
@@ -26,12 +21,35 @@ import {
  * tournament_players, tables — so the panel adds no new privileged surface.
  * It is fully self-contained: one query on open, one light refresh while it is
  * open, and it unsubscribes on close.
+ *
+ * ─── THE CONSOLE (#ClubArenaConsole, 2026-09-08) ─────────────────────────────
+ *
+ * It was a rounded navy sheet with a grey title bar, a nine-tile stat grid, a
+ * row of filled tab pills and four bordered tables. It is Dan's approved spade
+ * master now: the event name is the eyebrow, TOURNAMENT is engraved in the
+ * header well, the live level sits in the well's painted pill slot, and every
+ * figure prints as a row on the black glass between the rails - label in the
+ * master's lit blue on the left, value in silver on the right, an engraved
+ * rule between rows. The tabs are lit words on the glass rather than drawn
+ * pills, and Close is a lit word on the flat closing cap's glass, because the
+ * foot paints two plates and this surface has one action.
+ *
+ * Figures follow the house rule: anything that is a TERM OF WHAT THE SERVER
+ * CHARGES (the buy-in) stays exact; every browsing chip figure - pools, stacks,
+ * prize previews - goes through compactChips.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
 import { money } from '../../utils/buyIn';
+import { compactChips } from '../../utils/format';
+import { SpadeConsole } from '../console/SpadeConsole';
+import {
+  tournamentEntryWindow,
+  tournamentEntryWindowOpen,
+  type TournamentEntryWindowRow,
+} from '../../utils/tournamentEntryWindow';
 import {
   effectivePlaceLadderPool,
   placePrize,
@@ -106,6 +124,13 @@ const num = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const TAB_LABELS: Record<TabId, string> = {
+  ranking: 'Ranking',
+  prizes: 'Prizes',
+  tables: 'Tables',
+  blinds: 'Blinds',
+};
+
 export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose }: Props) {
   const [tab, setTab] = useState<TabId>('ranking');
   const [t, setT] = useState<TournamentRow | null>(null);
@@ -133,9 +158,6 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
         supabase
           .from('tournaments')
           .select(
-            // `arena` is the three columns fn_ca_tournament_unit_cents tests,
-            // so this panel's ladder is priced in the unit the event actually
-            // pays in rather than in the cent every tournament used to pay in.
             'id, name, status, variant, tournament_type, spin_multiplier, buy_in_amount, buy_in_fee, prize_pool, guaranteed_prize, bubble_protection, satellite_target_id, satellite_target, bounty_pool, current_players, max_players, starting_chips, current_level, level_started_at, late_reg_levels, late_reg_mins, rebuy_levels, prize_pool_finalized, started_at, blind_structure, payout_structure, is_bounty, start_time, arena:clubs!tournaments_club_id_fkey(id, asset, is_platform, union_id)'
           )
           .eq('id', tournamentId)
@@ -209,6 +231,13 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
     };
   }, [rows, t, heroUserId, fieldSize]);
 
+  /**
+   * The unit this event pays in, from the `arena` the select above embeds. A
+   * cent-grid share of a Diamond pool floors to a different whole number than
+   * a Diamond-grid one does, so the arithmetic, not the display, is what this
+   * fixes.
+   */
+  const unitCents = useMemo(() => tournamentRowUnitCents(t), [t]);
   const blinds = useMemo(() => asArray(t?.blind_structure), [t]);
   const payouts = useMemo(() => resolvePayoutStructure(t) ?? [], [t]);
   const isSatellite =
@@ -228,13 +257,6 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
       isSatellite
     );
   }, [fieldSize, isSatellite, payouts, t]);
-  /**
-   * The unit this event pays in, from the `arena` the select above embeds. A
-   * cent-grid share of a Diamond pool floors to a different whole number than
-   * a Diamond-grid one does, so the arithmetic, not the display, is what this
-   * fixes.
-   */
-  const unitCents = useMemo(() => tournamentRowUnitCents(t), [t]);
   /**
    * LEVEL DISPLAY IS 1-BASED, THE COLUMN IS NOT (2026-08-23).
    *
@@ -287,8 +309,8 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
 
   const stat = (label: string, value: string) => (
     <div className="tip__stat">
-      <span className="tip__statLabel">{label}</span>
-      <span className="tip__statValue">{known ? value : '-'}</span>
+      <span className="tip__statLabel sc-label sc-ink--blue">{label}</span>
+      <span className="tip__statValue sc-ink--silver">{known ? value : '-'}</span>
     </div>
   );
 
@@ -300,207 +322,216 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
         role="dialog"
         aria-label="Tournament Information"
       >
-        <header className="tip__head">
-          <div className="tip__title">{t?.name || 'Tournament'}</div>
-          <button className="tip__close" onClick={onClose} aria-label="Close">
-            ×
+        <SpadeConsole
+          as="div"
+          className="tip__console"
+          eyebrow={t?.name || 'Tournament'}
+          title="Tournament"
+          pill={known ? `Lv ${level}` : undefined}
+          pillInk="blue"
+          foot="foot"
+        >
+          <div className="tip__stats">
+            {stat(
+              'My Position',
+              stats.myStatus === 'eliminated'
+                ? `Out ${stats.myPosition ? `(${stats.myPosition})` : ''}`.trim()
+                : stats.myRank
+                  ? `${stats.myRank} / ${stats.entriesAlive}`
+                  : 'Not Entered'
+            )}
+            {stat('Entries', `${stats.entriesAlive} / ${stats.entriesTotal}`)}
+            {stat('Prize Pool', compactChips(stats.prizePool))}
+            {stat(
+              t?.is_bounty ? 'Bounty Pool' : 'Buy-In',
+              t?.is_bounty
+                ? compactChips(stats.bountyPool)
+                : /* A term of what the server charges: exact, never compacted. */
+                  money(num(t?.buy_in_amount) + num(t?.buy_in_fee))
+            )}
+            {stat('Level', String(level))}
+            {stat('Late Reg', lateRegText)}
+            {stat('Avg Stack', compactChips(stats.avg))}
+            {stat('Largest', compactChips(stats.largest))}
+            {stat('Smallest', compactChips(stats.smallest))}
+          </div>
+
+          {/* Lit words on the glass, not drawn pills. The master paints the
+              controls it has; a tab strip is not one of them, so it is type. */}
+          <nav className="tip__tabs" role="tablist">
+            {(['ranking', 'prizes', 'tables', 'blinds'] as TabId[]).map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={tab === id}
+                className={`tip__tab ${tab === id ? 'is-active' : ''}`}
+                onClick={() => setTab(id)}
+              >
+                {TAB_LABELS[id]}
+              </button>
+            ))}
+          </nav>
+
+          <div className="tip__body">
+            {loading && rows.length === 0 && !failed && (
+              <div className="tip__empty sc-copy sc-copy--center">Loading...</div>
+            )}
+
+            {/* We could not ask. Never dressed up as "the answer is none". */}
+            {failed && (
+              <div className="tip__error sc-copy sc-copy--center" role="status">
+                Could Not Load Tournament Details. Retrying.
+              </div>
+            )}
+
+            {tab === 'ranking' && (
+              <table className="tip__table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Player</th>
+                    <th className="tip__num">Chips</th>
+                    {t?.is_bounty && <th className="tip__num">KO</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.ranked.map((r, i) => (
+                    <tr
+                      key={r.user_id}
+                      className={heroUserId && r.user_id === heroUserId ? 'is-me' : ''}
+                    >
+                      <td>{i + 1}</td>
+                      <td className="tip__name">{r.username || 'Player'}</td>
+                      <td className="tip__num">{compactChips(num(r.chips))}</td>
+                      {t?.is_bounty && <td className="tip__num">{num(r.bounties_collected)}</td>}
+                    </tr>
+                  ))}
+                  {!loading && !failed && stats.ranked.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="tip__empty">
+                        No Players Seated Yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {tab === 'prizes' && (
+              <table className="tip__table">
+                <thead>
+                  <tr>
+                    <th>Place</th>
+                    <th className="tip__num">Share</th>
+                    <th className="tip__num">Prize</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payouts.map((p, i) => {
+                    const pct = p.percentage;
+                    /* The shared place calculation (residual rule, bubble
+                       reserve, satellite carve-out): a player is never shown
+                       one number and paid another. The preview is a browsing
+                       figure, so it prints through compactChips. */
+                    const amount =
+                      placeLadderPool === null
+                        ? null
+                        : placePrize(placeLadderPool, payouts, p.place, unitCents);
+                    return (
+                      <tr key={i}>
+                        <td>{p.place}</td>
+                        <td className="tip__num">{pct}%</td>
+                        <td className="tip__num">{amount === null ? '-' : compactChips(amount)}</td>
+                      </tr>
+                    );
+                  })}
+                  {!failed && payouts.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="tip__empty">
+                        Payouts Are Set When Registration Closes.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {tab === 'tables' && (
+              <table className="tip__table">
+                <thead>
+                  <tr>
+                    <th>Table</th>
+                    <th className="tip__num">Players</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tables.map(([id, n]) => (
+                    <tr key={id}>
+                      <td className="tip__name">Table {id.slice(0, 8)}</td>
+                      <td className="tip__num">{n}</td>
+                    </tr>
+                  ))}
+                  {!failed && tables.length === 0 && (
+                    <tr>
+                      <td colSpan={2} className="tip__empty">
+                        Tables Are Built When The Tournament Starts.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {tab === 'blinds' && (
+              <table className="tip__table">
+                <thead>
+                  <tr>
+                    <th>Level</th>
+                    <th className="tip__num">Blinds</th>
+                    <th className="tip__num">Ante</th>
+                    <th className="tip__num">Mins</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {blinds.map((b, i) => {
+                    const lvl = num(b.level) || i + 1;
+                    const isBreak = Boolean(b.isBreak);
+                    return (
+                      <tr key={i} className={lvl === level ? 'is-me' : ''}>
+                        <td>{isBreak ? 'Break' : lvl}</td>
+                        <td className="tip__num">
+                          {isBreak
+                            ? '-'
+                            : `${compactChips(num(b.smallBlind))}/${compactChips(num(b.bigBlind))}`}
+                        </td>
+                        <td className="tip__num">
+                          {num(b.ante) ? compactChips(num(b.ante)) : '-'}
+                        </td>
+                        <td className="tip__num">
+                          {num(b.durationMinutes) || num(b.duration) / 60 || '-'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {!failed && blinds.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="tip__empty">
+                        No Blind Structure Recorded.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* ONE ACTION, SO NO PLATES. The foot paints both plates or neither,
+              and a painted plate with nothing on it reads as broken. */}
+          <button type="button" className="tip__close sc-ink--blue" onClick={onClose}>
+            Close
           </button>
-        </header>
-
-        <div className="tip__statGrid">
-          {stat(
-            'My Position',
-            stats.myStatus === 'eliminated'
-              ? `Out ${stats.myPosition ? `(${stats.myPosition})` : ''}`.trim()
-              : stats.myRank
-                ? `${stats.myRank} / ${stats.entriesAlive}`
-                : 'Not Entered'
-          )}
-          {stat('Entries', `${stats.entriesAlive} / ${stats.entriesTotal}`)}
-          {stat('Prize Pool', money(stats.prizePool))}
-          {stat(
-            t?.is_bounty ? 'Bounty Pool' : 'Buy-In',
-            t?.is_bounty
-              ? money(stats.bountyPool)
-              : money(num(t?.buy_in_amount) + num(t?.buy_in_fee))
-          )}
-          {stat('Level', String(level))}
-          {stat('Late Reg', lateRegText)}
-          {stat('Avg Stack', stats.avg.toLocaleString())}
-          {stat('Largest', stats.largest.toLocaleString())}
-          {stat('Smallest', stats.smallest.toLocaleString())}
-        </div>
-
-        <nav className="tip__tabs" role="tablist">
-          {(['ranking', 'prizes', 'tables', 'blinds'] as TabId[]).map((id) => (
-            <button
-              key={id}
-              role="tab"
-              aria-selected={tab === id}
-              className={`tip__tab ${tab === id ? 'is-active' : ''}`}
-              onClick={() => setTab(id)}
-            >
-              {id === 'ranking'
-                ? 'Ranking'
-                : id === 'prizes'
-                  ? 'Prizes'
-                  : id === 'tables'
-                    ? 'Tables'
-                    : 'Blinds'}
-            </button>
-          ))}
-        </nav>
-
-        <div className="tip__body">
-          {loading && rows.length === 0 && !failed && <div className="tip__empty">Loading...</div>}
-
-          {/* We could not ask. Never dressed up as "the answer is none". */}
-          {failed && (
-            <div className="tip__error" role="status">
-              Could Not Load Tournament Details. Retrying.
-            </div>
-          )}
-
-          {tab === 'ranking' && (
-            <table className="tip__table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Player</th>
-                  <th className="tip__num">Chips</th>
-                  {t?.is_bounty && <th className="tip__num">KO</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {stats.ranked.map((r, i) => (
-                  <tr
-                    key={r.user_id}
-                    className={heroUserId && r.user_id === heroUserId ? 'is-me' : ''}
-                  >
-                    <td>{i + 1}</td>
-                    <td className="tip__name">{r.username || 'Player'}</td>
-                    <td className="tip__num">{num(r.chips).toLocaleString()}</td>
-                    {t?.is_bounty && <td className="tip__num">{num(r.bounties_collected)}</td>}
-                  </tr>
-                ))}
-                {!loading && !failed && stats.ranked.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="tip__empty">
-                      No Players Seated Yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          )}
-
-          {tab === 'prizes' && (
-            <table className="tip__table">
-              <thead>
-                <tr>
-                  <th>Place</th>
-                  <th className="tip__num">Share</th>
-                  <th className="tip__num">Prize</th>
-                </tr>
-              </thead>
-              <tbody>
-                {payouts.map((p, i) => {
-                  const pct = p.percentage;
-                  const amount =
-                    placeLadderPool === null
-                      ? null
-                      : placePrize(placeLadderPool, payouts, p.place, unitCents);
-                  return (
-                    <tr key={i}>
-                      <td>{p.place}</td>
-                      <td className="tip__num">{pct}%</td>
-                      <td className="tip__num">
-                        {amount === null
-                          ? '-'
-                          : amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {!failed && payouts.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="tip__empty">
-                      Payouts Are Set When Registration Closes.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          )}
-
-          {tab === 'tables' && (
-            <table className="tip__table">
-              <thead>
-                <tr>
-                  <th>Table</th>
-                  <th className="tip__num">Players</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tables.map(([id, n]) => (
-                  <tr key={id}>
-                    <td className="tip__name">Table {id.slice(0, 8)}</td>
-                    <td className="tip__num">{n}</td>
-                  </tr>
-                ))}
-                {!failed && tables.length === 0 && (
-                  <tr>
-                    <td colSpan={2} className="tip__empty">
-                      Tables Are Built When The Tournament Starts.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          )}
-
-          {tab === 'blinds' && (
-            <table className="tip__table">
-              <thead>
-                <tr>
-                  <th>Level</th>
-                  <th className="tip__num">Blinds</th>
-                  <th className="tip__num">Ante</th>
-                  <th className="tip__num">Mins</th>
-                </tr>
-              </thead>
-              <tbody>
-                {blinds.map((b, i) => {
-                  const lvl = num(b.level) || i + 1;
-                  const isBreak = Boolean(b.isBreak);
-                  return (
-                    <tr key={i} className={lvl === level ? 'is-me' : ''}>
-                      <td>{isBreak ? 'Break' : lvl}</td>
-                      <td className="tip__num">
-                        {isBreak
-                          ? '-'
-                          : `${num(b.smallBlind).toLocaleString()}/${num(b.bigBlind).toLocaleString()}`}
-                      </td>
-                      <td className="tip__num">
-                        {num(b.ante) ? num(b.ante).toLocaleString() : '-'}
-                      </td>
-                      <td className="tip__num">
-                        {num(b.durationMinutes) || num(b.duration) / 60 || '-'}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {!failed && blinds.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="tip__empty">
-                      No Blind Structure Recorded.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          )}
-        </div>
+        </SpadeConsole>
       </section>
     </div>
   );

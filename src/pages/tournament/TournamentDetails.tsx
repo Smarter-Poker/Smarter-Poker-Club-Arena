@@ -74,7 +74,7 @@ import UnionsTab from '../../components/tournament/details/UnionsTab';
 import TablesTab from '../../components/tournament/details/TablesTab';
 import RewardsTab from '../../components/tournament/details/RewardsTab';
 import SatellitesTab from '../../components/tournament/details/SatellitesTab';
-import { chipsCompact } from '../../components/tournament/details/types';
+import { chipsCompact, tournamentRowUnitCents } from '../../components/tournament/details/types';
 import type {
   NormalisedBlindLevel,
   TabId,
@@ -1909,6 +1909,9 @@ export default function TournamentDetails({
           tournamentId={tournamentId}
           tournamentName={tournament.name || 'Tournament'}
           prizePool={tournament.prize_pool || 0}
+          /* The pool's unit, off the arena this row was read with - the same
+             reading every tab on this page prices through (2026-09-21). */
+          unitCents={tournamentRowUnitCents(tabProps.tournament)}
         />
       )}
     </PageErrorBoundary>

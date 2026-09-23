@@ -180,6 +180,7 @@ describe('Club Arena information architecture', () => {
       '/unions/union-1/operations',
       '/unions/union-1/statements',
       '/unions/union-1/settlement',
+      '/unions/union-1/diamond-costs',
     ]);
 
     const communityForOperator = getArenaSectionNavigation('/community', {

@@ -183,6 +183,57 @@ try:
     lease_retention = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/lease_reaper_qualification.py'))
     lease_retention['qualify'](ROOT, out, cmd, command, run, probe, require, results)
     require(results.get('leaseReaper', {}).get('passed') is True, 'Unresolved F06 lease retention did not qualify')
+    # The historical cohort replays the retired-origin scenario on the same fixed
+    # fixture ids (1401/1402), so it cannot run after the ordinary lane has seeded
+    # them. Clone the clean prerequisite state here, in this same owned cluster,
+    # while retained + lease_reaper are done and retired_origin has not yet run.
+    # Earlier qualifiers move this lane onto their own database, so clone whatever
+    # cmd[-1] currently names rather than assuming the initial one.
+    prerequisite_db = cmd[-1]
+    clone_db = 'f06_historical_prerequisite'
+    require(re.fullmatch('[a-z][a-z0-9_]*', prerequisite_db) is not None, 'Unexpected prerequisite database identity')
+    run('historical-prerequisite-clone', 'CREATE DATABASE ' + clone_db + ' TEMPLATE ' + prerequisite_db + ';')
+    retired = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/retired_origin_qualification.py'))
+    retired['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('retiredOrigin', {}).get('passed') is True, 'Retired original authority qualification did not complete')
+    stopped_banks = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/stopped_bank_qualification.py'))
+    stopped_banks['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('stoppedBanks', {}).get('passed') is True, 'Stopped original bank qualification did not complete')
+    # The historical qualifier re-executes the ordinary retired-origin module and
+    # reuses its log names, its `out` side files and its results keys. Give it its
+    # own output directory and its own results mapping so no ordinary evidence or
+    # verdict is overwritten, and point the real psql argv at the untouched clone
+    # for the whole nested run, restoring the lane's database in a finally.
+    historical_out = out / 'historical'
+    historical_out.mkdir()
+    historical_results = {'cases': [], 'passed': False}
+
+    def historical_run(name, sql, expected=None, error=None):
+        r = command(cmd, sql)
+        (historical_out / (name + '.log')).write_text(r.stdout + r.stderr)
+        passed = (r.returncode != 0 and error in r.stderr) if error else r.returncode == 0
+        if expected is not None:
+            passed = passed and r.stdout.rstrip('\n') == expected
+        results['cases'].append({'name': 'historical/' + name, 'passed': passed})
+        require(passed, 'historical/' + name + ': ' + r.stdout[-500:] + r.stderr[-1500:])
+        return r.stdout.rstrip('\n')
+
+    def historical_probe(name, sql, expected=None, error=None):
+        return historical_run(name, 'BEGIN;\n' + sql + '\nROLLBACK;', expected, error)
+
+    historical = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/historical_bank_qualification.py'))
+    cmd[-1] = clone_db
+    try:
+        historical_run('historical-runs-on-the-clone', 'SELECT current_database();', clone_db)
+        historical['qualify'](ROOT, historical_out, cmd, command, historical_run, historical_probe, require, historical_results)
+    finally:
+        cmd[-1] = prerequisite_db
+    run('historical-ordinary-database-restored', 'SELECT current_database();', prerequisite_db)
+    results['historicalLoss'] = historical_results.get('historicalLoss')
+    results['historicalRetiredOrigin'] = historical_results.get('retiredOrigin')
+    results['historicalRetiredOtherZero'] = historical_results.get('retiredOtherZero')
+    require((results['historicalLoss'] or {}).get('passed') is True,
+            'Historical MTT bank loss qualification did not complete')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

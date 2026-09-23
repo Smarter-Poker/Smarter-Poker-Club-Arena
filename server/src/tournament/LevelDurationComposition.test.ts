@@ -4,7 +4,11 @@ import path from 'node:path';
 import ts from 'typescript';
 import { sliceMethod } from '../testHelpers/sourceWindow.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
-import { escalatedBlindLevel, lastPlayableIndex } from './blindEscalation.js';
+import {
+  enforcePlayableBlindLevel,
+  escalatedBlindLevel,
+  lastPlayableIndex,
+} from './blindEscalation.js';
 import { observedStepRatio } from './blindLadder.js';
 import { continueBookedSpinBlinds } from './SpinDrawReceipt.js';
 import { spinBlindsForLevel } from '../config/spinSpec.js';
@@ -37,6 +41,10 @@ function manager(
   return {
     ...new Function(
       'acceleratedLevelMs',
+      // advanceBlindLevel applies the MAX_BLIND_VALUE ceiling through this
+      // rather than three independent Math.min calls (2026-09-21), so the
+      // extracted method needs it in scope like every other import it uses.
+      'enforcePlayableBlindLevel',
       'escalatedBlindLevel',
       'lastPlayableIndex',
       'observedStepRatio',
@@ -50,6 +58,7 @@ function manager(
       runtime
     )(
       acceleratedLevelMs,
+      enforcePlayableBlindLevel,
       escalatedBlindLevel,
       lastPlayableIndex,
       observedStepRatio,

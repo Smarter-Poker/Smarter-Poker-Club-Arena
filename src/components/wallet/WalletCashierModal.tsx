@@ -117,9 +117,9 @@ import {
   type PromoSource,
 } from './cashierModes';
 import { cashierRecipientBlock } from '../../lib/cashierRoster';
+import { SpadeConsole } from '../console/SpadeConsole';
 import ChipMintModal from './ChipMintModal';
 import './WalletCashierModal.css';
-import CashierConsoleSurface from '../cashier/CashierConsoleSurface';
 import { downloadBlob } from '../../utils/downloadCsv';
 
 type DestinationWallet = CashierDestination;
@@ -1354,31 +1354,44 @@ export default function WalletCashierModal({
         ? 'AGENT WALLET'
         : 'CLUB BANK';
 
+  /* THE FOOT PAINTS BOTH PLATES, so it is only used where there are genuinely
+     two actions: the send and claim forms, which have a cancel and a confirm.
+     The agent claim list, the two ledgers and the refusal each have exactly
+     one, so they close with the flat cap and print that action as a lit word
+     on the glass. */
+  const formTab = !agentClaimTab && (tab === 'send' || tab === 'claim');
+
   // Belt and braces: this modal is only mounted behind a role check, and the
   // row that opens it only renders for roles that hold the wallet. If it is
   // somehow reached anyway, say so plainly rather than rendering an empty
   // cashier.
   if (!allowed) {
     return (
-      <div className="cbc-overlay" role="dialog" aria-label="Club Bank Cashier" onClick={onClose}>
-        <div className="cbc-panel cbc-panel--denied" onClick={(e) => e.stopPropagation()}>
-          <CashierConsoleSurface
-            eyebrow="Cashier Access"
+      <div
+        className="cbc-overlay wcm-overlay"
+        role="dialog"
+        aria-label="Club Bank Cashier"
+        onClick={onClose}
+      >
+        <div
+          className="cbc-panel cbc-panel--denied wcm ac-popup"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <SpadeConsole
+            as="div"
+            eyebrow={clubName || 'Club Arena'}
             title={cashierTitle}
-            subtitle="Wallet Authority"
-            pill="Restricted"
+            pill="Locked"
             pillInk="red"
-            crest="club"
-            className="cbc-console"
+            foot="foot"
           >
-            <div className="cbc-title">{cashierTitle}</div>
             {/* "Co Owners" cannot appear in JSX text here: check-title-case
-              treats a bare `co` as the poker position (cutoff) and rewrites it
-              to "CO". Co-owners are covered by "Owners" in plain speech, and
-              the precise four-role list is in the server's own refusal string,
-              which reaches the screen through an expression rather than page
-              copy and so keeps its casing. */}
-            <p className="cbc-denied">
+                treats a bare `co` as the poker position (cutoff) and rewrites it
+                to "CO". Co-owners are covered by "Owners" in plain speech, and
+                the precise four-role list is in the server's own refusal string,
+                which reaches the screen through an expression rather than page
+                copy and so keeps its casing. */}
+            <p className="cbc-denied sc-copy sc-copy--center">
               {walletType === 'club_bank'
                 ? 'The Club Bank Is Restricted To Owners, Admins And Super Agents.'
                 : 'This Wallet Belongs To Agents And Club Staff.'}
@@ -1386,7 +1399,7 @@ export default function WalletCashierModal({
             <div className="cbc-actions">
               <button onClick={onClose}>Close</button>
             </div>
-          </CashierConsoleSurface>
+          </SpadeConsole>
         </div>
       </div>
     );
@@ -1395,28 +1408,34 @@ export default function WalletCashierModal({
   return (
     <>
       <div
-        className="cbc-overlay"
+        className="cbc-overlay wcm-overlay"
         role="dialog"
         aria-modal="true"
         aria-label={`${cashierTitle} Cashier`}
         onClick={closeIfIdle}
       >
-        <div className="cbc-panel" onClick={(e) => e.stopPropagation()}>
-          <CashierConsoleSurface
-            eyebrow="Club Arena Cashier"
+        <div className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
+          <SpadeConsole
+            as="div"
+            /* The club in the header well's eyebrow, the account engraved
+               beneath it, and the viewer's own standing in the well's painted
+               pill slot. The corner X is gone: the foot and the flat cap carry
+               Close now, at 44px in the thumb zone, exactly as every other
+               surface on this master does. `closeIfIdle` is unchanged and is
+               still what the overlay, the Escape key and every Close calls. */
+            eyebrow={clubName || 'Club Arena'}
             title={cashierTitle}
-            subtitle={clubName || 'Secure Wallet'}
-            pill="Live Ledger"
-            pillInk="green"
-            crest="club"
-            className="cbc-console"
-            actions={
-              tab === 'send' || tab === 'claim'
+            pill={roleLabel(viewerRole)}
+            pillInk="blue"
+            foot={formTab ? 'plates' : 'foot'}
+            plates={
+              formTab
                 ? {
                     secondary: {
                       label: confirming ? 'Go Back' : 'Cancel',
                       disabled: inFlight,
                       onClick: () => (confirming ? setConfirming(false) : closeIfIdle()),
+                      'aria-label': confirming ? 'Go Back' : 'Close The Cashier',
                     },
                     primary: {
                       label: sending
@@ -1430,7 +1449,7 @@ export default function WalletCashierModal({
                           : tab === 'claim'
                             ? 'Claim Chips'
                             : 'Send Chips',
-                      ink: 'blue',
+                      ink: canSend ? 'white' : 'muted',
                       disabled: !canSend,
                       onClick: onSendPressed,
                     },
@@ -1438,23 +1457,6 @@ export default function WalletCashierModal({
                 : undefined
             }
           >
-            {/* ── Header ───────────────────────────────────────────────────── */}
-            <div className="cbc-head">
-              <div>
-                <div className="cbc-title">{cashierTitle}</div>
-              </div>
-              {tab !== 'send' && tab !== 'claim' && (
-                <button
-                  className="cbc-x"
-                  onClick={closeIfIdle}
-                  disabled={inFlight}
-                  aria-label="Close"
-                >
-                  Close
-                </button>
-              )}
-            </div>
-
             <div className="cbc-bank">
               <span>
                 {walletType === 'promo_wallet'
@@ -1472,10 +1474,10 @@ export default function WalletCashierModal({
             </div>
 
             {/* TWO PROMO ACCOUNTS, ONE SWITCH (2026-09-05). Offered only when the
-              viewer can stand at both: a Club Bank role who also holds a
-              personal float. An agent sees their float alone; a bank role with
-              no float sees the pot alone. Both balances are printed on the
-              switch so the one you are NOT looking at is never a mystery. */}
+                viewer can stand at both: a Club Bank role who also holds a
+                personal float. An agent sees their float alone; a bank role with
+                no float sees the pot alone. Both balances are printed on the
+                switch so the one you are NOT looking at is never a mystery. */}
             {walletType === 'promo_wallet' &&
               promoSourceFor(viewerRole) === 'club_pot' &&
               promoFloat !== null && (
@@ -1517,7 +1519,7 @@ export default function WalletCashierModal({
             )}
 
             {/* Chip Mint lives HERE and only for a standalone club. A club inside
-              a union has no mint at all - chips flow down from the union. */}
+                a union has no mint at all - chips flow down from the union. */}
             {mayMint && (
               <button className="cbc-mint" onClick={() => setShowMint(true)}>
                 Mint Chips Into The Club Bank
@@ -1542,10 +1544,10 @@ export default function WalletCashierModal({
             <div className="cbc-body">
               {agentClaimTab ? (
                 /* THE AGENT WALLET'S CLAIM BACK TAB. Not the club bank's kind:
-                 there is no member to pick and no amount to type, because the
-                 only thing an agent may take back is a send they already made,
-                 and only while its ten minute window is open. One row per send,
-                 one tap, and the row disappears when the clock runs out. */
+                   there is no member to pick and no amount to type, because the
+                   only thing an agent may take back is a send they already made,
+                   and only while its ten minute window is open. One row per send,
+                   one tap, and the row disappears when the clock runs out. */
                 <>
                   <div className="cbc-blurb">
                     {destinationBlurb(walletType, destination, 'claim')}
@@ -1573,9 +1575,9 @@ export default function WalletCashierModal({
                           </span>
                         </div>
                         {/* `claimed_back` was fetched and never shown, so a send
-                          already partly reversed elsewhere displayed only its
-                          remainder with no hint that the original was larger -
-                          which reads as the wrong amount having been sent. */}
+                            already partly reversed elsewhere displayed only its
+                            remainder with no hint that the original was larger -
+                            which reads as the wrong amount having been sent. */}
                         {Number(row.claimed_back) > 0 && (
                           <div className="cbc-tx-foot">
                             <span>
@@ -1700,8 +1702,8 @@ export default function WalletCashierModal({
                       className="cbc-input"
                       type="number"
                       /* Whole chips only (see amountIsWhole), so the keypad that
-                       comes up is the numeric one rather than the decimal one
-                       offering a point the field will then reject. */
+                         comes up is the numeric one rather than the decimal one
+                         offering a point the field will then reject. */
                       inputMode="numeric"
                       min={1}
                       step={1}
@@ -1709,9 +1711,9 @@ export default function WalletCashierModal({
                       onChange={(e) => setAmount(e.target.value)}
                       placeholder="Whole Chips"
                       /* aria-label was the EMPTY STRING, which is worse than
-                       absent: it overrides the visible <label> and announces an
-                       unnamed spin button to a screen reader on the one field
-                       that decides how much money moves. */
+                         absent: it overrides the visible <label> and announces an
+                         unnamed spin button to a screen reader on the one field
+                         that decides how much money moves. */
                       aria-label={tab === 'claim' ? 'Chips To Claim Back' : 'Chips To Send'}
                     />
 
@@ -1723,11 +1725,11 @@ export default function WalletCashierModal({
                       </div>
                     )}
                     {/* A BALANCE WE COULD NOT READ CANNOT PROJECT AN AFTER
-                      FIGURE. `bank ?? 0` turned an unread treasury into a
-                      confident "The Wallet Would Hold -500.00 Afterwards" -
-                      directly beneath a header already showing "..." for the
-                      same number. The send is refused anyway (canSend requires
-                      cap !== null); the sentence just has to stop lying. */}
+                        FIGURE. `bank ?? 0` turned an unread treasury into a
+                        confident "The Wallet Would Hold -500.00 Afterwards" -
+                        directly beneath a header already showing "..." for the
+                        same number. The send is refused anyway (canSend requires
+                        cap !== null); the sentence just has to stop lying. */}
                     {amt > 0 && !overCap && bank !== null && (
                       <div className="cbc-blurb">
                         {tab === 'claim'
@@ -1767,12 +1769,19 @@ export default function WalletCashierModal({
                         : `That Is ${Math.round((amt / (bank || 1)) * 100)} Percent Of The Club Bank. Send ${fmt(amt)} Chips To ${recipient.name}?`}
                     </div>
                   )}
+
+                  {/* CANCEL / SEND ARE THE PAINTED PLATES NOW. The pair used to
+                      be two drawn pills at the bottom of the scrolling body,
+                      which put the confirm for a send worth a quarter of the club
+                      bank below the fold on a phone. They are the foot's own art,
+                      always in view, and they carry the same labels, the same
+                      disabled conditions and the same two handlers. */}
                 </>
               ) : walletType === 'promo_wallet' ? (
                 /* THE PROMO WALLET LEDGER. Every movement on the account the
-                 viewer is standing at, newest first, with the other side of
-                 each one named: the union that funded it, the player it was
-                 handed to, the agent float it topped up. */
+                   viewer is standing at, newest first, with the other side of
+                   each one named: the union that funded it, the player it was
+                   handed to, the agent float it topped up. */
                 <>
                   {ledgerError && <div className="cbc-empty cbc-empty--bad">{ledgerError}</div>}
 
@@ -1868,6 +1877,11 @@ export default function WalletCashierModal({
                       Load More
                     </button>
                   )}
+                  <div className="cbc-actions">
+                    <button disabled={inFlight} onClick={closeIfIdle}>
+                      Close
+                    </button>
+                  </div>
                 </>
               ) : (
                 <>
@@ -1992,10 +2006,15 @@ export default function WalletCashierModal({
                       Load More
                     </button>
                   )}
+                  <div className="cbc-actions">
+                    <button disabled={inFlight} onClick={closeIfIdle}>
+                      Close
+                    </button>
+                  </div>
                 </>
               )}
             </div>
-          </CashierConsoleSurface>
+          </SpadeConsole>
         </div>
       </div>
 

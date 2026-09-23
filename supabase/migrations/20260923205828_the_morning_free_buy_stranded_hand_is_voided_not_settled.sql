@@ -109,7 +109,16 @@
 -- DIFFERENTLY FOR IT (CLAUDE.md 10.5). They keep their seats, their chips and
 -- their claim on the pool exactly as a human field would.
 --
--- This migration carries no DDL, so it fires no schema-cache reload.
+-- This migration carries no DDL, so it fires no schema-cache reload - which is
+-- also why it declares its own proof: it creates no object for
+-- scripts/ci/check-migrations-are-live.mjs to look up, so it says instead what
+-- a reader would run to see that production carries it. The three together are
+-- the whole of what this migration did: the receipt exists, no permit is left
+-- reserved, and the finding is recorded and resolved.
+--
+-- @live-proof: (SELECT count(*) FROM smarter_private.f06_generation_aborts WHERE tournament_id = '7c6277e7-921d-4651-91bc-15071a3884be' AND generation = '29afae24-5415-458f-acca-778b4f14444f') = 1
+-- @live-proof: (SELECT count(*) FROM smarter_private.f06_hand_permits WHERE tournament_id = '7c6277e7-921d-4651-91bc-15071a3884be' AND state = 'reserved') = 0
+-- @live-proof: (SELECT count(*) FROM public.financial_alerts WHERE source = 'tournament.stranded_event' AND context->>'tournament_id' = '7c6277e7-921d-4651-91bc-15071a3884be' AND resolved) = 1
 
 BEGIN;
 

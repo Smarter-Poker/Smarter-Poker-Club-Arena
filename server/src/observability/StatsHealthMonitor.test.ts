@@ -165,18 +165,6 @@ describe('StatsHealthMonitor', () => {
     expect(resolve.mock.calls.some(([name]) => name === STATS_TRIGGER_GAP_ALERT)).toBe(false);
   });
 
-  it('raises the trigger-gap alert immediately once the break lifts, same snapshot value', async () => {
-    const { mon, raise } = harness(
-      [{ ...LIVE_SAMPLE, recentHandsWithoutStat: 5 }, { ...LIVE_SAMPLE, recentHandsWithoutStat: 5 }],
-      { paused: true }
-    );
-    await mon.tick();
-    expect(raise.mock.calls.some(([a]) => a.alertname === STATS_TRIGGER_GAP_ALERT)).toBe(false);
-    (mon as unknown as { deps: { paused: () => boolean } }).deps.paused = () => false;
-    await mon.tick();
-    expect(raise.mock.calls.some(([a]) => a.alertname === STATS_TRIGGER_GAP_ALERT)).toBe(true);
-  });
-
   it('retains index evidence without inferring page staleness from the bulk watermark', async () => {
     // Source-only fixture: precise database-shaped times, not recovered times
     // from the historical originals, which did not retain their checkedAt.

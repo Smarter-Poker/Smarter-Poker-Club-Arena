@@ -1,4 +1,4 @@
-# The Morning Free Buy was never owed a payout, and one voided hand freed the fleet
+# The Morning Free Buy was never owed a payout, and its stranded hand is voided
 
 **2026-09-23**
 
@@ -160,3 +160,30 @@ The rest of that backlog is real and is not fixed here.
 
 A `financial_alerts` row records the finding and is resolved in the same transaction,
 with a resolution note that says plainly that no money was paid and none is owed yet.
+
+## What the void did NOT do, measured
+
+**The release is still blocked, and this change did not unblock it.** An earlier draft
+of this note was titled "one voided hand freed the fleet". It did not, and the title is
+corrected here rather than left to be believed.
+
+The durable blocker is gone - `smarter_private.f06_hand_permits` holds no `reserved` row
+for this event, and `check-migrations-are-live` proves it from the repo. But the gate
+`/health` publishes reads the RUNNING process's memory, not the database:
+`ServerTableEngineBase.hasUnresolvedF06Preparation()` returns
+`phase === 'unknown' || 'reserved' || 'terminated'` off `this.f06CurrentPermit`, a
+process-local object that a durable void cannot mutate. Watched across the whole 21:53
+break on engine `8825af51`: `cards_in_air` drained 36 -> 5 -> 0 as designed, every other
+table parked, and `unparkedReasons` settled on exactly
+`{f06_preparation_unresolved: 1}` with `readyForRestart: false` from `last_hand` through
+`counting_down` and past the scheduled end. The break then timed out on its own at
+22:01:47 and play resumed (`dealable` 51, `handsInFlight` 48), so players are served and
+the freeze is bounded; but no cutover happened and `releaseSha` is unchanged.
+
+So the deadlock is real and it is one level up from this change: the fix that would age
+a stuck preparation out (`F06_UNRESOLVED_GATE_MS`, #5003) is not an ancestor of the
+running engine, and it can only get there through a restart that the stuck preparation
+refuses. A restarted engine will now start clean, because the durable state it reads is
+clean - that is what this change bought, and it is all it bought. Clearing the running
+process's hold needs the bounded gate or the terminal F06 operation state (#5037), both
+owned by the F06 recovery work.

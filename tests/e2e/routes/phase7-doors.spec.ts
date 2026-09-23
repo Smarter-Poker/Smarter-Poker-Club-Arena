@@ -73,16 +73,61 @@ test.describe('Phase 7 - the doors that were retired', () => {
     );
   };
 
+  /**
+   * ── THE DESTINATION HAS ITS OWN DOOR POLICY (2026-09-23) ────────────────
+   *
+   * `/unions` is deliberately closed. Dan, 2026-09-05: "AND THIS PAGE SHOULD
+   * BE HIDDEN TO EVERYONE EXECPT ME". `UnionNetworkGuard` sends any account it
+   * refuses to `/community` "which is where the Unions entry used to live and
+   * is a place they can actually use". The production certification account is
+   * exactly such an account, so `/unions` is never a URL it is allowed to
+   * REST on.
+   *
+   * `landsOn` above samples the address bar, so for these two doors it was
+   * racing that guard: the redirect chain is
+   * `union-dashboard` -> `/unions` -> (guard resolves) -> `/community`, and
+   * whether `/unions` is still showing when the assertion looks depends on how
+   * fast `useCanOperateUnionNetwork` answers a network round trip.
+   *
+   * MEASURED, Post-Deploy E2E run 35865600057 (2026-09-23T13:37Z): the two
+   * tests have the IDENTICAL destination and split in the same run.
+   * `union-games` sampled at 13:37:05 and passed on `/unions`;
+   * `union-dashboard` sampled from 13:37:01 and failed 20s later on
+   * `https://smarter.poker/hub/club-arena/community`. Nothing about the doors
+   * differed; only which side of the guard each one caught.
+   *
+   * The header above this helper already warned about exactly this: "A first
+   * draft asserting only the final URL passed one run and failed the next
+   * purely on which of the two won the race, which is exactly the flake this
+   * suite must not gain." It had gained it anyway, on the one destination that
+   * refuses its own visitors.
+   *
+   * So a union door may land on `/unions`, on the auth bounce that names it,
+   * or on the refusal `/unions` itself performs. It may NOT sit on
+   * `union-dashboard`/`union-games` rendering their orphan pages, and it may
+   * not land anywhere else - which is the whole of what Phase 7 retired.
+   *
+   * This accepts the guard's outcome; it does not accept a door repointed at
+   * `/community` directly. `tests/unit/phase7UnionDoorsForwardToUnions.test.ts`
+   * holds both routes to `Navigate to="/unions"` in App.tsx, so the half this
+   * assertion can no longer see is pinned where it cannot race.
+   */
+  const UNION_DOOR_LANDINGS = /\/unions(?:[/?#]|$)|\/community(?:[/?#]|$)/;
+
   test('rakeback-dashboard lands on the one rakeback display', async ({ page }) => {
     await landsOn(page, 'rakeback-dashboard', /\/rakeback(?:[/?#]|$)/);
   });
 
-  test('union-dashboard lands on unions', async ({ page }) => {
-    await landsOn(page, 'union-dashboard', /\/unions(?:[/?#]|$)/);
+  test('union-dashboard lands on unions, or on where unions sends a refused account', async ({
+    page,
+  }) => {
+    await landsOn(page, 'union-dashboard', UNION_DOOR_LANDINGS);
   });
 
-  test('union-games lands on unions', async ({ page }) => {
-    await landsOn(page, 'union-games', /\/unions(?:[/?#]|$)/);
+  test('union-games lands on unions, or on where unions sends a refused account', async ({
+    page,
+  }) => {
+    await landsOn(page, 'union-games', UNION_DOOR_LANDINGS);
   });
 
   test('the duplicate club dashboard lands on club data, carrying its club', async ({ page }) => {

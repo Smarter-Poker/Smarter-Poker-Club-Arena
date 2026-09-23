@@ -575,6 +575,76 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     expect(f.calls).toEqual([]);
   });
 
+  /* AN F06 REFUSAL NAMES THE PHASE ITS DISPOSITION TURNS ON (2026-09-23).
+
+     Production run 35724284646 refused `captureEngine.f06_custody_not_drained`
+     at 12:05:23Z on 2026-09-22 on one stopped, terminal tournament table, and
+     the detail it carried said only `f06=true/false` - a permit exists. All six
+     phases produce that same pair, and they do not share a disposition:
+     `attempted` is a hand that may have started and must never be restarted
+     over, `terminated` and `number_refused` provably never dealt, and `new`,
+     `reserved` and `unknown` are a preparation whose fate the database decides.
+     The guard already prints `permitPhase` on the mixed-original boundary field
+     for exactly this reason; this carries it on the capture refusal too, so one
+     refused attempt is enough to design the disposition. Observability only:
+     every pin below keeps the code, the order and the empty call list. */
+  const refusedPermit = async (permit: unknown) => {
+    const f = fixture(2, checkpoint758);
+    stopEmpty(f);
+    f.first.f06CurrentPermit = permit as object;
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'f06_custody_not_drained',
+      failedCheck: 'captureEngine.f06_custody_not_drained',
+      failedTable: f.first.tableId,
+    });
+    expect(f.calls).toEqual([]);
+    return result;
+  };
+
+  it.each(['new', 'reserved', 'unknown', 'attempted', 'terminated', 'number_refused'] as const)(
+    'names a retained %s permit by its phase on the capture refusal',
+    async (phase) => {
+      const result = await refusedPermit({ recoveryState: () => phase });
+      expect(terms(result)).toEqual(
+        expect.arrayContaining(['f06=true/false', `permitPhase=${phase}`])
+      );
+      carried(result);
+    }
+  );
+
+  it('says unreadable, not none, when the retained permit cannot state its phase', async () => {
+    // "I could not tell" is its own outcome and never folds into `none`, which
+    // this guard uses for "there is no permit at all" (CLAUDE.md 10.86 rule 1).
+    const result = await refusedPermit({
+      recoveryState: () => {
+        throw new Error('permit_unreadable');
+      },
+    });
+    expect(terms(result)).toEqual(
+      expect.arrayContaining(['f06=true/false', 'permitPhase=unreadable'])
+    );
+    // One token pays for the throw; the rest of the record still arrives.
+    expect(terms(result)).toEqual(expect.arrayContaining(['stopped=true', 'fleet=2']));
+    carried(result);
+  });
+
+  it('names the recovery that refused without a permit as none', async () => {
+    const f = fixture(2, checkpoint758);
+    stopEmpty(f);
+    f.first.f06RecoveryInFlight = true;
+    const result: any = await f.run();
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'f06_custody_not_drained',
+      failedCheck: 'captureEngine.f06_custody_not_drained',
+    });
+    expect(terms(result)).toEqual(expect.arrayContaining(['f06=false/true', 'permitPhase=none']));
+    carried(result);
+    expect(f.calls).toEqual([]);
+  });
+
   it('does not accept758 readback from an announcement even after the native ready bit changes', async () => {
     const f = fixture(1, checkpoint758);
     f.onRead((rows) => {

@@ -362,19 +362,6 @@
   z-index: 1;
 }
 
-/* The live-bets pill: inline, one pill-height of room, so smaller chips. */
-/* The street tower stands BESIDE the pill rather than inside it. A pill is one
-   line tall and a tower of full-size chips is not, so leaving it in flow would
-   stretch the pill into a box. Out of flow it keeps the pill's shape and still
-   shows the street's chips at the one size every other chip on the felt uses.
-   It rises from the pill's left end, clear of the collected pot's own pile,
-   which is centred ABOVE the POT pill. */
-.pot-display__pile--street {
-  position: absolute;
-  right: calc(100% + 6px);
-  bottom: -1px;
-}
-
 .pot-display__pile-stack {
   /* relative so a clamped denomination's "x12" badge can hang above the
      spread without joining the row. */
@@ -530,10 +517,6 @@
 /* No per-place chip size any more. Dan 2026-08-24: "all chips should be the
    same size" - the street chips, the collected pot's chips and the chips in
    front of every seat all read --cp-chip-size. */
-
-.pot-display__pile--street .pot-display__pile-multi {
-  font-size: 0.45rem;
-}
 
 @media (prefers-reduced-motion: reduce) {
   .pot-display__pile-stack {

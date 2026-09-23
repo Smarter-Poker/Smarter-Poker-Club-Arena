@@ -209,21 +209,27 @@ describe('a contract the database speaks must be one the client can read', () =>
 
   it('a live answer this client cannot read is reported, one sentence per surface', () => {
     const client = clientContract(readOrNull);
-    const found = disagreements(LIVE_2026_09_23, client);
-    if (client.contract_versions.includes(4)) {
-      // The client has caught up with production. Then the recorded drift is
-      // no longer a disagreement about the contract version, and the law's
-      // job is to prove the comparison still LOOKS - which the v2 case below
-      // does against the same client.
-      expect(found.every((s) => !s.includes('contract_version 4,'))).toBe(true);
-    } else {
-      expect(found.join('\n')).toContain('contract_version 4');
-      expect(found.join('\n')).toContain(CLIENT_FILES.service);
-    }
+    // The 2026-09-23 drift as production actually answered it, against a client
+    // pinned to the two versions main carried that morning. Nothing here reads
+    // the client of the day this test runs, so it keeps saying the same thing.
+    const asItWas = {
+      ...client,
+      contract_versions: [2, 3],
+      model_versions: ['wheel-v2', 'wheel-v3'],
+      draw_domains: ['wheel-v2', 'wheel-v2-upgrade', 'wheel-v3', 'wheel-v3-upgrade'],
+      bonus_floor_fns: ['fn_diamond_bonus_minimum'],
+      payout_versions: [1, 2, 3],
+    };
+    const found = disagreements(LIVE_2026_09_23, asItWas);
+    expect(found.join('\n')).toContain('contract_version 4');
+    expect(found.join('\n')).toContain('wheel-v4');
+    expect(found.join('\n')).toContain('fn_diamond_bonus_floor');
+    expect(found.join('\n')).toContain('payout_version >= 4');
+    expect(found.join('\n')).toContain(CLIENT_FILES.service);
     // A client that dropped a contract production still speaks is the same
     // failure from the other end, and lands in the same comparison.
     const narrowed = {
-      ...client,
+      ...asItWas,
       contract_versions: [99],
       model_versions: ['wheel-v99'],
       draw_domains: ['wheel-v99'],
@@ -232,15 +238,15 @@ describe('a contract the database speaks must be one the client can read', () =>
     // Agreement is agreement: nothing invented.
     const matching = {
       ...client,
-      contract_versions: [...client.contract_versions, 4],
-      model_versions: [...client.model_versions, 'wheel-v4'],
-      draw_domains: [...client.draw_domains, 'wheel-v4'],
+      contract_versions: [...new Set([...client.contract_versions, 4])],
+      model_versions: [...new Set([...client.model_versions, 'wheel-v4'])],
+      draw_domains: [...new Set([...client.draw_domains, 'wheel-v4'])],
       prize_kinds: [...new Set([...client.prize_kinds, ...LIVE_2026_09_23.prize_kinds])],
       bonus_games: [...new Set([...client.bonus_games, ...LIVE_2026_09_23.bonus_games])],
       segment_count: LIVE_2026_09_23.segment_count,
       upgrade_segment_count: LIVE_2026_09_23.upgrade_segment_count,
       bonus_floor_fns: [...new Set([...client.bonus_floor_fns, 'fn_diamond_bonus_floor'])],
-      payout_versions: [...client.payout_versions, 4],
+      payout_versions: [...new Set([...client.payout_versions, 4])],
     };
     expect(disagreements(LIVE_2026_09_23, matching)).toEqual([]);
   });
@@ -318,47 +324,116 @@ describe('a contract the database speaks must be one the client can read', () =>
     expect(disagreements(live, dropped).join('\n')).toContain('fn_diamond_bonus_floor');
   });
 
-  it('accuses no migration on main: a gate with a false-positive rate gets switched off', () => {
-    // The whole history, against the client that is on this tree. Every one of
-    // the 3,292 migrations already merged describes a contract this client can
-    // read, so not one of them may be refused.
+  /**
+   * THE REMEDY MUST BE EXACT, AND THIS MUST NOT ASSERT THE WEATHER.
+   *
+   * This was `expect(accused).toEqual([])` when it was written, measured at 0
+   * of 3,292 - and it went red on main four hours later, correctly. #5124
+   * taught the client contract_version 4 and the wheel-v4 draw domains but not
+   * `payout_version` 4, so the forward rule started accusing the migration
+   * that seals receipts at 4, which is the truth and is the whole point of the
+   * gate. A law that fails whenever the estate has a real gap is a law that
+   * gets deleted, and it was asserting a state of the world rather than a
+   * property of the rule.
+   *
+   * The property is this: every accusation the rule makes against a migration
+   * that is ALREADY on main names a client declaration and a value, and
+   * carrying that value in that declaration withdraws the accusation exactly.
+   * An accusation that survives its own remedy is an artifact of the parser,
+   * which is the failure this scan exists to catch - measured the day it was
+   * written, a whole-file parser claimed a Diamond Spins contract fact in
+   * fourteen migrations and seven of those were another contract's.
+   */
+  it('every accusation against a merged migration is exact: its own remedy withdraws it', () => {
     const client = clientContract(readOrNull);
     const dir = path.join(ROOT, 'supabase', 'migrations');
-    const accused: string[] = [];
+    const unfixable: string[] = [];
     for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.sql'))) {
       const sql = fs.readFileSync(path.join(dir, file), 'utf8');
-      if (sourceVerdict(client, client, [{ file, sql }]).length) accused.push(file);
+      if (sourceVerdict(client, client, [{ file, sql }]).length === 0) continue;
+      const facts = contractFactsInSql(sql);
+      /* The client this migration's author would have had to land with it. */
+      const widened = {
+        ...client,
+        contract_versions: [...new Set([...client.contract_versions, ...facts.contract_versions])],
+        model_versions: [
+          ...new Set([
+            ...client.model_versions,
+            ...facts.model_versions,
+            ...facts.model_generations.map((n) => `wheel-v${n}`),
+          ]),
+        ],
+        draw_domains: [...new Set([...client.draw_domains, ...facts.model_versions])],
+        payout_versions: [...new Set([...client.payout_versions, ...facts.payout_versions])],
+        bonus_floor_fns: [...new Set([...client.bonus_floor_fns, ...facts.declared_bonus_fns])],
+      };
+      const left = sourceVerdict(client, widened, [{ file, sql }]);
+      if (left.length) unfixable.push(`${file}: ${left.join(' | ')}`);
     }
     expect(
-      accused,
-      'these migrations are already on main and already live, so refusing them is a false ' +
-        'accusation. Scope the fact to the declaration that makes it, not to the file.'
+      unfixable,
+      'these accusations survive the exact remedy they name, so they are artifacts of the ' +
+        'parser rather than contract drift. Scope the fact to the declaration that makes it, ' +
+        'not to the file.'
+    ).toEqual([]);
+  });
+
+  /**
+   * AND THE RULE SAYS WHAT THIS LAW SAYS IT SAYS.
+   *
+   * The scan above proves an accusation is curable by its own remedy. It does
+   * not prove the rule compared the right two things - a verdict that measured
+   * a migration's payout_version against the client's CONTRACT versions would
+   * still be curable whenever the two sets happen to overlap, and on
+   * 2026-09-23 they did. So the law states the rule in its own words, over
+   * every migration on main, and requires the implementation to agree exactly.
+   */
+  it('the forward rule accuses exactly the migrations whose facts the client cannot read', () => {
+    const client = clientContract(readOrNull);
+    const dir = path.join(ROOT, 'supabase', 'migrations');
+    const disagree: string[] = [];
+    for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.sql'))) {
+      const sql = fs.readFileSync(path.join(dir, file), 'utf8');
+      const f = contractFactsInSql(sql);
+      const unreadable =
+        f.contract_versions.some((v) => !client.contract_versions.includes(v)) ||
+        f.model_versions.some((v) => !client.model_versions.includes(v)) ||
+        f.model_generations.some((n) => !client.model_versions.includes(`wheel-v${n}`)) ||
+        f.payout_versions.some((v) => !client.payout_versions.includes(v)) ||
+        (f.declared_bonus_fns.some((n) => !client.bonus_floor_fns.includes(n)) &&
+          client.bonus_floor_fns.some((m) => sql.includes(m)));
+      const accused = sourceVerdict(client, client, [{ file, sql }]).length > 0;
+      if (accused !== unreadable)
+        disagree.push(`${file}: rule says ${accused}, this law says ${unreadable}`);
+    }
+    expect(
+      disagree,
+      'the forward rule and this law disagree about which merged migrations declare a ' +
+        'contract the client cannot read. One of them is comparing the wrong two sets.'
     ).toEqual([]);
   });
 
   it('fails closed forward: a migration cannot outrun the client in its own branch', () => {
+    /* A generation no client will ever have caught up with, so this test says
+       the same thing on the day the estate ships wheel-v5 as it does today. */
     const base = clientContract(readOrNull);
-    const V4 =
+    const AHEAD =
       `CREATE OR REPLACE FUNCTION public.fn_wheel_state_v2(p uuid) RETURNS jsonb AS $$\n` +
-      `  SELECT jsonb_build_object('contract_version',4,'model_version','wheel-v4');\n$$ LANGUAGE sql;`;
-    const problems = sourceVerdict(base, base, [
-      { file: 'supabase/migrations/20260923033605_diamond_wheel_v4.sql', sql: V4 },
-    ]);
+      `  SELECT jsonb_build_object('contract_version',99,'model_version','wheel-v99',\n` +
+      `    'segments',public.fn_wheel_v99_segments(100,100,false,false));\n$$ LANGUAGE sql;`;
+    const FILE = 'supabase/migrations/29990101000000_a_wheel_nothing_has_heard_of.sql';
+    const problems = sourceVerdict(base, base, [{ file: FILE, sql: AHEAD }]);
     expect(problems.length).toBeGreaterThan(0);
-    expect(problems.join('\n')).toContain('20260923033605');
+    expect(problems.join('\n')).toContain('29990101000000');
     expect(problems.join('\n')).toContain(CLIENT_FILES.service);
     // And when the client in the same branch does accept it, it passes.
     const widened = {
       ...base,
-      contract_versions: [...new Set([...base.contract_versions, 4])],
-      model_versions: [...new Set([...base.model_versions, 'wheel-v4'])],
-      draw_domains: [...new Set([...base.draw_domains, 'wheel-v4', 'wheel-v4-upgrade'])],
+      contract_versions: [...new Set([...base.contract_versions, 99])],
+      model_versions: [...new Set([...base.model_versions, 'wheel-v99'])],
+      draw_domains: [...new Set([...base.draw_domains, 'wheel-v99', 'wheel-v99-upgrade'])],
     };
-    expect(
-      sourceVerdict(base, widened, [
-        { file: 'supabase/migrations/20260923033605_diamond_wheel_v4.sql', sql: V4 },
-      ])
-    ).toEqual([]);
+    expect(sourceVerdict(base, widened, [{ file: FILE, sql: AHEAD }])).toEqual([]);
   });
 
   it('fails closed backward: the client cannot drop what production may still speak', () => {

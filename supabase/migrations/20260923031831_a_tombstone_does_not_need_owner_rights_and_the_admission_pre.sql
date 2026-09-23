@@ -82,6 +82,13 @@
 -- Nothing here weakens either audit's assertion: no allowlist entry is added
 -- for the cashier routines, and no grant is widened for anyone.
 
+-- This migration creates no persistent object: it changes a security attribute
+-- on three existing functions and writes one allowlist row. So it declares what
+-- a reader would run to see that production carries it.
+--
+-- @live-proof: (SELECT count(*) = 3 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname IN ('fn_cashout_request','fn_cashout_approve','fn_cashout_release') AND NOT p.prosecdef)
+-- @live-proof: (SELECT EXISTS (SELECT 1 FROM public.ca_browser_definer_allowlist a WHERE a.proname = 'fn_ca_new_tournament_is_unlimited'))
+
 BEGIN;
 SET LOCAL lock_timeout = '4s';
 SET LOCAL statement_timeout = '30s';

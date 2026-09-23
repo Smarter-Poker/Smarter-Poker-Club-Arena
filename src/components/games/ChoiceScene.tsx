@@ -20,7 +20,7 @@ import {
   WALK_MS,
   type StreetState,
 } from '../../utils/crossingScene';
-import { CHOICE_MODE, ROAD_LADDERS, type ChoiceGame } from '../../utils/diamondChoiceMath';
+import { CHOICE_MODE, ROAD_LADDERS_V4, type ChoiceGame } from '../../utils/diamondChoiceMath';
 import { gameChips } from '../../utils/bonusGameBudget';
 import { prefersReducedMotion, getAnimationSpeed } from '../../utils/animationSpeed';
 import { reportError } from '../../utils/errorReporter';
@@ -370,7 +370,9 @@ function CrossingScene(props: Props) {
     latest = useRef(props);
   latest.current = props;
   const [failed, setFailed] = useState(false);
-  const ladder = props.ladder ?? ROAD_LADDERS[CHOICE_MODE.crossing];
+  // The page hands the round's own ladder down; this is only the shape drawn
+  // before one arrives, so it is the ladder a new round is dealt today.
+  const ladder = props.ladder ?? ROAD_LADDERS_V4[CHOICE_MODE.crossing];
   const step = props.picked.length;
   /**
    * THE SCENE OWNS THE REVEAL. A confirmed answer lands on the page the moment
@@ -806,7 +808,7 @@ function CrossingScene(props: Props) {
       const visibleDelta = lastVisibleFrame === null ? 0 : now - lastVisibleFrame;
       lastVisibleFrame = now;
       const p = latest.current,
-        road = p.ladder ?? ROAD_LADDERS[CHOICE_MODE.crossing],
+        road = p.ladder ?? ROAD_LADDERS_V4[CHOICE_MODE.crossing],
         step = p.picked.length,
         newSignature = `${p.roundId}:${step}:${p.phase}`;
       const newRoad = road.join(',');

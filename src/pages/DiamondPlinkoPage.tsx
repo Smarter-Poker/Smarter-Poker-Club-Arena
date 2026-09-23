@@ -35,11 +35,7 @@ import {
   validBonusBudget,
   validPlinkoBudget,
 } from '../utils/bonusGameBudget';
-import {
-  PLINKO_TABLES,
-  diamondBonusMinimum,
-  plinkoTableVersion,
-} from '../utils/diamondBonusPayout';
+import { PLINKO_TABLES, diamondBonusFloor, plinkoTableForFloor } from '../utils/diamondBonusPayout';
 import { diamondGameTitle } from '../utils/diamondGameTitles';
 import { randomClientSeed, hmacSha256Hex, sha256Hex } from '../utils/wheelFairness';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -124,11 +120,29 @@ function DiamondPlinkoGame() {
   const award = result ? receiptBudget?.award : budget.award;
   const boost = award?.boostMultiplier === 2 ? 2 : 1;
   const isSuper = boost === 2;
+  // What the player paid for this stake: the spin entry plus whatever Double
+  // Diamonds added on top of the funded base. Mirrors fn_diamond_game_paid_diamonds.
+  const paidDiamonds = award ? award.entryDiamonds + (total - award.entryDiamonds * boost) : total;
   const player = state?.player;
   const quotedBet = state?.bets.find((bet) => bet.bet_diamonds === total);
-  // One table per stake kind, named by the server's own quote. Nobody chooses it,
-  // and an award that cannot cover its table is not playable at this entry.
-  const wantedVersion = earned.quote?.plinkoTable ?? plinkoTableVersion(boost);
+  // THE BOARD FOLLOWS THE FLOOR (contract 4). The server's own quote names it
+  // for an award; for ordinary play the page computes the same two functions
+  // the server runs - the floor this stake seals, then the open board whose
+  // lowest slot carries it. It used to fall back to the board the BOOST named,
+  // which for ordinary play is Diamond (5), closed on 2026-09-21: no open board
+  // matched, so an ordinary entry could not be dealt at all.
+  const entryRate = state?.config?.diamonds_per_chip;
+  const entryFloor = (() => {
+    if (!entryRate || !total) return null;
+    try {
+      return diamondBonusFloor(total / entryRate, boost, award ? paidDiamonds : total, entryRate);
+    } catch {
+      return null;
+    }
+  })();
+  const wantedVersion =
+    earned.quote?.plinkoTable ??
+    (entryRate && entryFloor !== null ? plinkoTableForFloor(total / entryRate, entryFloor) : null);
   const table = (state?.tables ?? []).find(
     (option) =>
       option.version === wantedVersion &&
@@ -143,7 +157,7 @@ function DiamondPlinkoGame() {
       ? result.multipliers_cents
       : (table?.multipliers_cents ??
         result?.multipliers_cents ??
-        PLINKO_TABLES[wantedVersion]?.multipliersCents ??
+        (wantedVersion === null ? undefined : PLINKO_TABLES[wantedVersion]?.multipliersCents) ??
         []);
   // What the server's own state says about dropping now. Deliberately without
   // the entry quote, which blinks off during every drop and must not count as
@@ -179,13 +193,8 @@ function DiamondPlinkoGame() {
   const guaranteedChips = (() => {
     if (result) return result.minimum_payout_chips ?? 0;
     if (earned.quote) return earned.quote.minimumPayoutChips;
-    const rate = state?.config?.diamonds_per_chip;
-    if (earned.award || earned.loading || !rate) return null;
-    try {
-      return diamondBonusMinimum(total / rate, 1);
-    } catch {
-      return null;
-    }
+    if (earned.award || earned.loading) return null;
+    return entryFloor;
   })();
 
   const newTicket = useCallback(async () => {

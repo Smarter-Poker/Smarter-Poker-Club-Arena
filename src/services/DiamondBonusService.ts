@@ -11,7 +11,15 @@ import {
 import { validSpinAmount, PLINKO_MAX_DROPS, PLINKO_MIN_DROPS } from '../utils/bonusGameBudget';
 import { parseChoiceRound } from './DiamondChoiceService';
 import { validateCrashSettlement } from '../utils/crashReceipt';
-import { diamondBonusMinimum, plinkoTableVersion } from '../utils/diamondBonusPayout';
+import {
+  BONUS_PAYOUT_VERSION,
+  diamondBonusFloor,
+  diamondBonusMinimum,
+  plinkoTableForFloor,
+  plinkoTableVersion,
+  validBonusMinimum,
+} from '../utils/diamondBonusPayout';
+import { crashCashoutFloorCents } from '../utils/diamondGamesFairness';
 
 export type BonusGame = 'plinko' | 'crash' | 'crossing' | 'mines';
 /** The server said no and charged nothing. `ticketGone` marks the one refusal
@@ -141,9 +149,15 @@ export interface PlinkoBonus {
   multipliers_cents: number[];
   drops: PlinkoBall[];
   payout_chips: number;
-  /** A Super batch returns at least half its doubled stake, the spin entry. */
+  /** The chips this batch pays whatever the drops do: half the stake, or for a
+   *  Super award with the add-on what the player paid. */
   minimum_payout_chips?: number;
-  payout_version?: 1 | 3;
+  /** 1: no floor (historical). 3: the Super half. 4: the paid floor. */
+  payout_version?: 1 | 3 | 4;
+  /** Contract 4: the spin entry plus the Double Diamonds add-on, in diamonds. */
+  paid_diamonds?: number;
+  /** Contract 4: the drops this batch played, the player's own split of the stake. */
+  drop_count?: number;
   server_seed_hash: string;
   server_seed: string;
   client_seed: string;
@@ -245,16 +259,36 @@ export function parsePlinkoBonus(value: unknown): PlinkoBonus {
 }
 
 /** A batch settled before the Super guarantee carries no floor; a Super batch
- * (payout_version 3) carries half its stake, computed from the funded diamonds
- * and the bridge rate exactly as the server did. */
+ * (payout_version 3) carries half its stake; a contract-4 batch carries the
+ * floor fn_diamond_bonus_floor seals - half the stake, or for a Super award the
+ * greater of that and what the player PAID. Every one is recomputed from the
+ * funded diamonds and the bridge rate exactly as the server did, never trusted. */
 function validPlinkoMinimum(v: PlinkoBonus) {
   const floor = v.minimum_payout_chips;
   const version = v.payout_version;
   if (floor === undefined && version === undefined) return true;
   if (version === 1) return floor === 0;
-  if (version !== 3 || typeof floor !== 'number') return false;
+  if (typeof floor !== 'number') return false;
   if (!Number.isSafeInteger(v.bet_diamonds) || !Number.isSafeInteger(v.diamonds_per_chip))
     return false;
+  if (version === BONUS_PAYOUT_VERSION) {
+    // The batch names the diamonds it was paid for; the shared rule checks them.
+    if (
+      v.paid_diamonds !== undefined &&
+      (!Number.isSafeInteger(v.paid_diamonds) || v.paid_diamonds < 0)
+    )
+      return false;
+    if (
+      v.drop_count !== undefined &&
+      (!Number.isSafeInteger(v.drop_count) || v.drop_count !== v.drops.length)
+    )
+      return false;
+    return validBonusMinimum({
+      ...(v as unknown as Record<string, unknown>),
+      bet_chips: v.bet_diamonds / v.diamonds_per_chip,
+    });
+  }
+  if (version !== 3) return false;
   try {
     return floor === diamondBonusMinimum(v.bet_diamonds / v.diamonds_per_chip, 2);
   } catch {
@@ -428,19 +462,38 @@ export function validateBonusReceipt(input: BonusStart, raw: Record<string, unkn
   if (input.game === 'plinko') {
     const result = parsePlinkoBonus(raw);
     const boost = input.budget.award?.boostMultiplier ?? 1;
-    // A receipt sealed since the one-table rule (it carries payout_version) must
-    // name the table the stake kind owns, and a Super batch its guarantee. A
-    // receipt sealed before it keeps the table it was dealt.
+    const betChips = bonusTotal(input.budget) / result.diamonds_per_chip;
+    // THE TABLE FOLLOWS THE FLOOR (contract 4, Dan 2026-09-21, R10/R11). Before
+    // it, the boost named the table: Diamond (5) ordinarily, Super (4) for a
+    // Super award. From it, the floor names it - fn_plinko_table_for_floor picks
+    // the open board whose lowest slot still carries this stake's floor - which
+    // is Super (4) for every half-the-stake floor and Super Double (6) for the
+    // two thirds a Super award with the add-on paid. Board 5 is closed and no
+    // new batch may name it. A receipt sealed before the rule keeps the table it
+    // was dealt, so history still verifies.
     const sealedWithRule = result.payout_version !== undefined;
+    // What the player paid for this stake, exactly as fn_diamond_game_paid_diamonds
+    // computes it: the whole stake when nothing funded it, and otherwise the
+    // spin entry plus whatever Double Diamonds added on top of the funded base.
+    const paidDiamonds = input.budget.award
+      ? input.budget.award.entryDiamonds + bonusAdded(input.budget)
+      : bonusTotal(input.budget);
+    const floor = diamondBonusFloor(betChips, boost, paidDiamonds, result.diamonds_per_chip);
+    const expectedTable =
+      result.payout_version === BONUS_PAYOUT_VERSION
+        ? plinkoTableForFloor(betChips, floor)
+        : plinkoTableVersion(boost);
     if (
       result.table_version !== input.tableVersion ||
-      (sealedWithRule && result.table_version !== plinkoTableVersion(boost)) ||
+      (sealedWithRule && result.table_version !== expectedTable) ||
       (sealedWithRule &&
-        (boost === 2
-          ? result.payout_version !== 3 ||
-            result.minimum_payout_chips !==
-              diamondBonusMinimum(bonusTotal(input.budget) / result.diamonds_per_chip, 2)
-          : result.payout_version !== 1)) ||
+        (result.payout_version === BONUS_PAYOUT_VERSION
+          ? result.minimum_payout_chips !== floor ||
+            (result.paid_diamonds !== undefined && result.paid_diamonds !== paidDiamonds)
+          : boost === 2
+            ? result.payout_version !== 3 ||
+              result.minimum_payout_chips !== diamondBonusMinimum(betChips, 2)
+            : result.payout_version !== 1)) ||
       result.diamonds_per_drop !== input.budget.denomination ||
       result.commit_id !== input.commitId ||
       result.client_seed !== input.seed
@@ -473,7 +526,12 @@ export function validateBonusReceipt(input: BonusStart, raw: Record<string, unkn
       !finite(raw.bet_chips) ||
       Math.abs(raw.bet_chips - bonusTotal(input.budget) / Number(raw.diamonds_per_chip)) > 1e-8 ||
       !Number.isSafeInteger(raw.cap_cents) ||
-      Number(raw.cap_cents) < 101 ||
+      // The cap has to cover the first hundredth this round's contract lets a
+      // player book, or there is no round: 1.01x before contract 4, 1.11x from it.
+      Number(raw.cap_cents) <
+        crashCashoutFloorCents(
+          typeof raw.payout_version === 'number' ? raw.payout_version : undefined
+        ) ||
       !finite(raw.growth_k) ||
       raw.growth_k <= 0 ||
       !finite(raw.elapsed_ms) ||

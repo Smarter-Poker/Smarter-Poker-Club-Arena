@@ -2,11 +2,22 @@ import { supabase } from '../lib/supabase';
 import { earnedReceiptBudget } from '../utils/bonusGameBudget';
 import { validBonusMinimum } from '../utils/diamondBonusPayout';
 import {
+  CHOICE_PAYOUT_VERSION,
   MINE_COUNTS,
   ROAD_LADDERS,
+  ROAD_LADDERS_V4,
   type ChoiceGame,
   type ChoiceProof,
 } from '../utils/diamondChoiceMath';
+
+/** Every setting a round of this game, sealed under this contract, may name.
+ *  Mirrors public.fn_choice_ladder_v4 / fn_choice_ladder and the mine counts. */
+export function choiceModes(game: ChoiceGame, payoutVersion?: number): string[] {
+  if (game === 'mines') return MINE_COUNTS.map(String);
+  return Object.keys(
+    (payoutVersion ?? 0) >= CHOICE_PAYOUT_VERSION ? ROAD_LADDERS_V4 : ROAD_LADDERS
+  );
+}
 
 export interface ChoiceRound {
   ok: true;
@@ -24,8 +35,10 @@ export interface ChoiceRound {
   prizes: number[];
   payout_chips: number;
   minimum_payout_chips?: number;
-  /** 1: no floor (historical). 2: a tenth of the stake. 3: the Super half. */
-  payout_version?: 1 | 2 | 3;
+  /** 1: no floor (historical). 2: a tenth of the stake. 3: the Super half.
+   *  4: half the stake, or for a Super award what the player paid, with the
+   *  first step of the game certain (owner ruling 2026-09-21, R3). */
+  payout_version?: 1 | 2 | 3 | 4;
   server_seed_hash: string;
   client_seed: string;
   nonce: number;
@@ -62,6 +75,12 @@ function object(value: unknown): Record<string, unknown> {
 }
 export function parseChoiceRound(value: unknown): ChoiceRound {
   const v = object(value);
+  // The contract this receipt says it was sealed under; 0 is the oldest of all.
+  // Written without a `payout_version : <digit>` shape on purpose: that is the
+  // exact spelling scripts/ci/check-diamond-contract-parity.mjs reads as a
+  // version the client ACCEPTS, and a fallback is not an accepted version.
+  const version = Number.isSafeInteger(v.payout_version) ? Number(v.payout_version) : 0;
+  const sealedV4 = version >= CHOICE_PAYOUT_VERSION;
   const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
   const cells = (x: unknown): x is number[] =>
     Array.isArray(x) &&
@@ -102,9 +121,11 @@ export function parseChoiceRound(value: unknown): ChoiceRound {
     Number(v.diamonds_per_chip) <= 0 ||
     Math.abs(Number(v.bet_diamonds) / Number(v.diamonds_per_chip) - v.bet_chips) > 1e-8 ||
     Math.abs(v.payout_chips * 100 - Math.round(v.payout_chips * 100)) > 1e-8 ||
-    !(
-      v.game === 'mines' ? MINE_COUNTS.map(String) : (Object.keys(ROAD_LADDERS) as string[])
-    ).includes(String(v.mode))
+    // THE SETTING A ROUND MAY NAME IS ITS OWN CONTRACT'S (2026-09-23). Mines
+    // has always dealt one of four counts; the road's ladders were retired one
+    // at a time, so a contract-4 crossing round may name only the road the v4
+    // ladder deals, while a round sealed earlier keeps the ladder it was dealt.
+    !choiceModes(v.game === 'mines' ? 'mines' : 'crossing', version).includes(String(v.mode))
   ) {
     throw new Error('The Game Response Could Not Be Verified');
   }
@@ -138,7 +159,20 @@ export function parseChoiceRound(value: unknown): ChoiceRound {
       (p.game === 'crossing' && (p.mines !== 0 || p.mine_cells.length !== 0)) ||
       typeof p.road_roll !== 'string' ||
       !/^\d+$/.test(p.road_roll) ||
-      BigInt(p.road_roll) >= 281474976710656n
+      BigInt(p.road_roll) >= 281474976710656n ||
+      // A receipt is sealed under ONE contract and says which one it was, so a
+      // proof that disagrees with its own round about that is not this round's
+      // proof. Only the contract-4 boundary is compared: a round dealt before
+      // the proof carried a version at all still verifies as what it is.
+      (p.payout_version ?? 0) >= CHOICE_PAYOUT_VERSION !== sealedV4 ||
+      // CONTRACT 4 mines: the board is dealt at the first pick, around it, so
+      // it could not have been known before the player touched a tile. The
+      // proof names that tile; without it the board is unverifiable in the
+      // browser, and named as any other tile it is not the board this seed
+      // makes. Mirrors public.fn_choice_board_v4.
+      (v.game === 'mines' &&
+        sealedV4 &&
+        (p.first_pick !== v.picked[0] || p.mine_cells.includes(v.picked[0])))
     ) {
       throw new Error('The Game Response Could Not Be Verified');
     }

@@ -7,18 +7,22 @@ import DoubleDownOffer from '../components/games/DoubleDownOffer';
 import { WheelWinReveal } from '../components/wheel/WheelWinReveal';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
-import { CHOICE_MODE, minePrize, ROAD_LADDERS, roadSurvives } from '../utils/diamondChoiceMath';
 import {
+  CHOICE_MODE,
+  CHOICE_PAYOUT_VERSION,
+  minePrizeV4,
+  roadLadder,
+  roadSurvives,
+} from '../utils/diamondChoiceMath';
+import {
+  CRASH_PAYOUT_VERSION,
   crashMultiplierCents,
   crashPointCentsFromRoll,
+  crashPointFloorCents,
   plinkoBitsFromPathBits,
 } from '../utils/diamondGamesFairness';
 import { plinkoAllocations } from '../utils/bonusGameBudget';
-import {
-  PLINKO_TABLES,
-  diamondBonusMinimum,
-  plinkoTableVersion,
-} from '../utils/diamondBonusPayout';
+import { PLINKO_TABLES, diamondBonusFloor, plinkoTableForFloor } from '../utils/diamondBonusPayout';
 import { diamondGameTitle, type DiamondBonusGame } from '../utils/diamondGameTitles';
 import styles from './diamondGames.module.css';
 import setup from '../components/games/BonusSetup.module.css';
@@ -30,8 +34,9 @@ const games: Record<DiamondBonusGame, string> = {
   mines: 'Diamond Mines',
 };
 type Game = DiamondBonusGame;
-/** The one setting per game, exactly as the server installs it. */
-const ROAD = ROAD_LADDERS[CHOICE_MODE.crossing];
+/** The one setting per game, exactly as the server installs it: the ladder of
+ * the contract every live round is sealed with. */
+const ROAD = roadLadder(CHOICE_MODE.crossing, CHOICE_PAYOUT_VERSION) as readonly number[];
 const MINES = Number(CHOICE_MODE.mines);
 const MINE_PICKS = 25 - MINES;
 function roll48() {
@@ -49,7 +54,10 @@ export default function DiamondTestPage() {
   const upgraded = params.get('super') === '1';
   const boost = upgraded ? 2 : 1;
   const [entry, setEntry] = useState(100),
-    [doubled, setDoubled] = useState(false),
+    // Double Diamonds can be opened already taken, so the board a Super award
+    // WITH the add-on is dealt - Super Double, the one its two-thirds floor
+    // needs - can be reached offline as well as through the offer step.
+    [doubled, setDoubled] = useState(params.get('double') === '1'),
     [offer, setOffer] = useState(false);
   const [phase, setPhase] = useState<'idle' | 'open' | 'cashed' | 'lost'>('idle');
   const [sceneBusy, setSceneBusy] = useState(false);
@@ -71,13 +79,16 @@ export default function DiamondTestPage() {
     payout = useRef(0);
   const total = entry * boost + (doubled ? entry : 0),
     chips = total / 100,
-    // The guaranteed minimum, by the server's rule: a Super award keeps half its
-    // doubled stake, which is the original spin; ordinary play keeps a tenth.
-    minimum = diamondBonusMinimum(chips, boost);
-  // One table per stake kind. The live game lets the player choose the drop
-  // value (R6); this offline copy plays the ten-drop split when the stake
-  // offers it, else the fewest drops the stake allows.
-  const tableVersion = plinkoTableVersion(boost);
+    // What the player paid: the spin entry, plus the add-on when it was taken.
+    paid = entry + (total - entry * boost),
+    // The guaranteed minimum, by the server's rule (contract 4): half the
+    // stake, or for a Super award the greater of that and what was paid.
+    minimum = diamondBonusFloor(chips, boost, paid, 100);
+  // The board follows that floor, exactly as fn_plinko_table_for_floor picks it.
+  // The live game lets the player choose the drop value (R6); this offline copy
+  // plays the ten-drop split when the stake offers it, else the fewest drops
+  // the stake allows.
+  const tableVersion = plinkoTableForFloor(chips, minimum) as number;
   const table = PLINKO_TABLES[tableVersion];
   const allocations = plinkoAllocations(total);
   const allocation = allocations.find((a) => a.drops === 10) ?? allocations[allocations.length - 1];
@@ -114,7 +125,7 @@ export default function DiamondTestPage() {
   }, [open, game, minimum, chips]);
   const nextPrize = (count: number) => {
     if (game === 'crossing') return (chips * (ROAD[count - 1] ?? 0)) / 100;
-    const p = minePrize(chips, MINES, count, minimum);
+    const p = minePrizeV4(chips, MINES, count, minimum);
     return Number(p.numerator) / Number(p.denominator) / 100;
   };
   const ladderPrizes =
@@ -146,23 +157,37 @@ export default function DiamondTestPage() {
             10000,
         0
       );
-      // A Super batch returns at least the original spin whatever the drops did.
-      payout.current = upgraded ? Math.max(dropped, minimum) : dropped;
+      // Every batch returns at least its floor whatever the drops did: half the
+      // stake, or for a Super award with the add-on what the player paid.
+      payout.current = Math.max(dropped, minimum);
     } else if (game === 'crash')
-      crash.current = Math.min(10000, crashPointCentsFromRoll(roll48(), chips, minimum));
+      crash.current = Math.min(
+        10000,
+        crashPointCentsFromRoll(
+          roll48(),
+          chips,
+          minimum,
+          crashPointFloorCents(CRASH_PAYOUT_VERSION)
+        )
+      );
     else if (game === 'crossing') sealedRoad.current = roll48();
-    else {
-      const cells = Array.from({ length: 25 }, (_, i) => i);
-      for (let i = 24; i > 0; i--) {
-        const j = Number(roll48() % BigInt(i + 1));
-        [cells[i], cells[j]] = [cells[j], cells[i]];
-      }
-      mines.current = cells.slice(0, MINES);
+    // CONTRACT 4: the board is not dealt until the first tile is picked, so
+    // that tile is always a gem and the ladder's first rung is certain.
+    else mines.current = [];
+  };
+  /** The twenty-four tiles other than the first pick, shuffled around it. */
+  const dealMines = (first: number) => {
+    const cells = Array.from({ length: 25 }, (_, i) => i).filter((c) => c !== first);
+    for (let i = 23; i > 0; i--) {
+      const j = Number(roll48() % BigInt(i + 1));
+      [cells[i], cells[j]] = [cells[j], cells[i]];
     }
+    mines.current = cells.slice(0, MINES);
   };
   const pick = (cell: number) => {
     if (!open || !busy.current || sceneBusy || picked.includes(cell)) return;
     if (game === 'crossing') setSceneBusy(true);
+    if (game === 'mines' && picked.length === 0) dealMines(cell);
     const next = [...picked, cell];
     setPicked(next);
     const safe =
@@ -201,7 +226,7 @@ export default function DiamondTestPage() {
         : 0
     : prize;
   const guaranteeSentence = upgraded
-    ? `${diamondGameTitle(game, 2)} Pays At Least ${money(minimum)} Chips, Your Original Spin, Whatever Happens.`
+    ? `${diamondGameTitle(game, 2)} Pays At Least ${money(minimum)} Chips, What You Paid For It, Whatever Happens.`
     : `Pays At Least ${money(minimum)} Chips On Any Loss.`;
   return (
     <main className={`${styles.page} ${styles.fullscreenPage}`}>

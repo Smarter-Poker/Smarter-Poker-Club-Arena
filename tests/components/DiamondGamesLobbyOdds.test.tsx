@@ -9,7 +9,7 @@
  * the cap from the bets the server is quoting - so this renders the page with a
  * server answer and reads what a player would read.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { GameState } from '../../src/services/DiamondGamesService';
@@ -92,8 +92,18 @@ describe('the lobby prints the crash odds the server plays', () => {
         : { ok: true, available: true, game, bets: [], tables: [], frozen: false }
     );
     lobby();
-    // An ordinary award keeps a tenth of its stake, rounded up to the cent.
-    await waitFor(() => expect(screen.getByText('1 In 4.2 To 4.3')).toBeTruthy());
+    // CONTRACT 4: an ordinary award keeps HALF its stake, rounded up to the
+    // cent, and the cash-out opens at 1.11x, so this is the figure the server
+    // plays. It was "1 In 4.2 To 4.3" while the floor was a tenth.
+    await waitFor(() => expect(screen.getByText('1 In 1.9 To 2')).toBeTruthy());
+    // Both figures, and what they are odds OF, live in the crash console's own
+    // "How It Pays": a Super award with the Double Diamonds add-on keeps the
+    // two thirds it paid, so it ends before the cash-out opens far more often.
+    fireEvent.click(screen.getAllByRole('button', { name: 'How It Pays' })[2]);
+    const rules = await screen.findByText(/Ends Before Cash Out Opens/);
+    expect(rules.textContent).toContain('1 In 1.9 To 2 On An Ordinary Award');
+    expect(rules.textContent).toContain('1 In 1.4 To 2 On A Super Award');
+    expect(rules.textContent).not.toContain('1.00x');
     expect(screen.getByText('Instant Crash')).toBeTruthy();
     expect(screen.getByText('On An Ordinary Award')).toBeTruthy();
     expect(screen.queryByText('1 In 5')).toBeNull();

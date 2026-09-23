@@ -336,7 +336,7 @@ describe('choice-game entry quotes belong to the selected settings', () => {
         screen.getByText(
           game === 'mines'
             ? /6 Mines Hide Among 25 Tiles\. .*A Mine Ends The Round And Pays The Guaranteed Minimum\./
-            : /12 Streets Pay 1\.10x Up To 20\.00x\. .*Book The Win After Any Street\. A Hit Ends The Round And Pays The Guaranteed Minimum\./
+            : /12 Streets Pay 0\.80x Up To 20\.00x\. .*Book The Win After Any Street\. A Hit Ends The Round And Pays The Guaranteed Minimum\./
         )
       ).toBeInTheDocument();
       expect(screen.getByText(/Nobody Picks A Difficulty/)).toBeInTheDocument();
@@ -345,12 +345,13 @@ describe('choice-game entry quotes belong to the selected settings', () => {
     }
   );
   it.each(['mines', 'crossing'] as const)(
-    'shows the standard tenth floor as the %s guarantee for ordinary play before Start',
+    'shows the standard half floor as the %s guarantee for ordinary play before Start',
     async (game) => {
       render(<DiamondChoicePage game={game} />);
       await act(async () => {});
-      // 100 diamonds at 100 per chip is a 1.00 chip stake; the server keeps a tenth.
-      expect(screen.getByText('Guaranteed').nextElementSibling).toHaveTextContent('0.10 Chips');
+      // 100 diamonds at 100 per chip is a 1.00 chip stake, and ordinary play
+      // pays for all of it, so contract 4 keeps HALF. It kept a tenth before.
+      expect(screen.getByText('Guaranteed').nextElementSibling).toHaveTextContent('0.50 Chips');
       expect(screen.getByText('Guaranteed').nextElementSibling).not.toHaveAttribute(
         'data-ink',
         'gold'

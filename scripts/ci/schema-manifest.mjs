@@ -123,17 +123,33 @@ export function loadSchemaManifest(repo = process.cwd()) {
   const functions = new Set(base.functions || []);
   const addedTables = new Set();
   const addedFunctions = new Set();
+  /* A FRAGMENT IS A PROMISE, NOT AN OBSERVATION (2026-09-22).
+     The base snapshot is generated FROM the live schema, so a name in it was
+     seen in production. A fragment is a line an agent typed on their own
+     branch. Unioning the two loses which is which, and every reader downstream
+     then reports a promise as a fact - see check-migrations-applied.mjs, which
+     printed "every object these migrations declare exists in the live schema"
+     about fourteen tables production had never heard of. Keep the fragment-only
+     names separate so a reader can tell the two apart. */
+  const promisedTables = new Set();
+  const promisedFunctions = new Set();
   const removedTables = new Set();
   const removedFunctions = new Set();
   let declared = 0;
   for (const { data } of readFragments(repo)) {
     for (const t of data.tables || []) {
-      if (!tables.has(t)) declared++;
+      if (!tables.has(t)) {
+        declared++;
+        promisedTables.add(t);
+      }
       tables.add(t);
       addedTables.add(t);
     }
     for (const f of data.functions || []) {
-      if (!functions.has(f)) declared++;
+      if (!functions.has(f)) {
+        declared++;
+        promisedFunctions.add(f);
+      }
       functions.add(f);
       addedFunctions.add(f);
     }
@@ -157,6 +173,10 @@ export function loadSchemaManifest(repo = process.cwd()) {
     functions: [...functions].sort(),
     declaredByFragments: declared,
     removedByFragments: removedTables.size + removedFunctions.size,
+    /* Names present ONLY because a fragment promised them. Anything here is
+       unproved against production by construction. */
+    promisedTables: [...promisedTables].sort(),
+    promisedFunctions: [...promisedFunctions].sort(),
   };
 }
 

@@ -866,9 +866,15 @@ BEGIN
     -- fn_tournament_entry_split always sets refund_fee=0 on a Spin's
     -- wallet_charge entitlements (the whole buy-in itemizes as prize), and
     -- fn_ca_tournament_escrow_chips shadow-initialised fee_entries_in from
-    -- the pooled rake_records total, not from these entitlements. Mirror
-    -- that exact source (rr.fee_in-rr.fee_sat there) instead of the
-    -- per-player v_direct_fee, which is structurally always 0 for a Spin.
+    -- the pooled rake_records total, not from these entitlements. Read that
+    -- same source (rr.fee_in-rr.fee_sat there) instead of the per-player
+    -- v_direct_fee, which is structurally always 0 for a Spin - but unlike
+    -- fee_in, exclude any prior atomic_cancel_tournament/fn_unregister_from_
+    -- tournament reversal row: fee_entries_in was fixed at booking and must
+    -- not drift if this function is asked again after a partial refund
+    -- already wrote one (this check itself runs before this migration's own
+    -- reversal rows exist, so it is a no-op for these 13, but the function
+    -- is the platform's shared refund-plan authority, not scoped to them).
     -- Non-spin tournaments are unchanged.
     SELECT round(COALESCE(sum(r.rake_amount) FILTER (
           WHERE NOT (r.rake_amount<0 AND r.source IN (
@@ -941,6 +947,17 @@ BEGIN
    ORDER BY e.entitlement_kind,e.id;
 END;
 $function$;
+
+-- CREATE OR REPLACE preserves an existing function's ACL rather than
+-- resetting it, so the 20260909165629 REVOKE ALL already holds live. Restated
+-- here anyway: the definer-authorization gate reads only the migration that
+-- declares a function, not the full history, so a replace with no grant
+-- statement of its own reads as silently reopened. Idempotent, not a change
+-- of policy - this function is called only from other SECURITY DEFINER
+-- functions owned by the same role (atomic_cancel_tournament), never as a
+-- direct RPC.
+REVOKE ALL ON FUNCTION public.fn_ca_tournament_refund_plan(uuid,uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
 
 -- Settle the 13 stuck rows themselves through the platform's own idempotent
 -- cancellation/refund authority. Re-running this migration a second time is

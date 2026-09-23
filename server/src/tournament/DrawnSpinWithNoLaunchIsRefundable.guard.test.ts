@@ -85,7 +85,14 @@ describe('a drawn Spin with no launch evidence is refundable', () => {
       /SELECT COALESCE\(t\.spin_multiplier,0\)>0 INTO v_is_spin/
     );
     expect(REFUND_PLAN).toMatch(/IF v_is_spin THEN/);
-    expect(REFUND_PLAN).toMatch(/r\.source='fn_spin_book_entry'/); // documented, not literally filtered
+    // Sums every rake_records row for the tournament EXCEPT a prior
+    // cancellation/unregister reversal, then subtracts the satellite-seat
+    // award portion - not a literal filter on 'fn_spin_book_entry', so this
+    // stays correct for a Spin with an earlier partial refund on record, not
+    // only for these 13 (which happen to carry no other rake source yet).
+    expect(REFUND_PLAN).toMatch(
+      /NOT \(r\.rake_amount<0 AND r\.source IN \(\s*\n\s*'atomic_cancel_tournament','fn_unregister_from_tournament'\)\)/
+    );
     expect(REFUND_PLAN).toMatch(/WHERE r\.source='fn_award_satellite_seat'/);
     expect(REFUND_PLAN).toMatch(/v_expected_fee_entries:=v_direct_fee;/);
     expect(REFUND_PLAN).toMatch(
@@ -121,8 +128,8 @@ describe('a drawn Spin with no launch evidence is refundable', () => {
       expect(SETTLEMENT).toContain(id);
     }
     expect(SETTLEMENT).toMatch(/atomic_cancel_tournament\(v_id,NULL\)/);
-    expect(SETTLEMENT).toMatch(/\(v_result->>'ok'\)::boolean\),false\) IS NOT TRUE/);
-    expect(SETTLEMENT).toMatch(/\(v_result->>'fully_settled'\)::boolean\),false\) IS NOT TRUE/);
+    expect(SETTLEMENT).toMatch(/\(v_result->>'ok'\)::boolean,false\) IS NOT TRUE/);
+    expect(SETTLEMENT).toMatch(/\(v_result->>'fully_settled'\)::boolean,false\) IS NOT TRUE/);
     expect(SETTLEMENT).toMatch(
       /\(v_result->>'total_refunded'\)::numeric IS DISTINCT FROM v_expected\[v_i\]/
     );

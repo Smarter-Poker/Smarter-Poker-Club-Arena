@@ -1520,6 +1520,21 @@ describe('every finished round verifies itself', () => {
     render(<DiamondChoicePage game="crossing" />);
     await settle();
   };
+  /**
+   * A CHECK THE PLAYER PRESSED IS WAITED FOR, NOT ASSUMED. Verifying a round is
+   * real SHA-256 and HMAC over four checks, so it answers on the event loop
+   * rather than on the fake clock, and it races the page's own automatic check
+   * of the same round. settle() spends a fixed budget of turns, which was
+   * enough on an idle machine and not on a loaded one, so this assertion went
+   * red in CI and nowhere else. It turns the loop until the verdict is on
+   * screen instead, and falls back to getByText for the readable failure when
+   * a verdict genuinely never arrives. findByText cannot do this job here:
+   * its clock is faked, and it times out against real time.
+   */
+  const said = async (text: string) => {
+    for (let i = 0; i < 50 && screen.queryByText(text) === null; i++) await settle();
+    return screen.getByText(text);
+  };
   const toTheReceipt = async () => {
     fireEvent.click(screen.getByRole('button', { name: /^Cross Street/ }));
     await settle();
@@ -1595,11 +1610,8 @@ describe('every finished round verifies itself', () => {
     await plays({ payout_chips: 99 });
     await toTheReceipt();
     fireEvent.click(screen.getByRole('button', { name: 'Verify Revealed Outcome' }));
-    await settle();
     expect(
-      screen.getByText(
-        'The Outcome Could Not Be Verified. Seal Ok, Draw Ok, Ladder Ok, Chips Differs.'
-      )
+      await said('The Outcome Could Not Be Verified. Seal Ok, Draw Ok, Ladder Ok, Chips Differs.')
     ).toBeInTheDocument();
   });
 });

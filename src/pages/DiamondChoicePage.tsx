@@ -39,15 +39,15 @@ import {
 import { supabase } from '../lib/supabase';
 import {
   CHOICE_MODE,
-  ROAD_LADDERS,
+  CHOICE_PAYOUT_VERSION,
+  roadLadder,
   roadSurvives,
   choiceRoundVerified,
   verifyChoiceRoundDetailed,
   type ChoiceGame,
   type ChoiceVerdict,
-  type RoadRisk,
 } from '../utils/diamondChoiceMath';
-import { diamondBonusMinimum } from '../utils/diamondBonusPayout';
+import { diamondBonusFloor } from '../utils/diamondBonusPayout';
 import { diamondGameTitle } from '../utils/diamondGameTitles';
 import { randomClientSeed } from '../utils/wheelFairness';
 import { compactChips } from '../utils/format';
@@ -64,7 +64,9 @@ interface Ticket {
 }
 /** "1.10x" and "20.00x": the road's multipliers always read with two decimals. */
 const multiplierCopy = (cents: number) => `${(cents / 100).toFixed(2)}x`;
-const ROAD = ROAD_LADDERS[CHOICE_MODE.crossing];
+/** The road a NEW round is dealt: the ladder of the contract the server seals
+ * with today. A round already on the board paints its own, from its receipt. */
+const ROAD = roadLadder(CHOICE_MODE.crossing, CHOICE_PAYOUT_VERSION) as readonly number[];
 /** What the page says while it mends something by itself. None of these asks
  * the player to do anything, so none of them reads as an error. */
 const RECONNECTING = 'Reconnecting To Your Game';
@@ -697,7 +699,12 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           ? prizes[picks - 1]
           : 0;
   const nextPrize = viewOpen ? prizes[picks] : view ? undefined : prizes[0];
-  const ladder = ROAD_LADDERS[(round?.mode ?? mode) as RoadRisk];
+  // THE LADDER THE PAGE PAINTS IS THE LADDER THE SERVER PAYS (2026-09-23). A
+  // round carries the contract it was sealed under, and the ladder is that
+  // contract's: contract 4's road starts at 0.80x, the one before it at 1.10x.
+  // This read the pre-contract-4 table for every round, so a live round's first
+  // street was drawn and reckoned at a multiplier the server does not pay.
+  const ladder = roadLadder(round?.mode ?? mode, round?.payout_version ?? CHOICE_PAYOUT_VERSION);
   const roadEnd =
     game === 'crossing' && round?.proof && ladder
       ? ladder.filter((target) =>
@@ -709,7 +716,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           )
         ).length
       : null;
-  const roadMultiplier = roadEnd !== null && roadEnd > 0 ? ladder[roadEnd - 1] : 0;
+  const roadMultiplier = ladder && roadEnd !== null && roadEnd > 0 ? ladder[roadEnd - 1] : 0;
   const payableRoadEnd = Math.min(roadEnd ?? 0, round?.max_steps ?? 0);
   /** ONE NAME PER OUTCOME. Where the road really ended, said the one way the
    * scene, the readout, the receipt and the history row all say it. */
@@ -749,7 +756,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         : '';
     if (game !== 'crossing')
       return `${upgrade}${item.status === 'cashed' ? 'Win Booked' : 'Round Over'}`;
-    const rungs = ROAD_LADDERS[item.mode as RoadRisk];
+    const rungs = roadLadder(item.mode, item.payout_version);
     const street = item.picked.length;
     if (item.status !== 'cashed')
       return `${upgrade}Hit At Street ${street}${item.payout_chips > 0 ? ' · Guarantee Paid' : ''}`;
@@ -830,9 +837,11 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // paid); ordinary play keeps the tenth the server enforces and every receipt
   // verifies.
   const standardFloor = (() => {
-    if (entryChips === undefined) return null;
+    if (entryChips === undefined || !state) return null;
     try {
-      return diamondBonusMinimum(entryChips, 1);
+      // Ordinary play pays for its whole stake, so the diamonds it paid ARE the
+      // stake: fn_diamond_bonus_floor then keeps half of it.
+      return diamondBonusFloor(entryChips, 1, bet, state.diamonds_per_chip);
     } catch {
       return null;
     }
@@ -1052,7 +1061,12 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           busy={busy || uncertain}
           onPick={(cell) => void act('pick', cell)}
           ladder={
-            game === 'crossing' ? ROAD_LADDERS[(sceneRound?.mode ?? mode) as RoadRisk] : undefined
+            game === 'crossing'
+              ? roadLadder(
+                  sceneRound?.mode ?? mode,
+                  sceneRound?.payout_version ?? CHOICE_PAYOUT_VERSION
+                )
+              : undefined
           }
           prizes={sceneRound ? sceneRound.prizes : prizes}
           betChips={stakeChips}
@@ -1079,7 +1093,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                 {game === 'mines'
                   ? 'All Remaining Mines Are Revealed. Your Win Is Saved.'
                   : `${bookedAt === null ? 'Your Win Is Booked.' : `Booked At Street ${picks} At ${bookedAt}.`}${roadEnded === null ? '' : ` ${roadEnded}.`}${payableRoadEnd < (roadEnd ?? 0) ? ` Your Round Would Have Booked At Its Street ${payableRoadEnd} Limit First.` : ''}`}{' '}
-                {game === 'crossing' && payableRoadEnd > 0 && view.proof ? (
+                {game === 'crossing' && payableRoadEnd > 0 && view.proof && ladder ? (
                   <SealedPrize
                     serverSeed={view.proof.server_seed}
                     clientSeed={view.client_seed}

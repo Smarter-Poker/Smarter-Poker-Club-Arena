@@ -668,18 +668,19 @@ describe('Crash shows its guarantee before the round starts', () => {
     expect(readout()).toHaveTextContent('Checking Your Wheel Award');
   });
 
-  it('prints the tenth an ordinary entry keeps, and says so, before Start', async () => {
+  it('prints the half an ordinary entry keeps, and says so, before Start', async () => {
     render(<DiamondCrashPage />);
     await act(async () => {});
     expect(screen.getByRole('heading', { name: 'Diamond Crash' })).toBeInTheDocument();
-    // 100 diamonds at 100 per chip is 1 chip; an ordinary round keeps a tenth.
-    expect(guaranteedBay()).toHaveTextContent('0.10 Chips');
+    // 100 diamonds at 100 per chip is 1 chip, and ordinary play pays for the
+    // whole stake, so contract 4 keeps HALF of it. It kept a tenth before.
+    expect(guaranteedBay()).toHaveTextContent('0.50 Chips');
     expect(guaranteedBay()).not.toHaveAttribute('data-ink', 'gold');
-    expect(readout()).toHaveTextContent('Pays At Least 0.10 Chips On Any Loss.');
+    expect(readout()).toHaveTextContent('Pays At Least 0.50 Chips On Any Loss.');
     expect(readout()).toHaveTextContent('Up To 1000x On This Bet.');
     fireEvent.change(screen.getByLabelText('Entry Diamonds'), { target: { value: '250' } });
     await act(async () => {});
-    expect(guaranteedBay()).toHaveTextContent('0.25 Chips');
+    expect(guaranteedBay()).toHaveTextContent('1.25 Chips');
   });
 
   it('keeps the recent crash points above the curve, coloured by band', async () => {

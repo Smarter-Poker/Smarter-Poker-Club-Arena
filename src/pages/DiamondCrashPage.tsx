@@ -66,7 +66,7 @@ import {
   gameChips,
   validBonusBudget,
 } from '../utils/bonusGameBudget';
-import { diamondBonusMinimum } from '../utils/diamondBonusPayout';
+import { diamondBonusFloor } from '../utils/diamondBonusPayout';
 import { diamondGameTitle } from '../utils/diamondGameTitles';
 import {
   DiamondBonusService,
@@ -82,6 +82,8 @@ import DiamondGamesService, {
 } from '../services/DiamondGamesService';
 import { randomClientSeed } from '../utils/wheelFairness';
 import {
+  CRASH_PAYOUT_VERSION,
+  crashCashoutFloorCents,
   multiplierLabel,
   verifyCrashRound,
   type CrashFairnessVerdict,
@@ -102,8 +104,15 @@ import styles from './diamondGames.module.css';
 
 const MAX_CLIENT_SEED = 64;
 const POLL_MS = 320;
-/** The displayed hundredth from which Book The Win is offered: the same floor crashSettle enforces. */
-const CASHOUT_OPENS_CENTS = 101;
+/**
+ * The displayed hundredth from which Book The Win is offered: the same floor
+ * crashSettle enforces, and the one the round was SEALED with. Contract 4 moved
+ * it from 1.01x to 1.11x (Dan 2026-09-21, R3: the ship can never explode until
+ * after 1.10x), so a page pinned to 1.01x offers a button the server refuses.
+ * A round carries its own, and a page with no round on it uses the contract
+ * every new round is sealed with.
+ */
+const DEFAULT_CASHOUT_OPENS_CENTS = crashCashoutFloorCents(CRASH_PAYOUT_VERSION);
 /** How often the page asks about a round the platform has paused. The crash
  * point is sealed and the clock is the server's own wall clock, so nothing
  * about the outcome depends on how often this tab asks: only the reveal waits,
@@ -208,13 +217,15 @@ function DiamondCrashGame() {
    * read from this ref at the tap.
    */
   const liveCentsRef = useRef(100);
+  /** The open hundredth of the round on the table, read by the tick and the tap. */
+  const cashoutOpensRef = useRef(DEFAULT_CASHOUT_OPENS_CENTS);
   const readoutValueRef = useRef<HTMLSpanElement>(null);
   const readoutWorthRef = useRef<HTMLSpanElement>(null);
   const [cashoutOpen, setCashoutOpen] = useState(false);
   const cashoutOpenRef = useRef(false);
   const cashingRef = useRef(false);
   const openCashout = useCallback((cents: number) => {
-    const opens = cents >= CASHOUT_OPENS_CENTS;
+    const opens = cents >= cashoutOpensRef.current;
     if (cashoutOpenRef.current === opens) return;
     cashoutOpenRef.current = opens;
     setCashoutOpen(opens);
@@ -239,6 +250,10 @@ function DiamondCrashGame() {
   const busyRef = useRef(false);
   const roundRef = useRef<CrashRound | null>(null);
   roundRef.current = round;
+  // The open hundredth belongs to the round on the table, so the tick that
+  // lights Book The Win and the tap that sends it read the same figure the
+  // server will accept.
+  cashoutOpensRef.current = round?.cashout_floor_cents ?? DEFAULT_CASHOUT_OPENS_CENTS;
   const [stageRef, stageWidth] = useMeasuredWidth<HTMLDivElement>(300);
   const { floor, refresh: refreshFloor } = useGameFloor(clubUuid, 20);
 
@@ -255,7 +270,7 @@ function DiamondCrashGame() {
       if (readoutValueRef.current) readoutValueRef.current.textContent = multiplierLabel(cents);
       if (readoutWorthRef.current && roundRef.current)
         readoutWorthRef.current.textContent = `Worth ${chipsLabel((roundRef.current.bet_chips * cents) / 100)} Chips Right Now`;
-      if (cents >= CASHOUT_OPENS_CENTS) openCashout(cents);
+      if (cents >= cashoutOpensRef.current) openCashout(cents);
     },
     [openCashout]
   );
@@ -937,7 +952,7 @@ function DiamondCrashGame() {
       current.status !== 'open' ||
       phase !== 'open' ||
       busyRef.current ||
-      liveCents < CASHOUT_OPENS_CENTS
+      liveCents < (current.cashout_floor_cents ?? DEFAULT_CASHOUT_OPENS_CENTS)
     )
       return;
     busyRef.current = true;
@@ -992,6 +1007,10 @@ function DiamondCrashGame() {
           crashCents: r.fairness.crash_cents,
           betChips: r.bet_chips,
           minimumPayoutChips: r.minimum_payout_chips ?? 0,
+          // The floor the round was sealed with. Without it this recomputes the
+          // point at 1.00x and disagrees with the sealed point on about half of
+          // all real rolls, which reads to the player as "Did Not Verify".
+          payoutVersion: r.payout_version,
         });
         if (r.status === 'cashed' && r.outcome?.cashout_cents) {
           const prize = await sealedChipPrize({
@@ -1092,11 +1111,13 @@ function DiamondCrashGame() {
     ? 2
     : 1;
   const title = diamondGameTitle('crash', boost);
-  /** The tenth an ordinary entry keeps, from the client mirror of the server's rule. */
+  /** The half an ordinary entry keeps, from the client mirror of the server's
+   * rule. Ordinary play pays for its whole stake, so the diamonds it paid ARE
+   * the stake and fn_diamond_bonus_floor keeps half of them. */
   const standardFloor = (() => {
-    if (budget.award || !validBonusBudget(budget)) return null;
+    if (budget.award || !validBonusBudget(budget) || !rate) return null;
     try {
-      return diamondBonusMinimum(bet / rate, 1);
+      return diamondBonusFloor(bet / rate, 1, bet, rate);
     } catch {
       return null;
     }

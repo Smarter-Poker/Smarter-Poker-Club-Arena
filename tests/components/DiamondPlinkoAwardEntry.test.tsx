@@ -85,32 +85,38 @@ vi.mock('../../src/components/games/TodayLine', () => ({ default: () => null }))
  * pre-selected, Drop Diamonds waits for the choice, every further ball is the
  * player's own release, and the finished receipt stays until a tap.
  */
-const DIAMOND_TABLE = {
-  name: 'Diamond',
-  version: 5,
-  multipliers_cents: PLINKO_TABLES[5].multipliersCents,
-  max_multiplier_cents: 2000,
-};
+/** The two boards production has open since 2026-09-21: Super (4) carries every
+ *  half-the-stake floor, Super Double (6) the two thirds a Super award with the
+ *  Double Diamonds add-on paid. Diamond (5) is closed and is never offered. */
 const SUPER_TABLE = {
   name: 'Super',
   version: 4,
   multipliers_cents: PLINKO_TABLES[4].multipliersCents,
   max_multiplier_cents: 2000,
 };
+const SUPER_DOUBLE_TABLE = {
+  name: 'Super Double',
+  version: 6,
+  multipliers_cents: PLINKO_TABLES[6].multipliersCents,
+  max_multiplier_cents: 2000,
+};
 const state = {
   available: true,
   frozen: false,
-  tables: [DIAMOND_TABLE, SUPER_TABLE],
+  tables: [SUPER_TABLE, SUPER_DOUBLE_TABLE],
   bets: [{ bet_diamonds: 200, cap_cents: 2000, playable: true }],
-  config: { max_rounds_per_player_per_day: 500 },
+  config: { max_rounds_per_player_per_day: 500, diamonds_per_chip: 100 },
   player: { spendable: 0, is_member: true, rounds_today: 0, seconds_until_next: 0 },
 };
-/** The server's own guarantee for an award, exactly as `parseBonusGuarantee` returns it. */
-const quoteFor = (boost: 1 | 2, minimumPayoutChips: number) => ({
+/** The server's own guarantee for an award, exactly as `parseBonusGuarantee`
+ *  returns it. The board follows the FLOOR, not the boost: Super (4) carries
+ *  every half-the-stake floor, and only a Super award that took the add-on -
+ *  whose floor is the two thirds it paid - is dealt Super Double (6). */
+const quoteFor = (boost: 1 | 2, minimumPayoutChips: number, plinkoTable = 4) => ({
   guarantee: boost === 2 ? ('super' as const) : ('standard' as const),
   minimumPayoutChips,
   mode: null,
-  plinkoTable: boost === 2 ? 4 : 5,
+  plinkoTable,
 });
 /** A deck bay reads `<dt>label</dt><dd>value</dd>`, so the value is the next element. */
 const bay = (label: string) => screen.getByText(label).nextElementSibling;
@@ -183,7 +189,7 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
     });
     backend.start.mockResolvedValue({
       ...fixtures.receipts.plinko,
-      table_version: 5,
+      table_version: 4,
       payout_chips: 12.57,
     });
     render(<DiamondPlinkoPage />);
@@ -200,8 +206,15 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
     expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
     await act(async () => {});
+    // ORDINARY PLAY IS DEALT ON THE BOARD ITS FLOOR CHOSE (contract 4). 100
+    // diamonds at 100 a chip is a 1.00 chip stake with a 0.50 floor, which
+    // Super (4) carries. The boost used to name Diamond (5), closed since
+    // 2026-09-21, so this entry could not be dealt at all.
     expect(backend.start).toHaveBeenCalledWith(
-      expect.objectContaining({ budget: expect.objectContaining({ denomination: 10 }) }),
+      expect.objectContaining({
+        tableVersion: 4,
+        budget: expect.objectContaining({ denomination: 10 }),
+      }),
       'player-a'
     );
     // The tap that started the game released the first diamond; nine are in hand.
@@ -282,7 +295,7 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
     expect(backend.getState).not.toHaveBeenCalled();
     expect(backend.latest).not.toHaveBeenCalled();
   });
-  it('offers only the values that split a doubled 5,000 into 1 to 100 drops, and plays the Diamond table', async () => {
+  it('offers only the values that split a doubled 5,000 into 1 to 100 drops, and plays the board its floor chose', async () => {
     backend.latest.mockResolvedValue(fixtures.receipts.plinko);
     backend.getState.mockRejectedValue(new Error('Legacy direct entry is unavailable'));
     backend.awardState.mockImplementation(async (_club, _game, doubled) => ({
@@ -321,7 +334,7 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
     expect(backend.start).toHaveBeenCalledTimes(1);
     expect(backend.start).toHaveBeenCalledWith(
       expect.objectContaining({
-        tableVersion: 5,
+        tableVersion: 4,
         budget: {
           base: 2500,
           doubled: true,
@@ -398,7 +411,7 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
       award: ordinaryAward,
       gameState: {
         ...state,
-        tables: [DIAMOND_TABLE],
+        tables: [SUPER_TABLE],
         bets: [
           { bet_diamonds: doubled ? 5000 : 2500, cap_cents: doubled ? 1000 : 2000, playable: true },
         ],

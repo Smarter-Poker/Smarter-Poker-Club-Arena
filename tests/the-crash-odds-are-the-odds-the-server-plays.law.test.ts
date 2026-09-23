@@ -129,9 +129,15 @@ describe('the crash odds are the odds the server plays', () => {
       for (const call of caller.matchAll(/verifyCrashRound\(\{([\s\S]*?)\}\)/g)) {
         expect(call[1], file).toContain('betChips');
         expect(call[1], file).toContain('minimumPayoutChips');
+        // CONTRACT 4 (2026-09-23): the crash point is floored at 1.10x, and a
+        // verifier that assumes 1.00x disagrees with the sealed point on about
+        // half of all real rolls. The round says which floor it was sealed
+        // under, so every caller hands that over too.
+        expect(call[1], file).toContain('payoutVersion');
       }
       for (const call of caller.matchAll(/crashPointCentsFromRoll\(((?:[^()]|\([^()]*\))*)\)/g))
-        expect(call[1].split(',').length, `${file}: ${call[0]}`).toBe(3);
+        // The bet, the minimum, and the contract floor when the caller knows it.
+        expect(call[1].split(',').length, `${file}: ${call[0]}`).toBeGreaterThanOrEqual(3);
     }
   });
 

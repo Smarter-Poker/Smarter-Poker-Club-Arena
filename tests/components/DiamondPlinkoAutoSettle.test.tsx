@@ -87,17 +87,20 @@ const TICKETS = ['a', 'b', 'c', 'd'].map((hex) => ({
   commit_id: `00000000-0000-0000-0000-00000000000${hex}`,
   server_seed_hash: hex.repeat(64),
 }));
+/** The two boards production has open since 2026-09-21: Super (4) carries
+ *  every half-the-stake floor, Super Double (6) the two thirds a Super award
+ *  with the add-on paid. Diamond (5) is closed and is never offered. */
 const TABLES = [
-  {
-    name: 'Diamond',
-    version: 5,
-    multipliers_cents: PLINKO_TABLES[5].multipliersCents,
-    max_multiplier_cents: 2000,
-  },
   {
     name: 'Super',
     version: 4,
     multipliers_cents: PLINKO_TABLES[4].multipliersCents,
+    max_multiplier_cents: 2000,
+  },
+  {
+    name: 'Super Double',
+    version: 6,
+    multipliers_cents: PLINKO_TABLES[6].multipliersCents,
     max_multiplier_cents: 2000,
   },
 ];
@@ -106,7 +109,7 @@ const state = {
   frozen: false,
   tables: TABLES,
   bets: [{ bet_diamonds: 200, cap_cents: 2000, playable: true }],
-  config: { max_rounds_per_player_per_day: 500 },
+  config: { max_rounds_per_player_per_day: 500, diamonds_per_chip: 100 },
   player: { spendable: 0, is_member: true, rounds_today: 0, seconds_until_next: 0 },
 };
 const award = {
@@ -265,7 +268,7 @@ describe('a won Plinko game waits for the player, and drops what they chose', ()
         guarantee: 'standard',
         minimumPayoutChips: doubled ? 50 : 25,
         mode: null,
-        plinkoTable: 5,
+        plinkoTable: 4,
       },
     }));
     render(<DiamondPlinkoPage />);
@@ -284,7 +287,7 @@ describe('a won Plinko game waits for the player, and drops what they chose', ()
     await advance();
     expect(requests()).toEqual([
       expect.objectContaining({
-        tableVersion: 5,
+        tableVersion: 4,
         budget: {
           base: 2500,
           doubled: true,

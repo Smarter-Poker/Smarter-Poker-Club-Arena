@@ -42,16 +42,19 @@ const backend = vi.hoisted(() => ({
   spin: vi.fn(),
   runBegin: vi.fn(),
   runEnd: vi.fn(),
+  pickCard: vi.fn(),
   navigate: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
-vi.mock('../src/services/DiamondWheelService', () => ({
+vi.mock('../src/services/DiamondWheelService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/services/DiamondWheelService')>()),
   default: {
     getStateV2: backend.state,
     commit: backend.commit,
     spinV2: backend.spin,
     runBegin: backend.runBegin,
     runEnd: backend.runEnd,
+    pickCard: backend.pickCard,
     welcomeState: async () => ({ available: false, enabled: false }),
     dailyBonusState: async () => ({ available: false, ticket_count: 0 }),
     history: async () => [],
@@ -310,7 +313,7 @@ describe('the clock that pressed Spin is gone from the source', () => {
     const reveal = readFileSync(resolve(ROOT, 'src/components/wheel/WheelWinReveal.tsx'), 'utf8');
     expect(reveal).not.toContain("autoContinue || prize.kind === 'bonus'");
     expect(reveal).toContain(
-      "const gameAhead = prize.kind === 'bonus' || prize.kind === 'upgrade';"
+      "const gameAhead = prize.kind === 'bonus' || prize.kind === 'upgrade' || holdOpen;"
     );
     expect(reveal).toContain('autoContinue && autoContinueAfterMs > 0 && !gameAhead');
   });

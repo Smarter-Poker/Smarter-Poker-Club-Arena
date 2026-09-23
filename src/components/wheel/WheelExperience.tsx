@@ -103,6 +103,17 @@ export function WheelExperience({
   }, [awaiting]);
   const prize = secondary ? receipt?.secondary?.outcome : receipt?.outcome;
   const showPrize = (phase === 'prize' || phase === 'bonus') && prize && receipt;
+  /* DIAMONDS PAYS NOTHING AT THE SPIN (owner ruling 2026-09-21, R15). It seals
+     three cards worth half, double and triple the diamonds risked, and the
+     player picks one afterwards. So this reveal may not say the prize was
+     added to the account, may not be left by Escape, and its plate opens the
+     table instead of continuing. `revealButtonLabel` cannot tell from the kind
+     alone, because Diamonds PAID at the spin under contract 3. */
+  const cardRisk = secondary ? undefined : receipt?.outcome.cards?.risk_diamonds;
+  const cardDetail =
+    cardRisk === undefined
+      ? null
+      : `Three Cards Are Face Down. One Pays Half Your ${cardRisk.toLocaleString()} Diamonds, One Pays Double And One Pays Triple. You Pick One.`;
   const finish = () => {
     setPhase('finished');
     onFinished();
@@ -212,20 +223,24 @@ export function WheelExperience({
         <WheelWinReveal
           key={secondary ? 'bonus-prize' : 'primary-prize'}
           prize={prize}
-          title={wheelPrizeTitle(prize)}
+          title={cardDetail ? 'Diamond Cards' : wheelPrizeTitle(prize)}
+          openLabel={cardDetail ? 'Pick Your Card' : undefined}
+          holdOpen={Boolean(cardDetail)}
           detail={
-            prize.kind === 'upgrade'
-              ? 'Your Upgrade Wheel Opens With Super Games And Instant Chip Wins. You Spin It Yourself.'
-              : prize.kind === 'bonus'
-                ? 'Your Game Is Ready. Tap Play Game When You Are Ready To Play It.'
-                : prize.grants
-                  ? prize.grants
-                      .map(
-                        (g) =>
-                          `${g.uses.toLocaleString()} ${inventoryNames[g.feature] ?? 'Reward'}${g.uses === 1 ? '' : 's'}`
-                      )
-                      .join(' + ') + ' Added To Your Account.'
-                  : 'Your Prize Has Been Added To Your Account.'
+            cardDetail
+              ? cardDetail
+              : prize.kind === 'upgrade'
+                ? 'Your Upgrade Wheel Opens With Super Games And Instant Chip Wins. You Spin It Yourself.'
+                : prize.kind === 'bonus'
+                  ? 'Your Game Is Ready. Tap Play Game When You Are Ready To Play It.'
+                  : prize.grants
+                    ? prize.grants
+                        .map(
+                          (g) =>
+                            `${g.uses.toLocaleString()} ${inventoryNames[g.feature] ?? 'Reward'}${g.uses === 1 ? '' : 's'}`
+                        )
+                        .join(' + ') + ' Added To Your Account.'
+                    : 'Your Prize Has Been Added To Your Account.'
           }
           onOpen={() => {
             if (prize.kind === 'upgrade') {

@@ -1,4 +1,4 @@
-import type { WheelSegment, WheelSpinResult } from '../services/DiamondWheelService';
+import type { WheelCardPick, WheelSegment, WheelSpinResult } from '../services/DiamondWheelService';
 import { WHEEL_V4_TOTAL } from './wheelV4Model';
 
 const gameNames = ['plinko', 'crash', 'crossing', 'mines'] as const;
@@ -291,4 +291,61 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
     return;
   }
   if (secondary?.outcome.game !== bonus?.game) fail();
+}
+/**
+ * THE REVEAL IS THIS AWARD'S, OR IT IS NOT ACTED ON (owner ruling 2026-09-21,
+ * R15).
+ *
+ * `fn_wheel_diamond_cards_pick` seals three values worth half, double and
+ * triple the diamonds risked, pays the one behind the card the player turned
+ * over, and publishes the seed that ordered them. This is the browser holding
+ * that answer to the shape the function can produce: a body that pays a figure
+ * none of the three cards carries, whose three values are not the half, the
+ * double and the triple of this award's own risk, or that answers a card this
+ * player did not choose, is refused rather than shown to them as a win.
+ *
+ * `replayed` is the one case where the card may differ from the card sent. The
+ * award was already picked - a second tab, or an earlier send that landed - and
+ * the answer is the FIRST pick's, which is the one the ledger paid.
+ *
+ * The half is the risk halved and rounded by the server's own sealed draw, so
+ * on an odd risk both the floor and the ceiling are accepted and nothing else.
+ */
+export function assertWheelCardPick(pick: WheelCardPick, awardId: string, card: number): void {
+  const risk = pick.risk_diamonds;
+  const sealed = [...pick.cards].sort((a, b) => a - b);
+  const sealsTo = (half: number) =>
+    [half, 2 * risk, 3 * risk].sort((a, b) => a - b).every((v, i) => v === sealed[i]);
+  if (
+    pick.ok !== true ||
+    !uuid.test(pick.award_id) ||
+    pick.award_id !== awardId ||
+    !uuid.test(pick.spin_id) ||
+    !Number.isSafeInteger(risk) ||
+    risk < 25 ||
+    risk > 2500 ||
+    !Number.isSafeInteger(pick.picked) ||
+    pick.picked < 1 ||
+    pick.picked > 3 ||
+    (!pick.replayed && pick.picked !== card) ||
+    pick.cards.length !== 3 ||
+    pick.cards.some((value) => !Number.isSafeInteger(value) || value <= 0) ||
+    !(sealsTo(Math.floor(risk / 2)) || sealsTo(Math.ceil(risk / 2))) ||
+    pick.paid_diamonds !== pick.cards[pick.picked - 1] ||
+    pick.fairness.domain !== 'wheel-v4-cards' ||
+    !Number.isSafeInteger(pick.fairness.roll) ||
+    pick.fairness.roll < 0 ||
+    pick.fairness.roll >= 2 ** 48 ||
+    !Number.isInteger(pick.fairness.permutation) ||
+    pick.fairness.permutation < 0 ||
+    pick.fairness.permutation > 5 ||
+    !Number.isSafeInteger(pick.fairness.nonce) ||
+    pick.fairness.nonce < 1 ||
+    !/^[0-9a-f]{64}$/i.test(pick.fairness.server_seed) ||
+    !/^[0-9a-f]{64}$/i.test(pick.fairness.server_seed_hash) ||
+    pick.fairness.client_seed.length < 1 ||
+    !Number.isFinite(pick.balances.diamonds) ||
+    pick.balances.diamonds < 0
+  )
+    throw new Error('The Card Reveal Could Not Be Confirmed. Send The Same Pick Again');
 }

@@ -36,6 +36,8 @@ export function WheelWinReveal({
   autoContinueAfterMs = 0,
   eyebrow,
   silent = false,
+  openLabel,
+  holdOpen = false,
 }: {
   prize: Pick<WheelSegment, 'kind' | 'game' | 'multiplier'>;
   title: string;
@@ -56,6 +58,19 @@ export function WheelWinReveal({
    * players that the sounds mean nothing.
    */
   silent?: boolean;
+  /**
+   * What the one plate says, when the prize's own kind does not say it. The
+   * Diamonds card game is the case: its plate opens three sealed cards rather
+   * than continuing, and `revealButtonLabel` cannot know that from the kind
+   * alone, because the same kind PAID under contract 3.
+   */
+  openLabel?: string;
+  /**
+   * Money is still ahead of this reveal, so the plate is the only way off it.
+   * Escape and the backdrop close nothing, exactly as they close nothing over
+   * a bonus game or an upgrade.
+   */
+  holdOpen?: boolean;
 }) {
   const opened = useRef(false);
   const onOpenRef = useRef(onOpen);
@@ -77,7 +92,7 @@ export function WheelWinReveal({
   }, [prize.kind, visible, silent]);
   const continueButton = useRef<HTMLButtonElement>(null);
   const [ready, setReady] = useState(false);
-  const gameAhead = prize.kind === 'bonus' || prize.kind === 'upgrade';
+  const gameAhead = prize.kind === 'bonus' || prize.kind === 'upgrade' || holdOpen;
   const timedPrize = autoContinue && autoContinueAfterMs > 0 && !gameAhead;
   useEffect(() => {
     if (ready && !timedPrize) continueButton.current?.focus();
@@ -139,7 +154,7 @@ export function WheelWinReveal({
             disabled={!ready && !timedPrize}
             onClick={finish}
           >
-            {revealButtonLabel(prize.kind)}
+            {openLabel ?? revealButtonLabel(prize.kind)}
           </button>
         </SpadeConsole>
       </div>

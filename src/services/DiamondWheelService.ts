@@ -3,7 +3,11 @@
  * Legacy RPCs remain exclusively for inactive hosts and old-request recovery. */
 
 import { supabase } from '../lib/supabase';
-import { assertWheelAward, assertWheelUpgradeTable } from '../utils/wheelAward';
+import {
+  assertWheelAward,
+  assertWheelCardPick,
+  assertWheelUpgradeTable,
+} from '../utils/wheelAward';
 
 export type WheelContractVersion = 2 | 3 | 4;
 export type WheelDrawDomain =
@@ -141,6 +145,8 @@ export interface WheelRunEnd {
   run_id: string;
   spins_done: number;
   pending_awards: WheelBonusAward[];
+  /** Card games the run won and left sealed. Empty on an older server. */
+  pending_cards: WheelCardAward[];
 }
 
 export interface WheelState {
@@ -152,6 +158,12 @@ export interface WheelState {
   welcome?: { available: boolean; entry_diamonds: number };
   /** Every bonus game won and not yet played, oldest first. Empty on an older server. */
   pending_awards?: WheelBonusAward[];
+  /**
+   * Every three-card game won and not yet picked, oldest first. The server
+   * refuses another spin while one of these is open, so this is what reopens
+   * the cards after a reload, in a second tab, or on a later visit.
+   */
+  pending_cards?: WheelCardAward[];
   /** The open run, or null when none is open (and on an older server). */
   auto_run?: WheelAutoRun | null;
   ok: boolean;
@@ -293,7 +305,19 @@ export interface WheelCardAward {
   award_id: string;
   risk_diamonds: number;
   status: 'pending';
+  /** The spin that dealt it. Listed with a pending award, absent from the receipt's own block. */
+  spin_id?: string;
+  created_at?: string;
 }
+
+/** What the player reads when the database would not turn a card over. */
+export const CARD_NOT_PICKED = 'That Card Could Not Be Turned Over';
+
+/**
+ * The answer to one pick. A refusal has no reveal behind it, so it carries no
+ * seed, no values and no figure: there is nothing to draw and nothing to pay.
+ */
+export type WheelCardPickAnswer = { ok: true; pick: WheelCardPick } | { ok: false; error: string };
 
 export interface WheelCardPick {
   ok: boolean;
@@ -512,6 +536,72 @@ function normaliseAwards(raw: Record<string, unknown>): WheelBonusAward[] {
     .map(normaliseAward);
 }
 
+/**
+ * THE THREE-CARD GAME'S AWARD, WHICHEVER DOOR NAMED IT. A spin's own receipt
+ * calls it `award_id`; `fn_wheel_card_public`, which is what a state read and
+ * a run close list, calls the same value `id` and adds the spin that dealt it.
+ * One award, one shape, so the page has one thing to open whether the card
+ * game just landed or was found waiting.
+ */
+function normaliseCardAward(raw: Record<string, unknown>): WheelCardAward {
+  return {
+    award_id: String(raw.award_id ?? raw.id ?? ''),
+    risk_diamonds: num(raw.risk_diamonds),
+    status: 'pending',
+    ...(typeof raw.spin_id === 'string' ? { spin_id: raw.spin_id } : {}),
+    ...(typeof raw.created_at === 'string' ? { created_at: raw.created_at } : {}),
+  };
+}
+
+/**
+ * Unpicked card games, oldest first. A row this client could not act on (no
+ * award to send it against, a stake outside the wheel's own limits) is dropped
+ * rather than drawn face down with nothing behind it; the server still holds
+ * the real one, and the state read that finds it again is the way back to it.
+ */
+function normaliseCardAwards(raw: Record<string, unknown>): WheelCardAward[] {
+  return (Array.isArray(raw.pending_cards) ? raw.pending_cards : [])
+    .filter((c): c is Record<string, unknown> => Boolean(c) && typeof c === 'object')
+    .map(normaliseCardAward)
+    .filter(
+      (c) =>
+        UUID.test(c.award_id) &&
+        Number.isSafeInteger(c.risk_diamonds) &&
+        c.risk_diamonds >= 25 &&
+        c.risk_diamonds <= 2500
+    );
+}
+
+/** One reveal, exactly as fn_wheel_diamond_cards_pick wrote it. */
+function normaliseCardPick(raw: Record<string, unknown>): WheelCardPick {
+  const fairness = (raw.fairness ?? {}) as Record<string, unknown>;
+  const balances = (raw.balances ?? {}) as Record<string, unknown>;
+  return {
+    ok: raw.ok === true,
+    error: raw.error ? String(raw.error) : undefined,
+    replayed: raw.replayed === true,
+    award_id: String(raw.award_id ?? ''),
+    spin_id: String(raw.spin_id ?? ''),
+    picked: num(raw.picked),
+    cards: Array.isArray(raw.cards) ? raw.cards.map(num) : [],
+    paid_diamonds: num(raw.paid_diamonds),
+    risk_diamonds: num(raw.risk_diamonds),
+    ...(raw.value_chips == null ? {} : { value_chips: num(raw.value_chips) }),
+    balances: { diamonds: num(balances.diamonds) },
+    fairness: {
+      // Carried, never assumed: a draw from another domain is a different game,
+      // and assertWheelCardPick is what refuses one.
+      domain: String(fairness.domain ?? '') as WheelCardPick['fairness']['domain'],
+      roll: num(fairness.roll),
+      permutation: num(fairness.permutation),
+      server_seed: String(fairness.server_seed ?? ''),
+      server_seed_hash: String(fairness.server_seed_hash ?? ''),
+      client_seed: String(fairness.client_seed ?? ''),
+      nonce: num(fairness.nonce),
+    },
+  };
+}
+
 /** An open run, or null: an absent field (older server) and a malformed one both read as no run. */
 function normaliseAutoRun(raw: unknown): WheelAutoRun | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
@@ -554,6 +644,7 @@ function normaliseState(raw: Record<string, unknown>): WheelState {
           }
         : undefined,
     pending_awards: normaliseAwards(raw),
+    pending_cards: normaliseCardAwards(raw),
     auto_run: normaliseAutoRun(raw.auto_run),
     ok: Boolean(raw.ok),
     error: raw.error ? String(raw.error) : undefined,
@@ -830,7 +921,12 @@ function verifiedSpin(read: () => WheelSpinResult): WheelSpinResult {
  * refusal the page acts on (it clears the saved spin and deals the next
  * ticket); throws when the same saved request should be sent again.
  */
-async function sendSpin(fn: string, args: Record<string, unknown>, commitId: string) {
+async function sendSpin(
+  fn: string,
+  args: Record<string, unknown>,
+  commitId: string,
+  refusal: string = SPIN_NOT_TAKEN
+) {
   const { data, error } = await supabase.rpc(fn, args);
   if (!error) {
     passingSends.delete(commitId);
@@ -846,7 +942,7 @@ async function sendSpin(fn: string, args: Record<string, unknown>, commitId: str
     }
   }
   passingSends.delete(commitId);
-  return { ok: false, error: SPIN_NOT_TAKEN };
+  return { ok: false, error: refusal };
 }
 
 /** Paid and welcome spins in one list, newest first, for the player's own history. */
@@ -993,12 +1089,50 @@ const DiamondWheelService = {
         run_id: runId,
         spins_done: 0,
         pending_awards: [],
+        pending_cards: [],
       };
     }
     const spins_done = num(raw.spins_done);
     if (String(raw.run_id ?? '') !== runId || !Number.isSafeInteger(spins_done) || spins_done < 0)
       throw new Error('The Run Could Not Be Confirmed');
-    return { ok: true, run_id: runId, spins_done, pending_awards: normaliseAwards(raw) };
+    return {
+      ok: true,
+      run_id: runId,
+      spins_done,
+      pending_awards: normaliseAwards(raw),
+      pending_cards: normaliseCardAwards(raw),
+    };
+  },
+
+  /**
+   * TURN ONE OF THE THREE CARDS OVER (owner ruling 2026-09-21, R15).
+   *
+   * `fn_wheel_diamond_cards_pick` is idempotent on the AWARD rather than on
+   * this request: an award already picked answers with its FIRST pick's
+   * reveal and `replayed: true`, whatever card this send carried. So a pick
+   * whose answer was lost is sent again with the identity the player chose,
+   * and the second send can neither pay twice nor take a different card.
+   *
+   * A refusal the database ANSWERED is an answer: it comes back as
+   * `{ ok: false }` and the page stops sending. Anything else throws, and the
+   * page's own schedule sends the same saved pick again.
+   */
+  async pickCard(awardId: string, card: number): Promise<WheelCardPickAnswer> {
+    const data = await sendSpin(
+      'fn_wheel_diamond_cards_pick',
+      { p_award_id: awardId, p_card: card },
+      `card:${awardId}`,
+      CARD_NOT_PICKED
+    );
+    if (!data || typeof data !== 'object' || Array.isArray(data))
+      throw new Error('The Card Reveal Could Not Be Confirmed');
+    const raw = data as Record<string, unknown>;
+    if (typeof raw.ok !== 'boolean') throw new Error('The Card Reveal Could Not Be Confirmed');
+    if (raw.ok === false)
+      return { ok: false, error: typeof raw.error === 'string' ? raw.error : CARD_NOT_PICKED };
+    const pick = normaliseCardPick(raw);
+    assertWheelCardPick(pick, awardId, card);
+    return { ok: true, pick };
   },
 
   async dailyBonusState(clubId: string): Promise<WheelDailyBonusState> {
@@ -1257,3 +1391,80 @@ const DiamondWheelService = {
 };
 
 export default DiamondWheelService;
+/**
+ * THE PICK THIS BROWSER SENT, KEPT UNTIL ITS REVEAL LANDS.
+ *
+ * Saved before the request leaves, exactly as a spin is, so an answer that
+ * never arrives is sent again as the SAME pick rather than as a second,
+ * different one. The server refuses another spin while a card game is open,
+ * so there is at most one of these per player per club and one key holds it.
+ */
+export interface WheelPendingCard {
+  userId: string;
+  clubId: string;
+  awardId: string;
+  card: 1 | 2 | 3;
+}
+
+const cardKeyFor = (userId: string, clubId: string) => `diamond-wheel-card:v1:${userId}:${clubId}`;
+
+function validCard(saved: WheelPendingCard, userId: string, clubId: string): boolean {
+  return (
+    Boolean(saved) &&
+    saved.userId === userId &&
+    saved.clubId === clubId &&
+    UUID.test(String(saved.awardId)) &&
+    (saved.card === 1 || saved.card === 2 || saved.card === 3)
+  );
+}
+
+/**
+ * A saved pick this build cannot send is not a pick: it is dropped rather than
+ * replayed, which leaves the three cards face down where the server still has
+ * them. Nothing is lost by that, because the award is only ever picked once.
+ */
+export function readWheelPendingCard(userId: string, clubId: string): WheelPendingCard | null {
+  const key = cardKeyFor(userId, clubId);
+  let raw: string | null;
+  try {
+    raw = localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  let saved: WheelPendingCard;
+  try {
+    saved = JSON.parse(raw) as WheelPendingCard;
+  } catch {
+    saved = { userId: '', clubId: '', awardId: '', card: 1 };
+  }
+  if (!validCard(saved, userId, clubId)) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* Storage that cannot be written cannot hold a pick either. */
+    }
+    return null;
+  }
+  return saved;
+}
+
+/** Persist before the money request leaves. An unsaved pick is never sent. */
+export function saveWheelPendingCard(saved: WheelPendingCard): void {
+  if (!validCard(saved, saved.userId, saved.clubId))
+    throw new Error('The Card Pick Could Not Be Saved');
+  const key = cardKeyFor(saved.userId, saved.clubId);
+  const value = JSON.stringify(saved);
+  localStorage.setItem(key, value);
+  if (localStorage.getItem(key) !== value) throw new Error('The Card Pick Could Not Be Saved');
+}
+
+/** Only the pick that owns the saved slot may clear it. */
+export function clearWheelPendingCard(saved: WheelPendingCard): void {
+  if (readWheelPendingCard(saved.userId, saved.clubId)?.awardId !== saved.awardId) return;
+  try {
+    localStorage.removeItem(cardKeyFor(saved.userId, saved.clubId));
+  } catch {
+    /* Nothing more this browser can do; the award is picked either way. */
+  }
+}

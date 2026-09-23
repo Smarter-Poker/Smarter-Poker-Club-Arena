@@ -57,6 +57,7 @@ import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { uuid } from '../../utils/uuid';
+import { compactChips } from '../../utils/format';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './ChipMintModal.css';
 
@@ -87,6 +88,9 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
   const [diamonds, setDiamonds] = useState('');
 
   const [balance, setBalance] = useState<number | null>(null);
+  // A diamond read that FAILED is not a balance of zero. The row prints
+  // Unavailable and the presets stay disabled until a read succeeds.
+  const [balanceFailed, setBalanceFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [target, setTarget] = useState<MintTarget>({ state: 'loading' });
   /**
@@ -161,16 +165,25 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
     if (!isOpen || !user?.id) return;
     let live = true;
     setDiamonds('');
+    setBalanceFailed(false);
     setTarget({ state: 'loading' });
 
     (async () => {
       // Diamond balance.
-      const { data: prof } = await supabase
+      const { data: prof, error: profError } = await supabase
         .from('profiles')
         .select('diamonds')
         .eq('id', user.id)
         .maybeSingle();
-      if (live) setBalance(Number(prof?.diamonds) || 0);
+      if (profError) {
+        reportError(profError, 'ChipMintModal');
+        if (live) {
+          setBalance(null);
+          setBalanceFailed(true);
+        }
+      } else if (live) {
+        setBalance(Number(prof?.diamonds) || 0);
+      }
 
       // ── Destination pre-flight ──
       // AUDIT 2026-08-21: the caller may hand us a 6-digit club CODE
@@ -297,7 +310,20 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
           as="div"
           eyebrow="Club Bank"
           title="Chip Mint"
-          subtitle="100 Diamonds = 10,000 Chips"
+          subtitle={`100 Diamonds = ${compactChips(100 * CHIPS_PER_DIAMOND)} Chips`}
+          // The pill slot is painted in the master: never leave it unlabelled.
+          pill={
+            target.state === 'loading'
+              ? 'Checking'
+              : busy
+                ? 'Minting'
+                : canMintHere
+                  ? 'Ready'
+                  : 'Refused'
+          }
+          pillInk={
+            target.state === 'loading' ? 'gold' : busy ? 'gold' : canMintHere ? 'green' : 'red'
+          }
           {...(canMintHere
             ? {
                 plates: {
@@ -323,7 +349,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
             <div className="cmm-row">
               <span className="cmm-label sc-label sc-ink--blue">Your Diamonds</span>
               <span className="cmm-value sc-ink--silver">
-                {balance === null ? '...' : fmt(balance)}
+                {balance === null ? (balanceFailed ? 'Unavailable' : '...') : fmt(balance)}
               </span>
             </div>
 
@@ -381,7 +407,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
                     key={q}
                     type="button"
                     className="cmm-quick-word"
-                    disabled={balance !== null && q > balance}
+                    disabled={balance === null || q > balance}
                     onClick={() => setDiamondsAndResetKey(String(q))}
                   >
                     {fmt(q)}
@@ -393,7 +419,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
                   disabled={!balance}
                   onClick={() => setDiamondsAndResetKey(String(balance ?? 0))}
                 >
-                  MAX
+                  Max
                 </button>
               </div>
 

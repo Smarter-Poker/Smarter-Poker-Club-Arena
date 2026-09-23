@@ -1,863 +1,697 @@
 /*
- * CASHIER / #SMARTERCASINOREALISM
- * Black-first vault room, precision gunmetal structure, electric-blue energy.
- * The generated hero artwork supplies the physical realism; CSS frames and
- * organizes live data without pretending to be the artwork.
+ * CASHIER TRADE / #ClubArenaConsole
+ *
+ * #ClubArenaConsole is the visual authority of this file. The page and its four
+ * dialogs (Transaction Receipt, Request Chips, Send Out / Send Ticket, Claim
+ * Back) sit on the approved spade console master through <SpadeConsole>, and
+ * the master paints every frame, rail, crest and plate. This sheet only lays
+ * live copy and native controls onto the black glass, in the master's own inks.
+ *
+ * Nothing here draws a card, a pill, a button face, an avatar box or an icon
+ * holder. Rows are separated by the engraved rule (a black line with a light
+ * lip, the cut the master's own chrome rules are made of), every control is a
+ * lit word, and a field is a single engraved rule under its text.
+ *
+ * #SMARTERCASINOREALISM was the former authority of this page (the vault hero
+ * and its gunmetal frames); it no longer governs anything in this file.
+ *
+ * No hover states. Everything on the glass sizes in cqw against the console.
  */
 
 .page {
-  --cashier-void: #040609;
-  --cashier-black: #080b10;
-  --cashier-panel: #0c1118;
-  --cashier-panel-raised: #111823;
-  --cashier-gunmetal: #263140;
-  --cashier-chrome: #c9d4df;
-  --cashier-blue: #36a9ff;
-  --cashier-blue-hot: #8ad2ff;
-  --cashier-gold: #c59a4a;
-  --cashier-muted: #8391a1;
+  /* The master's inks (SpadeConsole.css), for copy that carries a module class
+     rather than an sc-ink class. Schema colours only. */
+  --ink-blue: #45adff;
+  --ink-blue-glow:
+    0 0 0.9cqw rgb(49 168 255 / 70%), 0 0 2cqw rgb(49 168 255 / 30%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+  --ink-silver: #e4e7ec;
+  --ink-silver-bevel:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%), 0 0.25cqw 0 #6d747c, 0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+  --ink-white: #f4f7fb;
+  --ink-white-glow:
+    0 0 1cqw rgb(140 210 255 / 90%), 0 0.25cqw 0 rgb(0 0 0 / 70%), 0 0.5cqw 1cqw rgb(0 0 0 / 60%);
+  --ink-green: #c8ffd2;
+  --ink-green-glow:
+    0 0 1cqw rgb(53 217 90 / 80%), 0 0 2cqw rgb(53 217 90 / 35%), 0 0.25cqw 0 rgb(0 0 0 / 70%);
+  --ink-red: #ff5b6e;
+  --ink-red-glow:
+    0 0 1cqw rgb(240 40 73 / 80%), 0 0 2cqw rgb(240 40 73 / 35%), 0 0.25cqw 0 rgb(0 0 0 / 70%);
+  --ink-gold: #ffd700;
+  --ink-gold-glow:
+    0 0 1cqw rgb(255 215 0 / 70%), 0 0 2cqw rgb(255 215 0 / 30%), 0 0.25cqw 0 rgb(0 0 0 / 70%);
+  --ink-muted: #9aa5b3;
+  --ink-muted-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  --ink-copy: #d7dee7;
+  --engraved-rule-lip: inset 0 1px 0 rgb(255 255 255 / 8%);
+
   position: relative;
   isolation: isolate;
   display: flex;
   flex-direction: column;
-  width: min(100%, 1280px);
+  width: 100%;
+  max-width: 1000px;
   min-height: 100dvh;
   margin: 0 auto;
-  padding: 20px 24px calc(190px + env(safe-area-inset-bottom, 0px));
-  overflow-x: hidden;
+  /* Page content pads with the designed clearance so nothing jumps when the
+     footer slides; the dock below stacks on the live base instead. */
+  padding: 12px 12px calc(var(--bottom-nav-clearance, 86px) + 24px);
   overflow-x: clip;
-  color: #f1f5f8;
-  background:
-    radial-gradient(circle at 82% 4%, rgba(35, 139, 219, 0.1), transparent 28rem),
-    linear-gradient(180deg, #070a0f 0%, var(--cashier-void) 65%, #020304 100%);
-  font-family:
+  color: #e6e9ee;
+  background: #000;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+}
+
+/* ── The console and its glass ────────────────────────────────────────── */
+
+.console {
+  --sc-max: 1000px;
+}
+
+.glass {
+  display: flex;
+  flex-direction: column;
+  gap: 3cqw;
+  min-width: 0;
+}
+
+/* Global element styles, and metallic-popups.css inside a dialog, must not
+   paint a frame onto the glass. This switches them off at the specificity of
+   one class, so every rule below it still wins. The master's own chassis -
+   .sc__head, .sc__body, .sc__foot, the plates and every other sc- hook - is
+   excluded and never flattened. */
+.console
+  :where(
+    section,
+    nav,
+    div,
+    button,
+    input,
+    select,
+    textarea,
+    span,
+    p,
+    img,
+    dl,
+    dt,
+    dd,
+    a,
+    strong,
+    em,
+    small,
+    h1,
+    h2,
+    h3,
+    h4,
+    ul,
+    ol,
+    li,
+    label,
+    table,
+    tr,
+    td,
+    th
+  ):where(
+    :not(:global(.sc__head)):not(:global(.sc__body)):not(:global(.sc__foot)):not(
+        :global(.sc-plate)
+      ):not([class^='sc'])
+  ) {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* Every control on the glass is a lit word. The painted plates are the
+   master's and are left alone. */
+.console :where(button:not(:global(.sc-plate))) {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 1cqw;
+  color: var(--ink-blue);
+  font:
+    800 3.2cqw/1.2 'Roboto Condensed',
     Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: var(--ink-blue-glow);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.console :where(button:not(:global(.sc-plate)):active) {
+  transform: none;
+  filter: brightness(1.25);
+}
+
+.console :where(button:not(:global(.sc-plate)):disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* metallic-popups.css bevels every button inside a dialog with !important. */
+.consoleDialog :where(button:not(:global(.sc-plate))) {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* A field is one engraved rule under its text: no box, no well, no spinner.
+   The !important answers metallic-popups.css, which recesses every dialog
+   field with !important. */
+.console input:not([type='checkbox']) {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 2.2cqw 1cqw;
+  border: 0 !important;
+  border-bottom: 1px solid #000 !important;
+  border-radius: 0 !important;
+  outline: 0;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%) !important;
+  color: var(--ink-white) !important;
+  font:
+    600 max(16px, 3.6cqw) / 1.3 Inter,
+    system-ui,
     sans-serif;
 }
 
-.page::before {
-  position: fixed;
-  z-index: -1;
-  inset: 0;
-  content: '';
-  pointer-events: none;
-  opacity: 0.3;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
-  background-size: 44px 44px;
-  mask-image: linear-gradient(to bottom, black, transparent 70%);
+.console input:not([type='checkbox'])::placeholder {
+  color: var(--ink-muted);
+  opacity: 0.8;
 }
 
-/* ── Cinematic vault hero ─────────────────────────────────────────────── */
-
-.hero {
-  position: relative;
-  min-height: 438px;
-  overflow: hidden;
-  border: 1px solid #526071;
-  border-radius: 8px;
-  background: #030405;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
-    inset 0 -1px 0 rgba(54, 169, 255, 0.28),
-    0 28px 70px rgba(0, 0, 0, 0.46);
+.console input:not([type='checkbox']):focus-visible {
+  /* Focus lights the rule itself; it never draws a box round the field. */
+  border-bottom-color: var(--ink-blue) !important;
+  outline: 0 !important;
+  box-shadow: 0 1px 0 var(--ink-blue) !important;
 }
 
-.hero::before,
-.hero::after {
-  position: absolute;
-  z-index: 3;
-  content: '';
-  pointer-events: none;
+.console input[type='number']::-webkit-inner-spin-button,
+.console input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
-.hero::before {
-  inset: 6px;
-  border: 1px solid rgba(180, 196, 211, 0.2);
-  border-radius: 4px;
-  clip-path: polygon(0 0, 31% 0, 33% 4px, 67% 4px, 69% 0, 100% 0, 100% 100%, 0 100%);
+.console input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
-.hero::after {
-  right: 6px;
-  bottom: 6px;
-  left: 6px;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--cashier-blue), transparent);
-  box-shadow: 0 0 18px rgba(54, 169, 255, 0.8);
-}
+/* ── Type on the glass ────────────────────────────────────────────────── */
 
-.heroImage {
-  position: absolute;
-  z-index: 0;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  filter: saturate(0.9) contrast(1.06);
-}
-
-.heroHardware {
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(
-      90deg,
-      rgba(2, 3, 5, 0.99) 0%,
-      rgba(2, 3, 5, 0.88) 26%,
-      rgba(2, 3, 5, 0.2) 60%,
-      rgba(2, 3, 5, 0.04) 100%
-    ),
-    linear-gradient(
-      180deg,
-      rgba(2, 3, 5, 0.74) 0%,
-      transparent 26%,
-      transparent 70%,
-      rgba(2, 3, 5, 0.9) 100%
-    );
-}
-
-.header {
-  position: relative;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  min-height: 58px;
-  padding: 10px 16px 10px 20px;
-  border-bottom: 1px solid rgba(180, 196, 211, 0.18);
-  background: linear-gradient(90deg, rgba(4, 7, 11, 0.9), rgba(4, 7, 11, 0.32));
-}
-
-.title,
-.eyebrow,
 .sectionEyebrow,
 .sectionMeta,
-.stripLabel,
 .heroMetricLabel,
+.stripLabel,
 .summaryLabel,
+.recoveryMetric > span,
 .pickerLabel {
-  font:
-    700 0.67rem/1 Rajdhani,
-    Inter,
-    sans-serif;
+  color: var(--ink-blue);
+  font-size: 2.7cqw;
+  font-weight: 700;
   letter-spacing: 0.16em;
+  text-shadow: var(--ink-blue-glow);
   text-transform: uppercase;
 }
 
+.sectionMeta {
+  color: var(--ink-muted);
+  text-shadow: var(--ink-muted-shadow);
+}
+
+.heroTitle,
+.sectionTitle,
+.recoveryTitle {
+  margin: 0;
+  color: var(--ink-silver);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.03em;
+  text-shadow: var(--ink-silver-bevel);
+  text-transform: uppercase;
+}
+
+.heroTitle {
+  font-size: 5.6cqw;
+}
+
+.sectionTitle,
+.recoveryTitle {
+  font-size: 4.6cqw;
+}
+
+.heroMetricValue,
+.heroRole,
+.stripValue,
+.summaryValue,
+.recoveryMetric strong {
+  color: var(--ink-silver);
+  font-size: 4cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow: var(--ink-silver-bevel);
+  overflow-wrap: anywhere;
+}
+
+.integrityGood,
+.amtIn {
+  color: var(--ink-green);
+  text-shadow: var(--ink-green-glow);
+}
+
+.integrityBad,
+.amtOut {
+  color: var(--ink-red);
+  text-shadow: var(--ink-red-glow);
+}
+
+.modalHint,
+.empty,
 .pickerStatus {
-  padding: 22px 16px;
-  color: #91a1b1;
-  font-size: 0.78rem;
-  line-height: 1.55;
+  margin: 0;
+  color: var(--ink-muted);
+  font:
+    500 3.1cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: var(--ink-muted-shadow);
+}
+
+.empty,
+.pickerStatus {
+  padding: 3cqw 1cqw;
   text-align: center;
 }
 
-.title {
-  color: #aebdca;
+/* Retry, Cancel, Decline: lit words inside a line of copy or a row. */
+.retryBtn,
+.reqBtn,
+.closeBtn {
+  min-height: 44px;
+  padding: 0 1.4cqw;
+}
+
+.reqBtnGo {
+  color: var(--ink-white);
+  text-shadow: var(--ink-white-glow);
+}
+
+/* ── Hero: the club, the promise, the status, the balances ────────────── */
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 2.6cqw;
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
 
 .entityBtn {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  width: min(330px, 60vw);
+  gap: 2.4cqw;
+  max-width: 100%;
   min-height: 44px;
-  padding: 5px 12px 5px 6px;
-  overflow: hidden;
-  border: 1px solid #5e6c7c;
-  border-radius: 4px;
-  color: #f4f7fa;
-  background: linear-gradient(180deg, rgba(27, 35, 46, 0.96), rgba(8, 12, 17, 0.96));
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.08),
-    inset 0 -1px rgba(54, 169, 255, 0.17);
-  cursor: pointer;
+  padding: 0;
+  color: var(--ink-silver);
+  text-shadow: none;
 }
 
-.entityLogo,
-.entityInitial {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  border: 1px solid rgba(138, 210, 255, 0.5);
-  border-radius: 3px;
-}
-
-/* A missing club logo is represented by the club name already printed beside
-   it; do not invent a flat square icon holder. */
-.entityInitial {
-  display: none;
-}
-
+/* A real logo prints as itself: no frame, no rounding, no fallback square.
+   A club without one is represented by its name beside it. */
 .entityLogo {
+  width: 7cqw;
+  height: 7cqw;
+  flex: 0 0 auto;
   object-fit: cover;
 }
 
-.entityInitial {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #eef8ff;
-  background: linear-gradient(145deg, #276ca1, #0a1a28);
-  font:
-    700 0.8rem/1 Rajdhani,
-    sans-serif;
-}
-
 .entityName {
+  min-width: 0;
   overflow: hidden;
-  font:
-    700 0.8rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.08em;
+  color: var(--ink-silver);
+  font-size: 3.8cqw;
+  font-weight: 800;
+  letter-spacing: 0.04em;
   text-overflow: ellipsis;
+  text-shadow: var(--ink-silver-bevel);
   text-transform: uppercase;
   white-space: nowrap;
 }
 
 .entityCaret {
-  margin-left: auto;
-  color: var(--cashier-blue-hot);
-  font-size: 0.72rem;
+  flex: 0 0 auto;
 }
 
 .heroContent {
-  position: relative;
-  z-index: 4;
-  width: min(48%, 540px);
-  padding: 62px 0 122px 6%;
-}
-
-.eyebrow,
-.sectionEyebrow {
-  display: block;
-  color: var(--cashier-blue-hot);
-}
-
-.heroTitle {
-  max-width: 620px;
-  margin: 12px 0 15px;
-  color: #f5f7f8;
-  font:
-    500 clamp(2.55rem, 5.4vw, 5.25rem) / 0.87 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: -0.025em;
-  text-transform: uppercase;
-  text-wrap: balance;
-  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  gap: 1.8cqw;
+  min-width: 0;
 }
 
 .heroCopy {
-  max-width: 490px;
   margin: 0;
-  color: #9ca9b6;
-  font-size: clamp(0.82rem, 1.2vw, 0.98rem);
-  line-height: 1.62;
 }
 
+/* The live synchronisation line. Its warning state reads red; the class name
+   is kept because tests/cashier-casino-realism-phase2.test.ts pins it. */
 .securityLine {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 19px;
-  color: #b8c7d3;
-  font:
-    700 0.64rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.12em;
+  color: var(--ink-green);
+  font-size: 2.9cqw;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-shadow: var(--ink-green-glow);
   text-transform: uppercase;
-}
-
-.securityDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #5bc8ff;
-  box-shadow:
-    0 0 0 3px rgba(54, 169, 255, 0.12),
-    0 0 13px var(--cashier-blue);
 }
 
 .securityDotWarning {
-  background: #e0aa54;
-  box-shadow:
-    0 0 0 3px rgb(197 154 74 / 16%),
-    0 0 13px #c59a4a;
+  color: var(--ink-red);
+  text-shadow: var(--ink-red-glow);
 }
 
-.heroMetrics {
-  position: absolute;
-  z-index: 5;
-  right: 18px;
-  bottom: 17px;
-  left: 18px;
+/* ── Figures as rows on the glass ─────────────────────────────────────── */
+
+/* Wide: the figures stand side by side under one engraved rule, label over
+   value. Narrow (below): one row each, label left and value right. */
+.heroMetrics,
+.strip,
+.recoveryGrid,
+.ledgerSummary {
   display: grid;
-  grid-template-columns: 1fr 1fr 0.72fr;
-  overflow: hidden;
-  border: 1px solid rgba(144, 162, 179, 0.28);
-  border-radius: 4px;
-  background: rgba(5, 8, 12, 0.84);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-.heroMetric {
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 3cqw;
   min-width: 0;
-  padding: 12px 16px;
-  border-right: 1px solid rgba(144, 162, 179, 0.17);
+  padding: 2.2cqw 0.5cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
 }
 
-.heroMetric:last-child {
-  border-right: 0;
+.heroMetric,
+.stripCell,
+.recoveryMetric,
+.summaryCell {
+  display: flex;
+  flex-direction: column;
+  gap: 1cqw;
+  min-width: 0;
 }
 
-.heroMetricLabel {
-  display: block;
-  margin-bottom: 6px;
-  color: #778697;
+.stripValue {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2cqw;
 }
 
-.heroMetricValue,
-.heroRole {
-  display: block;
-  overflow: hidden;
-  color: #eff5f9;
-  font:
-    600 clamp(1.18rem, 2vw, 1.65rem) / 1 Rajdhani,
-    Inter,
-    sans-serif;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.035em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.plusBtn {
+  min-height: 44px;
+  padding: 0 1cqw;
+  color: var(--ink-gold);
+  text-shadow: var(--ink-gold-glow);
 }
 
-.heroRole {
-  color: var(--cashier-gold);
-  font-size: clamp(0.92rem, 1.5vw, 1.18rem);
-  text-transform: uppercase;
-}
-
-/* ── Club picker ──────────────────────────────────────────────────────── */
+/* ── Club picker, printed inline on the glass ─────────────────────────── */
 
 .picker {
-  position: absolute;
-  z-index: 80;
-  top: 82px;
-  right: 40px;
-  width: min(390px, calc(100vw - 48px));
-  max-height: min(520px, 70vh);
+  display: flex;
+  flex-direction: column;
+  max-height: 96cqw;
   overflow-y: auto;
-  border: 1px solid #657484;
-  border-radius: 5px;
-  background: #090d13;
-  box-shadow:
-    0 22px 70px rgba(0, 0, 0, 0.75),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  overscroll-behavior: contain;
 }
 
 .pickerLabel {
-  position: sticky;
-  z-index: 1;
-  top: 0;
-  padding: 13px 15px 10px;
-  color: var(--cashier-blue-hot);
-  border-bottom: 1px solid rgba(138, 210, 255, 0.16);
-  background: #090d13;
+  padding: 1.4cqw 0.5cqw;
 }
 
 .pickerRow {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 2.4cqw;
   width: 100%;
-  min-height: 54px;
-  padding: 8px 12px;
-  border: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
-  color: #dce4eb;
-  background: #0b1017;
+  min-height: 44px;
+  padding: 2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
+  color: var(--ink-silver);
+  font-weight: 700;
+  letter-spacing: normal;
   text-align: left;
-  cursor: pointer;
-}
-
-.pickerRowActive {
-  background: linear-gradient(90deg, rgba(54, 169, 255, 0.16), rgba(54, 169, 255, 0.03));
-  box-shadow: inset 2px 0 var(--cashier-blue);
+  text-shadow: none;
+  text-transform: none;
 }
 
 .pickerName {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
-  font:
-    700 0.84rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.05em;
+  color: var(--ink-silver);
+  font-size: 3.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.04em;
   text-overflow: ellipsis;
+  text-shadow: var(--ink-silver-bevel);
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+.pickerRowActive .pickerName {
+  color: var(--ink-blue);
+  text-shadow: var(--ink-blue-glow);
 }
 
 .pickerBalance {
-  margin-left: auto;
-  color: #99a8b6;
-  font:
-    600 0.76rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+  color: var(--ink-muted);
+  font-size: 2.9cqw;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow: var(--ink-muted-shadow);
   white-space: nowrap;
 }
 
-/* ── Segmented navigation ─────────────────────────────────────────────── */
+/* ── Tabs: lit words under one engraved rule ──────────────────────────── */
 
 .tabs {
   display: flex;
-  gap: 0;
-  margin: 14px 0 0;
-  overflow-x: auto;
-  border: 1px solid #2b3643;
-  border-radius: 5px;
-  background: #080c12;
-  scrollbar-width: none;
-}
-
-.tabs::-webkit-scrollbar {
-  display: none;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 2cqw;
+  padding-bottom: 0.6cqw;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .tab {
-  position: relative;
-  flex: 1 0 max-content;
-  min-height: 46px;
-  padding: 0 22px;
-  border: 0;
-  border-right: 1px solid rgba(140, 158, 176, 0.12);
-  color: #748292;
-  background: transparent;
-  font:
-    700 0.67rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.tab:last-child {
-  border-right: 0;
-}
-
-.tab::after {
-  position: absolute;
-  right: 20%;
-  bottom: 0;
-  left: 20%;
-  height: 2px;
-  content: '';
-  background: transparent;
+  flex: 1 1 28%;
+  min-height: 44px;
+  padding: 1cqw 0.5cqw;
+  color: var(--ink-muted);
+  font-size: 3cqw;
+  text-shadow: var(--ink-muted-shadow);
 }
 
 .tabActive {
-  color: #eaf6ff;
-  background: linear-gradient(180deg, rgba(54, 169, 255, 0.08), rgba(54, 169, 255, 0.015));
-}
-
-.tabActive::after {
-  background: var(--cashier-blue);
-  box-shadow: 0 0 12px rgba(54, 169, 255, 0.85);
+  color: var(--ink-blue);
+  text-shadow: var(--ink-blue-glow);
 }
 
 .tabBadge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 17px;
-  height: 17px;
-  margin-left: 6px;
-  padding: 0 4px;
-  border: 1px solid rgba(255, 128, 139, 0.7);
-  border-radius: 9px;
-  color: #ffe9eb;
-  background: #8d2431;
-  font-size: 0.59rem;
-  letter-spacing: 0;
+  margin-left: 1.2cqw;
+  color: var(--ink-gold);
+  text-shadow: var(--ink-gold-glow);
 }
 
-/* ── Reconciliation and recovery console ─────────────────────────────── */
+/* ── Reconciliation console ───────────────────────────────────────────── */
 
 .recoveryConsole {
-  margin-top: 14px;
-  overflow: hidden;
-  border: 1px solid #344657;
-  border-radius: 6px;
-  background: linear-gradient(90deg, rgba(54, 169, 255, 0.055), transparent 42%), #080d13;
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
-}
-
-.recoveryConsoleAttention {
-  border-color: rgba(197, 154, 74, 0.66);
-  box-shadow:
-    inset 3px 0 #c59a4a,
-    inset 0 1px rgba(255, 255, 255, 0.035);
-}
-
-.recoveryHeading {
   display: flex;
+  flex-direction: column;
+  gap: 1.6cqw;
+  min-width: 0;
+}
+
+.recoveryConsoleAttention .sectionEyebrow {
+  color: var(--ink-red);
+  text-shadow: var(--ink-red-glow);
+}
+
+.recoveryHeading,
+.sectionHeading {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  padding: 15px 18px 13px;
-  border-bottom: 1px solid rgba(142, 159, 176, 0.13);
-}
-
-.recoveryTitle {
-  margin: 5px 0 0;
-  color: #e8f0f5;
-  font:
-    600 1.08rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.reconcileBtn,
-.recoveryAlert button {
-  min-height: 44px;
-  padding: 0 15px;
-  border: 1px solid #52b9ff;
-  border-radius: 4px;
-  color: #eef9ff;
-  background: linear-gradient(180deg, #176da5, #0b426a);
-  font:
-    700 0.68rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.reconcileBtn:disabled,
-.recoveryAlert button:disabled,
-.plusBtn:disabled,
-.classicLink:disabled {
-  opacity: 0.38;
-  cursor: default;
-}
-
-.recoveryGrid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.recoveryMetric {
+  gap: 1cqw 3cqw;
   min-width: 0;
-  padding: 12px 18px 14px;
-  border-right: 1px solid rgba(142, 159, 176, 0.12);
 }
 
-.recoveryMetric:last-child {
-  border-right: 0;
+.recoveryHeading > div,
+.sectionHeading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8cqw;
+  min-width: 0;
 }
 
-.recoveryMetric span,
-.receiptFacts dt,
-.receiptAmount span,
-.receiptAmount small {
-  display: block;
-  margin-bottom: 6px;
-  color: #758596;
-  font:
-    700 0.62rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.recoveryMetric strong {
-  display: block;
-  overflow: hidden;
-  color: #dce6ed;
-  font:
-    700 0.82rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.integrityGood {
-  color: #6cd693 !important;
-}
-
-.integrityBad {
-  color: #ff9b77 !important;
+.reconcileBtn {
+  min-height: 44px;
+  padding: 0 1cqw;
 }
 
 .recoveryAlert {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin: 0 12px 12px;
-  padding: 12px 14px;
-  border: 1px solid rgba(255, 123, 139, 0.43);
-  border-radius: 4px;
-  background: rgba(117, 22, 36, 0.17);
+  gap: 1.4cqw 3cqw;
+  padding: 2.2cqw 0.5cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
 }
 
 .recoveryAlert > div {
   display: flex;
-  min-width: 0;
   flex-direction: column;
-  gap: 4px;
+  gap: 0.8cqw;
+  min-width: 0;
 }
 
 .recoveryAlert strong {
-  color: #ffabb4;
-  font:
-    700 0.78rem/1 Rajdhani,
-    sans-serif;
-  letter-spacing: 0.06em;
+  color: var(--ink-red);
+  font-size: 3.2cqw;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-shadow: var(--ink-red-glow);
   text-transform: uppercase;
 }
 
 .recoveryAlert span {
-  color: #9aa8b5;
-  font-size: 0.72rem;
-  line-height: 1.45;
+  color: var(--ink-copy);
+  font:
+    500 3.1cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
 }
 
-/* ── Shared machined content shell ────────────────────────────────────── */
+.recoveryAlert button {
+  min-height: 44px;
+}
+
+/* ── Tab panels ───────────────────────────────────────────────────────── */
 
 .sectionShell {
-  position: relative;
-  margin-top: 14px;
-  overflow: hidden;
-  border: 1px solid #34404d;
-  border-radius: 6px;
-  background: linear-gradient(180deg, #0d1219, #070a0f);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
-}
-
-.sectionShell::before {
-  position: absolute;
-  top: 0;
-  right: 8%;
-  left: 8%;
-  height: 1px;
-  content: '';
-  background: linear-gradient(90deg, transparent, rgba(193, 211, 228, 0.55), transparent);
-}
-
-.sectionHeading {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 20px 22px 16px;
-  border-bottom: 1px solid rgba(142, 159, 176, 0.13);
-}
-
-.sectionTitle {
-  margin: 6px 0 0;
-  color: #edf3f7;
-  font:
-    500 clamp(1.55rem, 2.7vw, 2.25rem) / 1 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.01em;
-  text-transform: uppercase;
-}
-
-.sectionMeta {
-  padding-bottom: 3px;
-  color: #718091;
-  text-align: right;
-}
-
-/* ── Balances and member tools ───────────────────────────────────────── */
-
-.strip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1px;
-  margin: 0;
-  border-bottom: 1px solid rgba(142, 159, 176, 0.13);
-  background: rgba(142, 159, 176, 0.13);
-}
-
-.stripCell {
+  flex-direction: column;
+  gap: 2.4cqw;
   min-width: 0;
-  padding: 14px 20px;
-  background: #0a0f15;
-}
-
-.stripLabel {
-  display: block;
-  margin-bottom: 7px;
-  color: #8292a2;
-}
-
-.stripValue {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: #edf5fa;
-  font:
-    600 1.35rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
-}
-
-.plusBtn {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid var(--cashier-blue-hot);
-  border-radius: 3px;
-  color: #eaf7ff;
-  background: #0c5788;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.plusBtn::before {
-  position: absolute;
-  inset: -11px;
-  content: '';
 }
 
 .searchRow {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 16px 20px 0;
-}
-
-.searchRow input,
-.ledgerSearch,
-.modal input {
-  width: 100%;
-  min-width: 0;
-  min-height: 44px;
-  padding: 10px 13px;
-  border: 1px solid #344150;
-  border-radius: 4px;
-  outline: none;
-  color: #eef3f7;
-  background: #05080c;
-  font:
-    500 16px/1.25 Inter,
-    sans-serif;
-  box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.5);
-}
-
-.searchRow input::placeholder,
-.ledgerSearch::placeholder,
-.modal input::placeholder {
-  color: #7b8998;
+  gap: 2.4cqw;
 }
 
 .memberCount {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  height: 44px;
-  padding: 0 10px;
-  border: 1px solid #344150;
-  border-radius: 4px;
-  color: #9aabba;
-  background: #0a0f15;
-  font:
-    700 0.76rem/1 Rajdhani,
-    sans-serif;
-  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+  color: var(--ink-muted);
+  font-size: 3cqw;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow: var(--ink-muted-shadow);
 }
 
 .filterRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 22px;
-  min-height: 48px;
-  padding: 0 20px;
-  overflow-x: auto;
-  border-bottom: 1px solid rgba(142, 159, 176, 0.13);
-  color: #94a4b3;
-  font:
-    600 0.72rem/1.2 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.04em;
-  scrollbar-width: none;
+  gap: 0 3cqw;
 }
 
 .groupToggle {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  white-space: nowrap;
+  min-height: 44px;
+  color: var(--ink-muted);
+  font-size: 3cqw;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
   cursor: pointer;
 }
 
+/* A filter toggle is a lit word: muted when off, blue when on. The native
+   checkbox stays in the tree for keyboard and assistive tech, but it does not
+   paint a white box on the glass. */
 .groupToggle input {
-  accent-color: var(--cashier-blue);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  opacity: 0;
+  clip-path: inset(50%);
+}
+
+.groupToggle:has(input:checked) {
+  color: var(--ink-blue);
+  text-shadow: var(--ink-blue-glow);
+}
+
+.groupToggle:has(input:disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.groupToggle:has(input:focus-visible) {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
 }
 
 .sortBtn {
   min-height: 44px;
   margin-left: auto;
-  padding: 0;
-  border: 0;
-  color: var(--cashier-blue-hot);
-  background: transparent;
-  font: inherit;
-  letter-spacing: inherit;
-  white-space: nowrap;
-  cursor: pointer;
 }
 
-/* ── Lists and rows ───────────────────────────────────────────────────── */
+/* ── Rows ─────────────────────────────────────────────────────────────── */
 
 .list {
-  min-height: 170px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.row,
+.claimRow {
+  display: flex;
+  align-items: center;
+  gap: 2.6cqw;
+  min-width: 0;
+  min-height: 44px;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
 }
 
 .row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 62px;
-  padding: 10px 20px;
-  border-bottom: 1px solid rgba(141, 158, 175, 0.11);
-  color: #dfe6eb;
-  background: rgba(8, 12, 17, 0.72);
   cursor: default;
 }
 
@@ -865,390 +699,219 @@
   cursor: pointer;
 }
 
-.row:last-child {
-  border-bottom: 0;
+.rowSelf {
+  opacity: 0.6;
 }
 
-.rowSelf {
-  /* The viewer's own row: listed and searchable, never a recipient. */
-  cursor: default;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), transparent);
+.rowSelected .rowName {
+  color: var(--ink-blue);
+  text-shadow: var(--ink-blue-glow);
+}
+
+/* A real avatar prints as itself; a player without one is their name. */
+.avatar {
+  width: 8cqw;
+  height: 8cqw;
+  flex: 0 0 auto;
+  object-fit: cover;
+}
+
+.rowInfo {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.6cqw;
+  min-width: 0;
+}
+
+.rowName {
+  overflow: hidden;
+  color: var(--ink-white);
+  font-size: 3.5cqw;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rowYou {
-  margin-left: 8px;
-  padding: 1px 6px;
-  border: 1px solid #4a5f72;
-  border-radius: 3px;
-  color: #a9bccb;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  margin-left: 1.6cqw;
+  color: var(--ink-gold);
+  font-size: 2.6cqw;
+  letter-spacing: 0.14em;
+  text-shadow: var(--ink-gold-glow);
   text-transform: uppercase;
-  vertical-align: middle;
 }
 
-.checkboxNone {
-  width: 20px;
-  height: 20px;
-  flex: 0 0 20px;
+.rowSub {
+  color: var(--ink-muted);
+  font-size: 2.8cqw;
+  line-height: 1.45;
+  text-shadow: var(--ink-muted-shadow);
 }
 
-.rowSelected {
-  background: linear-gradient(90deg, rgba(54, 169, 255, 0.14), rgba(54, 169, 255, 0.025));
-  box-shadow: inset 2px 0 var(--cashier-blue);
+.rowBalance {
+  flex: 0 0 auto;
+  color: var(--ink-silver);
+  font-size: 3.6cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow: var(--ink-silver-bevel);
+  white-space: nowrap;
+}
+
+.rowBalance.amtIn {
+  color: var(--ink-green);
+  text-shadow: var(--ink-green-glow);
+}
+
+.rowBalance.amtOut {
+  color: var(--ink-red);
+  text-shadow: var(--ink-red-glow);
+}
+
+/* The selection mark is a word, not a drawn box. */
+.checkbox {
+  flex: 0 0 auto;
+  min-width: 13cqw;
+  color: var(--ink-muted);
+  font-size: 2.6cqw;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-align: right;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+}
+
+.checkboxOn {
+  color: var(--ink-blue);
+  text-shadow: var(--ink-blue-glow);
+}
+
+.classicLink,
+.loadMore {
+  width: 100%;
+  min-height: 44px;
+  padding: 1.4cqw 1cqw;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
 }
 
 .receiptRow {
   width: 100%;
-  border-top: 0;
-  border-right: 0;
-  border-left: 0;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
+  color: inherit;
   font: inherit;
+  letter-spacing: normal;
   text-align: left;
+  text-shadow: none;
+  text-transform: none;
   cursor: pointer;
 }
 
 .receiptCue {
   flex: 0 0 auto;
-  color: var(--cashier-blue-hot);
-  font:
-    700 0.62rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.1em;
+  color: var(--ink-blue);
+  font-size: 2.6cqw;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-shadow: var(--ink-blue-glow);
   text-transform: uppercase;
 }
 
-.avatar,
-.avatarFallback {
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
-  border: 1px solid #576677;
-  border-radius: 4px;
-}
+/* ── The dock: the selection and the three actions, in the thumb zone ─── */
 
-.avatar {
-  object-fit: cover;
-}
-
-.avatarFallback {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #e8f5fd;
-  background: linear-gradient(145deg, #22384b, #0d151e);
-  font:
-    700 0.9rem/1 Rajdhani,
-    sans-serif;
-}
-
-.rowInfo,
-.rowInfoWrapper {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-}
-
-.rowInfo {
-  flex-direction: column;
-  gap: 4px;
-}
-
-.rowInfoWrapper,
-.rowActionWrapper {
-  align-items: center;
-  gap: 12px;
-}
-
-.rowActionWrapper {
-  display: flex;
-  cursor: pointer;
-}
-
-.rowName {
-  overflow: hidden;
-  color: #e8edf1;
-  font:
-    700 0.86rem/1.1 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.025em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rowSub {
-  overflow: hidden;
-  color: #6f7e8e;
-  font-size: 0.7rem;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rowBalance {
-  flex: 0 0 auto;
-  min-width: 92px;
-  padding: 7px 10px;
-  border: 1px solid rgba(139, 157, 174, 0.18);
-  border-radius: 3px;
-  color: #e9f0f5;
-  background: #05080c;
-  font:
-    700 0.84rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.035em;
-  text-align: right;
-}
-
-.amtIn {
-  color: #6cd693 !important;
-}
-
-.amtOut {
-  color: #ff7b8b !important;
-}
-
-.checkbox {
-  position: relative;
-  width: 20px;
-  height: 20px;
-  flex: 0 0 20px;
-  border: 1px solid #657586;
-  border-radius: 3px;
-  background: #080c11;
-}
-
-.checkboxOn {
-  border-color: var(--cashier-blue-hot);
-  background: #11689f;
-  box-shadow: 0 0 10px rgba(54, 169, 255, 0.25);
-}
-
-.checkboxOn::after {
-  position: absolute;
-  top: 2px;
-  left: 6px;
-  width: 5px;
-  height: 10px;
-  content: '';
-  border: solid #fff;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-
-.empty {
-  padding: 44px 22px;
-  color: #738292;
-  font:
-    600 0.8rem/1.55 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.04em;
-  text-align: center;
-}
-
-.classicLink,
-.loadMore {
-  display: block;
-  width: calc(100% - 40px);
-  min-height: 44px;
-  margin: 16px 20px;
-  padding: 10px 15px;
-  border: 1px solid #3b4d5e;
-  border-radius: 4px;
-  color: #9ec7df;
-  background: linear-gradient(180deg, #101923, #090e14);
-  font:
-    700 0.72rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.loadMore:disabled {
-  color: #617080;
-  cursor: default;
-}
-
-/* ── Ledger controls ──────────────────────────────────────────────────── */
-
-.ledgerSummary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1px;
-  border-bottom: 1px solid rgba(142, 159, 176, 0.13);
-  background: rgba(142, 159, 176, 0.13);
-}
-
-.summaryCell {
-  padding: 14px 20px;
-  background: #090e14;
-}
-
-.summaryLabel {
-  display: block;
-  margin-bottom: 7px;
-  color: #8292a2;
-}
-
-.summaryValue {
-  color: #e8f0f5;
-  font:
-    600 clamp(1rem, 2vw, 1.35rem) / 1 Rajdhani,
-    Inter,
-    sans-serif;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.035em;
-}
-
-.ledgerToolbar {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto;
-  gap: 12px;
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(142, 159, 176, 0.13);
-}
-
-.ledgerFilters {
-  display: flex;
-  border: 1px solid #344150;
-  border-radius: 4px;
-  background: #05080c;
-}
-
-.ledgerFilter {
-  min-height: 42px;
-  padding: 0 14px;
-  border: 0;
-  border-right: 1px solid #283340;
-  color: #718091;
-  background: transparent;
-  font:
-    700 0.65rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.ledgerFilter:last-child {
-  border-right: 0;
-}
-
-.ledgerFilterActive {
-  color: #e9f7ff;
-  background: rgba(54, 169, 255, 0.13);
-  box-shadow: inset 0 -2px var(--cashier-blue);
-}
-
-/* ── Fixed action console ─────────────────────────────────────────────── */
-
-.footer {
-  position: fixed;
-  z-index: 50;
-  right: max(14px, calc((100vw - 1280px) / 2 + 24px));
-  /* SNAP-LOCKED TO THE FOOTER (Dan 2026-09-04). --bottom-nav-stack-base is
-     the height the footer is OCCUPYING right now (see styles/globals.css):
-     measured while shown, 0px while scroll has dropped it off the edge, 0px
-     when unmounted. This bar sits on the footer when there is one and on the
-     bottom edge when there is not, moving on the same frame with no
-     transition, because the footer's rule is "real time instant change". */
+/* It stacks on the footer's live height (tests/bars-stack-on-the-footers-
+   live-height.law.test.ts) and sticks inside the Trade panel, between the
+   rails. The glass is transparent over the page's black, so the dock carries
+   that same black to keep rows from showing through it: one tone. */
+.dock {
+  position: sticky;
+  z-index: 5;
   bottom: var(--bottom-nav-stack-base, 86px);
-  left: max(14px, calc((100vw - 1280px) / 2 + 24px));
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid #526171;
-  border-radius: 6px;
-  background: rgba(5, 8, 12, 0.96);
-  box-shadow:
-    0 -16px 40px rgba(0, 0, 0, 0.48),
-    inset 0 1px rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-
-.footerBtn {
-  min-height: 44px;
-  padding: 9px 12px;
-  border: 1px solid #607285;
-  border-radius: 4px;
-  color: #e9f2f7;
-  background: linear-gradient(180deg, #182431, #0b1118);
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
-  font:
-    700 0.74rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.footerBtn:last-child {
-  border-color: #59baff;
-  background: linear-gradient(180deg, #176da5, #0c426a);
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.14),
-    0 0 18px rgba(54, 169, 255, 0.12);
-}
-
-.footerBtn:disabled,
-.reqBtn:disabled,
-.modalActions button:disabled {
-  opacity: 0.38;
-  cursor: default;
+  display: flex;
+  flex-direction: column;
+  background: #000;
 }
 
 .selBar {
-  position: fixed;
-  z-index: 49;
-  right: max(14px, calc((100vw - 1280px) / 2 + 24px));
-  bottom: calc(var(--bottom-nav-stack-base, 86px) + 66px);
-  left: max(14px, calc((100vw - 1280px) / 2 + 24px));
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  min-height: 42px;
-  padding: 6px 11px 6px 15px;
-  border: 1px solid rgba(89, 186, 255, 0.4);
-  border-bottom: 0;
-  border-radius: 5px 5px 0 0;
-  color: #a8dcff;
-  background: rgba(8, 20, 31, 0.97);
-  font:
-    700 0.7rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.06em;
+  gap: 3cqw;
+  padding: 0.6cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
+  color: var(--ink-blue);
+  font-size: 2.8cqw;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0.1em;
+  text-shadow: var(--ink-blue-glow);
   text-transform: uppercase;
 }
 
 .selClear {
   min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid #587087;
-  border-radius: 3px;
-  color: #c9d7e2;
-  background: #101a23;
-  font: inherit;
-  cursor: pointer;
 }
 
-/* ── Modals ───────────────────────────────────────────────────────────── */
+.footer {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2cqw;
+  padding: 0.6cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
+}
 
-.modalOverlay {
+.footerBtn {
+  min-height: 44px;
+  padding: 1cqw;
+}
+
+.footerBtn:last-child {
+  color: var(--ink-white);
+  text-shadow: var(--ink-white-glow);
+}
+
+/* ── Trade Record controls ────────────────────────────────────────────── */
+
+.ledgerToolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 1cqw;
+}
+
+.ledgerSearch {
+  width: 100%;
+}
+
+.ledgerFilters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 2cqw;
+}
+
+.ledgerFilter {
+  flex: 1 1 20%;
+  min-height: 44px;
+  color: var(--ink-muted);
+  text-shadow: var(--ink-muted-shadow);
+}
+
+.ledgerFilterActive {
+  color: var(--ink-blue);
+  text-shadow: var(--ink-blue-glow);
+}
+
+/* ── Dialogs ──────────────────────────────────────────────────────────── */
+
+/* Black, not grey, and no blur: the console floats on the same black as the
+   page. metallic-popups.css tints and blurs every `_modalOverlay_` with
+   !important, which is why these two declarations carry it too. */
+.page .modalOverlay {
   position: fixed;
   z-index: 200;
   inset: 0;
@@ -1257,296 +920,157 @@
   justify-content: center;
   padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
     max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
-  background: rgba(0, 0, 0, 0.78);
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
+  background: rgb(0 0 0 / 97%) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
-.modal {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 13px;
-  width: min(470px, 94vw);
-  max-height: min(
-    720px,
-    calc(
-      100dvh - max(12px, env(safe-area-inset-top, 0px)) -
-        max(12px, env(safe-area-inset-bottom, 0px))
-    )
-  );
-  padding: 22px;
-  overflow-y: auto;
-  border: 1px solid #69798a;
-  border-radius: 6px;
-  color: #eaf0f4;
-  background: linear-gradient(145deg, #111821, #070a0e 68%);
-  box-shadow:
-    0 30px 90px rgba(0, 0, 0, 0.8),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+/* Positioning only. The console inside is the whole visible dialog. */
+.consoleDialog {
+  width: min(100%, 560px);
+  max-height: 100%;
+  overflow: visible auto;
+  outline: 0;
 }
 
-.modal::before {
-  position: absolute;
-  top: 0;
-  right: 14%;
-  left: 14%;
-  height: 2px;
-  content: '';
-  background: linear-gradient(90deg, transparent, var(--cashier-blue), transparent);
-}
-
-.modalTitle {
-  color: #f0f5f8;
-  font:
-    600 1.45rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.receiptHeader {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
+.consoleDialog:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
 }
 
 .receiptAmount {
-  padding: 19px 16px;
-  border: 1px solid rgba(95, 185, 246, 0.29);
-  border-radius: 4px;
-  background: radial-gradient(circle at 50% 0, rgba(54, 169, 255, 0.1), transparent 70%), #060a0f;
-  text-align: center;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 1cqw 2.4cqw;
+  padding: 0 0.5cqw 1cqw;
 }
 
 .receiptAmount strong {
-  display: block;
-  font:
-    600 2.45rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.035em;
-}
-
-.receiptAmount small {
-  margin: 6px 0 0;
+  margin-left: auto;
+  font-size: 7cqw;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
 }
 
 .receiptFacts {
+  display: flex;
+  flex-direction: column;
   margin: 0;
-  border: 1px solid #303d49;
-  border-radius: 4px;
-  background: #06090d;
 }
 
 .receiptFacts > div {
-  display: grid;
-  grid-template-columns: minmax(92px, 0.35fr) 1fr;
-  gap: 14px;
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
-}
-
-.receiptFacts > div:last-child {
-  border-bottom: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3cqw;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
 }
 
 .receiptFacts dt {
-  margin: 2px 0 0;
+  flex: 0 0 auto;
 }
 
 .receiptFacts dd {
   min-width: 0;
   margin: 0;
-  overflow-wrap: anywhere;
-  color: #c8d3db;
-  font-size: 0.78rem;
-  line-height: 1.4;
+  font-size: 3.4cqw;
+  font-weight: 700;
   text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .receiptReference dd {
-  color: #91a5b5;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.67rem;
-}
-
-.modalHint {
-  color: #8090a0;
-  font-size: 0.76rem;
-  line-height: 1.5;
+  font-size: 2.8cqw;
+  letter-spacing: 0.02em;
 }
 
 .modalTargets,
+.modalFailures,
 .claimList {
-  max-height: 220px;
-  padding: 7px 10px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.modalTargets {
+  max-height: 60cqw;
   overflow-y: auto;
-  border: 1px solid #2f3b48;
-  border-radius: 4px;
-  background: #06090d;
+  overscroll-behavior: contain;
 }
 
 .modalTargetRow,
-.claimRow {
+.modalFailureRow {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 10px;
-  min-height: 38px;
-  padding: 5px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
-  color: #b9c5cf;
-  font-size: 0.78rem;
+  gap: 3cqw;
+  padding: 1.8cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
 }
 
-.modalTargetRow:last-child,
-.claimRow:last-child {
-  border-bottom: 0;
+.modalTargetRow > span:first-child,
+.modalFailureRow > span:first-child {
+  min-width: 0;
+  color: var(--ink-white);
+  font-size: 3.4cqw;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
-.modalTargetRow span:last-child {
-  color: #eff5f8;
-  font-variant-numeric: tabular-nums;
-}
-
-.modalFailures {
-  max-height: 170px;
-  padding: 9px 11px;
-  overflow-y: auto;
-  border: 1px solid rgba(255, 94, 111, 0.45);
-  border-radius: 4px;
-  background: rgba(107, 18, 31, 0.16);
+.modalTargetRow > span:last-child {
+  flex: 0 0 auto;
+  color: var(--ink-silver);
+  font-size: 3.4cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow: var(--ink-silver-bevel);
 }
 
 .modalFailuresTitle {
-  margin-bottom: 6px;
-  color: #ff9aa5;
-  font:
-    700 0.75rem/1 Rajdhani,
-    sans-serif;
-  letter-spacing: 0.05em;
+  padding: 0 0.5cqw 1.2cqw;
+  color: var(--ink-red);
+  font-size: 2.8cqw;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-shadow: var(--ink-red-glow);
   text-transform: uppercase;
 }
 
-.modalFailureRow {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 3px 0;
-  color: #c8d0d7;
-  font-size: 0.74rem;
-}
-
-.modalFailureRow span:last-child {
-  color: #8e9aa6;
+.modalFailureRow > span:last-child {
+  color: var(--ink-red);
+  font-size: 3cqw;
   text-align: right;
+  text-shadow: var(--ink-red-glow);
 }
 
+/* Claim Back has one action, so its foot is the flat cap and Close is a lit
+   word on the glass. It stays reachable while a long list scrolls; the black
+   is the glass's own tone over the backdrop. */
 .modalActions {
+  position: sticky;
+  bottom: 0;
   display: flex;
-  justify-content: flex-end;
-  gap: 9px;
-  padding-top: 4px;
+  justify-content: center;
+  padding-top: 0.6cqw;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
+  background: #000;
 }
 
-.modalActions button,
-.reqBtn,
-.retryBtn {
-  min-height: 44px;
-  padding: 0 15px;
-  border: 1px solid #536273;
-  border-radius: 4px;
-  color: #dce5eb;
-  background: linear-gradient(180deg, #15202b, #0b1117);
-  font:
-    700 0.7rem/1 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.modalConfirm,
-.reqBtnGo {
-  border-color: #57baff !important;
-  color: #f3faff !important;
-  background: linear-gradient(180deg, #1772aa, #0b456f) !important;
-}
-
-.reqBtn {
-  flex: 0 0 auto;
-  min-height: 44px;
-  padding: 0 12px;
-}
-
-.retryBtn {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  margin-left: 7px;
-}
-
-/* ── Focus, motion and responsive behavior ────────────────────────────── */
+/* ── Focus and responsive behaviour ───────────────────────────────────── */
 
 .page button:focus-visible,
-.page input:focus-visible,
 .page [role='checkbox']:focus-visible,
 .page [role='tabpanel']:focus-visible,
-.picker:focus-visible,
-.modal:focus-visible {
-  outline: 2px solid var(--cashier-blue-hot);
+.picker:focus-visible {
+  outline: 2px solid #8fd4ff;
   outline-offset: 2px;
-}
-
-@media (max-width: 800px) {
-  .page {
-    padding: 12px 12px calc(210px + env(safe-area-inset-bottom, 0px));
-  }
-
-  .hero {
-    min-height: 450px;
-  }
-
-  .heroImage {
-    object-position: 63% center;
-  }
-
-  .heroHardware {
-    background:
-      linear-gradient(90deg, rgba(2, 3, 5, 0.98), rgba(2, 3, 5, 0.76) 43%, rgba(2, 3, 5, 0.12)),
-      linear-gradient(180deg, rgba(2, 3, 5, 0.75), transparent 35%, rgba(2, 3, 5, 0.92));
-  }
-
-  .heroContent {
-    width: 68%;
-    padding: 58px 0 122px 5%;
-  }
-
-  .heroTitle {
-    font-size: clamp(2.5rem, 9vw, 4rem);
-  }
-
-  .footer,
-  .selBar {
-    right: 12px;
-    left: 12px;
-  }
-
-  .ledgerToolbar {
-    grid-template-columns: 1fr;
-  }
-
-  .ledgerFilters {
-    width: 100%;
-  }
-
-  .ledgerFilter {
-    flex: 1;
-  }
 }
 
 @media (max-width: 560px) {
@@ -1555,277 +1079,28 @@
     padding-left: 8px;
   }
 
-  .hero {
-    min-height: 400px;
-  }
-
-  .heroImage {
-    opacity: 0.68;
-    object-position: 67% center;
-  }
-
-  .header {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 8px;
-    padding: 13px 13px 11px;
-  }
-
-  .title {
-    padding-left: 2px;
-  }
-
-  .entityBtn {
-    width: 100%;
-  }
-
-  .picker {
-    top: 108px;
-    right: 16px;
-    left: 16px;
-    width: auto;
-  }
-
-  .heroContent {
-    width: 92%;
-    padding: 30px 18px 132px;
-  }
-
-  .heroTitle {
-    margin-top: 6px;
-    font-size: clamp(2.15rem, 11vw, 3.15rem);
-  }
-
-  .heroCopy {
-    max-width: 350px;
-    font-size: 0.78rem;
-  }
-
-  .heroMetrics {
-    grid-template-columns: 1fr 1fr;
-    right: 10px;
-    bottom: 11px;
-    left: 10px;
-  }
-
-  .heroMetric {
-    padding: 10px 12px;
-  }
-
-  .heroMetric:nth-child(2) {
-    border-right: 0;
-  }
-
-  .heroMetric:last-child {
-    grid-column: 1 / -1;
-    border-top: 1px solid rgba(144, 162, 179, 0.17);
-  }
-
-  .tabs {
-    scroll-snap-type: x proximity;
-    scrollbar-color: var(--cashier-blue) #080c12;
-    scrollbar-width: thin;
-  }
-
-  .tabs::-webkit-scrollbar {
-    display: block;
-    height: 4px;
-  }
-
-  .tabs::-webkit-scrollbar-thumb {
-    background: var(--cashier-blue);
-  }
-
-  .tab {
-    scroll-snap-align: start;
-  }
-
-  .heroMetricValue {
-    font-size: 1.12rem;
-  }
-
-  .tabs {
-    margin-top: 9px;
-  }
-
-  .tab {
-    min-height: 44px;
-    padding: 0 16px;
-  }
-
-  .sectionShell {
-    margin-top: 9px;
-  }
-
-  .recoveryConsole {
-    margin-top: 9px;
-  }
-
-  .recoveryHeading {
-    align-items: flex-start;
-    padding: 13px;
-  }
-
-  .reconcileBtn {
-    padding: 0 10px;
-    font-size: 0.61rem;
-  }
-
-  .recoveryGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .recoveryMetric {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 9px 13px;
-    border-right: 0;
-    border-bottom: 1px solid rgba(142, 159, 176, 0.1);
-  }
-
-  .recoveryMetric span {
-    margin: 0;
-  }
-
-  .recoveryAlert {
-    align-items: stretch;
-    flex-direction: column;
-    margin: 10px;
-  }
-
-  .receiptCue {
-    width: 100%;
-    padding-left: 47px;
-  }
-
-  .sectionHeading {
-    align-items: flex-start;
-    padding: 16px 14px 13px;
-  }
-
-  .sectionMeta {
-    max-width: 120px;
-    font-size: 0.59rem;
-  }
-
-  .strip {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .stripCell {
-    padding: 12px 14px;
-  }
-
-  .stripCell:last-child {
-    grid-column: 1 / -1;
-  }
-
-  .searchRow {
-    margin: 13px 13px 0;
-  }
-
-  .filterRow {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 5px 14px;
-    padding: 7px 13px;
-  }
-
-  .sortBtn {
-    margin-left: 0;
-  }
-
-  .row {
-    flex-wrap: wrap;
-    gap: 9px;
-    min-height: 62px;
-    padding: 10px 13px;
-  }
-
-  .rowBalance {
-    min-width: 84px;
-  }
-
+  .heroMetrics,
+  .strip,
+  .recoveryGrid,
   .ledgerSummary {
-    grid-template-columns: 1fr;
+    grid-auto-flow: row;
+    gap: 0;
+    padding-top: 0;
+    border-top: 0;
+    box-shadow: none;
   }
 
+  .heroMetric,
+  .stripCell,
+  .recoveryMetric,
   .summaryCell {
-    display: flex;
-    align-items: center;
+    flex-direction: row;
+    align-items: baseline;
     justify-content: space-between;
-    padding: 10px 14px;
-  }
-
-  .summaryLabel {
-    margin: 0;
-  }
-
-  .ledgerToolbar {
-    gap: 9px;
-    padding: 13px;
-  }
-
-  .ledgerFilter {
-    padding: 0 8px;
-    font-size: 0.61rem;
-  }
-
-  .classicLink,
-  .loadMore {
-    width: calc(100% - 26px);
-    margin: 13px;
-  }
-
-  .footer,
-  .selBar {
-    right: 8px;
-    left: 8px;
-  }
-
-  .footer {
-    gap: 5px;
-    padding: 7px;
-  }
-
-  .footerBtn {
-    padding: 7px 4px;
-    font-size: 0.64rem;
-  }
-
-  .selBar {
-    bottom: calc(var(--bottom-nav-stack-base, 86px) + 59px);
-  }
-
-  .modal {
-    width: 100%;
-    max-height: calc(
-      100dvh - max(8px, env(safe-area-inset-top, 0px)) - max(8px, env(safe-area-inset-bottom, 0px))
-    );
-    padding: 18px;
-  }
-
-  .modalOverlay {
-    align-items: flex-end;
-    padding: max(8px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px))
-      max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
-  }
-
-  .modalActions {
-    position: sticky;
-    bottom: -18px;
-    z-index: 2;
-    margin: 0 -18px -18px;
-    padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
-    border-top: 1px solid rgba(105, 121, 138, 0.45);
-    background: rgba(7, 10, 14, 0.98);
-  }
-
-  .claimRow {
-    align-items: flex-start;
-    flex-wrap: wrap;
+    gap: 3cqw;
+    padding: 2cqw 0.5cqw;
+    border-top: 1px solid #000;
+    box-shadow: var(--engraved-rule-lip);
   }
 }
 
@@ -1837,436 +1112,5 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   #CLUBARENACONSOLE CASHIER OVERRIDE
-
-   The approved console master is now the only chassis. Everything below is
-   live copy or a native control printed on its black glass. These selectors
-   deliberately neutralise the previous CSS-built vault frames, gradients,
-   rounded tiles, shadows and flat icon holders without changing any handler,
-   state branch, focus contract or financial wiring in the page component.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.page {
-  width: 100%;
-  max-width: 1000px;
-  min-height: 100dvh;
-  padding: 12px 0 calc(190px + env(safe-area-inset-bottom, 0px));
-  color: #e6e9ee;
-  background: #000;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-}
-
-/* Dialog positioning only. CashierConsoleSurface paints the complete visible
-   chassis; this wrapper must never become a second frame. */
-.consoleDialog {
-  width: min(94vw, 760px);
-  max-height: 94dvh;
-  overflow: auto;
-  border: 0;
-  border-radius: 0;
-  outline: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.consoleDialog:focus-visible {
-  outline: 2px solid #8fd4ff;
-  outline-offset: 2px;
-}
-
-.consoleDialog input,
-.consoleDialog textarea,
-.consoleDialog select {
-  width: 100%;
-  min-height: 44px;
-  padding: 12px 0;
-  border: 0;
-  border-block-end: 1px solid #526071;
-  border-radius: 0;
-  outline: 0;
-  color: #f4f7fb;
-  background: transparent;
-  box-shadow: none;
-  font-size: max(16px, 3.5cqw);
-}
-
-.consoleDialog input:focus-visible,
-.consoleDialog textarea:focus-visible,
-.consoleDialog select:focus-visible {
-  border-block-end-color: #45adff;
-  outline: 0;
-  box-shadow: 0 0.8cqw 0.9cqw -0.9cqw #45adff;
-}
-
-.page::before,
-.console :where(section, nav, div, button, input, select)::before,
-.console :where(section, nav, div, button, input, select)::after {
-  content: none;
-}
-
-.console
-  :where(section, nav, div, button, input, select):not(:global(.sc__head)):not(
-    :global(.sc__body)
-  ):not(:global(.sc__foot)) {
-  border: 0 !important;
-  border-radius: 0 !important;
-  background-color: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-}
-
-.console :where(button, input, select) {
-  min-height: 44px;
-  color: #d7dee7;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-}
-
-.console :where(button) {
-  border: 0;
-  color: #45adff;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  text-shadow: 0 0 0.8cqw rgb(49 168 255 / 55%);
-}
-
-.console :where(button:active) {
-  transform: none;
-  filter: brightness(1.25);
-}
-
-.console :where(button:disabled) {
-  opacity: 0.45;
-}
-
-.console input,
-.console select {
-  width: 100%;
-  min-width: 0;
-  padding: 1.6cqw 0;
-  border: 0;
-  border-block-end: 1px solid #526071 !important;
-  outline: 0 !important;
-  color: #f4f7fb;
-  font-size: max(16px, 3.5cqw);
-}
-
-.console input:focus-visible,
-.console select:focus-visible {
-  border-block-end-color: #45adff;
-  outline: 0;
-  box-shadow: 0 0.8cqw 0.9cqw -0.9cqw #45adff;
-}
-
-.hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  min-height: 0;
-  padding: 0;
-  overflow: visible;
-}
-
-.heroImage,
-.heroHardware,
-.heroTitle,
-.eyebrow {
-  display: none;
-}
-
-.header {
-  order: 2;
-  min-height: 44px;
-  padding: 0;
-}
-
-.title {
-  color: #9aa5b3;
-}
-
-.heroContent {
-  order: 1;
-  position: static;
-  max-width: none;
-  padding: 0;
-}
-
-.heroCopy,
-.securityLine {
-  max-width: none;
-  margin: 0;
-  color: #d7dee7;
-  font-size: 3.4cqw;
-  line-height: 1.5;
-}
-
-.securityLine {
-  margin-block-start: 1.5cqw;
-  color: #c8ffd2;
-}
-
-.securityDot {
-  display: none;
-}
-
-.heroMetrics,
-.strip,
-.recoveryGrid,
-.summaryGrid,
-.receiptFacts {
-  position: static;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 2cqw;
-  padding: 2cqw 0;
-}
-
-.heroMetric,
-.stripCell,
-.recoveryMetric,
-.summaryCell,
-.receiptFacts > div {
-  min-width: 0;
-  padding: 0;
-}
-
-.heroMetricLabel,
-.stripLabel,
-.recoveryMetric > span,
-.summaryLabel,
-.receiptFacts dt,
-.sectionEyebrow,
-.sectionMeta,
-.pickerLabel {
-  color: #45adff;
-  font-size: 2.5cqw;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.heroMetricValue,
-.heroRole,
-.stripValue,
-.recoveryMetric strong,
-.summaryValue,
-.receiptFacts dd {
-  color: #f4f7fb;
-  font-size: 4cqw;
-  font-weight: 800;
-  overflow-wrap: anywhere;
-}
-
-.entityBtn {
-  width: auto;
-  max-width: 100%;
-  padding: 0;
-}
-
-.entityLogo,
-.entityInitial {
-  width: 8cqw;
-  height: 8cqw;
-  border: 0;
-  object-fit: cover;
-}
-
-.entityCaret,
-.memberCount,
-.tabBadge,
-.receiptCue {
-  color: #ffd700;
-}
-
-.memberCount {
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-.picker,
-.tabs,
-.recoveryConsole,
-.sectionShell {
-  position: static;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-}
-
-.picker {
-  max-height: 46cqw;
-  overflow-y: auto;
-}
-
-.tabs,
-.filterRow,
-.footerActions,
-.modalActions,
-.receiptToolbar {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 1.5cqw;
-}
-
-.tab {
-  flex: 1 1 28%;
-  padding: 1.5cqw 0.5cqw;
-  color: #9aa5b3;
-  font-size: 3cqw;
-}
-
-.tabActive {
-  color: #45adff;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 75%),
-    0 0 2cqw rgb(49 168 255 / 30%);
-}
-
-.recoveryHeading,
-.sectionHeading,
-.row,
-.pickerRow,
-.receiptHeader,
-.receiptAmount {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 2cqw;
-  min-width: 0;
-  padding: 2cqw 0;
-}
-
-.sectionTitle,
-.recoveryTitle,
-.modalTitle {
-  margin: 0;
-  color: #e4e7ec;
-  font-size: 4.8cqw;
-  line-height: 1.1;
-  text-transform: uppercase;
-  text-shadow:
-    0 -0.18cqw 0 rgb(255 255 255 / 55%),
-    0 0.25cqw 0 #6d747c,
-    0 0.45cqw 0 #050607;
-}
-
-.list,
-.claimList,
-.modalTargets,
-.modalFailures {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5cqw;
-  min-width: 0;
-}
-
-.rowInfo,
-.pickerName {
-  min-width: 0;
-  flex: 1;
-}
-
-.rowName,
-.pickerName,
-.modalTargetRow > span:first-child {
-  color: #f4f7fb;
-  font-size: 3.5cqw;
-  font-weight: 700;
-}
-
-.rowSub,
-.pickerBalance,
-.modalHint,
-.empty,
-.pickerStatus {
-  color: #9aa5b3;
-  font-size: 2.9cqw;
-  line-height: 1.45;
-}
-
-.rowBalance,
-.pickerBalance,
-.receiptAmount strong {
-  color: #ffd700;
-  font-size: 3.5cqw;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.integrityGood,
-.amtIn {
-  color: #c8ffd2;
-}
-
-.integrityBad,
-.amtOut,
-.recoveryAlert,
-.modalFailures {
-  color: #ff5b6e;
-}
-
-.searchRow,
-.transferControls,
-.amountRow {
-  display: flex;
-  align-items: center;
-  gap: 2cqw;
-}
-
-.footer {
-  position: static;
-  padding: 2cqw 0 0;
-}
-
-@media (max-width: 560px) {
-  .heroMetrics,
-  .strip,
-  .recoveryGrid,
-  .summaryGrid,
-  .receiptFacts {
-    grid-template-columns: 1fr;
-  }
-
-  .recoveryHeading,
-  .sectionHeading,
-  .row,
-  .pickerRow,
-  .receiptHeader,
-  .receiptAmount {
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-}
-
-@media (min-width: 1000px) {
-  .heroCopy,
-  .securityLine {
-    font-size: 34px;
-  }
-
-  .heroMetricLabel,
-  .stripLabel,
-  .recoveryMetric > span,
-  .summaryLabel,
-  .receiptFacts dt,
-  .sectionEyebrow,
-  .sectionMeta,
-  .pickerLabel {
-    font-size: 25px;
-  }
-
-  .heroMetricValue,
-  .heroRole,
-  .stripValue,
-  .recoveryMetric strong,
-  .summaryValue,
-  .receiptFacts dd {
-    font-size: 40px;
   }
 }

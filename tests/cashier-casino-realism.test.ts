@@ -5,17 +5,12 @@ import { resolve } from 'node:path';
 const ROOT = resolve(__dirname, '..');
 const PAGE = readFileSync(resolve(ROOT, 'src/pages/CashierTradePage.tsx'), 'utf8');
 const CSS = readFileSync(resolve(ROOT, 'src/pages/CashierTradePage.module.css'), 'utf8');
-const SURFACE = readFileSync(
-  resolve(ROOT, 'src/components/cashier/CashierConsoleSurface.tsx'),
-  'utf8'
-);
 
 describe('the cashier is a rendered Club Arena room, not a generic dark dashboard', () => {
   it('uses the approved painted console master instead of the retired vault hero', () => {
-    expect(PAGE).toContain('<CashierConsoleSurface');
+    expect(PAGE).toContain('<SpadeConsole');
     expect(PAGE).not.toContain('cashier-vault-hero');
-    expect(SURFACE).toContain('<SpadeConsole');
-    expect(SURFACE).not.toMatch(/<img|<svg|linear-gradient|radial-gradient/);
+    expect(PAGE).not.toContain('CashierConsoleSurface');
   });
 
   it('keeps all balances and access data live in HTML', () => {
@@ -24,10 +19,9 @@ describe('the cashier is a rendered Club Arena room, not a generic dark dashboar
     expect(PAGE).toContain('roleLabel(myRole as ClubRole)');
   });
 
-  it('uses the cashier visual system and respects reduced motion', () => {
-    expect(CSS).toContain('#SMARTERCASINOREALISM');
-    expect(CSS).toContain('#CLUBARENACONSOLE CASHIER OVERRIDE');
-    expect(CSS).toContain('--cashier-blue: #36a9ff');
+  it('names #ClubArenaConsole as its visual authority and respects reduced motion', () => {
+    expect(CSS).toContain('#ClubArenaConsole is the visual authority');
+    expect(CSS).not.toContain('--cashier-blue');
     expect(CSS).toContain('@media (prefers-reduced-motion: reduce)');
   });
 });

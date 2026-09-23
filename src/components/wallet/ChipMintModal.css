@@ -17,7 +17,7 @@
    The amount is a GROOVE cut in the glass - the same cut as `.rules-textarea`
    on the Club Rules page: no fill, no rim, a black line with a light lip above
    and below. Rows are separated by an engraved rule. No border-radius on a
-   card, tile, pill or button, no gradient, no box-shadow on a box, no :hover.
+   card, tile, pill or button, no gradient, no box-shadow on a box, no hover.
 
    NO FIGURE IN THIS SHEET IS ABBREVIATED. The diamonds burned and the chips
    created are the amounts about to move, so they print in full through `fmt`.
@@ -26,7 +26,7 @@
 .cmm-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1100;
+  z-index: 1800; /* above the Club Bank cashier (1700) it opens from */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -129,13 +129,14 @@
     0 0.25cqw 0 #6d747c,
     0 0.45cqw 0 #050607,
     0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
-  caret-color: #5bb8ff;
+  caret-color: #45adff;
   outline: none;
 }
 
 .cmm-input::placeholder {
-  color: #4a5462;
-  -webkit-text-fill-color: #4a5462;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  opacity: 0.45;
   font-size: 3.4cqw;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -208,15 +209,19 @@
 
 .cmm-quick-word:disabled,
 .cmm-close-word:disabled {
-  color: #3a424d;
-  -webkit-text-fill-color: #3a424d;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
+/* metallic-popups.css presses every dialog button in with an inset bevel and
+   a 1px drop at 0,2,1 !important; at 0,3,0 the word only brightens. */
 .cmm-quick-word:active:not(:disabled),
 .cmm-close-word:active:not(:disabled) {
+  box-shadow: none !important;
   filter: brightness(1.25);
-  transform: none;
+  transform: none !important;
 }
 
 .cmm-quick-word:focus-visible,
@@ -227,11 +232,20 @@
 
 /* ── When the server has already refused, there is one thing to do ────── */
 
+/* `cmm-close` matches the popup chassis' [class*='-close'] close-control
+   rule, which paints a raised, rounded steel box with !important. This row is
+   an engraved rule on the glass, so every longhand that rule sets is restated. */
 .cmm-close {
   display: flex;
   justify-content: center;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  min-width: 0;
+  min-height: 0;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
 }
 
 .cmm-close-word {

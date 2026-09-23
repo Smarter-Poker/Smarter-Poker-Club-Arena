@@ -1,5 +1,13 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
-   CASHIER CLUB SWITCHER — compact club context bar with dropdown (Facebook Dark)
+   CASHIER CLUB SWITCHER - the club context line above the Cashier console
+   (#ClubArenaConsole)
+
+   Printed, not drawn: the label and the club name are ink, the trigger and the
+   menu are separated from what is around them by the console's engraved rule
+   (a black line with an 8% light lip), and the current club is named by a lit
+   ink rather than a bar or a box. A club with no logo shows its printed name
+   and nothing else - no placeholder square, no initial in a tile. Colours are
+   the kit's own inks. No :hover.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .bar {
@@ -13,12 +21,12 @@
 }
 
 .label {
+  flex-shrink: 0;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.8px;
   text-transform: uppercase;
-  color: #8892a4;
-  flex-shrink: 0;
+  color: #9aa5b3;
 }
 
 .trigger {
@@ -30,10 +38,10 @@
   min-height: 44px;
   padding: 6px 0;
   border: 0;
-  border-block-end: 1px solid #526071;
-  border-radius: 0;
+  border-block-end: 1px solid #000;
   background: transparent;
-  color: #e8eaf0;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+  color: #e4e7ec;
   font: inherit;
   font-size: 13px;
   font-weight: 700;
@@ -42,7 +50,7 @@
 }
 
 .trigger:focus-visible {
-  outline: 2px solid rgba(111, 220, 255, 0.7);
+  outline: 2px solid #8fd4ff;
   outline-offset: 2px;
 }
 
@@ -51,40 +59,25 @@
 }
 
 .name {
-  white-space: nowrap;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
+  white-space: nowrap;
 }
 
 .choose {
+  flex-shrink: 0;
   font-size: 9px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #45adff;
-  flex-shrink: 0;
 }
 
 .logo {
+  flex-shrink: 0;
   width: 20px;
   height: 20px;
-  border-radius: 0;
   object-fit: cover;
-  flex-shrink: 0;
-}
-
-.logoFallback {
-  width: 20px;
-  height: 20px;
-  border-radius: 0;
-  background: transparent;
-  color: #6fdcff;
-  font-size: 10px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
 }
 
 .overlay {
@@ -99,19 +92,19 @@
   top: calc(100% + 6px);
   left: 16px;
   z-index: 960;
+  display: flex;
+  flex-direction: column;
   min-width: 220px;
   max-width: 300px;
   max-height: 280px;
   overflow-y: auto;
-  background: rgb(0 0 0 / 96%);
-  border: 0;
-  border-block: 1px solid #526071;
-  border-radius: 0;
-  box-shadow: none;
   padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  border: 0;
+  border-block: 1px solid #000;
+  background: rgb(0 0 0 / 96%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .menuTitle {
@@ -120,35 +113,42 @@
   font-weight: 700;
   letter-spacing: 1px;
   text-transform: uppercase;
-  color: #8892a4;
+  color: #9aa5b3;
 }
 
 .item {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
   background: none;
-  border: none;
-  color: #e8eaf0;
+  color: #e4e7ec;
   font: inherit;
   font-size: 13px;
   font-weight: 600;
   text-align: left;
-  padding: 8px 10px;
-  border-radius: 0;
   cursor: pointer;
-  min-width: 0;
+}
+
+/* One club per line, cut apart by the engraved rule. */
+.item + .item {
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .item:focus-visible {
-  outline: 2px solid rgba(111, 220, 255, 0.7);
+  outline: 2px solid #8fd4ff;
   outline-offset: -2px;
 }
 
+/* The club whose cashier is open is NAMED in the lit blue, not marked with a
+   drawn bar. */
 .itemActive {
-  color: #6fdcff;
-  background: transparent;
-  border-inline-start: 2px solid #45adff;
+  color: #45adff;
+  text-shadow: 0 0 6px rgb(49 168 255 / 55%);
 }
 
 .itemText {
@@ -158,19 +158,19 @@
 }
 
 .itemName {
-  white-space: nowrap;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
+  white-space: nowrap;
 }
 
 .itemBalance {
+  overflow: hidden;
   font-size: 10px;
   font-weight: 600;
-  color: #8892a4;
-  white-space: nowrap;
-  overflow: hidden;
+  color: #9aa5b3;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 480px) {

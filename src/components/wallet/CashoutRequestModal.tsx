@@ -35,6 +35,20 @@ import { reportError } from '../../utils/errorReporter';
 import { fireVibration } from '../../utils/vibrationGate';
 
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
+import { titleCase } from '../../utils/titleCase';
+
+/**
+ * A preset's figure, for its label only. `cashoutPercentage` hands back the
+ * exact cent string the field is set to ("125.00"); on the glass a whole
+ * amount prints whole ("125", "3,125") and a fractional one keeps its cents
+ * ("0.31"). The value sent to the field is unchanged.
+ */
+const presetFigure = (cents: string): string => {
+  const n = Number(cents);
+  return Number.isInteger(n)
+    ? n.toLocaleString('en-US')
+    : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
 // Haptic feedback for mobile-first financial interactions
 const triggerHaptic = (pattern: number | number[] = 10) => {
   try {
@@ -91,30 +105,29 @@ function CashoutStepTracker({ status }: { status: string }) {
   const currentStep = stepMap[status] ?? 0;
   const isClosed = currentStep === -1;
 
+  /* Printed on the glass, one engraved row per step: the ordinal and the
+     label in the master's inks. No dot, no connector line and no tick glyph;
+     the ink says where the request stands. */
   return (
-    <div className="cashout-step-tracker">
+    <ol className="cashout-step-tracker">
       {CASHOUT_STEPS.map((step, i) => {
         const isComplete = i < currentStep;
         const isCurrent = i === currentStep;
+        const ink = isClosed
+          ? 'sc-ink--red'
+          : isComplete
+            ? 'sc-ink--green'
+            : isCurrent
+              ? 'sc-ink--gold'
+              : 'sc-ink--muted';
         return (
-          <div key={step.key} className="cashout-step">
-            <div
-              className={`step-dot ${isComplete ? 'complete' : ''} ${isCurrent ? 'active' : ''} ${isClosed ? 'rejected' : ''}`}
-            >
-              {isComplete ? '✓' : i + 1}
-            </div>
-            <span
-              className={`step-label ${isComplete ? 'complete' : ''} ${isCurrent ? 'active' : ''}`}
-            >
-              {step.label}
-            </span>
-            {i < CASHOUT_STEPS.length - 1 && (
-              <div className={`step-line ${isComplete ? 'complete' : ''}`} />
-            )}
-          </div>
+          <li key={step.key} className="cashout-step" aria-current={isCurrent ? 'step' : undefined}>
+            <span className={`cro-step-num ${ink}`}>{i + 1}</span>
+            <span className={`cro-step-label ${ink}`}>{step.label}</span>
+          </li>
         );
       })}
-    </div>
+    </ol>
   );
 }
 
@@ -439,7 +452,7 @@ function CashoutRequestContent({
       setSuccessText(
         result.status === 'pending'
           ? 'Cashout Requested. Chips Are Held For Review. Your Invoice Is Available In Messenger.'
-          : `This Cashout Is Already ${result.status}. Check Its Invoice For Details.`
+          : `This Cashout Is Already ${titleCase(result.status)}. Check Its Invoice For Details.`
       );
       setSuccess(true);
       setAmount('');
@@ -553,8 +566,20 @@ function CashoutRequestContent({
           eyebrow="Chip Cashout"
           title="Request Cashout"
           titleId="cashout-modal-title"
-          pill={heldCount > 0 ? `${heldCount} Held` : undefined}
-          pillInk="gold"
+          // The head's pill slot is painted in the master, so the pill is never
+          // left empty: the title would run into an unlabelled plate.
+          pill={
+            heldCount > 0
+              ? `${heldCount} Held`
+              : success
+                ? 'Submitted'
+                : isSubmitting
+                  ? 'Checking'
+                  : balanceAvailable
+                    ? 'Ready'
+                    : 'Attention'
+          }
+          pillInk={heldCount > 0 ? 'gold' : success ? 'green' : balanceAvailable ? 'green' : 'red'}
           plates={{
             secondary: {
               label: 'Close',
@@ -572,7 +597,11 @@ function CashoutRequestContent({
                 },
           }}
         >
-          <CashoutReceiptChecks checks={receiptChecks} />
+          {/* The receipt checks print unstyled markup; this hook types it on
+              the glass (display: contents, so it adds no box and no gap). */}
+          <div className="cro-receipts">
+            <CashoutReceiptChecks checks={receiptChecks} />
+          </div>
 
           {/* The balance every check on this sheet is made against. Exact, and
               never abbreviated: it is the ceiling the request is measured by.
@@ -680,7 +709,7 @@ function CashoutRequestContent({
                           if (selected !== null) editAmount(selected);
                         }}
                       >
-                        {pct}%{selected !== null ? ` · ${selected}` : ''}
+                        {pct}%{selected !== null ? ` · ${presetFigure(selected)}` : ''}
                       </button>
                     );
                   })}
@@ -697,7 +726,7 @@ function CashoutRequestContent({
                   >
                     Max
                     {cashoutPercentage(currentBalance ?? NaN, 100) !== null
-                      ? ` · ${cashoutPercentage(currentBalance ?? NaN, 100)}`
+                      ? ` · ${presetFigure(cashoutPercentage(currentBalance ?? NaN, 100)!)}`
                       : ''}
                   </button>
                 </div>

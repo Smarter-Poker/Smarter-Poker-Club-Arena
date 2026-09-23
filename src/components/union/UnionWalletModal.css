@@ -195,7 +195,7 @@
     500 max(16px, 3.5cqw) / 1.45 Inter,
     system-ui,
     sans-serif;
-  caret-color: #5bb8ff;
+  caret-color: #45adff;
   outline: none;
 }
 
@@ -203,8 +203,21 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The browser's spin buttons are a drawn control the art does not contain. */
+.uwm-input.uwm-input--amount {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.uwm-input--amount::-webkit-inner-spin-button,
+.uwm-input--amount::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 .uwm-input.uwm-input::placeholder {
-  color: #6b7784;
+  color: #9aa5b3;
+  opacity: 0.7;
 }
 
 .uwm-input.uwm-input:focus-visible {
@@ -244,7 +257,10 @@
 /* The chosen target is NAMED, not boxed: the whole row lights, the way the
    master lights its own labels. */
 .uwm-target.is-on .uwm-target-name {
+  /* The name wears `sc-ink--silver`, whose -webkit-text-fill-color outranks
+     `color` in every engine that paints it, so the lit ink restates both. */
   color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
   text-shadow:
     0 0 1cqw rgb(140 210 255 / 90%),
     0 0.25cqw 0 rgb(0 0 0 / 70%);
@@ -252,6 +268,7 @@
 
 .uwm-target.is-on.is-pull .uwm-target-name {
   color: #ff5b6e;
+  -webkit-text-fill-color: #ff5b6e;
   text-shadow:
     0 0 1cqw rgb(240 40 73 / 80%),
     0 0.25cqw 0 rgb(0 0 0 / 70%);
@@ -478,7 +495,14 @@
 
 /* metallic-popups.css bevels every button inside a dialog with `!important`
    at specificity 0 and paints steel hardware on anything labelled Close. A lit
-   word and a row paint nothing: the longhands are restated at 0,2,1. */
+   word and a row paint nothing: the longhands are restated at 0,2,1.
+
+   COLOUR IS NOT ONE OF THEM (2026-09-22). This block also said
+   `color: inherit !important`, which no metallic rule needs undoing on these
+   four (none is a primary, danger or Close control) and which beat the tab's
+   own inks: every tab printed in the console's body colour, and the page you
+   were on was told apart by its glow alone. Each of these carries its own ink
+   (the tabs above, `sc-ink--*` on the rest). */
 [role='dialog'] .uwm-tab.uwm-tab,
 [role='dialog'] .uwm-kind.uwm-kind,
 [role='dialog'] .uwm-word.uwm-word,
@@ -489,7 +513,6 @@
   border-radius: 0 !important;
   background: transparent !important;
   background-image: none !important;
-  color: inherit !important;
   box-shadow: none !important;
   transform: none !important;
 }

@@ -1,1256 +1,16 @@
-/* ═══════════════════════════════════════════════════════════════
-   CASHIER PAGE - #SMARTERCASINOREALISM
-   ═══════════════════════════════════════════════════════════════
-
-   The classic cashier: club and personal balances, transfers, chip requests,
-   the high-value escrow flow, pending cash-outs and the transaction ledger.
-
-   Vocabulary: src/styles/club-engine.css, the block titled
-   "#SMARTERCASINOREALISM - THE MATERIAL LAYER". This is the sibling of
-   CashierTradePage.module.css and the two are meant to read as the same room:
-   panels are a lit top edge over a cavity, inputs are the cavity itself,
-   buttons carry a milled face and press on :active. There is no :hover rule
-   in this file and none may be added (tests/no-hover-effects.law.test.ts) -
-   on a phone the press IS the feedback.
-
-   Reds are verdicts and were not retoned: .quickLinkDanger, .messageError,
-   .txNegative, .confirmWarning and .btnDanger all still read as refusals.
-   The amber of .pendingBox, .connectionBanner and the confirm modal's frame
-   is a caution and stays amber.
-   ═══════════════════════════════════════════════════════════════ */
-
-.page {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color: var(--realism-chrome);
-}
-
-/* ═══ Wallet Header ═══ */
-.walletHeader {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 16px;
-}
-
-.walletHeader :global(.dw) {
-  max-width: 260px;
-  width: 100%;
-}
-
-/* ═══ Tab Navigation ═══ */
-.tabNav {
-  display: flex;
-  gap: 2px;
-  margin-bottom: 20px;
-  overflow-x: auto;
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  border-radius: 12px;
-  padding: 4px;
-  border: 1px solid var(--realism-gunmetal);
-  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-
-.tabNav::-webkit-scrollbar {
-  display: none;
-}
-
-.tab {
-  flex: 1;
-  padding: 10px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--realism-chrome);
-  background: none;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  white-space: nowrap;
-  text-align: center;
-  transition: all 0.2s ease;
-  min-width: 0;
-  text-transform: capitalize;
-}
-
-.tabActive {
-  color: var(--realism-chrome-hot);
-  background: linear-gradient(180deg, rgba(24, 119, 242, 0.2) 0%, rgba(10, 93, 194, 0.1) 100%);
-  border: 1px solid var(--realism-blue);
-  box-shadow:
-    0 0 12px rgba(24, 119, 242, 0.3),
-    var(--realism-bevel);
-  box-shadow:
-    0 0 12px rgba(24, 119, 242, 0.15),
-    inset 0 -2px 0 var(--realism-blue);
-  position: relative;
-}
-
-/* ═══ Quick Links ═══ */
-.quickLinks {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 8px 0 12px;
-}
-
-.quickLink {
-  padding: 5px 10px;
-  border-radius: 6px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-decoration: none;
-  transition: all 0.15s ease;
-}
-
-.quickLinkWarning {
-  background: rgba(255, 184, 0, 0.1);
-  border: 1px solid rgba(255, 184, 0, 0.25);
-  color: var(--realism-cyan);
-}
-
-.quickLinkDanger {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  color: #ef4444;
-}
-
-.quickLinkPrimary {
-  background: rgba(24, 119, 242, 0.1);
-  border: 1px solid rgba(24, 119, 242, 0.25);
-  color: var(--realism-blue);
-}
-
-/* ═══ Card / Panel ═══ */
-/* The room's main surface: it sits IN its frame, not on the page. Lit top
-   edge, cavity beneath it, gunmetal edge, and the lift that separates it from
-   the ground. Radius left at 14px - the 768px block below steps it to 12px
-   and that rhythm is the page's, not the material layer's to change. */
-.card {
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  border: 1px solid var(--realism-gunmetal);
-  border-radius: 14px;
-  padding: 24px;
-  margin-bottom: 20px;
-  animation: cardIn 0.35s ease-out;
-  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
-}
-
-@keyframes cardIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.cardTitle {
-  font-size: 16px;
-  font-weight: 800;
-  margin: 0 0 18px;
-  color: var(--realism-chrome-hot);
-  text-transform: capitalize;
-  letter-spacing: 0.5px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--realism-gunmetal);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.cardTitleIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: rgba(24, 119, 242, 0.1);
-  color: var(--realism-blue);
-  font-size: 16px;
-  flex-shrink: 0;
-}
-
-.cardBody {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/* ═══ Form Elements ═══ */
-.formGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.formLabel {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--realism-muted);
-  text-transform: capitalize;
-  letter-spacing: 0.8px;
-}
-
-/* Inputs and selects are the inverse of a panel: a cavity cut into it, with
-   the shade falling from the top edge inward. */
-.select {
-  width: 100%;
-  padding: 12px 14px;
-  background: linear-gradient(180deg, var(--realism-obsidian) 0%, var(--realism-panel) 100%);
-  border: 1px solid var(--realism-gunmetal);
-  border-radius: 10px;
-  color: var(--realism-chrome-hot);
-  font-size: 16px; /* was 14px; under 16px makes iOS zoom the page on focus */
-  font-weight: 500;
-  outline: none;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23b0b3b8' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  padding-right: 32px;
-  box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.5);
-  transition: border-color 0.2s;
-  box-sizing: border-box;
-}
-
-.select:focus {
-  border-color: var(--realism-cyan);
-  box-shadow:
-    inset 0 1px 8px rgba(0, 0, 0, 0.5),
-    0 0 0 3px rgba(0, 212, 255, 0.14);
-}
-
-.select option {
-  background: var(--realism-panel);
-  color: var(--realism-chrome-hot);
-}
-
-.input {
-  width: 100%;
-  padding: 12px 14px;
-  background: linear-gradient(180deg, var(--realism-obsidian) 0%, var(--realism-panel) 100%);
-  border: 1px solid var(--realism-gunmetal);
-  border-radius: 10px;
-  color: var(--realism-chrome-hot);
-  font-size: 16px;
-  font-weight: 600;
-  outline: none;
-  box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.5);
-  transition: border-color 0.2s;
-  box-sizing: border-box;
-}
-
-.input:focus {
-  border-color: var(--realism-cyan);
-  box-shadow:
-    inset 0 1px 8px rgba(0, 0, 0, 0.5),
-    0 0 0 3px rgba(0, 212, 255, 0.14);
-}
-
-.input::placeholder {
-  color: var(--realism-muted);
-}
-
-/* ═══ Preset Buttons Grid ═══ */
-.presetGrid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-}
-
-.presetBtn {
-  padding: 10px 8px;
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  border: 1px solid var(--realism-gunmetal);
-  border-radius: 8px;
-  color: var(--realism-chrome);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow:
-    var(--realism-bevel),
-    0 1px 2px rgba(0, 0, 0, 0.55);
-  transition: all 0.15s ease;
-  text-align: center;
-}
-
-/* ═══ Buttons ═══ */
-.btnPrimary {
-  width: 100%;
-  padding: 14px 24px;
-  background: linear-gradient(135deg, var(--realism-blue) 0%, #2563eb 100%);
-  color: #fff;
-  border: none;
-  border-radius: 12px;
-  font-weight: 700;
-  font-size: 15px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow:
-    0 2px 12px rgba(24, 119, 242, 0.25),
-    var(--realism-bevel),
-    var(--realism-lift);
-  text-transform: capitalize;
-  letter-spacing: 0.5px;
-}
-
-.btnPrimary:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
-.btnGhost {
-  padding: 12px 20px;
-  background: linear-gradient(180deg, rgba(39, 49, 60, 0.35), rgba(11, 16, 23, 0.5));
-  color: var(--realism-chrome);
-  border: 1px solid var(--realism-gunmetal);
-  border-radius: 10px;
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  box-shadow:
-    var(--realism-bevel),
-    0 1px 2px rgba(0, 0, 0, 0.55);
-  transition: all 0.2s ease;
-}
-
-.btnGhost:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.btnSuccess {
-  padding: 10px 14px;
-  background: rgba(63, 208, 122, 0.1);
-  border: 1px solid rgba(63, 208, 122, 0.3);
-  border-radius: 8px;
-  color: var(--realism-green);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  width: 100%;
-  box-shadow:
-    var(--realism-bevel),
-    0 1px 2px rgba(0, 0, 0, 0.55);
-  transition: all 0.15s ease;
-}
-
-.btnRow {
-  display: flex;
-  gap: 12px;
-}
-
-.btnRow > * {
-  flex: 1;
-}
-
-/* ═══ Messages / Alerts ═══ */
-.message {
-  padding: 12px 16px;
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.5;
-  animation: messageIn 0.25s ease-out;
-}
-
-@keyframes messageIn {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.messageSuccess {
-  background: rgba(63, 208, 122, 0.08);
-  border: 1px solid rgba(63, 208, 122, 0.2);
-  color: var(--realism-green);
-}
-
-.messageError {
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  color: #ef4444;
-}
-
-.messageInfo {
-  background: rgba(255, 184, 0, 0.08);
-  border: 1px solid rgba(255, 184, 0, 0.2);
-  color: var(--realism-cyan);
-}
-
-/* ═══ Transfer Preview ═══ */
-.transferPreview {
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  border: 1px solid var(--realism-gunmetal);
-  border-radius: 10px;
-  padding: 12px 14px;
-  box-shadow: var(--realism-bevel), var(--realism-cavity);
-}
-
-.previewRow {
-  display: flex;
-  justify-content: space-between;
-  padding: 4px 0;
-  font-size: 13px;
-  color: var(--realism-muted);
-}
-
-/* The computed figures on the right are live data, so they read cyan. */
-.previewRow span:last-child {
-  font-weight: 700;
-  color: var(--realism-cyan);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ═══ Pending Cashouts ═══ */
-/* Amber frame kept - a pending cash-out is a caution, not a panel. */
-.pendingBox {
-  padding: 12px;
-  background: rgba(255, 184, 0, 0.06);
-  border: 1px solid rgba(255, 184, 0, 0.2);
-  border-radius: 10px;
-  box-shadow: var(--realism-bevel), var(--realism-cavity);
-}
-
-.pendingTitle {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--realism-cyan);
-  text-transform: capitalize;
-  letter-spacing: 0.5px;
-  margin-bottom: 8px;
-}
-
-.pendingRow {
-  display: flex;
-  justify-content: space-between;
-  padding: 4px 0;
-  font-size: 13px;
-  color: var(--realism-chrome);
-}
-
-.pendingStatus {
-  color: var(--realism-cyan);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-/* ═══ High-Value Escrow Flow ═══ */
-.escrowFlow {
-  padding: 10px 0;
-}
-
-.escrowIcon {
-  font-size: 3rem;
-  text-align: center;
-  margin-bottom: 16px;
-}
-
-.escrowTitle {
-  color: var(--realism-chrome-hot);
-  font-size: 1.15rem;
-  margin-bottom: 10px;
-  font-weight: 800;
-  text-transform: capitalize;
-  letter-spacing: 0.5px;
-  text-align: center;
-}
-
-.escrowDesc {
-  color: var(--realism-muted);
-  font-size: 14px;
-  line-height: 1.6;
-  max-width: 85%;
-  margin: 0 auto 24px;
-  text-align: center;
-}
-
-.escrowAmount {
-  color: var(--realism-green);
-  font-size: 1rem;
-  font-weight: 800;
-}
-
-.escrowChecklist {
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  padding: 20px;
-  border-radius: 14px;
-  margin-bottom: 24px;
-  border: 1px solid var(--realism-gunmetal);
-  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
-}
-
-.escrowCheckItem {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 16px;
-}
-
-.escrowCheckItem:last-child {
-  margin-bottom: 0;
-}
-
-.escrowCheckIcon {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  flex-shrink: 0;
-}
-
-.escrowCheckGreen {
-  background: rgba(63, 208, 122, 0.12);
-  color: var(--realism-green);
-}
-
-.escrowCheckAmber {
-  background: rgba(255, 184, 0, 0.12);
-  color: var(--realism-cyan);
-  animation: checkPulse 2s ease-in-out infinite;
-}
-
-@keyframes checkPulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.6;
-  }
-}
-
-.escrowCheckLabel {
-  font-size: 14px;
-  color: var(--realism-chrome);
-  font-weight: 500;
-}
-
-/* ═══ Transaction History ═══ */
-.txContainer {
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-.txFilters {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 6px;
-  margin-bottom: 12px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  align-items: center;
-  padding-bottom: 4px;
-}
-
-.txFilters::-webkit-scrollbar {
-  display: none;
-}
-
-.txFilterBtn {
-  padding: 5px 12px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-  text-transform: capitalize;
-  letter-spacing: 0.5px;
-  transition: all 0.15s ease;
-  border: 1px solid var(--realism-gunmetal);
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  color: var(--realism-muted);
-  box-shadow:
-    var(--realism-bevel),
-    0 1px 2px rgba(0, 0, 0, 0.55);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.txFilterActive {
-  border-color: rgba(24, 119, 242, 0.4);
-  background: rgba(24, 119, 242, 0.1);
-  color: var(--realism-blue);
-}
-
-.txExportBtn {
-  margin-left: auto;
-  padding: 5px 12px;
-  border-radius: 20px;
-  border: 1px solid rgba(49, 162, 76, 0.3);
-  background: rgba(49, 162, 76, 0.08);
-  color: var(--realism-green);
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-  text-transform: capitalize;
-  letter-spacing: 0.5px;
-  transition: all 0.15s ease;
-}
-
-.txLoading,
-.txEmpty {
-  text-align: center;
-  padding: 12px 0;
-  color: var(--realism-muted);
-  font-size: 14px;
-}
-
-.txSkeletonRow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  animation: txFadeIn 0.4s ease-out both;
-}
-
-/* ═══ Recipient Loading Skeleton ═══ */
-.recipientSkeleton {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 4px 0;
-}
-
-.recipientSkeletonBar {
-  height: 44px;
-  border-radius: 10px;
-  background: linear-gradient(
-    90deg,
-    var(--realism-panel) 0%,
-    var(--realism-gunmetal) 40%,
-    var(--realism-panel) 80%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s ease-in-out infinite;
-}
-
-.txEmptyIcon {
-  font-size: 2.5rem;
-  display: block;
-  margin-bottom: 12px;
-  opacity: 0.6;
-}
-
-.txEmptyTitle {
-  display: block;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--realism-chrome);
-  margin-bottom: 6px;
-}
-
-.txEmptyDesc {
-  color: var(--realism-muted);
-  font-size: 13px;
-}
-
-.txList {
-  display: flex;
-  flex-direction: column;
-}
-
-.txRow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  /* Left at the 0.2 tint on purpose: gunmetal is the milled EDGE of a surface,
-     and a solid one on every row of a long ledger reads as stripes. */
-  border-bottom: 1px solid rgba(58, 59, 60, 0.2);
-  transition: all 0.15s ease;
-  border-left: 3px solid transparent;
-  animation: txFadeIn 0.4s ease-out both;
-}
-
-@keyframes txFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.txIcon {
-  font-size: 1.1rem;
-  min-width: 28px;
-  text-align: center;
-  color: var(--realism-muted);
-}
-
-.txDetails {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.txCategory {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--realism-muted);
-  letter-spacing: 0.5px;
-  text-transform: capitalize;
-}
-
-.txDesc {
-  font-size: 13px;
-  color: var(--realism-chrome);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.txAmounts {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-.txAmount {
-  font-variant-numeric: tabular-nums;
-  font-size: 14px;
-  font-weight: 800;
-}
-
-.txPositive {
-  color: var(--realism-green);
-}
-
-.txNegative {
-  color: #ef4444;
-}
-
-.txWallet {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--realism-muted);
-  text-transform: capitalize;
-  letter-spacing: 0.3px;
-}
-
-.txTime {
-  font-size: 11px;
-  color: var(--realism-muted);
-  white-space: nowrap;
-  min-width: 55px;
-  text-align: right;
-}
-
-/* ═══ Table Context ═══ */
-.tableContext {
-  text-align: center;
-  font-size: 12px;
-  color: var(--realism-muted);
-  margin-top: 8px;
-}
-
-/* .loadingText removed 2026-08-25: every loading state on this page is a
-   skeleton (.loadingSkeleton / .recipientSkeleton / .txSkeletonRow), so this
-   rule matched nothing. */
-
-/* ═══ Spinner ═══ */
-.spinner {
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-  margin-right: 8px;
-  vertical-align: middle;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   RESPONSIVE
-   ═══════════════════════════════════════════════════════════════ */
-
-/* ═══ Tablet ═══ */
-@media (max-width: 768px) {
-  .page {
-  }
-
-  /* 44px touch targets apply on all mobile widths, not just ≤480px */
-  .presetBtn,
-  .tab,
-  .txFilterBtn,
-  .txExportBtn,
-  .quickLink {
-    min-height: 44px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    touch-action: manipulation;
-  }
-
-  .card {
-    padding: 18px;
-    border-radius: 12px;
-  }
-
-  .presetGrid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-
-  .btnPrimary {
-    font-size: 14px;
-    padding: 12px 20px;
-  }
-
-  .txRow {
-    padding: 10px 10px;
-  }
-}
-
-/* ═══ Phone ═══ */
-@media (max-width: 480px) {
-  .page {
-  }
-
-  .walletHeader {
-    justify-content: center;
-  }
-
-  .walletHeader :global(.dw) {
-    max-width: 100%;
-  }
-
-  .tab {
-    padding: 8px 10px;
-    font-size: 11px;
-  }
-
-  .card {
-    padding: 16px;
-  }
-
-  .cardTitle {
-    font-size: 14px;
-  }
-
-  .presetGrid {
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-  }
-
-  .presetBtn {
-    padding: 8px 6px;
-    font-size: 12px;
-  }
-
-  .btnPrimary {
-    font-size: 13px;
-    padding: 12px 16px;
-  }
-
-  .message {
-    padding: 10px 12px;
-    font-size: 12px;
-  }
-
-  /* 16px is deliberate and must not go lower: iOS Safari auto-zooms the
-     viewport when a focused input is under 16px, and this is the amount
-     field on the money screen. The base rule is already 16px; this override
-     used to drop it to 14px and re-introduce the zoom. */
-  .select,
-  .input {
-    padding: 10px 12px;
-    font-size: 16px;
-    min-height: 44px;
-  }
-
-  .txAmount {
-    font-size: 13px;
-  }
-
-  .txCategory {
-    font-size: 10px;
-  }
-
-  .txDesc {
-    font-size: 12px;
-  }
-}
-
-/* ═══ Small Phone ═══ */
-@media (max-width: 380px) {
-  .page {
-  }
-
-  .tab {
-    font-size: 10px;
-    padding: 7px 6px;
-  }
-
-  .presetGrid {
-    grid-template-columns: repeat(4, 1fr);
-    gap: 4px;
-  }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
-   TOUCH TARGETS — 44px minimum on the money screen
-   ═══════════════════════════════════════════════════════════════════════════
-   At the 375px target the preset amount buttons rendered ~30px tall, the
-   tabs ~26px, and the history filter / export / quick-link chips ~23-24px.
-   The presets are how an amount actually gets entered on mobile, so a
-   mis-tap there is a mis-typed transfer. Sized to the 44px guideline
-   without changing the visual padding rhythm. */
-@media (max-width: 480px) {
-  .presetBtn,
-  .tab,
-  .txFilterBtn,
-  .txExportBtn,
-  .quickLink {
-    min-height: 44px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
+   CLASSIC CASHIER - #CLUBARENACONSOLE
 
-  .btnPrimary,
-  .btnSecondary,
-  .btnDanger {
-    min-height: 48px;
-  }
-}
-
-/* ═══ Loading Skeleton ═══ */
-.loadingSkeleton {
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.skeletonBar {
-  background: linear-gradient(
-    90deg,
-    var(--realism-panel) 0%,
-    var(--realism-gunmetal) 40%,
-    var(--realism-panel) 80%
-  );
-  background-size: 200% 100%;
-  border-radius: 8px;
-  animation: shimmer 1.5s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
-
-/* ═══ Send Confirmation Modal ═══ */
-.modalOverlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-  animation: fadeIn 0.2s ease-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* Amber frame kept: this modal is the last stop before chips move. */
-.confirmModal {
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  border: 1px solid rgba(255, 184, 0, 0.3);
-  border-radius: 16px;
-  padding: 28px 24px;
-  max-width: 400px;
-  width: 90%;
-  box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.5),
-    var(--realism-bevel),
-    var(--realism-cavity);
-  animation: cashierPageSlideUp 0.25s ease-out;
-}
-
-@keyframes cashierPageSlideUp {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.confirmTitle {
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--realism-cyan);
-  margin: 0 0 16px;
-  text-align: center;
-}
-
-.confirmText {
-  font-size: 14px;
-  color: var(--realism-chrome);
-  text-align: center;
-  line-height: 1.5;
-  margin: 0 0 8px;
-}
-
-/* The amount and the recipient are the readout this modal exists for. */
-.confirmText strong {
-  color: var(--realism-chrome-hot);
-}
-
-.confirmWarning {
-  font-size: 12px;
-  color: #ef4444;
-  text-align: center;
-  padding: 8px 12px;
-  background: rgba(239, 68, 68, 0.06);
-  border: 1px solid rgba(239, 68, 68, 0.15);
-  border-radius: 8px;
-  margin: 0 0 20px;
-}
-
-.confirmButtons {
-  display: flex;
-  gap: 12px;
-}
-
-.btnSecondary {
-  flex: 1;
-  padding: 12px 16px;
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  border: 1px solid var(--realism-gunmetal);
-  border-radius: 10px;
-  color: var(--realism-chrome);
-  font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
-  box-shadow:
-    var(--realism-bevel),
-    0 1px 2px rgba(0, 0, 0, 0.55);
-  transition: all 0.15s ease;
-}
-
-/* Red, and staying red: this is the button that sends the chips. */
-.btnDanger {
-  flex: 1;
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #ef4444 0%, #ef4444 100%);
-  border: none;
-  border-radius: 10px;
-  color: #fff;
-  font-weight: 700;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow:
-    0 2px 12px rgba(239, 68, 68, 0.25),
-    var(--realism-bevel),
-    var(--realism-lift);
-}
-
-/* ═══ Load More Button ═══ */
-.loadMoreBtn {
-  display: block;
-  width: 100%;
-  padding: 12px;
-  margin-top: 8px;
-  background: rgba(24, 119, 242, 0.06);
-  border: 1px solid rgba(24, 119, 242, 0.2);
-  border-radius: 10px;
-  color: var(--realism-blue);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow:
-    var(--realism-bevel),
-    0 1px 2px rgba(0, 0, 0, 0.55);
-  transition: all 0.15s ease;
-}
-
-/* ═══ Connection Status Banner ═══ */
-.connectionBanner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  margin: 0 16px 8px;
-  background: rgba(255, 184, 0, 0.08);
-  border: 1px solid rgba(255, 184, 0, 0.2);
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--realism-gold);
-  animation: connectionFadeIn 0.3s ease;
-}
-
-@keyframes connectionFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.connectionDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  animation: connectionPulse 1.5s ease-in-out infinite;
-}
-
-@keyframes connectionPulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
-  }
-}
-
-/* ═══ ARIA Focus Visible ═══ */
-.tab:focus-visible,
-.btnPrimary:focus-visible,
-.btnSecondary:focus-visible,
-.btnDanger:focus-visible,
-.btnGhost:focus-visible,
-.btnSuccess:focus-visible,
-.presetBtn:focus-visible,
-.txFilterBtn:focus-visible,
-.txExportBtn:focus-visible,
-.quickLink:focus-visible,
-.select:focus-visible,
-.input:focus-visible,
-.loadMoreBtn:focus-visible {
-  outline: 2px solid var(--realism-cyan);
-  outline-offset: 2px;
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   THE PRESS
-
-   On a phone there is no hover, so this is the only confirmation a player
-   gets that the control took the tap: the button drops into its own cavity
-   and the top light goes out. No :hover rule exists in this file and none
-   may be added (tests/no-hover-effects.law.test.ts).
-   ═══════════════════════════════════════════════════════════════ */
-
-.tab:active,
-.presetBtn:active,
-.quickLink:active,
-.txFilterBtn:active,
-.txExportBtn:active,
-.loadMoreBtn:active,
-.btnGhost:active:not(:disabled),
-.btnSuccess:active:not(:disabled),
-.btnPrimary:active:not(:disabled),
-.btnSecondary:active:not(:disabled),
-.btnDanger:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
-  filter: brightness(0.94);
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   REDUCED MOTION
-
-   Motion collapses, meaning does not (CLAUDE.md 10.6). Scoped to this
-   sheet's own class names rather than a universal rule, so it cannot reach
-   an animation another stylesheet owns. The skeletons stop shimmering but
-   keep a solid panel face, so they still read as placeholders; .spinner is
-   deliberately left running, because it is the only signal that a transfer
-   is still in flight.
-   ═══════════════════════════════════════════════════════════════ */
-
-@media (prefers-reduced-motion: reduce) {
-  .card,
-  .message,
-  .txRow,
-  .txSkeletonRow,
-  .modalOverlay,
-  .confirmModal,
-  .connectionBanner {
-    animation: none;
-  }
-
-  .connectionDot,
-  .escrowCheckAmber {
-    animation: none;
-  }
-
-  .skeletonBar,
-  .recipientSkeletonBar {
-    animation: none;
-    background: var(--realism-panel-raised);
-  }
-
-  .tab,
-  .quickLink,
-  .presetBtn,
-  .select,
-  .input,
-  .btnPrimary,
-  .btnGhost,
-  .btnSuccess,
-  .btnSecondary,
-  .btnDanger,
-  .txFilterBtn,
-  .txExportBtn,
-  .loadMoreBtn {
-    transition: none;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   #CLUBARENACONSOLE CLASSIC CASHIER
-
-   The diamond console is the page's one master. The legacy CSS material layer
-   is neutralised inside it so cards, tabs, inputs and action words no longer
-   manufacture rounded frames, gradients, shadows or generic icon holders.
+   The page is one spade console (SpadeConsole) with the Dynamic Wallet
+   masters above it, outside the frame. The console paints the frame, the
+   crest, the header well and the plates; this sheet only places the page and
+   types what prints on the black glass: the tab words, the fields, the rows,
+   the ledger. Nothing here draws a card, a pill, a button face or an icon
+   box. Rows are separated by the engraved rule (a black line with an 8%
+   light lip), fields sit on one engraved rule, and every control is a lit
+   word at least 44px tall. Inks come from the kit (`sc-ink--*`, `sc-copy`,
+   `sc-label`); sizes are cqw against the console. No hover rule
+   (tests/no-hover-effects.law.test.ts): the press is the feedback.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .page {
@@ -1262,93 +22,11 @@
   font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
 }
 
-/* Position the approved painted confirmation master without drawing a second
-   modal frame around it. */
-.consoleDialog {
-  width: min(94vw, 560px);
-  max-height: 94dvh;
-  overflow: auto;
-  border: 0;
-  border-radius: 0;
-  outline: 0;
-  background: transparent;
-  box-shadow: none;
-}
+/* ── The Dynamic Wallet: its own approved master, above the console ──── */
 
-.console :where(section, nav, div, button, input, select)::before,
-.console :where(section, nav, div, button, input, select)::after {
-  content: none;
-}
-
-.console
-  :where(section, nav, div, button, input, select, textarea):not(:global(.sc__head)):not(
-    :global(.sc__body)
-  ):not(:global(.sc__foot)) {
-  border: 0 !important;
-  border-radius: 0 !important;
-  background-color: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-}
-
-.console :where(button) {
-  min-height: 44px;
-  padding: 1.2cqw 1.8cqw;
-  border: 0;
-  color: #45adff;
-  background: transparent;
-  box-shadow: none;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  text-shadow: 0 0 0.8cqw rgb(49 168 255 / 55%);
-}
-
-.console :where(button:active) {
-  transform: none;
-  filter: brightness(1.25);
-}
-
-.console :where(button:disabled) {
-  opacity: 0.45;
-}
-
-.console input,
-.console select,
-.console textarea {
-  width: 100%;
-  min-width: 0;
-  min-height: 44px;
-  padding: 1.6cqw 0;
-  border: 0;
-  border-block-end: 1px solid #526071 !important;
-  border-radius: 0;
-  outline: 0 !important;
-  color: #f4f7fb;
-  background: transparent;
-  background-image: none;
-  box-shadow: none;
-  font-size: max(16px, 3.5cqw);
-}
-
-.console input:focus-visible,
-.console select:focus-visible,
-.console textarea:focus-visible {
-  border-block-end-color: #45adff;
-  outline: 0;
-  box-shadow: 0 0.8cqw 0.9cqw -0.9cqw #45adff;
-}
-
-.walletHeader,
-.tabNav,
-.quickLinks,
-.card,
-.cardBody,
-.txContainer,
-.pendingBox,
-.message,
-.connectionBanner {
+.walletHeader {
+  display: flex;
+  justify-content: flex-end;
   width: 100%;
   margin: 0;
   padding: 0;
@@ -1373,153 +51,469 @@
   content: none !important;
 }
 
-.tabNav,
-.quickLinks,
-.txFilters,
-.confirmButtons,
-.buttonGroup,
-.presetGrid {
+@media (max-width: 480px) {
+  .walletHeader {
+    justify-content: center;
+  }
+}
+
+/* ── The confirm dialog: positions the painted console, draws nothing ── */
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgb(0 0 0 / 90%);
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.consoleDialog {
+  width: min(94vw, 560px);
+  max-height: 94dvh;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* ── Legacy flattening inside the console ─────────────────────────────
+   The Cashier Club Switcher and the Agent Promo Panel print inside this
+   glass and bring their own stylesheets, which still manufacture cards,
+   pills and shadows. Inside the console none of that may paint. The chassis
+   itself (.sc__head, .sc__body, .sc__foot, the plates and zones, and every
+   kit ink class) is excluded, and the exclusions sit inside :where() so the
+   rule carries one class of specificity: this sheet's own engraved rules
+   below still win. */
+
+.console
+  :where(
+    section,
+    nav,
+    div,
+    button,
+    input,
+    select,
+    textarea,
+    span,
+    p,
+    img,
+    dl,
+    dt,
+    dd,
+    a,
+    strong,
+    em,
+    h2,
+    h3,
+    h4,
+    ul,
+    ol,
+    li,
+    label,
+    table,
+    tr,
+    td,
+    th
+  ):where(
+    :not(
+      :global(.sc__head),
+      :global(.sc__body),
+      :global(.sc__foot),
+      :global(.sc-plate),
+      :global(.sc-zone),
+      [class^='sc']
+    )
+  ) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.console
+  :where(section, nav, div, button, input, select, span, p, li):where(:not([class^='sc']))::before,
+.console
+  :where(section, nav, div, button, input, select, span, p, li):where(:not([class^='sc']))::after {
+  content: none;
+}
+
+/* Every control on the glass is a lit word. The painted plates are the
+   kit's and are left alone. */
+.console :where(button:not(:global(.sc-plate))) {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 1.2cqw 1.8cqw;
+  color: #45adff;
+  font:
+    800 3.2cqw/1.1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.console :where(button:not(:global(.sc-plate))):active {
+  filter: brightness(1.3);
+}
+
+.console :where(button:not(:global(.sc-plate))):disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.console :where(button:not(:global(.sc-plate))):focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
+}
+
+/* ── Fields: one engraved rule under the value, no frame ─────────────── */
+
+.console :where(input:not([type='checkbox']):not([type='radio']), select, textarea) {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 1.6cqw 0.5cqw;
+  border-bottom: 1px solid #000 !important;
+  outline: 0;
+  color: #f4f7fb;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%) !important;
+  font:
+    500 max(16px, 3.6cqw) / 1.4 Inter,
+    system-ui,
+    sans-serif;
+  caret-color: #45adff;
+}
+
+.console :where(input, select, textarea):focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.4cqw;
+}
+
+.console :where(input, textarea)::placeholder {
+  color: #9aa5b3;
+  opacity: 0.7;
+}
+
+.input,
+.select {
+  appearance: none;
+}
+
+/* Amounts are figures, in the chrome face. iOS zooms under 16px. */
+.input[type='number'] {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: max(16px, 5cqw);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums lining-nums;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.input[type='number']::-webkit-inner-spin-button,
+.input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.select option {
+  color: #f4f7fb;
+  background: #000;
+}
+
+/* ── The glass column and its sections ───────────────────────────────── */
+
+.glass {
+  display: flex;
+  flex-direction: column;
+  gap: 3cqw;
+  min-width: 0;
+}
+
+.panel,
+.stack,
+.formGroup,
+.txContainer,
+.txList,
+.rows {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+}
+
+.panel,
+.stack {
+  gap: 3cqw;
+}
+
+.formGroup {
+  gap: 1.4cqw;
+}
+
+.txContainer {
+  gap: 2cqw;
+}
+
+.txList,
+.rows {
+  gap: 0;
+}
+
+/* A section opens under an engraved rule, the cut the master's own chrome
+   rules are made of. */
+.console .panel {
+  padding-top: 3cqw;
+  border-top: 1px solid #000 !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+}
+
+.panelTitle,
+.subTitle {
+  margin: 0;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.panelTitle {
+  font-size: 4.8cqw;
+}
+
+.subTitle {
+  font-size: 3.8cqw;
+}
+
+.loading {
+  animation: cashierPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes cashierPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.alertRow {
   display: flex;
   flex-wrap: wrap;
+  gap: 1cqw 3cqw;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ── Rows on the glass ───────────────────────────────────────────────── */
+
+.console .row,
+.console .txRow {
+  display: flex;
+  gap: 3cqw;
+  align-items: baseline;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 2.4cqw 0.5cqw;
+  border-top: 1px solid #000 !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+}
+
+.value {
+  font-size: 3.8cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-align: right;
+}
+
+/* ── Word controls ───────────────────────────────────────────────────── */
+
+.tabNav,
+.quickLinks,
+.presetGrid,
+.txFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5cqw 1.5cqw;
   justify-content: center;
-  gap: 1.5cqw;
+  margin: 0;
 }
 
 .tab,
 .quickLink,
+.presetBtn,
 .txFilterBtn,
 .txExportBtn,
+.loadMoreBtn,
+.wordAction,
+.wordInline {
+  min-height: 44px;
+}
+
+/* Short words never break; a tab strip that cannot fit wraps to a second
+   line rather than scrolling sideways, which is the page swipe. */
+.tab,
+.quickLink,
+.presetBtn,
+.txFilterBtn,
+.txExportBtn,
+.wordInline {
+  white-space: nowrap;
+}
+
+.tab {
+  flex: 1 1 auto;
+  font-size: 3.2cqw;
+}
+
+.quickLink,
+.txFilterBtn,
+.txExportBtn {
+  font-size: 2.9cqw;
+}
+
 .presetBtn {
-  flex: 1 1 26%;
-  min-width: 0;
-  color: #9aa5b3;
+  flex: 1 1 18%;
+  font-size: 3.6cqw;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.loadMoreBtn,
+.wordAction {
+  width: 100%;
+}
+
+/* A long action ("Confirm Secure Cashout" in a half-width cell) wraps inside
+   its own box rather than running past the rail. */
+.wordAction {
+  font-size: 3.6cqw;
+  letter-spacing: 0.14em;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.wordRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2cqw;
+}
+
+.wordInline {
+  padding-inline: 1cqw;
   font-size: 3cqw;
 }
 
-.tabActive,
-.txFilterActive,
-.presetBtnActive {
-  color: #45adff;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 75%),
-    0 0 2cqw rgb(49 168 255 / 30%);
-}
+/* ── The ledger ──────────────────────────────────────────────────────── */
 
-.cardTitle {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  color: #e4e7ec;
-  font-size: 4.8cqw;
-  line-height: 1.1;
-  text-transform: uppercase;
-  text-shadow:
-    0 -0.18cqw 0 rgb(255 255 255 / 55%),
-    0 0.25cqw 0 #6d747c,
-    0 0.45cqw 0 #050607;
-}
-
-.cardTitleIcon,
-.txIcon,
-.txEmptyIcon,
-.connectionDot {
-  display: none;
-}
-
-.cardBody,
-.txContainer,
-.txList,
-.formGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 2cqw;
-  min-width: 0;
-}
-
-.formLabel,
-.balanceLabel,
-.txWallet,
-.txTime {
-  color: #45adff;
-  font-size: 2.5cqw;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.balanceValue,
-.txAmount,
-.pendingAmount {
-  color: #ffd700;
-  font-size: 4cqw;
-  font-weight: 800;
-}
-
-.txRow,
-.pendingItem,
-.recipientItem,
-.previewRow {
-  display: flex;
+.console .txRow {
   align-items: center;
-  gap: 2cqw;
-  min-width: 0;
-  padding: 2cqw 0;
+  animation: txFadeIn 0.3s ease-out both;
+}
+
+@keyframes txFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .txDetails,
-.recipientInfo {
-  flex: 1;
+.txAmounts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6cqw;
   min-width: 0;
 }
 
+.txDetails {
+  flex: 1;
+}
+
+.txAmounts {
+  align-items: flex-end;
+}
+
 .txCategory,
-.recipientName,
 .txEmptyTitle {
-  color: #f4f7fb;
-  font-size: 3.5cqw;
+  font-size: 3.4cqw;
   font-weight: 700;
 }
 
-.txDesc,
-.txEmptyDesc,
-.message,
-.pendingNote {
-  color: #9aa5b3;
-  font-size: 2.9cqw;
-  line-height: 1.45;
+.txDesc {
+  overflow-wrap: anywhere;
+  font:
+    500 2.9cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
 }
 
-.txPositive,
-.messageSuccess {
-  color: #c8ffd2;
+.txAmount {
+  font-size: 3.8cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
 }
 
-.txNegative,
-.messageError,
-.quickLinkDanger {
-  color: #ff5b6e;
+.txWallet,
+.txTime {
+  font-size: 2.4cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.txEmpty {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4cqw;
+  align-items: center;
+  padding: 4cqw 0;
+  text-align: center;
 }
 
 @media (max-width: 560px) {
-  .txRow,
-  .pendingItem,
-  .recipientItem,
-  .previewRow {
-    align-items: flex-start;
+  .console .txRow {
     flex-wrap: wrap;
   }
 }
 
-@media (min-width: 1000px) {
-  .tab,
-  .quickLink,
-  .txFilterBtn,
-  .txExportBtn,
-  .presetBtn {
-    font-size: 30px;
-  }
-
-  .cardTitle {
-    font-size: 48px;
+@media (prefers-reduced-motion: reduce) {
+  .modalOverlay,
+  .loading,
+  .console .txRow {
+    animation: none;
   }
 }

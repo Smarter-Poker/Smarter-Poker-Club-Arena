@@ -289,11 +289,6 @@ describe('a won Plinko game starts itself', () => {
     await advance(3000);
     expect(dropsIn(2)).toBeEnabled();
     const seed = screen.getByLabelText('Your Seed');
-    fireEvent.change(seed, { target: { value: '' } });
-    await advance(10000);
-    // An empty seed cannot be sent, so nothing counts down and nothing starts.
-    expect(drop()).toBeEnabled();
-    expect(backend.start).not.toHaveBeenCalled();
     fireEvent.change(seed, { target: { value: 'my-own-seed' } });
     await advance();
     expect(dropsIn(5)).toBeEnabled();
@@ -613,5 +608,152 @@ describe('a refused ticket re-sends the saved wager, never a rebuilt one', () =>
     expect(holding()).toBe(false);
     await advance(60000);
     expect(backend.start).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * A BLANK SEED NEVER STALLS A WON GAME (review 2026-09-22). "Your Seed" is a
+ * free text field in Bonus Proof. Emptying it used to break two owner rules at
+ * once: the auto-start required seed.trim() !== '', so a won game never
+ * counted down and never started itself while useLiveBonusGuard still held
+ * every exit for the award; and pressing Drop made DiamondBonusService throw
+ * BonusRefusal('Enter A Seed With 1 To 64 Characters') before anything was
+ * sent, which play()'s catch cannot tell from a refusal the server gave - the
+ * ticket dropped and the countdown spent. Donkey Cross was fixed in #5096;
+ * Plinko drops a seed of its own the same way.
+ */
+describe('a blank seed never stalls a won Plinko game', () => {
+  const seedField = () => screen.getByLabelText('Your Seed') as HTMLInputElement;
+  /** The service's own pre-send check, which a blank seed used to trip. */
+  const checksTheSeed = async (request: { seed: string }) => {
+    if (!request.seed.trim().length || request.seed.length > 64)
+      throw new BonusRefusal('Enter A Seed With 1 To 64 Characters');
+    return receipt(3.25);
+  };
+
+  it('counts the won game down with the field cleared, and drops a seed of its own', async () => {
+    fakeClock();
+    won();
+    backend.start.mockImplementationOnce(checksTheSeed);
+    render(<DiamondPlinkoPage />);
+    await advance();
+    await answerOffer();
+    fireEvent.change(seedField(), { target: { value: '' } });
+    await advance();
+    // Clearing the field is typing: the five seconds start again, and run.
+    expect(dropsIn(5)).toBeEnabled();
+    expect(holding()).toBe(true);
+    await advance(5000);
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    const sent = requests()[0].seed;
+    expect(sent).toMatch(/^[0-9a-f]{32}$/);
+    // Bonus Proof shows the seed the drops were actually sent with.
+    expect(seedField().value).toBe(sent);
+    // Writing the seed back changes the countdown's key. It must not buy a
+    // second drop on the same award.
+    await advance(60000);
+    expect(backend.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a pressed batch on a seed of its own instead of being refused for it', async () => {
+    fakeClock();
+    direct();
+    backend.start.mockImplementationOnce(checksTheSeed);
+    render(<DiamondPlinkoPage />);
+    await advance();
+    fireEvent.change(seedField(), { target: { value: '   ' } });
+    fireEvent.click(drop());
+    await advance();
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    expect(requests()[0].seed).toMatch(/^[0-9a-f]{32}$/);
+    // The ticket in hand is the one it was sent on: nothing was thrown away.
+    expect(requests()[0].commitId).toBe(TICKETS[0].commit_id);
+    expect(statusLine()).not.toHaveTextContent('Enter A Seed');
+  });
+
+  it('refills the field when the player leaves it empty', async () => {
+    fakeClock();
+    direct();
+    render(<DiamondPlinkoPage />);
+    await advance();
+    const dealt = seedField().value;
+    fireEvent.change(seedField(), { target: { value: '  ' } });
+    expect(seedField().value).toBe('  ');
+    fireEvent.blur(seedField());
+    expect(seedField().value).toMatch(/^[0-9a-f]{32}$/);
+    expect(seedField().value).not.toBe(dealt);
+    // A seed the player did write is left exactly as they wrote it.
+    fireEvent.change(seedField(), { target: { value: 'lucky plinko' } });
+    fireEvent.blur(seedField());
+    expect(seedField().value).toBe('lucky plinko');
+  });
+});
+
+/**
+ * A SETTLED WAGER IS NEVER STILL SETTLING (review 2026-09-22). check() replays
+ * the saved wager and then reads the game again. On a direct entry that second
+ * read is a real await, and when it failed the catch treated the whole turn as
+ * unsettled: it said "Settling Your Bonus" over a booked receipt and counted
+ * another settle attempt, although accept() had already cleared the wager. The
+ * wager is settled the moment nothing is held; only the read failed, and the
+ * read has its own schedule.
+ */
+describe('a settled wager is never still settling', () => {
+  const SAVED = {
+    clubId: CLUB,
+    game: 'plinko',
+    budget: { base: 100, doubled: false, denomination: 10 },
+    commitId: TICKETS[3].commit_id,
+    serverSeedHash: TICKETS[3].server_seed_hash,
+    seed: 'saved-seed',
+    tableVersion: 4,
+  };
+
+  it('books the replay and says what actually failed, when the read behind it is lost', async () => {
+    fakeClock();
+    direct();
+    sessionStorage.setItem(`diamond-spins-pending:player-a:${CLUB}:plinko`, JSON.stringify(SAVED));
+    let readsFail = false;
+    backend.getState.mockImplementation(async () => {
+      if (readsFail) throw new Error('Offline');
+      return DIRECT_STATE;
+    });
+    backend.start.mockImplementationOnce(async () => {
+      readsFail = true;
+      return receipt(3.25);
+    });
+    render(<DiamondPlinkoPage />);
+    await advance();
+    // The replay answered: the chips are booked and the console says Completed.
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    expect(backend.start).toHaveBeenCalledWith(SAVED, 'player-a');
+    expect(screen.getByRole('dialog', { name: '3.25 Chips' })).toBeInTheDocument();
+    expect(screen.getByText('Completed')).toBeInTheDocument();
+    // So nothing is settling. The read is what failed, and the page says so.
+    expect(statusLine()).not.toHaveTextContent('Settling Your Bonus');
+    expect(statusLine()).toHaveTextContent('Checking Your Entry');
+    expect(holding()).toBe(false);
+    // The page reads the entry again by itself and the line clears; the
+    // settled wager is never sent a second time.
+    readsFail = false;
+    const reads = backend.getState.mock.calls.length;
+    await advance(8000);
+    expect(backend.getState.mock.calls.length).toBeGreaterThan(reads);
+    expect(statusLine()).toHaveTextContent('Chips Booked From');
+    await advance(60000);
+    expect(backend.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('never says Settling over a Refresh that found nothing in flight', async () => {
+    fakeClock();
+    direct();
+    backend.getState.mockResolvedValueOnce(DIRECT_STATE).mockRejectedValue(new Error('Offline'));
+    render(<DiamondPlinkoPage />);
+    await advance();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await advance();
+    expect(backend.start).not.toHaveBeenCalled();
+    expect(statusLine()).not.toHaveTextContent('Settling Your Bonus');
+    expect(holding()).toBe(false);
   });
 });

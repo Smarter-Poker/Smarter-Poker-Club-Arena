@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import DiamondCrashPage from '../../src/pages/DiamondCrashPage';
+import { useLiveBonusGuard } from '../../src/hooks/useLiveBonusGuard';
 import { BonusRefusal } from '../../src/services/DiamondBonusService';
 import fixtures from '../fixtures/diamond-spins/local-postgres-receipts.json';
 
@@ -655,5 +656,110 @@ describe('Crash shows its guarantee before the round starts', () => {
     expect(strip.compareDocumentPosition(stage.querySelector('button')!)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING
     );
+  });
+});
+
+/**
+ * THE BREAK IS SAID ONCE, AND AN ANSWERED TICK STOPS ASKING (review
+ * 2026-09-22). The tick asked fn_crash_settle every 320ms and called
+ * toast.info('The Platform Is In Its Maintenance Break. The Round Waits') on
+ * every one of those answers for as long as the break lasted; only the Toast
+ * provider's sixty-second cooldown kept it off the screen. Nothing is decided
+ * while the platform is paused, so those asks bought nothing. And an ok:false
+ * answer - the session is gone, the round is not there, or it is not this
+ * player's - was ignored entirely: the tick kept asking forever while the exit
+ * guard held the player on a round the page could never finish.
+ */
+describe('the Crash tick stops asking once the answer cannot change', () => {
+  const frozenRound = { ...open, frozen: true };
+  const elapse = async (ms: number) => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  };
+  const breakSaid = () =>
+    backend.toast.info.mock.calls.filter(([said]) => /Maintenance Break/.test(String(said))).length;
+  const guardHolds = () => vi.mocked(useLiveBonusGuard).mock.calls.at(-1)?.[0];
+
+  it('says the break once, asks far less often through it, and settles the round when it ends', async () => {
+    backend.crashSettle.mockResolvedValue(frozenRound);
+    await mountOpen();
+    // mountOpen has let one tick run: it found the break and said so.
+    expect(breakSaid()).toBe(1);
+    expect(backend.toast.info).toHaveBeenCalledWith(
+      'The Platform Is In Its Maintenance Break. The Round Waits'
+    );
+    const asked = backend.crashSettle.mock.calls.length;
+    await elapse(3200);
+    // Ten polls' worth of time, one ask, and nothing said a second time.
+    expect(backend.crashSettle).toHaveBeenCalledTimes(asked + 1);
+    expect(breakSaid()).toBe(1);
+    // The break ends: the next ask settles the round, with no press.
+    backend.crashSettle.mockResolvedValue(settled);
+    await elapse(2000);
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Flight' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('stops asking about a round the server will not discuss, and hands the page back', async () => {
+    backend.crashSettle.mockResolvedValue({ ok: false, error: 'Sign In To Play' });
+    await mountOpen();
+    const asked = backend.crashSettle.mock.calls.length;
+    await elapse(10_000);
+    // The answer can only repeat, so it is never asked for again.
+    expect(backend.crashSettle).toHaveBeenCalledTimes(asked);
+    expect(backend.toast.error).toHaveBeenCalledTimes(1);
+    expect(backend.toast.error).toHaveBeenCalledWith(
+      'This Round Cannot Be Followed Right Now. The Server Settles It Without This Page'
+    );
+    // The player is neither held on it nor shown a round the page cannot finish.
+    expect(guardHolds()).toBe(false);
+    expect(screen.queryByRole('button', { name: 'Book The Win' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start 100' })).toBeInTheDocument();
+    // Nothing was sent again on the player's behalf.
+    expect(backend.start).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A BLANK CLIENT SEED IS NOT A DECISION (review 2026-09-22). handleStart
+ * already dealt itself a seed when "Your Client Seed" was empty, but sent it
+ * without ever showing it, so the proof panel named a seed the round was not
+ * started with, and the field stayed empty for the next round too.
+ */
+describe('Crash shows the client seed it actually sent', () => {
+  const field = () => screen.getByLabelText('Your Client Seed') as HTMLInputElement;
+
+  it('writes the dealt seed back into the field the player emptied', async () => {
+    backend.start.mockResolvedValueOnce(open);
+    backend.crashSettle.mockReturnValue(new Promise(() => {}));
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    fireEvent.change(field(), { target: { value: '   ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start 100' }));
+    await act(async () => {});
+    const sent = backend.start.mock.calls[0][0].seed;
+    expect(sent).toMatch(/^[0-9a-f]{32}$/);
+    expect(field().value).toBe(sent);
+    // Writing the seed back must not buy a second round on the same ticket.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(backend.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('refills the field when the player leaves it empty', async () => {
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    const dealt = field().value;
+    fireEvent.change(field(), { target: { value: '  ' } });
+    expect(field().value).toBe('  ');
+    fireEvent.blur(field());
+    expect(field().value).toMatch(/^[0-9a-f]{32}$/);
+    expect(field().value).not.toBe(dealt);
+    // A seed the player did write is left exactly as they wrote it.
+    fireEvent.change(field(), { target: { value: 'lucky crash' } });
+    fireEvent.blur(field());
+    expect(field().value).toBe('lucky crash');
   });
 });

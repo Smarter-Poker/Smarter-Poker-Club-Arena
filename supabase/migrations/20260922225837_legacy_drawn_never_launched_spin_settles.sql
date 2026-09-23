@@ -97,6 +97,18 @@
 -- taken back from any player. Every credit runs through
 -- atomic_cancel_tournament's own fn_settle_tournament_refund_exact /
 -- fn_ca_declare_ledger rails -- nothing here hand-writes a wallet row.
+--
+-- LIVE PROOF. Both function patches above are applied by reading the live
+-- function body with pg_get_functiondef() and EXECUTE-ing a runtime string,
+-- never a literal `CREATE OR REPLACE FUNCTION` in this file's own text -- so
+-- the static DDL parser check-migrations-are-live.mjs uses (and the same
+-- parser tests/a-merged-migration-must-be-live.law.test.ts exercises) sees
+-- no persistent object declared here to look up in the catalogue. That is
+-- exactly the class the @live-proof convention exists for: the externally
+-- observable effect of the settlement below, and that the refund-plan
+-- patch text is actually the one running in production.
+-- @live-proof: NOT EXISTS (SELECT 1 FROM public.tournaments WHERE id = ANY(ARRAY['8904c10b-6a47-4934-bdf2-def1b1e76f0b','9cecb4fa-4fdd-4447-9e98-2fe5c20c46a8','b3b65e07-6b3a-4b6c-b5d1-aeb5af17fa99','2aa4cba1-506f-426b-a1ba-d8e22e018533','44d7e2d8-66ed-48ae-a1cb-306ae92b6dfa','95e43b6e-c1c9-445e-a1d9-cbe711e3bac1','8d5969da-df76-44fa-8c83-5608b844ca06','b67ab0cb-e2d6-4955-8f43-4bff32551400','efd5455d-d188-4171-becb-1d35b016d06a','6d359f61-d681-49ba-82f3-00493178e5b3','c2fd1c7e-9572-4b95-90dd-3b999777a145','7284506c-093c-491a-8da7-5816bf1ccccf','482e90bb-ef9d-4135-9067-9f0332c94142']::uuid[]) AND status <> 'CANCELLED')
+-- @live-proof: (SELECT pg_get_functiondef(oid) FROM pg_proc WHERE proname = 'fn_ca_tournament_refund_plan') LIKE '%tsp.variant=''spin''%'
 
 BEGIN;
 

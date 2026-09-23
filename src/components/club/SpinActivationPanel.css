@@ -20,7 +20,6 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .sap {
-  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -159,9 +158,13 @@
   text-shadow: 0 0 8px rgb(240 40 73 / 45%);
 }
 
+/* Two fields side by side where there is room, one above the other where
+   there is not. No container query: containment would size the panel from
+   nothing, and a host that shrinks it to fit (a centred flex popup body) would
+   then collapse it to zero width, the buttons with it. */
 .sap .sap-fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
   gap: 16px;
   min-width: 0;
 }
@@ -256,6 +259,15 @@
   filter: brightness(1.3);
 }
 
+/* metallic-popups.css presses every dialog button down a pixel and swaps its
+   shadow on :active, at 0,2,1 with !important. In the lobby popup that would
+   make the panel's lit words move where the page's do not; restated here at
+   0,4,0 so the press is the same brightening in every host. */
+.sap .sap-action.sap-action:active {
+  transform: none !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+}
+
 .sap .sap-action:focus-visible {
   outline: 2px solid #45adff;
   outline-offset: 3px;
@@ -265,10 +277,4 @@
   color: #9aa5b3 !important;
   text-shadow: none;
   cursor: not-allowed;
-}
-
-@container (max-width: 420px) {
-  .sap .sap-fields {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }

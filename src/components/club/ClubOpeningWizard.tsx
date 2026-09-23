@@ -53,6 +53,13 @@ const PROMOTION_TYPES: { value: OpeningPromotionType; label: string }[] = [
 type OpeningAnswer = 'enabled' | 'not_now' | null;
 
 /**
+ * Who covers a later round the Promo Wallet cannot: the Club Bank, as its own
+ * recorded overlay, or nobody until the Promo Wallet is funded. Null until the
+ * owner answers: authority over future Club Bank chips is never a default.
+ */
+type OverlayAnswer = 'club_bank' | 'unpaid' | null;
+
+/**
  * An exact money figure: the whole integer with thousands separators and no
  * decimals. Used only where the owner confirms or must type an exact amount
  * (a transfer confirmation, a minimum, a shortfall). Every other figure on
@@ -155,6 +162,7 @@ export default function ClubOpeningWizard({
   >('profit');
   const [leaderboardPrizeBudget, setLeaderboardPrizeBudget] = useState(500);
   const [leaderboardFundingConfirmed, setLeaderboardFundingConfirmed] = useState(false);
+  const [overlayAnswer, setOverlayAnswer] = useState<OverlayAnswer>(null);
   const [saving, setSaving] = useState(false);
   /* In-flight protection that does not wait for a render: a double tap on the
      painted plate lands before `saving` has re-rendered it disabled. */
@@ -255,19 +263,16 @@ export default function ClubOpeningWizard({
         }
       }
       if (index === 6 && leaderboardRewardsEnabled) {
-        if (leaderboardPrizeBudget < 100) {
-          return 'Leaderboard Prize Budget Must Be At Least 100 Chips';
-        }
+        /* The seed funds round one, so a Promotion is no longer required; the
+           server still refuses a paid budget under its minimum. */
+        const fundingRefusal = openingLeaderboardFundingRefusal({ leaderboardPrizeBudget });
+        if (fundingRefusal) return fundingRefusal;
         if (!openingLeaderboardBudgetSplitsEvenly(leaderboardPrizeBudget)) {
           return 'Leaderboard Prize Budget Must Be A Multiple Of 10 Chips So Every Prize Is A Whole Chip Amount';
         }
-        const fundingRefusal = openingLeaderboardFundingRefusal({
-          promoEnabled,
-          promoBudget,
-          leaderboardPrizeBudget,
-          existingPromoBalance: clubPromoBalance,
-        });
-        if (fundingRefusal) return fundingRefusal;
+        if (overlayAnswer === null) {
+          return 'Choose Club Bank Covers Shortfalls Or Leave Unpaid Until Funded Before Continuing';
+        }
         if (!leaderboardFundingConfirmed) {
           return 'Confirm The Exact Leaderboard Prize Seed Transfer Before Continuing';
         }
@@ -304,7 +309,7 @@ export default function ClubOpeningWizard({
     leaderboardRewardsEnabled,
     leaderboardPrizeBudget,
     leaderboardFundingConfirmed,
-    clubPromoBalance,
+    overlayAnswer,
     remaining,
   ]);
 
@@ -328,6 +333,7 @@ export default function ClubOpeningWizard({
       leaderboardRewardsEnabled,
       leaderboardMetric,
       leaderboardPrizeBudget,
+      leaderboardOverlayEnabled: leaderboardRewardsEnabled && overlayAnswer === 'club_bank',
     };
     const fingerprint = JSON.stringify(input);
     if (!requestKeyRef.current || requestKeyRef.current.fingerprint !== fingerprint) {
@@ -849,6 +855,7 @@ export default function ClubOpeningWizard({
                     onClick={() => {
                       setLeaderboardRewardsEnabled(false);
                       setLeaderboardFundingConfirmed(false);
+                      setOverlayAnswer(null);
                     }}
                   >
                     <strong>Display Only</strong>
@@ -859,7 +866,10 @@ export default function ClubOpeningWizard({
                     className={leaderboardRewardsEnabled ? 'is-selected' : ''}
                     aria-pressed={leaderboardRewardsEnabled}
                     onClick={() => {
-                      if (!leaderboardRewardsEnabled) setLeaderboardFundingConfirmed(false);
+                      if (!leaderboardRewardsEnabled) {
+                        setLeaderboardFundingConfirmed(false);
+                        setOverlayAnswer(null);
+                      }
                       setLeaderboardRewardsEnabled(true);
                     }}
                   >
@@ -896,7 +906,10 @@ export default function ClubOpeningWizard({
                             setLeaderboardPrizeBudget(wholeChips(event.target.value));
                           }}
                         />
-                        <small>Held As The First-Round Prize Seed, Outside The Promo Wallet</small>
+                        <small>
+                          The Weekly Prize Pool. Round One Is Seeded From The Club Bank When Setup
+                          Completes, Held Outside The Promo Wallet
+                        </small>
                       </label>
                     </div>
                     <div
@@ -910,9 +923,6 @@ export default function ClubOpeningWizard({
                           type="button"
                           className={leaderboardPrizeBudget === budget ? 'is-selected' : ''}
                           aria-pressed={leaderboardPrizeBudget === budget}
-                          /* A budget the server's funding gate would reject is
-                           shown but never selectable. */
-                          disabled={budget > leaderboardFundingCapacity}
                           onClick={() => {
                             setLeaderboardFundingConfirmed(false);
                             setLeaderboardPrizeBudget(budget);
@@ -923,15 +933,51 @@ export default function ClubOpeningWizard({
                       ))}
                     </div>
                     <p className="club-setup-wizard__commit-note">
-                      {leaderboardFundingCapacity >= 100
-                        ? `A Weekly Prize Budget Can Be At Most The ${compactChips(leaderboardFundingCapacity)} Chip Promotion Budget, Because Every Later Round Is Paid From The Promo Wallet.`
-                        : 'Paid Leaderboards Need A Funded Promotion Budget First, Because Every Later Round Is Paid From The Promo Wallet.'}
+                      {`Round One Is Paid From This Seed, And Whatever It Does Not Pay Moves Into The Promo Wallet. Every Later Round Is Paid From The Promo Wallet, Which Holds ${compactChips(leaderboardFundingCapacity)} Chips After Setup.`}
                     </p>
                     <div className="club-setup-wizard__prize-plan">
                       <span>Suggested Balanced Plan</span>
                       <strong>1st {compactChips(leaderboardPrizeSplit.first)}</strong>
                       <strong>2nd {compactChips(leaderboardPrizeSplit.second)}</strong>
                       <strong>3rd {compactChips(leaderboardPrizeSplit.third)}</strong>
+                    </div>
+                    <span className="club-setup-wizard__eyebrow" id="club-setup-overlay-question">
+                      Later-Round Shortfalls
+                    </span>
+                    <p className="club-setup-wizard__commit-note">
+                      If The Promo Wallet Cannot Cover What A Later Round Owes, Choose What Happens.
+                      Nothing Is Chosen For You.
+                    </p>
+                    <div
+                      className="club-setup-wizard__choice-grid"
+                      role="group"
+                      aria-labelledby="club-setup-overlay-question"
+                    >
+                      <button
+                        type="button"
+                        className={overlayAnswer === 'club_bank' ? 'is-selected' : ''}
+                        aria-pressed={overlayAnswer === 'club_bank'}
+                        onClick={() => setOverlayAnswer('club_bank')}
+                      >
+                        <strong>Club Bank Covers Shortfalls</strong>
+                        <span>
+                          The Club Bank Pays Only The Missing Chips, Recorded As A Separate Overlay.
+                          If It Cannot Cover Them Either, The Round Waits And Is Retried
+                          Automatically
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className={overlayAnswer === 'unpaid' ? 'is-selected' : ''}
+                        aria-pressed={overlayAnswer === 'unpaid'}
+                        onClick={() => setOverlayAnswer('unpaid')}
+                      >
+                        <strong>Leave Unpaid Until Funded</strong>
+                        <span>
+                          The Round Waits And Is Retried Automatically Until The Promo Wallet Covers
+                          It. The Club Bank Is Never Used
+                        </span>
+                      </button>
                     </div>
                     <FundingConfirmation
                       title="Leaderboard Funding Confirmation"
@@ -987,6 +1033,18 @@ export default function ClubOpeningWizard({
                         : 'Display Only'}
                     </strong>
                   </div>
+                  {leaderboardRewardsEnabled && (
+                    <div>
+                      <span>Later-Round Shortfalls</span>
+                      <strong>
+                        {overlayAnswer === 'club_bank'
+                          ? 'Club Bank Covers Shortfalls'
+                          : overlayAnswer === 'unpaid'
+                            ? 'Leave Unpaid Until Funded'
+                            : 'Not Answered'}
+                      </strong>
+                    </div>
+                  )}
                   <div className="club-setup-wizard__ledger-total">
                     <span>Total Opening Allocation</span>
                     <strong>{compactChips(allocation)} Chips</strong>
@@ -1015,14 +1073,20 @@ export default function ClubOpeningWizard({
                   </p>
                 )}
                 <p className="club-setup-wizard__commit-note">
-                  Completing Setup Commits Every Enabled System In One Transaction. A Paid
-                  Leaderboard Holds Its First-Round Seed Outside The Promo Wallet. The First Round
-                  Is Paid From That Seed, Then From The Promo Wallet, And Any Unused Seed Moves Into
-                  The Promo Wallet. Every Later Round Is Paid Only From The Promo Wallet. If The
-                  Promo Wallet Cannot Cover A Round, That Round Stays Unpaid And Is Retried
-                  Automatically. No Round Is Ever Paid From The Club Bank. If Any Treasury,
+                  Completing Setup Commits Every Enabled System In One Transaction. If Any Treasury,
                   Permission, Or Promotion Step Fails, Nothing Is Deducted.
                 </p>
+                {leaderboardRewardsEnabled && (
+                  <p className="club-setup-wizard__commit-note">
+                    A Paid Leaderboard Holds Its First-Round Seed Outside The Promo Wallet. The
+                    First Round Is Paid From That Seed, Then From The Promo Wallet, And Any Unused
+                    Seed Moves Into The Promo Wallet. Every Later Round Is Paid From The Promo
+                    Wallet.{' '}
+                    {overlayAnswer === 'club_bank'
+                      ? 'If The Promo Wallet Cannot Cover What A Round Still Owes, The Club Bank Pays Only That Shortfall, Recorded As A Separate Overlay. If The Club Bank Cannot Cover It Either, That Round Stays Unpaid And Is Retried Automatically.'
+                      : 'If The Promo Wallet Cannot Cover What A Round Still Owes, That Round Stays Unpaid And Is Retried Automatically. The Club Bank Never Pays A Round Of This Leaderboard.'}
+                  </p>
+                )}
               </section>
             )}
           </main>

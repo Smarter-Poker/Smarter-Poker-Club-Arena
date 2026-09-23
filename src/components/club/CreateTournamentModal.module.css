@@ -45,22 +45,27 @@
    full-width console on a wide, short screen leaves no body to scroll. The
    standard lets a surface NARROW --sc-max, never raise it: the console is
    sized from the height it has, which keeps about half of that height for the
-   form at every viewport. */
-.consoleShell {
+   form at every viewport. Two classes, because SpadeConsole.css is loaded
+   after this sheet and its own `.sc` rule would otherwise win the tie. */
+.form > .consoleShell {
   --sc-max: min(1000px, max(320px, calc(var(--ctm-space) * 0.8)));
   height: var(--ctm-space);
 }
 
-.consoleShell > :global(.sc__head),
-.consoleShell > :global(.sc__foot) {
+.form > .consoleShell > :global(.sc__head),
+.form > .consoleShell > :global(.sc__foot) {
   flex: 0 0 auto;
 }
 
-.consoleShell > :global(.sc__body) {
+/* The body reaches one pixel under the foot (the kit's seam overlap), so a
+   control scrolled to the edge keeps the body's own bottom padding clear of
+   the plates, the same air the end of the form has. */
+.form > .consoleShell > :global(.sc__body) {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scroll-padding-block: calc(3cqw + 1px);
 }
 
 /* A phone on its side has no room for a fixed head, a fixed foot and a form.
@@ -69,12 +74,13 @@
 @media (max-height: 560px) {
   .modalOverlay {
     overflow-y: auto;
+    scroll-padding-block: 12px;
   }
-  .consoleShell {
+  .form > .consoleShell {
     --sc-max: min(1000px, max(320px, calc(var(--ctm-space) + var(--ctm-clear))));
     height: auto;
   }
-  .consoleShell > :global(.sc__body) {
+  .form > .consoleShell > :global(.sc__body) {
     overflow-y: visible;
   }
 }
@@ -86,7 +92,7 @@
 .sectionLabel {
   display: block;
   margin-bottom: 7px;
-  color: #aeb9c3;
+  color: #e4e7ec;
   font:
     700 11px/1.25 'Roboto Condensed',
     sans-serif;
@@ -101,7 +107,7 @@
   min-height: 44px;
   box-sizing: border-box;
   padding: 10px 12px;
-  border: 1px solid rgb(94 116 134 / 52%);
+  border: 1px solid rgb(154 165 179 / 56%);
   color: #f4f7fb;
   background-color: #05080c;
   font-size: 16px;
@@ -134,7 +140,7 @@
 .input:focus,
 .select:focus,
 .formGroup input:focus {
-  outline: 3px solid #8fd4ff;
+  outline: 3px solid #45adff;
   outline-offset: 2px;
 }
 .row {
@@ -153,11 +159,16 @@
 .calendarSelect {
   color-scheme: dark;
 }
+/* Engraved rules above and below: a black line with the glass's own 8% light
+   under it. Nothing is drawn around the rule. */
 .readOnlyRule,
 .lockedRule {
   min-height: 44px;
   padding: 11px 0;
-  border-block: 1px solid rgb(94 116 134 / 36%);
+  border-block: 1px solid #000;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    0 1px 0 rgb(255 255 255 / 8%);
   color: #e4e7ec;
 }
 .lockedRule {
@@ -167,12 +178,12 @@
   margin: 4px 0 18px;
 }
 .lockedRule span {
-  color: #8795a2;
+  color: #9aa5b3;
 }
 .helperText {
   display: block;
   margin-top: 6px;
-  color: #73818e;
+  color: #9aa5b3;
   font-size: 12px;
   line-height: 1.4;
 }
@@ -183,13 +194,16 @@
   min-height: 44px;
   padding-block: 7px;
   margin: 0 !important;
-  border-bottom: 1px solid rgb(94 116 134 / 26%);
-  color: #d3dbe2 !important;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+  color: #e4e7ec !important;
   cursor: pointer;
 }
-/* The labeled On / Off switch is the create-table Toggle, unchanged. Only its
-   dress is restated here in schema inks, because its own console dress is
-   scoped to the create-table page. */
+/* The labeled On / Off switch is the create-table Toggle, unchanged: its
+   track, thumb and On / Off inks come from its own stylesheet, which
+   controls.tsx imports wherever it renders. Only the row it sits in and its
+   label's type are set here, because that label style is scoped to the
+   create-table page. */
 .toggleRow {
   min-width: 0;
   margin-bottom: 10px;
@@ -217,30 +231,6 @@
     sans-serif;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-}
-.toggleRow :global(.table-config-switch__track) {
-  border-color: rgb(154 165 179 / 56%);
-  background: #05080c;
-  box-shadow: none;
-}
-.toggleRow :global(.table-config-switch__input:checked + .table-config-switch__track) {
-  border-color: #45adff;
-  background: rgb(69 173 255 / 34%);
-  box-shadow: none;
-}
-.toggleRow :global(.table-config-switch__thumb) {
-  background: #e4e7ec;
-  box-shadow: none;
-}
-.toggleRow :global(.table-config-switch__status.is-on) {
-  color: #45adff;
-}
-.toggleRow :global(.table-config-switch__status.is-off) {
-  color: #9aa5b3;
-}
-.toggleRow :global(.table-config-switch__input:focus-visible + .table-config-switch__track) {
-  outline: 3px solid #8fd4ff;
-  outline-offset: 2px;
 }
 
 /* Figures print as rows on the glass: lit label left, silver value right, an
@@ -310,13 +300,16 @@
   color: #f4f7fb !important;
 }
 .modal .litWord.litWord:focus-visible {
-  outline: 3px solid #8fd4ff;
+  outline: 3px solid #45adff;
   outline-offset: 2px;
 }
 .sectionDivider {
   margin: 18px 0;
   padding-block: 16px;
-  border-block: 1px solid rgb(94 116 134 / 32%);
+  border-block: 1px solid #000;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    0 1px 0 rgb(255 255 255 / 8%);
 }
 .sectionLabel {
   color: #45adff;

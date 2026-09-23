@@ -5,25 +5,52 @@ export interface ClubOpeningEligibility {
 }
 
 /**
+ * The server's completion latch for the opening checklist, as the lobby holds
+ * it (fn_club_opening_checklist_state, 2026-09-23). THREE answers, never two:
+ *
+ *   undefined  not read yet, or not asked because this viewer is not the
+ *              owner of a new standalone club: fail closed
+ *   null       read and not latched, or the store could not answer and the
+ *              lobby is on its local fallback (today's behaviour)
+ *   string     latched at that time: the list is finished for good, whatever
+ *              the live data says later (a closed table, a member who left)
+ */
+export type ClubOpeningChecklistCompletion = string | null | undefined;
+
+/**
+ * The half of `hasNewClubOpeningChecklist` the club row alone can answer. The
+ * lobby asks the server for the checklist state as soon as this holds, beside
+ * the union lookup rather than after it; nothing shows until both are in.
+ */
+export function mayHaveNewClubOpeningChecklist(
+  club: ClubOpeningEligibility | null | undefined
+): boolean {
+  return Boolean(club?.opening_checklist_started_at && club.is_union !== true && !club.union_id);
+}
+
+/**
  * Opening guidance belongs only to standalone clubs created after the
- * checklist feature was installed. Legacy clubs have no marker, and a club
- * managed by a union completes setup from the union console instead.
+ * checklist feature was installed, and only until the checklist is finished.
+ * Legacy clubs have no marker, a club managed by a union completes setup from
+ * the union console instead, and a latched checklist never comes back.
  */
 export function hasNewClubOpeningChecklist(
   club: ClubOpeningEligibility | null | undefined,
-  resolvedUnionId: string | null | undefined
+  resolvedUnionId: string | null | undefined,
+  completedAt: ClubOpeningChecklistCompletion
 ): boolean {
   /* `undefined` means the union lookup has not produced an authoritative
      answer yet. Fail closed during that window: a club linked only through
      union_clubs does not necessarily carry clubs.union_id, and painting the
      checklist before that lookup completes makes an established union club
      flash a new-club gate on every visit. `null` is the positive, resolved
-     answer that this is a standalone club. */
+     answer that this is a standalone club. The latch follows the same rule:
+     only a positive "not latched" (`null`) lets the checklist draw, so a
+     finished club never flashes it while its latch is being read. */
   return Boolean(
+    completedAt === null &&
     resolvedUnionId !== undefined &&
-    club?.opening_checklist_started_at &&
-    club.is_union !== true &&
-    !club.union_id &&
+    mayHaveNewClubOpeningChecklist(club) &&
     !resolvedUnionId
   );
 }
@@ -83,6 +110,68 @@ export function hasOwnClubPicture(
    checklist and its desktop layout exist at all) and the checklist itself.
    Only an OPTIONAL, unfinished step can be skipped: a required step that an
    older build allowed to be skipped is simply open again. */
+
+/** The one REQUIRED step. It is never skipped, here or on the server. */
+export const CLUB_LAUNCH_REQUIRED_TASK_ID = 'opening-setup';
+
+/**
+ * Every OPTIONAL step, spelled exactly as fn_club_opening_checklist_skip and
+ * the club_opening_checklists CHECK spell them. The server refuses any other
+ * id, so a skip of anything else stays in this browser.
+ */
+export const CLUB_LAUNCH_OPTIONAL_TASK_IDS = [
+  'identity',
+  'tagline',
+  'nlh',
+  'plo',
+  'limit',
+  'mtt',
+  'spin',
+  'heads-up',
+  'first-player',
+  'first-agent',
+] as const;
+
+export type ClubLaunchOptionalTaskId = (typeof CLUB_LAUNCH_OPTIONAL_TASK_IDS)[number];
+
+export function isOptionalClubLaunchTaskId(id: unknown): id is ClubLaunchOptionalTaskId {
+  return (
+    typeof id === 'string' && (CLUB_LAUNCH_OPTIONAL_TASK_IDS as readonly string[]).includes(id)
+  );
+}
+
+/** One answer of fn_club_opening_checklist_state, _skip or _complete. */
+export interface ClubOpeningChecklistServerState {
+  clubId: string;
+  completedAt: string | null;
+  skippedTaskIds: ClubLaunchOptionalTaskId[];
+}
+
+/**
+ * Reads a checklist RPC answer, or returns null when it is not one for this
+ * club. A shape that cannot be read is a failure the caller reports and falls
+ * back from, never an empty checklist (CLAUDE.md 10.86): answering "nothing
+ * skipped, not finished" to a question nobody could read would redraw a
+ * finished checklist.
+ */
+export function parseClubOpeningChecklistState(
+  data: unknown,
+  expectedClubId: string
+): ClubOpeningChecklistServerState | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const row = data as { clubId?: unknown; completedAt?: unknown; skippedTaskIds?: unknown };
+  if (typeof row.clubId !== 'string' || row.clubId !== expectedClubId) return null;
+  const { completedAt, skippedTaskIds } = row;
+  if (completedAt !== null && (typeof completedAt !== 'string' || !completedAt.trim())) return null;
+  if (!Array.isArray(skippedTaskIds) || !skippedTaskIds.every((id) => typeof id === 'string')) {
+    return null;
+  }
+  return {
+    clubId: row.clubId,
+    completedAt,
+    skippedTaskIds: skippedTaskIds.filter(isOptionalClubLaunchTaskId),
+  };
+}
 export interface ClubLaunchSkipCandidate {
   id: string;
   complete: boolean;
@@ -101,7 +190,9 @@ export function resolveClubLaunchTasks<T extends ClubLaunchSkipCandidate>(
 
 export function clubLaunchSkipStorageKey(clubId: string, viewerId: string): string {
   /* IDs, never display names: two clubs may share a name, a club may be
-     renamed, and two operators can use the same browser. */
+     renamed, and two operators can use the same browser. Since 2026-09-23 the
+     owner's skips live on the server; this browser copy is the fallback when
+     the server cannot answer, and the one-time source of skips made before. */
   return `club-launch-skips:${clubId}:${viewerId}`;
 }
 

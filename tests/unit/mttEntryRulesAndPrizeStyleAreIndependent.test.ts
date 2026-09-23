@@ -11,6 +11,8 @@ import { describe, it, expect } from 'vitest';
 import {
   buildTournamentConfig,
   entryRulesForDraft,
+  mttEntryWindowProblem,
+  MTT_ENTRY_WINDOW_REQUIRED,
   prizeStyleForDraft,
   MTT_ENTRY_RULES,
   MTT_PRIZE_STYLES,
@@ -217,6 +219,30 @@ describe('what the controls show for an older template', () => {
     expect(prizeStyleForDraft({ koBounty: false })).toBe('regular');
     expect(prizeStyleForDraft({ prizeStyle: 'mystery_bounty', koBounty: false })).toBe(
       'mystery_bounty'
+    );
+  });
+});
+
+describe('a Rebuy or Re-Entry event needs late registration to close', () => {
+  // The engine and process_tournament_rebuy read a 0 cap as no cap at all.
+  it.each(['rebuy', 'reentry'] as const)('refuses %s with late registration 0', (entryRules) => {
+    expect(mttEntryWindowProblem({ ...base, entryRules, lateRegistrationLevel: 0 })).toBe(
+      MTT_ENTRY_WINDOW_REQUIRED
+    );
+    expect(mttEntryWindowProblem({ ...base, entryRules, lateRegistrationLevel: 1 })).toBeNull();
+  });
+
+  it('asks nothing of a Freezeout, a Free Buy, a Sit And Go or an older draft', () => {
+    const zero = { ...base, lateRegistrationLevel: 0 };
+    expect(mttEntryWindowProblem({ ...zero, entryRules: 'freezeout' })).toBeNull();
+    expect(mttEntryWindowProblem({ ...zero, entryRules: 'rebuy', buyIn: 0 })).toBeNull();
+    expect(mttEntryWindowProblem({ ...zero, entryRules: 'rebuy', gameMode: 'sng' })).toBeNull();
+    expect(mttEntryWindowProblem({ ...zero, entryRules: undefined })).toBeNull();
+  });
+
+  it('is Title Case with no em dash', () => {
+    expect(MTT_ENTRY_WINDOW_REQUIRED).toBe(
+      'Late Registration Must Be At Least 1 Level When Rebuys Or Re-Entries Are On'
     );
   });
 });

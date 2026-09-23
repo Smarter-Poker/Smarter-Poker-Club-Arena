@@ -44,6 +44,7 @@ import GameCreationActions, {
   type GameCreationTarget,
 } from '../components/club/GameCreationActions';
 import ClubLaunchProgress, {
+  ClubLaunchCompletionLatch,
   type ClubLaunchTask,
   useClubLaunchSkips,
 } from '../components/club/ClubLaunchProgress';
@@ -52,6 +53,7 @@ import { clubOpeningSetupService } from '../services/ClubOpeningSetupService';
 import {
   hasNewClubOpeningChecklist,
   hasOwnClubPicture,
+  mayHaveNewClubOpeningChecklist,
   resolveClubLaunchTasks,
   resolveClubUnionScope,
 } from '../utils/clubOpeningEligibility';
@@ -995,11 +997,28 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [currentUserId, setCurrentUserId] = useState<string | null>(
     () => useUserStore.getState().user?.id ?? null
   );
-  const openingChecklistEligible = hasNewClubOpeningChecklist(club, unionIdForCreate);
   /* Owned here, not inside the checklist, so the checklist, the
      data-opening-checklist attribute and the desktop scroll layout all drop in
-     the same render the last step resolves. */
-  const launchSkips = useClubLaunchSkips(club?.id ?? '', currentUserId || 'unknown');
+     the same render the last step resolves. The owner's skips and the
+     checklist's completion latch live on the server (2026-09-23), read as
+     soon as the club row says this can be a new standalone club, beside the
+     union lookup rather than after it. */
+  const launchSkips = useClubLaunchSkips(club?.id ?? '', currentUserId || 'unknown', {
+    server: Boolean(
+      club &&
+      currentUserId &&
+      club.owner_id === currentUserId &&
+      mayHaveNewClubOpeningChecklist(club)
+    ),
+  });
+  /* A latched checklist is finished for good: no checklist, no layout
+     attribute, no wizard mount and no setup read, whatever the live data says
+     later. Until the latch is read it fails closed, like the union lookup. */
+  const openingChecklistEligible = hasNewClubOpeningChecklist(
+    club,
+    unionIdForCreate,
+    launchSkips.completedAt
+  );
   const toast = useToast();
   useEffect(() => {
     if (
@@ -1035,6 +1054,20 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       cancelled = true;
     };
   }, [club?.id, club?.owner_id, currentUserId, openingChecklistEligible, openingSetupReadRevision]);
+  /* THE LATCH IS ASKED FOR ONCE (2026-09-23). The first render in which every
+     step is complete or validly skipped asks the server to record the list as
+     finished, so it never comes back when a table closes or a member leaves.
+     One request per club per page, guarded while it is in flight; a refusal
+     or a failure is reported by the hook and today's behaviour stands. No
+     timer, no polling, no retry loop. */
+  const launchLatchRequestedRef = useRef<string | null>(null);
+  const completeLaunchChecklist = launchSkips.complete;
+  const latchOpeningChecklist = useCallback(() => {
+    const latchClubId = club?.id;
+    if (!latchClubId || launchLatchRequestedRef.current === latchClubId) return;
+    launchLatchRequestedRef.current = latchClubId;
+    void completeLaunchChecklist();
+  }, [club?.id, completeLaunchChecklist]);
   useEffect(() => {
     if (!club?.id || !currentUserId || club.owner_id !== currentUserId) {
       setConfiguredAgentUserId(null);
@@ -4817,6 +4850,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     openingChecklistEligible &&
     isOwner &&
     launchTasks.some((task) => !task.complete && !task.skipped);
+  /* Every step complete or validly skipped: the one moment the lobby asks the
+     server to latch the list finished (latchOpeningChecklist above). */
+  const launchChecklistFinished =
+    openingChecklistEligible &&
+    isOwner &&
+    launchTasks.every((task) => task.complete || task.skipped);
 
   return (
     <div className="club-home club-home--unified-mobile">
@@ -5505,6 +5544,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             skips={launchSkips}
           />
         )}
+        <ClubLaunchCompletionLatch
+          resolved={launchChecklistFinished}
+          onResolved={latchOpeningChecklist}
+        />
 
         {/* ═══════════════════════════════════════════════════════════════════
           AD STRIP - directly under the action bar. THREE ROTATING PICTURES.

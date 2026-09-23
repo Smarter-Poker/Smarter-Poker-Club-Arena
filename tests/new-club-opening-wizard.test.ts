@@ -1,19 +1,55 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(__dirname, '..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
+const migrationsDir = resolve(root, 'supabase/migrations');
+const newestFirst = readdirSync(migrationsDir)
+  .filter((name) => name.endsWith('.sql'))
+  .sort()
+  .reverse();
+
+/**
+ * The live rule is the NEWEST migration that says it, the way the mint law
+ * test picks its file: migrations apply in version order, so an older file is
+ * history. A pin against a fixed old file keeps passing after the rule it
+ * describes has been replaced, which is how this suite came to pin an overlay
+ * waterfall that 20260906084547 had already removed.
+ */
+function newestMigrationMatching(pattern: RegExp): { file: string; sql: string } {
+  for (const file of newestFirst) {
+    const sql = readFileSync(resolve(migrationsDir, file), 'utf8');
+    if (pattern.test(sql)) return { file, sql };
+  }
+  throw new Error(`No migration matches ${pattern}`);
+}
+const definesFunction = (fn: string) =>
+  new RegExp(`CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+public\\.${fn}\\(`);
+/** Just that function's statement, from its newest definition. */
+function liveFunction(fn: string): string {
+  const { file, sql } = newestMigrationMatching(definesFunction(fn));
+  const start = sql.search(definesFunction(fn));
+  const open = sql.indexOf('$function$', start);
+  const close = sql.indexOf('$function$', open + 10);
+  expect(close, `${fn} in ${file} has no closing $function$`).toBeGreaterThan(open);
+  return sql.slice(start, close + 10);
+}
+
 const wizard = read('src/components/club/ClubOpeningWizard.tsx');
 const wizardCss = read('src/components/club/ClubOpeningWizard.css');
 const home = read('src/pages/ClubHomePage.tsx');
 const settings = read('src/pages/ClubSettingsPage.tsx');
 const memberManagement = read('src/pages/MemberManagementPage.tsx');
-const openingSql = read('supabase/migrations/20260901073000_club_opening_setup_wizard.sql');
+const openingSql = newestMigrationMatching(definesFunction('fn_complete_club_opening_setup')).sql;
 const taglineSql = read('supabase/migrations/20260901072500_club_tagline_is_its_own_field.sql');
-const payoutSql = read(
-  'supabase/migrations/20260901074000_leaderboard_promo_first_overlay_waterfall.sql'
-);
+const payoutSql = liveFunction('fn_payout_leaderboard');
+const payoutFile = newestMigrationMatching(definesFunction('fn_payout_leaderboard')).sql;
+const sweepSql = liveFunction('fn_settle_due_leaderboards');
+const batchTableSql = newestMigrationMatching(
+  /CREATE TABLE IF NOT EXISTS public\.leaderboard_payout_batches/
+).sql;
+const sweepScheduleSql = newestMigrationMatching(/'leaderboard-payout-waterfall-daily'/).sql;
 
 describe('new club opening wizard', () => {
   it('is a complete full-viewport page with a bottom-anchored action footer', () => {
@@ -110,30 +146,41 @@ describe('new club opening wizard', () => {
 });
 
 describe('paid leaderboard funding waterfall', () => {
-  it('uses the first-round seed, then Promo Funds, then an explicit overlay', () => {
+  it('uses the first-round seed, then Promo Funds, then an explicit overlay the owner allowed', () => {
     expect(payoutSql).toContain('v_seed_debit := LEAST(v_total, v_seed_available)');
-    expect(payoutSql).toContain(
-      'v_promo_debit := LEAST(v_total - v_seed_debit, v_promo_available)'
-    );
-    expect(payoutSql).toContain('v_overlay := v_total - v_seed_debit - v_promo_debit');
+    expect(payoutSql).toContain('v_promo_debit := v_total - v_seed_debit - v_overlay;');
+    expect(payoutSql).toContain('v_overlay := v_total - v_seed_available - v_promo_available;');
     expect(payoutSql).toContain('chip_treasury = chip_treasury - v_overlay');
     expect(payoutSql).toContain('leaderboard_seed_remaining = 0');
+    // The overlay is never silent: without the owner's per-program opt-in the
+    // round is refused as underfunded and retried, and a union is never debited.
+    expect(payoutSql).toContain('SELECT program.overlay_enabled');
+    expect(payoutSql).toMatch(
+      /IF NOT v_overlay_enabled THEN\s*RAISE EXCEPTION\s*'LEADERBOARD_PROMO_UNDERFUNDED\|/
+    );
+    expect(payoutSql).toContain("AND program.funding_owner_type = 'club';");
+    expect(payoutSql).toContain("set_config('app.ledger_category', 'overlay', true)");
   });
 
   it('records and credits one atomic, idempotent payout batch', () => {
-    expect(payoutSql).toContain('UNIQUE (club_id, period, period_start)');
+    expect(batchTableSql).toContain('UNIQUE (club_id, period, period_start)');
     expect(payoutSql).toContain('public.fn_credit_and_log(');
     expect(payoutSql).toContain("format('leaderboard:%s:%s:%s:%s'");
     expect(payoutSql).toContain('INSERT INTO public.leaderboard_payout_batches');
     expect(payoutSql).toContain('INSERT INTO public.leaderboard_payouts');
     expect(payoutSql).toContain('Leaderboard Credit Key Already Exists Without A Batch Receipt');
+    expect(payoutSql).toContain("'overlay_funded', v_overlay,");
   });
 
   it('settles only through the server role and has a scheduled boundary sweep', () => {
-    expect(payoutSql).toContain('CREATE OR REPLACE FUNCTION public.fn_settle_due_leaderboards()');
-    expect(payoutSql).toContain("'leaderboard-payout-waterfall-daily'");
-    expect(payoutSql).toContain("'20 0 * * *'");
-    expect(payoutSql).toContain('FROM PUBLIC, anon, authenticated');
-    expect(payoutSql).toContain('TO service_role');
+    expect(sweepSql).toContain('CREATE OR REPLACE FUNCTION public.fn_settle_due_leaderboards()');
+    expect(sweepScheduleSql).toContain("'leaderboard-payout-waterfall-daily'");
+    expect(sweepScheduleSql).toContain("'20 0 * * *'");
+    expect(payoutFile).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_payout_leaderboard\(uuid, text, text, timestamptz, timestamptz\)\s*FROM PUBLIC, anon, authenticated;/
+    );
+    expect(payoutFile).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.fn_payout_leaderboard\(uuid, text, text, timestamptz, timestamptz\)\s*TO service_role;/
+    );
   });
 });

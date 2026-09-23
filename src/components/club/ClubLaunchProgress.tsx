@@ -1,6 +1,11 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { supabase } from '../../lib/supabase';
 import {
   clubLaunchSkipStorageKey,
+  type ClubOpeningChecklistCompletion,
+  type ClubOpeningChecklistServerState,
+  isOptionalClubLaunchTaskId,
+  parseClubOpeningChecklistState,
   readClubLaunchSkips,
   resolveClubLaunchTasks,
   writeClubLaunchSkips,
@@ -32,6 +37,26 @@ export interface ClubLaunchSkips {
   undoSkip: (taskId: string) => void;
 }
 
+/**
+ * What the lobby reads beside the skips when the owner's checklist lives on
+ * the server: the completion latch, and the one call that sets it.
+ */
+export interface ClubLaunchChecklistState extends ClubLaunchSkips {
+  /** See ClubOpeningChecklistCompletion: undefined until the server answers. */
+  completedAt: ClubOpeningChecklistCompletion;
+  /** Latch the list finished. Resolves true once the server holds a latch. */
+  complete: () => Promise<boolean>;
+}
+
+export interface ClubLaunchSkipOptions {
+  /**
+   * Read and write the owner's state on the server. The lobby turns this on
+   * for the owner of a club that can have the checklist, and only then: the
+   * functions answer the owner alone.
+   */
+  server?: boolean;
+}
+
 interface Props {
   clubId: string;
   viewerId: string;
@@ -47,61 +72,261 @@ interface Props {
   skips?: ClubLaunchSkips;
 }
 
+/**
+ * Where the skips of this club and viewer are being kept right now:
+ *   'local'    this browser (standalone callers, and the fallback when the
+ *              server could not answer: today's behaviour)
+ *   'loading'  the server has been asked and has not answered yet
+ *   'server'   the server answered; skips and the latch are kept there
+ */
+type SkipSource = 'local' | 'loading' | 'server';
+
 interface SkipState {
-  storageKey: string | null;
+  stateKey: string | null;
   skippedIds: string[];
+  completedAt: ClubOpeningChecklistCompletion;
+  source: SkipSource;
 }
 
-function loadSkipState(storageKey: string | null): SkipState {
+function loadSkipState(
+  stateKey: string | null,
+  storageKey: string | null,
+  server: boolean
+): SkipState {
   return {
-    storageKey,
+    stateKey,
     skippedIds: storageKey ? readClubLaunchSkips(storageKey, reportError) : [],
+    completedAt: undefined,
+    source: server && storageKey ? 'loading' : 'local',
   };
 }
 
+const withSkip = (ids: readonly string[], taskId: string): string[] =>
+  ids.includes(taskId) ? [...ids] : [...ids, taskId];
+
 /**
- * Skips are stored per club AND per viewer in this browser. A server-side
- * store is a later database change; until then the storage is wrapped, every
+ * THE OWNER'S SKIPS AND THE COMPLETION LATCH LIVE ON THE SERVER (2026-09-23).
+ *
+ * With `server` on, the state is read once per club and viewer from
+ * fn_club_opening_checklist_state, each skip or undo is written through
+ * fn_club_opening_checklist_skip, and `complete` latches the list through
+ * fn_club_opening_checklist_complete. Skips an older build left in this
+ * browser are moved to the server once, and removed here only when every one
+ * of them landed.
+ *
+ * Any error or unreadable answer is reported and falls back to today's local
+ * behaviour: the skips come from and go to this browser, `completedAt` reads
+ * null (not latched) and `complete` asks nothing. No timer, no polling, no
+ * retry loop: the next page load asks again.
+ *
+ * Without `server` (standalone callers), skips are stored per club AND per
+ * viewer in this browser, exactly as before. Storage is wrapped, every
  * failure is reported, and a failed write still resolves the step for the
  * current session. Pass an empty club id while the club is unknown.
  */
 // eslint-disable-next-line react-refresh/only-export-components
-export function useClubLaunchSkips(clubId: string, viewerId: string): ClubLaunchSkips {
+export function useClubLaunchSkips(
+  clubId: string,
+  viewerId: string,
+  options: ClubLaunchSkipOptions = {}
+): ClubLaunchChecklistState {
+  const server = Boolean(options.server && clubId);
   const storageKey = clubId ? clubLaunchSkipStorageKey(clubId, viewerId) : null;
-  const [state, setState] = useState<SkipState>(() => loadSkipState(storageKey));
+  const stateKey = storageKey ? `${storageKey}:${server ? 'server' : 'local'}` : null;
+  const [state, setState] = useState<SkipState>(() => loadSkipState(stateKey, storageKey, server));
   let current = state;
-  if (state.storageKey !== storageKey) {
+  if (state.stateKey !== stateKey) {
     /* Route-param navigation keeps this hook mounted while the club changes.
-       Re-derive during render so one club's skips are never applied to the
-       next club, not even for a frame. */
-    current = loadSkipState(storageKey);
+       Re-derive during render so one club's skips (and latch) are never
+       applied to the next club, not even for a frame. */
+    current = loadSkipState(stateKey, storageKey, server);
     setState(current);
   }
 
-  const commit = useCallback(
-    (next: string[]) => {
+  /* One read per club, viewer and mode. The answer is applied only to the
+     state it was asked for, so a slow answer about the previous club cannot
+     land on the next one. */
+  useEffect(() => {
+    if (!server || !stateKey || !storageKey) return;
+    let live = true;
+    const apply = (next: Omit<SkipState, 'stateKey'>) => {
+      if (live) setState((prev) => (prev.stateKey === stateKey ? { stateKey, ...next } : prev));
+    };
+    void (async () => {
+      const local = readClubLaunchSkips(storageKey, reportError);
+      let answer: ClubOpeningChecklistServerState;
+      try {
+        const { data, error } = await supabase.rpc('fn_club_opening_checklist_state', {
+          p_club_id: clubId,
+        });
+        if (error) throw error;
+        const parsed = parseClubOpeningChecklistState(data, clubId);
+        if (!parsed)
+          throw new Error('fn_club_opening_checklist_state answered an unreadable shape');
+        answer = parsed;
+      } catch (error) {
+        reportError(error, 'ClubLaunchSkips.server_read_failed');
+        apply({ skippedIds: local, completedAt: null, source: 'local' });
+        return;
+      }
+      const known = answer;
+
+      /* ONE-TIME MOVE of the skips an older build kept in this browser. Only
+         optional steps travel (the server refuses anything else), and the
+         browser copy is removed only when every one of them has landed; a
+         failure leaves it for the next load and the owner still sees them. */
+      const pending = local.filter(
+        (id) => isOptionalClubLaunchTaskId(id) && !known.skippedTaskIds.includes(id)
+      );
+      let moved = true;
+      for (const taskId of pending) {
+        try {
+          const { data, error } = await supabase.rpc('fn_club_opening_checklist_skip', {
+            p_club_id: clubId,
+            p_task_id: taskId,
+            p_skipped: true,
+          });
+          if (error) throw error;
+          if (!parseClubOpeningChecklistState(data, clubId)) {
+            throw new Error('fn_club_opening_checklist_skip answered an unreadable shape');
+          }
+        } catch (error) {
+          reportError(error, 'ClubLaunchSkips.local_move_failed', { taskId });
+          moved = false;
+          break;
+        }
+      }
+      if (moved && local.length > 0) writeClubLaunchSkips(storageKey, [], reportError);
+      apply({
+        skippedIds: pending.reduce<string[]>(withSkip, [...known.skippedTaskIds]),
+        completedAt: known.completedAt,
+        source: 'server',
+      });
+    })();
+    return () => {
+      live = false;
+    };
+  }, [server, stateKey, storageKey, clubId]);
+
+  const { skippedIds, source } = current;
+
+  /* A server write that fails keeps today's behaviour: the step resolves for
+     this session and this browser keeps the list, which the next load moves
+     to the server. An undo that lands also clears the step from any browser
+     copy still waiting to move, so it cannot come back from there. */
+  const write = useCallback(
+    (taskId: string, skipped: boolean, next: string[]) => {
       if (!storageKey) return;
-      setState({ storageKey, skippedIds: next });
-      writeClubLaunchSkips(storageKey, next, reportError);
+      if (source !== 'server') {
+        writeClubLaunchSkips(storageKey, next, reportError);
+        return;
+      }
+      void (async () => {
+        try {
+          const { data, error } = await supabase.rpc('fn_club_opening_checklist_skip', {
+            p_club_id: clubId,
+            p_task_id: taskId,
+            p_skipped: skipped,
+          });
+          if (error) throw error;
+          if (!parseClubOpeningChecklistState(data, clubId)) {
+            throw new Error('fn_club_opening_checklist_skip answered an unreadable shape');
+          }
+          if (!skipped) {
+            const stored = readClubLaunchSkips(storageKey, reportError);
+            if (stored.includes(taskId)) {
+              writeClubLaunchSkips(
+                storageKey,
+                stored.filter((id) => id !== taskId),
+                reportError
+              );
+            }
+          }
+        } catch (error) {
+          reportError(error, 'ClubLaunchSkips.server_write_failed', { taskId, skipped });
+          writeClubLaunchSkips(storageKey, next, reportError);
+        }
+      })();
     },
-    [storageKey]
+    [clubId, storageKey, source]
   );
 
-  const { skippedIds } = current;
+  const commit = useCallback(
+    (taskId: string, skipped: boolean, next: string[]) => {
+      if (!stateKey) return;
+      setState((prev) => (prev.stateKey === stateKey ? { ...prev, skippedIds: next } : prev));
+      write(taskId, skipped, next);
+    },
+    [stateKey, write]
+  );
+
   const skip = useCallback(
     (taskId: string) => {
-      if (!skippedIds.includes(taskId)) commit([...skippedIds, taskId]);
+      if (!skippedIds.includes(taskId)) commit(taskId, true, [...skippedIds, taskId]);
     },
     [skippedIds, commit]
   );
   const undoSkip = useCallback(
     (taskId: string) => {
-      if (skippedIds.includes(taskId)) commit(skippedIds.filter((id) => id !== taskId));
+      if (skippedIds.includes(taskId)) {
+        commit(
+          taskId,
+          false,
+          skippedIds.filter((id) => id !== taskId)
+        );
+      }
     },
     [skippedIds, commit]
   );
 
-  return { skippedIds, skip, undoSkip };
+  /* The latch. Asked only when the server is the store: on the local
+     fallback there is nothing to latch, and today's behaviour stands. */
+  const complete = useCallback(async (): Promise<boolean> => {
+    if (source !== 'server' || !stateKey) return false;
+    try {
+      const { data, error } = await supabase.rpc('fn_club_opening_checklist_complete', {
+        p_club_id: clubId,
+      });
+      if (error) throw error;
+      const answer = parseClubOpeningChecklistState(data, clubId);
+      if (!answer?.completedAt) {
+        throw new Error('fn_club_opening_checklist_complete answered without a latch');
+      }
+      const completedAt = answer.completedAt;
+      setState((prev) => (prev.stateKey === stateKey ? { ...prev, completedAt } : prev));
+      return true;
+    } catch (error) {
+      reportError(error, 'ClubLaunchSkips.latch_failed');
+      return false;
+    }
+  }, [clubId, stateKey, source]);
+
+  return {
+    skippedIds,
+    skip,
+    undoSkip,
+    completedAt: server ? current.completedAt : undefined,
+    complete,
+  };
+}
+
+/**
+ * Renders nothing. Calls `onResolved` when `resolved` turns true. The lobby
+ * builds its task list after its loading returns, where no hook can live, so
+ * the moment "every step is resolved" is observed here and handed back to the
+ * lobby, which owns the once-only, in-flight guard around the latch.
+ */
+export function ClubLaunchCompletionLatch({
+  resolved,
+  onResolved,
+}: {
+  resolved: boolean;
+  onResolved: () => void;
+}) {
+  useEffect(() => {
+    if (resolved) onResolved();
+  }, [resolved, onResolved]);
+  return null;
 }
 
 export default function ClubLaunchProgress({

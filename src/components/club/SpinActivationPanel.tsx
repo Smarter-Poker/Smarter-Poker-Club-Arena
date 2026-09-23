@@ -50,14 +50,16 @@ function walletLabel(kind: string | undefined, wallet: string | null | undefined
 }
 
 /**
- * TWO WAYS TO PRINT CHIPS, AND WHICH ONE IS NOT A MATTER OF TASTE (2026-09-20).
+ * HOW THIS PANEL PRINTS CHIPS, AND WHY IT IS NOT A MATTER OF TASTE (2026-09-20).
  *
- * `chips` is for a figure the owner is committing to or being promised: the
- * seed the button will move, the bar, the repayment thresholds and the next
- * instalment. It is the whole number with thousands separators, never
- * abbreviated and never with decimals, and it rounds UP, because a quote that
- * understates a charge is the one direction a quote may never be wrong in.
- * It used to allow two decimals.
+ * `chips` is for what the owner is being charged or must reach: the seed the
+ * button moves, the required seed and the repayment thresholds. Whole chips
+ * with thousands separators, never abbreviated and never with decimals (it
+ * used to allow two), rounded UP, because a quote that understates a charge
+ * is the one way a quote may never be wrong.
+ *
+ * `chipsBack` is the same exact format rounded DOWN, for chips held for the
+ * owner or coming back to them.
  *
  * `compactChips` (utils/format) is for the glance figures - balances and
  * running totals - and rounds down, so a balance is never overstated.
@@ -65,8 +67,12 @@ function walletLabel(kind: string | undefined, wallet: string | null | undefined
 const chips = (n: number | null | undefined) =>
   Math.ceil(Number(n ?? 0) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 
-/** Chips coming BACK to the owner: whole, unabbreviated, rounded down. */
-const chipsReturned = (n: number | null | undefined) =>
+/**
+ * Chips held for the owner or coming back to them - a seed already in the
+ * pool, a returned seed, the next instalment: whole, unabbreviated, rounded
+ * DOWN, so a promise of money back is never overstated.
+ */
+const chipsBack = (n: number | null | undefined) =>
   Math.floor(Number(n ?? 0) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 
 export default function SpinActivationPanel({ clubId }: Props) {
@@ -186,7 +192,7 @@ export default function SpinActivationPanel({ clubId }: Props) {
       const returned = Number(response.result.seed_returned ?? 0);
       toast.success(
         returned > 0
-          ? `Spins Deactivated. ${chipsReturned(returned)} Seed Chips Returned To ${walletLabel(state?.owner_kind, state?.seed_source_wallet)}.`
+          ? `Spins Deactivated. ${chipsBack(returned)} Seed Chips Returned To ${walletLabel(state?.owner_kind, state?.seed_source_wallet)}.`
           : 'Spins Deactivated. The Reserve Remains Locked Until Every Live Spin Is Settled.'
       );
       await load();
@@ -246,7 +252,7 @@ export default function SpinActivationPanel({ clubId }: Props) {
 
       {!state.is_active && state.seeded_amount > 0 && (
         <p className="sap-note">
-          Seed Of {chips(state.seeded_amount)} Is Still In This Wallet From Before.{' '}
+          Seed Of {chipsBack(state.seeded_amount)} Is Still In This Wallet From Before.{' '}
           {state.seed_is_repayable
             ? 'It Counts Toward What You Need, So Turning Spins Back On Will Not Charge You For It Again.'
             : 'It Has No Recorded Source Wallet, So It Cannot Be Returned Automatically.'}
@@ -288,8 +294,8 @@ export default function SpinActivationPanel({ clubId }: Props) {
 
           {state.seeded_amount > 0 && !state.seed_is_repayable ? (
             <p className="sap-note">
-              Seed Outstanding {chips(state.seeded_amount)}. It Has No Recorded Source Wallet, So It
-              Cannot Be Returned Automatically.
+              Seed Outstanding {compactChips(state.seeded_amount)}. It Has No Recorded Source
+              Wallet, So It Cannot Be Returned Automatically.
             </p>
           ) : state.seeded_amount > 0 ? (
             <>
@@ -301,13 +307,13 @@ export default function SpinActivationPanel({ clubId }: Props) {
               </p>
               <p className="sap-note">
                 {state.next_instalment > 0
-                  ? `Next Instalment ${chipsReturned(state.next_instalment)}, Due On The Next Spin.`
+                  ? `Next Instalment ${chipsBack(state.next_instalment)}, Due On The Next Spin.`
                   : `Next Instalment Once The Wallet Climbs Another ${chips(state.seed_repayable_in)}.`}
               </p>
             </>
           ) : (
             <p className="sap-note">
-              Seed Of {chipsReturned(state.seed_returned_amount)} Has Been Returned. Every Chip
+              Seed Of {compactChips(state.seed_returned_amount)} Has Been Returned. Every Chip
               Collected Now Stays Here To Fund Multipliers.
             </p>
           )}
@@ -384,7 +390,7 @@ export default function SpinActivationPanel({ clubId }: Props) {
             {stillNeeded < required && (
               <div className="sap-row">
                 <dt className="sap-label">Already In This Wallet</dt>
-                <dd className="sap-value">{chipsReturned(required - stillNeeded)} Chips</dd>
+                <dd className="sap-value">{chipsBack(required - stillNeeded)} Chips</dd>
               </div>
             )}
             <div className="sap-row">
@@ -403,7 +409,7 @@ export default function SpinActivationPanel({ clubId }: Props) {
             Required Seed {chips(required)} Chips. That Is Two Top Multiplier Jackpots At A Stake Of{' '}
             {maxStake}, So The Wallet Can Always Pay The Biggest Prize It Offers.
             {stillNeeded < required &&
-              ` You Only Pay ${chips(stillNeeded)} Because ${chipsReturned(required - stillNeeded)} Is Already Here.`}
+              ` You Only Pay ${chips(stillNeeded)} Because ${chipsBack(required - stillNeeded)} Is Already Here.`}
           </p>
 
           {actionError && (

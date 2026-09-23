@@ -15,6 +15,7 @@ import {
   impliedHouseEdge,
 } from '../../config/spinSpec';
 import { maxSeatsTheDeckAllows } from '../../config/tableSeating';
+import { titleCase } from '../../utils/titleCase';
 import { capPaidPlaces, fieldCapFor, minPlayersFor } from '../../lib/tournamentFieldRules';
 import styles from './CreateTournamentModal.module.css';
 import { useToast } from '../common/Toast';
@@ -38,7 +39,10 @@ import {
 } from '../../config/blindStructures';
 import { canRunAsSpin, type TournamentGameVariant } from '../../config/tournamentVariants';
 import { SpadeConsole } from '../console/SpadeConsole';
-import { provisionalMttPayoutStructure } from '../../../server/src/tournament/mttPayoutDepth';
+import {
+  MTT_PAYOUT_DEPTH_CHOICES,
+  provisionalMttPayoutStructure,
+} from '../../../server/src/tournament/mttPayoutDepth';
 import {
   MTT_CREATION_PROFILES,
   type MttCreationProfileId,
@@ -87,6 +91,13 @@ type MttPrizeStyle = 'regular' | 'bounty' | 'progressive_bounty' | 'mystery_boun
 type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 const EVERY_DAY_OF_WEEK = [0, 1, 2, 3, 4, 5, 6];
 const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, index) => index + 1);
+/* PAID PLACES ARE 10 TO 15 PERCENT OF THE FINAL FIELD (owner requirement,
+   2026-09-20). The depths come from the database's own contract, capped at 15:
+   the contract still accepts 20 for events that already carry it, but this
+   creator only ever makes a new event, so it no longer offers it. */
+const CREATOR_PAID_FIELD_PERCENTS = MTT_PAYOUT_DEPTH_CHOICES.map((choice) => choice.percent).filter(
+  (percent): percent is 10 | 15 => percent <= 15
+);
 
 const VARIANT_OPTIONS: { value: TournamentGameVariant; label: string }[] = [
   { value: 'NLH', label: "No-Limit Hold'em" },
@@ -152,10 +163,8 @@ export default function CreateTournamentModal({
   const [buyIn, setBuyIn] = useState('10');
   const [startingChips, setStartingChips] = useState('1500');
   const [maxPlayers, setMaxPlayers] = useState('6');
-  /* PAID PLACES ARE 10 TO 15 PERCENT OF THE FINAL FIELD (owner requirement,
-     2026-09-20). The database contract still accepts 20 for events that
-     already carry it; this creator only makes new events and no longer offers
-     it. There is no edit or clone path through this modal. */
+  // See CREATOR_PAID_FIELD_PERCENTS. There is no edit or clone path through
+  // this modal (its props carry no existing event), so no stored 20 can arrive.
   const [payoutPercent, setPayoutPercent] = useState<10 | 15>(10);
   const isSngOrSpin = format === 'sng' || format === 'spin';
   const fieldCap = isSngOrSpin ? fieldCapFor(maxPlayers) : null;
@@ -316,8 +325,10 @@ export default function CreateTournamentModal({
   const [weeklyMatchesStart, setWeeklyMatchesStart] = useState(true);
   const [schedule, setSchedule] = useState<WeeklyScheduleValue>({ ...DEFAULT_WEEKLY_SCHEDULE });
   const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(new Date().getUTCDate());
-  const repeatsWeekly = recurrence === 'weekly' && weeklyMatchesStart;
-  const scheduleEnabled = recurrence !== 'none' && !repeatsWeekly;
+  // Heads Up and Spins have no recurrence control, so none is ever sent for
+  // them, whatever was chosen before the category changed.
+  const repeatsWeekly = !isSngOrSpin && recurrence === 'weekly' && weeklyMatchesStart;
+  const scheduleEnabled = !isSngOrSpin && recurrence !== 'none' && !repeatsWeekly;
   const scheduleCadence: 'daily' | 'weekly' | 'monthly' =
     recurrence === 'none' ? 'weekly' : recurrence;
 
@@ -519,6 +530,7 @@ export default function CreateTournamentModal({
         setLateRegLevels('0');
         setStartTimeMode('now');
         setAddOnAvailable(false);
+        setRecurrence('none');
         break;
       case 'spin':
         setMttEntryRules('freezeout');
@@ -526,6 +538,7 @@ export default function CreateTournamentModal({
         setLateRegLevels('0');
         setStartTimeMode('now');
         setAddOnAvailable(false);
+        setRecurrence('none');
         /* The catalogue narrows on the way IN as well as in the list. Picking
            Short Deck and then switching the format to Spin would otherwise
            leave a value the shortened <select> no longer contains, which a
@@ -1042,8 +1055,7 @@ export default function CreateTournamentModal({
   // Whole numbers only — no decimal buy-ins on any tournament or SNG.
   // A Free Buy is the one event whose entry price is legitimately 0, so the
   // field border and the summary ask the same question coreValid asks.
-  const buyInValid =
-    mttEntryRules === 'free_buy' ? buyIn.trim() !== '' && Number(buyIn) === 0 : isWholeBuyIn(buyIn);
+  const buyInValid = mttEntryRules === 'free_buy' ? Number(buyIn) === 0 : isWholeBuyIn(buyIn);
 
   const coreValid = (() => {
     if (!name.trim()) return false;
@@ -1318,7 +1330,8 @@ export default function CreateTournamentModal({
                         </option>
                         {MTT_CREATION_PROFILES.map((profile) => (
                           <option key={profile.id} value={profile.id}>
-                            {profile.label} · {profile.depthBB} BB · {profile.minutes} Min
+                            {titleCase(profile.label)} · {profile.depthBB} BB · {profile.minutes}{' '}
+                            Min
                           </option>
                         ))}
                         <option value="custom">Custom Structure</option>
@@ -1471,7 +1484,7 @@ export default function CreateTournamentModal({
                       <option value="">Select Target Tournament…</option>
                       {satelliteTargets.map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.name}
+                          {titleCase(t.name)}
                         </option>
                       ))}
                     </select>
@@ -1596,10 +1609,18 @@ export default function CreateTournamentModal({
                   id="mtt-paid-field"
                   className={styles.select}
                   value={payoutPercent}
-                  onChange={(e) => setPayoutPercent(Number(e.target.value) === 15 ? 15 : 10)}
+                  onChange={(e) => {
+                    const next = CREATOR_PAID_FIELD_PERCENTS.find(
+                      (percent) => percent === Number(e.target.value)
+                    );
+                    if (next) setPayoutPercent(next);
+                  }}
                 >
-                  <option value={10}>Top 10 Percent</option>
-                  <option value={15}>Top 15 Percent</option>
+                  {CREATOR_PAID_FIELD_PERCENTS.map((percent) => (
+                    <option key={percent} value={percent}>
+                      Top {percent} Percent
+                    </option>
+                  ))}
                 </select>
                 <span className={styles.helperText}>
                   Paid Places Follow Actual Entries When Registration Closes, Rounded Up.
@@ -1944,7 +1965,7 @@ export default function CreateTournamentModal({
                         <span className={styles.helperText}>
                           {isFreeBuy
                             ? 'Play Pauses After The Current Hand For The Final 60 Seconds. The Full Add-On Cost Goes To The Prize Pool With No Rake.'
-                            : 'It Opens Once, The Moment Late Registration, Rebuys And Re-Entries Close. Play Pauses After The Current Hand. The Full Add-On Cost Goes To The Prize Pool With No Rake.'}
+                            : 'It Opens Once, When Late Registration, Rebuys And Re-Entries Close, Or When A Break Already Running Then Ends. Play Pauses After The Current Hand. The Full Add-On Cost Goes To The Prize Pool With No Rake.'}
                         </span>
                       </div>
                     </div>

@@ -46,7 +46,12 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 
 export const TIME_UTC_PATTERN = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
 
-/** Human summary of a stored schedule row — shared with the union manager. */
+/**
+ * Human summary of a stored schedule row — shared with the union manager,
+ * which prints it as it comes. Title Case here (2026-09-20): the copy gates
+ * read literals only, so a lower-case word built in a template string reached
+ * the screen unchecked ("Every day at 18:00 UTC").
+ */
 export function describeSchedule(
   days: number[],
   times: string[],
@@ -54,14 +59,14 @@ export function describeSchedule(
 ): string {
   const dayText =
     days.length === 7
-      ? 'Every day'
+      ? 'Every Day'
       : days
           .slice()
           .sort((a, b) => a - b)
           .map((d) => DAY_NAMES[d]?.slice(0, 3) ?? String(d))
           .join(', ');
-  if (intervalMinutes) return `${dayText} - every ${intervalMinutes.toLocaleString()} min`;
-  return `${dayText} at ${times.join(', ')} UTC`;
+  if (intervalMinutes) return `${dayText}, Every ${intervalMinutes.toLocaleString()} Minutes`;
+  return `${dayText} At ${times.join(', ')} UTC`;
 }
 
 export default function WeeklyScheduleEditor({

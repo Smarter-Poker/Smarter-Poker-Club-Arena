@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { migrationCorpus } from './helpers/migrationCorpus';
 
 const root = resolve(__dirname, '..');
 const migration = readFileSync(
@@ -8,6 +9,18 @@ const migration = readFileSync(
   'utf8'
 );
 const certification = readFileSync(resolve(root, 'scripts/ci/certify-club-create.mjs'), 'utf8');
+
+/** The newest migration's restatement of `fn`: what a rebuild installs. */
+const newestDefinition = (fn: string): string => {
+  const create = `CREATE OR REPLACE FUNCTION public.${fn}(`;
+  const newest = migrationCorpus()
+    .filter((m) => m.sql.includes(create))
+    .pop();
+  if (!newest) return '';
+  const rest = newest.sql.slice(newest.sql.indexOf(create));
+  const open = rest.indexOf('$function$');
+  return rest.slice(0, rest.indexOf('$function$', open + '$function$'.length));
+};
 
 describe('New Club Opening Bank Ledger', () => {
   it('removes the obsolete owner-wallet grant', () => {
@@ -18,12 +31,20 @@ describe('New Club Opening Bank Ledger', () => {
   });
 
   it('accepts an idempotent duplicate only when the canonical mint exists', () => {
-    expect(migration).toContain("f.sqlstate = '23505'");
-    expect(migration).toContain('ux_chip_ledger_idempotency_key');
-    expect(migration).toContain("l.idempotency_key = 'club-opening-grant:' || f.club_id::text");
-    expect(migration).toContain("l.from_type = 'system_mint'");
-    expect(migration).toContain("l.to_type = 'club_treasury'");
-    expect(migration).toContain('l.amount = 100000');
+    /* 2026-09-23: the grant has journalled from issuance_reserve since
+       2026-09-03, so an exemption matching l.from_type = 'system_mint' alone
+       was dead for every newer club. The detectors that carry it today (the
+       newest definitions, not this 2026-09-01 file) accept both shapes. */
+    for (const fn of ['fn_ca_quick_reconcile', 'fn_chip_integrity_report']) {
+      const body = newestDefinition(fn);
+      expect(body, fn).toContain("f.sqlstate = '23505'");
+      expect(body, fn).toContain('ux_chip_ledger_idempotency_key');
+      expect(body, fn).toContain("l.idempotency_key = 'club-opening-grant:' || f.club_id::text");
+      expect(body, fn).toContain("l.from_type IN ('system_mint', 'issuance_reserve')");
+      expect(body, fn).not.toContain("l.from_type = 'system_mint'");
+      expect(body, fn).toContain("l.to_type = 'club_treasury'");
+      expect(body, fn).toContain('l.amount = 100000');
+    }
   });
 
   it('limits Drift Incidents to Midway Union without limiting global club fixes', () => {

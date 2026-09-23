@@ -15,6 +15,7 @@ import { useState } from 'react';
 import fs from 'node:fs';
 import path from 'node:path';
 import WeeklyScheduleEditor, {
+  describeSchedule,
   validateWeeklySchedule,
   type WeeklyScheduleValue,
 } from '../../src/components/tournament/WeeklyScheduleEditor';
@@ -171,6 +172,23 @@ describe('validation copy is Title Case in the source', () => {
   });
 });
 
+describe('the schedule summary the union manager prints', () => {
+  it('is Title Case, every word', () => {
+    expect(describeSchedule([0, 1, 2, 3, 4, 5, 6], ['18:00', '19:05'], null)).toBe(
+      'Every Day At 18:00, 19:05 UTC'
+    );
+    expect(describeSchedule([5, 1], [], 90)).toBe('Mon, Fri, Every 90 Minutes');
+    for (const text of [
+      describeSchedule([0, 1, 2, 3, 4, 5, 6], ['18:00'], null),
+      describeSchedule([2], [], 1440),
+    ]) {
+      for (const word of text.split(/[\s,]+/).filter(Boolean)) {
+        expect(word[0], `${word} in "${text}"`).toBe(word[0].toUpperCase());
+      }
+    }
+  });
+});
+
 describe('the editor prints on the glass', () => {
   const css = fs.readFileSync(
     path.join(process.cwd(), 'src', 'components', 'tournament', 'WeeklyScheduleEditor.css'),
@@ -197,8 +215,11 @@ describe('the editor prints on the glass', () => {
       '#45adff',
       '#ff5b6e',
       '#9aa5b3',
+      // black for the engraved cut, the console's own bevel black for the
+      // wells, and the kit's focus ring: the same three the create-table form uses
       '#000',
-      '#05080c',
+      '#050607',
+      '#8fd4ff',
     ]);
     for (const hex of hexes) expect(schema.has(hex), hex).toBe(true);
   });

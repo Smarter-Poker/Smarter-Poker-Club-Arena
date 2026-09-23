@@ -181,6 +181,35 @@ describe('entry rules and prize style are independent axes', () => {
 });
 
 describe('the tournament category is reachable from an event', () => {
+  it('prints a satellite target name from the database in Title Case', async () => {
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      neq: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({
+        data: [
+          {
+            id: 'd6000000-0000-4000-8000-000000000009',
+            name: 'sunday main event',
+            is_bounty: false,
+            is_pko: false,
+            is_mystery_bounty: false,
+            is_premium_spin: false,
+            variant: 'freezeout',
+            tournament_type: 'MTT',
+          },
+        ],
+        error: null,
+      }),
+    };
+    vi.spyOn(supabase, 'from').mockReturnValue(query as never);
+    mount(undefined);
+    choose(screen.getByLabelText('Tournament Category') as HTMLSelectElement, 'satellite');
+    expect(await screen.findByRole('option', { name: 'Sunday Main Event' })).toBeInTheDocument();
+  });
+
   it('lets an event opened with no initial format become a satellite and come back', () => {
     mount(undefined);
     const category = screen.getByLabelText('Tournament Category') as HTMLSelectElement;
@@ -357,6 +386,20 @@ describe('one recurrence control at the foot of the form', () => {
     expect(rpc).not.toHaveBeenCalledWith('fn_upsert_tournament_schedule', expect.anything());
   });
 
+  it('drops a chosen recurrence when the category becomes Heads Up', async () => {
+    const rpc = spyScheduleRpc();
+    const { container } = mount();
+    choose(repeat(), 'daily');
+    const category = () => screen.getByLabelText('Tournament Category') as HTMLSelectElement;
+    choose(category(), 'sng');
+    expect(screen.queryByLabelText('Repeat')).toBeNull();
+    const config = await submit(container);
+    expect(config.type).toBe('sng');
+    expect(rpc).not.toHaveBeenCalledWith('fn_upsert_tournament_schedule', expect.anything());
+    choose(category(), 'mtt_freezeout');
+    expect(repeat().value).toBe('none');
+  });
+
   it('is not offered on fixed-seat formats', () => {
     mount('spin');
     expect(screen.queryByLabelText('Repeat')).toBeNull();
@@ -368,6 +411,10 @@ describe('the add-on rule says what the engine does', () => {
     mount('mtt_rebuy');
     expect(screen.getByText('One 60-Second Period When The Rebuy Period Closes')).toBeVisible();
     expect(screen.getByText(/Play Pauses After The Current Hand/)).toHaveTextContent('No Rake');
+    // triggerAddOnPeriod is deferred while a break is running (pendingAddOnPeriod).
+    expect(screen.getByText(/Play Pauses After The Current Hand/)).toHaveTextContent(
+      'Or When A Break Already Running Then Ends'
+    );
     expect(screen.queryByText('1 Minute After Rebuy Period')).toBeNull();
   });
 });

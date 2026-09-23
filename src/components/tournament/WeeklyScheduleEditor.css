@@ -6,10 +6,12 @@
    surface, so it draws no card of its own: a frame never sits on a frame. Rows
    print on the glass and an engraved rule (a black line with a faint highlight
    under it) separates them. Every colour is a schema ink: silver #e4e7ec,
-   white #f4f7fb, lit blue #45adff, red #ff5b6e, muted #9aa5b3. State is shown
-   by ink, never by a drawn pill, and there is no hover rule anywhere - only
-   :active and :focus-visible. Sizes are rem, not cqw, because one host is a
-   dialog with no container and cqw would fall back to the viewport there. */
+   white #f4f7fb, lit blue #45adff, red #ff5b6e, muted #9aa5b3; the wells are
+   the console's own bevel black #050607 and the focus ring is the kit's
+   #8fd4ff, the same two the create-table form uses. State is shown by ink,
+   never by a drawn pill, and there is no hover rule anywhere - only :active
+   and :focus-visible. Sizes are rem, not cqw, because one host is a dialog
+   with no container and cqw would fall back to the viewport there. */
 
 .weekly-schedule-editor {
   margin: 0.5rem 0;
@@ -71,7 +73,7 @@
 .weekly-schedule-editor .wse-add-time:focus-visible,
 .weekly-schedule-editor .wse-time-input:focus-visible,
 .weekly-schedule-editor .wse-interval-input:focus-visible {
-  outline: 2px solid #45adff;
+  outline: 2px solid #8fd4ff;
   outline-offset: 2px;
 }
 
@@ -115,7 +117,7 @@
 }
 
 .weekly-schedule-editor .wse-mode-input:focus-visible + .wse-mode-text {
-  outline: 2px solid #45adff;
+  outline: 2px solid #8fd4ff;
   outline-offset: 4px;
 }
 
@@ -148,9 +150,9 @@
 .wse-interval-input {
   min-height: 40px;
   padding: 0.35rem 0.5rem;
-  border: 1px solid rgb(94 116 134 / 52%);
+  border: 1px solid rgb(154 165 179 / 40%);
   border-radius: 0;
-  background: #05080c;
+  background: #050607;
   color: #f4f7fb;
   color-scheme: dark;
   font: inherit;
@@ -165,7 +167,7 @@
 }
 
 .wse-time-input option {
-  background: #05080c;
+  background: #050607;
   color: #f4f7fb;
 }
 

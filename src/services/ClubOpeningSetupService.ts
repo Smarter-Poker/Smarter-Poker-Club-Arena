@@ -1,5 +1,4 @@
 import { supabase } from '../lib/supabase';
-import { compactChips } from '../utils/format';
 import { titleCase } from '../utils/titleCase';
 
 export type OpeningPromotionType =
@@ -27,6 +26,12 @@ export interface ClubOpeningSetupInput {
   leaderboardRewardsEnabled: boolean;
   leaderboardMetric: 'profit' | 'hands_played' | 'tournaments_won' | 'roi';
   leaderboardPrizeBudget: number;
+  /**
+   * The owner's explicit answer on a paid leaderboard: true when the Club Bank
+   * may pay a later round's shortfall as its own recorded overlay leg. Never a
+   * default; the server records OFF unless it is sent.
+   */
+  leaderboardOverlayEnabled: boolean;
 }
 
 export interface ClubOpeningSetupResult {
@@ -39,6 +44,7 @@ export interface ClubOpeningSetupResult {
   spin_seeded?: number;
   promo_budget?: number;
   promotion_id?: string | null;
+  leaderboard_overlay_enabled?: boolean;
   operation_id: string;
 }
 
@@ -136,44 +142,49 @@ export function openingLeaderboardBudgetSplitsEvenly(budget: number): boolean {
 export interface OpeningLeaderboardFundingInput {
   promoEnabled: boolean;
   promoBudget: number;
-  leaderboardPrizeBudget: number;
   /** Promo Wallet chips the club already holds. A new club holds none. */
   existingPromoBalance?: number | null;
 }
 
-/** The largest paid leaderboard budget the server's funding gate accepts. */
-export function openingLeaderboardFundingCapacity(
-  input: Omit<OpeningLeaderboardFundingInput, 'leaderboardPrizeBudget'>
-): number {
+/** The smallest weekly budget the opening RPC accepts for a paid leaderboard. */
+export const OPENING_LEADERBOARD_MINIMUM_BUDGET = 100;
+
+/**
+ * The Promo Wallet the club holds once setup commits: what it already holds
+ * plus the Promotion budget. A paid leaderboard's first round is paid from its
+ * own seed; every later round draws on this wallet.
+ */
+export function openingLeaderboardFundingCapacity(input: OpeningLeaderboardFundingInput): number {
   const existing = Math.max(0, Math.floor(Number(input.existingPromoBalance) || 0));
   const promo = input.promoEnabled ? Math.max(0, Math.floor(Number(input.promoBudget) || 0)) : 0;
   return existing + promo;
 }
 
 /**
- * Mirrors the server's funding gate for a standalone club's opening setup.
+ * Mirrors what the server still refuses about a paid leaderboard's funding
+ * when a club opens.
  *
- * The opening RPC first adds the Promotion budget to clubs.promo_balance, then
- * publishes the paid leaderboard program. The BEFORE INSERT trigger
- * leaderboard_program_funding_gate rejects the program, and so the whole
- * setup, when the weekly prize total exceeds clubs.promo_balance. The
- * leaderboard's own first-round seed is held separately and is NOT counted by
- * that gate. So a paid budget passes only when
- *   leaderboardPrizeBudget <= existingPromoBalance + promoBudget.
+ * The opening RPC moves the whole weekly budget out of the Club Bank as the
+ * first round's explicit seed and, since 20260923143157, writes the setup row
+ * that holds it BEFORE it publishes the program. The funding gate
+ * (fn_enforce_leaderboard_program_funding) counts that unreleased seed, for
+ * the setup's own publication only, beside clubs.promo_balance. The published
+ * plan sums exactly to the budget, so the seed alone covers it: no Promotion is
+ * required and no Promotion size can refuse it. What the server still refuses
+ * is a paid budget under its 100-chip minimum ("A Prize Leaderboard Requires A
+ * Minimum 100-Chip Budget"). The seed's Club Bank cover is checked with every
+ * other transfer, on the review step.
  *
- * Returns '' when the server will accept the configuration, otherwise the
- * Title Case reason to show the owner.
+ * Returns '' when the server will accept the budget, otherwise the Title Case
+ * reason to show the owner.
  */
-export function openingLeaderboardFundingRefusal(input: OpeningLeaderboardFundingInput): string {
-  const budget = Math.max(0, Number(input.leaderboardPrizeBudget) || 0);
-  const capacity = openingLeaderboardFundingCapacity(input);
-  if (budget <= capacity) return '';
-  const exact = (value: number) => Math.floor(value).toLocaleString('en-US');
-  if (capacity < 100) {
-    return `Paid Leaderboards Need A Promotion Budget Of At Least ${exact(budget)} Chips. Go Back And Create A Promotion, Or Choose Display Only`;
-  }
-  // A cap may print compact: floored, it can only ask for less than the server allows.
-  return `Weekly Prize Budget Cannot Exceed The ${compactChips(capacity)} Chip Promotion Budget. Raise The Promotion Budget Or Lower The Prize Budget`;
+export function openingLeaderboardFundingRefusal(input: {
+  leaderboardPrizeBudget: number;
+}): string {
+  const budget = Number(input.leaderboardPrizeBudget) || 0;
+  return budget >= OPENING_LEADERBOARD_MINIMUM_BUDGET
+    ? ''
+    : 'Leaderboard Prize Budget Must Be At Least 100 Chips';
 }
 
 export const clubOpeningSetupService = {
@@ -237,6 +248,13 @@ export const clubOpeningSetupService = {
         p_leaderboard_prize_budget: input.leaderboardRewardsEnabled
           ? input.leaderboardPrizeBudget
           : 0,
+        /* The Club Bank overlay travels only when the owner allowed it on a
+           paid leaderboard. The server records OFF unless it is sent, so
+           leaving it out IS the owner's "Leave Unpaid Until Funded", and the
+           eighteen-argument payload is unchanged for every other answer. */
+        ...(input.leaderboardRewardsEnabled && input.leaderboardOverlayEnabled
+          ? { p_leaderboard_overlay_enabled: true }
+          : {}),
       } as never
     );
     if (error) {

@@ -20,6 +20,8 @@ import { RESTART_MAX_MINUTES } from '../services/TournamentService';
 import { payoutEngine } from '../services/PayoutEngine';
 import { rakeRateFor, splitBuyIn } from '../utils/buyIn';
 import { freeBuyConfig } from '../utils/freeBuy';
+// A line of its own: tests/law/FreerollsAreFreeBuy.law.test.ts pins the line above verbatim.
+import { isFreeBuyEvent } from '../utils/freeBuy';
 import { maxSeatsTheDeckAllows } from '../config/tableSeating';
 import {
   mttPayoutDepthForChoice,
@@ -110,6 +112,31 @@ export function prizeStyleForDraft(draft: {
 }): MttPrizeStyle {
   if (isMttPrizeStyle(draft.prizeStyle)) return draft.prizeStyle;
   return draft.koBounty === true ? 'bounty' : 'regular';
+}
+
+/**
+ * A REBUY OR RE-ENTRY EVENT NEEDS LATE REGISTRATION TO CLOSE (2026-09-20).
+ * Rebuys and re-entries close with late registration, and the engine and
+ * process_tournament_rebuy both read a cap of 0 as NO cap at all
+ * (`NULLIF(..., 0)`), so a 0 late registration level would leave rebuys open
+ * for the whole event: not what Rebuy or Re-Entry promises. The club
+ * tournament modal refuses the same pair. A Free Buy runs its own window and
+ * is not asked. Returns the message to show, or null when the pair is fine.
+ */
+export const MTT_ENTRY_WINDOW_REQUIRED =
+  'Late Registration Must Be At Least 1 Level When Rebuys Or Re-Entries Are On';
+
+export function mttEntryWindowProblem(config: {
+  gameMode: TournamentFormInput['gameMode'];
+  buyIn: number;
+  entryRules?: unknown;
+  lateRegistrationLevel: number;
+}): string | null {
+  if (config.gameMode !== 'mtt') return null;
+  if (config.entryRules !== 'rebuy' && config.entryRules !== 'reentry') return null;
+  const buyIn = Math.max(0, Math.round(Number(config.buyIn) || 0));
+  if (isFreeBuyEvent({ buyIn, type: 'mtt' })) return null;
+  return Number(config.lateRegistrationLevel) >= 1 ? null : MTT_ENTRY_WINDOW_REQUIRED;
 }
 
 /** The subset of the create-table form a tournament actually uses. */
@@ -300,16 +327,15 @@ export function buildTournamentConfig(
       ? Math.round(config.customAddOnCost!)
       : split.total;
 
-  // FREEROLLS ARE FREE BUY: computed once, because the lifecycle, the add-on
-  // break and the prize style below all need to know.
-  const freeBuy = freeBuyConfig({
-    buyIn: split.total,
-    type: isSpins ? 'spin' : isSng ? 'sng' : 'mtt',
-    startingStack: config.startingChips,
-    addOnChips: Math.round(config.startingChips * Math.max(1, config.addOnMultiplier)),
-    maxRebuys: config.numberOfRebuysReentries,
-  });
-  const isFreeBuy = freeBuy.freeBuy === true;
+  // FREEROLLS ARE FREE BUY. Asked once up front, because the lifecycle, the
+  // add-on break and the prize style below all depend on it. The rule's own
+  // keys are still spread LAST in the object below, where they have to win.
+  const isFreeBuy =
+    freeBuyConfig({
+      buyIn: split.total,
+      type: isSpins ? 'spin' : isSng ? 'sng' : 'mtt',
+      startingStack: config.startingChips,
+    }).freeBuy === true;
 
   /* THE LIFECYCLE AXIS. An explicit Entry Rules choice sets exactly one flag.
      A draft with no choice keeps the mapping it was saved under, so restoring
@@ -383,7 +409,13 @@ export function buildTournamentConfig(
      * each whatever the sliders say (the form locks them and says why). Spread
      * LAST so it wins. Empty for a paid event, a Spin or an SNG.
      */
-    ...freeBuy,
+    ...freeBuyConfig({
+      buyIn: split.total,
+      type: isSpins ? 'spin' : isSng ? 'sng' : 'mtt',
+      startingStack: config.startingChips,
+      addOnChips: Math.round(config.startingChips * Math.max(1, config.addOnMultiplier)),
+      maxRebuys: config.numberOfRebuysReentries,
+    }),
     guaranteedPrize:
       isMtt && config.gtdPrizePool ? Math.max(0, Math.round(config.gtdPrizeAmount ?? 0)) : 0,
     gameVariant: VARIANT_MAP[String(gameType ?? 'nlh').toLowerCase()] ?? 'NLH',

@@ -106,12 +106,56 @@ describe('opening checklist wiring', () => {
   });
 
   it('resolves skips once, in the lobby, and hands the same state to the checklist', () => {
-    expect(PAGE).toContain("useClubLaunchSkips(club?.id ?? '', currentUserId || 'unknown')");
+    expect(PAGE).toContain("useClubLaunchSkips(club?.id ?? '', currentUserId || 'unknown', {");
     expect(PAGE).toContain(
       'const launchTasks = resolveClubLaunchTasks(launchTaskList, launchSkips.skippedIds);'
     );
     expect(PAGE).toContain('skips={launchSkips}');
     expect(PAGE).toContain('data-opening-checklist={showLaunchChecklist || undefined}');
+    expect(PAGE.split('useClubLaunchSkips(').length - 1).toBe(1);
+  });
+
+  it('keeps the skips and the latch on the server for the owner of a possible new club only', () => {
+    const hook = PAGE.slice(
+      PAGE.indexOf("useClubLaunchSkips(club?.id ?? '', currentUserId || 'unknown', {"),
+      PAGE.indexOf('const toast = useToast();')
+    );
+    expect(hook).toContain('club.owner_id === currentUserId');
+    expect(hook).toContain('mayHaveNewClubOpeningChecklist(club)');
+    /* A latched checklist never draws, and an unread latch fails closed: the
+       eligibility that gates the checklist, the layout attribute, the wizard
+       mount and the setup read is computed FROM the latch. */
+    expect(hook).toMatch(
+      /const openingChecklistEligible = hasNewClubOpeningChecklist\(\s*club,\s*unionIdForCreate,\s*launchSkips\.completedAt\s*\);/
+    );
+    expect(PAGE.indexOf('const launchSkips = useClubLaunchSkips(')).toBeLessThan(
+      PAGE.indexOf('const openingChecklistEligible = hasNewClubOpeningChecklist(')
+    );
+    expect(PAGE).toContain(
+      '{showOpeningWizard && isOwner && club && openingChecklistEligible && ('
+    );
+  });
+
+  it('asks for the latch once, behind an in-flight guard, with no timer', () => {
+    const latch = PAGE.slice(
+      PAGE.indexOf('const launchLatchRequestedRef = useRef<string | null>(null);'),
+      PAGE.indexOf('}, [club?.id, completeLaunchChecklist]);')
+    );
+    expect(latch).toContain(
+      'if (!latchClubId || launchLatchRequestedRef.current === latchClubId) return;'
+    );
+    expect(latch).toContain('launchLatchRequestedRef.current = latchClubId;');
+    expect(latch).toContain('void completeLaunchChecklist();');
+    expect(latch).not.toMatch(/setTimeout|setInterval/);
+    expect(PAGE.split('completeLaunchChecklist()').length - 1).toBe(1);
+    /* The moment: every step complete or validly skipped, for the owner. */
+    expect(PAGE).toMatch(
+      /const launchChecklistFinished =\s*openingChecklistEligible &&\s*isOwner &&\s*launchTasks\.every\(\(task\) => task\.complete \|\| task\.skipped\);/
+    );
+    expect(PAGE).toMatch(
+      /<ClubLaunchCompletionLatch\s+resolved=\{launchChecklistFinished\}\s+onResolved=\{latchOpeningChecklist\}\s+\/>/
+    );
+    expect(PAGE.split('<ClubLaunchCompletionLatch').length - 1).toBe(1);
   });
 
   it('shows the opening journey to the owner, whose state is the only one loaded', () => {

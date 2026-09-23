@@ -3,26 +3,39 @@ import { resolve } from 'path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  CLUB_LAUNCH_OPTIONAL_TASK_IDS,
+  CLUB_LAUNCH_REQUIRED_TASK_ID,
   hasNewClubOpeningChecklist,
   hasOwnClubPicture,
+  isOptionalClubLaunchTaskId,
   isPresetClubLogo,
+  mayHaveNewClubOpeningChecklist,
+  parseClubOpeningChecklistState,
   resolveClubLaunchTasks,
   resolveClubUnionScope,
 } from '../../src/utils/clubOpeningEligibility';
 
 describe('new club opening eligibility', () => {
+  /* `null` is the positive, read answer "not latched" (see the latch tests below). */
+  const OPEN = null;
+
   it('shows the checklist only for newly created standalone clubs', () => {
     expect(
-      hasNewClubOpeningChecklist({ opening_checklist_started_at: '2026-09-01T13:30:00Z' }, null)
+      hasNewClubOpeningChecklist(
+        { opening_checklist_started_at: '2026-09-01T13:30:00Z' },
+        null,
+        OPEN
+      )
     ).toBe(true);
-    expect(hasNewClubOpeningChecklist({}, null)).toBe(false);
+    expect(hasNewClubOpeningChecklist({}, null, OPEN)).toBe(false);
     expect(
       hasNewClubOpeningChecklist(
         {
           opening_checklist_started_at: '2026-09-01T13:30:00Z',
           is_union: true,
         },
-        null
+        null,
+        OPEN
       )
     ).toBe(false);
     expect(
@@ -31,7 +44,8 @@ describe('new club opening eligibility', () => {
           opening_checklist_started_at: '2026-09-01T13:30:00Z',
           union_id: 'union-id',
         },
-        'union-id'
+        'union-id',
+        OPEN
       )
     ).toBe(false);
   });
@@ -39,9 +53,30 @@ describe('new club opening eligibility', () => {
   it('fails closed until union scope is resolved and excludes union_clubs-only members', () => {
     const club = { opening_checklist_started_at: '2026-09-01T13:30:00Z' };
 
-    expect(hasNewClubOpeningChecklist(club, undefined)).toBe(false);
-    expect(hasNewClubOpeningChecklist(club, 'union-from-membership-table')).toBe(false);
-    expect(hasNewClubOpeningChecklist(club, null)).toBe(true);
+    expect(hasNewClubOpeningChecklist(club, undefined, OPEN)).toBe(false);
+    expect(hasNewClubOpeningChecklist(club, 'union-from-membership-table', OPEN)).toBe(false);
+    expect(hasNewClubOpeningChecklist(club, null, OPEN)).toBe(true);
+  });
+
+  it('never draws a latched checklist, and fails closed until the latch is read', () => {
+    /* 2026-09-23: a finished checklist came back when the only NLH table
+       closed or the one extra member left, because every step is recomputed
+       from live data. The server latch ends it for good. */
+    const club = { opening_checklist_started_at: '2026-09-01T13:30:00Z' };
+    expect(hasNewClubOpeningChecklist(club, null, '2026-09-23T10:00:00+00:00')).toBe(false);
+    expect(hasNewClubOpeningChecklist(club, null, undefined)).toBe(false);
+    expect(hasNewClubOpeningChecklist(club, null, null)).toBe(true);
+    // A latch never opens anything the other rules close.
+    expect(hasNewClubOpeningChecklist({ ...club, is_union: true }, null, null)).toBe(false);
+  });
+
+  it('asks the server as soon as the club row alone allows the checklist', () => {
+    const club = { opening_checklist_started_at: '2026-09-01T13:30:00Z' };
+    expect(mayHaveNewClubOpeningChecklist(club)).toBe(true);
+    expect(mayHaveNewClubOpeningChecklist({})).toBe(false);
+    expect(mayHaveNewClubOpeningChecklist({ ...club, is_union: true })).toBe(false);
+    expect(mayHaveNewClubOpeningChecklist({ ...club, union_id: 'u1' })).toBe(false);
+    expect(mayHaveNewClubOpeningChecklist(null)).toBe(false);
   });
 
   it('marks future inserts without backfilling any existing club or union', () => {
@@ -135,5 +170,76 @@ describe('opening checklist skip resolution', () => {
       ['opening-setup', 'identity', 'tagline']
     );
     expect(resolved.map((task) => task.skipped)).toEqual([false, true, false, false]);
+  });
+});
+
+describe('opening checklist step ids', () => {
+  it('names one required step and ten optional ones, and only the optional ones pass', () => {
+    expect(CLUB_LAUNCH_REQUIRED_TASK_ID).toBe('opening-setup');
+    expect(CLUB_LAUNCH_OPTIONAL_TASK_IDS).toEqual([
+      'identity',
+      'tagline',
+      'nlh',
+      'plo',
+      'limit',
+      'mtt',
+      'spin',
+      'heads-up',
+      'first-player',
+      'first-agent',
+    ]);
+    expect(isOptionalClubLaunchTaskId('nlh')).toBe(true);
+    expect(isOptionalClubLaunchTaskId('opening-setup')).toBe(false);
+    expect(isOptionalClubLaunchTaskId('Picture')).toBe(false);
+    expect(isOptionalClubLaunchTaskId(undefined)).toBe(false);
+  });
+});
+
+describe('reading a checklist RPC answer', () => {
+  const answer = (overrides: Record<string, unknown> = {}) => ({
+    clubId: 'club-a',
+    completedAt: null,
+    skippedTaskIds: ['nlh', 'identity'],
+    ...overrides,
+  });
+
+  it('reads the answer for the club it was asked about', () => {
+    expect(parseClubOpeningChecklistState(answer(), 'club-a')).toEqual({
+      clubId: 'club-a',
+      completedAt: null,
+      skippedTaskIds: ['nlh', 'identity'],
+    });
+    expect(
+      parseClubOpeningChecklistState(answer({ completedAt: '2026-09-23T10:00:00+00:00' }), 'club-a')
+        ?.completedAt
+    ).toBe('2026-09-23T10:00:00+00:00');
+  });
+
+  it('drops any id the server would never store', () => {
+    expect(
+      parseClubOpeningChecklistState(
+        answer({ skippedTaskIds: ['opening-setup', 'Picture', 'mtt'] }),
+        'club-a'
+      )?.skippedTaskIds
+    ).toEqual(['mtt']);
+  });
+
+  it('treats every unreadable answer as a failure, never as an empty checklist', () => {
+    for (const bad of [
+      null,
+      0,
+      'ok',
+      [],
+      {},
+      answer({ clubId: 'club-b' }),
+      answer({ clubId: undefined }),
+      answer({ completedAt: undefined }),
+      answer({ completedAt: '' }),
+      answer({ completedAt: 7 }),
+      answer({ skippedTaskIds: null }),
+      answer({ skippedTaskIds: ['nlh', 3] }),
+    ]) {
+      expect(parseClubOpeningChecklistState(bad, 'club-a')).toBeNull();
+    }
   });
 });

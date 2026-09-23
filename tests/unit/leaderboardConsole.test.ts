@@ -23,7 +23,12 @@ describe('Leaderboard Painted Console Contract', () => {
     const wizard = readFileSync('src/components/leaderboard/LeaderboardPrizeWizard.tsx', 'utf8');
     expect(wizard.match(/<SpadeConsole\b/g)).toHaveLength(1);
     expect(wizard).toContain('plates={{');
-    expect(wizard).toContain('step="0.01"');
+    /* Was step="0.01" (2026-09-20 pin). Prize places are whole chips now:
+       forward-facing figures carry no decimals, and the splits the wizard
+       shows must be the exact whole-chip list it publishes
+       (tests/components/leaderboardPrizeWizardWholeChips.test.tsx). */
+    expect(wizard).toContain('step="1"');
+    expect(wizard).not.toContain('step="0.01"');
     expect(wizard).toContain('value={row.amount');
     expect(readFileSync('src/components/leaderboard/LeaderboardPrizeWizard.css', 'utf8')).toContain(
       'z-index: 10050'

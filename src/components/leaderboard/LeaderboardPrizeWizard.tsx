@@ -106,6 +106,105 @@ function editableRows(prizes: LeaderboardPrize[]): LeaderboardPrize[] {
   }));
 }
 
+/**
+ * A budget or a place amount as whole chips (2026-09-23). The owner types
+ * chips, and a forward-facing figure never carries decimals, so whatever is
+ * typed is floored to a whole chip: the wizard never publishes more than the
+ * owner entered.
+ */
+function wholeChips(value: number | string): number {
+  return Math.floor(clampPrizeBudget(Number(value)));
+}
+
+/**
+ * WHOLE CHIPS THAT ADD UP TO EXACTLY THE BUDGET (2026-09-23).
+ *
+ * The shared plan helpers split in cents: a 101-chip Balanced Podium is
+ * 50.50 / 30.30 / 20.20 and a 100-chip Even Podium is 33.33 / 33.33 / 33.34,
+ * and those decimals were printed in the place fields and published. Every
+ * place now keeps its whole-chip floor, and the few chips that leaves over go
+ * one each to the places with the largest remainder (the ordinary way to
+ * round shares to whole units). The helpers push their cent residue onto the
+ * last place, so remainders within a cent of the largest are a tie, and a tie
+ * goes to the better place: the odd chip goes to first, as at a poker table.
+ * The result always sums to the whole budget, and it is the exact list the
+ * wizard shows and then publishes (the component keeps the cent split only as
+ * the shape a later budget is scaled from).
+ */
+function wholeChipPrizes(prizes: LeaderboardPrize[], budget: number): LeaderboardPrize[] {
+  const target = wholeChips(budget);
+  const rows = normalizeCustomPrizes(prizes);
+  if (target === 0 || rows.length === 0) return [];
+  const whole = rows.map((row) => Math.floor(row.amount));
+  const remainder = rows.map((row, index) => Math.round((row.amount - whole[index]) * 100));
+  const given = new Set<number>();
+  let left = target - whole.reduce((sum, amount) => sum + amount, 0);
+  while (left > 0) {
+    const open = remainder
+      .map((cents, index) => ({ cents, index }))
+      .filter(({ index }) => !given.has(index));
+    const best = Math.max(...open.map((row) => row.cents));
+    // Cannot run dry (the floors lose less than one chip per place); if it
+    // ever did, the chip goes to first place rather than out of the total.
+    const pick = open.find(({ cents }) => cents >= best - 1)?.index ?? 0;
+    given.add(pick);
+    whole[pick] += 1;
+    left -= 1;
+  }
+  // A budget below the places' own floors (no caller passes one) comes off
+  // the lowest places, so the list still never exceeds the budget.
+  for (let index = whole.length - 1; left < 0 && index >= 0; index -= 1) {
+    const take = Math.min(whole[index], -left);
+    whole[index] -= take;
+    left += take;
+  }
+  return rows
+    .map((row, index) => ({ rank: row.rank, amount: whole[index] }))
+    .filter((row) => row.amount > 0);
+}
+
+/**
+ * EXACT FIGURES WHERE THE OWNER IS CONFIRMING MONEY (lead ruling, 2026-09-20).
+ * compactChips() is the house format for a glance ("12.3K"), and it is used
+ * for every balance here. A figure the owner is agreeing to publish, or a
+ * limit they must type a plan under, is printed whole with separators and is
+ * never abbreviated. Floored: a plan is whole chips, so the largest plan a
+ * capacity of 100.50 allows is 100.
+ */
+function exactChips(value: number | null | undefined): string {
+  return Math.floor(Math.max(Number(value) || 0, 0)).toLocaleString('en-US', {
+    maximumFractionDigits: 0,
+  });
+}
+
+/**
+ * WHAT HAPPENS WHEN THE PROMO WALLET FALLS SHORT: the one place it is said.
+ *
+ * Today's settlement is promo only (20260906084547): a closed round is paid
+ * from the recorded Promo Wallet (a standalone club's leftover opening prize
+ * seed first) in full or not at all. An underfunded round is left unpaid, no
+ * winner is partly paid, the daily settlement run retries it, and no bank is
+ * ever debited (the batch table's overlay column is held at zero by a check
+ * constraint). Publication itself is gated on the Promo Wallet alone
+ * (20260906003717).
+ *
+ * If the publication RPC gains the owner's opt-in to cover a shortfall from
+ * the bank, THIS is what becomes that one labelled On/Off choice (the Toggle
+ * in table-config/controls, default Off), shown where this row is shown, and
+ * planPayload() is where its value is sent. Until the SQL has it, the row
+ * states the only behaviour there is.
+ */
+function shortfallRule(ownerType: LeaderboardSettings['funding_owner_type']) {
+  return {
+    label: 'If Promo Falls Short',
+    value: 'Round Waits Unpaid',
+    note:
+      ownerType === 'union'
+        ? 'A Closed Round Is Paid In Full Or Not At All. If The Union Promo Wallet Holds Less Than The Prizes, No Winner Is Paid, The Round Stays Unpaid, And The Daily Settlement Run Retries It Until The Wallet Covers It. The Union Bank And Club Banks Are Never Used.'
+        : 'A Closed Round Is Paid In Full Or Not At All. If Any Leftover Opening Prize Seed And The Promo Wallet Together Hold Less Than The Prizes, No Winner Is Paid, The Round Stays Unpaid, And The Daily Settlement Run Retries It Until They Cover It. The Club Bank Is Never Used.',
+  };
+}
+
 export function LeaderboardPrizeWizard({
   isOpen,
   setup,
@@ -122,8 +221,13 @@ export function LeaderboardPrizeWizard({
   const [planKey, setPlanKey] = useState<LeaderboardPrizePlanKey>(setup.suggestion_key);
   const [weeklyPrizes, setWeeklyPrizes] = useState<LeaderboardPrize[]>(setup.weekly_prizes);
   const [monthlyPrizes, setMonthlyPrizes] = useState<LeaderboardPrize[]>(setup.monthly_prizes);
-  const [weeklyBudget, setWeeklyBudget] = useState(totalPrizePlan(setup.weekly_prizes));
-  const [monthlyBudget, setMonthlyBudget] = useState(totalPrizePlan(setup.monthly_prizes));
+  /* The prize state is the SHAPE of each split, as the plan helpers produce it
+     (cents); the budget is whole chips. What is shown and published is the
+     whole-chip projection below, never the shape itself. */
+  const [weeklyBudget, setWeeklyBudget] = useState(wholeChips(totalPrizePlan(setup.weekly_prizes)));
+  const [monthlyBudget, setMonthlyBudget] = useState(
+    wholeChips(totalPrizePlan(setup.monthly_prizes))
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [templateTargets, setTemplateTargets] = useState<string[]>([]);
@@ -149,8 +253,10 @@ export function LeaderboardPrizeWizard({
     setPlanKey(initialKey);
     setWeeklyPrizes(initialWeekly);
     setMonthlyPrizes(initialMonthly);
-    setWeeklyBudget(totalPrizePlan(initialWeekly));
-    setMonthlyBudget(totalPrizePlan(initialMonthly));
+    // A program published before whole chips carries cent amounts; its budget
+    // is its own whole total, and it is shown and republished as whole chips.
+    setWeeklyBudget(wholeChips(totalPrizePlan(initialWeekly)));
+    setMonthlyBudget(wholeChips(totalPrizePlan(initialMonthly)));
     setSaving(false);
     setError(null);
     setTemplateTargets([]);
@@ -190,8 +296,21 @@ export function LeaderboardPrizeWizard({
   }, [isOpen]);
 
   const selectedPlan = planKey === 'custom' ? null : planKey;
-  const weeklyTotal = totalPrizePlan(weeklyPrizes);
-  const monthlyTotal = totalPrizePlan(monthlyPrizes);
+  /* WHAT THE OWNER SEES IS WHAT IS PUBLISHED. Each split's whole-chip
+     projection is the list the place fields show, the review prints and
+     planPayload() sends. Keeping the shape underneath means a budget typed a
+     digit at a time rescales the owner's split, not whatever a two-chip
+     intermediate budget had rounded it to. */
+  const weeklyPlaces = useMemo(
+    () => wholeChipPrizes(weeklyPrizes, weeklyBudget),
+    [weeklyPrizes, weeklyBudget]
+  );
+  const monthlyPlaces = useMemo(
+    () => wholeChipPrizes(monthlyPrizes, monthlyBudget),
+    [monthlyPrizes, monthlyBudget]
+  );
+  const weeklyTotal = totalPrizePlan(weeklyPlaces);
+  const monthlyTotal = totalPrizePlan(monthlyPlaces);
   const proposedCommitment = enabled ? weeklyTotal + monthlyTotal : 0;
   const publicationCapacity = setup.publication_capacity ?? setup.available_balance;
   const projectedUncommitted =
@@ -199,10 +318,17 @@ export function LeaderboardPrizeWizard({
   const hasPrizes = weeklyTotal > 0 || monthlyTotal > 0;
   const exceedsAvailable = publicationCapacity != null && proposedCommitment > publicationCapacity;
 
+  /* Where prize chips come from, exactly as the SQL does it. Publication is
+     checked against the Promo Wallet alone (20260906003717); a standalone
+     club's settlement draws any leaderboard prize seed left from its opening
+     before its Promo Wallet (20260906084547), and a union batch has no seed. */
   const sourceDescription =
     setup.funding_owner_type === 'union'
-      ? `${setup.union_name || 'The Union'} Controls This Club's Leaderboard Rewards.`
-      : `${setup.club_name} Is Standalone, So Its Club Promo Wallet Is The Funding Source.`;
+      ? `This Club Belongs To ${setup.union_name || 'A Union'}, So The Union Promo Wallet Pays Its Leaderboard Prizes.`
+      : `${setup.club_name} Is Standalone, So Its Promo Wallet Pays Its Leaderboard Prizes. Any Leaderboard Prize Seed Left From Opening Is Used First.`;
+  const shortfall = shortfallRule(setup.funding_owner_type);
+  const placesLine = (prizes: LeaderboardPrize[]) =>
+    prizes.length ? prizes.map((prize) => exactChips(prize.amount)).join(' / ') : 'None';
 
   const applyPlan = (nextPlan: Exclude<LeaderboardPrizePlanKey, 'custom'>) => {
     setPlanKey(nextPlan);
@@ -220,29 +346,27 @@ export function LeaderboardPrizeWizard({
   };
 
   const updateBudget = (period: 'weekly' | 'monthly', rawValue: string) => {
-    const budget = clampPrizeBudget(Number(rawValue));
+    const budget = wholeChips(rawValue);
+    const split = (current: LeaderboardPrize[]) =>
+      selectedPlan
+        ? distributePrizeBudget(budget, selectedPlan)
+        : scaleCustomPrizesToBudget(current, budget);
     if (period === 'weekly') {
       setWeeklyBudget(budget);
-      setWeeklyPrizes((current) =>
-        selectedPlan
-          ? distributePrizeBudget(budget, selectedPlan)
-          : scaleCustomPrizesToBudget(current, budget)
-      );
+      setWeeklyPrizes(split);
     } else {
       setMonthlyBudget(budget);
-      setMonthlyPrizes((current) =>
-        selectedPlan
-          ? distributePrizeBudget(budget, selectedPlan)
-          : scaleCustomPrizesToBudget(current, budget)
-      );
+      setMonthlyPrizes(split);
     }
   };
 
   const updateCustomPrize = (period: 'weekly' | 'monthly', rank: number, rawValue: string) => {
-    const amount = clampPrizeBudget(Number(rawValue));
+    const amount = wholeChips(rawValue);
     setPlanKey('custom');
     const setRows = period === 'weekly' ? setWeeklyPrizes : setMonthlyPrizes;
-    const current = period === 'weekly' ? weeklyPrizes : monthlyPrizes;
+    // An edit starts from the places on screen, so every other place keeps
+    // exactly the whole chips the owner is looking at.
+    const current = period === 'weekly' ? weeklyPlaces : monthlyPlaces;
     const rows = editableRows(current).map((row) => (row.rank === rank ? { rank, amount } : row));
     setRows(normalizeCustomPrizes(rows));
     const total = totalPrizePlan(rows);
@@ -253,8 +377,8 @@ export function LeaderboardPrizeWizard({
   const planPayload = () => ({
     rewards_enabled: enabled,
     payout_metric: metric,
-    weekly_prizes: normalizeCustomPrizes(weeklyPrizes),
-    monthly_prizes: normalizeCustomPrizes(monthlyPrizes),
+    weekly_prizes: normalizeCustomPrizes(weeklyPlaces),
+    monthly_prizes: normalizeCustomPrizes(monthlyPlaces),
     suggestion_key: planKey,
   });
 
@@ -527,6 +651,13 @@ export function LeaderboardPrizeWizard({
                     A Union Wallet.
                   </span>
                 </div>
+                <dl className="lb-prize-rows" aria-label="Shortfall Rule">
+                  <div>
+                    <dt>{shortfall.label}</dt>
+                    <dd>{shortfall.value}</dd>
+                  </div>
+                </dl>
+                <p className="lb-prize-rule-note">{shortfall.note}</p>
               </div>
             )}
 
@@ -586,7 +717,7 @@ export function LeaderboardPrizeWizard({
 
                 <div className="lb-prize-period-grid">
                   {(['weekly', 'monthly'] as const).map((rewardPeriod) => {
-                    const prizes = rewardPeriod === 'weekly' ? weeklyPrizes : monthlyPrizes;
+                    const prizes = rewardPeriod === 'weekly' ? weeklyPlaces : monthlyPlaces;
                     const budget = rewardPeriod === 'weekly' ? weeklyBudget : monthlyBudget;
                     return (
                       <fieldset key={rewardPeriod}>
@@ -599,8 +730,8 @@ export function LeaderboardPrizeWizard({
                             type="number"
                             min="0"
                             max={MAX_PRIZE_PLAN_BUDGET}
-                            step="0.01"
-                            inputMode="decimal"
+                            step="1"
+                            inputMode="numeric"
                             value={budget || ''}
                             onChange={(event) => updateBudget(rewardPeriod, event.target.value)}
                           />
@@ -613,8 +744,8 @@ export function LeaderboardPrizeWizard({
                                 type="number"
                                 min="0"
                                 max={MAX_PRIZE_PLAN_BUDGET}
-                                step="0.01"
-                                inputMode="decimal"
+                                step="1"
+                                inputMode="numeric"
                                 value={row.amount || ''}
                                 onChange={(event) =>
                                   updateCustomPrize(rewardPeriod, row.rank, event.target.value)
@@ -640,7 +771,7 @@ export function LeaderboardPrizeWizard({
                 {exceedsAvailable && (
                   <div className="lb-prize-inline-error" role="alert">
                     This Plan Cannot Be Published. Reduce The Combined Weekly And Monthly Commitment
-                    To {compactChips(publicationCapacity)} Promo Chips Or Less.
+                    To {exactChips(publicationCapacity)} Promo Chips Or Less.
                   </div>
                 )}
               </div>
@@ -696,17 +827,31 @@ export function LeaderboardPrizeWizard({
                     <dt>Prize Split</dt>
                     <dd>{prizePlanLabel(planKey)}</dd>
                   </div>
+                  {/* The figures being published are exact; the balance after
+                      them, below, is a glance and stays compact. */}
+                  {enabled && (
+                    <div>
+                      <dt>Weekly Places</dt>
+                      <dd>{placesLine(weeklyPlaces)}</dd>
+                    </div>
+                  )}
                   <div>
                     <dt>Weekly Total</dt>
-                    <dd>{compactChips(weeklyTotal)} Chips</dd>
+                    <dd>{exactChips(weeklyTotal)} Chips</dd>
                   </div>
+                  {enabled && (
+                    <div>
+                      <dt>Monthly Places</dt>
+                      <dd>{placesLine(monthlyPlaces)}</dd>
+                    </div>
+                  )}
                   <div>
                     <dt>Monthly Total</dt>
-                    <dd>{compactChips(monthlyTotal)} Chips</dd>
+                    <dd>{exactChips(monthlyTotal)} Chips</dd>
                   </div>
                   <div>
                     <dt>Combined Commitment</dt>
-                    <dd>{compactChips(proposedCommitment)} Chips</dd>
+                    <dd>{exactChips(proposedCommitment)} Chips</dd>
                   </div>
                   <div>
                     {/* With template clubs chosen, each of them also commits
@@ -724,6 +869,12 @@ export function LeaderboardPrizeWizard({
                         : `${compactChips(projectedUncommitted)} Chips`}
                     </dd>
                   </div>
+                  {enabled && (
+                    <div>
+                      <dt>{shortfall.label}</dt>
+                      <dd>{shortfall.value}</dd>
+                    </div>
+                  )}
                 </dl>
                 {templateClubs.length > 0 && (
                   <fieldset className="lb-prize-template">
@@ -761,7 +912,7 @@ export function LeaderboardPrizeWizard({
                     {templateTargets.length > 0 && (
                       <span className="lb-prize-template-note">
                         {enabled
-                          ? `Publishing To ${templateTargets.length + 1} Clubs. Each Commits ${compactChips(proposedCommitment)} Chips From The Union Promo Wallet, Checked In Turn; A Club It Cannot Cover Is Refused And Listed.`
+                          ? `Publishing To ${templateTargets.length + 1} Clubs. Each Commits ${exactChips(proposedCommitment)} Chips From The Union Promo Wallet, Checked In Turn; A Club It Cannot Cover Is Refused And Listed.`
                           : `Publishing To ${templateTargets.length + 1} Clubs. Prizes Will Be Disabled For Each Of Them.`}
                       </span>
                     )}
@@ -775,13 +926,24 @@ export function LeaderboardPrizeWizard({
                   </span>
                 </div>
                 <div className="lb-prize-safety-note" role="note">
-                  <strong>Publication Claims Funding Capacity.</strong>
-                  <span>
-                    Publishing Does Not Move Chips. The Service-Only Settlement Process Debits The
-                    Recorded Promo Wallet And Writes Immutable Payout Evidence After The Period
-                    Closes.
-                  </span>
+                  <strong>Publishing Checks Funding And Moves No Chips.</strong>
+                  {setup.funding_owner_type === 'union' ? (
+                    <span>
+                      The Union Promo Wallet Must Cover This Plan And Every Other Club Plan Already
+                      Published From It. Its Chips Are Not Locked. After Each Period Closes, The
+                      Service-Only Settlement Pays The Winners From That Wallet And Writes Immutable
+                      Payout Receipts.
+                    </span>
+                  ) : (
+                    <span>
+                      The Promo Wallet Must Cover This Plan When It Is Published. Its Chips Are Not
+                      Locked. After Each Period Closes, The Service-Only Settlement Pays The Winners
+                      From Any Leftover Opening Prize Seed, Then The Promo Wallet, And Writes
+                      Immutable Payout Receipts.
+                    </span>
+                  )}
                 </div>
+                {enabled && <p className="lb-prize-rule-note">{shortfall.note}</p>}
                 {error && (
                   <div className="lb-prize-inline-error" role="alert">
                     {error}

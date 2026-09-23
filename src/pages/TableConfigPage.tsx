@@ -34,6 +34,7 @@ import { tournamentService } from '../services/TournamentService';
 import {
   buildTournamentConfig,
   entryRulesForDraft,
+  mttEntryWindowProblem,
   prizeStyleForDraft,
   MTT_ENTRY_RULES,
   MTT_PRIZE_STYLES,
@@ -1019,6 +1020,15 @@ export default function TableConfigPage({
         return;
       }
 
+      // A Rebuy or Re-Entry event needs late registration to close: a 0 level
+      // is read as no cap at all, so rebuys would never close. Same refusal
+      // as the club tournament modal. Shown beside the slider as well.
+      const entryWindowProblem = mttEntryWindowProblem(config);
+      if (entryWindowProblem) {
+        toast.error(entryWindowProblem);
+        return;
+      }
+
       // A start is a date AND a time. Half of one would parse as no start at
       // all and the event would quietly take the service default instead.
       if (
@@ -1027,6 +1037,17 @@ export default function TableConfigPage({
         !isCompleteLocalStart(config.startTime)
       ) {
         toast.error('Choose Both A Start Date And A Start Time, Or Clear Both.');
+        return;
+      }
+      // Today's earlier quarter hours are in the list too, and buildTournamentConfig
+      // would quietly drop a past start and open the event now. Refuse it the way
+      // the club tournament modal does, with a minute of slack for the clock.
+      if (
+        config.gameMode === 'mtt' &&
+        isCompleteLocalStart(config.startTime) &&
+        !(new Date(config.startTime).getTime() >= Date.now() - 60_000)
+      ) {
+        toast.error('Pick A Start Time In The Future');
         return;
       }
 
@@ -1142,6 +1163,7 @@ export default function TableConfigPage({
      applies the same rule). The stored choice is left alone and comes back the
      moment the lock lifts. */
   const prizeStyleLocked = isFreeBuy || config.nextStepSatellite;
+  const lateRegProblem = mttEntryWindowProblem(config);
 
   const content = (
     <div className="table-config-page">
@@ -1291,7 +1313,7 @@ export default function TableConfigPage({
               label="VIP Only"
               value={config.isVipOnly}
               onChange={(v) => updateConfig('isVipOnly', v)}
-              tooltip="Only VIP Members And This Club's Owner, Admins And Agents Can Register"
+              tooltip="Only Players With An Active VIP Membership, And This Club's Owners, Admins And Agents, Can Register"
             />
             <div className="config-textarea">
               <span className="textarea-label">Short Description</span>
@@ -1346,7 +1368,7 @@ export default function TableConfigPage({
               label="Hide Club Name"
               value={config.hideClubName}
               onChange={(v) => updateConfig('hideClubName', v)}
-              tooltip="Lobby Listings Outside Your Club Do Not Show Which Club Is Hosting This Tournament"
+              tooltip="Union Lobbies List This Tournament Without Naming Your Club As The Host"
             />
             <Slider
               label="Table Size"
@@ -1587,7 +1609,7 @@ export default function TableConfigPage({
                   min={1}
                   max={10}
                   suffix=" min"
-                  tooltip="On A Free Buy The Add-On Stays Open From The Start Through Late Registration, Then For This Many More Minutes"
+                  tooltip="On A Free Buy The Add-On Is Open From The Start Through Late Registration. Play Then Pauses For This Many Minutes Of Add-On Break Before It Closes."
                 />
               </div>
             ) : (
@@ -1602,7 +1624,7 @@ export default function TableConfigPage({
                     <HelpPopover label="Entry Rules">
                       Freezeout: One Entry, And A Player Who Busts Is Out. Rebuy: A Player Who Busts
                       May Pay For A New Stack. Re-Entry: A Player Who Busts May Pay To Enter Again.
-                      Both Close When Late Registration Closes.
+                      Both Stay Open Through Late Registration And Any Add-On Period, Then Close.
                     </HelpPopover>
                   </span>
                   <select
@@ -1768,6 +1790,15 @@ export default function TableConfigPage({
               suffix=" level"
               tooltip="Players May Still Register During This Many Blind Levels After The Start. 0 Closes Registration When Play Starts."
             />
+            {lateRegProblem && (
+              <p
+                className="config-free-buy__text"
+                role="alert"
+                style={{ padding: '0.35rem 0.5rem 0.6rem' }}
+              >
+                {lateRegProblem}
+              </p>
+            )}
             <Toggle
               label="Early Bird Registration"
               value={config.earlyBirdRegistration}
@@ -1855,7 +1886,7 @@ export default function TableConfigPage({
                 Start Date
                 <HelpPopover label="Start Date">
                   The Day This Tournament Starts, In Your Local Time. With No Date And No Time, It
-                  Starts Once The Minimum Players Have Registered.
+                  Can Start A Minute After It Is Created, Once The Minimum Players Have Registered.
                 </HelpPopover>
               </span>
               <select
@@ -1924,7 +1955,7 @@ export default function TableConfigPage({
                 max={1440}
                 step={5}
                 suffix=" min"
-                tooltip="When This Tournament Ends, A Copy Opens And Starts This Many Minutes After The Finish"
+                tooltip="When This Tournament Finishes, A Copy With The Same Settings Opens And Starts This Many Minutes Later. At 1440 Minutes The Copy Starts At The Same Time The Next Day."
               />
             )}
 

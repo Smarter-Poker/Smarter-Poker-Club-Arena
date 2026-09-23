@@ -311,3 +311,60 @@ describe('four search paths are pinned, and said to be the smaller fix they are'
     expect(MIG3).toContain("RAISE EXCEPTION 'search_path is still unpinned on: %', bad");
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  THE TWO REPOSITORY LISTS OF ANON-READABLE DEFINERS MUST AGREE (2026-09-23)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * A decision that a caller with no account may execute a SECURITY DEFINER
+ * reader has to be written in THREE places, and nothing compared them:
+ *
+ *   public.ca_browser_definer_allowlist                     Telemetry Exposure
+ *   definer-authorization.allowlist.json > anonPublicSurface the branch gate
+ *   definer-exposure-baseline.json > reviewedAnonReaders     THIS live audit
+ *
+ * On 2026-09-19, fn_shared_bonus_replay was reviewed properly and recorded in
+ * the first two by migration
+ * 20260919153418_public_bonus_replay_has_an_explicitly_public_reader.sql. The
+ * third was missed, so the branch went green, production was correct, and the
+ * daily audit failed every run from 2026-09-20 on a decision that had already
+ * been taken. That is CLAUDE.md 10.84's three-lists failure in a new place.
+ *
+ * The database list cannot be read from CI, so this pins the two that can be:
+ * if a name is a deliberate public surface for the gate, the live audit must
+ * know it too, with its own paragraph. It only ever requires MORE writing down.
+ */
+describe('a reviewed anon-readable definer is written in both repository lists', () => {
+  const gate = JSON.parse(read('scripts/ci/definer-authorization.allowlist.json'));
+  const baseline = JSON.parse(read('scripts/ci/definer-exposure-baseline.json'));
+  const gateNames = Object.keys(gate.anonPublicSurface ?? {});
+  const auditNames = new Set(Object.keys(baseline.reviewedAnonReaders ?? {}));
+
+  it('every anonPublicSurface name is also in reviewedAnonReaders', () => {
+    const missing = gateNames.filter((n) => !auditNames.has(n));
+    expect(
+      missing,
+      `${missing.join(', ')} is a deliberate public surface for the branch gate but unknown to ` +
+        'the live audit, which will fail every day until it is added to reviewedAnonReaders ' +
+        'in scripts/ci/definer-exposure-baseline.json with its own reason.'
+    ).toEqual([]);
+  });
+
+  it('and the live audit says what an unauthenticated caller learns, in its own words', () => {
+    for (const name of gateNames) {
+      const why = (baseline.reviewedAnonReaders ?? {})[name] as string;
+      // A paragraph, not a cross-reference. A reason that only points at the
+      // other file leaves the next reader exactly where this one started.
+      expect(typeof why, `${name} has no reason in reviewedAnonReaders`).toBe('string');
+      expect(why.length, `${name} needs a reason, not a label`).toBeGreaterThan(120);
+    }
+  });
+
+  it('fn_shared_bonus_replay carries the decision that was already taken', () => {
+    const why = (baseline.reviewedAnonReaders ?? {}).fn_shared_bonus_replay as string;
+    expect(why).toBeTruthy();
+    expect(why).toContain('diamond_bonus_shares');
+    expect(why).toContain('20260919153418');
+  });
+});

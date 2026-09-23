@@ -54,7 +54,10 @@ export default function DiamondTestPage() {
   const upgraded = params.get('super') === '1';
   const boost = upgraded ? 2 : 1;
   const [entry, setEntry] = useState(100),
-    [doubled, setDoubled] = useState(false),
+    // Double Diamonds can be opened already taken, so the board a Super award
+    // WITH the add-on is dealt - Super Double, the one its two-thirds floor
+    // needs - can be reached offline as well as through the offer step.
+    [doubled, setDoubled] = useState(params.get('double') === '1'),
     [offer, setOffer] = useState(false);
   const [phase, setPhase] = useState<'idle' | 'open' | 'cashed' | 'lost'>('idle');
   const [sceneBusy, setSceneBusy] = useState(false);

@@ -26,8 +26,8 @@ export async function diamondGamesFixture() {
  import PlinkoBoard from './src/components/plinko/PlinkoBoard';import {useMeasuredWidth} from './src/hooks/useMeasuredWidth';
  import {diamondGameTitle,type DiamondBonusGame} from './src/utils/diamondGameTitles';
  import {bonusTotal,gameChips,plinkoBudget,plinkoDrops,validBonusBudget,type BonusBudget} from './src/utils/bonusGameBudget';
- import {PLINKO_TABLES,diamondBonusMinimum,plinkoTableVersion} from './src/utils/diamondBonusPayout';
- import {CHOICE_MODE,ROAD_LADDERS,minePrize} from './src/utils/diamondChoiceMath';
+ import {PLINKO_TABLES,diamondBonusFloor,plinkoTableForFloor} from './src/utils/diamondBonusPayout';
+ import {CHOICE_MODE,ROAD_LADDERS_V4,minePrizeV4} from './src/utils/diamondChoiceMath';
  import './src/styles/club-engine.css';import './src/pages/diamondGames.module.css';
  // club-engine.css is where the --realism-* design tokens are DEFINED, and the
  // console reads them for every surface it paints. A CSS fixture without it
@@ -37,8 +37,10 @@ export async function diamondGamesFixture() {
  // The one setting per game, read from the same constants the server mirrors:
  // the live ordinary board (never a deactivated one, and never a chooser), the
  // one road, and the dealt number of mines on the sample reveal.
- const TABLE=PLINKO_TABLES[plinkoTableVersion(1)];
- const ROAD=ROAD_LADDERS[CHOICE_MODE.crossing];
+ // Contract 4: the board follows the stake's FLOOR, so an ordinary entry is
+ // dealt Super (4). The boost used to name Diamond (5), closed 2026-09-21.
+ const TABLE=PLINKO_TABLES[plinkoTableForFloor(1,diamondBonusFloor(1,1,100,100))!];
+ const ROAD=ROAD_LADDERS_V4[CHOICE_MODE.crossing];
  const MINES=Number(CHOICE_MODE.mines);
  const MINE_PICKS=25-MINES;
  const MINE_CELLS=Array.from({length:MINES},(_,i)=>i*4+1);
@@ -50,9 +52,9 @@ export async function diamondGamesFixture() {
  // An entry the controls cannot quote has no guarantee to state, so nothing here
  // asks the payout maths about it.
  const chips=validBonusBudget(budget)?bonusTotal(budget)/100:0;
- const minimum=chips>0?diamondBonusMinimum(chips):0;
+ const minimum=chips>0?diamondBonusFloor(chips,1,bonusTotal(budget),100):0;
  const guaranteed=gameChips(minimum);
- const prizes=chips<=0?[]:game==='crossing'?ROAD.map(m=>(chips*m)/100):game==='mines'?Array.from({length:MINE_PICKS},(_,i)=>{const p=minePrize(chips,MINES,i+1,minimum);return Number(p.numerator)/Number(p.denominator)/100;}):[];
+ const prizes=chips<=0?[]:game==='crossing'?ROAD.map(m=>(chips*m)/100):game==='mines'?Array.from({length:MINE_PICKS},(_,i)=>{const p=minePrizeV4(chips,MINES,i+1,minimum);return Number(p.numerator)/Number(p.denominator)/100;}):[];
  return <><nav aria-label="Preview games">{GAMES.map(g=><button key={g} onClick={()=>{setGame(g);setPicked([]);setPhase('open');}}>{g}</button>)}</nav>
  <GameConsole title={diamondGameTitle(game)} pill="Preview"
  setup={<BonusSetup budget={budget} onChange={b=>setBudget(plinkoBudget(b))} diamonds={1000} disabled={false} game={game} clubId="preview"/>}

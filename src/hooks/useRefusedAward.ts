@@ -22,13 +22,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * `serverBlocked` is the page's own "the server's state says this cannot
  * start" - never a transient flag such as a quote in flight or a start in
  * progress. The moment it goes from blocked to clear (the break ended), the
- * refusal is forgotten and `opening` changes, which gives the countdown a fresh
- * key: a refusal the state explains still ends in the game starting itself,
- * while a refusal the server repeats with nothing changed is never retried on a
- * timer. */
+ * refusal is forgotten and the award is offered again, on the plate, for the
+ * player to press. A refusal the server repeats with nothing changed keeps the
+ * award let go, so the exit guard never holds anybody on it. */
 export function useRefusedAward(awardId: string | null | undefined, serverBlocked: boolean) {
   const [refused, setRefused] = useState<string | null>(null);
-  const [opening, setOpening] = useState(0);
   const wasBlocked = useRef(serverBlocked);
   useEffect(() => {
     if (serverBlocked) {
@@ -38,7 +36,6 @@ export function useRefusedAward(awardId: string | null | undefined, serverBlocke
     if (!wasBlocked.current) return;
     wasBlocked.current = false;
     setRefused(null);
-    setOpening((count) => count + 1);
   }, [serverBlocked]);
   const refuse = useCallback((id: string | null | undefined) => {
     if (id) setRefused(id);
@@ -46,8 +43,6 @@ export function useRefusedAward(awardId: string | null | undefined, serverBlocke
   return {
     /** The award on screen is the one the server just refused. */
     refused: Boolean(awardId) && refused === awardId,
-    /** Changes each time the server's blockers clear; part of the countdown key. */
-    opening,
     refuse,
   };
 }

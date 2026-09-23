@@ -191,12 +191,72 @@ frozen tables into a green tick.
   tell.** The precondition fails first, so those assertions have never run on
   this revision, and no claim is made about them here.
 
+## Addendum: a third defect, found by publishing this
+
+Publishing the section above put a fresh certificate on the board, and
+`Client browser verification` failed on it for the first time: run
+`35865600057`, 313 passed, 1 failed.
+
+    tests/e2e/routes/phase7-doors.spec.ts:80
+    Error: union-dashboard did not land where Phase 7 sent it
+    Expected: predicate to succeed
+    Received: "https://smarter.poker/hub/club-arena/community"
+
+### (b) the spec is broken
+
+`/unions` is closed on purpose. Dan, 2026-09-05: "AND THIS PAGE SHOULD BE
+HIDDEN TO EVERYONE EXECPT ME". `UnionNetworkGuard` forwards every account it
+refuses to `/community`, "which is where the Unions entry used to live and is
+a place they can actually use". The production certification account is one of
+those accounts, so `/unions` is a URL it passes through and never rests on.
+
+`landsOn` samples the address bar, so for these two doors it was racing that
+guard: `union-dashboard` -> `/unions` -> (guard resolves a network round trip)
+-> `/community`. The two tests have the identical destination and split in the
+same run: `union-games` sampled at 13:37:05 and passed on `/unions`;
+`union-dashboard` sampled from 13:37:01 and failed twenty seconds later on
+`/community`. Nothing about the doors differed, only which side of the guard
+each one caught. The player sees the correct page either way.
+
+The helper's own header had already warned about this: "A first draft
+asserting only the final URL passed one run and failed the next purely on
+which of the two won the race, which is exactly the flake this suite must not
+gain." It had gained it anyway, on the one destination that refuses its own
+visitors.
+
+### Moved, not weakened
+
+A union door may now land on `/unions`, on the auth bounce that names it, or
+on the refusal `/unions` itself performs. It still fails if the door sits on
+`union-dashboard` or `union-games` rendering the orphan pages Phase 7 retired,
+and it still fails if it lands anywhere else.
+
+The half the browser can no longer distinguish, a door quietly repointed
+straight at `/community`, is pinned where nothing can race it:
+`tests/unit/phase7UnionDoorsForwardToUnions.test.ts` holds both routes in
+`App.tsx` to `<Navigate to="/unions" replace />`, to exactly one destination,
+and to no page component of their own. Verified by mutation: repointing
+`union-dashboard` at `/community` turns three of its seven assertions red, and
+`src/App.tsx` was restored byte-identical afterwards.
+
+### The other failed step in that job: (c) I could not tell
+
+`Prove production stayed on one exact release during certification` also
+failed on run `35865600057`, and correctly. Three merges published inside ten
+minutes: `b0c30fb710` at 13:12:38Z, this task's squash `302e60c723` at
+13:15:43Z and `f425cbfc93` at 13:21:45Z. The certificate opened on one release
+and the specs finished against another, so the run cannot say which bundle it
+measured. That step exists to refuse exactly that, and it refused. It is not a
+defect in the page or in the step, and nothing was changed for it.
+
 ## Verified
 
 `npx tsc --noEmit` clean. All eight gate scripts print ok
 (`check-css-modules`, `check-title-case`, `check-painted-text-case`,
 `check-nav-title-case`, `check-ui-text`, `check-no-emoji`,
 `check-horses-are-players`, `check-discarded-read-then-write`).
-`python3 scripts/ci/verify-source-bindings.py` intact; no pinned file changed,
-so no restamp was required. No source file was modified, so no spec needed
-moving and no law changed.
+`python3 scripts/ci/verify-source-bindings.py` intact; neither changed file is
+pinned by a source binding, so no restamp was required. No `*.law.test.*` was
+added or changed, so `docs/laws.d/` is unaffected.
+`tests/unit/phase7UnionDoorsForwardToUnions.test.ts` passes, 7 tests, and
+fails 3 of them when the door it guards is repointed.

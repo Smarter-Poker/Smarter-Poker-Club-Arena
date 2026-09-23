@@ -151,6 +151,32 @@ describe('StatsHealthMonitor', () => {
     expect(resolve.mock.calls.some(([name]) => name === STATS_INDEX_LAG_ALERT)).toBe(false);
   });
 
+  it('does NOT raise the trigger-gap alert while a maintenance break is on (CLAUDE.md 13.6)', async () => {
+    // Regression for the 2026-09-23 fix: this block never checked paused(),
+    // unlike its sibling index-lag block immediately above, so a hand written
+    // in the last few seconds before the freeze could still read as "missing"
+    // on the next tick and page about the scheduled stop this monitor's own
+    // class doc says it must never page about.
+    const { mon, raise, resolve } = harness([{ ...LIVE_SAMPLE, recentHandsWithoutStat: 5 }], {
+      paused: true,
+    });
+    await mon.tick();
+    expect(raise.mock.calls.some(([a]) => a.alertname === STATS_TRIGGER_GAP_ALERT)).toBe(false);
+    expect(resolve.mock.calls.some(([name]) => name === STATS_TRIGGER_GAP_ALERT)).toBe(false);
+  });
+
+  it('raises the trigger-gap alert immediately once the break lifts, same snapshot value', async () => {
+    const { mon, raise } = harness(
+      [{ ...LIVE_SAMPLE, recentHandsWithoutStat: 5 }, { ...LIVE_SAMPLE, recentHandsWithoutStat: 5 }],
+      { paused: true }
+    );
+    await mon.tick();
+    expect(raise.mock.calls.some(([a]) => a.alertname === STATS_TRIGGER_GAP_ALERT)).toBe(false);
+    (mon as unknown as { deps: { paused: () => boolean } }).deps.paused = () => false;
+    await mon.tick();
+    expect(raise.mock.calls.some(([a]) => a.alertname === STATS_TRIGGER_GAP_ALERT)).toBe(true);
+  });
+
   it('retains index evidence without inferring page staleness from the bulk watermark', async () => {
     // Source-only fixture: precise database-shaped times, not recovered times
     // from the historical originals, which did not retain their checkedAt.
